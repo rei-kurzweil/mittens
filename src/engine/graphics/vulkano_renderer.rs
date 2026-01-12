@@ -16,6 +16,7 @@ mod vulkano_backend {
     use crate::engine::graphics::pipeline_descriptor_set_layouts::PipelineDescriptorSetLayouts;
     use crate::engine::graphics::primitives::MeshHandle;
     use crate::engine::graphics::primitives::TextureHandle;
+    use crate::engine::graphics::vulkano_texture_upload;
     use crate::engine::graphics::visual_world::VisualWorld;
     use crate::engine::graphics::vulkano_swapchain::VulkanoSwapchainState;
     use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
@@ -195,8 +196,8 @@ mod vulkano_backend {
         fn create_material_ubo(material: crate::engine::graphics::MaterialHandle) -> MaterialUBO {
             match material {
                 crate::engine::graphics::MaterialHandle::TOON_MESH => MaterialUBO {
-                    base_color: [1.0, 0.7, 0.2, 1.0],
-                    quant_steps: 4.0,
+                    base_color: [1.0, 1.0, 1.0, 1.0],
+                    quant_steps: 3.0,
                     emissive: 0,
                     _pad0: [0, 0],
                 },
@@ -406,6 +407,54 @@ mod vulkano_backend {
             state.upload_texture_rgba8(TextureHandle(0), &[255, 255, 255, 255], 1, 1)?;
 
             Ok(state)
+        }
+
+        pub fn upload_texture_rgba8(
+            &mut self,
+            handle: TextureHandle,
+            rgba: &[u8],
+            width: u32,
+            height: u32,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            if self.textures.contains_key(&handle) {
+                return Ok(());
+            }
+
+            let view = vulkano_texture_upload::upload_texture_rgba8(
+                &self.context,
+                &self.command_buffer_allocator,
+                rgba,
+                width,
+                height,
+            )?;
+
+            self.textures.insert(handle, VulkanoGpuTexture { view });
+            Ok(())
+        }
+
+        pub fn upload_texture_bc7(
+            &mut self,
+            handle: TextureHandle,
+            bc7_blocks: &[u8],
+            width: u32,
+            height: u32,
+            srgb: bool,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            if self.textures.contains_key(&handle) {
+                return Ok(());
+            }
+
+            let view = vulkano_texture_upload::upload_texture_bc7(
+                &self.context,
+                &self.command_buffer_allocator,
+                bc7_blocks,
+                width,
+                height,
+                srgb,
+            )?;
+
+            self.textures.insert(handle, VulkanoGpuTexture { view });
+            Ok(())
         }
 
         fn recreate_swapchain_if_needed(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -773,169 +822,6 @@ mod vulkano_backend {
                 }
             }
 
-            Ok(())
-        }
-
-        pub fn upload_texture_rgba8(
-            &mut self,
-            handle: TextureHandle,
-            rgba: &[u8],
-            width: u32,
-            height: u32,
-        ) -> Result<(), Box<dyn std::error::Error>> {
-            if self.textures.contains_key(&handle) {
-                return Ok(());
-            }
-
-            if width == 0 || height == 0 {
-                return Err("texture has zero size".into());
-            }
-
-            let expected_len = width as usize * height as usize * 4;
-            if rgba.len() != expected_len {
-                return Err(format!(
-                    "texture rgba length mismatch: got={}, expected={}",
-                    rgba.len(),
-                    expected_len
-                )
-                .into());
-            }
-
-            let memory_allocator = self.context.memory_allocator().clone();
-            let queue = self.context.graphics_queue().clone();
-
-            let staging = Buffer::from_iter(
-                memory_allocator.clone(),
-                BufferCreateInfo {
-                    usage: BufferUsage::TRANSFER_SRC,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                    ..Default::default()
-                },
-                rgba.iter().copied(),
-            )?;
-
-            let image = Image::new(
-                memory_allocator,
-                ImageCreateInfo {
-                    image_type: ImageType::Dim2d,
-                    format: Format::R8G8B8A8_UNORM,
-                    extent: [width, height, 1],
-                    usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
-                    ..Default::default()
-                },
-            )?;
-
-            let mut cbb = AutoCommandBufferBuilder::primary(
-                self.command_buffer_allocator.clone(),
-                queue.queue_family_index(),
-                CommandBufferUsage::OneTimeSubmit,
-            )?;
-
-            cbb.copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(staging, image.clone()))?;
-
-            let cb = cbb.build()?;
-
-            cb.execute(queue.clone())?
-                .then_signal_fence_and_flush()?
-                .wait(None)?;
-
-            let view = ImageView::new_default(image)
-                .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
-            self.textures.insert(handle, VulkanoGpuTexture { view });
-            Ok(())
-        }
-
-        pub fn upload_texture_bc7(
-            &mut self,
-            handle: TextureHandle,
-            bc7_blocks: &[u8],
-            width: u32,
-            height: u32,
-            srgb: bool,
-        ) -> Result<(), Box<dyn std::error::Error>> {
-            if self.textures.contains_key(&handle) {
-                return Ok(());
-            }
-
-            if width == 0 || height == 0 {
-                return Err("texture has zero size".into());
-            }
-
-            let blocks_w = (width + 3) / 4;
-            let blocks_h = (height + 3) / 4;
-            let expected_len = blocks_w as usize * blocks_h as usize * 16;
-            if bc7_blocks.len() != expected_len {
-                return Err(format!(
-                    "texture bc7 length mismatch: got={}, expected={}",
-                    bc7_blocks.len(),
-                    expected_len
-                )
-                .into());
-            }
-
-            let memory_allocator = self.context.memory_allocator().clone();
-            let queue = self.context.graphics_queue().clone();
-
-            let staging = Buffer::from_iter(
-                memory_allocator.clone(),
-                BufferCreateInfo {
-                    usage: BufferUsage::TRANSFER_SRC,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                    ..Default::default()
-                },
-                bc7_blocks.iter().copied(),
-            )?;
-
-            let format = if srgb {
-                Format::BC7_SRGB_BLOCK
-            } else {
-                Format::BC7_UNORM_BLOCK
-            };
-
-            let image = Image::new(
-                memory_allocator,
-                ImageCreateInfo {
-                    image_type: ImageType::Dim2d,
-                    format,
-                    extent: [width, height, 1],
-                    usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
-                    ..Default::default()
-                },
-            )?;
-
-            let mut cbb = AutoCommandBufferBuilder::primary(
-                self.command_buffer_allocator.clone(),
-                queue.queue_family_index(),
-                CommandBufferUsage::OneTimeSubmit,
-            )?;
-
-            cbb.copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(staging, image.clone()))?;
-
-            let cb = cbb.build()?;
-
-            cb.execute(queue.clone())?
-                .then_signal_fence_and_flush()?
-                .wait(None)?;
-
-            let view = ImageView::new_default(image)
-                .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
-            self.textures.insert(handle, VulkanoGpuTexture { view });
             Ok(())
         }
 
