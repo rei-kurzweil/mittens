@@ -24,6 +24,9 @@ pub struct RenderAssets {
     cpu_meshes: Vec<CpuMesh>,
     gpu_meshes: HashMap<CpuMeshHandle, MeshHandle>,
 
+    /// Imported CPU meshes keyed by a stable string (e.g. "{gltf_name}:{mesh_name_or_index}:{prim_index}").
+    imported_meshes: HashMap<String, CpuMeshHandle>,
+
     /// Built-in CPU mesh handles (stable ids) keyed by mesh kind.
     ///
     /// These are pre-registered in `RenderAssets::new()` so scenes that refer to built-in
@@ -79,6 +82,19 @@ impl RenderAssets {
         let h = CpuMeshHandle(self.cpu_meshes.len() as u32);
         self.cpu_meshes.push(mesh);
         h
+    }
+
+    /// Register an imported mesh and index it by `key` for later lookup.
+    pub fn register_imported_mesh(&mut self, key: impl Into<String>, mesh: CpuMesh) -> CpuMeshHandle {
+        let key = key.into();
+        let h = self.register_mesh(mesh);
+        self.imported_meshes.insert(key, h);
+        h
+    }
+
+    /// Look up an imported mesh handle by key.
+    pub fn imported_mesh(&self, key: &str) -> Option<CpuMeshHandle> {
+        self.imported_meshes.get(key).copied()
     }
 
     pub fn cpu_mesh(&self, h: CpuMeshHandle) -> Option<&CpuMesh> {

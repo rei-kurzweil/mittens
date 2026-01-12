@@ -1,5 +1,5 @@
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::{ColorComponent, RenderableComponent, UVComponent};
+use crate::engine::ecs::component::{ColorComponent, MeshComponent, RenderableComponent, UVComponent};
 
 use crate::engine::ecs::World;
 use crate::engine::ecs::system::System;
@@ -37,11 +37,14 @@ pub struct RenderableSystem {
     pending_color: HashMap<ComponentId, [f32; 4]>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct PendingRenderable {
     cpu_mesh: CpuMeshHandle,
     material: MaterialHandle,
     renderable_cid: ComponentId,
+
+    /// Optional string-key override for the CPU mesh (resolved via `RenderAssets::imported_mesh`).
+    mesh_key: Option<String>,
 }
 
 fn clone_mesh_with_uv_overrides(
@@ -255,12 +258,19 @@ impl RenderableSystem {
             return;
         };
 
+        let mesh_key = world
+            .children_of(component)
+            .iter()
+            .copied()
+            .find_map(|cid| world.get_component_by_id_as::<MeshComponent>(cid).map(|m| m.key.clone()));
+
         self.pending.insert(
             component,
             PendingRenderable {
                 cpu_mesh: renderable_comp.renderable.mesh,
                 material: renderable_comp.renderable.material,
                 renderable_cid: component,
+                mesh_key,
             },
         );
         println!(
@@ -291,11 +301,28 @@ impl RenderableSystem {
         // Collect keys first to avoid borrow issues.
         let keys: Vec<ComponentId> = self.pending.keys().copied().collect();
         for key in keys {
-            let Some(p) = self.pending.get(&key).copied() else {
+            let Some(p) = self.pending.get(&key).cloned() else {
                 continue;
             };
 
             let mut cpu_mesh = p.cpu_mesh;
+
+            // If a MeshComponent override exists, don't flush until the imported mesh resolves.
+            if let Some(mesh_key) = p.mesh_key.as_deref() {
+                let Some(imported) = render_assets.imported_mesh(mesh_key) else {
+                    continue;
+                };
+                cpu_mesh = imported;
+                if let Some(pending) = self.pending.get_mut(&key) {
+                    pending.cpu_mesh = cpu_mesh;
+                }
+                if let Some(renderable_comp) =
+                    world.get_component_by_id_as_mut::<RenderableComponent>(p.renderable_cid)
+                {
+                    renderable_comp.renderable.mesh = cpu_mesh;
+                }
+            }
+
             if let Some(uvs) = self.pending_uv.get(&p.renderable_cid).cloned() {
                 if let Some(new_mesh) = clone_mesh_with_uv_overrides(render_assets, cpu_mesh, &uvs)
                 {

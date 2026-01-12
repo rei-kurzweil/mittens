@@ -1,4 +1,5 @@
 use crate::engine::ecs::component::{CatEngineTextureFormat, RenderableComponent, TextureComponent};
+use crate::engine::ecs::component::texture::TextureSource;
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::{TextureHandle, TextureUploader, VisualWorld};
 use std::collections::HashMap;
@@ -7,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 struct TextureRecord {
-    uri: String,
+    uri: Option<String>,
     format: CatEngineTextureFormat,
     gpu: Option<TextureHandle>,
 }
@@ -25,6 +26,15 @@ impl TextureSystem {
         Self::default()
     }
 
+    /// Register an already-uploaded texture handle for a URI-like key.
+    ///
+    /// This is intended for virtual keys (e.g. GLTF imported textures like
+    /// "{gltf_name}:{image_name_or_index}") where the data is not loaded from disk
+    /// by `TextureSystem`.
+    pub fn register_cached_texture(&mut self, uri: impl Into<String>, handle: TextureHandle) {
+        self.uri_cache.insert(uri.into(), handle);
+    }
+
     pub fn register_texture(
         &mut self,
         world: &mut World,
@@ -38,9 +48,12 @@ impl TextureSystem {
         self.textures
             .entry(component)
             .or_insert_with(|| TextureRecord {
-                uri: tex_comp.uri.clone(),
+                uri: tex_comp.uri().map(|s| s.to_string()),
                 format: tex_comp.format,
-                gpu: None,
+                gpu: match tex_comp.source {
+                    TextureSource::Handle(h) => Some(h),
+                    TextureSource::Uri(_) => None,
+                },
             });
 
         // If this texture is attached under a renderable, remember that relationship.
@@ -87,14 +100,31 @@ impl TextureSystem {
                 continue;
             };
 
-            if let Some(cached) = self.uri_cache.get(&record.uri).copied() {
-                record.gpu = Some(cached);
+            if record.gpu.is_none() {
+                if let Some(uri) = record.uri.as_deref() {
+                    if let Some(cached) = self.uri_cache.get(uri).copied() {
+                        record.gpu = Some(cached);
+                    }
+                }
             }
 
             let tex_handle = match record.gpu {
                 Some(h) => h,
                 None => {
-                    let uri = record.uri.as_str();
+                    let Some(uri) = record.uri.as_deref() else {
+                        // No URI and no pre-provided handle. Nothing we can do.
+                        let _ = self.pending_attach.remove(&renderable_cid);
+                        continue;
+                    };
+
+                    // Virtual URI keys (e.g. GLTF imported textures) are resolved purely via
+                    // `uri_cache`. If the handle isn't registered yet, keep the attachment
+                    // pending so we can retry later.
+                    if is_virtual_texture_key(uri) {
+                        // If the GLTFSystem hasn't registered this key yet, just wait.
+                        continue;
+                    }
+
                     let raw_path_str = uri.strip_prefix("file://").unwrap_or(uri);
                     let raw_path = Path::new(raw_path_str);
 
@@ -203,7 +233,7 @@ impl TextureSystem {
                     };
 
                     record.gpu = Some(handle);
-                    self.uri_cache.insert(record.uri.clone(), handle);
+                    self.uri_cache.insert(uri.to_string(), handle);
                     handle
                 }
             };
@@ -212,6 +242,15 @@ impl TextureSystem {
             let _ = self.pending_attach.remove(&renderable_cid);
         }
     }
+}
+
+fn is_virtual_texture_key(uri: &str) -> bool {
+    // Heuristic for v1: GLTF imported textures use the pattern "{gltf_name}:{image_name_or_index}".
+    // We treat these as non-filesystem keys that must be resolved via `uri_cache`.
+    //
+    // This avoids trying to read them from disk and allows components to be created before the
+    // GLTF's textures are uploaded.
+    !uri.starts_with("file://") && uri.contains(':')
 }
 
 struct Bc7Decoded {

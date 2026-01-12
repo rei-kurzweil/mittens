@@ -1,5 +1,4 @@
-mod engine;
-mod utils;
+use little_cat::{engine, example, utils};
 
 fn main() {
     utils::logger::init();
@@ -32,12 +31,12 @@ fn main() {
             Err(e) => {
                 eprintln!("[CLI] Failed to load scene: {}", e);
                 eprintln!("[CLI] Building demo scene instead...");
-                universe.build_demo_scene_7_shapes();
+                example::build_demo_scene_7_shapes(&mut universe);
             }
         }
     } else {
         // Build demo scene if not loading
-        universe.build_demo_scene_7_shapes();
+        example::build_demo_scene_7_shapes(&mut universe);
     }
 
     // Handle save command after scene is built

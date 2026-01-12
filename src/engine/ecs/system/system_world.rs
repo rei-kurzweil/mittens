@@ -1,6 +1,7 @@
 use super::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::system::CameraSystem;
+use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::InputSystem;
 use crate::engine::ecs::system::LightSystem;
 use crate::engine::ecs::system::RenderableSystem;
@@ -15,6 +16,8 @@ use crate::engine::user_input::InputState;
 pub struct SystemWorld {
     pub transform:  TransformSystem,
     pub renderable: RenderableSystem,
+
+    pub gltf:       GLTFSystem,
 
     pub camera:     CameraSystem,
     pub input:      InputSystem,
@@ -90,6 +93,10 @@ impl SystemWorld {
         render_assets: &mut RenderAssets,
         uploader: &mut dyn RenderUploader,
     ) {
+        // Ensure any imported assets are registered before renderables try to resolve meshes/textures.
+        self.gltf
+            .flush_imports(render_assets, &mut self.texture, uploader);
+
         self.renderable
             .flush_pending(world, visuals, render_assets, uploader);
 
@@ -241,6 +248,9 @@ impl SystemWorld {
     ) {
         // Process input first - it may queue commands
         self.input.process_input(world, input, queue, dt_sec);
+
+        // Spawn any GLTF component trees. This may queue component registrations.
+        self.gltf.tick_with_queue(world, queue, dt_sec);
 
         self.transform.tick(world, visuals, input, dt_sec);
         self.renderable.tick(world, visuals, input, dt_sec);

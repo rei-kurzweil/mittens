@@ -1,4 +1,5 @@
 pub mod camera_system;
+pub mod gltf_system;
 pub mod input_system;
 pub mod light_system;
 pub mod renderable_system;
@@ -7,6 +8,7 @@ pub mod texture_system;
 pub mod transform_system;
 
 pub use camera_system::{Camera3D, CameraHandle, CameraSystem};
+pub use gltf_system::GLTFSystem;
 pub use input_system::InputSystem;
 pub use light_system::LightSystem;
 pub use renderable_system::RenderableSystem;

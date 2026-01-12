@@ -19,3 +19,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 uuid = { version = "1.11", features = ["v4", "serde"] }
 ddsfile = "0.5"
+
+# glTF 2.0 import (used by GLTFSystem to load .glb models and embedded images)
+gltf = { version = "1", features = ["import"] }

@@ -1,5 +1,6 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::graphics::TextureHandle;
 use std::path::Path;
 
 /// Runtime texture source/encoding understood by the engine.
@@ -12,6 +13,19 @@ pub enum CatEngineTextureFormat {
     Rgba8,
     /// DDS container containing BC7 blocks (UNorm or UNorm_sRGB).
     DdsBc7,
+}
+
+/// Where a texture comes from.
+///
+/// For v1 GLTF support, imported textures can be represented as a namespaced URI string
+/// like "{gltf_name}:{image_name_or_index}".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextureSource {
+    /// A URI-like string. Today this is typically a filesystem path (optionally `file://`),
+    /// but it can also be a virtual key (e.g. for imported textures).
+    Uri(String),
+    /// A renderer-provided handle, already uploaded.
+    Handle(TextureHandle),
 }
 
 impl CatEngineTextureFormat {
@@ -38,7 +52,7 @@ impl CatEngineTextureFormat {
 /// system sees the texture is attached to a renderable.
 #[derive(Debug, Clone)]
 pub struct TextureComponent {
-    pub uri: String,
+    pub source: TextureSource,
     pub format: CatEngineTextureFormat,
 }
 
@@ -46,7 +60,19 @@ impl TextureComponent {
     pub fn new(uri: impl Into<String>) -> Self {
         let uri = uri.into();
         let format = CatEngineTextureFormat::from_uri(&uri);
-        Self { uri, format }
+        Self {
+            source: TextureSource::Uri(uri),
+            format,
+        }
+    }
+
+    pub fn from_handle(handle: TextureHandle) -> Self {
+        Self {
+            source: TextureSource::Handle(handle),
+            // Format is irrelevant for handle-based textures (already uploaded), but keep a
+            // sensible default.
+            format: CatEngineTextureFormat::Rgba8,
+        }
     }
 
     /// Construct a texture component referencing a PNG file.
@@ -67,7 +93,16 @@ impl TextureComponent {
     }
 
     pub fn refresh_format_from_uri(&mut self) {
-        self.format = CatEngineTextureFormat::from_uri(&self.uri);
+        if let TextureSource::Uri(uri) = &self.source {
+            self.format = CatEngineTextureFormat::from_uri(uri);
+        }
+    }
+
+    pub fn uri(&self) -> Option<&str> {
+        match &self.source {
+            TextureSource::Uri(s) => Some(s.as_str()),
+            TextureSource::Handle(_) => None,
+        }
     }
 }
 
@@ -90,7 +125,11 @@ impl Component for TextureComponent {
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
         let mut map = std::collections::HashMap::new();
-        map.insert("uri".to_string(), serde_json::json!(self.uri));
+        // Keep on-disk format stable for now: only URI-backed textures are serialized.
+        // Handle-backed textures are runtime-only.
+        if let Some(uri) = self.uri() {
+            map.insert("uri".to_string(), serde_json::json!(uri));
+        }
         map
     }
 
@@ -99,8 +138,9 @@ impl Component for TextureComponent {
         data: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<(), String> {
         if let Some(uri) = data.get("uri") {
-            self.uri = serde_json::from_value(uri.clone())
+            let uri_str: String = serde_json::from_value(uri.clone())
                 .map_err(|e| format!("Failed to decode uri: {}", e))?;
+            self.source = TextureSource::Uri(uri_str);
         }
         self.refresh_format_from_uri();
         Ok(())
