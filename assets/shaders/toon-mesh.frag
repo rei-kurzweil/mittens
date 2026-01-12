@@ -65,8 +65,12 @@ void main() {
     vec3 light_pos = g_lights.lights[0].pos_intensity.xyz;
     vec3 light_color = g_lights.lights[0].color_distance.rgb;
 
+    // get dot product of normal and light direction
+    vec3 N = normalize(v_normal);
+    vec3 L = normalize(light_pos - v_world_pos);
+    float NdotL = max(dot(N, L), 0.0);
 
 
-    vec3 out_rgb = base;
+    vec3 out_rgb = base * NdotL * light_color;
     f_color = vec4(out_rgb, base_rgba.a);
 }

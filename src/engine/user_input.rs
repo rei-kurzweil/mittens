@@ -107,7 +107,24 @@ impl UserInput {
     pub fn handle_window_event(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::KeyboardInput { event, .. } => {
-                let key = event.logical_key.clone();
+                fn normalize_key(key: &Key) -> Key {
+                    match key {
+                        // Treat ASCII letters case-insensitively by storing the lowercase form.
+                        // This makes WASD/QE work regardless of Shift state.
+                        Key::Character(s) => {
+                            if s.len() == 1 {
+                                let c = s.chars().next().unwrap_or('\0');
+                                if c.is_ascii_alphabetic() {
+                                    return Key::Character(c.to_ascii_lowercase().to_string().into());
+                                }
+                            }
+                            Key::Character(s.clone())
+                        }
+                        _ => key.clone(),
+                    }
+                }
+
+                let key = normalize_key(&event.logical_key);
                 match event.state {
                     ElementState::Pressed => {
                         let was_down = self.state.keys_down.contains(&key);

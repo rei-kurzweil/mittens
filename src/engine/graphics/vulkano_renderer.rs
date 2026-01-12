@@ -17,6 +17,7 @@ mod vulkano_backend {
     use crate::engine::graphics::primitives::MeshHandle;
     use crate::engine::graphics::primitives::TextureHandle;
     use crate::engine::graphics::visual_world::VisualWorld;
+    use crate::engine::graphics::vulkano_swapchain::VulkanoSwapchainState;
     use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
     use vulkano::command_buffer::{
         AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo, PrimaryCommandBufferAbstract,
@@ -33,6 +34,7 @@ mod vulkano_backend {
         AttachmentBlend, BlendFactor, BlendOp, ColorBlendAttachmentState, ColorBlendState,
         ColorComponents,
     };
+    use vulkano::pipeline::graphics::depth_stencil::{DepthState, DepthStencilState};
     use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
     use vulkano::pipeline::graphics::multisample::MultisampleState;
     use vulkano::pipeline::graphics::rasterization::RasterizationState;
@@ -51,8 +53,8 @@ mod vulkano_backend {
     use vulkano::pipeline::{
         DynamicState, GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineShaderStageCreateInfo,
     };
-    use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass};
-    use vulkano::swapchain::{self, Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo};
+    use vulkano::render_pass::{RenderPass, Subpass};
+    use vulkano::swapchain::{self, SwapchainPresentInfo};
     use vulkano::sync::{self, GpuFuture};
     use vulkano::{Validated, VulkanError};
     use vulkano_util::context::{VulkanoConfig, VulkanoContext};
@@ -133,16 +135,9 @@ mod vulkano_backend {
         pub context: VulkanoContext,
         #[allow(dead_code)]
         pub window: Arc<Window>,
+
         #[allow(dead_code)]
-        pub surface: Arc<Surface>,
-        #[allow(dead_code)]
-        pub swapchain: Arc<Swapchain>,
-        #[allow(dead_code)]
-        pub swapchain_views: Vec<Arc<ImageView>>,
-        #[allow(dead_code)]
-        pub render_pass: Arc<RenderPass>,
-        #[allow(dead_code)]
-        pub framebuffers: Vec<Arc<Framebuffer>>,
+        pub swapchain_state: VulkanoSwapchainState,
 
         #[allow(dead_code)]
         pub command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
@@ -164,7 +159,7 @@ mod vulkano_backend {
 
         pub window_resized: bool,
         pub recreate_swapchain: bool,
-        pub previous_frame_end: Option<Box<dyn GpuFuture>>,
+        pub images_in_flight: Vec<Option<Box<dyn GpuFuture>>>,
     }
 
     const MAX_POINT_LIGHTS: usize = 64;
@@ -222,75 +217,8 @@ mod vulkano_backend {
             let context = VulkanoContext::new(VulkanoConfig::default());
             let device = context.device().clone();
 
-            let surface = Surface::from_window(device.instance().clone(), window.clone())?;
-
-            let surface_capabilities = device
-                .physical_device()
-                .surface_capabilities(&surface, Default::default())?;
-            let image_format = device
-                .physical_device()
-                .surface_formats(&surface, Default::default())?
-                .first()
-                .ok_or("no supported surface formats")?
-                .0;
-
-            let mut min_image_count = 2u32.max(surface_capabilities.min_image_count);
-            if let Some(max_image_count) = surface_capabilities.max_image_count {
-                min_image_count = min_image_count.min(max_image_count);
-            }
-
-            let (swapchain, images) = Swapchain::new(device.clone(), surface.clone(), {
-                let create_info = SwapchainCreateInfo {
-                    // Keep swapchain buffering as low as possible (prefer 2) while
-                    // respecting surface min/max limits.
-                    min_image_count,
-                    image_format,
-                    image_extent: window.inner_size().into(),
-                    image_usage: vulkano::image::ImageUsage::COLOR_ATTACHMENT,
-                    composite_alpha: surface_capabilities
-                        .supported_composite_alpha
-                        .into_iter()
-                        .next()
-                        .ok_or("no supported composite alpha")?,
-                    ..Default::default()
-                };
-                create_info
-            })?;
-
-            let swapchain_views = images
-                .into_iter()
-                .map(|image| ImageView::new_default(image).map_err(|e| e.into()))
-                .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
-
-            let render_pass = vulkano::single_pass_renderpass!(
-                device.clone(),
-                attachments: {
-                    color: {
-                        format: swapchain.image_format(),
-                        samples: 1,
-                        load_op: Clear,
-                        store_op: Store,
-                    },
-                },
-                pass: {
-                    color: [color],
-                    depth_stencil: {},
-                }
-            )?;
-
-            let framebuffers = swapchain_views
-                .iter()
-                .map(|view| {
-                    Framebuffer::new(
-                        render_pass.clone(),
-                        FramebufferCreateInfo {
-                            attachments: vec![view.clone()],
-                            ..Default::default()
-                        },
-                    )
-                    .map_err(|e| e.into())
-                })
-                .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+            let swapchain_state = VulkanoSwapchainState::new(&context, window.clone())?;
+            let framebuffer_count = swapchain_state.framebuffers.len();
 
             let set_layouts = PipelineDescriptorSetLayouts::new(device.clone())?;
 
@@ -400,7 +328,8 @@ mod vulkano_backend {
                     },
                 );
 
-            let subpass = Subpass::from(render_pass.clone(), 0).ok_or("missing subpass 0")?;
+            let subpass = Subpass::from(swapchain_state.render_pass.clone(), 0)
+                .ok_or("missing subpass 0")?;
             let mut pipeline_ci =
                 vulkano::pipeline::graphics::GraphicsPipelineCreateInfo::layout(layout);
             pipeline_ci.stages = stages.into();
@@ -409,7 +338,11 @@ mod vulkano_backend {
             pipeline_ci.viewport_state = Some(ViewportState::default());
             pipeline_ci.rasterization_state = Some(RasterizationState::default());
             pipeline_ci.multisample_state = Some(MultisampleState::default());
-            pipeline_ci.depth_stencil_state = None;
+            // Enable depth testing so 3D geometry occludes correctly.
+            pipeline_ci.depth_stencil_state = Some(DepthStencilState {
+                depth: Some(DepthState::simple()),
+                ..Default::default()
+            });
             // Enable alpha blending so textures with transparency (e.g. PNG alpha) render correctly.
             // Uses straight alpha: out.rgb = src.rgb * src.a + dst.rgb * (1-src.a)
             pipeline_ci.color_blend_state = Some(ColorBlendState::with_attachment_states(
@@ -449,11 +382,8 @@ mod vulkano_backend {
             let mut state = Self {
                 context,
                 window,
-                surface,
-                swapchain,
-                swapchain_views,
-                render_pass,
-                framebuffers,
+
+                swapchain_state,
 
                 command_buffer_allocator,
                 descriptor_set_allocator,
@@ -469,7 +399,7 @@ mod vulkano_backend {
 
                 window_resized: false,
                 recreate_swapchain: false,
-                previous_frame_end: Some(sync::now(device).boxed()),
+                images_in_flight: (0..framebuffer_count).map(|_| None).collect(),
             };
 
             // Default texture: 1x1 white so untextured materials can still bind a sampler.
@@ -483,48 +413,42 @@ mod vulkano_backend {
                 return Ok(());
             }
 
+            // Swapchain recreation can race with in-flight frames during rapid resize/fullscreen
+            // transitions. Ensure the GPU is idle before we rebuild swapchain-dependent
+            // resources (framebuffers/depth images).
+            unsafe {
+                self.context
+                    .device()
+                    .wait_idle()
+                    .map_err(|e| -> Box<dyn std::error::Error> { format!("wait_idle failed: {e}").into() })?;
+
+                // IMPORTANT: Vulkano's internal resource tracking is tied to futures. If we drop
+                // futures without telling Vulkano they've finished, it can permanently believe a
+                // resource is still in use (even if the GPU is idle).
+                for slot in self.images_in_flight.iter_mut() {
+                    if let Some(mut fut) = slot.take() {
+                        fut.signal_finished();
+                        fut.cleanup_finished();
+                    }
+                }
+            }
+
             self.recreate_swapchain = false;
-            let new_dimensions = self.window.inner_size();
-            if new_dimensions.width == 0 || new_dimensions.height == 0 {
-                // Avoid recreating with a zero-sized swapchain while minimized.
+
+            if let Err(e) = self.swapchain_state.recreate(&self.context, &self.window) {
+                self.recreate_swapchain = true;
+                println!(
+                    "[VulkanoRenderer] failed to recreate swapchain: {}",
+                    e
+                );
                 return Ok(());
             }
 
-            let (new_swapchain, new_images) = match self.swapchain.recreate(SwapchainCreateInfo {
-                image_extent: new_dimensions.into(),
-                ..self.swapchain.create_info()
-            }) {
-                Ok(r) => r,
-                Err(e) => {
-                    self.recreate_swapchain = true;
-                    println!(
-                        "[VulkanoRenderer] failed to recreate swapchain: {}",
-                        Validated::unwrap(e)
-                    );
-                    return Ok(());
-                }
-            };
-
-            self.swapchain = new_swapchain;
-            self.swapchain_views = new_images
-                .into_iter()
-                .map(|image| ImageView::new_default(image).map_err(|e| e.into()))
-                .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
-
-            self.framebuffers = self
-                .swapchain_views
-                .iter()
-                .map(|view| {
-                    Framebuffer::new(
-                        self.render_pass.clone(),
-                        FramebufferCreateInfo {
-                            attachments: vec![view.clone()],
-                            ..Default::default()
-                        },
-                    )
-                    .map_err(|e| e.into())
-                })
-                .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+            // After swapchain recreation, all old swapchain images/depth attachments are gone.
+            // Reset per-image in-flight tracking.
+            self.images_in_flight = (0..self.swapchain_state.framebuffers.len())
+                .map(|_| None)
+                .collect();
 
             self.window_resized = false;
             Ok(())
@@ -539,12 +463,15 @@ mod vulkano_backend {
             let device = self.context.device().clone();
             let queue = self.context.graphics_queue().clone();
 
-            if let Some(previous_frame_end) = self.previous_frame_end.as_mut() {
-                previous_frame_end.cleanup_finished();
+            // Let Vulkano drop finished per-frame resources incrementally.
+            for fut in self.images_in_flight.iter_mut() {
+                if let Some(fut) = fut.as_mut() {
+                    fut.cleanup_finished();
+                }
             }
 
             let (image_i, suboptimal, acquire_future) =
-                match swapchain::acquire_next_image(self.swapchain.clone(), None)
+                match swapchain::acquire_next_image(self.swapchain_state.swapchain.clone(), None)
                     .map_err(Validated::unwrap)
                 {
                     Ok(r) => r,
@@ -592,11 +519,11 @@ mod vulkano_backend {
                 instance_data_iter,
             )?;
 
-            let framebuffer = self.framebuffers[image_i as usize].clone();
+            let framebuffer = self.swapchain_state.framebuffers[image_i as usize].clone();
             let mut render_pass_begin = RenderPassBeginInfo::framebuffer(framebuffer);
-            render_pass_begin.clear_values = vec![Some(ClearValue::from([0.0f32, 0.0, 0.0, 1.0]))];
+            render_pass_begin.clear_values = VulkanoSwapchainState::clear_values();
 
-            let extent = self.swapchain.image_extent();
+            let extent = self.swapchain_state.swapchain.image_extent();
             let viewport = Viewport {
                 offset: [0.0, 0.0],
                 extent: [extent[0] as f32, extent[1] as f32],
@@ -781,32 +708,68 @@ mod vulkano_backend {
 
             let cb = cbb.build()?;
 
-            let start_future: Box<dyn GpuFuture> = self
-                .previous_frame_end
+            // Ensure we never render into a swapchain image (and its paired depth attachment)
+            // while a previous frame that used that image is still in flight.
+            let image_i_usize = image_i as usize;
+            if self.images_in_flight.len() != self.swapchain_state.framebuffers.len() {
+                // Defensive: should only happen if swapchain recreation failed partially.
+                self.images_in_flight = (0..self.swapchain_state.framebuffers.len())
+                    .map(|_| None)
+                    .collect();
+            }
+
+            let image_future: Box<dyn GpuFuture> = self.images_in_flight[image_i_usize]
                 .take()
                 .unwrap_or_else(|| sync::now(device.clone()).boxed());
 
-            let execution = start_future
+            let execution = image_future
                 .join(acquire_future)
                 .then_execute(queue.clone(), cb)?
                 .then_swapchain_present(
                     queue.clone(),
-                    SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), image_i),
+                    SwapchainPresentInfo::swapchain_image_index(
+                        self.swapchain_state.swapchain.clone(),
+                        image_i,
+                    ),
                 )
                 .then_signal_fence_and_flush();
 
             match execution.map_err(Validated::unwrap) {
                 Ok(future) => {
-                    // Keep the future so resources can be cleaned up incrementally.
-                    self.previous_frame_end = Some(future.boxed());
+                    // Track this swapchain image as in flight; this also keeps per-frame
+                    // resources alive until the GPU is done.
+                    self.images_in_flight[image_i_usize] = Some(future.boxed());
                 }
                 Err(VulkanError::OutOfDate) => {
                     self.recreate_swapchain = true;
-                    self.previous_frame_end = Some(sync::now(device).boxed());
+                    // During resize/out-of-date thrash, the command buffer may have been
+                    // submitted but we might not get a usable future back. Ensure the GPU
+                    // is idle before we drop tracking; otherwise resources (e.g. depth
+                    // attachments) can appear "already in use" next frame.
+                    unsafe {
+                        println!("[VulkanoRenderer] swapchain out of date during flush");
+                        let _ = device.wait_idle();
+                        for slot in self.images_in_flight.iter_mut() {
+                            if let Some(mut fut) = slot.take() {
+                                fut.signal_finished();
+                                fut.cleanup_finished();
+                            }
+                        }
+                    }
                 }
                 Err(e) => {
                     println!("[VulkanoRenderer] failed to flush future: {e}");
-                    self.previous_frame_end = Some(sync::now(device).boxed());
+
+                    unsafe {
+                        println!("[VulkanoRenderer] waiting for device idle after flush failure");
+                        let _ = device.wait_idle();
+                        for slot in self.images_in_flight.iter_mut() {
+                            if let Some(mut fut) = slot.take() {
+                                fut.signal_finished();
+                                fut.cleanup_finished();
+                            }
+                        }
+                    }
                 }
             }
 

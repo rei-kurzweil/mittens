@@ -3,6 +3,7 @@ pub mod pipeline_descriptor_set_layouts;
 pub mod primitives;
 pub mod render_assets;
 pub mod render_info;
+pub(crate) mod vulkano_swapchain;
 pub mod visual_world;
 pub mod vulkano_renderer;
 
@@ -13,7 +14,7 @@ pub use primitives::{
     TransformMatrix,
 };
 
-pub use render_assets::RenderAssets;
+pub use render_assets::{BuiltinMeshType, RenderAssets};
 pub use visual_world::VisualWorld;
 pub use vulkano_renderer::VulkanoRenderer;
 

@@ -2,7 +2,7 @@ use crate::engine::ecs::component::{
     Camera3DComponent, ColorComponent, InputComponent, PointLightComponent, RenderableComponent,
     TextureComponent, TransformComponent,
 };
-use crate::engine::graphics::mesh::MeshFactory;
+use crate::engine::graphics::BuiltinMeshType;
 use crate::engine::graphics::primitives::MaterialHandle;
 use crate::engine::user_input::InputState;
 use crate::engine::{ecs, graphics};
@@ -77,9 +77,10 @@ impl Universe {
     /// Build the demo scene with 7 shapes and a textured square.
     /// This can be called from main.rs after Universe creation.
     pub fn build_demo_scene_7_shapes(&mut self) {
-        // Register CPU meshes once and reuse handles.
-        let tri_mesh = self.render_assets.register_mesh(MeshFactory::triangle_2d());
-        let square_mesh = self.render_assets.register_mesh(MeshFactory::quad_2d());
+        // Built-in CPU meshes are pre-registered; just fetch stable handles.
+        let tri_mesh = self.render_assets.get_mesh(BuiltinMeshType::Triangle2D);
+        let square_mesh = self.render_assets.get_mesh(BuiltinMeshType::Quad2D);
+        let tetra_mesh = self.render_assets.get_mesh(BuiltinMeshType::Tetrahedron);
 
         fn spawn(
             world: &mut ecs::World,
@@ -117,6 +118,40 @@ impl Universe {
             } else {
                 world.init_component_tree(transform, queue);
             }
+
+            transform
+        }
+
+        fn spawn_3d(
+            world: &mut ecs::World,
+            queue: &mut ecs::CommandQueue,
+            mesh: crate::engine::graphics::primitives::CpuMeshHandle,
+            x: f32,
+            y: f32,
+            z: f32,
+            s: f32,
+            rx: f32,
+            ry: f32,
+            rz: f32,
+            color: [f32; 4],
+        ) -> ecs::ComponentId {
+            let transform = world.add_component(
+                TransformComponent::new()
+                    .with_position(x, y, z)
+                    .with_scale(s, s, s)
+                    .with_rotation_euler(rx, ry, rz),
+            );
+            let renderable = world.add_component(RenderableComponent::new(
+                crate::engine::graphics::primitives::Renderable::new(
+                    mesh,
+                    MaterialHandle::TOON_MESH,
+                ),
+            ));
+            let color_c = world.add_component(ColorComponent { rgba: color });
+
+            let _ = world.add_child(transform, renderable);
+            let _ = world.add_child(renderable, color_c);
+            world.init_component_tree(transform, queue);
 
             transform
         }
@@ -169,11 +204,6 @@ impl Universe {
         let tri_color = self
             .world
             .add_component(ColorComponent::rgba(0.2, 1.0, 0.2, 1.0));
-        let tri_light = self.world.add_component(
-            PointLightComponent::new()
-                .with_distance(10.0)
-                .with_color(1.0, 0.0, 0.0),
-        );
 
         let _ = self.world.add_child(rig_transform, tri_root_transform);
         let _ = self
@@ -181,10 +211,29 @@ impl Universe {
             .add_child(tri_root_transform, tri_visual_transform);
         let _ = self.world.add_child(tri_visual_transform, tri_renderable);
         let _ = self.world.add_child(tri_renderable, tri_color);
-        let _ = self.world.add_child(tri_root_transform, tri_light);
+        //let _ = self.world.add_child(tri_root_transform, tri_light);
+
+        let tri_light = self.world.add_component(
+            PointLightComponent::new()
+                .with_distance(10.0)
+                .with_color(1.0, 1.0, 1.0),
+        );
+
+        let light_transform = self
+            .world
+            .add_component(
+                TransformComponent::new()
+                    .with_position(0.5, 0.50, 1.0)
+                    .with_scale(0.1, 0.1, 0.1),
+            );
+
+        let _ = self.world.add_child(light_transform, tri_light);
 
         self.world
             .init_component_tree(tri_input, &mut self.command_queue);
+
+        self.world
+            .init_component_tree(light_transform, &mut self.command_queue);
 
         spawn(
             &mut self.world,
@@ -207,6 +256,22 @@ impl Universe {
             0.0,
             [1.0, 0.6, 0.2, 1.0],
             false,
+        );
+
+        // 3D primitive: tetrahedron.
+        // Rotated in X/Y so you can tell it's not a flat 2D mesh.
+        spawn_3d(
+            &mut self.world,
+            &mut self.command_queue,
+            tetra_mesh,
+            0.55,
+            -0.15,
+            0.0,
+            0.35,
+            0.75,
+            0.55,
+            0.0,
+            [0.2, 0.7, 1.0, 1.0],
         );
         spawn(
             &mut self.world,

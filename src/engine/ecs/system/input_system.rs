@@ -4,7 +4,7 @@ use crate::engine::ecs::component::{ForwardAxis, InputComponent, InputTransformM
 use crate::engine::ecs::system::System;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
-use winit::keyboard::Key;
+use winit::keyboard::{Key, NamedKey};
 
 /// System that processes input components and updates transforms based on WASD input.
 ///
@@ -37,20 +37,16 @@ impl InputSystem {
         transform: &mut crate::engine::graphics::primitives::Transform,
     ) {
         // Read movement keys.
-        let w = input.key_down(&Key::Character("w".into()))
-            || input.key_down(&Key::Character("W".into()));
-        let a = input.key_down(&Key::Character("a".into()))
-            || input.key_down(&Key::Character("A".into()));
-        let s = input.key_down(&Key::Character("s".into()))
-            || input.key_down(&Key::Character("S".into()));
-        let d = input.key_down(&Key::Character("d".into()))
-            || input.key_down(&Key::Character("D".into()));
+        let w = input.key_down(&Key::Character("w".into()));
+        let a = input.key_down(&Key::Character("a".into()));
+        let s = input.key_down(&Key::Character("s".into()));
+        let d = input.key_down(&Key::Character("d".into()));
+        let r: bool = input.key_down(&Key::Character("r".into()));
+        let f: bool = input.key_down(&Key::Character("f".into()));
 
         // Roll keys.
-        let q = input.key_down(&Key::Character("q".into()))
-            || input.key_down(&Key::Character("Q".into()));
-        let e = input.key_down(&Key::Character("e".into()))
-            || input.key_down(&Key::Character("E".into()));
+        let q = input.key_down(&Key::Character("q".into()));
+        let e = input.key_down(&Key::Character("e".into()));
 
         // Apply rotation first so translation happens "after" rotation.
         if q || e {
@@ -79,7 +75,14 @@ impl InputSystem {
             transform.rotation = quat_mul(transform.rotation, q_inc);
         }
 
-        let speed = speed_units_per_sec * dt_sec;
+        // Holding Shift increases movement speed.
+        let speed_multiplier = if input.key_down(&Key::Named(NamedKey::Shift)) {
+            3.0
+        } else {
+            1.0
+        };
+
+        let speed = speed_units_per_sec * speed_multiplier * dt_sec;
 
         fn quat_conjugate(q: [f32; 4]) -> [f32; 4] {
             [-q[0], -q[1], -q[2], q[3]]
@@ -109,6 +112,7 @@ impl InputSystem {
                 // Legacy 2D-style translation delta (x/y).
                 let mut dx = 0.0f32;
                 let mut dy = 0.0f32;
+
                 if w {
                     dy -= 1.0;
                 }
@@ -133,36 +137,48 @@ impl InputSystem {
                 let v = quat_rotate_vec3(transform.rotation, [dx, dy, 0.0]);
                 transform.translation[0] += v[0] * speed;
                 transform.translation[1] += v[1] * speed;
+
             }
 
             ForwardAxis::Z => {
                 // 3D-friendly translation delta (x/z). We intentionally do not apply the
                 // current rotation to this movement; it's meant for a camera rig.
                 let mut dx = 0.0f32;
+                let mut dy: f32 = 0.0f32;
                 let mut dz = 0.0f32;
-                if w {
-                    dz -= 1.0;
-                }
-                if s {
-                    dz += 1.0;
-                }
+
                 if a {
                     dx -= 1.0;
                 }
                 if d {
                     dx += 1.0;
                 }
+                if r {
+                    dy -= 1.0;
+                }
+                if f {
+                    dy += 1.0;
+                }
+                if w {
+                    dz -= 1.0;
+                }
+                if s {
+                    dz += 1.0;
+                }
+                
 
                 // Normalize diagonal movement.
-                let len = (dx * dx + dz * dz).sqrt();
+                let len = (dx * dx + dy * dy + dz * dz).sqrt();
                 if len > 0.0 {
                     dx /= len;
+                    dy /= len;
                     dz /= len;
                 }
 
                 // Move in the rig's local space (so yaw affects movement).
-                let v = quat_rotate_vec3(transform.rotation, [dx, 0.0, dz]);
+                let v = quat_rotate_vec3(transform.rotation, [dx, dy, dz]);
                 transform.translation[0] += v[0] * speed;
+                transform.translation[1] += v[1] * speed;
                 transform.translation[2] += v[2] * speed;
             }
         }
@@ -183,17 +199,13 @@ impl InputSystem {
     ) {
         // We gate early to avoid scanning inputs if nothing relevant is pressed.
         let any_move = input.key_down(&Key::Character("w".into()))
-            || input.key_down(&Key::Character("W".into()))
             || input.key_down(&Key::Character("a".into()))
-            || input.key_down(&Key::Character("A".into()))
             || input.key_down(&Key::Character("s".into()))
-            || input.key_down(&Key::Character("S".into()))
             || input.key_down(&Key::Character("d".into()))
-            || input.key_down(&Key::Character("D".into()))
+            || input.key_down(&Key::Character("r".into()))
+            || input.key_down(&Key::Character("f".into()))
             || input.key_down(&Key::Character("q".into()))
-            || input.key_down(&Key::Character("Q".into()))
-            || input.key_down(&Key::Character("e".into()))
-            || input.key_down(&Key::Character("E".into()));
+            || input.key_down(&Key::Character("e".into()));
 
         if !any_move {
             return;

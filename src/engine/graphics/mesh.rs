@@ -187,10 +187,14 @@ impl MeshFactory {
             },
         ];
 
-        // 4 faces, CCW as seen from outside
+        // 4 faces, CCW as seen from outside.
+        // NOTE: if these are wound the other way, the tetra renders “inside out”
+        // under back-face culling.
         let indices = vec![
-            0, 2, 1, // base-ish
-            0, 1, 3, 0, 3, 2, 1, 2, 3,
+            0, 1, 2, // base-ish
+            0, 3, 1, // side
+            0, 2, 3, // side
+            1, 3, 2, // bottom
         ];
 
         CpuMesh::new(vertices, indices)
