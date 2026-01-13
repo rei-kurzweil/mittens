@@ -1,7 +1,7 @@
 use crate::engine;
 use crate::engine::ecs;
 use crate::engine::ecs::component::{
-    Camera3DComponent, ColorComponent, GLTFComponent, InputComponent,
+    Camera3DComponent, ColorComponent, EmissiveComponent, GLTFComponent, InputComponent,
     InputTransformModeComponent, PointLightComponent, RenderableComponent, TextureComponent,
     TransformComponent,
 };
@@ -24,6 +24,7 @@ pub fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         r: f32,
         color: [f32; 4],
         input_driven: bool,
+        emissive: bool,
     ) -> ecs::ComponentId {
         let transform = world.add_component(
             TransformComponent::new()
@@ -35,6 +36,11 @@ pub fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
             crate::engine::graphics::primitives::Renderable::new(mesh, MaterialHandle::TOON_MESH),
         ));
         let color_c = world.add_component(ColorComponent { rgba: color });
+
+        if emissive {
+            let emissive_c = world.add_component(EmissiveComponent::on());
+            let _ = world.add_child(renderable, emissive_c);
+        }
 
         // Topology: (optional Input) -> Transform -> Renderable
         let _ = world.add_child(transform, renderable);
@@ -163,6 +169,7 @@ pub fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         0.0,
         [1.0, 0.2, 0.2, 1.0],
         false,
+        true,
     );
     spawn(
         &mut universe.world,
@@ -174,6 +181,7 @@ pub fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         0.0,
         [1.0, 0.6, 0.2, 1.0],
         false,
+        true,
     );
 
     // 3D primitive: tetrahedron.
@@ -200,6 +208,7 @@ pub fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         0.0,
         [1.0, 1.0, 0.2, 1.0],
         false,
+        true,
     );
     spawn(
         &mut universe.world,
@@ -211,6 +220,7 @@ pub fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         0.0,
         [0.2, 0.6, 1.0, 1.0],
         false,
+        true,
     );
     spawn(
         &mut universe.world,
@@ -222,6 +232,7 @@ pub fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         0.0,
         [0.8, 0.2, 1.0, 1.0],
         false,
+        true,
     );
     spawn(
         &mut universe.world,
@@ -233,13 +244,14 @@ pub fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         -3.14159,
         [1.0, 1.0, 1.0, 1.0],
         false,
+        false,
     );
 
     // Textured square.
     let tex_transform = universe.world.add_component(
         TransformComponent::new()
-            .with_position(0.0, 0.10, 0.0)
-            .with_scale(0.45, 0.45, 1.0),
+            .with_position(0.0, 0.1, 0.0)
+            .with_scale(0.45, 0.45, 1.0)
     );
     let tex_renderable = universe.world.add_component(RenderableComponent::new(
         crate::engine::graphics::primitives::Renderable::new(square_mesh, MaterialHandle::TOON_MESH),
@@ -262,8 +274,9 @@ pub fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
     // Attach GLTFComponent under a Transform so GLTFSystem can use it as an anchor.
     let cat_anchor = universe.world.add_component(
         TransformComponent::new()
-            .with_position(0.0, -0.10, 0.0)
-            .with_scale(0.50, 0.50, 0.50),
+            .with_position(0.0, -0.10, -4.0)
+            .with_scale(0.50, 0.50, 0.50)
+            .with_rotation_euler(0.0, 0.0, 3.14159),
     );
     let cat_gltf = universe
         .world

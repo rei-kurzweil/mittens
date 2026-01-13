@@ -72,6 +72,16 @@ impl SystemWorld {
         self.texture.register_texture(world, visuals, component);
     }
 
+    /// Register an EmissiveComponent and apply it to its ancestor RenderableComponent.
+    pub fn register_emissive(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.renderable.register_emissive(world, visuals, component);
+    }
+
     /// Register a PointLightComponent instance with the LightSystem.
     pub fn register_light(
         &mut self,

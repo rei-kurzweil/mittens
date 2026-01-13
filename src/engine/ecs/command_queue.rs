@@ -110,6 +110,14 @@ impl CommandQueue {
         });
     }
 
+    /// Queue a register emissive command.
+    pub fn queue_register_emissive(&mut self, component_id: crate::engine::ecs::ComponentId) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REGISTER_EMISSIVE { component_id },
+        });
+    }
+
     /// Flush all queued commands, executing them through the systems.
     pub fn flush(
         &mut self,
@@ -159,6 +167,9 @@ impl CommandQueue {
                 Command::REGISTER_TEXTURE { component_id } => {
                     systems.register_texture(world, visuals, component_id);
                 }
+                Command::REGISTER_EMISSIVE { component_id } => {
+                    systems.register_emissive(world, visuals, component_id);
+                }
                 Command::REMOVE_RENDERABLE { component_id: _ } => {
                     // TODO: implement when needed
                 }
@@ -202,6 +213,9 @@ enum Command {
         component_id: crate::engine::ecs::ComponentId,
     },
     REGISTER_TEXTURE {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+    REGISTER_EMISSIVE {
         component_id: crate::engine::ecs::ComponentId,
     },
     REMOVE_RENDERABLE {

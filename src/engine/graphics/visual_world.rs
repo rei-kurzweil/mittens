@@ -49,6 +49,7 @@ pub struct VisualInstance {
     pub renderable: GpuRenderable,
     pub transform: Transform,
     pub color: [f32; 4],
+    pub emissive: u32,
     pub texture: Option<crate::engine::graphics::TextureHandle>,
 }
 
@@ -285,6 +286,7 @@ impl VisualWorld {
         renderable: GpuRenderable,
         transform: Transform,
         color: [f32; 4],
+        emissive: u32,
         texture: Option<crate::engine::graphics::TextureHandle>,
     ) -> InstanceHandle {
         let handle = InstanceHandle(self.next_handle);
@@ -295,6 +297,7 @@ impl VisualWorld {
             renderable,
             transform,
             color,
+            emissive,
             texture,
         });
         self.handle_to_index.insert(handle, idx);
@@ -363,6 +366,16 @@ impl VisualWorld {
         }
     }
 
+    pub fn update_emissive(&mut self, handle: InstanceHandle, emissive: u32) -> bool {
+        if let Some(&idx) = self.handle_to_index.get(&handle) {
+            self.instances[idx].emissive = emissive;
+            self.dirty_instance_data = true;
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn update_texture(
         &mut self,
         handle: InstanceHandle,
@@ -387,11 +400,13 @@ impl VisualWorld {
         if let Some(&idx) = self.handle_to_index.get(&handle) {
             // Preserve per-instance color when updating renderable/transform.
             let color = self.instances[idx].color;
+            let emissive = self.instances[idx].emissive;
             let texture = self.instances[idx].texture;
             self.instances[idx] = VisualInstance {
                 renderable,
                 transform,
                 color,
+                emissive,
                 texture,
             };
             self.dirty_draw_cache = true; // renderable changes likely affect sort/batch

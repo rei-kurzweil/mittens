@@ -114,8 +114,11 @@ mod vulkano_backend {
         pub i_model_c2: [f32; 4],
         #[format(R32G32B32A32_SFLOAT)]
         pub i_model_c3: [f32; 4],
+
         #[format(R32G32B32A32_SFLOAT)]
         pub i_color: [f32; 4],
+        #[format(R32_UINT)]
+        pub i_emissive: u32,
     }
 
     pub struct VulkanoGpuMesh {
@@ -247,7 +250,7 @@ mod vulkano_backend {
 
             // Important: `CpuVertex` contains more than just position (e.g. UV).
             // We explicitly declare which attributes are consumed by the shader.
-            // Instance data occupies locations 1-4.
+            // Instance data occupies locations 1-4 (+ per-instance color/emissive).
             let vertex_input_state = VertexInputState::new()
                 .binding(
                     0,
@@ -325,6 +328,15 @@ mod vulkano_backend {
                         binding: 1,
                         format: Format::R32G32B32A32_SFLOAT,
                         offset: 64,
+                        ..Default::default()
+                    },
+                )
+                .attribute(
+                    7,
+                    VertexInputAttributeDescription {
+                        binding: 1,
+                        format: Format::R32_UINT,
+                        offset: 80,
                         ..Default::default()
                     },
                 );
@@ -551,6 +563,7 @@ mod vulkano_backend {
                     i_model_c2: m[2],
                     i_model_c3: m[3],
                     i_color: inst.color,
+                    i_emissive: inst.emissive,
                 }
             });
 

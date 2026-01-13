@@ -1,11 +1,15 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
-use crate::engine::ecs::component::{GLTFComponent, MeshComponent, RenderableComponent, TextureComponent, TransformComponent};
+use crate::engine::ecs::component::{
+    ColorComponent, EmissiveComponent, GLTFComponent, MeshComponent, RenderableComponent,
+    TextureComponent, TransformComponent,
+};
 use crate::engine::graphics::mesh::{CpuMesh, CpuVertex};
 use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Renderable};
 use crate::engine::graphics::{RenderAssets, RenderUploader};
 use crate::engine::user_input::InputState;
 use std::collections::{HashMap, HashSet};
+use std::env;
 use std::path::Path;
 
 #[derive(Debug, Default)]
@@ -40,6 +44,140 @@ struct ImportedTexture {
 impl GLTFSystem {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    fn debug_enabled() -> bool {
+        match env::var("LITTLE_CAT_GLTF_DEBUG") {
+            Ok(v) => {
+                let v = v.trim().to_ascii_lowercase();
+                !(v.is_empty() || v == "0" || v == "false" || v == "off")
+            }
+            Err(_) => false,
+        }
+    }
+
+    fn debug_indent(n: usize) -> String {
+        let mut s = String::new();
+        for _ in 0..n {
+            s.push_str("  ");
+        }
+        s
+    }
+
+    fn debug_dump_document(uri: &str, doc: &gltf::Document, loaded: &LoadedGltf) {
+        println!("[GLTFSystem][debug] ===== GLTF dump: '{}' =====", uri);
+        println!(
+            "[GLTFSystem][debug] scenes={} meshes={} materials={} images={}",
+            doc.scenes().len(),
+            doc.meshes().len(),
+            doc.materials().len(),
+            doc.images().len()
+        );
+
+        if let Some(scene) = doc.default_scene() {
+            println!(
+                "[GLTFSystem][debug] default_scene index={} name={:?}",
+                scene.index(),
+                scene.name()
+            );
+        } else {
+            println!("[GLTFSystem][debug] default_scene <none>");
+        }
+
+        for (i, img) in doc.images().enumerate() {
+            println!(
+                "[GLTFSystem][debug] image[{}] name={:?} source={:?}",
+                i,
+                img.name(),
+                img.source()
+            );
+        }
+
+        for (i, mat) in doc.materials().enumerate() {
+            let pbr = mat.pbr_metallic_roughness();
+            let base_color_factor = pbr.base_color_factor();
+            let base_color_tex = pbr
+                .base_color_texture()
+                .map(|t| (t.texture().index(), t.texture().source().index()));
+
+            println!(
+                "[GLTFSystem][debug] material[{}] name={:?} double_sided={} alpha_mode={:?} base_color_factor={:?} base_color_tex={:?}",
+                i,
+                mat.name(),
+                mat.double_sided(),
+                mat.alpha_mode(),
+                base_color_factor,
+                base_color_tex
+            );
+        }
+
+        for scene in doc.scenes() {
+            println!(
+                "[GLTFSystem][debug] scene index={} name={:?} root_nodes={} ",
+                scene.index(),
+                scene.name(),
+                scene.nodes().len()
+            );
+            for node in scene.nodes() {
+                Self::debug_dump_node(node, 1, loaded);
+            }
+        }
+    }
+
+    fn debug_dump_node(node: gltf::Node, depth: usize, loaded: &LoadedGltf) {
+        let indent = Self::debug_indent(depth);
+        let name = node.name().unwrap_or("<unnamed>");
+        let mesh_info = node.mesh().map(|m| {
+            let mesh_name = m.name().unwrap_or("<unnamed>");
+            format!("mesh#{} name='{}'", m.index(), mesh_name)
+        });
+
+        println!(
+            "[GLTFSystem][debug] {}node index={} name='{}' mesh={:?} children={}",
+            indent,
+            node.index(),
+            name,
+            mesh_info,
+            node.children().len()
+        );
+
+        if let Some(mesh) = node.mesh() {
+            let mesh_name_or_index = mesh
+                .name()
+                .map(Self::sanitize_key_part)
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| format!("mesh{}", mesh.index()));
+
+            for (prim_index, prim) in mesh.primitives().enumerate() {
+                let mode = prim.mode();
+                let mat = prim.material();
+                let pbr = mat.pbr_metallic_roughness();
+                let base_color_factor = pbr.base_color_factor();
+                let base_color_tex = pbr
+                    .base_color_texture()
+                    .map(|t| (t.texture().index(), t.texture().source().index()));
+
+                let mesh_key = format!(
+                    "{}:{}:prim{}",
+                    loaded.gltf_name, mesh_name_or_index, prim_index
+                );
+
+                println!(
+                    "[GLTFSystem][debug] {}  prim{} mode={:?} mesh_key='{}' material name={:?} base_color_factor={:?} base_color_tex={:?}",
+                    indent,
+                    prim_index,
+                    mode,
+                    mesh_key,
+                    mat.name(),
+                    base_color_factor,
+                    base_color_tex
+                );
+            }
+        }
+
+        for ch in node.children() {
+            Self::debug_dump_node(ch, depth + 1, loaded);
+        }
     }
 
     fn candidate_paths(uri: &str) -> Vec<String> {
@@ -158,6 +296,10 @@ impl GLTFSystem {
                 continue;
             };
 
+            if Self::debug_enabled() {
+                Self::debug_dump_document(&uri, &doc, loaded);
+            }
+
             for node in scene.nodes() {
                 let root = self.spawn_node_recursive(world, anchor_transform, &buffers, loaded, node);
                 if let Some(root) = root {
@@ -225,6 +367,11 @@ impl GLTFSystem {
                 _ => c,
             })
             .collect()
+    }
+
+    fn is_black_rgb(rgb: [f32; 3]) -> bool {
+        let eps = 1e-4_f32;
+        rgb[0].abs() <= eps && rgb[1].abs() <= eps && rgb[2].abs() <= eps
     }
 
     fn load_gltf_resources(uri: &str) -> Result<LoadedGltf, String> {
@@ -387,14 +534,15 @@ impl GLTFSystem {
                 let _ = world.add_child(this_transform, renderable);
                 let _ = world.add_child(renderable, mesh_ref);
 
+                let material = prim.material();
+
                 // Attach base-color texture if present.
-                let tex_key_opt = prim
-                    .material()
+                let base_color_tex = material
                     .pbr_metallic_roughness()
                     .base_color_texture()
-                    .and_then(|t| Some(t.texture().source().index()));
+                    .map(|t| t.texture().source().index());
 
-                if let Some(image_index) = tex_key_opt {
+                if let Some(image_index) = base_color_tex {
                     let image_name_or_index = loaded
                         .textures
                         .get(image_index)
@@ -403,6 +551,48 @@ impl GLTFSystem {
 
                     let tex_comp = world.add_component(TextureComponent::new(image_name_or_index));
                     let _ = world.add_child(renderable, tex_comp);
+                }
+
+                // Base color factor: always meaningful for untextured primitives.
+                // If base_color is black but emissive is non-black, treat emissive as the visible color
+                // and mark the instance as emissive (unlit) via EmissiveComponent.
+                let base_color_factor = material.pbr_metallic_roughness().base_color_factor();
+                let base_rgb = [base_color_factor[0], base_color_factor[1], base_color_factor[2]];
+                let emissive_factor = material.emissive_factor();
+                let emissive_rgb = [emissive_factor[0], emissive_factor[1], emissive_factor[2]];
+
+                let has_base_tex = base_color_tex.is_some();
+                let mut wants_emissive = false;
+
+                let color_rgba = if !has_base_tex
+                    && Self::is_black_rgb(base_rgb)
+                    && !Self::is_black_rgb(emissive_rgb)
+                {
+                    wants_emissive = true;
+                    [emissive_rgb[0], emissive_rgb[1], emissive_rgb[2], base_color_factor[3]]
+                } else {
+                    base_color_factor
+                };
+
+                // Always attach color for untextured primitives.
+                // For textured primitives, attach color only if it would tint (non-white or alpha != 1).
+                let should_attach_color = if has_base_tex {
+                    (color_rgba[0] - 1.0).abs() > 1e-4
+                        || (color_rgba[1] - 1.0).abs() > 1e-4
+                        || (color_rgba[2] - 1.0).abs() > 1e-4
+                        || (color_rgba[3] - 1.0).abs() > 1e-4
+                } else {
+                    true
+                };
+
+                if should_attach_color {
+                    let color_comp = world.add_component(ColorComponent { rgba: color_rgba });
+                    let _ = world.add_child(renderable, color_comp);
+                }
+
+                if wants_emissive {
+                    let emissive_comp = world.add_component(EmissiveComponent::on());
+                    let _ = world.add_child(renderable, emissive_comp);
                 }
 
                 // If the primitive provides texcoords, they're already baked into the imported mesh.

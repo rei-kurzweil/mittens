@@ -4,6 +4,7 @@ layout(location = 0) in vec3 v_world_pos;
 layout(location = 1) in vec3 v_normal;
 layout(location = 2) in vec2 v_uv;
 layout(location = 3) in vec4 v_color;
+layout(location = 4) flat in uint v_emissive;
 
 layout(location = 0) out vec4 f_color;
 
@@ -50,7 +51,14 @@ void main() {
     vec4 base_rgba = tex_rgba * v_color;
     vec3 base = base_rgba.rgb;
 
-    if (mat.emissive != 0u) {
+    // IMPORTANT: with depth testing enabled, fully-transparent texels must not write depth.
+    // Otherwise later geometry gets depth-rejected and you see the clear color (often black)
+    // in places that should be transparent.
+    if (base_rgba.a <= 0.001) {
+        discard;
+    }
+
+    if (mat.emissive != 0u || v_emissive != 0u) {
         f_color = vec4(base, base_rgba.a);
         return;
     }
