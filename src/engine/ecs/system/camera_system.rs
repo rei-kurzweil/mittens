@@ -2,6 +2,7 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
+use crate::engine::ecs::component::CameraXRComponent;
 use crate::engine::graphics::VisualWorld;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -98,7 +99,8 @@ pub struct CameraSystem {
     cameras: Vec<(CameraHandle, AnyCamera)>,
     camera2d_components: std::collections::HashMap<CameraHandle, ComponentId>,
     camera3d_components: std::collections::HashMap<CameraHandle, ComponentId>,
-    pub active_camera: Option<CameraHandle>,
+    pub active_window_camera: Option<CameraHandle>,
+    pub active_xr_camera: Option<ComponentId>,
 
     // Track viewport changes for the no-camera fallback projection.
     last_viewport: Option<[f32; 2]>,
@@ -142,20 +144,20 @@ impl CameraSystem {
         self.cameras.push((h, AnyCamera::Camera3D(cam)));
         self.camera3d_components.insert(h, component);
 
-        // Newest becomes active.
-        self.active_camera = Some(h);
+        // Newest becomes active (window target).
+        self.active_window_camera = Some(h);
         visuals.set_camera(cam.view, cam.proj);
 
         h
     }
 
-    pub fn set_active_camera(&mut self, visuals: &mut VisualWorld, h: CameraHandle) {
-        if self.active_camera == Some(h) {
+    pub fn set_active_window_camera(&mut self, visuals: &mut VisualWorld, h: CameraHandle) {
+        if self.active_window_camera == Some(h) {
             return;
         }
 
         if let Some((_, cam)) = self.cameras.iter().find(|(ch, _)| *ch == h) {
-            self.active_camera = Some(h);
+            self.active_window_camera = Some(h);
             match *cam {
                 AnyCamera::Camera3D(cam3d) => {
                     visuals.set_camera(cam3d.view, cam3d.proj);
@@ -164,6 +166,22 @@ impl CameraSystem {
                     visuals.set_camera(cam2d.view, cam2d.proj);
                 }
             }
+        }
+    }
+
+    pub fn set_active_xr_camera(
+        &mut self,
+        world: &World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        // Only allow selecting an enabled XR camera; otherwise keep existing selection.
+        if world
+            .get_component_by_id_as::<CameraXRComponent>(component)
+            .is_some_and(|c| c.enabled)
+        {
+            self.active_xr_camera = Some(component);
+            visuals.set_active_xr_camera(Some(component));
         }
     }
 
@@ -186,7 +204,7 @@ impl CameraSystem {
         };
 
         if let Some(handle) = camera2d_comp.handle {
-            if self.active_camera == Some(handle) {
+            if self.active_window_camera == Some(handle) {
                 // Maintain the old call sites' contract: ensure the provided parent really is a Transform.
                 if world
                     .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(
@@ -241,14 +259,14 @@ impl CameraSystem {
         self.cameras.push((h, AnyCamera::Camera2D(Camera2D::identity())));
         self.camera2d_components.insert(h, component);
 
-        // Newest becomes active.
-        self.active_camera = Some(h);
+        // Newest becomes active (window target).
+        self.active_window_camera = Some(h);
 
         h
     }
 
-    pub fn active_camera_matrices(&self) -> Option<([[f32; 4]; 4], [[f32; 4]; 4])> {
-        let h = self.active_camera?;
+    pub fn active_window_camera_matrices(&self) -> Option<([[f32; 4]; 4], [[f32; 4]; 4])> {
+        let h = self.active_window_camera?;
         let (_, cam) = self.cameras.iter().find(|(ch, _)| *ch == h)?;
         match *cam {
             AnyCamera::Camera3D(cam3d) => Some((cam3d.view, cam3d.proj)),
@@ -275,7 +293,7 @@ impl CameraSystem {
         };
 
         if let Some(handle) = camera3d_comp.handle {
-            if self.active_camera == Some(handle) {
+            if self.active_window_camera == Some(handle) {
                 // Maintain the old call sites' contract: ensure the provided parent really is a Transform.
                 if world
                     .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(
@@ -307,6 +325,30 @@ impl CameraSystem {
                 visuals.set_camera(view, proj);
             }
         }
+    }
+
+    fn update_active_xr_camera(&mut self, world: &World, visuals: &mut VisualWorld) {
+        // If the current active XR camera is still enabled, keep it.
+        if let Some(active) = self.active_xr_camera {
+            if let Some(c) = world.get_component_by_id_as::<CameraXRComponent>(active) {
+                if c.enabled {
+                    visuals.set_active_xr_camera(Some(active));
+                    return;
+                }
+            }
+        }
+
+        // Otherwise, pick the first enabled XR camera component (if any).
+        let next = world
+            .all_components()
+            .find(|&id| {
+                world
+                    .get_component_by_id_as::<CameraXRComponent>(id)
+                    .is_some_and(|c| c.enabled)
+            });
+
+        self.active_xr_camera = next;
+        visuals.set_active_xr_camera(next);
     }
 }
 
@@ -373,11 +415,14 @@ fn invert_affine_transform(m: &[[f32; 4]; 4]) -> [[f32; 4]; 4] {
 impl System for CameraSystem {
     fn tick(
         &mut self,
-        _world: &mut World,
+        world: &mut World,
         visuals: &mut VisualWorld,
         _input: &crate::engine::user_input::InputState,
         _dt_sec: f32,
     ) {
+        // Maintain which XR rig is active so the OpenXR system can apply the correct world transform.
+        self.update_active_xr_camera(world, visuals);
+
         let vp = visuals.viewport();
         let prev_vp = self.last_viewport;
         self.last_viewport = Some(vp);
@@ -390,7 +435,7 @@ impl System for CameraSystem {
             return;
         }
 
-        let Some(active_handle) = self.active_camera else {
+        let Some(active_handle) = self.active_window_camera else {
             // No camera in the scene: keep the legacy behavior where 2D content is aspect-correct.
             // Previously this was done in the vertex shader via `ubo.viewport`.
             let inv_aspect = if vp[0] > 0.0 { vp[1] / vp[0] } else { 1.0 };

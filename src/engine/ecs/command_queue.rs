@@ -118,6 +118,14 @@ impl CommandQueue {
         });
     }
 
+    /// Queue a register OpenXR command.
+    pub fn queue_register_openxr(&mut self, component_id: crate::engine::ecs::ComponentId) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REGISTER_OPENXR { component_id },
+        });
+    }
+
     /// Flush all queued commands, executing them through the systems.
     pub fn flush(
         &mut self,
@@ -170,6 +178,9 @@ impl CommandQueue {
                 Command::REGISTER_EMISSIVE { component_id } => {
                     systems.register_emissive(world, visuals, component_id);
                 }
+                Command::REGISTER_OPENXR { component_id } => {
+                    systems.register_openxr(world, visuals, component_id);
+                }
                 Command::REMOVE_RENDERABLE { component_id: _ } => {
                     // TODO: implement when needed
                 }
@@ -216,6 +227,9 @@ enum Command {
         component_id: crate::engine::ecs::ComponentId,
     },
     REGISTER_EMISSIVE {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+    REGISTER_OPENXR {
         component_id: crate::engine::ecs::ComponentId,
     },
     REMOVE_RENDERABLE {

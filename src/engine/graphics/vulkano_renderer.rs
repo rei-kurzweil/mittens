@@ -22,14 +22,13 @@ mod vulkano_backend {
     use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
     use vulkano::command_buffer::{
         AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo, PrimaryCommandBufferAbstract,
-        RenderPassBeginInfo, SubpassBeginInfo, SubpassEndInfo,
         allocator::StandardCommandBufferAllocator,
     };
+    use vulkano::command_buffer::{RenderingAttachmentInfo, RenderingInfo};
     use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
     use vulkano::descriptor_set::{DescriptorSet, WriteDescriptorSet};
     use vulkano::format::ClearValue;
     use vulkano::image::view::ImageView;
-    use vulkano::image::{Image, ImageCreateInfo, ImageType, ImageUsage};
     use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter};
     use vulkano::pipeline::graphics::color_blend::{
         AttachmentBlend, BlendFactor, BlendOp, ColorBlendAttachmentState, ColorBlendState,
@@ -40,6 +39,7 @@ mod vulkano_backend {
     use vulkano::pipeline::graphics::multisample::MultisampleState;
     use vulkano::pipeline::graphics::rasterization::RasterizationState;
     use vulkano::pipeline::graphics::subpass::PipelineSubpassType;
+    use vulkano::pipeline::graphics::subpass::PipelineRenderingCreateInfo;
     use vulkano::pipeline::graphics::vertex_input::{
         VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate,
         VertexInputState,
@@ -48,18 +48,21 @@ mod vulkano_backend {
     use vulkano::pipeline::layout::{PipelineLayout, PipelineLayoutCreateInfo};
 
     use vulkano::DeviceSize;
-    use vulkano::command_buffer::CopyBufferToImageInfo;
     use vulkano::format::Format;
     use vulkano::image::sampler::{Sampler, SamplerCreateInfo};
     use vulkano::pipeline::{
         DynamicState, GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineShaderStageCreateInfo,
     };
-    use vulkano::render_pass::{RenderPass, Subpass};
+    use vulkano::render_pass::{AttachmentLoadOp, AttachmentStoreOp};
     use vulkano::swapchain::{self, SwapchainPresentInfo};
     use vulkano::sync::{self, GpuFuture};
     use vulkano::{Validated, VulkanError};
+    use vulkano::Version;
+    use vulkano::VulkanObject;
     use vulkano_util::context::{VulkanoConfig, VulkanoContext};
     use winit::window::Window;
+
+    use vulkano::device::DeviceExtensions;
 
     mod toon_mesh_vs {
         vulkano_shaders::shader! {
@@ -161,9 +164,19 @@ mod vulkano_backend {
 
         pub pipeline_toon_mesh: Arc<GraphicsPipeline>,
 
+        xr_offscreen: Option<XrOffscreenTargets>,
+
         pub window_resized: bool,
         pub recreate_swapchain: bool,
         pub images_in_flight: Vec<Option<Box<dyn GpuFuture>>>,
+    }
+
+    struct XrOffscreenTargets {
+        extent: [u32; 2],
+        color_format: Format,
+        color_images: Vec<Arc<vulkano::image::Image>>,
+        color_views: Vec<Arc<ImageView>>,
+        depth_views: Vec<Arc<ImageView>>,
     }
 
     const MAX_POINT_LIGHTS: usize = 64;
@@ -215,14 +228,142 @@ mod vulkano_backend {
             }
         }
 
-        pub fn new(window: Arc<Window>) -> Result<Self, Box<dyn std::error::Error>> {
+        pub fn new(
+            window: Arc<Window>,
+            xr_required: Option<(&[String], &[String])>,
+        ) -> Result<Self, Box<dyn std::error::Error>> {
             // Prefer the helper context while we're migrating: it enables surface extensions
             // and sets up graphics/compute queues and allocators.
-            let context = VulkanoContext::new(VulkanoConfig::default());
+            let context = {
+                let mut config = VulkanoConfig::default();
+
+                // SteamVR's OpenXR Vulkan requirements commonly report a max API of 1.2.0.
+                // Some runtimes appear to validate the VkInstance API version against this.
+                config.instance_create_info.max_api_version = Some(Version::V1_2);
+
+                // Dynamic rendering: required so we can record the same draw-batch code against
+                // non-swapchain targets (e.g. OpenXR swapchain images) without per-target
+                // RenderPass/Framebuffer objects.
+                //
+                // On Vulkan 1.2 this is provided via VK_KHR_dynamic_rendering.
+                config.device_extensions.khr_dynamic_rendering = true;
+                config.device_features.dynamic_rendering = true;
+
+                if let Some((instance_exts, device_exts)) = xr_required {
+                    let mut enabled_instance_exts = config.instance_create_info.enabled_extensions;
+                    let mut enabled_device_exts = config.device_extensions;
+
+                    let mut unknown_instance_exts: Vec<&str> = Vec::new();
+                    for name in instance_exts {
+                        let ok = match name.as_str() {
+                            "VK_KHR_get_physical_device_properties2" => {
+                                enabled_instance_exts.khr_get_physical_device_properties2 = true;
+                                true
+                            }
+                            "VK_KHR_external_memory_capabilities" => {
+                                enabled_instance_exts.khr_external_memory_capabilities = true;
+                                true
+                            }
+                            "VK_KHR_external_fence_capabilities" => {
+                                enabled_instance_exts.khr_external_fence_capabilities = true;
+                                true
+                            }
+                            "VK_KHR_external_semaphore_capabilities" => {
+                                enabled_instance_exts.khr_external_semaphore_capabilities = true;
+                                true
+                            }
+                            "VK_KHR_surface" => {
+                                // Needed by winit surface creation anyway, but we mark it explicitly.
+                                enabled_instance_exts.khr_surface = true;
+                                true
+                            }
+                            _ => false,
+                        };
+                        if !ok {
+                            unknown_instance_exts.push(name);
+                        }
+                    }
+
+                    let mut unknown_device_exts: Vec<&str> = Vec::new();
+                    for name in device_exts {
+                        let ok = match name.as_str() {
+                            "VK_KHR_external_memory" => {
+                                enabled_device_exts.khr_external_memory = true;
+                                true
+                            }
+                            "VK_KHR_external_memory_fd" => {
+                                enabled_device_exts.khr_external_memory_fd = true;
+                                true
+                            }
+                            "VK_KHR_external_fence" => {
+                                enabled_device_exts.khr_external_fence = true;
+                                true
+                            }
+                            "VK_KHR_external_fence_fd" => {
+                                enabled_device_exts.khr_external_fence_fd = true;
+                                true
+                            }
+                            "VK_KHR_external_semaphore" => {
+                                enabled_device_exts.khr_external_semaphore = true;
+                                true
+                            }
+                            "VK_KHR_external_semaphore_fd" => {
+                                enabled_device_exts.khr_external_semaphore_fd = true;
+                                true
+                            }
+                            "VK_KHR_get_memory_requirements2" => {
+                                enabled_device_exts.khr_get_memory_requirements2 = true;
+                                true
+                            }
+                            "VK_KHR_dedicated_allocation" => {
+                                enabled_device_exts.khr_dedicated_allocation = true;
+                                true
+                            }
+                            "VK_KHR_bind_memory2" => {
+                                enabled_device_exts.khr_bind_memory2 = true;
+                                true
+                            }
+                            "VK_KHR_timeline_semaphore" => {
+                                enabled_device_exts.khr_timeline_semaphore = true;
+                                true
+                            }
+                            "VK_KHR_image_format_list" => {
+                                enabled_device_exts.khr_image_format_list = true;
+                                true
+                            }
+                            _ => false,
+                        };
+                        if !ok {
+                            unknown_device_exts.push(name);
+                        }
+                    }
+
+                    config.instance_create_info.enabled_extensions = enabled_instance_exts;
+                    config.device_extensions = enabled_device_exts;
+
+                    // Keep the device selection filter in sync with the extensions we require.
+                    let required_dev_exts: DeviceExtensions = enabled_device_exts;
+                    config.device_filter_fn = Arc::new(move |p| {
+                        p.supported_extensions().contains(&required_dev_exts)
+                    });
+
+                    if !unknown_instance_exts.is_empty() || !unknown_device_exts.is_empty() {
+                        // These might still be satisfied by Vulkan API version or be irrelevant to Vulkano;
+                        // we log them so we can extend the mapping as needed.
+                        eprintln!(
+                            "[VulkanoRenderer] Note: some OpenXR-required Vulkan extensions were not mapped: instance={:?} device={:?}",
+                            unknown_instance_exts,
+                            unknown_device_exts
+                        );
+                    }
+                }
+
+                VulkanoContext::new(config)
+            };
             let device = context.device().clone();
 
             let swapchain_state = VulkanoSwapchainState::new(&context, window.clone())?;
-            let framebuffer_count = swapchain_state.framebuffers.len();
+            let framebuffer_count = swapchain_state.swapchain_views.len();
 
             let set_layouts = PipelineDescriptorSetLayouts::new(device.clone())?;
 
@@ -341,8 +482,7 @@ mod vulkano_backend {
                     },
                 );
 
-            let subpass = Subpass::from(swapchain_state.render_pass.clone(), 0)
-                .ok_or("missing subpass 0")?;
+            let color_format = swapchain_state.swapchain.image_format();
             let mut pipeline_ci =
                 vulkano::pipeline::graphics::GraphicsPipelineCreateInfo::layout(layout);
             pipeline_ci.stages = stages.into();
@@ -376,7 +516,13 @@ mod vulkano_backend {
             pipeline_ci.dynamic_state = [DynamicState::Viewport, DynamicState::Scissor]
                 .into_iter()
                 .collect();
-            pipeline_ci.subpass = Some(PipelineSubpassType::BeginRenderPass(subpass));
+            // Dynamic rendering so we can reuse the same draw code for non-swapchain targets (OpenXR).
+            // The pipeline is keyed by attachment formats rather than a specific RenderPass.
+            let mut pipeline_rendering = PipelineRenderingCreateInfo::default();
+            pipeline_rendering.color_attachment_formats = vec![Some(color_format)];
+            pipeline_rendering.depth_attachment_format = Some(VulkanoSwapchainState::DEPTH_FORMAT);
+
+            pipeline_ci.subpass = Some(PipelineSubpassType::BeginRendering(pipeline_rendering));
 
             let pipeline_toon_mesh = GraphicsPipeline::new(device.clone(), None, pipeline_ci)?;
 
@@ -410,6 +556,8 @@ mod vulkano_backend {
 
                 pipeline_toon_mesh,
 
+                xr_offscreen: None,
+
                 window_resized: false,
                 recreate_swapchain: false,
                 images_in_flight: (0..framebuffer_count).map(|_| None).collect(),
@@ -419,6 +567,141 @@ mod vulkano_backend {
             state.upload_texture_rgba8(TextureHandle(0), &[255, 255, 255, 255], 1, 1)?;
 
             Ok(state)
+        }
+
+        pub fn window_color_format(&self) -> Format {
+            self.swapchain_state.swapchain.image_format()
+        }
+
+        fn ensure_xr_offscreen_targets(
+            &mut self,
+            view_count: usize,
+            extent: [u32; 2],
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let color_format = self.swapchain_state.swapchain.image_format();
+
+            let needs_recreate = self
+                .xr_offscreen
+                .as_ref()
+                .is_none_or(|t| {
+                    t.extent != extent
+                        || t.color_format != color_format
+                        || t.color_views.len() != view_count
+                });
+
+            if !needs_recreate {
+                return Ok(());
+            }
+
+            let memory_allocator = self.context.memory_allocator().clone();
+
+            let mut color_images = Vec::with_capacity(view_count);
+            let mut color_views = Vec::with_capacity(view_count);
+            let mut depth_views = Vec::with_capacity(view_count);
+
+            for _ in 0..view_count {
+                let color_image = vulkano::image::Image::new(
+                    memory_allocator.clone(),
+                    vulkano::image::ImageCreateInfo {
+                        image_type: vulkano::image::ImageType::Dim2d,
+                        format: color_format,
+                        extent: [extent[0], extent[1], 1],
+                        usage: vulkano::image::ImageUsage::COLOR_ATTACHMENT
+                            | vulkano::image::ImageUsage::TRANSFER_SRC,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                        ..Default::default()
+                    },
+                )?;
+
+                let color_view = ImageView::new_default(color_image.clone())
+                    .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
+
+                let depth_image = vulkano::image::Image::new(
+                    memory_allocator.clone(),
+                    vulkano::image::ImageCreateInfo {
+                        image_type: vulkano::image::ImageType::Dim2d,
+                        format: VulkanoSwapchainState::DEPTH_FORMAT,
+                        extent: [extent[0], extent[1], 1],
+                        usage: vulkano::image::ImageUsage::DEPTH_STENCIL_ATTACHMENT,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                        ..Default::default()
+                    },
+                )?;
+
+                let depth_view = ImageView::new_default(depth_image)
+                    .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
+
+                color_images.push(color_image);
+                color_views.push(color_view);
+                depth_views.push(depth_view);
+            }
+
+            self.xr_offscreen = Some(XrOffscreenTargets {
+                extent,
+                color_format,
+                color_images,
+                color_views,
+                depth_views,
+            });
+
+            Ok(())
+        }
+
+        pub fn render_xr_eye_offscreen(
+            &mut self,
+            visual_world: &mut VisualWorld,
+            eye: usize,
+            extent: [u32; 2],
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            // MVP: assume PRIMARY_STEREO (2 eyes).
+            let view_count = 2;
+            self.ensure_xr_offscreen_targets(view_count, extent)?;
+
+            let Some(targets) = self.xr_offscreen.as_ref() else {
+                return Err("XR offscreen targets missing".into());
+            };
+
+            let color_view = targets
+                .color_views
+                .get(eye)
+                .ok_or("XR offscreen eye out of range")?
+                .clone();
+            let depth_view = targets
+                .depth_views
+                .get(eye)
+                .ok_or("XR depth eye out of range")?
+                .clone();
+
+            let cb = self.build_draw_batches_command_buffer(
+                visual_world,
+                crate::engine::graphics::CameraTarget::Xr,
+                eye,
+                color_view,
+                depth_view,
+                extent,
+            )?;
+
+            let device = self.context.device().clone();
+            let queue = self.context.graphics_queue().clone();
+
+            sync::now(device)
+                .then_execute(queue, cb)?
+                .then_signal_fence_and_flush()?
+                .wait(None)?;
+
+            Ok(())
+        }
+
+        pub fn xr_offscreen_vk_image(&self, eye: usize) -> Option<ash::vk::Image> {
+            let targets = self.xr_offscreen.as_ref()?;
+            let img = targets.color_images.get(eye)?;
+            Some(img.handle())
         }
 
         pub fn upload_texture_rgba8(
@@ -507,7 +790,7 @@ mod vulkano_backend {
 
             // After swapchain recreation, all old swapchain images/depth attachments are gone.
             // Reset per-image in-flight tracking.
-            self.images_in_flight = (0..self.swapchain_state.framebuffers.len())
+            self.images_in_flight = (0..self.swapchain_state.swapchain_views.len())
                 .map(|_| None)
                 .collect();
 
@@ -515,37 +798,16 @@ mod vulkano_backend {
             Ok(())
         }
 
-        pub fn render_visual_world(
-            &mut self,
+        fn build_draw_batches_command_buffer(
+            &self,
             visual_world: &mut VisualWorld,
-        ) -> Result<(), Box<dyn std::error::Error>> {
-            self.recreate_swapchain_if_needed()?;
-
-            let device = self.context.device().clone();
+            camera_target: crate::engine::graphics::CameraTarget,
+            eye: usize,
+            color_view: Arc<ImageView>,
+            depth_view: Arc<ImageView>,
+            extent: [u32; 2],
+        ) -> Result<Arc<vulkano::command_buffer::PrimaryAutoCommandBuffer>, Box<dyn std::error::Error>> {
             let queue = self.context.graphics_queue().clone();
-
-            // Let Vulkano drop finished per-frame resources incrementally.
-            for fut in self.images_in_flight.iter_mut() {
-                if let Some(fut) = fut.as_mut() {
-                    fut.cleanup_finished();
-                }
-            }
-
-            let (image_i, suboptimal, acquire_future) =
-                match swapchain::acquire_next_image(self.swapchain_state.swapchain.clone(), None)
-                    .map_err(Validated::unwrap)
-                {
-                    Ok(r) => r,
-                    Err(VulkanError::OutOfDate) => {
-                        self.recreate_swapchain = true;
-                        return Ok(());
-                    }
-                    Err(e) => return Err(Box::new(e)),
-                };
-
-            if suboptimal {
-                self.recreate_swapchain = true;
-            }
 
             // Always rebuild draw cache cheaply.
             visual_world.prepare_draw_cache();
@@ -567,25 +829,66 @@ mod vulkano_backend {
                 }
             });
 
-            let instance_buffer: Subbuffer<[InstanceData]> = Buffer::from_iter(
-                self.context.memory_allocator().clone(),
-                BufferCreateInfo {
-                    usage: BufferUsage::VERTEX_BUFFER,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                    ..Default::default()
-                },
-                instance_data_iter,
-            )?;
+            // `Buffer::from_iter` with an empty iterator can panic inside Vulkano.
+            let instance_buffer: Subbuffer<[InstanceData]> = if instance_count == 0 {
+                Buffer::from_iter(
+                    self.context.memory_allocator().clone(),
+                    BufferCreateInfo {
+                        usage: BufferUsage::VERTEX_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                        ..Default::default()
+                    },
+                    std::iter::once(InstanceData::default()),
+                )?
+            } else {
+                Buffer::from_iter(
+                    self.context.memory_allocator().clone(),
+                    BufferCreateInfo {
+                        usage: BufferUsage::VERTEX_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                        ..Default::default()
+                    },
+                    instance_data_iter,
+                )?
+            };
 
-            let framebuffer = self.swapchain_state.framebuffers[image_i as usize].clone();
-            let mut render_pass_begin = RenderPassBeginInfo::framebuffer(framebuffer);
-            render_pass_begin.clear_values = VulkanoSwapchainState::clear_values();
+            let clear_color = match camera_target {
+                crate::engine::graphics::CameraTarget::Xr => [1.0f32, 0.713_725_5, 0.756_862_76, 1.0],
+                crate::engine::graphics::CameraTarget::Window => [0.0f32, 0.0, 0.0, 1.0],
+            };
 
-            let extent = self.swapchain_state.swapchain.image_extent();
+            let color_attachment = RenderingAttachmentInfo {
+                load_op: AttachmentLoadOp::Clear,
+                store_op: AttachmentStoreOp::Store,
+                clear_value: Some(ClearValue::from(clear_color)),
+                ..RenderingAttachmentInfo::image_view(color_view)
+            };
+
+            let depth_attachment = RenderingAttachmentInfo {
+                load_op: AttachmentLoadOp::Clear,
+                store_op: AttachmentStoreOp::DontCare,
+                clear_value: Some(ClearValue::Depth(1.0)),
+                ..RenderingAttachmentInfo::image_view(depth_view)
+            };
+
+            let rendering_info = RenderingInfo {
+                render_area_offset: [0, 0],
+                render_area_extent: [extent[0], extent[1]],
+                layer_count: 1,
+                color_attachments: vec![Some(color_attachment)],
+                depth_attachment: Some(depth_attachment),
+                stencil_attachment: None,
+                ..Default::default()
+            };
+
             let viewport = Viewport {
                 offset: [0.0, 0.0],
                 extent: [extent[0] as f32, extent[1] as f32],
@@ -593,16 +896,10 @@ mod vulkano_backend {
                 ..Default::default()
             };
 
-            // Keep VisualWorld informed of the current output size so camera systems can
-            // build aspect-correct projection matrices.
-            visual_world.set_viewport([extent[0] as f32, extent[1] as f32]);
-
             // Camera uniform buffer (set=0, binding=0).
-            // `camera2d` currently feeds the 2D path directly; we also pass the current
-            // swapchain extent so shaders can correct for aspect ratio.
             let camera_ubo = CameraUBO {
-                view: visual_world.camera_view(),
-                proj: visual_world.camera_proj(),
+                view: visual_world.camera_view_for_eye(camera_target, eye),
+                proj: visual_world.camera_proj_for_eye(camera_target, eye),
                 camera2d: visual_world.camera_2d(),
                 viewport: [extent[0] as f32, extent[1] as f32],
                 _pad0: [0.0, 0.0],
@@ -622,7 +919,7 @@ mod vulkano_backend {
                 camera_ubo,
             )?;
 
-            // Lights storage buffer (set=0, binding=1). Placeholder for now.
+            // Lights storage buffer (set=0, binding=1).
             let mut lights_ssbo = LightsSSBO::default();
             let lights = visual_world.point_lights();
             let count = (lights.len()).min(MAX_POINT_LIGHTS);
@@ -669,7 +966,7 @@ mod vulkano_backend {
                 CommandBufferUsage::OneTimeSubmit,
             )?;
 
-            cbb.begin_render_pass(render_pass_begin, SubpassBeginInfo::default())?;
+            cbb.begin_rendering(rendering_info)?;
 
             cbb.set_viewport(0, vec![viewport].into())?;
             cbb.set_scissor(
@@ -683,20 +980,19 @@ mod vulkano_backend {
             )?;
 
             // Bind pipeline/descriptor sets per (material, texture).
-            // For now, TOON_MESH is the primary bring-up pipeline.
-            // UNLIT_MESH is treated as an alias to TOON_MESH for compatibility while migrating.
             let mut bound_material: Option<crate::engine::graphics::MaterialHandle> = None;
             let mut bound_texture: Option<TextureHandle> = None;
 
             for batch in visual_world.draw_batches() {
                 let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
 
-                if bound_material != Some(batch.material) || bound_texture != Some(texture_handle) {
+                if bound_material != Some(batch.material)
+                    || bound_texture != Some(texture_handle)
+                {
                     match batch.material {
                         crate::engine::graphics::MaterialHandle::TOON_MESH
                         | crate::engine::graphics::MaterialHandle::UNLIT_MESH => {
                             let Some(tex) = self.textures.get(&texture_handle) else {
-                                // Missing texture: skip this batch.
                                 continue;
                             };
 
@@ -738,7 +1034,6 @@ mod vulkano_backend {
                             )?;
                         }
                         _ => {
-                            // Unknown material: skip this batch.
                             continue;
                         }
                     }
@@ -766,16 +1061,66 @@ mod vulkano_backend {
                 }
             }
 
-            cbb.end_render_pass(SubpassEndInfo::default())?;
+            cbb.end_rendering()?;
 
-            let cb = cbb.build()?;
+            Ok(cbb.build()?)
+        }
+
+        pub fn render_visual_world(
+            &mut self,
+            visual_world: &mut VisualWorld,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            self.recreate_swapchain_if_needed()?;
+
+            let device = self.context.device().clone();
+            let queue = self.context.graphics_queue().clone();
+
+            // Let Vulkano drop finished per-frame resources incrementally.
+            for fut in self.images_in_flight.iter_mut() {
+                if let Some(fut) = fut.as_mut() {
+                    fut.cleanup_finished();
+                }
+            }
+
+            let (image_i, suboptimal, acquire_future) =
+                match swapchain::acquire_next_image(self.swapchain_state.swapchain.clone(), None)
+                    .map_err(Validated::unwrap)
+                {
+                    Ok(r) => r,
+                    Err(VulkanError::OutOfDate) => {
+                        self.recreate_swapchain = true;
+                        return Ok(());
+                    }
+                    Err(e) => return Err(Box::new(e)),
+                };
+
+            if suboptimal {
+                self.recreate_swapchain = true;
+            }
+
+            let extent = self.swapchain_state.swapchain.image_extent();
+
+            // Keep VisualWorld informed of the current output size so camera systems can
+            // build aspect-correct projection matrices.
+            visual_world.set_viewport([extent[0] as f32, extent[1] as f32]);
+
+            let color_view = self.swapchain_state.swapchain_views[image_i as usize].clone();
+            let depth_view = self.swapchain_state.depth_views[image_i as usize].clone();
+            let cb = self.build_draw_batches_command_buffer(
+                visual_world,
+                crate::engine::graphics::CameraTarget::Window,
+                0,
+                color_view,
+                depth_view,
+                extent,
+            )?;
 
             // Ensure we never render into a swapchain image (and its paired depth attachment)
             // while a previous frame that used that image is still in flight.
             let image_i_usize = image_i as usize;
-            if self.images_in_flight.len() != self.swapchain_state.framebuffers.len() {
+            if self.images_in_flight.len() != self.swapchain_state.swapchain_views.len() {
                 // Defensive: should only happen if swapchain recreation failed partially.
-                self.images_in_flight = (0..self.swapchain_state.framebuffers.len())
+                self.images_in_flight = (0..self.swapchain_state.swapchain_views.len())
                     .map(|_| None)
                     .collect();
             }
@@ -965,9 +1310,10 @@ impl VulkanoRenderer {
     pub fn init_for_window(
         &mut self,
         window: &Arc<Window>,
+        xr_required: Option<(&[String], &[String])>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if self.vulkano.is_none() {
-            self.vulkano = Some(vulkano_backend::VulkanoState::new(window.clone())?);
+            self.vulkano = Some(vulkano_backend::VulkanoState::new(window.clone(), xr_required)?);
             println!("[VulkanoRenderer] Vulkano swapchain/render-pass initialized");
         }
 
@@ -1010,6 +1356,60 @@ impl VulkanoRenderer {
         }
 
         vulkano.render_visual_world(visual_world)
+    }
+
+    pub fn window_vk_format_raw(&self) -> Option<u32> {
+        let vulkano = self.vulkano.as_ref()?;
+        let format = vulkano.window_color_format();
+        let vk: ash::vk::Format = format.into();
+        Some(vk.as_raw() as u32)
+    }
+
+    pub fn render_xr_eye_offscreen(
+        &mut self,
+        visual_world: &mut VisualWorld,
+        eye: usize,
+        extent: [u32; 2],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(vulkano) = self.vulkano.as_mut() else {
+            return Err("VulkanoRenderer not initialized (call init_for_window first)".into());
+        };
+
+        vulkano.render_xr_eye_offscreen(visual_world, eye, extent)
+    }
+
+    pub fn xr_offscreen_vk_image(&self, eye: usize) -> Option<ash::vk::Image> {
+        self.vulkano.as_ref()?.xr_offscreen_vk_image(eye)
+    }
+
+    /// Returns raw Vulkan handles suitable for `openxr::Instance::create_session::<openxr::Vulkan>()`.
+    ///
+    /// Note: OpenXR expects these as opaque pointers; we cast from `ash` raw handles.
+    pub fn xr_vulkan_graphics(&self) -> Option<crate::engine::graphics::XrVulkanGraphics> {
+        use std::ffi::c_void;
+        use vulkano::VulkanObject;
+        use ash::vk::Handle as _;
+
+        let vulkano = self.vulkano.as_ref()?;
+
+        let device = vulkano.context.device().clone();
+        let queue = vulkano.context.graphics_queue().clone();
+        let instance = device.instance().clone();
+        let physical_device = device.physical_device();
+
+        let vk_instance = instance.handle().as_raw() as usize as *const c_void;
+        let vk_physical_device = physical_device.handle().as_raw() as usize as *const c_void;
+        let vk_device = device.handle().as_raw() as usize as *const c_void;
+
+        Some(crate::engine::graphics::XrVulkanGraphics {
+            vk_instance,
+            vk_physical_device,
+            vk_device,
+            queue_family_index: queue.queue_family_index(),
+            // Vulkano doesn't currently expose a stable “queue index within family” API here.
+            // Using 0 is correct for the common single-queue case.
+            queue_index: 0,
+        })
     }
 }
 

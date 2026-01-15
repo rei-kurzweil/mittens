@@ -4,6 +4,7 @@ use crate::engine::ecs::system::CameraSystem;
 use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::InputSystem;
 use crate::engine::ecs::system::LightSystem;
+use crate::engine::ecs::system::OpenXRSystem;
 use crate::engine::ecs::system::RenderableSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TextureSystem;
@@ -18,6 +19,8 @@ pub struct SystemWorld {
     pub renderable: RenderableSystem,
 
     pub gltf:       GLTFSystem,
+
+    pub openxr:     OpenXRSystem,
 
     pub camera:     CameraSystem,
     pub input:      InputSystem,
@@ -80,6 +83,16 @@ impl SystemWorld {
         component: ComponentId,
     ) {
         self.renderable.register_emissive(world, visuals, component);
+    }
+
+    /// Register an OpenXRComponent (initializes OpenXR runtime if enabled).
+    pub fn register_openxr(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.openxr.register_openxr(world, visuals, component);
     }
 
     /// Register a PointLightComponent instance with the LightSystem.
@@ -226,12 +239,36 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
+        // XR rig cameras.
+        if let Some(camera_xr) = _world
+            .get_component_by_id_as::<crate::engine::ecs::component::CameraXRComponent>(component)
+        {
+            match camera_xr.target {
+                crate::engine::graphics::CameraTarget::Xr => {
+                    self.camera.set_active_xr_camera(_world, visuals, component);
+                }
+                crate::engine::graphics::CameraTarget::Window => {
+                    // If someone explicitly targets Window with a CameraXRComponent, ignore for now.
+                    // (Window camera matrices are driven by Camera2D/Camera3D.)
+                }
+            }
+            return;
+        }
+
         // Try Camera3DComponent first
         if let Some(camera_comp) = _world
             .get_component_by_id_as::<crate::engine::ecs::component::Camera3DComponent>(component)
         {
             if let Some(handle) = camera_comp.handle {
-                self.camera.set_active_camera(visuals, handle);
+                match camera_comp.target {
+                    crate::engine::graphics::CameraTarget::Window => {
+                        self.camera.set_active_window_camera(visuals, handle);
+                    }
+                    crate::engine::graphics::CameraTarget::Xr => {
+                        // XR camera matrices are driven by OpenXR each frame.
+                        // Keep this as a no-op for now.
+                    }
+                }
                 return;
             }
         }
@@ -240,7 +277,15 @@ impl SystemWorld {
             .get_component_by_id_as::<crate::engine::ecs::component::Camera2DComponent>(component)
         {
             if let Some(handle) = camera2d_comp.handle {
-                self.camera.set_active_camera(visuals, handle);
+                match camera2d_comp.target {
+                    crate::engine::graphics::CameraTarget::Window => {
+                        self.camera.set_active_window_camera(visuals, handle);
+                    }
+                    crate::engine::graphics::CameraTarget::Xr => {
+                        // XR camera matrices are driven by OpenXR each frame.
+                        // Keep this as a no-op for now.
+                    }
+                }
             }
         }
     }
@@ -262,9 +307,14 @@ impl SystemWorld {
         // Spawn any GLTF component trees. This may queue component registrations.
         self.gltf.tick_with_queue(world, queue, dt_sec);
 
+        // Ensure transforms are propagated before any camera systems consume world matrices.
         self.transform.tick(world, visuals, input, dt_sec);
-        self.renderable.tick(world, visuals, input, dt_sec);
+        // Update window camera + select active XR camera rig before OpenXR consumes it.
         self.camera.tick(world, visuals, input, dt_sec);
+        // OpenXR consumes the latest rig transform + publishes per-eye cameras.
+        self.openxr.tick(world, visuals, input, dt_sec);
+
+        self.renderable.tick(world, visuals, input, dt_sec);
 
         self.light.tick(world, visuals, input, dt_sec);
     }

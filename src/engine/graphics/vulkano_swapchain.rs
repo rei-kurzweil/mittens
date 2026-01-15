@@ -1,17 +1,15 @@
 use std::sync::Arc;
 
-use vulkano::format::ClearValue;
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
 use vulkano::image::{Image, ImageCreateInfo, ImageType, ImageUsage};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter};
-use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
 use vulkano::swapchain::{Surface, Swapchain, SwapchainCreateInfo};
 use vulkano::Validated;
 use vulkano_util::context::VulkanoContext;
 use winit::window::Window;
 
-/// Swapchain + swapchain-dependent attachments (views/depth/framebuffers).
+/// Swapchain + swapchain-dependent attachments (views/depth).
 ///
 /// This intentionally owns *all* swapchain-dependent resources so recreation is localized.
 pub(crate) struct VulkanoSwapchainState {
@@ -19,19 +17,10 @@ pub(crate) struct VulkanoSwapchainState {
     pub swapchain: Arc<Swapchain>,
     pub swapchain_views: Vec<Arc<ImageView>>,
     pub depth_views: Vec<Arc<ImageView>>,
-    pub render_pass: Arc<RenderPass>,
-    pub framebuffers: Vec<Arc<Framebuffer>>,
 }
 
 impl VulkanoSwapchainState {
     pub(crate) const DEPTH_FORMAT: Format = Format::D32_SFLOAT;
-
-    pub(crate) fn clear_values() -> Vec<Option<ClearValue>> {
-        vec![
-            Some(ClearValue::from([0.0f32, 0.0, 0.0, 1.0])),
-            Some(ClearValue::Depth(1.0)),
-        ]
-    }
 
     pub(crate) fn new(context: &VulkanoContext, window: Arc<Window>) -> Result<Self, Box<dyn std::error::Error>> {
         let device = context.device().clone();
@@ -41,12 +30,28 @@ impl VulkanoSwapchainState {
         let surface_capabilities = device
             .physical_device()
             .surface_capabilities(&surface, Default::default())?;
-        let image_format = device
+
+        let surface_formats = device
             .physical_device()
-            .surface_formats(&surface, Default::default())?
-            .first()
-            .ok_or("no supported surface formats")?
-            .0;
+            .surface_formats(&surface, Default::default())?;
+
+        if surface_formats.is_empty() {
+            return Err("no supported surface formats".into());
+        }
+
+        // Prefer common 8-bit sRGB formats so the window swapchain can match
+        // the OpenXR swapchain format on common runtimes (e.g. SteamVR).
+        let preferred_formats = [Format::R8G8B8A8_SRGB, Format::B8G8R8A8_SRGB];
+
+        let image_format = preferred_formats
+            .into_iter()
+            .find_map(|fmt| {
+                surface_formats
+                    .iter()
+                    .find(|(f, _)| *f == fmt)
+                    .map(|(f, _)| *f)
+            })
+            .unwrap_or(surface_formats[0].0);
 
         let mut min_image_count = 2u32.max(surface_capabilities.min_image_count);
         if let Some(max_image_count) = surface_capabilities.max_image_count {
@@ -75,43 +80,14 @@ impl VulkanoSwapchainState {
             .map(|image| ImageView::new_default(image).map_err(|e| e.into()))
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
 
-        let render_pass = vulkano::single_pass_renderpass!(
-            device.clone(),
-            attachments: {
-                color: {
-                    format: swapchain.image_format(),
-                    samples: 1,
-                    load_op: Clear,
-                    store_op: Store,
-                },
-                depth: {
-                    format: Self::DEPTH_FORMAT,
-                    samples: 1,
-                    load_op: Clear,
-                    store_op: DontCare,
-                },
-            },
-            pass: {
-                color: [color],
-                depth_stencil: {depth},
-            }
-        )?;
-
         let extent = swapchain.image_extent();
-        let (depth_views, framebuffers) = Self::create_swapchain_dependent(
-            context,
-            &swapchain_views,
-            extent,
-            render_pass.clone(),
-        )?;
+        let depth_views = Self::create_depth_views(context, &swapchain_views, extent)?;
 
         Ok(Self {
             surface,
             swapchain,
             swapchain_views,
             depth_views,
-            render_pass,
-            framebuffers,
         })
     }
 
@@ -144,24 +120,16 @@ impl VulkanoSwapchainState {
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
 
         let extent = self.swapchain.image_extent();
-        let (depth_views, framebuffers) = Self::create_swapchain_dependent(
-            context,
-            &self.swapchain_views,
-            extent,
-            self.render_pass.clone(),
-        )?;
-        self.depth_views = depth_views;
-        self.framebuffers = framebuffers;
+        self.depth_views = Self::create_depth_views(context, &self.swapchain_views, extent)?;
 
         Ok(())
     }
 
-    fn create_swapchain_dependent(
+    fn create_depth_views(
         context: &VulkanoContext,
         swapchain_views: &[Arc<ImageView>],
         extent: [u32; 2],
-        render_pass: Arc<RenderPass>,
-    ) -> Result<(Vec<Arc<ImageView>>, Vec<Arc<Framebuffer>>), Box<dyn std::error::Error>> {
+    ) -> Result<Vec<Arc<ImageView>>, Box<dyn std::error::Error>> {
         // Depth buffer: one image per swapchain image.
         let memory_allocator = context.memory_allocator().clone();
 
@@ -188,21 +156,6 @@ impl VulkanoSwapchainState {
             })
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
 
-        let framebuffers = swapchain_views
-            .iter()
-            .zip(depth_views.iter())
-            .map(|(view, depth_view)| {
-                Framebuffer::new(
-                    render_pass.clone(),
-                    FramebufferCreateInfo {
-                        attachments: vec![view.clone(), depth_view.clone()],
-                        ..Default::default()
-                    },
-                )
-                .map_err(|e| e.into())
-            })
-            .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
-
-        Ok((depth_views, framebuffers))
+        Ok(depth_views)
     }
 }

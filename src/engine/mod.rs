@@ -6,7 +6,6 @@ pub mod repl;
 pub mod universe;
 pub mod user_input;
 pub mod windowing;
-pub mod xr;
 
 pub use cli::CLI;
 pub use universe::Universe;

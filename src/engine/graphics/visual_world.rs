@@ -4,6 +4,25 @@ use crate::engine::graphics::GpuRenderable;
 use crate::engine::graphics::primitives::InstanceHandle;
 use crate::engine::graphics::primitives::TransformMatrix;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CameraTarget {
+    Window,
+    Xr,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CameraData {
+    pub view: [[f32; 4]; 4],
+    pub proj: [[f32; 4]; 4],
+    pub transform: Transform,
+}
+
+#[derive(Debug, Clone)]
+pub struct VisualCamera {
+    pub target: CameraTarget,
+    pub eyes: Vec<CameraData>,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct DrawBatch {
     pub material: crate::engine::graphics::MaterialHandle,
@@ -21,9 +40,11 @@ pub struct VisualWorld {
     point_light_index_by_component: std::collections::HashMap<ComponentId, usize>,
     dirty_lights: bool,
 
-    // Active camera state (owned by CameraSystem, mirrored here for renderer snapshot).
-    camera_view: [[f32; 4]; 4],
-    camera_proj: [[f32; 4]; 4],
+    // Target-scoped camera state. Window is typically mono; XR is stereo.
+    visual_cameras: Vec<VisualCamera>,
+
+    // Which CameraXRComponent (by ComponentId) is currently active for XR rig transforms.
+    active_xr_camera: Option<ComponentId>,
     // Most recent render target size in pixels (width, height).
     viewport: [f32; 2],
     // 2D camera view transform for translation/scale/rotation.
@@ -55,6 +76,16 @@ pub struct VisualInstance {
 
 impl Default for VisualWorld {
     fn default() -> Self {
+        let ident4 = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let mut t = Transform::default();
+        t.model = ident4;
+        t.matrix_world = ident4;
+
         Self {
             instances: Vec::new(),
 
@@ -62,18 +93,16 @@ impl Default for VisualWorld {
             point_light_index_by_component: std::collections::HashMap::new(),
             dirty_lights: true,
 
-            camera_view: [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-            camera_proj: [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
+            visual_cameras: vec![VisualCamera {
+                target: CameraTarget::Window,
+                eyes: vec![CameraData {
+                    view: ident4,
+                    proj: ident4,
+                    transform: t,
+                }],
+            }],
+
+            active_xr_camera: None,
             viewport: [1.0, 1.0],
             camera_2d: [
                 [1.0, 0.0, 0.0, 0.0],
@@ -122,6 +151,16 @@ impl VisualWorld {
         self.dirty_camera = true;
         self.draw_order.clear();
         self.draw_batches.clear();
+
+        self.active_xr_camera = None;
+    }
+
+    pub fn active_xr_camera(&self) -> Option<ComponentId> {
+        self.active_xr_camera
+    }
+
+    pub fn set_active_xr_camera(&mut self, component: Option<ComponentId>) {
+        self.active_xr_camera = component;
     }
 
     pub fn lights_dirty(&self) -> bool {
@@ -159,12 +198,66 @@ impl VisualWorld {
         v
     }
 
-    pub fn camera_view(&self) -> [[f32; 4]; 4] {
-        self.camera_view
+    pub fn visual_cameras(&self) -> &[VisualCamera] {
+        &self.visual_cameras
     }
 
+    pub fn visual_camera(&self, target: CameraTarget) -> Option<&VisualCamera> {
+        self.visual_cameras.iter().find(|c| c.target == target)
+    }
+
+    fn visual_camera_mut(&mut self, target: CameraTarget) -> &mut VisualCamera {
+        if let Some(i) = self.visual_cameras.iter().position(|c| c.target == target) {
+            return &mut self.visual_cameras[i];
+        }
+
+        self.visual_cameras.push(VisualCamera {
+            target,
+            eyes: Vec::new(),
+        });
+        self.visual_cameras.last_mut().unwrap()
+    }
+
+    /// Window-facing compatibility: returns the first eye's view matrix for the window target.
+    pub fn camera_view(&self) -> [[f32; 4]; 4] {
+        self.camera_view_for(CameraTarget::Window)
+    }
+
+    /// Window-facing compatibility: returns the first eye's projection matrix for the window target.
     pub fn camera_proj(&self) -> [[f32; 4]; 4] {
-        self.camera_proj
+        self.camera_proj_for(CameraTarget::Window)
+    }
+
+    pub fn camera_view_for(&self, target: CameraTarget) -> [[f32; 4]; 4] {
+        self.camera_view_for_eye(target, 0)
+    }
+
+    pub fn camera_view_for_eye(&self, target: CameraTarget, eye: usize) -> [[f32; 4]; 4] {
+        self.visual_camera(target)
+            .and_then(|c| c.eyes.get(eye))
+            .map(|e| e.view)
+            .unwrap_or([
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ])
+    }
+
+    pub fn camera_proj_for(&self, target: CameraTarget) -> [[f32; 4]; 4] {
+        self.camera_proj_for_eye(target, 0)
+    }
+
+    pub fn camera_proj_for_eye(&self, target: CameraTarget, eye: usize) -> [[f32; 4]; 4] {
+        self.visual_camera(target)
+            .and_then(|c| c.eyes.get(eye))
+            .map(|e| e.proj)
+            .unwrap_or([
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ])
     }
 
     pub fn viewport(&self) -> [f32; 2] {
@@ -180,8 +273,7 @@ impl VisualWorld {
     }
 
     pub fn set_camera(&mut self, view: [[f32; 4]; 4], proj: [[f32; 4]; 4]) {
-        self.camera_view = view;
-        self.camera_proj = proj;
+        self.set_camera_mono_for_target(CameraTarget::Window, view, proj);
         // When a 3D camera becomes active, the 2D camera transform should be neutral.
         self.camera_2d = [
             [1.0, 0.0, 0.0, 0.0],
@@ -189,6 +281,38 @@ impl VisualWorld {
             [0.0, 0.0, 1.0, 0.0],
         ];
         self.dirty_camera = true;
+    }
+
+    /// Set all eyes for a target.
+    ///
+    /// - For `CameraTarget::Window`, pass a 1-element `eyes` vector.
+    /// - For `CameraTarget::Xr`, pass 2 (or more) eyes.
+    pub fn set_camera_for_target(&mut self, target: CameraTarget, eyes: Vec<CameraData>) {
+        let c = self.visual_camera_mut(target);
+        c.eyes = eyes;
+        self.dirty_camera = true;
+    }
+
+    /// Convenience: set a single-eye camera for a target.
+    pub fn set_camera_mono_for_target(
+        &mut self,
+        target: CameraTarget,
+        view: [[f32; 4]; 4],
+        proj: [[f32; 4]; 4],
+    ) {
+        self.set_camera_for_target(
+            target,
+            vec![CameraData {
+                view,
+                proj,
+                transform: Transform::default(),
+            }],
+        );
+    }
+
+    /// Convenience: set XR eyes.
+    pub fn set_xr_camera(&mut self, eyes: Vec<CameraData>) {
+        self.set_camera_for_target(CameraTarget::Xr, eyes);
     }
 
     pub fn set_camera_2d(&mut self, m: [[f32; 4]; 3]) {

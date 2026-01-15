@@ -58,7 +58,35 @@ impl Universe {
         self.visuals
             .set_viewport([size.width as f32, size.height as f32]);
 
-        self.renderer.init_for_window(window)
+        let xr_required = self.systems.openxr.required_vulkan_extensions();
+        if let Some((ref instance_exts, ref device_exts)) = xr_required {
+            println!(
+                "[OpenXR] Required Vulkan extensions: instance={} device={}",
+                instance_exts.len(),
+                device_exts.len()
+            );
+            println!(
+                "[OpenXR] Required Vulkan instance extensions: {}",
+                instance_exts.join(" ")
+            );
+            println!(
+                "[OpenXR] Required Vulkan device extensions: {}",
+                device_exts.join(" ")
+            );
+        }
+
+        self.renderer
+            .init_for_window(window, xr_required.as_ref().map(|(i, d)| (i.as_slice(), d.as_slice())))?;
+
+        if let Some(fmt) = self.renderer.window_vk_format_raw() {
+            self.systems.openxr.set_preferred_swapchain_format(fmt);
+        }
+
+        if let Some(gfx) = self.renderer.xr_vulkan_graphics() {
+            self.systems.openxr.set_vulkan_graphics(gfx);
+        }
+
+        Ok(())
     }
 
     /// Resize the renderer when the window is resized.
@@ -97,6 +125,11 @@ impl Universe {
             &mut self.render_assets,
             &mut self.renderer as &mut dyn graphics::RenderUploader,
         );
+
+        // Render XR (if enabled) before the window present.
+        self.systems
+            .openxr
+            .render_xr(&self.world, &mut self.visuals, &mut self.renderer);
 
         // TODO: rebuild inspector around component graph instead of entities.
 
