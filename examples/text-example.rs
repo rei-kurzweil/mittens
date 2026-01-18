@@ -43,8 +43,12 @@ fn main() {
         .add_component(engine::ecs::component::TextureComponent::with_uri(
             "assets/textures/font.dds",
         ));
+    let debug_filtering = universe.world.add_component(
+        engine::ecs::component::TextureFilteringComponent::nearest_magnification(),
+    );
     let _ = universe.world.add_child(debug_root, debug_renderable);
     let _ = universe.world.add_child(debug_renderable, debug_tex);
+    let _ = universe.world.add_child(debug_renderable, debug_filtering);
     universe
         .world
         .init_component_tree(debug_root, &mut universe.command_queue);

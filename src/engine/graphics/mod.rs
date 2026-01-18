@@ -18,6 +18,7 @@ pub use primitives::{
 pub use render_assets::{BuiltinMeshType, RenderAssets};
 pub use visual_world::VisualWorld;
 pub use visual_world::{CameraData, CameraTarget, VisualCamera};
+pub use visual_world::TextureFiltering;
 pub(crate) mod vulkano_texture_upload;
 pub use vulkano_renderer::VulkanoRenderer;
 pub use xr_swapchain::XRSwapchain;

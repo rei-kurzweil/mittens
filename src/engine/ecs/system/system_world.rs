@@ -79,6 +79,17 @@ impl SystemWorld {
         self.texture.register_texture(world, visuals, component);
     }
 
+    /// Register a TextureFilteringComponent and apply it to its ancestor RenderableComponent.
+    pub fn register_texture_filtering(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.texture
+            .register_texture_filtering(world, visuals, component);
+    }
+
     /// Register a TextComponent and expand it into per-glyph components.
     pub fn register_text(
         &mut self,

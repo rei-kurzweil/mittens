@@ -15,6 +15,7 @@ pub mod point_light;
 pub mod renderable;
 pub mod text;
 pub mod texture;
+pub mod texture_filtering;
 pub mod transform;
 pub mod uv;
 
@@ -35,6 +36,7 @@ pub use point_light::PointLightComponent;
 pub use renderable::RenderableComponent;
 pub use text::TextComponent;
 pub use texture::{CatEngineTextureFormat, TextureComponent};
+pub use texture_filtering::TextureFilteringComponent;
 pub use transform::TransformComponent;
 pub use uv::UVComponent;
 

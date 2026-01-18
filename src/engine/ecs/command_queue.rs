@@ -110,6 +110,17 @@ impl CommandQueue {
         });
     }
 
+    /// Queue a register texture filtering command.
+    pub fn queue_register_texture_filtering(
+        &mut self,
+        component_id: crate::engine::ecs::ComponentId,
+    ) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REGISTER_TEXTURE_FILTERING { component_id },
+        });
+    }
+
     /// Queue a register text command.
     pub fn queue_register_text(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
@@ -195,6 +206,9 @@ impl CommandQueue {
                 Command::REGISTER_TEXTURE { component_id } => {
                     systems.register_texture(world, visuals, component_id);
                 }
+                Command::REGISTER_TEXTURE_FILTERING { component_id } => {
+                    systems.register_texture_filtering(world, visuals, component_id);
+                }
                 Command::REGISTER_TEXT { component_id } => {
                     systems.register_text(world, visuals, component_id, self);
                 }
@@ -248,6 +262,9 @@ enum Command {
         component_id: crate::engine::ecs::ComponentId,
     },
     REGISTER_TEXTURE {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+    REGISTER_TEXTURE_FILTERING {
         component_id: crate::engine::ecs::ComponentId,
     },
     REGISTER_TEXT {

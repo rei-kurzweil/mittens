@@ -1,6 +1,9 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
-use crate::engine::ecs::component::{RenderableComponent, TextComponent, TextureComponent, TransformComponent, UVComponent};
+use crate::engine::ecs::component::{
+    RenderableComponent, TextComponent, TextureComponent, TextureFilteringComponent,
+    TransformComponent, UVComponent,
+};
 use crate::engine::graphics::VisualWorld;
 
 #[derive(Debug, Default)]
@@ -30,6 +33,17 @@ impl TextSystem {
 
         let text = text_comp.text.clone();
         let wrap_at = text_comp.wrap_at;
+
+        // If the TextComponent has an immediate TextureFilteringComponent child,
+        // propagate it to all glyph renderables we spawn.
+        let inherited_filtering = world
+            .children_of(component)
+            .iter()
+            .find_map(|&ch| {
+                world
+                    .get_component_by_id_as::<TextureFilteringComponent>(ch)
+                    .map(|c| c.filtering)
+            });
 
         // Debug instrumentation: trace exactly what glyph subtrees get spawned.
         // (logger is currently a placeholder, so use stdout.)
@@ -95,6 +109,11 @@ impl TextSystem {
 
             let tex_id = world.add_component(TextureComponent::with_uri("assets/textures/font.dds"));
             let _ = world.add_child(r_id, tex_id);
+
+            if let Some(filtering) = inherited_filtering {
+                let f_id = world.add_component(TextureFilteringComponent::new(filtering));
+                let _ = world.add_child(r_id, f_id);
+            }
 
             spawned_glyphs += 1;
 

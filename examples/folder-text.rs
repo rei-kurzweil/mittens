@@ -188,7 +188,11 @@ fn main() {
         let text = universe.world.add_component(
             engine::ecs::component::TextComponent::with_wrap(display_text, WRAP_AT),
         );
+        let filtering = universe
+            .world
+            .add_component(engine::ecs::component::TextureFilteringComponent::nearest_magnification());
         let _ = universe.world.add_child(file_root, text);
+        let _ = universe.world.add_child(text, filtering);
 
         universe
             .world

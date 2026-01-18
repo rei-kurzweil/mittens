@@ -17,7 +17,7 @@ mod vulkano_backend {
     use crate::engine::graphics::primitives::MeshHandle;
     use crate::engine::graphics::primitives::TextureHandle;
     use crate::engine::graphics::vulkano_texture_upload;
-    use crate::engine::graphics::visual_world::VisualWorld;
+    use crate::engine::graphics::visual_world::{TextureFiltering, VisualWorld};
     use crate::engine::graphics::vulkano_swapchain::VulkanoSwapchainState;
     use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
     use vulkano::command_buffer::{
@@ -49,7 +49,9 @@ mod vulkano_backend {
 
     use vulkano::DeviceSize;
     use vulkano::format::Format;
-    use vulkano::image::sampler::{Sampler, SamplerCreateInfo};
+    use vulkano::image::sampler::{
+        Filter, Sampler, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode,
+    };
     use vulkano::pipeline::{
         DynamicState, GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineShaderStageCreateInfo,
     };
@@ -159,7 +161,9 @@ mod vulkano_backend {
         pub meshes: HashMap<MeshHandle, VulkanoGpuMesh>,
 
         pub textures: HashMap<TextureHandle, VulkanoGpuTexture>,
-        pub sampler: Arc<Sampler>,
+        pub sampler_linear: Arc<Sampler>,
+        pub sampler_nearest: Arc<Sampler>,
+        pub sampler_nearest_mag: Arc<Sampler>,
         pub default_white_texture: TextureHandle,
 
         pub pipeline_toon_mesh: Arc<GraphicsPipeline>,
@@ -167,8 +171,14 @@ mod vulkano_backend {
         // --- Per-frame CPU work reduction ---
         cached_instance_buffer: Option<Subbuffer<[InstanceData]>>,
         cached_instance_count: usize,
-        cached_material_sets:
-            HashMap<(crate::engine::graphics::MaterialHandle, TextureHandle), Arc<DescriptorSet>>,
+        cached_material_sets: HashMap<
+            (
+                crate::engine::graphics::MaterialHandle,
+                TextureHandle,
+                TextureFiltering,
+            ),
+            Arc<DescriptorSet>,
+        >,
 
         xr_offscreen: Option<XrOffscreenTargets>,
 
@@ -215,6 +225,14 @@ mod vulkano_backend {
     }
 
     impl VulkanoState {
+        fn sampler_for(&self, filtering: TextureFiltering) -> &Arc<Sampler> {
+            match filtering {
+                TextureFiltering::Linear => &self.sampler_linear,
+                TextureFiltering::Nearest => &self.sampler_nearest,
+                TextureFiltering::NearestMagnification => &self.sampler_nearest_mag,
+            }
+        }
+
         fn create_material_ubo(material: crate::engine::graphics::MaterialHandle) -> MaterialUBO {
             match material {
                 crate::engine::graphics::MaterialHandle::TOON_MESH => MaterialUBO {
@@ -542,7 +560,30 @@ mod vulkano_backend {
                 Default::default(),
             ));
 
-            let sampler = Sampler::new(device.clone(), SamplerCreateInfo::simple_repeat_linear())?;
+            let sampler_linear =
+                Sampler::new(device.clone(), SamplerCreateInfo::simple_repeat_linear())?;
+
+            let sampler_nearest = Sampler::new(
+                device.clone(),
+                SamplerCreateInfo {
+                    mag_filter: Filter::Nearest,
+                    min_filter: Filter::Nearest,
+                    mipmap_mode: SamplerMipmapMode::Nearest,
+                    address_mode: [SamplerAddressMode::Repeat; 3],
+                    ..Default::default()
+                },
+            )?;
+
+            let sampler_nearest_mag = Sampler::new(
+                device.clone(),
+                SamplerCreateInfo {
+                    mag_filter: Filter::Nearest,
+                    min_filter: Filter::Linear,
+                    mipmap_mode: SamplerMipmapMode::Nearest,
+                    address_mode: [SamplerAddressMode::Repeat; 3],
+                    ..Default::default()
+                },
+            )?;
 
             let mut state = Self {
                 context,
@@ -555,7 +596,9 @@ mod vulkano_backend {
                 meshes: HashMap::new(),
 
                 textures: HashMap::new(),
-                sampler,
+                sampler_linear,
+                sampler_nearest,
+                sampler_nearest_mag,
                 default_white_texture: TextureHandle(0),
 
                 set_layouts,
@@ -1015,12 +1058,16 @@ mod vulkano_backend {
             // Bind pipeline/descriptor sets per (material, texture).
             let mut bound_material: Option<crate::engine::graphics::MaterialHandle> = None;
             let mut bound_texture: Option<TextureHandle> = None;
+            let mut bound_filtering: Option<TextureFiltering> = None;
 
             for batch in visual_world.draw_batches() {
                 let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
 
+                let filtering = batch.texture_filtering;
+
                 if bound_material != Some(batch.material)
                     || bound_texture != Some(texture_handle)
+                    || bound_filtering != Some(filtering)
                 {
                     match batch.material {
                         crate::engine::graphics::MaterialHandle::TOON_MESH
@@ -1029,7 +1076,7 @@ mod vulkano_backend {
                                 continue;
                             };
 
-                            let material_key = (batch.material, texture_handle);
+                            let material_key = (batch.material, texture_handle, filtering);
                             let material_set = if let Some(set) =
                                 self.cached_material_sets.get(&material_key)
                             {
@@ -1050,6 +1097,8 @@ mod vulkano_backend {
                                     material_ubo,
                                 )?;
 
+                                let sampler = self.sampler_for(filtering).clone();
+
                                 let set = DescriptorSet::new(
                                     self.descriptor_set_allocator.clone(),
                                     self.set_layouts.material.clone(),
@@ -1058,7 +1107,7 @@ mod vulkano_backend {
                                         WriteDescriptorSet::image_view_sampler(
                                             1,
                                             tex.view.clone(),
-                                            self.sampler.clone(),
+                                            sampler,
                                         ),
                                     ],
                                     [],
@@ -1083,6 +1132,7 @@ mod vulkano_backend {
 
                     bound_material = Some(batch.material);
                     bound_texture = Some(texture_handle);
+                    bound_filtering = Some(filtering);
                 }
 
                 let Some(mesh) = self.meshes.get(&batch.mesh) else {

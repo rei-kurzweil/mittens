@@ -1,7 +1,9 @@
-use crate::engine::ecs::component::{CatEngineTextureFormat, RenderableComponent, TextureComponent};
+use crate::engine::ecs::component::{
+    CatEngineTextureFormat, RenderableComponent, TextureComponent, TextureFilteringComponent,
+};
 use crate::engine::ecs::component::texture::TextureSource;
 use crate::engine::ecs::{ComponentId, World};
-use crate::engine::graphics::{TextureHandle, TextureUploader, VisualWorld};
+use crate::engine::graphics::{TextureFiltering, TextureHandle, TextureUploader, VisualWorld};
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -13,12 +15,21 @@ struct TextureRecord {
     gpu: Option<TextureHandle>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct TextureFilteringRecord {
+    filtering: TextureFiltering,
+}
+
 #[derive(Debug, Default)]
 pub struct TextureSystem {
     textures: HashMap<ComponentId, TextureRecord>,
     uri_cache: HashMap<String, TextureHandle>,
     /// RenderableComponent cid -> TextureComponent cid
     pending_attach: HashMap<ComponentId, ComponentId>,
+
+    filterings: HashMap<ComponentId, TextureFilteringRecord>,
+    /// RenderableComponent cid -> TextureFilteringComponent cid
+    pending_filtering_attach: HashMap<ComponentId, ComponentId>,
 }
 
 impl TextureSystem {
@@ -70,6 +81,38 @@ impl TextureSystem {
         }
     }
 
+    pub fn register_texture_filtering(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let Some(filter_comp) =
+            world.get_component_by_id_as::<TextureFilteringComponent>(component)
+        else {
+            return;
+        };
+
+        self.filterings
+            .entry(component)
+            .or_insert(TextureFilteringRecord {
+                filtering: filter_comp.filtering,
+            });
+
+        // If this filtering is attached under a renderable, remember that relationship.
+        let mut cur = component;
+        while let Some(parent) = world.parent_of(cur) {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(parent)
+                .is_some()
+            {
+                self.pending_filtering_attach.insert(parent, component);
+                break;
+            }
+            cur = parent;
+        }
+    }
+
     /// Decode+upload any textures that are now attachable to renderables.
     ///
     /// Must run after renderables are flushed into `VisualWorld` so we can update instance handles.
@@ -79,6 +122,35 @@ impl TextureSystem {
         visuals: &mut VisualWorld,
         uploader: &mut dyn TextureUploader,
     ) {
+        // Apply any pending filtering choices to renderable instances.
+        let filtering_pairs: Vec<(ComponentId, ComponentId)> = self
+            .pending_filtering_attach
+            .iter()
+            .map(|(&r, &f)| (r, f))
+            .collect();
+
+        for (renderable_cid, filtering_cid) in filtering_pairs {
+            let Some(renderable_comp) =
+                world.get_component_by_id_as::<RenderableComponent>(renderable_cid)
+            else {
+                let _ = self.pending_filtering_attach.remove(&renderable_cid);
+                continue;
+            };
+
+            let Some(instance_handle) = renderable_comp.get_handle() else {
+                // Renderable not in VisualWorld yet.
+                continue;
+            };
+
+            let Some(record) = self.filterings.get(&filtering_cid).copied() else {
+                let _ = self.pending_filtering_attach.remove(&renderable_cid);
+                continue;
+            };
+
+            let _ = visuals.update_texture_filtering(instance_handle, record.filtering);
+            let _ = self.pending_filtering_attach.remove(&renderable_cid);
+        }
+
         let pairs: Vec<(ComponentId, ComponentId)> =
             self.pending_attach.iter().map(|(&r, &t)| (r, t)).collect();
 
