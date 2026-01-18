@@ -164,6 +164,12 @@ mod vulkano_backend {
 
         pub pipeline_toon_mesh: Arc<GraphicsPipeline>,
 
+        // --- Per-frame CPU work reduction ---
+        cached_instance_buffer: Option<Subbuffer<[InstanceData]>>,
+        cached_instance_count: usize,
+        cached_material_sets:
+            HashMap<(crate::engine::graphics::MaterialHandle, TextureHandle), Arc<DescriptorSet>>,
+
         xr_offscreen: Option<XrOffscreenTargets>,
 
         pub window_resized: bool,
@@ -556,6 +562,10 @@ mod vulkano_backend {
 
                 pipeline_toon_mesh,
 
+                cached_instance_buffer: None,
+                cached_instance_count: 0,
+                cached_material_sets: HashMap::new(),
+
                 xr_offscreen: None,
 
                 window_resized: false,
@@ -799,7 +809,7 @@ mod vulkano_backend {
         }
 
         fn build_draw_batches_command_buffer(
-            &self,
+            &mut self,
             visual_world: &mut VisualWorld,
             camera_target: crate::engine::graphics::CameraTarget,
             eye: usize,
@@ -812,52 +822,75 @@ mod vulkano_backend {
             // Always rebuild draw cache cheaply.
             visual_world.prepare_draw_cache();
 
+            // Consume dirty flags so they reflect "changed since last render".
+            // For multi-eye (XR) rendering, only consume on the first eye.
+            let instance_data_dirty = if eye == 0 {
+                visual_world.take_instance_data_dirty()
+            } else {
+                visual_world.instance_data_dirty()
+            };
+
             // Build instance buffer in draw order so each DrawBatch maps to a contiguous range.
             let instance_count = visual_world.draw_order().len();
             let instances_ref = visual_world.instances();
 
-            let instance_data_iter = visual_world.draw_order().iter().map(|&idx| {
-                let inst = instances_ref[idx as usize];
-                let m = inst.transform.model;
-                InstanceData {
-                    i_model_c0: m[0],
-                    i_model_c1: m[1],
-                    i_model_c2: m[2],
-                    i_model_c3: m[3],
-                    i_color: inst.color,
-                    i_emissive: inst.emissive,
-                }
-            });
+            let need_instance_buffer = instance_data_dirty
+                || self.cached_instance_buffer.is_none()
+                || self.cached_instance_count != instance_count;
 
             // `Buffer::from_iter` with an empty iterator can panic inside Vulkano.
-            let instance_buffer: Subbuffer<[InstanceData]> = if instance_count == 0 {
-                Buffer::from_iter(
-                    self.context.memory_allocator().clone(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::VERTEX_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                    std::iter::once(InstanceData::default()),
-                )?
+            let instance_buffer: Subbuffer<[InstanceData]> = if !need_instance_buffer {
+                self.cached_instance_buffer
+                    .as_ref()
+                    .expect("cached_instance_buffer")
+                    .clone()
             } else {
-                Buffer::from_iter(
-                    self.context.memory_allocator().clone(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::VERTEX_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                    instance_data_iter,
-                )?
+                let instance_data_iter = visual_world.draw_order().iter().map(|&idx| {
+                    let inst = instances_ref[idx as usize];
+                    let m = inst.transform.model;
+                    InstanceData {
+                        i_model_c0: m[0],
+                        i_model_c1: m[1],
+                        i_model_c2: m[2],
+                        i_model_c3: m[3],
+                        i_color: inst.color,
+                        i_emissive: inst.emissive,
+                    }
+                });
+
+                let buf: Subbuffer<[InstanceData]> = if instance_count == 0 {
+                    Buffer::from_iter(
+                        self.context.memory_allocator().clone(),
+                        BufferCreateInfo {
+                            usage: BufferUsage::VERTEX_BUFFER,
+                            ..Default::default()
+                        },
+                        AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                            ..Default::default()
+                        },
+                        std::iter::once(InstanceData::default()),
+                    )?
+                } else {
+                    Buffer::from_iter(
+                        self.context.memory_allocator().clone(),
+                        BufferCreateInfo {
+                            usage: BufferUsage::VERTEX_BUFFER,
+                            ..Default::default()
+                        },
+                        AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                            ..Default::default()
+                        },
+                        instance_data_iter,
+                    )?
+                };
+
+                self.cached_instance_count = instance_count;
+                self.cached_instance_buffer = Some(buf.clone());
+                buf
             };
 
             let clear_color = match camera_target {
@@ -996,34 +1029,44 @@ mod vulkano_backend {
                                 continue;
                             };
 
-                            let material_ubo = Self::create_material_ubo(batch.material);
-                            let material_buffer: Subbuffer<MaterialUBO> = Buffer::from_data(
-                                self.context.memory_allocator().clone(),
-                                BufferCreateInfo {
-                                    usage: BufferUsage::UNIFORM_BUFFER,
-                                    ..Default::default()
-                                },
-                                AllocationCreateInfo {
-                                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                                    ..Default::default()
-                                },
-                                material_ubo,
-                            )?;
+                            let material_key = (batch.material, texture_handle);
+                            let material_set = if let Some(set) =
+                                self.cached_material_sets.get(&material_key)
+                            {
+                                set.clone()
+                            } else {
+                                let material_ubo = Self::create_material_ubo(batch.material);
+                                let material_buffer: Subbuffer<MaterialUBO> = Buffer::from_data(
+                                    self.context.memory_allocator().clone(),
+                                    BufferCreateInfo {
+                                        usage: BufferUsage::UNIFORM_BUFFER,
+                                        ..Default::default()
+                                    },
+                                    AllocationCreateInfo {
+                                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                                        ..Default::default()
+                                    },
+                                    material_ubo,
+                                )?;
 
-                            let material_set = DescriptorSet::new(
-                                self.descriptor_set_allocator.clone(),
-                                self.set_layouts.material.clone(),
-                                [
-                                    WriteDescriptorSet::buffer(0, material_buffer),
-                                    WriteDescriptorSet::image_view_sampler(
-                                        1,
-                                        tex.view.clone(),
-                                        self.sampler.clone(),
-                                    ),
-                                ],
-                                [],
-                            )?;
+                                let set = DescriptorSet::new(
+                                    self.descriptor_set_allocator.clone(),
+                                    self.set_layouts.material.clone(),
+                                    [
+                                        WriteDescriptorSet::buffer(0, material_buffer),
+                                        WriteDescriptorSet::image_view_sampler(
+                                            1,
+                                            tex.view.clone(),
+                                            self.sampler.clone(),
+                                        ),
+                                    ],
+                                    [],
+                                )?;
+
+                                self.cached_material_sets.insert(material_key, set.clone());
+                                set
+                            };
 
                             cbb.bind_pipeline_graphics(self.pipeline_toon_mesh.clone())?;
                             cbb.bind_descriptor_sets(
@@ -1048,7 +1091,7 @@ mod vulkano_backend {
                 cbb.bind_vertex_buffers(0, (mesh.vertices.clone(), instance_buffer.clone()))?;
                 cbb.bind_index_buffer(mesh.indices.clone())?;
 
-                if instance_count > 0 {
+                if instance_count > 0 && batch.count > 0 {
                     unsafe {
                         cbb.draw_indexed(
                             mesh.index_count,
@@ -1063,7 +1106,9 @@ mod vulkano_backend {
 
             cbb.end_rendering()?;
 
-            Ok(cbb.build()?)
+            let cb = cbb.build()?;
+
+            Ok(cb)
         }
 
         pub fn render_visual_world(

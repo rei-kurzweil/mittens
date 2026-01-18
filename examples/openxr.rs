@@ -48,7 +48,7 @@ fn main() {
         .render_assets
         .get_mesh(engine::graphics::BuiltinMeshType::Cube);
 
-    let n: usize = 16;
+    let n: usize = 32;
     let cube_scale: f32 = 0.10;
     let gap: f32 = 0.10;
     let step: f32 = cube_scale + gap;
@@ -70,7 +70,7 @@ fn main() {
 
     for z in 0..n {
         for y in 0..n {
-            for x in 0..n {
+            for x in 0..n*2 {
                 let px = x as f32 * step - half_extent_x;
                 let py = y as f32 * step - half_extent_y;
                 let pz = z as f32 * step - half_extent_z;

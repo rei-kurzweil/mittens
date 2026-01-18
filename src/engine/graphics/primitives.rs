@@ -170,6 +170,16 @@ pub struct MeshHandle(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CpuMeshHandle(pub u32);
 
+impl CpuMeshHandle {
+    // These constants are relied on by scene serialization and built-in inference.
+    // Keep in sync with `RenderAssets::register_builtin_meshes` order.
+    pub const TRIANGLE_2D: CpuMeshHandle = CpuMeshHandle(0);
+    pub const QUAD_2D: CpuMeshHandle = CpuMeshHandle(1);
+    pub const CUBE: CpuMeshHandle = CpuMeshHandle(2);
+    pub const TETRAHEDRON: CpuMeshHandle = CpuMeshHandle(3);
+    pub const SPHERE: CpuMeshHandle = CpuMeshHandle(4);
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MaterialHandle(pub u32);
 

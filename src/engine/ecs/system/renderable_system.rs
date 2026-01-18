@@ -31,6 +31,13 @@ pub struct RenderableSystem {
     /// Keyed by the RenderableComponent's ComponentId.
     pending_uv: HashMap<ComponentId, Vec<[f32; 2]>>,
 
+    /// Cache of CPU meshes with baked UV overrides.
+    ///
+    /// Text rendering creates many glyphs that repeat the same UVs (same character) across many
+    /// instances. Without caching, we end up cloning/registering a new CPU mesh per glyph
+    /// instance, which breaks batching and explodes draw calls.
+    uv_mesh_cache: HashMap<UvMeshCacheKey, CpuMeshHandle>,
+
     /// Per-instance color override for a renderable.
     ///
     /// Keyed by the RenderableComponent's ComponentId.
@@ -40,6 +47,16 @@ pub struct RenderableSystem {
     ///
     /// Keyed by the RenderableComponent's ComponentId.
     pending_emissive: HashMap<ComponentId, u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct UvMeshCacheKey {
+    base_mesh: CpuMeshHandle,
+    /// Packed f32 bits for 4 UVs (x,y per vertex) => 8 u32s.
+    ///
+    /// This cache currently targets QUAD-like meshes (4 vertices), which is the hot path for
+    /// text glyphs.
+    uv_bits: [u32; 8],
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +81,37 @@ fn clone_mesh_with_uv_overrides(
     }
 
     Some(render_assets.register_mesh(mesh))
+}
+
+impl RenderableSystem {
+    fn clone_mesh_with_uv_overrides_cached(
+        &mut self,
+        render_assets: &mut RenderAssets,
+        base_mesh: CpuMeshHandle,
+        uvs: &[[f32; 2]],
+    ) -> Option<CpuMeshHandle> {
+        // Fast path: cache only for 4-vertex meshes (text glyph quads).
+        let vertex_count = render_assets.cpu_mesh(base_mesh)?.vertices.len();
+        if vertex_count == 4 && uvs.len() >= 4 {
+            let mut uv_bits = [0u32; 8];
+            for i in 0..4 {
+                uv_bits[i * 2] = uvs[i][0].to_bits();
+                uv_bits[i * 2 + 1] = uvs[i][1].to_bits();
+            }
+
+            let key = UvMeshCacheKey { base_mesh, uv_bits };
+            if let Some(&cached) = self.uv_mesh_cache.get(&key) {
+                return Some(cached);
+            }
+
+            let new_mesh = clone_mesh_with_uv_overrides(render_assets, base_mesh, uvs)?;
+            self.uv_mesh_cache.insert(key, new_mesh);
+            return Some(new_mesh);
+        }
+
+        // Fallback: uncached bake for arbitrary meshes.
+        clone_mesh_with_uv_overrides(render_assets, base_mesh, uvs)
+    }
 }
 
 impl RenderableSystem {
@@ -149,7 +197,8 @@ impl RenderableSystem {
                 continue;
             };
 
-            let Some(new_mesh) = clone_mesh_with_uv_overrides(render_assets, base_mesh, &uvs)
+            let Some(new_mesh) =
+                self.clone_mesh_with_uv_overrides_cached(render_assets, base_mesh, &uvs)
             else {
                 continue;
             };
@@ -388,7 +437,8 @@ impl RenderableSystem {
             }
 
             if let Some(uvs) = self.pending_uv.get(&p.renderable_cid).cloned() {
-                if let Some(new_mesh) = clone_mesh_with_uv_overrides(render_assets, cpu_mesh, &uvs)
+                if let Some(new_mesh) =
+                    self.clone_mesh_with_uv_overrides_cached(render_assets, cpu_mesh, &uvs)
                 {
                     cpu_mesh = new_mesh;
                     if let Some(pending) = self.pending.get_mut(&key) {

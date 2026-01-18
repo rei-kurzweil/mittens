@@ -199,4 +199,56 @@ impl MeshFactory {
 
         CpuMesh::new(vertices, indices)
     }
+
+    /// UV sphere centered at origin.
+    ///
+    /// Radius is 0.5 to match the unit-ish cube extents.
+    pub fn sphere() -> CpuMesh {
+        let radius = 0.5_f32;
+        let rings: u32 = 16;
+        let segments: u32 = 32;
+
+        let mut vertices: Vec<CpuVertex> = Vec::new();
+        let mut indices: Vec<u32> = Vec::new();
+
+        // Create vertices.
+        // v in [0..rings], u in [0..segments]
+        for r in 0..=rings {
+            let v = r as f32 / rings as f32;
+            let theta = v * std::f32::consts::PI; // 0..pi
+            let (st, ct) = theta.sin_cos();
+
+            for s in 0..=segments {
+                let u = s as f32 / segments as f32;
+                let phi = u * std::f32::consts::TAU; // 0..2pi
+                let (sp, cp) = phi.sin_cos();
+
+                let x = cp * st;
+                let y = ct;
+                let z = sp * st;
+
+                vertices.push(CpuVertex {
+                    pos: [x * radius, y * radius, z * radius],
+                    uv: [u, 1.0 - v],
+                });
+            }
+        }
+
+        // Create indices.
+        let stride = segments + 1;
+        for r in 0..rings {
+            for s in 0..segments {
+                let i0 = r * stride + s;
+                let i1 = i0 + 1;
+                let i2 = (r + 1) * stride + s;
+                let i3 = i2 + 1;
+
+                // Two triangles per quad.
+                indices.extend_from_slice(&[i0, i2, i1]);
+                indices.extend_from_slice(&[i1, i2, i3]);
+            }
+        }
+
+        CpuMesh::new(vertices, indices)
+    }
 }

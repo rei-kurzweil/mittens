@@ -66,6 +66,10 @@ impl TextureComponent {
         }
     }
 
+    pub fn with_uri(uri: impl Into<String>) -> Self {
+        Self::new(uri)
+    }
+
     pub fn from_handle(handle: TextureHandle) -> Self {
         Self {
             source: TextureSource::Handle(handle),

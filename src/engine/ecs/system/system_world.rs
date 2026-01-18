@@ -1,12 +1,14 @@
 use super::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::system::CameraSystem;
+use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::InputSystem;
 use crate::engine::ecs::system::LightSystem;
 use crate::engine::ecs::system::OpenXRSystem;
 use crate::engine::ecs::system::RenderableSystem;
 use crate::engine::ecs::system::System;
+use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
@@ -16,6 +18,7 @@ use crate::engine::user_input::InputState;
 #[derive(Debug, Default)]
 pub struct SystemWorld {
     pub transform:  TransformSystem,
+    pub collision:  CollisionSystem,
     pub renderable: RenderableSystem,
 
     pub gltf:       GLTFSystem,
@@ -26,6 +29,7 @@ pub struct SystemWorld {
     pub input:      InputSystem,
     pub light:      LightSystem,
     
+    pub text:       TextSystem,
     pub texture:    TextureSystem,
 }
 
@@ -73,6 +77,20 @@ impl SystemWorld {
         component: ComponentId,
     ) {
         self.texture.register_texture(world, visuals, component);
+    }
+
+    /// Register a TextComponent and expand it into per-glyph components.
+    pub fn register_text(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+        queue: &mut crate::engine::ecs::CommandQueue,
+    ) {
+        let spawned = self.text.register_text(world, visuals, component);
+        for g in spawned {
+            world.init_component_tree(g.transform, queue);
+        }
     }
 
     /// Register an EmissiveComponent and apply it to its ancestor RenderableComponent.
@@ -309,12 +327,18 @@ impl SystemWorld {
 
         // Ensure transforms are propagated before any camera systems consume world matrices.
         self.transform.tick(world, visuals, input, dt_sec);
+
+        // Collision runs before camera/OpenXR for now; it reads cached world transforms.
+        self.collision.tick(world, visuals, input, dt_sec);
+
         // Update window camera + select active XR camera rig before OpenXR consumes it.
         self.camera.tick(world, visuals, input, dt_sec);
         // OpenXR consumes the latest rig transform + publishes per-eye cameras.
         self.openxr.tick(world, visuals, input, dt_sec);
 
         self.renderable.tick(world, visuals, input, dt_sec);
+
+        self.text.tick(world, visuals, input, dt_sec);
 
         self.light.tick(world, visuals, input, dt_sec);
     }

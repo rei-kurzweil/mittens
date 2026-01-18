@@ -220,6 +220,7 @@ impl ComponentCodec {
             "input" => Ok(Box::new(InputComponent::new())),
             "input_transform_mode" => Ok(Box::new(InputTransformModeComponent::default())),
             "openxr" => Ok(Box::new(OpenXRComponent::off())),
+            "text" => Ok(Box::new(TextComponent::new(""))),
             _ => Err(format!("Unknown component type: '{}'", type_name)),
         }
     }
