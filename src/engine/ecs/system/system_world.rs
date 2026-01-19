@@ -114,6 +114,26 @@ impl SystemWorld {
         self.renderable.register_emissive(world, visuals, component);
     }
 
+    /// Register a CollisionComponent instance with the CollisionSystem.
+    pub fn register_collision(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.collision.register_collision(world, visuals, component);
+    }
+
+    /// Remove a CollisionComponent instance from the CollisionSystem.
+    pub fn remove_collision(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.collision.remove_collision(world, visuals, component);
+    }
+
     /// Register an OpenXRComponent (initializes OpenXR runtime if enabled).
     pub fn register_openxr(
         &mut self,
@@ -169,6 +189,7 @@ impl SystemWorld {
             component,
             &mut self.camera,
             &mut self.light,
+            &mut self.collision,
         );
     }
 

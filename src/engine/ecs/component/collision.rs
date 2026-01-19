@@ -62,6 +62,14 @@ impl Component for CollisionComponent {
         self
     }
 
+    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
+        queue.queue_register_collision(component);
+    }
+
+    fn cleanup(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
+        queue.queue_remove_collision(component);
+    }
+
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
         let mut map = std::collections::HashMap::new();
         let mode_str = match self.mode {

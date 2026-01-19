@@ -89,6 +89,125 @@ impl CollisionSystem {
         Self::default()
     }
 
+    pub fn register_collision(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.ensure_worker();
+        self.upsert_component(world, component);
+    }
+
+    /// Update a collision object when its parent transform changes.
+    ///
+    /// Intended to be called by TransformSystem when `transform_component` has `component`
+    /// as a direct child.
+    pub fn update_from_transform(
+        &mut self,
+        world: &mut World,
+        component: ComponentId,
+        transform_component: ComponentId,
+    ) {
+        self.ensure_worker();
+
+        let position_world = match world
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(
+                transform_component,
+            )
+            .map(|t| t.transform.matrix_world)
+        {
+            Some(m) => {
+                let p = m[3];
+                [p[0], p[1], p[2]]
+            }
+            None => TransformSystem::world_position(world, component).unwrap_or([0.0, 0.0, 0.0]),
+        };
+
+        self.upsert_component_with_position(world, component, position_world);
+    }
+
+    pub fn remove_collision(
+        &mut self,
+        _world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.ensure_worker();
+        if let Some(tx) = self.to_worker.as_ref() {
+            let _ = tx.send(CollisionMessage::RemoveObject { component });
+        }
+        self.known.remove(&component);
+    }
+
+    fn upsert_component(&mut self, world: &mut World, component: ComponentId) {
+        let Some(collision_comp) = world.get_component_by_id_as::<CollisionComponent>(component)
+        else {
+            return;
+        };
+
+        let Some(tx) = self.to_worker.as_ref() else {
+            return;
+        };
+
+        let guid = match world.get_component_record(component) {
+            Some(node) => node.guid,
+            None => return,
+        };
+
+        let position_world =
+            TransformSystem::world_position(world, component).unwrap_or([0.0, 0.0, 0.0]);
+        self.upsert_component_with_position(world, component, position_world);
+    }
+
+    fn upsert_component_with_position(
+        &mut self,
+        world: &mut World,
+        component: ComponentId,
+        position_world: [f32; 3],
+    ) {
+        let Some(collision_comp) = world.get_component_by_id_as::<CollisionComponent>(component)
+        else {
+            return;
+        };
+
+        let Some(tx) = self.to_worker.as_ref() else {
+            return;
+        };
+
+        let guid = match world.get_component_record(component) {
+            Some(node) => node.guid,
+            None => return,
+        };
+
+        let mode = collision_comp.mode;
+
+        let shape = resolve_shape(world, component).unwrap_or_else(|| {
+            crate::engine::ecs::system::model::collision_types::CollisionShape::CUBE()
+        });
+
+        let msg = if self.known.contains(&component) {
+            CollisionMessage::UpdateObject {
+                component,
+                guid,
+                mode,
+                shape,
+                position_world,
+            }
+        } else {
+            CollisionMessage::AddObject {
+                component,
+                guid,
+                mode,
+                shape,
+                position_world,
+            }
+        };
+
+        let _ = tx.send(msg);
+        self.known.insert(component);
+    }
+
     fn ensure_worker(&mut self) {
         if self.to_worker.is_some() {
             return;
@@ -122,7 +241,7 @@ impl Drop for CollisionSystem {
 impl System for CollisionSystem {
     fn tick(
         &mut self,
-        world: &mut World,
+        _world: &mut World,
         _visuals: &mut VisualWorld,
         _input: &InputState,
         _dt_sec: f32,
@@ -152,57 +271,6 @@ impl System for CollisionSystem {
                 }
             }
         }
-
-        // Discover collision components and sync into the worker.
-        let mut seen: HashSet<ComponentId> = HashSet::new();
-        for cid in world.all_components() {
-            let Some(collision_comp) = world.get_component_by_id_as::<CollisionComponent>(cid) else {
-                continue;
-            };
-
-            let guid = match world.get_component_record(cid) {
-                Some(node) => node.guid,
-                None => continue,
-            };
-
-            let mode = collision_comp.mode;
-            let position_world = TransformSystem::world_position(world, cid).unwrap_or([0.0, 0.0, 0.0]);
-
-            let shape = resolve_shape(world, cid).unwrap_or_else(|| {
-                // If no shape is specified and we can't infer, fall back to a unit cube.
-                // (This keeps the thread demo functional without requiring authoring shape components.)
-                crate::engine::ecs::system::model::collision_types::CollisionShape::CUBE()
-            });
-
-            seen.insert(cid);
-
-            let msg = if self.known.contains(&cid) {
-                CollisionMessage::UpdateObject {
-                    component: cid,
-                    guid,
-                    mode,
-                    shape,
-                    position_world,
-                }
-            } else {
-                CollisionMessage::AddObject {
-                    component: cid,
-                    guid,
-                    mode,
-                    shape,
-                    position_world,
-                }
-            };
-
-            let _ = tx.send(msg);
-        }
-
-        // Remove objects that disappeared.
-        for old in self.known.difference(&seen).copied().collect::<Vec<_>>() {
-            let _ = tx.send(CollisionMessage::RemoveObject { component: old });
-        }
-
-        self.known = seen;
 
         let _ = tx.send(CollisionMessage::Tick);
     }
@@ -398,6 +466,12 @@ fn worker_tick(state: &WorkerState, tx: &mpsc::Sender<CollisionMessage>) {
         for j in (i + 1)..all.len() {
             let a = all[i];
             let b = all[j];
+
+            // MVP policy: ignore static-static collisions (walls touching walls).
+            if a.mode == CollisionMode::Static && b.mode == CollisionMode::Static {
+                continue;
+            }
+
             if intersects(a, b) {
                 let _ = tx.send(CollisionMessage::CollisionDetected {
                     a_component: a.component,

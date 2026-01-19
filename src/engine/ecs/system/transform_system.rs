@@ -1,8 +1,10 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    Camera2DComponent, Camera3DComponent, RenderableComponent, TransformComponent,
+    Camera2DComponent, Camera3DComponent, CollisionComponent, RenderableComponent,
+    TransformComponent,
 };
+use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::TransformMatrix;
@@ -82,6 +84,7 @@ impl TransformSystem {
         component: ComponentId,
         camera_system: &mut crate::engine::ecs::system::CameraSystem,
         light_system: &mut crate::engine::ecs::system::LightSystem,
+        collision_system: &mut CollisionSystem,
     ) {
         // Recompute cached world matrices for this transform and all descendant transforms.
         // Then update any dependent renderables/cameras under the subtree.
@@ -170,6 +173,14 @@ impl TransformSystem {
                         camera_system.update_camera_3d_from_parent_transform(
                             world, visuals, child, node,
                         );
+                    }
+
+                    // If this transform directly parents a CollisionComponent, update it.
+                    if world
+                        .get_component_by_id_as::<CollisionComponent>(child)
+                        .is_some()
+                    {
+                        collision_system.update_from_transform(world, child, node);
                     }
                 }
 
