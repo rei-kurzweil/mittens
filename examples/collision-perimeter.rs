@@ -46,7 +46,7 @@ fn main() {
     );
     let light = universe.world.add_component(
         engine::ecs::component::PointLightComponent::new()
-            .with_distance(50.0)
+            .with_distance(180.0)
             .with_color(1.0, 1.0, 1.0),
     );
     let _ = universe.world.add_child(light_transform, light);
@@ -74,7 +74,7 @@ fn main() {
             .add_component(engine::ecs::component::ColorComponent::rgba(0.9, 0.2, 0.2, 1.0));
 
         let _ = universe.world.add_child(t, r);
-        let _ = universe.world.add_child(r, cn);
+        let _ = universe.world.add_child(t, cn);
         let _ = universe.world.add_child(r, c);
 
         universe

@@ -141,20 +141,6 @@ impl CollisionSystem {
     }
 
     fn upsert_component(&mut self, world: &mut World, component: ComponentId) {
-        let Some(collision_comp) = world.get_component_by_id_as::<CollisionComponent>(component)
-        else {
-            return;
-        };
-
-        let Some(tx) = self.to_worker.as_ref() else {
-            return;
-        };
-
-        let guid = match world.get_component_record(component) {
-            Some(node) => node.guid,
-            None => return,
-        };
-
         let position_world =
             TransformSystem::world_position(world, component).unwrap_or([0.0, 0.0, 0.0]);
         self.upsert_component_with_position(world, component, position_world);
@@ -166,6 +152,22 @@ impl CollisionSystem {
         component: ComponentId,
         position_world: [f32; 3],
     ) {
+        // Semantics: a CollisionComponent only has behavior when it is a direct child of a
+        // TransformComponent. Otherwise, it should not participate in collision at all.
+        let has_transform_parent = world
+            .parent_of(component)
+            .and_then(|p| world.get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(p).map(|_| p))
+            .is_some();
+
+        if !has_transform_parent {
+            if self.known.remove(&component) {
+                if let Some(tx) = self.to_worker.as_ref() {
+                    let _ = tx.send(CollisionMessage::RemoveObject { component });
+                }
+            }
+            return;
+        }
+
         let Some(collision_comp) = world.get_component_by_id_as::<CollisionComponent>(component)
         else {
             return;

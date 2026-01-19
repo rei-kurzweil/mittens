@@ -10,10 +10,12 @@ use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::user_input::InputState;
 
-/// System responsible for syncing `TransformComponent` changes into `VisualWorld`.
+/// System responsible for 
+/// syncing `TransformComponent` changes into `VisualWorld`.
+/// applying side effects to direct children of transforms
+/// and calculating world matrices for descendant transform components.
 ///
 /// Key points:
-/// - An entity can have multiple TransformComponents.
 /// - A `TransformComponent` can parent other transforms to form groups.
 /// - Instances in `VisualWorld` are created per `RenderableComponent` under transforms.
 #[derive(Debug, Default)]

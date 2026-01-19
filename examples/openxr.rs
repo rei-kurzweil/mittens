@@ -50,7 +50,7 @@ fn main() {
 
     let n: usize = 32;
     let cube_scale: f32 = 0.10;
-    let gap: f32 = 0.10;
+    let gap: f32 = 0.50;
     let step: f32 = cube_scale + gap;
 
     // Center positions around 0 by subtracting half the extent (in steps).
@@ -89,7 +89,7 @@ fn main() {
 
                 let denom = (n - 1) as f32;
                 let color = engine::ecs::component::ColorComponent::rgba(
-                    x as f32 / denom,
+                    f32::sin(x as f32 / 10.0),
                     y as f32 / denom,
                     z as f32 / denom,
                     1.0,
