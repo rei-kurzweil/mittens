@@ -34,7 +34,7 @@ fn main() {
         .unwrap_or(1.0);
 
     // Safety caps: this demo can explode the ECS if we load huge projects.
-    const MAX_FILES: usize = 30;
+    const MAX_FILES: usize = 42;
     const MAX_CHARS_PER_FILE: usize = 10_000;
     const WRAP_AT: usize = 90;
     const TEXT_SCALE: f32 = 0.01;
@@ -182,7 +182,8 @@ fn main() {
         let file_root = universe.world.add_component(
             engine::ecs::component::TransformComponent::new()
                 .with_position(x, 1.0, 0.0)
-                .with_scale(TEXT_SCALE, TEXT_SCALE, 1.0),
+                .with_scale(TEXT_SCALE, TEXT_SCALE, 1.0)
+                .with_rotation_euler(0.0, std::f32::consts::PI / 6.0, 0.0),
         );
 
         let text = universe.world.add_component(
@@ -191,8 +192,16 @@ fn main() {
         let filtering = universe
             .world
             .add_component(engine::ecs::component::TextureFilteringComponent::nearest_magnification());
+        // let color = universe
+        //     .world
+        //     .add_component(engine::ecs::component::ColorComponent::rgba(0.7, 0.7, 1.0, 1.0));
+        let emissive = universe
+            .world
+            .add_component(engine::ecs::component::EmissiveComponent::on());
         let _ = universe.world.add_child(file_root, text);
         let _ = universe.world.add_child(text, filtering);
+        //let _ = universe.world.add_child(text, color);
+        let _ = universe.world.add_child(text, emissive);
 
         universe
             .world

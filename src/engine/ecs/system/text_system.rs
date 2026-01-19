@@ -1,8 +1,8 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    RenderableComponent, TextComponent, TextureComponent, TextureFilteringComponent,
-    TransformComponent, UVComponent,
+    ColorComponent, EmissiveComponent, RenderableComponent, TextComponent, TextureComponent,
+    TextureFilteringComponent, TransformComponent, UVComponent,
 };
 use crate::engine::graphics::VisualWorld;
 
@@ -43,6 +43,21 @@ impl TextSystem {
                 world
                     .get_component_by_id_as::<TextureFilteringComponent>(ch)
                     .map(|c| c.filtering)
+            });
+
+        // Also allow styling at the TextComponent root: immediate Color/Emissive children.
+        let inherited_color = world
+            .children_of(component)
+            .iter()
+            .find_map(|&ch| world.get_component_by_id_as::<ColorComponent>(ch).map(|c| c.rgba));
+
+        let inherited_emissive = world
+            .children_of(component)
+            .iter()
+            .find_map(|&ch| {
+                world
+                    .get_component_by_id_as::<EmissiveComponent>(ch)
+                    .map(|e| e.enabled)
             });
 
         // Debug instrumentation: trace exactly what glyph subtrees get spawned.
@@ -113,6 +128,16 @@ impl TextSystem {
             if let Some(filtering) = inherited_filtering {
                 let f_id = world.add_component(TextureFilteringComponent::new(filtering));
                 let _ = world.add_child(r_id, f_id);
+            }
+
+            if let Some(rgba) = inherited_color {
+                let c_id = world.add_component(ColorComponent { rgba });
+                let _ = world.add_child(r_id, c_id);
+            }
+
+            if let Some(enabled) = inherited_emissive {
+                let e_id = world.add_component(EmissiveComponent { enabled });
+                let _ = world.add_child(r_id, e_id);
             }
 
             spawned_glyphs += 1;
