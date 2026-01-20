@@ -34,6 +34,10 @@ pub struct InputState {
     /// Mouse movement delta since last frame (current - previous).
     mouse_movement: (f32, f32),
 
+    /// Derived mouse drag state (active when a button is held while the cursor moves).
+    mouse_dragging: bool,
+    mouse_drag_delta: (f32, f32),
+
     /// Accumulated wheel delta since last `begin_frame`.
     pub wheel_delta: (f32, f32),
 }
@@ -53,6 +57,16 @@ impl InputState {
             _ => (0.0, 0.0),
         };
         self.prev_cursor_pos = self.cursor_pos;
+
+        // Derive drag state from buttons + movement.
+        let any_button_down = !self.mouse_down.is_empty();
+        let moved = self.mouse_movement.0 != 0.0 || self.mouse_movement.1 != 0.0;
+        self.mouse_dragging = any_button_down && moved;
+        self.mouse_drag_delta = if self.mouse_dragging {
+            self.mouse_movement
+        } else {
+            (0.0, 0.0)
+        };
     }
 
     #[inline]
@@ -75,6 +89,18 @@ impl InputState {
     #[inline]
     pub fn mouse_movement(&self) -> (f32, f32) {
         self.mouse_movement
+    }
+
+    /// Whether the user is currently dragging the mouse (button held + cursor moved this frame).
+    #[inline]
+    pub fn mouse_dragging(&self) -> bool {
+        self.mouse_dragging
+    }
+
+    /// Mouse drag delta (dx, dy) in pixels for this frame.
+    #[inline]
+    pub fn mouse_drag_delta(&self) -> (f32, f32) {
+        self.mouse_drag_delta
     }
 }
 

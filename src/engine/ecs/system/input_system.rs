@@ -4,6 +4,7 @@ use crate::engine::ecs::component::{ForwardAxis, InputComponent, InputTransformM
 use crate::engine::ecs::system::System;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
+use crate::utils::math;
 use winit::keyboard::{Key, NamedKey};
 
 /// System that processes input components and updates transforms based on WASD input.
@@ -27,14 +28,93 @@ impl InputSystem {
         }
     }
 
-    fn compute_transform(
+    fn compute_rotation(
+        &self,
+        roll_axis: RollAxis,
+        fps_rotation: bool,
+        input: &InputState,
+        dt_sec: f32,
+        rotation: &mut [f32; 4],
+    ) {
+        // Roll keys.
+        let q = input.key_down(&Key::Character("q".into()));
+        let e = input.key_down(&Key::Character("e".into()));
+
+        // Mouse drag rotates the rig (yaw + pitch).
+        let (drag_dx, drag_dy) = if input.mouse_dragging() {
+            input.mouse_drag_delta()
+        } else {
+            (0.0, 0.0)
+        };
+
+        // Sensitivity is radians per pixel.
+        const MOUSE_SENS_RAD_PER_PX: f32 = 0.003;
+        let yaw_delta = drag_dx * MOUSE_SENS_RAD_PER_PX;
+        let pitch_delta = -drag_dy * MOUSE_SENS_RAD_PER_PX;
+
+        if fps_rotation {
+            // FPS-style semantics:
+            // - keep rotation as TRS yaw/pitch (stable)
+            // - yaw about world up
+            // - pitch about camera-right after yaw
+            // - clamp pitch to avoid flipping
+
+            // Derive current yaw/pitch from forward vector.
+            let fwd = math::quat_rotate_vec3(*rotation, [0.0, 0.0, -1.0]);
+            let fwd_n = math::vec3_normalize(fwd);
+
+            let mut yaw = fwd_n[0].atan2(-fwd_n[2]);
+            let mut pitch = fwd_n[1].clamp(-1.0, 1.0).asin();
+
+            yaw += yaw_delta;
+            pitch += pitch_delta;
+
+            const MAX_PITCH: f32 = 1.55; // ~88.8deg
+            pitch = pitch.clamp(-MAX_PITCH, MAX_PITCH);
+
+            let q_yaw = math::quat_from_axis_angle([0.0, 1.0, 0.0], yaw);
+            let right = math::quat_rotate_vec3(q_yaw, [1.0, 0.0, 0.0]);
+            let q_pitch = math::quat_from_axis_angle(right, pitch);
+
+            // Apply yaw then pitch (pitch axis depends on yaw).
+            *rotation = math::quat_mul(q_pitch, q_yaw);
+
+            // For now, disable roll keys in FPS mode to keep the camera stable.
+        } else {
+            // Relative/flight-style semantics: apply local incremental rotations.
+            if yaw_delta != 0.0 {
+                let q_yaw = math::quat_from_axis_angle([0.0, 1.0, 0.0], yaw_delta);
+                *rotation = math::quat_mul(*rotation, q_yaw);
+            }
+            if pitch_delta != 0.0 {
+                let q_pitch = math::quat_from_axis_angle([1.0, 0.0, 0.0], pitch_delta);
+                *rotation = math::quat_mul(*rotation, q_pitch);
+            }
+
+            if q || e {
+                const ROT_SPEED_RAD_PER_SEC: f32 = 1.5;
+                let dir = (q as i32) as f32 - (e as i32) as f32;
+                let dtheta = dir * ROT_SPEED_RAD_PER_SEC * dt_sec;
+                let axis = match roll_axis {
+                    RollAxis::X => [1.0, 0.0, 0.0],
+                    RollAxis::Y => [0.0, 1.0, 0.0],
+                    RollAxis::Z => [0.0, 0.0, 1.0],
+                };
+                let q_roll = math::quat_from_axis_angle(axis, dtheta);
+                *rotation = math::quat_mul(*rotation, q_roll);
+            }
+        }
+    }
+
+    fn compute_translation(
         &self,
         forward_axis: ForwardAxis,
-        roll_axis: RollAxis,
+        fps_rotation: bool,
         speed_units_per_sec: f32,
         input: &InputState,
         dt_sec: f32,
-        transform: &mut crate::engine::graphics::primitives::Transform,
+        rotation: [f32; 4],
+        translation: &mut [f32; 3],
     ) {
         // Read movement keys.
         let w = input.key_down(&Key::Character("w".into()));
@@ -44,37 +124,6 @@ impl InputSystem {
         let r: bool = input.key_down(&Key::Character("r".into()));
         let f: bool = input.key_down(&Key::Character("f".into()));
 
-        // Roll keys.
-        let q = input.key_down(&Key::Character("q".into()));
-        let e = input.key_down(&Key::Character("e".into()));
-
-        // Apply rotation first so translation happens "after" rotation.
-        if q || e {
-            const ROT_SPEED_RAD_PER_SEC: f32 = 1.5;
-            let dir = (q as i32) as f32 - (e as i32) as f32;
-            let dtheta = dir * ROT_SPEED_RAD_PER_SEC * dt_sec;
-            let (s, c) = (0.5 * dtheta).sin_cos();
-            let q_inc = match roll_axis {
-                RollAxis::X => [s, 0.0f32, 0.0f32, c],
-                RollAxis::Y => [0.0f32, s, 0.0f32, c],
-                RollAxis::Z => [0.0f32, 0.0f32, s, c],
-            };
-
-            fn quat_mul(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
-                let (ax, ay, az, aw) = (a[0], a[1], a[2], a[3]);
-                let (bx, by, bz, bw) = (b[0], b[1], b[2], b[3]);
-                [
-                    aw * bx + ax * bw + ay * bz - az * by,
-                    aw * by - ax * bz + ay * bw + az * bx,
-                    aw * bz + ax * by - ay * bx + az * bw,
-                    aw * bw - ax * bx - ay * by - az * bz,
-                ]
-            }
-
-            // Apply local rotation increment.
-            transform.rotation = quat_mul(transform.rotation, q_inc);
-        }
-
         // Holding Shift increases movement speed.
         let speed_multiplier = if input.key_down(&Key::Named(NamedKey::Shift)) {
             3.0
@@ -83,29 +132,6 @@ impl InputSystem {
         };
 
         let speed = speed_units_per_sec * speed_multiplier * dt_sec;
-
-        fn quat_conjugate(q: [f32; 4]) -> [f32; 4] {
-            [-q[0], -q[1], -q[2], q[3]]
-        }
-
-        fn quat_rotate_vec3(q: [f32; 4], v: [f32; 3]) -> [f32; 3] {
-            // v' = q * (v,0) * conj(q)
-            fn quat_mul(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
-                let (ax, ay, az, aw) = (a[0], a[1], a[2], a[3]);
-                let (bx, by, bz, bw) = (b[0], b[1], b[2], b[3]);
-                [
-                    aw * bx + ax * bw + ay * bz - az * by,
-                    aw * by - ax * bz + ay * bw + az * bx,
-                    aw * bz + ax * by - ay * bx + az * bw,
-                    aw * bw - ax * bx - ay * by - az * bz,
-                ]
-            }
-
-            let vq = [v[0], v[1], v[2], 0.0f32];
-            let t = quat_mul(q, vq);
-            let r = quat_mul(t, quat_conjugate(q));
-            [r[0], r[1], r[2]]
-        }
 
         match forward_axis {
             ForwardAxis::Y => {
@@ -134,15 +160,12 @@ impl InputSystem {
                 }
 
                 // Translate in the transform's local (rotated) axes.
-                let v = quat_rotate_vec3(transform.rotation, [dx, dy, 0.0]);
-                transform.translation[0] += v[0] * speed;
-                transform.translation[1] += v[1] * speed;
-
+                let v = math::quat_rotate_vec3(rotation, [dx, dy, 0.0]);
+                translation[0] += v[0] * speed;
+                translation[1] += v[1] * speed;
             }
 
             ForwardAxis::Z => {
-                // 3D-friendly translation delta (x/z). We intentionally do not apply the
-                // current rotation to this movement; it's meant for a camera rig.
                 let mut dx = 0.0f32;
                 let mut dy: f32 = 0.0f32;
                 let mut dz = 0.0f32;
@@ -165,7 +188,6 @@ impl InputSystem {
                 if s {
                     dz += 1.0;
                 }
-                
 
                 // Normalize diagonal movement.
                 let len = (dx * dx + dy * dy + dz * dz).sqrt();
@@ -175,15 +197,24 @@ impl InputSystem {
                     dz /= len;
                 }
 
-                // Move in the rig's local space (so yaw affects movement).
-                let v = quat_rotate_vec3(transform.rotation, [dx, dy, dz]);
-                transform.translation[0] += v[0] * speed;
-                transform.translation[1] += v[1] * speed;
-                transform.translation[2] += v[2] * speed;
+                if fps_rotation {
+                    // FPS: yaw drives horizontal movement; pitch doesn't.
+                    let fwd = math::quat_rotate_vec3(rotation, [0.0, 0.0, -1.0]);
+                    let yaw = fwd[0].atan2(-fwd[2]);
+                    let q_yaw = math::quat_from_axis_angle([0.0, 1.0, 0.0], yaw);
+                    let v = math::quat_rotate_vec3(q_yaw, [dx, 0.0, dz]);
+                    translation[0] += v[0] * speed;
+                    translation[1] += dy * speed;
+                    translation[2] += v[2] * speed;
+                } else {
+                    // Flight/relative: full rotation drives movement.
+                    let v = math::quat_rotate_vec3(rotation, [dx, dy, dz]);
+                    translation[0] += v[0] * speed;
+                    translation[1] += v[1] * speed;
+                    translation[2] += v[2] * speed;
+                }
             }
         }
-
-        transform.recompute_model();
     }
 
     /// Process input and queue at most one transform update per InputComponent.
@@ -207,7 +238,9 @@ impl InputSystem {
             || input.key_down(&Key::Character("q".into()))
             || input.key_down(&Key::Character("e".into()));
 
-        if !any_move {
+        let any_drag = input.mouse_dragging();
+
+        if !any_move && !any_drag {
             return;
         }
 
@@ -226,16 +259,16 @@ impl InputSystem {
             });
 
             // Optional mode child.
-            let (forward_axis, roll_axis) = world
+            let (forward_axis, roll_axis, fps_rotation) = world
                 .children_of(input_cid)
                 .iter()
                 .copied()
                 .find_map(|cid| {
                     world
                         .get_component_by_id_as::<InputTransformModeComponent>(cid)
-                        .map(|m| (m.forward_axis, m.roll_axis))
+                        .map(|m| (m.forward_axis, m.roll_axis, m.fps_rotation))
                 })
-                .unwrap_or((ForwardAxis::Y, RollAxis::Z));
+                .unwrap_or((ForwardAxis::Y, RollAxis::Z, false));
 
             let Some(transform_cid) = transform_child else {
                 continue;
@@ -244,14 +277,25 @@ impl InputSystem {
             if let Some(transform_comp_mut) =
                 world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
             {
-                self.compute_transform(
-                    forward_axis,
+                self.compute_rotation(
                     roll_axis,
+                    fps_rotation,
+                    input,
+                    dt_sec,
+                    &mut transform_comp_mut.transform.rotation,
+                );
+                let rot = transform_comp_mut.transform.rotation;
+                self.compute_translation(
+                    forward_axis,
+                    fps_rotation,
                     speed_units_per_sec,
                     input,
                     dt_sec,
-                    &mut transform_comp_mut.transform,
+                    rot,
+                    &mut transform_comp_mut.transform.translation,
                 );
+
+                transform_comp_mut.transform.recompute_model();
                 queue.queue_update_transform(transform_cid, transform_comp_mut.transform);
             }
         }

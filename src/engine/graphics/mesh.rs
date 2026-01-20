@@ -21,6 +21,7 @@ pub enum IndexFormat {
 /// A minimal CPU vertex format for bring-up.
 ///
 /// - `pos`: object-space / model-space position
+/// - `normal`: object-space normal (for lighting)
 /// - `uv`: optional 0..1 UV (useful for screen-space gradients)
 #[derive(BufferContents, Vertex, Debug, Clone, Copy, Default)]
 #[repr(C)]
@@ -29,6 +30,8 @@ pub struct CpuVertex {
     pub pos: [f32; 3],
     #[format(R32G32_SFLOAT)]
     pub uv: [f32; 2],
+    #[format(R32G32B32_SFLOAT)]
+    pub normal: [f32; 3],
 }
 
 /// CPU-side mesh data.
@@ -91,14 +94,17 @@ impl MeshFactory {
                 pos: [-0.5, y_bottom, 0.0],
                 // For 2D primitives, we treat UV as normalized XY over the primitive's bounds.
                 uv: [0.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
             },
             CpuVertex {
                 pos: [0.5, y_bottom, 0.0],
                 uv: [1.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
             },
             CpuVertex {
                 pos: [0.0, y_top, 0.0],
                 uv: [0.5, (y_top - y_bottom) / y_span],
+                normal: [0.0, 0.0, 1.0],
             },
         ];
 
@@ -111,18 +117,22 @@ impl MeshFactory {
             CpuVertex {
                 pos: [-0.5, -0.5, 0.0],
                 uv: [0.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
             },
             CpuVertex {
                 pos: [0.5, -0.5, 0.0],
                 uv: [1.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
             },
             CpuVertex {
                 pos: [0.5, 0.5, 0.0],
                 uv: [1.0, 1.0],
+                normal: [0.0, 0.0, 1.0],
             },
             CpuVertex {
                 pos: [-0.5, 0.5, 0.0],
                 uv: [0.0, 1.0],
+                normal: [0.0, 0.0, 1.0],
             },
         ];
 
@@ -132,34 +142,88 @@ impl MeshFactory {
 
     /// Unit-ish cube centered at origin.
     ///
-    /// This is an *indexed position-only* cube (8 vertices, 12 triangles).
+    /// This is a cube with per-face vertices (24 vertices, 12 triangles) so normals are flat.
     pub fn cube() -> CpuMesh {
-        let v = |x: f32, y: f32, z: f32| CpuVertex {
-            pos: [x, y, z],
-            uv: [0.0, 0.0],
+        let p = 0.5_f32;
+
+        // 4 verts per face. UVs are placeholder; cube texturing isn't a priority yet.
+        let mut vertices: Vec<CpuVertex> = Vec::with_capacity(24);
+        let mut indices: Vec<u32> = Vec::with_capacity(36);
+
+        let mut push_face = |n: [f32; 3], a: [f32; 3], b: [f32; 3], c: [f32; 3], d: [f32; 3]| {
+            let base = vertices.len() as u32;
+            vertices.push(CpuVertex {
+                pos: a,
+                uv: [0.0, 0.0],
+                normal: n,
+            });
+            vertices.push(CpuVertex {
+                pos: b,
+                uv: [1.0, 0.0],
+                normal: n,
+            });
+            vertices.push(CpuVertex {
+                pos: c,
+                uv: [1.0, 1.0],
+                normal: n,
+            });
+            vertices.push(CpuVertex {
+                pos: d,
+                uv: [0.0, 1.0],
+                normal: n,
+            });
+            // CCW triangles as seen from outside.
+            indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
         };
 
-        let vertices = vec![
-            v(-0.5, -0.5, -0.5), // 0
-            v(0.5, -0.5, -0.5),  // 1
-            v(0.5, 0.5, -0.5),   // 2
-            v(-0.5, 0.5, -0.5),  // 3
-            v(-0.5, -0.5, 0.5),  // 4
-            v(0.5, -0.5, 0.5),   // 5
-            v(0.5, 0.5, 0.5),    // 6
-            v(-0.5, 0.5, 0.5),   // 7
-        ];
-
-        // 12 triangles (2 per face), CCW when looking at the outside
-        let indices = vec![
-            // -Z face
-            0, 2, 1, 0, 3, 2, // +Z face
-            4, 5, 6, 4, 6, 7, // -X face
-            0, 4, 7, 0, 7, 3, // +X face
-            1, 2, 6, 1, 6, 5, // -Y face
-            0, 1, 5, 0, 5, 4, // +Y face
-            3, 7, 6, 3, 6, 2,
-        ];
+        // -Z
+        push_face(
+            [0.0, 0.0, -1.0],
+            [-p, -p, -p],
+            [p, -p, -p],
+            [p, p, -p],
+            [-p, p, -p],
+        );
+        // +Z
+        push_face(
+            [0.0, 0.0, 1.0],
+            [-p, -p, p],
+            [p, -p, p],
+            [p, p, p],
+            [-p, p, p],
+        );
+        // -X
+        push_face(
+            [-1.0, 0.0, 0.0],
+            [-p, -p, -p],
+            [-p, -p, p],
+            [-p, p, p],
+            [-p, p, -p],
+        );
+        // +X
+        push_face(
+            [1.0, 0.0, 0.0],
+            [p, -p, -p],
+            [p, p, -p],
+            [p, p, p],
+            [p, -p, p],
+        );
+        // -Y
+        push_face(
+            [0.0, -1.0, 0.0],
+            [-p, -p, -p],
+            [p, -p, -p],
+            [p, -p, p],
+            [-p, -p, p],
+        );
+        // +Y
+        push_face(
+            [0.0, 1.0, 0.0],
+            [-p, p, -p],
+            [-p, p, p],
+            [p, p, p],
+            [p, p, -p],
+        );
 
         CpuMesh::new(vertices, indices)
     }
@@ -172,18 +236,22 @@ impl MeshFactory {
             CpuVertex {
                 pos: [0.0, 0.0, 0.6123724],
                 uv: [0.5, 1.0],
+                normal: [0.0, 0.0, 1.0],
             },
             CpuVertex {
                 pos: [-0.5, -0.2886751, -0.2041241],
                 uv: [0.0, 0.0],
+                normal: [-1.0, -1.0, -1.0],
             },
             CpuVertex {
                 pos: [0.5, -0.2886751, -0.2041241],
                 uv: [1.0, 0.0],
+                normal: [1.0, -1.0, -1.0],
             },
             CpuVertex {
                 pos: [0.0, 0.5773503, -0.2041241],
                 uv: [0.5, 0.5],
+                normal: [0.0, 1.0, -1.0],
             },
         ];
 
@@ -230,6 +298,7 @@ impl MeshFactory {
                 vertices.push(CpuVertex {
                     pos: [x * radius, y * radius, z * radius],
                     uv: [u, 1.0 - v],
+                    normal: [x, y, z],
                 });
             }
         }

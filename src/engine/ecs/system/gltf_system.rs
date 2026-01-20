@@ -411,16 +411,76 @@ impl GLTFSystem {
                     .map(|t| t.into_f32().collect())
                     .unwrap_or_default();
 
+                let indices_u32: Vec<u32> = match reader.read_indices() {
+                    Some(read) => read.into_u32().collect(),
+                    None => (0..positions.len() as u32).collect(),
+                };
+
+                // Normals: prefer glTF normals; otherwise compute smooth normals.
+                let mut normals: Vec<[f32; 3]> = reader
+                    .read_normals()
+                    .map(|it| it.collect())
+                    .unwrap_or_default();
+
+                if normals.len() != positions.len() {
+                    normals.clear();
+                }
+
+                if normals.is_empty() {
+                    let mut acc = vec![[0.0f32; 3]; positions.len()];
+
+                    let cross = |a: [f32; 3], b: [f32; 3]| -> [f32; 3] {
+                        [
+                            a[1] * b[2] - a[2] * b[1],
+                            a[2] * b[0] - a[0] * b[2],
+                            a[0] * b[1] - a[1] * b[0],
+                        ]
+                    };
+
+                    let sub = |a: [f32; 3], b: [f32; 3]| -> [f32; 3] { [a[0] - b[0], a[1] - b[1], a[2] - b[2]] };
+
+                    for tri in indices_u32.chunks_exact(3) {
+                        let i0 = tri[0] as usize;
+                        let i1 = tri[1] as usize;
+                        let i2 = tri[2] as usize;
+                        if i0 >= positions.len() || i1 >= positions.len() || i2 >= positions.len() {
+                            continue;
+                        }
+
+                        let p0 = positions[i0];
+                        let p1 = positions[i1];
+                        let p2 = positions[i2];
+
+                        let e1 = sub(p1, p0);
+                        let e2 = sub(p2, p0);
+                        let n = cross(e1, e2);
+
+                        for &idx in &[i0, i1, i2] {
+                            acc[idx][0] += n[0];
+                            acc[idx][1] += n[1];
+                            acc[idx][2] += n[2];
+                        }
+                    }
+
+                    normals = acc
+                        .into_iter()
+                        .map(|n| {
+                            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+                            if len > 1e-8 {
+                                [n[0] / len, n[1] / len, n[2] / len]
+                            } else {
+                                [0.0, 0.0, 1.0]
+                            }
+                        })
+                        .collect();
+                }
+
                 let mut vertices: Vec<CpuVertex> = Vec::with_capacity(positions.len());
                 for (i, p) in positions.iter().copied().enumerate() {
                     let uv = uvs.get(i).copied().unwrap_or([0.0, 0.0]);
-                    vertices.push(CpuVertex { pos: p, uv });
+                    let normal = normals.get(i).copied().unwrap_or([0.0, 0.0, 1.0]);
+                    vertices.push(CpuVertex { pos: p, uv, normal });
                 }
-
-                let indices_u32: Vec<u32> = match reader.read_indices() {
-                    Some(read) => read.into_u32().collect(),
-                    None => (0..vertices.len() as u32).collect(),
-                };
 
                 let key = format!("{}:{}:prim{}", gltf_name, mesh_name_or_index, prim_index);
                 meshes.push(ImportedMesh {

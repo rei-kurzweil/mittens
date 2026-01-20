@@ -452,6 +452,15 @@ mod vulkano_backend {
                     },
                 )
                 .attribute(
+                    8,
+                    VertexInputAttributeDescription {
+                        binding: 0,
+                        format: Format::R32G32B32_SFLOAT,
+                        offset: 20,
+                        ..Default::default()
+                    },
+                )
+                .attribute(
                     1,
                     VertexInputAttributeDescription {
                         binding: 1,

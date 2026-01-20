@@ -24,6 +24,10 @@ pub enum RollAxis {
 pub struct InputTransformModeComponent {
     pub forward_axis: ForwardAxis,
     pub roll_axis: RollAxis,
+
+    /// If true, rotations are applied in world axes (FPS-style).
+    /// If false, rotations are applied in local space (current behavior).
+    pub fps_rotation: bool,
 }
 
 impl InputTransformModeComponent {
@@ -31,6 +35,7 @@ impl InputTransformModeComponent {
         Self {
             forward_axis: ForwardAxis::Y,
             roll_axis: RollAxis::Z,
+            fps_rotation: false,
         }
     }
 
@@ -38,7 +43,13 @@ impl InputTransformModeComponent {
         Self {
             forward_axis: ForwardAxis::Z,
             roll_axis: RollAxis::Z,
+            fps_rotation: false,
         }
+    }
+
+    pub fn with_fps_rotation(mut self) -> Self {
+        self.fps_rotation = true;
+        self
     }
 
     pub fn with_roll_axis_y(mut self) -> Self {
@@ -85,6 +96,11 @@ impl Component for InputTransformModeComponent {
             RollAxis::Z => "z",
         };
         map.insert("roll_axis".to_string(), serde_json::json!(roll_axis));
+
+        map.insert(
+            "fps_rotation".to_string(),
+            serde_json::json!(self.fps_rotation),
+        );
         map
     }
 
@@ -111,6 +127,11 @@ impl Component for InputTransformModeComponent {
                 "z" | "Z" => RollAxis::Z,
                 _ => return Err(format!("Unknown roll_axis: '{}'", axis)),
             };
+        }
+
+        if let Some(v) = data.get("fps_rotation") {
+            self.fps_rotation = serde_json::from_value(v.clone())
+                .map_err(|e| format!("Failed to decode fps_rotation: {}", e))?;
         }
         Ok(())
     }

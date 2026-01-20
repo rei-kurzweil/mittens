@@ -2,6 +2,7 @@
 
 layout(location = 0) in vec3 in_pos;
 layout(location = 5) in vec2 in_uv;
+layout(location = 8) in vec3 in_normal;
 
 // Per-instance model matrix.
 layout(location = 1) in vec4 i_model_c0;
@@ -35,9 +36,8 @@ void main() {
     // World-space outputs (lighting expects world-space lights).
     v_world_pos = world.xyz;
 
-    // Vertex format currently has no normals. For 2D primitives (XY plane), a stable forward
-    // normal is +Z in object space; transform it into world space.
-    v_normal = normalize(mat3(model) * vec3(0.0, 0.0, 1.0));
+    // Object-space normal provided by CPU mesh data; transform into world space.
+    v_normal = normalize(mat3(model) * in_normal);
     v_uv = in_uv;
     v_color = i_color;
     v_emissive = i_emissive;

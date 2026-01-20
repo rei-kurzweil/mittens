@@ -21,7 +21,9 @@ fn main() {
     let input_mode = universe
         .world
         .add_component(engine::ecs::component::InputTransformModeComponent::forward_z()
-            .with_roll_axis_y());
+            .with_roll_axis_y()
+            .with_fps_rotation()
+        );
 
     let rig_collision = universe
         .world
@@ -40,24 +42,43 @@ fn main() {
         .world
         .init_component_tree(input, &mut universe.command_queue);
 
-    // Light so we can see non-emissive meshes.
-    let light_transform = universe.world.add_component(
-        engine::ecs::component::TransformComponent::new().with_position(0.0, 2.0, 0.0),
-    );
-    let light = universe.world.add_component(
-        engine::ecs::component::PointLightComponent::new()
-            .with_distance(180.0)
-            .with_color(1.0, 1.0, 1.0),
-    );
-    let _ = universe.world.add_child(light_transform, light);
-    universe
-        .world
-        .init_component_tree(light_transform, &mut universe.command_queue);
+    // Lights so we can see non-emissive meshes and verify attenuation/direction.
+    fn spawn_light(
+        universe: &mut engine::Universe,
+        x: f32,
+        y: f32,
+        z: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+        intensity: f32,
+        distance: f32,
+    ) {
+        let t = universe.world.add_component(
+            engine::ecs::component::TransformComponent::new().with_position(x, y, z),
+        );
+        let l = universe.world.add_component(
+            engine::ecs::component::PointLightComponent::new()
+                .with_color(r, g, b)
+                .with_intensity(intensity)
+                .with_distance(distance),
+        );
+        let _ = universe.world.add_child(t, l);
+        universe.world.init_component_tree(t, &mut universe.command_queue);
+    }
 
     // Perimeter of cubes: 16 per side, 90deg turns.
     const N: i32 = 16;
     let spacing = 1.0;
     let half = (N as f32 - 1.0) * spacing * 0.5;
+
+    // Place 4 very distinct colored lights near corners plus a white overhead fill.
+    // (High-ish saturation makes it easy to tell which light is contributing.)
+    spawn_light(&mut universe, -half, 2.8, -half, 1.0, 0.1, 0.1, 2.5, 14.0); // red
+    spawn_light(&mut universe, half, 2.8, -half, 0.1, 1.0, 0.1, 2.5, 14.0); // green
+    spawn_light(&mut universe, half, 2.8, half, 0.1, 0.2, 1.0, 2.5, 14.0); // blue
+    spawn_light(&mut universe, -half, 2.8, half, 1.0, 0.2, 1.0, 2.5, 14.0); // magenta-ish
+    spawn_light(&mut universe, 0.0, 5.5, 0.0, 1.0, 1.0, 1.0, 0.7, 40.0); // white fill
 
     fn spawn_wall_cube(universe: &mut engine::Universe, x: f32, y: f32, z: f32) {
         let t = universe.world.add_component(
@@ -80,6 +101,36 @@ fn main() {
         universe
             .world
             .init_component_tree(t, &mut universe.command_queue);
+    }
+
+    fn spawn_cube(
+        universe: &mut engine::Universe,
+        x: f32,
+        y: f32,
+        z: f32,
+        sx: f32,
+        sy: f32,
+        sz: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    ) {
+        let t = universe.world.add_component(
+            engine::ecs::component::TransformComponent::new()
+                .with_position(x, y, z)
+                .with_scale(sx, sy, sz),
+        );
+        let renderable = universe
+            .world
+            .add_component(engine::ecs::component::RenderableComponent::cube());
+        let color = universe
+            .world
+            .add_component(engine::ecs::component::ColorComponent::rgba(r, g, b, 1.0));
+
+        let _ = universe.world.add_child(t, renderable);
+        let _ = universe.world.add_child(renderable, color);
+
+        universe.world.init_component_tree(t, &mut universe.command_queue);
     }
 
     let y = 0.5;
@@ -110,6 +161,37 @@ fn main() {
         let x = -half;
         let z = half - (i as f32) * spacing;
         spawn_wall_cube(&mut universe, x, y, z);
+    }
+
+    // A few larger cubes outside the perimeter (visual landmarks + lighting test surfaces).
+    let outer = half + 3.0;
+    spawn_cube(&mut universe, 0.0, 0.75, -outer, 3.0, 1.5, 1.0, 0.15, 0.15, 0.18);
+    spawn_cube(&mut universe, 0.0, 0.75, outer, 3.0, 1.5, 1.0, 0.15, 0.15, 0.18);
+    spawn_cube(&mut universe, -outer, 0.75, 0.0, 1.0, 1.5, 3.0, 0.15, 0.15, 0.18);
+    spawn_cube(&mut universe, outer, 0.75, 0.0, 1.0, 1.5, 3.0, 0.15, 0.15, 0.18);
+
+    // Many small cubes inside the perimeter.
+    // Deterministic pseudo-random distribution so the scene is stable.
+    let mut seed: u32 = 0xC0111510;
+    let mut rng01 = || {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        (seed as f32) / (u32::MAX as f32)
+    };
+
+    for _ in 0..60 {
+        let x = (rng01() * 2.0 - 1.0) * (half - 1.5);
+        let z = (rng01() * 2.0 - 1.0) * (half - 1.5);
+        let s = 0.15 + rng01() * 0.35;
+        let y = 0.5 * s;
+
+        // Slightly varied colors to show multiple light contributions.
+        let cr = 0.25 + rng01() * 0.6;
+        let cg = 0.25 + rng01() * 0.6;
+        let cb = 0.25 + rng01() * 0.6;
+
+        spawn_cube(&mut universe, x, y, z, s, s, s, cr, cg, cb);
     }
 
     // Process init-time registrations.

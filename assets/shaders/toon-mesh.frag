@@ -8,13 +8,6 @@ layout(location = 4) flat in uint v_emissive;
 
 layout(location = 0) out vec4 f_color;
 
-// Compile-time debug selector:
-// 0 = normal lighting
-// 1 = show SSBO light0.pos_intensity.rgb
-// 2 = show SSBO light0.color_distance.rgb
-// 3 = show interpolated normal (remapped)
-// 4 = show light_count as grayscale
-const uint LC_DEBUG_OUTPUT = 0u;
 
 struct PointLight {
     vec4 pos_intensity;  // xyz position (world), w intensity
@@ -70,15 +63,38 @@ void main() {
         return;
     }
 
-    vec3 light_pos = g_lights.lights[0].pos_intensity.xyz;
-    vec3 light_color = g_lights.lights[0].color_distance.rgb;
-
-    // get dot product of normal and light direction
     vec3 N = normalize(v_normal);
-    vec3 L = normalize(light_pos - v_world_pos);
-    float NdotL = max(dot(N, L), 0.0);
+    vec3 out_rgb = vec3(0.0);
 
+    for (uint i = 0u; i < light_count; i++) {
+        vec3 lp = g_lights.lights[i].pos_intensity.xyz;
+        float intensity = g_lights.lights[i].pos_intensity.w;
+        vec3 lc = g_lights.lights[i].color_distance.rgb;
+        float range = g_lights.lights[i].color_distance.w;
 
-    vec3 out_rgb = base * NdotL * light_color;
+        vec3 toL = lp - v_world_pos;
+        float dist = length(toL);
+        if (dist <= 1e-5) {
+            continue;
+        }
+
+        vec3 L = toL / dist;
+        float ndotl = max(dot(N, L), 0.0);
+        float q = quantize(ndotl, mat.quant_steps);
+
+        // Attenuation:
+        // - if range is provided, fade out to 0 at range (smooth)
+        // - otherwise fall back to inverse-square-ish
+        float att = 1.0;
+        if (range > 1e-3) {
+            float t = clamp(1.0 - (dist / range), 0.0, 1.0);
+            att = t * t;
+        } else {
+            att = 1.0 / (1.0 + dist * dist);
+        }
+
+        out_rgb += base * q * lc * intensity * att;
+    }
+
     f_color = vec4(out_rgb, base_rgba.a);
 }
