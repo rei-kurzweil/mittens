@@ -1,4 +1,4 @@
-# cat engine「０.２」
+# cat engine「０.3」
 
 <img width="498" height="400" alt="Screenshot_20260106_094219" src="https://github.com/user-attachments/assets/83c00897-aa61-4520-8756-cd7263289800" />
 
@@ -40,8 +40,9 @@ using vulkan instanced rendering and several layers to describe game objects:
 #### TextureSystem
 #### LightSystem
 
-## Renderer 
+## VulkanoRenderer 
 + displays data from VisualWorld through vulkan
++ TODO: make WgpuRenderer for web / webasm
 
 # Components
 
@@ -52,27 +53,46 @@ using vulkan instanced rendering and several layers to describe game objects:
     + Camera2DComponent
     + Camera3DComponent
     + PointLightComponent
+    + CollisionComponent
   + affected by parents:
     + InputComponent (recieves transform input from InputComponent)
 
 + RenderableComponent
   + Several built-in RenderableComponents are available as special constructors on the impl.
+  + If you need lower level control over the mesh or material, you can create a `CPUMesh` and `MaterialHandle` and pass them to the `RenderableComponent::new()` constructor.
+  + Meshes are uploaded to the GPU via the RenderableSystem and stored in RenderAssets.
+  + Materials are pre-defined pipelines stored in `graphics::primitives::MaterialHandle`.
   + TODO: make separate material and geometry components
 
 + InputComponent
   + Recieves keyboard or other input sources and passes that info to relevant child components
   + TODO: set up key mappings and movement / transform modes beyond the defaults.
++ InputTransformModeComponent
+  + Configures how an InputComponent affects the TransformComponent child.
+  + construct with `forward_z()` or `forward_y()` 
+    + to change which axis is forward(useful for both 3D or 2D games)
+  + `with_roll_axis_y()` to remap roll keys to yaw
+  + `with_fps_rotation()` to use FPS-style mouse rotation 
+  +
 + Camera2DComponent
+  + simple orthographic camera for 2D rendering
+  + add to TransformComponent to use that transform's model matrix for the camera
+
 + Camera3DComponent
   + add to TransformComponent to use that transform's model matrix for the camera
   + add to TransformComponent and add that TransformComponent to an InputComponent to control the camera with the keyboard.
 
++ CameraXRComponent
+  + stereoscopic camera for OpenXR rendering
+  + can be parented to TransformComponent to transform both eyes at once
+  + must be used with OpenXRComponent to get proper view/projection matrices from the XR
 ```
-// input example
+// input example (pseudo code)
 InputComponent {
     TransformComponent {
-        Camera2DComponent { }
+        Camera3DComponent { }
     }
+    InputTransformModeComponent::forward_z().with_fps_rotation()
 }
 ```
 
@@ -90,9 +110,27 @@ InputComponent {
   + Textures are deduplicated by `uri` (multiple components can share the same GPU texture).
   + Texture affects batching: draw calls are grouped by (material, mesh, texture).
 
++ GLTFComponent
+  + Loads a glTF 2.0 model from a URI (e.g. `"assets/models/cat.glb"`).
+  + Creates child components for each mesh in the glTF file.
+  + Materials are mapped to built-in `MaterialHandle` pipelines where possible.
+  + Textures are loaded and deduplicated via TextureComponent.
+
 + PointLightComponent
   + Adds a point light to the scene (fed to the shader via an SSBO).
 
++ CollisionComponent
+  + adds parent transform as a collision object
+  + types supported
+    + STATIC     // does not move. only interacts with other CollisionComponents
+    + KINEMATIC  // can move in response to collisions
+    + RIGGED     // for cameras and players and npcs and stuff
+
++ CollisionShapeComponent
+
++ OpenXRComponent
+  + adds OpenXR support to the universe
+  + handles session, frame loop, and input events from XR runtime
 
 
 # REPL / CLI
