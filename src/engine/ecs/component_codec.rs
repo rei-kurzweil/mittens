@@ -210,6 +210,7 @@ impl ComponentCodec {
                     crate::engine::graphics::primitives::MaterialHandle::TOON_MESH,
                 ),
             ))),
+            "background_color" => Ok(Box::new(BackgroundColorComponent::new())),
             "color" => Ok(Box::new(ColorComponent::new())),
             "texture" => Ok(Box::new(TextureComponent::new(""))),
             "camera2d" => Ok(Box::new(Camera2DComponent::new())),

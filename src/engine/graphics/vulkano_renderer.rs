@@ -945,10 +945,7 @@ mod vulkano_backend {
                 buf
             };
 
-            let clear_color = match camera_target {
-                crate::engine::graphics::CameraTarget::Xr => [1.0f32, 0.713_725_5, 0.756_862_76, 1.0],
-                crate::engine::graphics::CameraTarget::Window => [0.0f32, 0.0, 0.0, 1.0],
-            };
+            let clear_color = visual_world.clear_color();
 
             let color_attachment = RenderingAttachmentInfo {
                 load_op: AttachmentLoadOp::Clear,

@@ -1,5 +1,6 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::{ColorComponent, EmissiveComponent, MeshComponent, RenderableComponent, UVComponent};
+use crate::engine::ecs::component::BackgroundColorComponent;
 
 use crate::engine::ecs::World;
 use crate::engine::ecs::system::System;
@@ -326,6 +327,20 @@ impl RenderableSystem {
         // Cache until we can apply it during `flush_pending` (which has access to RenderAssets
         // and can safely clone meshes per-renderable).
         self.pending_uv.insert(renderable_cid, uv_comp.uvs.clone());
+    }
+
+    pub fn register_background_color(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let Some(bg) = world.get_component_by_id_as::<BackgroundColorComponent>(component) else {
+            return;
+        };
+
+        // Global state: last registered wins.
+        visuals.set_clear_color(bg.rgba);
     }
 
     /// Register a renderable component with this system.

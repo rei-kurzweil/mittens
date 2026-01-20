@@ -528,14 +528,14 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
         ]
     }
 
-    fn clear_xr_swapchain_image_light_pink(
+    fn clear_xr_swapchain_image(
         sess: &OpenXRSessionState,
         image: ash::vk::Image,
+        rgba: [f32; 4],
         was_initialized: bool,
     ) -> Result<(), ash::vk::Result> {
-        // Light pink (#FFB6C1).
         let clear = ash::vk::ClearColorValue {
-            float32: [1.0, 0.713_725_5, 0.756_862_76, 1.0],
+            float32: rgba,
         };
 
         let old_layout = if was_initialized {
@@ -841,12 +841,12 @@ impl OpenXRSystem {
                 if !sess.did_log_format_mismatch {
                     sess.did_log_format_mismatch = true;
                     eprintln!(
-                        "[OpenXR] XR swapchain format mismatch (xr={} window={:?}); falling back to pink clear",
+                        "[OpenXR] XR swapchain format mismatch (xr={} window={:?}); falling back to clear_color",
                         xr_format, window_format
                     );
                 }
 
-                if let Err(e) = Self::clear_xr_swapchain_image_light_pink(sess, dst_image, dst_was_initialized) {
+                if let Err(e) = Self::clear_xr_swapchain_image(sess, dst_image, visuals.clear_color(), dst_was_initialized) {
                     eprintln!("[OpenXR] clear XR image failed: {e:?}");
                 } else if let Some(slot) = sess.swapchain_image_initialized.get_mut(image_index_usize) {
                     *slot = true;

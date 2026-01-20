@@ -1,6 +1,7 @@
 pub mod camera_2d;
 pub mod camera_3d;
 pub mod camera_xr;
+pub mod background_color;
 pub mod color;
 pub mod emissive;
 pub mod gltf;
@@ -22,6 +23,7 @@ pub mod uv;
 pub use camera_2d::Camera2DComponent;
 pub use camera_3d::Camera3DComponent;
 pub use camera_xr::CameraXRComponent;
+pub use background_color::BackgroundColorComponent;
 pub use color::ColorComponent;
 pub use emissive::EmissiveComponent;
 pub use self::gltf::GLTFComponent;

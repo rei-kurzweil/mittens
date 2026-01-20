@@ -69,6 +69,17 @@ impl SystemWorld {
         self.renderable.register_color(world, visuals, component);
     }
 
+    /// Register a BackgroundColorComponent and apply it to VisualWorld.
+    pub fn register_background_color(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.renderable
+            .register_background_color(world, visuals, component);
+    }
+
     /// Register a TextureComponent and apply it to its ancestor RenderableComponent.
     pub fn register_texture(
         &mut self,

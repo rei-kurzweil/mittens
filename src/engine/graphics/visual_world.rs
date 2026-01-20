@@ -47,6 +47,7 @@ pub struct DrawBatch {
 
 pub struct VisualWorld {
     instances: Vec<VisualInstance>,
+    clear_color: [f32; 4],
 
     point_lights: Vec<VisualPointLight>,
     point_light_index_by_component: std::collections::HashMap<ComponentId, usize>,
@@ -101,6 +102,7 @@ impl Default for VisualWorld {
 
         Self {
             instances: Vec::new(),
+            clear_color: [0.0, 0.0, 0.0, 1.0],
 
             point_lights: Vec::new(),
             point_light_index_by_component: std::collections::HashMap::new(),
@@ -135,7 +137,6 @@ impl Default for VisualWorld {
         }
     }
 }
-
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VisualPointLight {
     pub position_ws: [f32; 3],
@@ -147,6 +148,14 @@ pub struct VisualPointLight {
 impl VisualWorld {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn clear_color(&self) -> [f32; 4] {
+        self.clear_color
+    }
+
+    pub fn set_clear_color(&mut self, rgba: [f32; 4]) {
+        self.clear_color = rgba;
     }
 
     pub fn clear(&mut self) {

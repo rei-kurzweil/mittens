@@ -39,7 +39,6 @@ impl InputSystem {
     fn compute_rotation(
         &self,
         roll_axis: RollAxis,
-        fps_rotation: bool,
         input: &InputState,
         dt_sec: f32,
         rotation: &mut [f32; 4],
@@ -60,62 +59,30 @@ impl InputSystem {
         let yaw_delta = drag_dx * MOUSE_SENS_RAD_PER_PX;
         let pitch_delta = -drag_dy * MOUSE_SENS_RAD_PER_PX;
 
-        if fps_rotation {
-            // FPS-style semantics:
-            // - keep rotation as TRS yaw/pitch (stable)
-            // - yaw about world up
-            // - pitch about camera-right after yaw
-            // - clamp pitch to avoid flipping
-
-            // Derive current yaw/pitch from basis vectors.
-            // Important: yaw-from-forward becomes ill-defined when looking straight up/down;
-            // using the right vector keeps yaw stable under pitch.
-            let right = math::quat_rotate_vec3(*rotation, [1.0, 0.0, 0.0]);
-            let right_n = math::vec3_normalize(right);
-            let fwd = math::quat_rotate_vec3(*rotation, [0.0, 0.0, -1.0]);
-            let fwd_n = math::vec3_normalize(fwd);
-
-            let mut yaw = right_n[2].atan2(right_n[0]);
-            let mut pitch = fwd_n[1].clamp(-1.0, 1.0).asin();
-
-            yaw += yaw_delta;
-            pitch += pitch_delta;
-
-            const MAX_PITCH: f32 = 1.55; // ~88.8deg
-            pitch = pitch.clamp(-MAX_PITCH, MAX_PITCH);
-
-            let q_yaw = math::quat_from_axis_angle([0.0, 1.0, 0.0], yaw);
-            let right = math::quat_rotate_vec3(q_yaw, [1.0, 0.0, 0.0]);
-            let q_pitch = math::quat_from_axis_angle(right, pitch);
-
-            // Apply yaw then pitch (pitch axis depends on yaw).
-            *rotation = math::quat_mul(q_pitch, q_yaw);
-
-            // For now, disable roll keys in FPS mode to keep the camera stable.
-        } else {
-            // Relative/flight-style semantics: apply local incremental rotations.
-            if yaw_delta != 0.0 {
-                let q_yaw = math::quat_from_axis_angle([0.0, 1.0, 0.0], yaw_delta);
-                *rotation = math::quat_mul(*rotation, q_yaw);
-            }
-            if pitch_delta != 0.0 {
-                let q_pitch = math::quat_from_axis_angle([1.0, 0.0, 0.0], pitch_delta);
-                *rotation = math::quat_mul(*rotation, q_pitch);
-            }
-
-            if q || e {
-                const ROT_SPEED_RAD_PER_SEC: f32 = 1.5;
-                let dir = (q as i32) as f32 - (e as i32) as f32;
-                let dtheta = dir * ROT_SPEED_RAD_PER_SEC * dt_sec;
-                let axis = match roll_axis {
-                    RollAxis::X => [1.0, 0.0, 0.0],
-                    RollAxis::Y => [0.0, 1.0, 0.0],
-                    RollAxis::Z => [0.0, 0.0, 1.0],
-                };
-                let q_roll = math::quat_from_axis_angle(axis, dtheta);
-                *rotation = math::quat_mul(*rotation, q_roll);
-            }
+        
+        // Relative/flight-style semantics: apply local incremental rotations.
+        if yaw_delta != 0.0 {
+            let q_yaw = math::quat_from_axis_angle([0.0, 1.0, 0.0], yaw_delta);
+            *rotation = math::quat_mul(*rotation, q_yaw);
         }
+        if pitch_delta != 0.0 {
+            let q_pitch = math::quat_from_axis_angle([1.0, 0.0, 0.0], pitch_delta);
+            *rotation = math::quat_mul(*rotation, q_pitch);
+        }
+
+        if q || e {
+            const ROT_SPEED_RAD_PER_SEC: f32 = 1.5;
+            let dir = (q as i32) as f32 - (e as i32) as f32;
+            let dtheta = dir * ROT_SPEED_RAD_PER_SEC * dt_sec;
+            let axis = match roll_axis {
+                RollAxis::X => [1.0, 0.0, 0.0],
+                RollAxis::Y => [0.0, 1.0, 0.0],
+                RollAxis::Z => [0.0, 0.0, 1.0],
+            };
+            let q_roll = math::quat_from_axis_angle(axis, dtheta);
+            *rotation = math::quat_mul(*rotation, q_roll);
+        }
+        
     }
 
     fn compute_rotation_fps(
@@ -354,7 +321,6 @@ impl InputSystem {
                 } else {
                     self.compute_rotation(
                         roll_axis,
-                        fps_rotation,
                         input,
                         dt_sec,
                         &mut transform_comp_mut.transform.rotation,

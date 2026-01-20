@@ -6,6 +6,14 @@ fn main() {
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
 
+    let bg_color = universe
+        .world
+        .add_component(engine::ecs::component::BackgroundColorComponent::rgba(0.1, 0.02, 0.05, 1.0));
+
+    let _ = universe
+        .world
+        .init_component_tree(bg_color, &mut universe.command_queue);
+
     // Input-driven camera rig.
     // Topology: I { T { C3D }  CN{Rigged { Sphere }} }
     let input = universe
