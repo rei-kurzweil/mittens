@@ -1,3 +1,4 @@
+use crate::engine::ecs::component::AmbientLightComponent;
 use crate::engine::ecs::component::PointLightComponent;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
@@ -38,6 +39,21 @@ impl LightSystem {
                 color: light.color,
             },
         );
+    }
+
+    pub fn register_ambient_light(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let Some(ambient) = world.get_component_by_id_as::<AmbientLightComponent>(component)
+        else {
+            return;
+        };
+
+        // Global state: last registered wins.
+        visuals.set_ambient_light(ambient.rgb);
     }
 
     /// Called when a TransformComponent changes.

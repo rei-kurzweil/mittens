@@ -1,6 +1,7 @@
 use little_cat::engine::ecs::component::{
-    BackgroundColorComponent, Camera3DComponent, ColorComponent, GLTFComponent, InputComponent,
-    InputTransformModeComponent, RenderableComponent, TransformComponent,
+    AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ColorComponent,
+    GLTFComponent, InputComponent, InputTransformModeComponent, RenderableComponent,
+    TransformComponent,
 };
 use little_cat::{engine, utils};
 
@@ -17,6 +18,14 @@ fn main() {
     universe
         .world
         .init_component_tree(background, &mut universe.command_queue);
+
+    // Small ambient so shadowed areas aren't pure black.
+    let ambient = universe
+        .world
+        .add_component(AmbientLightComponent::rgb(0.10, 0.10, 0.12));
+    universe
+        .world
+        .init_component_tree(ambient, &mut universe.command_queue);
 
     // --- Camera rig (WASD + mouse) ---
     // InputComponent is the root, and it owns a Transform (the camera rig).
@@ -41,11 +50,33 @@ fn main() {
         .world
         .init_component_tree(input, &mut universe.command_queue);
 
+    // --- lighting ---
+    let light_transform = universe.world.add_component(
+        TransformComponent::new()
+            .with_position(2.0, 8.0, 2.0)
+            .with_scale(0.1, 0.1, 0.1),
+    );
+    let light = universe.world.add_component(
+        engine::ecs::component::PointLightComponent::new()
+            .with_distance(200.0)
+            .with_color(1.0, 1.0, 1.0),
+    );
+    let _ = universe.world.add_child(light_transform, light);
+    universe
+        .world
+        .init_component_tree(light_transform, &mut universe.command_queue);
+
     // --- VTuber model ---
     let model_root = universe.world.add_component(TransformComponent::new());
     let model = universe
         .world
         .add_component(GLTFComponent::new("assets/models/pc-rei.hoodie.glb"));
+    // emissive for pc-rei
+    let emissive = universe.world.add_component(
+        engine::ecs::component::EmissiveComponent { enabled: true });
+
+    let _ = universe.world.add_child(model, emissive);
+
     let _ = universe.world.add_child(model_root, model);
     universe
         .world
@@ -53,9 +84,9 @@ fn main() {
 
     // --- Simple environment ---
     let spawn_cube = |universe: &mut engine::Universe,
-                      position: (f32, f32, f32),
-                      scale: (f32, f32, f32),
-                      color: (f32, f32, f32, f32)| {
+                        position: (f32, f32, f32),
+                        scale: (f32, f32, f32),
+                        color: (f32, f32, f32, f32)| {
         let transform = universe.world.add_component(
             TransformComponent::new()
                 .with_position(position.0, position.1, position.2)
@@ -77,15 +108,15 @@ fn main() {
     // floor
     spawn_cube(
         &mut universe,
-        (0.0, -5.5, 0.0),
-        (10.0, 1.0, 10.0),
+        (0.0, 0.0, 0.0),
+        (10.0, 0.1, 10.0),
         (0.92, 0.92, 0.92, 1.0),
     );
 
     // back wall
     spawn_cube(
         &mut universe,
-        (0.0, -5.0, 0.0),
+        (0.0, 1.5, -5.0),
         (10.0, 3.0, 1.0),
         (0.95, 0.94, 0.96, 1.0),
     );
@@ -93,8 +124,8 @@ fn main() {
     // desk
     spawn_cube(
         &mut universe,
-        (0.0, 0.0, 1.0),
-        (2.0, 0.25, 1.0),
+        (0.0, 0.45, 1.0),
+        (2.0, 0.9, 1.0),
         (0.75, 0.70, 0.65, 1.0),
     );
 

@@ -90,6 +90,10 @@ mod vulkano_backend {
         // Swapchain size in pixels (width, height). Used for aspect correction in 2D.
         pub viewport: [f32; 2],
         pub _pad0: [f32; 2],
+
+        // Linear RGB ambient light in 0..1.
+        pub ambient_light: [f32; 3],
+        pub _pad1: f32,
     }
 
     #[derive(BufferContents, Clone, Copy, Debug, Default)]
@@ -988,6 +992,9 @@ mod vulkano_backend {
                 camera2d: visual_world.camera_2d(),
                 viewport: [extent[0] as f32, extent[1] as f32],
                 _pad0: [0.0, 0.0],
+
+                ambient_light: visual_world.ambient_light(),
+                _pad1: 0.0,
             };
 
             let camera_buffer: Subbuffer<CameraUBO> = Buffer::from_data(

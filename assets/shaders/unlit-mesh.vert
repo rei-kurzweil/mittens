@@ -20,6 +20,8 @@ layout(set = 0, binding = 0) uniform CameraUBO {
     mat3 camera2d;
     vec2 viewport;
     vec2 _pad0;
+    vec3 ambient_light;
+    float _pad1;
 } ubo;
 
 void main() {

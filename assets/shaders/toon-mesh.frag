@@ -8,6 +8,17 @@ layout(location = 4) flat in uint v_emissive;
 
 layout(location = 0) out vec4 f_color;
 
+// Set 0: global camera.
+layout(set = 0, binding = 0) uniform CameraUBO {
+    mat4 view;
+    mat4 proj;
+    mat3 camera2d;
+    vec2 viewport;
+    vec2 _pad0;
+    vec3 ambient_light;
+    float _pad1;
+} ubo;
+
 
 struct PointLight {
     vec4 pos_intensity;  // xyz position (world), w intensity
@@ -57,14 +68,9 @@ void main() {
     }
 
     uint light_count = min(g_lights.count, 64u);
-    if (light_count == 0u) {
-        // No lights: show black so it's obvious.
-        f_color = vec4(0.0, 0.0, 0.0, 1.0);
-        return;
-    }
 
     vec3 N = normalize(v_normal);
-    vec3 out_rgb = vec3(0.0);
+    vec3 out_rgb = base * max(ubo.ambient_light, vec3(0.0));
 
     for (uint i = 0u; i < light_count; i++) {
         vec3 lp = g_lights.lights[i].pos_intensity.xyz;

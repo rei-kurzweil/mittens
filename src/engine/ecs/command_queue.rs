@@ -113,6 +113,14 @@ impl CommandQueue {
         });
     }
 
+    /// Queue a register ambient light command.
+    pub fn queue_register_ambient_light(&mut self, component_id: crate::engine::ecs::ComponentId) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REGISTER_AMBIENT_LIGHT { component_id },
+        });
+    }
+
     /// Queue a register texture command.
     pub fn queue_register_texture(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
@@ -233,6 +241,9 @@ impl CommandQueue {
                 Command::REGISTER_BACKGROUND_COLOR { component_id } => {
                     systems.register_background_color(world, visuals, component_id);
                 }
+                Command::REGISTER_AMBIENT_LIGHT { component_id } => {
+                    systems.register_ambient_light(world, visuals, component_id);
+                }
                 Command::REGISTER_TEXTURE { component_id } => {
                     systems.register_texture(world, visuals, component_id);
                 }
@@ -298,6 +309,9 @@ enum Command {
         component_id: crate::engine::ecs::ComponentId,
     },
     REGISTER_BACKGROUND_COLOR {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+    REGISTER_AMBIENT_LIGHT {
         component_id: crate::engine::ecs::ComponentId,
     },
     REGISTER_TEXTURE {

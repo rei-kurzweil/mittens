@@ -49,6 +49,8 @@ pub struct VisualWorld {
     instances: Vec<VisualInstance>,
     clear_color: [f32; 4],
 
+    ambient_light: [f32; 3],
+
     point_lights: Vec<VisualPointLight>,
     point_light_index_by_component: std::collections::HashMap<ComponentId, usize>,
     dirty_lights: bool,
@@ -104,6 +106,8 @@ impl Default for VisualWorld {
             instances: Vec::new(),
             clear_color: [0.0, 0.0, 0.0, 1.0],
 
+            ambient_light: [0.0, 0.0, 0.0],
+
             point_lights: Vec::new(),
             point_light_index_by_component: std::collections::HashMap::new(),
             dirty_lights: true,
@@ -158,6 +162,16 @@ impl VisualWorld {
         self.clear_color = rgba;
     }
 
+    pub fn ambient_light(&self) -> [f32; 3] {
+        self.ambient_light
+    }
+
+    pub fn set_ambient_light(&mut self, rgb: [f32; 3]) {
+        self.ambient_light = rgb;
+        // Stored in the global camera UBO for now.
+        self.dirty_camera = true;
+    }
+
     pub fn clear(&mut self) {
         self.instances.clear();
         self.handle_to_index.clear();
@@ -167,6 +181,8 @@ impl VisualWorld {
         self.point_lights.clear();
         self.point_light_index_by_component.clear();
         self.dirty_lights = true;
+
+        self.ambient_light = [0.0, 0.0, 0.0];
 
         self.dirty_draw_cache = true;
         self.dirty_instance_data = true;
