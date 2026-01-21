@@ -100,7 +100,7 @@ impl InputSystem {
         // Sensitivity is radians per pixel.
         const MOUSE_SENS_RAD_PER_PX: f32 = 0.003;
         let yaw_delta = drag_dx * MOUSE_SENS_RAD_PER_PX;
-        let pitch_delta = -drag_dy * MOUSE_SENS_RAD_PER_PX;
+        let pitch_delta = drag_dy * MOUSE_SENS_RAD_PER_PX;
 
         if yaw_delta == 0.0 && pitch_delta == 0.0 {
             return;
