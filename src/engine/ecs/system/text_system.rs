@@ -279,12 +279,12 @@ fn uvs_for_glyph(ch: char) -> Vec<[f32; 2]> {
 
     // Atlas convention for `assets/textures/font.dds`:
     // - Row 0 is the TOP row of the image.
-    // - The renderer/texture sampling treats v=0 as TOP and v=1 as BOTTOM.
-    // So we do *not* flip V here.
+    // - Our texture sampling treats v=0 as TOP and v=1 as BOTTOM.
     let v0 = row / ROWS;
     let v1 = (row + 1.0) / ROWS;
 
     // Quad vertex order from MeshFactory::quad_2d():
     // 0 bottom-left, 1 bottom-right, 2 top-right, 3 top-left
-    vec![[u0, v0], [u1, v0], [u1, v1], [u0, v1]]
+    // Since row 0 is the *top* of the atlas, bottom vertices must use v1.
+    vec![[u0, v1], [u1, v1], [u1, v0], [u0, v0]]
 }

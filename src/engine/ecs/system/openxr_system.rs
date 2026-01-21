@@ -504,24 +504,13 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
         let nf = 1.0 / (z_near - z_far);
 
         // Match the engine's column-major RH ZO layout used in Camera3D::perspective_rh_zo.
-        //
-        // OpenXR fov angles are defined with +Y up in view space, but our Vulkan path uses a
-        // top-left framebuffer origin with a non-flipped viewport. To keep XR vertical motion
-        // consistent (pitch/roll direction), flip clip-space Y by negating the 2nd row.
-        let mut m = [
+        // Now: +Y is up in clip space, matching OpenXR and GLTF conventions.
+        [
             [2.0 * z_near / w, 0.0, 0.0, 0.0],
             [0.0, 2.0 * z_near / h, 0.0, 0.0],
             [(r + l) / w, (u + d) / h, z_far * nf, -1.0],
             [0.0, 0.0, (z_near * z_far) * nf, 0.0],
-        ];
-
-        // Negate row 1 (y) in our column-major storage: elements [col][1].
-        m[0][1] = -m[0][1];
-        m[1][1] = -m[1][1];
-        m[2][1] = -m[2][1];
-        m[3][1] = -m[3][1];
-
-        m
+        ]
     }
 
     fn clear_xr_swapchain_image(

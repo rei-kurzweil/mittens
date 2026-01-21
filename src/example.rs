@@ -276,7 +276,7 @@ pub fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         TransformComponent::new()
             .with_position(0.0, -0.10, -4.0)
             .with_scale(0.50, 0.50, 0.50)
-            .with_rotation_euler(0.0, 0.0, 3.14159),
+            .with_rotation_euler(0.0, 0.0, 0.0),
     );
     let cat_gltf = universe
         .world

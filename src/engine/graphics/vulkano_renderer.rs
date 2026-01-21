@@ -971,9 +971,12 @@ mod vulkano_backend {
                 ..Default::default()
             };
 
+            // Engine convention: +Y is up in clip space.
+            // Vulkan's default viewport maps NDC Y with opposite direction, so we flip the
+            // viewport by using a negative height.
             let viewport = Viewport {
-                offset: [0.0, 0.0],
-                extent: [extent[0] as f32, extent[1] as f32],
+                offset: [0.0, extent[1] as f32],
+                extent: [extent[0] as f32, -(extent[1] as f32)],
                 depth_range: 0.0..=1.0,
                 ..Default::default()
             };

@@ -57,7 +57,7 @@ impl InputSystem {
         // Sensitivity is radians per pixel.
         const MOUSE_SENS_RAD_PER_PX: f32 = 0.003;
         let yaw_delta = drag_dx * MOUSE_SENS_RAD_PER_PX;
-        let pitch_delta = -drag_dy * MOUSE_SENS_RAD_PER_PX;
+        let pitch_delta = drag_dy * MOUSE_SENS_RAD_PER_PX;
 
         
         // Relative/flight-style semantics: apply local incremental rotations.
@@ -172,10 +172,10 @@ impl InputSystem {
                 let mut dy = 0.0f32;
 
                 if w {
-                    dy -= 1.0;
+                    dy += 1.0;
                 }
                 if s {
-                    dy += 1.0;
+                    dy -= 1.0;
                 }
                 if a {
                     dx -= 1.0;
@@ -209,10 +209,10 @@ impl InputSystem {
                     dx += 1.0;
                 }
                 if r {
-                    dy -= 1.0;
+                    dy += 1.0;
                 }
                 if f {
-                    dy += 1.0;
+                    dy -= 1.0;
                 }
                 if w {
                     dz -= 1.0;
