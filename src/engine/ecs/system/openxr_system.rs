@@ -425,28 +425,12 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
         t.scale = [1.0, 1.0, 1.0];
         t.recompute_model();
 
-        // OpenXR spaces are right-handed with -Z forward. The engine's world/camera conventions
-        // are effectively rotated 180° around +Y relative to that basis. Apply the basis change
-        // as a similarity transform: M * T * M^-1. For a 180° Y rotation, M == M^-1.
-        // This fixes inverted pitch/roll while keeping yaw intuitive.
-        let basis = [
-            [-1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, -1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ];
-
-        let m = t.model;
-        let m = Self::mul_mat4(&m, &basis);
-        let mut m = Self::mul_mat4(&basis, &m);
-
-        // The basis change above is intended to fix orientation convention mismatches.
-        // SteamVR's OpenXR pose translation appears to be Y-inverted relative to the engine's
-        // world-up convention, so we fix just the Y component here.
-        m[3][0] = p.x;
-        m[3][1] = -p.y;
-        m[3][2] = p.z;
-        m
+        // OpenXR view poses are right-handed with -Z forward, which matches the engine's
+        // Camera3D convention (forward -Z) and our projection math.
+        //
+        // Do not apply additional basis flips here unless we have a proven convention mismatch,
+        // since flipping X/Z will also flip head translation direction and can break stereo.
+        t.model
     }
 
     fn invert_affine_transform(m: &[[f32; 4]; 4]) -> [[f32; 4]; 4] {
@@ -520,12 +504,24 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
         let nf = 1.0 / (z_near - z_far);
 
         // Match the engine's column-major RH ZO layout used in Camera3D::perspective_rh_zo.
-        [
+        //
+        // OpenXR fov angles are defined with +Y up in view space, but our Vulkan path uses a
+        // top-left framebuffer origin with a non-flipped viewport. To keep XR vertical motion
+        // consistent (pitch/roll direction), flip clip-space Y by negating the 2nd row.
+        let mut m = [
             [2.0 * z_near / w, 0.0, 0.0, 0.0],
             [0.0, 2.0 * z_near / h, 0.0, 0.0],
             [(r + l) / w, (u + d) / h, z_far * nf, -1.0],
             [0.0, 0.0, (z_near * z_far) * nf, 0.0],
-        ]
+        ];
+
+        // Negate row 1 (y) in our column-major storage: elements [col][1].
+        m[0][1] = -m[0][1];
+        m[1][1] = -m[1][1];
+        m[2][1] = -m[2][1];
+        m[3][1] = -m[3][1];
+
+        m
     }
 
     fn clear_xr_swapchain_image(
@@ -784,7 +780,21 @@ impl OpenXRSystem {
 
         sess.debug_frame_counter = sess.debug_frame_counter.wrapping_add(1);
         if sess.debug_frame_counter % 120 == 0 {
-            if let Some(v0) = views.first() {
+            if views.len() >= 2 {
+                let p0 = views[0].pose.position;
+                let p1 = views[1].pose.position;
+                let q0 = views[0].pose.orientation;
+                println!(
+                    "[OpenXR] Eye0 pose: p=({:.3},{:.3},{:.3}) q=({:.3},{:.3},{:.3},{:.3})",
+                    p0.x, p0.y, p0.z, q0.x, q0.y, q0.z, q0.w
+                );
+                println!(
+                    "[OpenXR] Eye pose delta (1-0): dp=({:.4},{:.4},{:.4})",
+                    p1.x - p0.x,
+                    p1.y - p0.y,
+                    p1.z - p0.z
+                );
+            } else if let Some(v0) = views.first() {
                 let p = v0.pose.position;
                 let q = v0.pose.orientation;
                 println!(

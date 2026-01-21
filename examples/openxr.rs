@@ -6,6 +6,14 @@ fn main() {
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
 
+    let background = universe
+        .world
+        .add_component(engine::ecs::component::BackgroundColorComponent::rgba(0.3, 0.1, 1.0, 1.0));
+
+    let _ = universe
+        .world
+        .init_component_tree(background, &mut universe.command_queue);
+
     // --- Camera rig (WASD/QE) ---
     // Keep this similar to the main demo so we can fly around the cube field.
     let input = universe
@@ -70,7 +78,7 @@ fn main() {
 
     for z in 0..n {
         for y in 0..n {
-            for x in 0..n*2 {
+            for x in 0..n {
                 let px = x as f32 * step - half_extent_x;
                 let py = y as f32 * step - half_extent_y;
                 let pz = z as f32 * step - half_extent_z;
