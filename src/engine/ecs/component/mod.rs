@@ -1,22 +1,46 @@
-pub mod camera2d;
-pub mod camera3d;
+pub mod camera_2d;
+pub mod camera_3d;
+pub mod camera_xr;
+pub mod background_color;
+pub mod ambient_light;
 pub mod color;
+pub mod emissive;
+pub mod gltf;
 pub mod input;
-pub mod lit_voxel;
+pub mod input_transform_mode;
+pub mod mesh;
+pub mod collision;
+pub mod collision_shape;
+
+pub mod openxr;
 pub mod point_light;
 pub mod renderable;
+pub mod text;
 pub mod texture;
+pub mod texture_filtering;
 pub mod transform;
 pub mod uv;
 
-pub use camera2d::Camera2DComponent;
-pub use camera3d::Camera3DComponent;
+pub use camera_2d::Camera2DComponent;
+pub use camera_3d::Camera3DComponent;
+pub use camera_xr::CameraXRComponent;
+pub use background_color::BackgroundColorComponent;
+pub use ambient_light::AmbientLightComponent;
 pub use color::ColorComponent;
+pub use emissive::EmissiveComponent;
+pub use self::gltf::GLTFComponent;
 pub use input::InputComponent;
-pub use lit_voxel::LitVoxelComponent;
+pub use input_transform_mode::{ForwardAxis, InputTransformModeComponent, RollAxis};
+pub use self::mesh::MeshComponent;
+pub use collision::CollisionComponent;
+pub use collision_shape::CollisionShapeComponent;
+pub use crate::engine::ecs::system::model::collision_types::{CollisionMode, CollisionShape};
+pub use openxr::OpenXRComponent;
 pub use point_light::PointLightComponent;
 pub use renderable::RenderableComponent;
-pub use texture::TextureComponent;
+pub use text::TextComponent;
+pub use texture::{CatEngineTextureFormat, TextureComponent};
+pub use texture_filtering::TextureFilteringComponent;
 pub use transform::TransformComponent;
 pub use uv::UVComponent;
 
@@ -29,7 +53,8 @@ pub type LightComponent = point_light::PointLightComponent;
 /// in `World`, each record carrying its own parent/children handles.
 
 pub struct ComponentNode {
-    pub name: &'static str,
+    pub guid: uuid::Uuid,
+    pub name: String,
     pub component: Box<dyn Component>,
     pub parent: Option<crate::engine::ecs::ComponentId>,
     pub children: Vec<crate::engine::ecs::ComponentId>,
@@ -37,8 +62,9 @@ pub struct ComponentNode {
 
 impl ComponentNode {
     pub fn new(component: Box<dyn Component>) -> Self {
-        let name = component.name();
+        let name = component.name().to_string();
         Self {
+            guid: uuid::Uuid::new_v4(),
             name,
             component,
             parent: None,
@@ -46,9 +72,24 @@ impl ComponentNode {
         }
     }
 
-    pub fn new_named(name: &'static str, component: Box<dyn Component>) -> Self {
+    pub fn new_named(name: impl Into<String>, component: Box<dyn Component>) -> Self {
         Self {
-            name,
+            guid: uuid::Uuid::new_v4(),
+            name: name.into(),
+            component,
+            parent: None,
+            children: Vec::new(),
+        }
+    }
+
+    pub fn new_with_guid_named(
+        guid: uuid::Uuid,
+        name: impl Into<String>,
+        component: Box<dyn Component>,
+    ) -> Self {
+        Self {
+            guid,
+            name: name.into(),
             component,
             parent: None,
             children: Vec::new(),
@@ -81,5 +122,22 @@ pub trait Component: std::any::Any {
         _queue: &mut crate::engine::ecs::CommandQueue,
         _component: crate::engine::ecs::ComponentId,
     ) {
+    }
+
+    /// Encode component data to a HashMap for serialization.
+    ///
+    /// Components should serialize their data fields (not runtime handles).
+    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
+        std::collections::HashMap::new()
+    }
+
+    /// Decode component data from a HashMap after deserialization.
+    ///
+    /// Components should restore their data fields from the map.
+    fn decode(
+        &mut self,
+        _data: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> Result<(), String> {
+        Ok(())
     }
 }

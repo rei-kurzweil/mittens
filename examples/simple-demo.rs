@@ -1,0 +1,14 @@
+use little_cat::{engine, example, utils};
+
+fn main() {
+    utils::logger::init();
+
+    let world = engine::ecs::World::default();
+    let mut universe = engine::Universe::new(world);
+
+    example::build_demo_scene_7_shapes(&mut universe);
+
+    let user_input = engine::user_input::UserInput::new();
+    universe.enable_repl();
+    engine::Windowing::run_app(universe, user_input).expect("Windowing failed");
+}

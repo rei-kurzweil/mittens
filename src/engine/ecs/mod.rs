@@ -1,11 +1,13 @@
 pub mod command_queue;
 pub mod component;
+pub mod component_codec;
 pub mod system;
 
 #[cfg(test)]
 mod world_graph_tests;
 
 use crate::engine::graphics::{RenderAssets, VisualWorld};
+use std::collections::HashMap;
 use slotmap::{SlotMap, new_key_type};
 
 new_key_type! {
@@ -15,9 +17,11 @@ new_key_type! {
 
 // Re-export these so other modules can use `crate::engine::ecs::Transform`
 // and `crate::engine::ecs::Renderable` consistently.
-pub use crate::engine::graphics::primitives::{Renderable, Transform};
+#[allow(unused_imports)]
+pub use crate::engine::graphics::primitives::{Renderable, Transform, TransformMatrix};
 
 pub use command_queue::CommandQueue;
+pub use component_codec::ComponentCodec;
 pub use system::{System, SystemWorld};
 
 /// Bundle of mutable engine state passed to component mutation APIs.
@@ -51,9 +55,15 @@ impl<'a> WorldContext<'a> {
 #[derive(Default)]
 pub struct World {
     components: SlotMap<ComponentId, crate::engine::ecs::component::ComponentNode>,
+    guid_index: HashMap<uuid::Uuid, ComponentId>,
 }
 
 impl World {
+    /// Fast GUID -> ComponentId lookup.
+    pub fn component_id_by_guid(&self, guid: uuid::Uuid) -> Option<ComponentId> {
+        self.guid_index.get(&guid).copied()
+    }
+
     /// Add a new component to the world (no parent) and return its id.
     ///
     /// Note: this currently does *not* call `Component::init`. That should happen via a
@@ -75,20 +85,53 @@ impl World {
         &mut self,
         c: Box<dyn crate::engine::ecs::component::Component>,
     ) -> ComponentId {
-        self.components
-            .insert(crate::engine::ecs::component::ComponentNode::new(c))
+        let node = crate::engine::ecs::component::ComponentNode::new(c);
+        let guid = node.guid;
+        let id = self.components.insert(node);
+        let _old = self.guid_index.insert(guid, id);
+        if let Some(node) = self.get_component_record_mut(id) {
+            node.component.set_id(id);
+        }
+        id
     }
 
     /// Add a new boxed component with an explicit stored name.
     pub fn add_component_boxed_named(
         &mut self,
-        name: &'static str,
+        name: impl Into<String>,
         c: Box<dyn crate::engine::ecs::component::Component>,
     ) -> ComponentId {
-        self.components
-            .insert(crate::engine::ecs::component::ComponentNode::new_named(
-                name, c,
-            ))
+        let node = crate::engine::ecs::component::ComponentNode::new_named(name, c);
+        let guid = node.guid;
+        let id = self.components.insert(node);
+        let _old = self.guid_index.insert(guid, id);
+        if let Some(node) = self.get_component_record_mut(id) {
+            node.component.set_id(id);
+        }
+        id
+    }
+
+    /// Add a new boxed component with a restored GUID and explicit stored name.
+    ///
+    /// This is intended for deserialization.
+    pub fn add_component_boxed_with_guid_named(
+        &mut self,
+        guid: uuid::Uuid,
+        name: impl Into<String>,
+        c: Box<dyn crate::engine::ecs::component::Component>,
+    ) -> ComponentId {
+        if self.guid_index.contains_key(&guid) {
+            panic!("duplicate component guid inserted into World: {}", guid);
+        }
+
+        let node = crate::engine::ecs::component::ComponentNode::new_with_guid_named(guid, name, c);
+        let guid = node.guid;
+        let id = self.components.insert(node);
+        self.guid_index.insert(guid, id);
+        if let Some(node) = self.get_component_record_mut(id) {
+            node.component.set_id(id);
+        }
+        id
     }
 
     /// Temporary alias during migration.
@@ -106,6 +149,14 @@ impl World {
         self.components.get(id)
     }
 
+    /// Alias for `get_component_record` (used by ComponentCodec).
+    pub fn get_component_node(
+        &self,
+        id: ComponentId,
+    ) -> Option<&crate::engine::ecs::component::ComponentNode> {
+        self.get_component_record(id)
+    }
+
     pub fn get_component_record_mut(
         &mut self,
         id: ComponentId,
@@ -116,6 +167,11 @@ impl World {
     // --- Topology helpers (component-graph) ---
     pub fn parent_of(&self, c: ComponentId) -> Option<ComponentId> {
         self.get_component_record(c)?.parent
+    }
+
+    /// Iterator over all component IDs in the world.
+    pub fn all_components(&self) -> impl Iterator<Item = ComponentId> + '_ {
+        self.components.keys()
     }
 
     pub fn children_of(&self, c: ComponentId) -> &[ComponentId] {
@@ -251,14 +307,19 @@ impl World {
     /// This is a *leaf-only* removal: it fails if the component still has children.
     /// Use `remove_component_subtree` when you want to delete a whole branch.
     pub fn remove_component_leaf(&mut self, c: ComponentId) -> Result<(), &'static str> {
-        let Some(node) = self.get_component_record(c) else {
-            return Err("component does not exist");
+        let guid = {
+            let Some(node) = self.get_component_record(c) else {
+                return Err("component does not exist");
+            };
+            if !node.children.is_empty() {
+                return Err(
+                    "component has children; use remove_component_subtree or detach children first",
+                );
+            }
+            node.guid
         };
-        if !node.children.is_empty() {
-            return Err(
-                "component has children; use remove_component_subtree or detach children first",
-            );
-        }
+
+        self.guid_index.remove(&guid);
 
         self.detach_from_parent(c);
         self.components.remove(c);
@@ -287,6 +348,10 @@ impl World {
 
         // Delete in reverse (children first).
         for c in order.into_iter().rev() {
+            let guid = self.get_component_record(c).map(|n| n.guid);
+            if let Some(guid) = guid {
+                self.guid_index.remove(&guid);
+            }
             // Clear parent/children links if node still exists.
             if let Some(node) = self.get_component_record_mut(c) {
                 node.parent = None;

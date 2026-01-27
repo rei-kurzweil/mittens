@@ -74,4 +74,31 @@ impl Component for PointLightComponent {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
+
+    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
+        let mut map = std::collections::HashMap::new();
+        map.insert("intensity".to_string(), serde_json::json!(self.intensity));
+        map.insert("distance".to_string(), serde_json::json!(self.distance));
+        map.insert("color".to_string(), serde_json::json!(self.color));
+        map
+    }
+
+    fn decode(
+        &mut self,
+        data: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> Result<(), String> {
+        if let Some(intensity) = data.get("intensity") {
+            self.intensity = serde_json::from_value(intensity.clone())
+                .map_err(|e| format!("Failed to decode intensity: {}", e))?;
+        }
+        if let Some(distance) = data.get("distance") {
+            self.distance = serde_json::from_value(distance.clone())
+                .map_err(|e| format!("Failed to decode distance: {}", e))?;
+        }
+        if let Some(color) = data.get("color") {
+            self.color = serde_json::from_value(color.clone())
+                .map_err(|e| format!("Failed to decode color: {}", e))?;
+        }
+        Ok(())
+    }
 }

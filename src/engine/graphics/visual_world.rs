@@ -2,12 +2,44 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::Transform;
 use crate::engine::graphics::GpuRenderable;
 use crate::engine::graphics::primitives::InstanceHandle;
+use crate::engine::graphics::primitives::TransformMatrix;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum TextureFiltering {
+    /// Default: linear filtering for both minification and magnification.
+    #[default]
+    Linear,
+    /// Nearest-neighbor filtering for both minification and magnification.
+    Nearest,
+    /// Nearest for magnification, linear for minification.
+    NearestMagnification,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CameraTarget {
+    Window,
+    Xr,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CameraData {
+    pub view: [[f32; 4]; 4],
+    pub proj: [[f32; 4]; 4],
+    pub transform: Transform,
+}
+
+#[derive(Debug, Clone)]
+pub struct VisualCamera {
+    pub target: CameraTarget,
+    pub eyes: Vec<CameraData>,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct DrawBatch {
     pub material: crate::engine::graphics::MaterialHandle,
     pub mesh: crate::engine::graphics::primitives::MeshHandle,
     pub texture: Option<crate::engine::graphics::TextureHandle>,
+    pub texture_filtering: TextureFiltering,
     /// Range into `draw_order`
     pub start: usize,
     pub count: usize,
@@ -15,14 +47,21 @@ pub struct DrawBatch {
 
 pub struct VisualWorld {
     instances: Vec<VisualInstance>,
+    clear_color: [f32; 4],
+
+    ambient_light: [f32; 3],
 
     point_lights: Vec<VisualPointLight>,
     point_light_index_by_component: std::collections::HashMap<ComponentId, usize>,
     dirty_lights: bool,
 
-    // Active camera state (owned by CameraSystem, mirrored here for renderer snapshot).
-    camera_view: [[f32; 4]; 4],
-    camera_proj: [[f32; 4]; 4],
+    // Target-scoped camera state. Window is typically mono; XR is stereo.
+    visual_cameras: Vec<VisualCamera>,
+
+    // Which CameraXRComponent (by ComponentId) is currently active for XR rig transforms.
+    active_xr_camera: Option<ComponentId>,
+    // Most recent render target size in pixels (width, height).
+    viewport: [f32; 2],
     // 2D camera view transform for translation/scale/rotation.
     // Stored as mat3 column vectors padded to vec4 columns (std140 friendly).
     camera_2d: [[f32; 4]; 3],
@@ -46,30 +85,44 @@ pub struct VisualInstance {
     pub renderable: GpuRenderable,
     pub transform: Transform,
     pub color: [f32; 4],
+    pub emissive: u32,
     pub texture: Option<crate::engine::graphics::TextureHandle>,
+    pub texture_filtering: TextureFiltering,
 }
 
 impl Default for VisualWorld {
     fn default() -> Self {
+        let ident4 = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let mut t = Transform::default();
+        t.model = ident4;
+        t.matrix_world = ident4;
+
         Self {
             instances: Vec::new(),
+            clear_color: [0.0, 0.0, 0.0, 1.0],
+
+            ambient_light: [0.0, 0.0, 0.0],
 
             point_lights: Vec::new(),
             point_light_index_by_component: std::collections::HashMap::new(),
             dirty_lights: true,
 
-            camera_view: [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-            camera_proj: [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
+            visual_cameras: vec![VisualCamera {
+                target: CameraTarget::Window,
+                eyes: vec![CameraData {
+                    view: ident4,
+                    proj: ident4,
+                    transform: t,
+                }],
+            }],
+
+            active_xr_camera: None,
+            viewport: [1.0, 1.0],
             camera_2d: [
                 [1.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],
@@ -88,7 +141,6 @@ impl Default for VisualWorld {
         }
     }
 }
-
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VisualPointLight {
     pub position_ws: [f32; 3],
@@ -102,6 +154,24 @@ impl VisualWorld {
         Self::default()
     }
 
+    pub fn clear_color(&self) -> [f32; 4] {
+        self.clear_color
+    }
+
+    pub fn set_clear_color(&mut self, rgba: [f32; 4]) {
+        self.clear_color = rgba;
+    }
+
+    pub fn ambient_light(&self) -> [f32; 3] {
+        self.ambient_light
+    }
+
+    pub fn set_ambient_light(&mut self, rgb: [f32; 3]) {
+        self.ambient_light = rgb;
+        // Stored in the global camera UBO for now.
+        self.dirty_camera = true;
+    }
+
     pub fn clear(&mut self) {
         self.instances.clear();
         self.handle_to_index.clear();
@@ -112,11 +182,23 @@ impl VisualWorld {
         self.point_light_index_by_component.clear();
         self.dirty_lights = true;
 
+        self.ambient_light = [0.0, 0.0, 0.0];
+
         self.dirty_draw_cache = true;
         self.dirty_instance_data = true;
         self.dirty_camera = true;
         self.draw_order.clear();
         self.draw_batches.clear();
+
+        self.active_xr_camera = None;
+    }
+
+    pub fn active_xr_camera(&self) -> Option<ComponentId> {
+        self.active_xr_camera
+    }
+
+    pub fn set_active_xr_camera(&mut self, component: Option<ComponentId>) {
+        self.active_xr_camera = component;
     }
 
     pub fn lights_dirty(&self) -> bool {
@@ -154,12 +236,74 @@ impl VisualWorld {
         v
     }
 
-    pub fn camera_view(&self) -> [[f32; 4]; 4] {
-        self.camera_view
+    pub fn visual_cameras(&self) -> &[VisualCamera] {
+        &self.visual_cameras
     }
 
+    pub fn visual_camera(&self, target: CameraTarget) -> Option<&VisualCamera> {
+        self.visual_cameras.iter().find(|c| c.target == target)
+    }
+
+    fn visual_camera_mut(&mut self, target: CameraTarget) -> &mut VisualCamera {
+        if let Some(i) = self.visual_cameras.iter().position(|c| c.target == target) {
+            return &mut self.visual_cameras[i];
+        }
+
+        self.visual_cameras.push(VisualCamera {
+            target,
+            eyes: Vec::new(),
+        });
+        self.visual_cameras.last_mut().unwrap()
+    }
+
+    /// Window-facing compatibility: returns the first eye's view matrix for the window target.
+    pub fn camera_view(&self) -> [[f32; 4]; 4] {
+        self.camera_view_for(CameraTarget::Window)
+    }
+
+    /// Window-facing compatibility: returns the first eye's projection matrix for the window target.
     pub fn camera_proj(&self) -> [[f32; 4]; 4] {
-        self.camera_proj
+        self.camera_proj_for(CameraTarget::Window)
+    }
+
+    pub fn camera_view_for(&self, target: CameraTarget) -> [[f32; 4]; 4] {
+        self.camera_view_for_eye(target, 0)
+    }
+
+    pub fn camera_view_for_eye(&self, target: CameraTarget, eye: usize) -> [[f32; 4]; 4] {
+        self.visual_camera(target)
+            .and_then(|c| c.eyes.get(eye))
+            .map(|e| e.view)
+            .unwrap_or([
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ])
+    }
+
+    pub fn camera_proj_for(&self, target: CameraTarget) -> [[f32; 4]; 4] {
+        self.camera_proj_for_eye(target, 0)
+    }
+
+    pub fn camera_proj_for_eye(&self, target: CameraTarget, eye: usize) -> [[f32; 4]; 4] {
+        self.visual_camera(target)
+            .and_then(|c| c.eyes.get(eye))
+            .map(|e| e.proj)
+            .unwrap_or([
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ])
+    }
+
+    pub fn viewport(&self) -> [f32; 2] {
+        self.viewport
+    }
+
+    pub fn set_viewport(&mut self, viewport: [f32; 2]) {
+        self.viewport = viewport;
     }
 
     pub fn camera_2d(&self) -> [[f32; 4]; 3] {
@@ -167,8 +311,7 @@ impl VisualWorld {
     }
 
     pub fn set_camera(&mut self, view: [[f32; 4]; 4], proj: [[f32; 4]; 4]) {
-        self.camera_view = view;
-        self.camera_proj = proj;
+        self.set_camera_mono_for_target(CameraTarget::Window, view, proj);
         // When a 3D camera becomes active, the 2D camera transform should be neutral.
         self.camera_2d = [
             [1.0, 0.0, 0.0, 0.0],
@@ -176,6 +319,38 @@ impl VisualWorld {
             [0.0, 0.0, 1.0, 0.0],
         ];
         self.dirty_camera = true;
+    }
+
+    /// Set all eyes for a target.
+    ///
+    /// - For `CameraTarget::Window`, pass a 1-element `eyes` vector.
+    /// - For `CameraTarget::Xr`, pass 2 (or more) eyes.
+    pub fn set_camera_for_target(&mut self, target: CameraTarget, eyes: Vec<CameraData>) {
+        let c = self.visual_camera_mut(target);
+        c.eyes = eyes;
+        self.dirty_camera = true;
+    }
+
+    /// Convenience: set a single-eye camera for a target.
+    pub fn set_camera_mono_for_target(
+        &mut self,
+        target: CameraTarget,
+        view: [[f32; 4]; 4],
+        proj: [[f32; 4]; 4],
+    ) {
+        self.set_camera_for_target(
+            target,
+            vec![CameraData {
+                view,
+                proj,
+                transform: Transform::default(),
+            }],
+        );
+    }
+
+    /// Convenience: set XR eyes.
+    pub fn set_xr_camera(&mut self, eyes: Vec<CameraData>) {
+        self.set_camera_for_target(CameraTarget::Xr, eyes);
     }
 
     pub fn set_camera_2d(&mut self, m: [[f32; 4]; 3]) {
@@ -222,12 +397,12 @@ impl VisualWorld {
         self.draw_order.clear();
         self.draw_order.extend(0..self.instances.len() as u32);
 
-        // Sort by (material, mesh). Stable sort keeps relative order for identical keys.
+        // Sort by (material, mesh, texture, filtering). Stable sort keeps relative order for identical keys.
         self.draw_order.sort_by_key(|&i| {
             let inst = self.instances[i as usize];
             let r = inst.renderable;
             let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
-            (r.material.0, r.mesh.0, tex)
+            (r.material.0, r.mesh.0, tex, inst.texture_filtering as u8)
         });
 
         self.draw_batches.clear();
@@ -239,6 +414,7 @@ impl VisualWorld {
             let material = r0.material;
             let mesh = r0.mesh;
             let texture = inst0.texture;
+            let texture_filtering = inst0.texture_filtering;
 
             let start = cursor;
             cursor += 1;
@@ -247,7 +423,11 @@ impl VisualWorld {
                 let idx = self.draw_order[cursor] as usize;
                 let inst = self.instances[idx];
                 let r = inst.renderable;
-                if r.material == material && r.mesh == mesh && inst.texture == texture {
+                if r.material == material
+                    && r.mesh == mesh
+                    && inst.texture == texture
+                    && inst.texture_filtering == texture_filtering
+                {
                     cursor += 1;
                 } else {
                     break;
@@ -258,6 +438,7 @@ impl VisualWorld {
                 material,
                 mesh,
                 texture,
+                texture_filtering,
                 start,
                 count: cursor - start,
             });
@@ -273,6 +454,7 @@ impl VisualWorld {
         renderable: GpuRenderable,
         transform: Transform,
         color: [f32; 4],
+        emissive: u32,
         texture: Option<crate::engine::graphics::TextureHandle>,
     ) -> InstanceHandle {
         let handle = InstanceHandle(self.next_handle);
@@ -283,7 +465,9 @@ impl VisualWorld {
             renderable,
             transform,
             color,
+            emissive,
             texture,
+            texture_filtering: TextureFiltering::default(),
         });
         self.handle_to_index.insert(handle, idx);
         self.component_to_handle.insert(cid, handle);
@@ -329,9 +513,10 @@ impl VisualWorld {
         }
     }
 
-    pub fn update_model(&mut self, handle: InstanceHandle, model: [[f32; 4]; 4]) -> bool {
+    pub fn update_model(&mut self, handle: InstanceHandle, model: TransformMatrix) -> bool {
         if let Some(&idx) = self.handle_to_index.get(&handle) {
             self.instances[idx].transform.model = model;
+            self.instances[idx].transform.matrix_world = model;
             self.dirty_instance_data = true;
             // model-only doesn’t affect batching by (material, mesh)
             true
@@ -343,6 +528,16 @@ impl VisualWorld {
     pub fn update_color(&mut self, handle: InstanceHandle, color: [f32; 4]) -> bool {
         if let Some(&idx) = self.handle_to_index.get(&handle) {
             self.instances[idx].color = color;
+            self.dirty_instance_data = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn update_emissive(&mut self, handle: InstanceHandle, emissive: u32) -> bool {
+        if let Some(&idx) = self.handle_to_index.get(&handle) {
+            self.instances[idx].emissive = emissive;
             self.dirty_instance_data = true;
             true
         } else {
@@ -365,6 +560,21 @@ impl VisualWorld {
         }
     }
 
+    pub fn update_texture_filtering(
+        &mut self,
+        handle: InstanceHandle,
+        filtering: TextureFiltering,
+    ) -> bool {
+        if let Some(&idx) = self.handle_to_index.get(&handle) {
+            self.instances[idx].texture_filtering = filtering;
+            // Filtering affects batching (sampler binding), but not instance vertex data.
+            self.dirty_draw_cache = true;
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn update(
         &mut self,
         handle: InstanceHandle,
@@ -374,12 +584,16 @@ impl VisualWorld {
         if let Some(&idx) = self.handle_to_index.get(&handle) {
             // Preserve per-instance color when updating renderable/transform.
             let color = self.instances[idx].color;
+            let emissive = self.instances[idx].emissive;
             let texture = self.instances[idx].texture;
+            let texture_filtering = self.instances[idx].texture_filtering;
             self.instances[idx] = VisualInstance {
                 renderable,
                 transform,
                 color,
+                emissive,
                 texture,
+                texture_filtering,
             };
             self.dirty_draw_cache = true; // renderable changes likely affect sort/batch
             self.dirty_instance_data = true;

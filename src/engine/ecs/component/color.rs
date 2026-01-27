@@ -48,4 +48,21 @@ impl Component for ColorComponent {
     fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
         queue.queue_register_color(component);
     }
+
+    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
+        let mut map = std::collections::HashMap::new();
+        map.insert("rgba".to_string(), serde_json::json!(self.rgba));
+        map
+    }
+
+    fn decode(
+        &mut self,
+        data: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> Result<(), String> {
+        if let Some(rgba) = data.get("rgba") {
+            self.rgba = serde_json::from_value(rgba.clone())
+                .map_err(|e| format!("Failed to decode rgba: {}", e))?;
+        }
+        Ok(())
+    }
 }

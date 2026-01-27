@@ -66,9 +66,7 @@ mod tests {
 
         let root = w.add_component(crate::engine::ecs::component::TransformComponent::new());
         let child = w.add_component(crate::engine::ecs::component::TransformComponent::new());
-        let grandchild = w.add_component(crate::engine::ecs::component::RenderableComponent::cube(
-            crate::engine::graphics::primitives::CpuMeshHandle(0),
-        ));
+        let grandchild = w.add_component(crate::engine::ecs::component::RenderableComponent::cube());
 
         w.add_child(root, child).unwrap();
         w.add_child(child, grandchild).unwrap();

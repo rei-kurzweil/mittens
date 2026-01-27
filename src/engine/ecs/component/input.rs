@@ -34,4 +34,21 @@ impl Component for InputComponent {
     fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
         queue.queue_register_input(component);
     }
+
+    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
+        let mut map = std::collections::HashMap::new();
+        map.insert("speed".to_string(), serde_json::json!(self.speed));
+        map
+    }
+
+    fn decode(
+        &mut self,
+        data: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> Result<(), String> {
+        if let Some(speed) = data.get("speed") {
+            self.speed = serde_json::from_value(speed.clone())
+                .map_err(|e| format!("Failed to decode speed: {}", e))?;
+        }
+        Ok(())
+    }
 }

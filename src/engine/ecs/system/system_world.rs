@@ -1,11 +1,14 @@
 use super::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::system::CameraSystem;
+use crate::engine::ecs::system::CollisionSystem;
+use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::InputSystem;
 use crate::engine::ecs::system::LightSystem;
-use crate::engine::ecs::system::LitVoxelSystem;
+use crate::engine::ecs::system::OpenXRSystem;
 use crate::engine::ecs::system::RenderableSystem;
 use crate::engine::ecs::system::System;
+use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
@@ -14,13 +17,20 @@ use crate::engine::user_input::InputState;
 /// System world that holds and runs all registered systems.
 #[derive(Debug, Default)]
 pub struct SystemWorld {
-    pub camera: CameraSystem,
+    pub transform:  TransformSystem,
+    pub collision:  CollisionSystem,
     pub renderable: RenderableSystem,
-    pub transform: TransformSystem,
-    pub input: InputSystem,
-    pub light: LightSystem,
-    pub lit_voxel: LitVoxelSystem,
-    pub texture: TextureSystem,
+
+    pub gltf:       GLTFSystem,
+
+    pub openxr:     OpenXRSystem,
+
+    pub camera:     CameraSystem,
+    pub input:      InputSystem,
+    pub light:      LightSystem,
+    
+    pub text:       TextSystem,
+    pub texture:    TextureSystem,
 }
 
 impl SystemWorld {
@@ -59,6 +69,27 @@ impl SystemWorld {
         self.renderable.register_color(world, visuals, component);
     }
 
+    /// Register a BackgroundColorComponent and apply it to VisualWorld.
+    pub fn register_background_color(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.renderable
+            .register_background_color(world, visuals, component);
+    }
+
+    /// Register an AmbientLightComponent and apply it to VisualWorld.
+    pub fn register_ambient_light(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.light.register_ambient_light(world, visuals, component);
+    }
+
     /// Register a TextureComponent and apply it to its ancestor RenderableComponent.
     pub fn register_texture(
         &mut self,
@@ -67,6 +98,71 @@ impl SystemWorld {
         component: ComponentId,
     ) {
         self.texture.register_texture(world, visuals, component);
+    }
+
+    /// Register a TextureFilteringComponent and apply it to its ancestor RenderableComponent.
+    pub fn register_texture_filtering(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.texture
+            .register_texture_filtering(world, visuals, component);
+    }
+
+    /// Register a TextComponent and expand it into per-glyph components.
+    pub fn register_text(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+        queue: &mut crate::engine::ecs::CommandQueue,
+    ) {
+        let spawned = self.text.register_text(world, visuals, component);
+        for g in spawned {
+            world.init_component_tree(g.transform, queue);
+        }
+    }
+
+    /// Register an EmissiveComponent and apply it to its ancestor RenderableComponent.
+    pub fn register_emissive(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.renderable.register_emissive(world, visuals, component);
+    }
+
+    /// Register a CollisionComponent instance with the CollisionSystem.
+    pub fn register_collision(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.collision.register_collision(world, visuals, component);
+    }
+
+    /// Remove a CollisionComponent instance from the CollisionSystem.
+    pub fn remove_collision(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.collision.remove_collision(world, visuals, component);
+    }
+
+    /// Register an OpenXRComponent (initializes OpenXR runtime if enabled).
+    pub fn register_openxr(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.openxr.register_openxr(world, visuals, component);
     }
 
     /// Register a PointLightComponent instance with the LightSystem.
@@ -90,6 +186,10 @@ impl SystemWorld {
         render_assets: &mut RenderAssets,
         uploader: &mut dyn RenderUploader,
     ) {
+        // Ensure any imported assets are registered before renderables try to resolve meshes/textures.
+        self.gltf
+            .flush_imports(render_assets, &mut self.texture, uploader);
+
         self.renderable
             .flush_pending(world, visuals, render_assets, uploader);
 
@@ -110,6 +210,7 @@ impl SystemWorld {
             component,
             &mut self.camera,
             &mut self.light,
+            &mut self.collision,
         );
     }
 
@@ -209,12 +310,36 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
+        // XR rig cameras.
+        if let Some(camera_xr) = _world
+            .get_component_by_id_as::<crate::engine::ecs::component::CameraXRComponent>(component)
+        {
+            match camera_xr.target {
+                crate::engine::graphics::CameraTarget::Xr => {
+                    self.camera.set_active_xr_camera(_world, visuals, component);
+                }
+                crate::engine::graphics::CameraTarget::Window => {
+                    // If someone explicitly targets Window with a CameraXRComponent, ignore for now.
+                    // (Window camera matrices are driven by Camera2D/Camera3D.)
+                }
+            }
+            return;
+        }
+
         // Try Camera3DComponent first
         if let Some(camera_comp) = _world
             .get_component_by_id_as::<crate::engine::ecs::component::Camera3DComponent>(component)
         {
             if let Some(handle) = camera_comp.handle {
-                self.camera.set_active_camera(visuals, handle);
+                match camera_comp.target {
+                    crate::engine::graphics::CameraTarget::Window => {
+                        self.camera.set_active_window_camera(visuals, handle);
+                    }
+                    crate::engine::graphics::CameraTarget::Xr => {
+                        // XR camera matrices are driven by OpenXR each frame.
+                        // Keep this as a no-op for now.
+                    }
+                }
                 return;
             }
         }
@@ -223,7 +348,15 @@ impl SystemWorld {
             .get_component_by_id_as::<crate::engine::ecs::component::Camera2DComponent>(component)
         {
             if let Some(handle) = camera2d_comp.handle {
-                self.camera.set_active_camera(visuals, handle);
+                match camera2d_comp.target {
+                    crate::engine::graphics::CameraTarget::Window => {
+                        self.camera.set_active_window_camera(visuals, handle);
+                    }
+                    crate::engine::graphics::CameraTarget::Xr => {
+                        // XR camera matrices are driven by OpenXR each frame.
+                        // Keep this as a no-op for now.
+                    }
+                }
             }
         }
     }
@@ -242,12 +375,25 @@ impl SystemWorld {
         // Process input first - it may queue commands
         self.input.process_input(world, input, queue, dt_sec);
 
+        // Spawn any GLTF component trees. This may queue component registrations.
+        self.gltf.tick_with_queue(world, queue, dt_sec);
+
+        // Ensure transforms are propagated before any camera systems consume world matrices.
         self.transform.tick(world, visuals, input, dt_sec);
-        self.renderable.tick(world, visuals, input, dt_sec);
+
+        // Collision runs before camera/OpenXR for now; it reads cached world transforms.
+        self.collision.tick(world, visuals, input, dt_sec);
+
+        // Update window camera + select active XR camera rig before OpenXR consumes it.
         self.camera.tick(world, visuals, input, dt_sec);
+        // OpenXR consumes the latest rig transform + publishes per-eye cameras.
+        self.openxr.tick(world, visuals, input, dt_sec);
+
+        self.renderable.tick(world, visuals, input, dt_sec);
+
+        self.text.tick(world, visuals, input, dt_sec);
 
         self.light.tick(world, visuals, input, dt_sec);
-        self.lit_voxel.tick(world, visuals, input, dt_sec);
     }
 
     /// Process commands from the command queue.

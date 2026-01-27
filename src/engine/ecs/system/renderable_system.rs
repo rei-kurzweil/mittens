@@ -1,5 +1,6 @@
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::{ColorComponent, RenderableComponent, UVComponent};
+use crate::engine::ecs::component::{ColorComponent, EmissiveComponent, MeshComponent, RenderableComponent, UVComponent};
+use crate::engine::ecs::component::BackgroundColorComponent;
 
 use crate::engine::ecs::World;
 use crate::engine::ecs::system::System;
@@ -31,17 +32,42 @@ pub struct RenderableSystem {
     /// Keyed by the RenderableComponent's ComponentId.
     pending_uv: HashMap<ComponentId, Vec<[f32; 2]>>,
 
+    /// Cache of CPU meshes with baked UV overrides.
+    ///
+    /// Text rendering creates many glyphs that repeat the same UVs (same character) across many
+    /// instances. Without caching, we end up cloning/registering a new CPU mesh per glyph
+    /// instance, which breaks batching and explodes draw calls.
+    uv_mesh_cache: HashMap<UvMeshCacheKey, CpuMeshHandle>,
+
     /// Per-instance color override for a renderable.
     ///
     /// Keyed by the RenderableComponent's ComponentId.
     pending_color: HashMap<ComponentId, [f32; 4]>,
+
+    /// Per-instance emissive/unlit override for a renderable.
+    ///
+    /// Keyed by the RenderableComponent's ComponentId.
+    pending_emissive: HashMap<ComponentId, u32>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct UvMeshCacheKey {
+    base_mesh: CpuMeshHandle,
+    /// Packed f32 bits for 4 UVs (x,y per vertex) => 8 u32s.
+    ///
+    /// This cache currently targets QUAD-like meshes (4 vertices), which is the hot path for
+    /// text glyphs.
+    uv_bits: [u32; 8],
+}
+
+#[derive(Debug, Clone)]
 struct PendingRenderable {
     cpu_mesh: CpuMeshHandle,
     material: MaterialHandle,
     renderable_cid: ComponentId,
+
+    /// Optional string-key override for the CPU mesh (resolved via `RenderAssets::imported_mesh`).
+    mesh_key: Option<String>,
 }
 
 fn clone_mesh_with_uv_overrides(
@@ -59,6 +85,64 @@ fn clone_mesh_with_uv_overrides(
 }
 
 impl RenderableSystem {
+    fn clone_mesh_with_uv_overrides_cached(
+        &mut self,
+        render_assets: &mut RenderAssets,
+        base_mesh: CpuMeshHandle,
+        uvs: &[[f32; 2]],
+    ) -> Option<CpuMeshHandle> {
+        // Fast path: cache only for 4-vertex meshes (text glyph quads).
+        let vertex_count = render_assets.cpu_mesh(base_mesh)?.vertices.len();
+        if vertex_count == 4 && uvs.len() >= 4 {
+            let mut uv_bits = [0u32; 8];
+            for i in 0..4 {
+                uv_bits[i * 2] = uvs[i][0].to_bits();
+                uv_bits[i * 2 + 1] = uvs[i][1].to_bits();
+            }
+
+            let key = UvMeshCacheKey { base_mesh, uv_bits };
+            if let Some(&cached) = self.uv_mesh_cache.get(&key) {
+                return Some(cached);
+            }
+
+            let new_mesh = clone_mesh_with_uv_overrides(render_assets, base_mesh, uvs)?;
+            self.uv_mesh_cache.insert(key, new_mesh);
+            return Some(new_mesh);
+        }
+
+        // Fallback: uncached bake for arbitrary meshes.
+        clone_mesh_with_uv_overrides(render_assets, base_mesh, uvs)
+    }
+}
+
+impl RenderableSystem {
+    fn apply_pending_emissive_updates_to_registered_renderables(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+    ) {
+        let keys: Vec<ComponentId> = self.pending_emissive.keys().copied().collect();
+        for renderable_cid in keys {
+            let Some(renderable_comp) =
+                world.get_component_by_id_as::<RenderableComponent>(renderable_cid)
+            else {
+                let _ = self.pending_emissive.remove(&renderable_cid);
+                continue;
+            };
+
+            let Some(handle) = renderable_comp.get_handle() else {
+                continue;
+            };
+
+            let Some(emissive) = self.pending_emissive.get(&renderable_cid).copied() else {
+                continue;
+            };
+
+            let _ = visuals.update_emissive(handle, emissive);
+            let _ = self.pending_emissive.remove(&renderable_cid);
+        }
+    }
+
     fn apply_pending_color_updates_to_registered_renderables(
         &mut self,
         world: &mut World,
@@ -114,7 +198,8 @@ impl RenderableSystem {
                 continue;
             };
 
-            let Some(new_mesh) = clone_mesh_with_uv_overrides(render_assets, base_mesh, &uvs)
+            let Some(new_mesh) =
+                self.clone_mesh_with_uv_overrides_cached(render_assets, base_mesh, &uvs)
             else {
                 continue;
             };
@@ -135,6 +220,7 @@ impl RenderableSystem {
             };
             let transform = Transform {
                 model,
+                matrix_world: model,
                 ..Default::default()
             };
 
@@ -180,6 +266,38 @@ impl RenderableSystem {
         self.pending_color.insert(renderable_cid, color_comp.rgba);
     }
 
+    pub fn register_emissive(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let Some(emissive_comp) = world.get_component_by_id_as::<EmissiveComponent>(component)
+        else {
+            return;
+        };
+
+        // Find the ancestor RenderableComponent that this EmissiveComponent should apply to.
+        let mut cur = component;
+        let mut renderable_cid: Option<ComponentId> = None;
+        while let Some(parent) = world.parent_of(cur) {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(parent)
+                .is_some()
+            {
+                renderable_cid = Some(parent);
+                break;
+            }
+            cur = parent;
+        }
+        let Some(renderable_cid) = renderable_cid else {
+            return;
+        };
+
+        self.pending_emissive
+            .insert(renderable_cid, if emissive_comp.enabled { 1 } else { 0 });
+    }
+
     pub fn register_uv(
         &mut self,
         world: &mut World,
@@ -209,6 +327,20 @@ impl RenderableSystem {
         // Cache until we can apply it during `flush_pending` (which has access to RenderAssets
         // and can safely clone meshes per-renderable).
         self.pending_uv.insert(renderable_cid, uv_comp.uvs.clone());
+    }
+
+    pub fn register_background_color(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let Some(bg) = world.get_component_by_id_as::<BackgroundColorComponent>(component) else {
+            return;
+        };
+
+        // Global state: last registered wins.
+        visuals.set_clear_color(bg.rgba);
     }
 
     /// Register a renderable component with this system.
@@ -254,12 +386,19 @@ impl RenderableSystem {
             return;
         };
 
+        let mesh_key = world
+            .children_of(component)
+            .iter()
+            .copied()
+            .find_map(|cid| world.get_component_by_id_as::<MeshComponent>(cid).map(|m| m.key.clone()));
+
         self.pending.insert(
             component,
             PendingRenderable {
                 cpu_mesh: renderable_comp.renderable.mesh,
                 material: renderable_comp.renderable.material,
                 renderable_cid: component,
+                mesh_key,
             },
         );
         println!(
@@ -290,13 +429,31 @@ impl RenderableSystem {
         // Collect keys first to avoid borrow issues.
         let keys: Vec<ComponentId> = self.pending.keys().copied().collect();
         for key in keys {
-            let Some(p) = self.pending.get(&key).copied() else {
+            let Some(p) = self.pending.get(&key).cloned() else {
                 continue;
             };
 
             let mut cpu_mesh = p.cpu_mesh;
+
+            // If a MeshComponent override exists, don't flush until the imported mesh resolves.
+            if let Some(mesh_key) = p.mesh_key.as_deref() {
+                let Some(imported) = render_assets.imported_mesh(mesh_key) else {
+                    continue;
+                };
+                cpu_mesh = imported;
+                if let Some(pending) = self.pending.get_mut(&key) {
+                    pending.cpu_mesh = cpu_mesh;
+                }
+                if let Some(renderable_comp) =
+                    world.get_component_by_id_as_mut::<RenderableComponent>(p.renderable_cid)
+                {
+                    renderable_comp.renderable.mesh = cpu_mesh;
+                }
+            }
+
             if let Some(uvs) = self.pending_uv.get(&p.renderable_cid).cloned() {
-                if let Some(new_mesh) = clone_mesh_with_uv_overrides(render_assets, cpu_mesh, &uvs)
+                if let Some(new_mesh) =
+                    self.clone_mesh_with_uv_overrides_cached(render_assets, cpu_mesh, &uvs)
                 {
                     cpu_mesh = new_mesh;
                     if let Some(pending) = self.pending.get_mut(&key) {
@@ -337,6 +494,7 @@ impl RenderableSystem {
 
             let transform = Transform {
                 model,
+                matrix_world: model,
                 ..Default::default()
             };
 
@@ -346,7 +504,13 @@ impl RenderableSystem {
                 .copied()
                 .unwrap_or([1.0, 1.0, 1.0, 1.0]);
 
-            let handle = visuals.register(p.renderable_cid, gpu_r, transform, color, None);
+            let emissive = self
+                .pending_emissive
+                .get(&p.renderable_cid)
+                .copied()
+                .unwrap_or(0);
+
+            let handle = visuals.register(p.renderable_cid, gpu_r, transform, color, emissive, None);
             if let Some(renderable_comp) =
                 world.get_component_by_id_as_mut::<RenderableComponent>(p.renderable_cid)
             {
@@ -359,6 +523,9 @@ impl RenderableSystem {
             // Color has now been applied.
             let _ = self.pending_color.remove(&p.renderable_cid);
 
+            // Emissive has now been applied.
+            let _ = self.pending_emissive.remove(&p.renderable_cid);
+
             // (If you log ComponentId in a format string, use {:?}.)
             self.pending.remove(&key);
         }
@@ -370,6 +537,7 @@ impl RenderableSystem {
             uploader,
         );
         self.apply_pending_color_updates_to_registered_renderables(world, visuals);
+        self.apply_pending_emissive_updates_to_registered_renderables(world, visuals);
     }
 }
 

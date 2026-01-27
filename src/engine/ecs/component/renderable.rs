@@ -1,7 +1,8 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
 use crate::engine::graphics::mesh::MeshFactory;
-use crate::engine::graphics::primitives::{InstanceHandle, MaterialHandle, Renderable};
+use crate::engine::graphics::render_assets::RenderAssets;
+use crate::engine::graphics::primitives::{CpuMeshHandle, InstanceHandle, MaterialHandle, Renderable};
 
 /// Renderable component.
 #[derive(Debug, Clone)]
@@ -23,8 +24,8 @@ impl RenderableComponent {
         }
     }
 
-    fn from_cpu_mesh_handle(
-        h: crate::engine::graphics::primitives::CpuMeshHandle,
+    pub fn from_cpu_mesh_handle(
+        h: CpuMeshHandle,
         material: MaterialHandle,
     ) -> Self {
         Self::new(Renderable::new(h, material))
@@ -34,34 +35,64 @@ impl RenderableComponent {
         self.handle
     }
 
-    /// Predefined renderable: 2D triangle (placeholder handle).
-    pub fn triangle(mesh: crate::engine::graphics::primitives::CpuMeshHandle) -> Self {
-        let _ = MeshFactory::triangle_2d();
-        Self::from_cpu_mesh_handle(mesh, MaterialHandle::TOON_MESH)
+    /// Predefined renderable: 2D triangle (shared built-in mesh handle).
+    pub fn triangle() -> Self {
+        Self::from_cpu_mesh_handle(CpuMeshHandle::TRIANGLE_2D, MaterialHandle::TOON_MESH)
     }
 
-    /// Predefined renderable: 2D square/quad (placeholder handle).
-    pub fn square(mesh: crate::engine::graphics::primitives::CpuMeshHandle) -> Self {
-        let _ = MeshFactory::quad_2d();
-        Self::from_cpu_mesh_handle(mesh, MaterialHandle::TOON_MESH)
+    /// Predefined renderable: 2D triangle (unique CPU mesh registered into `render_assets`).
+    pub fn triangle_dynamic(render_assets: &mut RenderAssets) -> Self {
+        let h = render_assets.register_mesh(MeshFactory::triangle_2d());
+        Self::from_cpu_mesh_handle(h, MaterialHandle::TOON_MESH)
     }
 
-    /// Predefined renderable: cube primitive (placeholder handles for now).
-    pub fn cube(mesh: crate::engine::graphics::primitives::CpuMeshHandle) -> Self {
-        let _ = MeshFactory::cube();
-        Self::from_cpu_mesh_handle(mesh, MaterialHandle::TOON_MESH)
+    /// Predefined renderable: 2D square/quad (shared built-in mesh handle).
+    pub fn square() -> Self {
+        Self::from_cpu_mesh_handle(CpuMeshHandle::QUAD_2D, MaterialHandle::TOON_MESH)
     }
 
-    /// Predefined renderable: tetrahedron primitive (placeholder handles for now).
-    pub fn tetrahedron(mesh: crate::engine::graphics::primitives::CpuMeshHandle) -> Self {
-        let _ = MeshFactory::tetrahedron();
-        Self::from_cpu_mesh_handle(mesh, MaterialHandle::TOON_MESH)
+    /// Predefined renderable: 2D square/quad (unique CPU mesh registered into `render_assets`).
+    pub fn square_dynamic(render_assets: &mut RenderAssets) -> Self {
+        let h = render_assets.register_mesh(MeshFactory::quad_2d());
+        Self::from_cpu_mesh_handle(h, MaterialHandle::TOON_MESH)
+    }
+
+    /// Predefined renderable: cube primitive (shared built-in mesh handle).
+    pub fn cube() -> Self {
+        Self::from_cpu_mesh_handle(CpuMeshHandle::CUBE, MaterialHandle::TOON_MESH)
+    }
+
+    /// Predefined renderable: cube primitive (unique CPU mesh registered into `render_assets`).
+    pub fn cube_dynamic(render_assets: &mut RenderAssets) -> Self {
+        let h = render_assets.register_mesh(MeshFactory::cube());
+        Self::from_cpu_mesh_handle(h, MaterialHandle::TOON_MESH)
+    }
+
+    /// Predefined renderable: sphere primitive (shared built-in mesh handle).
+    pub fn sphere() -> Self {
+        Self::from_cpu_mesh_handle(CpuMeshHandle::SPHERE, MaterialHandle::TOON_MESH)
+    }
+
+    /// Predefined renderable: sphere primitive (unique CPU mesh registered into `render_assets`).
+    pub fn sphere_dynamic(render_assets: &mut RenderAssets) -> Self {
+        let h = render_assets.register_mesh(MeshFactory::sphere());
+        Self::from_cpu_mesh_handle(h, MaterialHandle::TOON_MESH)
+    }
+
+    /// Predefined renderable: tetrahedron primitive (shared built-in mesh handle).
+    pub fn tetrahedron() -> Self {
+        Self::from_cpu_mesh_handle(CpuMeshHandle::TETRAHEDRON, MaterialHandle::TOON_MESH)
+    }
+
+    /// Predefined renderable: tetrahedron primitive (unique CPU mesh registered into `render_assets`).
+    pub fn tetrahedron_dynamic(render_assets: &mut RenderAssets) -> Self {
+        let h = render_assets.register_mesh(MeshFactory::tetrahedron());
+        Self::from_cpu_mesh_handle(h, MaterialHandle::TOON_MESH)
     }
 
     /// Predefined renderable: tetrahedron (alias of `tetrahedron`).
-    pub fn color_tetrahedron(mesh: crate::engine::graphics::primitives::CpuMeshHandle) -> Self {
-        let _ = MeshFactory::tetrahedron();
-        Self::from_cpu_mesh_handle(mesh, MaterialHandle::TOON_MESH)
+    pub fn color_tetrahedron() -> Self {
+        Self::tetrahedron()
     }
 }
 
@@ -85,5 +116,35 @@ impl Component for RenderableComponent {
     fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
         // Queue registration command instead of immediately registering
         queue.queue_register_renderable(component);
+    }
+
+    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
+        let mut map = std::collections::HashMap::new();
+        map.insert(
+            "mesh".to_string(),
+            serde_json::json!(self.renderable.mesh.0),
+        );
+        map.insert(
+            "material".to_string(),
+            serde_json::json!(self.renderable.material.0),
+        );
+        map
+    }
+
+    fn decode(
+        &mut self,
+        data: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> Result<(), String> {
+        if let Some(mesh) = data.get("mesh") {
+            let mesh_id: u32 = serde_json::from_value(mesh.clone())
+                .map_err(|e| format!("Failed to decode mesh: {}", e))?;
+            self.renderable.mesh = crate::engine::graphics::primitives::CpuMeshHandle(mesh_id);
+        }
+        if let Some(material) = data.get("material") {
+            let material_id: u32 = serde_json::from_value(material.clone())
+                .map_err(|e| format!("Failed to decode material: {}", e))?;
+            self.renderable.material = MaterialHandle(material_id);
+        }
+        Ok(())
     }
 }
