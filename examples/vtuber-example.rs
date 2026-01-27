@@ -53,12 +53,12 @@ fn main() {
     // --- lighting ---
     let light_transform = universe.world.add_component(
         TransformComponent::new()
-            .with_position(2.0, 8.0, 2.0)
+            .with_position(1.0, 6.0, 3.0)
             .with_scale(0.1, 0.1, 0.1),
     );
     let light = universe.world.add_component(
         engine::ecs::component::PointLightComponent::new()
-            .with_distance(200.0)
+            .with_distance(120.0)
             .with_color(1.0, 1.0, 1.0),
     );
     let _ = universe.world.add_child(light_transform, light);
@@ -108,7 +108,7 @@ fn main() {
     // floor
     spawn_cube(
         &mut universe,
-        (0.0, 0.0, 0.0),
+        (0.0, -0.05, 0.0),
         (10.0, 0.1, 10.0),
         (0.92, 0.92, 0.92, 1.0),
     );
