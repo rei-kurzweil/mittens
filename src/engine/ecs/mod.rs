@@ -7,8 +7,8 @@ pub mod system;
 mod world_graph_tests;
 
 use crate::engine::graphics::{RenderAssets, VisualWorld};
-use std::collections::HashMap;
 use slotmap::{SlotMap, new_key_type};
+use std::collections::HashMap;
 
 new_key_type! {
     /// Global component identity (dense arena key).

@@ -1,6 +1,6 @@
+use super::{pipe, util};
 use crate::engine::ecs;
 use slotmap::KeyData;
-use super::{pipe, util};
 use std::io::Write;
 
 /// Runs REPL commands against engine state.
@@ -250,30 +250,28 @@ impl ReplBackend {
                 print!("\x1b[2J\x1b[H\x1b[3J");
                 let _ = std::io::stdout().flush();
             }
-            "pwd" => {
-                match self.cwd {
-                    None => println!("🐈 /"),
-                    Some(mut cur) => {
-                        let mut parts: Vec<String> = Vec::new();
-                        loop {
-                            let Some(node) = world.get_component_node(cur) else {
-                                break;
-                            };
-                            parts.push(format!(
-                                "{}:{}",
-                                Self::format_component_id_short(cur),
-                                node.name
-                            ));
-                            match world.parent_of(cur) {
-                                Some(p) => cur = p,
-                                None => break,
-                            }
+            "pwd" => match self.cwd {
+                None => println!("🐈 /"),
+                Some(mut cur) => {
+                    let mut parts: Vec<String> = Vec::new();
+                    loop {
+                        let Some(node) = world.get_component_node(cur) else {
+                            break;
+                        };
+                        parts.push(format!(
+                            "{}:{}",
+                            Self::format_component_id_short(cur),
+                            node.name
+                        ));
+                        match world.parent_of(cur) {
+                            Some(p) => cur = p,
+                            None => break,
                         }
-                        parts.reverse();
-                        println!("🐈 /{}", parts.join("/"));
                     }
+                    parts.reverse();
+                    println!("🐈 /{}", parts.join("/"));
                 }
-            }
+            },
             "ls" => {
                 let ids: Vec<ecs::ComponentId> = self.current_listing(world);
 
@@ -305,12 +303,12 @@ impl ReplBackend {
 
                 match target {
                     Some(root) => {
-                        match ecs::ComponentCodec::encode_subtree_node(world, root)
-                            .and_then(|node| {
+                        match ecs::ComponentCodec::encode_subtree_node(world, root).and_then(
+                            |node| {
                                 serde_json::to_string_pretty(&node)
                                     .map_err(|e| format!("failed to serialize JSON: {}", e))
-                            })
-                        {
+                            },
+                        ) {
                             Ok(json) => println!("{}", json),
                             Err(e) => println!("🐈 cat: {}", e),
                         }

@@ -1,4 +1,4 @@
-use little_cat::{engine, utils};
+use cat_engine::{engine, utils};
 
 fn main() {
     utils::logger::init();
@@ -6,9 +6,12 @@ fn main() {
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
 
-    let bg_color = universe
-        .world
-        .add_component(engine::ecs::component::BackgroundColorComponent::rgba(0.1, 0.02, 0.05, 1.0));
+    let bg_color =
+        universe
+            .world
+            .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
+                0.1, 0.02, 0.05, 1.0,
+            ));
 
     let _ = universe
         .world
@@ -26,19 +29,21 @@ fn main() {
     let camera3d = universe
         .world
         .add_component(engine::ecs::component::Camera3DComponent::new());
-    let input_mode = universe
-        .world
-        .add_component(engine::ecs::component::InputTransformModeComponent::forward_z()
+    let input_mode = universe.world.add_component(
+        engine::ecs::component::InputTransformModeComponent::forward_z()
             .with_roll_axis_y()
-            .with_fps_rotation()
-        );
+            .with_fps_rotation(),
+    );
 
     let rig_collision = universe
         .world
         .add_component(engine::ecs::component::CollisionComponent::RIGGED());
-    let rig_shape = universe.world.add_component(engine::ecs::component::CollisionShapeComponent::new(
-        engine::ecs::component::CollisionShape::sphere_radius(0.25),
-    ));
+    let rig_shape =
+        universe
+            .world
+            .add_component(engine::ecs::component::CollisionShapeComponent::new(
+                engine::ecs::component::CollisionShape::sphere_radius(0.25),
+            ));
 
     let _ = universe.world.add_child(input, input_mode);
     let _ = universe.world.add_child(input, rig_transform);
@@ -72,7 +77,9 @@ fn main() {
                 .with_distance(distance),
         );
         let _ = universe.world.add_child(t, l);
-        universe.world.init_component_tree(t, &mut universe.command_queue);
+        universe
+            .world
+            .init_component_tree(t, &mut universe.command_queue);
     }
 
     // Perimeter of cubes: 16 per side, 90deg turns.
@@ -100,7 +107,9 @@ fn main() {
             .add_component(engine::ecs::component::CollisionComponent::STATIC());
         let c = universe
             .world
-            .add_component(engine::ecs::component::ColorComponent::rgba(0.9, 0.2, 0.2, 1.0));
+            .add_component(engine::ecs::component::ColorComponent::rgba(
+                0.9, 0.2, 0.2, 1.0,
+            ));
 
         let _ = universe.world.add_child(t, r);
         let _ = universe.world.add_child(t, cn);
@@ -138,7 +147,9 @@ fn main() {
         let _ = universe.world.add_child(t, renderable);
         let _ = universe.world.add_child(renderable, color);
 
-        universe.world.init_component_tree(t, &mut universe.command_queue);
+        universe
+            .world
+            .init_component_tree(t, &mut universe.command_queue);
     }
 
     let y = 0.5;
@@ -173,10 +184,54 @@ fn main() {
 
     // A few larger cubes outside the perimeter (visual landmarks + lighting test surfaces).
     let outer = half + 3.0;
-    spawn_cube(&mut universe, 0.0, 0.75, -outer, 3.0, 1.5, 1.0, 0.15, 0.15, 0.18);
-    spawn_cube(&mut universe, 0.0, 0.75, outer, 3.0, 1.5, 1.0, 0.15, 0.15, 0.18);
-    spawn_cube(&mut universe, -outer, 0.75, 0.0, 1.0, 1.5, 3.0, 0.15, 0.15, 0.18);
-    spawn_cube(&mut universe, outer, 0.75, 0.0, 1.0, 1.5, 3.0, 0.15, 0.15, 0.18);
+    spawn_cube(
+        &mut universe,
+        0.0,
+        0.75,
+        -outer,
+        3.0,
+        1.5,
+        1.0,
+        0.15,
+        0.15,
+        0.18,
+    );
+    spawn_cube(
+        &mut universe,
+        0.0,
+        0.75,
+        outer,
+        3.0,
+        1.5,
+        1.0,
+        0.15,
+        0.15,
+        0.18,
+    );
+    spawn_cube(
+        &mut universe,
+        -outer,
+        0.75,
+        0.0,
+        1.0,
+        1.5,
+        3.0,
+        0.15,
+        0.15,
+        0.18,
+    );
+    spawn_cube(
+        &mut universe,
+        outer,
+        0.75,
+        0.0,
+        1.0,
+        1.5,
+        3.0,
+        0.15,
+        0.15,
+        0.18,
+    );
 
     // Many small cubes inside the perimeter.
     // Deterministic pseudo-random distribution so the scene is stable.

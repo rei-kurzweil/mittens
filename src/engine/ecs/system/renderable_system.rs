@@ -1,6 +1,8 @@
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::{ColorComponent, EmissiveComponent, MeshComponent, RenderableComponent, UVComponent};
 use crate::engine::ecs::component::BackgroundColorComponent;
+use crate::engine::ecs::component::{
+    ColorComponent, EmissiveComponent, MeshComponent, RenderableComponent, UVComponent,
+};
 
 use crate::engine::ecs::World;
 use crate::engine::ecs::system::System;
@@ -390,7 +392,11 @@ impl RenderableSystem {
             .children_of(component)
             .iter()
             .copied()
-            .find_map(|cid| world.get_component_by_id_as::<MeshComponent>(cid).map(|m| m.key.clone()));
+            .find_map(|cid| {
+                world
+                    .get_component_by_id_as::<MeshComponent>(cid)
+                    .map(|m| m.key.clone())
+            });
 
         self.pending.insert(
             component,
@@ -510,7 +516,8 @@ impl RenderableSystem {
                 .copied()
                 .unwrap_or(0);
 
-            let handle = visuals.register(p.renderable_cid, gpu_r, transform, color, emissive, None);
+            let handle =
+                visuals.register(p.renderable_cid, gpu_r, transform, color, emissive, None);
             if let Some(renderable_comp) =
                 world.get_component_by_id_as_mut::<RenderableComponent>(p.renderable_cid)
             {

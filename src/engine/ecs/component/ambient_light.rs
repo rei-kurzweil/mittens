@@ -12,7 +12,9 @@ pub struct AmbientLightComponent {
 
 impl AmbientLightComponent {
     pub fn new() -> Self {
-        Self { rgb: [0.0, 0.0, 0.0] }
+        Self {
+            rgb: [0.0, 0.0, 0.0],
+        }
     }
 
     pub fn rgb(r: f32, g: f32, b: f32) -> Self {

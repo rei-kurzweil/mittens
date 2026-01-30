@@ -301,7 +301,8 @@ impl GLTFSystem {
             }
 
             for node in scene.nodes() {
-                let root = self.spawn_node_recursive(world, anchor_transform, &buffers, loaded, node);
+                let root =
+                    self.spawn_node_recursive(world, anchor_transform, &buffers, loaded, node);
                 if let Some(root) = root {
                     world.init_component_tree(root, queue);
                 }
@@ -350,7 +351,10 @@ impl GLTFSystem {
 
     fn nearest_transform_ancestor(world: &World, mut cid: ComponentId) -> Option<ComponentId> {
         while let Some(parent) = world.parent_of(cid) {
-            if world.get_component_by_id_as::<TransformComponent>(parent).is_some() {
+            if world
+                .get_component_by_id_as::<TransformComponent>(parent)
+                .is_some()
+            {
                 return Some(parent);
             }
             cid = parent;
@@ -437,7 +441,9 @@ impl GLTFSystem {
                         ]
                     };
 
-                    let sub = |a: [f32; 3], b: [f32; 3]| -> [f32; 3] { [a[0] - b[0], a[1] - b[1], a[2] - b[2]] };
+                    let sub = |a: [f32; 3], b: [f32; 3]| -> [f32; 3] {
+                        [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+                    };
 
                     for tri in indices_u32.chunks_exact(3) {
                         let i0 = tri[0] as usize;
@@ -581,7 +587,10 @@ impl GLTFSystem {
                     .map(Self::sanitize_key_part)
                     .filter(|s| !s.is_empty())
                     .unwrap_or_else(|| format!("mesh{}", mesh.index()));
-                let mesh_key = format!("{}:{}:prim{}", loaded.gltf_name, mesh_name_or_index, prim_index);
+                let mesh_key = format!(
+                    "{}:{}:prim{}",
+                    loaded.gltf_name, mesh_name_or_index, prim_index
+                );
 
                 // Create a renderable with a placeholder mesh; RenderableSystem will block flush
                 // until MeshComponent resolves to an imported mesh.
@@ -617,7 +626,11 @@ impl GLTFSystem {
                 // If base_color is black but emissive is non-black, treat emissive as the visible color
                 // and mark the instance as emissive (unlit) via EmissiveComponent.
                 let base_color_factor = material.pbr_metallic_roughness().base_color_factor();
-                let base_rgb = [base_color_factor[0], base_color_factor[1], base_color_factor[2]];
+                let base_rgb = [
+                    base_color_factor[0],
+                    base_color_factor[1],
+                    base_color_factor[2],
+                ];
                 let emissive_factor = material.emissive_factor();
                 let emissive_rgb = [emissive_factor[0], emissive_factor[1], emissive_factor[2]];
 
@@ -629,7 +642,12 @@ impl GLTFSystem {
                     && !Self::is_black_rgb(emissive_rgb)
                 {
                     wants_emissive = true;
-                    [emissive_rgb[0], emissive_rgb[1], emissive_rgb[2], base_color_factor[3]]
+                    [
+                        emissive_rgb[0],
+                        emissive_rgb[1],
+                        emissive_rgb[2],
+                        base_color_factor[3],
+                    ]
                 } else {
                     base_color_factor
                 };

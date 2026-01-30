@@ -16,9 +16,9 @@ mod vulkano_backend {
     use crate::engine::graphics::pipeline_descriptor_set_layouts::PipelineDescriptorSetLayouts;
     use crate::engine::graphics::primitives::MeshHandle;
     use crate::engine::graphics::primitives::TextureHandle;
-    use crate::engine::graphics::vulkano_texture_upload;
     use crate::engine::graphics::visual_world::{TextureFiltering, VisualWorld};
     use crate::engine::graphics::vulkano_swapchain::VulkanoSwapchainState;
+    use crate::engine::graphics::vulkano_texture_upload;
     use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
     use vulkano::command_buffer::{
         AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo, PrimaryCommandBufferAbstract,
@@ -38,8 +38,8 @@ mod vulkano_backend {
     use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
     use vulkano::pipeline::graphics::multisample::MultisampleState;
     use vulkano::pipeline::graphics::rasterization::RasterizationState;
-    use vulkano::pipeline::graphics::subpass::PipelineSubpassType;
     use vulkano::pipeline::graphics::subpass::PipelineRenderingCreateInfo;
+    use vulkano::pipeline::graphics::subpass::PipelineSubpassType;
     use vulkano::pipeline::graphics::vertex_input::{
         VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate,
         VertexInputState,
@@ -48,6 +48,8 @@ mod vulkano_backend {
     use vulkano::pipeline::layout::{PipelineLayout, PipelineLayoutCreateInfo};
 
     use vulkano::DeviceSize;
+    use vulkano::Version;
+    use vulkano::VulkanObject;
     use vulkano::format::Format;
     use vulkano::image::sampler::{
         Filter, Sampler, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode,
@@ -59,8 +61,6 @@ mod vulkano_backend {
     use vulkano::swapchain::{self, SwapchainPresentInfo};
     use vulkano::sync::{self, GpuFuture};
     use vulkano::{Validated, VulkanError};
-    use vulkano::Version;
-    use vulkano::VulkanObject;
     use vulkano_util::context::{VulkanoConfig, VulkanoContext};
     use winit::window::Window;
 
@@ -371,17 +371,15 @@ mod vulkano_backend {
 
                     // Keep the device selection filter in sync with the extensions we require.
                     let required_dev_exts: DeviceExtensions = enabled_device_exts;
-                    config.device_filter_fn = Arc::new(move |p| {
-                        p.supported_extensions().contains(&required_dev_exts)
-                    });
+                    config.device_filter_fn =
+                        Arc::new(move |p| p.supported_extensions().contains(&required_dev_exts));
 
                     if !unknown_instance_exts.is_empty() || !unknown_device_exts.is_empty() {
                         // These might still be satisfied by Vulkan API version or be irrelevant to Vulkano;
                         // we log them so we can extend the mapping as needed.
                         eprintln!(
                             "[VulkanoRenderer] Note: some OpenXR-required Vulkan extensions were not mapped: instance={:?} device={:?}",
-                            unknown_instance_exts,
-                            unknown_device_exts
+                            unknown_instance_exts, unknown_device_exts
                         );
                     }
                 }
@@ -646,14 +644,11 @@ mod vulkano_backend {
         ) -> Result<(), Box<dyn std::error::Error>> {
             let color_format = self.swapchain_state.swapchain.image_format();
 
-            let needs_recreate = self
-                .xr_offscreen
-                .as_ref()
-                .is_none_or(|t| {
-                    t.extent != extent
-                        || t.color_format != color_format
-                        || t.color_views.len() != view_count
-                });
+            let needs_recreate = self.xr_offscreen.as_ref().is_none_or(|t| {
+                t.extent != extent
+                    || t.color_format != color_format
+                    || t.color_views.len() != view_count
+            });
 
             if !needs_recreate {
                 return Ok(());
@@ -830,7 +825,9 @@ mod vulkano_backend {
                 self.context
                     .device()
                     .wait_idle()
-                    .map_err(|e| -> Box<dyn std::error::Error> { format!("wait_idle failed: {e}").into() })?;
+                    .map_err(|e| -> Box<dyn std::error::Error> {
+                        format!("wait_idle failed: {e}").into()
+                    })?;
 
                 // IMPORTANT: Vulkano's internal resource tracking is tied to futures. If we drop
                 // futures without telling Vulkano they've finished, it can permanently believe a
@@ -847,10 +844,7 @@ mod vulkano_backend {
 
             if let Err(e) = self.swapchain_state.recreate(&self.context, &self.window) {
                 self.recreate_swapchain = true;
-                println!(
-                    "[VulkanoRenderer] failed to recreate swapchain: {}",
-                    e
-                );
+                println!("[VulkanoRenderer] failed to recreate swapchain: {}", e);
                 return Ok(());
             }
 
@@ -872,7 +866,10 @@ mod vulkano_backend {
             color_view: Arc<ImageView>,
             depth_view: Arc<ImageView>,
             extent: [u32; 2],
-        ) -> Result<Arc<vulkano::command_buffer::PrimaryAutoCommandBuffer>, Box<dyn std::error::Error>> {
+        ) -> Result<
+            Arc<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
+            Box<dyn std::error::Error>,
+        > {
             let queue = self.context.graphics_queue().clone();
 
             // Always rebuild draw cache cheaply.
@@ -1424,7 +1421,10 @@ impl VulkanoRenderer {
         xr_required: Option<(&[String], &[String])>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if self.vulkano.is_none() {
-            self.vulkano = Some(vulkano_backend::VulkanoState::new(window.clone(), xr_required)?);
+            self.vulkano = Some(vulkano_backend::VulkanoState::new(
+                window.clone(),
+                xr_required,
+            )?);
             println!("[VulkanoRenderer] Vulkano swapchain/render-pass initialized");
         }
 
@@ -1497,9 +1497,9 @@ impl VulkanoRenderer {
     ///
     /// Note: OpenXR expects these as opaque pointers; we cast from `ash` raw handles.
     pub fn xr_vulkan_graphics(&self) -> Option<crate::engine::graphics::XrVulkanGraphics> {
+        use ash::vk::Handle as _;
         use std::ffi::c_void;
         use vulkano::VulkanObject;
-        use ash::vk::Handle as _;
 
         let vulkano = self.vulkano.as_ref()?;
 

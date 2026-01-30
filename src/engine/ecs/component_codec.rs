@@ -40,7 +40,10 @@ impl ComponentCodec {
     ///
     /// This is the same encoding used for file-based save operations, but returns the
     /// in-memory representation instead of writing to disk.
-    pub fn encode_subtree_node(world: &World, root_id: ComponentId) -> Result<ComponentDataNode, String> {
+    pub fn encode_subtree_node(
+        world: &World,
+        root_id: ComponentId,
+    ) -> Result<ComponentDataNode, String> {
         Self::encode_subtree(world, root_id)
     }
 
@@ -70,10 +73,7 @@ impl ComponentCodec {
     /// Decode a scene from a JSON file and attach all roots to the world.
     ///
     /// Returns the ComponentIds of all loaded roots.
-    pub fn decode_scene(
-        world: &mut World,
-        input_file: &str,
-    ) -> Result<Vec<ComponentId>, String> {
+    pub fn decode_scene(world: &mut World, input_file: &str) -> Result<Vec<ComponentId>, String> {
         let json = std::fs::read_to_string(input_file)
             .map_err(|e| format!("Failed to read file '{}': {}", input_file, e))?;
 
@@ -138,17 +138,17 @@ impl ComponentCodec {
         // Encode children, tracking names to handle duplicates.
         let mut name_counts: HashMap<String, usize> = HashMap::new();
         let mut child_nodes = Vec::new();
-        
+
         for &child_id in &node.children {
             let mut child_node = Self::encode_subtree(world, child_id)?;
-            
+
             // Track name usage and append _N if duplicate.
             let count = name_counts.entry(child_node.name.clone()).or_insert(0);
             if *count > 0 {
                 child_node.name = format!("{}_{}", child_node.name, count);
             }
             *count += 1;
-            
+
             child_nodes.push(child_node);
         }
 
@@ -177,7 +177,8 @@ impl ComponentCodec {
 
         // Add to world with restored GUID + stored name (assigns a fresh ComponentId).
         // Note: The name might have _N suffix which we preserve.
-        let new_id = world.add_component_boxed_with_guid_named(node.guid, node.name.clone(), component);
+        let new_id =
+            world.add_component_boxed_with_guid_named(node.guid, node.name.clone(), component);
 
         // Set parent if specified.
         if let Some(parent) = parent_id {

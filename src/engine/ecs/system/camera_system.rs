@@ -1,8 +1,8 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
+use crate::engine::ecs::component::CameraXRComponent;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
-use crate::engine::ecs::component::CameraXRComponent;
 use crate::engine::graphics::VisualWorld;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -232,10 +232,8 @@ impl CameraSystem {
                 ];
 
                 // Persist into the camera registry so switching cameras updates visuals immediately.
-                if let Some((_, AnyCamera::Camera2D(cam2d))) = self
-                    .cameras
-                    .iter_mut()
-                    .find(|(ch, _)| *ch == handle)
+                if let Some((_, AnyCamera::Camera2D(cam2d))) =
+                    self.cameras.iter_mut().find(|(ch, _)| *ch == handle)
                 {
                     cam2d.view = view;
                     cam2d.proj = proj;
@@ -256,7 +254,8 @@ impl CameraSystem {
         let h = CameraHandle(self.next_handle);
         self.next_handle = self.next_handle.wrapping_add(1);
 
-        self.cameras.push((h, AnyCamera::Camera2D(Camera2D::identity())));
+        self.cameras
+            .push((h, AnyCamera::Camera2D(Camera2D::identity())));
         self.camera2d_components.insert(h, component);
 
         // Newest becomes active (window target).
@@ -311,8 +310,7 @@ impl CameraSystem {
 
                 let vp = visuals.viewport();
                 let aspect = if vp[1] > 0.0 { vp[0] / vp[1] } else { 1.0 };
-                let proj =
-                    Camera3D::perspective_rh_zo(60.0_f32.to_radians(), aspect, 0.1, 100.0);
+                let proj = Camera3D::perspective_rh_zo(60.0_f32.to_radians(), aspect, 0.1, 100.0);
 
                 // Persist into the camera registry so switching cameras updates visuals immediately.
                 if let Some((_, AnyCamera::Camera3D(cam3d))) =
@@ -339,13 +337,11 @@ impl CameraSystem {
         }
 
         // Otherwise, pick the first enabled XR camera component (if any).
-        let next = world
-            .all_components()
-            .find(|&id| {
-                world
-                    .get_component_by_id_as::<CameraXRComponent>(id)
-                    .is_some_and(|c| c.enabled)
-            });
+        let next = world.all_components().find(|&id| {
+            world
+                .get_component_by_id_as::<CameraXRComponent>(id)
+                .is_some_and(|c| c.enabled)
+        });
 
         self.active_xr_camera = next;
         visuals.set_active_xr_camera(next);
@@ -373,8 +369,7 @@ fn invert_affine_transform(m: &[[f32; 4]; 4]) -> [[f32; 4]; 4] {
     let a12 = c2[1];
     let a22 = c2[2];
 
-    let det = a00 * (a11 * a22 - a12 * a21)
-        - a01 * (a10 * a22 - a12 * a20)
+    let det = a00 * (a11 * a22 - a12 * a21) - a01 * (a10 * a22 - a12 * a20)
         + a02 * (a10 * a21 - a11 * a20);
 
     if det.abs() < 1e-8 {
@@ -468,8 +463,7 @@ impl System for CameraSystem {
             }
             AnyCamera::Camera3D(cam3d) => {
                 let aspect = if vp[1] > 0.0 { vp[0] / vp[1] } else { 1.0 };
-                cam3d.proj =
-                    Camera3D::perspective_rh_zo(60.0_f32.to_radians(), aspect, 0.1, 100.0);
+                cam3d.proj = Camera3D::perspective_rh_zo(60.0_f32.to_radians(), aspect, 0.1, 100.0);
                 visuals.set_camera(cam3d.view, cam3d.proj);
             }
         }

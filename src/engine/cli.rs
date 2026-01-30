@@ -1,4 +1,4 @@
-//! Command-line interface for little-cat.
+//! Command-line interface for cat-engine.
 
 use std::env;
 
@@ -20,9 +20,9 @@ impl CLI {
     /// Parse command-line arguments.
     ///
     /// Supported commands:
-    /// - `./little-cat save <filename>` - Save the current scene
-    /// - `./little-cat load <filename>` - Load a scene from file
-    /// - `./little-cat` (no args) - Run normally
+    /// - `./cat-engine save <filename>` - Save the current scene
+    /// - `./cat-engine load <filename>` - Load a scene from file
+    /// - `./cat-engine` (no args) - Run normally
     pub fn parse() -> Self {
         let args: Vec<String> = env::args().collect();
 

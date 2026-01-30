@@ -1,6 +1,8 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
-use crate::engine::ecs::component::{CollisionComponent, CollisionShapeComponent, RenderableComponent};
+use crate::engine::ecs::component::{
+    CollisionComponent, CollisionShapeComponent, RenderableComponent,
+};
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::graphics::VisualWorld;
@@ -156,7 +158,11 @@ impl CollisionSystem {
         // TransformComponent. Otherwise, it should not participate in collision at all.
         let has_transform_parent = world
             .parent_of(component)
-            .and_then(|p| world.get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(p).map(|_| p))
+            .and_then(|p| {
+                world
+                    .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(p)
+                    .map(|_| p)
+            })
             .is_some();
 
         if !has_transform_parent {
@@ -337,10 +343,7 @@ impl Default for WorkerState {
     }
 }
 
-fn collision_worker_loop(
-    rx: mpsc::Receiver<CollisionMessage>,
-    tx: mpsc::Sender<CollisionMessage>,
-) {
+fn collision_worker_loop(rx: mpsc::Receiver<CollisionMessage>, tx: mpsc::Sender<CollisionMessage>) {
     let mut state = WorkerState::default();
     while let Ok(msg) = rx.recv() {
         match msg {

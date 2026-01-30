@@ -1,4 +1,4 @@
-use little_cat::{engine, example, utils};
+use cat_engine::{engine, example, utils};
 
 fn main() {
     utils::logger::init();

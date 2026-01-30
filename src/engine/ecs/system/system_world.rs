@@ -17,20 +17,20 @@ use crate::engine::user_input::InputState;
 /// System world that holds and runs all registered systems.
 #[derive(Debug, Default)]
 pub struct SystemWorld {
-    pub transform:  TransformSystem,
-    pub collision:  CollisionSystem,
+    pub transform: TransformSystem,
+    pub collision: CollisionSystem,
     pub renderable: RenderableSystem,
 
-    pub gltf:       GLTFSystem,
+    pub gltf: GLTFSystem,
 
-    pub openxr:     OpenXRSystem,
+    pub openxr: OpenXRSystem,
 
-    pub camera:     CameraSystem,
-    pub input:      InputSystem,
-    pub light:      LightSystem,
-    
-    pub text:       TextSystem,
-    pub texture:    TextureSystem,
+    pub camera: CameraSystem,
+    pub input: InputSystem,
+    pub light: LightSystem,
+
+    pub text: TextSystem,
+    pub texture: TextureSystem,
 }
 
 impl SystemWorld {

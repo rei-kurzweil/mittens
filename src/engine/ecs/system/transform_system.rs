@@ -10,7 +10,7 @@ use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::user_input::InputState;
 
-/// System responsible for 
+/// System responsible for
 /// syncing `TransformComponent` changes into `VisualWorld`.
 /// applying side effects to direct children of transforms
 /// and calculating world matrices for descendant transform components.
@@ -163,18 +163,16 @@ impl TransformSystem {
                         .get_component_by_id_as::<Camera2DComponent>(child)
                         .is_some()
                     {
-                        camera_system.update_camera_2d_from_parent_transform(
-                            world, visuals, child, node,
-                        );
+                        camera_system
+                            .update_camera_2d_from_parent_transform(world, visuals, child, node);
                     }
 
                     if world
                         .get_component_by_id_as::<Camera3DComponent>(child)
                         .is_some()
                     {
-                        camera_system.update_camera_3d_from_parent_transform(
-                            world, visuals, child, node,
-                        );
+                        camera_system
+                            .update_camera_3d_from_parent_transform(world, visuals, child, node);
                     }
 
                     // If this transform directly parents a CollisionComponent, update it.

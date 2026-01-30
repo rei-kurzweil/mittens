@@ -75,8 +75,12 @@ impl Universe {
             );
         }
 
-        self.renderer
-            .init_for_window(window, xr_required.as_ref().map(|(i, d)| (i.as_slice(), d.as_slice())))?;
+        self.renderer.init_for_window(
+            window,
+            xr_required
+                .as_ref()
+                .map(|(i, d)| (i.as_slice(), d.as_slice())),
+        )?;
 
         if let Some(fmt) = self.renderer.window_vk_format_raw() {
             self.systems.openxr.set_preferred_swapchain_format(fmt);

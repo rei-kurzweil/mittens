@@ -47,7 +47,7 @@ impl ApplicationHandler for App {
         }
 
         let attrs: WindowAttributes = Window::default_attributes()
-            .with_title("Cat Engine 0.3")
+            .with_title("cat engine 0.4")
             .with_inner_size(winit::dpi::LogicalSize::new(1024.0, 768.0))
             .with_resizable(true);
 

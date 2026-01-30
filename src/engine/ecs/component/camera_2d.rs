@@ -25,10 +25,7 @@ impl Camera2DComponent {
     }
 
     /// Ask the CameraSystem to make this the active camera.
-    pub fn make_active_camera(
-        &mut self,
-        queue: &mut crate::engine::ecs::CommandQueue,
-    ) {
+    pub fn make_active_camera(&mut self, queue: &mut crate::engine::ecs::CommandQueue) {
         if self.handle.is_some() {
             if let Some(component) = self.component_id {
                 queue.queue_make_active_camera(component);

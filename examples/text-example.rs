@@ -1,4 +1,4 @@
-use little_cat::{engine, utils};
+use cat_engine::{engine, utils};
 
 fn main() {
     utils::logger::init();
@@ -17,11 +17,9 @@ fn main() {
     let camera3d = universe
         .world
         .add_component(engine::ecs::component::Camera3DComponent::new());
-    let input_mode = universe
-        .world
-        .add_component(engine::ecs::component::InputTransformModeComponent::forward_z()
-            .with_roll_axis_y()
-        );
+    let input_mode = universe.world.add_component(
+        engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y(),
+    );
     let _ = universe.world.add_child(input, input_mode);
     let _ = universe.world.add_child(input, rig_transform);
     let _ = universe.world.add_child(rig_transform, camera3d);
@@ -38,14 +36,15 @@ fn main() {
     let debug_renderable = universe
         .world
         .add_component(engine::ecs::component::RenderableComponent::square());
-    let debug_tex = universe
+    let debug_tex =
+        universe
+            .world
+            .add_component(engine::ecs::component::TextureComponent::with_uri(
+                "assets/textures/font.dds",
+            ));
+    let debug_filtering = universe
         .world
-        .add_component(engine::ecs::component::TextureComponent::with_uri(
-            "assets/textures/font.dds",
-        ));
-    let debug_filtering = universe.world.add_component(
-        engine::ecs::component::TextureFilteringComponent::nearest_magnification(),
-    );
+        .add_component(engine::ecs::component::TextureFilteringComponent::nearest_magnification());
     let _ = universe.world.add_child(debug_root, debug_renderable);
     let _ = universe.world.add_child(debug_renderable, debug_tex);
     let _ = universe.world.add_child(debug_renderable, debug_filtering);
@@ -68,13 +67,7 @@ fn main() {
         .init_component_tree(light_transform, &mut universe.command_queue);
 
     // 4 red cubes around the perimeter of the world (easy visual anchors).
-    fn spawn_red_cube(
-        universe: &mut engine::Universe,
-        x: f32,
-        y: f32,
-        z: f32,
-        s: f32,
-    ) {
+    fn spawn_red_cube(universe: &mut engine::Universe, x: f32, y: f32, z: f32, s: f32) {
         let t = universe.world.add_component(
             engine::ecs::component::TransformComponent::new()
                 .with_position(x, y, z)
@@ -85,7 +78,9 @@ fn main() {
             .add_component(engine::ecs::component::RenderableComponent::cube());
         let c = universe
             .world
-            .add_component(engine::ecs::component::ColorComponent::rgba(1.0, 0.0, 0.0, 1.0));
+            .add_component(engine::ecs::component::ColorComponent::rgba(
+                1.0, 0.0, 0.0, 1.0,
+            ));
         let e = universe
             .world
             .add_component(engine::ecs::component::EmissiveComponent::on());

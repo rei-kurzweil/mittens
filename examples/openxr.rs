@@ -1,4 +1,4 @@
-use little_cat::{engine, utils};
+use cat_engine::{engine, utils};
 
 fn main() {
     utils::logger::init();
@@ -6,9 +6,12 @@ fn main() {
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
 
-    let background = universe
-        .world
-        .add_component(engine::ecs::component::BackgroundColorComponent::rgba(0.3, 0.1, 1.0, 1.0));
+    let background =
+        universe
+            .world
+            .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
+                0.3, 0.1, 1.0, 1.0,
+            ));
 
     let _ = universe
         .world
@@ -19,18 +22,20 @@ fn main() {
     let input = universe
         .world
         .add_component(engine::ecs::component::InputComponent::new().with_speed(1.5));
-    let input_mode = universe
-        .world
-        .add_component(engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y());
+    let input_mode = universe.world.add_component(
+        engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y(),
+    );
     let _ = universe.world.add_child(input, input_mode);
 
     // Start pulled back so the grid is in view.
-    let rig_transform = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 4.0));
+    let rig_transform = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 4.0),
+    );
     let _ = universe.world.add_child(input, rig_transform);
 
-    let camera3d = universe.world.add_component(engine::ecs::component::Camera3DComponent::new());
+    let camera3d = universe
+        .world
+        .add_component(engine::ecs::component::Camera3DComponent::new());
     let _ = universe.world.add_child(rig_transform, camera3d);
 
     // Simple point light so the toon shader reads well.
@@ -39,9 +44,9 @@ fn main() {
             .with_distance(50.0)
             .with_color(1.0, 1.0, 1.0),
     );
-    let light_transform = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 5.0, 2.0));
+    let light_transform = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 5.0, 2.0),
+    );
     let _ = universe.world.add_child(light_transform, light);
 
     universe
@@ -73,7 +78,11 @@ fn main() {
     let container_offset_z = -(half_extent_z + 1.0 + 0.5);
 
     let container = universe.world.add_component(
-        engine::ecs::component::TransformComponent::new().with_position(0.0, container_offset_y, container_offset_z),
+        engine::ecs::component::TransformComponent::new().with_position(
+            0.0,
+            container_offset_y,
+            container_offset_z,
+        ),
     );
 
     for z in 0..n {
@@ -88,12 +97,15 @@ fn main() {
                         .with_position(px, py, pz)
                         .with_scale(cube_scale, cube_scale, cube_scale),
                 );
-                let renderable = universe.world.add_component(engine::ecs::component::RenderableComponent::new(
-                    engine::graphics::primitives::Renderable::new(
-                        cube_mesh,
-                        engine::graphics::primitives::MaterialHandle::TOON_MESH,
-                    ),
-                ));
+                let renderable =
+                    universe
+                        .world
+                        .add_component(engine::ecs::component::RenderableComponent::new(
+                            engine::graphics::primitives::Renderable::new(
+                                cube_mesh,
+                                engine::graphics::primitives::MaterialHandle::TOON_MESH,
+                            ),
+                        ));
 
                 let denom = (n - 1) as f32;
                 let color = engine::ecs::component::ColorComponent::rgba(

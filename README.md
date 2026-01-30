@@ -1,4 +1,4 @@
-# cat engine「０.3」
+# cat engine「0.4」
 
 <img width="498" height="400" alt="Screenshot_20260106_094219" src="https://github.com/user-attachments/assets/83c00897-aa61-4520-8756-cd7263289800" />
 
@@ -199,3 +199,8 @@ Pipes use `|` but they pipe *component objects* (ComponentIds), not strings.
 
 https://github.com/user-attachments/assets/ce4ac311-1087-4792-bec8-5dd012d848f2
 
+
+Credits:
+
+Special thanks to [2gd4.me](https://2gd4.me) for designing font_system.png
+ 

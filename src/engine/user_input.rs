@@ -141,7 +141,9 @@ impl UserInput {
                             if s.len() == 1 {
                                 let c = s.chars().next().unwrap_or('\0');
                                 if c.is_ascii_alphabetic() {
-                                    return Key::Character(c.to_ascii_lowercase().to_string().into());
+                                    return Key::Character(
+                                        c.to_ascii_lowercase().to_string().into(),
+                                    );
                                 }
                             }
                             Key::Character(s.clone())

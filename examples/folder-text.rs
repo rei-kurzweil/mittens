@@ -1,6 +1,40 @@
-use little_cat::{engine, utils};
+use cat_engine::{engine, utils};
 
 use std::path::{Path, PathBuf};
+
+fn measure_text_bounds(text: &str, wrap_at: usize) -> (usize, usize) {
+    const TAB_WIDTH: usize = 4;
+
+    let mut col: usize = 0;
+    let mut line_count: usize = 0;
+    let mut row: usize = 0;
+    let mut max_col: usize = 0;
+
+    for ch in text.chars() {
+        if ch == '\n' {
+            max_col = max_col.max(col);
+            row += 1;
+            col = 0;
+            line_count = 0;
+            continue;
+        }
+
+        if wrap_at != 0 && line_count >= wrap_at {
+            max_col = max_col.max(col);
+            row += 1;
+            col = 0;
+            line_count = 0;
+        }
+
+        let adv = if ch == '\t' { TAB_WIDTH } else { 1 };
+        col += adv;
+        line_count += adv;
+        max_col = max_col.max(col);
+    }
+
+    // Keep a minimum 1x1 so empty text still gets a panel.
+    (max_col.max(1), (row + 1).max(1))
+}
 
 fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(read_dir) = std::fs::read_dir(dir) else {
@@ -76,6 +110,34 @@ fn main() {
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
 
+    // Dark magenta background + matching ambient light.
+    let bg_r = 0.10;
+    let bg_g = 0.00;
+    let bg_b = 0.15;
+    let background =
+        universe
+            .world
+            .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
+                bg_r / 2.0,
+                bg_g / 2.0,
+                bg_b / 2.0,
+                1.00,
+            ));
+    universe
+        .world
+        .init_component_tree(background, &mut universe.command_queue);
+
+    let ambient = universe
+        .world
+        .add_component(engine::ecs::component::AmbientLightComponent::rgb(
+            bg_r * 2.0,
+            bg_g * 2.0,
+            bg_b * 2.0,
+        ));
+    universe
+        .world
+        .init_component_tree(ambient, &mut universe.command_queue);
+
     // Input-driven camera rig.
     // Topology: I { T { C3D } }
     let input = universe
@@ -96,31 +158,23 @@ fn main() {
     let camera3d = universe
         .world
         .add_component(engine::ecs::component::Camera3DComponent::new());
-    let input_mode = universe
-        .world
-        .add_component(engine::ecs::component::InputTransformModeComponent::forward_z()
-            .with_roll_axis_y()
-        );
+    let input_mode = universe.world.add_component(
+        engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y(),
+    );
     let _ = universe.world.add_child(input, input_mode);
     let _ = universe.world.add_child(input, rig_transform);
     let _ = universe.world.add_child(rig_transform, camera3d);
+
+    // Attach a point light to the same transform the camera is nested under.
+    let camera_light = universe.world.add_component(
+        engine::ecs::component::PointLightComponent::new()
+            .with_distance(100.0)
+            .with_color(1.0, 1.0, 1.0),
+    );
+    let _ = universe.world.add_child(rig_transform, camera_light);
     universe
         .world
         .init_component_tree(input, &mut universe.command_queue);
-
-    // Light so we can see meshes / UI consistently.
-    let light_transform = universe.world.add_component(
-        engine::ecs::component::TransformComponent::new().with_position(center_x, 0.0, 2.0),
-    );
-    let light = universe.world.add_component(
-        engine::ecs::component::PointLightComponent::new()
-            .with_distance(25.0)
-            .with_color(1.0, 1.0, 1.0),
-    );
-    let _ = universe.world.add_child(light_transform, light);
-    universe
-        .world
-        .init_component_tree(light_transform, &mut universe.command_queue);
 
     // 4 red cubes around the perimeter of the world (easy visual anchors).
     fn spawn_red_cube(universe: &mut engine::Universe, x: f32, y: f32, z: f32, s: f32) {
@@ -134,7 +188,9 @@ fn main() {
             .add_component(engine::ecs::component::RenderableComponent::cube());
         let c = universe
             .world
-            .add_component(engine::ecs::component::ColorComponent::rgba(1.0, 0.0, 0.0, 1.0));
+            .add_component(engine::ecs::component::ColorComponent::rgba(
+                1.0, 0.0, 0.0, 1.0,
+            ));
         let e = universe
             .world
             .add_component(engine::ecs::component::EmissiveComponent::on());
@@ -179,19 +235,64 @@ fn main() {
         }
 
         let x = start_x + (i as f32) * spacing;
+
+        // Per-file group at world scale.
+        // This owns the (tiny) text subtree and a world-scale ground plane.
+        let file_group = universe.world.add_component(
+            engine::ecs::component::TransformComponent::new().with_position(x, 0.0, 0.0),
+        );
+
+        // Text subtree (tiny scale).
         let file_root = universe.world.add_component(
             engine::ecs::component::TransformComponent::new()
-                .with_position(x, 1.0, 0.0)
+                .with_position(0.0, 1.0, 0.0)
                 .with_scale(TEXT_SCALE, TEXT_SCALE, 1.0)
                 .with_rotation_euler(0.0, std::f32::consts::PI / 6.0, 0.0),
         );
+        let _ = universe.world.add_child(file_group, file_root);
 
-        let text = universe.world.add_component(
-            engine::ecs::component::TextComponent::with_wrap(display_text, WRAP_AT),
+        // Pink background panel behind the text.
+        // Size is based on wrapped line count (matches TextSystem's strict wrapping behavior).
+        let (max_cols, rows) = measure_text_bounds(&display_text, WRAP_AT);
+        let pad_x = 4.0;
+        let pad_y = 4.0;
+        let w = (max_cols as f32) + pad_x;
+        let h = (rows as f32) + pad_y;
+
+        // Text glyph quads are centered at integer (col,row) positions and are 1x1, so the
+        // text's AABB (in text-space) is roughly:
+        //   x: [-0.5, max_cols-0.5]
+        //   y: [-(rows-1)-0.5, 0.5]
+        // Centering the background quad at those midpoints keeps it aligned as text grows.
+        let bg_x = (max_cols as f32 - 1.0) * 0.5;
+        let bg_y = -((rows as f32 - 1.0) * 0.5);
+
+        let bg_transform = universe.world.add_component(
+            engine::ecs::component::TransformComponent::new()
+                .with_position(bg_x, bg_y, -0.05)
+                .with_scale(w, h, 1.0),
         );
-        let filtering = universe
+        let bg_renderable = universe
             .world
-            .add_component(engine::ecs::component::TextureFilteringComponent::nearest_magnification());
+            .add_component(engine::ecs::component::RenderableComponent::square());
+        let bg_color = universe
+            .world
+            .add_component(engine::ecs::component::ColorComponent::rgba(
+                0.2, 0.2, 0.2, 1.0,
+            ));
+        let _ = universe.world.add_child(file_root, bg_transform);
+        let _ = universe.world.add_child(bg_transform, bg_renderable);
+        let _ = universe.world.add_child(bg_renderable, bg_color);
+
+        let text = universe
+            .world
+            .add_component(engine::ecs::component::TextComponent::with_wrap(
+                display_text,
+                WRAP_AT,
+            ));
+        let filtering = universe.world.add_component(
+            engine::ecs::component::TextureFilteringComponent::nearest_magnification(),
+        );
         // let color = universe
         //     .world
         //     .add_component(engine::ecs::component::ColorComponent::rgba(0.7, 0.7, 1.0, 1.0));
@@ -205,7 +306,7 @@ fn main() {
 
         universe
             .world
-            .init_component_tree(file_root, &mut universe.command_queue);
+            .init_component_tree(file_group, &mut universe.command_queue);
     }
 
     // Process init-time registrations (Text expands into glyph subtrees here).

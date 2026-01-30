@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
+use vulkano::Validated;
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
 use vulkano::image::{Image, ImageCreateInfo, ImageType, ImageUsage};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter};
 use vulkano::swapchain::{Surface, Swapchain, SwapchainCreateInfo};
-use vulkano::Validated;
 use vulkano_util::context::VulkanoContext;
 use winit::window::Window;
 
@@ -22,7 +22,10 @@ pub(crate) struct VulkanoSwapchainState {
 impl VulkanoSwapchainState {
     pub(crate) const DEPTH_FORMAT: Format = Format::D32_SFLOAT;
 
-    pub(crate) fn new(context: &VulkanoContext, window: Arc<Window>) -> Result<Self, Box<dyn std::error::Error>> {
+    pub(crate) fn new(
+        context: &VulkanoContext,
+        window: Arc<Window>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let device = context.device().clone();
 
         let surface = Surface::from_window(device.instance().clone(), window.clone())?;

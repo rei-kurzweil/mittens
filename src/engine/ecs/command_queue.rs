@@ -193,84 +193,82 @@ impl CommandQueue {
         while !self.commands.is_empty() {
             passes += 1;
             if passes > 1000 {
-                println!(
-                    "[CommandQueue] aborting flush: too many passes (possible infinite loop)"
-                );
+                println!("[CommandQueue] aborting flush: too many passes (possible infinite loop)");
                 break;
             }
 
             let commands = std::mem::take(&mut self.commands);
             for cmd in commands {
                 match cmd.command {
-                Command::REGISTER_TRANSFORM { component_id } => {
-                    systems.transform_changed(world, visuals, component_id);
-                }
-                Command::UPDATE_TRANSFORM {
-                    component_id,
-                    transform,
-                } => {
-                    systems.update_transform(world, visuals, component_id, transform);
-                }
-                Command::REMOVE_TRANSFORM { component_id } => {
-                    systems.remove_transform(world, visuals, component_id);
-                }
-                Command::REGISTER_CAMERA_3D { component_id } => {
-                    systems.register_camera(world, visuals, component_id);
-                }
-                Command::REGISTER_CAMERA2D { component_id } => {
-                    systems.register_camera2d(world, visuals, component_id);
-                }
-                Command::MAKE_ACTIVE_CAMERA { component_id } => {
-                    systems.make_active_camera(world, visuals, component_id);
-                }
-                Command::REGISTER_INPUT { component_id } => {
-                    systems.register_input(component_id);
-                }
-                Command::REGISTER_RENDERABLE { component_id } => {
-                    systems.register_renderable(world, visuals, component_id);
-                }
-                Command::REGISTER_UV { component_id } => {
-                    systems.register_uv(world, visuals, component_id);
-                }
-                Command::REGISTER_LIGHT { component_id } => {
-                    systems.register_light(world, visuals, component_id);
-                }
-                Command::REGISTER_COLOR { component_id } => {
-                    systems.register_color(world, visuals, component_id);
-                }
-                Command::REGISTER_BACKGROUND_COLOR { component_id } => {
-                    systems.register_background_color(world, visuals, component_id);
-                }
-                Command::REGISTER_AMBIENT_LIGHT { component_id } => {
-                    systems.register_ambient_light(world, visuals, component_id);
-                }
-                Command::REGISTER_TEXTURE { component_id } => {
-                    systems.register_texture(world, visuals, component_id);
-                }
-                Command::REGISTER_TEXTURE_FILTERING { component_id } => {
-                    systems.register_texture_filtering(world, visuals, component_id);
-                }
-                Command::REGISTER_TEXT { component_id } => {
-                    systems.register_text(world, visuals, component_id, self);
-                }
-                Command::REGISTER_EMISSIVE { component_id } => {
-                    systems.register_emissive(world, visuals, component_id);
-                }
-                Command::REGISTER_COLLISION { component_id } => {
-                    systems.register_collision(world, visuals, component_id);
-                }
-                Command::REGISTER_OPENXR { component_id } => {
-                    systems.register_openxr(world, visuals, component_id);
-                }
-                Command::REMOVE_COLLISION { component_id } => {
-                    systems.remove_collision(world, visuals, component_id);
-                }
-                Command::REMOVE_RENDERABLE { component_id: _ } => {
-                    // TODO: implement when needed
-                }
-                Command::REMOVE_CAMERA { component_id: _ } => {
-                    // TODO: implement when needed
-                }
+                    Command::REGISTER_TRANSFORM { component_id } => {
+                        systems.transform_changed(world, visuals, component_id);
+                    }
+                    Command::UPDATE_TRANSFORM {
+                        component_id,
+                        transform,
+                    } => {
+                        systems.update_transform(world, visuals, component_id, transform);
+                    }
+                    Command::REMOVE_TRANSFORM { component_id } => {
+                        systems.remove_transform(world, visuals, component_id);
+                    }
+                    Command::REGISTER_CAMERA_3D { component_id } => {
+                        systems.register_camera(world, visuals, component_id);
+                    }
+                    Command::REGISTER_CAMERA2D { component_id } => {
+                        systems.register_camera2d(world, visuals, component_id);
+                    }
+                    Command::MAKE_ACTIVE_CAMERA { component_id } => {
+                        systems.make_active_camera(world, visuals, component_id);
+                    }
+                    Command::REGISTER_INPUT { component_id } => {
+                        systems.register_input(component_id);
+                    }
+                    Command::REGISTER_RENDERABLE { component_id } => {
+                        systems.register_renderable(world, visuals, component_id);
+                    }
+                    Command::REGISTER_UV { component_id } => {
+                        systems.register_uv(world, visuals, component_id);
+                    }
+                    Command::REGISTER_LIGHT { component_id } => {
+                        systems.register_light(world, visuals, component_id);
+                    }
+                    Command::REGISTER_COLOR { component_id } => {
+                        systems.register_color(world, visuals, component_id);
+                    }
+                    Command::REGISTER_BACKGROUND_COLOR { component_id } => {
+                        systems.register_background_color(world, visuals, component_id);
+                    }
+                    Command::REGISTER_AMBIENT_LIGHT { component_id } => {
+                        systems.register_ambient_light(world, visuals, component_id);
+                    }
+                    Command::REGISTER_TEXTURE { component_id } => {
+                        systems.register_texture(world, visuals, component_id);
+                    }
+                    Command::REGISTER_TEXTURE_FILTERING { component_id } => {
+                        systems.register_texture_filtering(world, visuals, component_id);
+                    }
+                    Command::REGISTER_TEXT { component_id } => {
+                        systems.register_text(world, visuals, component_id, self);
+                    }
+                    Command::REGISTER_EMISSIVE { component_id } => {
+                        systems.register_emissive(world, visuals, component_id);
+                    }
+                    Command::REGISTER_COLLISION { component_id } => {
+                        systems.register_collision(world, visuals, component_id);
+                    }
+                    Command::REGISTER_OPENXR { component_id } => {
+                        systems.register_openxr(world, visuals, component_id);
+                    }
+                    Command::REMOVE_COLLISION { component_id } => {
+                        systems.remove_collision(world, visuals, component_id);
+                    }
+                    Command::REMOVE_RENDERABLE { component_id: _ } => {
+                        // TODO: implement when needed
+                    }
+                    Command::REMOVE_CAMERA { component_id: _ } => {
+                        // TODO: implement when needed
+                    }
                 }
             }
         }

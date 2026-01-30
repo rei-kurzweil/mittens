@@ -1,6 +1,8 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
-use crate::engine::ecs::component::{ForwardAxis, InputComponent, InputTransformModeComponent, RollAxis, TransformComponent};
+use crate::engine::ecs::component::{
+    ForwardAxis, InputComponent, InputTransformModeComponent, RollAxis, TransformComponent,
+};
 use crate::engine::ecs::system::System;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
@@ -59,7 +61,6 @@ impl InputSystem {
         let yaw_delta = drag_dx * MOUSE_SENS_RAD_PER_PX;
         let pitch_delta = drag_dy * MOUSE_SENS_RAD_PER_PX;
 
-        
         // Relative/flight-style semantics: apply local incremental rotations.
         if yaw_delta != 0.0 {
             let q_yaw = math::quat_from_axis_angle([0.0, 1.0, 0.0], yaw_delta);
@@ -82,7 +83,6 @@ impl InputSystem {
             let q_roll = math::quat_from_axis_angle(axis, dtheta);
             *rotation = math::quat_mul(*rotation, q_roll);
         }
-        
     }
 
     fn compute_rotation_fps(
@@ -107,16 +107,21 @@ impl InputSystem {
         }
 
         // Initialize once from current rotation.
-        let (mut yaw, mut pitch) = self.fps_yaw_pitch.get(&transform_cid).copied().unwrap_or_else(|| {
-            let right = math::vec3_normalize(math::quat_rotate_vec3(*rotation, [1.0, 0.0, 0.0]));
-            let fwd = math::vec3_normalize(math::quat_rotate_vec3(*rotation, [0.0, 0.0, -1.0]));
+        let (mut yaw, mut pitch) = self
+            .fps_yaw_pitch
+            .get(&transform_cid)
+            .copied()
+            .unwrap_or_else(|| {
+                let right =
+                    math::vec3_normalize(math::quat_rotate_vec3(*rotation, [1.0, 0.0, 0.0]));
+                let fwd = math::vec3_normalize(math::quat_rotate_vec3(*rotation, [0.0, 0.0, -1.0]));
 
-            // Yaw is global (world up): angle around +Y.
-            let yaw = right[2].atan2(right[0]);
-            // Pitch comes from forward Y.
-            let pitch = fwd[1].clamp(-1.0, 1.0).asin();
-            (yaw, pitch)
-        });
+                // Yaw is global (world up): angle around +Y.
+                let yaw = right[2].atan2(right[0]);
+                // Pitch comes from forward Y.
+                let pitch = fwd[1].clamp(-1.0, 1.0).asin();
+                (yaw, pitch)
+            });
 
         // Apply deltas.
         yaw += yaw_delta;

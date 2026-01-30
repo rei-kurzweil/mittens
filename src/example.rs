@@ -12,7 +12,9 @@ pub fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
     // Built-in CPU meshes are pre-registered; just fetch stable handles.
     let tri_mesh = universe.render_assets.get_mesh(BuiltinMeshType::Triangle2D);
     let square_mesh = universe.render_assets.get_mesh(BuiltinMeshType::Quad2D);
-    let tetra_mesh = universe.render_assets.get_mesh(BuiltinMeshType::Tetrahedron);
+    let tetra_mesh = universe
+        .render_assets
+        .get_mesh(BuiltinMeshType::Tetrahedron);
 
     fn spawn(
         world: &mut ecs::World,
@@ -96,9 +98,9 @@ pub fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
     let tri_input = universe
         .world
         .add_component(InputComponent::new().with_speed(0.5));
-    let input_mode = universe.world.add_component(
-        InputTransformModeComponent::forward_z().with_roll_axis_y(),
-    );
+    let input_mode = universe
+        .world
+        .add_component(InputTransformModeComponent::forward_z().with_roll_axis_y());
     let _ = universe.world.add_child(tri_input, input_mode);
 
     // Start pulled back so the demo meshes at z=0 are in view.
@@ -134,7 +136,9 @@ pub fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
     let _ = universe
         .world
         .add_child(tri_root_transform, tri_visual_transform);
-    let _ = universe.world.add_child(tri_visual_transform, tri_renderable);
+    let _ = universe
+        .world
+        .add_child(tri_visual_transform, tri_renderable);
     let _ = universe.world.add_child(tri_renderable, tri_color);
 
     let tri_light = universe.world.add_component(
@@ -251,17 +255,20 @@ pub fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
     let tex_transform = universe.world.add_component(
         TransformComponent::new()
             .with_position(0.0, 0.1, 0.0)
-            .with_scale(0.45, 0.45, 1.0)
+            .with_scale(0.45, 0.45, 1.0),
     );
     let tex_renderable = universe.world.add_component(RenderableComponent::new(
-        crate::engine::graphics::primitives::Renderable::new(square_mesh, MaterialHandle::TOON_MESH),
+        crate::engine::graphics::primitives::Renderable::new(
+            square_mesh,
+            MaterialHandle::TOON_MESH,
+        ),
     ));
     let tex_color = universe
         .world
         .add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
-    let tex = universe
-        .world
-        .add_component(TextureComponent::from_dds("assets/textures/cat-face-amused.dds"));
+    let tex = universe.world.add_component(TextureComponent::from_dds(
+        "assets/textures/cat-face-amused.dds",
+    ));
 
     let _ = universe.world.add_child(tex_transform, tex_renderable);
     let _ = universe.world.add_child(tex_renderable, tex_color);

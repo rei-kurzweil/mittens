@@ -1,8 +1,10 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
 use crate::engine::graphics::mesh::MeshFactory;
+use crate::engine::graphics::primitives::{
+    CpuMeshHandle, InstanceHandle, MaterialHandle, Renderable,
+};
 use crate::engine::graphics::render_assets::RenderAssets;
-use crate::engine::graphics::primitives::{CpuMeshHandle, InstanceHandle, MaterialHandle, Renderable};
 
 /// Renderable component.
 #[derive(Debug, Clone)]
@@ -24,10 +26,7 @@ impl RenderableComponent {
         }
     }
 
-    pub fn from_cpu_mesh_handle(
-        h: CpuMeshHandle,
-        material: MaterialHandle,
-    ) -> Self {
+    pub fn from_cpu_mesh_handle(h: CpuMeshHandle, material: MaterialHandle) -> Self {
         Self::new(Renderable::new(h, material))
     }
 

@@ -47,8 +47,7 @@ impl LightSystem {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        let Some(ambient) = world.get_component_by_id_as::<AmbientLightComponent>(component)
-        else {
+        let Some(ambient) = world.get_component_by_id_as::<AmbientLightComponent>(component) else {
             return;
         };
 

@@ -39,5 +39,9 @@ pub fn scale_rgb((r, g, b): (u8, u8, u8), factor: f32) -> (u8, u8, u8) {
         scaled.clamp(0.0, 255.0) as u8
     }
 
-    (scale_u8(r, factor), scale_u8(g, factor), scale_u8(b, factor))
+    (
+        scale_u8(r, factor),
+        scale_u8(g, factor),
+        scale_u8(b, factor),
+    )
 }

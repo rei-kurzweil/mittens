@@ -1,13 +1,13 @@
-use crate::engine::ecs::component::OpenXRComponent;
 use crate::engine::ecs::component::CameraXRComponent;
+use crate::engine::ecs::component::OpenXRComponent;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::{ComponentId, World};
-use crate::engine::graphics::XrVulkanGraphics;
 use crate::engine::graphics::CameraData;
-use crate::engine::graphics::XRSwapchain;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::VulkanoRenderer;
+use crate::engine::graphics::XRSwapchain;
+use crate::engine::graphics::XrVulkanGraphics;
 use crate::engine::user_input::InputState;
 
 use ash::vk::Handle as _;
@@ -120,7 +120,7 @@ impl OpenXRSystem {
 
         if state.session.is_none() {
             if let Err(err) = Self::try_init_session(state, gfx, self.preferred_swapchain_format) {
-                    eprintln!("[OpenXR] Session init failed: {err}");
+                eprintln!("[OpenXR] Session init failed: {err}");
                 self.last_init_error = Some(err);
             }
         }
@@ -153,7 +153,9 @@ impl OpenXRSystem {
                 // If we already have Vulkan handles from the renderer, try to create a session.
                 if let (Some(state), Some(gfx)) = (self.state.as_mut(), self.vulkan_graphics) {
                     if state.session.is_none() {
-                        if let Err(err) = Self::try_init_session(state, gfx, self.preferred_swapchain_format) {
+                        if let Err(err) =
+                            Self::try_init_session(state, gfx, self.preferred_swapchain_format)
+                        {
                             eprintln!("[OpenXR] Session init failed: {err}");
                             self.last_init_error = Some(err);
                         }
@@ -173,9 +175,9 @@ impl OpenXRSystem {
         let entry = unsafe { openxr::Entry::load().map_err(|e| format!("Entry::load: {e:?}"))? };
 
         let app_info = openxr::ApplicationInfo {
-            application_name: "little-cat",
+            application_name: "cat-engine",
             application_version: 1,
-            engine_name: "little-cat",
+            engine_name: "cat-engine",
             engine_version: 1,
             api_version: openxr::Version::new(1, 0, 0),
         };
@@ -190,19 +192,14 @@ impl OpenXRSystem {
         let layers: [&str; 0] = [];
 
         let instance = entry
-            .create_instance(
-                &app_info,
-                &extensions,
-                &layers,
-            )
+            .create_instance(&app_info, &extensions, &layers)
             .map_err(|e| format!("create_instance: {e:?}"))?;
 
         // Best-effort runtime identification (helps debugging which OpenXR runtime is active).
         if let Ok(props) = instance.properties() {
             println!(
                 "[OpenXR] Runtime: {} ({:?})",
-                props.runtime_name,
-                props.runtime_version
+                props.runtime_name, props.runtime_version
             );
         }
 
@@ -211,7 +208,7 @@ impl OpenXRSystem {
             Err(openxr::sys::Result::ERROR_FORM_FACTOR_UNAVAILABLE) => {
                 return Err(
                     "system(HMD): ERROR_FORM_FACTOR_UNAVAILABLE (no HMD detected / runtime not ready).\n\
-                    Start an OpenXR runtime (e.g. SteamVR/Monado/ALVR) and ensure a headset is connected and the runtime is running before launching little-cat.\n\
+                    Start an OpenXR runtime (e.g. SteamVR/Monado/ALVR) and ensure a headset is connected and the runtime is running before launching cat-engine.\n\
                     On Linux you can also check XR_RUNTIME_JSON points to an installed runtime manifest."
                         .to_string(),
                 );
@@ -244,11 +241,13 @@ impl OpenXRSystem {
         preferred_swapchain_format: Option<u32>,
     ) -> Result<(), String> {
         // Log Vulkan version requirements (useful debugging).
-        if let Ok(reqs) = state.instance.graphics_requirements::<openxr::Vulkan>(state.system) {
+        if let Ok(reqs) = state
+            .instance
+            .graphics_requirements::<openxr::Vulkan>(state.system)
+        {
             println!(
                 "[OpenXR] Vulkan requirements: min {:?}, max {:?}",
-                reqs.min_api_version_supported,
-                reqs.max_api_version_supported
+                reqs.min_api_version_supported, reqs.max_api_version_supported
             );
         }
 
@@ -329,7 +328,8 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
 
         let vk_instance = unsafe { ash::Instance::load(entry.static_fn(), vk_instance) };
         let vk_device = unsafe { ash::Device::load(vk_instance.fp_v1_0(), vk_device_handle) };
-        let vk_queue = unsafe { vk_device.get_device_queue(gfx.queue_family_index, gfx.queue_index) };
+        let vk_queue =
+            unsafe { vk_device.get_device_queue(gfx.queue_family_index, gfx.queue_index) };
 
         let vk_command_pool = unsafe {
             vk_device
@@ -406,7 +406,9 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
         c
     }
 
-    fn transform_from_matrix_world(m: [[f32; 4]; 4]) -> crate::engine::graphics::primitives::Transform {
+    fn transform_from_matrix_world(
+        m: [[f32; 4]; 4],
+    ) -> crate::engine::graphics::primitives::Transform {
         let mut t = crate::engine::graphics::primitives::Transform::default();
         t.model = m;
         t.matrix_world = m;
@@ -450,8 +452,7 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
         let a12 = c2[1];
         let a22 = c2[2];
 
-        let det = a00 * (a11 * a22 - a12 * a21)
-            - a01 * (a10 * a22 - a12 * a20)
+        let det = a00 * (a11 * a22 - a12 * a21) - a01 * (a10 * a22 - a12 * a20)
             + a02 * (a10 * a21 - a11 * a20);
 
         if det.abs() < 1e-8 {
@@ -519,9 +520,7 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
         rgba: [f32; 4],
         was_initialized: bool,
     ) -> Result<(), ash::vk::Result> {
-        let clear = ash::vk::ClearColorValue {
-            float32: rgba,
-        };
+        let clear = ash::vk::ClearColorValue { float32: rgba };
 
         let old_layout = if was_initialized {
             ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
@@ -542,8 +541,10 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
         };
 
         unsafe {
-            sess.vk_device
-                .reset_command_buffer(sess.vk_command_buffer, ash::vk::CommandBufferResetFlags::empty())?;
+            sess.vk_device.reset_command_buffer(
+                sess.vk_command_buffer,
+                ash::vk::CommandBufferResetFlags::empty(),
+            )?;
 
             sess.vk_device.begin_command_buffer(
                 sess.vk_command_buffer,
@@ -608,7 +609,8 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
 
             let command_buffers = [sess.vk_command_buffer];
             let submit_info = ash::vk::SubmitInfo::default().command_buffers(&command_buffers);
-            sess.vk_device.queue_submit(sess.vk_queue, &[submit_info], ash::vk::Fence::null())?;
+            sess.vk_device
+                .queue_submit(sess.vk_queue, &[submit_info], ash::vk::Fence::null())?;
             sess.vk_device.queue_wait_idle(sess.vk_queue)?;
         }
 
@@ -721,22 +723,25 @@ impl OpenXRSystem {
         }
 
         if !frame_state.should_render {
-            let _ = sess
-                .frame_stream
-                .end(frame_state.predicted_display_time, state.blend_mode, &[]);
+            let _ =
+                sess.frame_stream
+                    .end(frame_state.predicted_display_time, state.blend_mode, &[]);
             return;
         }
 
-        let views = match sess
-            .session
-            .locate_views(state.view_type, frame_state.predicted_display_time, &sess.reference_space)
-        {
+        let views = match sess.session.locate_views(
+            state.view_type,
+            frame_state.predicted_display_time,
+            &sess.reference_space,
+        ) {
             Ok((_flags, views)) => views,
             Err(e) => {
                 eprintln!("[OpenXR] locate_views failed: {e:?}");
-                let _ = sess
-                    .frame_stream
-                    .end(frame_state.predicted_display_time, state.blend_mode, &[]);
+                let _ = sess.frame_stream.end(
+                    frame_state.predicted_display_time,
+                    state.blend_mode,
+                    &[],
+                );
                 return;
             }
         };
@@ -800,9 +805,11 @@ impl OpenXRSystem {
                 Ok(i) => i,
                 Err(e) => {
                     eprintln!("[OpenXR] acquire_image failed: {e:?}");
-                    let _ = sess
-                        .frame_stream
-                        .end(frame_state.predicted_display_time, state.blend_mode, &[]);
+                    let _ = sess.frame_stream.end(
+                        frame_state.predicted_display_time,
+                        state.blend_mode,
+                        &[],
+                    );
                     return;
                 }
             }
@@ -845,9 +852,16 @@ impl OpenXRSystem {
                     );
                 }
 
-                if let Err(e) = Self::clear_xr_swapchain_image(sess, dst_image, visuals.clear_color(), dst_was_initialized) {
+                if let Err(e) = Self::clear_xr_swapchain_image(
+                    sess,
+                    dst_image,
+                    visuals.clear_color(),
+                    dst_was_initialized,
+                ) {
                     eprintln!("[OpenXR] clear XR image failed: {e:?}");
-                } else if let Some(slot) = sess.swapchain_image_initialized.get_mut(image_index_usize) {
+                } else if let Some(slot) =
+                    sess.swapchain_image_initialized.get_mut(image_index_usize)
+                {
                     *slot = true;
                 }
             } else {
@@ -916,9 +930,9 @@ impl OpenXRSystem {
             return;
         }
 
-        if let Err(e) = sess
-            .frame_stream
-            .end(frame_state.predicted_display_time, state.blend_mode, &[])
+        if let Err(e) =
+            sess.frame_stream
+                .end(frame_state.predicted_display_time, state.blend_mode, &[])
         {
             eprintln!("[OpenXR] end_frame failed: {e:?}");
         }
@@ -950,8 +964,10 @@ impl OpenXRSystem {
         };
 
         unsafe {
-            sess.vk_device
-                .reset_command_buffer(sess.vk_command_buffer, ash::vk::CommandBufferResetFlags::empty())?;
+            sess.vk_device.reset_command_buffer(
+                sess.vk_command_buffer,
+                ash::vk::CommandBufferResetFlags::empty(),
+            )?;
 
             sess.vk_device.begin_command_buffer(
                 sess.vk_command_buffer,
@@ -1070,7 +1086,8 @@ impl OpenXRSystem {
 
             let command_buffers = [sess.vk_command_buffer];
             let submit_info = ash::vk::SubmitInfo::default().command_buffers(&command_buffers);
-            sess.vk_device.queue_submit(sess.vk_queue, &[submit_info], ash::vk::Fence::null())?;
+            sess.vk_device
+                .queue_submit(sess.vk_queue, &[submit_info], ash::vk::Fence::null())?;
             sess.vk_device.queue_wait_idle(sess.vk_queue)?;
         }
 

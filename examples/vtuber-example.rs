@@ -1,9 +1,9 @@
-use little_cat::engine::ecs::component::{
+use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ColorComponent,
     GLTFComponent, InputComponent, InputTransformModeComponent, RenderableComponent,
     TransformComponent,
 };
-use little_cat::{engine, utils};
+use cat_engine::{engine, utils};
 
 fn main() {
     utils::logger::init();
@@ -72,8 +72,9 @@ fn main() {
         .world
         .add_component(GLTFComponent::new("assets/models/pc-rei.hoodie.glb"));
     // emissive for pc-rei
-    let emissive = universe.world.add_component(
-        engine::ecs::component::EmissiveComponent { enabled: true });
+    let emissive = universe
+        .world
+        .add_component(engine::ecs::component::EmissiveComponent { enabled: true });
 
     let _ = universe.world.add_child(model, emissive);
 
@@ -84,9 +85,9 @@ fn main() {
 
     // --- Simple environment ---
     let spawn_cube = |universe: &mut engine::Universe,
-                        position: (f32, f32, f32),
-                        scale: (f32, f32, f32),
-                        color: (f32, f32, f32, f32)| {
+                      position: (f32, f32, f32),
+                      scale: (f32, f32, f32),
+                      color: (f32, f32, f32, f32)| {
         let transform = universe.world.add_component(
             TransformComponent::new()
                 .with_position(position.0, position.1, position.2)
