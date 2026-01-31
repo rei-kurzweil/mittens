@@ -135,6 +135,17 @@ impl SystemWorld {
         self.renderable.register_emissive(world, visuals, component);
     }
 
+    /// Register a LightQuantizationComponent and apply it to its ancestor RenderableComponent.
+    pub fn register_light_quantization(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.renderable
+            .register_light_quantization(world, visuals, component);
+    }
+
     /// Register a CollisionComponent instance with the CollisionSystem.
     pub fn register_collision(
         &mut self,

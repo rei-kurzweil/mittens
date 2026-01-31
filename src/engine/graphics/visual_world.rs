@@ -40,6 +40,7 @@ pub struct DrawBatch {
     pub mesh: crate::engine::graphics::primitives::MeshHandle,
     pub texture: Option<crate::engine::graphics::TextureHandle>,
     pub texture_filtering: TextureFiltering,
+    pub quant_steps: f32,
     /// Range into `draw_order`
     pub start: usize,
     pub count: usize,
@@ -88,6 +89,15 @@ pub struct VisualInstance {
     pub emissive: u32,
     pub texture: Option<crate::engine::graphics::TextureHandle>,
     pub texture_filtering: TextureFiltering,
+    pub quant_steps: f32,
+}
+
+fn sanitize_quant_steps(steps: f32) -> f32 {
+    if !steps.is_finite() {
+        3.0
+    } else {
+        steps.clamp(1.0, 64.0)
+    }
 }
 
 impl Default for VisualWorld {
@@ -402,7 +412,13 @@ impl VisualWorld {
             let inst = self.instances[i as usize];
             let r = inst.renderable;
             let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
-            (r.material.0, r.mesh.0, tex, inst.texture_filtering as u8)
+            (
+                r.material.0,
+                r.mesh.0,
+                tex,
+                inst.texture_filtering as u8,
+                sanitize_quant_steps(inst.quant_steps).to_bits(),
+            )
         });
 
         self.draw_batches.clear();
@@ -415,6 +431,7 @@ impl VisualWorld {
             let mesh = r0.mesh;
             let texture = inst0.texture;
             let texture_filtering = inst0.texture_filtering;
+            let quant_steps = sanitize_quant_steps(inst0.quant_steps);
 
             let start = cursor;
             cursor += 1;
@@ -427,6 +444,7 @@ impl VisualWorld {
                     && r.mesh == mesh
                     && inst.texture == texture
                     && inst.texture_filtering == texture_filtering
+                    && sanitize_quant_steps(inst.quant_steps).to_bits() == quant_steps.to_bits()
                 {
                     cursor += 1;
                 } else {
@@ -439,6 +457,7 @@ impl VisualWorld {
                 mesh,
                 texture,
                 texture_filtering,
+                quant_steps,
                 start,
                 count: cursor - start,
             });
@@ -456,6 +475,7 @@ impl VisualWorld {
         color: [f32; 4],
         emissive: u32,
         texture: Option<crate::engine::graphics::TextureHandle>,
+        quant_steps: f32,
     ) -> InstanceHandle {
         let handle = InstanceHandle(self.next_handle);
         self.next_handle = self.next_handle.wrapping_add(1);
@@ -468,6 +488,7 @@ impl VisualWorld {
             emissive,
             texture,
             texture_filtering: TextureFiltering::default(),
+            quant_steps: sanitize_quant_steps(quant_steps),
         });
         self.handle_to_index.insert(handle, idx);
         self.component_to_handle.insert(cid, handle);
@@ -475,6 +496,21 @@ impl VisualWorld {
         self.dirty_draw_cache = true;
         self.dirty_instance_data = true;
         handle
+    }
+
+    pub fn update_quant_steps(&mut self, handle: InstanceHandle, quant_steps: f32) -> bool {
+        if let Some(&idx) = self.handle_to_index.get(&handle) {
+            let q = sanitize_quant_steps(quant_steps);
+            if self.instances[idx].quant_steps.to_bits() == q.to_bits() {
+                return true;
+            }
+            self.instances[idx].quant_steps = q;
+            // Quantization affects material UBO selection => batching.
+            self.dirty_draw_cache = true;
+            true
+        } else {
+            false
+        }
     }
 
     pub fn remove(&mut self, handle: InstanceHandle) -> bool {
@@ -587,6 +623,7 @@ impl VisualWorld {
             let emissive = self.instances[idx].emissive;
             let texture = self.instances[idx].texture;
             let texture_filtering = self.instances[idx].texture_filtering;
+            let quant_steps = self.instances[idx].quant_steps;
             self.instances[idx] = VisualInstance {
                 renderable,
                 transform,
@@ -594,6 +631,7 @@ impl VisualWorld {
                 emissive,
                 texture,
                 texture_filtering,
+                quant_steps,
             };
             self.dirty_draw_cache = true; // renderable changes likely affect sort/batch
             self.dirty_instance_data = true;

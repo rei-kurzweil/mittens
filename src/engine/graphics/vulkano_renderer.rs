@@ -180,6 +180,7 @@ mod vulkano_backend {
                 crate::engine::graphics::MaterialHandle,
                 TextureHandle,
                 TextureFiltering,
+                u32,
             ),
             Arc<DescriptorSet>,
         >,
@@ -237,18 +238,27 @@ mod vulkano_backend {
             }
         }
 
-        fn create_material_ubo(material: crate::engine::graphics::MaterialHandle) -> MaterialUBO {
+        fn create_material_ubo(
+            material: crate::engine::graphics::MaterialHandle,
+            quant_steps: f32,
+        ) -> MaterialUBO {
+            let quant_steps = if quant_steps.is_finite() {
+                quant_steps.clamp(1.0, 64.0)
+            } else {
+                3.0
+            };
+
             match material {
                 crate::engine::graphics::MaterialHandle::TOON_MESH => MaterialUBO {
                     base_color: [1.0, 1.0, 1.0, 1.0],
-                    quant_steps: 3.0,
+                    quant_steps,
                     emissive: 0,
                     _pad0: [0, 0],
                 },
                 // While migrating, treat UNLIT as a simple toon material too.
                 crate::engine::graphics::MaterialHandle::UNLIT_MESH => MaterialUBO {
                     base_color: [1.0, 1.0, 1.0, 1.0],
-                    quant_steps: 1.0,
+                    quant_steps,
                     emissive: 1,
                     _pad0: [0, 0],
                 },
@@ -1072,15 +1082,19 @@ mod vulkano_backend {
             let mut bound_material: Option<crate::engine::graphics::MaterialHandle> = None;
             let mut bound_texture: Option<TextureHandle> = None;
             let mut bound_filtering: Option<TextureFiltering> = None;
+            let mut bound_quant: Option<u32> = None;
 
             for batch in visual_world.draw_batches() {
                 let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
 
                 let filtering = batch.texture_filtering;
 
+                let quant_bits = batch.quant_steps.to_bits();
+
                 if bound_material != Some(batch.material)
                     || bound_texture != Some(texture_handle)
                     || bound_filtering != Some(filtering)
+                    || bound_quant != Some(quant_bits)
                 {
                     match batch.material {
                         crate::engine::graphics::MaterialHandle::TOON_MESH
@@ -1089,13 +1103,15 @@ mod vulkano_backend {
                                 continue;
                             };
 
-                            let material_key = (batch.material, texture_handle, filtering);
+                            let material_key =
+                                (batch.material, texture_handle, filtering, quant_bits);
                             let material_set = if let Some(set) =
                                 self.cached_material_sets.get(&material_key)
                             {
                                 set.clone()
                             } else {
-                                let material_ubo = Self::create_material_ubo(batch.material);
+                                let material_ubo =
+                                    Self::create_material_ubo(batch.material, batch.quant_steps);
                                 let material_buffer: Subbuffer<MaterialUBO> = Buffer::from_data(
                                     self.context.memory_allocator().clone(),
                                     BufferCreateInfo {
@@ -1146,6 +1162,7 @@ mod vulkano_backend {
                     bound_material = Some(batch.material);
                     bound_texture = Some(texture_handle);
                     bound_filtering = Some(filtering);
+                    bound_quant = Some(quant_bits);
                 }
 
                 let Some(mesh) = self.meshes.get(&batch.mesh) else {

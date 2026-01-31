@@ -156,6 +156,17 @@ impl CommandQueue {
         });
     }
 
+    /// Queue a register light quantization command.
+    pub fn queue_register_light_quantization(
+        &mut self,
+        component_id: crate::engine::ecs::ComponentId,
+    ) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REGISTER_LIGHT_QUANTIZATION { component_id },
+        });
+    }
+
     /// Queue a register collision command.
     pub fn queue_register_collision(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
@@ -254,6 +265,9 @@ impl CommandQueue {
                     Command::REGISTER_EMISSIVE { component_id } => {
                         systems.register_emissive(world, visuals, component_id);
                     }
+                    Command::REGISTER_LIGHT_QUANTIZATION { component_id } => {
+                        systems.register_light_quantization(world, visuals, component_id);
+                    }
                     Command::REGISTER_COLLISION { component_id } => {
                         systems.register_collision(world, visuals, component_id);
                     }
@@ -322,6 +336,9 @@ enum Command {
         component_id: crate::engine::ecs::ComponentId,
     },
     REGISTER_EMISSIVE {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+    REGISTER_LIGHT_QUANTIZATION {
         component_id: crate::engine::ecs::ComponentId,
     },
     REGISTER_COLLISION {

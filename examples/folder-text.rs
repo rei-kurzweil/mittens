@@ -1,5 +1,6 @@
 use cat_engine::{engine, utils};
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 fn measure_text_bounds(text: &str, wrap_at: usize) -> (usize, usize) {
@@ -107,21 +108,67 @@ fn main() {
         spacing
     );
 
+    #[derive(Debug, Clone)]
+    struct FileEntry {
+        path: PathBuf,
+        display_text: String,
+        max_cols: usize,
+        rows: usize,
+    }
+
+    // Group files by folder.
+    // Layout:
+    // - each folder becomes a column along +X
+    // - within a folder, files stack along +Y (8 high)
+    // - after 8, additional files start a new stack further along +Z
+    let mut files_by_folder: BTreeMap<PathBuf, Vec<FileEntry>> = BTreeMap::new();
+    for path in files {
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            eprintln!("[folder-text] Failed to read {:?}", path);
+            continue;
+        };
+
+        let mut display_text = format!(
+            "// {}\n\n{}",
+            path.strip_prefix(&manifest_dir).unwrap_or(&path).display(),
+            content
+        );
+
+        if display_text.chars().count() > MAX_CHARS_PER_FILE {
+            display_text = display_text
+                .chars()
+                .take(MAX_CHARS_PER_FILE)
+                .collect::<String>();
+            display_text.push_str("\n\n// ... truncated ...\n");
+        }
+
+        let (max_cols, rows) = measure_text_bounds(&display_text, WRAP_AT);
+
+        let folder_key = path.parent().unwrap_or(&scan_root).to_path_buf();
+        files_by_folder
+            .entry(folder_key)
+            .or_default()
+            .push(FileEntry {
+                path,
+                display_text,
+                max_cols,
+                rows,
+            });
+    }
+
+    let column_count = files_by_folder.len().max(1);
+
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
 
-    // Dark magenta background + matching ambient light.
-    let bg_r = 0.10;
-    let bg_g = 0.00;
-    let bg_b = 0.15;
+    let bg_r = 0.25;
+    let bg_g = 0.25;
+    let bg_b = 0.25;
     let background =
         universe
             .world
             .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
-                bg_r / 2.0,
-                bg_g / 2.0,
-                bg_b / 2.0,
-                1.00,
+                bg_r, bg_g, bg_b, 1.00,
             ));
     universe
         .world
@@ -130,9 +177,7 @@ fn main() {
     let ambient = universe
         .world
         .add_component(engine::ecs::component::AmbientLightComponent::rgb(
-            bg_r * 2.0,
-            bg_g * 2.0,
-            bg_b * 2.0,
+            bg_r, bg_g, bg_b,
         ));
     universe
         .world
@@ -144,11 +189,11 @@ fn main() {
         .world
         .add_component(engine::ecs::component::InputComponent::new().with_speed(1.5));
 
-    // Center the camera horizontally over the spawned blocks.
-    let center_x = if files.len() <= 1 {
+    // Center the camera horizontally over the spawned columns.
+    let center_x = if column_count <= 1 {
         0.0
     } else {
-        ((files.len() - 1) as f32) * spacing * 0.5
+        ((column_count - 1) as f32) * spacing * 0.5
     };
 
     // Bring camera closer: these text blocks are tiny.
@@ -164,17 +209,41 @@ fn main() {
     let _ = universe.world.add_child(input, input_mode);
     let _ = universe.world.add_child(input, rig_transform);
     let _ = universe.world.add_child(rig_transform, camera3d);
-
-    // Attach a point light to the same transform the camera is nested under.
-    let camera_light = universe.world.add_component(
-        engine::ecs::component::PointLightComponent::new()
-            .with_distance(100.0)
-            .with_color(1.0, 1.0, 1.0),
-    );
-    let _ = universe.world.add_child(rig_transform, camera_light);
     universe
         .world
         .init_component_tree(input, &mut universe.command_queue);
+
+    // Big floor plane under everything.
+    // RenderableComponent::square() is an XY quad facing +Z; rotate it to XZ facing +Y.
+    let max_stacks = files_by_folder
+        .values()
+        .map(|v| (v.len() + 7) / 8)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    let total_width = (column_count as f32) * spacing;
+    let total_depth = (max_stacks as f32) * spacing;
+    let floor_w = total_width.max(10.0);
+    let floor_h = total_depth.max(10.0);
+    let floor_transform = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new()
+            .with_position(0.0, -2.0, 0.0)
+            .with_rotation_euler(-std::f32::consts::FRAC_PI_2, 0.0, 0.0)
+            .with_scale(floor_w, floor_h, 1.0),
+    );
+    let floor_renderable = universe
+        .world
+        .add_component(engine::ecs::component::RenderableComponent::square());
+    let floor_color = universe
+        .world
+        .add_component(engine::ecs::component::ColorComponent::rgba(
+            0.88, 0.88, 0.88, 1.0,
+        ));
+    let _ = universe.world.add_child(floor_transform, floor_renderable);
+    let _ = universe.world.add_child(floor_renderable, floor_color);
+    universe
+        .world
+        .init_component_tree(floor_transform, &mut universe.command_queue);
 
     // 4 red cubes around the perimeter of the world (easy visual anchors).
     fn spawn_red_cube(universe: &mut engine::Universe, x: f32, y: f32, z: f32, s: f32) {
@@ -191,13 +260,21 @@ fn main() {
             .add_component(engine::ecs::component::ColorComponent::rgba(
                 1.0, 0.0, 0.0, 1.0,
             ));
-        let e = universe
-            .world
-            .add_component(engine::ecs::component::EmissiveComponent::on());
+
+        let light_transform = universe.world.add_component(
+            engine::ecs::component::TransformComponent::new().with_position(0.0, s * 0.75, 0.0),
+        );
+        let light = universe.world.add_component(
+            engine::ecs::component::PointLightComponent::new()
+                .with_intensity(1.5)
+                .with_distance(20.0)
+                .with_color(1.0, 0.0, 0.0),
+        );
 
         let _ = universe.world.add_child(t, r);
         let _ = universe.world.add_child(r, c);
-        let _ = universe.world.add_child(r, e);
+        let _ = universe.world.add_child(t, light_transform);
+        let _ = universe.world.add_child(light_transform, light);
 
         universe
             .world
@@ -211,102 +288,137 @@ fn main() {
     spawn_red_cube(&mut universe, -p, p, 0.0, s);
     spawn_red_cube(&mut universe, p, p, 0.0, s);
 
-    // Place each file beside the previous along X.
     let start_x = -center_x;
+    let stack_depth = spacing;
+    let row_gap_world = 0.35;
 
-    for (i, path) in files.iter().enumerate() {
-        let Ok(content) = std::fs::read_to_string(path) else {
-            eprintln!("[folder-text] Failed to read {:?}", path);
-            continue;
-        };
+    // One global point light at the top of the overall text "tower".
+    let pad_y = 4.0;
+    let global_max_panel_h_world = files_by_folder
+        .values()
+        .flat_map(|v| v.iter())
+        .map(|e| ((e.rows as f32) + pad_y) * TEXT_SCALE)
+        .fold(0.0_f32, f32::max)
+        .max(0.6);
+    let global_slot_h_world = global_max_panel_h_world + row_gap_world;
+    let tower_top_y = (7.0 * global_slot_h_world) + 4.0;
+    let tower_center_z = total_depth * 0.5;
 
-        let mut display_text = format!(
-            "// {}\n\n{}",
-            path.strip_prefix(&manifest_dir).unwrap_or(path).display(),
-            content
-        );
+    let tower_light_transform = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(
+            0.0,
+            tower_top_y,
+            tower_center_z,
+        ),
+    );
+    let tower_light = universe.world.add_component(
+        engine::ecs::component::PointLightComponent::new()
+            .with_intensity(2.0)
+            .with_distance(120.0)
+            .with_color(1.0, 1.0, 1.0),
+    );
+    let _ = universe.world.add_child(tower_light_transform, tower_light);
+    universe
+        .world
+        .init_component_tree(tower_light_transform, &mut universe.command_queue);
 
-        if display_text.chars().count() > MAX_CHARS_PER_FILE {
-            display_text = display_text
-                .chars()
-                .take(MAX_CHARS_PER_FILE)
-                .collect::<String>();
-            display_text.push_str("\n\n// ... truncated ...\n");
-        }
+    for (col_idx, (_folder, mut entries)) in files_by_folder.into_iter().enumerate() {
+        entries.sort_by(|a, b| a.path.cmp(&b.path));
 
-        let x = start_x + (i as f32) * spacing;
-
-        // Per-file group at world scale.
-        // This owns the (tiny) text subtree and a world-scale ground plane.
-        let file_group = universe.world.add_component(
-            engine::ecs::component::TransformComponent::new().with_position(x, 0.0, 0.0),
-        );
-
-        // Text subtree (tiny scale).
-        let file_root = universe.world.add_component(
-            engine::ecs::component::TransformComponent::new()
-                .with_position(0.0, 1.0, 0.0)
-                .with_scale(TEXT_SCALE, TEXT_SCALE, 1.0)
-                .with_rotation_euler(0.0, std::f32::consts::PI / 6.0, 0.0),
-        );
-        let _ = universe.world.add_child(file_group, file_root);
-
-        // Pink background panel behind the text.
-        // Size is based on wrapped line count (matches TextSystem's strict wrapping behavior).
-        let (max_cols, rows) = measure_text_bounds(&display_text, WRAP_AT);
-        let pad_x = 4.0;
+        // Slot height (world units) based on the tallest panel in this folder.
         let pad_y = 4.0;
-        let w = (max_cols as f32) + pad_x;
-        let h = (rows as f32) + pad_y;
+        let max_panel_h_world = entries
+            .iter()
+            .map(|e| ((e.rows as f32) + pad_y) * TEXT_SCALE)
+            .fold(0.0_f32, f32::max)
+            .max(0.6);
+        let slot_h_world = max_panel_h_world + row_gap_world;
 
-        // Text glyph quads are centered at integer (col,row) positions and are 1x1, so the
-        // text's AABB (in text-space) is roughly:
-        //   x: [-0.5, max_cols-0.5]
-        //   y: [-(rows-1)-0.5, 0.5]
-        // Centering the background quad at those midpoints keeps it aligned as text grows.
-        let bg_x = (max_cols as f32 - 1.0) * 0.5;
-        let bg_y = -((rows as f32 - 1.0) * 0.5);
+        let col_x = start_x + (col_idx as f32) * spacing;
 
-        let bg_transform = universe.world.add_component(
-            engine::ecs::component::TransformComponent::new()
-                .with_position(bg_x, bg_y, -0.05)
-                .with_scale(w, h, 1.0),
-        );
-        let bg_renderable = universe
-            .world
-            .add_component(engine::ecs::component::RenderableComponent::square());
-        let bg_color = universe
-            .world
-            .add_component(engine::ecs::component::ColorComponent::rgba(
-                0.2, 0.2, 0.2, 1.0,
-            ));
-        let _ = universe.world.add_child(file_root, bg_transform);
-        let _ = universe.world.add_child(bg_transform, bg_renderable);
-        let _ = universe.world.add_child(bg_renderable, bg_color);
+        for (i, entry) in entries.into_iter().enumerate() {
+            let row = (i % 8) as f32;
+            let stack = (i / 8) as f32;
+            let file_y = row * slot_h_world;
+            let file_z = stack * stack_depth;
 
-        let text = universe
-            .world
-            .add_component(engine::ecs::component::TextComponent::with_wrap(
-                display_text,
-                WRAP_AT,
-            ));
-        let filtering = universe.world.add_component(
-            engine::ecs::component::TextureFilteringComponent::nearest_magnification(),
-        );
-        // let color = universe
-        //     .world
-        //     .add_component(engine::ecs::component::ColorComponent::rgba(0.7, 0.7, 1.0, 1.0));
-        let emissive = universe
-            .world
-            .add_component(engine::ecs::component::EmissiveComponent::on());
-        let _ = universe.world.add_child(file_root, text);
-        let _ = universe.world.add_child(text, filtering);
-        //let _ = universe.world.add_child(text, color);
-        let _ = universe.world.add_child(text, emissive);
+            let file_group = universe.world.add_component(
+                engine::ecs::component::TransformComponent::new()
+                    .with_position(col_x, file_y, file_z),
+            );
 
-        universe
-            .world
-            .init_component_tree(file_group, &mut universe.command_queue);
+            // Text subtree (tiny scale).
+            let file_root = universe.world.add_component(
+                engine::ecs::component::TransformComponent::new()
+                    .with_position(0.0, 1.0, 0.0)
+                    .with_scale(TEXT_SCALE, TEXT_SCALE, 1.0)
+                    .with_rotation_euler(0.0, std::f32::consts::PI / 6.0, 0.0),
+            );
+            let _ = universe.world.add_child(file_group, file_root);
+
+            // Background panel behind the text.
+            // Size is based on wrapped line count (matches TextSystem's strict wrapping behavior).
+            let (max_cols, rows) = (entry.max_cols, entry.rows);
+            let pad_x = 4.0;
+            let pad_y = 4.0;
+            let w = (max_cols as f32) + pad_x;
+            let h = (rows as f32) + pad_y;
+
+            // Text glyph quads are centered at integer (col,row) positions and are 1x1, so the
+            // text's AABB (in text-space) is roughly:
+            //   x: [-0.5, max_cols-0.5]
+            //   y: [-(rows-1)-0.5, 0.5]
+            // Centering the background quad at those midpoints keeps it aligned as text grows.
+            let bg_x = (max_cols as f32 - 1.0) * 0.5;
+            let bg_y = -((rows as f32 - 1.0) * 0.5);
+
+            let bg_transform = universe.world.add_component(
+                engine::ecs::component::TransformComponent::new()
+                    .with_position(bg_x, bg_y, -0.05)
+                    .with_scale(w, h, 1.0),
+            );
+            let bg_renderable = universe
+                .world
+                .add_component(engine::ecs::component::RenderableComponent::square());
+            let bg_quant = universe.world.add_component(
+                engine::ecs::component::LightQuantizationComponent::steps(5.0),
+            );
+            let bg_color =
+                universe
+                    .world
+                    .add_component(engine::ecs::component::ColorComponent::rgba(
+                        0.2, 0.2, 0.2, 1.0,
+                    ));
+            let _ = universe.world.add_child(file_root, bg_transform);
+            let _ = universe.world.add_child(bg_transform, bg_renderable);
+            let _ = universe.world.add_child(bg_renderable, bg_quant);
+            let _ = universe.world.add_child(bg_renderable, bg_color);
+
+            let text =
+                universe
+                    .world
+                    .add_component(engine::ecs::component::TextComponent::with_wrap(
+                        entry.display_text,
+                        WRAP_AT,
+                    ));
+            let filtering = universe.world.add_component(
+                engine::ecs::component::TextureFilteringComponent::nearest_magnification(),
+            );
+            // let color = universe
+            //     .world
+            //     .add_component(engine::ecs::component::ColorComponent::rgba(0.7, 0.7, 1.0, 1.0));
+            let emissive = universe
+                .world
+                .add_component(engine::ecs::component::EmissiveComponent::on());
+            let _ = universe.world.add_child(file_root, text);
+            let _ = universe.world.add_child(text, filtering);
+            //let _ = universe.world.add_child(text, color);
+            let _ = universe.world.add_child(text, emissive);
+
+            universe
+                .world
+                .init_component_tree(file_group, &mut universe.command_queue);
+        }
     }
 
     // Process init-time registrations (Text expands into glyph subtrees here).

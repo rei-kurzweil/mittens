@@ -10,6 +10,7 @@ pub mod emissive;
 pub mod gltf;
 pub mod input;
 pub mod input_transform_mode;
+pub mod light_quantization;
 pub mod mesh;
 
 pub mod openxr;
@@ -35,6 +36,7 @@ pub use color::ColorComponent;
 pub use emissive::EmissiveComponent;
 pub use input::InputComponent;
 pub use input_transform_mode::{ForwardAxis, InputTransformModeComponent, RollAxis};
+pub use light_quantization::LightQuantizationComponent;
 pub use openxr::OpenXRComponent;
 pub use point_light::PointLightComponent;
 pub use renderable::RenderableComponent;

@@ -1,7 +1,8 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::BackgroundColorComponent;
 use crate::engine::ecs::component::{
-    ColorComponent, EmissiveComponent, MeshComponent, RenderableComponent, UVComponent,
+    ColorComponent, EmissiveComponent, LightQuantizationComponent, MeshComponent,
+    RenderableComponent, UVComponent,
 };
 
 use crate::engine::ecs::World;
@@ -50,6 +51,11 @@ pub struct RenderableSystem {
     ///
     /// Keyed by the RenderableComponent's ComponentId.
     pending_emissive: HashMap<ComponentId, u32>,
+
+    /// Per-renderable toon light quantization steps.
+    ///
+    /// Keyed by the RenderableComponent's ComponentId.
+    pending_quant_steps: HashMap<ComponentId, f32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -142,6 +148,33 @@ impl RenderableSystem {
 
             let _ = visuals.update_emissive(handle, emissive);
             let _ = self.pending_emissive.remove(&renderable_cid);
+        }
+    }
+
+    fn apply_pending_quant_updates_to_registered_renderables(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+    ) {
+        let keys: Vec<ComponentId> = self.pending_quant_steps.keys().copied().collect();
+        for renderable_cid in keys {
+            let Some(renderable_comp) =
+                world.get_component_by_id_as::<RenderableComponent>(renderable_cid)
+            else {
+                let _ = self.pending_quant_steps.remove(&renderable_cid);
+                continue;
+            };
+
+            let Some(handle) = renderable_comp.get_handle() else {
+                continue;
+            };
+
+            let Some(quant_steps) = self.pending_quant_steps.get(&renderable_cid).copied() else {
+                continue;
+            };
+
+            let _ = visuals.update_quant_steps(handle, quant_steps);
+            let _ = self.pending_quant_steps.remove(&renderable_cid);
         }
     }
 
@@ -266,6 +299,49 @@ impl RenderableSystem {
         };
 
         self.pending_color.insert(renderable_cid, color_comp.rgba);
+    }
+
+    pub fn register_light_quantization(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let Some(q_comp) = world.get_component_by_id_as::<LightQuantizationComponent>(component)
+        else {
+            return;
+        };
+
+        // Find the ancestor RenderableComponent that this quantization setting should apply to.
+        let mut cur = component;
+        let mut renderable_cid: Option<ComponentId> = None;
+        while let Some(parent) = world.parent_of(cur) {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(parent)
+                .is_some()
+            {
+                renderable_cid = Some(parent);
+                break;
+            }
+            cur = parent;
+        }
+
+        let Some(renderable_cid) = renderable_cid else {
+            return;
+        };
+
+        self.pending_quant_steps
+            .insert(renderable_cid, q_comp.quant_steps);
+
+        // If already registered, apply immediately.
+        if let Some(renderable_comp) =
+            world.get_component_by_id_as::<RenderableComponent>(renderable_cid)
+        {
+            if let Some(handle) = renderable_comp.get_handle() {
+                let _ = visuals.update_quant_steps(handle, q_comp.quant_steps);
+                let _ = self.pending_quant_steps.remove(&renderable_cid);
+            }
+        }
     }
 
     pub fn register_emissive(
@@ -516,8 +592,25 @@ impl RenderableSystem {
                 .copied()
                 .unwrap_or(0);
 
-            let handle =
-                visuals.register(p.renderable_cid, gpu_r, transform, color, emissive, None);
+            let quant_steps = self
+                .pending_quant_steps
+                .get(&p.renderable_cid)
+                .copied()
+                .unwrap_or_else(|| match p.material {
+                    MaterialHandle::TOON_MESH => 3.0,
+                    MaterialHandle::UNLIT_MESH => 1.0,
+                    _ => 3.0,
+                });
+
+            let handle = visuals.register(
+                p.renderable_cid,
+                gpu_r,
+                transform,
+                color,
+                emissive,
+                None,
+                quant_steps,
+            );
             if let Some(renderable_comp) =
                 world.get_component_by_id_as_mut::<RenderableComponent>(p.renderable_cid)
             {
@@ -533,6 +626,9 @@ impl RenderableSystem {
             // Emissive has now been applied.
             let _ = self.pending_emissive.remove(&p.renderable_cid);
 
+            // Quant steps have now been applied.
+            let _ = self.pending_quant_steps.remove(&p.renderable_cid);
+
             // (If you log ComponentId in a format string, use {:?}.)
             self.pending.remove(&key);
         }
@@ -545,6 +641,7 @@ impl RenderableSystem {
         );
         self.apply_pending_color_updates_to_registered_renderables(world, visuals);
         self.apply_pending_emissive_updates_to_registered_renderables(world, visuals);
+        self.apply_pending_quant_updates_to_registered_renderables(world, visuals);
     }
 }
 
