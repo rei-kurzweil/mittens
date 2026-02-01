@@ -1,3 +1,4 @@
+pub mod bvh_system;
 pub mod camera_system;
 pub mod collision_system;
 pub mod gltf_system;
@@ -12,6 +13,7 @@ pub mod text_system;
 pub mod texture_system;
 pub mod transform_system;
 
+pub use bvh_system::BvhSystem;
 pub use camera_system::{Camera3D, CameraHandle, CameraSystem};
 pub use collision_system::CollisionSystem;
 pub use gltf_system::GLTFSystem;

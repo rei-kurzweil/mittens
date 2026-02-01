@@ -1,5 +1,6 @@
 use super::World;
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::CameraSystem;
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::GLTFSystem;
@@ -19,6 +20,7 @@ use crate::engine::user_input::InputState;
 #[derive(Debug, Default)]
 pub struct SystemWorld {
     pub transform: TransformSystem,
+    pub bvh: BvhSystem,
     pub collision: CollisionSystem,
     pub renderable: RenderableSystem,
 
@@ -415,6 +417,9 @@ impl SystemWorld {
         // Ensure transforms are propagated before any camera systems consume world matrices.
         self.transform.tick(world, visuals, input, dt_sec);
 
+        // Spatial acceleration structure built from latest world transforms.
+        self.bvh.tick(world, visuals, input, dt_sec);
+
         // Collision runs before camera/OpenXR for now; it reads cached world transforms.
         self.collision.tick(world, visuals, input, dt_sec);
 
@@ -424,7 +429,7 @@ impl SystemWorld {
         self.openxr.tick(world, visuals, input, dt_sec);
 
         self.raycast
-            .tick_with_queue(world, visuals, input, queue, dt_sec);
+            .tick_with_queue(world, visuals, input, queue, &self.bvh, dt_sec);
 
         self.renderable.tick(world, visuals, input, dt_sec);
 

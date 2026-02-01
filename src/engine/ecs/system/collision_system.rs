@@ -7,6 +7,10 @@ use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
+use bvh::Point3;
+use bvh::aabb::{AABB, Bounded};
+use bvh::bounding_hierarchy::BHShape;
+use bvh::bvh::{BVH, BVHNode};
 use slotmap::{SlotMap, new_key_type};
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
@@ -467,16 +471,109 @@ fn worker_tick(state: &WorkerState, tx: &mpsc::Sender<CollisionMessage>) {
     all.extend(state.kinematic_objects.values());
     all.extend(state.rigged_objects.values());
 
-    for i in 0..all.len() {
-        for j in (i + 1)..all.len() {
-            let a = all[i];
-            let b = all[j];
+    if all.len() < 2 {
+        return;
+    }
 
-            // MVP policy: ignore static-static collisions (walls touching walls).
-            if a.mode == CollisionMode::Static && b.mode == CollisionMode::Static {
+    // Broadphase: build a BVH over world-space AABBs for the collision objects.
+    // This reduces the candidate set for narrowphase `intersects()`.
+    let mut shapes: Vec<CollisionAabbShape> = all
+        .iter()
+        .enumerate()
+        .filter_map(|(index, obj)| {
+            let (min, max) = world_aabb_for_collision_object(obj);
+            Some(CollisionAabbShape::new(index, min, max))
+        })
+        .collect();
+
+    // If any shapes failed to produce AABBs, fall back to brute force.
+    if shapes.len() != all.len() {
+        for i in 0..all.len() {
+            for j in (i + 1)..all.len() {
+                let a = all[i];
+                let b = all[j];
+
+                if a.mode == CollisionMode::Static && b.mode == CollisionMode::Static {
+                    continue;
+                }
+
+                if intersects(a, b) {
+                    let _ = tx.send(CollisionMessage::CollisionDetected {
+                        a_component: a.component,
+                        a_guid: a.guid,
+                        a_mode: a.mode,
+                        b_component: b.component,
+                        b_guid: b.guid,
+                        b_mode: b.mode,
+                    });
+                }
+            }
+        }
+        return;
+    }
+
+    let bvh = BVH::build(&mut shapes);
+
+    let debug = collision_bvh_query_debug_enabled();
+    let dynamic_count = all
+        .iter()
+        .filter(|o| o.mode != CollisionMode::Static)
+        .count();
+
+    // Baseline: if we did a naive broadphase, each dynamic body would AABB-test against all others.
+    // (This matches the current BVH approach, which only initiates queries from non-static bodies.)
+    let naive_aabb_tests_total = dynamic_count.saturating_mul(all.len().saturating_sub(1));
+    let mut bvh_aabb_tests_total: usize = 0;
+    let mut bvh_visited_total: usize = 0;
+    let mut bvh_visited_leaves: usize = 0;
+    let mut bvh_candidates_total: usize = 0;
+    let mut bvh_candidates_excluding_self_total: usize = 0;
+    let mut narrowphase_intersects_calls: usize = 0;
+    let mut collisions_sent: usize = 0;
+
+    let mut debug_depth_hist: Option<std::collections::BTreeMap<u32, usize>> = None;
+    let mut debug_max_depth_seen: u32 = 0;
+
+    // Only query from non-static objects.
+    // Static-static collisions are ignored, and static objects don't need to initiate queries.
+    for i in 0..all.len() {
+        let a = all[i];
+        if a.mode == CollisionMode::Static {
+            continue;
+        }
+
+        let query = shapes[i].aabb;
+        let (candidates, stats) = bvh_query_aabb_indices(&bvh, &shapes, &query);
+
+        bvh_aabb_tests_total += stats.overlap_tests;
+        bvh_visited_total += stats.visited_total;
+        bvh_visited_leaves += stats.visited_leaves;
+        bvh_candidates_total += candidates.len();
+        bvh_candidates_excluding_self_total += candidates
+            .iter()
+            .copied()
+            .filter(|&j| j != i && j < all.len())
+            .count();
+        if debug {
+            debug_max_depth_seen = debug_max_depth_seen.max(stats.max_depth_seen);
+            if debug_depth_hist.is_none() {
+                debug_depth_hist = Some(stats.visited_by_depth);
+            }
+        }
+
+        for j in candidates {
+            if j == i || j >= all.len() {
                 continue;
             }
 
+            let b = all[j];
+
+            // Avoid double-reporting dynamic-dynamic pairs, but always test dynamic-static.
+            if b.mode != CollisionMode::Static && j <= i {
+                continue;
+            }
+
+            narrowphase_intersects_calls += 1;
             if intersects(a, b) {
                 let _ = tx.send(CollisionMessage::CollisionDetected {
                     a_component: a.component,
@@ -486,8 +583,181 @@ fn worker_tick(state: &WorkerState, tx: &mpsc::Sender<CollisionMessage>) {
                     b_guid: b.guid,
                     b_mode: b.mode,
                 });
+                collisions_sent += 1;
             }
         }
+    }
+
+    if debug {
+        println!(
+            "[CollisionSystemWorker] broadphase: n={} dynamic={} naive_object_aabb_tests={} bvh_traversal_aabb_tests={} bvh_nodes_visited={} bvh_leaf_object_aabb_tests={} bvh_candidates_raw={} bvh_candidates_excl_self={} intersects_calls={} collisions_sent={}",
+            all.len(),
+            dynamic_count,
+            naive_aabb_tests_total,
+            bvh_aabb_tests_total,
+            bvh_visited_total,
+            bvh_visited_leaves,
+            bvh_candidates_total,
+            bvh_candidates_excluding_self_total,
+            narrowphase_intersects_calls,
+            collisions_sent
+        );
+        if let Some(hist) = debug_depth_hist {
+            println!(
+                "[CollisionSystemWorker] query_aabb depth histogram (sample): max_depth={} (per-depth visited nodes/leaves)",
+                debug_max_depth_seen
+            );
+            for (depth, count) in hist {
+                println!("[CollisionSystemWorker] query_aabb: depth {} visited {}", depth, count);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CollisionAabbShape {
+    index: usize,
+    aabb: AABB,
+    node_index: usize,
+}
+
+impl CollisionAabbShape {
+    fn new(index: usize, min: [f32; 3], max: [f32; 3]) -> Self {
+        Self {
+            index,
+            aabb: AABB::with_bounds(
+                Point3::new(min[0], min[1], min[2]),
+                Point3::new(max[0], max[1], max[2]),
+            ),
+            node_index: 0,
+        }
+    }
+}
+
+impl Bounded for CollisionAabbShape {
+    fn aabb(&self) -> AABB {
+        self.aabb
+    }
+}
+
+impl BHShape for CollisionAabbShape {
+    fn set_bh_node_index(&mut self, index: usize) {
+        self.node_index = index;
+    }
+
+    fn bh_node_index(&self) -> usize {
+        self.node_index
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+struct BvhQueryStats {
+    overlap_tests: usize,
+    visited_total: usize,
+    visited_leaves: usize,
+    max_depth_seen: u32,
+    visited_by_depth: std::collections::BTreeMap<u32, usize>,
+}
+
+fn bvh_query_aabb_indices(
+    bvh: &BVH,
+    shapes: &[CollisionAabbShape],
+    query: &AABB,
+) -> (Vec<usize>, BvhQueryStats) {
+    if bvh.nodes.is_empty() {
+        return (Vec::new(), BvhQueryStats::default());
+    }
+
+    let debug = collision_bvh_query_debug_enabled();
+    let mut stats = BvhQueryStats::default();
+
+    let mut out = Vec::new();
+    let mut stack = vec![0usize];
+    while let Some(node_index) = stack.pop() {
+        match bvh.nodes[node_index] {
+            BVHNode::Node {
+                child_l_index,
+                child_l_aabb,
+                child_r_index,
+                child_r_aabb,
+                depth,
+                ..
+            } => {
+                if debug {
+                    stats.visited_total += 1;
+                    stats.max_depth_seen = stats.max_depth_seen.max(depth);
+                    *stats.visited_by_depth.entry(depth).or_default() += 1;
+                }
+
+                stats.overlap_tests += 1;
+                if aabb_overlap_bvh(query, &child_l_aabb) {
+                    stack.push(child_l_index);
+                }
+
+                stats.overlap_tests += 1;
+                if aabb_overlap_bvh(query, &child_r_aabb) {
+                    stack.push(child_r_index);
+                }
+            }
+            BVHNode::Leaf {
+                shape_index, depth, ..
+            } => {
+                if debug {
+                    stats.visited_total += 1;
+                    stats.visited_leaves += 1;
+                    stats.max_depth_seen = stats.max_depth_seen.max(depth);
+                    *stats.visited_by_depth.entry(depth).or_default() += 1;
+                }
+                if let Some(s) = shapes.get(shape_index) {
+                    stats.overlap_tests += 1;
+                    if aabb_overlap_bvh(query, &s.aabb) {
+                        out.push(s.index);
+                    }
+                }
+            }
+        }
+    }
+
+    if !debug {
+        stats.visited_by_depth.clear();
+    }
+
+    (out, stats)
+}
+
+fn collision_bvh_query_debug_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("CAT_COLLISION_BVH_QUERY_DEBUG")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+    })
+}
+
+fn aabb_overlap_bvh(a: &AABB, b: &AABB) -> bool {
+    !(a.max.x < b.min.x
+        || a.min.x > b.max.x
+        || a.max.y < b.min.y
+        || a.min.y > b.max.y
+        || a.max.z < b.min.z
+        || a.min.z > b.max.z)
+}
+
+fn world_aabb_for_collision_object(obj: &StoredObject) -> ([f32; 3], [f32; 3]) {
+    match obj.shape {
+        CollisionShape::Sphere { radius } => (
+            [
+                obj.position_world[0] - radius,
+                obj.position_world[1] - radius,
+                obj.position_world[2] - radius,
+            ],
+            [
+                obj.position_world[0] + radius,
+                obj.position_world[1] + radius,
+                obj.position_world[2] + radius,
+            ],
+        ),
+        CollisionShape::Cube { half_extents } => world_aabb_cube(obj.position_world, half_extents),
     }
 }
 

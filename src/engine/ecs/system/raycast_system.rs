@@ -3,6 +3,7 @@ use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     ColorComponent, RayCastComponent, RayCastMode, RenderableComponent,
 };
+use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::graphics::VisualWorld;
@@ -341,6 +342,27 @@ impl RayCastSystem {
 
         best
     }
+
+    fn cast_against_renderables_bvh(
+        &self,
+        world: &World,
+        bvh: &BvhSystem,
+        origin: [f32; 3],
+        dir: [f32; 3],
+        max_distance: f32,
+    ) -> Option<(ComponentId, f32)> {
+        let hit = bvh.raycast_renderables(origin, dir, max_distance);
+        match hit {
+            Some((cid, t))
+                if world
+                    .get_component_by_id_as::<RenderableComponent>(cid)
+                    .is_some() =>
+            {
+                Some((cid, t))
+            }
+            _ => None,
+        }
+    }
 }
 
 impl System for RayCastSystem {
@@ -497,10 +519,137 @@ impl RayCastSystem {
         visuals: &mut VisualWorld,
         input: &InputState,
         queue: &mut crate::engine::ecs::CommandQueue,
-        dt_sec: f32,
+        bvh: &BvhSystem,
+        _dt_sec: f32,
     ) {
-        // Keep existing behavior.
-        self.tick(world, visuals, input, dt_sec);
+        // Equivalent to `tick()` but uses BVH for hit testing and can apply queued side effects.
+        // Keep the debug prints so it's easy to see input edges.
+        let left_down = input.mouse_down.contains(&MouseButton::Left);
+        if left_down && !self.debug_left_down_prev {
+            println!(
+                "[RayCast] debug: left down (start) cursor={:?} pressed={:?} released={:?}",
+                input.cursor_pos, input.mouse_pressed, input.mouse_released
+            );
+        }
+        if !left_down && self.debug_left_down_prev {
+            println!(
+                "[RayCast] debug: left down (end) cursor={:?} pressed={:?} released={:?}",
+                input.cursor_pos, input.mouse_pressed, input.mouse_released
+            );
+        }
+        self.debug_left_down_prev = left_down;
+
+        if input.mouse_pressed.contains(&MouseButton::Left) {
+            println!(
+                "[RayCast] debug: left pressed cursor={:?} down={:?}",
+                input.cursor_pos, left_down
+            );
+        }
+        if input.mouse_released.contains(&MouseButton::Left) {
+            println!(
+                "[RayCast] debug: left released cursor={:?} down={:?}",
+                input.cursor_pos, left_down
+            );
+        }
+
+        if !self.raycasters.is_empty() {
+            if let Some(ray) = Self::ray_from_cursor(visuals, input) {
+                // Iterate over a stable snapshot so removal during iteration is safe.
+                let raycasters: Vec<ComponentId> = self.raycasters.iter().copied().collect();
+                for rcid in raycasters {
+                    let Some(rc) = world.get_component_by_id_as::<RayCastComponent>(rcid) else {
+                        self.raycasters.remove(&rcid);
+                        self.last_hit.remove(&rcid);
+                        continue;
+                    };
+
+                    if !Self::should_cast(rc.mode, input) {
+                        continue;
+                    }
+
+                    if rc.mode == RayCastMode::EventDriven
+                        && input.mouse_pressed.contains(&MouseButton::Left)
+                    {
+                        let view = visuals.camera_view();
+                        let cam_pos = math::mat4_inverse(view)
+                            .map(|inv_view| {
+                                let t = inv_view[3];
+                                [t[0], t[1], t[2]]
+                            })
+                            .unwrap_or([f32::NAN, f32::NAN, f32::NAN]);
+
+                        println!(
+                            "[RayCast] ray debug: cursor={:?} ndc=({:.3},{:.3}) cam_pos=({:.3},{:.3},{:.3}) origin=({:.3},{:.3},{:.3}) dir=({:.3},{:.3},{:.3}) near=({:.3},{:.3},{:.3}) far=({:.3},{:.3},{:.3})",
+                            input.cursor_pos,
+                            ray.x_ndc,
+                            ray.y_ndc,
+                            cam_pos[0],
+                            cam_pos[1],
+                            cam_pos[2],
+                            ray.origin[0],
+                            ray.origin[1],
+                            ray.origin[2],
+                            ray.dir[0],
+                            ray.dir[1],
+                            ray.dir[2],
+                            ray.near[0],
+                            ray.near[1],
+                            ray.near[2],
+                            ray.far[0],
+                            ray.far[1],
+                            ray.far[2]
+                        );
+                    }
+
+                    let hit = self
+                        .cast_against_renderables_bvh(
+                            world,
+                            bvh,
+                            ray.origin,
+                            ray.dir,
+                            rc.max_distance,
+                        )
+                        .or_else(|| {
+                            self.cast_against_renderables(
+                                world,
+                                ray.origin,
+                                ray.dir,
+                                rc.max_distance,
+                            )
+                        });
+
+                    match rc.mode {
+                        RayCastMode::Continuous => {
+                            let prev = self.last_hit.get(&rcid).copied().flatten();
+                            let next = hit.map(|(cid, _)| cid);
+                            if prev != next {
+                                if let Some((hit_cid, t)) = hit {
+                                    let parent = world.parent_of(hit_cid);
+                                    println!(
+                                        "[RayCast] hit renderable={:?} parent={:?} t={:.3}",
+                                        hit_cid, parent, t
+                                    );
+                                } else {
+                                    println!("[RayCast] no hit");
+                                }
+                            }
+                            self.last_hit.insert(rcid, next);
+                        }
+                        RayCastMode::EventDriven => {
+                            if let Some((hit_cid, t)) = hit {
+                                let parent = world.parent_of(hit_cid);
+                                println!(
+                                    "[RayCast] click hit renderable={:?} parent={:?} t={:.3}",
+                                    hit_cid, parent, t
+                                );
+                            } else {
+                                println!("[RayCast] click no hit");
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Restore highlight when the click ends.
         if input.mouse_released.contains(&MouseButton::Left) {
@@ -546,8 +695,9 @@ impl RayCastSystem {
                 break;
             }
         }
-        if let Some((hit_cid, _t)) =
-            self.cast_against_renderables(world, ray.origin, ray.dir, length)
+        if let Some((hit_cid, _t)) = self
+            .cast_against_renderables_bvh(world, bvh, ray.origin, ray.dir, length)
+            .or_else(|| self.cast_against_renderables(world, ray.origin, ray.dir, length))
         {
             let green = [0.2, 1.0, 0.2, 1.0];
             if let Some(color_cid) = self.upsert_renderable_color(world, queue, hit_cid, green) {
