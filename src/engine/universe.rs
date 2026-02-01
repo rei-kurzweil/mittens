@@ -41,6 +41,31 @@ impl Universe {
         }
     }
 
+    /// Add a component subtree to the "live" universe by initializing it.
+    ///
+    /// This runs `Component::init` for `root` and any not-yet-initialized descendants.
+    pub fn add(&mut self, root: ecs::ComponentId) {
+        self.world
+            .init_component_tree(root, &mut self.command_queue);
+    }
+
+    /// Attach `child` under `parent`.
+    ///
+    /// If `parent` is already initialized, the newly-attached subtree rooted at `child`
+    /// is initialized automatically.
+    pub fn attach(
+        &mut self,
+        parent: ecs::ComponentId,
+        child: ecs::ComponentId,
+    ) -> Result<(), &'static str> {
+        self.world.add_child(parent, child)?;
+        if self.world.is_initialized(parent) {
+            self.world
+                .init_component_tree(child, &mut self.command_queue);
+        }
+        Ok(())
+    }
+
     fn sync_repl(&mut self) {
         let (Some(repl), Some(backend)) = (&self.repl, self.repl_backend.as_mut()) else {
             return;

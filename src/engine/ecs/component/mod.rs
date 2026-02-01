@@ -60,6 +60,7 @@ pub struct ComponentNode {
     pub component: Box<dyn Component>,
     pub parent: Option<crate::engine::ecs::ComponentId>,
     pub children: Vec<crate::engine::ecs::ComponentId>,
+    pub initialized: bool,
 }
 
 impl ComponentNode {
@@ -71,6 +72,7 @@ impl ComponentNode {
             component,
             parent: None,
             children: Vec::new(),
+            initialized: false,
         }
     }
 
@@ -81,6 +83,7 @@ impl ComponentNode {
             component,
             parent: None,
             children: Vec::new(),
+            initialized: false,
         }
     }
 
@@ -95,6 +98,7 @@ impl ComponentNode {
             component,
             parent: None,
             children: Vec::new(),
+            initialized: false,
         }
     }
 }

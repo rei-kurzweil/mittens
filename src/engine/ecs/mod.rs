@@ -80,6 +80,21 @@ impl World {
         id
     }
 
+    /// Register a new component in the world and return its id.
+    ///
+    /// This is intentionally a storage/identity operation only: it does *not* call
+    /// `Component::init`.
+    pub fn register<T: crate::engine::ecs::component::Component>(&mut self, c: T) -> ComponentId {
+        self.add_component(c)
+    }
+
+    /// Whether this component has had `Component::init` invoked.
+    pub fn is_initialized(&self, c: ComponentId) -> bool {
+        self.get_component_record(c)
+            .map(|n| n.initialized)
+            .unwrap_or(false)
+    }
+
     /// Add a new component to the world (no parent). Returns its global id.
     pub fn add_component_boxed(
         &mut self,
@@ -372,9 +387,12 @@ impl World {
         root: ComponentId,
         queue: &mut crate::engine::ecs::CommandQueue,
     ) {
-        // Initialize the root component
+        // Initialize the root component (idempotent).
         if let Some(node) = self.get_component_record_mut(root) {
-            node.component.init(queue, root);
+            if !node.initialized {
+                node.component.init(queue, root);
+                node.initialized = true;
+            }
         }
 
         // Recursively initialize all children
