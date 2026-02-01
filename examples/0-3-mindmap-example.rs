@@ -62,9 +62,11 @@ fn main() {
         .register(InputComponent::new().with_speed(3.0));
 
     // Optional: match other examples (WASD + mouse, forward -Z).
-    let input_mode = universe
-        .world
-        .register(InputTransformModeComponent::forward_z().with_fps_rotation());
+    let input_mode = universe.world.register(
+        InputTransformModeComponent::forward_z()
+            .with_fps_rotation()
+            .with_roll_axis_y(),
+    );
     let _ = universe.attach(input, input_mode);
 
     let cam_transform = universe

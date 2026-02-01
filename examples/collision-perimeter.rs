@@ -9,27 +9,25 @@ fn main() {
     let bg_color =
         universe
             .world
-            .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
+            .register(engine::ecs::component::BackgroundColorComponent::rgba(
                 0.1, 0.02, 0.05, 1.0,
             ));
 
-    let _ = universe
-        .world
-        .init_component_tree(bg_color, &mut universe.command_queue);
+    universe.add(bg_color);
 
     // Input-driven camera rig.
     // Topology: I { T { C3D }  CN{Rigged { Sphere }} }
     let input = universe
         .world
-        .add_component(engine::ecs::component::InputComponent::new().with_speed(2.0));
+        .register(engine::ecs::component::InputComponent::new().with_speed(2.0));
 
-    let rig_transform = universe.world.add_component(
+    let rig_transform = universe.world.register(
         engine::ecs::component::TransformComponent::new().with_position(0.0, 0.75, 0.0),
     );
     let camera3d = universe
         .world
-        .add_component(engine::ecs::component::Camera3DComponent::new());
-    let input_mode = universe.world.add_component(
+        .register(engine::ecs::component::Camera3DComponent::new());
+    let input_mode = universe.world.register(
         engine::ecs::component::InputTransformModeComponent::forward_z()
             .with_roll_axis_y()
             .with_fps_rotation(),
@@ -37,23 +35,21 @@ fn main() {
 
     let rig_collision = universe
         .world
-        .add_component(engine::ecs::component::CollisionComponent::RIGGED());
+        .register(engine::ecs::component::CollisionComponent::RIGGED());
     let rig_shape =
         universe
             .world
-            .add_component(engine::ecs::component::CollisionShapeComponent::new(
+            .register(engine::ecs::component::CollisionShapeComponent::new(
                 engine::ecs::component::CollisionShape::sphere_radius(0.25),
             ));
 
-    let _ = universe.world.add_child(input, input_mode);
-    let _ = universe.world.add_child(input, rig_transform);
-    let _ = universe.world.add_child(rig_transform, camera3d);
-    let _ = universe.world.add_child(rig_transform, rig_collision);
-    let _ = universe.world.add_child(rig_collision, rig_shape);
+    let _ = universe.attach(input, input_mode);
+    let _ = universe.attach(input, rig_transform);
+    let _ = universe.attach(rig_transform, camera3d);
+    let _ = universe.attach(rig_transform, rig_collision);
+    let _ = universe.attach(rig_collision, rig_shape);
 
-    universe
-        .world
-        .init_component_tree(input, &mut universe.command_queue);
+    universe.add(input);
 
     // Lights so we can see non-emissive meshes and verify attenuation/direction.
     fn spawn_light(
@@ -67,19 +63,17 @@ fn main() {
         intensity: f32,
         distance: f32,
     ) {
-        let t = universe.world.add_component(
+        let t = universe.world.register(
             engine::ecs::component::TransformComponent::new().with_position(x, y, z),
         );
-        let l = universe.world.add_component(
+        let l = universe.world.register(
             engine::ecs::component::PointLightComponent::new()
                 .with_color(r, g, b)
                 .with_intensity(intensity)
                 .with_distance(distance),
         );
-        let _ = universe.world.add_child(t, l);
-        universe
-            .world
-            .init_component_tree(t, &mut universe.command_queue);
+        let _ = universe.attach(t, l);
+        universe.add(t);
     }
 
     // Perimeter of cubes: 16 per side, 90deg turns.
@@ -96,28 +90,26 @@ fn main() {
     spawn_light(&mut universe, 0.0, 5.5, 0.0, 1.0, 1.0, 1.0, 0.7, 40.0); // white fill
 
     fn spawn_wall_cube(universe: &mut engine::Universe, x: f32, y: f32, z: f32) {
-        let t = universe.world.add_component(
+        let t = universe.world.register(
             engine::ecs::component::TransformComponent::new().with_position(x, y, z),
         );
         let r = universe
             .world
-            .add_component(engine::ecs::component::RenderableComponent::cube());
+            .register(engine::ecs::component::RenderableComponent::cube());
         let cn = universe
             .world
-            .add_component(engine::ecs::component::CollisionComponent::STATIC());
+            .register(engine::ecs::component::CollisionComponent::STATIC());
         let c = universe
             .world
-            .add_component(engine::ecs::component::ColorComponent::rgba(
+            .register(engine::ecs::component::ColorComponent::rgba(
                 0.9, 0.2, 0.2, 1.0,
             ));
 
-        let _ = universe.world.add_child(t, r);
-        let _ = universe.world.add_child(t, cn);
-        let _ = universe.world.add_child(r, c);
+        let _ = universe.attach(t, r);
+        let _ = universe.attach(t, cn);
+        let _ = universe.attach(r, c);
 
-        universe
-            .world
-            .init_component_tree(t, &mut universe.command_queue);
+        universe.add(t);
     }
 
     fn spawn_cube(
@@ -132,24 +124,22 @@ fn main() {
         g: f32,
         b: f32,
     ) {
-        let t = universe.world.add_component(
+        let t = universe.world.register(
             engine::ecs::component::TransformComponent::new()
                 .with_position(x, y, z)
                 .with_scale(sx, sy, sz),
         );
         let renderable = universe
             .world
-            .add_component(engine::ecs::component::RenderableComponent::cube());
+            .register(engine::ecs::component::RenderableComponent::cube());
         let color = universe
             .world
-            .add_component(engine::ecs::component::ColorComponent::rgba(r, g, b, 1.0));
+            .register(engine::ecs::component::ColorComponent::rgba(r, g, b, 1.0));
 
-        let _ = universe.world.add_child(t, renderable);
-        let _ = universe.world.add_child(renderable, color);
+        let _ = universe.attach(t, renderable);
+        let _ = universe.attach(renderable, color);
 
-        universe
-            .world
-            .init_component_tree(t, &mut universe.command_queue);
+        universe.add(t);
     }
 
     let y = 0.5;
