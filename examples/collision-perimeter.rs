@@ -6,12 +6,11 @@ fn main() {
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
 
-    let bg_color =
-        universe
-            .world
-            .register(engine::ecs::component::BackgroundColorComponent::rgba(
-                0.1, 0.02, 0.05, 1.0,
-            ));
+    let bg_color = universe
+        .world
+        .register(engine::ecs::component::BackgroundColorComponent::rgba(
+            0.1, 0.02, 0.05, 1.0,
+        ));
 
     universe.add(bg_color);
 
@@ -21,9 +20,9 @@ fn main() {
         .world
         .register(engine::ecs::component::InputComponent::new().with_speed(2.0));
 
-    let rig_transform = universe.world.register(
-        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.75, 0.0),
-    );
+    let rig_transform = universe
+        .world
+        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.75, 0.0));
     let camera3d = universe
         .world
         .register(engine::ecs::component::Camera3DComponent::new());
@@ -36,12 +35,11 @@ fn main() {
     let rig_collision = universe
         .world
         .register(engine::ecs::component::CollisionComponent::RIGGED());
-    let rig_shape =
-        universe
-            .world
-            .register(engine::ecs::component::CollisionShapeComponent::new(
-                engine::ecs::component::CollisionShape::sphere_radius(0.25),
-            ));
+    let rig_shape = universe
+        .world
+        .register(engine::ecs::component::CollisionShapeComponent::new(
+            engine::ecs::component::CollisionShape::sphere_radius(0.25),
+        ));
 
     let _ = universe.attach(input, input_mode);
     let _ = universe.attach(input, rig_transform);
@@ -63,9 +61,9 @@ fn main() {
         intensity: f32,
         distance: f32,
     ) {
-        let t = universe.world.register(
-            engine::ecs::component::TransformComponent::new().with_position(x, y, z),
-        );
+        let t = universe
+            .world
+            .register(engine::ecs::component::TransformComponent::new().with_position(x, y, z));
         let l = universe.world.register(
             engine::ecs::component::PointLightComponent::new()
                 .with_color(r, g, b)
@@ -90,9 +88,9 @@ fn main() {
     spawn_light(&mut universe, 0.0, 5.5, 0.0, 1.0, 1.0, 1.0, 0.7, 40.0); // white fill
 
     fn spawn_wall_cube(universe: &mut engine::Universe, x: f32, y: f32, z: f32) {
-        let t = universe.world.register(
-            engine::ecs::component::TransformComponent::new().with_position(x, y, z),
-        );
+        let t = universe
+            .world
+            .register(engine::ecs::component::TransformComponent::new().with_position(x, y, z));
         let r = universe
             .world
             .register(engine::ecs::component::RenderableComponent::cube());

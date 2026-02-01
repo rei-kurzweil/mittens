@@ -6,6 +6,7 @@ use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::InputSystem;
 use crate::engine::ecs::system::LightSystem;
 use crate::engine::ecs::system::OpenXRSystem;
+use crate::engine::ecs::system::RayCastSystem;
 use crate::engine::ecs::system::RenderableSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TextSystem;
@@ -20,6 +21,8 @@ pub struct SystemWorld {
     pub transform: TransformSystem,
     pub collision: CollisionSystem,
     pub renderable: RenderableSystem,
+
+    pub raycast: RayCastSystem,
 
     pub gltf: GLTFSystem,
 
@@ -184,6 +187,26 @@ impl SystemWorld {
         component: ComponentId,
     ) {
         self.light.register_light(world, visuals, component);
+    }
+
+    /// Register a RayCastComponent instance with the RayCastSystem.
+    pub fn register_raycast(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.raycast.register_raycast(world, visuals, component);
+    }
+
+    /// Remove a RayCastComponent instance from the RayCastSystem.
+    pub fn remove_raycast(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.raycast.remove_raycast(world, visuals, component);
     }
 
     /// Prepare render state before issuing a frame.
@@ -399,6 +422,9 @@ impl SystemWorld {
         self.camera.tick(world, visuals, input, dt_sec);
         // OpenXR consumes the latest rig transform + publishes per-eye cameras.
         self.openxr.tick(world, visuals, input, dt_sec);
+
+        self.raycast
+            .tick_with_queue(world, visuals, input, queue, dt_sec);
 
         self.renderable.tick(world, visuals, input, dt_sec);
 

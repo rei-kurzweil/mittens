@@ -15,6 +15,7 @@ pub mod mesh;
 
 pub mod openxr;
 pub mod point_light;
+pub mod raycast;
 pub mod renderable;
 pub mod text;
 pub mod texture;
@@ -39,6 +40,7 @@ pub use input_transform_mode::{ForwardAxis, InputTransformModeComponent, RollAxi
 pub use light_quantization::LightQuantizationComponent;
 pub use openxr::OpenXRComponent;
 pub use point_light::PointLightComponent;
+pub use raycast::{RayCastComponent, RayCastMode};
 pub use renderable::RenderableComponent;
 pub use text::TextComponent;
 pub use texture::{CatEngineTextureFormat, TextureComponent};

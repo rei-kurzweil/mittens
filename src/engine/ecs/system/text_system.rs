@@ -1,7 +1,7 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    ColorComponent, EmissiveComponent, RenderableComponent, TextComponent, TextureComponent,
+    EmissiveComponent, RenderableComponent, TextComponent, TextureComponent,
     TextureFilteringComponent, TransformComponent, UVComponent,
 };
 use crate::engine::graphics::VisualWorld;
@@ -158,13 +158,8 @@ impl TextSystem {
                 .map(|c| c.filtering)
         });
 
-        // Also allow styling at the TextComponent root: immediate Color/Emissive children.
-        let inherited_color = world.children_of(component).iter().find_map(|&ch| {
-            world
-                .get_component_by_id_as::<ColorComponent>(ch)
-                .map(|c| c.rgba)
-        });
-
+        // Also allow styling at the TextComponent root: immediate Emissive children.
+        // (Color is now inherited by renderables from ancestors; no per-glyph ColorComponent needed.)
         let inherited_emissive = world.children_of(component).iter().find_map(|&ch| {
             world
                 .get_component_by_id_as::<EmissiveComponent>(ch)
@@ -208,11 +203,6 @@ impl TextSystem {
             if let Some(filtering) = inherited_filtering {
                 let f_id = world.add_component(TextureFilteringComponent::new(filtering));
                 let _ = world.add_child(r_id, f_id);
-            }
-
-            if let Some(rgba) = inherited_color {
-                let c_id = world.add_component(ColorComponent { rgba });
-                let _ = world.add_child(r_id, c_id);
             }
 
             if let Some(enabled) = inherited_emissive {

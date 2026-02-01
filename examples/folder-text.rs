@@ -164,16 +164,19 @@ fn main() {
     let bg_r = 0.25;
     let bg_g = 0.25;
     let bg_b = 0.25;
-    let background = universe
-        .world
-        .register(engine::ecs::component::BackgroundColorComponent::rgba(
-            bg_r, bg_g, bg_b, 1.00,
-        ));
+    let background =
+        universe
+            .world
+            .register(engine::ecs::component::BackgroundColorComponent::rgba(
+                bg_r, bg_g, bg_b, 1.00,
+            ));
     universe.add(background);
 
     let ambient = universe
         .world
-        .register(engine::ecs::component::AmbientLightComponent::rgb(bg_r, bg_g, bg_b));
+        .register(engine::ecs::component::AmbientLightComponent::rgb(
+            bg_r, bg_g, bg_b,
+        ));
     universe.add(ambient);
 
     // Input-driven camera rig.
@@ -365,9 +368,12 @@ fn main() {
             let bg_renderable = universe
                 .world
                 .register(engine::ecs::component::RenderableComponent::square());
-            let bg_quant = universe.world.register(
-                engine::ecs::component::LightQuantizationComponent::steps(5.0),
-            );
+            let bg_quant =
+                universe
+                    .world
+                    .register(engine::ecs::component::LightQuantizationComponent::steps(
+                        5.0,
+                    ));
             let bg_color = universe
                 .world
                 .register(engine::ecs::component::ColorComponent::rgba(
@@ -378,13 +384,12 @@ fn main() {
             let _ = universe.attach(bg_renderable, bg_quant);
             let _ = universe.attach(bg_renderable, bg_color);
 
-            let text =
-                universe
-                    .world
-                    .register(engine::ecs::component::TextComponent::with_wrap(
-                        entry.display_text,
-                        WRAP_AT,
-                    ));
+            let text = universe
+                .world
+                .register(engine::ecs::component::TextComponent::with_wrap(
+                    entry.display_text,
+                    WRAP_AT,
+                ));
             let filtering = universe.world.register(
                 engine::ecs::component::TextureFilteringComponent::nearest_magnification(),
             );

@@ -191,6 +191,22 @@ impl CommandQueue {
         });
     }
 
+    /// Queue a register RayCast command.
+    pub fn queue_register_raycast(&mut self, component_id: crate::engine::ecs::ComponentId) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REGISTER_RAYCAST { component_id },
+        });
+    }
+
+    /// Queue a remove RayCast command.
+    pub fn queue_remove_raycast(&mut self, component_id: crate::engine::ecs::ComponentId) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REMOVE_RAYCAST { component_id },
+        });
+    }
+
     /// Flush all queued commands, executing them through the systems.
     pub fn flush(
         &mut self,
@@ -274,8 +290,14 @@ impl CommandQueue {
                     Command::REGISTER_OPENXR { component_id } => {
                         systems.register_openxr(world, visuals, component_id);
                     }
+                    Command::REGISTER_RAYCAST { component_id } => {
+                        systems.register_raycast(world, visuals, component_id);
+                    }
                     Command::REMOVE_COLLISION { component_id } => {
                         systems.remove_collision(world, visuals, component_id);
+                    }
+                    Command::REMOVE_RAYCAST { component_id } => {
+                        systems.remove_raycast(world, visuals, component_id);
                     }
                     Command::REMOVE_RENDERABLE { component_id: _ } => {
                         // TODO: implement when needed
@@ -347,6 +369,10 @@ enum Command {
     REGISTER_OPENXR {
         component_id: crate::engine::ecs::ComponentId,
     },
+
+    REGISTER_RAYCAST {
+        component_id: crate::engine::ecs::ComponentId,
+    },
     REMOVE_RENDERABLE {
         component_id: crate::engine::ecs::ComponentId,
     },
@@ -354,6 +380,10 @@ enum Command {
         component_id: crate::engine::ecs::ComponentId,
     },
     REMOVE_CAMERA {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+
+    REMOVE_RAYCAST {
         component_id: crate::engine::ecs::ComponentId,
     },
 

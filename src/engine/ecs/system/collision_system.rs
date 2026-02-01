@@ -303,11 +303,11 @@ fn resolve_shape(world: &World, collision_cid: ComponentId) -> Option<CollisionS
         };
 
         // Built-in mesh handles (stable ids).
-        if r.renderable.mesh == crate::engine::graphics::primitives::CpuMeshHandle::CUBE {
+        if r.renderable.base_mesh == crate::engine::graphics::primitives::CpuMeshHandle::CUBE {
             return Some(CollisionShape::CUBE());
         }
 
-        if r.renderable.mesh == crate::engine::graphics::primitives::CpuMeshHandle::SPHERE {
+        if r.renderable.base_mesh == crate::engine::graphics::primitives::CpuMeshHandle::SPHERE {
             return Some(CollisionShape::SPHERE());
         }
     }

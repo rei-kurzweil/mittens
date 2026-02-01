@@ -124,6 +124,10 @@ impl Component for RenderableComponent {
             serde_json::json!(self.renderable.mesh.0),
         );
         map.insert(
+            "base_mesh".to_string(),
+            serde_json::json!(self.renderable.base_mesh.0),
+        );
+        map.insert(
             "material".to_string(),
             serde_json::json!(self.renderable.material.0),
         );
@@ -138,6 +142,15 @@ impl Component for RenderableComponent {
             let mesh_id: u32 = serde_json::from_value(mesh.clone())
                 .map_err(|e| format!("Failed to decode mesh: {}", e))?;
             self.renderable.mesh = crate::engine::graphics::primitives::CpuMeshHandle(mesh_id);
+        }
+        if let Some(base_mesh) = data.get("base_mesh") {
+            let base_mesh_id: u32 = serde_json::from_value(base_mesh.clone())
+                .map_err(|e| format!("Failed to decode base_mesh: {}", e))?;
+            self.renderable.base_mesh =
+                crate::engine::graphics::primitives::CpuMeshHandle(base_mesh_id);
+        } else {
+            // Back-compat: older scenes/components only stored `mesh`.
+            self.renderable.base_mesh = self.renderable.mesh;
         }
         if let Some(material) = data.get("material") {
             let material_id: u32 = serde_json::from_value(material.clone())

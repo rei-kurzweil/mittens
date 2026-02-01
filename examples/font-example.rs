@@ -2,7 +2,8 @@ use cat_engine::{engine, utils};
 
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, InputComponent,
-    InputTransformModeComponent, TextComponent, TextureFilteringComponent, TransformComponent,
+    InputTransformModeComponent, RayCastComponent, TextComponent, TextureFilteringComponent,
+    TransformComponent,
 };
 
 fn main() {
@@ -44,6 +45,12 @@ fn main() {
 
     let camera = universe.world.register(Camera3DComponent::new());
     let _ = universe.attach(rig_transform, camera);
+
+    // Click-to-pick: prints which renderable (glyph quad) is under the cursor.
+    let raycast = universe
+        .world
+        .register(RayCastComponent::event_driven().with_max_distance(50.0));
+    let _ = universe.attach(rig_transform, raycast);
 
     universe.add(input);
 

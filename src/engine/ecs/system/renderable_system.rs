@@ -12,7 +12,7 @@ use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Transfo
 use crate::engine::graphics::{GpuRenderable, VisualWorld};
 use crate::engine::graphics::{MeshUploader, RenderAssets};
 use crate::engine::user_input::InputState;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 /// System that registers/updates renderables in the `VisualWorld`.
 ///
@@ -93,6 +93,35 @@ fn clone_mesh_with_uv_overrides(
 }
 
 impl RenderableSystem {
+    fn immediate_color_child(world: &World, node: ComponentId) -> Option<[f32; 4]> {
+        world.children_of(node).iter().find_map(|&ch| {
+            world
+                .get_component_by_id_as::<ColorComponent>(ch)
+                .map(|c| c.rgba)
+        })
+    }
+
+    fn inherited_color_for_renderable(
+        world: &World,
+        renderable_cid: ComponentId,
+    ) -> Option<[f32; 4]> {
+        // Explicit per-renderable override wins.
+        if let Some(rgba) = Self::immediate_color_child(world, renderable_cid) {
+            return Some(rgba);
+        }
+
+        // Otherwise, walk up the ancestry and look for a ColorComponent attached to any ancestor
+        // node (e.g., TextComponent root).
+        let mut cur = renderable_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(rgba) = Self::immediate_color_child(world, parent) {
+                return Some(rgba);
+            }
+            cur = parent;
+        }
+        None
+    }
+
     fn clone_mesh_with_uv_overrides_cached(
         &mut self,
         render_assets: &mut RenderAssets,
@@ -294,11 +323,37 @@ impl RenderableSystem {
             }
             cur = parent;
         }
-        let Some(renderable_cid) = renderable_cid else {
-            return;
-        };
 
-        self.pending_color.insert(renderable_cid, color_comp.rgba);
+        // Normal case: ColorComponent is attached under a RenderableComponent.
+        if let Some(renderable_cid) = renderable_cid {
+            self.pending_color.insert(renderable_cid, color_comp.rgba);
+            return;
+        }
+
+        // Inheritance case: ColorComponent is attached above renderables (e.g., on TextComponent).
+        // Apply it to descendant renderables that do NOT have an explicit per-renderable ColorComponent.
+        let mut q = VecDeque::new();
+        q.push_back(component);
+
+        while let Some(node) = q.pop_front() {
+            for &ch in world.children_of(node).iter() {
+                q.push_back(ch);
+            }
+
+            if world
+                .get_component_by_id_as::<RenderableComponent>(node)
+                .is_none()
+            {
+                continue;
+            }
+
+            // Don't clobber explicit per-renderable overrides.
+            if Self::immediate_color_child(world, node).is_some() {
+                continue;
+            }
+
+            self.pending_color.insert(node, color_comp.rgba);
+        }
     }
 
     pub fn register_light_quantization(
@@ -483,6 +538,15 @@ impl RenderableSystem {
                 mesh_key,
             },
         );
+
+        // Style inheritance: if this renderable doesn't have an explicit ColorComponent child,
+        // inherit the nearest ancestor ColorComponent's rgba.
+        if !self.pending_color.contains_key(&component) {
+            if let Some(rgba) = Self::inherited_color_for_renderable(world, component) {
+                self.pending_color.insert(component, rgba);
+            }
+        }
+
         println!(
             "[RenderableSystem]  -> pending += 1 (pending_len={}) cpu_mesh={:?} material={:?}",
             self.pending.len(),
@@ -530,6 +594,7 @@ impl RenderableSystem {
                     world.get_component_by_id_as_mut::<RenderableComponent>(p.renderable_cid)
                 {
                     renderable_comp.renderable.mesh = cpu_mesh;
+                    renderable_comp.renderable.base_mesh = cpu_mesh;
                 }
             }
 
@@ -537,6 +602,7 @@ impl RenderableSystem {
                 if let Some(new_mesh) =
                     self.clone_mesh_with_uv_overrides_cached(render_assets, cpu_mesh, &uvs)
                 {
+                    let uv_base_mesh = cpu_mesh;
                     cpu_mesh = new_mesh;
                     if let Some(pending) = self.pending.get_mut(&key) {
                         pending.cpu_mesh = cpu_mesh;
@@ -545,6 +611,7 @@ impl RenderableSystem {
                         world.get_component_by_id_as_mut::<RenderableComponent>(p.renderable_cid)
                     {
                         renderable_comp.renderable.mesh = cpu_mesh;
+                        renderable_comp.renderable.base_mesh = uv_base_mesh;
                     }
                 }
             }

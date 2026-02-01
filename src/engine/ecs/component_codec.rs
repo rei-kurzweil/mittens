@@ -211,6 +211,7 @@ impl ComponentCodec {
                     crate::engine::graphics::primitives::MaterialHandle::TOON_MESH,
                 ),
             ))),
+            "raycast" => Ok(Box::new(RayCastComponent::default())),
             "background_color" => Ok(Box::new(BackgroundColorComponent::new())),
             "ambient_light" => Ok(Box::new(AmbientLightComponent::new())),
             "color" => Ok(Box::new(ColorComponent::new())),

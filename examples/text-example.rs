@@ -14,9 +14,9 @@ fn main() {
     let camera3d = universe
         .world
         .register(engine::ecs::component::Camera3DComponent::new());
-    let rig_transform = universe.world.register(
-        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 2.5),
-    );
+    let rig_transform = universe
+        .world
+        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 2.5));
     let input_mode = universe.world.register(
         engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y(),
     );
@@ -34,12 +34,11 @@ fn main() {
     let debug_renderable = universe
         .world
         .register(engine::ecs::component::RenderableComponent::square());
-    let debug_tex =
-        universe
-            .world
-            .register(engine::ecs::component::TextureComponent::with_uri(
-                "assets/textures/font.dds",
-            ));
+    let debug_tex = universe
+        .world
+        .register(engine::ecs::component::TextureComponent::with_uri(
+            "assets/textures/font.dds",
+        ));
     let debug_filtering = universe
         .world
         .register(engine::ecs::component::TextureFilteringComponent::nearest_magnification());
@@ -49,9 +48,9 @@ fn main() {
     universe.add(debug_root);
 
     // Light so we can actually see non-emissive materials.
-    let light_transform = universe.world.register(
-        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 2.0),
-    );
+    let light_transform = universe
+        .world
+        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 2.0));
     let light = universe.world.register(
         engine::ecs::component::PointLightComponent::new()
             .with_distance(25.0)

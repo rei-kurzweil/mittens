@@ -26,9 +26,9 @@ fn main() {
     let _ = universe.attach(input, input_mode);
 
     // Start pulled back so the grid is in view.
-    let rig_transform = universe.world.register(
-        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 4.0),
-    );
+    let rig_transform = universe
+        .world
+        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 4.0));
     let _ = universe.attach(input, rig_transform);
 
     let camera3d = universe
@@ -42,9 +42,9 @@ fn main() {
             .with_distance(50.0)
             .with_color(1.0, 1.0, 1.0),
     );
-    let light_transform = universe.world.register(
-        engine::ecs::component::TransformComponent::new().with_position(0.0, 5.0, 2.0),
-    );
+    let light_transform = universe
+        .world
+        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 5.0, 2.0));
     let _ = universe.attach(light_transform, light);
 
     universe.add(input);

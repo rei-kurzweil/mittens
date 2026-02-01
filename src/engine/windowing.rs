@@ -110,8 +110,9 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::RedrawRequested => {
-                // Start of our "frame" from an input perspective: clear edge-triggered sets.
-                self.user_input.begin_frame();
+                // Start of our "frame" from an input perspective: compute deltas, but keep
+                // edge-triggered sets so they remain visible during `universe.update`.
+                self.user_input.start_frame();
 
                 let now = Instant::now();
                 let dt = self
@@ -125,6 +126,9 @@ impl ApplicationHandler for App {
                 universe.update(dt, self.user_input.state());
 
                 universe.render();
+
+                // Clear edge-triggered sets after the frame has consumed them.
+                self.user_input.end_frame();
 
                 if let Some(w) = &self.window {
                     // w.pre_present_notify();
