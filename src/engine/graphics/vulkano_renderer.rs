@@ -901,6 +901,463 @@ mod vulkano_backend {
             Ok(())
         }
 
+        fn record_opaque_pass(
+            &mut self,
+            cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
+            visual_world: &VisualWorld,
+            global_set: &Arc<DescriptorSet>,
+            instance_buffer: &Subbuffer<[InstanceData]>,
+            instance_count: usize,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            // Bind pipeline/descriptor sets per (material, texture).
+            let mut bound_material: Option<crate::engine::graphics::MaterialHandle> = None;
+            let mut bound_texture: Option<TextureHandle> = None;
+            let mut bound_filtering: Option<TextureFiltering> = None;
+            let mut bound_quant: Option<u32> = None;
+
+            for batch in visual_world.draw_batches() {
+                let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
+                let filtering = batch.texture_filtering;
+                let quant_bits = batch.quant_steps.to_bits();
+
+                if bound_material != Some(batch.material)
+                    || bound_texture != Some(texture_handle)
+                    || bound_filtering != Some(filtering)
+                    || bound_quant != Some(quant_bits)
+                {
+                    match batch.material {
+                        crate::engine::graphics::MaterialHandle::TOON_MESH
+                        | crate::engine::graphics::MaterialHandle::UNLIT_MESH => {
+                            let Some(tex) = self.textures.get(&texture_handle) else {
+                                continue;
+                            };
+
+                            let material_key =
+                                (batch.material, texture_handle, filtering, quant_bits);
+                            let material_set =
+                                if let Some(set) = self.cached_material_sets.get(&material_key) {
+                                    set.clone()
+                                } else {
+                                    let material_ubo =
+                                        Self::create_material_ubo(batch.material, batch.quant_steps);
+                                    let material_buffer: Subbuffer<MaterialUBO> = Buffer::from_data(
+                                        self.context.memory_allocator().clone(),
+                                        BufferCreateInfo {
+                                            usage: BufferUsage::UNIFORM_BUFFER,
+                                            ..Default::default()
+                                        },
+                                        AllocationCreateInfo {
+                                            memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                                            ..Default::default()
+                                        },
+                                        material_ubo,
+                                    )?;
+
+                                    let sampler = self.sampler_for(filtering).clone();
+
+                                    let set = DescriptorSet::new(
+                                        self.descriptor_set_allocator.clone(),
+                                        self.set_layouts.material.clone(),
+                                        [
+                                            WriteDescriptorSet::buffer(0, material_buffer),
+                                            WriteDescriptorSet::image_view_sampler(
+                                                1,
+                                                tex.view.clone(),
+                                                sampler,
+                                            ),
+                                        ],
+                                        [],
+                                    )?;
+
+                                    self.cached_material_sets.insert(material_key, set.clone());
+                                    set
+                                };
+
+                            cbb.bind_pipeline_graphics(self.pipeline_toon_mesh.clone())?;
+                            cbb.bind_descriptor_sets(
+                                PipelineBindPoint::Graphics,
+                                self.pipeline_toon_mesh.layout().clone(),
+                                0,
+                                (global_set.clone(), material_set),
+                            )?;
+                        }
+                        _ => {
+                            continue;
+                        }
+                    }
+
+                    bound_material = Some(batch.material);
+                    bound_texture = Some(texture_handle);
+                    bound_filtering = Some(filtering);
+                    bound_quant = Some(quant_bits);
+                }
+
+                let Some(mesh) = self.meshes.get(&batch.mesh) else {
+                    continue;
+                };
+                cbb.bind_vertex_buffers(0, (mesh.vertices.clone(), instance_buffer.clone()))?;
+                cbb.bind_index_buffer(mesh.indices.clone())?;
+
+                if instance_count > 0 && batch.count > 0 {
+                    unsafe {
+                        cbb.draw_indexed(
+                            mesh.index_count,
+                            batch.count as u32,
+                            0,
+                            0,
+                            batch.start as u32,
+                        )?;
+                    }
+                }
+            }
+
+            Ok(())
+        }
+
+        fn record_transparent_single_pass(
+            &mut self,
+            cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
+            visual_world: &VisualWorld,
+            global_set: &Arc<DescriptorSet>,
+            eye: usize,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let transparent_single_instance_count = visual_world.transparent_single_draw_order().len();
+
+            if eye == 0 {
+                let has_single = transparent_single_instance_count > 0;
+                if self.last_frame_had_transparent_single != Some(has_single) {
+                    if has_single {
+                        println!("[VulkanoRenderer] transparent single-layer pass enabled");
+                    } else {
+                        println!(
+                            "[VulkanoRenderer] transparent single-layer pass disabled (no instances)"
+                        );
+                    }
+                    self.last_frame_had_transparent_single = Some(has_single);
+                }
+            }
+
+            if transparent_single_instance_count == 0 {
+                return Ok(());
+            }
+
+            // Build instance buffer in transparent-single draw order.
+            let instances_ref = visual_world.instances();
+            let transparent_single_instance_data_iter =
+                visual_world.transparent_single_draw_order().iter().map(|&idx| {
+                    let inst = instances_ref[idx as usize];
+                    let m = inst.transform.model;
+                    InstanceData {
+                        i_model_c0: m[0],
+                        i_model_c1: m[1],
+                        i_model_c2: m[2],
+                        i_model_c3: m[3],
+                        i_color: inst.color,
+                        i_emissive: inst.emissive,
+                        i_opacity: inst.opacity,
+                    }
+                });
+
+            let transparent_single_instance_buffer: Subbuffer<[InstanceData]> = Buffer::from_iter(
+                self.context.memory_allocator().clone(),
+                BufferCreateInfo {
+                    usage: BufferUsage::VERTEX_BUFFER,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    ..Default::default()
+                },
+                transparent_single_instance_data_iter,
+            )?;
+
+            // Bind pipeline/descriptor sets per (material, texture).
+            let mut bound_material: Option<crate::engine::graphics::MaterialHandle> = None;
+            let mut bound_texture: Option<TextureHandle> = None;
+            let mut bound_filtering: Option<TextureFiltering> = None;
+            let mut bound_quant: Option<u32> = None;
+
+            for batch in visual_world.transparent_single_draw_batches() {
+                let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
+                let filtering = batch.texture_filtering;
+                let quant_bits = batch.quant_steps.to_bits();
+
+                if bound_material != Some(batch.material)
+                    || bound_texture != Some(texture_handle)
+                    || bound_filtering != Some(filtering)
+                    || bound_quant != Some(quant_bits)
+                {
+                    match batch.material {
+                        crate::engine::graphics::MaterialHandle::TOON_MESH
+                        | crate::engine::graphics::MaterialHandle::UNLIT_MESH => {
+                            let Some(tex) = self.textures.get(&texture_handle) else {
+                                continue;
+                            };
+
+                            let material_key =
+                                (batch.material, texture_handle, filtering, quant_bits);
+                            let material_set =
+                                if let Some(set) = self.cached_material_sets.get(&material_key) {
+                                    set.clone()
+                                } else {
+                                    let material_ubo =
+                                        Self::create_material_ubo(batch.material, batch.quant_steps);
+                                    let material_buffer: Subbuffer<MaterialUBO> = Buffer::from_data(
+                                        self.context.memory_allocator().clone(),
+                                        BufferCreateInfo {
+                                            usage: BufferUsage::UNIFORM_BUFFER,
+                                            ..Default::default()
+                                        },
+                                        AllocationCreateInfo {
+                                            memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                                            ..Default::default()
+                                        },
+                                        material_ubo,
+                                    )?;
+
+                                    let sampler = self.sampler_for(filtering).clone();
+
+                                    let set = DescriptorSet::new(
+                                        self.descriptor_set_allocator.clone(),
+                                        self.set_layouts.material.clone(),
+                                        [
+                                            WriteDescriptorSet::buffer(0, material_buffer),
+                                            WriteDescriptorSet::image_view_sampler(
+                                                1,
+                                                tex.view.clone(),
+                                                sampler,
+                                            ),
+                                        ],
+                                        [],
+                                    )?;
+
+                                    self.cached_material_sets.insert(material_key, set.clone());
+                                    set
+                                };
+
+                            cbb.bind_pipeline_graphics(
+                                self.pipeline_toon_mesh_transparent.clone(),
+                            )?;
+                            cbb.bind_descriptor_sets(
+                                PipelineBindPoint::Graphics,
+                                self.pipeline_toon_mesh_transparent.layout().clone(),
+                                0,
+                                (global_set.clone(), material_set),
+                            )?;
+                        }
+                        _ => {
+                            continue;
+                        }
+                    }
+
+                    bound_material = Some(batch.material);
+                    bound_texture = Some(texture_handle);
+                    bound_filtering = Some(filtering);
+                    bound_quant = Some(quant_bits);
+                }
+
+                let Some(mesh) = self.meshes.get(&batch.mesh) else {
+                    continue;
+                };
+                cbb.bind_vertex_buffers(
+                    0,
+                    (
+                        mesh.vertices.clone(),
+                        transparent_single_instance_buffer.clone(),
+                    ),
+                )?;
+                cbb.bind_index_buffer(mesh.indices.clone())?;
+
+                if batch.count > 0 {
+                    unsafe {
+                        cbb.draw_indexed(
+                            mesh.index_count,
+                            batch.count as u32,
+                            0,
+                            0,
+                            batch.start as u32,
+                        )?;
+                    }
+                }
+            }
+
+            Ok(())
+        }
+
+        fn record_transparent_multi_pass(
+            &mut self,
+            cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
+            visual_world: &mut VisualWorld,
+            global_set: &Arc<DescriptorSet>,
+            camera_target: crate::engine::graphics::CameraTarget,
+            eye: usize,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            // --- Transparent pass (multi-layer, sorted) ---
+            visual_world.prepare_transparent_multi_draw_cache_for_eye(camera_target, eye);
+            let transparent_multi_instance_count = visual_world.transparent_multi_draw_order().len();
+
+            if eye == 0 {
+                let has_multi = transparent_multi_instance_count > 0;
+                if self.last_frame_had_transparent_multi != Some(has_multi) {
+                    if has_multi {
+                        println!("[VulkanoRenderer] transparent multi-layer pass enabled");
+                    } else {
+                        println!(
+                            "[VulkanoRenderer] transparent multi-layer pass disabled (no instances)"
+                        );
+                    }
+                    self.last_frame_had_transparent_multi = Some(has_multi);
+                }
+            }
+
+            if transparent_multi_instance_count == 0 {
+                return Ok(());
+            }
+
+            // Build transparent instance buffer in transparent-multi draw order.
+            let instances_ref = visual_world.instances();
+            let transparent_multi_instance_data_iter =
+                visual_world.transparent_multi_draw_order().iter().map(|&idx| {
+                    let inst = instances_ref[idx as usize];
+                    let m = inst.transform.model;
+                    InstanceData {
+                        i_model_c0: m[0],
+                        i_model_c1: m[1],
+                        i_model_c2: m[2],
+                        i_model_c3: m[3],
+                        i_color: inst.color,
+                        i_emissive: inst.emissive,
+                        i_opacity: inst.opacity,
+                    }
+                });
+
+            let transparent_multi_instance_buffer: Subbuffer<[InstanceData]> = Buffer::from_iter(
+                self.context.memory_allocator().clone(),
+                BufferCreateInfo {
+                    usage: BufferUsage::VERTEX_BUFFER,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    ..Default::default()
+                },
+                transparent_multi_instance_data_iter,
+            )?;
+
+            // Bind pipeline/descriptor sets per (material, texture).
+            let mut bound_material: Option<crate::engine::graphics::MaterialHandle> = None;
+            let mut bound_texture: Option<TextureHandle> = None;
+            let mut bound_filtering: Option<TextureFiltering> = None;
+            let mut bound_quant: Option<u32> = None;
+
+            for batch in visual_world.transparent_multi_draw_batches() {
+                let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
+                let filtering = batch.texture_filtering;
+                let quant_bits = batch.quant_steps.to_bits();
+
+                if bound_material != Some(batch.material)
+                    || bound_texture != Some(texture_handle)
+                    || bound_filtering != Some(filtering)
+                    || bound_quant != Some(quant_bits)
+                {
+                    match batch.material {
+                        crate::engine::graphics::MaterialHandle::TOON_MESH
+                        | crate::engine::graphics::MaterialHandle::UNLIT_MESH => {
+                            let Some(tex) = self.textures.get(&texture_handle) else {
+                                continue;
+                            };
+
+                            let material_key =
+                                (batch.material, texture_handle, filtering, quant_bits);
+                            let material_set =
+                                if let Some(set) = self.cached_material_sets.get(&material_key) {
+                                    set.clone()
+                                } else {
+                                    let material_ubo =
+                                        Self::create_material_ubo(batch.material, batch.quant_steps);
+                                    let material_buffer: Subbuffer<MaterialUBO> = Buffer::from_data(
+                                        self.context.memory_allocator().clone(),
+                                        BufferCreateInfo {
+                                            usage: BufferUsage::UNIFORM_BUFFER,
+                                            ..Default::default()
+                                        },
+                                        AllocationCreateInfo {
+                                            memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                                            ..Default::default()
+                                        },
+                                        material_ubo,
+                                    )?;
+
+                                    let sampler = self.sampler_for(filtering).clone();
+
+                                    let set = DescriptorSet::new(
+                                        self.descriptor_set_allocator.clone(),
+                                        self.set_layouts.material.clone(),
+                                        [
+                                            WriteDescriptorSet::buffer(0, material_buffer),
+                                            WriteDescriptorSet::image_view_sampler(
+                                                1,
+                                                tex.view.clone(),
+                                                sampler,
+                                            ),
+                                        ],
+                                        [],
+                                    )?;
+
+                                    self.cached_material_sets.insert(material_key, set.clone());
+                                    set
+                                };
+
+                            cbb.bind_pipeline_graphics(
+                                self.pipeline_toon_mesh_transparent.clone(),
+                            )?;
+                            cbb.bind_descriptor_sets(
+                                PipelineBindPoint::Graphics,
+                                self.pipeline_toon_mesh_transparent.layout().clone(),
+                                0,
+                                (global_set.clone(), material_set),
+                            )?;
+                        }
+                        _ => {
+                            continue;
+                        }
+                    }
+
+                    bound_material = Some(batch.material);
+                    bound_texture = Some(texture_handle);
+                    bound_filtering = Some(filtering);
+                    bound_quant = Some(quant_bits);
+                }
+
+                let Some(mesh) = self.meshes.get(&batch.mesh) else {
+                    continue;
+                };
+                cbb.bind_vertex_buffers(
+                    0,
+                    (
+                        mesh.vertices.clone(),
+                        transparent_multi_instance_buffer.clone(),
+                    ),
+                )?;
+                cbb.bind_index_buffer(mesh.indices.clone())?;
+
+                // IMPORTANT: for correct alpha blending order, draw transparent instances
+                // one-by-one in sorted order (do not rely on instancing order).
+                for j in batch.start..(batch.start + batch.count) {
+                    unsafe {
+                        cbb.draw_indexed(mesh.index_count, 1, 0, 0, j as u32)?;
+                    }
+                }
+            }
+
+            Ok(())
+        }
+
         fn build_draw_batches_command_buffer(
             &mut self,
             visual_world: &mut VisualWorld,
@@ -1115,439 +1572,23 @@ mod vulkano_backend {
             )?;
 
             // Bind pipeline/descriptor sets per (material, texture).
-            let mut bound_material: Option<crate::engine::graphics::MaterialHandle> = None;
-            let mut bound_texture: Option<TextureHandle> = None;
-            let mut bound_filtering: Option<TextureFiltering> = None;
-            let mut bound_quant: Option<u32> = None;
+            self.record_opaque_pass(
+                &mut cbb,
+                visual_world,
+                &global_set,
+                &instance_buffer,
+                instance_count,
+            )?;
 
-            for batch in visual_world.draw_batches() {
-                let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
+            self.record_transparent_single_pass(&mut cbb, visual_world, &global_set, eye)?;
 
-                let filtering = batch.texture_filtering;
-
-                let quant_bits = batch.quant_steps.to_bits();
-
-                if bound_material != Some(batch.material)
-                    || bound_texture != Some(texture_handle)
-                    || bound_filtering != Some(filtering)
-                    || bound_quant != Some(quant_bits)
-                {
-                    match batch.material {
-                        crate::engine::graphics::MaterialHandle::TOON_MESH
-                        | crate::engine::graphics::MaterialHandle::UNLIT_MESH => {
-                            let Some(tex) = self.textures.get(&texture_handle) else {
-                                continue;
-                            };
-
-                            let material_key =
-                                (batch.material, texture_handle, filtering, quant_bits);
-                            let material_set = if let Some(set) =
-                                self.cached_material_sets.get(&material_key)
-                            {
-                                set.clone()
-                            } else {
-                                let material_ubo =
-                                    Self::create_material_ubo(batch.material, batch.quant_steps);
-                                let material_buffer: Subbuffer<MaterialUBO> = Buffer::from_data(
-                                    self.context.memory_allocator().clone(),
-                                    BufferCreateInfo {
-                                        usage: BufferUsage::UNIFORM_BUFFER,
-                                        ..Default::default()
-                                    },
-                                    AllocationCreateInfo {
-                                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                                        ..Default::default()
-                                    },
-                                    material_ubo,
-                                )?;
-
-                                let sampler = self.sampler_for(filtering).clone();
-
-                                let set = DescriptorSet::new(
-                                    self.descriptor_set_allocator.clone(),
-                                    self.set_layouts.material.clone(),
-                                    [
-                                        WriteDescriptorSet::buffer(0, material_buffer),
-                                        WriteDescriptorSet::image_view_sampler(
-                                            1,
-                                            tex.view.clone(),
-                                            sampler,
-                                        ),
-                                    ],
-                                    [],
-                                )?;
-
-                                self.cached_material_sets.insert(material_key, set.clone());
-                                set
-                            };
-
-                            cbb.bind_pipeline_graphics(self.pipeline_toon_mesh.clone())?;
-                            cbb.bind_descriptor_sets(
-                                PipelineBindPoint::Graphics,
-                                self.pipeline_toon_mesh.layout().clone(),
-                                0,
-                                (global_set.clone(), material_set),
-                            )?;
-                        }
-                        _ => {
-                            continue;
-                        }
-                    }
-
-                    bound_material = Some(batch.material);
-                    bound_texture = Some(texture_handle);
-                    bound_filtering = Some(filtering);
-                    bound_quant = Some(quant_bits);
-                }
-
-                let Some(mesh) = self.meshes.get(&batch.mesh) else {
-                    continue;
-                };
-                cbb.bind_vertex_buffers(0, (mesh.vertices.clone(), instance_buffer.clone()))?;
-                cbb.bind_index_buffer(mesh.indices.clone())?;
-
-                if instance_count > 0 && batch.count > 0 {
-                    unsafe {
-                        cbb.draw_indexed(
-                            mesh.index_count,
-                            batch.count as u32,
-                            0,
-                            0,
-                            batch.start as u32,
-                        )?;
-                    }
-                }
-            }
-
-            // --- Transparent pass (single-layer, instanced) ---
-            let transparent_single_instance_count = visual_world.transparent_single_draw_order().len();
-
-            if eye == 0 {
-                let has_single = transparent_single_instance_count > 0;
-                if self.last_frame_had_transparent_single != Some(has_single) {
-                    if has_single {
-                        println!("[VulkanoRenderer] transparent single-layer pass enabled");
-                    } else {
-                        println!(
-                            "[VulkanoRenderer] transparent single-layer pass disabled (no instances)"
-                        );
-                    }
-                    self.last_frame_had_transparent_single = Some(has_single);
-                }
-            }
-
-            if transparent_single_instance_count > 0 {
-                // Build instance buffer in transparent-single draw order.
-                let instances_ref = visual_world.instances();
-                let transparent_single_instance_data_iter =
-                    visual_world.transparent_single_draw_order().iter().map(|&idx| {
-                        let inst = instances_ref[idx as usize];
-                        let m = inst.transform.model;
-                        InstanceData {
-                            i_model_c0: m[0],
-                            i_model_c1: m[1],
-                            i_model_c2: m[2],
-                            i_model_c3: m[3],
-                            i_color: inst.color,
-                            i_emissive: inst.emissive,
-                            i_opacity: inst.opacity,
-                        }
-                    });
-
-                let transparent_single_instance_buffer: Subbuffer<[InstanceData]> =
-                    Buffer::from_iter(
-                        self.context.memory_allocator().clone(),
-                        BufferCreateInfo {
-                            usage: BufferUsage::VERTEX_BUFFER,
-                            ..Default::default()
-                        },
-                        AllocationCreateInfo {
-                            memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                            ..Default::default()
-                        },
-                        transparent_single_instance_data_iter,
-                    )?;
-
-                // Reset bindings for the transparent pipeline.
-                bound_material = None;
-                bound_texture = None;
-                bound_filtering = None;
-                bound_quant = None;
-
-                for batch in visual_world.transparent_single_draw_batches() {
-                    let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
-
-                    let filtering = batch.texture_filtering;
-
-                    let quant_bits = batch.quant_steps.to_bits();
-
-                    if bound_material != Some(batch.material)
-                        || bound_texture != Some(texture_handle)
-                        || bound_filtering != Some(filtering)
-                        || bound_quant != Some(quant_bits)
-                    {
-                        match batch.material {
-                            crate::engine::graphics::MaterialHandle::TOON_MESH
-                            | crate::engine::graphics::MaterialHandle::UNLIT_MESH => {
-                                let Some(tex) = self.textures.get(&texture_handle) else {
-                                    continue;
-                                };
-
-                                let material_key =
-                                    (batch.material, texture_handle, filtering, quant_bits);
-                                let material_set = if let Some(set) =
-                                    self.cached_material_sets.get(&material_key)
-                                {
-                                    set.clone()
-                                } else {
-                                    let material_ubo = Self::create_material_ubo(
-                                        batch.material,
-                                        batch.quant_steps,
-                                    );
-                                    let material_buffer: Subbuffer<MaterialUBO> =
-                                        Buffer::from_data(
-                                            self.context.memory_allocator().clone(),
-                                            BufferCreateInfo {
-                                                usage: BufferUsage::UNIFORM_BUFFER,
-                                                ..Default::default()
-                                            },
-                                            AllocationCreateInfo {
-                                                memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                                                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                                                ..Default::default()
-                                            },
-                                            material_ubo,
-                                        )?;
-
-                                    let sampler = self.sampler_for(filtering).clone();
-
-                                    let set = DescriptorSet::new(
-                                        self.descriptor_set_allocator.clone(),
-                                        self.set_layouts.material.clone(),
-                                        [
-                                            WriteDescriptorSet::buffer(0, material_buffer),
-                                            WriteDescriptorSet::image_view_sampler(
-                                                1,
-                                                tex.view.clone(),
-                                                sampler,
-                                            ),
-                                        ],
-                                        [],
-                                    )?;
-
-                                    self.cached_material_sets.insert(material_key, set.clone());
-                                    set
-                                };
-
-                                cbb.bind_pipeline_graphics(
-                                    self.pipeline_toon_mesh_transparent.clone(),
-                                )?;
-                                cbb.bind_descriptor_sets(
-                                    PipelineBindPoint::Graphics,
-                                    self.pipeline_toon_mesh_transparent.layout().clone(),
-                                    0,
-                                    (global_set.clone(), material_set),
-                                )?;
-                            }
-                            _ => {
-                                continue;
-                            }
-                        }
-
-                        bound_material = Some(batch.material);
-                        bound_texture = Some(texture_handle);
-                        bound_filtering = Some(filtering);
-                        bound_quant = Some(quant_bits);
-                    }
-
-                    let Some(mesh) = self.meshes.get(&batch.mesh) else {
-                        continue;
-                    };
-                    cbb.bind_vertex_buffers(
-                        0,
-                        (
-                            mesh.vertices.clone(),
-                            transparent_single_instance_buffer.clone(),
-                        ),
-                    )?;
-                    cbb.bind_index_buffer(mesh.indices.clone())?;
-
-                    if batch.count > 0 {
-                        unsafe {
-                            cbb.draw_indexed(
-                                mesh.index_count,
-                                batch.count as u32,
-                                0,
-                                0,
-                                batch.start as u32,
-                            )?;
-                        }
-                    }
-                }
-            }
-
-            // --- Transparent pass (multi-layer, sorted) ---
-            visual_world.prepare_transparent_multi_draw_cache_for_eye(camera_target, eye);
-            let transparent_multi_instance_count = visual_world.transparent_multi_draw_order().len();
-
-            if eye == 0 {
-                let has_multi = transparent_multi_instance_count > 0;
-                if self.last_frame_had_transparent_multi != Some(has_multi) {
-                    if has_multi {
-                        println!("[VulkanoRenderer] transparent multi-layer pass enabled");
-                    } else {
-                        println!(
-                            "[VulkanoRenderer] transparent multi-layer pass disabled (no instances)"
-                        );
-                    }
-                    self.last_frame_had_transparent_multi = Some(has_multi);
-                }
-            }
-
-            if transparent_multi_instance_count > 0 {
-                // Build transparent instance buffer in transparent-multi draw order.
-                let instances_ref = visual_world.instances();
-                let transparent_multi_instance_data_iter =
-                    visual_world.transparent_multi_draw_order().iter().map(|&idx| {
-                        let inst = instances_ref[idx as usize];
-                        let m = inst.transform.model;
-                        InstanceData {
-                            i_model_c0: m[0],
-                            i_model_c1: m[1],
-                            i_model_c2: m[2],
-                            i_model_c3: m[3],
-                            i_color: inst.color,
-                            i_emissive: inst.emissive,
-                            i_opacity: inst.opacity,
-                        }
-                    });
-
-                let transparent_multi_instance_buffer: Subbuffer<[InstanceData]> = Buffer::from_iter(
-                    self.context.memory_allocator().clone(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::VERTEX_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                    transparent_multi_instance_data_iter,
-                )?;
-
-                // Reset bindings for the transparent pipeline.
-                bound_material = None;
-                bound_texture = None;
-                bound_filtering = None;
-                bound_quant = None;
-
-                for batch in visual_world.transparent_multi_draw_batches() {
-                    let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
-
-                    let filtering = batch.texture_filtering;
-
-                    let quant_bits = batch.quant_steps.to_bits();
-
-                    if bound_material != Some(batch.material)
-                        || bound_texture != Some(texture_handle)
-                        || bound_filtering != Some(filtering)
-                        || bound_quant != Some(quant_bits)
-                    {
-                        match batch.material {
-                            crate::engine::graphics::MaterialHandle::TOON_MESH
-                            | crate::engine::graphics::MaterialHandle::UNLIT_MESH => {
-                                let Some(tex) = self.textures.get(&texture_handle) else {
-                                    continue;
-                                };
-
-                                let material_key =
-                                    (batch.material, texture_handle, filtering, quant_bits);
-                                let material_set = if let Some(set) =
-                                    self.cached_material_sets.get(&material_key)
-                                {
-                                    set.clone()
-                                } else {
-                                    let material_ubo = Self::create_material_ubo(
-                                        batch.material,
-                                        batch.quant_steps,
-                                    );
-                                    let material_buffer: Subbuffer<MaterialUBO> =
-                                        Buffer::from_data(
-                                            self.context.memory_allocator().clone(),
-                                            BufferCreateInfo {
-                                                usage: BufferUsage::UNIFORM_BUFFER,
-                                                ..Default::default()
-                                            },
-                                            AllocationCreateInfo {
-                                                memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                                                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                                                ..Default::default()
-                                            },
-                                            material_ubo,
-                                        )?;
-
-                                    let sampler = self.sampler_for(filtering).clone();
-
-                                    let set = DescriptorSet::new(
-                                        self.descriptor_set_allocator.clone(),
-                                        self.set_layouts.material.clone(),
-                                        [
-                                            WriteDescriptorSet::buffer(0, material_buffer),
-                                            WriteDescriptorSet::image_view_sampler(
-                                                1,
-                                                tex.view.clone(),
-                                                sampler,
-                                            ),
-                                        ],
-                                        [],
-                                    )?;
-
-                                    self.cached_material_sets.insert(material_key, set.clone());
-                                    set
-                                };
-
-                                cbb.bind_pipeline_graphics(
-                                    self.pipeline_toon_mesh_transparent.clone(),
-                                )?;
-                                cbb.bind_descriptor_sets(
-                                    PipelineBindPoint::Graphics,
-                                    self.pipeline_toon_mesh_transparent.layout().clone(),
-                                    0,
-                                    (global_set.clone(), material_set),
-                                )?;
-                            }
-                            _ => {
-                                continue;
-                            }
-                        }
-
-                        bound_material = Some(batch.material);
-                        bound_texture = Some(texture_handle);
-                        bound_filtering = Some(filtering);
-                        bound_quant = Some(quant_bits);
-                    }
-
-                    let Some(mesh) = self.meshes.get(&batch.mesh) else {
-                        continue;
-                    };
-                    cbb.bind_vertex_buffers(
-                        0,
-                        (mesh.vertices.clone(), transparent_multi_instance_buffer.clone()),
-                    )?;
-                    cbb.bind_index_buffer(mesh.indices.clone())?;
-
-                    // IMPORTANT: for correct alpha blending order, draw transparent instances
-                    // one-by-one in sorted order (do not rely on instancing order).
-                    for j in batch.start..(batch.start + batch.count) {
-                        unsafe {
-                            cbb.draw_indexed(mesh.index_count, 1, 0, 0, j as u32)?;
-                        }
-                    }
-                }
-            }
+            self.record_transparent_multi_pass(
+                &mut cbb,
+                visual_world,
+                &global_set,
+                camera_target,
+                eye,
+            )?;
 
             cbb.end_rendering()?;
 

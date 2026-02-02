@@ -44,6 +44,25 @@ using vulkan instanced rendering and several layers to describe game objects:
 + displays data from VisualWorld through vulkan
 + TODO: make WgpuRenderer for web / webasm
 
+### Transparency / Opacity
+
+The renderer uses a 3-pass model so we get decent performance for "simple" transparency, but still have a correct path for stacked transparency:
+
+1. **Opaque pass** (instanced)
+  + Depth test: ON
+  + Depth write: ON
+  + Batching/instancing: YES
+2. **Transparent single-layer pass** (instanced)
+  + Depth test: ON
+  + Depth write: OFF (so later transparent layers can still blend)
+  + Batching/instancing: YES (fast)
+3. **Transparent multi-layer pass** (sorted)
+  + Depth test: ON
+  + Depth write: OFF
+  + Batching: grouped by (material, mesh, texture), but **drawn one-by-one in back-to-front order** for correct blending
+
+This is driven by `VisualWorld` building separate draw orders/caches, and `VulkanoRenderer` recording all three passes in `build_draw_batches_command_buffer`.
+
 # Components
 
 + TransformComponent
@@ -100,6 +119,19 @@ InputComponent {
   + Per-instance RGBA tint.
   + Routed into the instanced vertex buffer, so it does not split draw batches.
   + Useful for quick “team color” / debug visualization without creating new materials.
+
++ OpacityComponent
+  + Per-instance opacity multiplier (separate from `ColorComponent` alpha).
+  + Routed into the instanced vertex buffer as `i_opacity` and multiplied into the fragment alpha.
+  + Like color, opacity can be inherited from ancestors (so you can set it once on a parent and affect all children).
+  + Influences which render pass an instance uses:
+    + Instances are treated as transparent if `opacity < 0.999` **or** `color.a < 0.999`.
+      + (Note: texture alpha is not currently considered for pass selection.)
+    + Transparent instances with `multiple_layers=false` go through the **transparent single-layer** instanced pass.
+    + Transparent instances with `multiple_layers=true` go through the **transparent multi-layer** sorted pass.
+  + Usage:
+    + `OpacityComponent::new().with_opacity(0.5)`
+    + `OpacityComponent::new().with_opacity(0.5).with_multiple_layers()` when it must blend correctly with other transparent surfaces.
 
 + UVComponent
   + Supplies UVs for a mesh so shaders can sample textures.
