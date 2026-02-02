@@ -44,6 +44,13 @@ fn main() {
     let _ = universe.attach(input, input_mode);
     let _ = universe.attach(input, rig_transform);
     let _ = universe.attach(rig_transform, camera3d);
+
+    // Click-to-pick: raycast from the active camera through the cursor.
+    let raycast = universe.world.register(
+        engine::ecs::component::RayCastComponent::event_driven().with_max_distance(100.0),
+    );
+    let _ = universe.attach(rig_transform, raycast);
+
     let _ = universe.attach(rig_transform, rig_collision);
     let _ = universe.attach(rig_collision, rig_shape);
 
@@ -61,16 +68,33 @@ fn main() {
         intensity: f32,
         distance: f32,
     ) {
-        let t = universe
-            .world
-            .register(engine::ecs::component::TransformComponent::new().with_position(x, y, z));
+        let t = universe.world.register(
+            engine::ecs::component::TransformComponent::new()
+                .with_position(x, y, z)
+                .with_scale(0.12, 0.12, 0.12),
+        );
+
         let l = universe.world.register(
             engine::ecs::component::PointLightComponent::new()
                 .with_color(r, g, b)
                 .with_intensity(intensity)
                 .with_distance(distance),
         );
+
+        // Visual marker: a small white cube at the light position.
+        // White ensures it mostly shows the light color.
+        let marker = universe
+            .world
+            .register(engine::ecs::component::RenderableComponent::cube());
+        let marker_color = universe
+            .world
+            .register(engine::ecs::component::ColorComponent::rgba(
+                1.0, 1.0, 1.0, 1.0,
+            ));
+
         let _ = universe.attach(t, l);
+        let _ = universe.attach(t, marker);
+        let _ = universe.attach(marker, marker_color);
         universe.add(t);
     }
 

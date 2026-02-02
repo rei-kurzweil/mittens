@@ -79,6 +79,14 @@ pub struct VisualWorld {
     dirty_instance_data: bool,
     draw_order: Vec<u32>, // indices into `instances`
     draw_batches: Vec<DrawBatch>,
+
+    // Transparent draw data.
+    // - Single-layer: cached (order does not depend on view), instanced.
+    transparent_single_draw_order: Vec<u32>,
+    transparent_single_draw_batches: Vec<DrawBatch>,
+    // - Multi-layer: rebuilt per-eye (ordering depends on view), sorted + drawn one-by-one.
+    transparent_multi_draw_order: Vec<u32>,
+    transparent_multi_draw_batches: Vec<DrawBatch>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -86,6 +94,8 @@ pub struct VisualInstance {
     pub renderable: GpuRenderable,
     pub transform: Transform,
     pub color: [f32; 4],
+    pub opacity: f32,
+    pub multiple_layers: bool,
     pub emissive: u32,
     pub texture: Option<crate::engine::graphics::TextureHandle>,
     pub texture_filtering: TextureFiltering,
@@ -148,6 +158,11 @@ impl Default for VisualWorld {
             dirty_instance_data: true,
             draw_order: Vec::new(),
             draw_batches: Vec::new(),
+
+            transparent_single_draw_order: Vec::new(),
+            transparent_single_draw_batches: Vec::new(),
+            transparent_multi_draw_order: Vec::new(),
+            transparent_multi_draw_batches: Vec::new(),
         }
     }
 }
@@ -162,6 +177,71 @@ pub struct VisualPointLight {
 impl VisualWorld {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    fn is_transparent(inst: &VisualInstance) -> bool {
+        // Conservative: any non-1 alpha/opacity is treated as transparent.
+        // (Texture alpha is not considered here; that would require texture metadata.)
+        inst.opacity < 0.999 || inst.color[3] < 0.999
+    }
+
+    fn view_space_z(view: TransformMatrix, model: TransformMatrix) -> f32 {
+        // Matrices are stored as column vectors (shader uses mat4(i_model_c0..c3)).
+        // Translation is column 3: (tx, ty, tz).
+        let tx = model[3][0];
+        let ty = model[3][1];
+        let tz = model[3][2];
+
+        // Multiply view * vec4(t,1) and return z.
+        view[0][2] * tx + view[1][2] * ty + view[2][2] * tz + view[3][2]
+    }
+
+    fn build_draw_batches_for_order(
+        instances: &[VisualInstance],
+        order: &[u32],
+        out: &mut Vec<DrawBatch>,
+    ) {
+        out.clear();
+        let mut cursor = 0usize;
+        while cursor < order.len() {
+            let idx0 = order[cursor] as usize;
+            let inst0 = instances[idx0];
+            let r0 = inst0.renderable;
+            let material = r0.material;
+            let mesh = r0.mesh;
+            let texture = inst0.texture;
+            let texture_filtering = inst0.texture_filtering;
+            let quant_steps = sanitize_quant_steps(inst0.quant_steps);
+
+            let start = cursor;
+            cursor += 1;
+
+            while cursor < order.len() {
+                let idx = order[cursor] as usize;
+                let inst = instances[idx];
+                let r = inst.renderable;
+                if r.material == material
+                    && r.mesh == mesh
+                    && inst.texture == texture
+                    && inst.texture_filtering == texture_filtering
+                    && sanitize_quant_steps(inst.quant_steps).to_bits() == quant_steps.to_bits()
+                {
+                    cursor += 1;
+                } else {
+                    break;
+                }
+            }
+
+            out.push(DrawBatch {
+                material,
+                mesh,
+                texture,
+                texture_filtering,
+                quant_steps,
+                start,
+                count: cursor - start,
+            });
+        }
     }
 
     pub fn clear_color(&self) -> [f32; 4] {
@@ -396,6 +476,24 @@ impl VisualWorld {
         &self.draw_batches
     }
 
+    /// Indices into `instances()` in the order they should be drawn (single-layer transparent pass).
+    pub fn transparent_single_draw_order(&self) -> &[u32] {
+        &self.transparent_single_draw_order
+    }
+
+    pub fn transparent_single_draw_batches(&self) -> &[DrawBatch] {
+        &self.transparent_single_draw_batches
+    }
+
+    /// Indices into `instances()` in the order they should be drawn (multi-layer transparent pass).
+    pub fn transparent_multi_draw_order(&self) -> &[u32] {
+        &self.transparent_multi_draw_order
+    }
+
+    pub fn transparent_multi_draw_batches(&self) -> &[DrawBatch] {
+        &self.transparent_multi_draw_batches
+    }
+
     /// Call once per frame before rendering. Cheap if nothing changed.
     ///
     /// Returns `true` if the cached draw order/batches were rebuilt this call.
@@ -405,7 +503,16 @@ impl VisualWorld {
         }
 
         self.draw_order.clear();
-        self.draw_order.extend(0..self.instances.len() as u32);
+        self.transparent_single_draw_order.clear();
+        // Opaque pass: exclude anything that is transparent.
+        for i in 0..self.instances.len() {
+            let inst = &self.instances[i];
+            if !Self::is_transparent(inst) {
+                self.draw_order.push(i as u32);
+            } else if !inst.multiple_layers {
+                self.transparent_single_draw_order.push(i as u32);
+            }
+        }
 
         // Sort by (material, mesh, texture, filtering). Stable sort keeps relative order for identical keys.
         self.draw_order.sort_by_key(|&i| {
@@ -421,50 +528,76 @@ impl VisualWorld {
             )
         });
 
-        self.draw_batches.clear();
-        let mut cursor = 0usize;
-        while cursor < self.draw_order.len() {
-            let idx0 = self.draw_order[cursor] as usize;
-            let inst0 = self.instances[idx0];
-            let r0 = inst0.renderable;
-            let material = r0.material;
-            let mesh = r0.mesh;
-            let texture = inst0.texture;
-            let texture_filtering = inst0.texture_filtering;
-            let quant_steps = sanitize_quant_steps(inst0.quant_steps);
+        let instances = &self.instances;
+        let draw_order = &self.draw_order;
+        Self::build_draw_batches_for_order(instances, draw_order, &mut self.draw_batches);
 
-            let start = cursor;
-            cursor += 1;
-
-            while cursor < self.draw_order.len() {
-                let idx = self.draw_order[cursor] as usize;
-                let inst = self.instances[idx];
-                let r = inst.renderable;
-                if r.material == material
-                    && r.mesh == mesh
-                    && inst.texture == texture
-                    && inst.texture_filtering == texture_filtering
-                    && sanitize_quant_steps(inst.quant_steps).to_bits() == quant_steps.to_bits()
-                {
-                    cursor += 1;
-                } else {
-                    break;
-                }
-            }
-
-            self.draw_batches.push(DrawBatch {
-                material,
-                mesh,
-                texture,
-                texture_filtering,
-                quant_steps,
-                start,
-                count: cursor - start,
-            });
-        }
+        // Single-layer transparent pass: batch aggressively (order does not depend on view).
+        self.transparent_single_draw_order.sort_by_key(|&i| {
+            let inst = self.instances[i as usize];
+            let r = inst.renderable;
+            let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
+            (
+                r.material.0,
+                r.mesh.0,
+                tex,
+                inst.texture_filtering as u8,
+                sanitize_quant_steps(inst.quant_steps).to_bits(),
+            )
+        });
+        let transparent_single_draw_order = &self.transparent_single_draw_order;
+        Self::build_draw_batches_for_order(
+            instances,
+            transparent_single_draw_order,
+            &mut self.transparent_single_draw_batches,
+        );
 
         self.dirty_draw_cache = false;
         true
+    }
+
+    /// Rebuild multi-layer transparent draw order/batches for a specific camera eye.
+    ///
+    /// Intended to be called by the renderer (ordering depends on view).
+    pub fn prepare_transparent_multi_draw_cache_for_eye(
+        &mut self,
+        target: CameraTarget,
+        eye: usize,
+    ) {
+        self.transparent_multi_draw_order.clear();
+
+        for i in 0..self.instances.len() {
+            let inst = &self.instances[i];
+            if inst.multiple_layers && Self::is_transparent(inst) {
+                self.transparent_multi_draw_order.push(i as u32);
+            }
+        }
+
+        if self.transparent_multi_draw_order.is_empty() {
+            self.transparent_multi_draw_batches.clear();
+            return;
+        }
+
+        let view = self.camera_view_for_eye(target, eye);
+
+        // Back-to-front for blending.
+        self.transparent_multi_draw_order.sort_by(|&a, &b| {
+            let ia = self.instances[a as usize];
+            let ib = self.instances[b as usize];
+            let za = Self::view_space_z(view, ia.transform.model);
+            let zb = Self::view_space_z(view, ib.transform.model);
+            za.partial_cmp(&zb)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.cmp(&b))
+        });
+
+        let instances = &self.instances;
+        let transparent_draw_order = &self.transparent_multi_draw_order;
+        Self::build_draw_batches_for_order(
+            instances,
+            transparent_draw_order,
+            &mut self.transparent_multi_draw_batches,
+        );
     }
 
     pub fn register(
@@ -473,6 +606,8 @@ impl VisualWorld {
         renderable: GpuRenderable,
         transform: Transform,
         color: [f32; 4],
+        opacity: f32,
+        multiple_layers: bool,
         emissive: u32,
         texture: Option<crate::engine::graphics::TextureHandle>,
         quant_steps: f32,
@@ -485,6 +620,12 @@ impl VisualWorld {
             renderable,
             transform,
             color,
+            opacity: if opacity.is_finite() {
+                opacity.clamp(0.0, 1.0)
+            } else {
+                1.0
+            },
+            multiple_layers,
             emissive,
             texture,
             texture_filtering: TextureFiltering::default(),
@@ -565,6 +706,50 @@ impl VisualWorld {
         if let Some(&idx) = self.handle_to_index.get(&handle) {
             self.instances[idx].color = color;
             self.dirty_instance_data = true;
+            // Color alpha can change transparent/opaque classification.
+            self.dirty_draw_cache = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn update_opacity(&mut self, handle: InstanceHandle, opacity: f32) -> bool {
+        self.update_opacity_state(handle, opacity, None)
+    }
+
+    pub fn update_opacity_state(
+        &mut self,
+        handle: InstanceHandle,
+        opacity: f32,
+        multiple_layers: impl Into<Option<bool>>,
+    ) -> bool {
+        if let Some(&idx) = self.handle_to_index.get(&handle) {
+            let o = if opacity.is_finite() {
+                opacity.clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            let mut changed = false;
+
+            if (self.instances[idx].opacity - o).abs() >= f32::EPSILON {
+                self.instances[idx].opacity = o;
+                changed = true;
+            }
+
+            if let Some(ml) = multiple_layers.into() {
+                if self.instances[idx].multiple_layers != ml {
+                    self.instances[idx].multiple_layers = ml;
+                    changed = true;
+                }
+            }
+
+            if !changed {
+                return true;
+            }
+            self.dirty_instance_data = true;
+            // Opacity changes can change transparent/opaque classification.
+            self.dirty_draw_cache = true;
             true
         } else {
             false
@@ -620,6 +805,8 @@ impl VisualWorld {
         if let Some(&idx) = self.handle_to_index.get(&handle) {
             // Preserve per-instance color when updating renderable/transform.
             let color = self.instances[idx].color;
+            let opacity = self.instances[idx].opacity;
+            let multiple_layers = self.instances[idx].multiple_layers;
             let emissive = self.instances[idx].emissive;
             let texture = self.instances[idx].texture;
             let texture_filtering = self.instances[idx].texture_filtering;
@@ -628,6 +815,8 @@ impl VisualWorld {
                 renderable,
                 transform,
                 color,
+                opacity,
+                multiple_layers,
                 emissive,
                 texture,
                 texture_filtering,

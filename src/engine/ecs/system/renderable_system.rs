@@ -1,7 +1,7 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::BackgroundColorComponent;
 use crate::engine::ecs::component::{
-    ColorComponent, EmissiveComponent, LightQuantizationComponent, MeshComponent,
+    ColorComponent, EmissiveComponent, LightQuantizationComponent, MeshComponent, OpacityComponent,
     RenderableComponent, UVComponent,
 };
 
@@ -47,6 +47,11 @@ pub struct RenderableSystem {
     /// Keyed by the RenderableComponent's ComponentId.
     pending_color: HashMap<ComponentId, [f32; 4]>,
 
+    /// Per-instance opacity multiplier for a renderable.
+    ///
+    /// Keyed by the RenderableComponent's ComponentId.
+    pending_opacity: HashMap<ComponentId, PendingOpacity>,
+
     /// Per-instance emissive/unlit override for a renderable.
     ///
     /// Keyed by the RenderableComponent's ComponentId.
@@ -56,6 +61,21 @@ pub struct RenderableSystem {
     ///
     /// Keyed by the RenderableComponent's ComponentId.
     pending_quant_steps: HashMap<ComponentId, f32>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PendingOpacity {
+    opacity: f32,
+    multiple_layers: bool,
+}
+
+impl Default for PendingOpacity {
+    fn default() -> Self {
+        Self {
+            opacity: 1.0,
+            multiple_layers: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -101,6 +121,17 @@ impl RenderableSystem {
         })
     }
 
+    fn immediate_opacity_child(world: &World, node: ComponentId) -> Option<PendingOpacity> {
+        world.children_of(node).iter().find_map(|&ch| {
+            world
+                .get_component_by_id_as::<OpacityComponent>(ch)
+                .map(|o| PendingOpacity {
+                    opacity: o.opacity,
+                    multiple_layers: o.multiple_layers,
+                })
+        })
+    }
+
     fn inherited_color_for_renderable(
         world: &World,
         renderable_cid: ComponentId,
@@ -116,6 +147,26 @@ impl RenderableSystem {
         while let Some(parent) = world.parent_of(cur) {
             if let Some(rgba) = Self::immediate_color_child(world, parent) {
                 return Some(rgba);
+            }
+            cur = parent;
+        }
+        None
+    }
+
+    fn inherited_opacity_for_renderable(
+        world: &World,
+        renderable_cid: ComponentId,
+    ) -> Option<PendingOpacity> {
+        // Explicit per-renderable override wins.
+        if let Some(o) = Self::immediate_opacity_child(world, renderable_cid) {
+            return Some(o);
+        }
+
+        // Otherwise, walk up ancestry and look for an OpacityComponent attached to any ancestor.
+        let mut cur = renderable_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(o) = Self::immediate_opacity_child(world, parent) {
+                return Some(o);
             }
             cur = parent;
         }
@@ -166,7 +217,6 @@ impl RenderableSystem {
                 let _ = self.pending_emissive.remove(&renderable_cid);
                 continue;
             };
-
             let Some(handle) = renderable_comp.get_handle() else {
                 continue;
             };
@@ -231,6 +281,34 @@ impl RenderableSystem {
 
             let _ = visuals.update_color(handle, color);
             let _ = self.pending_color.remove(&renderable_cid);
+        }
+    }
+
+    fn apply_pending_opacity_updates_to_registered_renderables(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+    ) {
+        let keys: Vec<ComponentId> = self.pending_opacity.keys().copied().collect();
+        for renderable_cid in keys {
+            let Some(renderable_comp) =
+                world.get_component_by_id_as::<RenderableComponent>(renderable_cid)
+            else {
+                let _ = self.pending_opacity.remove(&renderable_cid);
+                continue;
+            };
+
+            let Some(handle) = renderable_comp.get_handle() else {
+                // Still pending; will be handled by the pending flush.
+                continue;
+            };
+
+            let Some(pending) = self.pending_opacity.get(&renderable_cid).copied() else {
+                continue;
+            };
+
+            let _ = visuals.update_opacity_state(handle, pending.opacity, pending.multiple_layers);
+            let _ = self.pending_opacity.remove(&renderable_cid);
         }
     }
 
@@ -353,6 +431,67 @@ impl RenderableSystem {
             }
 
             self.pending_color.insert(node, color_comp.rgba);
+        }
+    }
+
+    pub fn register_opacity(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let Some(opacity_comp) = world.get_component_by_id_as::<OpacityComponent>(component) else {
+            return;
+        };
+
+        let pending = PendingOpacity {
+            opacity: opacity_comp.opacity,
+            multiple_layers: opacity_comp.multiple_layers,
+        };
+
+        // Find the ancestor RenderableComponent that this OpacityComponent should apply to.
+        let mut cur = component;
+        let mut renderable_cid: Option<ComponentId> = None;
+        while let Some(parent) = world.parent_of(cur) {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(parent)
+                .is_some()
+            {
+                renderable_cid = Some(parent);
+                break;
+            }
+            cur = parent;
+        }
+
+        // Normal case: OpacityComponent is attached under a RenderableComponent.
+        if let Some(renderable_cid) = renderable_cid {
+            self.pending_opacity.insert(renderable_cid, pending);
+            return;
+        }
+
+        // Inheritance case: OpacityComponent is attached above renderables (e.g., on TextComponent).
+        // Apply it to descendant renderables that do NOT have an explicit per-renderable OpacityComponent.
+        let mut q = VecDeque::new();
+        q.push_back(component);
+
+        while let Some(node) = q.pop_front() {
+            for &ch in world.children_of(node).iter() {
+                q.push_back(ch);
+            }
+
+            if world
+                .get_component_by_id_as::<RenderableComponent>(node)
+                .is_none()
+            {
+                continue;
+            }
+
+            // Don't clobber explicit per-renderable overrides.
+            if Self::immediate_opacity_child(world, node).is_some() {
+                continue;
+            }
+
+            self.pending_opacity.insert(node, pending);
         }
     }
 
@@ -492,6 +631,28 @@ impl RenderableSystem {
         self.register_renderable_from_world(world, visuals, component);
     }
 
+    pub fn remove_renderable(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.renderables.retain(|&c| c != component);
+
+        let _ = self.pending.remove(&component);
+        let _ = self.pending_uv.remove(&component);
+        let _ = self.pending_color.remove(&component);
+        let _ = self.pending_opacity.remove(&component);
+        let _ = self.pending_emissive.remove(&component);
+        let _ = self.pending_quant_steps.remove(&component);
+
+        if let Some(r) = world.get_component_by_id_as_mut::<RenderableComponent>(component) {
+            if let Some(handle) = r.handle.take() {
+                let _ = visuals.remove(handle);
+            }
+        }
+    }
+
     /// Register a renderable by walking the component graph in `World`.
     pub fn register_renderable_from_world(
         &mut self,
@@ -544,6 +705,12 @@ impl RenderableSystem {
         if !self.pending_color.contains_key(&component) {
             if let Some(rgba) = Self::inherited_color_for_renderable(world, component) {
                 self.pending_color.insert(component, rgba);
+            }
+        }
+
+        if !self.pending_opacity.contains_key(&component) {
+            if let Some(o) = Self::inherited_opacity_for_renderable(world, component) {
+                self.pending_opacity.insert(component, o);
             }
         }
 
@@ -653,6 +820,12 @@ impl RenderableSystem {
                 .copied()
                 .unwrap_or([1.0, 1.0, 1.0, 1.0]);
 
+            let opacity = self
+                .pending_opacity
+                .get(&p.renderable_cid)
+                .copied()
+                .unwrap_or_default();
+
             let emissive = self
                 .pending_emissive
                 .get(&p.renderable_cid)
@@ -674,6 +847,8 @@ impl RenderableSystem {
                 gpu_r,
                 transform,
                 color,
+                opacity.opacity,
+                opacity.multiple_layers,
                 emissive,
                 None,
                 quant_steps,
@@ -689,6 +864,9 @@ impl RenderableSystem {
 
             // Color has now been applied.
             let _ = self.pending_color.remove(&p.renderable_cid);
+
+            // Opacity has now been applied.
+            let _ = self.pending_opacity.remove(&p.renderable_cid);
 
             // Emissive has now been applied.
             let _ = self.pending_emissive.remove(&p.renderable_cid);
@@ -707,6 +885,7 @@ impl RenderableSystem {
             uploader,
         );
         self.apply_pending_color_updates_to_registered_renderables(world, visuals);
+        self.apply_pending_opacity_updates_to_registered_renderables(world, visuals);
         self.apply_pending_emissive_updates_to_registered_renderables(world, visuals);
         self.apply_pending_quant_updates_to_registered_renderables(world, visuals);
     }

@@ -52,6 +52,20 @@ impl SystemWorld {
     ) {
         self.renderable
             .register_renderable(world, visuals, component);
+
+        // Keep BVH in sync (defer actual build/refit to CommandQueue flush).
+        self.bvh.queue_renderable_added(component);
+    }
+
+    /// Remove a RenderableComponent instance from the RenderableSystem (and BVH).
+    pub fn remove_renderable(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.renderable.remove_renderable(world, visuals, component);
+        self.bvh.queue_renderable_removed(component);
     }
 
     /// Register a UVComponent and apply it to its ancestor RenderableComponent.
@@ -72,6 +86,16 @@ impl SystemWorld {
         component: ComponentId,
     ) {
         self.renderable.register_color(world, visuals, component);
+    }
+
+    /// Register an OpacityComponent and apply it to its ancestor RenderableComponent.
+    pub fn register_opacity(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.renderable.register_opacity(world, visuals, component);
     }
 
     /// Register a BackgroundColorComponent and apply it to VisualWorld.
@@ -124,10 +148,11 @@ impl SystemWorld {
         component: ComponentId,
         queue: &mut crate::engine::ecs::CommandQueue,
     ) {
-        let spawned = self.text.register_text(world, visuals, component);
-        for g in spawned {
-            world.init_component_tree(g.transform, queue);
-        }
+        let _spawned = self.text.register_text(world, visuals, component);
+
+        // Initialize any newly spawned glyph/background subtrees.
+        // This is idempotent: nodes that were already initialized are skipped.
+        world.init_component_tree(component, queue);
     }
 
     /// Register an EmissiveComponent and apply it to its ancestor RenderableComponent.
@@ -248,6 +273,10 @@ impl SystemWorld {
             &mut self.light,
             &mut self.collision,
         );
+
+        // Transform propagation may move many renderables in the subtree.
+        // Queue a BVH refit for that subtree (applied after command flush).
+        self.bvh.queue_transform_subtree(world, component);
     }
 
     /// Update a transform component's transform value and notify systems.
@@ -413,6 +442,10 @@ impl SystemWorld {
 
         // Spawn any GLTF component trees. This may queue component registrations.
         self.gltf.tick_with_queue(world, queue, dt_sec);
+
+        // Flush queued registrations/transform updates *before* systems that need current
+        // world matrices / acceleration structures (e.g. raycasting).
+        queue.flush(world, self, visuals);
 
         // Ensure transforms are propagated before any camera systems consume world matrices.
         self.transform.tick(world, visuals, input, dt_sec);

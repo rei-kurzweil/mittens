@@ -1,9 +1,9 @@
 use cat_engine::{engine, utils};
 
 use cat_engine::engine::ecs::component::{
-    AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, InputComponent,
-    InputTransformModeComponent, RayCastComponent, TextComponent, TextureFilteringComponent,
-    TransformComponent,
+    AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ColorComponent,
+    InputComponent, InputTransformModeComponent, RayCastComponent, TextComponent, TextureComponent,
+    TextureFilteringComponent, TransformComponent,
 };
 
 fn main() {
@@ -27,7 +27,7 @@ fn main() {
     // I {
     //   // not fps rotation, just relative rotation
     //   with_forward_z()
-    //   with_roll_axis_z()
+    //   with_roll_axis_y()
     //   C3D {}
     // }
     let input = universe
@@ -35,7 +35,7 @@ fn main() {
         .register(InputComponent::new().with_speed(2.0));
     let input_mode = universe
         .world
-        .register(InputTransformModeComponent::forward_z().with_roll_axis_z());
+        .register(InputTransformModeComponent::forward_z().with_roll_axis_y());
     let _ = universe.attach(input, input_mode);
 
     let rig_transform = universe
@@ -74,6 +74,8 @@ fn main() {
         position: (f32, f32, f32),
         scale: f32,
         text: &str,
+        font_texture_uri: Option<&str>,
+        color_rgba: Option<[f32; 4]>,
     ) -> f32 {
         // T_root { T_scale { TXT { filtering } } }
         let text_root = universe
@@ -87,6 +89,19 @@ fn main() {
 
         let text_c = universe.world.register(TextComponent::new(text));
         let _ = universe.attach(text_scale, text_c);
+
+        // Optional: override the inherited color for this text block.
+        if let Some([r, g, b, a]) = color_rgba {
+            let color = universe.world.register(ColorComponent::rgba(r, g, b, a));
+            let _ = universe.attach(text_c, color);
+        }
+
+        // Optional: override the font atlas for this text block.
+        // TextSystem will propagate this to all glyph renderables.
+        if let Some(uri) = font_texture_uri {
+            let tex = universe.world.register(TextureComponent::with_uri(uri));
+            let _ = universe.attach(text_c, tex);
+        }
 
         // Keep it crisp.
         let filtering = universe
@@ -104,7 +119,7 @@ fn main() {
     // (Text literals omitted in the README/snippet; see constants below.)
     const TEXT_BIG: &str = "CAT ENGINE\nfont example\nBIG TEXT";
     const TEXT_MED: &str = "multi-line\ntext block\nmedium";
-    const TEXT_SMALL: &str = "small\nmono-ish\ntext";
+    const TEXT_SMALL: &str = "small\ntext";
     const TEXT_TINY: &str = "tiny\ntext\n(zoom in)";
 
     // Stack vertically; advance by (measured height + gap) so big text gets more room.
@@ -113,10 +128,61 @@ fn main() {
     let mut y = 1.2;
     let gap = 0.15;
 
-    y -= spawn_text_block(&mut universe, (x, y, z), 0.55, TEXT_BIG) + gap;
-    y -= spawn_text_block(&mut universe, (x, y, z), 0.25, TEXT_MED) + gap;
-    y -= spawn_text_block(&mut universe, (x, y, z), 0.14, TEXT_SMALL) + gap;
-    let _ = spawn_text_block(&mut universe, (x, y, z), 0.08, TEXT_TINY);
+    y -= spawn_text_block(&mut universe, (x, y, z), 0.55, TEXT_BIG, None, None) + gap;
+    y -= spawn_text_block(&mut universe, (x, y, z), 0.25, TEXT_MED, None, None) + gap;
+    y -= spawn_text_block(&mut universe, (x, y, z), 0.14, TEXT_SMALL, None, None) + gap;
+    let _ = spawn_text_block(&mut universe, (x, y, z), 0.08, TEXT_TINY, None, None);
+
+    // Left block: explicit multi-line text using the default font_system atlas.
+    const TEXT_LEFT: &str = "even though there's hexes\nto the solar plexus in my lexus\ni'm feelin' reckless,\nwhen i'm eating breakfast";
+    let _ = spawn_text_block(
+        &mut universe,
+        (x - 8.1, 1.1, z),
+        0.22,
+        TEXT_LEFT,
+        Some("assets/textures/font_system.dds"),
+        None,
+    );
+
+    // Alt atlas: put it *behind* the original stack (slightly farther from the camera)
+    // and tint it dark grey.
+    let alt_atlas = Some("assets/textures/font_system.0.0.dds");
+    let alt_z = z - 0.05;
+    let alt_grey = Some([0.25, 0.25, 0.25, 1.0]);
+
+    let mut y_alt = 1.2;
+    y_alt -= spawn_text_block(
+        &mut universe,
+        (x, y_alt, alt_z),
+        0.55,
+        TEXT_BIG,
+        alt_atlas,
+        alt_grey,
+    ) + gap;
+    y_alt -= spawn_text_block(
+        &mut universe,
+        (x, y_alt, alt_z),
+        0.25,
+        TEXT_MED,
+        alt_atlas,
+        alt_grey,
+    ) + gap;
+    y_alt -= spawn_text_block(
+        &mut universe,
+        (x, y_alt, alt_z),
+        0.14,
+        TEXT_SMALL,
+        alt_atlas,
+        alt_grey,
+    ) + gap;
+    let _ = spawn_text_block(
+        &mut universe,
+        (x, y_alt, alt_z),
+        0.08,
+        TEXT_TINY,
+        alt_atlas,
+        alt_grey,
+    );
 
     universe.enable_repl();
 

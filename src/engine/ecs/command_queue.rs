@@ -23,6 +23,14 @@ impl CommandQueue {
         });
     }
 
+    /// Queue a remove renderable command.
+    pub fn queue_remove_renderable(&mut self, component_id: crate::engine::ecs::ComponentId) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REMOVE_RENDERABLE { component_id },
+        });
+    }
+
     /// Queue a register transform command.
     pub fn queue_register_transform(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
@@ -99,6 +107,14 @@ impl CommandQueue {
         self.commands.push(ComponentCommand {
             component_id,
             command: Command::REGISTER_COLOR { component_id },
+        });
+    }
+
+    /// Queue a register opacity command.
+    pub fn queue_register_opacity(&mut self, component_id: crate::engine::ecs::ComponentId) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REGISTER_OPACITY { component_id },
         });
     }
 
@@ -263,6 +279,9 @@ impl CommandQueue {
                     Command::REGISTER_COLOR { component_id } => {
                         systems.register_color(world, visuals, component_id);
                     }
+                    Command::REGISTER_OPACITY { component_id } => {
+                        systems.register_opacity(world, visuals, component_id);
+                    }
                     Command::REGISTER_BACKGROUND_COLOR { component_id } => {
                         systems.register_background_color(world, visuals, component_id);
                     }
@@ -300,7 +319,7 @@ impl CommandQueue {
                         systems.remove_raycast(world, visuals, component_id);
                     }
                     Command::REMOVE_RENDERABLE { component_id: _ } => {
-                        // TODO: implement when needed
+                        systems.remove_renderable(world, visuals, cmd.component_id);
                     }
                     Command::REMOVE_CAMERA { component_id: _ } => {
                         // TODO: implement when needed
@@ -308,6 +327,11 @@ impl CommandQueue {
                 }
             }
         }
+
+        // Keep the renderable BVH in sync with any renderable/transform changes applied above.
+        // This is intentionally done once after the queue is fully drained to avoid N rebuilds
+        // during init-time expansion (e.g. text glyph spawning).
+        systems.bvh.flush_pending(&*world);
     }
 }
 
@@ -340,6 +364,9 @@ enum Command {
         component_id: crate::engine::ecs::ComponentId,
     },
     REGISTER_COLOR {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+    REGISTER_OPACITY {
         component_id: crate::engine::ecs::ComponentId,
     },
     REGISTER_BACKGROUND_COLOR {

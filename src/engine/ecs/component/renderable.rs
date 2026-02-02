@@ -117,6 +117,10 @@ impl Component for RenderableComponent {
         queue.queue_register_renderable(component);
     }
 
+    fn cleanup(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
+        queue.queue_remove_renderable(component);
+    }
+
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
         let mut map = std::collections::HashMap::new();
         map.insert(

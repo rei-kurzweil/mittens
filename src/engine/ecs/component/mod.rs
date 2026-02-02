@@ -12,6 +12,7 @@ pub mod input;
 pub mod input_transform_mode;
 pub mod light_quantization;
 pub mod mesh;
+pub mod opacity;
 
 pub mod openxr;
 pub mod point_light;
@@ -38,6 +39,7 @@ pub use emissive::EmissiveComponent;
 pub use input::InputComponent;
 pub use input_transform_mode::{ForwardAxis, InputTransformModeComponent, RollAxis};
 pub use light_quantization::LightQuantizationComponent;
+pub use opacity::OpacityComponent;
 pub use openxr::OpenXRComponent;
 pub use point_light::PointLightComponent;
 pub use raycast::{RayCastComponent, RayCastMode};

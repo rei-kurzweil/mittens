@@ -11,13 +11,27 @@ use bvh::bvh::BVH;
 use bvh::bvh::BVHNode;
 use bvh::ray::Ray;
 use bvh::{Point3, Vector3};
-use std::collections::BTreeMap;
-use std::sync::OnceLock;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Default)]
 pub struct BvhSystem {
     shapes: Vec<RenderableAabb>,
     bvh: Option<BVH>,
+
+    /// Map ECS ComponentId -> shape index in `shapes`.
+    index_by_component: HashMap<ComponentId, usize>,
+
+    /// Renderables that were registered this frame (via command flush).
+    pending_add: Vec<ComponentId>,
+
+    /// Renderables whose AABBs need updating due to transform propagation.
+    pending_refit: HashSet<ComponentId>,
+
+    /// Shape indices that need refitting in the BVH.
+    pending_refit_shape_indices: HashSet<usize>,
+
+    /// True when shapes were added/removed and we need a full rebuild.
+    dirty_rebuild: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -56,27 +70,81 @@ impl BHShape for RenderableAabb {
 }
 
 impl BvhSystem {
-    pub fn rebuild_renderable_bvh(&mut self, world: &World) {
-        self.shapes.clear();
+    pub fn queue_renderable_added(&mut self, component: ComponentId) {
+        if self.index_by_component.contains_key(&component) {
+            return;
+        }
+        if self.pending_add.contains(&component) {
+            return;
+        }
+        self.pending_add.push(component);
+    }
 
-        for cid in world.all_components() {
-            let Some(r) = world.get_component_by_id_as::<RenderableComponent>(cid) else {
-                continue;
-            };
+    pub fn queue_renderable_removed(&mut self, component: ComponentId) {
+        // If it's still pending add (not committed to shapes yet), just drop it.
+        self.pending_add.retain(|&c| c != component);
+        self.pending_refit.remove(&component);
 
-            // Use base mesh so UV-baked variants (text glyphs) still behave like their primitive.
-            let mesh = r.renderable.base_mesh;
-            let Some(model) = TransformSystem::world_model(world, cid) else {
-                continue;
-            };
+        let Some(index) = self.index_by_component.remove(&component) else {
+            return;
+        };
 
-            let Some((min, max)) = aabb_from_world_matrix_for_mesh(mesh, model) else {
-                continue;
-            };
-
-            self.shapes.push(RenderableAabb::new(cid, min, max));
+        // Remove by swap_remove to keep O(1).
+        let last_index = self.shapes.len().saturating_sub(1);
+        self.shapes.swap_remove(index);
+        if index != last_index {
+            // We swapped some other shape into `index`; fix its index mapping.
+            if let Some(swapped) = self.shapes.get(index) {
+                self.index_by_component.insert(swapped.component, index);
+            }
         }
 
+        self.dirty_rebuild = true;
+        self.pending_refit_shape_indices.clear();
+    }
+
+    /// Queue all renderables under the given transform subtree for BVH refit.
+    pub fn queue_transform_subtree(&mut self, world: &World, transform_root: ComponentId) {
+        let mut stack = vec![transform_root];
+        while let Some(node) = stack.pop() {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(node)
+                .is_some()
+            {
+                self.pending_refit.insert(node);
+            }
+
+            let children: Vec<ComponentId> = world.children_of(node).to_vec();
+            for ch in children {
+                stack.push(ch);
+            }
+        }
+    }
+
+    fn placeholder_aabb() -> AABB {
+        // Far away and tiny so it won't get hit.
+        let p = 1.0e9_f32;
+        AABB::with_bounds(
+            Point3::new(p, p, p),
+            Point3::new(p + 0.001, p + 0.001, p + 0.001),
+        )
+    }
+
+    fn compute_aabb_for_renderable(world: &World, cid: ComponentId) -> Option<AABB> {
+        let r = world.get_component_by_id_as::<RenderableComponent>(cid)?;
+
+        // Use base mesh so UV-baked variants (text glyphs) still behave like their primitive.
+        let mesh = r.renderable.base_mesh;
+        let model = TransformSystem::world_model(world, cid)?;
+        let (min, max) = aabb_from_world_matrix_for_mesh(mesh, model)?;
+
+        Some(AABB::with_bounds(
+            Point3::new(min[0], min[1], min[2]),
+            Point3::new(max[0], max[1], max[2]),
+        ))
+    }
+
+    fn rebuild_from_shapes(&mut self) {
         if self.shapes.is_empty() {
             self.bvh = None;
             return;
@@ -87,6 +155,87 @@ impl BvhSystem {
         let bvh = BVH::build(&mut shapes);
         self.shapes = shapes;
         self.bvh = Some(bvh);
+    }
+
+    /// Apply any queued add/remove/refit requests.
+    ///
+    /// Intended to be called once after `CommandQueue::flush` completes.
+    pub fn flush_pending(&mut self, world: &World) {
+        // Commit pending adds.
+        if !self.pending_add.is_empty() {
+            for cid in std::mem::take(&mut self.pending_add) {
+                if self.index_by_component.contains_key(&cid) {
+                    continue;
+                }
+
+                let aabb = Self::compute_aabb_for_renderable(world, cid)
+                    .unwrap_or_else(Self::placeholder_aabb);
+
+                let idx = self.shapes.len();
+                let mut shape = RenderableAabb {
+                    component: cid,
+                    aabb,
+                    node_index: 0,
+                };
+                // If we already have a BVH, this will be overwritten by rebuild.
+                shape.set_bh_node_index(0);
+
+                self.shapes.push(shape);
+                self.index_by_component.insert(cid, idx);
+            }
+
+            self.dirty_rebuild = true;
+        }
+
+        // Update AABBs for moved renderables.
+        if !self.pending_refit.is_empty() {
+            let moved = std::mem::take(&mut self.pending_refit);
+            for cid in moved {
+                let Some(&shape_index) = self.index_by_component.get(&cid) else {
+                    continue;
+                };
+
+                // If the renderable disappeared, drop it.
+                if world
+                    .get_component_by_id_as::<RenderableComponent>(cid)
+                    .is_none()
+                {
+                    self.queue_renderable_removed(cid);
+                    continue;
+                }
+
+                let new_aabb = Self::compute_aabb_for_renderable(world, cid)
+                    .unwrap_or_else(Self::placeholder_aabb);
+
+                if let Some(s) = self.shapes.get_mut(shape_index) {
+                    s.aabb = new_aabb;
+                    self.pending_refit_shape_indices.insert(shape_index);
+                }
+            }
+        }
+
+        // Rebuild if topology changed.
+        if self.dirty_rebuild {
+            // If any shapes were removed via swap_remove, their indices changed; safest is to
+            // refit nothing and rebuild.
+            self.pending_refit_shape_indices.clear();
+            self.rebuild_from_shapes();
+            self.dirty_rebuild = false;
+            return;
+        }
+
+        // Otherwise, update the existing BVH's AABBs and do cheap incremental optimization.
+        if !self.pending_refit_shape_indices.is_empty() {
+            match self.bvh.as_mut() {
+                None => {
+                    self.rebuild_from_shapes();
+                }
+                Some(bvh) => {
+                    bvh.optimize(&self.pending_refit_shape_indices, &self.shapes);
+                }
+            }
+            self.pending_refit_shape_indices.clear();
+        }
     }
 
     pub fn raycast_renderables(
@@ -189,12 +338,6 @@ impl BvhSystem {
             Point3::new(max[0], max[1], max[2]),
         );
 
-        let debug = bvh_query_aabb_debug_enabled();
-        let mut visited_by_depth: BTreeMap<u32, usize> = BTreeMap::new();
-        let mut visited_total: usize = 0;
-        let mut visited_leaves: usize = 0;
-        let mut max_depth_seen: u32 = 0;
-
         let mut hits = Vec::new();
         let mut stack = vec![0usize];
         while let Some(node_index) = stack.pop() {
@@ -204,14 +347,8 @@ impl BvhSystem {
                     child_l_aabb,
                     child_r_index,
                     child_r_aabb,
-                    depth,
                     ..
                 } => {
-                    if debug {
-                        visited_total += 1;
-                        max_depth_seen = max_depth_seen.max(depth);
-                        *visited_by_depth.entry(depth).or_default() += 1;
-                    }
                     if aabb_overlap_bvh(&query, &child_l_aabb) {
                         stack.push(child_l_index);
                     }
@@ -219,15 +356,7 @@ impl BvhSystem {
                         stack.push(child_r_index);
                     }
                 }
-                BVHNode::Leaf {
-                    shape_index, depth, ..
-                } => {
-                    if debug {
-                        visited_total += 1;
-                        visited_leaves += 1;
-                        max_depth_seen = max_depth_seen.max(depth);
-                        *visited_by_depth.entry(depth).or_default() += 1;
-                    }
+                BVHNode::Leaf { shape_index, .. } => {
                     if let Some(s) = self.shapes.get(shape_index) {
                         if aabb_overlap_bvh(&query, &s.aabb) {
                             hits.push(s.component);
@@ -237,32 +366,8 @@ impl BvhSystem {
             }
         }
 
-        if debug {
-            println!(
-                "[BvhSystem] query_aabb: min={:?} max={:?} visited_total={} leaves_visited={} hits={} max_depth={}",
-                min,
-                max,
-                visited_total,
-                visited_leaves,
-                hits.len(),
-                max_depth_seen
-            );
-            for (depth, count) in visited_by_depth {
-                println!("[BvhSystem] query_aabb: depth {} visited {}", depth, count);
-            }
-        }
-
         hits
     }
-}
-
-fn bvh_query_aabb_debug_enabled() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        std::env::var("CAT_BVH_QUERY_AABB_DEBUG")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false)
-    })
 }
 
 fn aabb_overlap_bvh(a: &AABB, b: &AABB) -> bool {
@@ -282,9 +387,9 @@ impl crate::engine::ecs::system::System for BvhSystem {
         _input: &InputState,
         _dt_sec: f32,
     ) {
-        // For now: rebuild every frame.
-        // Later: hook into transform/renderable change events and rebuild only when dirty.
-        self.rebuild_renderable_bvh(world);
+        // Event-driven via command queue flush.
+        // Keep this as a safety net in case someone mutates transforms/renderables directly.
+        let _ = world;
     }
 }
 

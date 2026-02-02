@@ -215,6 +215,7 @@ impl ComponentCodec {
             "background_color" => Ok(Box::new(BackgroundColorComponent::new())),
             "ambient_light" => Ok(Box::new(AmbientLightComponent::new())),
             "color" => Ok(Box::new(ColorComponent::new())),
+            "opacity" => Ok(Box::new(OpacityComponent::new())),
             "light_quantization" => Ok(Box::new(LightQuantizationComponent::new())),
             "texture" => Ok(Box::new(TextureComponent::new(""))),
             "camera2d" => Ok(Box::new(Camera2DComponent::new())),
