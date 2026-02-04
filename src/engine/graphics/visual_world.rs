@@ -180,6 +180,12 @@ impl Default for VisualWorld {
 }
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VisualPointLight {
+    /// Light type discriminator for GPU shading.
+    ///
+    /// Matches shader constants in `assets/shaders/toon-mesh.frag`:
+    /// - 1 = point
+    /// - 2 = directional
+    pub light_type: u32,
     pub position_ws: [f32; 3],
     pub intensity: f32,
     pub distance: f32,

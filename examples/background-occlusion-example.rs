@@ -50,15 +50,30 @@ fn main() {
     let camera3d = universe
         .world
         .register(engine::ecs::component::Camera3DComponent::new()
-        .with_far(200.0).with_fov(90.0)
+        .with_far(200.0).with_fov(70.0)
     );
     let _ = universe.attach(rig_transform, camera3d);
 
-    // A couple point lights to shade the cloud volume.
+    // Key directional light toward the cloud volume.
+    //
+    // Directional lights encode their direction in the node's world position.
+    // The shader normalizes this vector.
+    let sun = universe.world.register(
+        engine::ecs::component::DirectionalLightComponent::new()
+            .with_intensity(1.6)
+            .with_color(1.0, 0.98, 0.92),
+    );
+    // Pointing from the clouds back toward the camera a bit (+Z), and slightly from above.
+    let sun_dir = universe.world.register(
+        engine::ecs::component::TransformComponent::new().with_position(0.15, 0.65, 0.75),
+    );
+    let _ = universe.attach(sun_dir, sun);
+
+    // A couple point lights to fill/shade the cloud volume.
     let light_a = universe.world.register(
         engine::ecs::component::PointLightComponent::new()
             .with_distance(80.0)
-            .with_intensity(4.0)
+            .with_intensity(3.0)
             .with_color(0.9, 0.95, 1.0),
     );
     let light_a_tx = universe.world.register(
@@ -69,7 +84,7 @@ fn main() {
     let light_b = universe.world.register(
         engine::ecs::component::PointLightComponent::new()
             .with_distance(80.0)
-            .with_intensity(3.0)
+            .with_intensity(2.2)
             .with_color(1.0, 0.9, 0.85),
     );
     let light_b_tx = universe.world.register(
@@ -78,6 +93,7 @@ fn main() {
     let _ = universe.attach(light_b_tx, light_b);
 
     universe.add(input);
+    universe.add(sun_dir);
     universe.add(light_a_tx);
     universe.add(light_b_tx);
 
@@ -162,7 +178,7 @@ fn main() {
     let fg_tx = universe.world.register(
         engine::ecs::component::TransformComponent::new()
             .with_position(0.0, -0.5, -4.0)
-            .with_scale(1.2, 1.2, 1.2),
+            .with_scale(1.2, 0.8, 1.2),
     );
     let fg_renderable = universe
         .world
@@ -187,15 +203,15 @@ fn main() {
     universe.add(floor_root);
 
     let spacing = 10_f32;
-    let half = 7.5_f32;
+    let half = 5_f32;
     for x in 0..32u32 {
         for z in 0..32u32 {
             let px = (x as f32 - half) * spacing;
             let pz = (z as f32 - half) * spacing;
             let tx = universe.world.register(
                 engine::ecs::component::TransformComponent::new()
-                    .with_position(px, -10.0, pz)
-                    .with_scale(1.7, 0.5, 1.7),
+                    .with_position(px, -5.0, pz)
+                    .with_scale(5.0, 0.5, 5.0),
             );
             let renderable = universe
                 .world

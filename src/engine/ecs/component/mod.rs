@@ -12,6 +12,7 @@ pub mod gltf;
 pub mod input;
 pub mod input_transform_mode;
 pub mod light_quantization;
+pub mod directional_light;
 pub mod mesh;
 pub mod opacity;
 
@@ -38,6 +39,7 @@ pub use collision::CollisionComponent;
 pub use collision_shape::CollisionShapeComponent;
 pub use color::ColorComponent;
 pub use emissive::EmissiveComponent;
+pub use directional_light::DirectionalLightComponent;
 pub use input::InputComponent;
 pub use input_transform_mode::{ForwardAxis, InputTransformModeComponent, RollAxis};
 pub use light_quantization::LightQuantizationComponent;

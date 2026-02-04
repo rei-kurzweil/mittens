@@ -223,6 +223,7 @@ impl ComponentCodec {
             "camera3d" => Ok(Box::new(Camera3DComponent::new())),
             "camera_xr" => Ok(Box::new(CameraXRComponent::off())),
             "point_light" => Ok(Box::new(PointLightComponent::new())),
+            "directional_light" => Ok(Box::new(DirectionalLightComponent::new())),
             "uv" => Ok(Box::new(UVComponent::new())),
             "input" => Ok(Box::new(InputComponent::new())),
             "input_transform_mode" => Ok(Box::new(InputTransformModeComponent::default())),

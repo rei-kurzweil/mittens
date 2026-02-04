@@ -1,4 +1,5 @@
 use crate::engine::ecs::component::AmbientLightComponent;
+use crate::engine::ecs::component::DirectionalLightComponent;
 use crate::engine::ecs::component::PointLightComponent;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
@@ -23,22 +24,36 @@ impl LightSystem {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        let Some(light) = world.get_component_by_id_as::<PointLightComponent>(component) else {
-            return;
-        };
-
         let position_ws =
             TransformSystem::world_position(world, component).unwrap_or([0.0, 0.0, 0.0]);
 
-        visuals.upsert_point_light(
-            component,
-            crate::engine::graphics::visual_world::VisualPointLight {
-                position_ws,
-                intensity: light.intensity,
-                distance: light.distance,
-                color: light.color,
-            },
-        );
+        if let Some(light) = world.get_component_by_id_as::<PointLightComponent>(component) {
+            visuals.upsert_point_light(
+                component,
+                crate::engine::graphics::visual_world::VisualPointLight {
+                    light_type: 1,
+                    position_ws,
+                    intensity: light.intensity,
+                    distance: light.distance,
+                    color: light.color,
+                },
+            );
+            return;
+        }
+
+        if let Some(light) = world.get_component_by_id_as::<DirectionalLightComponent>(component) {
+            // Direction is encoded in the node's world position.
+            visuals.upsert_point_light(
+                component,
+                crate::engine::graphics::visual_world::VisualPointLight {
+                    light_type: 2,
+                    position_ws,
+                    intensity: light.intensity,
+                    distance: 0.0,
+                    color: light.color,
+                },
+            );
+        }
     }
 
     pub fn register_ambient_light(
@@ -72,17 +87,36 @@ impl LightSystem {
             visited_nodes += 1;
             for &child in world.children_of(node) {
                 stack.push(child);
-                if let Some(light) = world.get_component_by_id_as::<PointLightComponent>(child) {
-                    let position_ws =
-                        TransformSystem::world_position(world, child).unwrap_or([0.0, 0.0, 0.0]);
-                    updated_lights += 1;
 
+                let position_ws =
+                    TransformSystem::world_position(world, child).unwrap_or([0.0, 0.0, 0.0]);
+
+                if let Some(light) = world.get_component_by_id_as::<PointLightComponent>(child) {
+                    updated_lights += 1;
                     visuals.upsert_point_light(
                         child,
                         crate::engine::graphics::visual_world::VisualPointLight {
+                            light_type: 1,
                             position_ws,
                             intensity: light.intensity,
                             distance: light.distance,
+                            color: light.color,
+                        },
+                    );
+                    continue;
+                }
+
+                if let Some(light) =
+                    world.get_component_by_id_as::<DirectionalLightComponent>(child)
+                {
+                    updated_lights += 1;
+                    visuals.upsert_point_light(
+                        child,
+                        crate::engine::graphics::visual_world::VisualPointLight {
+                            light_type: 2,
+                            position_ws,
+                            intensity: light.intensity,
+                            distance: 0.0,
                             color: light.color,
                         },
                     );

@@ -20,9 +20,13 @@ layout(set = 0, binding = 0) uniform CameraUBO {
 } ubo;
 
 
-struct PointLight {
-    vec4 pos_intensity;  // xyz position (world), w intensity
-    vec4 color_distance; // rgb color, w distance
+const uint LIGHT_TYPE_POINT = 1u;
+const uint LIGHT_TYPE_DIRECTIONAL = 2u;
+
+struct Light {
+    vec4 pos_intensity;  // xyz position OR direction, w intensity
+    vec4 color_distance; // rgb color, w distance (point range)
+    uvec4 meta;          // meta.x = light_type
 };
 
 layout(set = 0, binding = 1, std430) readonly buffer LightsSSBO {
@@ -32,7 +36,7 @@ layout(set = 0, binding = 1, std430) readonly buffer LightsSSBO {
     uint _pad0;
     uint _pad1;
     uint _pad2;
-    PointLight lights[64];
+    Light lights[64];
 } g_lights;
 
 // Set 1: material params (no textures yet; those can be added later).
@@ -73,31 +77,46 @@ void main() {
     vec3 out_rgb = base * max(ubo.ambient_light, vec3(0.0));
 
     for (uint i = 0u; i < light_count; i++) {
+        uint light_type = g_lights.lights[i].meta.x;
         vec3 lp = g_lights.lights[i].pos_intensity.xyz;
         float intensity = g_lights.lights[i].pos_intensity.w;
         vec3 lc = g_lights.lights[i].color_distance.rgb;
         float range = g_lights.lights[i].color_distance.w;
 
-        vec3 toL = lp - v_world_pos;
-        float dist = length(toL);
-        if (dist <= 1e-5) {
-            continue;
+        vec3 L;
+        float att = 1.0;
+
+        if (light_type == LIGHT_TYPE_DIRECTIONAL) {
+            // Directional light: pos_intensity.xyz stores a direction vector.
+            // Normalize on-GPU, per user convention.
+            float len = length(lp);
+            if (len <= 1e-5) {
+                continue;
+            }
+            L = lp / len;
+            att = 1.0;
+        } else {
+            // Point light: pos_intensity.xyz stores world-space position.
+            vec3 toL = lp - v_world_pos;
+            float dist = length(toL);
+            if (dist <= 1e-5) {
+                continue;
+            }
+            L = toL / dist;
+
+            // Attenuation:
+            // - if range is provided, fade out to 0 at range (smooth)
+            // - otherwise fall back to inverse-square-ish
+            if (range > 1e-3) {
+                float t = clamp(1.0 - (dist / range), 0.0, 1.0);
+                att = t * t;
+            } else {
+                att = 1.0 / (1.0 + dist * dist);
+            }
         }
 
-        vec3 L = toL / dist;
         float ndotl = max(dot(N, L), 0.0);
         float q = quantize(ndotl, mat.quant_steps);
-
-        // Attenuation:
-        // - if range is provided, fade out to 0 at range (smooth)
-        // - otherwise fall back to inverse-square-ish
-        float att = 1.0;
-        if (range > 1e-3) {
-            float t = clamp(1.0 - (dist / range), 0.0, 1.0);
-            att = t * t;
-        } else {
-            att = 1.0 / (1.0 + dist * dist);
-        }
 
         out_rgb += base * q * lc * intensity * att;
     }

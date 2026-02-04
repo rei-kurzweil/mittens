@@ -216,15 +216,21 @@ mod vulkano_backend {
         depth_views: Vec<Arc<ImageView>>,
     }
 
-    const MAX_POINT_LIGHTS: usize = 64;
+    const MAX_LIGHTS: usize = 64;
+
+    const LIGHT_TYPE_POINT: u32 = 1;
+    const LIGHT_TYPE_DIRECTIONAL: u32 = 2;
 
     #[derive(BufferContents, Clone, Copy, Debug, Default)]
     #[repr(C, align(16))]
-    struct GpuPointLight {
+    struct GpuLight {
         // xyz position (world), w intensity
         pos_intensity: [f32; 4],
         // rgb color, w distance
         color_distance: [f32; 4],
+        // Light metadata (matches `uvec4 meta` on the shader side).
+        // meta.x = light_type (1=point, 2=directional)
+        meta: [u32; 4],
     }
 
     #[derive(BufferContents, Clone, Copy, Debug)]
@@ -232,7 +238,7 @@ mod vulkano_backend {
     struct LightsSSBO {
         count: u32,
         _pad0: [u32; 3],
-        lights: [GpuPointLight; MAX_POINT_LIGHTS],
+        lights: [GpuLight; MAX_LIGHTS],
     }
 
     impl Default for LightsSSBO {
@@ -240,7 +246,7 @@ mod vulkano_backend {
             Self {
                 count: 0,
                 _pad0: [0, 0, 0],
-                lights: [GpuPointLight::default(); MAX_POINT_LIGHTS],
+                lights: [GpuLight::default(); MAX_LIGHTS],
             }
         }
     }
@@ -1210,10 +1216,17 @@ mod vulkano_backend {
             // Lights storage buffer (set=0, binding=1).
             let mut lights_ssbo = LightsSSBO::default();
             let lights = visual_world.point_lights();
-            let count = (lights.len()).min(MAX_POINT_LIGHTS);
+            let count = (lights.len()).min(MAX_LIGHTS);
             lights_ssbo.count = count as u32;
             for (i, l) in lights.iter().take(count).enumerate() {
-                lights_ssbo.lights[i] = GpuPointLight {
+                let light_type = match l.light_type {
+                    LIGHT_TYPE_POINT => LIGHT_TYPE_POINT,
+                    LIGHT_TYPE_DIRECTIONAL => LIGHT_TYPE_DIRECTIONAL,
+                    // Default to point for legacy/unknown values.
+                    _ => LIGHT_TYPE_POINT,
+                };
+
+                lights_ssbo.lights[i] = GpuLight {
                     pos_intensity: [
                         l.position_ws[0],
                         l.position_ws[1],
@@ -1221,6 +1234,7 @@ mod vulkano_backend {
                         l.intensity,
                     ],
                     color_distance: [l.color[0], l.color[1], l.color[2], l.distance],
+                    meta: [light_type, 0, 0, 0],
                 };
             }
 
