@@ -62,6 +62,89 @@ fn spawn_text_label(universe: &mut engine::Universe, position: (f32, f32, f32), 
     universe.add(text_root);
 }
 
+fn text_block_dimensions(text: &str) -> (usize, usize) {
+    let mut max_cols = 0usize;
+    let mut rows = 1usize;
+    let mut cur = 0usize;
+
+    for ch in text.chars() {
+        if ch == '\n' {
+            max_cols = max_cols.max(cur);
+            cur = 0;
+            rows += 1;
+        } else {
+            cur += 1;
+        }
+    }
+    max_cols = max_cols.max(cur);
+
+    (max_cols.max(1), rows.max(1))
+}
+
+fn spawn_text_label_with_bg(
+    universe: &mut engine::Universe,
+    position: (f32, f32, f32),
+    text: &str,
+    bg_opacity: f32,
+) {
+    // T_root {
+    //   T_bg { R_bg { Color black, Opacity } }
+    //   T_scale { TXT { filtering } }
+    // }
+
+    let text_root = universe
+        .world
+        .register(TransformComponent::new().with_position(position.0, position.1, position.2));
+
+    // Background quad (slightly behind the glyph quads).
+    let (cols, rows) = text_block_dimensions(text);
+    let text_scale = 0.18_f32;
+    let pad_x = 0.55_f32;
+    let pad_y = 0.45_f32;
+    let bg_w = cols as f32 * text_scale + pad_x;
+    let bg_h = rows as f32 * text_scale + pad_y;
+
+    let bg_t = universe.world.register(
+        TransformComponent::new()
+            .with_position(1.5, 0.0, -0.02)
+            .with_scale(bg_w, bg_h, 1.0),
+    );
+    let bg_r = universe.world.register(RenderableComponent::square());
+    let _ = universe.attach(text_root, bg_t);
+    let _ = universe.attach(bg_t, bg_r);
+
+    let bg_c = universe
+        .world
+        .register(ColorComponent::rgba(0.0, 0.0, 0.0, 1.0));
+    let _ = universe.attach(bg_r, bg_c);
+
+    let bg_o = universe
+        .world
+        .register(OpacityComponent::new().with_opacity(bg_opacity));
+    let _ = universe.attach(bg_r, bg_o);
+
+    let text_scale_t = universe
+        .world
+        .register(TransformComponent::new().with_scale(text_scale, text_scale, 1.0));
+    let _ = universe.attach(text_root, text_scale_t);
+
+    let text_c = universe.world.register(TextComponent::new(text));
+    let _ = universe.attach(text_scale_t, text_c);
+
+    // Keep it crisp.
+    let filtering = universe.world.register(TextureFilteringComponent::nearest());
+    let _ = universe.attach(text_c, filtering);
+
+    // Force the label into the transparent pass so it layers correctly with the background.
+    // (Pass selection currently does not consider texture alpha.)
+    let color = universe
+        .world
+        .register(ColorComponent::rgba(1.0, 1.0, 1.0, 0.998));
+    let _ = universe.attach(text_c, color);
+
+    universe.add(text_root);
+}
+
 fn spawn_demo_spot(
     universe: &mut engine::Universe,
     spot_pos: (f32, f32, f32),
@@ -194,6 +277,58 @@ fn spawn_demo_strip_pair(
     spawn_text_label(universe, (label_x, label_y, label_z), &label);
 }
 
+fn spawn_demo_xy_plane(
+    universe: &mut engine::Universe,
+    spot_pos: (f32, f32, f32),
+    opacity: f32,
+    n_x: i32,
+    n_y: i32,
+    z: f32,
+) {
+    let spot = universe
+        .world
+        .register(TransformComponent::new().with_position(spot_pos.0, spot_pos.1, spot_pos.2));
+
+    let white = universe.world.register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+    let _ = universe.attach(spot, white);
+
+    let oc = universe.world.register(OpacityComponent::new().with_opacity(opacity));
+    let _ = universe.attach(spot, oc);
+
+    universe.add(spot);
+
+    let nx = n_x.max(1);
+    let ny = n_y.max(1);
+    let spacing = 0.45;
+    let cube_scale = 0.35;
+    let half_x = (nx as f32 - 1.0) * spacing * 0.5;
+
+    for y in 0..ny {
+        for x in 0..nx {
+            let px = x as f32 * spacing - half_x;
+            let py = y as f32 * spacing;
+            spawn_cube(
+                universe,
+                spot,
+                (px, py, z),
+                (cube_scale, cube_scale, cube_scale),
+                None,
+                None,
+            );
+        }
+    }
+
+    // Label in front of the plane.
+    let label = format!(
+        "XY plane: {}x{}\nopacity: {:.2}\nmulti-layer: false",
+        nx, ny, opacity
+    );
+    let label_x = spot_pos.0 - (half_x + 0.6);
+    let label_y = spot_pos.1 + (ny as f32 * spacing) + 1.2;
+    let label_z = spot_pos.2 - 2.5;
+    spawn_text_label_with_bg(universe, (label_x, label_y, label_z), &label, 0.50);
+}
+
 fn main() {
     utils::logger::init();
 
@@ -277,6 +412,9 @@ fn main() {
     }
 
     // --- Demo spots ---
+    // Left of the left big spot: a single-layer transparent XY plane (16x16).
+    spawn_demo_xy_plane(&mut universe, (-14.0, 0.0, 0.0), 0.50, 16, 16, 0.0);
+
     // Big spots: 8x8x8
     // Left: single-layer transparent (instanced)
     spawn_demo_spot(&mut universe, (-4.0, 0.0, 0.0), 0.50, false, 8);

@@ -1,4 +1,5 @@
 pub mod ambient_light;
+pub mod background;
 pub mod background_color;
 pub mod camera_2d;
 pub mod camera_3d;
@@ -28,6 +29,7 @@ pub use self::gltf::GLTFComponent;
 pub use self::mesh::MeshComponent;
 pub use crate::engine::ecs::system::model::collision_types::{CollisionMode, CollisionShape};
 pub use ambient_light::AmbientLightComponent;
+pub use background::BackgroundComponent;
 pub use background_color::BackgroundColorComponent;
 pub use camera_2d::Camera2DComponent;
 pub use camera_3d::Camera3DComponent;

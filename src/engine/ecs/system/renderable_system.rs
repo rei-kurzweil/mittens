@@ -1,8 +1,8 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::BackgroundColorComponent;
 use crate::engine::ecs::component::{
-    ColorComponent, EmissiveComponent, LightQuantizationComponent, MeshComponent, OpacityComponent,
-    RenderableComponent, UVComponent,
+    BackgroundComponent, ColorComponent, EmissiveComponent, LightQuantizationComponent,
+    MeshComponent, OpacityComponent, RenderableComponent, UVComponent,
 };
 
 use crate::engine::ecs::World;
@@ -113,6 +113,19 @@ fn clone_mesh_with_uv_overrides(
 }
 
 impl RenderableSystem {
+    fn inherited_background_for_renderable(world: &World, renderable_cid: ComponentId) -> (bool, bool) {
+        // Nearest BackgroundComponent ancestor wins.
+        // Returns: (is_background, occluded_lit)
+        let mut cur = renderable_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(bg) = world.get_component_by_id_as::<BackgroundComponent>(parent) {
+                return (true, bg.occlusion_and_lighting);
+            }
+            cur = parent;
+        }
+        (false, false)
+    }
+
     fn immediate_color_child(world: &World, node: ComponentId) -> Option<[f32; 4]> {
         world.children_of(node).iter().find_map(|&ch| {
             world
@@ -842,6 +855,9 @@ impl RenderableSystem {
                     _ => 3.0,
                 });
 
+            let (background, background_occluded_lit) =
+                Self::inherited_background_for_renderable(world, p.renderable_cid);
+
             let handle = visuals.register(
                 p.renderable_cid,
                 gpu_r,
@@ -849,6 +865,8 @@ impl RenderableSystem {
                 color,
                 opacity.opacity,
                 opacity.multiple_layers,
+                background,
+                background_occluded_lit,
                 emissive,
                 None,
                 quant_steps,

@@ -46,22 +46,24 @@ using vulkan instanced rendering and several layers to describe game objects:
 
 ### Transparency / Opacity
 
-The renderer uses a 3-pass model so we get decent performance for "simple" transparency, but still have a correct path for stacked transparency:
+The renderer uses a 3-phase transparency model so we get decent performance for "simple" transparency, but still have a correct path for stacked transparency.
 
-1. **Opaque pass** (instanced)
+This is not multiple Vulkan "render passes" (we use dynamic rendering). It’s a single rendering scope where we record draw commands in three phases, switching pipelines/state between phases:
+
+1. **Opaque phase** (instanced)
   + Depth test: ON
   + Depth write: ON
   + Batching/instancing: YES
-2. **Transparent single-layer pass** (instanced)
+2. **Transparent single-layer phase** (instanced)
   + Depth test: ON
   + Depth write: OFF (so later transparent layers can still blend)
   + Batching/instancing: YES (fast)
-3. **Transparent multi-layer pass** (sorted)
+3. **Transparent multi-layer phase** (sorted)
   + Depth test: ON
   + Depth write: OFF
   + Batching: grouped by (material, mesh, texture), but **drawn one-by-one in back-to-front order** for correct blending
 
-This is driven by `VisualWorld` building separate draw orders/caches, and `VulkanoRenderer` recording all three passes in `build_draw_batches_command_buffer`.
+This is driven by `VisualWorld` building separate draw orders/caches, and `VulkanoRenderer` recording all three phases in `build_draw_batches_command_buffer`.
 
 # Components
 
@@ -124,11 +126,11 @@ InputComponent {
   + Per-instance opacity multiplier (separate from `ColorComponent` alpha).
   + Routed into the instanced vertex buffer as `i_opacity` and multiplied into the fragment alpha.
   + Like color, opacity can be inherited from ancestors (so you can set it once on a parent and affect all children).
-  + Influences which render pass an instance uses:
+  + Influences which transparency **draw phase** an instance uses:
     + Instances are treated as transparent if `opacity < 0.999` **or** `color.a < 0.999`.
       + (Note: texture alpha is not currently considered for pass selection.)
-    + Transparent instances with `multiple_layers=false` go through the **transparent single-layer** instanced pass.
-    + Transparent instances with `multiple_layers=true` go through the **transparent multi-layer** sorted pass.
+    + Transparent instances with `multiple_layers=false` go through the **transparent single-layer** instanced phase.
+    + Transparent instances with `multiple_layers=true` go through the **transparent multi-layer** sorted phase.
   + Usage:
     + `OpacityComponent::new().with_opacity(0.5)`
     + `OpacityComponent::new().with_opacity(0.5).with_multiple_layers()` when it must blend correctly with other transparent surfaces.

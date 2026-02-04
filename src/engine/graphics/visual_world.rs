@@ -77,6 +77,12 @@ pub struct VisualWorld {
     /// True when per-instance data (e.g. model matrices) changed and any cached GPU instance
     /// buffer should be rebuilt/uploaded.
     dirty_instance_data: bool,
+
+    // Background draw data (rebuilt when dirty)
+    background_order: Vec<u32>, // indices into `instances`
+    background_batches: Vec<DrawBatch>,
+    background_occluded_lit_order: Vec<u32>,
+    background_occluded_lit_batches: Vec<DrawBatch>,
     draw_order: Vec<u32>, // indices into `instances`
     draw_batches: Vec<DrawBatch>,
 
@@ -96,6 +102,8 @@ pub struct VisualInstance {
     pub color: [f32; 4],
     pub opacity: f32,
     pub multiple_layers: bool,
+    pub background: bool,
+    pub background_occluded_lit: bool,
     pub emissive: u32,
     pub texture: Option<crate::engine::graphics::TextureHandle>,
     pub texture_filtering: TextureFiltering,
@@ -156,6 +164,10 @@ impl Default for VisualWorld {
 
             dirty_draw_cache: true,
             dirty_instance_data: true,
+            background_order: Vec::new(),
+            background_batches: Vec::new(),
+            background_occluded_lit_order: Vec::new(),
+            background_occluded_lit_batches: Vec::new(),
             draw_order: Vec::new(),
             draw_batches: Vec::new(),
 
@@ -277,6 +289,8 @@ impl VisualWorld {
         self.dirty_draw_cache = true;
         self.dirty_instance_data = true;
         self.dirty_camera = true;
+        self.background_order.clear();
+        self.background_batches.clear();
         self.draw_order.clear();
         self.draw_batches.clear();
 
@@ -468,6 +482,23 @@ impl VisualWorld {
     }
 
     /// Indices into `instances()` in the order they should be drawn (opaque batching).
+    pub fn background_order(&self) -> &[u32] {
+        &self.background_order
+    }
+
+    pub fn background_batches(&self) -> &[DrawBatch] {
+        &self.background_batches
+    }
+
+    pub fn background_occluded_lit_order(&self) -> &[u32] {
+        &self.background_occluded_lit_order
+    }
+
+    pub fn background_occluded_lit_batches(&self) -> &[DrawBatch] {
+        &self.background_occluded_lit_batches
+    }
+
+    /// Indices into `instances()` in the order they should be drawn (opaque batching).
     pub fn draw_order(&self) -> &[u32] {
         &self.draw_order
     }
@@ -502,17 +533,67 @@ impl VisualWorld {
             return false;
         }
 
+        self.background_order.clear();
+        self.background_occluded_lit_order.clear();
         self.draw_order.clear();
         self.transparent_single_draw_order.clear();
         // Opaque pass: exclude anything that is transparent.
         for i in 0..self.instances.len() {
             let inst = &self.instances[i];
-            if !Self::is_transparent(inst) {
+            if inst.background {
+                if inst.background_occluded_lit {
+                    self.background_occluded_lit_order.push(i as u32);
+                } else {
+                    self.background_order.push(i as u32);
+                }
+            } else if !Self::is_transparent(inst) {
                 self.draw_order.push(i as u32);
             } else if !inst.multiple_layers {
                 self.transparent_single_draw_order.push(i as u32);
             }
         }
+
+        // Background pass: batch aggressively (order does not depend on view).
+        // NOTE: Background instances are excluded from the normal opaque/transparent lists.
+        self.background_order.sort_by_key(|&i| {
+            let inst = self.instances[i as usize];
+            let r = inst.renderable;
+            let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
+            (
+                r.material.0,
+                r.mesh.0,
+                tex,
+                inst.texture_filtering as u8,
+                sanitize_quant_steps(inst.quant_steps).to_bits(),
+            )
+        });
+        let instances = &self.instances;
+        let background_draw_order = &self.background_order;
+        Self::build_draw_batches_for_order(
+            instances,
+            background_draw_order,
+            &mut self.background_batches,
+        );
+
+        // Background (occluded+lit) pass: same batching strategy.
+        self.background_occluded_lit_order.sort_by_key(|&i| {
+            let inst = self.instances[i as usize];
+            let r = inst.renderable;
+            let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
+            (
+                r.material.0,
+                r.mesh.0,
+                tex,
+                inst.texture_filtering as u8,
+                sanitize_quant_steps(inst.quant_steps).to_bits(),
+            )
+        });
+        let background_occluded_lit_draw_order = &self.background_occluded_lit_order;
+        Self::build_draw_batches_for_order(
+            instances,
+            background_occluded_lit_draw_order,
+            &mut self.background_occluded_lit_batches,
+        );
 
         // Sort by (material, mesh, texture, filtering). Stable sort keeps relative order for identical keys.
         self.draw_order.sort_by_key(|&i| {
@@ -528,7 +609,6 @@ impl VisualWorld {
             )
         });
 
-        let instances = &self.instances;
         let draw_order = &self.draw_order;
         Self::build_draw_batches_for_order(instances, draw_order, &mut self.draw_batches);
 
@@ -608,6 +688,8 @@ impl VisualWorld {
         color: [f32; 4],
         opacity: f32,
         multiple_layers: bool,
+        background: bool,
+        background_occluded_lit: bool,
         emissive: u32,
         texture: Option<crate::engine::graphics::TextureHandle>,
         quant_steps: f32,
@@ -626,6 +708,8 @@ impl VisualWorld {
                 1.0
             },
             multiple_layers,
+            background,
+            background_occluded_lit,
             emissive,
             texture,
             texture_filtering: TextureFiltering::default(),
@@ -807,6 +891,8 @@ impl VisualWorld {
             let color = self.instances[idx].color;
             let opacity = self.instances[idx].opacity;
             let multiple_layers = self.instances[idx].multiple_layers;
+            let background = self.instances[idx].background;
+            let background_occluded_lit = self.instances[idx].background_occluded_lit;
             let emissive = self.instances[idx].emissive;
             let texture = self.instances[idx].texture;
             let texture_filtering = self.instances[idx].texture_filtering;
@@ -817,6 +903,8 @@ impl VisualWorld {
                 color,
                 opacity,
                 multiple_layers,
+                background,
+                background_occluded_lit,
                 emissive,
                 texture,
                 texture_filtering,

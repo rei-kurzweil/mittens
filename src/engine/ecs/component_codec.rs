@@ -212,6 +212,7 @@ impl ComponentCodec {
                 ),
             ))),
             "raycast" => Ok(Box::new(RayCastComponent::default())),
+            "background" => Ok(Box::new(BackgroundComponent::new())),
             "background_color" => Ok(Box::new(BackgroundColorComponent::new())),
             "ambient_light" => Ok(Box::new(AmbientLightComponent::new())),
             "color" => Ok(Box::new(ColorComponent::new())),
