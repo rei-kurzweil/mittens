@@ -2,9 +2,13 @@ use cat_engine::{engine, utils};
 
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ColorComponent,
-    InputComponent, InputTransformModeComponent, RayCastComponent, TextComponent, TextureComponent,
-    TextureFilteringComponent, TransformComponent,
+    BackgroundComponent, InputComponent, InputTransformModeComponent, RayCastComponent,
+    TextComponent, TextureComponent, TextureFilteringComponent, TransformComponent,
+    TransparentCutoutComponent,
 };
+
+#[path = "example_util/mod.rs"]
+mod example_util;
 
 fn main() {
     utils::logger::init();
@@ -15,14 +19,38 @@ fn main() {
     // Dark background so the font texture pops.
     let background = universe
         .world
-        .register(BackgroundColorComponent::rgba(0.12, 0.05, 0.20, 1.0));
+        .register(BackgroundColorComponent::rgba(0.20, 0.2, 0.20, 1.0));
     universe.add(background);
 
     // Ambient so text is readable even without explicit lights.
     let ambient = universe
         .world
-        .register(AmbientLightComponent::rgb(0.85, 0.85, 0.95));
+        .register(AmbientLightComponent::rgb(0.50, 0.50, 0.50));
     universe.add(ambient);
+
+    let directional_tx = universe
+        .world
+        .register(TransformComponent::new().with_position(0.0, 0.5, 1.0));
+    let directional_light = universe.world.register(
+        engine::ecs::component::DirectionalLightComponent::new()
+            .with_color(1.0, 1.0, 1.0)
+            .with_intensity(0.8),
+    );
+    let _ = universe.attach(directional_tx, directional_light);
+    universe.add(directional_tx);
+
+    // --- background clouds ---
+    // Background stage (occluded + lit) so the cloud volume self-occludes but won't occlude
+    // the foreground text (renderer clears depth before foreground).
+    let bg_root = universe
+        .world
+        .register(BackgroundComponent::new().with_occlusion_and_lighting());
+    universe.add(bg_root);
+
+    let mut bg_cloud_params = example_util::CloudRingParams::default();
+    bg_cloud_params.cloud_count = 6;
+    bg_cloud_params.seed = 0xF0_17_C10u32;
+    example_util::spawn_cloud_ring(&mut universe, bg_root, bg_cloud_params);
 
     // I {
     //   // not fps rotation, just relative rotation
@@ -53,6 +81,25 @@ fn main() {
     let _ = universe.attach(rig_transform, raycast);
 
     universe.add(input);
+
+    // --- foreground clouds ---
+    // Normal foreground renderables (not background stage).
+    // Offset the ring forward (negative Z) so several clusters are in view.
+    let fg_cloud_root = universe.world.register(
+        TransformComponent::new().with_position(0.0, -6.0, -10.0),
+    );
+    universe.add(fg_cloud_root);
+
+    let mut fg_cloud_params = example_util::CloudRingParams::default();
+    fg_cloud_params.cloud_count = 4;
+    fg_cloud_params.radius = 9.0;
+    fg_cloud_params.center_y = 1.0;
+    fg_cloud_params.puffs_per_cloud = 22;
+    fg_cloud_params.angle_jitter = 0.35;
+    fg_cloud_params.high_y_probability = 0.35;
+    fg_cloud_params.high_y_multiplier = 1.4;
+    fg_cloud_params.seed = 0xF0_17_C102u32;
+    example_util::spawn_cloud_ring(&mut universe, fg_cloud_root, fg_cloud_params);
 
     // T {
     //   with_translation(0,0, -2)
@@ -89,6 +136,10 @@ fn main() {
 
         let text_c = universe.world.register(TextComponent::new(text));
         let _ = universe.attach(text_scale, text_c);
+
+        // Route glyph quads into the alpha-to-coverage cutout pass.
+        let cutout = universe.world.register(TransparentCutoutComponent::new());
+        let _ = universe.attach(text_c, cutout);
 
         // Optional: override the inherited color for this text block.
         if let Some([r, g, b, a]) = color_rgba {
@@ -185,6 +236,12 @@ fn main() {
     );
 
     universe.enable_repl();
+
+    // Add an OpenXR component so OpenXRSystem initializes and starts polling events.
+    let xr_root = universe
+        .world
+        .register(engine::ecs::component::OpenXRComponent::on());
+    universe.add(xr_root);
 
     // Process init-time registrations (Text expands into glyph subtrees here).
     universe.systems.process_commands(

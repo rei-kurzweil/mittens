@@ -8,6 +8,12 @@ fn main() {
 
     example::build_demo_scene_7_shapes(&mut universe);
 
+    universe.systems.process_commands(
+        &mut universe.world,
+        &mut universe.visuals,
+        &mut universe.command_queue,
+    );
+
     let user_input = engine::user_input::UserInput::new();
     universe.enable_repl();
     engine::Windowing::run_app(universe, user_input).expect("Windowing failed");

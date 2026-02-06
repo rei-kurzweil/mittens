@@ -426,7 +426,6 @@ fn main() {
     spawn_demo_strip_pair(&mut universe, (-4.0, 0.0, 10.0), false);
     spawn_demo_strip_pair(&mut universe, ( 4.0, 0.0, 10.0), true);
     
-    
     // Process init-time registrations.
     universe.systems.process_commands(
         &mut universe.world,

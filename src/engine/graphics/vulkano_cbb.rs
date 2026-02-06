@@ -167,23 +167,9 @@ impl VulkanoState {
         cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
         visual_world: &VisualWorld,
         global_set: &Arc<DescriptorSet>,
-        eye: usize,
+        _eye: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let transparent_single_instance_count = visual_world.transparent_single_draw_order().len();
-
-        if eye == 0 {
-            let has_single = transparent_single_instance_count > 0;
-            if self.last_frame_had_transparent_single != Some(has_single) {
-                if has_single {
-                    println!("[VulkanoRenderer] transparent single-layer pass enabled");
-                } else {
-                    println!(
-                        "[VulkanoRenderer] transparent single-layer pass disabled (no instances)"
-                    );
-                }
-                self.last_frame_had_transparent_single = Some(has_single);
-            }
-        }
 
         if transparent_single_instance_count == 0 {
             return Ok(());
@@ -274,20 +260,6 @@ impl VulkanoState {
         // --- Transparent pass (multi-layer, sorted) ---
         visual_world.prepare_transparent_multi_draw_cache_for_eye(camera_target, eye);
         let transparent_multi_instance_count = visual_world.transparent_multi_draw_order().len();
-
-        if eye == 0 {
-            let has_multi = transparent_multi_instance_count > 0;
-            if self.last_frame_had_transparent_multi != Some(has_multi) {
-                if has_multi {
-                    println!("[VulkanoRenderer] transparent multi-layer pass enabled");
-                } else {
-                    println!(
-                        "[VulkanoRenderer] transparent multi-layer pass disabled (no instances)"
-                    );
-                }
-                self.last_frame_had_transparent_multi = Some(has_multi);
-            }
-        }
 
         if transparent_multi_instance_count == 0 {
             return Ok(());

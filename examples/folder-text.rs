@@ -390,6 +390,9 @@ fn main() {
                     entry.display_text,
                     WRAP_AT,
                 ));
+            let cutout = universe
+                .world
+                .register(engine::ecs::component::TransparentCutoutComponent::new());
             let filtering = universe.world.register(
                 engine::ecs::component::TextureFilteringComponent::nearest_magnification(),
             );
@@ -400,6 +403,7 @@ fn main() {
                 .world
                 .register(engine::ecs::component::EmissiveComponent::on());
             let _ = universe.attach(file_root, text);
+            let _ = universe.attach(text, cutout);
             let _ = universe.attach(text, filtering);
             //let _ = universe.world.add_child(text, color);
             let _ = universe.attach(text, emissive);

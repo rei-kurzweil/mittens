@@ -50,8 +50,6 @@ struct OpenXRSessionState {
     vk_queue: ash::vk::Queue,
     vk_command_pool: ash::vk::CommandPool,
     vk_command_buffer: ash::vk::CommandBuffer,
-
-    debug_frame_counter: u32,
 }
 
 impl Default for OpenXRSystem {
@@ -373,8 +371,6 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             vk_queue,
             vk_command_pool,
             vk_command_buffer,
-
-            debug_frame_counter: 0,
         });
 
         println!("[OpenXR] Session created (Vulkan)");
@@ -771,32 +767,6 @@ impl OpenXRSystem {
             });
         }
         visuals.set_xr_camera(eyes);
-
-        sess.debug_frame_counter = sess.debug_frame_counter.wrapping_add(1);
-        if sess.debug_frame_counter % 120 == 0 {
-            if views.len() >= 2 {
-                let p0 = views[0].pose.position;
-                let p1 = views[1].pose.position;
-                let q0 = views[0].pose.orientation;
-                println!(
-                    "[OpenXR] Eye0 pose: p=({:.3},{:.3},{:.3}) q=({:.3},{:.3},{:.3},{:.3})",
-                    p0.x, p0.y, p0.z, q0.x, q0.y, q0.z, q0.w
-                );
-                println!(
-                    "[OpenXR] Eye pose delta (1-0): dp=({:.4},{:.4},{:.4})",
-                    p1.x - p0.x,
-                    p1.y - p0.y,
-                    p1.z - p0.z
-                );
-            } else if let Some(v0) = views.first() {
-                let p = v0.pose.position;
-                let q = v0.pose.orientation;
-                println!(
-                    "[OpenXR] Eye0 pose: p=({:.3},{:.3},{:.3}) q=({:.3},{:.3},{:.3},{:.3})",
-                    p.x, p.y, p.z, q.x, q.y, q.z, q.w
-                );
-            }
-        }
 
         // Acquire XR swapchain image.
         let image_index = {

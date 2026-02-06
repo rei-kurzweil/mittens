@@ -146,6 +146,11 @@ fn main() {
         (0.75, 0.70, 0.65, 1.0),
     );
 
+    let xr_root = universe
+        .world
+        .register(engine::ecs::component::OpenXRComponent::on());
+    universe.add(xr_root);
+
     universe.systems.process_commands(
         &mut universe.world,
         &mut universe.visuals,

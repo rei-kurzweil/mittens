@@ -216,9 +216,6 @@ mod vulkano_backend {
 
         xr_offscreen: Option<XrOffscreenTargets>,
 
-        last_frame_had_transparent_single: Option<bool>,
-        last_frame_had_transparent_multi: Option<bool>,
-
         pub window_resized: bool,
         pub recreate_swapchain: bool,
         pub images_in_flight: Vec<Option<Box<dyn GpuFuture>>>,
@@ -752,9 +749,6 @@ mod vulkano_backend {
                 cached_material_sets: HashMap::new(),
 
                 xr_offscreen: None,
-
-                last_frame_had_transparent_single: None,
-                last_frame_had_transparent_multi: None,
 
                 window_resized: false,
                 recreate_swapchain: false,

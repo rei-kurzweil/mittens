@@ -100,7 +100,7 @@ fn main() {
             let px = x as f32 * spacing - half_w;
             let py = y as f32 * spacing - half_h;
 
-            let pz: x.sin
+            let pz: f32 = (x as f32) % half_w;
 
             let quad_t = universe.world.register(
                 TransformComponent::new()
@@ -136,11 +136,11 @@ fn main() {
     // point light for cats
     let cat_light_tx = universe
         .world
-        .register(TransformComponent::new().with_position(0.0, 2.0, 5.0));
+        .register(TransformComponent::new().with_position(0.0, 2.0, 7.0));
 
     let cat_light = universe.world.register(
         PointLightComponent::new()
-            .with_distance(50.0)
+            .with_distance(150.0)
             .with_intensity(1.5)
             .with_color(1.0, 0.98, 0.92),
     );
