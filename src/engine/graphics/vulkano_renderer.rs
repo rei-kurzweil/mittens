@@ -195,6 +195,15 @@ mod vulkano_backend {
         // --- Per-frame CPU work reduction ---
         cached_instance_buffer: Option<Subbuffer<[InstanceData]>>,
         cached_instance_count: usize,
+
+        cached_background_instance_buffer: Option<Subbuffer<[InstanceData]>>,
+        cached_background_instance_count: usize,
+
+        cached_background_occluded_lit_instance_buffer: Option<Subbuffer<[InstanceData]>>,
+        cached_background_occluded_lit_instance_count: usize,
+
+        cached_cutout_instance_buffer: Option<Subbuffer<[InstanceData]>>,
+        cached_cutout_instance_count: usize,
         cached_material_sets: HashMap<
             (
                 crate::engine::graphics::MaterialHandle,
@@ -731,6 +740,15 @@ mod vulkano_backend {
 
                 cached_instance_buffer: None,
                 cached_instance_count: 0,
+
+                cached_background_instance_buffer: None,
+                cached_background_instance_count: 0,
+
+                cached_background_occluded_lit_instance_buffer: None,
+                cached_background_occluded_lit_instance_count: 0,
+
+                cached_cutout_instance_buffer: None,
+                cached_cutout_instance_count: 0,
                 cached_material_sets: HashMap::new(),
 
                 xr_offscreen: None,
@@ -1231,19 +1249,52 @@ mod vulkano_backend {
                 buf
             };
 
-            // Build background instance buffers (currently uncached).
-            let background_instance_buffer = self.build_instance_buffer_for_order_opt(
-                &*visual_world,
-                visual_world.background_order(),
-            )?;
-            let background_occluded_lit_instance_buffer = self.build_instance_buffer_for_order_opt(
-                &*visual_world,
-                visual_world.background_occluded_lit_order(),
-            )?;
+            let need_background_instance_buffer = instance_data_dirty
+                || draw_cache_rebuilt
+                || self.cached_background_instance_count != background_instance_count;
+            let background_instance_buffer = if !need_background_instance_buffer {
+                self.cached_background_instance_buffer.clone()
+            } else {
+                let buf = self.build_instance_buffer_for_order_opt(
+                    &*visual_world,
+                    visual_world.background_order(),
+                )?;
+                self.cached_background_instance_count = background_instance_count;
+                self.cached_background_instance_buffer = buf.clone();
+                buf
+            };
 
-            // Build cutout instance buffer (currently uncached).
-            let cutout_instance_buffer =
-                self.build_instance_buffer_for_order_opt(&*visual_world, visual_world.cutout_order())?;
+            let need_background_occluded_lit_instance_buffer = instance_data_dirty
+                || draw_cache_rebuilt
+                || self.cached_background_occluded_lit_instance_count
+                    != background_occluded_lit_instance_count;
+            let background_occluded_lit_instance_buffer = if !need_background_occluded_lit_instance_buffer {
+                self.cached_background_occluded_lit_instance_buffer.clone()
+            } else {
+                let buf = self.build_instance_buffer_for_order_opt(
+                    &*visual_world,
+                    visual_world.background_occluded_lit_order(),
+                )?;
+                self.cached_background_occluded_lit_instance_count =
+                    background_occluded_lit_instance_count;
+                self.cached_background_occluded_lit_instance_buffer = buf.clone();
+                buf
+            };
+
+            let need_cutout_instance_buffer = instance_data_dirty
+                || draw_cache_rebuilt
+                || self.cached_cutout_instance_count != cutout_instance_count;
+            let cutout_instance_buffer = if !need_cutout_instance_buffer {
+                self.cached_cutout_instance_buffer.clone()
+            } else {
+                let buf = self.build_instance_buffer_for_order_opt(
+                    &*visual_world,
+                    visual_world.cutout_order(),
+                )?;
+                self.cached_cutout_instance_count = cutout_instance_count;
+                self.cached_cutout_instance_buffer = buf.clone();
+                buf
+            };
 
             let clear_color = visual_world.clear_color();
 
