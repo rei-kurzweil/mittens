@@ -1,5 +1,6 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
+use crate::engine::ecs::component::BackgroundComponent;
 use crate::engine::ecs::component::RenderableComponent;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::graphics::VisualWorld;
@@ -70,6 +71,19 @@ impl BHShape for RenderableAabb {
 }
 
 impl BvhSystem {
+    pub(crate) fn renderable_is_raycastable(world: &World, renderable_cid: ComponentId) -> bool {
+        // Nearest BackgroundComponent ancestor wins.
+        // Default: renderables are raycastable unless placed under a background.
+        let mut cur = renderable_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(bg) = world.get_component_by_id_as::<BackgroundComponent>(parent) {
+                return bg.ray_casting;
+            }
+            cur = parent;
+        }
+        true
+    }
+
     pub fn queue_renderable_added(&mut self, component: ComponentId) {
         if self.index_by_component.contains_key(&component) {
             return;
@@ -165,6 +179,10 @@ impl BvhSystem {
         if !self.pending_add.is_empty() {
             for cid in std::mem::take(&mut self.pending_add) {
                 if self.index_by_component.contains_key(&cid) {
+                    continue;
+                }
+
+                if !Self::renderable_is_raycastable(world, cid) {
                     continue;
                 }
 

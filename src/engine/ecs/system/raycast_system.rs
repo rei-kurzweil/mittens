@@ -376,35 +376,7 @@ impl System for RayCastSystem {
         // NOTE: RayCastSystem is normally ticked via `tick_with_queue` from SystemWorld so it can
         // apply queued side effects (e.g., click highlight color upserts). If this gets called
         // directly, we can still do hit testing and prints.
-        // Debug: confirm mouse input is reaching this system.
-        // (Useful when raycasters aren't registered yet or hits aren't happening.)
-        let left_down = input.mouse_down.contains(&MouseButton::Left);
-        if left_down && !self.debug_left_down_prev {
-            println!(
-                "[RayCast] debug: left down (start) cursor={:?} pressed={:?} released={:?}",
-                input.cursor_pos, input.mouse_pressed, input.mouse_released
-            );
-        }
-        if !left_down && self.debug_left_down_prev {
-            println!(
-                "[RayCast] debug: left down (end) cursor={:?} pressed={:?} released={:?}",
-                input.cursor_pos, input.mouse_pressed, input.mouse_released
-            );
-        }
-        self.debug_left_down_prev = left_down;
-
-        if input.mouse_pressed.contains(&MouseButton::Left) {
-            println!(
-                "[RayCast] debug: left pressed cursor={:?} down={:?}",
-                input.cursor_pos, left_down
-            );
-        }
-        if input.mouse_released.contains(&MouseButton::Left) {
-            println!(
-                "[RayCast] debug: left released cursor={:?} down={:?}",
-                input.cursor_pos, left_down
-            );
-        }
+        
 
         if self.raycasters.is_empty() {
             return;
@@ -525,19 +497,7 @@ impl RayCastSystem {
         // Equivalent to `tick()` but uses BVH for hit testing and can apply queued side effects.
         // Keep the debug prints so it's easy to see input edges.
         let left_down = input.mouse_down.contains(&MouseButton::Left);
-        if left_down && !self.debug_left_down_prev {
-            println!(
-                "[RayCast] debug: left down (start) cursor={:?} pressed={:?} released={:?}",
-                input.cursor_pos, input.mouse_pressed, input.mouse_released
-            );
-        }
-        if !left_down && self.debug_left_down_prev {
-            println!(
-                "[RayCast] debug: left down (end) cursor={:?} pressed={:?} released={:?}",
-                input.cursor_pos, input.mouse_pressed, input.mouse_released
-            );
-        }
-        self.debug_left_down_prev = left_down;
+        
 
         if input.mouse_pressed.contains(&MouseButton::Left) {
             println!(

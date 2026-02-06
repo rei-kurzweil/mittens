@@ -13,6 +13,11 @@ pub fn format_ls_line(world: &ecs::World, index: usize, cid: ecs::ComponentId) -
         "renderable" => Some((255, 0, 200)),
         "input" => Some((40, 255, 10)),
         "camera3d" | "camera2d" => Some((0, 160, 255)),
+        "animation" => Some((190, 255, 0)),
+        "clock" => Some((0, 120, 255)),
+        "background"       => Some((255, 100, 255)),
+        "background_color" => Some((200, 100, 150)),
+        "ambient_light"   => Some((200, 100, 150)),
         _ => None,
     };
 

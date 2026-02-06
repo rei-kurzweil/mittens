@@ -215,6 +215,34 @@ impl CommandQueue {
         });
     }
 
+    pub fn queue_register_animation(&mut self, component_id: crate::engine::ecs::ComponentId) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REGISTER_ANIMATION { component_id },
+        });
+    }
+
+    pub fn queue_register_keyframe(&mut self, component_id: crate::engine::ecs::ComponentId) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REGISTER_KEYFRAME { component_id },
+        });
+    }
+
+    pub fn queue_register_audio_output(&mut self, component_id: crate::engine::ecs::ComponentId) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REGISTER_AUDIO_OUTPUT { component_id },
+        });
+    }
+
+    pub fn queue_register_clock(&mut self, component_id: crate::engine::ecs::ComponentId) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REGISTER_CLOCK { component_id },
+        });
+    }
+
     /// Queue a remove RayCast command.
     pub fn queue_remove_raycast(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
@@ -312,6 +340,18 @@ impl CommandQueue {
                     Command::REGISTER_RAYCAST { component_id } => {
                         systems.register_raycast(world, visuals, component_id);
                     }
+                    Command::REGISTER_ANIMATION { component_id } => {
+                        systems.register_animation(world, visuals, component_id);
+                    }
+                    Command::REGISTER_KEYFRAME { component_id } => {
+                        systems.register_keyframe(world, visuals, component_id);
+                    }
+                    Command::REGISTER_AUDIO_OUTPUT { component_id } => {
+                        systems.register_audio_output(world, visuals, component_id);
+                    }
+                    Command::REGISTER_CLOCK { component_id } => {
+                        systems.register_clock(world, visuals, component_id);
+                    }
                     Command::REMOVE_COLLISION { component_id } => {
                         systems.remove_collision(world, visuals, component_id);
                     }
@@ -398,6 +438,20 @@ enum Command {
     },
 
     REGISTER_RAYCAST {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+
+    REGISTER_ANIMATION {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+    REGISTER_KEYFRAME {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+    REGISTER_AUDIO_OUTPUT {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+
+    REGISTER_CLOCK {
         component_id: crate::engine::ecs::ComponentId,
     },
     REMOVE_RENDERABLE {

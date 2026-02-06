@@ -21,6 +21,9 @@ serde_json = "1.0"
 uuid = { version = "1.11", features = ["v4", "serde"] }
 ddsfile = "0.5"
 
+# Audio output + audio-clock driver
+cpal = "0.15"
+
 # Spatial acceleration structures (ray/AABB + BVH)
 bvh = "0.7"
 

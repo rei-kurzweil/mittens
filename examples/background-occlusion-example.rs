@@ -204,10 +204,10 @@ fn main() {
 
     let spacing = 10_f32;
     let half = 5_f32;
-    for x in 0..32u32 {
-        for z in 0..32u32 {
+    for x in 0..16u32 {
+        for z in 0..64u32 {
             let px = (x as f32 - half) * spacing;
-            let pz = (z as f32 - half) * spacing;
+            let pz = (z as f32 * -1.0 + half) * spacing;
             let tx = universe.world.register(
                 engine::ecs::component::TransformComponent::new()
                     .with_position(px, -5.0, pz)

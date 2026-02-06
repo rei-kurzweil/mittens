@@ -2,6 +2,7 @@ use super::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::CameraSystem;
+use crate::engine::ecs::system::ClockSystem;
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::InputSystem;
@@ -13,12 +14,18 @@ use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::TransformSystem;
+use crate::engine::ecs::system::{ActionSystem, AnimationSystem, AudioSystem};
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 
 /// System world that holds and runs all registered systems.
 #[derive(Debug, Default)]
 pub struct SystemWorld {
+    pub clock: ClockSystem,
+    pub audio: AudioSystem,
+    pub animation: AnimationSystem,
+    pub action: ActionSystem,
+
     pub transform: TransformSystem,
     pub bvh: BvhSystem,
     pub collision: CollisionSystem,
@@ -54,7 +61,9 @@ impl SystemWorld {
             .register_renderable(world, visuals, component);
 
         // Keep BVH in sync (defer actual build/refit to CommandQueue flush).
-        self.bvh.queue_renderable_added(component);
+        if BvhSystem::renderable_is_raycastable(world, component) {
+            self.bvh.queue_renderable_added(component);
+        }
     }
 
     /// Remove a RenderableComponent instance from the RenderableSystem (and BVH).
@@ -234,6 +243,47 @@ impl SystemWorld {
         component: ComponentId,
     ) {
         self.raycast.remove_raycast(world, visuals, component);
+    }
+
+    pub fn register_animation(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.animation.register_animation(world, component);
+    }
+
+    pub fn register_keyframe(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.animation.register_keyframe(world, component);
+    }
+
+    pub fn register_audio_output(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.audio.register_audio_output(world, component);
+    }
+
+    pub fn register_clock(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        if world
+            .get_component_by_id_as::<crate::engine::ecs::component::ClockComponent>(component)
+            .is_some()
+        {
+            self.clock.register_clock_component(component);
+        }
     }
 
     /// Prepare render state before issuing a frame.
@@ -446,6 +496,21 @@ impl SystemWorld {
         // Flush queued registrations/transform updates *before* systems that need current
         // world matrices / acceleration structures (e.g. raycasting).
         queue.flush(world, self, visuals);
+
+        // Audio clock takeover: once audio output is active, use it as the ClockDriver.
+        if let Some(driver) = self.audio.driver() {
+            if self.clock.driver_name() != driver.name() {
+                self.clock.set_driver(driver);
+            }
+        }
+
+        self.clock.tick(world, visuals, input, dt_sec);
+        self.animation.tick_with_beat(
+            world,
+            self.clock.beat_now(),
+            &mut self.action,
+            queue,
+        );
 
         // Ensure transforms are propagated before any camera systems consume world matrices.
         self.transform.tick(world, visuals, input, dt_sec);

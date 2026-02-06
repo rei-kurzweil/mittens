@@ -1,9 +1,12 @@
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ColorComponent,
-    GLTFComponent, InputComponent, InputTransformModeComponent, RenderableComponent,
-    TransformComponent,
+    DirectionalLightComponent, GLTFComponent, InputComponent, InputTransformModeComponent,
+    RenderableComponent, TransformComponent,
 };
 use cat_engine::{engine, utils};
+
+#[path = "example_util/mod.rs"]
+mod example_util;
 
 fn main() {
     utils::logger::init();
@@ -30,7 +33,7 @@ fn main() {
         .register(InputComponent::new().with_speed(1.5));
     let input_mode = universe
         .world
-        .register(InputTransformModeComponent::forward_z().with_fps_rotation());
+        .register(InputTransformModeComponent::forward_z().with_fps_rotation().with_roll_axis_y());
     let _ = universe.attach(input, input_mode);
 
     // Start slightly pulled back looking towards the origin.
@@ -45,6 +48,18 @@ fn main() {
     universe.add(input);
 
     // --- lighting ---
+    // Directional key light (slightly down + forward Z).
+    let sun = universe.world.register(
+        DirectionalLightComponent::new()
+            .with_intensity(1.2)
+            .with_color(1.0, 0.98, 0.94),
+    );
+    let sun_dir = universe
+        .world
+        .register(TransformComponent::new().with_position(0.0, -0.35, 1.0));
+    let _ = universe.attach(sun_dir, sun);
+    universe.add(sun_dir);
+
     let light_transform = universe.world.register(
         TransformComponent::new()
             .with_position(1.0, 6.0, 3.0)
@@ -72,6 +87,19 @@ fn main() {
 
     let _ = universe.attach(model_root, model);
     universe.add(model_root);
+
+    // --- Background clouds (occluded + lit) ---
+    let bg_root = universe.world.register(
+        engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting(),
+    );
+    universe.add(bg_root);
+    let mut cloud_params = example_util::CloudRingParams::default();
+    cloud_params.cloud_count = 8; // +3 clusters
+    cloud_params.angle_jitter = 0.35;
+    cloud_params.high_y_probability = 0.5;
+    cloud_params.high_y_multiplier = 1.5;
+    cloud_params.seed = 0x57_55_B0_01u32;
+    example_util::spawn_cloud_ring(&mut universe, bg_root, cloud_params);
 
     // --- Simple environment ---
     let spawn_cube = |universe: &mut engine::Universe,
