@@ -86,6 +86,10 @@ pub struct VisualWorld {
     draw_order: Vec<u32>, // indices into `instances`
     draw_batches: Vec<DrawBatch>,
 
+    // Alpha-to-coverage cutout draw data (rebuilt when dirty).
+    cutout_order: Vec<u32>,
+    cutout_batches: Vec<DrawBatch>,
+
     // Transparent draw data.
     // - Single-layer: cached (order does not depend on view), instanced.
     transparent_single_draw_order: Vec<u32>,
@@ -102,6 +106,7 @@ pub struct VisualInstance {
     pub color: [f32; 4],
     pub opacity: f32,
     pub multiple_layers: bool,
+    pub transparent_cutout: bool,
     pub background: bool,
     pub background_occluded_lit: bool,
     pub emissive: u32,
@@ -170,6 +175,9 @@ impl Default for VisualWorld {
             background_occluded_lit_batches: Vec::new(),
             draw_order: Vec::new(),
             draw_batches: Vec::new(),
+
+            cutout_order: Vec::new(),
+            cutout_batches: Vec::new(),
 
             transparent_single_draw_order: Vec::new(),
             transparent_single_draw_batches: Vec::new(),
@@ -297,8 +305,17 @@ impl VisualWorld {
         self.dirty_camera = true;
         self.background_order.clear();
         self.background_batches.clear();
+        self.background_occluded_lit_order.clear();
+        self.background_occluded_lit_batches.clear();
         self.draw_order.clear();
         self.draw_batches.clear();
+        self.cutout_order.clear();
+        self.cutout_batches.clear();
+
+        self.transparent_single_draw_order.clear();
+        self.transparent_single_draw_batches.clear();
+        self.transparent_multi_draw_order.clear();
+        self.transparent_multi_draw_batches.clear();
 
         self.active_xr_camera = None;
     }
@@ -513,6 +530,15 @@ impl VisualWorld {
         &self.draw_batches
     }
 
+    /// Indices into `instances()` in the order they should be drawn (alpha-to-coverage cutout pass).
+    pub fn cutout_order(&self) -> &[u32] {
+        &self.cutout_order
+    }
+
+    pub fn cutout_batches(&self) -> &[DrawBatch] {
+        &self.cutout_batches
+    }
+
     /// Indices into `instances()` in the order they should be drawn (single-layer transparent pass).
     pub fn transparent_single_draw_order(&self) -> &[u32] {
         &self.transparent_single_draw_order
@@ -542,6 +568,7 @@ impl VisualWorld {
         self.background_order.clear();
         self.background_occluded_lit_order.clear();
         self.draw_order.clear();
+        self.cutout_order.clear();
         self.transparent_single_draw_order.clear();
         // Opaque pass: exclude anything that is transparent.
         for i in 0..self.instances.len() {
@@ -552,6 +579,8 @@ impl VisualWorld {
                 } else {
                     self.background_order.push(i as u32);
                 }
+            } else if inst.transparent_cutout {
+                self.cutout_order.push(i as u32);
             } else if !Self::is_transparent(inst) {
                 self.draw_order.push(i as u32);
             } else if !inst.multiple_layers {
@@ -617,6 +646,22 @@ impl VisualWorld {
 
         let draw_order = &self.draw_order;
         Self::build_draw_batches_for_order(instances, draw_order, &mut self.draw_batches);
+
+        // Cutout pass: batch aggressively (order does not depend on view).
+        self.cutout_order.sort_by_key(|&i| {
+            let inst = self.instances[i as usize];
+            let r = inst.renderable;
+            let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
+            (
+                r.material.0,
+                r.mesh.0,
+                tex,
+                inst.texture_filtering as u8,
+                sanitize_quant_steps(inst.quant_steps).to_bits(),
+            )
+        });
+        let cutout_order = &self.cutout_order;
+        Self::build_draw_batches_for_order(instances, cutout_order, &mut self.cutout_batches);
 
         // Single-layer transparent pass: batch aggressively (order does not depend on view).
         self.transparent_single_draw_order.sort_by_key(|&i| {
@@ -694,6 +739,7 @@ impl VisualWorld {
         color: [f32; 4],
         opacity: f32,
         multiple_layers: bool,
+        transparent_cutout: bool,
         background: bool,
         background_occluded_lit: bool,
         emissive: u32,
@@ -714,6 +760,7 @@ impl VisualWorld {
                 1.0
             },
             multiple_layers,
+            transparent_cutout,
             background,
             background_occluded_lit,
             emissive,
@@ -846,6 +893,20 @@ impl VisualWorld {
         }
     }
 
+    pub fn update_transparent_cutout(&mut self, handle: InstanceHandle, enabled: bool) -> bool {
+        if let Some(&idx) = self.handle_to_index.get(&handle) {
+            if self.instances[idx].transparent_cutout == enabled {
+                return true;
+            }
+            self.instances[idx].transparent_cutout = enabled;
+            // Cutout changes affect pass classification.
+            self.dirty_draw_cache = true;
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn update_emissive(&mut self, handle: InstanceHandle, emissive: u32) -> bool {
         if let Some(&idx) = self.handle_to_index.get(&handle) {
             self.instances[idx].emissive = emissive;
@@ -897,6 +958,7 @@ impl VisualWorld {
             let color = self.instances[idx].color;
             let opacity = self.instances[idx].opacity;
             let multiple_layers = self.instances[idx].multiple_layers;
+            let transparent_cutout = self.instances[idx].transparent_cutout;
             let background = self.instances[idx].background;
             let background_occluded_lit = self.instances[idx].background_occluded_lit;
             let emissive = self.instances[idx].emissive;
@@ -909,6 +971,7 @@ impl VisualWorld {
                 color,
                 opacity,
                 multiple_layers,
+                transparent_cutout,
                 background,
                 background_occluded_lit,
                 emissive,

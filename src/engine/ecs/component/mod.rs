@@ -20,6 +20,7 @@ pub mod directional_light;
 pub mod keyframe;
 pub mod mesh;
 pub mod opacity;
+pub mod transparent_cutout;
 
 pub mod openxr;
 pub mod point_light;
@@ -56,6 +57,7 @@ pub use input_transform_mode::{ForwardAxis, InputTransformModeComponent, RollAxi
 pub use light_quantization::LightQuantizationComponent;
 pub use keyframe::KeyframeComponent;
 pub use opacity::OpacityComponent;
+pub use transparent_cutout::TransparentCutoutComponent;
 pub use openxr::OpenXRComponent;
 pub use point_light::PointLightComponent;
 pub use raycast::{RayCastComponent, RayCastMode};

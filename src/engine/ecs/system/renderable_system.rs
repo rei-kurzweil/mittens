@@ -2,7 +2,7 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::BackgroundColorComponent;
 use crate::engine::ecs::component::{
     BackgroundComponent, ColorComponent, EmissiveComponent, LightQuantizationComponent,
-    MeshComponent, OpacityComponent, RenderableComponent, UVComponent,
+    MeshComponent, OpacityComponent, RenderableComponent, TransparentCutoutComponent, UVComponent,
 };
 
 use crate::engine::ecs::World;
@@ -51,6 +51,11 @@ pub struct RenderableSystem {
     ///
     /// Keyed by the RenderableComponent's ComponentId.
     pending_opacity: HashMap<ComponentId, PendingOpacity>,
+
+    /// Whether a renderable should be routed into the transparent cutout pass.
+    ///
+    /// Keyed by the RenderableComponent's ComponentId.
+    pending_cutout: HashMap<ComponentId, bool>,
 
     /// Per-instance emissive/unlit override for a renderable.
     ///
@@ -145,6 +150,14 @@ impl RenderableSystem {
         })
     }
 
+    fn immediate_cutout_child(world: &World, node: ComponentId) -> Option<bool> {
+        world.children_of(node).iter().find_map(|&ch| {
+            world
+                .get_component_by_id_as::<TransparentCutoutComponent>(ch)
+                .map(|c| c.enabled)
+        })
+    }
+
     fn inherited_color_for_renderable(
         world: &World,
         renderable_cid: ComponentId,
@@ -180,6 +193,23 @@ impl RenderableSystem {
         while let Some(parent) = world.parent_of(cur) {
             if let Some(o) = Self::immediate_opacity_child(world, parent) {
                 return Some(o);
+            }
+            cur = parent;
+        }
+        None
+    }
+
+    fn inherited_cutout_for_renderable(world: &World, renderable_cid: ComponentId) -> Option<bool> {
+        // Explicit per-renderable override wins.
+        if let Some(v) = Self::immediate_cutout_child(world, renderable_cid) {
+            return Some(v);
+        }
+
+        // Otherwise, walk up ancestry and look for a TransparentCutoutComponent attached under any ancestor.
+        let mut cur = renderable_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(v) = Self::immediate_cutout_child(world, parent) {
+                return Some(v);
             }
             cur = parent;
         }
@@ -322,6 +352,34 @@ impl RenderableSystem {
 
             let _ = visuals.update_opacity_state(handle, pending.opacity, pending.multiple_layers);
             let _ = self.pending_opacity.remove(&renderable_cid);
+        }
+    }
+
+    fn apply_pending_cutout_updates_to_registered_renderables(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+    ) {
+        let keys: Vec<ComponentId> = self.pending_cutout.keys().copied().collect();
+        for renderable_cid in keys {
+            let Some(renderable_comp) =
+                world.get_component_by_id_as::<RenderableComponent>(renderable_cid)
+            else {
+                let _ = self.pending_cutout.remove(&renderable_cid);
+                continue;
+            };
+
+            let Some(handle) = renderable_comp.get_handle() else {
+                // Still pending; will be handled by the pending flush.
+                continue;
+            };
+
+            let Some(enabled) = self.pending_cutout.get(&renderable_cid).copied() else {
+                continue;
+            };
+
+            let _ = visuals.update_transparent_cutout(handle, enabled);
+            let _ = self.pending_cutout.remove(&renderable_cid);
         }
     }
 
@@ -505,6 +563,83 @@ impl RenderableSystem {
             }
 
             self.pending_opacity.insert(node, pending);
+        }
+    }
+
+    pub fn register_transparent_cutout(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let Some(cutout_comp) = world.get_component_by_id_as::<TransparentCutoutComponent>(component)
+        else {
+            return;
+        };
+
+        let pending = cutout_comp.enabled;
+
+        // Find the ancestor RenderableComponent that this TransparentCutoutComponent should apply to.
+        let mut cur = component;
+        let mut renderable_cid: Option<ComponentId> = None;
+        while let Some(parent) = world.parent_of(cur) {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(parent)
+                .is_some()
+            {
+                renderable_cid = Some(parent);
+                break;
+            }
+            cur = parent;
+        }
+
+        // Normal case: TransparentCutoutComponent is attached under a RenderableComponent.
+        if let Some(renderable_cid) = renderable_cid {
+            self.pending_cutout.insert(renderable_cid, pending);
+
+            // If already registered, apply immediately.
+            if let Some(renderable_comp) =
+                world.get_component_by_id_as::<RenderableComponent>(renderable_cid)
+            {
+                if let Some(handle) = renderable_comp.get_handle() {
+                    let _ = visuals.update_transparent_cutout(handle, pending);
+                    let _ = self.pending_cutout.remove(&renderable_cid);
+                }
+            }
+
+            return;
+        }
+
+        // Inheritance case: TransparentCutoutComponent is attached above renderables (e.g., on TextComponent).
+        // Apply it to descendant renderables that do NOT have an explicit per-renderable TransparentCutoutComponent.
+        let mut q = VecDeque::new();
+        q.push_back(component);
+
+        while let Some(node) = q.pop_front() {
+            for &ch in world.children_of(node).iter() {
+                q.push_back(ch);
+            }
+
+            if world
+                .get_component_by_id_as::<RenderableComponent>(node)
+                .is_none()
+            {
+                continue;
+            }
+
+            // Don't clobber explicit per-renderable overrides.
+            if Self::immediate_cutout_child(world, node).is_some() {
+                continue;
+            }
+
+            self.pending_cutout.insert(node, pending);
+            if let Some(renderable_comp) = world.get_component_by_id_as::<RenderableComponent>(node)
+            {
+                if let Some(handle) = renderable_comp.get_handle() {
+                    let _ = visuals.update_transparent_cutout(handle, pending);
+                    let _ = self.pending_cutout.remove(&node);
+                }
+            }
         }
     }
 
@@ -839,6 +974,13 @@ impl RenderableSystem {
                 .copied()
                 .unwrap_or_default();
 
+            let transparent_cutout = self
+                .pending_cutout
+                .get(&p.renderable_cid)
+                .copied()
+                .or_else(|| Self::inherited_cutout_for_renderable(world, p.renderable_cid))
+                .unwrap_or(false);
+
             let emissive = self
                 .pending_emissive
                 .get(&p.renderable_cid)
@@ -865,6 +1007,7 @@ impl RenderableSystem {
                 color,
                 opacity.opacity,
                 opacity.multiple_layers,
+                transparent_cutout,
                 background,
                 background_occluded_lit,
                 emissive,
@@ -886,6 +1029,9 @@ impl RenderableSystem {
             // Opacity has now been applied.
             let _ = self.pending_opacity.remove(&p.renderable_cid);
 
+            // Cutout has now been applied.
+            let _ = self.pending_cutout.remove(&p.renderable_cid);
+
             // Emissive has now been applied.
             let _ = self.pending_emissive.remove(&p.renderable_cid);
 
@@ -904,6 +1050,7 @@ impl RenderableSystem {
         );
         self.apply_pending_color_updates_to_registered_renderables(world, visuals);
         self.apply_pending_opacity_updates_to_registered_renderables(world, visuals);
+        self.apply_pending_cutout_updates_to_registered_renderables(world, visuals);
         self.apply_pending_emissive_updates_to_registered_renderables(world, visuals);
         self.apply_pending_quant_updates_to_registered_renderables(world, visuals);
     }

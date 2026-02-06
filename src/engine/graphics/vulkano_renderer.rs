@@ -24,11 +24,15 @@ mod vulkano_backend {
         AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo, PrimaryCommandBufferAbstract,
         allocator::StandardCommandBufferAllocator,
     };
-    use vulkano::command_buffer::{RenderingAttachmentInfo, RenderingInfo};
+    use vulkano::command_buffer::{
+        ClearAttachment, ClearRect, RenderingAttachmentInfo, RenderingAttachmentResolveInfo,
+        RenderingInfo,
+    };
     use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
     use vulkano::descriptor_set::{DescriptorSet, WriteDescriptorSet};
     use vulkano::format::ClearValue;
     use vulkano::image::view::ImageView;
+    use vulkano::image::{SampleCount, SampleCounts};
     use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter};
     use vulkano::pipeline::graphics::color_blend::{
         AttachmentBlend, BlendFactor, BlendOp, ColorBlendAttachmentState, ColorBlendState,
@@ -184,6 +188,9 @@ mod vulkano_backend {
 
         pub pipeline_toon_mesh: Arc<GraphicsPipeline>,
         pub pipeline_toon_mesh_transparent: Arc<GraphicsPipeline>,
+        pub pipeline_toon_mesh_cutout: Arc<GraphicsPipeline>,
+
+        pub msaa_samples: SampleCount,
 
         // --- Per-frame CPU work reduction ---
         cached_instance_buffer: Option<Subbuffer<[InstanceData]>>,
@@ -212,6 +219,7 @@ mod vulkano_backend {
         extent: [u32; 2],
         color_format: Format,
         color_images: Vec<Arc<vulkano::image::Image>>,
+        msaa_color_views: Vec<Arc<ImageView>>,
         color_views: Vec<Arc<ImageView>>,
         depth_views: Vec<Arc<ImageView>>,
     }
@@ -420,7 +428,30 @@ mod vulkano_backend {
             };
             let device = context.device().clone();
 
-            let swapchain_state = VulkanoSwapchainState::new(&context, window.clone())?;
+            // Prefer 4x MSAA if the device supports it (color+depth).
+            let msaa_samples = {
+                let props = device.physical_device().properties();
+                let counts =
+                    props.framebuffer_color_sample_counts & props.framebuffer_depth_sample_counts;
+                if counts.intersects(SampleCounts::SAMPLE_4) {
+                    SampleCount::Sample4
+                } else if counts.intersects(SampleCounts::SAMPLE_2) {
+                    SampleCount::Sample2
+                } else {
+                    SampleCount::Sample1
+                }
+            };
+
+            if msaa_samples == SampleCount::Sample4 {
+                println!("[VulkanoRenderer] MSAA enabled: 4x");
+            } else if msaa_samples == SampleCount::Sample2 {
+                println!("[VulkanoRenderer] MSAA enabled: 2x (4x unsupported)");
+            } else {
+                println!("[VulkanoRenderer] MSAA disabled (unsupported)");
+            }
+
+            let swapchain_state =
+                VulkanoSwapchainState::new(&context, window.clone(), msaa_samples)?;
             let framebuffer_count = swapchain_state.swapchain_views.len();
 
             let set_layouts = PipelineDescriptorSetLayouts::new(device.clone())?;
@@ -566,7 +597,10 @@ mod vulkano_backend {
             pipeline_ci.input_assembly_state = Some(InputAssemblyState::default());
             pipeline_ci.viewport_state = Some(ViewportState::default());
             pipeline_ci.rasterization_state = Some(RasterizationState::default());
-            pipeline_ci.multisample_state = Some(MultisampleState::default());
+            pipeline_ci.multisample_state = Some(MultisampleState {
+                rasterization_samples: msaa_samples,
+                ..Default::default()
+            });
             // Enable depth testing so 3D geometry occludes correctly.
             pipeline_ci.depth_stencil_state = Some(DepthStencilState {
                 depth: Some(DepthState::simple()),
@@ -604,7 +638,7 @@ mod vulkano_backend {
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci.clone())?;
 
             // Transparent variant: depth test ON, depth write OFF.
-            let mut pipeline_ci_transparent = pipeline_ci;
+            let mut pipeline_ci_transparent = pipeline_ci.clone();
             pipeline_ci_transparent.depth_stencil_state = Some(DepthStencilState {
                 depth: Some(DepthState {
                     write_enable: false,
@@ -614,6 +648,27 @@ mod vulkano_backend {
             });
             let pipeline_toon_mesh_transparent =
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci_transparent)?;
+
+            // Transparent cutout variant:
+            // - depth test/write ON
+            // - alpha-to-coverage enabled (requires MSAA)
+            // - blending disabled (coverage handles edges)
+            let mut pipeline_ci_cutout = pipeline_ci;
+            pipeline_ci_cutout.multisample_state = Some(MultisampleState {
+                rasterization_samples: msaa_samples,
+                alpha_to_coverage_enable: true,
+                ..Default::default()
+            });
+            pipeline_ci_cutout.color_blend_state = Some(ColorBlendState::with_attachment_states(
+                1,
+                ColorBlendAttachmentState {
+                    blend: None,
+                    color_write_enable: true,
+                    color_write_mask: ColorComponents::all(),
+                },
+            ));
+            let pipeline_toon_mesh_cutout =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_cutout)?;
 
             let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
                 device.clone(),
@@ -670,6 +725,9 @@ mod vulkano_backend {
 
                 pipeline_toon_mesh,
                 pipeline_toon_mesh_transparent,
+                pipeline_toon_mesh_cutout,
+
+                msaa_samples,
 
                 cached_instance_buffer: None,
                 cached_instance_count: 0,
@@ -706,6 +764,9 @@ mod vulkano_backend {
                 t.extent != extent
                     || t.color_format != color_format
                     || t.color_views.len() != view_count
+                    || (self.msaa_samples == SampleCount::Sample1) != t.msaa_color_views.is_empty()
+                    || (self.msaa_samples != SampleCount::Sample1
+                        && t.msaa_color_views.len() != view_count)
             });
 
             if !needs_recreate {
@@ -715,16 +776,19 @@ mod vulkano_backend {
             let memory_allocator = self.context.memory_allocator().clone();
 
             let mut color_images = Vec::with_capacity(view_count);
+            let mut msaa_color_views = Vec::with_capacity(view_count);
             let mut color_views = Vec::with_capacity(view_count);
             let mut depth_views = Vec::with_capacity(view_count);
 
             for _ in 0..view_count {
+                // Resolve target (single-sampled): used for transfer/copy out.
                 let color_image = vulkano::image::Image::new(
                     memory_allocator.clone(),
                     vulkano::image::ImageCreateInfo {
                         image_type: vulkano::image::ImageType::Dim2d,
                         format: color_format,
                         extent: [extent[0], extent[1], 1],
+                        samples: SampleCount::Sample1,
                         usage: vulkano::image::ImageUsage::COLOR_ATTACHMENT
                             | vulkano::image::ImageUsage::TRANSFER_SRC,
                         ..Default::default()
@@ -738,12 +802,37 @@ mod vulkano_backend {
                 let color_view = ImageView::new_default(color_image.clone())
                     .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
 
+                // Multisampled color attachment (optional): resolved into `color_view`.
+                if self.msaa_samples != SampleCount::Sample1 {
+                    let msaa_color_image = vulkano::image::Image::new(
+                        memory_allocator.clone(),
+                        vulkano::image::ImageCreateInfo {
+                            image_type: vulkano::image::ImageType::Dim2d,
+                            format: color_format,
+                            extent: [extent[0], extent[1], 1],
+                            samples: self.msaa_samples,
+                            usage: vulkano::image::ImageUsage::COLOR_ATTACHMENT
+                                | vulkano::image::ImageUsage::TRANSIENT_ATTACHMENT,
+                            ..Default::default()
+                        },
+                        AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                            ..Default::default()
+                        },
+                    )?;
+
+                    let msaa_color_view = ImageView::new_default(msaa_color_image)
+                        .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
+                    msaa_color_views.push(msaa_color_view);
+                }
+
                 let depth_image = vulkano::image::Image::new(
                     memory_allocator.clone(),
                     vulkano::image::ImageCreateInfo {
                         image_type: vulkano::image::ImageType::Dim2d,
                         format: VulkanoSwapchainState::DEPTH_FORMAT,
                         extent: [extent[0], extent[1], 1],
+                        samples: self.msaa_samples,
                         usage: vulkano::image::ImageUsage::DEPTH_STENCIL_ATTACHMENT,
                         ..Default::default()
                     },
@@ -765,6 +854,7 @@ mod vulkano_backend {
                 extent,
                 color_format,
                 color_images,
+                msaa_color_views,
                 color_views,
                 depth_views,
             });
@@ -786,11 +876,24 @@ mod vulkano_backend {
                 return Err("XR offscreen targets missing".into());
             };
 
-            let color_view = targets
+            let resolve_view = targets
                 .color_views
                 .get(eye)
                 .ok_or("XR offscreen eye out of range")?
                 .clone();
+
+            let (color_attachment_view, color_resolve_view) = if self.msaa_samples
+                != SampleCount::Sample1
+            {
+                let msaa_view = targets
+                    .msaa_color_views
+                    .get(eye)
+                    .ok_or("XR MSAA color eye out of range")?
+                    .clone();
+                (msaa_view, Some(resolve_view))
+            } else {
+                (resolve_view, None)
+            };
             let depth_view = targets
                 .depth_views
                 .get(eye)
@@ -801,7 +904,8 @@ mod vulkano_backend {
                 visual_world,
                 crate::engine::graphics::CameraTarget::Xr,
                 eye,
-                color_view,
+                color_attachment_view,
+                color_resolve_view,
                 depth_view,
                 extent,
             )?;
@@ -1069,7 +1173,8 @@ mod vulkano_backend {
             visual_world: &mut VisualWorld,
             camera_target: crate::engine::graphics::CameraTarget,
             eye: usize,
-            color_view: Arc<ImageView>,
+            color_attachment_view: Arc<ImageView>,
+            color_resolve_view: Option<Arc<ImageView>>,
             depth_view: Arc<ImageView>,
             extent: [u32; 2],
         ) -> Result<
@@ -1100,6 +1205,9 @@ mod vulkano_backend {
                 visual_world.background_occluded_lit_order().len();
             let any_background =
                 background_instance_count > 0 || background_occluded_lit_instance_count > 0;
+
+            // --- Cutout pass ---
+            let cutout_instance_count = visual_world.cutout_order().len();
 
             let need_instance_buffer = instance_data_dirty
                 || draw_cache_rebuilt
@@ -1133,21 +1241,25 @@ mod vulkano_backend {
                 visual_world.background_occluded_lit_order(),
             )?;
 
+            // Build cutout instance buffer (currently uncached).
+            let cutout_instance_buffer =
+                self.build_instance_buffer_for_order_opt(&*visual_world, visual_world.cutout_order())?;
+
             let clear_color = visual_world.clear_color();
 
-            let color_attachment_clear = RenderingAttachmentInfo {
+            let mut color_attachment_clear = RenderingAttachmentInfo {
                 load_op: AttachmentLoadOp::Clear,
                 store_op: AttachmentStoreOp::Store,
                 clear_value: Some(ClearValue::from(clear_color)),
-                ..RenderingAttachmentInfo::image_view(color_view.clone())
+                ..RenderingAttachmentInfo::image_view(color_attachment_view)
             };
 
-            let color_attachment_load = RenderingAttachmentInfo {
-                load_op: AttachmentLoadOp::Load,
-                store_op: AttachmentStoreOp::Store,
-                clear_value: None,
-                ..RenderingAttachmentInfo::image_view(color_view)
-            };
+            if let Some(resolve_view) = color_resolve_view {
+                color_attachment_clear.resolve_info =
+                    Some(RenderingAttachmentResolveInfo::image_view(resolve_view));
+                // The multisampled attachment doesn't need to be stored when resolve is used.
+                color_attachment_clear.store_op = AttachmentStoreOp::DontCare;
+            }
 
             let depth_attachment_clear = RenderingAttachmentInfo {
                 load_op: AttachmentLoadOp::Clear,
@@ -1162,17 +1274,6 @@ mod vulkano_backend {
                 layer_count: 1,
                 color_attachments: vec![Some(color_attachment_clear)],
                 depth_attachment: Some(depth_attachment_clear.clone()),
-                stencil_attachment: None,
-                ..Default::default()
-            };
-
-            // Foreground rendering after background: keep color, but reset depth.
-            let rendering_info_load_color_clear_depth = RenderingInfo {
-                render_area_offset: [0, 0],
-                render_area_extent: [extent[0], extent[1]],
-                layer_count: 1,
-                color_attachments: vec![Some(color_attachment_load)],
-                depth_attachment: Some(depth_attachment_clear),
                 stencil_attachment: None,
                 ..Default::default()
             };
@@ -1320,23 +1421,24 @@ mod vulkano_backend {
                 CommandBufferUsage::OneTimeSubmit,
             )?;
 
+            // Single dynamic-rendering scope. This keeps MSAA resolve straightforward.
+            cbb.begin_rendering(rendering_info_clear_color_and_depth)?;
+
+            cbb.set_viewport(0, vec![viewport].into())?;
+            cbb.set_scissor(
+                0,
+                vec![Scissor {
+                    offset: [0, 0],
+                    extent: [extent[0], extent[1]],
+                    ..Default::default()
+                }]
+                .into(),
+            )?;
+
             if any_background {
-                // Background phase: clear color+depth, then draw:
+                // Background phase: draw:
                 // 1) plain background (no depth write)
                 // 2) occluded+lit background (depth write ON for self-occlusion)
-                cbb.begin_rendering(rendering_info_clear_color_and_depth.clone())?;
-
-                cbb.set_viewport(0, vec![viewport.clone()].into())?;
-                cbb.set_scissor(
-                    0,
-                    vec![Scissor {
-                        offset: [0, 0],
-                        extent: [extent[0], extent[1]],
-                        ..Default::default()
-                    }]
-                    .into(),
-                )?;
-
                 if let Some(global_set_bg) = global_set_bg.as_ref() {
                     if let Some(background_instance_buffer) = background_instance_buffer.as_ref() {
                         self.record_background_draws(
@@ -1361,86 +1463,48 @@ mod vulkano_backend {
                     }
                 }
 
-                cbb.end_rendering()?;
-
-                // Foreground phase: keep color, but clear depth so background doesn't occlude.
-                cbb.begin_rendering(rendering_info_load_color_clear_depth)?;
-
-                cbb.set_viewport(0, vec![viewport.clone()].into())?;
-                cbb.set_scissor(
-                    0,
-                    vec![Scissor {
+                // Foreground phase: clear depth so background doesn't occlude.
+                // NOTE: `clear_attachments` requires a bound graphics pipeline.
+                cbb.bind_pipeline_graphics(self.pipeline_toon_mesh.clone())?;
+                cbb.clear_attachments(
+                    smallvec::smallvec![ClearAttachment::Depth(1.0)],
+                    smallvec::smallvec![ClearRect {
                         offset: [0, 0],
                         extent: [extent[0], extent[1]],
-                        ..Default::default()
-                    }]
-                    .into(),
+                        array_layers: 0..1,
+                    }],
                 )?;
-
-                self.record_opaque_draws(
-                    &mut cbb,
-                    visual_world,
-                    &global_set_fg,
-                    &instance_buffer,
-                    instance_count,
-                )?;
-
-                self.record_transparent_single_draws(
-                    &mut cbb,
-                    visual_world,
-                    &global_set_fg,
-                    eye,
-                )?;
-
-                self.record_transparent_multi_draws(
-                    &mut cbb,
-                    visual_world,
-                    &global_set_fg,
-                    camera_target,
-                    eye,
-                )?;
-
-                cbb.end_rendering()?;
-            } else {
-                // No background: single rendering scope, clear color+depth once.
-                cbb.begin_rendering(rendering_info_clear_color_and_depth)?;
-
-                cbb.set_viewport(0, vec![viewport].into())?;
-                cbb.set_scissor(
-                    0,
-                    vec![Scissor {
-                        offset: [0, 0],
-                        extent: [extent[0], extent[1]],
-                        ..Default::default()
-                    }]
-                    .into(),
-                )?;
-
-                self.record_opaque_draws(
-                    &mut cbb,
-                    visual_world,
-                    &global_set_fg,
-                    &instance_buffer,
-                    instance_count,
-                )?;
-
-                self.record_transparent_single_draws(
-                    &mut cbb,
-                    visual_world,
-                    &global_set_fg,
-                    eye,
-                )?;
-
-                self.record_transparent_multi_draws(
-                    &mut cbb,
-                    visual_world,
-                    &global_set_fg,
-                    camera_target,
-                    eye,
-                )?;
-
-                cbb.end_rendering()?;
             }
+
+            self.record_opaque_draws(
+                &mut cbb,
+                visual_world,
+                &global_set_fg,
+                &instance_buffer,
+                instance_count,
+            )?;
+
+            if let Some(cutout_instance_buffer) = cutout_instance_buffer.as_ref() {
+                self.record_cutout_draws(
+                    &mut cbb,
+                    visual_world,
+                    &global_set_fg,
+                    cutout_instance_buffer,
+                    cutout_instance_count,
+                )?;
+            }
+
+            self.record_transparent_single_draws(&mut cbb, visual_world, &global_set_fg, eye)?;
+
+            self.record_transparent_multi_draws(
+                &mut cbb,
+                visual_world,
+                &global_set_fg,
+                camera_target,
+                eye,
+            )?;
+
+            cbb.end_rendering()?;
 
             let cb = cbb.build()?;
 
@@ -1485,13 +1549,24 @@ mod vulkano_backend {
             // build aspect-correct projection matrices.
             visual_world.set_viewport([extent[0] as f32, extent[1] as f32]);
 
-            let color_view = self.swapchain_state.swapchain_views[image_i as usize].clone();
+            let resolve_view = self.swapchain_state.swapchain_views[image_i as usize].clone();
+            let (color_attachment_view, color_resolve_view) =
+                if self.swapchain_state.msaa_samples != SampleCount::Sample1 {
+                    (
+                        self.swapchain_state.msaa_color_views[image_i as usize].clone(),
+                        Some(resolve_view),
+                    )
+                } else {
+                    (resolve_view, None)
+                };
+
             let depth_view = self.swapchain_state.depth_views[image_i as usize].clone();
             let cb = self.build_draw_batches_command_buffer(
                 visual_world,
                 crate::engine::graphics::CameraTarget::Window,
                 0,
-                color_view,
+                color_attachment_view,
+                color_resolve_view,
                 depth_view,
                 extent,
             )?;

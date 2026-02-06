@@ -140,6 +140,28 @@ impl VulkanoState {
         )
     }
 
+    pub(super) fn record_cutout_draws(
+        &mut self,
+        cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
+        visual_world: &VisualWorld,
+        global_set: &Arc<DescriptorSet>,
+        instance_buffer: &Subbuffer<[InstanceData]>,
+        instance_count: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if instance_count == 0 {
+            return Ok(());
+        }
+
+        self.record_instanced_draws_for_batches(
+            cbb,
+            global_set,
+            instance_buffer,
+            instance_count,
+            visual_world.cutout_batches(),
+            self.pipeline_toon_mesh_cutout.clone(),
+        )
+    }
+
     pub(super) fn record_transparent_single_draws(
         &mut self,
         cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,

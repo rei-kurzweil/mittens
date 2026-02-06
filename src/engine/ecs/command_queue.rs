@@ -118,6 +118,17 @@ impl CommandQueue {
         });
     }
 
+    /// Queue a register transparent cutout command.
+    pub fn queue_register_transparent_cutout(
+        &mut self,
+        component_id: crate::engine::ecs::ComponentId,
+    ) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REGISTER_TRANSPARENT_CUTOUT { component_id },
+        });
+    }
+
     /// Queue a register background color command.
     pub fn queue_register_background_color(
         &mut self,
@@ -310,6 +321,9 @@ impl CommandQueue {
                     Command::REGISTER_OPACITY { component_id } => {
                         systems.register_opacity(world, visuals, component_id);
                     }
+                    Command::REGISTER_TRANSPARENT_CUTOUT { component_id } => {
+                        systems.register_transparent_cutout(world, visuals, component_id);
+                    }
                     Command::REGISTER_BACKGROUND_COLOR { component_id } => {
                         systems.register_background_color(world, visuals, component_id);
                     }
@@ -407,6 +421,9 @@ enum Command {
         component_id: crate::engine::ecs::ComponentId,
     },
     REGISTER_OPACITY {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+    REGISTER_TRANSPARENT_CUTOUT {
         component_id: crate::engine::ecs::ComponentId,
     },
     REGISTER_BACKGROUND_COLOR {

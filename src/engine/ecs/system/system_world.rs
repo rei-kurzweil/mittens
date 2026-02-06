@@ -107,6 +107,17 @@ impl SystemWorld {
         self.renderable.register_opacity(world, visuals, component);
     }
 
+    /// Register a TransparentCutoutComponent and apply it to its ancestor RenderableComponent.
+    pub fn register_transparent_cutout(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.renderable
+            .register_transparent_cutout(world, visuals, component);
+    }
+
     /// Register a BackgroundColorComponent and apply it to VisualWorld.
     pub fn register_background_color(
         &mut self,
