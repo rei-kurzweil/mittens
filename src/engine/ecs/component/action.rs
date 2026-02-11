@@ -7,6 +7,12 @@ pub enum ActionMethod {
     Noop,
     Print,
     SetColor,
+    OscillatorSetEnabled,
+    OscillatorSetPitch,
+    OscillatorScheduleSetPitch,
+    OscillatorScheduleSetNote,
+    OscillatorScheduleMusicNote,
+    MusicSetNote,
     /// Placeholder for future unification with the command queue.
     ///
     /// Encoded as: method="command_queue", command_name="...".
@@ -24,6 +30,39 @@ impl ActionMethod {
             }
             ActionMethod::SetColor => {
                 map.insert("method".to_string(), serde_json::json!("set_color"));
+            }
+            ActionMethod::OscillatorSetEnabled => {
+                map.insert(
+                    "method".to_string(),
+                    serde_json::json!("oscillator_set_enabled"),
+                );
+            }
+            ActionMethod::OscillatorSetPitch => {
+                map.insert(
+                    "method".to_string(),
+                    serde_json::json!("oscillator_set_pitch"),
+                );
+            }
+            ActionMethod::OscillatorScheduleSetPitch => {
+                map.insert(
+                    "method".to_string(),
+                    serde_json::json!("oscillator_schedule_set_pitch"),
+                );
+            }
+            ActionMethod::OscillatorScheduleSetNote => {
+                map.insert(
+                    "method".to_string(),
+                    serde_json::json!("oscillator_schedule_set_note"),
+                );
+            }
+            ActionMethod::OscillatorScheduleMusicNote => {
+                map.insert(
+                    "method".to_string(),
+                    serde_json::json!("oscillator_schedule_music_note"),
+                );
+            }
+            ActionMethod::MusicSetNote => {
+                map.insert("method".to_string(), serde_json::json!("music_set_note"));
             }
             ActionMethod::CommandQueue { command_name } => {
                 map.insert("method".to_string(), serde_json::json!("command_queue"));
@@ -67,6 +106,68 @@ impl Action {
             target,
             method: ActionMethod::SetColor,
             params: vec![serde_json::json!(rgba)],
+        }
+    }
+
+    pub fn oscillator_set_enabled(target: Vec<ComponentId>, enabled: bool) -> Self {
+        Self {
+            target,
+            method: ActionMethod::OscillatorSetEnabled,
+            params: vec![serde_json::json!(enabled)],
+        }
+    }
+
+    /// Set oscillator frequency directly (in Hz).
+    pub fn oscillator_set_pitch(target: Vec<ComponentId>, frequency_hz: f32) -> Self {
+        Self {
+            target,
+            method: ActionMethod::OscillatorSetPitch,
+            params: vec![serde_json::json!(frequency_hz)],
+        }
+    }
+
+    /// Schedule an oscillator frequency set (Hz) at a beat offset.
+    ///
+    /// The `beat` parameter is interpreted as an offset relative to the `beat_now`
+    /// value passed to `ActionSystem::execute(...)`.
+    pub fn oscillator_schedule_set_pitch(
+        target: Vec<ComponentId>,
+        beat: f64,
+        frequency_hz: f32,
+    ) -> Self {
+        Self {
+            target,
+            method: ActionMethod::OscillatorScheduleSetPitch,
+            params: vec![serde_json::json!(beat), serde_json::json!(frequency_hz)],
+        }
+    }
+
+    /// Schedule an oscillator to play a musical note at a beat offset.
+    ///
+    /// `note.duration_beats()` is interpreted in beats, and will schedule a note-off
+    /// (disable) at `beat + duration`.
+    ///
+    /// The `beat` parameter is interpreted as an offset relative to the `beat_now`
+    /// value passed to `ActionSystem::execute(...)`.
+    pub fn oscillator_schedule_music_note(
+        target: Vec<ComponentId>,
+        beat: f64,
+        note: crate::engine::ecs::component::MusicNote,
+    ) -> Self {
+        Self {
+            target,
+            method: ActionMethod::OscillatorScheduleMusicNote,
+            params: vec![serde_json::json!(beat), serde_json::json!(note)],
+        }
+    }
+
+    /// Update the first `MusicNoteComponent` found under each target oscillator (subtree search),
+    /// and re-apply its pitch/octave to the oscillator frequency.
+    pub fn music_set_note(target: Vec<ComponentId>, note: crate::engine::ecs::component::MusicNote) -> Self {
+        Self {
+            target,
+            method: ActionMethod::MusicSetNote,
+            params: vec![serde_json::json!(note)],
         }
     }
 }
@@ -158,6 +259,16 @@ impl Component for ActionComponent {
             "noop" => ActionMethod::Noop,
             "print" => ActionMethod::Print,
             "set_color" => ActionMethod::SetColor,
+            "oscillator_set_enabled" => ActionMethod::OscillatorSetEnabled,
+            // Deprecated/removed: keep backward compatibility but do nothing.
+            "oscillator_multiply_pitch" => ActionMethod::Noop,
+            "oscillator_set_pitch" => ActionMethod::OscillatorSetPitch,
+            // Deprecated/removed: keep backward compatibility but do nothing.
+            "oscillator_schedule_multiply_pitch" => ActionMethod::Noop,
+            "oscillator_schedule_set_pitch" => ActionMethod::OscillatorScheduleSetPitch,
+            "oscillator_schedule_set_note" => ActionMethod::OscillatorScheduleSetNote,
+            "oscillator_schedule_music_note" => ActionMethod::OscillatorScheduleMusicNote,
+            "music_set_note" => ActionMethod::MusicSetNote,
             "command_queue" => ActionMethod::CommandQueue {
                 command_name: data
                     .get("command_name")

@@ -247,6 +247,76 @@ impl CommandQueue {
         });
     }
 
+    pub fn queue_register_audio_oscillator(
+        &mut self,
+        component_id: crate::engine::ecs::ComponentId,
+    ) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REGISTER_AUDIO_OSCILLATOR { component_id },
+        });
+    }
+
+    pub fn queue_register_audio_buffer_size(
+        &mut self,
+        component_id: crate::engine::ecs::ComponentId,
+    ) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REGISTER_AUDIO_BUFFER_SIZE { component_id },
+        });
+    }
+
+    pub fn queue_schedule_audio_op(
+        &mut self,
+        component_id: crate::engine::ecs::ComponentId,
+        beat: f64,
+        op: crate::engine::ecs::system::audio_system::AudioOp,
+    ) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::SCHEDULE_AUDIO_OP {
+                component_id,
+                beat,
+                op,
+            },
+        });
+    }
+
+    pub fn queue_schedule_audio_pitch_set_hz(
+        &mut self,
+        component_id: crate::engine::ecs::ComponentId,
+        beat: f64,
+        frequency_hz: f32,
+    ) {
+        self.queue_schedule_audio_op(
+            component_id,
+            beat,
+            crate::engine::ecs::system::audio_system::AudioOp::SetHz(frequency_hz),
+        );
+    }
+
+    pub fn queue_schedule_audio_oscillator_enabled(
+        &mut self,
+        component_id: crate::engine::ecs::ComponentId,
+        beat: f64,
+        enabled: bool,
+    ) {
+        self.queue_schedule_audio_op(
+            component_id,
+            beat,
+            crate::engine::ecs::system::audio_system::AudioOp::SetEnabled(enabled),
+        );
+    }
+
+    pub fn queue_schedule_audio_gain_set(&mut self, component_id: crate::engine::ecs::ComponentId, beat: f64, gain: f32) {
+        self.queue_schedule_audio_op(
+            component_id,
+            beat,
+            crate::engine::ecs::system::audio_system::AudioOp::SetGain(gain),
+        );
+    }
+
     pub fn queue_register_clock(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
@@ -363,8 +433,21 @@ impl CommandQueue {
                     Command::REGISTER_AUDIO_OUTPUT { component_id } => {
                         systems.register_audio_output(world, visuals, component_id);
                     }
+                    Command::REGISTER_AUDIO_OSCILLATOR { component_id } => {
+                        systems.register_audio_oscillator(world, visuals, component_id);
+                    }
+                    Command::REGISTER_AUDIO_BUFFER_SIZE { component_id } => {
+                        systems.register_audio_buffer_size(world, visuals, component_id);
+                    }
                     Command::REGISTER_CLOCK { component_id } => {
                         systems.register_clock(world, visuals, component_id);
+                    }
+                    Command::SCHEDULE_AUDIO_OP {
+                        component_id,
+                        beat,
+                        op,
+                    } => {
+                        systems.audio.schedule_audio_op(component_id, beat, op);
                     }
                     Command::REMOVE_COLLISION { component_id } => {
                         systems.remove_collision(world, visuals, component_id);
@@ -468,9 +551,24 @@ enum Command {
         component_id: crate::engine::ecs::ComponentId,
     },
 
+    REGISTER_AUDIO_OSCILLATOR {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+
+    REGISTER_AUDIO_BUFFER_SIZE {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+
     REGISTER_CLOCK {
         component_id: crate::engine::ecs::ComponentId,
     },
+
+    SCHEDULE_AUDIO_OP {
+        component_id: crate::engine::ecs::ComponentId,
+        beat: f64,
+        op: crate::engine::ecs::system::audio_system::AudioOp,
+    },
+
     REMOVE_RENDERABLE {
         component_id: crate::engine::ecs::ComponentId,
     },

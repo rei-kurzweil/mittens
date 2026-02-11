@@ -233,6 +233,7 @@ impl ComponentCodec {
             "keyframe" => Ok(Box::new(KeyframeComponent::new(0.0))),
             "action" => Ok(Box::new(ActionComponent::default())),
             "audio_output" => Ok(Box::new(AudioOutputComponent::new())),
+            "audio_buffer_size" => Ok(Box::new(crate::engine::ecs::component::AudioBufferSizeComponent::default())),
             "clock" => Ok(Box::new(ClockComponent::new())),
             _ => Err(format!("Unknown component type: '{}'", type_name)),
         }

@@ -23,6 +23,12 @@ ddsfile = "0.5"
 
 smallvec = "1"
 
+# Lock-free SPSC queue (GUI thread -> audio callback)
+heapless = "0.8"
+
+# DSP backend
+fundsp = "0.20"
+
 # Audio output + audio-clock driver
 cpal = "0.15"
 
@@ -31,3 +37,5 @@ bvh = "0.7"
 
 # glTF 2.0 import (used by GLTFSystem to load .glb models and embedded images)
 gltf = { version = "1", features = ["import"] }
+
+

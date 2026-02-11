@@ -1,4 +1,9 @@
-use crate::engine::ecs::component::{Action, ActionComponent, ActionMethod, ColorComponent, RenderableComponent};
+use crate::engine::ecs::component::{
+    Action, ActionComponent, ActionMethod, AudioOscillatorComponent, ColorComponent,
+    RenderableComponent,
+};
+use crate::engine::ecs::component::{MusicNote, MusicNoteComponent, NotePitch};
+use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::{CommandQueue, ComponentId, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
@@ -17,14 +22,21 @@ impl ActionSystem {
         queue: &mut CommandQueue,
         action: &ActionComponent,
     ) {
-        self.execute(world, queue, &action.action);
+        // Legacy callers don't provide beat context; treat "scheduled" offsets as immediate.
+        self.execute(world, queue, 0.0, &action.action);
     }
 
-    pub fn execute(&mut self, world: &mut World, queue: &mut CommandQueue, action: &Action) {
+    pub fn execute(
+        &mut self,
+        world: &mut World,
+        queue: &mut CommandQueue,
+        beat_now: f64,
+        action: &Action,
+    ) {
         match &action.method {
             ActionMethod::Noop => {}
             ActionMethod::Print => {
-                let msg = action
+                let _msg = action
                     .params
                     .get(0)
                     .and_then(|v| v.as_str())
@@ -48,6 +60,238 @@ impl ActionSystem {
                     if let Some(c) = world.get_component_by_id_as_mut::<ColorComponent>(color_cid) {
                         c.rgba = rgba;
                         queue.queue_register_color(color_cid);
+                    }
+                }
+            }
+            ActionMethod::OscillatorSetEnabled => {
+                let Some(enabled) = action.params.get(0).and_then(parse_bool) else {
+                    println!(
+                        "[ActionSystem] oscillator_set_enabled: missing/invalid enabled params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+
+                let mut osc_cids = Vec::new();
+                for &target in action.target.iter() {
+                    collect_oscillator_targets(world, target, &mut osc_cids);
+                }
+                osc_cids.sort();
+                osc_cids.dedup();
+
+                for osc_cid in osc_cids {
+                    if let Some(c) = world
+                        .get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
+                    {
+                        for osc in c.oscillators.iter_mut() {
+                            osc.enabled = enabled;
+                        }
+                        queue.queue_register_audio_oscillator(osc_cid);
+                    }
+                }
+            }
+            ActionMethod::OscillatorSetPitch => {
+                let Some(frequency_hz) = action.params.get(0).and_then(parse_f32) else {
+                    println!(
+                        "[ActionSystem] oscillator_set_pitch: missing/invalid frequency params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+                if !frequency_hz.is_finite() {
+                    println!(
+                        "[ActionSystem] oscillator_set_pitch: non-finite frequency_hz={frequency_hz}"
+                    );
+                    return;
+                }
+
+                let mut osc_cids = Vec::new();
+                for &target in action.target.iter() {
+                    collect_oscillator_targets(world, target, &mut osc_cids);
+                }
+                osc_cids.sort();
+                osc_cids.dedup();
+
+                for osc_cid in osc_cids {
+                    if let Some(c) = world
+                        .get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
+                    {
+                        for osc in c.oscillators.iter_mut() {
+                            osc.frequency = frequency_hz;
+                            osc.music_note_applied = true;
+                        }
+                        queue.queue_register_audio_oscillator(osc_cid);
+                    }
+                }
+            }
+            ActionMethod::OscillatorScheduleSetPitch => {
+                let Some(beat_offset) = action.params.get(0).and_then(parse_f64) else {
+                    println!(
+                        "[ActionSystem] oscillator_schedule_set_pitch: missing/invalid beat params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+                let Some(frequency_hz) = action.params.get(1).and_then(parse_f32) else {
+                    println!(
+                        "[ActionSystem] oscillator_schedule_set_pitch: missing/invalid frequency params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+
+                let beat = beat_now + beat_offset;
+
+                let mut osc_cids = Vec::new();
+                for &target in action.target.iter() {
+                    collect_oscillator_targets(world, target, &mut osc_cids);
+                }
+                osc_cids.sort();
+                osc_cids.dedup();
+
+                for osc_cid in osc_cids {
+                    queue.queue_schedule_audio_pitch_set_hz(osc_cid, beat, frequency_hz);
+                }
+            }
+            ActionMethod::OscillatorScheduleSetNote => {
+                let Some(beat_offset) = action.params.get(0).and_then(parse_f64) else {
+                    println!(
+                        "[ActionSystem] oscillator_schedule_set_note: missing/invalid beat params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+                let Some(pitch) = action.params.get(1).and_then(parse_pitch) else {
+                    println!(
+                        "[ActionSystem] oscillator_schedule_set_note: missing/invalid pitch params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+                let Some(octave) = action.params.get(2).and_then(parse_u16) else {
+                    println!(
+                        "[ActionSystem] oscillator_schedule_set_note: missing/invalid octave params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+
+                let duration_beats = action
+                    .params
+                    .get(3)
+                    .and_then(parse_f32)
+                    .unwrap_or(0.25)
+                    .max(0.0) as f64;
+
+                let beat = beat_now + beat_offset;
+
+                let note = MusicNote::from_pitch(duration_beats as f32, pitch, octave);
+                let frequency_hz = MusicSystem::frequency_hz_for_note(note);
+
+                let mut osc_cids = Vec::new();
+                for &target in action.target.iter() {
+                    collect_oscillator_targets(world, target, &mut osc_cids);
+                }
+                osc_cids.sort();
+                osc_cids.dedup();
+
+                for osc_cid in osc_cids {
+                    queue.queue_schedule_audio_oscillator_enabled(osc_cid, beat, true);
+                    queue.queue_schedule_audio_pitch_set_hz(osc_cid, beat, frequency_hz);
+
+                    if duration_beats.is_finite() && duration_beats > 0.0 {
+                        queue.queue_schedule_audio_oscillator_enabled(
+                            osc_cid,
+                            beat + duration_beats,
+                            false,
+                        );
+                    }
+                }
+            }
+            ActionMethod::OscillatorScheduleMusicNote => {
+                let Some(beat_offset) = action.params.get(0).and_then(parse_f64) else {
+                    println!(
+                        "[ActionSystem] oscillator_schedule_music_note: missing/invalid beat params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+
+                let Some(note) = action.params.get(1).and_then(parse_music_note) else {
+                    println!(
+                        "[ActionSystem] oscillator_schedule_music_note: missing/invalid note params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+
+                // Velocity is part of MusicNote.
+                let velocity = note.velocity();
+                let velocity = if velocity.is_finite() { velocity.max(0.0) } else { 1.0 };
+
+                let frequency_hz = MusicSystem::frequency_hz_for_note(note);
+                let duration_beats = note.duration_beats() as f64;
+
+                let beat = beat_now + beat_offset;
+
+                let mut osc_cids = Vec::new();
+                for &target in action.target.iter() {
+                    collect_oscillator_targets(world, target, &mut osc_cids);
+                }
+                osc_cids.sort();
+                osc_cids.dedup();
+
+                for osc_cid in osc_cids {
+                    queue.queue_schedule_audio_oscillator_enabled(osc_cid, beat, true);
+                    queue.queue_schedule_audio_pitch_set_hz(osc_cid, beat, frequency_hz);
+                    queue.queue_schedule_audio_gain_set(osc_cid, beat, velocity);
+
+                    if duration_beats.is_finite() && duration_beats > 0.0 {
+                        queue.queue_schedule_audio_oscillator_enabled(
+                            osc_cid,
+                            beat + duration_beats,
+                            false,
+                        );
+
+                        // Reset gain after note-off for predictable one-shot behavior.
+                        queue.queue_schedule_audio_gain_set(osc_cid, beat + duration_beats, 1.0);
+                    }
+                }
+            }
+            ActionMethod::MusicSetNote => {
+                let Some(note) = action.params.get(0).and_then(parse_music_note) else {
+                    println!(
+                        "[ActionSystem] music_set_note: missing/invalid note params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+
+                let mut osc_cids = Vec::new();
+                for &target in action.target.iter() {
+                    collect_oscillator_targets(world, target, &mut osc_cids);
+                }
+                osc_cids.sort();
+                osc_cids.dedup();
+
+                for osc_cid in osc_cids {
+                    // 1) Update note component under this oscillator (if present).
+                    if let Some(note_cid) = find_first_music_note_component(world, osc_cid) {
+                        if let Some(nc) = world.get_component_by_id_as_mut::<MusicNoteComponent>(note_cid) {
+                            nc.note = note;
+                        }
+                    }
+
+                    // 2) Apply computed frequency to oscillator(s).
+                    let freq = MusicSystem::frequency_hz_for_note(note);
+                    if let Some(c) = world
+                        .get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
+                    {
+                        for osc in c.oscillators.iter_mut() {
+                            osc.frequency = freq;
+                            osc.music_note_applied = true;
+                        }
+                        queue.queue_register_audio_oscillator(osc_cid);
                     }
                 }
             }
@@ -86,6 +330,86 @@ fn parse_rgba(v: &serde_json::Value) -> Option<[f32; 4]> {
     Some(rgba)
 }
 
+fn parse_bool(v: &serde_json::Value) -> Option<bool> {
+    if let Some(b) = v.as_bool() {
+        return Some(b);
+    }
+    if let Some(i) = v.as_i64() {
+        return Some(i != 0);
+    }
+    if let Some(f) = v.as_f64() {
+        return Some(f != 0.0);
+    }
+    None
+}
+
+fn parse_f32(v: &serde_json::Value) -> Option<f32> {
+    if let Some(f) = v.as_f64() {
+        return Some(f as f32);
+    }
+    if let Some(i) = v.as_i64() {
+        return Some(i as f32);
+    }
+    if let Some(u) = v.as_u64() {
+        return Some(u as f32);
+    }
+    None
+}
+
+fn parse_f64(v: &serde_json::Value) -> Option<f64> {
+    if let Some(f) = v.as_f64() {
+        return Some(f);
+    }
+    if let Some(i) = v.as_i64() {
+        return Some(i as f64);
+    }
+    if let Some(u) = v.as_u64() {
+        return Some(u as f64);
+    }
+    None
+}
+
+fn parse_u16(v: &serde_json::Value) -> Option<u16> {
+    if let Some(u) = v.as_u64() {
+        return u16::try_from(u).ok();
+    }
+    if let Some(i) = v.as_i64() {
+        return u16::try_from(i).ok();
+    }
+    if let Some(f) = v.as_f64() {
+        if f.is_finite() && f >= 0.0 {
+            return u16::try_from(f as u64).ok();
+        }
+    }
+    None
+}
+
+fn parse_pitch(v: &serde_json::Value) -> Option<NotePitch> {
+    serde_json::from_value::<NotePitch>(v.clone()).ok()
+}
+
+fn parse_music_note(v: &serde_json::Value) -> Option<MusicNote> {
+    serde_json::from_value::<MusicNote>(v.clone()).ok()
+}
+
+fn find_first_music_note_component(world: &World, target: ComponentId) -> Option<ComponentId> {
+    // Find the first MusicNoteComponent anywhere in the subtree.
+    if world.get_component_by_id_as::<MusicNoteComponent>(target).is_some() {
+        return Some(target);
+    }
+
+    let mut stack = vec![target];
+    while let Some(node) = stack.pop() {
+        for &ch in world.children_of(node) {
+            if world.get_component_by_id_as::<MusicNoteComponent>(ch).is_some() {
+                return Some(ch);
+            }
+            stack.push(ch);
+        }
+    }
+    None
+}
+
 fn collect_color_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {
     // 1) Direct ColorComponent target.
     if world.get_component_by_id_as::<ColorComponent>(target).is_some() {
@@ -117,6 +441,30 @@ fn collect_color_targets(world: &World, target: ComponentId, out: &mut Vec<Compo
                     out.push(ch);
                 }
             }
+        }
+    }
+}
+
+fn collect_oscillator_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {
+    if world
+        .get_component_by_id_as::<AudioOscillatorComponent>(target)
+        .is_some()
+    {
+        out.push(target);
+        return;
+    }
+
+    let mut stack = vec![target];
+    while let Some(node) = stack.pop() {
+        for &ch in world.children_of(node) {
+            stack.push(ch);
+        }
+
+        if world
+            .get_component_by_id_as::<AudioOscillatorComponent>(node)
+            .is_some()
+        {
+            out.push(node);
         }
     }
 }

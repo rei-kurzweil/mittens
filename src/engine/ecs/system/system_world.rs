@@ -7,6 +7,7 @@ use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::InputSystem;
 use crate::engine::ecs::system::LightSystem;
+use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::OpenXRSystem;
 use crate::engine::ecs::system::RayCastSystem;
 use crate::engine::ecs::system::RenderableSystem;
@@ -23,6 +24,7 @@ use crate::engine::user_input::InputState;
 pub struct SystemWorld {
     pub clock: ClockSystem,
     pub audio: AudioSystem,
+    pub music: MusicSystem,
     pub animation: AnimationSystem,
     pub action: ActionSystem,
 
@@ -283,6 +285,25 @@ impl SystemWorld {
         self.audio.register_audio_output(world, component);
     }
 
+    pub fn register_audio_oscillator(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.music.apply_music_note_to_oscillator(world, component);
+        self.audio.register_audio_oscillator(world, component);
+    }
+
+    pub fn register_audio_buffer_size(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.audio.register_audio_buffer_size(world, component);
+    }
+
     pub fn register_clock(
         &mut self,
         world: &mut World,
@@ -516,9 +537,16 @@ impl SystemWorld {
         }
 
         self.clock.tick(world, visuals, input, dt_sec);
+
+        // Provide tempo + transport to the audio thread scheduler.
+        // ClockSystem may be using AudioClockDriver, so this keeps both timelines aligned.
+        self.audio
+            .update_transport_from_clock(self.clock.beat_now(), self.clock.bpm());
+
         self.animation.tick_with_beat(
             world,
             self.clock.beat_now(),
+            self.clock.bpm(),
             &mut self.action,
             queue,
         );
