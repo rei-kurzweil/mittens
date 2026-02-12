@@ -31,9 +31,11 @@ fn main() {
     let input = universe
         .world
         .register(InputComponent::new().with_speed(1.5));
-    let input_mode = universe
-        .world
-        .register(InputTransformModeComponent::forward_z().with_fps_rotation().with_roll_axis_y());
+    let input_mode = universe.world.register(
+        InputTransformModeComponent::forward_z()
+            .with_fps_rotation()
+            .with_roll_axis_y(),
+    );
     let _ = universe.attach(input, input_mode);
 
     // Start slightly pulled back looking towards the origin.
@@ -89,9 +91,9 @@ fn main() {
     universe.add(model_root);
 
     // --- Background clouds (occluded + lit) ---
-    let bg_root = universe.world.register(
-        engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting(),
-    );
+    let bg_root = universe
+        .world
+        .register(engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting());
     universe.add(bg_root);
     let mut cloud_params = example_util::CloudRingParams::default();
     cloud_params.cloud_count = 8; // +3 clusters

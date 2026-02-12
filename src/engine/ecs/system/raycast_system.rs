@@ -376,7 +376,6 @@ impl System for RayCastSystem {
         // NOTE: RayCastSystem is normally ticked via `tick_with_queue` from SystemWorld so it can
         // apply queued side effects (e.g., click highlight color upserts). If this gets called
         // directly, we can still do hit testing and prints.
-        
 
         if self.raycasters.is_empty() {
             return;
@@ -497,7 +496,6 @@ impl RayCastSystem {
         // Equivalent to `tick()` but uses BVH for hit testing and can apply queued side effects.
         // Keep the debug prints so it's easy to see input edges.
         let left_down = input.mouse_down.contains(&MouseButton::Left);
-        
 
         if input.mouse_pressed.contains(&MouseButton::Left) {
             println!(

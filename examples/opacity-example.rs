@@ -52,11 +52,15 @@ fn spawn_text_label(universe: &mut engine::Universe, position: (f32, f32, f32), 
     let _ = universe.attach(text_scale, text_c);
 
     // Keep it crisp.
-    let filtering = universe.world.register(TextureFilteringComponent::nearest());
+    let filtering = universe
+        .world
+        .register(TextureFilteringComponent::nearest());
     let _ = universe.attach(text_c, filtering);
 
     // White label.
-    let color = universe.world.register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+    let color = universe
+        .world
+        .register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
     let _ = universe.attach(text_c, color);
 
     universe.add(text_root);
@@ -132,7 +136,9 @@ fn spawn_text_label_with_bg(
     let _ = universe.attach(text_scale_t, text_c);
 
     // Keep it crisp.
-    let filtering = universe.world.register(TextureFilteringComponent::nearest());
+    let filtering = universe
+        .world
+        .register(TextureFilteringComponent::nearest());
     let _ = universe.attach(text_c, filtering);
 
     // Force the label into the transparent pass so it layers correctly with the background.
@@ -157,7 +163,9 @@ fn spawn_demo_spot(
         .register(TransformComponent::new().with_position(spot_pos.0, spot_pos.1, spot_pos.2));
 
     // All cubes inherit this color.
-    let white = universe.world.register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+    let white = universe
+        .world
+        .register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
     let _ = universe.attach(spot, white);
 
     // All cubes inherit this opacity (no per-cube OpacityComponent needed).
@@ -223,7 +231,9 @@ fn spawn_demo_strip_pair(
         .world
         .register(TransformComponent::new().with_position(spot_pos.0, spot_pos.1, spot_pos.2));
 
-    let white = universe.world.register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+    let white = universe
+        .world
+        .register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
     let _ = universe.attach(transparent_root, white);
 
     let mut oc = OpacityComponent::new().with_opacity(0.50);
@@ -248,10 +258,16 @@ fn spawn_demo_strip_pair(
     }
 
     // Opaque strip to the left, same spacing/scale.
-    let opaque_root = universe.world.register(
-        TransformComponent::new().with_position(spot_pos.0 - spacing, spot_pos.1, spot_pos.2),
-    );
-    let white = universe.world.register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+    let opaque_root = universe
+        .world
+        .register(TransformComponent::new().with_position(
+            spot_pos.0 - spacing,
+            spot_pos.1,
+            spot_pos.2,
+        ));
+    let white = universe
+        .world
+        .register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
     let _ = universe.attach(opaque_root, white);
     universe.add(opaque_root);
 
@@ -269,7 +285,11 @@ fn spawn_demo_strip_pair(
 
     let label = format!(
         "mini: opaque + transparent strip\ntransparent opacity: 0.50\nmulti-layer: {}",
-        if transparent_multiple_layers { "true" } else { "false" }
+        if transparent_multiple_layers {
+            "true"
+        } else {
+            "false"
+        }
     );
     let label_y = spot_pos.1 + spacing + 1.8;
     let label_x = spot_pos.0 - (spacing * 2.6);
@@ -289,10 +309,14 @@ fn spawn_demo_xy_plane(
         .world
         .register(TransformComponent::new().with_position(spot_pos.0, spot_pos.1, spot_pos.2));
 
-    let white = universe.world.register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+    let white = universe
+        .world
+        .register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
     let _ = universe.attach(spot, white);
 
-    let oc = universe.world.register(OpacityComponent::new().with_opacity(opacity));
+    let oc = universe
+        .world
+        .register(OpacityComponent::new().with_opacity(opacity));
     let _ = universe.attach(spot, oc);
 
     universe.add(spot);
@@ -420,12 +444,12 @@ fn main() {
     spawn_demo_spot(&mut universe, (-4.0, 0.0, 0.0), 0.50, false, 8);
 
     // Right: multi-layer transparent (sorted)
-    spawn_demo_spot(&mut universe, ( 4.0, 0.0, 0.0), 0.50, true, 8);
+    spawn_demo_spot(&mut universe, (4.0, 0.0, 0.0), 0.50, true, 8);
 
     // Small spots: opaque 1x4 strip + transparent 1x4 strip (along Z).
     spawn_demo_strip_pair(&mut universe, (-4.0, 0.0, 10.0), false);
-    spawn_demo_strip_pair(&mut universe, ( 4.0, 0.0, 10.0), true);
-    
+    spawn_demo_strip_pair(&mut universe, (4.0, 0.0, 10.0), true);
+
     // Process init-time registrations.
     universe.systems.process_commands(
         &mut universe.world,

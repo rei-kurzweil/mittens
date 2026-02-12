@@ -80,17 +80,20 @@ fn main() {
             .with_position(0.0, -40.0, 0.0)
             .with_scale(200.0, 1.0, 200.0),
     );
-    let ground_renderable = universe
+    let ground_renderable =
+        universe
+            .world
+            .register(engine::ecs::component::RenderableComponent::new(
+                engine::graphics::primitives::Renderable::new(
+                    cube_mesh,
+                    engine::graphics::primitives::MaterialHandle::UNLIT_MESH,
+                ),
+            ));
+    let ground_color = universe
         .world
-        .register(engine::ecs::component::RenderableComponent::new(
-            engine::graphics::primitives::Renderable::new(
-                cube_mesh,
-                engine::graphics::primitives::MaterialHandle::UNLIT_MESH,
-            ),
+        .register(engine::ecs::component::ColorComponent::rgba(
+            0.015, 0.02, 0.03, 1.0,
         ));
-    let ground_color = universe.world.register(engine::ecs::component::ColorComponent::rgba(
-        0.015, 0.02, 0.03, 1.0,
-    ));
 
     let _ = universe.attach(bg_root, ground_tx);
     let _ = universe.attach(ground_tx, ground_renderable);
@@ -135,14 +138,15 @@ fn main() {
                     .with_position(px, py, pz)
                     .with_scale(scale, scale, scale),
             );
-            let renderable = universe
-                .world
-                .register(engine::ecs::component::RenderableComponent::new(
-                    engine::graphics::primitives::Renderable::new(
-                        cube_mesh,
-                        engine::graphics::primitives::MaterialHandle::UNLIT_MESH,
-                    ),
-                ));
+            let renderable =
+                universe
+                    .world
+                    .register(engine::ecs::component::RenderableComponent::new(
+                        engine::graphics::primitives::Renderable::new(
+                            cube_mesh,
+                            engine::graphics::primitives::MaterialHandle::UNLIT_MESH,
+                        ),
+                    ));
 
             let c = 0.75 + rand01(cell.wrapping_mul(3)) * 0.25;
             let color = universe
@@ -173,23 +177,26 @@ fn main() {
                     .with_position(px, 0.5, pz)
                     .with_scale(0.25, 0.25, 0.25),
             );
-            let renderable = universe
-                .world
-                .register(engine::ecs::component::RenderableComponent::new(
-                    engine::graphics::primitives::Renderable::new(
-                        cube_mesh,
-                        engine::graphics::primitives::MaterialHandle::TOON_MESH,
-                    ),
-                ));
+            let renderable =
+                universe
+                    .world
+                    .register(engine::ecs::component::RenderableComponent::new(
+                        engine::graphics::primitives::Renderable::new(
+                            cube_mesh,
+                            engine::graphics::primitives::MaterialHandle::TOON_MESH,
+                        ),
+                    ));
 
             let fx = (x as f32) / ((n - 1) as f32);
             let fz = (z as f32) / ((n - 1) as f32);
-            let color = universe.world.register(engine::ecs::component::ColorComponent::rgba(
-                0.2 + 0.8 * fx,
-                0.2 + 0.8 * (1.0 - fz),
-                0.4,
-                1.0,
-            ));
+            let color = universe
+                .world
+                .register(engine::ecs::component::ColorComponent::rgba(
+                    0.2 + 0.8 * fx,
+                    0.2 + 0.8 * (1.0 - fz),
+                    0.4,
+                    1.0,
+                ));
 
             let _ = universe.attach(fg_root, tx);
             let _ = universe.attach(tx, renderable);

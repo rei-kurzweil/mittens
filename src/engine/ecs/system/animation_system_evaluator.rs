@@ -100,7 +100,11 @@ impl AnimationEvaluator {
         let local_end = local_beat + lookahead;
 
         let is_looping = anim.state == AnimationState::Looping;
-        let loop_len = if loop_len.is_finite() { loop_len.max(0.0) } else { 0.0 };
+        let loop_len = if loop_len.is_finite() {
+            loop_len.max(0.0)
+        } else {
+            0.0
+        };
 
         let mut out = Vec::new();
         for &kf_id in keyframes.iter() {

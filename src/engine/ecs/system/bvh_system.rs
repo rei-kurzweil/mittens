@@ -165,10 +165,7 @@ impl BvhSystem {
         }
 
         // Build the BVH in-place (sets node indices on shapes).
-        let mut shapes = std::mem::take(&mut self.shapes);
-        let bvh = BVH::build(&mut shapes);
-        self.shapes = shapes;
-        self.bvh = Some(bvh);
+        self.bvh = Some(BVH::build(&mut self.shapes));
     }
 
     /// Apply any queued add/remove/refit requests.

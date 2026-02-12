@@ -36,16 +36,15 @@ impl ActionSystem {
         match &action.method {
             ActionMethod::Noop => {}
             ActionMethod::Print => {
-                let _msg = action
-                    .params
-                    .get(0)
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let _msg = action.params.get(0).and_then(|v| v.as_str()).unwrap_or("");
                 //println!("[ActionSystem] print targets={:?} msg={}", action.target, msg);
             }
             ActionMethod::SetColor => {
                 let Some(rgba) = action.params.get(0).and_then(parse_rgba) else {
-                    println!("[ActionSystem] set_color: missing/invalid rgba params={:?}", action.params);
+                    println!(
+                        "[ActionSystem] set_color: missing/invalid rgba params={:?}",
+                        action.params
+                    );
                     return;
                 };
 
@@ -80,8 +79,8 @@ impl ActionSystem {
                 osc_cids.dedup();
 
                 for osc_cid in osc_cids {
-                    if let Some(c) = world
-                        .get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
+                    if let Some(c) =
+                        world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
                     {
                         for osc in c.oscillators.iter_mut() {
                             osc.enabled = enabled;
@@ -113,8 +112,8 @@ impl ActionSystem {
                 osc_cids.dedup();
 
                 for osc_cid in osc_cids {
-                    if let Some(c) = world
-                        .get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
+                    if let Some(c) =
+                        world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
                     {
                         for osc in c.oscillators.iter_mut() {
                             osc.frequency = frequency_hz;
@@ -227,7 +226,11 @@ impl ActionSystem {
 
                 // Velocity is part of MusicNote.
                 let velocity = note.velocity();
-                let velocity = if velocity.is_finite() { velocity.max(0.0) } else { 1.0 };
+                let velocity = if velocity.is_finite() {
+                    velocity.max(0.0)
+                } else {
+                    1.0
+                };
 
                 let frequency_hz = MusicSystem::frequency_hz_for_note(note);
                 let duration_beats = note.duration_beats() as f64;
@@ -277,15 +280,17 @@ impl ActionSystem {
                 for osc_cid in osc_cids {
                     // 1) Update note component under this oscillator (if present).
                     if let Some(note_cid) = find_first_music_note_component(world, osc_cid) {
-                        if let Some(nc) = world.get_component_by_id_as_mut::<MusicNoteComponent>(note_cid) {
+                        if let Some(nc) =
+                            world.get_component_by_id_as_mut::<MusicNoteComponent>(note_cid)
+                        {
                             nc.note = note;
                         }
                     }
 
                     // 2) Apply computed frequency to oscillator(s).
                     let freq = MusicSystem::frequency_hz_for_note(note);
-                    if let Some(c) = world
-                        .get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
+                    if let Some(c) =
+                        world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
                     {
                         for osc in c.oscillators.iter_mut() {
                             osc.frequency = freq;
@@ -394,14 +399,20 @@ fn parse_music_note(v: &serde_json::Value) -> Option<MusicNote> {
 
 fn find_first_music_note_component(world: &World, target: ComponentId) -> Option<ComponentId> {
     // Find the first MusicNoteComponent anywhere in the subtree.
-    if world.get_component_by_id_as::<MusicNoteComponent>(target).is_some() {
+    if world
+        .get_component_by_id_as::<MusicNoteComponent>(target)
+        .is_some()
+    {
         return Some(target);
     }
 
     let mut stack = vec![target];
     while let Some(node) = stack.pop() {
         for &ch in world.children_of(node) {
-            if world.get_component_by_id_as::<MusicNoteComponent>(ch).is_some() {
+            if world
+                .get_component_by_id_as::<MusicNoteComponent>(ch)
+                .is_some()
+            {
                 return Some(ch);
             }
             stack.push(ch);
@@ -412,13 +423,19 @@ fn find_first_music_note_component(world: &World, target: ComponentId) -> Option
 
 fn collect_color_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {
     // 1) Direct ColorComponent target.
-    if world.get_component_by_id_as::<ColorComponent>(target).is_some() {
+    if world
+        .get_component_by_id_as::<ColorComponent>(target)
+        .is_some()
+    {
         out.push(target);
         return;
     }
 
     // 2) RenderableComponent target -> find immediate ColorComponent child.
-    if world.get_component_by_id_as::<RenderableComponent>(target).is_some() {
+    if world
+        .get_component_by_id_as::<RenderableComponent>(target)
+        .is_some()
+    {
         for &ch in world.children_of(target) {
             if world.get_component_by_id_as::<ColorComponent>(ch).is_some() {
                 out.push(ch);
@@ -435,7 +452,10 @@ fn collect_color_targets(world: &World, target: ComponentId, out: &mut Vec<Compo
             stack.push(ch);
         }
 
-        if world.get_component_by_id_as::<RenderableComponent>(node).is_some() {
+        if world
+            .get_component_by_id_as::<RenderableComponent>(node)
+            .is_some()
+        {
             for &ch in world.children_of(node) {
                 if world.get_component_by_id_as::<ColorComponent>(ch).is_some() {
                     out.push(ch);

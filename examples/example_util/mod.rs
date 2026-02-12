@@ -77,9 +77,9 @@ pub fn spawn_cloud_ring(
             p.center_y
         };
 
-        let center_tx = universe.world.register(
-            engine::ecs::component::TransformComponent::new().with_position(cx, cy, cz),
-        );
+        let center_tx = universe
+            .world
+            .register(engine::ecs::component::TransformComponent::new().with_position(cx, cy, cz));
         let _ = universe.attach(bg_root, center_tx);
 
         let base_seed = seed_i ^ 0x243f_6a88;
@@ -100,12 +100,15 @@ pub fn spawn_cloud_ring(
                     .with_position(ox, oy, oz)
                     .with_scale(sx, sy, sz),
             );
-            let renderable = universe.world.register(engine::ecs::component::RenderableComponent::new(
-                engine::graphics::primitives::Renderable::new(
-                    cube_mesh,
-                    engine::graphics::primitives::MaterialHandle::TOON_MESH,
-                ),
-            ));
+            let renderable =
+                universe
+                    .world
+                    .register(engine::ecs::component::RenderableComponent::new(
+                        engine::graphics::primitives::Renderable::new(
+                            cube_mesh,
+                            engine::graphics::primitives::MaterialHandle::TOON_MESH,
+                        ),
+                    ));
 
             let t = rand01(seed ^ 0x7f4a_7c15);
             let r = 0.70 + 0.10 * t;

@@ -30,7 +30,9 @@ fn main() {
     // A bit of ambient so the cluster volume reads.
     let ambient = universe
         .world
-        .register(engine::ecs::component::AmbientLightComponent::rgb(0.20, 0.15, 0.3));
+        .register(engine::ecs::component::AmbientLightComponent::rgb(
+            0.20, 0.15, 0.3,
+        ));
     universe.add(ambient);
 
     // --- Camera rig (WASD/QE) ---
@@ -47,10 +49,10 @@ fn main() {
         .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 6.0));
     let _ = universe.attach(input, rig_transform);
 
-    let camera3d = universe
-        .world
-        .register(engine::ecs::component::Camera3DComponent::new()
-        .with_far(200.0).with_fov(70.0)
+    let camera3d = universe.world.register(
+        engine::ecs::component::Camera3DComponent::new()
+            .with_far(200.0)
+            .with_fov(70.0),
     );
     let _ = universe.attach(rig_transform, camera3d);
 
@@ -76,9 +78,9 @@ fn main() {
             .with_intensity(3.0)
             .with_color(0.9, 0.95, 1.0),
     );
-    let light_a_tx = universe.world.register(
-        engine::ecs::component::TransformComponent::new().with_position(8.0, 8.0, 5.0),
-    );
+    let light_a_tx = universe
+        .world
+        .register(engine::ecs::component::TransformComponent::new().with_position(8.0, 8.0, 5.0));
     let _ = universe.attach(light_a_tx, light_a);
 
     let light_b = universe.world.register(
@@ -104,9 +106,9 @@ fn main() {
     // --- Background occluded+lit world ---
     // Renderables under this node participate in a background stage that depth-writes for
     // self-occlusion + uses the normal lighting shader inputs.
-    let bg_root = universe.world.register(
-        engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting(),
-    );
+    let bg_root = universe
+        .world
+        .register(engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting());
     universe.add(bg_root);
 
     // Create overlapping cube clusters like cloud puffs.
@@ -151,12 +153,15 @@ fn main() {
                         .with_position(ox, oy, oz)
                         .with_scale(sx, sy, sz),
                 );
-                let renderable = universe.world.register(engine::ecs::component::RenderableComponent::new(
-                    engine::graphics::primitives::Renderable::new(
-                        cube_mesh,
-                        engine::graphics::primitives::MaterialHandle::TOON_MESH,
-                    ),
-                ));
+                let renderable =
+                    universe
+                        .world
+                        .register(engine::ecs::component::RenderableComponent::new(
+                            engine::graphics::primitives::Renderable::new(
+                                cube_mesh,
+                                engine::graphics::primitives::MaterialHandle::TOON_MESH,
+                            ),
+                        ));
 
                 // Slight blue-grey variation.
                 let t = rand01(puff_seed ^ 0x7f4a_7c15);
@@ -190,7 +195,9 @@ fn main() {
         ));
     let fg_color = universe
         .world
-        .register(engine::ecs::component::ColorComponent::rgba(0.9, 0.2, 0.2, 1.0));
+        .register(engine::ecs::component::ColorComponent::rgba(
+            0.9, 0.2, 0.2, 1.0,
+        ));
 
     universe.add(fg_tx);
     let _ = universe.attach(fg_tx, fg_renderable);
@@ -213,17 +220,20 @@ fn main() {
                     .with_position(px, -5.0, pz)
                     .with_scale(5.0, 0.5, 5.0),
             );
-            let renderable = universe
-                .world
-                .register(engine::ecs::component::RenderableComponent::new(
-                    engine::graphics::primitives::Renderable::new(
-                        cube_mesh,
-                        engine::graphics::primitives::MaterialHandle::TOON_MESH,
-                    ),
-                ));
+            let renderable =
+                universe
+                    .world
+                    .register(engine::ecs::component::RenderableComponent::new(
+                        engine::graphics::primitives::Renderable::new(
+                            cube_mesh,
+                            engine::graphics::primitives::MaterialHandle::TOON_MESH,
+                        ),
+                    ));
             let color = universe
                 .world
-                .register(engine::ecs::component::ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+                .register(engine::ecs::component::ColorComponent::rgba(
+                    1.0, 1.0, 1.0, 1.0,
+                ));
 
             let _ = universe.attach(floor_root, tx);
             let _ = universe.attach(tx, renderable);

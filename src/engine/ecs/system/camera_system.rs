@@ -490,12 +490,8 @@ impl System for CameraSystem {
                         Camera3DComponent::DEFAULT_Z_FAR,
                     ));
 
-                cam3d.proj = Camera3D::perspective_rh_zo(
-                    fov_y_deg.to_radians(),
-                    aspect,
-                    z_near,
-                    z_far,
-                );
+                cam3d.proj =
+                    Camera3D::perspective_rh_zo(fov_y_deg.to_radians(), aspect, z_near, z_far);
                 visuals.set_camera(cam3d.view, cam3d.proj);
             }
         }

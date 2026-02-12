@@ -68,7 +68,11 @@ impl MusicNote {
     }
 
     pub fn with_velocity(mut self, velocity: f32) -> Self {
-        self.velocity = if velocity.is_finite() { velocity.max(0.0) } else { 1.0 };
+        self.velocity = if velocity.is_finite() {
+            velocity.max(0.0)
+        } else {
+            1.0
+        };
         self
     }
 

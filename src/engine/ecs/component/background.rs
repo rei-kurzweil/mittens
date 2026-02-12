@@ -54,7 +54,10 @@ impl Component for BackgroundComponent {
             "occlusion_and_lighting".to_string(),
             serde_json::json!(self.occlusion_and_lighting),
         );
-        map.insert("ray_casting".to_string(), serde_json::json!(self.ray_casting));
+        map.insert(
+            "ray_casting".to_string(),
+            serde_json::json!(self.ray_casting),
+        );
         map
     }
 

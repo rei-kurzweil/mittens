@@ -1,0 +1,66 @@
+use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::component::Component;
+
+#[derive(Debug, Clone, Copy)]
+pub struct AudioHighPassFilterComponent {
+    pub cutoff_hz: f32,
+    pub resonance: f32,
+}
+
+impl AudioHighPassFilterComponent {
+    pub fn new(cutoff_hz: f32, resonance: f32) -> Self {
+        Self {
+            cutoff_hz,
+            resonance,
+        }
+    }
+}
+
+impl Default for AudioHighPassFilterComponent {
+    fn default() -> Self {
+        Self {
+            cutoff_hz: 200.0,
+            resonance: 0.2,
+        }
+    }
+}
+
+impl Component for AudioHighPassFilterComponent {
+    fn name(&self) -> &'static str {
+        "audio_high_pass_filter"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
+        queue.queue_audio_graph_dirty(component);
+    }
+
+    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
+        let mut map = std::collections::HashMap::new();
+        map.insert("cutoff_hz".to_string(), serde_json::json!(self.cutoff_hz));
+        map.insert("resonance".to_string(), serde_json::json!(self.resonance));
+        map
+    }
+
+    fn decode(
+        &mut self,
+        data: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> Result<(), String> {
+        if let Some(v) = data.get("cutoff_hz") {
+            self.cutoff_hz = serde_json::from_value(v.clone())
+                .map_err(|e| format!("Failed to decode cutoff_hz: {e}"))?;
+        }
+        if let Some(v) = data.get("resonance") {
+            self.resonance = serde_json::from_value(v.clone())
+                .map_err(|e| format!("Failed to decode resonance: {e}"))?;
+        }
+        Ok(())
+    }
+}

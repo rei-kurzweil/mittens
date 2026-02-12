@@ -26,6 +26,9 @@ smallvec = "1"
 # Lock-free SPSC queue (GUI thread -> audio callback)
 heapless = "0.8"
 
+# Heap-allocated lock-free SPSC ring buffer (GUI thread -> audio callback)
+rtrb = "0.3"
+
 # DSP backend
 fundsp = "0.20"
 

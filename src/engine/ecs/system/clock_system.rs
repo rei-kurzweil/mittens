@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::engine::ecs::system::System;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::ClockComponent;
+use crate::engine::ecs::system::System;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 
@@ -20,7 +20,9 @@ pub struct SystemClockDriver {
 
 impl SystemClockDriver {
     pub fn new() -> Self {
-        Self { start: Instant::now() }
+        Self {
+            start: Instant::now(),
+        }
     }
 }
 
@@ -115,7 +117,11 @@ impl ClockSystem {
 
     pub fn set_driver(&mut self, driver: Arc<dyn ClockDriver>) {
         if self.driver_name() != driver.name() {
-            println!("[ClockSystem] driver: {} -> {}", self.driver_name(), driver.name());
+            println!(
+                "[ClockSystem] driver: {} -> {}",
+                self.driver_name(),
+                driver.name()
+            );
         }
 
         // Keep beat continuous across driver changes.

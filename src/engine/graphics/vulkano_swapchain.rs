@@ -95,9 +95,15 @@ impl VulkanoSwapchainState {
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
 
         let extent = swapchain.image_extent();
-        let depth_views = Self::create_depth_views(context, &swapchain_views, extent, msaa_samples)?;
-        let msaa_color_views =
-            Self::create_msaa_color_views(context, &swapchain_views, extent, image_format, msaa_samples)?;
+        let depth_views =
+            Self::create_depth_views(context, &swapchain_views, extent, msaa_samples)?;
+        let msaa_color_views = Self::create_msaa_color_views(
+            context,
+            &swapchain_views,
+            extent,
+            image_format,
+            msaa_samples,
+        )?;
 
         Ok(Self {
             surface,
@@ -138,12 +144,8 @@ impl VulkanoSwapchainState {
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
 
         let extent = self.swapchain.image_extent();
-        self.depth_views = Self::create_depth_views(
-            context,
-            &self.swapchain_views,
-            extent,
-            self.msaa_samples,
-        )?;
+        self.depth_views =
+            Self::create_depth_views(context, &self.swapchain_views, extent, self.msaa_samples)?;
         self.msaa_color_views = Self::create_msaa_color_views(
             context,
             &self.swapchain_views,

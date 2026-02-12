@@ -1,14 +1,17 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use heapless::spsc::Consumer;
 use heapless::Vec as HVec;
+use rtrb::Consumer;
 
 use crate::engine::ecs::component::AudioOscillator;
 
 pub const AUDIO_QUEUE_CAP: usize = 1024;
 pub const MAX_OSCS_PER_COMPONENT: usize = 16;
+
+pub const MAX_AUDIO_GRAPH_NODES: usize = 64;
+pub const MAX_AUDIO_GRAPH_CHILDREN_PER_NODE: usize = 8;
 
 mod fundsp_backend {
     use std::collections::HashMap;
@@ -82,11 +85,7 @@ mod fundsp_backend {
     }
 
     fn sanitize_hz(hz: f32) -> f32 {
-        if hz.is_finite() {
-            hz.max(0.0)
-        } else {
-            0.0
-        }
+        if hz.is_finite() { hz.max(0.0) } else { 0.0 }
     }
 
     fn make_unit(ty: OscillatorType) -> Box<dyn AudioUnit> {
@@ -414,6 +413,7 @@ pub(crate) struct SynthRtState {
     pub(crate) osc_snapshot: HashMap<u64, Vec<AudioOscillator>>,
     pub(crate) component_gain: HashMap<u64, f32>,
     pub(crate) component_gate: HashMap<u64, ComponentGate>,
+    pub(crate) graphs: HashMap<u64, RtAudioGraph>,
     pub(crate) fundsp: fundsp_backend::FundspState,
 }
 
@@ -438,9 +438,80 @@ impl Default for ComponentGate {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum RtAudioGraphNodeKind {
+    OscillatorSource,
+    Gain { gain: f32 },
+    LowPass { cutoff_hz: f32, resonance: f32 },
+    HighPass { cutoff_hz: f32, resonance: f32 },
+    Limiter,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RtAudioGraphNodeState {
+    // Low-pass state.
+    lp_z1: f32,
+
+    // High-pass state.
+    hp_y1: f32,
+    hp_x1: f32,
+
+    // Limiter envelope.
+    lim_env: f32,
+
+    // Limiter parameters.
+    pub(crate) limiter_attack_ms: f32,
+    pub(crate) limiter_release_ms: f32,
+    pub(crate) limiter_threshold: f32,
+}
+
+impl Default for RtAudioGraphNodeState {
+    fn default() -> Self {
+        Self {
+            lp_z1: 0.0,
+            hp_y1: 0.0,
+            hp_x1: 0.0,
+            lim_env: 0.0,
+            limiter_attack_ms: 1.0,
+            limiter_release_ms: 50.0,
+            limiter_threshold: 1.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RtAudioGraphChild {
+    pub idx: u8,
+    pub weight: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct RtAudioGraphNode {
+    pub kind: RtAudioGraphNodeKind,
+    pub state: RtAudioGraphNodeState,
+    pub children: HVec<RtAudioGraphChild, MAX_AUDIO_GRAPH_CHILDREN_PER_NODE>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RtAudioGraph {
+    pub root_component_ffi: u64,
+    pub nodes: HVec<RtAudioGraphNode, MAX_AUDIO_GRAPH_NODES>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScheduledGraphOp {
+    pub beat: f64,
+    pub target_component_ffi: u64,
+    pub graph: RtAudioGraph,
+}
+
 impl ComponentGate {
     fn ramp_to(&mut self, target: f32, samples: u32, pending_disable: bool) {
-        let target = if target.is_finite() { target.clamp(0.0, 1.0) } else { 1.0 };
+        let target = if target.is_finite() {
+            target.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
         if samples == 0 {
             self.current = target;
             self.target = target;
@@ -487,12 +558,16 @@ pub struct ScheduledAudioOp {
 
 #[derive(Debug, Clone)]
 pub enum AudioQueueItem {
-    SetTransport { bpm: f64, beat_offset: f64 },
+    SetTransport {
+        bpm: f64,
+        beat_offset: f64,
+    },
     ReplaceOscillators {
         target_component_ffi: u64,
         oscillators: HVec<AudioOscillator, MAX_OSCS_PER_COMPONENT>,
     },
     Message(ScheduledAudioOp),
+    GraphMessage(ScheduledGraphOp),
 }
 
 #[derive(Debug, Default)]
@@ -501,8 +576,10 @@ pub(crate) struct AudioRtLocalState {
     pub(crate) beat_offset: f64,
 
     pub(crate) events: Vec<ScheduledAudioOp>,
+    pub(crate) graph_events: Vec<ScheduledGraphOp>,
 
     pub(crate) due_ops: Vec<(usize, u64, AudioOp)>,
+    pub(crate) due_graph_ops: Vec<(usize, u64, RtAudioGraph)>,
 }
 
 #[derive(Debug)]
@@ -537,16 +614,172 @@ fn apply_audio_op(oscs: &mut [AudioOscillator], op: AudioOp) {
     }
 }
 
+fn sanitize_param_f32(v: f32, default: f32) -> f32 {
+    if v.is_finite() { v } else { default }
+}
+
+fn one_pole_lowpass(x: f32, cutoff_hz: f32, sample_rate_hz: f32, z1: &mut f32) -> f32 {
+    let cutoff_hz = sanitize_param_f32(cutoff_hz, 0.0).max(0.0);
+    if cutoff_hz <= 0.0 {
+        *z1 = 0.0;
+        return 0.0;
+    }
+
+    // a = exp(-2*pi*fc/sr)
+    let sr = sample_rate_hz.max(1.0);
+    let a = (-std::f32::consts::TAU * cutoff_hz / sr).exp();
+    let y = (1.0 - a) * x + a * (*z1);
+    *z1 = y;
+    y
+}
+
+fn one_pole_highpass(
+    x: f32,
+    cutoff_hz: f32,
+    sample_rate_hz: f32,
+    y1: &mut f32,
+    x1: &mut f32,
+) -> f32 {
+    let cutoff_hz = sanitize_param_f32(cutoff_hz, 0.0).max(0.0);
+    if cutoff_hz <= 0.0 {
+        *y1 = 0.0;
+        *x1 = 0.0;
+        return x;
+    }
+
+    let sr = sample_rate_hz.max(1.0);
+    let dt = 1.0 / sr;
+    let rc = 1.0 / (std::f32::consts::TAU * cutoff_hz);
+    let a = rc / (rc + dt);
+
+    let y = a * (*y1 + x - *x1);
+    *y1 = y;
+    *x1 = x;
+    y
+}
+
+fn limiter(
+    x: f32,
+    attack_ms: f32,
+    release_ms: f32,
+    threshold: f32,
+    sample_rate_hz: f32,
+    env: &mut f32,
+) -> f32 {
+    let threshold = sanitize_param_f32(threshold, 1.0).max(0.000_1);
+    let attack_ms = sanitize_param_f32(attack_ms, 1.0).max(0.1);
+    let release_ms = sanitize_param_f32(release_ms, 50.0).max(0.1);
+
+    let sr = sample_rate_hz.max(1.0);
+    let attack_s = attack_ms / 1000.0;
+    let release_s = release_ms / 1000.0;
+    let a_a = (-1.0 / (attack_s * sr)).exp();
+    let a_r = (-1.0 / (release_s * sr)).exp();
+
+    let x_abs = x.abs();
+    if x_abs > *env {
+        *env = a_a * (*env) + (1.0 - a_a) * x_abs;
+    } else {
+        *env = a_r * (*env) + (1.0 - a_r) * x_abs;
+    }
+
+    let env = env.max(threshold);
+    let g = (threshold / env).min(1.0);
+    x * g
+}
+
+fn process_graph_node(
+    graph: &mut RtAudioGraph,
+    node_idx: u8,
+    input: f32,
+    sample_rate_hz: f32,
+    depth: u32,
+) -> f32 {
+    if depth > 64 {
+        return input;
+    }
+
+    let idx = node_idx as usize;
+    if idx >= graph.nodes.len() {
+        return input;
+    }
+
+    let (kind, children_len) = {
+        let node = &graph.nodes[idx];
+        (node.kind, node.children.len())
+    };
+
+    let mut y = match kind {
+        RtAudioGraphNodeKind::OscillatorSource => input,
+        RtAudioGraphNodeKind::Gain { gain } => input * sanitize_param_f32(gain, 1.0),
+        RtAudioGraphNodeKind::LowPass {
+            cutoff_hz,
+            resonance: _,
+        } => {
+            let z1 = &mut graph.nodes[idx].state.lp_z1;
+            one_pole_lowpass(input, cutoff_hz, sample_rate_hz, z1)
+        }
+        RtAudioGraphNodeKind::HighPass {
+            cutoff_hz,
+            resonance: _,
+        } => {
+            let (y1, x1) = {
+                let st = &mut graph.nodes[idx].state;
+                (&mut st.hp_y1, &mut st.hp_x1)
+            };
+            one_pole_highpass(input, cutoff_hz, sample_rate_hz, y1, x1)
+        }
+        RtAudioGraphNodeKind::Limiter => {
+            let (attack_ms, release_ms, threshold, env) = {
+                let st = &mut graph.nodes[idx].state;
+                (
+                    st.limiter_attack_ms,
+                    st.limiter_release_ms,
+                    st.limiter_threshold,
+                    &mut st.lim_env,
+                )
+            };
+            limiter(input, attack_ms, release_ms, threshold, sample_rate_hz, env)
+        }
+    };
+
+    if children_len == 0 {
+        return y;
+    }
+
+    let mut sum = 0.0f32;
+    // Clone child list out to avoid borrow issues while recursing/mutating state.
+    let children: HVec<RtAudioGraphChild, MAX_AUDIO_GRAPH_CHILDREN_PER_NODE> =
+        graph.nodes[idx].children.clone();
+    for ch in children.iter() {
+        let w = if ch.weight.is_finite() {
+            ch.weight
+        } else {
+            1.0
+        };
+        sum += process_graph_node(graph, ch.idx, y, sample_rate_hz, depth + 1) * w;
+    }
+    y = sum;
+
+    y
+}
+
 fn render_sample_from_map(
     map: &mut HashMap<u64, Vec<AudioOscillator>>,
     gains: &HashMap<u64, f32>,
     gates: &mut HashMap<u64, ComponentGate>,
+    graphs: &mut HashMap<u64, RtAudioGraph>,
     fundsp: &mut fundsp_backend::FundspState,
+    sample_rate_hz: u32,
 ) -> f32 {
     let mut out = 0.0f32;
     for (&cid_ffi, oscs) in map.iter_mut() {
         let base_g = gains.get(&cid_ffi).copied().unwrap_or(1.0);
-        let base_g = if base_g.is_finite() { base_g.max(0.0) } else { 1.0 };
+        let base_g = if base_g.is_finite() {
+            base_g.max(0.0)
+        } else {
+            1.0
+        };
 
         let gate = gates.entry(cid_ffi).or_default();
         gate.tick();
@@ -563,12 +796,22 @@ fn render_sample_from_map(
             continue;
         }
 
+        let mut base = 0.0f32;
         for (idx, osc) in oscs.iter().enumerate() {
             if !osc.enabled {
                 continue;
             }
             let v = fundsp_backend::sample(fundsp, (cid_ffi, idx), osc);
-            out += v * osc.amplitude * g;
+            base += v * osc.amplitude;
+        }
+        base *= g;
+
+        if let Some(graph) = graphs.get_mut(&cid_ffi) {
+            // Graph nodes are precompiled; node 0 is the oscillator root.
+            let sr = (sample_rate_hz as f32).max(1.0);
+            out += process_graph_node(graph, 0, base, sr, 0);
+        } else {
+            out += base;
         }
     }
     out.clamp(-1.0, 1.0)
@@ -580,7 +823,7 @@ pub(crate) fn render_buffer<T: Copy>(
     sample_rate_hz: u32,
     _sample_rate_hz_f32: f32,
     state_for_cb: &Arc<AudioClockState>,
-    rx: &mut Consumer<'static, AudioQueueItem, AUDIO_QUEUE_CAP>,
+    rx: &mut Consumer<AudioQueueItem>,
     rt: &mut AudioRtLocalState,
     synth_state: &mut SynthRtState,
     to_sample: fn(f32) -> T,
@@ -593,7 +836,7 @@ pub(crate) fn render_buffer<T: Copy>(
         .fundsp
         .set_sample_rate((sample_rate_hz as f64).max(1.0));
 
-    while let Some(item) = rx.dequeue() {
+    while let Ok(item) = rx.pop() {
         match item {
             AudioQueueItem::SetTransport { bpm, beat_offset } => {
                 if bpm.is_finite() && bpm > 0.0 {
@@ -614,7 +857,9 @@ pub(crate) fn render_buffer<T: Copy>(
                 }
                 let new_len = next.len();
                 synth_state.osc_snapshot.insert(target_component_ffi, next);
-                synth_state.fundsp.prune_component(target_component_ffi, new_len);
+                synth_state
+                    .fundsp
+                    .prune_component(target_component_ffi, new_len);
 
                 if let Some(next_oscs) = synth_state.osc_snapshot.get(&target_component_ffi) {
                     for (idx, next_osc) in next_oscs.iter().enumerate() {
@@ -627,7 +872,9 @@ pub(crate) fn render_buffer<T: Copy>(
                             .map(|o| o.enabled)
                             .unwrap_or(false);
                         if !was_enabled {
-                            synth_state.fundsp.retrigger_voice((target_component_ffi, idx));
+                            synth_state
+                                .fundsp
+                                .retrigger_voice((target_component_ffi, idx));
                         }
                     }
                 }
@@ -652,15 +899,40 @@ pub(crate) fn render_buffer<T: Copy>(
                     .unwrap_or_else(|i| i);
                 rt.events.insert(idx, op);
             }
+            AudioQueueItem::GraphMessage(op) => {
+                if !op.beat.is_finite() {
+                    continue;
+                }
+
+                let idx = rt
+                    .graph_events
+                    .binary_search_by(|e| {
+                        let Some(ord) = e.beat.partial_cmp(&op.beat) else {
+                            return std::cmp::Ordering::Equal;
+                        };
+                        if ord != std::cmp::Ordering::Equal {
+                            return ord;
+                        }
+                        // Stable ordering for identical beat.
+                        e.target_component_ffi.cmp(&op.target_component_ffi)
+                    })
+                    .unwrap_or_else(|i| i);
+                rt.graph_events.insert(idx, op);
+            }
         }
     }
 
-    let bpm = if rt.bpm.is_finite() && rt.bpm > 0.0 { rt.bpm } else { 120.0 };
+    let bpm = if rt.bpm.is_finite() && rt.bpm > 0.0 {
+        rt.bpm
+    } else {
+        120.0
+    };
     let beats_per_frame = (bpm / 60.0) / (sample_rate_hz as f64).max(1.0);
     let beat_start = rt.beat_offset + (base_frame as f64) * beats_per_frame;
     let beat_end = beat_start + (frames_in_buf as f64) * beats_per_frame;
 
     rt.due_ops.clear();
+    rt.due_graph_ops.clear();
 
     let mut split_idx = 0usize;
     while split_idx < rt.events.len() {
@@ -686,9 +958,29 @@ pub(crate) fn render_buffer<T: Copy>(
         });
     }
 
+    let mut graph_split_idx = 0usize;
+    while graph_split_idx < rt.graph_events.len() {
+        if rt.graph_events[graph_split_idx].beat <= beat_end + 1e-12 {
+            graph_split_idx += 1;
+        } else {
+            break;
+        }
+    }
+    if graph_split_idx > 0 {
+        for ev in rt.graph_events.drain(0..graph_split_idx) {
+            let rel = (ev.beat - beat_start) / beats_per_frame;
+            let idx = rel.round() as isize;
+            let idx = idx.clamp(0, frames_in_buf as isize - 1) as usize;
+            rt.due_graph_ops
+                .push((idx, ev.target_component_ffi, ev.graph));
+        }
+        rt.due_graph_ops.sort_by(|a, b| a.0.cmp(&b.0));
+    }
+
     let osc_snapshot = &mut synth_state.osc_snapshot;
     let gains = &mut synth_state.component_gain;
     let gates = &mut synth_state.component_gate;
+    let graphs = &mut synth_state.graphs;
     let fundsp = &mut synth_state.fundsp;
 
     const ENABLE_RAMP_SEC: f32 = 0.005;
@@ -697,7 +989,15 @@ pub(crate) fn render_buffer<T: Copy>(
     let disable_ramp_samples = ((sample_rate_hz as f32) * DISABLE_RAMP_SEC).round() as u32;
 
     let mut op_cursor = 0usize;
+    let mut graph_cursor = 0usize;
     for (frame_idx, frame) in data.chunks_mut(ch).enumerate() {
+        while graph_cursor < rt.due_graph_ops.len() && rt.due_graph_ops[graph_cursor].0 == frame_idx
+        {
+            let (_idx, target, graph) = rt.due_graph_ops[graph_cursor].clone();
+            graphs.insert(target, graph);
+            graph_cursor += 1;
+        }
+
         while op_cursor < rt.due_ops.len() && rt.due_ops[op_cursor].0 == frame_idx {
             let (_idx, target, op) = rt.due_ops[op_cursor];
             if let Some(oscs) = osc_snapshot.get_mut(&target) {
@@ -726,7 +1026,8 @@ pub(crate) fn render_buffer<T: Copy>(
             op_cursor += 1;
         }
 
-        let s = render_sample_from_map(osc_snapshot, &*gains, gates, fundsp);
+        let s =
+            render_sample_from_map(osc_snapshot, &*gains, gates, graphs, fundsp, sample_rate_hz);
         let t = to_sample(s);
         for v in frame.iter_mut() {
             *v = t;

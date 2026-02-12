@@ -47,6 +47,7 @@ impl Component for AudioOutputComponent {
     fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
         if self.enabled {
             queue.queue_register_audio_output(component);
+            queue.queue_audio_graph_dirty(component);
         }
     }
 

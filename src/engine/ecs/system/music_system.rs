@@ -1,4 +1,6 @@
-use crate::engine::ecs::component::{AudioOscillatorComponent, MusicNote, MusicNoteComponent, NotePitch};
+use crate::engine::ecs::component::{
+    AudioOscillatorComponent, MusicNote, MusicNoteComponent, NotePitch,
+};
 use crate::engine::ecs::{ComponentId, World};
 
 /// Music system.

@@ -1,10 +1,9 @@
 use cat_engine::{engine, utils};
 
 use cat_engine::engine::ecs::component::{
-    AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ColorComponent,
-    BackgroundComponent, InputComponent, InputTransformModeComponent, RayCastComponent,
-    TextComponent, TextureComponent, TextureFilteringComponent, TransformComponent,
-    TransparentCutoutComponent,
+    AmbientLightComponent, BackgroundColorComponent, BackgroundComponent, Camera3DComponent,
+    ColorComponent, InputComponent, InputTransformModeComponent, RayCastComponent, TextComponent,
+    TextureComponent, TextureFilteringComponent, TransformComponent, TransparentCutoutComponent,
 };
 
 #[path = "example_util/mod.rs"]
@@ -85,9 +84,9 @@ fn main() {
     // --- foreground clouds ---
     // Normal foreground renderables (not background stage).
     // Offset the ring forward (negative Z) so several clusters are in view.
-    let fg_cloud_root = universe.world.register(
-        TransformComponent::new().with_position(0.0, -6.0, -10.0),
-    );
+    let fg_cloud_root = universe
+        .world
+        .register(TransformComponent::new().with_position(0.0, -6.0, -10.0));
     universe.add(fg_cloud_root);
 
     let mut fg_cloud_params = example_util::CloudRingParams::default();

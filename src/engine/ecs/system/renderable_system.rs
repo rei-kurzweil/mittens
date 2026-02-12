@@ -13,6 +13,7 @@ use crate::engine::graphics::{GpuRenderable, VisualWorld};
 use crate::engine::graphics::{MeshUploader, RenderAssets};
 use crate::engine::user_input::InputState;
 use std::collections::{HashMap, VecDeque};
+use std::sync::OnceLock;
 
 /// System that registers/updates renderables in the `VisualWorld`.
 ///
@@ -117,8 +118,21 @@ fn clone_mesh_with_uv_overrides(
     Some(render_assets.register_mesh(mesh))
 }
 
+fn debug_renderable_pending_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("CAT_DEBUG_RENDERABLE_PENDING")
+            .ok()
+            .as_deref()
+            == Some("1")
+    })
+}
+
 impl RenderableSystem {
-    fn inherited_background_for_renderable(world: &World, renderable_cid: ComponentId) -> (bool, bool) {
+    fn inherited_background_for_renderable(
+        world: &World,
+        renderable_cid: ComponentId,
+    ) -> (bool, bool) {
         // Nearest BackgroundComponent ancestor wins.
         // Returns: (is_background, occluded_lit)
         let mut cur = renderable_cid;
@@ -572,7 +586,8 @@ impl RenderableSystem {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        let Some(cutout_comp) = world.get_component_by_id_as::<TransparentCutoutComponent>(component)
+        let Some(cutout_comp) =
+            world.get_component_by_id_as::<TransparentCutoutComponent>(component)
         else {
             return;
         };
@@ -862,12 +877,14 @@ impl RenderableSystem {
             }
         }
 
-        println!(
-            "[RenderableSystem]  -> pending += 1 (pending_len={}) cpu_mesh={:?} material={:?}",
-            self.pending.len(),
-            renderable_comp.renderable.mesh,
-            renderable_comp.renderable.material
-        );
+        if debug_renderable_pending_enabled() {
+            println!(
+                "[RenderableSystem]  -> pending += 1 (pending_len={}) cpu_mesh={:?} material={:?}",
+                self.pending.len(),
+                renderable_comp.renderable.mesh,
+                renderable_comp.renderable.material
+            );
+        }
 
         // Mark draw cache dirty only when we actually insert into visuals.
         let _ = visuals;

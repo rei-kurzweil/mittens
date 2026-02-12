@@ -47,7 +47,9 @@ fn main() {
     universe.add(ambient);
 
     // --- Camera rig (WASD/QE) ---
-    let input = universe.world.register(InputComponent::new().with_speed(2.0));
+    let input = universe
+        .world
+        .register(InputComponent::new().with_speed(2.0));
     let input_mode = universe
         .world
         .register(InputTransformModeComponent::forward_z().with_roll_axis_y());
@@ -59,11 +61,9 @@ fn main() {
         .register(TransformComponent::new().with_position(0.0, 0.0, 5.0));
     let _ = universe.attach(input, rig_transform);
 
-    let camera3d = universe.world.register(
-        Camera3DComponent::new()
-            .with_far(200.0)
-            .with_fov(55.0),
-    );
+    let camera3d = universe
+        .world
+        .register(Camera3DComponent::new().with_far(200.0).with_fov(55.0));
     let _ = universe.attach(rig_transform, camera3d);
     universe.add(input);
 
@@ -109,9 +109,9 @@ fn main() {
             );
             let quad_r = universe.world.register(RenderableComponent::square());
 
-            let quad_tex = universe
-                .world
-                .register(TextureComponent::with_uri("assets/textures/cat-face-amused.dds"));
+            let quad_tex = universe.world.register(TextureComponent::with_uri(
+                "assets/textures/cat-face-amused.dds",
+            ));
             let quad_filtering = universe.world.register(TextureFilteringComponent::linear());
             let quad_cutout = universe.world.register(TransparentCutoutComponent::new());
             let quad_color = universe
@@ -146,7 +146,7 @@ fn main() {
     );
     let _ = universe.attach(cat_light_tx, cat_light);
     let _ = universe.attach(cubes_root, cat_light_tx);
-    
+
     universe.add(cubes_root);
 
     let gold_a = (1.0, 0.86, 0.22);
@@ -163,11 +163,41 @@ fn main() {
     // Bigger orange/yellow cubes behind the cluster (to make the cutout depth obvious).
     let orange_gold_a = (1.0, 0.62, 0.10);
     let orange_gold_b = (1.0, 0.78, 0.18);
-    spawn_gold_cube(&mut universe, cubes_root, (0.0, -0.1, -2.1), 1.15, orange_gold_b);
-    spawn_gold_cube(&mut universe, cubes_root, (-1.8, 0.6, -2.6), 0.95, orange_gold_a);
-    spawn_gold_cube(&mut universe, cubes_root, (1.9, 0.7, -2.9), 1.05, orange_gold_b);
-    spawn_gold_cube(&mut universe, cubes_root, (0.9, 1.8, -3.2), 0.90, orange_gold_a);
-    spawn_gold_cube(&mut universe, cubes_root, (-0.9, 1.7, -3.5), 1.10, orange_gold_b);
+    spawn_gold_cube(
+        &mut universe,
+        cubes_root,
+        (0.0, -0.1, -2.1),
+        1.15,
+        orange_gold_b,
+    );
+    spawn_gold_cube(
+        &mut universe,
+        cubes_root,
+        (-1.8, 0.6, -2.6),
+        0.95,
+        orange_gold_a,
+    );
+    spawn_gold_cube(
+        &mut universe,
+        cubes_root,
+        (1.9, 0.7, -2.9),
+        1.05,
+        orange_gold_b,
+    );
+    spawn_gold_cube(
+        &mut universe,
+        cubes_root,
+        (0.9, 1.8, -3.2),
+        0.90,
+        orange_gold_a,
+    );
+    spawn_gold_cube(
+        &mut universe,
+        cubes_root,
+        (-0.9, 1.7, -3.5),
+        1.10,
+        orange_gold_b,
+    );
 
     // Process init-time registrations (loads textures, registers renderables, etc.).
     universe.systems.process_commands(

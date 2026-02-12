@@ -16,7 +16,9 @@ pub enum ActionMethod {
     /// Placeholder for future unification with the command queue.
     ///
     /// Encoded as: method="command_queue", command_name="...".
-    CommandQueue { command_name: String },
+    CommandQueue {
+        command_name: String,
+    },
 }
 
 impl ActionMethod {
@@ -66,10 +68,7 @@ impl ActionMethod {
             }
             ActionMethod::CommandQueue { command_name } => {
                 map.insert("method".to_string(), serde_json::json!("command_queue"));
-                map.insert(
-                    "command_name".to_string(),
-                    serde_json::json!(command_name),
-                );
+                map.insert("command_name".to_string(), serde_json::json!(command_name));
             }
         }
     }
@@ -163,7 +162,10 @@ impl Action {
 
     /// Update the first `MusicNoteComponent` found under each target oscillator (subtree search),
     /// and re-apply its pitch/octave to the oscillator frequency.
-    pub fn music_set_note(target: Vec<ComponentId>, note: crate::engine::ecs::component::MusicNote) -> Self {
+    pub fn music_set_note(
+        target: Vec<ComponentId>,
+        note: crate::engine::ecs::component::MusicNote,
+    ) -> Self {
         Self {
             target,
             method: ActionMethod::MusicSetNote,

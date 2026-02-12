@@ -26,7 +26,58 @@ pub struct AudioOscillator {
     /// This is set to true once a MusicNote has been applied, or after any
     /// action mutates the frequency (set/multiply pitch).
     #[serde(default)]
-    pub music_note_applied: bool,
+    pub(crate) music_note_applied: bool,
+}
+
+impl AudioOscillator {
+    pub fn new(oscillator_type: OscillatorType) -> Self {
+        Self {
+            oscillator_type,
+            ..Self::default()
+        }
+    }
+
+    pub fn sin() -> Self {
+        Self::new(OscillatorType::Sin)
+    }
+
+    pub fn triangle() -> Self {
+        Self::new(OscillatorType::Triangle)
+    }
+
+    pub fn square() -> Self {
+        Self::new(OscillatorType::Square)
+    }
+
+    pub fn saw() -> Self {
+        Self::new(OscillatorType::Saw)
+    }
+
+    pub fn noise() -> Self {
+        Self::new(OscillatorType::Noise)
+    }
+
+    pub fn drum() -> Self {
+        Self::new(OscillatorType::Drum)
+    }
+
+    /// Builder-style: set oscillator frequency in Hz.
+    pub fn with_frequency(mut self, frequency_hz: f32) -> Self {
+        self.frequency = frequency_hz;
+        self
+    }
+
+    /// Builder-style: set amplitude (linear 0..1-ish).
+    pub fn with_amplitude(mut self, amplitude: f32) -> Self {
+        self.amplitude = amplitude;
+        self
+    }
+
+    /// Builder-style: set enabled state.
+    pub fn with_enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
 }
 
 impl Default for AudioOscillator {
@@ -83,6 +134,7 @@ impl Component for AudioOscillatorComponent {
 
     fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
         queue.queue_register_audio_oscillator(component);
+        queue.queue_audio_graph_dirty(component);
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

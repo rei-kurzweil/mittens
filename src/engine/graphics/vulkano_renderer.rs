@@ -76,7 +76,10 @@ mod vulkano_backend {
     // a *virtual* module directory (`.../vulkano_renderer/vulkano_backend/`) that doesn't exist
     // on disk. Using `include!` lets us keep the helpers in a normal file next to the renderer.
     mod vulkano_cbb {
-        include!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/graphics/vulkano_cbb.rs"));
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/engine/graphics/vulkano_cbb.rs"
+        ));
     }
 
     mod toon_mesh_vs {
@@ -894,18 +897,17 @@ mod vulkano_backend {
                 .ok_or("XR offscreen eye out of range")?
                 .clone();
 
-            let (color_attachment_view, color_resolve_view) = if self.msaa_samples
-                != SampleCount::Sample1
-            {
-                let msaa_view = targets
-                    .msaa_color_views
-                    .get(eye)
-                    .ok_or("XR MSAA color eye out of range")?
-                    .clone();
-                (msaa_view, Some(resolve_view))
-            } else {
-                (resolve_view, None)
-            };
+            let (color_attachment_view, color_resolve_view) =
+                if self.msaa_samples != SampleCount::Sample1 {
+                    let msaa_view = targets
+                        .msaa_color_views
+                        .get(eye)
+                        .ok_or("XR MSAA color eye out of range")?
+                        .clone();
+                    (msaa_view, Some(resolve_view))
+                } else {
+                    (resolve_view, None)
+                };
             let depth_view = targets
                 .depth_views
                 .get(eye)
@@ -1262,18 +1264,19 @@ mod vulkano_backend {
                 || draw_cache_rebuilt
                 || self.cached_background_occluded_lit_instance_count
                     != background_occluded_lit_instance_count;
-            let background_occluded_lit_instance_buffer = if !need_background_occluded_lit_instance_buffer {
-                self.cached_background_occluded_lit_instance_buffer.clone()
-            } else {
-                let buf = self.build_instance_buffer_for_order_opt(
-                    &*visual_world,
-                    visual_world.background_occluded_lit_order(),
-                )?;
-                self.cached_background_occluded_lit_instance_count =
-                    background_occluded_lit_instance_count;
-                self.cached_background_occluded_lit_instance_buffer = buf.clone();
-                buf
-            };
+            let background_occluded_lit_instance_buffer =
+                if !need_background_occluded_lit_instance_buffer {
+                    self.cached_background_occluded_lit_instance_buffer.clone()
+                } else {
+                    let buf = self.build_instance_buffer_for_order_opt(
+                        &*visual_world,
+                        visual_world.background_occluded_lit_order(),
+                    )?;
+                    self.cached_background_occluded_lit_instance_count =
+                        background_occluded_lit_instance_count;
+                    self.cached_background_occluded_lit_instance_buffer = buf.clone();
+                    buf
+                };
 
             let need_cutout_instance_buffer = instance_data_dirty
                 || draw_cache_rebuilt

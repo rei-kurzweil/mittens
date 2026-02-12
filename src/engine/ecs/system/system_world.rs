@@ -304,6 +304,15 @@ impl SystemWorld {
         self.audio.register_audio_buffer_size(world, component);
     }
 
+    pub fn audio_graph_dirty(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.audio.mark_audio_graph_dirty(world, component);
+    }
+
     pub fn register_clock(
         &mut self,
         world: &mut World,
@@ -583,5 +592,7 @@ impl SystemWorld {
         commands: &mut crate::engine::ecs::CommandQueue,
     ) {
         commands.flush(world, self, visuals);
+        // Batch audio graph rebuild work once after all mutations for this frame.
+        self.audio.rebuild_dirty_audio_graphs(world);
     }
 }

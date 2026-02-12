@@ -387,18 +387,40 @@ impl World {
         root: ComponentId,
         queue: &mut crate::engine::ecs::CommandQueue,
     ) {
-        // Initialize the root component (idempotent).
-        if let Some(node) = self.get_component_record_mut(root) {
-            if !node.initialized {
-                node.component.init(queue, root);
-                node.initialized = true;
-            }
-        }
+        use std::collections::HashSet;
 
-        // Recursively initialize all children
-        let children: Vec<ComponentId> = self.children_of(root).to_vec();
-        for child in children {
-            self.init_component_tree(child, queue);
+        // Iterative traversal prevents stack overflows on large init expansions.
+        let mut stack: Vec<ComponentId> = vec![root];
+        let mut visited: HashSet<ComponentId> = HashSet::new();
+
+        // Log only a small number of cycle detections to avoid spam.
+        let mut cycle_logs_left: usize = 8;
+
+        while let Some(node_id) = stack.pop() {
+            if !visited.insert(node_id) {
+                if cycle_logs_left > 0 {
+                    cycle_logs_left -= 1;
+                    println!(
+                        "[World::init_component_tree] cycle/revisit detected at component={:?}",
+                        node_id
+                    );
+                }
+                continue;
+            }
+
+            // Initialize the component (idempotent).
+            if let Some(node) = self.get_component_record_mut(node_id) {
+                if !node.initialized {
+                    node.component.init(queue, node_id);
+                    node.initialized = true;
+                }
+            }
+
+            // Push children (reverse so first child is processed first in LIFO order).
+            let children: Vec<ComponentId> = self.children_of(node_id).to_vec();
+            for child in children.into_iter().rev() {
+                stack.push(child);
+            }
         }
     }
 }

@@ -247,6 +247,14 @@ impl CommandQueue {
         });
     }
 
+    /// Mark an audio graph subtree as dirty so compilation can be deferred/batched.
+    pub fn queue_audio_graph_dirty(&mut self, component_id: crate::engine::ecs::ComponentId) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::AUDIO_GRAPH_DIRTY { component_id },
+        });
+    }
+
     pub fn queue_register_audio_oscillator(
         &mut self,
         component_id: crate::engine::ecs::ComponentId,
@@ -283,6 +291,17 @@ impl CommandQueue {
         });
     }
 
+    pub fn queue_schedule_audio_graph_swap(
+        &mut self,
+        component_id: crate::engine::ecs::ComponentId,
+        beat: f64,
+    ) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::SCHEDULE_AUDIO_GRAPH_SWAP { component_id, beat },
+        });
+    }
+
     pub fn queue_schedule_audio_pitch_set_hz(
         &mut self,
         component_id: crate::engine::ecs::ComponentId,
@@ -309,7 +328,12 @@ impl CommandQueue {
         );
     }
 
-    pub fn queue_schedule_audio_gain_set(&mut self, component_id: crate::engine::ecs::ComponentId, beat: f64, gain: f32) {
+    pub fn queue_schedule_audio_gain_set(
+        &mut self,
+        component_id: crate::engine::ecs::ComponentId,
+        beat: f64,
+        gain: f32,
+    ) {
         self.queue_schedule_audio_op(
             component_id,
             beat,
@@ -439,6 +463,10 @@ impl CommandQueue {
                     Command::REGISTER_AUDIO_BUFFER_SIZE { component_id } => {
                         systems.register_audio_buffer_size(world, visuals, component_id);
                     }
+
+                    Command::AUDIO_GRAPH_DIRTY { component_id } => {
+                        systems.audio_graph_dirty(world, visuals, component_id);
+                    }
                     Command::REGISTER_CLOCK { component_id } => {
                         systems.register_clock(world, visuals, component_id);
                     }
@@ -448,6 +476,9 @@ impl CommandQueue {
                         op,
                     } => {
                         systems.audio.schedule_audio_op(component_id, beat, op);
+                    }
+                    Command::SCHEDULE_AUDIO_GRAPH_SWAP { component_id, beat } => {
+                        systems.audio.schedule_graph_swap(world, component_id, beat);
                     }
                     Command::REMOVE_COLLISION { component_id } => {
                         systems.remove_collision(world, visuals, component_id);
@@ -559,6 +590,10 @@ enum Command {
         component_id: crate::engine::ecs::ComponentId,
     },
 
+    AUDIO_GRAPH_DIRTY {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+
     REGISTER_CLOCK {
         component_id: crate::engine::ecs::ComponentId,
     },
@@ -567,6 +602,10 @@ enum Command {
         component_id: crate::engine::ecs::ComponentId,
         beat: f64,
         op: crate::engine::ecs::system::audio_system::AudioOp,
+    },
+    SCHEDULE_AUDIO_GRAPH_SWAP {
+        component_id: crate::engine::ecs::ComponentId,
+        beat: f64,
     },
 
     REMOVE_RENDERABLE {
