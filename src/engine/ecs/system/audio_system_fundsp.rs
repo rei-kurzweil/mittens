@@ -415,6 +415,11 @@ pub(crate) struct SynthRtState {
     pub(crate) component_gate: HashMap<u64, ComponentGate>,
     pub(crate) graphs: HashMap<u64, RtAudioGraph>,
     pub(crate) fundsp: fundsp_backend::FundspState,
+
+    // Debug-only tracing for audio ops from the RT thread.
+    pub(crate) trace_lp_ops_inited: bool,
+    pub(crate) trace_lp_ops: bool,
+    pub(crate) trace_lp_ops_count: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -441,9 +446,22 @@ impl Default for ComponentGate {
 #[derive(Debug, Clone, Copy)]
 pub enum RtAudioGraphNodeKind {
     OscillatorSource,
-    Gain { gain: f32 },
-    LowPass { cutoff_hz: f32, resonance: f32 },
-    HighPass { cutoff_hz: f32, resonance: f32 },
+    Gain {
+        gain: f32,
+    },
+    LowPass {
+        cutoff_hz: f32,
+        resonance: f32,
+    },
+    BandPass {
+        center_hz: f32,
+        bandwidth_octaves: f32,
+        resonance: f32,
+    },
+    HighPass {
+        cutoff_hz: f32,
+        resonance: f32,
+    },
     Limiter,
 }
 
@@ -487,6 +505,7 @@ pub struct RtAudioGraphChild {
 
 #[derive(Debug, Clone)]
 pub struct RtAudioGraphNode {
+    pub component_ffi: u64,
     pub kind: RtAudioGraphNodeKind,
     pub state: RtAudioGraphNodeState,
     pub children: HVec<RtAudioGraphChild, MAX_AUDIO_GRAPH_CHILDREN_PER_NODE>,
@@ -546,6 +565,14 @@ pub enum AudioOp {
     ///
     /// This is applied in addition to each oscillator's own `amplitude`.
     SetGain(f32),
+    /// Update a compiled RT graph low-pass cutoff in-place.
+    ///
+    /// Target is the `AudioLowPassFilterComponent` ComponentId (as FFI u64).
+    SetLowPassCutoffHz(f32),
+    /// Update a compiled RT graph band-pass center frequency in-place.
+    ///
+    /// Target is the `AudioBandPassFilterComponent` ComponentId (as FFI u64).
+    SetBandPassCenterHz(f32),
     SetEnabled(bool),
 }
 
@@ -593,6 +620,8 @@ fn op_priority(op: AudioOp) -> u8 {
         AudioOp::SetEnabled(true) => 0,
         AudioOp::SetHz(_) => 1,
         AudioOp::SetGain(_) => 1,
+        AudioOp::SetLowPassCutoffHz(_) => 1,
+        AudioOp::SetBandPassCenterHz(_) => 1,
         AudioOp::SetEnabled(false) => 2,
     }
 }
@@ -606,6 +635,8 @@ fn apply_audio_op(oscs: &mut [AudioOscillator], op: AudioOp) {
             }
         }
         AudioOp::SetGain(_) => {}
+        AudioOp::SetLowPassCutoffHz(_) => {}
+        AudioOp::SetBandPassCenterHz(_) => {}
         AudioOp::SetEnabled(enabled) => {
             for o in oscs.iter_mut() {
                 o.enabled = enabled;
@@ -719,6 +750,27 @@ fn process_graph_node(
             let z1 = &mut graph.nodes[idx].state.lp_z1;
             one_pole_lowpass(input, cutoff_hz, sample_rate_hz, z1)
         }
+        RtAudioGraphNodeKind::BandPass {
+            center_hz,
+            bandwidth_octaves,
+            resonance: _,
+        } => {
+            let center_hz = sanitize_param_f32(center_hz, 0.0).max(0.0);
+            let bandwidth_octaves = sanitize_param_f32(bandwidth_octaves, 1.0).clamp(0.01, 8.0);
+
+            // Convert an octave bandwidth into low/high cutoff frequencies.
+            // width = 2^(bw/2)
+            let width = 2.0f32.powf(0.5 * bandwidth_octaves);
+            let low_cutoff_hz = (center_hz / width).max(0.0);
+            let high_cutoff_hz = (center_hz * width).max(low_cutoff_hz);
+
+            let (hp_y1, hp_x1, lp_z1) = {
+                let st = &mut graph.nodes[idx].state;
+                (&mut st.hp_y1, &mut st.hp_x1, &mut st.lp_z1)
+            };
+            let hp = one_pole_highpass(input, low_cutoff_hz, sample_rate_hz, hp_y1, hp_x1);
+            one_pole_lowpass(hp, high_cutoff_hz, sample_rate_hz, lp_z1)
+        }
         RtAudioGraphNodeKind::HighPass {
             cutoff_hz,
             resonance: _,
@@ -828,6 +880,14 @@ pub(crate) fn render_buffer<T: Copy>(
     synth_state: &mut SynthRtState,
     to_sample: fn(f32) -> T,
 ) {
+    if !synth_state.trace_lp_ops_inited {
+        synth_state.trace_lp_ops_inited = true;
+        synth_state.trace_lp_ops = std::env::var("CAT_AUDIO_TRACE_LP")
+            .ok()
+            .map(|v| v != "0")
+            .unwrap_or(false);
+    }
+
     let ch = (channels.max(1) as usize).max(1);
     let frames_in_buf = (data.len() / ch).max(1) as u64;
     let base_frame = state_for_cb.frames_played.load(Ordering::Relaxed);
@@ -995,31 +1055,163 @@ pub(crate) fn render_buffer<T: Copy>(
         {
             let (_idx, target, graph) = rt.due_graph_ops[graph_cursor].clone();
             graphs.insert(target, graph);
+
+            if synth_state.trace_lp_ops {
+                if let Some(g) = graphs.get(&target) {
+                    let mut lp_ids: [u64; 4] = [0; 4];
+                    let mut lp_n = 0usize;
+                    for n in g.nodes.iter() {
+                        if matches!(n.kind, RtAudioGraphNodeKind::LowPass { .. }) {
+                            if lp_n < lp_ids.len() {
+                                lp_ids[lp_n] = n.component_ffi;
+                            }
+                            lp_n += 1;
+                        }
+                    }
+                    eprintln!(
+                        "[audio-rt] GraphSwap target_root_ffi={target} nodes={} lowpass_nodes={} lowpass_ids(first4)={:?}",
+                        g.nodes.len(),
+                        lp_n,
+                        lp_ids
+                    );
+                }
+            }
+
             graph_cursor += 1;
         }
 
         while op_cursor < rt.due_ops.len() && rt.due_ops[op_cursor].0 == frame_idx {
             let (_idx, target, op) = rt.due_ops[op_cursor];
-            if let Some(oscs) = osc_snapshot.get_mut(&target) {
-                match op {
-                    AudioOp::SetEnabled(true) => {
-                        for (idx, osc) in oscs.iter_mut().enumerate() {
-                            osc.enabled = true;
-                            fundsp.retrigger_voice((target, idx));
-                        }
+            match op {
+                AudioOp::SetLowPassCutoffHz(cutoff_hz) => {
+                    let cutoff_hz = if cutoff_hz.is_finite() {
+                        cutoff_hz.max(0.0)
+                    } else {
+                        0.0
+                    };
 
-                        let gate = gates.entry(target).or_default();
-                        gate.current = 0.0;
-                        gate.ramp_to(1.0, enable_ramp_samples.max(1), false);
+                    // Apply to any RT graph node that corresponds to this component.
+                    let mut matched = 0usize;
+                    for graph in graphs.values_mut() {
+                        for node in graph.nodes.iter_mut() {
+                            if node.component_ffi != target {
+                                continue;
+                            }
+
+                            if let RtAudioGraphNodeKind::LowPass { resonance, .. } = node.kind {
+                                node.kind = RtAudioGraphNodeKind::LowPass {
+                                    cutoff_hz,
+                                    resonance,
+                                };
+                                matched += 1;
+                            }
+                        }
                     }
-                    AudioOp::SetEnabled(false) => {
-                        let gate = gates.entry(target).or_default();
-                        gate.ramp_to(0.0, disable_ramp_samples.max(1), true);
+
+                    if synth_state.trace_lp_ops {
+                        synth_state.trace_lp_ops_count =
+                            synth_state.trace_lp_ops_count.wrapping_add(1);
+                        let n = synth_state.trace_lp_ops_count;
+
+                        // Rate limit: first 10 ops + then every 256th.
+                        if (matched == 0 && n <= 32) || n <= 10 || (n & 0xFF) == 0 {
+                            if matched == 0 {
+                                let mut any_lp_ids: [u64; 8] = [0; 8];
+                                let mut any_lp_n = 0usize;
+                                for graph in graphs.values() {
+                                    for node in graph.nodes.iter() {
+                                        if matches!(node.kind, RtAudioGraphNodeKind::LowPass { .. })
+                                        {
+                                            if any_lp_n < any_lp_ids.len() {
+                                                any_lp_ids[any_lp_n] = node.component_ffi;
+                                            }
+                                            any_lp_n += 1;
+                                        }
+                                    }
+                                }
+                                eprintln!(
+                                    "[audio-rt]   available_lowpass_nodes={} lowpass_ids(first8)={:?} graphs={} ",
+                                    any_lp_n,
+                                    any_lp_ids,
+                                    graphs.len(),
+                                );
+                            }
+                            eprintln!(
+                                "[audio-rt] SetLowPassCutoffHz target_ffi={target} cutoff_hz={cutoff_hz:.2} matched_nodes={matched} (count={n})"
+                            );
+                        }
                     }
-                    AudioOp::SetHz(_) => apply_audio_op(oscs, op),
-                    AudioOp::SetGain(g) => {
-                        let g = if g.is_finite() { g.max(0.0) } else { 1.0 };
-                        gains.insert(target, g);
+                }
+                AudioOp::SetBandPassCenterHz(center_hz) => {
+                    let center_hz = if center_hz.is_finite() {
+                        center_hz.max(0.0)
+                    } else {
+                        0.0
+                    };
+
+                    let mut matched = 0usize;
+                    for graph in graphs.values_mut() {
+                        for node in graph.nodes.iter_mut() {
+                            if node.component_ffi != target {
+                                continue;
+                            }
+
+                            if let RtAudioGraphNodeKind::BandPass {
+                                bandwidth_octaves,
+                                resonance,
+                                ..
+                            } = node.kind
+                            {
+                                node.kind = RtAudioGraphNodeKind::BandPass {
+                                    center_hz,
+                                    bandwidth_octaves,
+                                    resonance,
+                                };
+                                matched += 1;
+                            }
+                        }
+                    }
+
+                    if synth_state.trace_lp_ops {
+                        synth_state.trace_lp_ops_count =
+                            synth_state.trace_lp_ops_count.wrapping_add(1);
+                        let n = synth_state.trace_lp_ops_count;
+                        if (matched == 0 && n <= 32) || n <= 10 || (n & 0xFF) == 0 {
+                            eprintln!(
+                                "[audio-rt] SetBandPassCenterHz target_ffi={target} center_hz={center_hz:.2} matched_nodes={matched} (count={n})"
+                            );
+                        }
+                    }
+                }
+                _ => {
+                    if let Some(oscs) = osc_snapshot.get_mut(&target) {
+                        match op {
+                            AudioOp::SetEnabled(true) => {
+                                for (idx, osc) in oscs.iter_mut().enumerate() {
+                                    osc.enabled = true;
+                                    fundsp.retrigger_voice((target, idx));
+                                }
+
+                                let gate = gates.entry(target).or_default();
+                                gate.current = 0.0;
+                                gate.ramp_to(1.0, enable_ramp_samples.max(1), false);
+                            }
+                            AudioOp::SetEnabled(false) => {
+                                let gate = gates.entry(target).or_default();
+                                gate.ramp_to(0.0, disable_ramp_samples.max(1), true);
+                            }
+                            AudioOp::SetHz(_) => apply_audio_op(oscs, op),
+                            AudioOp::SetGain(g) => {
+                                let g = if g.is_finite() { g.max(0.0) } else { 1.0 };
+                                gains.insert(target, g);
+                            }
+                            AudioOp::SetLowPassCutoffHz(_) => {
+                                // Handled above.
+                            }
+                            AudioOp::SetBandPassCenterHz(_) => {
+                                // Handled above.
+                            }
+                        }
                     }
                 }
             }

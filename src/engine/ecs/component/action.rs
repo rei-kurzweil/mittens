@@ -7,6 +7,17 @@ pub enum ActionMethod {
     Noop,
     Print,
     SetColor,
+    SetText,
+    /// Attach `child` under `parent` (component graph topology change).
+    Attach,
+    /// Detach each target from its parent.
+    Detach,
+    /// Remove each target component and all descendants.
+    RemoveSubtree,
+    /// Mark the audio graph dirty (forces an end-of-frame recompile + RT graph swap scheduling).
+    AudioGraphRebuild,
+    AudioLowPassSetCutoffHz,
+    AudioBandPassSetCenterHz,
     OscillatorSetEnabled,
     OscillatorSetPitch,
     OscillatorScheduleSetPitch,
@@ -32,6 +43,36 @@ impl ActionMethod {
             }
             ActionMethod::SetColor => {
                 map.insert("method".to_string(), serde_json::json!("set_color"));
+            }
+            ActionMethod::SetText => {
+                map.insert("method".to_string(), serde_json::json!("set_text"));
+            }
+            ActionMethod::Attach => {
+                map.insert("method".to_string(), serde_json::json!("attach"));
+            }
+            ActionMethod::Detach => {
+                map.insert("method".to_string(), serde_json::json!("detach"));
+            }
+            ActionMethod::RemoveSubtree => {
+                map.insert("method".to_string(), serde_json::json!("remove_subtree"));
+            }
+            ActionMethod::AudioGraphRebuild => {
+                map.insert(
+                    "method".to_string(),
+                    serde_json::json!("audio_graph_rebuild"),
+                );
+            }
+            ActionMethod::AudioLowPassSetCutoffHz => {
+                map.insert(
+                    "method".to_string(),
+                    serde_json::json!("audio_low_pass_set_cutoff_hz"),
+                );
+            }
+            ActionMethod::AudioBandPassSetCenterHz => {
+                map.insert(
+                    "method".to_string(),
+                    serde_json::json!("audio_band_pass_set_center_hz"),
+                );
             }
             ActionMethod::OscillatorSetEnabled => {
                 map.insert(
@@ -105,6 +146,80 @@ impl Action {
             target,
             method: ActionMethod::SetColor,
             params: vec![serde_json::json!(rgba)],
+        }
+    }
+
+    pub fn set_text(target: Vec<ComponentId>, text: impl Into<String>) -> Self {
+        Self {
+            target,
+            method: ActionMethod::SetText,
+            params: vec![serde_json::json!(text.into())],
+        }
+    }
+
+    /// Attach `child` under `parent`.
+    ///
+    /// Mirrors `Universe::attach(parent, child)` / `World::add_child(parent, child)`.
+    pub fn attach(parent: ComponentId, child: ComponentId) -> Self {
+        Self {
+            target: vec![parent],
+            method: ActionMethod::Attach,
+            params: vec![serde_json::json!(child.data().as_ffi())],
+        }
+    }
+
+    /// Detach each target from its current parent.
+    ///
+    /// Mirrors `World::detach_from_parent(child)`.
+    pub fn detach(target: Vec<ComponentId>) -> Self {
+        Self {
+            target,
+            method: ActionMethod::Detach,
+            params: Vec::new(),
+        }
+    }
+
+    /// Common misspelling alias (kept for convenience).
+    pub fn detatch(target: Vec<ComponentId>) -> Self {
+        Self::detach(target)
+    }
+
+    /// Remove each target component and all its descendants.
+    ///
+    /// Mirrors `World::remove_component_subtree(root)`.
+    pub fn remove_subtree(target: Vec<ComponentId>) -> Self {
+        Self {
+            target,
+            method: ActionMethod::RemoveSubtree,
+            params: Vec::new(),
+        }
+    }
+
+    /// Force the audio graph to be recompiled (and swapped into the audio worker).
+    ///
+    /// This doesn't change topology by itself; it just ensures any world mutations are
+    /// reflected in the RT graph.
+    pub fn audio_graph_rebuild(target: Vec<ComponentId>) -> Self {
+        Self {
+            target,
+            method: ActionMethod::AudioGraphRebuild,
+            params: Vec::new(),
+        }
+    }
+
+    pub fn audio_low_pass_set_cutoff_hz(target: Vec<ComponentId>, cutoff_hz: f32) -> Self {
+        Self {
+            target,
+            method: ActionMethod::AudioLowPassSetCutoffHz,
+            params: vec![serde_json::json!(cutoff_hz)],
+        }
+    }
+
+    pub fn audio_band_pass_set_center_hz(target: Vec<ComponentId>, center_hz: f32) -> Self {
+        Self {
+            target,
+            method: ActionMethod::AudioBandPassSetCenterHz,
+            params: vec![serde_json::json!(center_hz)],
         }
     }
 
@@ -261,6 +376,13 @@ impl Component for ActionComponent {
             "noop" => ActionMethod::Noop,
             "print" => ActionMethod::Print,
             "set_color" => ActionMethod::SetColor,
+            "set_text" => ActionMethod::SetText,
+            "attach" => ActionMethod::Attach,
+            "detach" => ActionMethod::Detach,
+            "remove_subtree" => ActionMethod::RemoveSubtree,
+            "audio_graph_rebuild" => ActionMethod::AudioGraphRebuild,
+            "audio_low_pass_set_cutoff_hz" => ActionMethod::AudioLowPassSetCutoffHz,
+            "audio_band_pass_set_center_hz" => ActionMethod::AudioBandPassSetCenterHz,
             "oscillator_set_enabled" => ActionMethod::OscillatorSetEnabled,
             // Deprecated/removed: keep backward compatibility but do nothing.
             "oscillator_multiply_pitch" => ActionMethod::Noop,

@@ -13,7 +13,6 @@ use crate::engine::graphics::{GpuRenderable, VisualWorld};
 use crate::engine::graphics::{MeshUploader, RenderAssets};
 use crate::engine::user_input::InputState;
 use std::collections::{HashMap, VecDeque};
-use std::sync::OnceLock;
 
 /// System that registers/updates renderables in the `VisualWorld`.
 ///
@@ -116,16 +115,6 @@ fn clone_mesh_with_uv_overrides(
     }
 
     Some(render_assets.register_mesh(mesh))
-}
-
-fn debug_renderable_pending_enabled() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        std::env::var("CAT_DEBUG_RENDERABLE_PENDING")
-            .ok()
-            .as_deref()
-            == Some("1")
-    })
 }
 
 impl RenderableSystem {
@@ -433,13 +422,7 @@ impl RenderableSystem {
 
             let mesh = match render_assets.gpu_mesh_handle(uploader, new_mesh) {
                 Ok(h) => h,
-                Err(err) => {
-                    println!(
-                        "[RenderableSystem]  -> gpu_mesh_handle failed for cpu_mesh={:?}: {:?}",
-                        new_mesh, err
-                    );
-                    continue;
-                }
+                Err(_err) => continue,
             };
 
             let Some(model) = TransformSystem::world_model(world, renderable_cid) else {
@@ -828,7 +811,6 @@ impl RenderableSystem {
             let Some(renderable_comp) =
                 world.get_component_by_id_as::<RenderableComponent>(component)
             else {
-                println!("[RenderableSystem]  -> component is not RenderableComponent somehow");
                 return;
             };
             if renderable_comp.get_handle().is_some() {
@@ -839,7 +821,6 @@ impl RenderableSystem {
         // Defer insertion into VisualWorld until the GPU mesh exists.
         let Some(renderable_comp) = world.get_component_by_id_as::<RenderableComponent>(component)
         else {
-            println!("[RenderableSystem]  -> component is not RenderableComponent somehow");
             return;
         };
 
@@ -875,15 +856,6 @@ impl RenderableSystem {
             if let Some(o) = Self::inherited_opacity_for_renderable(world, component) {
                 self.pending_opacity.insert(component, o);
             }
-        }
-
-        if debug_renderable_pending_enabled() {
-            println!(
-                "[RenderableSystem]  -> pending += 1 (pending_len={}) cpu_mesh={:?} material={:?}",
-                self.pending.len(),
-                renderable_comp.renderable.mesh,
-                renderable_comp.renderable.material
-            );
         }
 
         // Mark draw cache dirty only when we actually insert into visuals.
@@ -951,13 +923,7 @@ impl RenderableSystem {
             // Upload/resolve GPU mesh.
             let mesh = match render_assets.gpu_mesh_handle(uploader, cpu_mesh) {
                 Ok(h) => h,
-                Err(err) => {
-                    println!(
-                        "[RenderableSystem]  -> gpu_mesh_handle failed for cpu_mesh={:?}: {:?}",
-                        cpu_mesh, err
-                    );
-                    continue;
-                }
+                Err(_err) => continue,
             };
 
             let gpu_r = GpuRenderable {

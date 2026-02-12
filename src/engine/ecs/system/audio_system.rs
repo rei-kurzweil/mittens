@@ -137,14 +137,17 @@ impl AudioSystem {
     }
 
     pub fn update_transport_from_clock(&mut self, beat_now: f64, bpm: f64) {
-        let Some(clock) = self.clock_state.as_ref() else {
-            return;
-        };
         if !beat_now.is_finite() || !bpm.is_finite() || bpm <= 0.0 {
             return;
         }
 
         self.last_transport = Some((beat_now, bpm));
+
+        // If audio isn't running yet, we still keep `last_transport` updated so that
+        // graph swaps can be scheduled as soon as the stream starts.
+        let Some(clock) = self.clock_state.as_ref() else {
+            return;
+        };
 
         let frames = clock.frames_played.load(Ordering::Relaxed) as f64;
         let sample_rate_hz = (clock.sample_rate_hz as f64).max(1.0);
@@ -402,6 +405,19 @@ impl AudioSystem {
 
         // Mark graph dirty so we compile once the frame's mutations settle.
         self.dirty_audio_outputs.insert(component);
+
+        // Also schedule an initial graph swap immediately so the RT thread has graphs
+        // before any keyframed parameter ops arrive.
+        let sources = collect_audio_oscillator_roots(world, component);
+        if !sources.is_empty() {
+            let (beat_now, bpm) = self.last_transport.unwrap_or((0.0, 120.0));
+            let beats_per_sec = bpm / 60.0;
+            let beat_epsilon = (beats_per_sec * 0.010).max(0.0); // ~10ms into the future.
+            let beat = beat_now + beat_epsilon;
+            for src in sources {
+                self.schedule_graph_swap(world, src, beat);
+            }
+        }
     }
 
     pub fn register_audio_oscillator(&mut self, world: &mut World, component: ComponentId) {
@@ -558,6 +574,18 @@ fn rt_graph_from_compiled(
                 },
                 Default::default(),
             ),
+            crate::engine::ecs::system::audio_graph_compiler::AudioGraphNodeKind::BandPass {
+                center_hz,
+                bandwidth_octaves,
+                resonance,
+            } => (
+                RtAudioGraphNodeKind::BandPass {
+                    center_hz,
+                    bandwidth_octaves,
+                    resonance,
+                },
+                Default::default(),
+            ),
             crate::engine::ecs::system::audio_graph_compiler::AudioGraphNodeKind::HighPass {
                 cutoff_hz,
                 resonance,
@@ -595,6 +623,7 @@ fn rt_graph_from_compiled(
 
         nodes
             .push(RtAudioGraphNode {
+                component_ffi: node.component.data().as_ffi(),
                 kind,
                 state,
                 children: HVec::<RtAudioGraphChild, MAX_AUDIO_GRAPH_CHILDREN_PER_NODE>::new(),

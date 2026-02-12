@@ -1,6 +1,7 @@
 pub mod action;
 pub mod ambient_light;
 pub mod animation;
+pub mod audio_band_pass_filter;
 pub mod audio_buffer_size;
 pub mod audio_gain;
 pub mod audio_high_pass_filter;
@@ -48,6 +49,7 @@ pub use action::{Action, ActionMethod};
 pub use ambient_light::AmbientLightComponent;
 pub use animation::AnimationComponent;
 pub use animation::AnimationState;
+pub use audio_band_pass_filter::*;
 pub use audio_buffer_size::AudioBufferSizeComponent;
 pub use audio_gain::*;
 pub use audio_high_pass_filter::*;

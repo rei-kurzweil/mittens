@@ -107,6 +107,10 @@ impl TextComponent {
         self.built
     }
 
+    pub(crate) fn mark_unbuilt(&mut self) {
+        self.built = false;
+    }
+
     pub(crate) fn mark_built(&mut self) {
         self.built = true;
     }

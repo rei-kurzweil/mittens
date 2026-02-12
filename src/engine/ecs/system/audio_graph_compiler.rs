@@ -1,6 +1,7 @@
 use crate::engine::ecs::component::{
-    AudioGainComponent, AudioHighPassFilterComponent, AudioLimiterComponent,
-    AudioLowPassFilterComponent, AudioMixComponent, AudioOscillatorComponent,
+    AudioBandPassFilterComponent, AudioGainComponent, AudioHighPassFilterComponent,
+    AudioLimiterComponent, AudioLowPassFilterComponent, AudioMixComponent,
+    AudioOscillatorComponent,
 };
 use crate::engine::ecs::{ComponentId, World};
 
@@ -33,6 +34,11 @@ pub enum AudioGraphNodeKind {
     },
     LowPass {
         cutoff_hz: f32,
+        resonance: f32,
+    },
+    BandPass {
+        center_hz: f32,
+        bandwidth_octaves: f32,
         resonance: f32,
     },
     HighPass {
@@ -143,6 +149,13 @@ impl AudioGraphCompiler {
                 resonance: c.resonance,
             });
         }
+        if let Some(c) = world.get_component_by_id_as::<AudioBandPassFilterComponent>(cid) {
+            return Some(AudioGraphNodeKind::BandPass {
+                center_hz: c.center_hz,
+                bandwidth_octaves: c.bandwidth_octaves,
+                resonance: c.resonance,
+            });
+        }
         if let Some(c) = world.get_component_by_id_as::<AudioHighPassFilterComponent>(cid) {
             return Some(AudioGraphNodeKind::HighPass {
                 cutoff_hz: c.cutoff_hz,
@@ -190,6 +203,16 @@ impl AudioGraphNode {
             } => {
                 format!(
                     "{pad}- AudioLowPassFilterComponent {{ cutoff_hz: {cutoff_hz:.1}, resonance: {resonance:.3} }} (component={:?})\n",
+                    self.component
+                )
+            }
+            AudioGraphNodeKind::BandPass {
+                center_hz,
+                bandwidth_octaves,
+                resonance,
+            } => {
+                format!(
+                    "{pad}- AudioBandPassFilterComponent {{ center_hz: {center_hz:.1}, bandwidth_octaves: {bandwidth_octaves:.3}, resonance: {resonance:.3} }} (component={:?})\n",
                     self.component
                 )
             }

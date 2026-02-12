@@ -1,12 +1,15 @@
 use crate::engine::ecs::component::{
     Action, ActionComponent, ActionMethod, AudioOscillatorComponent, ColorComponent,
-    RenderableComponent,
+    RenderableComponent, TextComponent,
 };
+use crate::engine::ecs::component::{AudioBandPassFilterComponent, AudioLowPassFilterComponent};
 use crate::engine::ecs::component::{MusicNote, MusicNoteComponent, NotePitch};
 use crate::engine::ecs::system::MusicSystem;
+use crate::engine::ecs::system::audio_system::AudioOp;
 use crate::engine::ecs::{CommandQueue, ComponentId, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
+use slotmap::KeyData;
 
 #[derive(Debug, Default)]
 pub struct ActionSystem;
@@ -59,6 +62,134 @@ impl ActionSystem {
                     if let Some(c) = world.get_component_by_id_as_mut::<ColorComponent>(color_cid) {
                         c.rgba = rgba;
                         queue.queue_register_color(color_cid);
+                    }
+                }
+            }
+            ActionMethod::SetText => {
+                let Some(text) = action.params.get(0).and_then(|v| v.as_str()) else {
+                    println!(
+                        "[ActionSystem] set_text: missing/invalid text params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+
+                let mut text_cids = Vec::new();
+                for &target in action.target.iter() {
+                    collect_text_targets(world, target, &mut text_cids);
+                }
+                text_cids.sort();
+                text_cids.dedup();
+
+                for text_cid in text_cids {
+                    queue.queue_set_text(text_cid, text.to_string());
+                }
+            }
+            ActionMethod::Attach => {
+                let Some(child) = action.params.get(0).and_then(parse_component_id) else {
+                    println!(
+                        "[ActionSystem] attach: missing/invalid child params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+
+                for &parent in action.target.iter() {
+                    if let Err(e) = world.add_child(parent, child) {
+                        println!("[ActionSystem] attach failed: {e}");
+                        continue;
+                    }
+
+                    if world.is_initialized(parent) {
+                        world.init_component_tree(child, queue);
+                    }
+
+                    // Topology change may affect audio compilation.
+                    queue.queue_audio_graph_dirty(parent);
+                    queue.queue_audio_graph_dirty(child);
+                }
+            }
+            ActionMethod::Detach => {
+                for &child in action.target.iter() {
+                    // Topology change may affect audio compilation. Mark before detaching so
+                    // we can still find an AudioOutput ancestor.
+                    queue.queue_audio_graph_dirty(child);
+
+                    let old_parent = world.parent_of(child);
+                    world.detach_from_parent(child);
+                    if let Some(p) = old_parent {
+                        queue.queue_audio_graph_dirty(p);
+                    }
+                }
+            }
+            ActionMethod::RemoveSubtree => {
+                for &root in action.target.iter() {
+                    // Topology change may affect audio compilation. Mark before removal so we
+                    // can still walk to an AudioOutput ancestor.
+                    queue.queue_audio_graph_dirty(root);
+                    queue.queue_remove_subtree(root);
+                }
+            }
+            ActionMethod::AudioGraphRebuild => {
+                // Mark graphs dirty; AudioSystem will batch recompile + schedule a graph swap
+                // once after CommandQueue flush for this frame.
+                for &target in action.target.iter() {
+                    queue.queue_audio_graph_dirty(target);
+                }
+            }
+            ActionMethod::AudioLowPassSetCutoffHz => {
+                let Some(cutoff_hz) = action.params.get(0).and_then(parse_f32) else {
+                    println!(
+                        "[ActionSystem] audio_low_pass_set_cutoff_hz: missing/invalid cutoff_hz params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+
+                for &target in action.target.iter() {
+                    if let Some(c) =
+                        world.get_component_by_id_as_mut::<AudioLowPassFilterComponent>(target)
+                    {
+                        c.cutoff_hz = if cutoff_hz.is_finite() {
+                            cutoff_hz.max(0.0)
+                        } else {
+                            c.cutoff_hz
+                        };
+
+                        // Cutoff changes don't require rebuilding the entire graph; update the
+                        // compiled RT node in-place at the current beat.
+                        queue.queue_schedule_audio_op(
+                            target,
+                            beat_now,
+                            AudioOp::SetLowPassCutoffHz(c.cutoff_hz),
+                        );
+                    }
+                }
+            }
+            ActionMethod::AudioBandPassSetCenterHz => {
+                let Some(center_hz) = action.params.get(0).and_then(parse_f32) else {
+                    println!(
+                        "[ActionSystem] audio_band_pass_set_center_hz: missing/invalid center_hz params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+
+                for &target in action.target.iter() {
+                    if let Some(c) =
+                        world.get_component_by_id_as_mut::<AudioBandPassFilterComponent>(target)
+                    {
+                        c.center_hz = if center_hz.is_finite() {
+                            center_hz.max(0.0)
+                        } else {
+                            c.center_hz
+                        };
+
+                        queue.queue_schedule_audio_op(
+                            target,
+                            beat_now,
+                            AudioOp::SetBandPassCenterHz(c.center_hz),
+                        );
                     }
                 }
             }
@@ -361,6 +492,17 @@ fn parse_f32(v: &serde_json::Value) -> Option<f32> {
     None
 }
 
+fn parse_component_id(v: &serde_json::Value) -> Option<ComponentId> {
+    let ffi = if let Some(u) = v.as_u64() {
+        u
+    } else if let Some(i) = v.as_i64() {
+        u64::try_from(i).ok()?
+    } else {
+        return None;
+    };
+    Some(KeyData::from_ffi(ffi).into())
+}
+
 fn parse_f64(v: &serde_json::Value) -> Option<f64> {
     if let Some(f) = v.as_f64() {
         return Some(f);
@@ -482,6 +624,30 @@ fn collect_oscillator_targets(world: &World, target: ComponentId, out: &mut Vec<
 
         if world
             .get_component_by_id_as::<AudioOscillatorComponent>(node)
+            .is_some()
+        {
+            out.push(node);
+        }
+    }
+}
+
+fn collect_text_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {
+    if world
+        .get_component_by_id_as::<TextComponent>(target)
+        .is_some()
+    {
+        out.push(target);
+        return;
+    }
+
+    let mut stack = vec![target];
+    while let Some(node) = stack.pop() {
+        for &ch in world.children_of(node) {
+            stack.push(ch);
+        }
+
+        if world
+            .get_component_by_id_as::<TextComponent>(node)
             .is_some()
         {
             out.push(node);

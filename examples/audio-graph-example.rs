@@ -1,5 +1,8 @@
 use cat_engine::{engine, utils};
 
+#[path = "example_util/mod.rs"]
+mod example_util;
+
 fn main() {
     utils::logger::init();
 
@@ -29,9 +32,19 @@ fn main() {
     let clear = universe
         .world
         .register(engine::ecs::component::BackgroundColorComponent::rgba(
-            0.05, 0.05, 0.08, 1.0,
+            0.07, 0.07, 0.07, 1.0,
         ));
     universe.add(clear);
+
+    // Ambient light so unlit areas aren't pitch black.
+    // Keep it dark to match the background clear color.
+    // (User request) 2.5x brighter.
+    let ambient = universe
+        .world
+        .register(engine::ecs::component::AmbientLightComponent::rgb(
+            0.075, 0.075, 0.075,
+        ));
+    universe.add(ambient);
 
     // Input-driven camera rig.
     let input = universe
@@ -53,17 +66,38 @@ fn main() {
     let _ = universe.attach(rig_transform, camera3d);
     universe.add(input);
 
-    // Light.
+    // Directional light (sun-ish). Note: the renderer interprets the node's world position
+    // as a direction vector (see DirectionalLightComponent docs).
     let light_tx = universe
         .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 2.5, 4.0));
+        .register(engine::ecs::component::TransformComponent::new().with_position(0.2, 0.7, 1.0));
     let light = universe.world.register(
-        engine::ecs::component::PointLightComponent::new()
-            .with_distance(25.0)
-            .with_color(1.0, 1.0, 1.0),
+        engine::ecs::component::DirectionalLightComponent::new()
+            .with_color(1.0, 1.0, 1.0)
+            .with_intensity(0.35),
     );
     let _ = universe.attach(light_tx, light);
     universe.add(light_tx);
+
+    // --- Background clouds (occluded + lit) ---
+    // Mirrors the vtuber example: use a BackgroundComponent stage so the cloud volume
+    // self-occludes and is lit, but renders as background.
+    let bg_root = universe
+        .world
+        .register(engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting());
+    universe.add(bg_root);
+    let mut cloud_params = example_util::CloudRingParams::default();
+    cloud_params.cloud_count = 7;
+    cloud_params.radius = 22.0;
+    // Move the ring up by ~one cloud height. The cloud generator uses a ~4.0 unit
+    // vertical spread for puff offsets, so +4.0 is a good "one height" bump.
+    cloud_params.center_y = 6.0;
+    cloud_params.puffs_per_cloud = 26;
+    cloud_params.angle_jitter = 0.0;
+    cloud_params.high_y_probability = 0.0;
+    cloud_params.high_y_multiplier = 1.0;
+    cloud_params.seed = 0xA0_D1_0C_01u32;
+    example_util::spawn_cloud_ring(&mut universe, bg_root, cloud_params);
 
     // ClockComponent sets global tempo.
     if audio_enabled {
@@ -99,9 +133,9 @@ fn main() {
         (true, false) => println!("[audio-graph-example] audio output added (CPAL off)"),
     }
 
-    // Track A: a bright saw lead.
+    // Track A: square lead.
     let osc_a_comp = if audio_enabled {
-        let osc_a = engine::ecs::component::AudioOscillator::saw()
+        let osc_a = engine::ecs::component::AudioOscillator::square()
             .with_frequency(110.0)
             .with_amplitude(0.12)
             .with_enabled(false);
@@ -125,45 +159,32 @@ fn main() {
         println!("[audio-graph-example] audio disabled; skipping track A");
     }
 
-    // Effect tree A (branching):
+    // Effect tree A (single chain):
     // osc_a
     //   Gain
-    //     Mix(weights)
-    //     LowPass
+    //     BandPass
     //       Limiter
-    //     HighPass
+    let mut bp_a_comp: Option<engine::ecs::ComponentId> = None;
     if let Some(osc_a_comp) = osc_a_comp {
         let gain_a = universe
             .world
-            .register(engine::ecs::component::AudioGainComponent::new(0.8));
-        let mix_a = universe
-            .world
-            .register(engine::ecs::component::AudioMixComponent::new(vec![
-                0.75, 0.25,
-            ]));
-        let lp_a =
+            .register(engine::ecs::component::AudioGainComponent::new(3.2));
+        let bp_a =
             universe
                 .world
-                .register(engine::ecs::component::AudioLowPassFilterComponent::new(
-                    1200.0, 0.40,
+                .register(engine::ecs::component::AudioBandPassFilterComponent::new(
+                    120.0, 3.0, 0.40,
                 ));
+        bp_a_comp = Some(bp_a);
         let lim_a = universe
             .world
             .register(engine::ecs::component::AudioLimiterComponent::new(
                 4.0, 80.0, 0.90,
             ));
-        let hp_a =
-            universe
-                .world
-                .register(engine::ecs::component::AudioHighPassFilterComponent::new(
-                    300.0, 0.20,
-                ));
 
         let _ = universe.attach(osc_a_comp, gain_a);
-        let _ = universe.attach(gain_a, mix_a);
-        let _ = universe.attach(gain_a, lp_a);
-        let _ = universe.attach(lp_a, lim_a);
-        let _ = universe.attach(gain_a, hp_a);
+        let _ = universe.attach(gain_a, bp_a);
+        let _ = universe.attach(bp_a, lim_a);
     }
 
     if audio_enabled {
@@ -189,6 +210,19 @@ fn main() {
                 text, wrap_cols,
             ));
         let _ = universe.attach(tx, t);
+
+        // TextSystem looks for an immediate TextureFilteringComponent child.
+        let filtering = universe
+            .world
+            .register(engine::ecs::component::TextureFilteringComponent::nearest());
+        let _ = universe.attach(t, filtering);
+
+        // TextSystem also supports styling from immediate Emissive children.
+        let emissive = universe
+            .world
+            .register(engine::ecs::component::EmissiveComponent::on());
+        let _ = universe.attach(t, emissive);
+
         universe.add(tx);
     }
 
@@ -261,8 +295,11 @@ fn main() {
     let lane_title_z = -0.4_f32;
     let lane_cfg_z = -0.4_f32;
     let lane_pat_z = -1.3_f32;
-    let lane_chain_z = -1.3_f32;
     let lane_graph_z = -1.15_f32;
+
+    // Content for pattern/chain/graph starts at x=0; keep section labels aligned there.
+    // This also keeps them from overlapping the config block (which is anchored at lane_x).
+    let lane_labels_x = lane_x + 1.6_f32;
 
     let track_a_y = 0.9_f32;
 
@@ -271,7 +308,7 @@ fn main() {
         (lane_x, track_a_y + 0.55, lane_title_z),
         0.09,
         42,
-        "Track A: AudioOscillator::saw()",
+        "Track A: AudioOscillator::square()",
     );
     spawn_text(
         &mut universe,
@@ -306,44 +343,290 @@ fn main() {
     // Labels for pattern/chain/graph sections.
     spawn_text(
         &mut universe,
-        (lane_x, track_a_y + 0.05, lane_title_z),
+        (lane_labels_x, track_a_y, lane_title_z),
         0.06,
         42,
-        "pattern →",
+        "pattern",
     );
     spawn_text(
         &mut universe,
-        (lane_x, track_a_y - 0.30, lane_title_z),
+        (lane_labels_x, track_a_y - 0.40, lane_title_z),
         0.06,
         42,
-        "chain →",
+        "graph",
     );
-    spawn_text(
-        &mut universe,
-        (lane_x, track_a_y - 0.78, lane_title_z),
-        0.06,
-        42,
-        "graph →",
-    );
+
+    // --- Processing chain + graph visualization (compiled graph → cubes + labels) ---
+    use engine::ecs::system::audio_graph_compiler::{
+        AudioGraphCompiler, AudioGraphNode, AudioGraphNodeKind,
+    };
+
+    fn effect_grey_for_depth(depth: usize) -> f32 {
+        // depth=1 => medium grey; deeper => lighter, capped.
+        let base = 0.55;
+        let step = 0.13;
+        let d = depth.saturating_sub(1) as f32;
+        (base + step * d).min(0.92)
+    }
+
+    fn node_rgba(node: &AudioGraphNode, depth: usize) -> [f32; 4] {
+        match node.kind {
+            AudioGraphNodeKind::OscillatorSource { .. } => [1.0, 0.78, 0.22, 1.0],
+            _ => {
+                let g = effect_grey_for_depth(depth);
+                [g, g, g, 1.0]
+            }
+        }
+    }
+
+    fn node_label(node: &AudioGraphNode) -> String {
+        match &node.kind {
+            AudioGraphNodeKind::OscillatorSource { voices } => {
+                format!("OscillatorSource voices={voices}")
+            }
+            AudioGraphNodeKind::Gain { gain } => {
+                format!("Gain gain={gain:.3}")
+            }
+            AudioGraphNodeKind::LowPass {
+                cutoff_hz,
+                resonance,
+            } => {
+                format!("LowPass cutoff={cutoff_hz:.1}Hz res={resonance:.3}")
+            }
+            AudioGraphNodeKind::BandPass {
+                center_hz,
+                bandwidth_octaves,
+                resonance,
+            } => {
+                format!(
+                    "BandPass center={center_hz:.1}Hz bw={bandwidth_octaves:.3}oct res={resonance:.3}"
+                )
+            }
+            AudioGraphNodeKind::HighPass {
+                cutoff_hz,
+                resonance,
+            } => {
+                format!("HighPass cutoff={cutoff_hz:.1}Hz res={resonance:.3}")
+            }
+            AudioGraphNodeKind::Limiter {
+                attack_ms,
+                release_ms,
+                threshold,
+            } => {
+                format!("Limiter atk={attack_ms:.1}ms rel={release_ms:.1}ms thr={threshold:.3}")
+            }
+        }
+    }
+
+    fn compute_layout(
+        node: &AudioGraphNode,
+        depth: usize,
+        x_cursor: &mut i32,
+        out: &mut std::collections::HashMap<*const AudioGraphNode, (i32, usize)>,
+    ) -> i32 {
+        // Depth-only layout:
+        // - keep children directly below their parent on X
+        // - use Z sibling offsets (in spawn_graph_tree) to show branching
+        let _ = x_cursor;
+        for ch in node.children.iter() {
+            let _ = compute_layout(ch, depth + 1, x_cursor, out);
+        }
+
+        let my_x = 0;
+        out.insert(node as *const AudioGraphNode, (my_x, depth));
+        my_x
+    }
+
+    fn spawn_graph_tree(
+        universe: &mut engine::Universe,
+        parent: engine::ecs::ComponentId,
+        node: &AudioGraphNode,
+        bp_component: Option<engine::ecs::ComponentId>,
+        bp_label_out: &mut Option<engine::ecs::ComponentId>,
+        origin: (f32, f32, f32),
+        layout: &std::collections::HashMap<*const AudioGraphNode, (i32, usize)>,
+        dx: f32,
+        dy: f32,
+        cube_scale: f32,
+        sibling_index: usize,
+        sibling_count: usize,
+    ) {
+        let Some((x_unit, depth)) = layout.get(&(node as *const AudioGraphNode)).copied() else {
+            return;
+        };
+
+        let x = origin.0 + (x_unit as f32) * dx;
+        let y = origin.1 - (depth as f32) * dy;
+
+        // Push siblings “behind” each other along Z to reduce overlap between
+        // a sibling's cube and another node's label.
+        let dz_sibling = 0.18;
+        let z = origin.2 - (sibling_index as f32) * dz_sibling;
+
+        // Keep text slightly in front of its cube.
+        let z_text = z + 0.03;
+
+        let rgba = node_rgba(node, depth);
+        let cube_tx = spawn_op_cube(universe, parent, (x, y, z), cube_scale, rgba);
+        let _ = cube_tx;
+
+        // Label next to the cube.
+        let label = node_label(node);
+        let tx = universe.world.register(
+            engine::ecs::component::TransformComponent::new()
+                .with_position(x + 0.14, y + 0.02, z_text)
+                .with_scale(0.06, 0.06, 1.0),
+        );
+        let t = universe
+            .world
+            .register(engine::ecs::component::TextComponent::with_word_wrap(
+                &label, 25,
+            ));
+        let _ = universe.attach(parent, tx);
+        let _ = universe.attach(tx, t);
+
+        if bp_component == Some(node.component) {
+            *bp_label_out = Some(t);
+        }
+
+        let filtering = universe
+            .world
+            .register(engine::ecs::component::TextureFilteringComponent::nearest());
+        let _ = universe.attach(t, filtering);
+
+        let emissive = universe
+            .world
+            .register(engine::ecs::component::EmissiveComponent::on());
+        let _ = universe.attach(t, emissive);
+
+        universe.add(tx);
+
+        // Mix/branch label if branching.
+        if node.children.len() > 1 {
+            let mut weights: Vec<f32> = Vec::with_capacity(node.children.len());
+            for i in 0..node.children.len() {
+                let w = node
+                    .mix
+                    .as_ref()
+                    .map(|m| m.weights.get(i).copied().unwrap_or(1.0))
+                    .unwrap_or(1.0);
+                weights.push(w);
+            }
+            let mix_label = if node.mix.is_some() {
+                format!("Mix weights={weights:?}")
+            } else {
+                format!("Mix <implicit> w={weights:?}")
+            };
+            let mix_tx = universe.world.register(
+                engine::ecs::component::TransformComponent::new()
+                    .with_position(x + 0.14, y - 0.11, z_text)
+                    .with_scale(0.05, 0.05, 1.0),
+            );
+            let mix_t =
+                universe
+                    .world
+                    .register(engine::ecs::component::TextComponent::with_word_wrap(
+                        &mix_label, 25,
+                    ));
+            let _ = universe.attach(parent, mix_tx);
+            let _ = universe.attach(mix_tx, mix_t);
+
+            let filtering = universe
+                .world
+                .register(engine::ecs::component::TextureFilteringComponent::nearest());
+            let _ = universe.attach(mix_t, filtering);
+
+            let emissive = universe
+                .world
+                .register(engine::ecs::component::EmissiveComponent::on());
+            let _ = universe.attach(mix_t, emissive);
+
+            universe.add(mix_tx);
+        }
+
+        let child_count = node.children.len().max(1);
+        for (i, ch) in node.children.iter().enumerate() {
+            // Each node's children form a sibling group; offset them in Z.
+            // For the root node, sibling_index is 0.
+            let _ = sibling_count;
+            spawn_graph_tree(
+                universe,
+                parent,
+                ch,
+                bp_component,
+                bp_label_out,
+                origin,
+                layout,
+                dx,
+                dy,
+                cube_scale,
+                i,
+                child_count,
+            );
+        }
+    }
+
+    // Compile + display chain and graph for the track.
+    let compiled_a = if audio_enabled {
+        println!("[audio-graph-example] compiling graph...");
+        let Some(osc_a_comp) = osc_a_comp else {
+            panic!("audio_enabled but track A was not created");
+        };
+        let compiled_a =
+            AudioGraphCompiler::compile(&universe.world, osc_a_comp).expect("compile A");
+        println!("[audio-graph-example] graph compiled");
+        Some(compiled_a)
+    } else {
+        println!("[audio-graph-example] audio disabled; skipping graph compilation");
+        None
+    };
+
+    // Full compiled graph visualization (tree layout + mix labels).
+    let mut bp_graph_label_text: Option<engine::ecs::ComponentId> = None;
+    if let Some(compiled_a) = &compiled_a {
+        let mut x_cursor = 0;
+        let mut layout: std::collections::HashMap<*const AudioGraphNode, (i32, usize)> =
+            std::collections::HashMap::new();
+        let _root_x = compute_layout(&compiled_a.root, 0, &mut x_cursor, &mut layout);
+
+        // With depth-only X layout, we keep the tree centered at x=0.
+        // Pull the graph up now that we don't show the separate chain view.
+        let origin = (0.0, track_a_y - 0.40, lane_graph_z);
+
+        spawn_graph_tree(
+            &mut universe,
+            viz_root,
+            &compiled_a.root,
+            bp_a_comp,
+            &mut bp_graph_label_text,
+            origin,
+            &layout,
+            0.45,
+            0.28,
+            0.08,
+            0,
+            1,
+        );
+    } else {
+        spawn_text(
+            &mut universe,
+            (0.0, track_a_y - 0.40, lane_graph_z),
+            0.06,
+            60,
+            "(audio disabled)",
+        );
+    }
 
     // Animation with 16 keyframes drives scheduled notes + pattern highlights.
     let anim = universe
         .world
         .register(engine::ecs::component::AnimationComponent::new());
 
-    let dur_a = 0.20_f32;
+    let dur_a = 0.85_f32;
     let beat_spacing = 0.38_f32;
 
     let a_dark = [0.18, 0.08, 0.22, 1.0];
     let a_bright = [0.85, 0.40, 1.00, 1.0];
-
-    // Simple repeating patterns.
-    let a_notes = [
-        engine::ecs::component::MusicNote::c(4, dur_a).with_velocity(0.80),
-        engine::ecs::component::MusicNote::e(4, dur_a).with_velocity(0.80),
-        engine::ecs::component::MusicNote::g(4, dur_a).with_velocity(0.80),
-        engine::ecs::component::MusicNote::b(4, dur_a).with_velocity(0.80),
-    ];
 
     for i in 0..16 {
         let kf_beat = i as f64;
@@ -353,13 +636,14 @@ fn main() {
 
         let _ = universe.attach(anim, kf);
 
-        // Scheduled audio notes (sample-accurate via lookahead).
+        // Scheduled audio note (sample-accurate via lookahead).
+        // Pulse every beat.
         if audio_enabled {
             let Some(osc_a_comp) = osc_a_comp else {
                 panic!("audio_enabled but track A was not created");
             };
 
-            let note_a = a_notes[i % a_notes.len()];
+            let note_a = engine::ecs::component::MusicNote::c(1, dur_a).with_velocity(0.80);
 
             let act_a = universe
                 .world
@@ -372,6 +656,40 @@ fn main() {
                 ));
 
             let _ = universe.attach(kf, act_a);
+        }
+
+        // Keyframed band-pass center.
+        // This is an immediate parameter update applied RT-side (no graph rebuild).
+        if audio_enabled {
+            if let Some(bp_a_comp) = bp_a_comp {
+                let t = (i as f32) / 15.0;
+                let center_hz = 10.0 + t * (1000.0 - 10.0);
+
+                let bp_center =
+                    universe
+                        .world
+                        .register(engine::ecs::component::ActionComponent::new(
+                            engine::ecs::component::Action::audio_band_pass_set_center_hz(
+                                vec![bp_a_comp],
+                                center_hz,
+                            ),
+                        ));
+                let _ = universe.attach(kf, bp_center);
+
+                // Update the BandPass node label in the graph visualization.
+                if let Some(text_id) = bp_graph_label_text {
+                    let label =
+                        universe
+                            .world
+                            .register(engine::ecs::component::ActionComponent::new(
+                                engine::ecs::component::Action::set_text(
+                                    vec![text_id],
+                                    format!("BandPass center={center_hz:.1}Hz"),
+                                ),
+                            ));
+                    let _ = universe.attach(kf, label);
+                }
+            }
         }
 
         // Visualization reset per keyframe.
@@ -402,250 +720,6 @@ fn main() {
     universe.add(anim);
 
     println!("[audio-graph-example] animation created");
-
-    // --- Processing chain + graph visualization (compiled graph → cubes + labels) ---
-    use engine::ecs::system::audio_graph_compiler::{
-        AudioGraphCompiler, AudioGraphNode, AudioGraphNodeKind,
-    };
-
-    fn node_label(node: &AudioGraphNode) -> String {
-        match &node.kind {
-            AudioGraphNodeKind::OscillatorSource { voices } => {
-                format!("AudioOscillatorComponent {{ oscillators: <len={voices}> }}")
-            }
-            AudioGraphNodeKind::Gain { gain } => {
-                format!("AudioGainComponent {{ gain: {gain:.3} }}")
-            }
-            AudioGraphNodeKind::LowPass {
-                cutoff_hz,
-                resonance,
-            } => {
-                format!(
-                    "AudioLowPassFilterComponent {{ cutoff_hz: {cutoff_hz:.1}, resonance: {resonance:.3} }}"
-                )
-            }
-            AudioGraphNodeKind::HighPass {
-                cutoff_hz,
-                resonance,
-            } => {
-                format!(
-                    "AudioHighPassFilterComponent {{ cutoff_hz: {cutoff_hz:.1}, resonance: {resonance:.3} }}"
-                )
-            }
-            AudioGraphNodeKind::Limiter {
-                attack_ms,
-                release_ms,
-                threshold,
-            } => {
-                format!(
-                    "AudioLimiterComponent {{ attack_ms: {attack_ms:.1}, release_ms: {release_ms:.1}, threshold: {threshold:.3} }}"
-                )
-            }
-        }
-    }
-
-    fn flatten_preorder<'a>(node: &'a AudioGraphNode, out: &mut Vec<&'a AudioGraphNode>) {
-        out.push(node);
-        for ch in node.children.iter() {
-            flatten_preorder(ch, out);
-        }
-    }
-
-    fn subtree_units(node: &AudioGraphNode) -> i32 {
-        if node.children.is_empty() {
-            1
-        } else {
-            node.children.iter().map(subtree_units).sum::<i32>().max(1)
-        }
-    }
-
-    fn spawn_graph(
-        universe: &mut engine::Universe,
-        parent: engine::ecs::ComponentId,
-        node: &AudioGraphNode,
-        origin: (f32, f32, f32),
-        depth: i32,
-        y_cursor_units: &mut i32,
-        dx: f32,
-        dy: f32,
-        cube_scale: f32,
-        rgba: [f32; 4],
-    ) {
-        let my_units = subtree_units(node);
-        let my_center_units = *y_cursor_units + my_units / 2;
-
-        let x = origin.0 + (depth as f32) * dx;
-        let y = origin.1 - (my_center_units as f32) * dy;
-        let z = origin.2;
-
-        let cube_tx = spawn_op_cube(universe, parent, (x, y, z), cube_scale, rgba);
-
-        // Label next to the cube.
-        let label = node_label(node);
-        let tx = universe.world.register(
-            engine::ecs::component::TransformComponent::new()
-                .with_position(x + 0.14, y + 0.02, z)
-                .with_scale(0.06, 0.06, 1.0),
-        );
-        let t = universe
-            .world
-            .register(engine::ecs::component::TextComponent::with_word_wrap(
-                &label, 56,
-            ));
-        let _ = universe.attach(parent, tx);
-        let _ = universe.attach(tx, t);
-        universe.add(tx);
-
-        // Mix/branch label if branching.
-        if node.children.len() > 1 {
-            let mut weights: Vec<f32> = Vec::with_capacity(node.children.len());
-            for i in 0..node.children.len() {
-                let w = node
-                    .mix
-                    .as_ref()
-                    .map(|m| m.weights.get(i).copied().unwrap_or(1.0))
-                    .unwrap_or(1.0);
-                weights.push(w);
-            }
-            let mix_label = if let Some(_m) = &node.mix {
-                format!("mix: AudioMixComponent {{ weights: {:?} }}", weights)
-            } else {
-                format!("mix: <implicit> (weights: {:?})", weights)
-            };
-            let mix_tx = universe.world.register(
-                engine::ecs::component::TransformComponent::new()
-                    .with_position(x + 0.14, y - 0.09, z)
-                    .with_scale(0.05, 0.05, 1.0),
-            );
-            let mix_t =
-                universe
-                    .world
-                    .register(engine::ecs::component::TextComponent::with_word_wrap(
-                        &mix_label, 60,
-                    ));
-            let _ = universe.attach(parent, mix_tx);
-            let _ = universe.attach(mix_tx, mix_t);
-            universe.add(mix_tx);
-        }
-
-        // Children, stacked vertically under this subtree.
-        let mut child_cursor = *y_cursor_units;
-        for ch in node.children.iter() {
-            spawn_graph(
-                universe,
-                parent,
-                ch,
-                origin,
-                depth + 1,
-                &mut child_cursor,
-                dx,
-                dy,
-                cube_scale,
-                rgba,
-            );
-            child_cursor += subtree_units(ch);
-        }
-
-        *y_cursor_units += my_units;
-
-        // Keep the cube_tx alive (it is already part of the world tree via parent).
-        let _ = cube_tx;
-    }
-
-    // Compile + display chain and graph for the track.
-    let compiled_a = if audio_enabled {
-        println!("[audio-graph-example] compiling graph...");
-        let Some(osc_a_comp) = osc_a_comp else {
-            panic!("audio_enabled but track A was not created");
-        };
-        let compiled_a =
-            AudioGraphCompiler::compile(&universe.world, osc_a_comp).expect("compile A");
-        println!("[audio-graph-example] graph compiled");
-        Some(compiled_a)
-    } else {
-        println!("[audio-graph-example] audio disabled; skipping graph compilation");
-        None
-    };
-
-    // Processing chain: flattened pre-order row with labels.
-    fn spawn_chain_row(
-        universe: &mut engine::Universe,
-        parent: engine::ecs::ComponentId,
-        compiled: &engine::ecs::system::audio_graph_compiler::CompiledAudioGraph,
-        origin: (f32, f32, f32),
-        x_step: f32,
-        rgba: [f32; 4],
-    ) {
-        let mut nodes = Vec::new();
-        flatten_preorder(&compiled.root, &mut nodes);
-        for (i, n) in nodes.iter().enumerate() {
-            let x = origin.0 + (i as f32) * x_step;
-            let y = origin.1;
-            let z = origin.2;
-            let _cube = spawn_op_cube(universe, parent, (x, y, z), 0.09, rgba);
-
-            let label = node_label(n);
-            let tx = universe.world.register(
-                engine::ecs::component::TransformComponent::new()
-                    .with_position(x - 0.03, y - 0.16, z)
-                    .with_scale(0.05, 0.05, 1.0),
-            );
-            let t = universe
-                .world
-                .register(engine::ecs::component::TextComponent::with_word_wrap(
-                    &label, 28,
-                ));
-            let _ = universe.attach(parent, tx);
-            let _ = universe.attach(tx, t);
-            universe.add(tx);
-        }
-    }
-
-    if let Some(compiled_a) = &compiled_a {
-        spawn_chain_row(
-            &mut universe,
-            viz_root,
-            compiled_a,
-            (0.0, track_a_y - 0.25, lane_chain_z),
-            0.48,
-            [0.22, 0.10, 0.28, 1.0],
-        );
-    } else {
-        spawn_text(
-            &mut universe,
-            (0.0, track_a_y - 0.25, lane_chain_z),
-            0.06,
-            60,
-            "(audio disabled)",
-        );
-    }
-
-    // Full compiled graph visualization (tree layout + mix labels).
-    if let Some(compiled_a) = &compiled_a {
-        {
-            let mut cursor = 0;
-            spawn_graph(
-                &mut universe,
-                viz_root,
-                &compiled_a.root,
-                (0.0, track_a_y - 0.55, lane_graph_z),
-                0,
-                &mut cursor,
-                0.55,
-                0.18,
-                0.08,
-                [0.35, 0.16, 0.45, 1.0],
-            );
-        }
-    } else {
-        spawn_text(
-            &mut universe,
-            (0.0, track_a_y - 0.55, lane_graph_z),
-            0.06,
-            60,
-            "(audio disabled)",
-        );
-    }
 
     // Keep window open.
     println!("[audio-graph-example] processing commands...");

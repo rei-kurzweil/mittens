@@ -175,6 +175,16 @@ impl CommandQueue {
         });
     }
 
+    /// Queue a text update command.
+    ///
+    /// This updates the `TextComponent.text` value and rebuilds its glyph subtree.
+    pub fn queue_set_text(&mut self, component_id: crate::engine::ecs::ComponentId, text: String) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::SET_TEXT { component_id, text },
+        });
+    }
+
     /// Queue a register emissive command.
     pub fn queue_register_emissive(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
@@ -207,6 +217,17 @@ impl CommandQueue {
         self.commands.push(ComponentCommand {
             component_id,
             command: Command::REMOVE_COLLISION { component_id },
+        });
+    }
+
+    /// Queue a remove subtree command.
+    ///
+    /// This removes any system/visual state for components in the subtree and then deletes the
+    /// components from the World.
+    pub fn queue_remove_subtree(&mut self, root: crate::engine::ecs::ComponentId) {
+        self.commands.push(ComponentCommand {
+            component_id: root,
+            command: Command::REMOVE_SUBTREE { root },
         });
     }
 
@@ -433,6 +454,68 @@ impl CommandQueue {
                     Command::REGISTER_TEXT { component_id } => {
                         systems.register_text(world, visuals, component_id, self);
                     }
+                    Command::SET_TEXT { component_id, text } => {
+                        use crate::engine::ecs::component::{
+                            RenderableComponent, TextComponent, TransformComponent,
+                        };
+
+                        let Some(_existing) =
+                            world.get_component_by_id_as::<TextComponent>(component_id)
+                        else {
+                            continue;
+                        };
+
+                        // Collect glyph roots (TransformComponent children of the TextComponent).
+                        let glyph_roots: Vec<crate::engine::ecs::ComponentId> = world
+                            .children_of(component_id)
+                            .iter()
+                            .copied()
+                            .filter(|&ch| {
+                                world
+                                    .get_component_by_id_as::<TransformComponent>(ch)
+                                    .is_some()
+                            })
+                            .collect();
+
+                        // Collect renderables to remove from VisualWorld before deleting subtrees.
+                        let mut renderables_to_remove: Vec<crate::engine::ecs::ComponentId> =
+                            Vec::new();
+                        for &root in glyph_roots.iter() {
+                            let mut stack: Vec<crate::engine::ecs::ComponentId> = vec![root];
+                            while let Some(node) = stack.pop() {
+                                if world
+                                    .get_component_by_id_as::<RenderableComponent>(node)
+                                    .is_some()
+                                {
+                                    renderables_to_remove.push(node);
+                                }
+                                for &ch in world.children_of(node).iter() {
+                                    stack.push(ch);
+                                }
+                            }
+                        }
+
+                        // Remove renderable instances (and BVH entries) first.
+                        for rid in renderables_to_remove {
+                            systems.remove_renderable(world, visuals, rid);
+                        }
+
+                        // Delete glyph subtrees.
+                        for root in glyph_roots {
+                            let _ = world.remove_component_subtree(root);
+                        }
+
+                        // Update text and force rebuild.
+                        if let Some(tc) =
+                            world.get_component_by_id_as_mut::<TextComponent>(component_id)
+                        {
+                            tc.text = text;
+                            tc.mark_unbuilt();
+                        }
+
+                        // Expand and register the new glyph tree.
+                        systems.register_text(world, visuals, component_id, self);
+                    }
                     Command::REGISTER_EMISSIVE { component_id } => {
                         systems.register_emissive(world, visuals, component_id);
                     }
@@ -488,6 +571,49 @@ impl CommandQueue {
                     }
                     Command::REMOVE_RENDERABLE { component_id: _ } => {
                         systems.remove_renderable(world, visuals, cmd.component_id);
+                    }
+                    Command::REMOVE_SUBTREE { root } => {
+                        use crate::engine::ecs::component::{
+                            CollisionComponent, RayCastComponent, RenderableComponent,
+                        };
+
+                        if world.get_component_record(root).is_none() {
+                            continue;
+                        }
+
+                        // Collect subtree node ids.
+                        let mut stack: Vec<crate::engine::ecs::ComponentId> = vec![root];
+                        let mut subtree: Vec<crate::engine::ecs::ComponentId> = Vec::new();
+                        while let Some(node) = stack.pop() {
+                            subtree.push(node);
+                            for &ch in world.children_of(node).iter() {
+                                stack.push(ch);
+                            }
+                        }
+
+                        // Remove system/visual state before deleting nodes.
+                        for cid in subtree.iter().copied() {
+                            if world
+                                .get_component_by_id_as::<RenderableComponent>(cid)
+                                .is_some()
+                            {
+                                systems.remove_renderable(world, visuals, cid);
+                            }
+                            if world
+                                .get_component_by_id_as::<CollisionComponent>(cid)
+                                .is_some()
+                            {
+                                systems.remove_collision(world, visuals, cid);
+                            }
+                            if world
+                                .get_component_by_id_as::<RayCastComponent>(cid)
+                                .is_some()
+                            {
+                                systems.remove_raycast(world, visuals, cid);
+                            }
+                        }
+
+                        let _ = world.remove_component_subtree(root);
                     }
                     Command::REMOVE_CAMERA { component_id: _ } => {
                         // TODO: implement when needed
@@ -554,6 +680,10 @@ enum Command {
     },
     REGISTER_TEXT {
         component_id: crate::engine::ecs::ComponentId,
+    },
+    SET_TEXT {
+        component_id: crate::engine::ecs::ComponentId,
+        text: String,
     },
     REGISTER_EMISSIVE {
         component_id: crate::engine::ecs::ComponentId,
@@ -624,6 +754,10 @@ enum Command {
 
     REMOVE_COLLISION {
         component_id: crate::engine::ecs::ComponentId,
+    },
+
+    REMOVE_SUBTREE {
+        root: crate::engine::ecs::ComponentId,
     },
 
     UPDATE_TRANSFORM {
