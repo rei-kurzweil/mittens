@@ -47,6 +47,44 @@ impl ComponentCodec {
         Self::encode_subtree(world, root_id)
     }
 
+    /// Decode a component subtree from an in-memory `ComponentDataNode`, but generate fresh GUIDs.
+    ///
+    /// This is useful for prefab-style instancing / cloning, where GUID collisions would be
+    /// incorrect and `World::add_component_boxed_with_guid_named` would panic.
+    ///
+    /// Returns the newly-created root `ComponentId`.
+    pub fn decode_subtree_node_with_new_guids(
+        world: &mut World,
+        parent_id: Option<ComponentId>,
+        node: &ComponentDataNode,
+    ) -> Result<ComponentId, String> {
+        fn decode_subtree_fresh_guids(
+            world: &mut World,
+            parent_id: Option<ComponentId>,
+            node: &ComponentDataNode,
+        ) -> Result<ComponentId, String> {
+            let mut component = ComponentCodec::create_component(&node.type_name)?;
+            component.decode(&node.data)?;
+
+            // Add to world with a fresh GUID but preserve the stored name.
+            let new_id = world.add_component_boxed_named(node.name.clone(), component);
+
+            if let Some(parent) = parent_id {
+                world
+                    .set_parent(new_id, Some(parent))
+                    .map_err(|e| format!("Failed to set parent: {}", e))?;
+            }
+
+            for child_node in &node.components {
+                decode_subtree_fresh_guids(world, Some(new_id), child_node)?;
+            }
+
+            Ok(new_id)
+        }
+
+        decode_subtree_fresh_guids(world, parent_id, node)
+    }
+
     /// Encode multiple component trees (scene roots) to a JSON file.
     ///
     /// Returns an error if any component doesn't exist or file I/O fails.
@@ -218,6 +256,7 @@ impl ComponentCodec {
             "color" => Ok(Box::new(ColorComponent::new())),
             "opacity" => Ok(Box::new(OpacityComponent::new())),
             "light_quantization" => Ok(Box::new(LightQuantizationComponent::new())),
+            "emissive" => Ok(Box::new(EmissiveComponent::default())),
             "texture" => Ok(Box::new(TextureComponent::new(""))),
             "camera2d" => Ok(Box::new(Camera2DComponent::new())),
             "camera3d" => Ok(Box::new(Camera3DComponent::new())),

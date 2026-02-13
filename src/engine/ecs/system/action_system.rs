@@ -1,12 +1,12 @@
 use crate::engine::ecs::component::{
     Action, ActionComponent, ActionMethod, AudioOscillatorComponent, ColorComponent,
-    RenderableComponent, TextComponent,
+    RenderableComponent, TextComponent, TransformComponent,
 };
 use crate::engine::ecs::component::{AudioBandPassFilterComponent, AudioLowPassFilterComponent};
 use crate::engine::ecs::component::{MusicNote, MusicNoteComponent, NotePitch};
 use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::audio_system::AudioOp;
-use crate::engine::ecs::{CommandQueue, ComponentId, World};
+use crate::engine::ecs::{CommandQueue, ComponentCodec, ComponentId, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 use slotmap::KeyData;
@@ -85,6 +85,30 @@ impl ActionSystem {
                     queue.queue_set_text(text_cid, text.to_string());
                 }
             }
+            ActionMethod::SetPosition => {
+                let Some(pos) = action.params.get(0).and_then(parse_vec3_f32) else {
+                    println!(
+                        "[ActionSystem] set_position: missing/invalid position params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+
+                let mut transform_cids = Vec::new();
+                for &target in action.target.iter() {
+                    collect_transform_targets(world, target, &mut transform_cids);
+                }
+                transform_cids.sort();
+                transform_cids.dedup();
+
+                for transform_cid in transform_cids {
+                    if let Some(t) =
+                        world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
+                    {
+                        t.set_position(queue, pos[0], pos[1], pos[2]);
+                    }
+                }
+            }
             ActionMethod::Attach => {
                 let Some(child) = action.params.get(0).and_then(parse_component_id) else {
                     println!(
@@ -104,9 +128,55 @@ impl ActionSystem {
                         world.init_component_tree(child, queue);
                     }
 
+                    // Topology changes alter world transform composition. Our TransformSystem is
+                    // event-driven, so explicitly queue a transform refresh on the moved subtree.
+                    queue_topology_transform_refresh(world, queue, child);
+                    queue_topology_transform_refresh(world, queue, parent);
+
                     // Topology change may affect audio compilation.
                     queue.queue_audio_graph_dirty(parent);
                     queue.queue_audio_graph_dirty(child);
+                }
+            }
+            ActionMethod::AttachClone => {
+                let Some(prefab_root) = action.params.get(0).and_then(parse_component_id) else {
+                    println!(
+                        "[ActionSystem] attach_clone: missing/invalid prefab_root params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+
+                let node = match ComponentCodec::encode_subtree_node(&*world, prefab_root) {
+                    Ok(n) => n,
+                    Err(e) => {
+                        println!("[ActionSystem] attach_clone failed: {e}");
+                        return;
+                    }
+                };
+
+                for &parent in action.target.iter() {
+                    let new_root = match ComponentCodec::decode_subtree_node_with_new_guids(
+                        world,
+                        Some(parent),
+                        &node,
+                    ) {
+                        Ok(id) => id,
+                        Err(e) => {
+                            println!("[ActionSystem] attach_clone decode failed: {e}");
+                            continue;
+                        }
+                    };
+
+                    if world.is_initialized(parent) {
+                        world.init_component_tree(new_root, queue);
+                    }
+
+                    queue_topology_transform_refresh(world, queue, new_root);
+                    queue_topology_transform_refresh(world, queue, parent);
+
+                    queue.queue_audio_graph_dirty(parent);
+                    queue.queue_audio_graph_dirty(new_root);
                 }
             }
             ActionMethod::Detach => {
@@ -120,6 +190,53 @@ impl ActionSystem {
                     if let Some(p) = old_parent {
                         queue.queue_audio_graph_dirty(p);
                     }
+
+                    queue_topology_transform_refresh(world, queue, child);
+                    if let Some(p) = old_parent {
+                        queue_topology_transform_refresh(world, queue, p);
+                    }
+                }
+            }
+            ActionMethod::RemoveChild => {
+                let Some(index) = action.params.get(0).and_then(parse_usize) else {
+                    println!(
+                        "[ActionSystem] remove_child: missing/invalid index params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+
+                for &parent in action.target.iter() {
+                    let child = world.children_of(parent).get(index).copied();
+                    let Some(child) = child else {
+                        // No-op when index is out of range (common when a parent has only marker children).
+                        continue;
+                    };
+
+                    queue.queue_audio_graph_dirty(child);
+                    queue.queue_audio_graph_dirty(parent);
+
+                    world.detach_from_parent(child);
+                    queue.queue_remove_subtree(child);
+
+                    queue_topology_transform_refresh(world, queue, parent);
+                }
+            }
+            ActionMethod::RemoveChildren => {
+                for &parent in action.target.iter() {
+                    let children: Vec<ComponentId> = world.children_of(parent).to_vec();
+                    if children.is_empty() {
+                        continue;
+                    }
+
+                    queue.queue_audio_graph_dirty(parent);
+                    for child in children {
+                        queue.queue_audio_graph_dirty(child);
+                        world.detach_from_parent(child);
+                        queue.queue_remove_subtree(child);
+                    }
+
+                    queue_topology_transform_refresh(world, queue, parent);
                 }
             }
             ActionMethod::RemoveSubtree => {
@@ -441,6 +558,64 @@ impl ActionSystem {
     }
 }
 
+fn parse_vec3_f32(v: &serde_json::Value) -> Option<[f32; 3]> {
+    let arr = v.as_array()?;
+    if arr.len() != 3 {
+        return None;
+    }
+    let x = arr[0].as_f64()? as f32;
+    let y = arr[1].as_f64()? as f32;
+    let z = arr[2].as_f64()? as f32;
+    if !(x.is_finite() && y.is_finite() && z.is_finite()) {
+        return None;
+    }
+    Some([x, y, z])
+}
+
+fn collect_transform_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {
+    if world
+        .get_component_by_id_as::<TransformComponent>(target)
+        .is_some()
+    {
+        out.push(target);
+        return;
+    }
+
+    // Subtree search: pick the first TransformComponent encountered per branch.
+    let mut stack = vec![target];
+    while let Some(node) = stack.pop() {
+        if world
+            .get_component_by_id_as::<TransformComponent>(node)
+            .is_some()
+        {
+            out.push(node);
+            continue;
+        }
+        for &ch in world.children_of(node).iter() {
+            stack.push(ch);
+        }
+    }
+}
+
+fn queue_topology_transform_refresh(world: &World, queue: &mut CommandQueue, cid: ComponentId) {
+    // If this node is a TransformComponent, refreshing it updates cached world matrices
+    // for its whole subtree.
+    if let Some(t) = world.get_component_by_id_as::<TransformComponent>(cid) {
+        queue.queue_update_transform(cid, t.transform);
+        return;
+    }
+
+    // Otherwise, refresh the nearest ancestor transform (if any).
+    let mut cur = cid;
+    while let Some(p) = world.parent_of(cur) {
+        if let Some(t) = world.get_component_by_id_as::<TransformComponent>(p) {
+            queue.queue_update_transform(p, t.transform);
+            return;
+        }
+        cur = p;
+    }
+}
+
 impl crate::engine::ecs::system::System for ActionSystem {
     fn tick(
         &mut self,
@@ -526,6 +701,21 @@ fn parse_u16(v: &serde_json::Value) -> Option<u16> {
     if let Some(f) = v.as_f64() {
         if f.is_finite() && f >= 0.0 {
             return u16::try_from(f as u64).ok();
+        }
+    }
+    None
+}
+
+fn parse_usize(v: &serde_json::Value) -> Option<usize> {
+    if let Some(u) = v.as_u64() {
+        return usize::try_from(u).ok();
+    }
+    if let Some(i) = v.as_i64() {
+        return usize::try_from(i).ok();
+    }
+    if let Some(f) = v.as_f64() {
+        if f.is_finite() && f >= 0.0 {
+            return usize::try_from(f as u64).ok();
         }
     }
     None

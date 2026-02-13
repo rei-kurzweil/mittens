@@ -66,6 +66,87 @@ impl Universe {
         Ok(())
     }
 
+    /// Remove the child at `index` from `parent` by deleting its subtree.
+    ///
+    /// This preserves the `parent` component and only deletes the selected child subtree.
+    /// The deletion is applied when the command queue is processed.
+    ///
+    /// Returns the removed root child's `ComponentId`.
+    pub fn remove_child(
+        &mut self,
+        parent: ecs::ComponentId,
+        index: usize,
+    ) -> Result<ecs::ComponentId, &'static str> {
+        if self.world.get_component_record(parent).is_none() {
+            return Err("parent does not exist");
+        }
+        let child = *self
+            .world
+            .children_of(parent)
+            .get(index)
+            .ok_or("child index out of range")?;
+
+        // Detach immediately to avoid dangling parent->child edges until the queue flush.
+        self.world.detach_from_parent(child);
+        self.command_queue.queue_remove_subtree(child);
+        Ok(child)
+    }
+
+    /// Remove all children from `parent` by deleting each child subtree.
+    ///
+    /// This preserves the `parent` component and deletes each direct child and its descendants.
+    /// The deletions are applied when the command queue is processed.
+    ///
+    /// Returns the removed child subtree root `ComponentId`s in the previous child order.
+    pub fn remove_children(
+        &mut self,
+        parent: ecs::ComponentId,
+    ) -> Result<Vec<ecs::ComponentId>, &'static str> {
+        if self.world.get_component_record(parent).is_none() {
+            return Err("parent does not exist");
+        }
+
+        // Snapshot child list because it mutates as we detach and queue deletions.
+        let children: Vec<ecs::ComponentId> = self.world.children_of(parent).to_vec();
+        for child in children.iter().copied() {
+            self.world.detach_from_parent(child);
+            self.command_queue.queue_remove_subtree(child);
+        }
+
+        Ok(children)
+    }
+
+    /// Clone a prefab subtree rooted at `prefab_root` and attach the cloned instance under `parent`.
+    ///
+    /// The cloned instance receives fresh `ComponentId`s and fresh GUIDs.
+    ///
+    /// Note: this is a structural/data clone via component `encode`/`decode`. If any components
+    /// contain references to other components (e.g. Action targets/params), those references are
+    /// currently copied as-is and may require a future fixup pass.
+    pub fn attach_clone(
+        &mut self,
+        parent: ecs::ComponentId,
+        prefab_root: ecs::ComponentId,
+    ) -> Result<ecs::ComponentId, String> {
+        let node = ecs::ComponentCodec::encode_subtree_node(&self.world, prefab_root)?;
+        let new_root = ecs::ComponentCodec::decode_subtree_node_with_new_guids(
+            &mut self.world,
+            Some(parent),
+            &node,
+        )?;
+
+        if self.world.get_component_record(new_root).is_none() {
+            return Err("attach_clone: new root missing after decode".to_string());
+        }
+
+        if self.world.is_initialized(parent) {
+            self.world
+                .init_component_tree(new_root, &mut self.command_queue);
+        }
+
+        Ok(new_root)
+    }
+
     fn sync_repl(&mut self) {
         let (Some(repl), Some(backend)) = (&self.repl, self.repl_backend.as_mut()) else {
             return;

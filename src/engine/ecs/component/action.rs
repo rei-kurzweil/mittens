@@ -8,10 +8,18 @@ pub enum ActionMethod {
     Print,
     SetColor,
     SetText,
+    /// Set position (translation) on TransformComponents.
+    SetPosition,
     /// Attach `child` under `parent` (component graph topology change).
     Attach,
+    /// Clone a prefab subtree and attach the cloned root under each target parent.
+    AttachClone,
     /// Detach each target from its parent.
     Detach,
+    /// Remove (delete) the child at a given index from each target parent.
+    RemoveChild,
+    /// Remove (delete) all children from each target parent.
+    RemoveChildren,
     /// Remove each target component and all descendants.
     RemoveSubtree,
     /// Mark the audio graph dirty (forces an end-of-frame recompile + RT graph swap scheduling).
@@ -47,11 +55,23 @@ impl ActionMethod {
             ActionMethod::SetText => {
                 map.insert("method".to_string(), serde_json::json!("set_text"));
             }
+            ActionMethod::SetPosition => {
+                map.insert("method".to_string(), serde_json::json!("set_position"));
+            }
             ActionMethod::Attach => {
                 map.insert("method".to_string(), serde_json::json!("attach"));
             }
+            ActionMethod::AttachClone => {
+                map.insert("method".to_string(), serde_json::json!("attach_clone"));
+            }
             ActionMethod::Detach => {
                 map.insert("method".to_string(), serde_json::json!("detach"));
+            }
+            ActionMethod::RemoveChild => {
+                map.insert("method".to_string(), serde_json::json!("remove_child"));
+            }
+            ActionMethod::RemoveChildren => {
+                map.insert("method".to_string(), serde_json::json!("remove_children"));
             }
             ActionMethod::RemoveSubtree => {
                 map.insert("method".to_string(), serde_json::json!("remove_subtree"));
@@ -157,6 +177,15 @@ impl Action {
         }
     }
 
+    /// Set translation (x,y,z) on TransformComponents.
+    pub fn set_position(target: Vec<ComponentId>, x: f32, y: f32, z: f32) -> Self {
+        Self {
+            target,
+            method: ActionMethod::SetPosition,
+            params: vec![serde_json::json!([x, y, z])],
+        }
+    }
+
     /// Attach `child` under `parent`.
     ///
     /// Mirrors `Universe::attach(parent, child)` / `World::add_child(parent, child)`.
@@ -165,6 +194,15 @@ impl Action {
             target: vec![parent],
             method: ActionMethod::Attach,
             params: vec![serde_json::json!(child.data().as_ffi())],
+        }
+    }
+
+    /// Clone the subtree rooted at `prefab_root` and attach the clone under `parent`.
+    pub fn attach_clone(parent: ComponentId, prefab_root: ComponentId) -> Self {
+        Self {
+            target: vec![parent],
+            method: ActionMethod::AttachClone,
+            params: vec![serde_json::json!(prefab_root.data().as_ffi())],
         }
     }
 
@@ -182,6 +220,24 @@ impl Action {
     /// Common misspelling alias (kept for convenience).
     pub fn detatch(target: Vec<ComponentId>) -> Self {
         Self::detach(target)
+    }
+
+    /// Remove (delete) the child at `index` from `parent`.
+    pub fn remove_child(parent: ComponentId, index: usize) -> Self {
+        Self {
+            target: vec![parent],
+            method: ActionMethod::RemoveChild,
+            params: vec![serde_json::json!(index as u64)],
+        }
+    }
+
+    /// Remove (delete) all direct children from `parent`.
+    pub fn remove_children(parent: ComponentId) -> Self {
+        Self {
+            target: vec![parent],
+            method: ActionMethod::RemoveChildren,
+            params: Vec::new(),
+        }
     }
 
     /// Remove each target component and all its descendants.
@@ -377,8 +433,12 @@ impl Component for ActionComponent {
             "print" => ActionMethod::Print,
             "set_color" => ActionMethod::SetColor,
             "set_text" => ActionMethod::SetText,
+            "set_position" => ActionMethod::SetPosition,
             "attach" => ActionMethod::Attach,
+            "attach_clone" => ActionMethod::AttachClone,
             "detach" => ActionMethod::Detach,
+            "remove_child" => ActionMethod::RemoveChild,
+            "remove_children" => ActionMethod::RemoveChildren,
             "remove_subtree" => ActionMethod::RemoveSubtree,
             "audio_graph_rebuild" => ActionMethod::AudioGraphRebuild,
             "audio_low_pass_set_cutoff_hz" => ActionMethod::AudioLowPassSetCutoffHz,
