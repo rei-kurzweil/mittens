@@ -3,6 +3,7 @@ pub mod pipeline_descriptor_set_layouts;
 pub mod primitives;
 pub mod render_assets;
 pub mod render_info;
+pub mod skin;
 pub mod visual_world;
 pub mod vulkano_renderer;
 pub(crate) mod vulkano_swapchain;
@@ -16,6 +17,7 @@ pub use primitives::{
 };
 
 pub use render_assets::{BuiltinMeshType, RenderAssets};
+pub use skin::{Skin, SkinId};
 pub use visual_world::TextureFiltering;
 pub use visual_world::VisualWorld;
 pub use visual_world::{CameraData, CameraTarget, VisualCamera};

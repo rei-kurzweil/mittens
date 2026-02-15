@@ -96,6 +96,13 @@ mod vulkano_backend {
         }
     }
 
+    mod skinned_toon_mesh_vs {
+        vulkano_shaders::shader! {
+            ty: "vertex",
+            path: "assets/shaders/skinned-toon-mesh.vert",
+        }
+    }
+
     #[derive(BufferContents, Clone, Copy, Debug, Default)]
     #[repr(C, align(16))]
     pub struct CameraUBO {
@@ -119,6 +126,18 @@ mod vulkano_backend {
         quant_steps: f32,
         emissive: u32,
         _pad0: [u32; 2],
+    }
+
+    #[derive(BufferContents, Clone, Copy, Debug, Default)]
+    #[repr(C, align(16))]
+    struct GpuMat4 {
+        cols: [[f32; 4]; 4],
+    }
+
+    #[derive(BufferContents, Clone, Copy, Debug, Default)]
+    #[repr(C, align(16))]
+    struct DummyPerInstanceLightingSSBO {
+        _pad0: [u32; 4],
     }
 
     #[derive(
@@ -147,11 +166,28 @@ mod vulkano_backend {
 
         #[format(R32_SFLOAT)]
         pub i_opacity: f32,
+
+        // For skinned meshes: base index/count into the shared bones palette SSBO.
+        // For non-skinned instances these are 0.
+        #[format(R32_UINT)]
+        pub i_bones_base: u32,
+        #[format(R32_UINT)]
+        pub i_bones_count: u32,
+    }
+
+    /// GPU-uploadable per-vertex skinning attributes (separate vertex buffer).
+    #[derive(BufferContents, Debug, Clone, Copy, Default)]
+    #[repr(C)]
+    pub struct GpuSkinVertex {
+        pub joints0: [u16; 4],
+        pub weights0: [f32; 4],
     }
 
     pub struct VulkanoGpuMesh {
         #[allow(dead_code)]
         pub vertices: Subbuffer<[CpuVertex]>,
+        #[allow(dead_code)]
+        pub skin_vertices: Option<Subbuffer<[GpuSkinVertex]>>,
         #[allow(dead_code)]
         pub indices: Subbuffer<[u32]>,
         #[allow(dead_code)]
@@ -193,6 +229,10 @@ mod vulkano_backend {
         pub pipeline_toon_mesh_transparent: Arc<GraphicsPipeline>,
         pub pipeline_toon_mesh_cutout: Arc<GraphicsPipeline>,
 
+        pub pipeline_skinned_toon_mesh: Arc<GraphicsPipeline>,
+        pub pipeline_skinned_toon_mesh_transparent: Arc<GraphicsPipeline>,
+        pub pipeline_skinned_toon_mesh_cutout: Arc<GraphicsPipeline>,
+
         pub msaa_samples: SampleCount,
 
         // --- Per-frame CPU work reduction ---
@@ -216,6 +256,10 @@ mod vulkano_backend {
             ),
             Arc<DescriptorSet>,
         >,
+
+        // Cached bones palette SSBO (set=2 binding=1). Only rewritten when dirty.
+        cached_bones_buffer: Option<Subbuffer<[GpuMat4]>>,
+        cached_bones_capacity: usize,
 
         xr_offscreen: Option<XrOffscreenTargets>,
 
@@ -289,6 +333,12 @@ mod vulkano_backend {
 
             match material {
                 crate::engine::graphics::MaterialHandle::TOON_MESH => MaterialUBO {
+                    base_color: [1.0, 1.0, 1.0, 1.0],
+                    quant_steps,
+                    emissive: 0,
+                    _pad0: [0, 0],
+                },
+                crate::engine::graphics::MaterialHandle::SKINNED_TOON_MESH => MaterialUBO {
                     base_color: [1.0, 1.0, 1.0, 1.0],
                     quant_steps,
                     emissive: 0,
@@ -468,6 +518,8 @@ mod vulkano_backend {
             let vs = toon_mesh_vs::load(device.clone())?;
             let fs = toon_mesh_fs::load(device.clone())?;
 
+            let skinned_vs = skinned_toon_mesh_vs::load(device.clone())?;
+
             let stages = vec![
                 PipelineShaderStageCreateInfo::new(
                     vs.entry_point("main")
@@ -479,10 +531,26 @@ mod vulkano_backend {
                 ),
             ];
 
+            let skinned_stages = vec![
+                PipelineShaderStageCreateInfo::new(
+                    skinned_vs
+                        .entry_point("main")
+                        .ok_or("missing skinned-toon-mesh.vert entry point")?,
+                ),
+                PipelineShaderStageCreateInfo::new(
+                    fs.entry_point("main")
+                        .ok_or("missing toon-mesh.frag entry point")?,
+                ),
+            ];
+
             let layout = PipelineLayout::new(
                 device.clone(),
                 PipelineLayoutCreateInfo {
-                    set_layouts: vec![set_layouts.global.clone(), set_layouts.material.clone()],
+                    set_layouts: vec![
+                        set_layouts.global.clone(),
+                        set_layouts.material.clone(),
+                        set_layouts.rig.clone(),
+                    ],
                     ..Default::default()
                 },
             )?;
@@ -490,7 +558,7 @@ mod vulkano_backend {
             // Important: `CpuVertex` contains more than just position (e.g. UV).
             // We explicitly declare which attributes are consumed by the shader.
             // Instance data occupies locations 1-4 (+ per-instance color/emissive).
-            let vertex_input_state = VertexInputState::new()
+            let vertex_input_state_static = VertexInputState::new()
                 .binding(
                     0,
                     VertexInputBindingDescription {
@@ -596,13 +664,188 @@ mod vulkano_backend {
                         offset: 84,
                         ..Default::default()
                     },
+                )
+                .attribute(
+                    10,
+                    VertexInputAttributeDescription {
+                        binding: 1,
+                        format: Format::R32_UINT,
+                        offset: 88,
+                        ..Default::default()
+                    },
+                )
+                .attribute(
+                    11,
+                    VertexInputAttributeDescription {
+                        binding: 1,
+                        format: Format::R32_UINT,
+                        offset: 92,
+                        ..Default::default()
+                    },
+                );
+
+            // Skinned pipeline: add a separate per-vertex skinning buffer (binding=1),
+            // and move per-instance data to binding=2.
+            let vertex_input_state_skinned = VertexInputState::new()
+                .binding(
+                    0,
+                    VertexInputBindingDescription {
+                        stride: size_of::<CpuVertex>() as u32,
+                        input_rate: VertexInputRate::Vertex,
+                        ..Default::default()
+                    },
+                )
+                .binding(
+                    1,
+                    VertexInputBindingDescription {
+                        stride: size_of::<GpuSkinVertex>() as u32,
+                        input_rate: VertexInputRate::Vertex,
+                        ..Default::default()
+                    },
+                )
+                .binding(
+                    2,
+                    VertexInputBindingDescription {
+                        stride: size_of::<InstanceData>() as u32,
+                        input_rate: VertexInputRate::Instance { divisor: 1 },
+                        ..Default::default()
+                    },
+                )
+                // Base vertex attributes.
+                .attribute(
+                    0,
+                    VertexInputAttributeDescription {
+                        binding: 0,
+                        format: Format::R32G32B32_SFLOAT,
+                        offset: 0,
+                        ..Default::default()
+                    },
+                )
+                .attribute(
+                    5,
+                    VertexInputAttributeDescription {
+                        binding: 0,
+                        format: Format::R32G32_SFLOAT,
+                        offset: 12,
+                        ..Default::default()
+                    },
+                )
+                .attribute(
+                    8,
+                    VertexInputAttributeDescription {
+                        binding: 0,
+                        format: Format::R32G32B32_SFLOAT,
+                        offset: 20,
+                        ..Default::default()
+                    },
+                )
+                // Skinning attributes.
+                .attribute(
+                    12,
+                    VertexInputAttributeDescription {
+                        binding: 1,
+                        format: Format::R16G16B16A16_UINT,
+                        offset: 0,
+                        ..Default::default()
+                    },
+                )
+                .attribute(
+                    13,
+                    VertexInputAttributeDescription {
+                        binding: 1,
+                        format: Format::R32G32B32A32_SFLOAT,
+                        offset: 8,
+                        ..Default::default()
+                    },
+                )
+                // Per-instance attributes (binding=2).
+                .attribute(
+                    1,
+                    VertexInputAttributeDescription {
+                        binding: 2,
+                        format: Format::R32G32B32A32_SFLOAT,
+                        offset: 0,
+                        ..Default::default()
+                    },
+                )
+                .attribute(
+                    2,
+                    VertexInputAttributeDescription {
+                        binding: 2,
+                        format: Format::R32G32B32A32_SFLOAT,
+                        offset: 16,
+                        ..Default::default()
+                    },
+                )
+                .attribute(
+                    3,
+                    VertexInputAttributeDescription {
+                        binding: 2,
+                        format: Format::R32G32B32A32_SFLOAT,
+                        offset: 32,
+                        ..Default::default()
+                    },
+                )
+                .attribute(
+                    4,
+                    VertexInputAttributeDescription {
+                        binding: 2,
+                        format: Format::R32G32B32A32_SFLOAT,
+                        offset: 48,
+                        ..Default::default()
+                    },
+                )
+                .attribute(
+                    6,
+                    VertexInputAttributeDescription {
+                        binding: 2,
+                        format: Format::R32G32B32A32_SFLOAT,
+                        offset: 64,
+                        ..Default::default()
+                    },
+                )
+                .attribute(
+                    7,
+                    VertexInputAttributeDescription {
+                        binding: 2,
+                        format: Format::R32_UINT,
+                        offset: 80,
+                        ..Default::default()
+                    },
+                )
+                .attribute(
+                    9,
+                    VertexInputAttributeDescription {
+                        binding: 2,
+                        format: Format::R32_SFLOAT,
+                        offset: 84,
+                        ..Default::default()
+                    },
+                )
+                .attribute(
+                    10,
+                    VertexInputAttributeDescription {
+                        binding: 2,
+                        format: Format::R32_UINT,
+                        offset: 88,
+                        ..Default::default()
+                    },
+                )
+                .attribute(
+                    11,
+                    VertexInputAttributeDescription {
+                        binding: 2,
+                        format: Format::R32_UINT,
+                        offset: 92,
+                        ..Default::default()
+                    },
                 );
 
             let color_format = swapchain_state.swapchain.image_format();
             let mut pipeline_ci =
                 vulkano::pipeline::graphics::GraphicsPipelineCreateInfo::layout(layout);
             pipeline_ci.stages = stages.into();
-            pipeline_ci.vertex_input_state = Some(vertex_input_state);
+            pipeline_ci.vertex_input_state = Some(vertex_input_state_static);
             pipeline_ci.input_assembly_state = Some(InputAssemblyState::default());
             pipeline_ci.viewport_state = Some(ViewportState::default());
             pipeline_ci.rasterization_state = Some(RasterizationState::default());
@@ -656,13 +899,13 @@ mod vulkano_backend {
                 ..Default::default()
             });
             let pipeline_toon_mesh_transparent =
-                GraphicsPipeline::new(device.clone(), None, pipeline_ci_transparent)?;
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_transparent.clone())?;
 
             // Transparent cutout variant:
             // - depth test/write ON
             // - alpha-to-coverage enabled (requires MSAA)
             // - blending disabled (coverage handles edges)
-            let mut pipeline_ci_cutout = pipeline_ci;
+            let mut pipeline_ci_cutout = pipeline_ci.clone();
             pipeline_ci_cutout.multisample_state = Some(MultisampleState {
                 rasterization_samples: msaa_samples,
                 alpha_to_coverage_enable: true,
@@ -677,7 +920,27 @@ mod vulkano_backend {
                 },
             ));
             let pipeline_toon_mesh_cutout =
-                GraphicsPipeline::new(device.clone(), None, pipeline_ci_cutout)?;
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_cutout.clone())?;
+
+            // Skinned variants: same state, different vertex shader.
+            let mut pipeline_ci_skinned = pipeline_ci.clone();
+            pipeline_ci_skinned.stages = skinned_stages.clone().into();
+            pipeline_ci_skinned.vertex_input_state = Some(vertex_input_state_skinned.clone());
+            let pipeline_skinned_toon_mesh =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_skinned.clone())?;
+
+            let mut pipeline_ci_skinned_transparent = pipeline_ci_transparent.clone();
+            pipeline_ci_skinned_transparent.stages = skinned_stages.clone().into();
+            pipeline_ci_skinned_transparent.vertex_input_state =
+                Some(vertex_input_state_skinned.clone());
+            let pipeline_skinned_toon_mesh_transparent =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_skinned_transparent)?;
+
+            let mut pipeline_ci_skinned_cutout = pipeline_ci_cutout.clone();
+            pipeline_ci_skinned_cutout.stages = skinned_stages.into();
+            pipeline_ci_skinned_cutout.vertex_input_state = Some(vertex_input_state_skinned);
+            let pipeline_skinned_toon_mesh_cutout =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_skinned_cutout)?;
 
             let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
                 device.clone(),
@@ -736,6 +999,10 @@ mod vulkano_backend {
                 pipeline_toon_mesh_transparent,
                 pipeline_toon_mesh_cutout,
 
+                pipeline_skinned_toon_mesh,
+                pipeline_skinned_toon_mesh_transparent,
+                pipeline_skinned_toon_mesh_cutout,
+
                 msaa_samples,
 
                 cached_instance_buffer: None,
@@ -750,6 +1017,9 @@ mod vulkano_backend {
                 cached_cutout_instance_buffer: None,
                 cached_cutout_instance_count: 0,
                 cached_material_sets: HashMap::new(),
+
+                cached_bones_buffer: None,
+                cached_bones_capacity: 0,
 
                 xr_offscreen: None,
 
@@ -1067,6 +1337,8 @@ mod vulkano_backend {
                         i_color: inst.color,
                         i_emissive: inst.emissive,
                         i_opacity: inst.opacity,
+                        i_bones_base: inst.bones_base,
+                        i_bones_count: inst.bones_count,
                     }
                 });
 
@@ -1109,6 +1381,8 @@ mod vulkano_backend {
                     i_color: inst.color,
                     i_emissive: inst.emissive,
                     i_opacity: inst.opacity,
+                    i_bones_base: inst.bones_base,
+                    i_bones_count: inst.bones_count,
                 }
             });
 
@@ -1138,7 +1412,8 @@ mod vulkano_backend {
         ) -> Result<Option<Arc<DescriptorSet>>, Box<dyn std::error::Error>> {
             match material {
                 crate::engine::graphics::MaterialHandle::TOON_MESH
-                | crate::engine::graphics::MaterialHandle::UNLIT_MESH => {}
+                | crate::engine::graphics::MaterialHandle::UNLIT_MESH
+                | crate::engine::graphics::MaterialHandle::SKINNED_TOON_MESH => {}
                 _ => return Ok(None),
             }
 
@@ -1463,6 +1738,100 @@ mod vulkano_backend {
                 Some(set)
             };
 
+            // Rig descriptor set (set=2): shared bones palette + placeholder per-instance lighting.
+            // Layout is defined in `PipelineDescriptorSetLayouts::rig`.
+            let rig_set: Arc<DescriptorSet> = {
+                // Update cached bones buffer only when palette changed.
+                let palette_dirty = visual_world.take_bones_palette_dirty();
+                let want_len = visual_world.bones_palette().len().max(1);
+
+                let needs_realloc = self
+                    .cached_bones_buffer
+                    .as_ref()
+                    .is_none_or(|_| self.cached_bones_capacity < want_len);
+
+                if needs_realloc {
+                    let new_cap = want_len.next_power_of_two().max(1);
+                    let buffer: Subbuffer<[GpuMat4]> = Buffer::new_slice(
+                        self.context.memory_allocator().clone(),
+                        BufferCreateInfo {
+                            usage: BufferUsage::STORAGE_BUFFER,
+                            ..Default::default()
+                        },
+                        AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                            ..Default::default()
+                        },
+                        new_cap as DeviceSize,
+                    )?;
+                    self.cached_bones_buffer = Some(buffer);
+                    self.cached_bones_capacity = new_cap;
+                }
+
+                if palette_dirty || needs_realloc {
+                    let bones_src = visual_world.bones_palette();
+                    let identity = [
+                        [1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ];
+
+                    let mut dst = self
+                        .cached_bones_buffer
+                        .as_ref()
+                        .expect("bones buffer should exist")
+                        .write()?;
+
+                    // Write current palette, then fill remainder with identity.
+                    if bones_src.is_empty() {
+                        dst[0] = GpuMat4 { cols: identity };
+                        for slot in dst.iter_mut().skip(1) {
+                            *slot = GpuMat4 { cols: identity };
+                        }
+                    } else {
+                        for (i, m) in bones_src.iter().copied().enumerate() {
+                            dst[i] = GpuMat4 { cols: m };
+                        }
+                        for slot in dst.iter_mut().skip(bones_src.len()) {
+                            *slot = GpuMat4 { cols: identity };
+                        }
+                    }
+                }
+
+                let bones_buffer = self
+                    .cached_bones_buffer
+                    .as_ref()
+                    .expect("bones buffer should exist")
+                    .clone();
+
+                let per_instance_lighting_buffer: Subbuffer<DummyPerInstanceLightingSSBO> =
+                    Buffer::from_data(
+                        self.context.memory_allocator().clone(),
+                        BufferCreateInfo {
+                            usage: BufferUsage::STORAGE_BUFFER,
+                            ..Default::default()
+                        },
+                        AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                            ..Default::default()
+                        },
+                        DummyPerInstanceLightingSSBO::default(),
+                    )?;
+
+                DescriptorSet::new(
+                    self.descriptor_set_allocator.clone(),
+                    self.set_layouts.rig.clone(),
+                    [
+                        WriteDescriptorSet::buffer(0, per_instance_lighting_buffer),
+                        WriteDescriptorSet::buffer(1, bones_buffer),
+                    ],
+                    [],
+                )?
+            };
+
             let mut cbb = AutoCommandBufferBuilder::primary(
                 self.command_buffer_allocator.clone(),
                 queue.queue_family_index(),
@@ -1493,6 +1862,7 @@ mod vulkano_backend {
                             &mut cbb,
                             visual_world,
                             global_set_bg,
+                            &rig_set,
                             background_instance_buffer,
                             background_instance_count,
                         )?;
@@ -1505,6 +1875,7 @@ mod vulkano_backend {
                             &mut cbb,
                             visual_world,
                             global_set_bg,
+                            &rig_set,
                             background_occluded_lit_instance_buffer,
                             background_occluded_lit_instance_count,
                         )?;
@@ -1528,6 +1899,7 @@ mod vulkano_backend {
                 &mut cbb,
                 visual_world,
                 &global_set_fg,
+                &rig_set,
                 &instance_buffer,
                 instance_count,
             )?;
@@ -1537,17 +1909,25 @@ mod vulkano_backend {
                     &mut cbb,
                     visual_world,
                     &global_set_fg,
+                    &rig_set,
                     cutout_instance_buffer,
                     cutout_instance_count,
                 )?;
             }
 
-            self.record_transparent_single_draws(&mut cbb, visual_world, &global_set_fg, eye)?;
+            self.record_transparent_single_draws(
+                &mut cbb,
+                visual_world,
+                &global_set_fg,
+                &rig_set,
+                eye,
+            )?;
 
             self.record_transparent_multi_draws(
                 &mut cbb,
                 visual_world,
                 &global_set_fg,
+                &rig_set,
                 camera_target,
                 eye,
             )?;
@@ -1721,6 +2101,39 @@ mod vulkano_backend {
                 mesh.vertices.iter().copied(),
             )?;
 
+            let skin_src: Option<Subbuffer<[GpuSkinVertex]>> = match (&mesh.joints0, &mesh.weights0)
+            {
+                (Some(joints0), Some(weights0))
+                    if joints0.len() == mesh.vertices.len()
+                        && weights0.len() == mesh.vertices.len() =>
+                {
+                    let skin_iter =
+                        joints0
+                            .iter()
+                            .copied()
+                            .zip(weights0.iter().copied())
+                            .map(|(j, w)| GpuSkinVertex {
+                                joints0: j,
+                                weights0: w,
+                            });
+
+                    Some(Buffer::from_iter(
+                        memory_allocator.clone(),
+                        BufferCreateInfo {
+                            usage: BufferUsage::TRANSFER_SRC,
+                            ..Default::default()
+                        },
+                        AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                            ..Default::default()
+                        },
+                        skin_iter,
+                    )?)
+                }
+                _ => None,
+            };
+
             let indices_src = Buffer::from_iter(
                 memory_allocator.clone(),
                 BufferCreateInfo {
@@ -1749,6 +2162,24 @@ mod vulkano_backend {
                 mesh.vertices.len() as DeviceSize,
             )?;
 
+            let skin_dst: Option<Subbuffer<[GpuSkinVertex]>> = skin_src
+                .as_ref()
+                .map(|_| {
+                    Buffer::new_slice::<GpuSkinVertex>(
+                        memory_allocator.clone(),
+                        BufferCreateInfo {
+                            usage: BufferUsage::VERTEX_BUFFER | BufferUsage::TRANSFER_DST,
+                            ..Default::default()
+                        },
+                        AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                            ..Default::default()
+                        },
+                        mesh.vertices.len() as DeviceSize,
+                    )
+                })
+                .transpose()?;
+
             let indices_dst = Buffer::new_slice::<u32>(
                 memory_allocator.clone(),
                 BufferCreateInfo {
@@ -1770,6 +2201,9 @@ mod vulkano_backend {
             )?;
 
             cbb.copy_buffer(CopyBufferInfo::buffers(vertices_src, vertices_dst.clone()))?;
+            if let (Some(src), Some(dst)) = (skin_src, skin_dst.as_ref()) {
+                cbb.copy_buffer(CopyBufferInfo::buffers(src, dst.clone()))?;
+            }
             cbb.copy_buffer(CopyBufferInfo::buffers(indices_src, indices_dst.clone()))?;
 
             let cb = cbb.build()?;
@@ -1782,6 +2216,7 @@ mod vulkano_backend {
                 handle,
                 VulkanoGpuMesh {
                     vertices: vertices_dst,
+                    skin_vertices: skin_dst,
                     indices: indices_dst,
                     index_count: mesh.index_count(),
                 },

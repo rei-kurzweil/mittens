@@ -41,4 +41,9 @@ bvh = "0.7"
 # glTF 2.0 import (used by GLTFSystem to load .glb models and embedded images)
 gltf = { version = "1", features = ["import"] }
 
+[[example]]
+# Cargo derives target names from filenames; dots are not allowed in crate names.
+name = "mindmap_example_0_3"
+path = "examples/mindmap-example.0.3.rs"
+
 

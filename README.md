@@ -14,6 +14,38 @@ using vulkan instanced rendering and several layers to describe game objects:
 + holds all the layers below,
 + and provides simple API to build component trees and add them to the world
 
+### Universe API (common helpers)
+
+The `engine::Universe` type is a convenience wrapper around `World + SystemWorld + VisualWorld + CommandQueue`.
+
+In addition to `add(...)` and `attach(parent, child)`, it provides a few higher-level helpers for
+prefab-style workflows and safe subtree removal:
+
+- `attach_clone(parent, prefab_root) -> Result<ComponentId, String>`
+  - Clones the component subtree rooted at `prefab_root` (fresh `ComponentId`s and fresh GUIDs) and attaches it under `parent`.
+  - Clone is done via component `encode`/`decode` using `ComponentCodec` (no JSON round-trip).
+  - Note: if any components contain references to other components (e.g. action targets stored inside component payloads), those references are currently copied as-is and may need a future fixup pass.
+
+- `remove_child(parent, index) -> Result<ComponentId, &'static str>`
+  - Detaches the child immediately and queues deletion of that child subtree via the command queue.
+  - Deletion is applied when the command queue is processed (after systems tick), so systems/visuals can cleanly unregister.
+
+- `remove_children(parent) -> Result<Vec<ComponentId>, &'static str>`
+  - Detaches all direct children and queues deletion of each child subtree (applied on command processing).
+
+Example (prefab clone):
+
+```rust
+use cat_engine::engine;
+
+let prefab_root: engine::ecs::ComponentId = /* detached prefab subtree root */;
+let parent: engine::ecs::ComponentId = /* some TransformComponent in the live scene */;
+
+let instance_root = universe.attach_clone(parent, prefab_root)?;
+// GUID is stored on the component record:
+let guid = universe.world.get_component_record(instance_root).unwrap().guid;
+```
+
 ## (component) World
 + stores list of components and topology (parent / child relationship between components)
 + components can have subcomponents
@@ -165,6 +197,59 @@ InputComponent {
 + OpenXRComponent
   + adds OpenXR support to the universe
   + handles session, frame loop, and input events from XR runtime
+
+
+# Actions
+
+Actions are data-driven “commands” stored in the component graph as `ActionComponent`s.
+They are typically executed by the `AnimationSystem` when a `KeyframeComponent` fires, but can also be executed directly via `ActionSystem`.
+
+## ActionComponent schema
+
+An `ActionComponent` encodes to a small JSON-ish record:
+
+- `target: [u64, ...]` — list of component ids (slotmap FFI ids)
+- `method: "..."` — action method string
+- `params: [ ... ]` — method-specific parameters
+
+## Supported actions
+
+Common topology/scene actions:
+
+- `set_color(target, rgba)` (`method = "set_color"`)
+- `set_text(target, text)` (`method = "set_text"`)
+- `set_position(target, x, y, z)` (`method = "set_position"`)
+
+- `attach(parent, child)` (`method = "attach"`)
+- `detach(targets)` (`method = "detach"`)
+- `remove_subtree(targets)` (`method = "remove_subtree"`)
+
+Prefab + child removal helpers (mirror the `Universe` helpers):
+
+- `attach_clone(parent, prefab_root)` (`method = "attach_clone"`)
+  - Clones the prefab subtree and attaches the cloned root under each target parent.
+
+- `remove_child(parent, index)` (`method = "remove_child"`)
+  - Detaches the selected child immediately and queues deletion of that subtree.
+  - `index` is based on the current `children_of(parent)` order; if you want a stable index, avoid attaching other “marker” children under the same parent.
+
+- `remove_children(parent)` (`method = "remove_children"`)
+  - Detaches + queues deletion for all direct children.
+
+Audio actions:
+
+- `audio_graph_rebuild(targets)` (`method = "audio_graph_rebuild"`)
+- `audio_low_pass_set_cutoff_hz(targets, cutoff_hz)` (`method = "audio_low_pass_set_cutoff_hz"`)
+- `audio_band_pass_set_center_hz(targets, center_hz)` (`method = "audio_band_pass_set_center_hz"`)
+
+Oscillator/music actions:
+
+- `oscillator_set_enabled(targets, enabled)` (`method = "oscillator_set_enabled"`)
+- `oscillator_set_pitch(targets, frequency_hz)` (`method = "oscillator_set_pitch"`)
+- `oscillator_schedule_set_pitch(targets, beat_offset, frequency_hz)` (`method = "oscillator_schedule_set_pitch"`)
+- `oscillator_schedule_set_note(targets, beat_offset, pitch, octave)` (`method = "oscillator_schedule_set_note"`)
+- `oscillator_schedule_music_note(targets, beat_offset, note)` (`method = "oscillator_schedule_music_note"`)
+- `music_set_note(targets, note)` (`method = "music_set_note"`)
 
 
 # REPL / CLI

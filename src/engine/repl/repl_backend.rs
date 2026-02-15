@@ -1,6 +1,7 @@
 use super::{pipe, util};
 use crate::engine::ecs;
 use slotmap::KeyData;
+use std::collections::HashSet;
 use std::io::Write;
 
 /// Runs REPL commands against engine state.
@@ -232,6 +233,7 @@ impl ReplBackend {
             "help" => {
                 println!("🐈 Commands:");
                 println!("🐈   ls");
+                println!("🐈   tree [max_depth]");
                 println!("🐈   cd <name>");
                 println!("🐈   cd <index>");
                 println!("🐈   cd <guid>");
@@ -285,6 +287,26 @@ impl ReplBackend {
                         println!("{}", line);
                     }
                 }
+            }
+            "tree" => {
+                let arg = it.next();
+                if it.next().is_some() {
+                    println!("🐈 tree: usage: tree [max_depth]");
+                    return;
+                }
+
+                let max_depth: Option<usize> = match arg {
+                    None => None,
+                    Some(s) => match s.parse::<usize>() {
+                        Ok(v) => Some(v),
+                        Err(_) => {
+                            println!("🐈 tree: invalid max_depth: {}", s);
+                            return;
+                        }
+                    },
+                };
+
+                self.print_tree(world, max_depth);
             }
             "cat" => {
                 // If no arg is provided, default to the current working directory.
@@ -424,6 +446,75 @@ impl ReplBackend {
                 }
             }
             _ => println!("🐈 unknown command: {}", verb),
+        }
+    }
+
+    fn print_tree(&self, world: &ecs::World, max_depth: Option<usize>) {
+        let mut visited: HashSet<ecs::ComponentId> = HashSet::new();
+
+        match self.cwd {
+            None => {
+                println!("🐈 /");
+                let roots: Vec<ecs::ComponentId> = world
+                    .all_components()
+                    .filter(|&cid| world.parent_of(cid).is_none())
+                    .collect();
+
+                for (i, cid) in roots.into_iter().enumerate() {
+                    self.print_tree_node(world, cid, 0, i, &mut visited, max_depth);
+                }
+            }
+            Some(cwd) => {
+                // Print the current component first.
+                if let Some(line) = util::format_ls_line(world, 0, cwd) {
+                    println!("{}", line);
+                } else {
+                    println!("🐈 tree: cwd deleted");
+                    return;
+                }
+
+                let children: Vec<ecs::ComponentId> = world.children_of(cwd).to_vec();
+                for (i, cid) in children.into_iter().enumerate() {
+                    self.print_tree_node(world, cid, 1, i, &mut visited, max_depth);
+                }
+            }
+        }
+    }
+
+    fn print_tree_node(
+        &self,
+        world: &ecs::World,
+        cid: ecs::ComponentId,
+        depth: usize,
+        index_in_parent: usize,
+        visited: &mut HashSet<ecs::ComponentId>,
+        max_depth: Option<usize>,
+    ) {
+        if let Some(limit) = max_depth {
+            if depth > limit {
+                return;
+            }
+        }
+
+        let indent = "  ".repeat(depth);
+
+        if !visited.insert(cid) {
+            // Defensive: should be a tree, but avoid infinite loops.
+            if let Some(line) = util::format_ls_line(world, index_in_parent, cid) {
+                println!("{}{} 🌀(cycle)", indent, line);
+            }
+            return;
+        }
+
+        if let Some(line) = util::format_ls_line(world, index_in_parent, cid) {
+            println!("{}{}", indent, line);
+        } else {
+            return;
+        }
+
+        let children: Vec<ecs::ComponentId> = world.children_of(cid).to_vec();
+        for (i, ch) in children.into_iter().enumerate() {
+            self.print_tree_node(world, ch, depth + 1, i, visited, max_depth);
         }
     }
 

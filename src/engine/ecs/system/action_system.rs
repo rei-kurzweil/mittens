@@ -109,6 +109,50 @@ impl ActionSystem {
                     }
                 }
             }
+            ActionMethod::SetTransform => {
+                // Preferred schema: params=[translation vec3, rotation quat vec4, scale vec3]
+                // (all numeric arrays).
+                let Some(translation) = action.params.get(0).and_then(parse_vec3_f32) else {
+                    println!(
+                        "[ActionSystem] set_transform: missing/invalid translation params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+                let Some(rotation) = action.params.get(1).and_then(parse_vec4_f32) else {
+                    println!(
+                        "[ActionSystem] set_transform: missing/invalid rotation params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+                let Some(scale) = action.params.get(2).and_then(parse_vec3_f32) else {
+                    println!(
+                        "[ActionSystem] set_transform: missing/invalid scale params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+
+                let mut transform_cids = Vec::new();
+                for &target in action.target.iter() {
+                    collect_transform_targets(world, target, &mut transform_cids);
+                }
+                transform_cids.sort();
+                transform_cids.dedup();
+
+                for transform_cid in transform_cids {
+                    if let Some(t) =
+                        world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
+                    {
+                        t.transform.translation = translation;
+                        t.transform.rotation = rotation;
+                        t.transform.scale = scale;
+                        t.transform.recompute_model();
+                        queue.queue_update_transform(transform_cid, t.transform);
+                    }
+                }
+            }
             ActionMethod::Attach => {
                 let Some(child) = action.params.get(0).and_then(parse_component_id) else {
                     println!(
@@ -570,6 +614,21 @@ fn parse_vec3_f32(v: &serde_json::Value) -> Option<[f32; 3]> {
         return None;
     }
     Some([x, y, z])
+}
+
+fn parse_vec4_f32(v: &serde_json::Value) -> Option<[f32; 4]> {
+    let arr = v.as_array()?;
+    if arr.len() != 4 {
+        return None;
+    }
+    let x = arr[0].as_f64()? as f32;
+    let y = arr[1].as_f64()? as f32;
+    let z = arr[2].as_f64()? as f32;
+    let w = arr[3].as_f64()? as f32;
+    if !(x.is_finite() && y.is_finite() && z.is_finite() && w.is_finite()) {
+        return None;
+    }
+    Some([x, y, z, w])
 }
 
 fn collect_transform_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {

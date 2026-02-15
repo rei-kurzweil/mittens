@@ -10,6 +10,8 @@ pub enum ActionMethod {
     SetText,
     /// Set position (translation) on TransformComponents.
     SetPosition,
+    /// Set full transform (translation + rotation quat + scale) on TransformComponents.
+    SetTransform,
     /// Attach `child` under `parent` (component graph topology change).
     Attach,
     /// Clone a prefab subtree and attach the cloned root under each target parent.
@@ -57,6 +59,9 @@ impl ActionMethod {
             }
             ActionMethod::SetPosition => {
                 map.insert("method".to_string(), serde_json::json!("set_position"));
+            }
+            ActionMethod::SetTransform => {
+                map.insert("method".to_string(), serde_json::json!("set_transform"));
             }
             ActionMethod::Attach => {
                 map.insert("method".to_string(), serde_json::json!("attach"));
@@ -183,6 +188,26 @@ impl Action {
             target,
             method: ActionMethod::SetPosition,
             params: vec![serde_json::json!([x, y, z])],
+        }
+    }
+
+    /// Set full transform on TransformComponents.
+    ///
+    /// Params are encoded as: [translation[x,y,z], rotation_quat[x,y,z,w], scale[x,y,z]].
+    pub fn set_transform(
+        target: Vec<ComponentId>,
+        translation: [f32; 3],
+        rotation_quat_xyzw: [f32; 4],
+        scale: [f32; 3],
+    ) -> Self {
+        Self {
+            target,
+            method: ActionMethod::SetTransform,
+            params: vec![
+                serde_json::json!(translation),
+                serde_json::json!(rotation_quat_xyzw),
+                serde_json::json!(scale),
+            ],
         }
     }
 
@@ -434,6 +459,7 @@ impl Component for ActionComponent {
             "set_color" => ActionMethod::SetColor,
             "set_text" => ActionMethod::SetText,
             "set_position" => ActionMethod::SetPosition,
+            "set_transform" => ActionMethod::SetTransform,
             "attach" => ActionMethod::Attach,
             "attach_clone" => ActionMethod::AttachClone,
             "detach" => ActionMethod::Detach,

@@ -5,10 +5,12 @@ impl VulkanoState {
         &mut self,
         cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
         global_set: &Arc<DescriptorSet>,
+        rig_set: &Arc<DescriptorSet>,
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
         batches: &[crate::engine::graphics::visual_world::DrawBatch],
-        pipeline: Arc<GraphicsPipeline>,
+        pipeline_toon: Arc<GraphicsPipeline>,
+        pipeline_skinned: Arc<GraphicsPipeline>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Bind pipeline/descriptor sets per (material, texture).
         let mut bound_material: Option<crate::engine::graphics::MaterialHandle> = None;
@@ -17,6 +19,12 @@ impl VulkanoState {
         let mut bound_quant: Option<u32> = None;
 
         for batch in batches {
+            let pipeline = if batch.material == crate::engine::graphics::MaterialHandle::SKINNED_TOON_MESH {
+                pipeline_skinned.clone()
+            } else {
+                pipeline_toon.clone()
+            };
+
             let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
             let filtering = batch.texture_filtering;
             let quant_bits = batch.quant_steps.to_bits();
@@ -41,7 +49,7 @@ impl VulkanoState {
                     PipelineBindPoint::Graphics,
                     pipeline.layout().clone(),
                     0,
-                    (global_set.clone(), material_set),
+                    (global_set.clone(), material_set, rig_set.clone()),
                 )?;
 
                 bound_material = Some(batch.material);
@@ -53,7 +61,18 @@ impl VulkanoState {
             let Some(mesh) = self.meshes.get(&batch.mesh) else {
                 continue;
             };
-            cbb.bind_vertex_buffers(0, (mesh.vertices.clone(), instance_buffer.clone()))?;
+            if batch.material == crate::engine::graphics::MaterialHandle::SKINNED_TOON_MESH {
+                let Some(skin) = mesh.skin_vertices.as_ref() else {
+                    // Skinned pipeline expects a skinning vertex buffer.
+                    continue;
+                };
+                cbb.bind_vertex_buffers(
+                    0,
+                    (mesh.vertices.clone(), skin.clone(), instance_buffer.clone()),
+                )?;
+            } else {
+                cbb.bind_vertex_buffers(0, (mesh.vertices.clone(), instance_buffer.clone()))?;
+            }
             cbb.bind_index_buffer(mesh.indices.clone())?;
 
             if instance_count > 0 && batch.count > 0 {
@@ -77,6 +96,7 @@ impl VulkanoState {
         cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
         visual_world: &VisualWorld,
         global_set: &Arc<DescriptorSet>,
+        rig_set: &Arc<DescriptorSet>,
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -87,11 +107,13 @@ impl VulkanoState {
         self.record_instanced_draws_for_batches(
             cbb,
             global_set,
+            rig_set,
             instance_buffer,
             instance_count,
             visual_world.background_batches(),
             // Plain background: no depth write.
             self.pipeline_toon_mesh_transparent.clone(),
+            self.pipeline_skinned_toon_mesh_transparent.clone(),
         )
     }
 
@@ -100,6 +122,7 @@ impl VulkanoState {
         cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
         visual_world: &VisualWorld,
         global_set: &Arc<DescriptorSet>,
+        rig_set: &Arc<DescriptorSet>,
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -110,11 +133,13 @@ impl VulkanoState {
         self.record_instanced_draws_for_batches(
             cbb,
             global_set,
+            rig_set,
             instance_buffer,
             instance_count,
             visual_world.background_occluded_lit_batches(),
             // Occluded+lit background: depth write ON for self-occlusion.
             self.pipeline_toon_mesh.clone(),
+            self.pipeline_skinned_toon_mesh.clone(),
         )
     }
 
@@ -123,6 +148,7 @@ impl VulkanoState {
         cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
         visual_world: &VisualWorld,
         global_set: &Arc<DescriptorSet>,
+        rig_set: &Arc<DescriptorSet>,
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -133,10 +159,12 @@ impl VulkanoState {
         self.record_instanced_draws_for_batches(
             cbb,
             global_set,
+            rig_set,
             instance_buffer,
             instance_count,
             visual_world.draw_batches(),
             self.pipeline_toon_mesh.clone(),
+            self.pipeline_skinned_toon_mesh.clone(),
         )
     }
 
@@ -145,6 +173,7 @@ impl VulkanoState {
         cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
         visual_world: &VisualWorld,
         global_set: &Arc<DescriptorSet>,
+        rig_set: &Arc<DescriptorSet>,
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -155,10 +184,12 @@ impl VulkanoState {
         self.record_instanced_draws_for_batches(
             cbb,
             global_set,
+            rig_set,
             instance_buffer,
             instance_count,
             visual_world.cutout_batches(),
             self.pipeline_toon_mesh_cutout.clone(),
+            self.pipeline_skinned_toon_mesh_cutout.clone(),
         )
     }
 
@@ -167,6 +198,7 @@ impl VulkanoState {
         cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
         visual_world: &VisualWorld,
         global_set: &Arc<DescriptorSet>,
+        rig_set: &Arc<DescriptorSet>,
         _eye: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let transparent_single_instance_count = visual_world.transparent_single_draw_order().len();
@@ -207,12 +239,20 @@ impl VulkanoState {
                     continue;
                 };
 
-                cbb.bind_pipeline_graphics(self.pipeline_toon_mesh_transparent.clone())?;
+                let pipeline = if batch.material
+                    == crate::engine::graphics::MaterialHandle::SKINNED_TOON_MESH
+                {
+                    self.pipeline_skinned_toon_mesh_transparent.clone()
+                } else {
+                    self.pipeline_toon_mesh_transparent.clone()
+                };
+
+                cbb.bind_pipeline_graphics(pipeline.clone())?;
                 cbb.bind_descriptor_sets(
                     PipelineBindPoint::Graphics,
-                    self.pipeline_toon_mesh_transparent.layout().clone(),
+                    pipeline.layout().clone(),
                     0,
-                    (global_set.clone(), material_set),
+                    (global_set.clone(), material_set, rig_set.clone()),
                 )?;
 
                 bound_material = Some(batch.material);
@@ -254,6 +294,7 @@ impl VulkanoState {
         cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
         visual_world: &mut VisualWorld,
         global_set: &Arc<DescriptorSet>,
+        rig_set: &Arc<DescriptorSet>,
         camera_target: crate::engine::graphics::CameraTarget,
         eye: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -297,12 +338,20 @@ impl VulkanoState {
                     continue;
                 };
 
-                cbb.bind_pipeline_graphics(self.pipeline_toon_mesh_transparent.clone())?;
+                let pipeline = if batch.material
+                    == crate::engine::graphics::MaterialHandle::SKINNED_TOON_MESH
+                {
+                    self.pipeline_skinned_toon_mesh_transparent.clone()
+                } else {
+                    self.pipeline_toon_mesh_transparent.clone()
+                };
+
+                cbb.bind_pipeline_graphics(pipeline.clone())?;
                 cbb.bind_descriptor_sets(
                     PipelineBindPoint::Graphics,
-                    self.pipeline_toon_mesh_transparent.layout().clone(),
+                    pipeline.layout().clone(),
                     0,
-                    (global_set.clone(), material_set),
+                    (global_set.clone(), material_set, rig_set.clone()),
                 )?;
 
                 bound_material = Some(batch.material);

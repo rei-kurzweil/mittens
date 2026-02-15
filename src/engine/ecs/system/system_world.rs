@@ -11,6 +11,7 @@ use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::OpenXRSystem;
 use crate::engine::ecs::system::RayCastSystem;
 use crate::engine::ecs::system::RenderableSystem;
+use crate::engine::ecs::system::SkinnedMeshSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextureSystem;
@@ -31,6 +32,7 @@ pub struct SystemWorld {
     pub transform: TransformSystem,
     pub bvh: BvhSystem,
     pub collision: CollisionSystem,
+    pub skinned_mesh: SkinnedMeshSystem,
     pub renderable: RenderableSystem,
 
     pub raycast: RayCastSystem,
@@ -365,6 +367,11 @@ impl SystemWorld {
             &mut self.collision,
         );
 
+        // Any transform changes can affect joint world matrices for skinning.
+        // Let SkinnedMeshSystem lazily recompute only affected rigs.
+        self.skinned_mesh
+            .transform_subtree_changed(&*world, component);
+
         // Transform propagation may move many renderables in the subtree.
         // Queue a BVH refit for that subtree (applied after command flush).
         self.bvh.queue_transform_subtree(world, component);
@@ -532,7 +539,8 @@ impl SystemWorld {
         self.input.process_input(world, input, queue, dt_sec);
 
         // Spawn any GLTF component trees. This may queue component registrations.
-        self.gltf.tick_with_queue(world, queue, dt_sec);
+        self.gltf
+            .tick_with_queue(world, visuals, &mut self.skinned_mesh, queue, dt_sec);
 
         // Flush queued registrations/transform updates *before* systems that need current
         // world matrices / acceleration structures (e.g. raycasting).
@@ -562,6 +570,9 @@ impl SystemWorld {
 
         // Ensure transforms are propagated before any camera systems consume world matrices.
         self.transform.tick(world, visuals, input, dt_sec);
+
+        // Compute joint palettes from cached world transforms.
+        self.skinned_mesh.tick(world, visuals, input, dt_sec);
 
         // Spatial acceleration structure built from latest world transforms.
         self.bvh.tick(world, visuals, input, dt_sec);

@@ -231,6 +231,12 @@ impl Material {
         vertex_shader: "assets/shaders/toon-mesh.vert",
         fragment_shader: "assets/shaders/toon-mesh.frag",
     };
+
+    /// Skinned toon material (uses a skinned vertex shader).
+    pub const SKINNED_TOON_MESH: Material = Material {
+        vertex_shader: "assets/shaders/skinned-toon-mesh.vert",
+        fragment_shader: "assets/shaders/toon-mesh.frag",
+    };
 }
 
 impl MaterialHandle {
@@ -239,4 +245,7 @@ impl MaterialHandle {
 
     /// Toon mesh material (see `Material::TOON_MESH`).
     pub const TOON_MESH: MaterialHandle = MaterialHandle(1);
+
+    /// Skinned toon mesh material (see `Material::SKINNED_TOON_MESH`).
+    pub const SKINNED_TOON_MESH: MaterialHandle = MaterialHandle(2);
 }

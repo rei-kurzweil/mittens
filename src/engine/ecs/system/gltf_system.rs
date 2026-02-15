@@ -1,12 +1,13 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    ColorComponent, EmissiveComponent, GLTFComponent, MeshComponent, RenderableComponent,
-    TextureComponent, TransformComponent,
+    ColorComponent, EmissiveComponent, GLTFComponent, JointComponent, MeshComponent,
+    RenderableComponent, SkinnedMeshComponent, TextureComponent, TransformComponent,
 };
 use crate::engine::graphics::mesh::{CpuMesh, CpuVertex};
+use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Renderable};
-use crate::engine::graphics::{RenderAssets, RenderUploader};
+use crate::engine::graphics::{RenderAssets, RenderUploader, SkinId, VisualWorld};
 use crate::engine::user_input::InputState;
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -23,6 +24,7 @@ struct LoadedGltf {
     gltf_name: String,
     meshes: Vec<ImportedMesh>,
     textures: Vec<ImportedTexture>,
+    skins: Vec<ImportedSkin>,
     meshes_registered: bool,
     textures_uploaded: bool,
 }
@@ -39,6 +41,13 @@ struct ImportedTexture {
     rgba: Vec<u8>,
     width: u32,
     height: u32,
+}
+
+#[derive(Debug, Clone)]
+struct ImportedSkin {
+    joints: Vec<usize>,
+    inverse_bind_matrices: Vec<TransformMatrix>,
+    skeleton_root: Option<usize>,
 }
 
 impl GLTFSystem {
@@ -235,6 +244,8 @@ impl GLTFSystem {
     pub fn tick_with_queue(
         &mut self,
         world: &mut World,
+        visuals: &mut VisualWorld,
+        skinned_mesh: &mut crate::engine::ecs::system::SkinnedMeshSystem,
         queue: &mut crate::engine::ecs::CommandQueue,
         _dt_sec: f32,
     ) {
@@ -300,12 +311,71 @@ impl GLTFSystem {
                 Self::debug_dump_document(&uri, &doc, loaded);
             }
 
+            // Per-instance mapping from glTF node indices -> spawned TransformComponent ids.
+            // Used to resolve skins (joint node indices -> ComponentId references).
+            let mut node_index_to_component: HashMap<usize, ComponentId> = HashMap::new();
+            let mut pending_skin_components: Vec<(ComponentId, usize)> = Vec::new();
+
+            // Precompute joint membership for debug markers.
+            // Map: joint node index -> list of skin indices that reference it.
+            let mut joint_node_to_skin_indices: HashMap<usize, Vec<usize>> = HashMap::new();
+            for (skin_index, skin) in loaded.skins.iter().enumerate() {
+                for &joint_node in &skin.joints {
+                    joint_node_to_skin_indices
+                        .entry(joint_node)
+                        .or_default()
+                        .push(skin_index);
+                }
+            }
+
             for node in scene.nodes() {
-                let root =
-                    self.spawn_node_recursive(world, anchor_transform, &buffers, loaded, node);
+                let root = self.spawn_node_recursive(
+                    world,
+                    anchor_transform,
+                    &buffers,
+                    loaded,
+                    node,
+                    &mut node_index_to_component,
+                    &mut pending_skin_components,
+                    &joint_node_to_skin_indices,
+                );
                 if let Some(root) = root {
                     world.init_component_tree(root, queue);
                 }
+            }
+
+            // Register shared skin definitions in VisualWorld + per-instance joint resolution
+            // in SkinnedMeshSystem.
+            //
+            // This avoids duplicating joint/IBM arrays for every primitive renderable.
+            let mut skin_id_by_index: HashMap<usize, SkinId> = HashMap::new();
+            for (skin_index, skin) in loaded.skins.iter().enumerate() {
+                let skin_id = visuals.upsert_skin(
+                    &uri,
+                    skin_index,
+                    skin.joints.clone(),
+                    skin.inverse_bind_matrices.clone(),
+                );
+                skin_id_by_index.insert(skin_index, skin_id);
+
+                let mut joints_resolved: Vec<Option<ComponentId>> =
+                    Vec::with_capacity(skin.joints.len());
+                for &node_index in &skin.joints {
+                    joints_resolved.push(node_index_to_component.get(&node_index).copied());
+                }
+                skinned_mesh.register_skin_instance_joints(cid, skin_id, joints_resolved);
+            }
+
+            for (skinned_cid, skin_index) in pending_skin_components {
+                let Some(skin_id) = skin_id_by_index.get(&skin_index).copied() else {
+                    continue;
+                };
+                let Some(sm) =
+                    world.get_component_by_id_as_mut::<SkinnedMeshComponent>(skinned_cid)
+                else {
+                    continue;
+                };
+                sm.skin_id = Some(skin_id);
             }
 
             // Mark component as spawned.
@@ -420,6 +490,14 @@ impl GLTFSystem {
                     None => (0..positions.len() as u32).collect(),
                 };
 
+                // Optional skinning attributes.
+                let joints0: Option<Vec<[u16; 4]>> = reader
+                    .read_joints(0)
+                    .map(|j| j.into_u16().collect::<Vec<[u16; 4]>>());
+                let weights0: Option<Vec<[f32; 4]>> = reader
+                    .read_weights(0)
+                    .map(|w| w.into_f32().collect::<Vec<[f32; 4]>>());
+
                 // Normals: prefer glTF normals; otherwise compute smooth normals.
                 let mut normals: Vec<[f32; 3]> = reader
                     .read_normals()
@@ -488,10 +566,26 @@ impl GLTFSystem {
                     vertices.push(CpuVertex { pos: p, uv, normal });
                 }
 
+                let (joints0, weights0) = match (joints0, weights0) {
+                    (Some(j), Some(w))
+                        if j.len() == positions.len() && w.len() == positions.len() =>
+                    {
+                        (Some(j), Some(w))
+                    }
+                    _ => (None, None),
+                };
+
                 let key = format!("{}:{}:prim{}", gltf_name, mesh_name_or_index, prim_index);
                 meshes.push(ImportedMesh {
                     key,
-                    mesh: CpuMesh::new(vertices, indices_u32),
+                    mesh: {
+                        let mesh = CpuMesh::new(vertices, indices_u32);
+                        if let (Some(j), Some(w)) = (joints0, weights0) {
+                            mesh.with_skinning(j, w)
+                        } else {
+                            mesh
+                        }
+                    },
                 });
             }
         }
@@ -549,10 +643,94 @@ impl GLTFSystem {
             });
         }
 
+        fn mat4_identity() -> TransformMatrix {
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        }
+
+        fn read_accessor_matrices4x4_f32(
+            acc: gltf::Accessor,
+            buffers: &[gltf::buffer::Data],
+        ) -> Vec<TransformMatrix> {
+            use gltf::accessor::{DataType, Dimensions};
+
+            if acc.data_type() != DataType::F32 {
+                return Vec::new();
+            }
+            if acc.dimensions() != Dimensions::Mat4 {
+                return Vec::new();
+            }
+
+            let Some(view) = acc.view() else {
+                return Vec::new();
+            };
+
+            let buffer_index = view.buffer().index();
+            let Some(buf) = buffers.get(buffer_index) else {
+                return Vec::new();
+            };
+
+            let stride_bytes: usize = view.stride().unwrap_or(16 * 4);
+            let start = view.offset() + acc.offset();
+            let count = acc.count();
+
+            let bytes = &buf.0;
+            let mut out: Vec<TransformMatrix> = Vec::with_capacity(count);
+            for i in 0..count {
+                let base = start + i * stride_bytes;
+                if base + 16 * 4 > bytes.len() {
+                    break;
+                }
+
+                // glTF stores matrices as 16 f32 values in column-major order.
+                let mut m = [[0.0f32; 4]; 4];
+                for col in 0..4 {
+                    for row in 0..4 {
+                        let j = col * 4 + row;
+                        let bi = base + j * 4;
+                        let Some(chunk) = bytes.get(bi..bi + 4) else {
+                            return out;
+                        };
+                        m[col][row] = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                    }
+                }
+
+                out.push(m);
+            }
+
+            out
+        }
+
+        // Build skins table.
+        let mut skins: Vec<ImportedSkin> = Vec::new();
+        for skin in doc.skins() {
+            let joints: Vec<usize> = skin.joints().map(|n| n.index()).collect();
+
+            let mut inverse_bind_matrices: Vec<TransformMatrix> = Vec::new();
+            if let Some(acc) = skin.inverse_bind_matrices() {
+                inverse_bind_matrices = read_accessor_matrices4x4_f32(acc, &buffers);
+            }
+
+            if inverse_bind_matrices.len() != joints.len() {
+                inverse_bind_matrices = vec![mat4_identity(); joints.len()];
+            }
+
+            skins.push(ImportedSkin {
+                joints,
+                inverse_bind_matrices,
+                skeleton_root: skin.skeleton().map(|n| n.index()),
+            });
+        }
+
         Ok(LoadedGltf {
             gltf_name,
             meshes,
             textures,
+            skins,
             meshes_registered: false,
             textures_uploaded: false,
         })
@@ -565,7 +743,16 @@ impl GLTFSystem {
         buffers: &[gltf::buffer::Data],
         loaded: &LoadedGltf,
         node: gltf::Node,
+        node_index_to_component: &mut HashMap<usize, ComponentId>,
+        pending_skin_components: &mut Vec<(ComponentId, usize)>,
+        joint_node_to_skin_indices: &HashMap<usize, Vec<usize>>,
     ) -> Option<ComponentId> {
+        let node_display_name = node
+            .name()
+            .map(Self::sanitize_key_part)
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| format!("node{}", node.index()));
+
         let (t, r, s) = node.transform().decomposed();
         let mut tc = TransformComponent::new();
         tc.transform.translation = t;
@@ -573,8 +760,22 @@ impl GLTFSystem {
         tc.transform.scale = s;
         tc.transform.recompute_model();
 
-        let this_transform = world.add_component(tc);
+        let this_transform =
+            world.add_component_boxed_named(node_display_name.clone(), Box::new(tc));
         let _ = world.add_child(parent_transform, this_transform);
+
+        node_index_to_component.insert(node.index(), this_transform);
+
+        // If this node is a joint in any skin, attach a debug marker component.
+        if let Some(skin_indices) = joint_node_to_skin_indices.get(&node.index()) {
+            let joint_comp = world.add_component_boxed_named(
+                format!("joint_marker:{}", node_display_name),
+                Box::new(JointComponent::new(node.index(), skin_indices.clone())),
+            );
+            let _ = world.add_child(this_transform, joint_comp);
+        }
+
+        let node_skin_index = node.skin().map(|s| s.index());
 
         if let Some(mesh) = node.mesh() {
             for (prim_index, prim) in mesh.primitives().enumerate() {
@@ -594,14 +795,32 @@ impl GLTFSystem {
 
                 // Create a renderable with a placeholder mesh; RenderableSystem will block flush
                 // until MeshComponent resolves to an imported mesh.
+                let material_handle = if node_skin_index.is_some() {
+                    MaterialHandle::SKINNED_TOON_MESH
+                } else {
+                    MaterialHandle::TOON_MESH
+                };
                 let renderable = world.add_component(RenderableComponent::new(Renderable::new(
                     CpuMeshHandle(0),
-                    MaterialHandle::TOON_MESH,
+                    material_handle,
                 )));
                 let mesh_ref = world.add_component(MeshComponent::new(mesh_key));
 
                 let _ = world.add_child(this_transform, renderable);
                 let _ = world.add_child(renderable, mesh_ref);
+
+                if let Some(skin_index) = node_skin_index {
+                    if loaded.skins.get(skin_index).is_some() {
+                        let skin_comp = world.add_component(SkinnedMeshComponent::new(skin_index));
+                        let _ = world.add_child(renderable, skin_comp);
+                        pending_skin_components.push((skin_comp, skin_index));
+                    } else {
+                        println!(
+                            "[GLTFSystem] warning: node refers to missing skin index={} (uri='{}')",
+                            skin_index, loaded.gltf_name
+                        );
+                    }
+                }
 
                 let material = prim.material();
 
@@ -680,7 +899,16 @@ impl GLTFSystem {
 
         // Recurse into children.
         for ch in node.children() {
-            let _ = self.spawn_node_recursive(world, this_transform, buffers, loaded, ch);
+            let _ = self.spawn_node_recursive(
+                world,
+                this_transform,
+                buffers,
+                loaded,
+                ch,
+                node_index_to_component,
+                pending_skin_components,
+                joint_node_to_skin_indices,
+            );
         }
 
         Some(this_transform)

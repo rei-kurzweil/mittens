@@ -276,6 +276,8 @@ impl ComponentCodec {
                 crate::engine::ecs::component::AudioBufferSizeComponent::default(),
             )),
             "clock" => Ok(Box::new(ClockComponent::new())),
+            "joint" => Ok(Box::new(JointComponent::new(0, Vec::new()))),
+            "skinned_mesh" => Ok(Box::new(SkinnedMeshComponent::new(0))),
             _ => Err(format!("Unknown component type: '{}'", type_name)),
         }
     }

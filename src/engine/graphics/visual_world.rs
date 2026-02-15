@@ -3,6 +3,8 @@ use crate::engine::ecs::Transform;
 use crate::engine::graphics::GpuRenderable;
 use crate::engine::graphics::primitives::InstanceHandle;
 use crate::engine::graphics::primitives::TransformMatrix;
+use crate::engine::graphics::{Skin, SkinId};
+use slotmap::{Key, SlotMap};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TextureFiltering {
@@ -49,6 +51,20 @@ pub struct DrawBatch {
 pub struct VisualWorld {
     instances: Vec<VisualInstance>,
     clear_color: [f32; 4],
+
+    // Shared bones palette for all skinned instances.
+    // Instances reference a subrange via (bones_base, bones_count).
+    //
+    // This is *persistent* across frames. We update only the subranges for rigs
+    // that become dirty (via transform changes), and we keep offsets stable via a
+    // tiny free-list allocator.
+    bones_palette: Vec<TransformMatrix>,
+    bones_free_ranges: Vec<(u32, u32)>,
+    dirty_bones_palette: bool,
+
+    // Shared skin definitions (glTF skins), keyed by (uri, skin_index).
+    skins: SlotMap<SkinId, Skin>,
+    skin_id_by_key: std::collections::HashMap<(String, usize), SkinId>,
 
     ambient_light: [f32; 3],
 
@@ -113,6 +129,11 @@ pub struct VisualInstance {
     pub texture: Option<crate::engine::graphics::TextureHandle>,
     pub texture_filtering: TextureFiltering,
     pub quant_steps: f32,
+
+    /// Base index into `VisualWorld::bones_palette`.
+    pub bones_base: u32,
+    /// Number of bone matrices for this instance.
+    pub bones_count: u32,
 }
 
 fn sanitize_quant_steps(steps: f32) -> f32 {
@@ -138,6 +159,13 @@ impl Default for VisualWorld {
         Self {
             instances: Vec::new(),
             clear_color: [0.0, 0.0, 0.0, 1.0],
+
+            bones_palette: vec![ident4],
+            bones_free_ranges: Vec::new(),
+            dirty_bones_palette: true,
+
+            skins: SlotMap::with_key(),
+            skin_id_by_key: std::collections::HashMap::new(),
 
             ambient_light: [0.0, 0.0, 0.0],
 
@@ -183,6 +211,230 @@ impl Default for VisualWorld {
             transparent_single_draw_batches: Vec::new(),
             transparent_multi_draw_order: Vec::new(),
             transparent_multi_draw_batches: Vec::new(),
+        }
+    }
+}
+
+impl VisualWorld {
+    pub fn skin(&self, id: SkinId) -> Option<&Skin> {
+        self.skins.get(id)
+    }
+
+    pub fn skin_id_for(&self, uri: &str, skin_index: usize) -> Option<SkinId> {
+        self.skin_id_by_key
+            .get(&(uri.to_string(), skin_index))
+            .copied()
+    }
+
+    pub fn upsert_skin(
+        &mut self,
+        uri: &str,
+        skin_index: usize,
+        joint_node_indices: Vec<usize>,
+        inverse_bind_matrices: Vec<TransformMatrix>,
+    ) -> SkinId {
+        let key = (uri.to_string(), skin_index);
+        if let Some(existing) = self.skin_id_by_key.get(&key).copied() {
+            if let Some(skin) = self.skins.get_mut(existing) {
+                skin.uri = uri.to_string();
+                skin.skin_index = skin_index;
+                skin.joint_node_indices = joint_node_indices;
+                skin.inverse_bind_matrices = inverse_bind_matrices;
+                return existing;
+            }
+        }
+
+        let id = self.skins.insert(Skin {
+            id: SkinId::null(),
+            uri: uri.to_string(),
+            skin_index,
+            joint_node_indices,
+            inverse_bind_matrices,
+        });
+
+        if let Some(s) = self.skins.get_mut(id) {
+            s.id = id;
+        }
+
+        self.skin_id_by_key.insert(key, id);
+        id
+    }
+
+    fn bones_identity() -> TransformMatrix {
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    }
+
+    fn bones_free_coalesce(&mut self) {
+        if self.bones_free_ranges.len() <= 1 {
+            return;
+        }
+
+        self.bones_free_ranges.sort_by_key(|(b, _)| *b);
+        let mut out: Vec<(u32, u32)> = Vec::with_capacity(self.bones_free_ranges.len());
+        for (base, len) in self.bones_free_ranges.drain(..) {
+            if let Some((prev_base, prev_len)) = out.last_mut() {
+                let prev_end = *prev_base + *prev_len;
+                if prev_end == base {
+                    *prev_len += len;
+                    continue;
+                }
+            }
+            out.push((base, len));
+        }
+        self.bones_free_ranges = out;
+    }
+
+    fn bones_alloc_range(&mut self, len: u32) -> u32 {
+        // Never allocate index 0 (reserved identity).
+        debug_assert!(!self.bones_palette.is_empty());
+        debug_assert_eq!(self.bones_palette[0], Self::bones_identity());
+
+        if len == 0 {
+            return 0;
+        }
+
+        // First-fit from free list.
+        for i in 0..self.bones_free_ranges.len() {
+            let (base, free_len) = self.bones_free_ranges[i];
+            if free_len >= len {
+                let alloc_base = base;
+                if free_len == len {
+                    self.bones_free_ranges.swap_remove(i);
+                } else {
+                    self.bones_free_ranges[i] = (base + len, free_len - len);
+                }
+                return alloc_base;
+            }
+        }
+
+        // Otherwise grow the palette.
+        let base = self.bones_palette.len() as u32;
+        self.bones_palette.resize(
+            self.bones_palette.len() + len as usize,
+            Self::bones_identity(),
+        );
+        base
+    }
+
+    fn bones_free_range(&mut self, base: u32, len: u32) {
+        if len == 0 {
+            return;
+        }
+
+        // Never free the reserved identity element.
+        if base == 0 {
+            return;
+        }
+
+        // Fill freed region with identity so sampling a freed slot is benign.
+        let start = base as usize;
+        let end = (base + len) as usize;
+        if end <= self.bones_palette.len() {
+            for slot in &mut self.bones_palette[start..end] {
+                *slot = Self::bones_identity();
+            }
+        }
+
+        self.bones_free_ranges.push((base, len));
+        self.bones_free_coalesce();
+        self.dirty_bones_palette = true;
+    }
+
+    /// Assigns the skin matrices for an instance into the shared palette.
+    ///
+    /// This keeps `bones_base` stable for an instance unless its bone count changes.
+    pub fn set_skin_matrices(&mut self, handle: InstanceHandle, bones: &[TransformMatrix]) -> bool {
+        let Some(&idx) = self.handle_to_index.get(&handle) else {
+            return false;
+        };
+
+        if bones.is_empty() {
+            // Disable skinning for this instance and free its allocation.
+            let old_base = self.instances[idx].bones_base;
+            let old_count = self.instances[idx].bones_count;
+            if old_count != 0 {
+                self.bones_free_range(old_base, old_count);
+            }
+            if self.instances[idx].bones_base != 0 || self.instances[idx].bones_count != 0 {
+                self.instances[idx].bones_base = 0;
+                self.instances[idx].bones_count = 0;
+                self.dirty_instance_data = true;
+            }
+            return true;
+        }
+
+        let want_count = bones.len() as u32;
+        let mut base = self.instances[idx].bones_base;
+        let old_count = self.instances[idx].bones_count;
+
+        if old_count == 0 {
+            base = self.bones_alloc_range(want_count);
+            self.instances[idx].bones_base = base;
+            self.instances[idx].bones_count = want_count;
+            self.dirty_instance_data = true;
+        } else if old_count != want_count {
+            // Reallocate with new size.
+            self.bones_free_range(base, old_count);
+            base = self.bones_alloc_range(want_count);
+            self.instances[idx].bones_base = base;
+            self.instances[idx].bones_count = want_count;
+            self.dirty_instance_data = true;
+        }
+
+        // Write into the palette.
+        let start = base as usize;
+        let end = start + bones.len();
+        if end > self.bones_palette.len() {
+            self.bones_palette.resize(end, Self::bones_identity());
+        }
+        self.bones_palette[start..end].copy_from_slice(bones);
+        self.dirty_bones_palette = true;
+        true
+    }
+
+    pub fn bones_palette(&self) -> &[TransformMatrix] {
+        &self.bones_palette
+    }
+
+    /// Returns whether the bones palette changed since the last call, and clears the dirty flag.
+    pub fn take_bones_palette_dirty(&mut self) -> bool {
+        let dirty = self.dirty_bones_palette;
+        self.dirty_bones_palette = false;
+        dirty
+    }
+
+    /// Compatibility helper: updates the skin palette range for an instance.
+    ///
+    /// Prefer `set_skin_matrices()` for stable allocation.
+    pub fn update_skin_range(
+        &mut self,
+        handle: InstanceHandle,
+        bones_base: u32,
+        bones_count: u32,
+    ) -> bool {
+        if let Some(&idx) = self.handle_to_index.get(&handle) {
+            if self.instances[idx].bones_base == bones_base
+                && self.instances[idx].bones_count == bones_count
+            {
+                return true;
+            }
+            // If the caller is forcing a range, free the old allocation (best-effort).
+            let old_base = self.instances[idx].bones_base;
+            let old_count = self.instances[idx].bones_count;
+            if old_count != 0 && (old_base != bones_base || old_count != bones_count) {
+                self.bones_free_range(old_base, old_count);
+            }
+            self.instances[idx].bones_base = bones_base;
+            self.instances[idx].bones_count = bones_count;
+            self.dirty_instance_data = true;
+            true
+        } else {
+            false
         }
     }
 }
@@ -767,6 +1019,9 @@ impl VisualWorld {
             texture,
             texture_filtering: TextureFiltering::default(),
             quant_steps: sanitize_quant_steps(quant_steps),
+
+            bones_base: 0,
+            bones_count: 0,
         });
         self.handle_to_index.insert(handle, idx);
         self.component_to_handle.insert(cid, handle);
@@ -793,6 +1048,13 @@ impl VisualWorld {
 
     pub fn remove(&mut self, handle: InstanceHandle) -> bool {
         if let Some(idx) = self.handle_to_index.remove(&handle) {
+            // Free any skin allocation before removing the instance.
+            let old_base = self.instances[idx].bones_base;
+            let old_count = self.instances[idx].bones_count;
+            if old_count != 0 {
+                self.bones_free_range(old_base, old_count);
+            }
+
             self.instances.swap_remove(idx);
 
             if idx < self.instances.len() {
@@ -965,6 +1227,8 @@ impl VisualWorld {
             let texture = self.instances[idx].texture;
             let texture_filtering = self.instances[idx].texture_filtering;
             let quant_steps = self.instances[idx].quant_steps;
+            let bones_base = self.instances[idx].bones_base;
+            let bones_count = self.instances[idx].bones_count;
             self.instances[idx] = VisualInstance {
                 renderable,
                 transform,
@@ -978,6 +1242,8 @@ impl VisualWorld {
                 texture,
                 texture_filtering,
                 quant_steps,
+                bones_base,
+                bones_count,
             };
             self.dirty_draw_cache = true; // renderable changes likely affect sort/batch
             self.dirty_instance_data = true;
