@@ -9,7 +9,7 @@ use crate::engine::ecs::system::InputSystem;
 use crate::engine::ecs::system::LightSystem;
 use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::OpenXRSystem;
-use crate::engine::ecs::system::PhysicsSystem;
+use crate::engine::ecs::system::KinematicResponseSystem;
 use crate::engine::ecs::system::RayCastSystem;
 use crate::engine::ecs::system::RenderableSystem;
 use crate::engine::ecs::system::SkinnedMeshSystem;
@@ -36,7 +36,7 @@ pub struct SystemWorld {
     pub transform: TransformSystem,
     pub bvh: BvhSystem,
     pub collision: CollisionSystem,
-    pub physics: PhysicsSystem,
+    pub kinematic_response: KinematicResponseSystem,
     pub skinned_mesh: SkinnedMeshSystem,
     pub renderable: RenderableSystem,
 
@@ -219,24 +219,25 @@ impl SystemWorld {
         self.collision.register_collision(world, visuals, component);
     }
 
-    /// Register a PhysicsBodyComponent instance with the PhysicsSystem.
-    pub fn register_physics_body(
+    /// Register a KinematicResponseComponent instance with the KinematicResponseSystem.
+    pub fn register_kinematic_response(
         &mut self,
         _world: &mut World,
         _visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.physics.register_physics_body(component);
+        self.kinematic_response
+            .register_kinematic_response(component);
     }
 
-    /// Remove a PhysicsBodyComponent instance from the PhysicsSystem.
-    pub fn remove_physics_body(
+    /// Remove a KinematicResponseComponent instance from the KinematicResponseSystem.
+    pub fn remove_kinematic_response(
         &mut self,
         _world: &mut World,
         _visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.physics.remove_physics_body(component);
+        self.kinematic_response.remove_kinematic_response(component);
     }
 
     /// Remove a CollisionComponent instance from the CollisionSystem.
@@ -611,10 +612,10 @@ impl SystemWorld {
         self.collision
             .tick_with_rx(world, visuals, input, dt_sec, &mut self.rx);
 
-        // Default kinematic-vs-static resolution (opt-in via PhysicsBodyComponent).
+        // Default kinematic-vs-static collision response (opt-in via KinematicResponseComponent).
         // This may enqueue transform updates; flush them immediately so camera/OpenXR
         // consume resolved transforms this frame.
-        self.physics
+        self.kinematic_response
             .tick_with_queue(world, visuals, input, dt_sec, queue, &self.collision);
         queue.flush(world, self, visuals);
 

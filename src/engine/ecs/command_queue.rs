@@ -212,19 +212,25 @@ impl CommandQueue {
         });
     }
 
-    /// Queue a register physics body command.
-    pub fn queue_register_physics_body(&mut self, component_id: crate::engine::ecs::ComponentId) {
+    /// Queue a register kinematic response command.
+    pub fn queue_register_kinematic_response(
+        &mut self,
+        component_id: crate::engine::ecs::ComponentId,
+    ) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_PHYSICS_BODY { component_id },
+            command: Command::REGISTER_KINEMATIC_RESPONSE { component_id },
         });
     }
 
-    /// Queue a remove physics body command.
-    pub fn queue_remove_physics_body(&mut self, component_id: crate::engine::ecs::ComponentId) {
+    /// Queue a remove kinematic response command.
+    pub fn queue_remove_kinematic_response(
+        &mut self,
+        component_id: crate::engine::ecs::ComponentId,
+    ) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REMOVE_PHYSICS_BODY { component_id },
+            command: Command::REMOVE_KINEMATIC_RESPONSE { component_id },
         });
     }
 
@@ -541,8 +547,8 @@ impl CommandQueue {
                     Command::REGISTER_COLLISION { component_id } => {
                         systems.register_collision(world, visuals, component_id);
                     }
-                    Command::REGISTER_PHYSICS_BODY { component_id } => {
-                        systems.register_physics_body(world, visuals, component_id);
+                    Command::REGISTER_KINEMATIC_RESPONSE { component_id } => {
+                        systems.register_kinematic_response(world, visuals, component_id);
                     }
                     Command::REGISTER_OPENXR { component_id } => {
                         systems.register_openxr(world, visuals, component_id);
@@ -585,8 +591,8 @@ impl CommandQueue {
                     Command::REMOVE_COLLISION { component_id } => {
                         systems.remove_collision(world, visuals, component_id);
                     }
-                    Command::REMOVE_PHYSICS_BODY { component_id } => {
-                        systems.remove_physics_body(world, visuals, component_id);
+                    Command::REMOVE_KINEMATIC_RESPONSE { component_id } => {
+                        systems.remove_kinematic_response(world, visuals, component_id);
                     }
                     Command::REMOVE_RAYCAST { component_id } => {
                         systems.remove_raycast(world, visuals, component_id);
@@ -716,7 +722,7 @@ enum Command {
     REGISTER_COLLISION {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_PHYSICS_BODY {
+    REGISTER_KINEMATIC_RESPONSE {
         component_id: crate::engine::ecs::ComponentId,
     },
     REGISTER_OPENXR {
@@ -780,7 +786,7 @@ enum Command {
     REMOVE_COLLISION {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REMOVE_PHYSICS_BODY {
+    REMOVE_KINEMATIC_RESPONSE {
         component_id: crate::engine::ecs::ComponentId,
     },
 

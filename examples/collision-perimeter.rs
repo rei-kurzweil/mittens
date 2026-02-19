@@ -36,12 +36,12 @@ fn main() {
         .world
         .register(engine::ecs::component::CollisionComponent::RIGGED());
 
-    // Opt-in to default kinematic-vs-static collision resolution.
-    // Policy note: collisions still emit signals regardless; physics only runs for entities
-    // that explicitly add a PhysicsBodyComponent.
-    let rig_physics = universe
+    // Opt-in to default kinematic-vs-static collision response.
+    // Policy note: collisions still emit signals regardless; response only runs for entities
+    // that explicitly add a KinematicResponseComponent.
+    let rig_response = universe
         .world
-        .register(engine::ecs::component::PhysicsBodyComponent::kinematic_slide());
+        .register(engine::ecs::component::KinematicResponseComponent::slide());
     let rig_shape = universe
         .world
         .register(engine::ecs::component::CollisionShapeComponent::new(
@@ -59,7 +59,7 @@ fn main() {
     let _ = universe.attach(rig_transform, raycast);
 
     let _ = universe.attach(rig_transform, rig_collision);
-    let _ = universe.attach(rig_transform, rig_physics);
+    let _ = universe.attach(rig_transform, rig_response);
     let _ = universe.attach(rig_collision, rig_shape);
 
     universe.add(input);
@@ -88,7 +88,6 @@ fn main() {
                 .with_intensity(intensity)
                 .with_distance(distance),
         );
-
         // Visual marker: a small white cube at the light position.
         // White ensures it mostly shows the light color.
         let marker = universe
@@ -172,7 +171,118 @@ fn main() {
         universe.add(t);
     }
 
+    fn spawn_pushable_cube(
+        universe: &mut engine::Universe,
+        x: f32,
+        y: f32,
+        z: f32,
+        s: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    ) {
+        let t = universe.world.register(
+            engine::ecs::component::TransformComponent::new()
+                .with_position(x, y, z)
+                .with_scale(s, s, s),
+        );
+        let renderable = universe
+            .world
+            .register(engine::ecs::component::RenderableComponent::cube());
+        let color = universe
+            .world
+            .register(engine::ecs::component::ColorComponent::rgba(r, g, b, 1.0));
+
+        let cn = universe
+            .world
+            .register(engine::ecs::component::CollisionComponent::KINEMATIC());
+        let response = universe
+            .world
+            .register(
+                engine::ecs::component::KinematicResponseComponent::push()
+                    .with_push_strength(4.0)
+                    .with_friction_y(10.0),
+            );
+        let shape = universe
+            .world
+            .register(engine::ecs::component::CollisionShapeComponent::new(
+                engine::ecs::component::CollisionShape::cube_half_extents([0.5 * s, 0.5 * s, 0.5 * s]),
+            ));
+
+        let _ = universe.attach(t, renderable);
+        let _ = universe.attach(renderable, color);
+
+        let _ = universe.attach(t, cn);
+        let _ = universe.attach(t, response);
+        let _ = universe.attach(cn, shape);
+
+        universe.add(t);
+    }
+
+    fn spawn_invisible_static_wall(
+        universe: &mut engine::Universe,
+        x: f32,
+        y: f32,
+        z: f32,
+        half_extents: [f32; 3],
+    ) {
+        let t = universe.world.register(
+            engine::ecs::component::TransformComponent::new().with_position(x, y, z),
+        );
+
+        let cn = universe
+            .world
+            .register(engine::ecs::component::CollisionComponent::STATIC());
+        let shape = universe
+            .world
+            .register(engine::ecs::component::CollisionShapeComponent::new(
+                engine::ecs::component::CollisionShape::cube_half_extents(half_extents),
+            ));
+
+        // Requested: attach kinematic_response as well (even though STATIC colliders
+        // are not responders).
+        let response = universe
+            .world
+            .register(engine::ecs::component::KinematicResponseComponent::slide());
+
+        let _ = universe.attach(t, cn);
+        let _ = universe.attach(cn, shape);
+        let _ = universe.attach(t, response);
+        universe.add(t);
+    }
+
     let y = 0.5;
+
+    // Static ground plane (thin cube). Top surface at y=0.
+    {
+        let ground_half = half + 2.0;
+        let thickness = 0.05;
+        let ground_t = universe.world.register(
+            engine::ecs::component::TransformComponent::new()
+                .with_position(0.0, -thickness, 0.0)
+                .with_scale(ground_half * 2.0, thickness * 2.0, ground_half * 2.0),
+        );
+        let ground_r = universe
+            .world
+            .register(engine::ecs::component::RenderableComponent::cube());
+        let ground_c = universe.world.register(engine::ecs::component::ColorComponent::rgba(
+            0.08, 0.08, 0.09, 1.0,
+        ));
+        let ground_cn = universe
+            .world
+            .register(engine::ecs::component::CollisionComponent::STATIC());
+        let ground_shape = universe
+            .world
+            .register(engine::ecs::component::CollisionShapeComponent::new(
+                engine::ecs::component::CollisionShape::cube_half_extents([ground_half, thickness, ground_half]),
+            ));
+
+        let _ = universe.attach(ground_t, ground_r);
+        let _ = universe.attach(ground_r, ground_c);
+        let _ = universe.attach(ground_t, ground_cn);
+        let _ = universe.attach(ground_cn, ground_shape);
+        universe.add(ground_t);
+    }
 
     // Bottom edge (left -> right)
     for i in 0..N {
@@ -253,6 +363,57 @@ fn main() {
         0.18,
     );
 
+    // Outer containment walls (invisible): keep runaway cubes near the scene.
+    // Collision shapes are in world units; transform scale is irrelevant for collision.
+    {
+        let wall_center_y = 6.0; // bottom at y=0, top at y=12
+        let wall_half_height = 6.0;
+        let wall_half_thickness = 0.25;
+        let wall_offset = half + 6.0;
+        let wall_half_len = wall_offset + 2.0;
+
+        // +Z / -Z walls
+        spawn_invisible_static_wall(
+            &mut universe,
+            0.0,
+            wall_center_y,
+            wall_offset,
+            [wall_half_len, wall_half_height, wall_half_thickness],
+        );
+        spawn_invisible_static_wall(
+            &mut universe,
+            0.0,
+            wall_center_y,
+            -wall_offset,
+            [wall_half_len, wall_half_height, wall_half_thickness],
+        );
+
+        // +X / -X walls
+        spawn_invisible_static_wall(
+            &mut universe,
+            wall_offset,
+            wall_center_y,
+            0.0,
+            [wall_half_thickness, wall_half_height, wall_half_len],
+        );
+        spawn_invisible_static_wall(
+            &mut universe,
+            -wall_offset,
+            wall_center_y,
+            0.0,
+            [wall_half_thickness, wall_half_height, wall_half_len],
+        );
+
+        // Roof
+        spawn_invisible_static_wall(
+            &mut universe,
+            0.0,
+            wall_center_y + wall_half_height + wall_half_thickness,
+            0.0,
+            [wall_half_len, wall_half_thickness, wall_half_len],
+        );
+    }
+
     // Many small cubes inside the perimeter.
     // Deterministic pseudo-random distribution so the scene is stable.
     let mut seed: u32 = 0xC0111510;
@@ -263,18 +424,27 @@ fn main() {
         (seed as f32) / (u32::MAX as f32)
     };
 
-    for _ in 0..60 {
-        let x = (rng01() * 2.0 - 1.0) * (half - 1.5);
-        let z = (rng01() * 2.0 - 1.0) * (half - 1.5);
-        let s = 0.15 + rng01() * 0.35;
-        let y = 0.5 * s;
+    // 3x more cubes, with three distinct size bands.
+    for band in 0..3 {
+        for _ in 0..60 {
+            let s = match band {
+                0 => 0.12 + rng01() * 0.20, // small
+                1 => 0.35 + rng01() * 0.35, // medium
+                _ => 0.75 + rng01() * 0.55, // large
+            };
 
-        // Slightly varied colors to show multiple light contributions.
-        let cr = 0.25 + rng01() * 0.6;
-        let cg = 0.25 + rng01() * 0.6;
-        let cb = 0.25 + rng01() * 0.6;
+            let bound = (half - (1.0 + s)).max(0.5);
+            let x = (rng01() * 2.0 - 1.0) * bound;
+            let z = (rng01() * 2.0 - 1.0) * bound;
+            let y = 0.5 * s;
 
-        spawn_cube(&mut universe, x, y, z, s, s, s, cr, cg, cb);
+            // Slightly varied colors to show multiple light contributions.
+            let cr = 0.25 + rng01() * 0.6;
+            let cg = 0.25 + rng01() * 0.6;
+            let cb = 0.25 + rng01() * 0.6;
+
+            spawn_pushable_cube(&mut universe, x, y, z, s, cr, cg, cb);
+        }
     }
 
     // Process init-time registrations.

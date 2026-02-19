@@ -52,10 +52,10 @@ fn ensure_emissive_on(
 fn ring_a_handler(
     world: &mut engine::ecs::World,
     queue: &mut engine::ecs::CommandQueue,
-    env: &engine::ecs::EventEnvelope,
+    env: &engine::ecs::SignalEnvelope,
 ) {
-    match &env.event {
-        engine::ecs::Event::RayIntersected { renderable, .. } => {
+    match &env.signal {
+        engine::ecs::Signal::RayIntersected { renderable, .. } => {
             println!(
                 "[ring_a_handler] fired scope={:?} renderable={:?}",
                 env.scope, renderable
@@ -68,8 +68,8 @@ fn ring_a_handler(
                 [1.0, 1.0, 0.0, 1.0],
             );
             let mut action_system = engine::ecs::system::ActionSystem::new();
-            let mut dummy_events = engine::ecs::EventWorld::default();
-            action_system.execute(world, queue, &mut dummy_events, 0.0, &action);
+            let mut dummy_rx = engine::ecs::RxWorld::default();
+            action_system.execute(world, queue, &mut dummy_rx, 0.0, &action);
         }
         _ => {}
     }
@@ -78,10 +78,10 @@ fn ring_a_handler(
 fn ring_b_handler(
     world: &mut engine::ecs::World,
     queue: &mut engine::ecs::CommandQueue,
-    env: &engine::ecs::EventEnvelope,
+    env: &engine::ecs::SignalEnvelope,
 ) {
-    match &env.event {
-        engine::ecs::Event::RayIntersected { renderable, .. } => {
+    match &env.signal {
+        engine::ecs::Signal::RayIntersected { renderable, .. } => {
             println!(
                 "[ring_b_handler] fired scope={:?} renderable={:?}",
                 env.scope, renderable
@@ -94,8 +94,8 @@ fn ring_b_handler(
                 [0.0, 1.0, 1.0, 1.0],
             );
             let mut action_system = engine::ecs::system::ActionSystem::new();
-            let mut dummy_events = engine::ecs::EventWorld::default();
-            action_system.execute(world, queue, &mut dummy_events, 0.0, &action);
+            let mut dummy_rx = engine::ecs::RxWorld::default();
+            action_system.execute(world, queue, &mut dummy_rx, 0.0, &action);
         }
         _ => {}
     }

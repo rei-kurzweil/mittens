@@ -30,7 +30,7 @@ pub mod light_quantization;
 pub mod mesh;
 pub mod music_note;
 pub mod opacity;
-pub mod physics_body;
+pub mod kinematic_response;
 pub mod skinned_mesh;
 pub mod transparent_cutout;
 
@@ -81,7 +81,7 @@ pub use light_quantization::LightQuantizationComponent;
 pub(crate) use music_note::NotePitch;
 pub use music_note::{MusicNote, MusicNoteComponent};
 pub use opacity::OpacityComponent;
-pub use physics_body::{PhysicsBodyComponent, PhysicsBodyMode};
+pub use kinematic_response::{KinematicResponseComponent, KinematicResponseMode};
 pub use openxr::OpenXRComponent;
 pub use point_light::PointLightComponent;
 pub use raycast::{RayCastComponent, RayCastMode};
