@@ -35,6 +35,13 @@ fn main() {
     let rig_collision = universe
         .world
         .register(engine::ecs::component::CollisionComponent::RIGGED());
+
+    // Opt-in to default kinematic-vs-static collision resolution.
+    // Policy note: collisions still emit signals regardless; physics only runs for entities
+    // that explicitly add a PhysicsBodyComponent.
+    let rig_physics = universe
+        .world
+        .register(engine::ecs::component::PhysicsBodyComponent::kinematic_slide());
     let rig_shape = universe
         .world
         .register(engine::ecs::component::CollisionShapeComponent::new(
@@ -52,6 +59,7 @@ fn main() {
     let _ = universe.attach(rig_transform, raycast);
 
     let _ = universe.attach(rig_transform, rig_collision);
+    let _ = universe.attach(rig_transform, rig_physics);
     let _ = universe.attach(rig_collision, rig_shape);
 
     universe.add(input);

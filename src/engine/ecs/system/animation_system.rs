@@ -6,7 +6,7 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::ActionSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::animation_system_evaluator::AnimationEvaluator;
-use crate::engine::ecs::{CommandQueue, ComponentId, World};
+use crate::engine::ecs::{CommandQueue, ComponentId, RxWorld, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 
@@ -108,6 +108,7 @@ impl AnimationSystem {
         beat_now: f64,
         bpm: f64,
         action_system: &mut ActionSystem,
+        rx: &mut RxWorld,
         queue: &mut CommandQueue,
     ) {
         // If time jumps backwards, reset fired state.
@@ -132,12 +133,10 @@ impl AnimationSystem {
             };
 
             anim_comp.state = state;
-            if matches!(state, AnimationState::Playing | AnimationState::Looping) {
-                runtime.start_beat = beat_now;
-                runtime.fired_keyframes.clear();
-                runtime.audio_scheduled_cycle_by_keyframe.clear();
-                runtime.audio_cycle = 0;
-            }
+            runtime.start_beat = beat_now;
+            runtime.fired_keyframes.clear();
+            runtime.audio_scheduled_cycle_by_keyframe.clear();
+            runtime.audio_cycle = 0;
         }
 
         // Drive animations.
@@ -244,7 +243,7 @@ impl AnimationSystem {
                             ActionMethod::OscillatorScheduleSetPitch
                             | ActionMethod::OscillatorScheduleSetNote
                             | ActionMethod::OscillatorScheduleMusicNote => {
-                                action_system.execute(world, queue, kf_global_beat, &action);
+                                action_system.execute(world, queue, rx, kf_global_beat, &action);
                             }
                             _ => {
                                 // Non-audio-scheduled actions must not run in lookahead
@@ -321,7 +320,7 @@ impl AnimationSystem {
                         }
 
                         let action = action_comp.action.clone();
-                        action_system.execute(world, queue, beat_now, &action);
+                        action_system.execute(world, queue, rx, beat_now, &action);
                     }
 
                     if !saw_any_action {

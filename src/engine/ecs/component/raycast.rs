@@ -21,6 +21,11 @@ pub struct RayCastComponent {
     /// Max ray distance in world units.
     pub max_distance: f32,
 
+    /// Incremented by `Action::raycast(...)` to request a cast on this frame.
+    ///
+    /// This is intentionally not serialized; it is a transient runtime signal.
+    pub cast_requests: u32,
+
     component: Option<ComponentId>,
 }
 
@@ -29,6 +34,7 @@ impl RayCastComponent {
         Self {
             mode,
             max_distance: 200.0,
+            cast_requests: 0,
             component: None,
         }
     }
@@ -97,6 +103,7 @@ impl Component for RayCastComponent {
         &mut self,
         data: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<(), String> {
+        self.cast_requests = 0;
         if let Some(mode) = data.get("mode") {
             let mode_str: String = serde_json::from_value(mode.clone())
                 .map_err(|e| format!("Failed to decode raycast mode: {}", e))?;

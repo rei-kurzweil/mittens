@@ -349,7 +349,21 @@ impl VisualWorld {
     ///
     /// This keeps `bones_base` stable for an instance unless its bone count changes.
     pub fn set_skin_matrices(&mut self, handle: InstanceHandle, bones: &[TransformMatrix]) -> bool {
+        let debug_skin_set = std::env::var("CAT_DEBUG_SKIN_SET")
+            .ok()
+            .map(|s| {
+                let s = s.trim().to_ascii_lowercase();
+                s == "1" || s == "true" || s == "on" || s == "yes"
+            })
+            .unwrap_or(false);
+
         let Some(&idx) = self.handle_to_index.get(&handle) else {
+            if debug_skin_set {
+                println!(
+                    "[VisualWorld] set_skin_matrices: unknown handle={handle:?} bones_len={}",
+                    bones.len()
+                );
+            }
             return false;
         };
 
@@ -394,6 +408,15 @@ impl VisualWorld {
         }
         self.bones_palette[start..end].copy_from_slice(bones);
         self.dirty_bones_palette = true;
+
+        if debug_skin_set {
+            println!(
+                "[VisualWorld] set_skin_matrices: handle={handle:?} idx={idx} bones_base={} bones_count={} bones_len={}",
+                self.instances[idx].bones_base,
+                self.instances[idx].bones_count,
+                bones.len(),
+            );
+        }
         true
     }
 

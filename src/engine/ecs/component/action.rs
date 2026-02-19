@@ -26,6 +26,11 @@ pub enum ActionMethod {
     RemoveSubtree,
     /// Mark the audio graph dirty (forces an end-of-frame recompile + RT graph swap scheduling).
     AudioGraphRebuild,
+
+    /// Request a raycast on the target RayCastComponent(s) this frame.
+    ///
+    /// Intended for animations: keyframes can trigger raycasts without mouse input.
+    Raycast,
     AudioLowPassSetCutoffHz,
     AudioBandPassSetCenterHz,
     OscillatorSetEnabled,
@@ -86,6 +91,9 @@ impl ActionMethod {
                     "method".to_string(),
                     serde_json::json!("audio_graph_rebuild"),
                 );
+            }
+            ActionMethod::Raycast => {
+                map.insert("method".to_string(), serde_json::json!("raycast"));
             }
             ActionMethod::AudioLowPassSetCutoffHz => {
                 map.insert(
@@ -219,6 +227,15 @@ impl Action {
             target: vec![parent],
             method: ActionMethod::Attach,
             params: vec![serde_json::json!(child.data().as_ffi())],
+        }
+    }
+
+    /// Request a raycast on the given RayCastComponent this frame.
+    pub fn raycast(raycaster: ComponentId) -> Self {
+        Self {
+            target: vec![raycaster],
+            method: ActionMethod::Raycast,
+            params: vec![],
         }
     }
 
@@ -467,6 +484,7 @@ impl Component for ActionComponent {
             "remove_children" => ActionMethod::RemoveChildren,
             "remove_subtree" => ActionMethod::RemoveSubtree,
             "audio_graph_rebuild" => ActionMethod::AudioGraphRebuild,
+            "raycast" => ActionMethod::Raycast,
             "audio_low_pass_set_cutoff_hz" => ActionMethod::AudioLowPassSetCutoffHz,
             "audio_band_pass_set_center_hz" => ActionMethod::AudioBandPassSetCenterHz,
             "oscillator_set_enabled" => ActionMethod::OscillatorSetEnabled,

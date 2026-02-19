@@ -10,6 +10,7 @@ use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::user_input::InputState;
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct BindingKey {
@@ -152,13 +153,48 @@ impl SkinnedMeshSystem {
         None
     }
 
-    fn find_parent_gltf_component(world: &World, mut cid: ComponentId) -> Option<ComponentId> {
+    /// Resolve the GLTFComponent that owns the instance joints for this skin.
+    ///
+    /// Important: GLTFSystem spawns the node/renderable subtree under the nearest Transform
+    /// ancestor (the "anchor"), and the GLTFComponent itself is typically a *child* of that
+    /// anchor Transform. That means spawned nodes are often siblings (not descendants) of the
+    /// GLTFComponent.
+    fn find_nearest_gltf_component_for_skin(
+        &self,
+        world: &World,
+        mut cid: ComponentId,
+        skin_id: SkinId,
+    ) -> Option<ComponentId> {
+        let mut first_candidate: Option<ComponentId> = None;
+
         loop {
+            // Candidate 1: the node itself.
             if world.get_component_by_id_as::<GLTFComponent>(cid).is_some() {
-                return Some(cid);
+                if self.instance_joints.contains_key(&(cid, skin_id)) {
+                    return Some(cid);
+                }
+                if first_candidate.is_none() {
+                    first_candidate = Some(cid);
+                }
             }
-            let parent = world.parent_of(cid)?;
-            cid = parent;
+
+            // Candidate 2: any GLTFComponent child of this node.
+            for &child in world.children_of(cid) {
+                if world.get_component_by_id_as::<GLTFComponent>(child).is_some() {
+                    if self.instance_joints.contains_key(&(child, skin_id)) {
+                        return Some(child);
+                    }
+                    if first_candidate.is_none() {
+                        first_candidate = Some(child);
+                    }
+                }
+            }
+
+            let parent = world.parent_of(cid);
+            match parent {
+                Some(p) => cid = p,
+                None => return first_candidate,
+            }
         }
     }
 
@@ -184,7 +220,9 @@ impl SkinnedMeshSystem {
                 continue;
             };
 
-            let Some(gltf_component) = Self::find_parent_gltf_component(world, skinned_cid) else {
+            let Some(gltf_component) =
+                self.find_nearest_gltf_component_for_skin(world, skinned_cid, skin_id)
+            else {
                 continue;
             };
 
@@ -267,6 +305,16 @@ impl System for SkinnedMeshSystem {
         _input: &InputState,
         _dt_sec: f32,
     ) {
+        let debug_skin_apply = std::env::var("CAT_DEBUG_SKIN_APPLY")
+            .ok()
+            .map(|s| {
+                let s = s.trim().to_ascii_lowercase();
+                s == "1" || s == "true" || s == "on" || s == "yes"
+            })
+            .unwrap_or(false);
+
+        static APPLY_LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
+
         let skinned: Vec<ComponentId> = world
             .all_components()
             .filter(|&cid| {
@@ -294,13 +342,38 @@ impl System for SkinnedMeshSystem {
         self.dirty_bindings.clear();
 
         for binding in dirty {
-            let Some(skin_mats) = self.update_binding(&*world, visuals, binding) else {
-                continue;
+            let skin_mats = match self.update_binding(&*world, visuals, binding) {
+                Some(v) => v,
+                None => {
+                    if debug_skin_apply {
+                        let n = APPLY_LOG_COUNT.fetch_add(1, Ordering::Relaxed);
+                        if n < 16 {
+                            let has_skin = visuals.skin(binding.skin_id).is_some();
+                            let has_joints = self
+                                .instance_joints
+                                .contains_key(&(binding.gltf_component, binding.skin_id));
+                            println!(
+                                "[SkinnedMeshSystem] binding skipped: reason=missing_data has_skin={} has_instance_joints={} gltf_component={:?} mesh_transform={:?}",
+                                has_skin,
+                                has_joints,
+                                binding.gltf_component,
+                                binding.mesh_transform,
+                            );
+                        }
+                    }
+                    // If prerequisite data isn't ready yet, retry next tick.
+                    self.dirty_bindings.insert(binding);
+                    continue;
+                }
             };
 
             let Some(renderables) = binding_to_renderables.get(&binding) else {
                 continue;
             };
+
+            let mut missing_handle = false;
+            let mut applied = 0usize;
+            let mut failed_apply = 0usize;
 
             for &renderable_cid in renderables {
                 let Some(renderable) =
@@ -309,9 +382,38 @@ impl System for SkinnedMeshSystem {
                     continue;
                 };
                 let Some(handle) = renderable.get_handle() else {
+                    missing_handle = true;
                     continue;
                 };
-                let _ = visuals.set_skin_matrices(handle, &skin_mats);
+                let did = visuals.set_skin_matrices(handle, &skin_mats);
+                if did {
+                    applied += 1;
+                } else {
+                    failed_apply += 1;
+                }
+            }
+
+            if debug_skin_apply {
+                // Log a few times per run so we can see the pipeline come online.
+                let n = APPLY_LOG_COUNT.fetch_add(1, Ordering::Relaxed);
+                if n < 16 {
+                    println!(
+                        "[SkinnedMeshSystem] binding applied: skin_mats={} renderables={} applied={} failed_apply={} missing_handle={} gltf_component={:?} mesh_transform={:?}",
+                        skin_mats.len(),
+                        renderables.len(),
+                        applied,
+                        failed_apply,
+                        missing_handle,
+                        binding.gltf_component,
+                        binding.mesh_transform,
+                    );
+                }
+            }
+
+            // If renderable instances aren't flushed yet, their handles will be missing here.
+            // Keep the binding dirty so we retry next tick and get an initial palette upload.
+            if missing_handle {
+                self.dirty_bindings.insert(binding);
             }
         }
     }

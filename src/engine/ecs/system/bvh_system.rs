@@ -1,6 +1,7 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::BackgroundComponent;
+use crate::engine::ecs::component::RaycastableComponent;
 use crate::engine::ecs::component::RenderableComponent;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::graphics::VisualWorld;
@@ -72,16 +73,55 @@ impl BHShape for RenderableAabb {
 
 impl BvhSystem {
     pub(crate) fn renderable_is_raycastable(world: &World, renderable_cid: ComponentId) -> bool {
-        // Nearest BackgroundComponent ancestor wins.
-        // Default: renderables are raycastable unless placed under a background.
+        // Background layers are a hard opt-out when disabled.
         let mut cur = renderable_cid;
         while let Some(parent) = world.parent_of(cur) {
             if let Some(bg) = world.get_component_by_id_as::<BackgroundComponent>(parent) {
-                return bg.ray_casting;
+                if !bg.ray_casting {
+                    return false;
+                }
+                break;
             }
             cur = parent;
         }
-        true
+
+        // Explicit RaycastableComponent on/above the renderable wins.
+        // Common topology is: renderable -> (raycastable, color, ...)
+        if let Some(rc) = world.children_of(renderable_cid).iter().find_map(|&ch| {
+            world
+                .get_component_by_id_as::<RaycastableComponent>(ch)
+                .copied()
+        }) {
+            return rc.enable;
+        }
+
+        // If a RaycastableComponent exists in the ancestry chain (renderable parented under it),
+        // nearest wins.
+        let mut cur = renderable_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(rc) = world.get_component_by_id_as::<RaycastableComponent>(parent) {
+                return rc.enable;
+            }
+            cur = parent;
+        }
+
+        // Default behavior: system default is raycastable=true, but can be overridden by a
+        // RaycastableComponent with `set_default=true`.
+        let mut best_default: Option<(ComponentId, bool)> = None;
+        for cid in world.all_components() {
+            let Some(rc) = world.get_component_by_id_as::<RaycastableComponent>(cid) else {
+                continue;
+            };
+            if !rc.set_default {
+                continue;
+            }
+            match best_default {
+                None => best_default = Some((cid, rc.enable)),
+                Some((best_id, _)) if cid < best_id => best_default = Some((cid, rc.enable)),
+                _ => {}
+            }
+        }
+        best_default.map(|(_, enable)| enable).unwrap_or(true)
     }
 
     pub fn queue_renderable_added(&mut self, component: ComponentId) {

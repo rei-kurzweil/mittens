@@ -1,6 +1,7 @@
 pub mod command_queue;
 pub mod component;
 pub mod component_codec;
+pub mod rx;
 pub mod system;
 
 #[cfg(test)]
@@ -22,6 +23,7 @@ pub use crate::engine::graphics::primitives::{Renderable, Transform, TransformMa
 
 pub use command_queue::CommandQueue;
 pub use component_codec::ComponentCodec;
+pub use rx::{RxWorld, Signal, SignalEnvelope, SignalHandler, SignalKind};
 pub use system::{System, SystemWorld};
 
 /// Bundle of mutable engine state passed to component mutation APIs.

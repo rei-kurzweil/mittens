@@ -49,6 +49,30 @@ impl Universe {
             .init_component_tree(root, &mut self.command_queue);
     }
 
+    /// Add a signal handler rooted at `scope_root`.
+    ///
+    /// The handler runs when a matching signal occurs within the `scope_root` subtree.
+    ///
+    /// Note: handlers are function pointers (not closures) for now.
+    pub fn add_signal_handler(
+        &mut self,
+        kind: ecs::SignalKind,
+        scope_root: ecs::ComponentId,
+        handler: ecs::SignalHandler,
+    ) {
+        self.systems.rx.add_handler(kind, scope_root, handler);
+    }
+
+    pub fn remove_signal_handler(
+        &mut self,
+        kind: ecs::SignalKind,
+        scope_root: ecs::ComponentId,
+        handler: ecs::SignalHandler,
+    ) -> bool {
+        self.systems.rx.remove_handler(kind, scope_root, handler)
+    }
+
+
     /// Attach `child` under `parent`.
     ///
     /// If `parent` is already initialized, the newly-attached subtree rooted at `child`
@@ -58,7 +82,18 @@ impl Universe {
         parent: ecs::ComponentId,
         child: ecs::ComponentId,
     ) -> Result<(), &'static str> {
+        let old_parent = self.world.parent_of(child);
         self.world.add_child(parent, child)?;
+
+        self.systems.rx.push(
+            child,
+            ecs::Signal::ParentChanged {
+                child,
+                old_parent,
+                new_parent: Some(parent),
+            },
+        );
+
         if self.world.is_initialized(parent) {
             self.world
                 .init_component_tree(child, &mut self.command_queue);
@@ -88,6 +123,16 @@ impl Universe {
 
         // Detach immediately to avoid dangling parent->child edges until the queue flush.
         self.world.detach_from_parent(child);
+
+        self.systems.rx.push(
+            child,
+            ecs::Signal::ParentChanged {
+                child,
+                old_parent: Some(parent),
+                new_parent: None,
+            },
+        );
+
         self.command_queue.queue_remove_subtree(child);
         Ok(child)
     }
@@ -110,6 +155,16 @@ impl Universe {
         let children: Vec<ecs::ComponentId> = self.world.children_of(parent).to_vec();
         for child in children.iter().copied() {
             self.world.detach_from_parent(child);
+
+            self.systems.rx.push(
+                child,
+                ecs::Signal::ParentChanged {
+                    child,
+                    old_parent: Some(parent),
+                    new_parent: None,
+                },
+            );
+
             self.command_queue.queue_remove_subtree(child);
         }
 
@@ -143,6 +198,15 @@ impl Universe {
             self.world
                 .init_component_tree(new_root, &mut self.command_queue);
         }
+
+        self.systems.rx.push(
+            new_root,
+            ecs::Signal::ParentChanged {
+                child: new_root,
+                old_parent: None,
+                new_parent: Some(parent),
+            },
+        );
 
         Ok(new_root)
     }

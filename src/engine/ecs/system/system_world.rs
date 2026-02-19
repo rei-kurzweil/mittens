@@ -9,6 +9,7 @@ use crate::engine::ecs::system::InputSystem;
 use crate::engine::ecs::system::LightSystem;
 use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::OpenXRSystem;
+use crate::engine::ecs::system::PhysicsSystem;
 use crate::engine::ecs::system::RayCastSystem;
 use crate::engine::ecs::system::RenderableSystem;
 use crate::engine::ecs::system::SkinnedMeshSystem;
@@ -17,12 +18,15 @@ use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::{ActionSystem, AnimationSystem, AudioSystem};
+use crate::engine::ecs::RxWorld;
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 
 /// System world that holds and runs all registered systems.
 #[derive(Debug, Default)]
 pub struct SystemWorld {
+    pub rx: RxWorld,
+
     pub clock: ClockSystem,
     pub audio: AudioSystem,
     pub music: MusicSystem,
@@ -32,6 +36,7 @@ pub struct SystemWorld {
     pub transform: TransformSystem,
     pub bvh: BvhSystem,
     pub collision: CollisionSystem,
+    pub physics: PhysicsSystem,
     pub skinned_mesh: SkinnedMeshSystem,
     pub renderable: RenderableSystem,
 
@@ -68,6 +73,9 @@ impl SystemWorld {
         if BvhSystem::renderable_is_raycastable(world, component) {
             self.bvh.queue_renderable_added(component);
         }
+
+        // Keep RayCastSystem's eligibility index in sync for brute-force fallback.
+        self.raycast.notify_renderable_added(&*world, component);
     }
 
     /// Remove a RenderableComponent instance from the RenderableSystem (and BVH).
@@ -79,6 +87,7 @@ impl SystemWorld {
     ) {
         self.renderable.remove_renderable(world, visuals, component);
         self.bvh.queue_renderable_removed(component);
+        self.raycast.notify_renderable_removed(component);
     }
 
     /// Register a UVComponent and apply it to its ancestor RenderableComponent.
@@ -208,6 +217,26 @@ impl SystemWorld {
         component: ComponentId,
     ) {
         self.collision.register_collision(world, visuals, component);
+    }
+
+    /// Register a PhysicsBodyComponent instance with the PhysicsSystem.
+    pub fn register_physics_body(
+        &mut self,
+        _world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.physics.register_physics_body(component);
+    }
+
+    /// Remove a PhysicsBodyComponent instance from the PhysicsSystem.
+    pub fn remove_physics_body(
+        &mut self,
+        _world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.physics.remove_physics_body(component);
     }
 
     /// Remove a CollisionComponent instance from the CollisionSystem.
@@ -565,6 +594,7 @@ impl SystemWorld {
             self.clock.beat_now(),
             self.clock.bpm(),
             &mut self.action,
+            &mut self.rx,
             queue,
         );
 
@@ -578,7 +608,18 @@ impl SystemWorld {
         self.bvh.tick(world, visuals, input, dt_sec);
 
         // Collision runs before camera/OpenXR for now; it reads cached world transforms.
-        self.collision.tick(world, visuals, input, dt_sec);
+        self.collision
+            .tick_with_rx(world, visuals, input, dt_sec, &mut self.rx);
+
+        // Default kinematic-vs-static resolution (opt-in via PhysicsBodyComponent).
+        // This may enqueue transform updates; flush them immediately so camera/OpenXR
+        // consume resolved transforms this frame.
+        self.physics
+            .tick_with_queue(world, visuals, input, dt_sec, queue, &self.collision);
+        queue.flush(world, self, visuals);
+
+        // Physics may have moved renderables; refit BVH so raycasts see the resolved state.
+        self.bvh.tick(world, visuals, input, dt_sec);
 
         // Update window camera + select active XR camera rig before OpenXR consumes it.
         self.camera.tick(world, visuals, input, dt_sec);
@@ -586,7 +627,7 @@ impl SystemWorld {
         self.openxr.tick(world, visuals, input, dt_sec);
 
         self.raycast
-            .tick_with_queue(world, visuals, input, queue, &self.bvh, dt_sec);
+            .tick_with_queue(world, visuals, input, queue, &mut self.rx, &self.bvh, dt_sec);
 
         self.renderable.tick(world, visuals, input, dt_sec);
 
@@ -603,6 +644,17 @@ impl SystemWorld {
         commands: &mut crate::engine::ecs::CommandQueue,
     ) {
         commands.flush(world, self, visuals);
+
+        // Post-mutation change event phase.
+        let events = self.rx.drain();
+        for env in events.iter() {
+            self.rx.dispatch_handlers(world, commands, env);
+        }
+
+        // Event handlers may have queued commands (e.g. register_color). Apply them now so
+        // the effects are visible this frame.
+        commands.flush(world, self, visuals);
+
         // Batch audio graph rebuild work once after all mutations for this frame.
         self.audio.rebuild_dirty_audio_graphs(world);
     }

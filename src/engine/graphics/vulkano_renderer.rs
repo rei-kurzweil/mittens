@@ -11,6 +11,7 @@ mod vulkano_backend {
     use std::collections::HashMap;
     use std::mem::size_of;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use crate::engine::graphics::mesh::{CpuMesh, CpuVertex};
     use crate::engine::graphics::pipeline_descriptor_set_layouts::PipelineDescriptorSetLayouts;
@@ -67,6 +68,20 @@ mod vulkano_backend {
     use vulkano::{Validated, VulkanError};
     use vulkano_util::context::{VulkanoConfig, VulkanoContext};
     use winit::window::Window;
+
+    fn env_flag(name: &str) -> bool {
+        std::env::var(name)
+            .ok()
+            .map(|s| {
+                let s = s.trim().to_ascii_lowercase();
+                s == "1" || s == "true" || s == "on" || s == "yes"
+            })
+            .unwrap_or(false)
+    }
+
+    fn env_usize(name: &str) -> Option<usize> {
+        std::env::var(name).ok().and_then(|s| s.trim().parse::<usize>().ok())
+    }
 
     use vulkano::device::DeviceExtensions;
 
@@ -257,8 +272,12 @@ mod vulkano_backend {
             Arc<DescriptorSet>,
         >,
 
-        // Cached bones palette SSBO (set=2 binding=1). Only rewritten when dirty.
-        cached_bones_buffer: Option<Subbuffer<[GpuMat4]>>,
+        // Cached bones palette SSBOs (set=2 binding=1).
+        //
+        // These are per-frame slots (swapchain image index + optional XR eye slots) to avoid
+        // writing a buffer while the GPU is still reading it from a previous frame.
+        cached_bones_buffers: Vec<Subbuffer<[GpuMat4]>>,
+        cached_bones_slot_valid: Vec<bool>,
         cached_bones_capacity: usize,
 
         xr_offscreen: Option<XrOffscreenTargets>,
@@ -1018,7 +1037,8 @@ mod vulkano_backend {
                 cached_cutout_instance_count: 0,
                 cached_material_sets: HashMap::new(),
 
-                cached_bones_buffer: None,
+                cached_bones_buffers: Vec::new(),
+                cached_bones_slot_valid: Vec::new(),
                 cached_bones_capacity: 0,
 
                 xr_offscreen: None,
@@ -1184,10 +1204,16 @@ mod vulkano_backend {
                 .ok_or("XR depth eye out of range")?
                 .clone();
 
+            let window_slots = self.swapchain_state.swapchain_views.len().max(1);
+            let bones_slots_total = window_slots + view_count;
+            let bones_slot = window_slots + eye;
+
             let cb = self.build_draw_batches_command_buffer(
                 visual_world,
                 crate::engine::graphics::CameraTarget::Xr,
                 eye,
+                bones_slot,
+                bones_slots_total,
                 color_attachment_view,
                 color_resolve_view,
                 depth_view,
@@ -1300,6 +1326,11 @@ mod vulkano_backend {
                 .map(|_| None)
                 .collect();
 
+            // Swapchain image count may have changed; rebuild per-slot bones buffers lazily.
+            self.cached_bones_buffers.clear();
+            self.cached_bones_slot_valid.clear();
+            self.cached_bones_capacity = 0;
+
             self.window_resized = false;
             Ok(())
         }
@@ -1309,6 +1340,44 @@ mod vulkano_backend {
             visual_world: &VisualWorld,
             order: &[u32],
         ) -> Result<Subbuffer<[InstanceData]>, Box<dyn std::error::Error>> {
+            static DID_LOG_SKIN_INSTANCE_RANGES: AtomicBool = AtomicBool::new(false);
+
+            if !order.is_empty() && env_flag("CAT_DEBUG_SKIN_INSTANCE_RANGES") {
+                let instances_ref = visual_world.instances();
+                let skinned_count = order
+                    .iter()
+                    .filter(|&&idx| instances_ref[idx as usize].bones_count > 0)
+                    .count();
+
+                if skinned_count > 0
+                    && !DID_LOG_SKIN_INSTANCE_RANGES.swap(true, Ordering::Relaxed)
+                {
+                    let mut skinned = Vec::new();
+                    for &idx in order.iter() {
+                        let inst = instances_ref[idx as usize];
+                        if inst.bones_count > 0 {
+                            skinned.push((idx, inst.renderable, inst.bones_base, inst.bones_count));
+                            if skinned.len() >= 24 {
+                                break;
+                            }
+                        }
+                    }
+
+                    let total = order.len();
+                    println!(
+                        "[VulkanoRenderer] instances: total={} with_bones={} (showing up to {})",
+                        total,
+                        skinned_count,
+                        skinned.len()
+                    );
+                    for (i, (idx, renderable, base, count)) in skinned.iter().enumerate() {
+                        println!(
+                            "  skinned[{i:02}] instance_index={idx} renderable={renderable:?} bones_base={base} bones_count={count}"
+                        );
+                    }
+                }
+            }
+
             // `Buffer::from_iter` with an empty iterator can panic inside Vulkano.
             let buf: Subbuffer<[InstanceData]> = if order.is_empty() {
                 Buffer::from_iter(
@@ -1462,6 +1531,8 @@ mod vulkano_backend {
             visual_world: &mut VisualWorld,
             camera_target: crate::engine::graphics::CameraTarget,
             eye: usize,
+            bones_slot: usize,
+            bones_slots_total: usize,
             color_attachment_view: Arc<ImageView>,
             color_resolve_view: Option<Arc<ImageView>>,
             depth_view: Arc<ImageView>,
@@ -1481,6 +1552,13 @@ mod vulkano_backend {
                 visual_world.take_instance_data_dirty()
             } else {
                 visual_world.instance_data_dirty()
+            };
+
+            // Only consume the bones palette dirty flag on the first eye.
+            let bones_palette_dirty = if eye == 0 {
+                visual_world.take_bones_palette_dirty()
+            } else {
+                false
             };
 
             // --- Opaque pass ---
@@ -1741,36 +1819,75 @@ mod vulkano_backend {
             // Rig descriptor set (set=2): shared bones palette + placeholder per-instance lighting.
             // Layout is defined in `PipelineDescriptorSetLayouts::rig`.
             let rig_set: Arc<DescriptorSet> = {
-                // Update cached bones buffer only when palette changed.
-                let palette_dirty = visual_world.take_bones_palette_dirty();
+                static DID_LOG_BONES_PALETTE_UPLOAD: AtomicBool = AtomicBool::new(false);
+
                 let want_len = visual_world.bones_palette().len().max(1);
 
-                let needs_realloc = self
-                    .cached_bones_buffer
-                    .as_ref()
-                    .is_none_or(|_| self.cached_bones_capacity < want_len);
+                let want_slots = bones_slots_total.max(1);
+                let slot = bones_slot.min(want_slots - 1);
+
+                let needs_realloc = self.cached_bones_buffers.len() != want_slots
+                    || self.cached_bones_capacity < want_len;
 
                 if needs_realloc {
                     let new_cap = want_len.next_power_of_two().max(1);
-                    let buffer: Subbuffer<[GpuMat4]> = Buffer::new_slice(
-                        self.context.memory_allocator().clone(),
-                        BufferCreateInfo {
-                            usage: BufferUsage::STORAGE_BUFFER,
-                            ..Default::default()
-                        },
-                        AllocationCreateInfo {
-                            memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                            ..Default::default()
-                        },
-                        new_cap as DeviceSize,
-                    )?;
-                    self.cached_bones_buffer = Some(buffer);
+
+                    let mut buffers = Vec::with_capacity(want_slots);
+                    for _ in 0..want_slots {
+                        let buffer: Subbuffer<[GpuMat4]> = Buffer::new_slice(
+                            self.context.memory_allocator().clone(),
+                            BufferCreateInfo {
+                                usage: BufferUsage::STORAGE_BUFFER,
+                                ..Default::default()
+                            },
+                            AllocationCreateInfo {
+                                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                                ..Default::default()
+                            },
+                            new_cap as DeviceSize,
+                        )?;
+                        buffers.push(buffer);
+                    }
+
+                    self.cached_bones_buffers = buffers;
+                    self.cached_bones_slot_valid = vec![false; want_slots];
                     self.cached_bones_capacity = new_cap;
                 }
 
-                if palette_dirty || needs_realloc {
+                if bones_palette_dirty {
+                    for v in self.cached_bones_slot_valid.iter_mut() {
+                        *v = false;
+                    }
+                }
+
+                let slot_needs_upload = !self
+                    .cached_bones_slot_valid
+                    .get(slot)
+                    .copied()
+                    .unwrap_or(false);
+
+                if slot_needs_upload {
                     let bones_src = visual_world.bones_palette();
+
+                    if env_flag("CAT_DEBUG_BONES_PALETTE")
+                        && bones_src.len() > 1
+                        && !DID_LOG_BONES_PALETTE_UPLOAD.swap(true, Ordering::Relaxed)
+                    {
+                        println!(
+                            "[VulkanoRenderer] bones palette upload: dirty={} realloc={} want_len={} cached_cap={} src_len={}",
+                            bones_palette_dirty,
+                            needs_realloc,
+                            want_len,
+                            self.cached_bones_capacity,
+                            bones_src.len()
+                        );
+
+                        for (i, m) in bones_src.iter().take(3).enumerate() {
+                            println!("  bone[{i:03}]={m:?}");
+                        }
+                    }
+
                     let identity = [
                         [1.0, 0.0, 0.0, 0.0],
                         [0.0, 1.0, 0.0, 0.0],
@@ -1778,11 +1895,7 @@ mod vulkano_backend {
                         [0.0, 0.0, 0.0, 1.0],
                     ];
 
-                    let mut dst = self
-                        .cached_bones_buffer
-                        .as_ref()
-                        .expect("bones buffer should exist")
-                        .write()?;
+                    let mut dst = self.cached_bones_buffers[slot].write()?;
 
                     // Write current palette, then fill remainder with identity.
                     if bones_src.is_empty() {
@@ -1798,13 +1911,13 @@ mod vulkano_backend {
                             *slot = GpuMat4 { cols: identity };
                         }
                     }
+
+                    if let Some(v) = self.cached_bones_slot_valid.get_mut(slot) {
+                        *v = true;
+                    }
                 }
 
-                let bones_buffer = self
-                    .cached_bones_buffer
-                    .as_ref()
-                    .expect("bones buffer should exist")
-                    .clone();
+                let bones_buffer = self.cached_bones_buffers[slot].clone();
 
                 let per_instance_lighting_buffer: Subbuffer<DummyPerInstanceLightingSSBO> =
                     Buffer::from_data(
@@ -1993,6 +2106,8 @@ mod vulkano_backend {
                 visual_world,
                 crate::engine::graphics::CameraTarget::Window,
                 0,
+                image_i as usize,
+                self.swapchain_state.swapchain_views.len().max(1),
                 color_attachment_view,
                 color_resolve_view,
                 depth_view,
@@ -2072,6 +2187,8 @@ mod vulkano_backend {
             handle: MeshHandle,
             mesh: &CpuMesh,
         ) -> Result<(), Box<dyn std::error::Error>> {
+            static SKIN_UPLOAD_LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
+
             if self.meshes.contains_key(&handle) {
                 return Ok(());
             }
@@ -2107,6 +2224,47 @@ mod vulkano_backend {
                     if joints0.len() == mesh.vertices.len()
                         && weights0.len() == mesh.vertices.len() =>
                 {
+                    if env_flag("CAT_DEBUG_SKIN_UPLOAD") {
+                        let limit = env_usize("CAT_DEBUG_SKIN_UPLOAD_LIMIT").unwrap_or(3);
+                        let n = SKIN_UPLOAD_LOG_COUNT.fetch_add(1, Ordering::Relaxed);
+                        if n < limit {
+                        println!(
+                            "[VulkanoRenderer] skin upload: mesh={handle:?} verts={} indices={} joints0_verts={} weights0_verts={}",
+                            mesh.vertices.len(),
+                            mesh.indices_u32.len(),
+                            joints0.len(),
+                            weights0.len()
+                        );
+                        for vi in 0..mesh.vertices.len().min(8) {
+                            let j = joints0[vi];
+                            let w = weights0[vi];
+                            let sum = w[0] + w[1] + w[2] + w[3];
+                            println!(
+                                "  v[{vi:04}] joints={j:?} weights={w:?} sum={sum:.6}",
+                            );
+                        }
+
+                        if env_flag("CAT_DEBUG_SKIN_HIST") {
+                            let mut joint_weight: HashMap<u16, f32> = HashMap::new();
+                            for (j, w) in joints0.iter().copied().zip(weights0.iter().copied()) {
+                                for lane in 0..4 {
+                                    let jw = w[lane];
+                                    if jw > 0.0 {
+                                        *joint_weight.entry(j[lane]).or_insert(0.0) += jw;
+                                    }
+                                }
+                            }
+
+                            let mut entries: Vec<(u16, f32)> = joint_weight.into_iter().collect();
+                            entries.sort_by(|a, b| b.1.total_cmp(&a.1));
+                            println!("[VulkanoRenderer] skin joint histogram (top 12 by total weight):");
+                            for (rank, (joint, total)) in entries.into_iter().take(12).enumerate() {
+                                println!("  #{rank:02} joint={joint} total_weight={total:.3}");
+                            }
+                        }
+                        }
+                    }
+
                     let skin_iter =
                         joints0
                             .iter()
@@ -2131,7 +2289,38 @@ mod vulkano_backend {
                         skin_iter,
                     )?)
                 }
-                _ => None,
+                (Some(joints0), Some(weights0)) => {
+                    if env_flag("CAT_DEBUG_SKIN_UPLOAD") {
+                        println!(
+                            "[VulkanoRenderer] skin upload skipped (len mismatch): mesh={handle:?} verts={} joints0_len={} weights0_len={}",
+                            mesh.vertices.len(),
+                            joints0.len(),
+                            weights0.len()
+                        );
+                    }
+                    None
+                }
+                (Some(joints0), None) => {
+                    if env_flag("CAT_DEBUG_SKIN_UPLOAD") {
+                        println!(
+                            "[VulkanoRenderer] skin upload skipped (missing weights0): mesh={handle:?} verts={} joints0_len={}",
+                            mesh.vertices.len(),
+                            joints0.len(),
+                        );
+                    }
+                    None
+                }
+                (None, Some(weights0)) => {
+                    if env_flag("CAT_DEBUG_SKIN_UPLOAD") {
+                        println!(
+                            "[VulkanoRenderer] skin upload skipped (missing joints0): mesh={handle:?} verts={} weights0_len={}",
+                            mesh.vertices.len(),
+                            weights0.len(),
+                        );
+                    }
+                    None
+                }
+                (None, None) => None,
             };
 
             let indices_src = Buffer::from_iter(

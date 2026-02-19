@@ -2,9 +2,10 @@ use cat_engine::engine::ecs::component::{
     Action, ActionComponent, AmbientLightComponent, AnimationComponent, AnimationState,
     BackgroundColorComponent, Camera3DComponent, ColorComponent, DirectionalLightComponent,
     EmissiveComponent, GLTFComponent, InputComponent, InputTransformModeComponent, JointComponent,
-    KeyframeComponent, RenderableComponent, TransformComponent,
+    KeyframeComponent, MeshComponent, RenderableComponent, SkinnedMeshComponent, TransformComponent,
 };
 use cat_engine::{engine, utils};
+use std::collections::{HashMap, HashSet};
 
 #[path = "example_util/mod.rs"]
 mod example_util;
@@ -175,6 +176,13 @@ fn main() {
         &mut universe.command_queue,
     );
 
+    // Register imported meshes into RenderAssets early so we can inspect skin weights
+    // (textures will still be uploaded later during normal rendering).
+    universe
+        .systems
+        .gltf
+        .flush_mesh_imports_only(&mut universe.render_assets);
+
     // --- Joint printout + animation binding (in the example) ---
     let all_joints = collect_joint_transforms(&universe.world, model_root);
     println!("[vtuber-joints-example] joints found: {}", all_joints.len());
@@ -182,11 +190,37 @@ fn main() {
         println!("  joint[{i:03}] node_index={node_index} transform={joint_tx:?}");
     }
 
+    let node_index_to_transform: HashMap<usize, engine::ecs::ComponentId> = all_joints
+        .iter()
+        .copied()
+        .collect();
+
     let joint_offset: usize = std::env::var("VTUBER_JOINT_OFFSET")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(0);
-    let wiggle_count: usize = 16;
+    let wiggle_count: usize = std::env::var("VTUBER_WIGGLE_COUNT")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(16);
+
+    let target_mesh_key = std::env::var("VTUBER_TARGET_MESH_KEY")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "pc-rei.hoodie:Body_(merged).baked:prim0".to_string());
+
+    let target_joint_names: Vec<String> = std::env::var("VTUBER_TARGET_JOINTS")
+        .ok()
+        .map(|s| {
+            s.split(',')
+                .map(|p| p.trim())
+                .filter(|p| !p.is_empty())
+                .map(|p| p.to_string())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| {
+            vec!["J_Bip_L_UpperArm".to_string(), "J_Bip_R_UpperArm".to_string()]
+        });
 
     // Disabled by default to avoid log spam. Set to 1/true/on to enable.
     let print_transform_updates: bool = std::env::var("VTUBER_PRINT_TRANSFORMS")
@@ -197,14 +231,39 @@ fn main() {
         })
         .unwrap_or(false);
 
-    let selected_joint_transforms: Vec<engine::ecs::ComponentId> =
-        select_joint_range(&all_joints, joint_offset, wiggle_count);
+    let selected_joint_transforms: Vec<(usize, engine::ecs::ComponentId)> =
+        select_named_joints(&universe.world, &all_joints, &target_joint_names)
+            .or_else(|| {
+                select_body_prim0_influencers(
+                    &universe,
+                    model_root,
+                    &target_mesh_key,
+                    wiggle_count,
+                    &node_index_to_transform,
+                )
+            })
+            .unwrap_or_else(|| select_joint_range(&all_joints, joint_offset, wiggle_count));
     println!(
-        "[vtuber-joints-example] wiggle range: offset={} count={} selected={}",
+        "[vtuber-joints-example] wiggle selection: target_mesh_key='{}' offset={} count={} selected={}",
+        target_mesh_key,
         joint_offset,
         wiggle_count,
         selected_joint_transforms.len()
     );
+
+    debug_print_selected_joint_influence(&universe, &target_mesh_key, model_root, &selected_joint_transforms);
+
+    println!("[vtuber-joints-example] selected joints:");
+    for (i, (node_index, joint_tx)) in selected_joint_transforms.iter().enumerate() {
+        let name = universe
+            .world
+            .get_component_record(*joint_tx)
+            .map(|n| n.name.as_str())
+            .unwrap_or("<unknown>");
+        println!(
+            "  sel[{i:02}] node_index={node_index} name={name} transform={joint_tx:?}"
+        );
+    }
 
     // Create a looping animation with many keyframes, and attach actions to the selected joints.
     let anim = universe
@@ -215,16 +274,30 @@ fn main() {
     // Fill [0, 2) beats densely so it looks smooth at bpm=120 (2 beats = 1 second).
     // Important: keep max beat < 2.0 so AnimationSystem uses loop_len=2.
     let steps: usize = 32;
-    let amplitude_rad: f32 = 0.20;
+    let amplitude_rad: f32 = std::env::var("VTUBER_AMPLITUDE_RAD")
+        .ok()
+        .and_then(|s| s.parse::<f32>().ok())
+        .unwrap_or(0.65);
+    let axis: [f32; 3] = std::env::var("VTUBER_AXIS")
+        .ok()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .as_deref()
+        .map(|s| match s {
+            "x" => [1.0, 0.0, 0.0],
+            "y" => [0.0, 1.0, 0.0],
+            "z" => [0.0, 0.0, 1.0],
+            _ => [0.0, 1.0, 0.0],
+        })
+        .unwrap_or([0.0, 1.0, 0.0]);
     for i in 0..steps {
         let beat = (i as f64) * (2.0 / (steps as f64));
         let kf = universe.world.register(KeyframeComponent::new(beat));
         let _ = universe.attach(anim, kf);
 
         let angle = ((std::f64::consts::PI * beat).sin() as f32) * amplitude_rad;
-        let delta = quat_from_axis_angle([0.0, 1.0, 0.0], angle);
+        let delta = quat_from_axis_angle(axis, angle);
 
-        for &joint_tx in selected_joint_transforms.iter() {
+        for &(_node_index, joint_tx) in selected_joint_transforms.iter() {
             let Some((translation, base_rotation, scale)) = universe
                 .world
                 .get_component_by_id_as::<TransformComponent>(joint_tx)
@@ -273,6 +346,331 @@ fn main() {
     engine::Windowing::run_app(universe, user_input).expect("Windowing failed");
 }
 
+fn select_named_joints(
+    world: &engine::ecs::World,
+    all_joints: &[(usize, engine::ecs::ComponentId)],
+    names: &[String],
+) -> Option<Vec<(usize, engine::ecs::ComponentId)>> {
+    if names.is_empty() {
+        return None;
+    }
+
+    let mut out: Vec<(usize, engine::ecs::ComponentId)> = Vec::new();
+    for wanted in names {
+        let mut found: Option<(usize, engine::ecs::ComponentId)> = None;
+        for &(node_index, joint_tx) in all_joints.iter() {
+            let name = world
+                .get_component_record(joint_tx)
+                .map(|r| r.name.as_str())
+                .unwrap_or("");
+            if name == wanted {
+                found = Some((node_index, joint_tx));
+                break;
+            }
+        }
+
+        if let Some(v) = found {
+            out.push(v);
+        } else {
+            println!(
+                "[vtuber-joints-example] warning: target joint '{}' not found (check names via REPL tree)",
+                wanted
+            );
+        }
+    }
+
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+fn debug_print_selected_joint_influence(
+    universe: &engine::Universe,
+    mesh_key: &str,
+    model_root: engine::ecs::ComponentId,
+    selected: &[(usize, engine::ecs::ComponentId)],
+) {
+    let Some(renderable) = find_renderable_by_mesh_key(&universe.world, model_root, mesh_key)
+    else {
+        println!(
+            "[vtuber-joints-example] influence: mesh_key='{}' renderable not found",
+            mesh_key
+        );
+        return;
+    };
+
+    let renderable_handle = universe
+        .world
+        .get_component_by_id_as::<RenderableComponent>(renderable)
+        .and_then(|r| r.get_handle());
+    println!(
+        "[vtuber-joints-example] influence: mesh_key='{}' renderable={:?} instance_handle={:?}",
+        mesh_key, renderable, renderable_handle
+    );
+    let Some(skin_id) = find_skin_id_for_renderable(&universe.world, renderable) else {
+        println!(
+            "[vtuber-joints-example] influence: mesh_key='{}' has no skin_id",
+            mesh_key
+        );
+        return;
+    };
+    let Some(skin) = universe.visuals.skin(skin_id) else {
+        println!(
+            "[vtuber-joints-example] influence: skin_id={:?} missing in visuals",
+            skin_id
+        );
+        return;
+    };
+    let Some(cpu_h) = universe.render_assets.imported_mesh(mesh_key) else {
+        println!(
+            "[vtuber-joints-example] influence: mesh_key='{}' missing in RenderAssets (did meshes register?)",
+            mesh_key
+        );
+        return;
+    };
+    let Some(cpu) = universe.render_assets.cpu_mesh(cpu_h) else {
+        println!(
+            "[vtuber-joints-example] influence: mesh_key='{}' cpu mesh handle invalid",
+            mesh_key
+        );
+        return;
+    };
+    let (Some(joints0), Some(weights0)) = (cpu.joints0.as_ref(), cpu.weights0.as_ref()) else {
+        println!(
+            "[vtuber-joints-example] influence: mesh_key='{}' has no skin attributes",
+            mesh_key
+        );
+        return;
+    };
+
+    let joint_count = skin.joint_count();
+    let totals = compute_total_weight_per_joint(joints0, weights0, joint_count);
+
+    println!(
+        "[vtuber-joints-example] influence: mesh_key='{}' verts={} joints={}",
+        mesh_key,
+        cpu.vertices.len(),
+        joint_count
+    );
+
+    for &(node_index, joint_tx) in selected.iter() {
+        // Find the skin joint index that maps to this node.
+        let skin_joint_index = skin
+            .joint_node_indices
+            .iter()
+            .position(|&ni| ni == node_index);
+
+        let name = universe
+            .world
+            .get_component_record(joint_tx)
+            .map(|r| r.name.as_str())
+            .unwrap_or("<unknown>");
+
+        match skin_joint_index {
+            Some(j) => {
+                let total = totals.get(j).copied().unwrap_or(0.0);
+                println!(
+                    "  influence: name='{}' node_index={} skin_joint_index={} total_weight={:.3}",
+                    name,
+                    node_index,
+                    j,
+                    total
+                );
+            }
+            None => {
+                println!(
+                    "  influence: name='{}' node_index={} skin_joint_index=<none>",
+                    name,
+                    node_index
+                );
+            }
+        }
+    }
+}
+
+fn compute_total_weight_per_joint(
+    joints0: &[[u16; 4]],
+    weights0: &[[f32; 4]],
+    joint_count: usize,
+) -> Vec<f32> {
+    let mut totals = vec![0.0f32; joint_count];
+    if joint_count == 0 {
+        return totals;
+    }
+    for (jv, wv) in joints0.iter().zip(weights0.iter()) {
+        for lane in 0..4 {
+            let j = jv[lane] as usize;
+            if j >= joint_count {
+                continue;
+            }
+            let w = wv[lane];
+            if w > 0.0 {
+                totals[j] += w;
+            }
+        }
+    }
+    totals
+}
+
+fn select_body_prim0_influencers(
+    universe: &engine::Universe,
+    model_root: engine::ecs::ComponentId,
+    mesh_key: &str,
+    count: usize,
+    node_index_to_transform: &HashMap<usize, engine::ecs::ComponentId>,
+) -> Option<Vec<(usize, engine::ecs::ComponentId)>> {
+    if count == 0 {
+        return Some(Vec::new());
+    }
+
+    let renderable = find_renderable_by_mesh_key(&universe.world, model_root, mesh_key)?;
+    let skin_id = find_skin_id_for_renderable(&universe.world, renderable)?;
+    let skin = universe.visuals.skin(skin_id)?;
+
+    let cpu_h = universe.render_assets.imported_mesh(mesh_key)?;
+    let cpu = universe.render_assets.cpu_mesh(cpu_h)?;
+    let joints0 = cpu.joints0.as_ref()?;
+    let weights0 = cpu.weights0.as_ref()?;
+
+    let joint_count = skin.joint_count();
+    if joint_count == 0 {
+        return None;
+    }
+
+    let mut total_weight_per_joint: Vec<f32> = vec![0.0; joint_count];
+    for (jv, wv) in joints0.iter().zip(weights0.iter()) {
+        for lane in 0..4 {
+            let j = jv[lane] as usize;
+            if j >= joint_count {
+                continue;
+            }
+            let w = wv[lane];
+            if w > 0.0 {
+                total_weight_per_joint[j] += w;
+            }
+        }
+    }
+
+    let mut ranked: Vec<(usize, f32)> = total_weight_per_joint
+        .iter()
+        .copied()
+        .enumerate()
+        .collect();
+    ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let min_total = std::env::var("VTUBER_AUTO_JOINT_MIN_TOTAL")
+        .ok()
+        .and_then(|s| s.parse::<f32>().ok())
+        .unwrap_or(10.0);
+
+    println!(
+        "[vtuber-joints-example] auto joints for mesh_key='{}': verts={} joint_count={} min_total={}",
+        mesh_key,
+        cpu.vertices.len(),
+        joint_count,
+        min_total
+    );
+
+    let mut out: Vec<(usize, engine::ecs::ComponentId)> = Vec::with_capacity(count);
+    let mut seen: HashSet<engine::ecs::ComponentId> = HashSet::new();
+
+    for (joint_index, total) in ranked.into_iter() {
+        if out.len() >= count {
+            break;
+        }
+        if total < min_total {
+            continue;
+        }
+
+        let node_index = *skin.joint_node_indices.get(joint_index)?;
+        let Some(&joint_tx) = node_index_to_transform.get(&node_index) else {
+            continue;
+        };
+        if !seen.insert(joint_tx) {
+            continue;
+        }
+
+        let name = universe
+            .world
+            .get_component_record(joint_tx)
+            .map(|n| n.name.clone())
+            .unwrap_or_else(|| "<unknown>".to_string());
+
+        println!(
+            "  auto[{:<2}] joint_index={:<3} total_weight={:<10.3} node_index={:<3} name={} tx={:?}",
+            out.len(),
+            joint_index,
+            total,
+            node_index,
+            name,
+            joint_tx
+        );
+
+        out.push((node_index, joint_tx));
+    }
+
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+fn find_renderable_by_mesh_key(
+    world: &engine::ecs::World,
+    root: engine::ecs::ComponentId,
+    mesh_key: &str,
+) -> Option<engine::ecs::ComponentId> {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        if let Some(m) = world.get_component_by_id_as::<MeshComponent>(node) {
+            if m.key == mesh_key {
+                return find_parent_renderable(world, node);
+            }
+        }
+        for &ch in world.children_of(node) {
+            stack.push(ch);
+        }
+    }
+    None
+}
+
+fn find_parent_renderable(
+    world: &engine::ecs::World,
+    mut cid: engine::ecs::ComponentId,
+) -> Option<engine::ecs::ComponentId> {
+    while let Some(parent) = world.parent_of(cid) {
+        if world
+            .get_component_by_id_as::<RenderableComponent>(parent)
+            .is_some()
+        {
+            return Some(parent);
+        }
+        cid = parent;
+    }
+    None
+}
+
+fn find_skin_id_for_renderable(
+    world: &engine::ecs::World,
+    renderable: engine::ecs::ComponentId,
+) -> Option<engine::graphics::SkinId> {
+    let mut stack = vec![renderable];
+    while let Some(node) = stack.pop() {
+        if let Some(sm) = world.get_component_by_id_as::<SkinnedMeshComponent>(node) {
+            if let Some(id) = sm.skin_id {
+                return Some(id);
+            }
+        }
+        for &ch in world.children_of(node) {
+            stack.push(ch);
+        }
+    }
+    None
+}
+
 fn collect_joint_transforms(
     world: &engine::ecs::World,
     root: engine::ecs::ComponentId,
@@ -304,7 +702,7 @@ fn select_joint_range(
     joints: &[(usize, engine::ecs::ComponentId)],
     offset: usize,
     count: usize,
-) -> Vec<engine::ecs::ComponentId> {
+) -> Vec<(usize, engine::ecs::ComponentId)> {
     if joints.is_empty() || count == 0 {
         return Vec::new();
     }
@@ -312,7 +710,7 @@ fn select_joint_range(
     let start = offset % len;
     let n = count.min(len);
 
-    (0..n).map(|i| joints[(start + i) % len].1).collect()
+    (0..n).map(|i| joints[(start + i) % len]).collect()
 }
 
 fn quat_from_axis_angle(axis: [f32; 3], angle_rad: f32) -> [f32; 4] {

@@ -1,4 +1,6 @@
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::RxWorld;
+use crate::engine::ecs::Signal;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     CollisionComponent, CollisionShapeComponent, RenderableComponent,
@@ -12,6 +14,7 @@ use bvh::aabb::{AABB, Bounded};
 use bvh::bounding_hierarchy::BHShape;
 use bvh::bvh::{BVH, BVHNode};
 use slotmap::{SlotMap, new_key_type};
+use slotmap::Key;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use std::thread;
@@ -88,11 +91,20 @@ pub struct CollisionSystem {
     worker: Option<thread::JoinHandle<()>>,
 
     known: HashSet<ComponentId>,
+
+    active_pairs: HashSet<(ComponentId, ComponentId)>,
 }
 
 impl CollisionSystem {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Snapshot of the currently-active overlap pairs (normalized ordering).
+    ///
+    /// Note: this is updated when `tick_with_rx` drains worker messages.
+    pub fn active_pairs_snapshot(&self) -> Vec<(ComponentId, ComponentId)> {
+        self.active_pairs.iter().copied().collect()
     }
 
     pub fn register_collision(
@@ -258,31 +270,67 @@ impl System for CollisionSystem {
         _input: &InputState,
         _dt_sec: f32,
     ) {
+        // Driven via SystemWorld::tick_with_rx.
+    }
+}
+
+impl CollisionSystem {
+    pub fn tick_with_rx(
+        &mut self,
+        _world: &mut World,
+        _visuals: &mut VisualWorld,
+        _input: &InputState,
+        _dt_sec: f32,
+        rx: &mut RxWorld,
+    ) {
         self.ensure_worker();
 
         let Some(tx) = self.to_worker.as_ref() else {
             return;
         };
 
-        // Drain worker -> main collision events.
-        if let Some(rx) = self.from_worker.as_ref() {
-            while let Ok(msg) = rx.try_recv() {
-                if let CollisionMessage::CollisionDetected {
+        // Drain worker -> current overlap set.
+        let mut current_pairs: HashSet<(ComponentId, ComponentId)> = HashSet::new();
+        if let Some(from_worker) = self.from_worker.as_ref() {
+            while let Ok(msg) = from_worker.try_recv() {
+                let CollisionMessage::CollisionDetected {
                     a_component,
-                    a_guid,
-                    a_mode,
+                    a_guid: _,
+                    a_mode: _,
                     b_component,
-                    b_guid,
-                    b_mode,
+                    b_guid: _,
+                    b_mode: _,
                 } = msg
-                {
-                    println!(
-                        "[CollisionSystem] collision: {:?}({:?}, {:?}) <-> {:?}({:?}, {:?})",
-                        a_component, a_guid, a_mode, b_component, b_guid, b_mode
-                    );
+                else {
+                    continue;
+                };
+
+                // Normalize ordering so (a,b) and (b,a) map to the same pair.
+                let a_key = a_component.data().as_ffi();
+                let b_key = b_component.data().as_ffi();
+                let (lo, hi) = if a_key <= b_key {
+                    (a_component, b_component)
+                } else {
+                    (b_component, a_component)
+                };
+                if lo != hi {
+                    current_pairs.insert((lo, hi));
                 }
             }
         }
+
+        // Emit started/ended based on set diffs.
+        for &(a, b) in current_pairs.difference(&self.active_pairs) {
+            rx.push(a, Signal::CollisionStarted { a, b });
+            rx.push(b, Signal::CollisionStarted { a, b });
+        }
+
+        for &(a, b) in self.active_pairs.difference(&current_pairs) {
+            rx.push(a, Signal::CollisionEnded { a, b });
+            rx.push(b, Signal::CollisionEnded { a, b });
+        }
+
+        self.active_pairs = current_pairs;
 
         let _ = tx.send(CollisionMessage::Tick);
     }

@@ -363,6 +363,38 @@ impl GLTFSystem {
                 for &node_index in &skin.joints {
                     joints_resolved.push(node_index_to_component.get(&node_index).copied());
                 }
+
+                let debug_joint_order = std::env::var("CAT_DEBUG_SKIN_JOINT_ORDER")
+                    .ok()
+                    .map(|s| {
+                        let s = s.trim().to_ascii_lowercase();
+                        s == "1" || s == "true" || s == "on" || s == "yes"
+                    })
+                    .unwrap_or(false);
+                if debug_joint_order {
+                    println!(
+                        "[GLTFSystem] skin joint order: uri='{}' skin_index={} joints={} (showing 0..16 and 74)",
+                        uri,
+                        skin_index,
+                        skin.joints.len()
+                    );
+
+                    let mut to_show: Vec<usize> = (0..skin.joints.len().min(16)).collect();
+                    if skin.joints.len() > 74 {
+                        to_show.push(74);
+                    }
+
+                    for joint_i in to_show {
+                        let node_i = skin.joints[joint_i];
+                        let name = joints_resolved[joint_i]
+                            .and_then(|cid| world.get_component_record(cid).map(|n| n.name.clone()))
+                            .unwrap_or_else(|| "<missing>".to_string());
+                        println!(
+                            "  joint_index={joint_i:03} gltf_node_index={node_i:03} name={name}",
+                        );
+                    }
+                }
+
                 skinned_mesh.register_skin_instance_joints(cid, skin_id, joints_resolved);
             }
 
@@ -416,6 +448,22 @@ impl GLTFSystem {
                 }
                 loaded.textures_uploaded = true;
             }
+        }
+    }
+
+    /// Register imported CPU meshes into `RenderAssets` without uploading textures.
+    ///
+    /// This is useful for headless/early inspection (e.g. examples that want to analyze
+    /// `JOINTS_0/WEIGHTS_0`) before a renderer is initialized.
+    pub fn flush_mesh_imports_only(&mut self, render_assets: &mut RenderAssets) {
+        for loaded in self.resources_by_uri.values_mut() {
+            if loaded.meshes_registered {
+                continue;
+            }
+            for m in &loaded.meshes {
+                let _h = render_assets.register_imported_mesh(m.key.clone(), m.mesh.clone());
+            }
+            loaded.meshes_registered = true;
         }
     }
 

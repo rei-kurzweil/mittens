@@ -13,6 +13,7 @@ use crate::engine::graphics::{GpuRenderable, VisualWorld};
 use crate::engine::graphics::{MeshUploader, RenderAssets};
 use crate::engine::user_input::InputState;
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// System that registers/updates renderables in the `VisualWorld`.
 ///
@@ -871,6 +872,20 @@ impl RenderableSystem {
         render_assets: &mut RenderAssets,
         uploader: &mut dyn MeshUploader,
     ) {
+        let parse_bool_env = |name: &str| {
+            std::env::var(name)
+                .ok()
+                .map(|s| {
+                    let s = s.trim().to_ascii_lowercase();
+                    s == "1" || s == "true" || s == "on" || s == "yes"
+                })
+                .unwrap_or(false)
+        };
+
+        let debug_mesh_stats = parse_bool_env("CAT_DEBUG_RENDERABLE_MESH_STATS");
+        let debug_mesh_stats_all = parse_bool_env("CAT_DEBUG_RENDERABLE_MESH_STATS_ALL");
+        static MESH_STATS_LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
+
         // println!(
         //     "[RenderableSystem] flush_pending: pending_len={} visuals.instances={} ",
         //     self.pending.len(),
@@ -925,6 +940,43 @@ impl RenderableSystem {
                 Ok(h) => h,
                 Err(_err) => continue,
             };
+
+            if debug_mesh_stats {
+                let (vcount, icount, has_skin) = render_assets
+                    .cpu_mesh(cpu_mesh)
+                    .map(|m| {
+                        (
+                            m.vertices.len(),
+                            m.indices_u32.len(),
+                            m.joints0.is_some() && m.weights0.is_some(),
+                        )
+                    })
+                    .unwrap_or((0, 0, false));
+
+                let key_str = p.mesh_key.as_deref().unwrap_or("<no mesh_key>");
+                let should_log = debug_mesh_stats_all || key_str != "<no mesh_key>" || has_skin;
+
+                if should_log {
+                    let limit = std::env::var("CAT_DEBUG_RENDERABLE_MESH_STATS_LIMIT")
+                        .ok()
+                        .and_then(|s| s.trim().parse::<usize>().ok())
+                        .unwrap_or(50);
+                    let n = MESH_STATS_LOG_COUNT.fetch_add(1, Ordering::Relaxed);
+                    if n < limit {
+                        println!(
+                            "[RenderableSystem] renderable={:?} material={:?} mesh_key='{}' cpu_mesh={:?} gpu_mesh={:?} verts={} indices={} skinned_attrs={}",
+                            p.renderable_cid,
+                            p.material,
+                            key_str,
+                            cpu_mesh,
+                            mesh,
+                            vcount,
+                            icount,
+                            has_skin
+                        );
+                    }
+                }
+            }
 
             let gpu_r = GpuRenderable {
                 mesh,
