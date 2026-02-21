@@ -163,7 +163,7 @@ fn main() {
     // overhead directional light
     let directional_light = universe.world.register(
         engine::ecs::component::DirectionalLightComponent::new()
-            .with_color( 0.06, 0.04, 0.07 )
+            .with_color( 0.16, 0.14, 0.12 )
             .with_intensity(0.7),
     );
     let directional_light_t = universe.world.register(

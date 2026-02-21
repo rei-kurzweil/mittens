@@ -74,7 +74,13 @@ void main() {
     uint light_count = min(g_lights.count, 64u);
 
     vec3 N = normalize(v_normal);
-    vec3 out_rgb = base * max(ubo.ambient_light, vec3(0.0));
+    vec3 ambient_rgb = base * max(ubo.ambient_light, vec3(0.0));
+
+    // Union-style ("OR") light combine:
+    // Instead of summing quantized contributions (which creates thicker/merged bands),
+    // take the strongest quantized light contribution.
+    float best_q = 0.0;
+    vec3 best_lc = vec3(0.0);
 
     for (uint i = 0u; i < light_count; i++) {
         uint light_type = g_lights.lights[i].meta.x;
@@ -117,13 +123,17 @@ void main() {
 
         float ndotl = max(dot(N, L), 0.0);
 
-        vec3 add_color = base * lc * quantize(
-            ndotl * intensity * att,
-            mat.quant_steps       
-        );
+        float q = quantize(ndotl * intensity * att, mat.quant_steps);
 
-        out_rgb += add_color;
+        // Prefer the highest band; on ties, keep the brightest color per-channel.
+        if (q > best_q + 1e-6) {
+            best_q = q;
+            best_lc = lc;
+        } else if (abs(q - best_q) <= 1e-6) {
+            best_lc = max(best_lc, lc);
+        }
     }
 
+    vec3 out_rgb = ambient_rgb + (base * best_lc * best_q);
     f_color = vec4(out_rgb, base_rgba.a);
 }
