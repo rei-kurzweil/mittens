@@ -14,7 +14,16 @@ use winit::window::{Window, WindowAttributes, WindowId};
 pub struct Windowing;
 
 impl Windowing {
-    pub fn run_app(universe: crate::engine::Universe, user_input: UserInput) -> EngineResult<()> {
+    /// Run a Universe in a winit window with default input handling.
+    pub fn run_app(universe: crate::engine::Universe) -> EngineResult<()> {
+        Self::run_app_with_input(universe, UserInput::new())
+    }
+
+    /// Run a Universe in a winit window with a caller-provided `UserInput`.
+    pub fn run_app_with_input(
+        universe: crate::engine::Universe,
+        user_input: UserInput,
+    ) -> EngineResult<()> {
         let event_loop = EventLoop::new().map_err(|_| EngineError::NotImplemented)?;
         event_loop.set_control_flow(ControlFlow::Poll);
 

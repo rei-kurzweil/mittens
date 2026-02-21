@@ -14,6 +14,13 @@ fn main() {
 
     universe.add(bg_color);
 
+    // Gravity field for the pushable cubes.
+    // Any KineticResponseComponent nested under this subtree will have gravity applied.
+    let gravity_field = universe
+        .world
+        .register(engine::ecs::component::GravityComponent::new().with_coefficient(0.5));
+    universe.add(gravity_field);
+
     // Input-driven camera rig.
     // Topology: I { T { C3D }  CN{Rigged { Sphere }} }
     let input = universe
@@ -38,10 +45,10 @@ fn main() {
 
     // Opt-in to default kinematic-vs-static collision response.
     // Policy note: collisions still emit signals regardless; response only runs for entities
-    // that explicitly add a KinematicResponseComponent.
+    // that explicitly add a KineticResponseComponent.
     let rig_response = universe
         .world
-        .register(engine::ecs::component::KinematicResponseComponent::slide());
+        .register(engine::ecs::component::KineticResponseComponent::slide());
     let rig_shape = universe
         .world
         .register(engine::ecs::component::CollisionShapeComponent::new(
@@ -59,7 +66,7 @@ fn main() {
     let _ = universe.attach(rig_transform, raycast);
 
     let _ = universe.attach(rig_transform, rig_collision);
-    let _ = universe.attach(rig_transform, rig_response);
+    let _ = universe.attach(rig_collision, rig_response);
     let _ = universe.attach(rig_collision, rig_shape);
 
     universe.add(input);
@@ -173,6 +180,7 @@ fn main() {
 
     fn spawn_pushable_cube(
         universe: &mut engine::Universe,
+        parent: engine::ecs::ComponentId,
         x: f32,
         y: f32,
         z: f32,
@@ -199,7 +207,7 @@ fn main() {
         let response = universe
             .world
             .register(
-                engine::ecs::component::KinematicResponseComponent::push()
+                engine::ecs::component::KineticResponseComponent::push()
                     .with_push_strength(4.0)
                     .with_friction_y(10.0),
             );
@@ -213,10 +221,10 @@ fn main() {
         let _ = universe.attach(renderable, color);
 
         let _ = universe.attach(t, cn);
-        let _ = universe.attach(t, response);
+        let _ = universe.attach(cn, response);
         let _ = universe.attach(cn, shape);
 
-        universe.add(t);
+        let _ = universe.attach(parent, t);
     }
 
     fn spawn_invisible_static_wall(
@@ -243,11 +251,11 @@ fn main() {
         // are not responders).
         let response = universe
             .world
-            .register(engine::ecs::component::KinematicResponseComponent::slide());
+            .register(engine::ecs::component::KineticResponseComponent::slide());
 
         let _ = universe.attach(t, cn);
         let _ = universe.attach(cn, shape);
-        let _ = universe.attach(t, response);
+        let _ = universe.attach(cn, response);
         universe.add(t);
     }
 
@@ -256,8 +264,14 @@ fn main() {
     // Static ground plane (thin cube). Top surface at y=0.
     {
         let ground_half = half + 2.0;
-        let thickness = 0.05;
-        let ground_t = universe.world.register(
+        let thickness = 0.20;
+
+        // Split transforms so scaling the ground does not scale any potential children.
+        // Top surface at y=0.
+        let ground_root_t = universe
+            .world
+            .register(engine::ecs::component::TransformComponent::new());
+        let ground_geom_t = universe.world.register(
             engine::ecs::component::TransformComponent::new()
                 .with_position(0.0, -thickness, 0.0)
                 .with_scale(ground_half * 2.0, thickness * 2.0, ground_half * 2.0),
@@ -277,11 +291,12 @@ fn main() {
                 engine::ecs::component::CollisionShape::cube_half_extents([ground_half, thickness, ground_half]),
             ));
 
-        let _ = universe.attach(ground_t, ground_r);
+        let _ = universe.attach(ground_root_t, ground_geom_t);
+        let _ = universe.attach(ground_geom_t, ground_r);
         let _ = universe.attach(ground_r, ground_c);
-        let _ = universe.attach(ground_t, ground_cn);
+        let _ = universe.attach(ground_geom_t, ground_cn);
         let _ = universe.attach(ground_cn, ground_shape);
-        universe.add(ground_t);
+        universe.add(ground_root_t);
     }
 
     // Bottom edge (left -> right)
@@ -443,7 +458,7 @@ fn main() {
             let cg = 0.25 + rng01() * 0.6;
             let cb = 0.25 + rng01() * 0.6;
 
-            spawn_pushable_cube(&mut universe, x, y, z, s, cr, cg, cb);
+            spawn_pushable_cube(&mut universe, gravity_field, x, y, z, s, cr, cg, cb);
         }
     }
 
@@ -454,6 +469,5 @@ fn main() {
         &mut universe.command_queue,
     );
 
-    let user_input = engine::user_input::UserInput::new();
-    engine::Windowing::run_app(universe, user_input).expect("Windowing failed");
+    engine::Windowing::run_app(universe).expect("Windowing failed");
 }

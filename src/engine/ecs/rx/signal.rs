@@ -3,10 +3,13 @@ use crate::engine::ecs::{ComponentId, World};
 use crate::engine::ecs::CommandQueue;
 
 #[derive(Debug, Clone)]
-pub enum Signal {
+pub enum ActionSignal {
     /// Intent: execute an action.
     Action(Action),
+}
 
+#[derive(Debug, Clone)]
+pub enum EventSignal {
     /// Fact: topology changed.
     ParentChanged {
         child: ComponentId,
@@ -24,16 +27,28 @@ pub enum Signal {
     },
 
     /// Fact: two collision objects began overlapping this tick.
+    ///
+    /// `delta` is the vector from `a` to `b` in world space: `pos(b) - pos(a)`.
     CollisionStarted {
         a: ComponentId,
         b: ComponentId,
+        delta: [f32; 3],
     },
 
     /// Fact: two collision objects stopped overlapping this tick.
+    ///
+    /// `delta` is the last known vector from `a` to `b` in world space: `pos(b) - pos(a)`.
     CollisionEnded {
         a: ComponentId,
         b: ComponentId,
+        delta: [f32; 3],
     },
+}
+
+#[derive(Debug, Clone)]
+pub enum SignalValue {
+    Action(ActionSignal),
+    Event(EventSignal),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -46,22 +61,52 @@ pub enum SignalKind {
     CollisionEnded,
 }
 
-impl Signal {
+impl SignalValue {
     pub fn kind(&self) -> SignalKind {
         match self {
-            Signal::Action(_) => SignalKind::Action,
-            Signal::ParentChanged { .. } => SignalKind::ParentChanged,
-            Signal::RayIntersected { .. } => SignalKind::RayIntersected,
-            Signal::CollisionStarted { .. } => SignalKind::CollisionStarted,
-            Signal::CollisionEnded { .. } => SignalKind::CollisionEnded,
+            SignalValue::Action(ActionSignal::Action(_)) => SignalKind::Action,
+            SignalValue::Event(EventSignal::ParentChanged { .. }) => SignalKind::ParentChanged,
+            SignalValue::Event(EventSignal::RayIntersected { .. }) => SignalKind::RayIntersected,
+            SignalValue::Event(EventSignal::CollisionStarted { .. }) => SignalKind::CollisionStarted,
+            SignalValue::Event(EventSignal::CollisionEnded { .. }) => SignalKind::CollisionEnded,
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct SignalEnvelope {
+pub struct Signal {
     pub scope: ComponentId,
-    pub signal: Signal,
+    pub value: SignalValue,
 }
 
-pub type SignalHandler = fn(&mut World, &mut CommandQueue, &SignalEnvelope);
+impl Signal {
+    pub fn kind(&self) -> SignalKind {
+        self.value.kind()
+    }
+}
+
+impl From<ActionSignal> for SignalValue {
+    fn from(v: ActionSignal) -> Self {
+        SignalValue::Action(v)
+    }
+}
+
+impl From<EventSignal> for SignalValue {
+    fn from(v: EventSignal) -> Self {
+        SignalValue::Event(v)
+    }
+}
+
+impl From<Action> for ActionSignal {
+    fn from(v: Action) -> Self {
+        ActionSignal::Action(v)
+    }
+}
+
+impl From<Action> for SignalValue {
+    fn from(v: Action) -> Self {
+        SignalValue::Action(ActionSignal::Action(v))
+    }
+}
+
+pub type SignalHandler = fn(&mut World, &mut CommandQueue, &Signal);

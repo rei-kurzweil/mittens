@@ -281,7 +281,8 @@ impl ComponentCodec {
             "collision_shape" => Ok(Box::new(CollisionShapeComponent::new(
                 crate::engine::ecs::component::CollisionShape::CUBE(),
             ))),
-            "kinematic_response" => Ok(Box::new(KinematicResponseComponent::default())),
+            "gravity" => Ok(Box::new(GravityComponent::default())),
+            "kinetic_response" => Ok(Box::new(KineticResponseComponent::default())),
             "joint" => Ok(Box::new(JointComponent::new(0, Vec::new()))),
             "skinned_mesh" => Ok(Box::new(SkinnedMeshComponent::new(0))),
             _ => Err(format!("Unknown component type: '{}'", type_name)),

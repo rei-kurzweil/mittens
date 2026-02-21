@@ -60,16 +60,21 @@ impl KineticResponseSystem {
             return;
         }
 
-        let pairs = collision.active_pairs_snapshot();
+        let pairs = collision.active_pairs_with_delta_snapshot();
 
         // Build an adjacency index once per tick so we don't scan all pairs per responder.
         // Key: collider cid, Value: other colliders overlapping it.
         // Note: pairs can be empty; Push mode still needs to integrate velocity.
-        let mut overlaps_by_collider: HashMap<ComponentId, Vec<ComponentId>> = HashMap::new();
+        let mut overlaps_by_collider: HashMap<ComponentId, Vec<(ComponentId, [f32; 3])>> =
+            HashMap::new();
         if !pairs.is_empty() {
-            for (a, b) in pairs.iter().copied() {
-                overlaps_by_collider.entry(a).or_default().push(b);
-                overlaps_by_collider.entry(b).or_default().push(a);
+            for (a, b, delta_ab) in pairs.iter().copied() {
+                // Store the vector from other -> self (so it matches `self_pos - other_pos`).
+                overlaps_by_collider
+                    .entry(a)
+                    .or_default()
+                    .push((b, [-delta_ab[0], -delta_ab[1], -delta_ab[2]]));
+                overlaps_by_collider.entry(b).or_default().push((a, delta_ab));
             }
         }
 
@@ -116,22 +121,22 @@ impl KineticResponseSystem {
 
             let gravity_coef = response.gravity_coefficient;
 
-            let overlaps: Vec<ComponentId> = overlaps_by_collider
+            let overlaps: Vec<(ComponentId, [f32; 3])> = overlaps_by_collider
                 .get(&collider_cid)
                 .cloned()
                 .unwrap_or_default();
 
             // Split overlaps into static and non-static colliders.
             let mut statics: Vec<ComponentId> = Vec::new();
-            let mut non_statics: Vec<ComponentId> = Vec::new();
-            for other in overlaps {
+            let mut non_statics: Vec<(ComponentId, [f32; 3])> = Vec::new();
+            for (other, delta_other_to_self) in overlaps {
                 let Some(c) = world.get_component_by_id_as::<CollisionComponent>(other) else {
                     continue;
                 };
                 if c.mode == CollisionMode::Static {
                     statics.push(other);
                 } else {
-                    non_statics.push(other);
+                    non_statics.push((other, delta_other_to_self));
                 }
             }
 
@@ -145,6 +150,7 @@ impl KineticResponseSystem {
                 Some(p) => p,
                 None => continue,
             };
+            let base_world_pos = desired_world_pos;
 
             // Mode-dependent motion intent.
             let mut velocity = response.velocity;
@@ -168,24 +174,24 @@ impl KineticResponseSystem {
                 if !non_statics.is_empty() && dt_sec > 0.0 && response.push_strength != 0.0 {
                     let mut sum = [0.0f32; 3];
                     let mut n = 0.0f32;
-                    for &other_cid in non_statics.iter() {
-                        let Some(other_parent) = world.parent_of(other_cid) else {
-                            continue;
-                        };
-                        if world
-                            .get_component_by_id_as::<TransformComponent>(other_parent)
-                            .is_none()
-                        {
-                            continue;
-                        }
-                        let Some(other_pos) = TransformSystem::world_position(world, other_parent) else {
-                            continue;
-                        };
+                    let self_motion = [
+                        desired_world_pos[0] - base_world_pos[0],
+                        desired_world_pos[1] - base_world_pos[1],
+                        desired_world_pos[2] - base_world_pos[2],
+                    ];
 
-                        // Delta from other -> self.
-                        sum[0] += desired_world_pos[0] - other_pos[0];
-                        sum[1] += desired_world_pos[1] - other_pos[1];
-                        sum[2] += desired_world_pos[2] - other_pos[2];
+                    for &(_other_cid, delta_other_to_self_at_base) in non_statics.iter() {
+                        // Adjust delta to reflect our integrated desired_world_pos.
+                        let adjusted = [
+                            delta_other_to_self_at_base[0] + self_motion[0],
+                            delta_other_to_self_at_base[1] + self_motion[1],
+                            delta_other_to_self_at_base[2] + self_motion[2],
+                        ];
+
+                        // Delta from other -> self (desired).
+                        sum[0] += adjusted[0];
+                        sum[1] += adjusted[1];
+                        sum[2] += adjusted[2];
                         n += 1.0;
                     }
 

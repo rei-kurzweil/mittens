@@ -377,7 +377,6 @@ fn main() {
         &mut universe.command_queue,
     );
 
-    let user_input = engine::user_input::UserInput::new();
     universe.enable_repl();
-    engine::Windowing::run_app(universe, user_input).expect("Windowing failed");
+    engine::Windowing::run_app(universe).expect("Windowing failed");
 }

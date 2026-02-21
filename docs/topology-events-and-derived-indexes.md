@@ -88,7 +88,7 @@ A synchronous stream processed during `CommandQueue::flush` has nice properties:
 The default architecture could be:
 
 1. Commands mutate the `World`.
-2. Each mutation emits a small `Signal` into a `Vec<SignalEnvelope>`.
+2. Each mutation emits a small `Signal` into a `Vec<Signal>`.
 3. After drain, systems consume the event list to update their derived indexes.
 4. Finally, systems run their existing `flush_pending()` steps.
 
@@ -119,7 +119,7 @@ In this model:
 
 - A keyframe can dispatch an **intent event** like `"AttachRaycasterToB"`.
 - The ActionSystem (or an EventSystem) consumes that event and emits `Action::attach(rot_b, raycaster)`.
-- The attach action mutates topology; that mutation emits `Signal::ParentChanged { ... }`.
+- The attach action mutates topology; that mutation emits `EventSignal::ParentChanged { ... }`.
 - Derived indexes (BVH membership, eligible sets, “nearest background”, etc.) update from `ParentChanged`.
 
 ### Do actions become events?
@@ -200,9 +200,9 @@ be identical:
 
 ### Unified event envelope (current implementation)
 
-The engine uses a single envelope type carrying a scope and a single event enum:
+The engine uses a single signal type carrying a scope and a value enum:
 
-- `ecs::SignalEnvelope { scope: ComponentId, signal: ecs::Signal }`
+- `ecs::Signal { scope: ComponentId, value: ecs::SignalValue }`
 
 This is a unified stream of **facts** (e.g. topology changes and interaction events). Intent
 is represented separately as `Action` (executed by `ActionSystem`).
@@ -231,7 +231,7 @@ For example (pseudo-Rust):
 
 ```rust
 universe.add_signal_handler(ecs::SignalKind::ParentChanged, scope_root, |world, queue, env| {
-  if let ecs::Signal::ParentChanged { child, old_parent, new_parent } = &env.signal {
+  if let ecs::SignalValue::Event(ecs::EventSignal::ParentChanged { child, old_parent, new_parent }) = &env.value {
     println!("child={child:?} old={old_parent:?} new={new_parent:?}");
     let _ = (world, queue);
   }
@@ -325,7 +325,7 @@ You don't need reactive streams to get most of the benefit. A minimal starting p
 
 - An `EventBus` that owns:
   - `Vec<IntentEvent>` (per-frame intent queue)
-  - `Vec<SignalEnvelope>` (per-dispatch signal queue)
+  - `Vec<Signal>` (per-dispatch signal queue)
   - `Vec<Handler>` (handlers with filters)
 - A `dispatch_*()` function that iterates handlers and calls those whose filter matches.
 
@@ -398,7 +398,7 @@ This becomes a cheap, high-signal view of “what the system thinks the world is
 
 1. Extend `ecs::Signal` + `ecs::SignalKind` for additional mutation/update signals.
 2. Emit `ParentChanged`, `ComponentAdded/Removed/Updated`, `SubtreeRemoved` at mutation points.
-3. Give systems a `consume_signals(&[SignalEnvelope])` hook (or `flush_signals` stage).
+3. Give systems a `consume_signals(&[Signal])` hook (or `flush_signals` stage).
 4. Implement the first full derived index using events:
    - Maintain `RayCastSystem::eligible_renderables` accurately across:
      - renderable add/remove

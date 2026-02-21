@@ -67,11 +67,21 @@ Putting both under “signals” makes the engine easier to reason about:
 Today the engine represents signals roughly like this (see `engine::ecs::rx`):
 
 ```rust
-pub enum Signal {
-    // intent
-    Action(Action),
+pub struct Signal {
+    pub scope: ComponentId,
+    pub value: SignalValue,
+}
 
-    // facts
+pub enum SignalValue {
+    Action(ActionSignal),
+    Event(EventSignal),
+}
+
+pub enum ActionSignal {
+    Action(Action),
+}
+
+pub enum EventSignal {
     ParentChanged {
         child: ComponentId,
         old_parent: Option<ComponentId>,
@@ -84,8 +94,8 @@ pub enum Signal {
         origin: [f32; 3],
         dir: [f32; 3],
     },
-    CollisionStarted { a: ComponentId, b: ComponentId },
-    CollisionEnded { a: ComponentId, b: ComponentId },
+    CollisionStarted { a: ComponentId, b: ComponentId, delta: [f32; 3] },
+    CollisionEnded { a: ComponentId, b: ComponentId, delta: [f32; 3] },
 }
 
 pub enum SignalKind {
@@ -97,21 +107,16 @@ pub enum SignalKind {
     CollisionEnded,
 }
 
-pub struct SignalEnvelope {
-    pub scope: ComponentId,
-    pub signal: Signal,
-}
-
-type SignalHandler = fn(&mut World, &mut CommandQueue, &SignalEnvelope);
+type SignalHandler = fn(&mut World, &mut CommandQueue, &Signal);
 ```
 
 Notes:
 - `SignalKind` exists so the handler registry doesn’t need to do pattern matching.
-- `SignalEnvelope` does not store the kind; it’s derived by calling `env.signal.kind()`.
+- `Signal` does not store the kind; it’s derived by calling `signal.kind()`.
 
 ## Why fn pointers (not closures) for handlers?
 
-Using `fn(&mut World, &mut CommandQueue, &SignalEnvelope)` buys a few pragmatic wins:
+Using `fn(&mut World, &mut CommandQueue, &Signal)` buys a few pragmatic wins:
 
 - **Simple storage + identity**: a function pointer is `Copy` and comparable by address, so `remove_signal_handler(kind, scope, handler)` is trivial.
 - **No allocation / no trait objects**: avoids `Box<dyn Fn...>` and dynamic dispatch in the hot path.
@@ -131,15 +136,15 @@ The bus that stores + dispatches signals:
 
 ```rust
 pub struct RxWorld {
-    signals: Vec<SignalEnvelope>,
+    signals: Vec<Signal>,
     handlers: HashMap<SignalKind, HashMap<ComponentId, Vec<SignalHandler>>>,
 }
 
 impl RxWorld {
-    pub fn push(&mut self, scope: ComponentId, signal: Signal) { ... }
-    pub fn drain(&mut self) -> Vec<SignalEnvelope> { ... }
+    pub fn push(&mut self, scope: ComponentId, value: impl Into<SignalValue>) { ... }
+    pub fn drain(&mut self) -> Vec<Signal> { ... }
     pub fn add_handler(&mut self, kind: SignalKind, scope_root: ComponentId, h: SignalHandler) { ... }
-    pub fn dispatch_handlers(&mut self, world: &mut World, queue: &mut CommandQueue, env: &SignalEnvelope) { ... }
+    pub fn dispatch_handlers(&mut self, world: &mut World, queue: &mut CommandQueue, signal: &Signal) { ... }
 }
 ```
 
@@ -211,7 +216,7 @@ Cons:
 
 ### Option 2: make action execution an explicit RX stage
 - RX owns: `ActionExecutor`
-- systems produce `Signal::Action`; RX executes actions in a dedicated phase
+- systems produce `SignalValue::Action(ActionSignal::Action(_))`; RX executes actions in a dedicated phase
 
 Pros:
 - extremely clear pipeline: produce signals → execute → emit facts → dispatch
@@ -224,7 +229,7 @@ Cons:
 ### Middle ground
 Keep `ActionSystem` where it is, but treat it as an “executor” invoked by RX:
 
-- a helper that drains `Signal::Action` envelopes, executes them, then proceeds to “fact” dispatch
+- a helper that drains action signals, executes them, then proceeds to “fact” dispatch
 
 This makes the pipeline explicit without relocating all code.
 

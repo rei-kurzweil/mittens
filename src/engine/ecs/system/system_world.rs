@@ -9,7 +9,7 @@ use crate::engine::ecs::system::InputSystem;
 use crate::engine::ecs::system::LightSystem;
 use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::OpenXRSystem;
-use crate::engine::ecs::system::KinematicResponseSystem;
+use crate::engine::ecs::system::KineticResponseSystem;
 use crate::engine::ecs::system::RayCastSystem;
 use crate::engine::ecs::system::RenderableSystem;
 use crate::engine::ecs::system::SkinnedMeshSystem;
@@ -36,7 +36,7 @@ pub struct SystemWorld {
     pub transform: TransformSystem,
     pub bvh: BvhSystem,
     pub collision: CollisionSystem,
-    pub kinematic_response: KinematicResponseSystem,
+    pub kinetic_response: KineticResponseSystem,
     pub skinned_mesh: SkinnedMeshSystem,
     pub renderable: RenderableSystem,
 
@@ -219,25 +219,25 @@ impl SystemWorld {
         self.collision.register_collision(world, visuals, component);
     }
 
-    /// Register a KinematicResponseComponent instance with the KinematicResponseSystem.
-    pub fn register_kinematic_response(
+    /// Register a KineticResponseComponent instance with the KineticResponseSystem.
+    pub fn register_kinetic_response(
         &mut self,
-        _world: &mut World,
+        world: &mut World,
         _visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.kinematic_response
-            .register_kinematic_response(component);
+        self.kinetic_response
+            .register_kinetic_response(world, component);
     }
 
-    /// Remove a KinematicResponseComponent instance from the KinematicResponseSystem.
-    pub fn remove_kinematic_response(
+    /// Remove a KineticResponseComponent instance from the KineticResponseSystem.
+    pub fn remove_kinetic_response(
         &mut self,
         _world: &mut World,
         _visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.kinematic_response.remove_kinematic_response(component);
+        self.kinetic_response.remove_kinetic_response(component);
     }
 
     /// Remove a CollisionComponent instance from the CollisionSystem.
@@ -612,10 +612,10 @@ impl SystemWorld {
         self.collision
             .tick_with_rx(world, visuals, input, dt_sec, &mut self.rx);
 
-        // Default kinematic-vs-static collision response (opt-in via KinematicResponseComponent).
+        // Default kinematic-vs-static collision response (opt-in via KineticResponseComponent).
         // This may enqueue transform updates; flush them immediately so camera/OpenXR
         // consume resolved transforms this frame.
-        self.kinematic_response
+        self.kinetic_response
             .tick_with_queue(world, visuals, input, dt_sec, queue, &self.collision);
         queue.flush(world, self, visuals);
 

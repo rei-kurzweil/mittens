@@ -15,17 +15,17 @@ use cat_engine::engine::ecs;
 fn on_topology_change(
     _world: &mut ecs::World,
     _queue: &mut ecs::CommandQueue,
-    env: &ecs::SignalEnvelope,
+    signal: &ecs::Signal,
 ) {
-    match &env.signal {
-        ecs::Signal::ParentChanged {
+    match &signal.value {
+        ecs::SignalValue::Event(ecs::EventSignal::ParentChanged {
             child,
             old_parent,
             new_parent,
-        } => {
+        }) => {
             println!(
                 "parent changed: child={child:?} old={old_parent:?} new={new_parent:?} (scope={:?})",
-                env.scope
+                signal.scope
             );
         }
         _ => {}
@@ -73,7 +73,7 @@ Actions emit events only when it’s useful to observe or maintain derived state
 
 Currently emitted:
 
-- `Signal::ParentChanged`
+- `EventSignal::ParentChanged`
 
 Emitted from:
 
@@ -109,7 +109,7 @@ Internally, listeners are organized as:
 Conceptually:
 
 ```rust
-HashMap<SignalKind, HashMap<ComponentId, Vec<fn(&mut World, &mut CommandQueue, &SignalEnvelope)>>> 
+HashMap<SignalKind, HashMap<ComponentId, Vec<fn(&mut World, &mut CommandQueue, &Signal)>>> 
 ```
 
 (In code today this is `HashMap<SignalKind, HashMap<ComponentId, Vec<SignalHandler>>>`.)

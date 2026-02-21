@@ -52,10 +52,13 @@ fn ensure_emissive_on(
 fn ring_a_handler(
     world: &mut engine::ecs::World,
     queue: &mut engine::ecs::CommandQueue,
-    env: &engine::ecs::SignalEnvelope,
+    env: &engine::ecs::Signal,
 ) {
-    match &env.signal {
-        engine::ecs::Signal::RayIntersected { renderable, .. } => {
+    match &env.value {
+        engine::ecs::SignalValue::Event(engine::ecs::EventSignal::RayIntersected {
+            renderable,
+            ..
+        }) => {
             println!(
                 "[ring_a_handler] fired scope={:?} renderable={:?}",
                 env.scope, renderable
@@ -78,10 +81,13 @@ fn ring_a_handler(
 fn ring_b_handler(
     world: &mut engine::ecs::World,
     queue: &mut engine::ecs::CommandQueue,
-    env: &engine::ecs::SignalEnvelope,
+    env: &engine::ecs::Signal,
 ) {
-    match &env.signal {
-        engine::ecs::Signal::RayIntersected { renderable, .. } => {
+    match &env.value {
+        engine::ecs::SignalValue::Event(engine::ecs::EventSignal::RayIntersected {
+            renderable,
+            ..
+        }) => {
             println!(
                 "[ring_b_handler] fired scope={:?} renderable={:?}",
                 env.scope, renderable
@@ -386,6 +392,5 @@ fn main() {
         &mut universe.command_queue,
     );
 
-    let user_input = engine::user_input::UserInput::new();
-    engine::Windowing::run_app(universe, user_input).expect("Windowing failed");
+    engine::Windowing::run_app(universe).expect("Windowing failed");
 }

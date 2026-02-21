@@ -1,6 +1,6 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
-use crate::engine::ecs::{RxWorld, Signal};
+use crate::engine::ecs::{EventSignal, RxWorld};
 use crate::engine::ecs::component::{
     ColorComponent, RayCastComponent, RayCastMode, RaycastableComponent, RenderableComponent,
 };
@@ -888,7 +888,7 @@ impl RayCastSystem {
                     // subscribe at any ancestor (e.g. a ring root transform).
                     rx.push(
                         hit_cid,
-                        Signal::RayIntersected {
+                        EventSignal::RayIntersected {
                             raycaster: rcid,
                             renderable: hit_cid,
                             t,

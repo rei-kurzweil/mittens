@@ -1,6 +1,6 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::RxWorld;
-use crate::engine::ecs::Signal;
+use crate::engine::ecs::EventSignal;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     CollisionComponent, CollisionShapeComponent, RenderableComponent,
@@ -93,6 +93,7 @@ pub struct CollisionSystem {
     known: HashSet<ComponentId>,
 
     active_pairs: HashSet<(ComponentId, ComponentId)>,
+    active_pair_deltas: HashMap<(ComponentId, ComponentId), [f32; 3]>,
 }
 
 impl CollisionSystem {
@@ -105,6 +106,22 @@ impl CollisionSystem {
     /// Note: this is updated when `tick_with_rx` drains worker messages.
     pub fn active_pairs_snapshot(&self) -> Vec<(ComponentId, ComponentId)> {
         self.active_pairs.iter().copied().collect()
+    }
+
+    /// Snapshot of active overlap pairs with `delta = pos(b) - pos(a)` in world space.
+    pub fn active_pairs_with_delta_snapshot(&self) -> Vec<(ComponentId, ComponentId, [f32; 3])> {
+        self.active_pairs
+            .iter()
+            .copied()
+            .map(|(a, b)| {
+                let delta = self
+                    .active_pair_deltas
+                    .get(&(a, b))
+                    .copied()
+                    .unwrap_or([0.0, 0.0, 0.0]);
+                (a, b, delta)
+            })
+            .collect()
     }
 
     pub fn register_collision(
@@ -277,7 +294,7 @@ impl System for CollisionSystem {
 impl CollisionSystem {
     pub fn tick_with_rx(
         &mut self,
-        _world: &mut World,
+        world: &mut World,
         _visuals: &mut VisualWorld,
         _input: &InputState,
         _dt_sec: f32,
@@ -291,6 +308,7 @@ impl CollisionSystem {
 
         // Drain worker -> current overlap set.
         let mut current_pairs: HashSet<(ComponentId, ComponentId)> = HashSet::new();
+        let mut current_deltas: HashMap<(ComponentId, ComponentId), [f32; 3]> = HashMap::new();
         if let Some(from_worker) = self.from_worker.as_ref() {
             while let Ok(msg) = from_worker.try_recv() {
                 let CollisionMessage::CollisionDetected {
@@ -314,23 +332,42 @@ impl CollisionSystem {
                     (b_component, a_component)
                 };
                 if lo != hi {
-                    current_pairs.insert((lo, hi));
+                    if current_pairs.insert((lo, hi)) {
+                        let a_pos = TransformSystem::world_position(world, lo)
+                            .unwrap_or([0.0, 0.0, 0.0]);
+                        let b_pos = TransformSystem::world_position(world, hi)
+                            .unwrap_or([0.0, 0.0, 0.0]);
+                        current_deltas.insert(
+                            (lo, hi),
+                            [b_pos[0] - a_pos[0], b_pos[1] - a_pos[1], b_pos[2] - a_pos[2]],
+                        );
+                    }
                 }
             }
         }
 
         // Emit started/ended based on set diffs.
         for &(a, b) in current_pairs.difference(&self.active_pairs) {
-            rx.push(a, Signal::CollisionStarted { a, b });
-            rx.push(b, Signal::CollisionStarted { a, b });
+            let delta = current_deltas
+                .get(&(a, b))
+                .copied()
+                .unwrap_or([0.0, 0.0, 0.0]);
+            rx.push(a, EventSignal::CollisionStarted { a, b, delta });
+            rx.push(b, EventSignal::CollisionStarted { a, b, delta });
         }
 
         for &(a, b) in self.active_pairs.difference(&current_pairs) {
-            rx.push(a, Signal::CollisionEnded { a, b });
-            rx.push(b, Signal::CollisionEnded { a, b });
+            let delta = self
+                .active_pair_deltas
+                .get(&(a, b))
+                .copied()
+                .unwrap_or([0.0, 0.0, 0.0]);
+            rx.push(a, EventSignal::CollisionEnded { a, b, delta });
+            rx.push(b, EventSignal::CollisionEnded { a, b, delta });
         }
 
         self.active_pairs = current_pairs;
+        self.active_pair_deltas = current_deltas;
 
         let _ = tx.send(CollisionMessage::Tick);
     }

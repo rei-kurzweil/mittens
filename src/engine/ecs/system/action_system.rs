@@ -6,7 +6,7 @@ use crate::engine::ecs::component::{AudioBandPassFilterComponent, AudioLowPassFi
 use crate::engine::ecs::component::{MusicNote, MusicNoteComponent, NotePitch};
 use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::audio_system::AudioOp;
-use crate::engine::ecs::{CommandQueue, ComponentCodec, ComponentId, RxWorld, Signal, World};
+use crate::engine::ecs::{CommandQueue, ComponentCodec, ComponentId, EventSignal, RxWorld, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 use slotmap::KeyData;
@@ -51,35 +51,35 @@ impl ActionSystem {
         action: &Action,
     ) {
         match &action.method {
-                ActionMethod::Noop => {}
-                ActionMethod::Print => {
-                    let _msg = action.params.get(0).and_then(|v| v.as_str()).unwrap_or("");
-                    //println!("[ActionSystem] print targets={:?} msg={}", action.target, msg);
-                }
-                ActionMethod::SetColor => {
-                    let Some(rgba) = action.params.get(0).and_then(parse_rgba) else {
-                        println!(
-                            "[ActionSystem] set_color: missing/invalid rgba params={:?}",
-                            action.params
-                        );
-                        return;
-                    };
+            ActionMethod::Noop => {}
+            ActionMethod::Print => {
+                let _msg = action.params.get(0).and_then(|v| v.as_str()).unwrap_or("");
+                //println!("[ActionSystem] print targets={:?} msg={}", action.target, msg);
+            }
+            ActionMethod::SetColor => {
+                let Some(rgba) = action.params.get(0).and_then(parse_rgba) else {
+                    println!(
+                        "[ActionSystem] set_color: missing/invalid rgba params={:?}",
+                        action.params
+                    );
+                    return;
+                };
 
-                    let mut color_cids = Vec::new();
-                    for &target in action.target.iter() {
-                        collect_color_targets(world, target, &mut color_cids);
-                    }
-                    color_cids.sort();
-                    color_cids.dedup();
+                let mut color_cids = Vec::new();
+                for &target in action.target.iter() {
+                    collect_color_targets(world, target, &mut color_cids);
+                }
+                color_cids.sort();
 
-                    for color_cid in color_cids {
-                        if let Some(c) = world.get_component_by_id_as_mut::<ColorComponent>(color_cid) {
-                            c.rgba = rgba;
-                            queue.queue_register_color(color_cid);
-                        }
+                for color_cid in color_cids {
+                    if let Some(c) = world.get_component_by_id_as_mut::<ColorComponent>(color_cid)
+                    {
+                        c.rgba = rgba;
+                        queue.queue_register_color(color_cid);
                     }
                 }
-                ActionMethod::SetText => {
+            }
+            ActionMethod::SetText => {
                     let Some(text) = action.params.get(0).and_then(|v| v.as_str()) else {
                         println!(
                             "[ActionSystem] set_text: missing/invalid text params={:?}",
@@ -98,8 +98,8 @@ impl ActionSystem {
                     for text_cid in text_cids {
                         queue.queue_set_text(text_cid, text.to_string());
                     }
-                }
-                ActionMethod::SetPosition => {
+            }
+            ActionMethod::SetPosition => {
                     let Some(pos) = action.params.get(0).and_then(parse_vec3_f32) else {
                         println!(
                             "[ActionSystem] set_position: missing/invalid position params={:?}",
@@ -185,7 +185,7 @@ impl ActionSystem {
 
                         rx.push(
                             child,
-                            Signal::ParentChanged {
+                            EventSignal::ParentChanged {
                                 child,
                                 old_parent,
                                 new_parent: Some(parent),
@@ -247,7 +247,7 @@ impl ActionSystem {
 
                         rx.push(
                             new_root,
-                            Signal::ParentChanged {
+                            EventSignal::ParentChanged {
                                 child: new_root,
                                 old_parent: None,
                                 new_parent: Some(parent),
@@ -271,7 +271,7 @@ impl ActionSystem {
 
                     rx.push(
                         child,
-                        Signal::ParentChanged {
+                        EventSignal::ParentChanged {
                             child,
                             old_parent,
                             new_parent: None,
@@ -311,7 +311,7 @@ impl ActionSystem {
 
                     rx.push(
                         child,
-                        Signal::ParentChanged {
+                        EventSignal::ParentChanged {
                             child,
                             old_parent: Some(parent),
                             new_parent: None,
@@ -337,7 +337,7 @@ impl ActionSystem {
 
                         rx.push(
                             child,
-                            Signal::ParentChanged {
+                            EventSignal::ParentChanged {
                                 child,
                                 old_parent: Some(parent),
                                 new_parent: None,

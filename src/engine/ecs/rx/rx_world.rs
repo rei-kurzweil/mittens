@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::engine::ecs::{CommandQueue, ComponentId, World};
 
-use super::{SignalEnvelope, SignalHandler, SignalKind};
+use super::{Signal, SignalHandler, SignalKind, SignalValue};
 
 type HandlerFn = SignalHandler;
 
@@ -12,16 +12,19 @@ type HandlerFn = SignalHandler;
 /// handlers attached to `S` or any ancestor of `S` are invoked.
 #[derive(Debug, Default)]
 pub struct RxWorld {
-    signals: Vec<SignalEnvelope>,
+    signals: Vec<Signal>,
     handlers: HashMap<SignalKind, HashMap<ComponentId, Vec<HandlerFn>>>,
 }
 
 impl RxWorld {
-    pub fn push(&mut self, scope: ComponentId, signal: super::Signal) {
-        self.signals.push(SignalEnvelope { scope, signal });
+    pub fn push(&mut self, scope: ComponentId, value: impl Into<SignalValue>) {
+        self.signals.push(Signal {
+            scope,
+            value: value.into(),
+        });
     }
 
-    pub fn drain(&mut self) -> Vec<SignalEnvelope> {
+    pub fn drain(&mut self) -> Vec<Signal> {
         std::mem::take(&mut self.signals)
     }
 
@@ -65,9 +68,9 @@ impl RxWorld {
         &mut self,
         world: &mut World,
         queue: &mut CommandQueue,
-        env: &SignalEnvelope,
+        env: &Signal,
     ) {
-        let kind = env.signal.kind();
+        let kind = env.kind();
         let scope_chain = compute_scope_chain(world, env.scope);
         for scope in scope_chain {
             dispatch_kind(self, world, queue, SignalKind::Any, scope, env);
@@ -92,7 +95,7 @@ fn dispatch_kind(
     queue: &mut CommandQueue,
     kind: SignalKind,
     scope: ComponentId,
-    env: &SignalEnvelope,
+    env: &Signal,
 ) {
     let Some(by_scope) = rx.handlers.get(&kind) else {
         return;
