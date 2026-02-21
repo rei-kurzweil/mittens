@@ -116,9 +116,13 @@ void main() {
         }
 
         float ndotl = max(dot(N, L), 0.0);
-        float q = quantize(ndotl, mat.quant_steps);
 
-        out_rgb += base * q * lc * intensity * att;
+        vec3 add_color = base * lc * quantize(
+            ndotl * intensity * att,
+            mat.quant_steps       
+        );
+
+        out_rgb += add_color;
     }
 
     f_color = vec4(out_rgb, base_rgba.a);
