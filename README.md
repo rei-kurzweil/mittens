@@ -76,40 +76,26 @@ let guid = universe.world.get_component_record(instance_root).unwrap().guid;
 + displays data from VisualWorld through vulkan
 + TODO: make WgpuRenderer for web / webasm
 
-### Render phases (background + transparency)
+### Transparency / Opacity
 
-See `docs/render-phases.md` for the canonical up-to-date phase list and pipeline notes.
+The renderer uses a 3-phase transparency model so we get decent performance for "simple" transparency, but still have a correct path for stacked transparency.
 
-The renderer uses a small set of **virtual draw phases** to balance batching with correctness.
+This is not multiple Vulkan "render passes" (we use dynamic rendering). It’s a single rendering scope where we record draw commands in three phases, switching pipelines/state between phases:
 
-This is not multiple Vulkan `RenderPass` objects (we use dynamic rendering). It’s a single rendering scope where we record draw commands in phases, switching pipelines/state between phases (see `src/engine/graphics/vulkano_renderer.rs` + `src/engine/graphics/vulkano_cbb.rs`).
-
-1. **Background phase** (instanced)
-  + For `BackgroundComponent` descendants.
-  + Depth test: ON
-  + Depth write: OFF (background never occludes foreground)
-2. **Background occluded+lit phase** (instanced)
-  + For `BackgroundComponent::with_occlusion_and_lighting()` descendants.
-  + Depth test: ON
-  + Depth write: ON (so background geometry self-occludes)
-3. **Foreground depth clear**
-  + Clears depth after background so it never occludes the main scene.
-4. **Opaque phase** (instanced)
+1. **Opaque phase** (instanced)
   + Depth test: ON
   + Depth write: ON
   + Batching/instancing: YES
-5. **Cutout phase** (instanced, optional)
-  + For `TransparentCutoutComponent` (alpha-to-coverage style cutout).
-6. **Transparent single-layer phase** (instanced)
+2. **Transparent single-layer phase** (instanced)
   + Depth test: ON
   + Depth write: OFF (so later transparent layers can still blend)
   + Batching/instancing: YES (fast)
-7. **Transparent multi-layer phase** (sorted)
+3. **Transparent multi-layer phase** (sorted)
   + Depth test: ON
   + Depth write: OFF
   + Batching: grouped by (material, mesh, texture), but **drawn one-by-one in back-to-front order** for correct blending
 
-Pipeline note: most phases have both `TOON_MESH` and `SKINNED_TOON_MESH` pipeline variants; the renderer selects the pipeline based on `MaterialHandle`.
+This is driven by `VisualWorld` building separate draw orders/caches, and `VulkanoRenderer` recording all three phases in `build_draw_batches_command_buffer`.
 
 # Components
 
