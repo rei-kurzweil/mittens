@@ -1,6 +1,6 @@
-use crate::engine::ecs::component::Component;
 use crate::engine::ecs::CommandQueue;
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::component::Component;
 
 #[derive(Debug, Clone, Default)]
 pub struct OpenXRComponent {

@@ -1,14 +1,15 @@
 pub mod command_queue;
 pub mod component;
 pub mod component_codec;
+pub mod rx;
 pub mod system;
 
 #[cfg(test)]
 mod world_graph_tests;
 
 use crate::engine::graphics::{RenderAssets, VisualWorld};
-use std::collections::HashMap;
 use slotmap::{SlotMap, new_key_type};
+use std::collections::HashMap;
 
 new_key_type! {
     /// Global component identity (dense arena key).
@@ -22,6 +23,7 @@ pub use crate::engine::graphics::primitives::{Renderable, Transform, TransformMa
 
 pub use command_queue::CommandQueue;
 pub use component_codec::ComponentCodec;
+pub use rx::{ActionSignal, EventSignal, RxWorld, Signal, SignalHandler, SignalKind, SignalValue};
 pub use system::{System, SystemWorld};
 
 /// Bundle of mutable engine state passed to component mutation APIs.
@@ -78,6 +80,21 @@ impl World {
             node.component.set_id(id);
         }
         id
+    }
+
+    /// Register a new component in the world and return its id.
+    ///
+    /// This is intentionally a storage/identity operation only: it does *not* call
+    /// `Component::init`.
+    pub fn register<T: crate::engine::ecs::component::Component>(&mut self, c: T) -> ComponentId {
+        self.add_component(c)
+    }
+
+    /// Whether this component has had `Component::init` invoked.
+    pub fn is_initialized(&self, c: ComponentId) -> bool {
+        self.get_component_record(c)
+            .map(|n| n.initialized)
+            .unwrap_or(false)
     }
 
     /// Add a new component to the world (no parent). Returns its global id.
@@ -372,15 +389,40 @@ impl World {
         root: ComponentId,
         queue: &mut crate::engine::ecs::CommandQueue,
     ) {
-        // Initialize the root component
-        if let Some(node) = self.get_component_record_mut(root) {
-            node.component.init(queue, root);
-        }
+        use std::collections::HashSet;
 
-        // Recursively initialize all children
-        let children: Vec<ComponentId> = self.children_of(root).to_vec();
-        for child in children {
-            self.init_component_tree(child, queue);
+        // Iterative traversal prevents stack overflows on large init expansions.
+        let mut stack: Vec<ComponentId> = vec![root];
+        let mut visited: HashSet<ComponentId> = HashSet::new();
+
+        // Log only a small number of cycle detections to avoid spam.
+        let mut cycle_logs_left: usize = 8;
+
+        while let Some(node_id) = stack.pop() {
+            if !visited.insert(node_id) {
+                if cycle_logs_left > 0 {
+                    cycle_logs_left -= 1;
+                    println!(
+                        "[World::init_component_tree] cycle/revisit detected at component={:?}",
+                        node_id
+                    );
+                }
+                continue;
+            }
+
+            // Initialize the component (idempotent).
+            if let Some(node) = self.get_component_record_mut(node_id) {
+                if !node.initialized {
+                    node.component.init(queue, node_id);
+                    node.initialized = true;
+                }
+            }
+
+            // Push children (reverse so first child is processed first in LIFO order).
+            let children: Vec<ComponentId> = self.children_of(node_id).to_vec();
+            for child in children.into_iter().rev() {
+                stack.push(child);
+            }
         }
     }
 }

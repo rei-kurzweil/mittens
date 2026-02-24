@@ -1,4 +1,4 @@
-use little_cat::{engine, example, utils};
+use cat_engine::{engine, example, utils};
 
 fn main() {
     utils::logger::init();
@@ -8,7 +8,11 @@ fn main() {
 
     example::build_demo_scene_7_shapes(&mut universe);
 
-    let user_input = engine::user_input::UserInput::new();
+    universe.systems.process_commands(
+        &mut universe.world,
+        &mut universe.visuals,
+        &mut universe.command_queue,
+    );
     universe.enable_repl();
-    engine::Windowing::run_app(universe, user_input).expect("Windowing failed");
+    engine::Windowing::run_app(universe).expect("Windowing failed");
 }

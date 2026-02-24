@@ -1,13 +1,87 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    ColorComponent, EmissiveComponent, RenderableComponent, TextComponent, TextureComponent,
+    EmissiveComponent, RenderableComponent, TextComponent, TextureComponent,
     TextureFilteringComponent, TransformComponent, UVComponent,
 };
 use crate::engine::graphics::VisualWorld;
 
 #[derive(Debug, Default)]
 pub struct TextSystem;
+
+#[derive(Debug, Clone, Copy)]
+struct WordWrapState {
+    col: usize,
+    row: usize,
+    line_count: usize,
+    last_wrap_allowed: bool,
+    wrap_at: usize,
+    word_wrap: bool,
+}
+
+impl WordWrapState {
+    const TAB_WIDTH: usize = 4;
+
+    fn new(wrap_at: usize, word_wrap: bool) -> Self {
+        Self {
+            col: 0,
+            row: 0,
+            line_count: 0,
+            last_wrap_allowed: false,
+            wrap_at,
+            word_wrap,
+        }
+    }
+
+    fn newline(&mut self) {
+        self.row += 1;
+        self.col = 0;
+        self.line_count = 0;
+        self.last_wrap_allowed = false;
+    }
+
+    fn apply_wrap_if_needed(&mut self) {
+        if self.wrap_at == 0 || self.line_count < self.wrap_at {
+            return;
+        }
+
+        // Word-wrap mode: only wrap if we previously encountered a wrap token.
+        // Otherwise keep going to avoid breaking words.
+        let should_wrap = if self.word_wrap {
+            self.last_wrap_allowed && self.col > 0
+        } else {
+            true
+        };
+
+        if should_wrap {
+            self.row += 1;
+            self.col = 0;
+            self.line_count = 0;
+        }
+    }
+
+    fn cursor_pos(&self) -> (f32, f32) {
+        (self.col as f32, -(self.row as f32))
+    }
+
+    fn advance_space(&mut self, i: usize, wrap_allowed_after: &[bool]) {
+        self.col += 1;
+        self.line_count += 1;
+        self.last_wrap_allowed = wrap_allowed_after.get(i).copied().unwrap_or(false);
+    }
+
+    fn advance_tab(&mut self, i: usize, wrap_allowed_after: &[bool]) {
+        self.col += Self::TAB_WIDTH;
+        self.line_count += Self::TAB_WIDTH;
+        self.last_wrap_allowed = wrap_allowed_after.get(i).copied().unwrap_or(false);
+    }
+
+    fn advance_glyph(&mut self, i: usize, wrap_allowed_after: &[bool]) {
+        self.col += 1;
+        self.line_count += 1;
+        self.last_wrap_allowed = wrap_allowed_after.get(i).copied().unwrap_or(false);
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct SpawnedGlyph {
@@ -18,6 +92,34 @@ pub struct SpawnedGlyph {
 }
 
 impl TextSystem {
+    fn handle_word_wrap_for(
+        ch: char,
+        i: usize,
+        wrap_allowed_after: &[bool],
+        state: &mut WordWrapState,
+    ) -> bool {
+        if ch == '\n' {
+            state.newline();
+            return false;
+        }
+
+        state.apply_wrap_if_needed();
+
+        // Huge perf win for code/text: don't spawn quads for whitespace.
+        // Still advance the cursor so words separate visually.
+        if ch == ' ' {
+            state.advance_space(i, wrap_allowed_after);
+            return false;
+        }
+
+        if ch == '\t' {
+            state.advance_tab(i, wrap_allowed_after);
+            return false;
+        }
+
+        true
+    }
+
     pub fn register_text(
         &mut self,
         world: &mut World,
@@ -33,40 +135,36 @@ impl TextSystem {
 
         let text = text_comp.text.clone();
         let wrap_at = text_comp.wrap_at;
+        let word_wrap = text_comp.word_wrap;
+        let word_wrap_tokens = text_comp.word_wrap_tokens.clone();
+
+        // Allow overriding the font atlas by attaching an immediate TextureComponent to the
+        // TextComponent root.
+        let inherited_font_texture_uri = world
+            .children_of(component)
+            .iter()
+            .find_map(|&ch| {
+                world
+                    .get_component_by_id_as::<TextureComponent>(ch)
+                    .and_then(|t| t.uri().map(|s| s.to_string()))
+            })
+            .unwrap_or_else(|| "assets/textures/font_system.dds".to_string());
 
         // If the TextComponent has an immediate TextureFilteringComponent child,
         // propagate it to all glyph renderables we spawn.
-        let inherited_filtering = world
-            .children_of(component)
-            .iter()
-            .find_map(|&ch| {
-                world
-                    .get_component_by_id_as::<TextureFilteringComponent>(ch)
-                    .map(|c| c.filtering)
-            });
+        let inherited_filtering = world.children_of(component).iter().find_map(|&ch| {
+            world
+                .get_component_by_id_as::<TextureFilteringComponent>(ch)
+                .map(|c| c.filtering)
+        });
 
-        // Also allow styling at the TextComponent root: immediate Color/Emissive children.
-        let inherited_color = world
-            .children_of(component)
-            .iter()
-            .find_map(|&ch| world.get_component_by_id_as::<ColorComponent>(ch).map(|c| c.rgba));
-
-        let inherited_emissive = world
-            .children_of(component)
-            .iter()
-            .find_map(|&ch| {
-                world
-                    .get_component_by_id_as::<EmissiveComponent>(ch)
-                    .map(|e| e.enabled)
-            });
-
-        // Debug instrumentation: trace exactly what glyph subtrees get spawned.
-        // (logger is currently a placeholder, so use stdout.)
-        let debug_logs = std::env::var("LITTLE_CAT_TEXT_DEBUG")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-        let total_chars = text.chars().count();
-
+        // Also allow styling at the TextComponent root: immediate Emissive children.
+        // (Color is now inherited by renderables from ancestors; no per-glyph ColorComponent needed.)
+        let inherited_emissive = world.children_of(component).iter().find_map(|&ch| {
+            world
+                .get_component_by_id_as::<EmissiveComponent>(ch)
+                .map(|e| e.enabled)
+        });
 
         // Mark built immediately to avoid re-entrancy/double-build.
         if let Some(text_comp) = world.get_component_by_id_as_mut::<TextComponent>(component) {
@@ -75,43 +173,18 @@ impl TextSystem {
 
         let mut spawned = Vec::new();
 
-        let mut col: usize = 0;
-        let mut row: usize = 0;
-        let mut line_count: usize = 0;
+        let chars: Vec<char> = text.chars().collect();
+        let wrap_allowed_after: Vec<bool> = compute_wrap_allowed_after(&chars, &word_wrap_tokens);
 
-        let mut spawned_glyphs: usize = 0;
+        let mut wrap_state = WordWrapState::new(wrap_at, word_wrap);
 
-        for ch in text.chars() {
-            if ch == '\n' {
-                
-                row += 1;
-                col = 0;
-                line_count = 0;
+        for (i, ch) in chars.iter().copied().enumerate() {
+            if !Self::handle_word_wrap_for(ch, i, &wrap_allowed_after, &mut wrap_state) {
                 continue;
             }
 
-            // Huge perf win for code/text: don't spawn quads for whitespace.
-            // Still advance the cursor so words separate visually.
-            if ch == ' ' {
-                col += 1;
-                line_count += 1;
-                continue;
-            }
-            if ch == '\t' {
-                // Tab width: 4 spaces.
-                col += 4;
-                line_count += 4;
-                continue;
-            }
-
-            if wrap_at > 0 && line_count >= wrap_at {
-                
-                row += 1;
-                col = 0;
-                line_count = 0;
-            }
-
-            let t = TransformComponent::new().with_position(col as f32, -(row as f32), 0.0);
+            let (x, y) = wrap_state.cursor_pos();
+            let t = TransformComponent::new().with_position(x, y, 0.0);
             let t_id = world.add_component(t);
             let _ = world.add_child(component, t_id);
 
@@ -122,7 +195,9 @@ impl TextSystem {
             let uv_id = world.add_component(UVComponent { uvs });
             let _ = world.add_child(r_id, uv_id);
 
-            let tex_id = world.add_component(TextureComponent::with_uri("assets/textures/font.dds"));
+            let tex_id = world.add_component(TextureComponent::with_uri(
+                inherited_font_texture_uri.clone(),
+            ));
             let _ = world.add_child(r_id, tex_id);
 
             if let Some(filtering) = inherited_filtering {
@@ -130,17 +205,10 @@ impl TextSystem {
                 let _ = world.add_child(r_id, f_id);
             }
 
-            if let Some(rgba) = inherited_color {
-                let c_id = world.add_component(ColorComponent { rgba });
-                let _ = world.add_child(r_id, c_id);
-            }
-
             if let Some(enabled) = inherited_emissive {
                 let e_id = world.add_component(EmissiveComponent { enabled });
                 let _ = world.add_child(r_id, e_id);
             }
-
-            spawned_glyphs += 1;
 
             spawned.push(SpawnedGlyph {
                 transform: t_id,
@@ -149,19 +217,58 @@ impl TextSystem {
                 texture: tex_id,
             });
 
-            col += 1;
-            line_count += 1;
-        }
-
-        if debug_logs {
-            println!(
-                "[TextSystem] done: text_comp={:?} spawned_glyphs={} (total_chars={})",
-                component, spawned_glyphs, total_chars
-            );
+            wrap_state.advance_glyph(i, &wrap_allowed_after);
         }
 
         spawned
     }
+}
+
+fn compute_wrap_allowed_after(chars: &[char], tokens: &[String]) -> Vec<bool> {
+    let mut wrap_allowed_after: Vec<bool> = vec![false; chars.len()];
+
+    // Always treat space/tab as wrap opportunities.
+    for (i, &ch) in chars.iter().enumerate() {
+        if ch == ' ' || ch == '\t' {
+            wrap_allowed_after[i] = true;
+        }
+    }
+
+    for tok in tokens {
+        if tok.is_empty() {
+            continue;
+        }
+
+        // Skip whitespace here; already handled above.
+        if tok == " " || tok == "\t" {
+            continue;
+        }
+
+        let tok_chars: Vec<char> = tok.chars().collect();
+        if tok_chars.is_empty() {
+            continue;
+        }
+
+        if tok_chars.len() > chars.len() {
+            continue;
+        }
+
+        for start in 0..=(chars.len() - tok_chars.len()) {
+            let mut matched = true;
+            for (j, &tch) in tok_chars.iter().enumerate() {
+                if chars[start + j] != tch {
+                    matched = false;
+                    break;
+                }
+            }
+            if matched {
+                let end = start + tok_chars.len() - 1;
+                wrap_allowed_after[end] = true;
+            }
+        }
+    }
+
+    wrap_allowed_after
 }
 
 impl crate::engine::ecs::system::System for TextSystem {
@@ -176,103 +283,20 @@ impl crate::engine::ecs::system::System for TextSystem {
     }
 }
 
-fn glyph_index(mut ch: char) -> usize {
-    if ch.is_ascii_uppercase() {
-        ch = ch.to_ascii_lowercase();
-    }
-
-    match ch {
-        // a..h
-        'a' => 0,
-        'b' => 1,
-        'c' => 2,
-        'd' => 3,
-        'e' => 4,
-        'f' => 5,
-        'g' => 6,
-        'h' => 7,
-
-        // i..p
-        'i' => 8,
-        'j' => 9,
-        'k' => 10,
-        'l' => 11,
-        'm' => 12,
-        'n' => 13,
-        'o' => 14,
-        'p' => 15,
-
-        // q..x
-        'q' => 16,
-        'r' => 17,
-        's' => 18,
-        't' => 19,
-        'u' => 20,
-        'v' => 21,
-        'w' => 22,
-        'x' => 23,
-
-        // y z 0 1 2 3 4 5
-        'y' => 24,
-        'z' => 25,
-        '0' => 26,
-        '1' => 27,
-        '2' => 28,
-        '3' => 29,
-        '4' => 30,
-        '5' => 31,
-
-        // 6 7 8 9 0 ( ) ?
-        '6' => 32,
-        '7' => 33,
-        '8' => 34,
-        '9' => 35,
-        '(' => 37,
-        ')' => 38,
-        '?' => 39,
-
-        // [ ] { } < > _ #
-        '[' => 40,
-        ']' => 41,
-        '{' => 42,
-        '}' => 43,
-        '<' => 44,
-        '>' => 45,
-        '_' => 46,
-        '#' => 47,
-
-        // % + - * / \ = .
-        '%' => 48,
-        '+' => 49,
-        '-' => 50,
-        '*' => 51,
-        '/' => 52,
-        '\\' => 53,
-        '=' => 54,
-        '.' => 55,
-
-        // , : ; ' " ! @ &
-        ',' => 56,
-        ':' => 57,
-        ';' => 58,
-        '\'' => 59,
-        '"' => 60,
-        '!' => 61,
-        '@' => 62,
-        '&' => 63,
-
-        // Fallback
-        _ => 39, // '?'
-    }
-}
-
 fn uvs_for_glyph(ch: char) -> Vec<[f32; 2]> {
-    const COLS: f32 = 8.0;
-    const ROWS: f32 = 8.0;
+    const COLS: f32 = 16.0;
+    const ROWS: f32 = 16.0;
 
-    let idx = glyph_index(ch);
-    let row = (idx / 8) as f32;
-    let col = (idx % 8) as f32;
+    // Atlas layout is ASCII-order in a 16x16 grid:
+    // row = ascii_code / 16, col = ascii_code % 16
+    // e.g. '!': 33 => row 2, col 1 (with the two initial blank/control rows).
+    let code: u8 = if ch.is_ascii() {
+        ch as u8
+    } else {
+        b'?' // fallback
+    };
+    let row = (code / 16) as f32;
+    let col = (code % 16) as f32;
 
     let u0 = col / COLS;
     let u1 = (col + 1.0) / COLS;

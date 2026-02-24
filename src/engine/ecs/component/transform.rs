@@ -42,6 +42,12 @@ impl TransformComponent {
         self
     }
 
+    /// Builder-style: set rotation from a quaternion (xyzw), returns Self.
+    pub fn with_rotation_quat(mut self, quat_xyzw: [f32; 4]) -> Self {
+        self.set_rotation_quat_internal(quat_xyzw);
+        self
+    }
+
     /// Private helper: computes and sets quaternion from euler angles, then recomputes model.
     fn set_rotation_euler_internal(&mut self, pitch_x: f32, yaw_y: f32, roll_z: f32) {
         // Minimal Euler->quat (XYZ intrinsic) implementation.
@@ -71,6 +77,12 @@ impl TransformComponent {
         self.recompute_model();
     }
 
+    /// Private helper: sets quaternion directly, then recomputes model.
+    fn set_rotation_quat_internal(&mut self, quat_xyzw: [f32; 4]) {
+        self.transform.rotation = quat_xyzw;
+        self.recompute_model();
+    }
+
     /// Set rotation from Euler angles (radians), XYZ order, and queue update.
     pub fn set_rotation_euler(
         &mut self,
@@ -80,6 +92,16 @@ impl TransformComponent {
         roll_z: f32,
     ) {
         self.set_rotation_euler_internal(pitch_x, yaw_y, roll_z);
+
+        let Some(cid) = self.component else {
+            return;
+        };
+        queue.queue_update_transform(cid, self.transform);
+    }
+
+    /// Set rotation from a quaternion (xyzw) and queue update.
+    pub fn set_rotation_quat(&mut self, queue: &mut CommandQueue, quat_xyzw: [f32; 4]) {
+        self.set_rotation_quat_internal(quat_xyzw);
 
         let Some(cid) = self.component else {
             return;

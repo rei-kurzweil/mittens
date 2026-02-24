@@ -1,8 +1,10 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
 use crate::engine::graphics::mesh::MeshFactory;
+use crate::engine::graphics::primitives::{
+    CpuMeshHandle, InstanceHandle, MaterialHandle, Renderable,
+};
 use crate::engine::graphics::render_assets::RenderAssets;
-use crate::engine::graphics::primitives::{CpuMeshHandle, InstanceHandle, MaterialHandle, Renderable};
 
 /// Renderable component.
 #[derive(Debug, Clone)]
@@ -24,10 +26,7 @@ impl RenderableComponent {
         }
     }
 
-    pub fn from_cpu_mesh_handle(
-        h: CpuMeshHandle,
-        material: MaterialHandle,
-    ) -> Self {
+    pub fn from_cpu_mesh_handle(h: CpuMeshHandle, material: MaterialHandle) -> Self {
         Self::new(Renderable::new(h, material))
     }
 
@@ -118,11 +117,19 @@ impl Component for RenderableComponent {
         queue.queue_register_renderable(component);
     }
 
+    fn cleanup(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
+        queue.queue_remove_renderable(component);
+    }
+
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
         let mut map = std::collections::HashMap::new();
         map.insert(
             "mesh".to_string(),
             serde_json::json!(self.renderable.mesh.0),
+        );
+        map.insert(
+            "base_mesh".to_string(),
+            serde_json::json!(self.renderable.base_mesh.0),
         );
         map.insert(
             "material".to_string(),
@@ -139,6 +146,15 @@ impl Component for RenderableComponent {
             let mesh_id: u32 = serde_json::from_value(mesh.clone())
                 .map_err(|e| format!("Failed to decode mesh: {}", e))?;
             self.renderable.mesh = crate::engine::graphics::primitives::CpuMeshHandle(mesh_id);
+        }
+        if let Some(base_mesh) = data.get("base_mesh") {
+            let base_mesh_id: u32 = serde_json::from_value(base_mesh.clone())
+                .map_err(|e| format!("Failed to decode base_mesh: {}", e))?;
+            self.renderable.base_mesh =
+                crate::engine::graphics::primitives::CpuMeshHandle(base_mesh_id);
+        } else {
+            // Back-compat: older scenes/components only stored `mesh`.
+            self.renderable.base_mesh = self.renderable.mesh;
         }
         if let Some(material) = data.get("material") {
             let material_id: u32 = serde_json::from_value(material.clone())

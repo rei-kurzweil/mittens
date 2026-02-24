@@ -1,7 +1,7 @@
+use crate::engine::ecs::component::texture::TextureSource;
 use crate::engine::ecs::component::{
     CatEngineTextureFormat, RenderableComponent, TextureComponent, TextureFilteringComponent,
 };
-use crate::engine::ecs::component::texture::TextureSource;
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::{TextureFiltering, TextureHandle, TextureUploader, VisualWorld};
 use std::collections::HashMap;
@@ -258,8 +258,7 @@ impl TextureSystem {
                     };
 
                     let handle = match record.format {
-                        CatEngineTextureFormat::DdsBc7 => {
-                        match decode_dds_bc7(&bytes) {
+                        CatEngineTextureFormat::DdsBc7 => match decode_dds_bc7(&bytes) {
                             Ok(decoded) => match uploader.upload_texture_bc7(
                                 &decoded.bc7_blocks,
                                 decoded.width,
@@ -268,7 +267,10 @@ impl TextureSystem {
                             ) {
                                 Ok(h) => h,
                                 Err(e) => {
-                                    println!("[TextureSystem] BC7 upload failed for '{uri}': {:?}", e);
+                                    println!(
+                                        "[TextureSystem] BC7 upload failed for '{uri}': {:?}",
+                                        e
+                                    );
                                     let _ = self.pending_attach.remove(&renderable_cid);
                                     continue;
                                 }
@@ -278,29 +280,28 @@ impl TextureSystem {
                                 let _ = self.pending_attach.remove(&renderable_cid);
                                 continue;
                             }
-                        }
-                        }
+                        },
                         CatEngineTextureFormat::Rgba8 => {
-                        let dyn_img = match image::load_from_memory(&bytes) {
-                            Ok(i) => i,
-                            Err(e) => {
-                                println!("[TextureSystem] decode failed for '{uri}': {:?}", e);
-                                let _ = self.pending_attach.remove(&renderable_cid);
-                                continue;
-                            }
-                        };
+                            let dyn_img = match image::load_from_memory(&bytes) {
+                                Ok(i) => i,
+                                Err(e) => {
+                                    println!("[TextureSystem] decode failed for '{uri}': {:?}", e);
+                                    let _ = self.pending_attach.remove(&renderable_cid);
+                                    continue;
+                                }
+                            };
 
-                        let rgba = dyn_img.to_rgba8();
-                        let (w, h) = rgba.dimensions();
+                            let rgba = dyn_img.to_rgba8();
+                            let (w, h) = rgba.dimensions();
 
-                        match uploader.upload_texture_rgba8(rgba.as_raw(), w, h) {
-                            Ok(h) => h,
-                            Err(e) => {
-                                println!("[TextureSystem] upload failed for '{uri}': {:?}", e);
-                                let _ = self.pending_attach.remove(&renderable_cid);
-                                continue;
+                            match uploader.upload_texture_rgba8(rgba.as_raw(), w, h) {
+                                Ok(h) => h,
+                                Err(e) => {
+                                    println!("[TextureSystem] upload failed for '{uri}': {:?}", e);
+                                    let _ = self.pending_attach.remove(&renderable_cid);
+                                    continue;
+                                }
                             }
-                        }
                         }
                     };
 

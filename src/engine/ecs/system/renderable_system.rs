@@ -1,6 +1,9 @@
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::{ColorComponent, EmissiveComponent, MeshComponent, RenderableComponent, UVComponent};
 use crate::engine::ecs::component::BackgroundColorComponent;
+use crate::engine::ecs::component::{
+    BackgroundComponent, ColorComponent, EmissiveComponent, LightQuantizationComponent,
+    MeshComponent, OpacityComponent, RenderableComponent, TransparentCutoutComponent, UVComponent,
+};
 
 use crate::engine::ecs::World;
 use crate::engine::ecs::system::System;
@@ -9,7 +12,8 @@ use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Transfo
 use crate::engine::graphics::{GpuRenderable, VisualWorld};
 use crate::engine::graphics::{MeshUploader, RenderAssets};
 use crate::engine::user_input::InputState;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// System that registers/updates renderables in the `VisualWorld`.
 ///
@@ -44,10 +48,40 @@ pub struct RenderableSystem {
     /// Keyed by the RenderableComponent's ComponentId.
     pending_color: HashMap<ComponentId, [f32; 4]>,
 
+    /// Per-instance opacity multiplier for a renderable.
+    ///
+    /// Keyed by the RenderableComponent's ComponentId.
+    pending_opacity: HashMap<ComponentId, PendingOpacity>,
+
+    /// Whether a renderable should be routed into the transparent cutout pass.
+    ///
+    /// Keyed by the RenderableComponent's ComponentId.
+    pending_cutout: HashMap<ComponentId, bool>,
+
     /// Per-instance emissive/unlit override for a renderable.
     ///
     /// Keyed by the RenderableComponent's ComponentId.
     pending_emissive: HashMap<ComponentId, u32>,
+
+    /// Per-renderable toon light quantization steps.
+    ///
+    /// Keyed by the RenderableComponent's ComponentId.
+    pending_quant_steps: HashMap<ComponentId, f32>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PendingOpacity {
+    opacity: f32,
+    multiple_layers: bool,
+}
+
+impl Default for PendingOpacity {
+    fn default() -> Self {
+        Self {
+            opacity: 1.0,
+            multiple_layers: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -85,6 +119,107 @@ fn clone_mesh_with_uv_overrides(
 }
 
 impl RenderableSystem {
+    fn inherited_background_for_renderable(
+        world: &World,
+        renderable_cid: ComponentId,
+    ) -> (bool, bool) {
+        // Nearest BackgroundComponent ancestor wins.
+        // Returns: (is_background, occluded_lit)
+        let mut cur = renderable_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(bg) = world.get_component_by_id_as::<BackgroundComponent>(parent) {
+                return (true, bg.occlusion_and_lighting);
+            }
+            cur = parent;
+        }
+        (false, false)
+    }
+
+    fn immediate_color_child(world: &World, node: ComponentId) -> Option<[f32; 4]> {
+        world.children_of(node).iter().find_map(|&ch| {
+            world
+                .get_component_by_id_as::<ColorComponent>(ch)
+                .map(|c| c.rgba)
+        })
+    }
+
+    fn immediate_opacity_child(world: &World, node: ComponentId) -> Option<PendingOpacity> {
+        world.children_of(node).iter().find_map(|&ch| {
+            world
+                .get_component_by_id_as::<OpacityComponent>(ch)
+                .map(|o| PendingOpacity {
+                    opacity: o.opacity,
+                    multiple_layers: o.multiple_layers,
+                })
+        })
+    }
+
+    fn immediate_cutout_child(world: &World, node: ComponentId) -> Option<bool> {
+        world.children_of(node).iter().find_map(|&ch| {
+            world
+                .get_component_by_id_as::<TransparentCutoutComponent>(ch)
+                .map(|c| c.enabled)
+        })
+    }
+
+    fn inherited_color_for_renderable(
+        world: &World,
+        renderable_cid: ComponentId,
+    ) -> Option<[f32; 4]> {
+        // Explicit per-renderable override wins.
+        if let Some(rgba) = Self::immediate_color_child(world, renderable_cid) {
+            return Some(rgba);
+        }
+
+        // Otherwise, walk up the ancestry and look for a ColorComponent attached to any ancestor
+        // node (e.g., TextComponent root).
+        let mut cur = renderable_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(rgba) = Self::immediate_color_child(world, parent) {
+                return Some(rgba);
+            }
+            cur = parent;
+        }
+        None
+    }
+
+    fn inherited_opacity_for_renderable(
+        world: &World,
+        renderable_cid: ComponentId,
+    ) -> Option<PendingOpacity> {
+        // Explicit per-renderable override wins.
+        if let Some(o) = Self::immediate_opacity_child(world, renderable_cid) {
+            return Some(o);
+        }
+
+        // Otherwise, walk up ancestry and look for an OpacityComponent attached to any ancestor.
+        let mut cur = renderable_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(o) = Self::immediate_opacity_child(world, parent) {
+                return Some(o);
+            }
+            cur = parent;
+        }
+        None
+    }
+
+    fn inherited_cutout_for_renderable(world: &World, renderable_cid: ComponentId) -> Option<bool> {
+        // Explicit per-renderable override wins.
+        if let Some(v) = Self::immediate_cutout_child(world, renderable_cid) {
+            return Some(v);
+        }
+
+        // Otherwise, walk up ancestry and look for a TransparentCutoutComponent attached under any ancestor.
+        let mut cur = renderable_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(v) = Self::immediate_cutout_child(world, parent) {
+                return Some(v);
+            }
+            cur = parent;
+        }
+        None
+    }
+
     fn clone_mesh_with_uv_overrides_cached(
         &mut self,
         render_assets: &mut RenderAssets,
@@ -129,7 +264,6 @@ impl RenderableSystem {
                 let _ = self.pending_emissive.remove(&renderable_cid);
                 continue;
             };
-
             let Some(handle) = renderable_comp.get_handle() else {
                 continue;
             };
@@ -140,6 +274,33 @@ impl RenderableSystem {
 
             let _ = visuals.update_emissive(handle, emissive);
             let _ = self.pending_emissive.remove(&renderable_cid);
+        }
+    }
+
+    fn apply_pending_quant_updates_to_registered_renderables(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+    ) {
+        let keys: Vec<ComponentId> = self.pending_quant_steps.keys().copied().collect();
+        for renderable_cid in keys {
+            let Some(renderable_comp) =
+                world.get_component_by_id_as::<RenderableComponent>(renderable_cid)
+            else {
+                let _ = self.pending_quant_steps.remove(&renderable_cid);
+                continue;
+            };
+
+            let Some(handle) = renderable_comp.get_handle() else {
+                continue;
+            };
+
+            let Some(quant_steps) = self.pending_quant_steps.get(&renderable_cid).copied() else {
+                continue;
+            };
+
+            let _ = visuals.update_quant_steps(handle, quant_steps);
+            let _ = self.pending_quant_steps.remove(&renderable_cid);
         }
     }
 
@@ -167,6 +328,62 @@ impl RenderableSystem {
 
             let _ = visuals.update_color(handle, color);
             let _ = self.pending_color.remove(&renderable_cid);
+        }
+    }
+
+    fn apply_pending_opacity_updates_to_registered_renderables(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+    ) {
+        let keys: Vec<ComponentId> = self.pending_opacity.keys().copied().collect();
+        for renderable_cid in keys {
+            let Some(renderable_comp) =
+                world.get_component_by_id_as::<RenderableComponent>(renderable_cid)
+            else {
+                let _ = self.pending_opacity.remove(&renderable_cid);
+                continue;
+            };
+
+            let Some(handle) = renderable_comp.get_handle() else {
+                // Still pending; will be handled by the pending flush.
+                continue;
+            };
+
+            let Some(pending) = self.pending_opacity.get(&renderable_cid).copied() else {
+                continue;
+            };
+
+            let _ = visuals.update_opacity_state(handle, pending.opacity, pending.multiple_layers);
+            let _ = self.pending_opacity.remove(&renderable_cid);
+        }
+    }
+
+    fn apply_pending_cutout_updates_to_registered_renderables(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+    ) {
+        let keys: Vec<ComponentId> = self.pending_cutout.keys().copied().collect();
+        for renderable_cid in keys {
+            let Some(renderable_comp) =
+                world.get_component_by_id_as::<RenderableComponent>(renderable_cid)
+            else {
+                let _ = self.pending_cutout.remove(&renderable_cid);
+                continue;
+            };
+
+            let Some(handle) = renderable_comp.get_handle() else {
+                // Still pending; will be handled by the pending flush.
+                continue;
+            };
+
+            let Some(enabled) = self.pending_cutout.get(&renderable_cid).copied() else {
+                continue;
+            };
+
+            let _ = visuals.update_transparent_cutout(handle, enabled);
+            let _ = self.pending_cutout.remove(&renderable_cid);
         }
     }
 
@@ -206,13 +423,7 @@ impl RenderableSystem {
 
             let mesh = match render_assets.gpu_mesh_handle(uploader, new_mesh) {
                 Ok(h) => h,
-                Err(err) => {
-                    println!(
-                        "[RenderableSystem]  -> gpu_mesh_handle failed for cpu_mesh={:?}: {:?}",
-                        new_mesh, err
-                    );
-                    continue;
-                }
+                Err(_err) => continue,
             };
 
             let Some(model) = TransformSystem::world_model(world, renderable_cid) else {
@@ -259,11 +470,219 @@ impl RenderableSystem {
             }
             cur = parent;
         }
+
+        // Normal case: ColorComponent is attached under a RenderableComponent.
+        if let Some(renderable_cid) = renderable_cid {
+            self.pending_color.insert(renderable_cid, color_comp.rgba);
+            return;
+        }
+
+        // Inheritance case: ColorComponent is attached above renderables (e.g., on TextComponent).
+        // Apply it to descendant renderables that do NOT have an explicit per-renderable ColorComponent.
+        let mut q = VecDeque::new();
+        q.push_back(component);
+
+        while let Some(node) = q.pop_front() {
+            for &ch in world.children_of(node).iter() {
+                q.push_back(ch);
+            }
+
+            if world
+                .get_component_by_id_as::<RenderableComponent>(node)
+                .is_none()
+            {
+                continue;
+            }
+
+            // Don't clobber explicit per-renderable overrides.
+            if Self::immediate_color_child(world, node).is_some() {
+                continue;
+            }
+
+            self.pending_color.insert(node, color_comp.rgba);
+        }
+    }
+
+    pub fn register_opacity(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let Some(opacity_comp) = world.get_component_by_id_as::<OpacityComponent>(component) else {
+            return;
+        };
+
+        let pending = PendingOpacity {
+            opacity: opacity_comp.opacity,
+            multiple_layers: opacity_comp.multiple_layers,
+        };
+
+        // Find the ancestor RenderableComponent that this OpacityComponent should apply to.
+        let mut cur = component;
+        let mut renderable_cid: Option<ComponentId> = None;
+        while let Some(parent) = world.parent_of(cur) {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(parent)
+                .is_some()
+            {
+                renderable_cid = Some(parent);
+                break;
+            }
+            cur = parent;
+        }
+
+        // Normal case: OpacityComponent is attached under a RenderableComponent.
+        if let Some(renderable_cid) = renderable_cid {
+            self.pending_opacity.insert(renderable_cid, pending);
+            return;
+        }
+
+        // Inheritance case: OpacityComponent is attached above renderables (e.g., on TextComponent).
+        // Apply it to descendant renderables that do NOT have an explicit per-renderable OpacityComponent.
+        let mut q = VecDeque::new();
+        q.push_back(component);
+
+        while let Some(node) = q.pop_front() {
+            for &ch in world.children_of(node).iter() {
+                q.push_back(ch);
+            }
+
+            if world
+                .get_component_by_id_as::<RenderableComponent>(node)
+                .is_none()
+            {
+                continue;
+            }
+
+            // Don't clobber explicit per-renderable overrides.
+            if Self::immediate_opacity_child(world, node).is_some() {
+                continue;
+            }
+
+            self.pending_opacity.insert(node, pending);
+        }
+    }
+
+    pub fn register_transparent_cutout(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let Some(cutout_comp) =
+            world.get_component_by_id_as::<TransparentCutoutComponent>(component)
+        else {
+            return;
+        };
+
+        let pending = cutout_comp.enabled;
+
+        // Find the ancestor RenderableComponent that this TransparentCutoutComponent should apply to.
+        let mut cur = component;
+        let mut renderable_cid: Option<ComponentId> = None;
+        while let Some(parent) = world.parent_of(cur) {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(parent)
+                .is_some()
+            {
+                renderable_cid = Some(parent);
+                break;
+            }
+            cur = parent;
+        }
+
+        // Normal case: TransparentCutoutComponent is attached under a RenderableComponent.
+        if let Some(renderable_cid) = renderable_cid {
+            self.pending_cutout.insert(renderable_cid, pending);
+
+            // If already registered, apply immediately.
+            if let Some(renderable_comp) =
+                world.get_component_by_id_as::<RenderableComponent>(renderable_cid)
+            {
+                if let Some(handle) = renderable_comp.get_handle() {
+                    let _ = visuals.update_transparent_cutout(handle, pending);
+                    let _ = self.pending_cutout.remove(&renderable_cid);
+                }
+            }
+
+            return;
+        }
+
+        // Inheritance case: TransparentCutoutComponent is attached above renderables (e.g., on TextComponent).
+        // Apply it to descendant renderables that do NOT have an explicit per-renderable TransparentCutoutComponent.
+        let mut q = VecDeque::new();
+        q.push_back(component);
+
+        while let Some(node) = q.pop_front() {
+            for &ch in world.children_of(node).iter() {
+                q.push_back(ch);
+            }
+
+            if world
+                .get_component_by_id_as::<RenderableComponent>(node)
+                .is_none()
+            {
+                continue;
+            }
+
+            // Don't clobber explicit per-renderable overrides.
+            if Self::immediate_cutout_child(world, node).is_some() {
+                continue;
+            }
+
+            self.pending_cutout.insert(node, pending);
+            if let Some(renderable_comp) = world.get_component_by_id_as::<RenderableComponent>(node)
+            {
+                if let Some(handle) = renderable_comp.get_handle() {
+                    let _ = visuals.update_transparent_cutout(handle, pending);
+                    let _ = self.pending_cutout.remove(&node);
+                }
+            }
+        }
+    }
+
+    pub fn register_light_quantization(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let Some(q_comp) = world.get_component_by_id_as::<LightQuantizationComponent>(component)
+        else {
+            return;
+        };
+
+        // Find the ancestor RenderableComponent that this quantization setting should apply to.
+        let mut cur = component;
+        let mut renderable_cid: Option<ComponentId> = None;
+        while let Some(parent) = world.parent_of(cur) {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(parent)
+                .is_some()
+            {
+                renderable_cid = Some(parent);
+                break;
+            }
+            cur = parent;
+        }
+
         let Some(renderable_cid) = renderable_cid else {
             return;
         };
 
-        self.pending_color.insert(renderable_cid, color_comp.rgba);
+        self.pending_quant_steps
+            .insert(renderable_cid, q_comp.quant_steps);
+
+        // If already registered, apply immediately.
+        if let Some(renderable_comp) =
+            world.get_component_by_id_as::<RenderableComponent>(renderable_cid)
+        {
+            if let Some(handle) = renderable_comp.get_handle() {
+                let _ = visuals.update_quant_steps(handle, q_comp.quant_steps);
+                let _ = self.pending_quant_steps.remove(&renderable_cid);
+            }
+        }
     }
 
     pub fn register_emissive(
@@ -359,6 +778,28 @@ impl RenderableSystem {
         self.register_renderable_from_world(world, visuals, component);
     }
 
+    pub fn remove_renderable(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.renderables.retain(|&c| c != component);
+
+        let _ = self.pending.remove(&component);
+        let _ = self.pending_uv.remove(&component);
+        let _ = self.pending_color.remove(&component);
+        let _ = self.pending_opacity.remove(&component);
+        let _ = self.pending_emissive.remove(&component);
+        let _ = self.pending_quant_steps.remove(&component);
+
+        if let Some(r) = world.get_component_by_id_as_mut::<RenderableComponent>(component) {
+            if let Some(handle) = r.handle.take() {
+                let _ = visuals.remove(handle);
+            }
+        }
+    }
+
     /// Register a renderable by walking the component graph in `World`.
     pub fn register_renderable_from_world(
         &mut self,
@@ -371,7 +812,6 @@ impl RenderableSystem {
             let Some(renderable_comp) =
                 world.get_component_by_id_as::<RenderableComponent>(component)
             else {
-                println!("[RenderableSystem]  -> component is not RenderableComponent somehow");
                 return;
             };
             if renderable_comp.get_handle().is_some() {
@@ -382,7 +822,6 @@ impl RenderableSystem {
         // Defer insertion into VisualWorld until the GPU mesh exists.
         let Some(renderable_comp) = world.get_component_by_id_as::<RenderableComponent>(component)
         else {
-            println!("[RenderableSystem]  -> component is not RenderableComponent somehow");
             return;
         };
 
@@ -390,7 +829,11 @@ impl RenderableSystem {
             .children_of(component)
             .iter()
             .copied()
-            .find_map(|cid| world.get_component_by_id_as::<MeshComponent>(cid).map(|m| m.key.clone()));
+            .find_map(|cid| {
+                world
+                    .get_component_by_id_as::<MeshComponent>(cid)
+                    .map(|m| m.key.clone())
+            });
 
         self.pending.insert(
             component,
@@ -401,12 +844,20 @@ impl RenderableSystem {
                 mesh_key,
             },
         );
-        println!(
-            "[RenderableSystem]  -> pending += 1 (pending_len={}) cpu_mesh={:?} material={:?}",
-            self.pending.len(),
-            renderable_comp.renderable.mesh,
-            renderable_comp.renderable.material
-        );
+
+        // Style inheritance: if this renderable doesn't have an explicit ColorComponent child,
+        // inherit the nearest ancestor ColorComponent's rgba.
+        if !self.pending_color.contains_key(&component) {
+            if let Some(rgba) = Self::inherited_color_for_renderable(world, component) {
+                self.pending_color.insert(component, rgba);
+            }
+        }
+
+        if !self.pending_opacity.contains_key(&component) {
+            if let Some(o) = Self::inherited_opacity_for_renderable(world, component) {
+                self.pending_opacity.insert(component, o);
+            }
+        }
 
         // Mark draw cache dirty only when we actually insert into visuals.
         let _ = visuals;
@@ -421,6 +872,20 @@ impl RenderableSystem {
         render_assets: &mut RenderAssets,
         uploader: &mut dyn MeshUploader,
     ) {
+        let parse_bool_env = |name: &str| {
+            std::env::var(name)
+                .ok()
+                .map(|s| {
+                    let s = s.trim().to_ascii_lowercase();
+                    s == "1" || s == "true" || s == "on" || s == "yes"
+                })
+                .unwrap_or(false)
+        };
+
+        let debug_mesh_stats = parse_bool_env("CAT_DEBUG_RENDERABLE_MESH_STATS");
+        let debug_mesh_stats_all = parse_bool_env("CAT_DEBUG_RENDERABLE_MESH_STATS_ALL");
+        static MESH_STATS_LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
+
         // println!(
         //     "[RenderableSystem] flush_pending: pending_len={} visuals.instances={} ",
         //     self.pending.len(),
@@ -448,6 +913,7 @@ impl RenderableSystem {
                     world.get_component_by_id_as_mut::<RenderableComponent>(p.renderable_cid)
                 {
                     renderable_comp.renderable.mesh = cpu_mesh;
+                    renderable_comp.renderable.base_mesh = cpu_mesh;
                 }
             }
 
@@ -455,6 +921,7 @@ impl RenderableSystem {
                 if let Some(new_mesh) =
                     self.clone_mesh_with_uv_overrides_cached(render_assets, cpu_mesh, &uvs)
                 {
+                    let uv_base_mesh = cpu_mesh;
                     cpu_mesh = new_mesh;
                     if let Some(pending) = self.pending.get_mut(&key) {
                         pending.cpu_mesh = cpu_mesh;
@@ -463,6 +930,7 @@ impl RenderableSystem {
                         world.get_component_by_id_as_mut::<RenderableComponent>(p.renderable_cid)
                     {
                         renderable_comp.renderable.mesh = cpu_mesh;
+                        renderable_comp.renderable.base_mesh = uv_base_mesh;
                     }
                 }
             }
@@ -470,14 +938,45 @@ impl RenderableSystem {
             // Upload/resolve GPU mesh.
             let mesh = match render_assets.gpu_mesh_handle(uploader, cpu_mesh) {
                 Ok(h) => h,
-                Err(err) => {
-                    println!(
-                        "[RenderableSystem]  -> gpu_mesh_handle failed for cpu_mesh={:?}: {:?}",
-                        cpu_mesh, err
-                    );
-                    continue;
-                }
+                Err(_err) => continue,
             };
+
+            if debug_mesh_stats {
+                let (vcount, icount, has_skin) = render_assets
+                    .cpu_mesh(cpu_mesh)
+                    .map(|m| {
+                        (
+                            m.vertices.len(),
+                            m.indices_u32.len(),
+                            m.joints0.is_some() && m.weights0.is_some(),
+                        )
+                    })
+                    .unwrap_or((0, 0, false));
+
+                let key_str = p.mesh_key.as_deref().unwrap_or("<no mesh_key>");
+                let should_log = debug_mesh_stats_all || key_str != "<no mesh_key>" || has_skin;
+
+                if should_log {
+                    let limit = std::env::var("CAT_DEBUG_RENDERABLE_MESH_STATS_LIMIT")
+                        .ok()
+                        .and_then(|s| s.trim().parse::<usize>().ok())
+                        .unwrap_or(50);
+                    let n = MESH_STATS_LOG_COUNT.fetch_add(1, Ordering::Relaxed);
+                    if n < limit {
+                        println!(
+                            "[RenderableSystem] renderable={:?} material={:?} mesh_key='{}' cpu_mesh={:?} gpu_mesh={:?} verts={} indices={} skinned_attrs={}",
+                            p.renderable_cid,
+                            p.material,
+                            key_str,
+                            cpu_mesh,
+                            mesh,
+                            vcount,
+                            icount,
+                            has_skin
+                        );
+                    }
+                }
+            }
 
             let gpu_r = GpuRenderable {
                 mesh,
@@ -504,13 +1003,52 @@ impl RenderableSystem {
                 .copied()
                 .unwrap_or([1.0, 1.0, 1.0, 1.0]);
 
+            let opacity = self
+                .pending_opacity
+                .get(&p.renderable_cid)
+                .copied()
+                .unwrap_or_default();
+
+            let transparent_cutout = self
+                .pending_cutout
+                .get(&p.renderable_cid)
+                .copied()
+                .or_else(|| Self::inherited_cutout_for_renderable(world, p.renderable_cid))
+                .unwrap_or(false);
+
             let emissive = self
                 .pending_emissive
                 .get(&p.renderable_cid)
                 .copied()
                 .unwrap_or(0);
 
-            let handle = visuals.register(p.renderable_cid, gpu_r, transform, color, emissive, None);
+            let quant_steps = self
+                .pending_quant_steps
+                .get(&p.renderable_cid)
+                .copied()
+                .unwrap_or_else(|| match p.material {
+                    MaterialHandle::TOON_MESH => 3.0,
+                    MaterialHandle::UNLIT_MESH => 1.0,
+                    _ => 3.0,
+                });
+
+            let (background, background_occluded_lit) =
+                Self::inherited_background_for_renderable(world, p.renderable_cid);
+
+            let handle = visuals.register(
+                p.renderable_cid,
+                gpu_r,
+                transform,
+                color,
+                opacity.opacity,
+                opacity.multiple_layers,
+                transparent_cutout,
+                background,
+                background_occluded_lit,
+                emissive,
+                None,
+                quant_steps,
+            );
             if let Some(renderable_comp) =
                 world.get_component_by_id_as_mut::<RenderableComponent>(p.renderable_cid)
             {
@@ -523,8 +1061,17 @@ impl RenderableSystem {
             // Color has now been applied.
             let _ = self.pending_color.remove(&p.renderable_cid);
 
+            // Opacity has now been applied.
+            let _ = self.pending_opacity.remove(&p.renderable_cid);
+
+            // Cutout has now been applied.
+            let _ = self.pending_cutout.remove(&p.renderable_cid);
+
             // Emissive has now been applied.
             let _ = self.pending_emissive.remove(&p.renderable_cid);
+
+            // Quant steps have now been applied.
+            let _ = self.pending_quant_steps.remove(&p.renderable_cid);
 
             // (If you log ComponentId in a format string, use {:?}.)
             self.pending.remove(&key);
@@ -537,7 +1084,10 @@ impl RenderableSystem {
             uploader,
         );
         self.apply_pending_color_updates_to_registered_renderables(world, visuals);
+        self.apply_pending_opacity_updates_to_registered_renderables(world, visuals);
+        self.apply_pending_cutout_updates_to_registered_renderables(world, visuals);
         self.apply_pending_emissive_updates_to_registered_renderables(world, visuals);
+        self.apply_pending_quant_updates_to_registered_renderables(world, visuals);
     }
 }
 

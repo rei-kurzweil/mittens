@@ -93,13 +93,31 @@ impl Transform {
 /// and uploads it to the renderer on demand.
 #[derive(Debug, Clone)]
 pub struct Renderable {
+    /// The mesh actually used for rendering.
     pub mesh: CpuMeshHandle,
+
+    /// The "base" mesh this renderable was derived from.
+    ///
+    /// For UV-baked variants (e.g. text glyphs), `mesh` is a dynamically-registered clone, while
+    /// `base_mesh` stays as the original (typically `CpuMeshHandle::QUAD_2D`).
+    ///
+    /// For normal renderables, `base_mesh == mesh`.
+    pub base_mesh: CpuMeshHandle,
     pub material: MaterialHandle,
 }
 
 impl Renderable {
     pub fn new(mesh: CpuMeshHandle, material: MaterialHandle) -> Self {
-        Self { mesh, material }
+        Self {
+            mesh,
+            base_mesh: mesh,
+            material,
+        }
+    }
+
+    pub fn with_base_mesh(mut self, base_mesh: CpuMeshHandle) -> Self {
+        self.base_mesh = base_mesh;
+        self
     }
 }
 
@@ -213,6 +231,12 @@ impl Material {
         vertex_shader: "assets/shaders/toon-mesh.vert",
         fragment_shader: "assets/shaders/toon-mesh.frag",
     };
+
+    /// Skinned toon material (uses a skinned vertex shader).
+    pub const SKINNED_TOON_MESH: Material = Material {
+        vertex_shader: "assets/shaders/skinned-toon-mesh.vert",
+        fragment_shader: "assets/shaders/toon-mesh.frag",
+    };
 }
 
 impl MaterialHandle {
@@ -221,4 +245,7 @@ impl MaterialHandle {
 
     /// Toon mesh material (see `Material::TOON_MESH`).
     pub const TOON_MESH: MaterialHandle = MaterialHandle(1);
+
+    /// Skinned toon mesh material (see `Material::SKINNED_TOON_MESH`).
+    pub const SKINNED_TOON_MESH: MaterialHandle = MaterialHandle(2);
 }

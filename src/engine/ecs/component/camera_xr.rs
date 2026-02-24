@@ -1,5 +1,5 @@
-use crate::engine::ecs::component::Component;
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::component::Component;
 use crate::engine::graphics::CameraTarget;
 
 #[derive(Debug, Clone, Copy)]
@@ -33,10 +33,7 @@ impl CameraXRComponent {
     }
 
     /// Ask the CameraSystem to make this the active XR camera rig.
-    pub fn make_active_camera(
-        &mut self,
-        queue: &mut crate::engine::ecs::CommandQueue,
-    ) {
+    pub fn make_active_camera(&mut self, queue: &mut crate::engine::ecs::CommandQueue) {
         if let Some(component) = self.component_id {
             queue.queue_make_active_camera(component);
         }

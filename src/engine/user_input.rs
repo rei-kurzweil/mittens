@@ -43,15 +43,13 @@ pub struct InputState {
 }
 
 impl InputState {
-    /// Clears per-frame transition state.
-    pub fn begin_frame(&mut self) {
-        self.keys_pressed.clear();
-        self.keys_released.clear();
-        self.mouse_pressed.clear();
-        self.mouse_released.clear();
-        self.wheel_delta = (0.0, 0.0);
-
-        // Update mouse movement delta
+    /// Called at the start of a render/update frame.
+    ///
+    /// Important: this does **not** clear edge-triggered sets (`pressed`/`released`).
+    /// Those are cleared at `end_frame` so events delivered before `RedrawRequested`
+    /// are still visible to systems during `Universe::update`.
+    pub fn start_frame(&mut self) {
+        // Update mouse movement delta.
         self.mouse_movement = match (self.cursor_pos, self.prev_cursor_pos) {
             (Some((cx, cy)), Some((px, py))) => (cx - px, cy - py),
             _ => (0.0, 0.0),
@@ -67,6 +65,15 @@ impl InputState {
         } else {
             (0.0, 0.0)
         };
+    }
+
+    /// Clears edge-triggered sets at the end of a frame.
+    pub fn end_frame(&mut self) {
+        self.keys_pressed.clear();
+        self.keys_released.clear();
+        self.mouse_pressed.clear();
+        self.mouse_released.clear();
+        self.wheel_delta = (0.0, 0.0);
     }
 
     #[inline]
@@ -123,8 +130,12 @@ impl UserInput {
         &mut self.state
     }
 
-    pub fn begin_frame(&mut self) {
-        self.state.begin_frame();
+    pub fn start_frame(&mut self) {
+        self.state.start_frame();
+    }
+
+    pub fn end_frame(&mut self) {
+        self.state.end_frame();
     }
 
     /// Feed a winit event into this input handler.
@@ -141,7 +152,9 @@ impl UserInput {
                             if s.len() == 1 {
                                 let c = s.chars().next().unwrap_or('\0');
                                 if c.is_ascii_alphabetic() {
-                                    return Key::Character(c.to_ascii_lowercase().to_string().into());
+                                    return Key::Character(
+                                        c.to_ascii_lowercase().to_string().into(),
+                                    );
                                 }
                             }
                             Key::Character(s.clone())

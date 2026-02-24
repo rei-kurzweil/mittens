@@ -9,14 +9,22 @@ enum PipeValue {
     Node(ecs::component_codec::ComponentDataNode),
 }
 
-fn source_ls(backend: &ReplBackend, world: &ecs::World, args: &[&str]) -> Result<Vec<ecs::ComponentId>, String> {
+fn source_ls(
+    backend: &ReplBackend,
+    world: &ecs::World,
+    args: &[&str],
+) -> Result<Vec<ecs::ComponentId>, String> {
     if !args.is_empty() {
         return Err("ls takes no arguments (in pipes)".to_string());
     }
     Ok(backend.current_listing(world))
 }
 
-fn source_cat(backend: &ReplBackend, world: &ecs::World, args: &[&str]) -> Result<Vec<ecs::component_codec::ComponentDataNode>, String> {
+fn source_cat(
+    backend: &ReplBackend,
+    world: &ecs::World,
+    args: &[&str],
+) -> Result<Vec<ecs::component_codec::ComponentDataNode>, String> {
     let target = match args {
         [] => backend.cwd(),
         [one] => backend.resolve_path_or_item(world, one)?,
@@ -40,11 +48,7 @@ fn source_cat(backend: &ReplBackend, world: &ecs::World, args: &[&str]) -> Resul
     }
 }
 
-fn stage_grep(
-    world: &ecs::World,
-    input: Vec<PipeValue>,
-    pattern: &str,
-) -> Vec<PipeValue> {
+fn stage_grep(world: &ecs::World, input: Vec<PipeValue>, pattern: &str) -> Vec<PipeValue> {
     let needle = pattern.to_ascii_lowercase();
     let mut out: Vec<PipeValue> = Vec::new();
 
@@ -124,8 +128,14 @@ fn stage_grep(
         // Treat these as searchable "properties" too.
         let type_name = node.component.name().to_string();
         let meta = [
-            ("name".to_string(), serde_json::Value::String(node.name.clone())),
-            ("type".to_string(), serde_json::Value::String(type_name.clone())),
+            (
+                "name".to_string(),
+                serde_json::Value::String(node.name.clone()),
+            ),
+            (
+                "type".to_string(),
+                serde_json::Value::String(type_name.clone()),
+            ),
             (
                 "guid".to_string(),
                 serde_json::Value::String(node.guid.to_string()),
@@ -204,7 +214,11 @@ fn sink_print_summary(world: &ecs::World, items: Vec<PipeValue>) {
 /// Supported sources: `ls`, `cat [path]`
 /// Supported stages: `grep <pattern>`
 /// Supported sinks: trailing `|` (prints ls-style summary)
-pub fn try_exec_piped(backend: &mut ReplBackend, world: &ecs::World, cmd: &str) -> Result<bool, String> {
+pub fn try_exec_piped(
+    backend: &mut ReplBackend,
+    world: &ecs::World,
+    cmd: &str,
+) -> Result<bool, String> {
     if !cmd.contains('|') {
         return Ok(false);
     }
@@ -247,7 +261,7 @@ pub fn try_exec_piped(backend: &mut ReplBackend, world: &ecs::World, cmd: &str) 
             return Err(format!(
                 "pipe: unsupported source '{}'; try 'ls' or 'cat'",
                 src_verb
-            ))
+            ));
         }
     };
 

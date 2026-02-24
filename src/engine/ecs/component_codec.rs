@@ -40,8 +40,49 @@ impl ComponentCodec {
     ///
     /// This is the same encoding used for file-based save operations, but returns the
     /// in-memory representation instead of writing to disk.
-    pub fn encode_subtree_node(world: &World, root_id: ComponentId) -> Result<ComponentDataNode, String> {
+    pub fn encode_subtree_node(
+        world: &World,
+        root_id: ComponentId,
+    ) -> Result<ComponentDataNode, String> {
         Self::encode_subtree(world, root_id)
+    }
+
+    /// Decode a component subtree from an in-memory `ComponentDataNode`, but generate fresh GUIDs.
+    ///
+    /// This is useful for prefab-style instancing / cloning, where GUID collisions would be
+    /// incorrect and `World::add_component_boxed_with_guid_named` would panic.
+    ///
+    /// Returns the newly-created root `ComponentId`.
+    pub fn decode_subtree_node_with_new_guids(
+        world: &mut World,
+        parent_id: Option<ComponentId>,
+        node: &ComponentDataNode,
+    ) -> Result<ComponentId, String> {
+        fn decode_subtree_fresh_guids(
+            world: &mut World,
+            parent_id: Option<ComponentId>,
+            node: &ComponentDataNode,
+        ) -> Result<ComponentId, String> {
+            let mut component = ComponentCodec::create_component(&node.type_name)?;
+            component.decode(&node.data)?;
+
+            // Add to world with a fresh GUID but preserve the stored name.
+            let new_id = world.add_component_boxed_named(node.name.clone(), component);
+
+            if let Some(parent) = parent_id {
+                world
+                    .set_parent(new_id, Some(parent))
+                    .map_err(|e| format!("Failed to set parent: {}", e))?;
+            }
+
+            for child_node in &node.components {
+                decode_subtree_fresh_guids(world, Some(new_id), child_node)?;
+            }
+
+            Ok(new_id)
+        }
+
+        decode_subtree_fresh_guids(world, parent_id, node)
     }
 
     /// Encode multiple component trees (scene roots) to a JSON file.
@@ -70,10 +111,7 @@ impl ComponentCodec {
     /// Decode a scene from a JSON file and attach all roots to the world.
     ///
     /// Returns the ComponentIds of all loaded roots.
-    pub fn decode_scene(
-        world: &mut World,
-        input_file: &str,
-    ) -> Result<Vec<ComponentId>, String> {
+    pub fn decode_scene(world: &mut World, input_file: &str) -> Result<Vec<ComponentId>, String> {
         let json = std::fs::read_to_string(input_file)
             .map_err(|e| format!("Failed to read file '{}': {}", input_file, e))?;
 
@@ -138,17 +176,17 @@ impl ComponentCodec {
         // Encode children, tracking names to handle duplicates.
         let mut name_counts: HashMap<String, usize> = HashMap::new();
         let mut child_nodes = Vec::new();
-        
+
         for &child_id in &node.children {
             let mut child_node = Self::encode_subtree(world, child_id)?;
-            
+
             // Track name usage and append _N if duplicate.
             let count = name_counts.entry(child_node.name.clone()).or_insert(0);
             if *count > 0 {
                 child_node.name = format!("{}_{}", child_node.name, count);
             }
             *count += 1;
-            
+
             child_nodes.push(child_node);
         }
 
@@ -177,7 +215,8 @@ impl ComponentCodec {
 
         // Add to world with restored GUID + stored name (assigns a fresh ComponentId).
         // Note: The name might have _N suffix which we preserve.
-        let new_id = world.add_component_boxed_with_guid_named(node.guid, node.name.clone(), component);
+        let new_id =
+            world.add_component_boxed_with_guid_named(node.guid, node.name.clone(), component);
 
         // Set parent if specified.
         if let Some(parent) = parent_id {
@@ -210,19 +249,42 @@ impl ComponentCodec {
                     crate::engine::graphics::primitives::MaterialHandle::TOON_MESH,
                 ),
             ))),
+            "raycast" => Ok(Box::new(RayCastComponent::default())),
+            "raycastable" => Ok(Box::new(RaycastableComponent::enabled())),
+            "background" => Ok(Box::new(BackgroundComponent::new())),
             "background_color" => Ok(Box::new(BackgroundColorComponent::new())),
             "ambient_light" => Ok(Box::new(AmbientLightComponent::new())),
             "color" => Ok(Box::new(ColorComponent::new())),
+            "opacity" => Ok(Box::new(OpacityComponent::new())),
+            "light_quantization" => Ok(Box::new(LightQuantizationComponent::new())),
+            "emissive" => Ok(Box::new(EmissiveComponent::default())),
             "texture" => Ok(Box::new(TextureComponent::new(""))),
             "camera2d" => Ok(Box::new(Camera2DComponent::new())),
             "camera3d" => Ok(Box::new(Camera3DComponent::new())),
             "camera_xr" => Ok(Box::new(CameraXRComponent::off())),
             "point_light" => Ok(Box::new(PointLightComponent::new())),
+            "directional_light" => Ok(Box::new(DirectionalLightComponent::new())),
             "uv" => Ok(Box::new(UVComponent::new())),
             "input" => Ok(Box::new(InputComponent::new())),
             "input_transform_mode" => Ok(Box::new(InputTransformModeComponent::default())),
             "openxr" => Ok(Box::new(OpenXRComponent::off())),
             "text" => Ok(Box::new(TextComponent::new(""))),
+            "animation" => Ok(Box::new(AnimationComponent::new())),
+            "keyframe" => Ok(Box::new(KeyframeComponent::new(0.0))),
+            "action" => Ok(Box::new(ActionComponent::default())),
+            "audio_output" => Ok(Box::new(AudioOutputComponent::new())),
+            "audio_buffer_size" => Ok(Box::new(
+                crate::engine::ecs::component::AudioBufferSizeComponent::default(),
+            )),
+            "clock" => Ok(Box::new(ClockComponent::new())),
+            "collision" => Ok(Box::new(CollisionComponent::default())),
+            "collision_shape" => Ok(Box::new(CollisionShapeComponent::new(
+                crate::engine::ecs::component::CollisionShape::CUBE(),
+            ))),
+            "gravity" => Ok(Box::new(GravityComponent::default())),
+            "kinetic_response" => Ok(Box::new(KineticResponseComponent::default())),
+            "joint" => Ok(Box::new(JointComponent::new(0, Vec::new()))),
+            "skinned_mesh" => Ok(Box::new(SkinnedMeshComponent::new(0))),
             _ => Err(format!("Unknown component type: '{}'", type_name)),
         }
     }

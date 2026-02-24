@@ -89,7 +89,11 @@ impl RenderAssets {
     }
 
     /// Register an imported mesh and index it by `key` for later lookup.
-    pub fn register_imported_mesh(&mut self, key: impl Into<String>, mesh: CpuMesh) -> CpuMeshHandle {
+    pub fn register_imported_mesh(
+        &mut self,
+        key: impl Into<String>,
+        mesh: CpuMesh,
+    ) -> CpuMeshHandle {
         let key = key.into();
         let h = self.register_mesh(mesh);
         self.imported_meshes.insert(key, h);

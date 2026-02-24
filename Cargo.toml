@@ -1,5 +1,5 @@
 [package]
-name = "little-cat"
+name = "cat-engine"
 version = "0.1.0"
 edition = "2024"
 
@@ -21,5 +21,29 @@ serde_json = "1.0"
 uuid = { version = "1.11", features = ["v4", "serde"] }
 ddsfile = "0.5"
 
+smallvec = "1"
+
+# Lock-free SPSC queue (GUI thread -> audio callback)
+heapless = "0.8"
+
+# Heap-allocated lock-free SPSC ring buffer (GUI thread -> audio callback)
+rtrb = "0.3"
+
+# DSP backend
+fundsp = "0.20"
+
+# Audio output + audio-clock driver
+cpal = "0.15"
+
+# Spatial acceleration structures (ray/AABB + BVH)
+bvh = "0.7"
+
 # glTF 2.0 import (used by GLTFSystem to load .glb models and embedded images)
 gltf = { version = "1", features = ["import"] }
+
+[[example]]
+# Cargo derives target names from filenames; dots are not allowed in crate names.
+name = "mindmap_example_0_3"
+path = "examples/mindmap-example.0.3.rs"
+
+

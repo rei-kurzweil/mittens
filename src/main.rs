@@ -1,4 +1,4 @@
-use little_cat::{engine, example, utils};
+use cat_engine::{engine, example, utils};
 
 fn main() {
     utils::logger::init();
@@ -14,7 +14,10 @@ fn main() {
         println!("[CLI] Loading scene from '{}'...", filename);
         match engine::ecs::ComponentCodec::decode_scene(&mut universe.world, filename) {
             Ok(root_ids) => {
-                println!("[CLI] Scene loaded successfully. {} root(s) loaded.", root_ids.len());
+                println!(
+                    "[CLI] Scene loaded successfully. {} root(s) loaded.",
+                    root_ids.len()
+                );
                 // Initialize all loaded component trees
                 for root_id in root_ids {
                     universe
@@ -42,7 +45,7 @@ fn main() {
     // Handle save command after scene is built
     if let engine::cli::CliCommand::Save { ref filename } = cli.command {
         println!("[CLI] Saving scene to '{}'...", filename);
-        
+
         // Find all root components (components with no parent)
         let root_components: Vec<engine::ecs::ComponentId> = universe
             .world
@@ -54,10 +57,17 @@ fn main() {
             eprintln!("[CLI] No root components found to save.");
         } else {
             println!("[CLI] Found {} root component(s)", root_components.len());
-            
-            match engine::ecs::ComponentCodec::encode_scene(&universe.world, &root_components, filename)
-            {
-                Ok(()) => println!("[CLI] Saved {} roots to '{}'", root_components.len(), filename),
+
+            match engine::ecs::ComponentCodec::encode_scene(
+                &universe.world,
+                &root_components,
+                filename,
+            ) {
+                Ok(()) => println!(
+                    "[CLI] Saved {} roots to '{}'",
+                    root_components.len(),
+                    filename
+                ),
                 Err(e) => eprintln!("[CLI] Failed to save scene: {}", e),
             }
         }
@@ -67,7 +77,6 @@ fn main() {
         return;
     }
 
-    let user_input = engine::user_input::UserInput::new();
     universe.enable_repl();
-    engine::Windowing::run_app(universe, user_input).expect("Windowing failed");
+    engine::Windowing::run_app(universe).expect("Windowing failed");
 }

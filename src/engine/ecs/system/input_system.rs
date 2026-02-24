@@ -1,6 +1,8 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
-use crate::engine::ecs::component::{ForwardAxis, InputComponent, InputTransformModeComponent, RollAxis, TransformComponent};
+use crate::engine::ecs::component::{
+    ForwardAxis, InputComponent, InputTransformModeComponent, RollAxis, TransformComponent,
+};
 use crate::engine::ecs::system::System;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
@@ -16,16 +18,16 @@ use winit::keyboard::{Key, NamedKey};
 pub struct InputSystem {
     inputs: Vec<ComponentId>,
 
-    // FPS mode needs stable yaw/pitch without per-frame extraction.
+    // FPS mode needs stable yaw/pitch/bank without per-frame extraction.
     // Keyed by the controlled TransformComponent id.
-    fps_yaw_pitch: HashMap<ComponentId, (f32, f32)>,
+    fps_yaw_pitch_roll: HashMap<ComponentId, (f32, f32, f32)>,
 }
 
 impl InputSystem {
     pub fn new() -> Self {
         Self {
             inputs: Vec::new(),
-            fps_yaw_pitch: HashMap::new(),
+            fps_yaw_pitch_roll: HashMap::new(),
         }
     }
 
@@ -59,7 +61,6 @@ impl InputSystem {
         let yaw_delta = drag_dx * MOUSE_SENS_RAD_PER_PX;
         let pitch_delta = drag_dy * MOUSE_SENS_RAD_PER_PX;
 
-        
         // Relative/flight-style semantics: apply local incremental rotations.
         if yaw_delta != 0.0 {
             let q_yaw = math::quat_from_axis_angle([0.0, 1.0, 0.0], yaw_delta);
@@ -82,15 +83,20 @@ impl InputSystem {
             let q_roll = math::quat_from_axis_angle(axis, dtheta);
             *rotation = math::quat_mul(*rotation, q_roll);
         }
-        
     }
 
     fn compute_rotation_fps(
         &mut self,
         transform_cid: ComponentId,
+        roll_axis: RollAxis,
         input: &InputState,
+        dt_sec: f32,
         rotation: &mut [f32; 4],
     ) {
+        // Roll keys.
+        let q = input.key_down(&Key::Character("q".into()));
+        let e = input.key_down(&Key::Character("e".into()));
+
         let (drag_dx, drag_dy) = if input.mouse_dragging() {
             input.mouse_drag_delta()
         } else {
@@ -102,39 +108,68 @@ impl InputSystem {
         let yaw_delta = drag_dx * MOUSE_SENS_RAD_PER_PX;
         let pitch_delta = drag_dy * MOUSE_SENS_RAD_PER_PX;
 
-        if yaw_delta == 0.0 && pitch_delta == 0.0 {
+        // Allow Q/E rotation even without mouse drag.
+        let qe_delta = if q || e {
+            const ROT_SPEED_RAD_PER_SEC: f32 = 1.5;
+            let dir = (q as i32) as f32 - (e as i32) as f32;
+            dir * ROT_SPEED_RAD_PER_SEC * dt_sec
+        } else {
+            0.0
+        };
+
+        if yaw_delta == 0.0 && pitch_delta == 0.0 && qe_delta == 0.0 {
             return;
         }
 
         // Initialize once from current rotation.
-        let (mut yaw, mut pitch) = self.fps_yaw_pitch.get(&transform_cid).copied().unwrap_or_else(|| {
-            let right = math::vec3_normalize(math::quat_rotate_vec3(*rotation, [1.0, 0.0, 0.0]));
-            let fwd = math::vec3_normalize(math::quat_rotate_vec3(*rotation, [0.0, 0.0, -1.0]));
+        let (mut yaw, mut pitch, mut roll) = self
+            .fps_yaw_pitch_roll
+            .get(&transform_cid)
+            .copied()
+            .unwrap_or_else(|| {
+                let right =
+                    math::vec3_normalize(math::quat_rotate_vec3(*rotation, [1.0, 0.0, 0.0]));
+                let fwd = math::vec3_normalize(math::quat_rotate_vec3(*rotation, [0.0, 0.0, -1.0]));
 
-            // Yaw is global (world up): angle around +Y.
-            let yaw = right[2].atan2(right[0]);
-            // Pitch comes from forward Y.
-            let pitch = fwd[1].clamp(-1.0, 1.0).asin();
-            (yaw, pitch)
-        });
+                // Yaw is global (world up): angle around +Y.
+                let yaw = right[2].atan2(right[0]);
+                // Pitch comes from forward Y.
+                let pitch = fwd[1].clamp(-1.0, 1.0).asin();
+                // Note: roll isn't extracted currently; it starts at 0 and is preserved
+                // once the user rolls with Q/E.
+                (yaw, pitch, 0.0)
+            });
 
         // Apply deltas.
         yaw += yaw_delta;
         pitch += pitch_delta;
 
+        // Q/E rotates around the configured axis.
+        match roll_axis {
+            RollAxis::Y => yaw += qe_delta,
+            RollAxis::X => pitch += qe_delta,
+            RollAxis::Z => roll += qe_delta,
+        }
+
         const MAX_PITCH: f32 = 1.55; // ~88.8deg
         pitch = pitch.clamp(-MAX_PITCH, MAX_PITCH);
 
         // Persist state.
-        self.fps_yaw_pitch.insert(transform_cid, (yaw, pitch));
+        self.fps_yaw_pitch_roll
+            .insert(transform_cid, (yaw, pitch, roll));
 
-        // Rebuild rotation from TRS yaw/pitch.
+        // Rebuild rotation from yaw/pitch/bank.
         // Yaw: global axis. Pitch: relative to yaw (around yaw-rotated right).
+        // Bank (roll): around camera-forward axis.
         let q_yaw = math::quat_from_axis_angle([0.0, 1.0, 0.0], yaw);
         let right = math::quat_rotate_vec3(q_yaw, [1.0, 0.0, 0.0]);
         let q_pitch = math::quat_from_axis_angle(right, pitch);
 
-        *rotation = math::quat_mul(q_pitch, q_yaw);
+        let q_base = math::quat_mul(q_pitch, q_yaw);
+        let fwd_world = math::vec3_normalize(math::quat_rotate_vec3(q_base, [0.0, 0.0, -1.0]));
+        let q_bank = math::quat_from_axis_angle(fwd_world, roll);
+
+        *rotation = math::quat_mul(q_bank, q_base);
     }
 
     fn compute_translation(
@@ -315,7 +350,9 @@ impl InputSystem {
                 if fps_rotation {
                     self.compute_rotation_fps(
                         transform_cid,
+                        roll_axis,
                         input,
+                        dt_sec,
                         &mut transform_comp_mut.transform.rotation,
                     );
                 } else {
@@ -328,7 +365,9 @@ impl InputSystem {
                 }
                 let rot = transform_comp_mut.transform.rotation;
                 let fps_yaw = if fps_rotation {
-                    self.fps_yaw_pitch.get(&transform_cid).map(|(y, _)| *y)
+                    self.fps_yaw_pitch_roll
+                        .get(&transform_cid)
+                        .map(|(y, _, _)| *y)
                 } else {
                     None
                 };

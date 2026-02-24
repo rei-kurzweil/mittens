@@ -1,36 +1,57 @@
 use super::World;
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::CameraSystem;
+use crate::engine::ecs::system::ClockSystem;
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::InputSystem;
 use crate::engine::ecs::system::LightSystem;
+use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::OpenXRSystem;
+use crate::engine::ecs::system::KineticResponseSystem;
+use crate::engine::ecs::system::RayCastSystem;
 use crate::engine::ecs::system::RenderableSystem;
+use crate::engine::ecs::system::SkinnedMeshSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::TransformSystem;
+use crate::engine::ecs::system::{ActionSystem, AnimationSystem, AudioSystem};
+use crate::engine::ecs::RxWorld;
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 
 /// System world that holds and runs all registered systems.
 #[derive(Debug, Default)]
 pub struct SystemWorld {
-    pub transform:  TransformSystem,
-    pub collision:  CollisionSystem,
+    pub rx: RxWorld,
+
+    pub clock: ClockSystem,
+    pub audio: AudioSystem,
+    pub music: MusicSystem,
+    pub animation: AnimationSystem,
+    pub action: ActionSystem,
+
+    pub transform: TransformSystem,
+    pub bvh: BvhSystem,
+    pub collision: CollisionSystem,
+    pub kinetic_response: KineticResponseSystem,
+    pub skinned_mesh: SkinnedMeshSystem,
     pub renderable: RenderableSystem,
 
-    pub gltf:       GLTFSystem,
+    pub raycast: RayCastSystem,
 
-    pub openxr:     OpenXRSystem,
+    pub gltf: GLTFSystem,
 
-    pub camera:     CameraSystem,
-    pub input:      InputSystem,
-    pub light:      LightSystem,
-    
-    pub text:       TextSystem,
-    pub texture:    TextureSystem,
+    pub openxr: OpenXRSystem,
+
+    pub camera: CameraSystem,
+    pub input: InputSystem,
+    pub light: LightSystem,
+
+    pub text: TextSystem,
+    pub texture: TextureSystem,
 }
 
 impl SystemWorld {
@@ -47,6 +68,26 @@ impl SystemWorld {
     ) {
         self.renderable
             .register_renderable(world, visuals, component);
+
+        // Keep BVH in sync (defer actual build/refit to CommandQueue flush).
+        if BvhSystem::renderable_is_raycastable(world, component) {
+            self.bvh.queue_renderable_added(component);
+        }
+
+        // Keep RayCastSystem's eligibility index in sync for brute-force fallback.
+        self.raycast.notify_renderable_added(&*world, component);
+    }
+
+    /// Remove a RenderableComponent instance from the RenderableSystem (and BVH).
+    pub fn remove_renderable(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.renderable.remove_renderable(world, visuals, component);
+        self.bvh.queue_renderable_removed(component);
+        self.raycast.notify_renderable_removed(component);
     }
 
     /// Register a UVComponent and apply it to its ancestor RenderableComponent.
@@ -67,6 +108,27 @@ impl SystemWorld {
         component: ComponentId,
     ) {
         self.renderable.register_color(world, visuals, component);
+    }
+
+    /// Register an OpacityComponent and apply it to its ancestor RenderableComponent.
+    pub fn register_opacity(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.renderable.register_opacity(world, visuals, component);
+    }
+
+    /// Register a TransparentCutoutComponent and apply it to its ancestor RenderableComponent.
+    pub fn register_transparent_cutout(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.renderable
+            .register_transparent_cutout(world, visuals, component);
     }
 
     /// Register a BackgroundColorComponent and apply it to VisualWorld.
@@ -119,10 +181,11 @@ impl SystemWorld {
         component: ComponentId,
         queue: &mut crate::engine::ecs::CommandQueue,
     ) {
-        let spawned = self.text.register_text(world, visuals, component);
-        for g in spawned {
-            world.init_component_tree(g.transform, queue);
-        }
+        let _spawned = self.text.register_text(world, visuals, component);
+
+        // Initialize any newly spawned glyph/background subtrees.
+        // This is idempotent: nodes that were already initialized are skipped.
+        world.init_component_tree(component, queue);
     }
 
     /// Register an EmissiveComponent and apply it to its ancestor RenderableComponent.
@@ -135,6 +198,17 @@ impl SystemWorld {
         self.renderable.register_emissive(world, visuals, component);
     }
 
+    /// Register a LightQuantizationComponent and apply it to its ancestor RenderableComponent.
+    pub fn register_light_quantization(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.renderable
+            .register_light_quantization(world, visuals, component);
+    }
+
     /// Register a CollisionComponent instance with the CollisionSystem.
     pub fn register_collision(
         &mut self,
@@ -143,6 +217,27 @@ impl SystemWorld {
         component: ComponentId,
     ) {
         self.collision.register_collision(world, visuals, component);
+    }
+
+    /// Register a KineticResponseComponent instance with the KineticResponseSystem.
+    pub fn register_kinetic_response(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.kinetic_response
+            .register_kinetic_response(world, component);
+    }
+
+    /// Remove a KineticResponseComponent instance from the KineticResponseSystem.
+    pub fn remove_kinetic_response(
+        &mut self,
+        _world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.kinetic_response.remove_kinetic_response(component);
     }
 
     /// Remove a CollisionComponent instance from the CollisionSystem.
@@ -173,6 +268,95 @@ impl SystemWorld {
         component: ComponentId,
     ) {
         self.light.register_light(world, visuals, component);
+    }
+
+    /// Register a RayCastComponent instance with the RayCastSystem.
+    pub fn register_raycast(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.raycast.register_raycast(world, visuals, component);
+    }
+
+    /// Remove a RayCastComponent instance from the RayCastSystem.
+    pub fn remove_raycast(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.raycast.remove_raycast(world, visuals, component);
+    }
+
+    pub fn register_animation(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.animation.register_animation(world, component);
+    }
+
+    pub fn register_keyframe(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.animation.register_keyframe(world, component);
+    }
+
+    pub fn register_audio_output(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.audio.register_audio_output(world, component);
+    }
+
+    pub fn register_audio_oscillator(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.music.apply_music_note_to_oscillator(world, component);
+        self.audio.register_audio_oscillator(world, component);
+    }
+
+    pub fn register_audio_buffer_size(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.audio.register_audio_buffer_size(world, component);
+    }
+
+    pub fn audio_graph_dirty(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.audio.mark_audio_graph_dirty(world, component);
+    }
+
+    pub fn register_clock(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        if world
+            .get_component_by_id_as::<crate::engine::ecs::component::ClockComponent>(component)
+            .is_some()
+        {
+            self.clock.register_clock_component(component);
+        }
     }
 
     /// Prepare render state before issuing a frame.
@@ -212,6 +396,15 @@ impl SystemWorld {
             &mut self.light,
             &mut self.collision,
         );
+
+        // Any transform changes can affect joint world matrices for skinning.
+        // Let SkinnedMeshSystem lazily recompute only affected rigs.
+        self.skinned_mesh
+            .transform_subtree_changed(&*world, component);
+
+        // Transform propagation may move many renderables in the subtree.
+        // Queue a BVH refit for that subtree (applied after command flush).
+        self.bvh.queue_transform_subtree(world, component);
     }
 
     /// Update a transform component's transform value and notify systems.
@@ -376,18 +569,66 @@ impl SystemWorld {
         self.input.process_input(world, input, queue, dt_sec);
 
         // Spawn any GLTF component trees. This may queue component registrations.
-        self.gltf.tick_with_queue(world, queue, dt_sec);
+        self.gltf
+            .tick_with_queue(world, visuals, &mut self.skinned_mesh, queue, dt_sec);
+
+        // Flush queued registrations/transform updates *before* systems that need current
+        // world matrices / acceleration structures (e.g. raycasting).
+        queue.flush(world, self, visuals);
+
+        // Audio clock takeover: once audio output is active, use it as the ClockDriver.
+        if let Some(driver) = self.audio.driver() {
+            if self.clock.driver_name() != driver.name() {
+                self.clock.set_driver(driver);
+            }
+        }
+
+        self.clock.tick(world, visuals, input, dt_sec);
+
+        // Provide tempo + transport to the audio thread scheduler.
+        // ClockSystem may be using AudioClockDriver, so this keeps both timelines aligned.
+        self.audio
+            .update_transport_from_clock(self.clock.beat_now(), self.clock.bpm());
+
+        self.animation.tick_with_beat(
+            world,
+            self.clock.beat_now(),
+            self.clock.bpm(),
+            &mut self.action,
+            &mut self.rx,
+            queue,
+        );
 
         // Ensure transforms are propagated before any camera systems consume world matrices.
         self.transform.tick(world, visuals, input, dt_sec);
 
+        // Compute joint palettes from cached world transforms.
+        self.skinned_mesh.tick(world, visuals, input, dt_sec);
+
+        // Spatial acceleration structure built from latest world transforms.
+        self.bvh.tick(world, visuals, input, dt_sec);
+
         // Collision runs before camera/OpenXR for now; it reads cached world transforms.
-        self.collision.tick(world, visuals, input, dt_sec);
+        self.collision
+            .tick_with_rx(world, visuals, input, dt_sec, &mut self.rx);
+
+        // Default kinematic-vs-static collision response (opt-in via KineticResponseComponent).
+        // This may enqueue transform updates; flush them immediately so camera/OpenXR
+        // consume resolved transforms this frame.
+        self.kinetic_response
+            .tick_with_queue(world, visuals, input, dt_sec, queue, &self.collision);
+        queue.flush(world, self, visuals);
+
+        // Physics may have moved renderables; refit BVH so raycasts see the resolved state.
+        self.bvh.tick(world, visuals, input, dt_sec);
 
         // Update window camera + select active XR camera rig before OpenXR consumes it.
         self.camera.tick(world, visuals, input, dt_sec);
         // OpenXR consumes the latest rig transform + publishes per-eye cameras.
         self.openxr.tick(world, visuals, input, dt_sec);
+
+        self.raycast
+            .tick_with_queue(world, visuals, input, queue, &mut self.rx, &self.bvh, dt_sec);
 
         self.renderable.tick(world, visuals, input, dt_sec);
 
@@ -404,5 +645,18 @@ impl SystemWorld {
         commands: &mut crate::engine::ecs::CommandQueue,
     ) {
         commands.flush(world, self, visuals);
+
+        // Post-mutation change event phase.
+        let events = self.rx.drain();
+        for env in events.iter() {
+            self.rx.dispatch_handlers(world, commands, env);
+        }
+
+        // Event handlers may have queued commands (e.g. register_color). Apply them now so
+        // the effects are visible this frame.
+        commands.flush(world, self, visuals);
+
+        // Batch audio graph rebuild work once after all mutations for this frame.
+        self.audio.rebuild_dirty_audio_graphs(world);
     }
 }

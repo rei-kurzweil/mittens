@@ -14,7 +14,16 @@ use winit::window::{Window, WindowAttributes, WindowId};
 pub struct Windowing;
 
 impl Windowing {
-    pub fn run_app(universe: crate::engine::Universe, user_input: UserInput) -> EngineResult<()> {
+    /// Run a Universe in a winit window with default input handling.
+    pub fn run_app(universe: crate::engine::Universe) -> EngineResult<()> {
+        Self::run_app_with_input(universe, UserInput::new())
+    }
+
+    /// Run a Universe in a winit window with a caller-provided `UserInput`.
+    pub fn run_app_with_input(
+        universe: crate::engine::Universe,
+        user_input: UserInput,
+    ) -> EngineResult<()> {
         let event_loop = EventLoop::new().map_err(|_| EngineError::NotImplemented)?;
         event_loop.set_control_flow(ControlFlow::Poll);
 
@@ -47,7 +56,7 @@ impl ApplicationHandler for App {
         }
 
         let attrs: WindowAttributes = Window::default_attributes()
-            .with_title("Cat Engine 0.3")
+            .with_title("cat engine 0.4")
             .with_inner_size(winit::dpi::LogicalSize::new(1024.0, 768.0))
             .with_resizable(true);
 
@@ -110,8 +119,9 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::RedrawRequested => {
-                // Start of our "frame" from an input perspective: clear edge-triggered sets.
-                self.user_input.begin_frame();
+                // Start of our "frame" from an input perspective: compute deltas, but keep
+                // edge-triggered sets so they remain visible during `universe.update`.
+                self.user_input.start_frame();
 
                 let now = Instant::now();
                 let dt = self
@@ -125,6 +135,9 @@ impl ApplicationHandler for App {
                 universe.update(dt, self.user_input.state());
 
                 universe.render();
+
+                // Clear edge-triggered sets after the frame has consumed them.
+                self.user_input.end_frame();
 
                 if let Some(w) = &self.window {
                     // w.pre_present_notify();

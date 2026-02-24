@@ -1,11 +1,20 @@
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::RxWorld;
+use crate::engine::ecs::EventSignal;
 use crate::engine::ecs::World;
-use crate::engine::ecs::component::{CollisionComponent, CollisionShapeComponent, RenderableComponent};
+use crate::engine::ecs::component::{
+    CollisionComponent, CollisionShapeComponent, RenderableComponent,
+};
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
+use bvh::Point3;
+use bvh::aabb::{AABB, Bounded};
+use bvh::bounding_hierarchy::BHShape;
+use bvh::bvh::{BVH, BVHNode};
 use slotmap::{SlotMap, new_key_type};
+use slotmap::Key;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use std::thread;
@@ -82,11 +91,37 @@ pub struct CollisionSystem {
     worker: Option<thread::JoinHandle<()>>,
 
     known: HashSet<ComponentId>,
+
+    active_pairs: HashSet<(ComponentId, ComponentId)>,
+    active_pair_deltas: HashMap<(ComponentId, ComponentId), [f32; 3]>,
 }
 
 impl CollisionSystem {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Snapshot of the currently-active overlap pairs (normalized ordering).
+    ///
+    /// Note: this is updated when `tick_with_rx` drains worker messages.
+    pub fn active_pairs_snapshot(&self) -> Vec<(ComponentId, ComponentId)> {
+        self.active_pairs.iter().copied().collect()
+    }
+
+    /// Snapshot of active overlap pairs with `delta = pos(b) - pos(a)` in world space.
+    pub fn active_pairs_with_delta_snapshot(&self) -> Vec<(ComponentId, ComponentId, [f32; 3])> {
+        self.active_pairs
+            .iter()
+            .copied()
+            .map(|(a, b)| {
+                let delta = self
+                    .active_pair_deltas
+                    .get(&(a, b))
+                    .copied()
+                    .unwrap_or([0.0, 0.0, 0.0]);
+                (a, b, delta)
+            })
+            .collect()
     }
 
     pub fn register_collision(
@@ -156,7 +191,11 @@ impl CollisionSystem {
         // TransformComponent. Otherwise, it should not participate in collision at all.
         let has_transform_parent = world
             .parent_of(component)
-            .and_then(|p| world.get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(p).map(|_| p))
+            .and_then(|p| {
+                world
+                    .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(p)
+                    .map(|_| p)
+            })
             .is_some();
 
         if !has_transform_parent {
@@ -248,31 +287,87 @@ impl System for CollisionSystem {
         _input: &InputState,
         _dt_sec: f32,
     ) {
+        // Driven via SystemWorld::tick_with_rx.
+    }
+}
+
+impl CollisionSystem {
+    pub fn tick_with_rx(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        _input: &InputState,
+        _dt_sec: f32,
+        rx: &mut RxWorld,
+    ) {
         self.ensure_worker();
 
         let Some(tx) = self.to_worker.as_ref() else {
             return;
         };
 
-        // Drain worker -> main collision events.
-        if let Some(rx) = self.from_worker.as_ref() {
-            while let Ok(msg) = rx.try_recv() {
-                if let CollisionMessage::CollisionDetected {
+        // Drain worker -> current overlap set.
+        let mut current_pairs: HashSet<(ComponentId, ComponentId)> = HashSet::new();
+        let mut current_deltas: HashMap<(ComponentId, ComponentId), [f32; 3]> = HashMap::new();
+        if let Some(from_worker) = self.from_worker.as_ref() {
+            while let Ok(msg) = from_worker.try_recv() {
+                let CollisionMessage::CollisionDetected {
                     a_component,
-                    a_guid,
-                    a_mode,
+                    a_guid: _,
+                    a_mode: _,
                     b_component,
-                    b_guid,
-                    b_mode,
+                    b_guid: _,
+                    b_mode: _,
                 } = msg
-                {
-                    println!(
-                        "[CollisionSystem] collision: {:?}({:?}, {:?}) <-> {:?}({:?}, {:?})",
-                        a_component, a_guid, a_mode, b_component, b_guid, b_mode
-                    );
+                else {
+                    continue;
+                };
+
+                // Normalize ordering so (a,b) and (b,a) map to the same pair.
+                let a_key = a_component.data().as_ffi();
+                let b_key = b_component.data().as_ffi();
+                let (lo, hi) = if a_key <= b_key {
+                    (a_component, b_component)
+                } else {
+                    (b_component, a_component)
+                };
+                if lo != hi {
+                    if current_pairs.insert((lo, hi)) {
+                        let a_pos = TransformSystem::world_position(world, lo)
+                            .unwrap_or([0.0, 0.0, 0.0]);
+                        let b_pos = TransformSystem::world_position(world, hi)
+                            .unwrap_or([0.0, 0.0, 0.0]);
+                        current_deltas.insert(
+                            (lo, hi),
+                            [b_pos[0] - a_pos[0], b_pos[1] - a_pos[1], b_pos[2] - a_pos[2]],
+                        );
+                    }
                 }
             }
         }
+
+        // Emit started/ended based on set diffs.
+        for &(a, b) in current_pairs.difference(&self.active_pairs) {
+            let delta = current_deltas
+                .get(&(a, b))
+                .copied()
+                .unwrap_or([0.0, 0.0, 0.0]);
+            rx.push(a, EventSignal::CollisionStarted { a, b, delta });
+            rx.push(b, EventSignal::CollisionStarted { a, b, delta });
+        }
+
+        for &(a, b) in self.active_pairs.difference(&current_pairs) {
+            let delta = self
+                .active_pair_deltas
+                .get(&(a, b))
+                .copied()
+                .unwrap_or([0.0, 0.0, 0.0]);
+            rx.push(a, EventSignal::CollisionEnded { a, b, delta });
+            rx.push(b, EventSignal::CollisionEnded { a, b, delta });
+        }
+
+        self.active_pairs = current_pairs;
+        self.active_pair_deltas = current_deltas;
 
         let _ = tx.send(CollisionMessage::Tick);
     }
@@ -297,11 +392,11 @@ fn resolve_shape(world: &World, collision_cid: ComponentId) -> Option<CollisionS
         };
 
         // Built-in mesh handles (stable ids).
-        if r.renderable.mesh == crate::engine::graphics::primitives::CpuMeshHandle::CUBE {
+        if r.renderable.base_mesh == crate::engine::graphics::primitives::CpuMeshHandle::CUBE {
             return Some(CollisionShape::CUBE());
         }
 
-        if r.renderable.mesh == crate::engine::graphics::primitives::CpuMeshHandle::SPHERE {
+        if r.renderable.base_mesh == crate::engine::graphics::primitives::CpuMeshHandle::SPHERE {
             return Some(CollisionShape::SPHERE());
         }
     }
@@ -337,10 +432,7 @@ impl Default for WorkerState {
     }
 }
 
-fn collision_worker_loop(
-    rx: mpsc::Receiver<CollisionMessage>,
-    tx: mpsc::Sender<CollisionMessage>,
-) {
+fn collision_worker_loop(rx: mpsc::Receiver<CollisionMessage>, tx: mpsc::Sender<CollisionMessage>) {
     let mut state = WorkerState::default();
     while let Ok(msg) = rx.recv() {
         match msg {
@@ -464,13 +556,69 @@ fn worker_tick(state: &WorkerState, tx: &mpsc::Sender<CollisionMessage>) {
     all.extend(state.kinematic_objects.values());
     all.extend(state.rigged_objects.values());
 
+    if all.len() < 2 {
+        return;
+    }
+
+    // Broadphase: build a BVH over world-space AABBs for the collision objects.
+    // This reduces the candidate set for narrowphase `intersects()`.
+    let mut shapes: Vec<CollisionAabbShape> = all
+        .iter()
+        .enumerate()
+        .filter_map(|(index, obj)| {
+            let (min, max) = world_aabb_for_collision_object(obj);
+            Some(CollisionAabbShape::new(index, min, max))
+        })
+        .collect();
+
+    // If any shapes failed to produce AABBs, fall back to brute force.
+    if shapes.len() != all.len() {
+        for i in 0..all.len() {
+            for j in (i + 1)..all.len() {
+                let a = all[i];
+                let b = all[j];
+
+                if a.mode == CollisionMode::Static && b.mode == CollisionMode::Static {
+                    continue;
+                }
+
+                if intersects(a, b) {
+                    let _ = tx.send(CollisionMessage::CollisionDetected {
+                        a_component: a.component,
+                        a_guid: a.guid,
+                        a_mode: a.mode,
+                        b_component: b.component,
+                        b_guid: b.guid,
+                        b_mode: b.mode,
+                    });
+                }
+            }
+        }
+        return;
+    }
+
+    let bvh = BVH::build(&mut shapes);
+
+    // Only query from non-static objects.
+    // Static-static collisions are ignored, and static objects don't need to initiate queries.
     for i in 0..all.len() {
-        for j in (i + 1)..all.len() {
-            let a = all[i];
+        let a = all[i];
+        if a.mode == CollisionMode::Static {
+            continue;
+        }
+
+        let query = shapes[i].aabb;
+        let candidates = bvh_query_aabb_indices(&bvh, &shapes, &query);
+
+        for j in candidates {
+            if j == i || j >= all.len() {
+                continue;
+            }
+
             let b = all[j];
 
-            // MVP policy: ignore static-static collisions (walls touching walls).
-            if a.mode == CollisionMode::Static && b.mode == CollisionMode::Static {
+            // Avoid double-reporting dynamic-dynamic pairs, but always test dynamic-static.
+            if b.mode != CollisionMode::Static && j <= i {
                 continue;
             }
 
@@ -485,6 +633,105 @@ fn worker_tick(state: &WorkerState, tx: &mpsc::Sender<CollisionMessage>) {
                 });
             }
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CollisionAabbShape {
+    index: usize,
+    aabb: AABB,
+    node_index: usize,
+}
+
+impl CollisionAabbShape {
+    fn new(index: usize, min: [f32; 3], max: [f32; 3]) -> Self {
+        Self {
+            index,
+            aabb: AABB::with_bounds(
+                Point3::new(min[0], min[1], min[2]),
+                Point3::new(max[0], max[1], max[2]),
+            ),
+            node_index: 0,
+        }
+    }
+}
+
+impl Bounded for CollisionAabbShape {
+    fn aabb(&self) -> AABB {
+        self.aabb
+    }
+}
+
+impl BHShape for CollisionAabbShape {
+    fn set_bh_node_index(&mut self, index: usize) {
+        self.node_index = index;
+    }
+
+    fn bh_node_index(&self) -> usize {
+        self.node_index
+    }
+}
+
+fn bvh_query_aabb_indices(bvh: &BVH, shapes: &[CollisionAabbShape], query: &AABB) -> Vec<usize> {
+    if bvh.nodes.is_empty() {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    let mut stack = vec![0usize];
+    while let Some(node_index) = stack.pop() {
+        match bvh.nodes[node_index] {
+            BVHNode::Node {
+                child_l_index,
+                child_l_aabb,
+                child_r_index,
+                child_r_aabb,
+                ..
+            } => {
+                if aabb_overlap_bvh(query, &child_l_aabb) {
+                    stack.push(child_l_index);
+                }
+                if aabb_overlap_bvh(query, &child_r_aabb) {
+                    stack.push(child_r_index);
+                }
+            }
+            BVHNode::Leaf { shape_index, .. } => {
+                if let Some(s) = shapes.get(shape_index) {
+                    if aabb_overlap_bvh(query, &s.aabb) {
+                        out.push(s.index);
+                    }
+                }
+            }
+        }
+    }
+
+    out
+}
+
+fn aabb_overlap_bvh(a: &AABB, b: &AABB) -> bool {
+    !(a.max.x < b.min.x
+        || a.min.x > b.max.x
+        || a.max.y < b.min.y
+        || a.min.y > b.max.y
+        || a.max.z < b.min.z
+        || a.min.z > b.max.z)
+}
+
+fn world_aabb_for_collision_object(obj: &StoredObject) -> ([f32; 3], [f32; 3]) {
+    match obj.shape {
+        CollisionShape::Sphere { radius } => (
+            [
+                obj.position_world[0] - radius,
+                obj.position_world[1] - radius,
+                obj.position_world[2] - radius,
+            ],
+            [
+                obj.position_world[0] + radius,
+                obj.position_world[1] + radius,
+                obj.position_world[2] + radius,
+            ],
+        ),
+        CollisionShape::Cube { half_extents } => world_aabb_cube(obj.position_world, half_extents),
     }
 }
 

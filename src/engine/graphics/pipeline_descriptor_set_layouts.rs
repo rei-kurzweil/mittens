@@ -8,7 +8,15 @@ use vulkano::device::Device;
 use vulkano::shader::ShaderStages;
 
 pub struct PipelineDescriptorSetLayouts {
-    /// Set 0: global data shared by all pipelines (camera, time, etc).
+    /// Set 0: global per-frame data shared by all pipelines.
+    ///
+    /// Bindings:
+    /// - `binding=0`: camera UBO (view/proj + misc per-frame values)
+    /// - `binding=1`: lights SSBO
+    ///
+    /// Note: the renderer may build multiple descriptor sets with this same layout
+    /// (e.g. a foreground variant and a background variant). They share the same
+    /// bindings, but may differ in the *values* written into the camera UBO.
     pub global: Arc<DescriptorSetLayout>,
 
     /// Set 1: material data (textures/params).
@@ -21,7 +29,9 @@ pub struct PipelineDescriptorSetLayouts {
 impl PipelineDescriptorSetLayouts {
     /// Creates a shared descriptor set layout used for global data.
     ///
-    /// Currently this is just `set=0,binding=0` uniform buffer (camera UBO).
+    /// This layout is:
+    /// - `set=0,binding=0` uniform buffer (camera UBO)
+    /// - `set=0,binding=1` storage buffer (lights SSBO)
     pub fn new(device: Arc<Device>) -> Result<Self, Box<dyn std::error::Error>> {
         let mut bindings = BTreeMap::new();
 

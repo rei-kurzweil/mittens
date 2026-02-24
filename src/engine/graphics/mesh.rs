@@ -45,6 +45,14 @@ pub struct CpuVertex {
 pub struct CpuMesh {
     pub vertices: Vec<CpuVertex>,
     pub indices_u32: Vec<u32>,
+
+    /// Optional skinning data (glTF: `JOINTS_0` / `WEIGHTS_0`).
+    ///
+    /// Contract (when present):
+    /// - `len == vertices.len()`
+    /// - `joints0[i]` corresponds to `weights0[i]`
+    pub joints0: Option<Vec<[u16; 4]>>,
+    pub weights0: Option<Vec<[f32; 4]>>,
     pub primitive_topology: PrimitiveTopology,
     pub index_format: IndexFormat,
 }
@@ -54,9 +62,20 @@ impl CpuMesh {
         Self {
             vertices,
             indices_u32,
+            joints0: None,
+            weights0: None,
             primitive_topology: PrimitiveTopology::TriangleList,
             index_format: IndexFormat::U32,
         }
+    }
+
+    pub fn with_skinning(mut self, joints0: Vec<[u16; 4]>, weights0: Vec<[f32; 4]>) -> Self {
+        debug_assert_eq!(joints0.len(), self.vertices.len());
+        debug_assert_eq!(weights0.len(), self.vertices.len());
+        debug_assert_eq!(joints0.len(), weights0.len());
+        self.joints0 = Some(joints0);
+        self.weights0 = Some(weights0);
+        self
     }
 
     pub fn index_count(&self) -> u32 {
@@ -74,7 +93,6 @@ impl CpuMesh {
 /// - The shapes here are intentionally simple and low-poly.
 /// - Winding order:
 ///   We return *counter-clockwise* triangles in object space for "front faces".
-///   (If your Vulkan pipeline uses CLOCKWISE front_face, you may need to flip.)
 pub struct MeshFactory;
 
 impl MeshFactory {

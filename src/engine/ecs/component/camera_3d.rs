@@ -22,22 +22,46 @@ pub struct Camera3DComponent {
     /// - Today, the 3D camera drives the Window camera matrices.
     /// - This field exists so `make_active_camera()` can be target-aware.
     pub target: CameraTarget,
+
+    /// Vertical field of view (degrees).
+    pub fov_y_degrees: f32,
+    pub z_near: f32,
+    pub z_far: f32,
 }
 
 impl Camera3DComponent {
+    pub const DEFAULT_FOV_Y_DEGREES: f32 = 60.0;
+    pub const DEFAULT_Z_NEAR: f32 = 0.1;
+    pub const DEFAULT_Z_FAR: f32 = 150.0;
+
     pub fn new() -> Self {
         Self {
             handle: None,
             component_id: None,
             target: CameraTarget::Window,
+            fov_y_degrees: Self::DEFAULT_FOV_Y_DEGREES,
+            z_near: Self::DEFAULT_Z_NEAR,
+            z_far: Self::DEFAULT_Z_FAR,
         }
     }
 
+    pub fn with_fov(mut self, fov_y_degrees: f32) -> Self {
+        self.fov_y_degrees = fov_y_degrees;
+        self
+    }
+
+    pub fn with_near(mut self, z_near: f32) -> Self {
+        self.z_near = z_near;
+        self
+    }
+
+    pub fn with_far(mut self, z_far: f32) -> Self {
+        self.z_far = z_far;
+        self
+    }
+
     /// Ask the CameraSystem to make this the active camera.
-    pub fn make_active_camera(
-        &mut self,
-        queue: &mut crate::engine::ecs::CommandQueue,
-    ) {
+    pub fn make_active_camera(&mut self, queue: &mut crate::engine::ecs::CommandQueue) {
         if self.handle.is_some() {
             if let Some(component) = self.component_id {
                 queue.queue_make_active_camera(component);
@@ -80,6 +104,31 @@ impl Component for Camera3DComponent {
             "target".to_string(),
             serde_json::Value::String(target.to_string()),
         );
+
+        map.insert(
+            "fov_y_deg".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(self.fov_y_degrees as f64).unwrap_or_else(|| {
+                    serde_json::Number::from_f64(Self::DEFAULT_FOV_Y_DEGREES as f64).unwrap()
+                }),
+            ),
+        );
+        map.insert(
+            "z_near".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(self.z_near as f64).unwrap_or_else(|| {
+                    serde_json::Number::from_f64(Self::DEFAULT_Z_NEAR as f64).unwrap()
+                }),
+            ),
+        );
+        map.insert(
+            "z_far".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(self.z_far as f64).unwrap_or_else(|| {
+                    serde_json::Number::from_f64(Self::DEFAULT_Z_FAR as f64).unwrap()
+                }),
+            ),
+        );
         map
     }
 
@@ -95,6 +144,24 @@ impl Component for Camera3DComponent {
                     "window" | _ => CameraTarget::Window,
                 };
             }
+        }
+
+        if let Some(v) = _data.get("fov_y_deg") {
+            self.fov_y_degrees = serde_json::from_value(v.clone())
+                .map_err(|e| format!("Failed to decode fov_y_deg: {}", e))?;
+        }
+        if let Some(v) = _data.get("z_near") {
+            self.z_near = serde_json::from_value(v.clone())
+                .map_err(|e| format!("Failed to decode z_near: {}", e))?;
+        }
+        if let Some(v) = _data.get("z_far") {
+            self.z_far = serde_json::from_value(v.clone())
+                .map_err(|e| format!("Failed to decode z_far: {}", e))?;
+        }
+
+        // Basic sanity: keep near/far in a valid ordering.
+        if self.z_far <= self.z_near {
+            self.z_far = self.z_near + 0.01;
         }
         Ok(())
     }

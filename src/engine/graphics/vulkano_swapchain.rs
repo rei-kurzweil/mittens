@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
+use vulkano::Validated;
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
-use vulkano::image::{Image, ImageCreateInfo, ImageType, ImageUsage};
+use vulkano::image::{Image, ImageCreateInfo, ImageType, ImageUsage, SampleCount};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter};
 use vulkano::swapchain::{Surface, Swapchain, SwapchainCreateInfo};
-use vulkano::Validated;
 use vulkano_util::context::VulkanoContext;
 use winit::window::Window;
 
@@ -16,13 +16,27 @@ pub(crate) struct VulkanoSwapchainState {
     pub surface: Arc<Surface>,
     pub swapchain: Arc<Swapchain>,
     pub swapchain_views: Vec<Arc<ImageView>>,
+
+    /// Multisample configuration used by pipelines and attachments.
+    pub msaa_samples: SampleCount,
+
+    /// Multisampled color attachments, one per swapchain image.
+    ///
+    /// When `msaa_samples` is `SampleCount::Sample1`, this is empty and the swapchain images are
+    /// rendered to directly.
+    pub msaa_color_views: Vec<Arc<ImageView>>,
+
     pub depth_views: Vec<Arc<ImageView>>,
 }
 
 impl VulkanoSwapchainState {
     pub(crate) const DEPTH_FORMAT: Format = Format::D32_SFLOAT;
 
-    pub(crate) fn new(context: &VulkanoContext, window: Arc<Window>) -> Result<Self, Box<dyn std::error::Error>> {
+    pub(crate) fn new(
+        context: &VulkanoContext,
+        window: Arc<Window>,
+        msaa_samples: SampleCount,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let device = context.device().clone();
 
         let surface = Surface::from_window(device.instance().clone(), window.clone())?;
@@ -81,12 +95,22 @@ impl VulkanoSwapchainState {
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
 
         let extent = swapchain.image_extent();
-        let depth_views = Self::create_depth_views(context, &swapchain_views, extent)?;
+        let depth_views =
+            Self::create_depth_views(context, &swapchain_views, extent, msaa_samples)?;
+        let msaa_color_views = Self::create_msaa_color_views(
+            context,
+            &swapchain_views,
+            extent,
+            image_format,
+            msaa_samples,
+        )?;
 
         Ok(Self {
             surface,
             swapchain,
             swapchain_views,
+            msaa_samples,
+            msaa_color_views,
             depth_views,
         })
     }
@@ -120,7 +144,15 @@ impl VulkanoSwapchainState {
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
 
         let extent = self.swapchain.image_extent();
-        self.depth_views = Self::create_depth_views(context, &self.swapchain_views, extent)?;
+        self.depth_views =
+            Self::create_depth_views(context, &self.swapchain_views, extent, self.msaa_samples)?;
+        self.msaa_color_views = Self::create_msaa_color_views(
+            context,
+            &self.swapchain_views,
+            extent,
+            self.swapchain.image_format(),
+            self.msaa_samples,
+        )?;
 
         Ok(())
     }
@@ -129,6 +161,7 @@ impl VulkanoSwapchainState {
         context: &VulkanoContext,
         swapchain_views: &[Arc<ImageView>],
         extent: [u32; 2],
+        samples: SampleCount,
     ) -> Result<Vec<Arc<ImageView>>, Box<dyn std::error::Error>> {
         // Depth buffer: one image per swapchain image.
         let memory_allocator = context.memory_allocator().clone();
@@ -142,6 +175,7 @@ impl VulkanoSwapchainState {
                         image_type: ImageType::Dim2d,
                         format: Self::DEPTH_FORMAT,
                         extent: [extent[0], extent[1], 1],
+                        samples,
                         usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT,
                         ..Default::default()
                     },
@@ -157,5 +191,45 @@ impl VulkanoSwapchainState {
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
 
         Ok(depth_views)
+    }
+
+    fn create_msaa_color_views(
+        context: &VulkanoContext,
+        swapchain_views: &[Arc<ImageView>],
+        extent: [u32; 2],
+        format: Format,
+        samples: SampleCount,
+    ) -> Result<Vec<Arc<ImageView>>, Box<dyn std::error::Error>> {
+        if samples == SampleCount::Sample1 {
+            return Ok(Vec::new());
+        }
+
+        let memory_allocator = context.memory_allocator().clone();
+
+        let views = swapchain_views
+            .iter()
+            .map(|_| {
+                let image = Image::new(
+                    memory_allocator.clone(),
+                    ImageCreateInfo {
+                        image_type: ImageType::Dim2d,
+                        format,
+                        extent: [extent[0], extent[1], 1],
+                        samples,
+                        usage: ImageUsage::COLOR_ATTACHMENT | ImageUsage::TRANSIENT_ATTACHMENT,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                        ..Default::default()
+                    },
+                )?;
+
+                ImageView::new_default(image)
+                    .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })
+            })
+            .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+
+        Ok(views)
     }
 }
