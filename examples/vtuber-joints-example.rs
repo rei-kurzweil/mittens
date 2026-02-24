@@ -1,8 +1,9 @@
 use cat_engine::engine::ecs::component::{
     Action, ActionComponent, AmbientLightComponent, AnimationComponent, AnimationState,
     BackgroundColorComponent, Camera3DComponent, ColorComponent, DirectionalLightComponent,
-    EmissiveComponent, GLTFComponent, InputComponent, InputTransformModeComponent, JointComponent,
-    KeyframeComponent, MeshComponent, RenderableComponent, SkinnedMeshComponent, TransformComponent,
+    ClockComponent, EmissiveComponent, GLTFComponent, InputComponent, InputTransformModeComponent,
+    JointComponent, KeyframeComponent, MeshComponent, RenderableComponent, SkinnedMeshComponent,
+    TransformComponent,
 };
 use cat_engine::{engine, utils};
 use std::collections::{HashMap, HashSet};
@@ -15,6 +16,10 @@ fn main() {
 
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
+
+    // Slow the global beat clock so beat-based animations run half as fast.
+    let clock = universe.world.register(ClockComponent::new().with_bpm(60.0));
+    universe.add(clock);
 
     // Light pink background.
     let background = universe
@@ -195,41 +200,15 @@ fn main() {
         .copied()
         .collect();
 
-    let joint_offset: usize = std::env::var("VTUBER_JOINT_OFFSET")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(0);
-    let wiggle_count: usize = std::env::var("VTUBER_WIGGLE_COUNT")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(16);
+    // Example settings are hardcoded to keep this example simple.
+    let joint_offset: usize = 0;
+    let wiggle_count: usize = 16;
 
-    let target_mesh_key = std::env::var("VTUBER_TARGET_MESH_KEY")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| "pc-rei.hoodie:Body_(merged).baked:prim0".to_string());
+    let target_mesh_key = "pc-rei.hoodie:Body_(merged).baked:prim0".to_string();
+    let target_joint_names: Vec<String> =
+        vec!["J_Bip_L_UpperArm".to_string(), "J_Bip_R_UpperArm".to_string()];
 
-    let target_joint_names: Vec<String> = std::env::var("VTUBER_TARGET_JOINTS")
-        .ok()
-        .map(|s| {
-            s.split(',')
-                .map(|p| p.trim())
-                .filter(|p| !p.is_empty())
-                .map(|p| p.to_string())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_else(|| {
-            vec!["J_Bip_L_UpperArm".to_string(), "J_Bip_R_UpperArm".to_string()]
-        });
-
-    // Disabled by default to avoid log spam. Set to 1/true/on to enable.
-    let print_transform_updates: bool = std::env::var("VTUBER_PRINT_TRANSFORMS")
-        .ok()
-        .map(|s| {
-            let s = s.trim().to_ascii_lowercase();
-            s == "1" || s == "true" || s == "on" || s == "yes"
-        })
-        .unwrap_or(false);
+    let print_transform_updates: bool = false;
 
     let selected_joint_transforms: Vec<(usize, engine::ecs::ComponentId)> =
         select_named_joints(&universe.world, &all_joints, &target_joint_names)
@@ -271,31 +250,18 @@ fn main() {
         .register(AnimationComponent::new().with_state(AnimationState::Looping));
     let _ = universe.attach(model_root, anim);
 
-    // Fill [0, 2) beats densely so it looks smooth at bpm=120 (2 beats = 1 second).
+    // Fill [0, 2) beats densely so it looks smooth at bpm=60 (2 beats = 2 seconds).
     // Important: keep max beat < 2.0 so AnimationSystem uses loop_len=2.
     let steps: usize = 32;
-    let amplitude_rad: f32 = std::env::var("VTUBER_AMPLITUDE_RAD")
-        .ok()
-        .and_then(|s| s.parse::<f32>().ok())
-        .unwrap_or(0.65);
-    let axis: [f32; 3] = std::env::var("VTUBER_AXIS")
-        .ok()
-        .map(|s| s.trim().to_ascii_lowercase())
-        .as_deref()
-        .map(|s| match s {
-            "x" => [1.0, 0.0, 0.0],
-            "y" => [0.0, 1.0, 0.0],
-            "z" => [0.0, 0.0, 1.0],
-            _ => [0.0, 1.0, 0.0],
-        })
-        .unwrap_or([0.0, 1.0, 0.0]);
+    // Rotate around Z, with half the previous distance.
+    let amplitude_rad: f32 = 0.325;
+    let axis_parent: [f32; 3] = [0.0, 0.0, 1.0];
     for i in 0..steps {
         let beat = (i as f64) * (2.0 / (steps as f64));
         let kf = universe.world.register(KeyframeComponent::new(beat));
         let _ = universe.attach(anim, kf);
 
         let angle = ((std::f64::consts::PI * beat).sin() as f32) * amplitude_rad;
-        let delta = quat_from_axis_angle(axis, angle);
 
         for &(_node_index, joint_tx) in selected_joint_transforms.iter() {
             let Some((translation, base_rotation, scale)) = universe
@@ -312,7 +278,12 @@ fn main() {
                 continue;
             };
 
-            let rotation = quat_mul(base_rotation, delta);
+            // Joints often have exported local axes that don't match the model's visible axes.
+            // To rotate around *parent/model-space* +Z, convert that axis into this joint's
+            // local space and then apply a local delta.
+            let axis_local = quat_rotate_vec3(quat_conjugate(quat_normalize(base_rotation)), axis_parent);
+            let delta_local = quat_from_axis_angle(axis_local, angle);
+            let rotation = quat_mul(base_rotation, delta_local);
 
             if print_transform_updates {
                 // Print at runtime (when the keyframe fires) which transforms are updated and to what.
@@ -559,10 +530,7 @@ fn select_body_prim0_influencers(
         .collect();
     ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    let min_total = std::env::var("VTUBER_AUTO_JOINT_MIN_TOTAL")
-        .ok()
-        .and_then(|s| s.parse::<f32>().ok())
-        .unwrap_or(10.0);
+    let min_total: f32 = 10.0;
 
     println!(
         "[vtuber-joints-example] auto joints for mesh_key='{}': verts={} joint_count={} min_total={}",
@@ -724,6 +692,27 @@ fn quat_from_axis_angle(axis: [f32; 3], angle_rad: f32) -> [f32; 4] {
     let half = 0.5 * angle_rad;
     let (s, c) = half.sin_cos();
     [ax * s, ay * s, az * s, c]
+}
+
+fn quat_conjugate(q: [f32; 4]) -> [f32; 4] {
+    [-q[0], -q[1], -q[2], q[3]]
+}
+
+fn quat_normalize(q: [f32; 4]) -> [f32; 4] {
+    let len2 = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
+    if len2 <= 0.0 {
+        return [0.0, 0.0, 0.0, 1.0];
+    }
+    let inv = len2.sqrt().recip();
+    [q[0] * inv, q[1] * inv, q[2] * inv, q[3] * inv]
+}
+
+fn quat_rotate_vec3(q: [f32; 4], v: [f32; 3]) -> [f32; 3] {
+    // v' = q * (v,0) * conj(q)
+    let qv = [v[0], v[1], v[2], 0.0];
+    let t = quat_mul(q, qv);
+    let out = quat_mul(t, quat_conjugate(q));
+    [out[0], out[1], out[2]]
 }
 
 fn quat_mul(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
