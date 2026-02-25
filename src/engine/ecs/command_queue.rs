@@ -391,6 +391,14 @@ impl CommandQueue {
         });
     }
 
+    /// Queue a register gizmo command.
+    pub fn queue_register_gizmo(&mut self, component_id: crate::engine::ecs::ComponentId) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REGISTER_GIZMO { component_id },
+        });
+    }
+
     /// Queue a remove RayCast command.
     pub fn queue_remove_raycast(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
@@ -578,6 +586,9 @@ impl CommandQueue {
                     Command::REGISTER_CLOCK { component_id } => {
                         systems.register_clock(world, visuals, component_id);
                     }
+                    Command::REGISTER_GIZMO { component_id } => {
+                        systems.register_gizmo(world, visuals, component_id, self);
+                    }
                     Command::SCHEDULE_AUDIO_OP {
                         component_id,
                         beat,
@@ -756,6 +767,10 @@ enum Command {
     },
 
     REGISTER_CLOCK {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+
+    REGISTER_GIZMO {
         component_id: crate::engine::ecs::ComponentId,
     },
 

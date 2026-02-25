@@ -12,6 +12,8 @@ pub enum BuiltinMeshType {
     Cube,
     Tetrahedron,
     Sphere,
+    Cone,
+    Circle2D,
 }
 
 /// Renderer-side asset registry used by ECS systems.
@@ -59,6 +61,8 @@ impl RenderAssets {
         let _ = self.ensure_builtin_mesh(BuiltinMeshType::Tetrahedron);
         // Appended to preserve existing numeric ids.
         let _ = self.ensure_builtin_mesh(BuiltinMeshType::Sphere);
+        let _ = self.ensure_builtin_mesh(BuiltinMeshType::Cone);
+        let _ = self.ensure_builtin_mesh(BuiltinMeshType::Circle2D);
     }
 
     fn ensure_builtin_mesh(&mut self, mesh: BuiltinMeshType) -> CpuMeshHandle {
@@ -72,6 +76,8 @@ impl RenderAssets {
             BuiltinMeshType::Cube => MeshFactory::cube(),
             BuiltinMeshType::Tetrahedron => MeshFactory::tetrahedron(),
             BuiltinMeshType::Sphere => MeshFactory::sphere(),
+            BuiltinMeshType::Cone => MeshFactory::cone(32),
+            BuiltinMeshType::Circle2D => MeshFactory::circle_2d(0.45, 0.5, 64),
         };
 
         let h = self.register_mesh(cpu_mesh);

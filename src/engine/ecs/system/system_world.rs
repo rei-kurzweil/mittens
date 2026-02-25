@@ -13,6 +13,7 @@ use crate::engine::ecs::system::KineticResponseSystem;
 use crate::engine::ecs::system::RayCastSystem;
 use crate::engine::ecs::system::RenderableSystem;
 use crate::engine::ecs::system::SkinnedMeshSystem;
+use crate::engine::ecs::system::{GestureSystem, GizmoSystem};
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextureSystem;
@@ -42,6 +43,9 @@ pub struct SystemWorld {
 
     pub raycast: RayCastSystem,
 
+    pub gesture: GestureSystem,
+    pub gizmo: GizmoSystem,
+
     pub gltf: GLTFSystem,
 
     pub openxr: OpenXRSystem,
@@ -57,6 +61,224 @@ pub struct SystemWorld {
 impl SystemWorld {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Register a GizmoComponent by spawning its visual subtree.
+    ///
+    /// Contract: GizmoComponent is expected to be attached under a TransformComponent.
+    pub fn register_gizmo(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+        queue: &mut crate::engine::ecs::CommandQueue,
+    ) {
+        use crate::engine::ecs::component::{GizmoComponent, TransformComponent};
+        use crate::engine::graphics::primitives::CpuMeshHandle;
+
+        // Must be a gizmo.
+        let Some(_) = world.get_component_by_id_as::<GizmoComponent>(component) else {
+            return;
+        };
+
+        // Find the nearest ancestor transform to attach visuals under.
+        let mut cur = component;
+        let mut parent_transform: Option<ComponentId> = None;
+        while let Some(p) = world.parent_of(cur) {
+            if world.get_component_by_id_as::<TransformComponent>(p).is_some() {
+                parent_transform = Some(p);
+                break;
+            }
+            cur = p;
+        }
+        if parent_transform.is_none() {
+            return;
+        }
+
+        // Avoid respawn.
+        if let Some(g) = world.get_component_by_id_as::<GizmoComponent>(component) {
+            if g.visual_root.is_some() {
+                return;
+            }
+        }
+
+        // Create a root transform for the gizmo visuals under the GizmoComponent node.
+        let gizmo_root = world.add_component_boxed_named(
+            "gizmo_root",
+            Box::new(TransformComponent::new()),
+        );
+        let _ = world.add_child(component, gizmo_root);
+
+        // Write back visual root.
+        if let Some(g) = world.get_component_by_id_as_mut::<GizmoComponent>(component) {
+            g.visual_root = Some(gizmo_root);
+        }
+
+        // Helper: spawn a renderable under a transform with color+emissive+raycastable.
+        fn spawn_part(
+            world: &mut World,
+            parent: ComponentId,
+            name: &str,
+            mesh: CpuMeshHandle,
+            pos: [f32; 3],
+            rot_euler: [f32; 3],
+            scale: [f32; 3],
+            rgba: [f32; 4],
+        ) {
+            use crate::engine::ecs::component::{ColorComponent, EmissiveComponent, RaycastableComponent, RenderableComponent, TransformComponent};
+            use crate::engine::graphics::primitives::{MaterialHandle, Renderable};
+
+            let t = world.add_component_boxed_named(
+                format!("{name}_t"),
+                Box::new(
+                    TransformComponent::new()
+                        .with_position(pos[0], pos[1], pos[2])
+                        .with_rotation_euler(rot_euler[0], rot_euler[1], rot_euler[2])
+                        .with_scale(scale[0], scale[1], scale[2]),
+                ),
+            );
+            let r = world.add_component_boxed_named(
+                format!("{name}_r"),
+                Box::new(RenderableComponent::new(Renderable::new(mesh, MaterialHandle::TOON_MESH))),
+            );
+            let c = world.add_component_boxed_named(
+                format!("{name}_color"),
+                Box::new(ColorComponent::rgba(rgba[0], rgba[1], rgba[2], rgba[3])),
+            );
+            let e = world.add_component_boxed_named(format!("{name}_emissive"), Box::new(EmissiveComponent::on()));
+            let rc = world.add_component_boxed_named(format!("{name}_ray"), Box::new(RaycastableComponent::enabled()));
+
+            let _ = world.add_child(parent, t);
+            let _ = world.add_child(t, r);
+            let _ = world.add_child(r, c);
+            let _ = world.add_child(r, e);
+            let _ = world.add_child(r, rc);
+        }
+
+        // Axis colors.
+        let red = [1.0, 0.15, 0.15, 1.0];
+        let green = [0.15, 1.0, 0.15, 1.0];
+        let blue = [0.15, 0.35, 1.0, 1.0];
+
+        // Rotation rings (thin annulus) for X/Y/Z axes.
+        // Circle2D lies in XY plane. To get YZ, rotate around Y by +90deg? Actually XY->YZ: rotate around X by +90deg puts normal +Z to +Y.
+        // We want plane YZ (normal +X): rotate around Y by -90deg.
+        let ring_mesh = CpuMeshHandle::CIRCLE_2D;
+        let ring_scale = [1.4, 1.4, 1.0];
+
+        // X axis rotation ring: plane YZ (normal +X)
+        spawn_part(
+            world,
+            gizmo_root,
+            "gizmo_rot_x",
+            ring_mesh,
+            [0.0, 0.0, 0.0],
+            [0.0, -std::f32::consts::FRAC_PI_2, 0.0],
+            ring_scale,
+            red,
+        );
+        // Y axis rotation ring: plane XZ (normal +Y)
+        spawn_part(
+            world,
+            gizmo_root,
+            "gizmo_rot_y",
+            ring_mesh,
+            [0.0, 0.0, 0.0],
+            [std::f32::consts::FRAC_PI_2, 0.0, 0.0],
+            ring_scale,
+            green,
+        );
+        // Z axis rotation ring: plane XY (normal +Z)
+        spawn_part(
+            world,
+            gizmo_root,
+            "gizmo_rot_z",
+            ring_mesh,
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            ring_scale,
+            blue,
+        );
+
+        // Translation arrows: stem (cube) + cone tip.
+        // We model arrows along +X/+Y/+Z by orienting stem/tip transforms.
+        let stem_mesh = CpuMeshHandle::CUBE;
+        let cone_mesh = CpuMeshHandle::CONE;
+        let stem_len = 1.0_f32;
+        let stem_thick = 0.06_f32;
+        let cone_len = 0.22_f32;
+        let cone_radius = 0.12_f32;
+
+        // +X arrow: rotate +Z axis to +X (yaw -90deg).
+        let rot_x = [0.0, -std::f32::consts::FRAC_PI_2, 0.0];
+        spawn_part(
+            world,
+            gizmo_root,
+            "gizmo_move_x_stem",
+            stem_mesh,
+            [stem_len * 0.5, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [stem_len, stem_thick, stem_thick],
+            red,
+        );
+        spawn_part(
+            world,
+            gizmo_root,
+            "gizmo_move_x_tip",
+            cone_mesh,
+            [stem_len + cone_len * 0.5, 0.0, 0.0],
+            rot_x,
+            [cone_radius, cone_radius, cone_len],
+            red,
+        );
+
+        // +Y arrow: rotate +Z axis to +Y (pitch +90deg around X).
+        let rot_y = [std::f32::consts::FRAC_PI_2, 0.0, 0.0];
+        spawn_part(
+            world,
+            gizmo_root,
+            "gizmo_move_y_stem",
+            stem_mesh,
+            [0.0, stem_len * 0.5, 0.0],
+            [0.0, 0.0, 0.0],
+            [stem_thick, stem_len, stem_thick],
+            green,
+        );
+        spawn_part(
+            world,
+            gizmo_root,
+            "gizmo_move_y_tip",
+            cone_mesh,
+            [0.0, stem_len + cone_len * 0.5, 0.0],
+            rot_y,
+            [cone_radius, cone_radius, cone_len],
+            green,
+        );
+
+        // +Z arrow: no rotation.
+        spawn_part(
+            world,
+            gizmo_root,
+            "gizmo_move_z_stem",
+            stem_mesh,
+            [0.0, 0.0, stem_len * 0.5],
+            [0.0, 0.0, 0.0],
+            [stem_thick, stem_thick, stem_len],
+            blue,
+        );
+        spawn_part(
+            world,
+            gizmo_root,
+            "gizmo_move_z_tip",
+            cone_mesh,
+            [0.0, 0.0, stem_len + cone_len * 0.5],
+            [0.0, 0.0, 0.0],
+            [cone_radius, cone_radius, cone_len],
+            blue,
+        );
+
+        // Init the subtree (queues renderable/transform/color registrations).
+        world.init_component_tree(gizmo_root, queue);
     }
 
     /// Register a RenderableComponent instance with the RenderableSystem.
@@ -629,6 +851,13 @@ impl SystemWorld {
 
         self.raycast
             .tick_with_queue(world, visuals, input, queue, &mut self.rx, &self.bvh, dt_sec);
+
+        // Gestures interpret ray hits + input into drag events.
+        self.gesture.tick_with_rx(input, &mut self.rx);
+        // Gizmos consume drag events and apply transform changes.
+        self.gizmo.tick_with_queue(world, input, queue, &mut self.rx);
+        // Apply gizmo transform updates immediately so visuals reflect the drag this frame.
+        queue.flush(world, self, visuals);
 
         self.renderable.tick(world, visuals, input, dt_sec);
 

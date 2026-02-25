@@ -24,6 +24,14 @@ impl RxWorld {
         });
     }
 
+    /// Returns the current queued signals for this frame.
+    ///
+    /// This is intentionally read-only: signals are drained and dispatched later in
+    /// `SystemWorld::process_commands`.
+    pub fn signals(&self) -> &[Signal] {
+        &self.signals
+    }
+
     pub fn drain(&mut self) -> Vec<Signal> {
         std::mem::take(&mut self.signals)
     }

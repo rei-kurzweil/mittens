@@ -43,6 +43,30 @@ pub enum EventSignal {
         b: ComponentId,
         delta: [f32; 3],
     },
+
+    /// Fact: a drag gesture started.
+    DragStart {
+        raycaster: ComponentId,
+        renderable: ComponentId,
+        hit_point: [f32; 3],
+    },
+
+    /// Fact: a drag gesture moved this tick.
+    ///
+    /// `delta_world` is the world-space movement since the last DragMove for this gesture.
+    DragMove {
+        raycaster: ComponentId,
+        renderable: ComponentId,
+        hit_point: [f32; 3],
+        delta_world: [f32; 3],
+    },
+
+    /// Fact: a drag gesture ended.
+    DragEnd {
+        raycaster: ComponentId,
+        renderable: ComponentId,
+        hit_point: Option<[f32; 3]>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -59,6 +83,9 @@ pub enum SignalKind {
     RayIntersected,
     CollisionStarted,
     CollisionEnded,
+    DragStart,
+    DragMove,
+    DragEnd,
 }
 
 impl SignalValue {
@@ -69,6 +96,9 @@ impl SignalValue {
             SignalValue::Event(EventSignal::RayIntersected { .. }) => SignalKind::RayIntersected,
             SignalValue::Event(EventSignal::CollisionStarted { .. }) => SignalKind::CollisionStarted,
             SignalValue::Event(EventSignal::CollisionEnded { .. }) => SignalKind::CollisionEnded,
+            SignalValue::Event(EventSignal::DragStart { .. }) => SignalKind::DragStart,
+            SignalValue::Event(EventSignal::DragMove { .. }) => SignalKind::DragMove,
+            SignalValue::Event(EventSignal::DragEnd { .. }) => SignalKind::DragEnd,
         }
     }
 }

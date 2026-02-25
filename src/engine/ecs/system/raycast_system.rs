@@ -91,7 +91,9 @@ impl RayCastSystem {
         match mode {
             RayCastMode::Continuous => true,
             RayCastMode::EventDriven => {
-                cast_requested || input.mouse_pressed.contains(&MouseButton::Left)
+                cast_requested
+                    || input.mouse_pressed.contains(&MouseButton::Left)
+                    || (input.mouse_down.contains(&MouseButton::Left) && input.mouse_dragging())
             }
         }
     }

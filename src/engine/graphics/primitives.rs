@@ -196,6 +196,10 @@ impl CpuMeshHandle {
     pub const CUBE: CpuMeshHandle = CpuMeshHandle(2);
     pub const TETRAHEDRON: CpuMeshHandle = CpuMeshHandle(3);
     pub const SPHERE: CpuMeshHandle = CpuMeshHandle(4);
+
+    // Appended built-ins (keep stable and in sync with RenderAssets registration order).
+    pub const CONE: CpuMeshHandle = CpuMeshHandle(5);
+    pub const CIRCLE_2D: CpuMeshHandle = CpuMeshHandle(6);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
