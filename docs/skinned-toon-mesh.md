@@ -2,6 +2,8 @@
 
 This document replaces the older “proposed” skinning notes and describes the **current, working** end-to-end pipeline for skinned glTF files in cat-engine.
 
+For the non-skinning-specific mesh/instance data flow (`CpuMesh` -> `RenderableComponent` -> `InstanceHandle`), see `docs/mesh.md`.
+
 Scope:
 - Importing glTF skins (`JOINTS_0` / `WEIGHTS_0`, joints list, inverse bind matrices)
 - ECS components/systems involved

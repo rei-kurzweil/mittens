@@ -2,6 +2,8 @@
 
 This document describes how cat-engine’s **renderable BVH** and **raycasting / mouse picking** work today: what data each system owns, how it stays in sync, and what the raycast query actually tests.
 
+For how meshes/handles flow through rendering (and why `base_mesh` exists), see `docs/mesh.md`.
+
 ## High-level idea
 
 - `BvhSystem` maintains a broadphase acceleration structure over **world-space AABBs** of *renderable* components.
@@ -21,9 +23,12 @@ This is intended for **picking / UI-ish hit testing** (cube/quad/triangle primit
   - Owns `transform.model` (local) and `transform.matrix_world` (cached world matrix).
   - `TransformSystem` keeps `matrix_world` correct.
 
-- `BackgroundComponent`
-  - Controls whether descendants are “raycastable” (via `ray_casting`).
-  - BVH and raycast both treat a renderable as pickable unless it’s under a background that disables it.
+
+- `RaycastableComponent`
+  - Explicit opt-in/opt-out for picking.
+  - A renderable is only eligible for the raycast BVH when a `RaycastableComponent` is found either:
+    - as an immediate child under the `RenderableComponent`, or
+    - on some ancestor in the topology (nearest ancestor wins).
 
 - `RayCastComponent`
   - A *request/behavior* component.
@@ -86,15 +91,14 @@ The ray is computed in `RayCastSystem::ray_from_cursor`:
 
 A renderable is only added if `renderable_is_raycastable(world, renderable_cid)` returns true:
 
-- It walks up ancestors to find the nearest `BackgroundComponent`.
-- If found, uses `bg.ray_casting`.
-- If not found, defaults to raycastable.
+- Explicit opt-in only: BVH will only include a renderable if a `RaycastableComponent` is present (immediate child or ancestor).
+- If multiple `RaycastableComponent`s exist in the ancestry chain, the nearest ancestor to the renderable wins.
 
 ### How AABBs are computed
 
 `compute_aabb_for_renderable()` uses:
 
-- `RenderableComponent.renderable.base_mesh` (important: it uses the *base mesh*, not UV-baked variants)
+- `RenderableComponent.renderable.base_mesh` (important: it uses the *base mesh*, not UV-baked variants — see `docs/mesh.md`)
 - The nearest cached world matrix from `TransformSystem::world_model(world, renderable_cid)`
 
 Then it calls `aabb_from_world_matrix_for_mesh(mesh, world_model)`.
@@ -179,26 +183,21 @@ There is no per-triangle mesh intersection here.
 
 ## About parenting RayCastComponent to transforms (your question)
 
-Yes, it’s common to **attach `RayCastComponent` somewhere under a camera rig transform**, but in the current implementation:
+`RayCastSystem` infers a ray source from topology:
 
-- The ray origin/direction comes from the **active window camera** in `VisualWorld`.
-- `RayCastSystem` does **not** read the `RayCastComponent`’s own transform (or any parent transform) when constructing the ray.
-
-So parenting a raycaster does *not* set a reference frame for picking.
-
-What *does* set the picking reference frame is:
-
-- The active camera’s view/projection matrices in `VisualWorld`, which themselves are driven by camera components parented under transforms.
+- If the nearest ancestor `TransformComponent` also has a camera component under it (`Camera3DComponent` or `Camera2DComponent`), it casts **cursor-through-active-camera** (the classic picking ray).
+- Otherwise, it casts **forward** along the nearest ancestor transform’s -Z axis (parent-local forward), using that transform’s world pose.
 
 Practical implication:
 
-- If you want picking from a different reference frame, you switch/drive the active camera (or extend `RayCastComponent` / `RayCastSystem` to support “cast from this transform”).
+- Attaching `RayCastComponent` under a camera rig transform will generally produce cursor picking.
+- Attaching it under a non-camera transform will produce a “controller-like” forward ray.
 
 ## Common gotchas
 
 - If you’re trying to pick a complex imported mesh, it likely won’t hit: only a few `CpuMeshHandle` primitives generate AABBs today.
 - If your renderable isn’t under a transform (no ancestor `TransformComponent`), it gets a placeholder AABB and won’t be hit.
-- Background filtering: if a renderable is under a `BackgroundComponent` with `ray_casting = false`, it won’t be indexed or hit.
+- If nothing ever hits, double-check you’ve explicitly opted in with `RaycastableComponent` (either on the renderable or an ancestor).
 
 ## Suggested next steps (if you want better picking)
 
