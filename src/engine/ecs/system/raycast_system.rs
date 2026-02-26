@@ -2,7 +2,7 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::{EventSignal, RxWorld};
 use crate::engine::ecs::component::{
-    ColorComponent, RayCastComponent, RayCastMode, RaycastableComponent, RenderableComponent,
+    ColorComponent, RayCastComponent, RayCastMode, RenderableComponent,
 };
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::System;
@@ -24,9 +24,6 @@ pub struct RayCastSystem {
     ///
     /// This is used to avoid scanning `world.all_components()` for brute-force fallback tests.
     eligible_renderables: HashSet<ComponentId>,
-
-    // Debug ray visualization: raycaster component -> visual root TransformComponent.
-    ray_visual_by_raycast: HashMap<ComponentId, ComponentId>,
 
     // Debug highlight: currently-highlighted renderable (glyph).
     highlighted_renderable: Option<ComponentId>,
@@ -149,8 +146,7 @@ impl RayCastSystem {
         let color_cid = match existing {
             Some(cid) => cid,
             None => {
-                let cid =
-                    world.add_component(ColorComponent::rgba(rgba[0], rgba[1], rgba[2], rgba[3]));
+                let cid = world.add_component(ColorComponent::rgba(rgba[0], rgba[1], rgba[2], rgba[3]));
                 let _ = world.add_child(renderable_cid, cid);
                 cid
             }
@@ -245,39 +241,6 @@ impl RayCastSystem {
         ]
     }
 
-    fn quat_normalize(q: [f32; 4]) -> [f32; 4] {
-        let len = (q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]).sqrt();
-        if len > 0.0 {
-            [q[0] / len, q[1] / len, q[2] / len, q[3] / len]
-        } else {
-            [0.0, 0.0, 0.0, 1.0]
-        }
-    }
-
-    /// Quaternion rotating vector `from` to vector `to`.
-    ///
-    /// Both vectors are treated as directions.
-    fn quat_from_to(from: [f32; 3], to: [f32; 3]) -> [f32; 4] {
-        let f = Self::vec3_normalize(from);
-        let t = Self::vec3_normalize(to);
-        let dot = Self::vec3_dot(f, t);
-
-        // If vectors are nearly opposite, pick an arbitrary orthogonal axis.
-        if dot < -0.999_999 {
-            let axis_seed = if f[0].abs() < 0.1 && f[2].abs() < 0.1 {
-                [1.0, 0.0, 0.0]
-            } else {
-                [0.0, 1.0, 0.0]
-            };
-            let axis = Self::vec3_normalize(Self::vec3_cross(f, axis_seed));
-            return [axis[0], axis[1], axis[2], 0.0];
-        }
-
-        let c = Self::vec3_cross(f, t);
-        let q = [c[0], c[1], c[2], 1.0 + dot];
-        Self::quat_normalize(q)
-    }
-
     fn nearest_ancestor_transform(world: &World, start: ComponentId) -> Option<ComponentId> {
         if world
             .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(start)
@@ -333,135 +296,6 @@ impl RayCastSystem {
         let forward_local = [0.0, 0.0, -1.0];
         let dir_world = Self::vec3_normalize(Self::mat4_mul_vec3_dir(model, forward_local));
         Some((origin, dir_world))
-    }
-
-    fn ensure_ray_visual(
-        &mut self,
-        world: &mut World,
-        queue: &mut crate::engine::ecs::CommandQueue,
-        raycaster_cid: ComponentId,
-    ) -> Option<ComponentId> {
-        let parent = Self::nearest_ancestor_transform(world, raycaster_cid)?;
-
-        if let Some(&vis_root) = self.ray_visual_by_raycast.get(&raycaster_cid) {
-            if world
-                .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(vis_root)
-                .is_some()
-            {
-                // If the raycaster was reparented, keep the visual under the same inferred parent
-                // transform so the attachment change is visible in topology.
-                if world.parent_of(vis_root) != Some(parent) {
-                    let _ = world.add_child(parent, vis_root);
-
-                    if world.is_initialized(parent) && !world.is_initialized(vis_root) {
-                        world.init_component_tree(vis_root, queue);
-                    }
-                }
-                return Some(vis_root);
-            }
-        }
-
-        // Attach the visual under the nearest ancestor transform, so it lives in a reasonable place
-        // in the component tree and is initialized if the parent is initialized.
-        let vis_t = world.register(
-            crate::engine::ecs::component::TransformComponent::new()
-                .with_scale(0.02, 0.02, 1.0),
-        );
-        let vis_r = world.register(
-            RenderableComponent::cube(),
-        );
-        let vis_rc = world.register(RaycastableComponent::disabled());
-        let vis_c = world.register(ColorComponent::rgba(1.0, 0.9, 0.2, 1.0));
-        let vis_e = world.register(crate::engine::ecs::component::EmissiveComponent::on());
-
-        let _ = world.add_child(parent, vis_t);
-        let _ = world.add_child(vis_t, vis_r);
-        let _ = world.add_child(vis_r, vis_rc);
-        let _ = world.add_child(vis_r, vis_c);
-        let _ = world.add_child(vis_r, vis_e);
-
-        if world.is_initialized(parent) {
-            world.init_component_tree(vis_t, queue);
-        }
-
-        self.ray_visual_by_raycast.insert(raycaster_cid, vis_t);
-        Some(vis_t)
-    }
-
-    fn update_ray_visual(
-        &mut self,
-        world: &mut World,
-        queue: &mut crate::engine::ecs::CommandQueue,
-        raycaster_cid: ComponentId,
-        origin: [f32; 3],
-        dir: [f32; 3],
-        length: f32,
-        source: RaySourceKind,
-    ) {
-        let Some(vis_t) = self.ensure_ray_visual(world, queue, raycaster_cid) else {
-            return;
-        };
-
-        // Convert the world-space ray (origin/dir) into the local space of the transform that owns
-        // the raycaster. The visual is parented under that transform, so its TransformComponent
-        // fields must be expressed in parent-local space.
-        let Some(parent) = Self::nearest_ancestor_transform(world, raycaster_cid) else {
-            return;
-        };
-        let Some(parent_model) = TransformSystem::world_model(world, parent) else {
-            return;
-        };
-        let Some(inv_parent_model) = math::mat4_inverse(parent_model) else {
-            return;
-        };
-
-        let o4 = Self::mat4_mul_vec4(inv_parent_model, [origin[0], origin[1], origin[2], 1.0]);
-        let d4 = Self::mat4_mul_vec4(inv_parent_model, [dir[0], dir[1], dir[2], 0.0]);
-
-        let origin_local = [o4[0], o4[1], o4[2]];
-        let dir_local = Self::vec3_normalize([d4[0], d4[1], d4[2]]);
-
-        let thickness = 0.02;
-        let len = length.max(0.01);
-        let center = Self::vec3_add(origin_local, Self::vec3_mul_scalar(dir_local, 0.5 * len));
-
-        // Orient the cube's +Z axis along the ray direction.
-        let rot = Self::quat_from_to([0.0, 0.0, 1.0], dir_local);
-
-        if let Some(t) = world.get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(vis_t) {
-            t.transform.translation = center;
-            t.transform.rotation = rot;
-            t.transform.scale = [thickness, thickness, len];
-            t.transform.recompute_model();
-            queue.queue_update_transform(vis_t, t.transform);
-        }
-
-        // Color-code based on inferred source.
-        let desired = match source {
-            RaySourceKind::CursorThroughActiveCamera => [0.2, 0.8, 1.0, 1.0],
-            RaySourceKind::ParentForward => [1.0, 0.85, 0.2, 1.0],
-        };
-
-        // Find the ColorComponent under the ray visual renderable.
-        // Topology: vis_t -> renderable -> (color, emissive)
-        if let Some(&renderable_cid) = world.children_of(vis_t).iter().find(|&&ch| {
-            world.get_component_by_id_as::<RenderableComponent>(ch).is_some()
-        }) {
-            if let Some(&color_cid) = world.children_of(renderable_cid).iter().find(|&&ch| {
-                world.get_component_by_id_as::<ColorComponent>(ch).is_some()
-            }) {
-                if let Some(c) = world.get_component_by_id_as_mut::<ColorComponent>(color_cid) {
-                    if c.rgba != desired {
-                        c.rgba = desired;
-                        queue.queue_register_color(color_cid);
-                    }
-                }
-            }
-        }
-    }
-
-    fn vec3_add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-        [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
     }
 
     fn aabb_from_world_matrix_for_mesh(
@@ -817,9 +651,6 @@ impl RayCastSystem {
                         (o, d, None)
                     }
                 };
-
-                // Always keep the debug ray visual updated so you can see where it will cast.
-                self.update_ray_visual(world, queue, rcid, origin, dir, max_distance, source);
 
                 if !Self::should_cast(mode, input, cast_requested) {
                     continue;
