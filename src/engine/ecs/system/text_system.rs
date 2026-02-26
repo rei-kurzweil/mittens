@@ -1,8 +1,8 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    EmissiveComponent, RenderableComponent, TextComponent, TextureComponent,
-    TextureFilteringComponent, TransformComponent, UVComponent,
+    EmissiveComponent, RaycastableComponent, RenderableComponent, TextComponent,
+    TextureComponent, TextureFilteringComponent, TransformComponent, UVComponent,
 };
 use crate::engine::graphics::VisualWorld;
 
@@ -166,6 +166,14 @@ impl TextSystem {
                 .map(|e| e.enabled)
         });
 
+        // Raycasting is explicit opt-in. For text, allow toggling at the TextComponent root by
+        // attaching an immediate RaycastableComponent child; this is propagated to all glyphs.
+        let inherited_raycastable = world.children_of(component).iter().find_map(|&ch| {
+            world
+                .get_component_by_id_as::<RaycastableComponent>(ch)
+                .map(|r| r.enable)
+        });
+
         // Mark built immediately to avoid re-entrancy/double-build.
         if let Some(text_comp) = world.get_component_by_id_as_mut::<TextComponent>(component) {
             text_comp.mark_built();
@@ -190,6 +198,11 @@ impl TextSystem {
 
             let r_id = world.add_component(RenderableComponent::square());
             let _ = world.add_child(t_id, r_id);
+
+            if let Some(enable) = inherited_raycastable {
+                let rc_id = world.add_component(RaycastableComponent::new(enable));
+                let _ = world.add_child(r_id, rc_id);
+            }
 
             let uvs = uvs_for_glyph(ch);
             let uv_id = world.add_component(UVComponent { uvs });

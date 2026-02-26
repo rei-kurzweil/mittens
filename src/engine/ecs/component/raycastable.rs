@@ -8,18 +8,11 @@ use crate::engine::ecs::component::Component;
 pub struct RaycastableComponent {
     /// If true, ray casting is enabled.
     pub enable: bool,
-
-    /// If true, this component sets the *default* raycasting policy for renderables that do not
-    /// have a RaycastableComponent.
-    pub set_default: bool,
 }
 
 impl RaycastableComponent {
     pub fn new(enable: bool) -> Self {
-        Self {
-            enable,
-            set_default: false,
-        }
+        Self { enable }
     }
 
     pub fn enabled() -> Self {
@@ -28,11 +21,6 @@ impl RaycastableComponent {
 
     pub fn disabled() -> Self {
         Self::new(false)
-    }
-
-    pub fn with_set_default(mut self, set_default: bool) -> Self {
-        self.set_default = set_default;
-        self
     }
 }
 
@@ -52,10 +40,6 @@ impl Component for RaycastableComponent {
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
         let mut map = std::collections::HashMap::new();
         map.insert("enable".to_string(), serde_json::json!(self.enable));
-        map.insert(
-            "set_default".to_string(),
-            serde_json::json!(self.set_default),
-        );
         map
     }
 
@@ -68,11 +52,7 @@ impl Component for RaycastableComponent {
                 self.enable = b;
             }
         }
-        if let Some(v) = data.get("set_default") {
-            if let Some(b) = v.as_bool() {
-                self.set_default = b;
-            }
-        }
+        // Backward-compatible: older saves may include "set_default"; ignore it.
         Ok(())
     }
 }

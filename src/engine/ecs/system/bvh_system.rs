@@ -1,6 +1,5 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
-use crate::engine::ecs::component::BackgroundComponent;
 use crate::engine::ecs::component::RaycastableComponent;
 use crate::engine::ecs::component::RenderableComponent;
 use crate::engine::ecs::system::TransformSystem;
@@ -73,19 +72,9 @@ impl BHShape for RenderableAabb {
 
 impl BvhSystem {
     pub(crate) fn renderable_is_raycastable(world: &World, renderable_cid: ComponentId) -> bool {
-        // Background layers are a hard opt-out when disabled.
-        let mut cur = renderable_cid;
-        while let Some(parent) = world.parent_of(cur) {
-            if let Some(bg) = world.get_component_by_id_as::<BackgroundComponent>(parent) {
-                if !bg.ray_casting {
-                    return false;
-                }
-                break;
-            }
-            cur = parent;
-        }
-
-        // Explicit RaycastableComponent on/above the renderable wins.
+        // Explicit opt-in only: a renderable is raycastable iff a RaycastableComponent is found
+        // either immediately under the renderable, or on some ancestor in the topology.
+        //
         // Common topology is: renderable -> (raycastable, color, ...)
         if let Some(rc) = world.children_of(renderable_cid).iter().find_map(|&ch| {
             world
@@ -105,23 +94,7 @@ impl BvhSystem {
             cur = parent;
         }
 
-        // Default behavior: system default is raycastable=true, but can be overridden by a
-        // RaycastableComponent with `set_default=true`.
-        let mut best_default: Option<(ComponentId, bool)> = None;
-        for cid in world.all_components() {
-            let Some(rc) = world.get_component_by_id_as::<RaycastableComponent>(cid) else {
-                continue;
-            };
-            if !rc.set_default {
-                continue;
-            }
-            match best_default {
-                None => best_default = Some((cid, rc.enable)),
-                Some((best_id, _)) if cid < best_id => best_default = Some((cid, rc.enable)),
-                _ => {}
-            }
-        }
-        best_default.map(|(_, enable)| enable).unwrap_or(true)
+        false
     }
 
     pub fn queue_renderable_added(&mut self, component: ComponentId) {

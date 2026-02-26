@@ -2,8 +2,9 @@ use cat_engine::{engine, utils};
 
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, BackgroundComponent, Camera3DComponent,
-    ColorComponent, InputComponent, InputTransformModeComponent, RayCastComponent, TextComponent,
-    TextureComponent, TextureFilteringComponent, TransformComponent, TransparentCutoutComponent,
+    ColorComponent, InputComponent, InputTransformModeComponent, RayCastComponent,
+    RaycastableComponent, TextComponent, TextureComponent, TextureFilteringComponent,
+    TransformComponent, TransparentCutoutComponent,
 };
 
 #[path = "example_util/mod.rs"]
@@ -135,6 +136,11 @@ fn main() {
 
         let text_c = universe.world.register(TextComponent::new(text));
         let _ = universe.attach(text_scale, text_c);
+
+        // Explicit opt-in: make the glyph renderables pickable.
+        // TextSystem will propagate this to all spawned glyph quads.
+        let raycastable = universe.world.register(RaycastableComponent::enabled());
+        let _ = universe.attach(text_c, raycastable);
 
         // Route glyph quads into the alpha-to-coverage cutout pass.
         let cutout = universe.world.register(TransparentCutoutComponent::new());

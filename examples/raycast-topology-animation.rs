@@ -204,11 +204,15 @@ fn main() {
         let r = universe
             .world
             .register(engine::ecs::component::RenderableComponent::cube());
+        let rc = universe
+            .world
+            .register(engine::ecs::component::RaycastableComponent::enabled());
         let c = universe.world.register(engine::ecs::component::ColorComponent::rgba(
             rgba[0], rgba[1], rgba[2], rgba[3],
         ));
         let _ = universe.attach(ring_root, t);
         let _ = universe.attach(t, r);
+        let _ = universe.attach(r, rc);
         let _ = universe.attach(r, c);
     }
 

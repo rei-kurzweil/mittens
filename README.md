@@ -153,11 +153,13 @@ InputComponent {
   + Per-instance opacity multiplier (separate from `ColorComponent` alpha).
   + Routed into the instanced vertex buffer as `i_opacity` and multiplied into the fragment alpha.
   + Like color, opacity can be inherited from ancestors (so you can set it once on a parent and affect all children).
-  + Influences which transparency **draw phase** an instance uses:
+  + Influences which virtual render pass (render phase) an instance uses:
     + Instances are treated as transparent if `opacity < 0.999` **or** `color.a < 0.999`.
       + (Note: texture alpha is not currently considered for pass selection.)
+    + If it is not transparent, it goes through the **opaque** instanced phase.
     + Transparent instances with `multiple_layers=false` go through the **transparent single-layer** instanced phase.
     + Transparent instances with `multiple_layers=true` go through the **transparent multi-layer** sorted phase.
+    + This does not control the **cutout** or **background** phases; those are driven by other instance flags/components.
   + Usage:
     + `OpacityComponent::new().with_opacity(0.5)`
     + `OpacityComponent::new().with_opacity(0.5).with_multiple_layers()` when it must blend correctly with other transparent surfaces.
