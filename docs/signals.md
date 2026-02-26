@@ -1,7 +1,60 @@
 
 # Signals: `{ actions, events }`
 
-This doc describes the engine’s “signals-first” layer.
+This is the canonical doc for the engine’s “signals-first” layer.
+
+If you were previously looking for `docs/events.md`: that file is now a deprecated redirect.
+
+## Practical examples (start here)
+
+### Example 1: listen for topology changes in a subtree
+
+One built-in structural event signal is `ParentChanged`.
+
+Register a listener on some subtree root (e.g. a character rig root), and you’ll be notified when
+any component in that subtree is reparented (attach/detach).
+
+```rust
+use cat_engine::engine::ecs;
+
+fn on_topology_change(
+    _world: &mut ecs::World,
+    _queue: &mut ecs::CommandQueue,
+    signal: &ecs::Signal,
+) {
+    match &signal.value {
+        ecs::SignalValue::Event(ecs::EventSignal::ParentChanged {
+            child,
+            old_parent,
+            new_parent,
+        }) => {
+            println!(
+                "parent changed: child={child:?} old={old_parent:?} new={new_parent:?} (scope={:?})",
+                signal.scope
+            );
+        }
+        _ => {}
+    }
+}
+
+fn setup(universe: &mut cat_engine::engine::Universe, scope_root: ecs::ComponentId) {
+    universe.add_signal_handler(ecs::SignalKind::ParentChanged, scope_root, on_topology_change);
+}
+```
+
+Key idea: listeners are subtree-scoped by default. You don’t subscribe globally and then filter.
+
+### Example 2: actions are intent, events are facts
+
+When you run an action (from animation keyframes, input, tools, etc), the action executes.
+
+If that action performs a meaningful state transition (like a topology move), it emits an **event
+signal** (a fact).
+
+That means you can:
+
+- use actions for “do something now”
+- use events for “something happened; react/derive/cache/log”
 
 ## Goal
 
@@ -28,6 +81,16 @@ Properties we want:
 - **Scoped**: delivered to listeners registered at an ancestor scope root.
 - **Deterministic**: processed in ordered phases.
 - **By value**: payloads are small, cloneable (ComponentId + small enums + numbers).
+
+### Signal handler
+
+A function registered to run when a signal is dispatched.
+
+In the current implementation handlers are plain function pointers:
+
+```rust
+type SignalHandler = fn(&mut World, &mut CommandQueue, &Signal);
+```
 
 ### Action signal
 A signal representing intent.
@@ -129,6 +192,34 @@ When we eventually need closure ergonomics (editor UI callbacks, scripting), a c
 - internally store `Box<dyn FnMut(...) + 'static>` (or `Fn`) keyed by the ID
 
 That’s a larger surface-area change, so starting with fn pointers keeps the system small and deterministic.
+
+## How scoped dispatch works
+
+Listeners are registered by `(SignalKind, scope_root)`.
+
+Each signal also has a `scope` (the component where the signal is most relevant). To dispatch a
+signal scoped at `S`, the engine walks the ancestor chain:
+
+- `S, parent(S), parent(parent(S)), ...`
+
+Any handler registered at any of those nodes will fire.
+
+So:
+
+- a handler on a root sees everything beneath
+- a handler on a nested node sees only that subtree
+
+This avoids global scanning: there’s no “iterate all listeners and test predicates” step.
+
+## When handlers run (important)
+
+Signals are dispatched in `SystemWorld::process_commands`, immediately after a command-queue flush.
+
+Implications:
+
+- handlers observe a stable “post-mutation result”
+- handlers can enqueue new commands; the engine flushes again after dispatch so effects can be
+    visible in the same frame
 
 ### RxWorld
 

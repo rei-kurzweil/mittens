@@ -78,7 +78,10 @@ pub use emissive::EmissiveComponent;
 pub use gravity::GravityComponent;
 pub use input::InputComponent;
 pub use input_transform_mode::{ForwardAxis, InputTransformModeComponent, RollAxis};
-pub use gizmo::{GizmoComponent, GizmoMode};
+pub use gizmo::{
+    GizmoAxis, GizmoComponent, GizmoRotateComponent, GizmoScaleComponent,
+    GizmoTranslateComponent,
+};
 pub use joint::JointComponent;
 pub use keyframe::KeyframeComponent;
 pub use light_quantization::LightQuantizationComponent;

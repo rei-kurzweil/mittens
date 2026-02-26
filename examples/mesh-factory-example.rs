@@ -3,8 +3,16 @@ use cat_engine::{engine, utils};
 fn main() {
     utils::logger::init();
 
+    const LABEL_WRAP_AT: usize = 13;
+
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
+
+    // add a clock
+    let clock = universe
+        .world
+        .register(engine::ecs::component::ClockComponent::new().with_bpm(60.0));
+    universe.add(clock);
 
     // Input-driven camera rig.
     // Topology: I { T { C3D } }
@@ -15,7 +23,7 @@ fn main() {
         .world
         .register(engine::ecs::component::Camera3DComponent::new());
     let rig_transform = universe.world.register(
-        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 5.0),
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 11.0),
     );
     let input_mode = universe.world.register(
         engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y(),
@@ -47,7 +55,8 @@ fn main() {
         color: [f32; 4],
     ) {
         use engine::ecs::component::{
-            ColorComponent, EmissiveComponent, RenderableComponent, TextComponent,
+            Action, ActionComponent, AnimationComponent, AnimationState, ColorComponent,
+            EmissiveComponent, KeyframeComponent, RenderableComponent, TextComponent,
             TransformComponent,
         };
         use engine::graphics::primitives::{MaterialHandle, Renderable};
@@ -58,6 +67,29 @@ fn main() {
                 .with_position(x, y, 0.0)
                 .with_scale(scale[0], scale[1], scale[2]),
         );
+
+        // Spin each shape around its own +Y axis using AnimationComponent + keyframes.
+        // We fill [0, 2) beats densely so it looks smooth.
+        let anim = universe
+            .world
+            .register(AnimationComponent::new().with_state(AnimationState::Looping));
+        let _ = universe.attach(root, anim);
+
+        let steps: usize = 64;
+        for i in 0..steps {
+            let beat = (i as f64) * (2.0 / (steps as f64));
+            let kf = universe.world.register(KeyframeComponent::new(beat));
+            let _ = universe.attach(anim, kf);
+
+            // Full turn over 2 beats.
+            let angle = (std::f64::consts::TAU * (beat / 2.0)) as f32;
+            let rotation = utils::math::quat_from_axis_angle([0.0, 1.0, 0.0], angle);
+
+            let action = Action::set_transform(vec![root], [x, y, 0.0], rotation, scale);
+            let action_cid = universe.world.register(ActionComponent::new(action));
+            let _ = universe.attach(kf, action_cid);
+        }
+
         let renderable = universe.world.register(RenderableComponent::new(Renderable::new(
             mesh,
             MaterialHandle::TOON_MESH,
@@ -76,11 +108,21 @@ fn main() {
         // Label (separate transform so we can scale text independently).
         let text_root = universe.world.register(
             TransformComponent::new()
-                .with_position(x - 0.55, y + 0.75, 0.0)
+                .with_position(x, y + 0.75, 0.05)
                 .with_scale(0.09, 0.09, 1.0),
         );
-        let text = universe.world.register(TextComponent::new(label));
+        let text = universe.world.register(TextComponent::with_word_wrap_tokens(
+            label,
+            LABEL_WRAP_AT,
+            ["::", "(", ")", ",", "."],
+        ));
+        let text_color = universe
+            .world
+            .register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+        let text_emissive = universe.world.register(EmissiveComponent::on());
         let _ = universe.attach(text_root, text);
+        let _ = universe.attach(text, text_color);
+        let _ = universe.attach(text, text_emissive);
         universe.add(text_root);
     }
 

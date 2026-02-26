@@ -1,6 +1,6 @@
 # Moved
 
-This document has been superseded by [docs/events.md](events.md).
+This document has been superseded by [docs/signals.md](signals.md).
 
 <!--
 

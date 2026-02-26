@@ -76,26 +76,21 @@ let guid = universe.world.get_component_record(instance_root).unwrap().guid;
 + displays data from VisualWorld through vulkan
 + TODO: make WgpuRenderer for web / webasm
 
-### Transparency / Opacity
+### Render phases (render graph summary)
 
-The renderer uses a 3-phase transparency model so we get decent performance for "simple" transparency, but still have a correct path for stacked transparency.
+Rendering is recorded in a single dynamic-rendering scope, but split into explicit phases (a small “render graph”) built by `VisualWorld` and recorded by `VulkanoRenderer`.
 
-This is not multiple Vulkan "render passes" (we use dynamic rendering). It’s a single rendering scope where we record draw commands in three phases, switching pipelines/state between phases:
+Current phase order (high level):
 
-1. **Opaque phase** (instanced)
-  + Depth test: ON
-  + Depth write: ON
-  + Batching/instancing: YES
-2. **Transparent single-layer phase** (instanced)
-  + Depth test: ON
-  + Depth write: OFF (so later transparent layers can still blend)
-  + Batching/instancing: YES (fast)
-3. **Transparent multi-layer phase** (sorted)
-  + Depth test: ON
-  + Depth write: OFF
-  + Batching: grouped by (material, mesh, texture), but **drawn one-by-one in back-to-front order** for correct blending
+1. **Background** (instanced, no depth write)
+2. **Background occluded+lit** (instanced, depth write ON for self-occlusion)
+   - Then the renderer clears depth so background never occludes the foreground.
+3. **Opaque** (instanced, depth write ON)
+4. **Cutout** (instanced, alpha-tested)
+5. **Transparent single-layer** (instanced)
+6. **Transparent multi-layer** (sorted back-to-front, drawn one-by-one for correct blending)
 
-This is driven by `VisualWorld` building separate draw orders/caches, and `VulkanoRenderer` recording all three phases in `build_draw_batches_command_buffer`.
+See [docs/render-phases.md](docs/render-phases.md) for details and the relevant code entry points.
 
 # Components
 
