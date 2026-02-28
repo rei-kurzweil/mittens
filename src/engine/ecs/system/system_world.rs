@@ -648,7 +648,7 @@ impl SystemWorld {
             .tick_with_queue(world, visuals, input, queue, &mut self.rx, &self.bvh, dt_sec);
 
         // Gestures interpret ray hits + input into drag events.
-        self.gesture.tick_with_rx(input, &mut self.rx);
+        self.gesture.tick_with_rx(visuals, input, &mut self.rx);
         // Gizmos consume drag events and apply transform changes.
         self.gizmo.tick_with_queue(world, input, queue, &mut self.rx);
         // Apply gizmo transform updates immediately so visuals reflect the drag this frame.

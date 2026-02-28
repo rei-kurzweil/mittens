@@ -22,6 +22,9 @@ These are practical limitations of the current pipeline that show up immediately
 - Mouse drag is currently a **global gesture** derived from “any mouse button is down + cursor moved”.
   - `InputState::mouse_dragging()` is not button-specific.
   - `InputSystem` uses mouse drag to rotate rigs/cameras (yaw/pitch), so **left-dragging a gizmo can also rotate the camera** unless you add routing/capture.
+- Dragging a gizmo handle currently only updates while the cursor ray continues to hit the handle geometry.
+  - If the cursor leaves the ring/arm while the button is still down, `GestureSystem` stops emitting `DragMove`, so `GizmoSystem` stops applying updates.
+  - This is a drag-capture / “continue even without hit” design gap.
 - Gizmo TRS math uses **world axes** (X/Y/Z unit vectors), but gizmo visuals are parented under the target transform.
   - There is currently no explicit local/world space mode switch.
   - This becomes especially noticeable once we add more accurate narrow-phase picking (because interaction precision goes up).
@@ -41,6 +44,8 @@ These are practical limitations of the current pipeline that show up immediately
 - ⬜ 5. Gizmos need a local/world mode.
 - ⬜ 6. World-mode gizmo parenting constraints need a concrete solution.
   - If world-mode exists and gizmo is parented under the target, we need detach/compensate logic so the gizmo stays neutral in world space.
+- ⬜ 7. Drag capture should continue even if the cursor ray stops hitting the handle.
+  - Desired: once a handle is captured on `DragStart`, it should keep producing `DragMove` while the button remains down.
 
 ## Terminology
 
@@ -88,6 +93,45 @@ Defined in `engine/ecs/rx/signal.rs`:
   - Emitted by `GestureSystem` when left mouse is released.
   - `hit_point` is the last known hit point, if any.
 
+### Proposed: drag coordinate sources (desktop vs VR)
+
+Right now, our drag events are implicitly “ray-hit-point-driven”: we keep raycasting and use the
+hit point to produce `delta_world`. That makes dragging dependent on continuing to hit the handle
+geometry.
+
+For gizmos, we often want a *different* source of drag coordinates once a handle is captured.
+Desktop/mobile UIs typically feel better with **screen-space** dragging (cursor delta), while VR
+controllers typically want **ray-cast** dragging.
+
+Proposed enum:
+
+```rust
+enum DragCoordinateSource {
+    RAY_CAST_COORDS,
+    SCREEN_SPACE_COORDS,
+}
+```
+
+Proposed signal change:
+
+- Add a `coord_source: DragCoordinateSource` field to `DragStart`/`DragMove`/`DragEnd`.
+- Keep `hit_point` in the signal, but interpret it as:
+  - `RAY_CAST_COORDS`: updated every tick from the raycast hit.
+  - `SCREEN_SPACE_COORDS`: typically “last known” (from `DragStart`) unless some derived constraint
+    (axis/plane) is used to compute a new world point.
+- Add `delta_screen: [f32; 2]` (pixels or NDC; pick one and standardize) to `DragMove` so screen
+  space mode has a first-class delta.
+
+This directly addresses the “drag stops when you leave the handle” issue: once captured, screen
+space drag continues even if the cursor ray no longer hits the handle.
+
+Implementation status (now):
+
+- `GestureSystem` has a `drag_coord_source` setting that switches between ray-hit-driven dragging
+  and screen-space dragging.
+- Signals are unchanged for now (still emitting `DragMove { hit_point, delta_world }` only); we
+  have **not** added `coord_source` or `delta_screen` fields yet.
+
 ## GestureSystem
 
 Source: `engine/ecs/system/gesture_system.rs`
@@ -110,8 +154,41 @@ Typical fields:
   - Emit `DragStart` scoped to the hit renderable.
 
 - While left button remains **down**:
-  - If the current frame’s best hit is still the captured `(raycaster, renderable)`, compute delta from `last_hit_point` and emit `DragMove`.
-  - Update `last_hit_point`.
+- While left button remains **down**:
+  - Behavior depends on `coord_source`.
+  - If `coord_source == RAY_CAST_COORDS` (current behavior):
+    - If the current frame’s best hit is still the captured `(raycaster, renderable)`, compute delta from `last_hit_point` and emit `DragMove`.
+    - Update `last_hit_point`.
+  - If `coord_source == SCREEN_SPACE_COORDS` (proposed):
+    - Do **not** require that the current frame’s best ray hit is still the captured handle.
+    - Instead, compute `delta_screen` from the cursor position delta since the previous frame and emit `DragMove` every tick while the button is down.
+    - Still capture and update `last_cursor_pos` each frame (and optionally keep `last_hit_point` as the starting reference from `DragStart`).
+
+This explains the “drag only works while hovering the gizmo” behavior: when the cursor ray stops hitting the captured handle, the best hit is no longer the captured renderable, so no `DragMove` is emitted.
+
+### What currently determines whether a gizmo updates its target
+
+The end-to-end condition is:
+
+1. `InputState` must indicate the left button is down.
+2. `RayCastSystem` must emit a `RayIntersected` signal for the handle *this tick*.
+3. `GestureSystem` must choose that handle as the best hit and consider it still captured.
+4. Only then does `GestureSystem` emit `DragMove`.
+5. `GizmoSystem` only applies mutations in response to `DragMove` (and resets on `DragEnd`).
+
+So if (2) or (3) stops being true mid-drag, mutation stops even though (1) is still true.
+
+### What we probably want instead (design note)
+
+Once `DragStart` captures a handle, we likely want to keep producing `DragMove` while the button remains down, even if the ray no longer hits the handle geometry.
+
+Screen-space dragging is one way to do that; another is to keep raycasting but against a derived
+constraint instead of the handle geometry.
+
+Typical options:
+
+- Continue raycasting, but against a **derived constraint** (axis line, plane, or analytic ring plane) rather than the handle geometry.
+- Or: keep using the regular cursor ray, but if there is no eligible hit, still compute motion relative to a persistent constraint (e.g. “drag on plane through initial hit point”).
 
 - On `MouseButton::Left` **released**:
   - Emit `DragEnd` for the captured renderable.
