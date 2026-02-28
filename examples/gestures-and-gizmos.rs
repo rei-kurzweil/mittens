@@ -23,7 +23,7 @@ fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Scene {
     // BackgroundColor { dark grey }
     let bg_color = universe
         .world
-        .add_component(BackgroundColorComponent::rgba(0.80, 0.80, 0.80, 1.0));
+        .add_component(BackgroundColorComponent::rgba(0.60, 0.60, 0.60, 1.0));
     universe.add(bg_color);
 
     // ambient light
@@ -35,16 +35,16 @@ fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Scene {
     // ground plane
     let ground_tx = universe.world.add_component(
         TransformComponent::new()
-            .with_position(0.0, -1.75, 0.0)
+            .with_position(0.0, -0.75, 0.0)
             .with_scale(20.0, 1.0, 20.0),
     );
     let ground_r = universe.world.add_component(RenderableComponent::new(Renderable::new(
-        universe.render_assets.get_mesh(BuiltinMeshType::Cube),
+        universe.render_assets.get_mesh(BuiltinMeshType::Quad2D),
         MaterialHandle::TOON_MESH,
     )));
     let ground_c = universe
         .world
-        .add_component(ColorComponent::rgba(0.7, 0.7, 0.7, 1.0));
+        .add_component(ColorComponent::rgba(0.25, 0.25, 0.25, 1.0));
     let _ = universe.attach(ground_tx, ground_r);
     let _ = universe.attach(ground_r, ground_c);
     let _ = universe.add(ground_tx);

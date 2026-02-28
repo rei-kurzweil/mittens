@@ -121,6 +121,70 @@ impl RayCastSystem {
             }
         }
 
+        fn ray_triangle_mt(
+            o: [f32; 3],
+            d: [f32; 3],
+            v0: [f32; 3],
+            v1: [f32; 3],
+            v2: [f32; 3],
+        ) -> Option<f32> {
+            // Möller–Trumbore. Returns t along local ray. Accepts both sides (no backface cull).
+            let eps = 1e-7_f32;
+            let e1 = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
+            let e2 = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]];
+            let p = RayCastSystem::vec3_cross(d, e2);
+            let det = RayCastSystem::vec3_dot(e1, p);
+            if det.abs() < eps {
+                return None;
+            }
+            let inv_det = 1.0 / det;
+            let tvec = [o[0] - v0[0], o[1] - v0[1], o[2] - v0[2]];
+            let u = RayCastSystem::vec3_dot(tvec, p) * inv_det;
+            if !(0.0..=1.0).contains(&u) {
+                return None;
+            }
+            let q = RayCastSystem::vec3_cross(tvec, e1);
+            let v = RayCastSystem::vec3_dot(d, q) * inv_det;
+            if v < 0.0 || u + v > 1.0 {
+                return None;
+            }
+            let t = RayCastSystem::vec3_dot(e2, q) * inv_det;
+            if t.is_finite() && t >= 0.0 {
+                Some(t)
+            } else {
+                None
+            }
+        }
+
+        fn best_triangle_hit_world_t(
+            model: TransformMatrix,
+            origin_world: [f32; 3],
+            dir_world: [f32; 3],
+            o_local: [f32; 3],
+            d_local: [f32; 3],
+            tris: &[[[f32; 3]; 3]],
+        ) -> Option<f32> {
+            let mut best: Option<f32> = None;
+            for tri in tris {
+                let t_local = ray_triangle_mt(o_local, d_local, tri[0], tri[1], tri[2]);
+                let Some(t_local) = t_local else { continue; };
+                let p_local = [
+                    o_local[0] + d_local[0] * t_local,
+                    o_local[1] + d_local[1] * t_local,
+                    o_local[2] + d_local[2] * t_local,
+                ];
+                let Some(t_world) = to_world_t(model, origin_world, dir_world, p_local) else {
+                    continue;
+                };
+                best = match best {
+                    None => Some(t_world),
+                    Some(bt) if t_world < bt => Some(t_world),
+                    _ => best,
+                };
+            }
+            best
+        }
+
         // Local-space narrow-phase tests.
         match shape {
             RaycastableShapeType::Aabb => Some(t_aabb),
@@ -135,8 +199,8 @@ impl RayCastSystem {
                 to_world_t(model, origin, dir, p_local)
             }
 
-            RaycastableShapeType::Quad2D | RaycastableShapeType::Triangle2D => {
-                // Treat as a thin slabbed quad for now (triangle narrow-phase can come later).
+            RaycastableShapeType::Quad2D => {
+                // Keep quad as a slab proxy; triangle is handled precisely below.
                 let thick = 0.02_f32;
                 let t_local = Self::ray_aabb(o_local, d_local, [-0.5, -0.5, -thick], [0.5, 0.5, thick])?;
                 let p_local = [
@@ -145,6 +209,18 @@ impl RayCastSystem {
                     o_local[2] + d_local[2] * t_local,
                 ];
                 to_world_t(model, origin, dir, p_local)
+            }
+
+            RaycastableShapeType::Triangle2D => {
+                // Exact triangle test matching MeshFactory::triangle_2d().
+                let h = 0.866_025_4_f32;
+                let y_top = 2.0 * h / 3.0;
+                let y_bottom = -h / 3.0;
+                let v0 = [-0.5, y_bottom, 0.0];
+                let v1 = [0.5, y_bottom, 0.0];
+                let v2 = [0.0, y_top, 0.0];
+                let tris: [[[f32; 3]; 3]; 1] = [[v0, v1, v2]];
+                best_triangle_hit_world_t(model, origin, dir, o_local, d_local, &tris[..])
             }
 
             RaycastableShapeType::Ring2D => {
@@ -251,8 +327,24 @@ impl RayCastSystem {
                 to_world_t(model, origin, dir, p_local)
             }
 
-            // Not yet implemented: accept AABB for now.
-            RaycastableShapeType::Tetrahedron | RaycastableShapeType::InferFromBaseMesh => Some(t_aabb),
+            RaycastableShapeType::Tetrahedron => {
+                // Exact tetrahedron test matching MeshFactory::tetrahedron() indices.
+                let p0 = [0.0, 0.0, 0.6123724];
+                let p1 = [-0.5, -0.2886751, -0.2041241];
+                let p2 = [0.5, -0.2886751, -0.2041241];
+                let p3 = [0.0, 0.5773503, -0.2041241];
+
+                // Faces (CCW as authored):
+                let tris = [
+                    [p0, p1, p2],
+                    [p0, p3, p1],
+                    [p0, p2, p3],
+                    [p1, p3, p2],
+                ];
+                best_triangle_hit_world_t(model, origin, dir, o_local, d_local, &tris[..])
+            }
+
+            RaycastableShapeType::InferFromBaseMesh => Some(t_aabb),
         }
     }
     pub fn register_raycast(
