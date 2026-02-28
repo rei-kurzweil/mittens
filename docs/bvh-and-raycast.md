@@ -5,11 +5,31 @@ This document describes how cat-engine’s **renderable BVH** and **raycasting /
 For how meshes/handles flow through rendering (and why `base_mesh` exists), see `docs/mesh.md`.
 
 ## High-level idea
+If you’re looking for future picking improvements (gizmo handles like rings/cones), see:
+- `docs/raycast-circles-and-cones.md`
 
 - `BvhSystem` maintains a broadphase acceleration structure over **world-space AABBs** of *renderable* components.
 - `RayCastSystem` turns the cursor + active camera into a **world-space ray**, then uses `BvhSystem` to find the closest hit.
 
 This is intended for **picking / UI-ish hit testing** (cube/quad/triangle primitives) rather than triangle-accurate mesh picking.
+
+Important limitation: the BVH/raycast AABB computation is only implemented for a few builtin `base_mesh` types (`Cube`, `Quad2D`, `Triangle2D`). Other meshes currently have no usable AABB in the picking path, so they effectively won’t be hit.
+
+## Planned improvement: “best-effort AABB first”, narrow-phase later
+
+The next practical step for picking (especially gizmos) is to make BVH eligibility less “all or nothing”:
+
+1. Expand AABB support beyond just rectangular / rectangular-prismatic primitives.
+  - Goal: *every* renderable that opts into `RaycastableComponent` gets some reasonable broad-phase AABB.
+  - For known primitives (tetrahedron, cone, ring, etc): define a local-space bounding box once and transform it.
+  - For arbitrary CPU meshes (imported or generated): compute/store a local-space bounds from vertex positions at registration/import time, then transform it.
+  - This alone makes these renderables show up as BVH candidates (even if narrow-phase is still “just AABB”).
+
+2. After a BVH AABB hit, optionally run a narrow-phase shape test.
+  - Initially this can be stubbed out: accept the AABB hit as the “hit” so we can iterate on broad-phase coverage first.
+  - Later, for non-boxy gizmo handles, add analytic tests (ring/cone/capsule) to reduce false positives.
+
+This keeps the system incremental: first make things selectable at all, then make them selectable *accurately*.
 
 ## Key participants
 
@@ -29,6 +49,14 @@ This is intended for **picking / UI-ish hit testing** (cube/quad/triangle primit
   - A renderable is only eligible for the raycast BVH when a `RaycastableComponent` is found either:
     - as an immediate child under the `RenderableComponent`, or
     - on some ancestor in the topology (nearest ancestor wins).
+
+  Future direction (design): keep `RaycastableComponent` as “eligible yes/no”, but resolve a separate pick shape (`RaycastableShapeComponent`) to unify broad-phase AABB generation + narrow-phase tests. In general, doing this resolution only in `RaycastableComponent::init()` is fragile (init ordering, ancestry-based opt-in, base_mesh changing), so a flush-time/on-demand resolution step is usually more robust.
+
+  **Topology note:** for “ancestor enables a subtree” to work, the `RaycastableComponent` must be in the *ancestor chain* of the renderable (i.e. the renderable must be parented under that raycastable node). Merely attaching a `RaycastableComponent` as a sibling under the same transform does not make it an ancestor and will not be seen by the eligibility walk.
+
+  Practical guideline:
+  - Use per-renderable raycastable (the common `renderable -> raycastable` child pattern) when each leaf should be independently pickable.
+  - Use one raycastable per clickable subtree by inserting a `RaycastableComponent` node above the subtree (so multiple leaf renderables inherit eligibility).
 
 - `RayCastComponent`
   - A *request/behavior* component.
@@ -180,6 +208,21 @@ The hit test is ray-vs-AABB only:
 - Chooses the candidate with smallest `t`.
 
 There is no per-triangle mesh intersection here.
+
+## Why gizmos can “block” clicking the thing they’re attached to
+
+It’s common to expect that a larger object (cube/tetrahedron) should be easier to click than thin gizmo parts (rings/stems/cones). However, with the current AABB-only picker, gizmo parts can win hits frequently.
+
+Key reasons:
+- **World-space AABBs are axis-aligned.** When a thin or flat part is rotated, the smallest axis-aligned box that contains it can become much larger than the visual geometry.
+- **The picker chooses the closest hit by ray parameter $t$.** “Biggest AABB” doesn’t matter; the first thing along the ray that intersects an AABB is the hit.
+- **AABB-only implies false positives.** A ray can intersect a gizmo part’s AABB even when it does not intersect the intended clickable shape (e.g. a ring annulus).
+
+### Narrow-phase note (important)
+
+Adding narrow-phase analytic tests (ring annulus / cone / capsule) is necessary to reduce false positives, but it must be paired with a query strategy that can try more than one candidate.
+
+If the BVH query returns only a *single* nearest AABB hit and narrow-phase rejects it, the raycast must then continue searching for the next-best candidate (or gather multiple candidates up front). Otherwise the result becomes “no hit” even if a valid object behind the gizmo should be clickable.
 
 ## About parenting RayCastComponent to transforms (your question)
 

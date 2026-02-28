@@ -42,7 +42,10 @@ impl RenderableComponent {
     /// Predefined renderable: 2D triangle (unique CPU mesh registered into `render_assets`).
     pub fn triangle_dynamic(render_assets: &mut RenderAssets) -> Self {
         let h = render_assets.register_mesh(MeshFactory::triangle_2d());
-        Self::from_cpu_mesh_handle(h, MaterialHandle::TOON_MESH)
+        Self::new(
+            Renderable::new(h, MaterialHandle::TOON_MESH)
+                .with_base_mesh(CpuMeshHandle::TRIANGLE_2D),
+        )
     }
 
     /// Predefined renderable: 2D square/quad (shared built-in mesh handle).
@@ -53,7 +56,10 @@ impl RenderableComponent {
     /// Predefined renderable: 2D square/quad (unique CPU mesh registered into `render_assets`).
     pub fn square_dynamic(render_assets: &mut RenderAssets) -> Self {
         let h = render_assets.register_mesh(MeshFactory::quad_2d());
-        Self::from_cpu_mesh_handle(h, MaterialHandle::TOON_MESH)
+        Self::new(
+            Renderable::new(h, MaterialHandle::TOON_MESH)
+                .with_base_mesh(CpuMeshHandle::QUAD_2D),
+        )
     }
 
     /// Predefined renderable: cube primitive (shared built-in mesh handle).
@@ -64,7 +70,10 @@ impl RenderableComponent {
     /// Predefined renderable: cube primitive (unique CPU mesh registered into `render_assets`).
     pub fn cube_dynamic(render_assets: &mut RenderAssets) -> Self {
         let h = render_assets.register_mesh(MeshFactory::cube());
-        Self::from_cpu_mesh_handle(h, MaterialHandle::TOON_MESH)
+        Self::new(
+            Renderable::new(h, MaterialHandle::TOON_MESH)
+                .with_base_mesh(CpuMeshHandle::CUBE),
+        )
     }
 
     /// Predefined renderable: sphere primitive (shared built-in mesh handle).
@@ -75,7 +84,10 @@ impl RenderableComponent {
     /// Predefined renderable: sphere primitive (unique CPU mesh registered into `render_assets`).
     pub fn sphere_dynamic(render_assets: &mut RenderAssets) -> Self {
         let h = render_assets.register_mesh(MeshFactory::sphere());
-        Self::from_cpu_mesh_handle(h, MaterialHandle::TOON_MESH)
+        Self::new(
+            Renderable::new(h, MaterialHandle::TOON_MESH)
+                .with_base_mesh(CpuMeshHandle::SPHERE),
+        )
     }
 
     /// Predefined renderable: tetrahedron primitive (shared built-in mesh handle).
@@ -86,7 +98,10 @@ impl RenderableComponent {
     /// Predefined renderable: tetrahedron primitive (unique CPU mesh registered into `render_assets`).
     pub fn tetrahedron_dynamic(render_assets: &mut RenderAssets) -> Self {
         let h = render_assets.register_mesh(MeshFactory::tetrahedron());
-        Self::from_cpu_mesh_handle(h, MaterialHandle::TOON_MESH)
+        Self::new(
+            Renderable::new(h, MaterialHandle::TOON_MESH)
+                .with_base_mesh(CpuMeshHandle::TETRAHEDRON),
+        )
     }
 
     /// Predefined renderable: tetrahedron (alias of `tetrahedron`).

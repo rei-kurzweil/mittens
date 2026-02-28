@@ -80,7 +80,7 @@ impl GizmoSystem {
             g.visual_root = Some(gizmo_root);
         }
 
-        // Helper: spawn a renderable under a transform with color+emissive+raycastable.
+        // Helper: spawn a renderable under a transform with color+emissive.
         fn spawn_part(
             world: &mut World,
             parent: ComponentId,
@@ -92,8 +92,7 @@ impl GizmoSystem {
             rgba: [f32; 4],
         ) {
             use crate::engine::ecs::component::{
-                ColorComponent, EmissiveComponent, RaycastableComponent, RenderableComponent,
-                TransformComponent,
+                ColorComponent, EmissiveComponent, RenderableComponent, TransformComponent,
             };
             use crate::engine::graphics::primitives::{MaterialHandle, Renderable};
 
@@ -121,16 +120,21 @@ impl GizmoSystem {
                 format!("{name}_emissive"),
                 Box::new(EmissiveComponent::on()),
             );
-            let rc = world.add_component_boxed_named(
-                format!("{name}_ray"),
-                Box::new(RaycastableComponent::enabled()),
-            );
 
             let _ = world.add_child(parent, t);
             let _ = world.add_child(t, r);
             let _ = world.add_child(r, c);
             let _ = world.add_child(r, e);
-            let _ = world.add_child(r, rc);
+        }
+
+        // Helper: create a single raycastable root node for a handle subtree.
+        // Descendant renderables become BVH-eligible via ancestry.
+        fn spawn_raycastable_root(world: &mut World, parent: ComponentId, name: &str) -> ComponentId {
+            use crate::engine::ecs::component::RaycastableComponent;
+
+            let rc = world.add_component_boxed_named(name, Box::new(RaycastableComponent::enabled()));
+            let _ = world.add_child(parent, rc);
+            rc
         }
 
         fn spawn_translate_handle_root(
@@ -169,9 +173,10 @@ impl GizmoSystem {
 
         // Rotation rings live under per-axis rotate handle components.
         let rot_x_root = spawn_rotate_handle_root(world, gizmo_root, GizmoAxis::X, "gizmo_rot_x");
+        let rot_x_pick = spawn_raycastable_root(world, rot_x_root, "gizmo_rot_x_pick");
         spawn_part(
             world,
-            rot_x_root,
+            rot_x_pick,
             "gizmo_rot_x_ring",
             ring_mesh,
             [0.0, 0.0, 0.0],
@@ -181,9 +186,10 @@ impl GizmoSystem {
         );
 
         let rot_y_root = spawn_rotate_handle_root(world, gizmo_root, GizmoAxis::Y, "gizmo_rot_y");
+        let rot_y_pick = spawn_raycastable_root(world, rot_y_root, "gizmo_rot_y_pick");
         spawn_part(
             world,
-            rot_y_root,
+            rot_y_pick,
             "gizmo_rot_y_ring",
             ring_mesh,
             [0.0, 0.0, 0.0],
@@ -193,9 +199,10 @@ impl GizmoSystem {
         );
 
         let rot_z_root = spawn_rotate_handle_root(world, gizmo_root, GizmoAxis::Z, "gizmo_rot_z");
+        let rot_z_pick = spawn_raycastable_root(world, rot_z_root, "gizmo_rot_z_pick");
         spawn_part(
             world,
-            rot_z_root,
+            rot_z_pick,
             "gizmo_rot_z_ring",
             ring_mesh,
             [0.0, 0.0, 0.0],
@@ -215,11 +222,12 @@ impl GizmoSystem {
         // Translation arrows live under per-axis translate handle components.
         let move_x_root =
             spawn_translate_handle_root(world, gizmo_root, GizmoAxis::X, "gizmo_move_x");
-        // +X arrow: rotate +Z axis to +X (yaw -90deg).
-        let rot_x = [0.0, -std::f32::consts::FRAC_PI_2, 0.0];
+        let move_x_pick = spawn_raycastable_root(world, move_x_root, "gizmo_move_x_pick");
+        // +X arrow: rotate +Z axis to +X (yaw +90deg).
+        let rot_x = [0.0, std::f32::consts::FRAC_PI_2, 0.0];
         spawn_part(
             world,
-            move_x_root,
+            move_x_pick,
             "gizmo_move_x_stem",
             stem_mesh,
             [stem_len * 0.5, 0.0, 0.0],
@@ -229,7 +237,7 @@ impl GizmoSystem {
         );
         spawn_part(
             world,
-            move_x_root,
+            move_x_pick,
             "gizmo_move_x_tip",
             cone_mesh,
             [stem_len + cone_len * 0.5, 0.0, 0.0],
@@ -240,11 +248,12 @@ impl GizmoSystem {
 
         let move_y_root =
             spawn_translate_handle_root(world, gizmo_root, GizmoAxis::Y, "gizmo_move_y");
-        // +Y arrow: rotate +Z axis to +Y (pitch +90deg around X).
-        let rot_y = [std::f32::consts::FRAC_PI_2, 0.0, 0.0];
+        let move_y_pick = spawn_raycastable_root(world, move_y_root, "gizmo_move_y_pick");
+        // +Y arrow: rotate +Z axis to +Y (pitch -90deg around X).
+        let rot_y = [-std::f32::consts::FRAC_PI_2, 0.0, 0.0];
         spawn_part(
             world,
-            move_y_root,
+            move_y_pick,
             "gizmo_move_y_stem",
             stem_mesh,
             [0.0, stem_len * 0.5, 0.0],
@@ -254,7 +263,7 @@ impl GizmoSystem {
         );
         spawn_part(
             world,
-            move_y_root,
+            move_y_pick,
             "gizmo_move_y_tip",
             cone_mesh,
             [0.0, stem_len + cone_len * 0.5, 0.0],
@@ -265,10 +274,11 @@ impl GizmoSystem {
 
         let move_z_root =
             spawn_translate_handle_root(world, gizmo_root, GizmoAxis::Z, "gizmo_move_z");
+        let move_z_pick = spawn_raycastable_root(world, move_z_root, "gizmo_move_z_pick");
         // +Z arrow: no rotation.
         spawn_part(
             world,
-            move_z_root,
+            move_z_pick,
             "gizmo_move_z_stem",
             stem_mesh,
             [0.0, 0.0, stem_len * 0.5],
@@ -278,7 +288,7 @@ impl GizmoSystem {
         );
         spawn_part(
             world,
-            move_z_root,
+            move_z_pick,
             "gizmo_move_z_tip",
             cone_mesh,
             [0.0, 0.0, stem_len + cone_len * 0.5],

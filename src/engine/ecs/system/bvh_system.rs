@@ -310,6 +310,49 @@ impl BvhSystem {
         best
     }
 
+    /// Return ray/AABB hit candidates (sorted by ascending t).
+    ///
+    /// This is intended to support narrow-phase hit tests that may reject the closest AABB hit
+    /// and need to fall through to the next-best candidates.
+    pub fn raycast_renderables_candidates(
+        &self,
+        origin: [f32; 3],
+        dir: [f32; 3],
+        max_distance: f32,
+        limit: usize,
+    ) -> Vec<(ComponentId, f32)> {
+        let Some(bvh) = &self.bvh else {
+            return Vec::new();
+        };
+
+        let origin_p = Point3::new(origin[0], origin[1], origin[2]);
+        let dir_v = Vector3::new(dir[0], dir[1], dir[2]);
+        let ray = Ray::new(origin_p, dir_v);
+
+        let candidates = bvh.traverse(&ray, &self.shapes);
+
+        let mut hits: Vec<(ComponentId, f32)> = Vec::new();
+        for s in candidates {
+            let min = [s.aabb.min.x, s.aabb.min.y, s.aabb.min.z];
+            let max = [s.aabb.max.x, s.aabb.max.y, s.aabb.max.z];
+
+            let Some(t) = ray_aabb(origin, dir, min, max) else {
+                continue;
+            };
+
+            if !t.is_finite() || t < 0.0 || t > max_distance {
+                continue;
+            }
+            hits.push((s.component, t));
+        }
+
+        hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        if limit > 0 && hits.len() > limit {
+            hits.truncate(limit);
+        }
+        hits
+    }
+
     pub fn query_point(&self, point: [f32; 3]) -> Vec<ComponentId> {
         let Some(bvh) = &self.bvh else {
             return Vec::new();
@@ -449,7 +492,26 @@ fn aabb_from_world_matrix_for_mesh(
             ],
             0.0,
         ),
-        CpuMeshHandle::QUAD_2D | CpuMeshHandle::TRIANGLE_2D => (
+        CpuMeshHandle::TETRAHEDRON => (
+            vec![
+                [0.0, 0.0, 0.6123724],
+                [-0.5, -0.2886751, -0.2041241],
+                [0.5, -0.2886751, -0.2041241],
+                [0.0, 0.5773503, -0.2041241],
+            ],
+            0.0,
+        ),
+        CpuMeshHandle::CONE => (
+            vec![
+                [-0.5, 0.0, -0.5],
+                [0.5, 0.0, -0.5],
+                [0.0, -0.5, -0.5],
+                [0.0, 0.5, -0.5],
+                [0.0, 0.0, 0.5],
+            ],
+            0.0,
+        ),
+        CpuMeshHandle::QUAD_2D | CpuMeshHandle::TRIANGLE_2D | CpuMeshHandle::CIRCLE_2D => (
             vec![
                 [-0.5, -0.5, 0.0],
                 [0.5, -0.5, 0.0],
@@ -457,6 +519,17 @@ fn aabb_from_world_matrix_for_mesh(
                 [0.5, 0.5, 0.0],
             ],
             0.01,
+        ),
+        CpuMeshHandle::SPHERE => (
+            vec![
+                [-0.5, 0.0, 0.0],
+                [0.5, 0.0, 0.0],
+                [0.0, -0.5, 0.0],
+                [0.0, 0.5, 0.0],
+                [0.0, 0.0, -0.5],
+                [0.0, 0.0, 0.5],
+            ],
+            0.0,
         ),
         _ => return None,
     };

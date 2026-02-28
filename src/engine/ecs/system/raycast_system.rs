@@ -2,7 +2,8 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::{EventSignal, RxWorld};
 use crate::engine::ecs::component::{
-    ColorComponent, RayCastComponent, RayCastMode, RenderableComponent,
+    ColorComponent, RayCastComponent, RayCastMode, RaycastableShapeComponent, RaycastableShapeType,
+    RenderableComponent,
 };
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::System;
@@ -47,6 +48,213 @@ enum RaySourceKind {
 }
 
 impl RayCastSystem {
+    fn explicit_shape_on_renderable(world: &World, renderable: ComponentId) -> Option<RaycastableShapeType> {
+        world.children_of(renderable).iter().find_map(|&ch| {
+            world
+                .get_component_by_id_as::<RaycastableShapeComponent>(ch)
+                .map(|s| s.shape)
+        })
+    }
+
+    fn infer_shape_from_base_mesh(mesh: CpuMeshHandle) -> RaycastableShapeType {
+        match mesh {
+            CpuMeshHandle::CUBE => RaycastableShapeType::Box,
+            CpuMeshHandle::QUAD_2D => RaycastableShapeType::Quad2D,
+            CpuMeshHandle::TRIANGLE_2D => RaycastableShapeType::Triangle2D,
+            CpuMeshHandle::TETRAHEDRON => RaycastableShapeType::Tetrahedron,
+            CpuMeshHandle::CONE => RaycastableShapeType::Cone,
+            CpuMeshHandle::CIRCLE_2D => RaycastableShapeType::Ring2D,
+            _ => RaycastableShapeType::Aabb,
+        }
+    }
+
+    fn resolved_shape_for_renderable(world: &World, renderable: ComponentId) -> RaycastableShapeType {
+        if let Some(shape) = Self::explicit_shape_on_renderable(world, renderable) {
+            if shape != RaycastableShapeType::InferFromBaseMesh {
+                return shape;
+            }
+        }
+
+        let Some(r) = world.get_component_by_id_as::<RenderableComponent>(renderable) else {
+            return RaycastableShapeType::Aabb;
+        };
+        Self::infer_shape_from_base_mesh(r.renderable.base_mesh)
+    }
+
+    fn narrow_phase_accept(
+        world: &World,
+        renderable: ComponentId,
+        origin: [f32; 3],
+        dir: [f32; 3],
+        t_aabb: f32,
+    ) -> Option<f32> {
+        let shape = Self::resolved_shape_for_renderable(world, renderable);
+
+        // If we can't compute a stable local-space transform, fall back to AABB-only.
+        let Some(model) = TransformSystem::world_model(world, renderable) else {
+            return Some(t_aabb);
+        };
+        let Some(inv_model) = math::mat4_inverse(model) else {
+            return Some(t_aabb);
+        };
+
+        // Transform the ray into renderable-local space.
+        let o4 = Self::mat4_mul_vec4(inv_model, [origin[0], origin[1], origin[2], 1.0]);
+        let d4 = Self::mat4_mul_vec4(inv_model, [dir[0], dir[1], dir[2], 0.0]);
+        let o_local = [o4[0], o4[1], o4[2]];
+        let d_local = [d4[0], d4[1], d4[2]];
+
+        fn to_world_t(
+            model: TransformMatrix,
+            origin_world: [f32; 3],
+            dir_world: [f32; 3],
+            p_local: [f32; 3],
+        ) -> Option<f32> {
+            let w = RayCastSystem::mat4_mul_vec4(model, [p_local[0], p_local[1], p_local[2], 1.0]);
+            let p_world = [w[0], w[1], w[2]];
+            let v = RayCastSystem::vec3_sub(p_world, origin_world);
+            let t = RayCastSystem::vec3_dot(v, dir_world);
+            if t.is_finite() && t >= 0.0 {
+                Some(t)
+            } else {
+                None
+            }
+        }
+
+        // Local-space narrow-phase tests.
+        match shape {
+            RaycastableShapeType::Aabb => Some(t_aabb),
+
+            RaycastableShapeType::Box => {
+                let t_local = Self::ray_aabb(o_local, d_local, [-0.5, -0.5, -0.5], [0.5, 0.5, 0.5])?;
+                let p_local = [
+                    o_local[0] + d_local[0] * t_local,
+                    o_local[1] + d_local[1] * t_local,
+                    o_local[2] + d_local[2] * t_local,
+                ];
+                to_world_t(model, origin, dir, p_local)
+            }
+
+            RaycastableShapeType::Quad2D | RaycastableShapeType::Triangle2D => {
+                // Treat as a thin slabbed quad for now (triangle narrow-phase can come later).
+                let thick = 0.02_f32;
+                let t_local = Self::ray_aabb(o_local, d_local, [-0.5, -0.5, -thick], [0.5, 0.5, thick])?;
+                let p_local = [
+                    o_local[0] + d_local[0] * t_local,
+                    o_local[1] + d_local[1] * t_local,
+                    o_local[2] + d_local[2] * t_local,
+                ];
+                to_world_t(model, origin, dir, p_local)
+            }
+
+            RaycastableShapeType::Ring2D => {
+                // Builtin ring mesh is generated as an annulus in the local XY plane.
+                // `RenderAssets` uses MeshFactory::circle_2d(0.45, 0.5, ...).
+                let mut r_in = 0.45_f32;
+                let mut r_out = 0.5_f32;
+
+                // Picking tolerance: slightly widen the clickable band.
+                let tol = 0.03_f32;
+                r_in = (r_in - tol).max(0.0);
+                r_out += tol;
+
+                // Intersect with local plane z=0.
+                let dz = d_local[2];
+                if dz.abs() < 1e-6 {
+                    return None;
+                }
+                let t_local = -o_local[2] / dz;
+                if !t_local.is_finite() || t_local < 0.0 {
+                    return None;
+                }
+
+                let p_local = [
+                    o_local[0] + d_local[0] * t_local,
+                    o_local[1] + d_local[1] * t_local,
+                    0.0,
+                ];
+                let r = (p_local[0] * p_local[0] + p_local[1] * p_local[1]).sqrt();
+                if r < r_in || r > r_out {
+                    return None;
+                }
+                to_world_t(model, origin, dir, p_local)
+            }
+
+            RaycastableShapeType::Cone => {
+                // Practical proxy: treat the cone as a finite cylinder in local space.
+                // This reduces AABB false positives under rotation, even if it's not a perfect cone.
+                let r = 0.5_f32;
+                let zmin = -0.5_f32;
+                let zmax = 0.5_f32;
+
+                let ox = o_local[0];
+                let oy = o_local[1];
+                let oz = o_local[2];
+                let dx = d_local[0];
+                let dy = d_local[1];
+                let dz = d_local[2];
+
+                let mut best_t: Option<f32> = None;
+
+                // Body intersection.
+                let a = dx * dx + dy * dy;
+                let b = 2.0 * (ox * dx + oy * dy);
+                let c = ox * ox + oy * oy - r * r;
+
+                if a.abs() > 1e-8 {
+                    let disc = b * b - 4.0 * a * c;
+                    if disc >= 0.0 {
+                        let s = disc.sqrt();
+                        let t0 = (-b - s) / (2.0 * a);
+                        let t1 = (-b + s) / (2.0 * a);
+                        for t in [t0, t1] {
+                            if !t.is_finite() || t < 0.0 {
+                                continue;
+                            }
+                            let z = oz + dz * t;
+                            if z >= zmin && z <= zmax {
+                                best_t = match best_t {
+                                    None => Some(t),
+                                    Some(bt) if t < bt => Some(t),
+                                    _ => best_t,
+                                };
+                            }
+                        }
+                    }
+                }
+
+                // Caps.
+                if dz.abs() > 1e-8 {
+                    for z_plane in [zmin, zmax] {
+                        let t = (z_plane - oz) / dz;
+                        if !t.is_finite() || t < 0.0 {
+                            continue;
+                        }
+                        let x = ox + dx * t;
+                        let y = oy + dy * t;
+                        if x * x + y * y <= r * r {
+                            best_t = match best_t {
+                                None => Some(t),
+                                Some(bt) if t < bt => Some(t),
+                                _ => best_t,
+                            };
+                        }
+                    }
+                }
+
+                let t_local = best_t?;
+                let p_local = [
+                    ox + dx * t_local,
+                    oy + dy * t_local,
+                    oz + dz * t_local,
+                ];
+                to_world_t(model, origin, dir, p_local)
+            }
+
+            // Not yet implemented: accept AABB for now.
+            RaycastableShapeType::Tetrahedron | RaycastableShapeType::InferFromBaseMesh => Some(t_aabb),
+        }
+    }
     pub fn register_raycast(
         &mut self,
         world: &mut World,
@@ -319,7 +527,27 @@ impl RayCastSystem {
                     0.0,
                 )
             }
-            CpuMeshHandle::QUAD_2D | CpuMeshHandle::TRIANGLE_2D => {
+            CpuMeshHandle::TETRAHEDRON => (
+                vec![
+                    [0.0, 0.0, 0.6123724],
+                    [-0.5, -0.2886751, -0.2041241],
+                    [0.5, -0.2886751, -0.2041241],
+                    [0.0, 0.5773503, -0.2041241],
+                ],
+                0.0,
+            ),
+            CpuMeshHandle::CONE => (
+                vec![
+                    // Base circle extremes at z = -0.5 and tip at z = +0.5.
+                    [-0.5, 0.0, -0.5],
+                    [0.5, 0.0, -0.5],
+                    [0.0, -0.5, -0.5],
+                    [0.0, 0.5, -0.5],
+                    [0.0, 0.0, 0.5],
+                ],
+                0.0,
+            ),
+            CpuMeshHandle::QUAD_2D | CpuMeshHandle::TRIANGLE_2D | CpuMeshHandle::CIRCLE_2D => {
                 // Flat meshes live in XY plane. Give them a tiny thickness so AABB tests work.
                 (
                     vec![
@@ -331,6 +559,17 @@ impl RayCastSystem {
                     0.01,
                 )
             }
+            CpuMeshHandle::SPHERE => (
+                vec![
+                    [-0.5, 0.0, 0.0],
+                    [0.5, 0.0, 0.0],
+                    [0.0, -0.5, 0.0],
+                    [0.0, 0.5, 0.0],
+                    [0.0, 0.0, -0.5],
+                    [0.0, 0.0, 0.5],
+                ],
+                0.0,
+            ),
             _ => return None,
         };
 
@@ -431,9 +670,17 @@ impl RayCastSystem {
                 continue;
             }
 
+            // Narrow-phase may reject; if it accepts, compare using the narrow-phase t.
+            let Some(t2) = Self::narrow_phase_accept(world, cid, origin, dir, t) else {
+                continue;
+            };
+            if t2 < 0.0 || t2 > max_distance {
+                continue;
+            }
+
             match best {
-                None => best = Some((cid, t)),
-                Some((_, bt)) if t < bt => best = Some((cid, t)),
+                None => best = Some((cid, t2)),
+                Some((_, bt)) if t2 < bt => best = Some((cid, t2)),
                 _ => {}
             }
         }
@@ -449,17 +696,42 @@ impl RayCastSystem {
         dir: [f32; 3],
         max_distance: f32,
     ) -> Option<(ComponentId, f32)> {
-        let hit = bvh.raycast_renderables(origin, dir, max_distance);
-        match hit {
-            Some((cid, t))
-                if world
-                    .get_component_by_id_as::<RenderableComponent>(cid)
-                    .is_some() =>
+        // Ask BVH for multiple candidates so narrow-phase can reject and fall through.
+        // Limit is a safety bound; gizmo scenes should have few nearby candidates.
+        let candidates = bvh.raycast_renderables_candidates(origin, dir, max_distance, 64);
+
+        let mut best: Option<(ComponentId, f32)> = None;
+        for (cid, t_aabb) in candidates {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(cid)
+                .is_none()
             {
-                Some((cid, t))
+                continue;
             }
-            _ => None,
+
+            // If we already have a best hit, and this candidate's AABB entry is beyond it,
+            // we can stop early (narrow-phase t should be >= AABB entry t).
+            if let Some((_, best_t)) = best {
+                if t_aabb > best_t {
+                    break;
+                }
+            }
+
+            let Some(t2) = Self::narrow_phase_accept(world, cid, origin, dir, t_aabb) else {
+                continue;
+            };
+            if t2 < 0.0 || t2 > max_distance {
+                continue;
+            }
+
+            match best {
+                None => best = Some((cid, t2)),
+                Some((_, bt)) if t2 < bt => best = Some((cid, t2)),
+                _ => {}
+            }
         }
+
+        best
     }
 }
 

@@ -11,6 +11,20 @@ The intent is to keep **gestures** as *system-owned state + signals* (not compon
 - Emit drag events with a **world-space delta per tick**.
 - Avoid a `GestureComponent` (gestures are global interaction state, not per-entity state).
 
+## Current limitations (verified in code)
+
+These are practical limitations of the current pipeline that show up immediately once gizmos are present.
+
+- Picking is effectively **AABB-only** today (broad-phase is treated as the hit distance).
+  - This means no “fine-grained” line-of-sight picking through holes (e.g. ring annulus).
+  - See `docs/bvh-and-raycast.md` and `docs/raycast-circles-and-cones.md`.
+- Mouse drag is currently a **global gesture** derived from “any mouse button is down + cursor moved”.
+  - `InputState::mouse_dragging()` is not button-specific.
+  - `InputSystem` uses mouse drag to rotate rigs/cameras (yaw/pitch), so **left-dragging a gizmo can also rotate the camera** unless you add routing/capture.
+- Gizmo TRS math uses **world axes** (X/Y/Z unit vectors), but gizmo visuals are parented under the target transform.
+  - There is currently no explicit local/world space mode switch.
+  - This becomes especially noticeable once we add more accurate narrow-phase picking (because interaction precision goes up).
+
 ## Terminology
 
 - **InputState**: per-frame mouse/keyboard snapshot from `engine/user_input.rs`.
@@ -105,6 +119,23 @@ To keep hit points updated during a drag without forcing fully continuous raycas
 
 This ensures `RayIntersected` keeps being produced during the drag.
 
+## Input routing / capture (why it matters)
+
+Right now, the engine does not have a routing/capture layer that can say:
+
+- “while dragging a gizmo handle, the camera should not consume mouse-drag rotation”, or
+- “right mouse is camera look; left mouse is interaction/picking”.
+
+As a result, input consumers can fight:
+
+- `InputSystem` interprets mouse drag as rig rotation.
+- `GestureSystem` interprets left mouse drag as an interaction gesture driven by ray hits.
+
+Two common directions:
+
+1. **Control scheme**: gate camera look to `MouseButton::Right` (or Alt+Left) and reserve left for picking/dragging.
+2. **Routing**: add an input-capture concept (e.g. “UI captured pointer this frame”), so only one subsystem consumes mouse drag.
+
 ## Gizmos
 
 ### GizmoComponent
@@ -162,6 +193,34 @@ Transform mutation should be done via `TransformComponent` setters that queue `q
 - Rotate: use `DragMove.hit_point` and an inferred previous hit (`hit_point - delta_world`) to compute a
   signed angle about the axis (in the plane orthogonal to the axis), then apply a quaternion delta.
 - Scale: project `delta_world` onto the axis and add it to the corresponding scale component (clamped to a minimum).
+
+## Gizmo local/world space mode (what’s missing)
+
+Many editors support two modes:
+
+- **Local mode**: axes follow the selected object’s orientation.
+- **World mode**: axes stay aligned to the global frame.
+
+Current behavior (verified in `GizmoSystem`):
+
+- Operation math uses fixed **world axes** (`axis.unit_vec3()`).
+- Gizmo visuals are spawned under the target’s component subtree, so they **inherit the target’s transform**.
+
+This means we don’t cleanly support either classical mode:
+
+- Visually it trends toward *local* (because it inherits parent rotation),
+- but interaction math trends toward *world* (because axes are world unit vectors).
+
+### If we add a world-mode gizmo, parenting becomes a real constraint
+
+If a gizmo is parented under the object it modifies and we want **world mode**, we need a way for the gizmo visuals to *not* inherit the parent’s rotation/scale.
+
+Common solutions:
+
+- **Detach**: parent the gizmo under a neutral world-space node, but keep a reference to the target transform.
+- **Compensate**: keep it parented, but apply an inverse parent rotation/scale to the gizmo root so its net world orientation remains fixed.
+
+Both require a deliberate design choice because existing code assumes “gizmo lives under target transform” for convenience.
 
 ## Tick ordering constraints
 
