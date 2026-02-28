@@ -109,6 +109,24 @@ impl InputState {
     pub fn mouse_drag_delta(&self) -> (f32, f32) {
         self.mouse_drag_delta
     }
+
+    /// Whether the given mouse button is currently dragging (that button is held + cursor moved
+    /// this frame).
+    #[inline]
+    pub fn mouse_dragging_button(&self, button: MouseButton) -> bool {
+        self.mouse_down.contains(&button)
+            && (self.mouse_movement.0 != 0.0 || self.mouse_movement.1 != 0.0)
+    }
+
+    /// Mouse drag delta (dx, dy) in pixels for this frame, gated to the given button.
+    #[inline]
+    pub fn mouse_drag_delta_button(&self, button: MouseButton) -> (f32, f32) {
+        if self.mouse_dragging_button(button) {
+            self.mouse_movement
+        } else {
+            (0.0, 0.0)
+        }
+    }
 }
 
 /// Stateful input event processor.

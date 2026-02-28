@@ -8,6 +8,7 @@ use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 use crate::utils::math;
 use std::collections::HashMap;
+use winit::event::MouseButton;
 use winit::keyboard::{Key, NamedKey};
 
 /// System that processes input components and updates transforms based on WASD input.
@@ -49,12 +50,8 @@ impl InputSystem {
         let q = input.key_down(&Key::Character("q".into()));
         let e = input.key_down(&Key::Character("e".into()));
 
-        // Mouse drag rotates the rig (yaw + pitch).
-        let (drag_dx, drag_dy) = if input.mouse_dragging() {
-            input.mouse_drag_delta()
-        } else {
-            (0.0, 0.0)
-        };
+        // Right-button drag rotates the rig (yaw + pitch).
+        let (drag_dx, drag_dy) = input.mouse_drag_delta_button(MouseButton::Right);
 
         // Sensitivity is radians per pixel.
         const MOUSE_SENS_RAD_PER_PX: f32 = 0.003;
@@ -97,11 +94,8 @@ impl InputSystem {
         let q = input.key_down(&Key::Character("q".into()));
         let e = input.key_down(&Key::Character("e".into()));
 
-        let (drag_dx, drag_dy) = if input.mouse_dragging() {
-            input.mouse_drag_delta()
-        } else {
-            (0.0, 0.0)
-        };
+        // Right-button drag rotates the rig (yaw + pitch).
+        let (drag_dx, drag_dy) = input.mouse_drag_delta_button(MouseButton::Right);
 
         // Sensitivity is radians per pixel.
         const MOUSE_SENS_RAD_PER_PX: f32 = 0.003;
@@ -307,7 +301,7 @@ impl InputSystem {
             || input.key_down(&Key::Character("q".into()))
             || input.key_down(&Key::Character("e".into()));
 
-        let any_drag = input.mouse_dragging();
+        let any_drag = input.mouse_dragging_button(MouseButton::Right);
 
         if !any_move && !any_drag {
             return;

@@ -15,8 +15,7 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
     let tetra_mesh = universe.render_assets.get_mesh(BuiltinMeshType::Tetrahedron);
 
     fn spawn(
-        world: &mut engine::ecs::World,
-        queue: &mut engine::ecs::CommandQueue,
+        universe: &mut engine::Universe,
         mesh: engine::graphics::primitives::CpuMeshHandle,
         x: f32,
         y: f32,
@@ -26,40 +25,41 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         input_driven: bool,
         emissive: bool,
     ) -> engine::ecs::ComponentId {
-        let transform = world.add_component(
+        let transform = universe.world.add_component(
             TransformComponent::new()
                 .with_position(x, y, 0.0)
                 .with_scale(s, s, 1.0)
                 .with_rotation_euler(0.0, 0.0, r),
         );
-        let renderable = world.add_component(RenderableComponent::new(
+        let renderable = universe.world.add_component(RenderableComponent::new(
             engine::graphics::primitives::Renderable::new(mesh, MaterialHandle::TOON_MESH),
         ));
-        let color_c = world.add_component(ColorComponent { rgba: color });
+        let color_c = universe.world.add_component(ColorComponent { rgba: color });
 
         if emissive {
-            let emissive_c = world.add_component(EmissiveComponent::on());
-            let _ = world.add_child(renderable, emissive_c);
+            let emissive_c = universe.world.add_component(EmissiveComponent::on());
+            let _ = universe.attach(renderable, emissive_c);
         }
 
         // Topology: (optional Input) -> Transform -> Renderable
-        let _ = world.add_child(transform, renderable);
-        let _ = world.add_child(renderable, color_c);
+        let _ = universe.attach(transform, renderable);
+        let _ = universe.attach(renderable, color_c);
 
         if input_driven {
-            let input = world.add_component(InputComponent::new().with_speed(0.5));
-            let _ = world.add_child(input, transform);
-            world.init_component_tree(input, queue);
+            let input = universe
+                .world
+                .add_component(InputComponent::new().with_speed(0.5));
+            let _ = universe.attach(input, transform);
+            universe.add(input);
         } else {
-            world.init_component_tree(transform, queue);
+            universe.add(transform);
         }
 
         transform
     }
 
     fn spawn_3d(
-        world: &mut engine::ecs::World,
-        queue: &mut engine::ecs::CommandQueue,
+        universe: &mut engine::Universe,
         mesh: engine::graphics::primitives::CpuMeshHandle,
         x: f32,
         y: f32,
@@ -70,20 +70,20 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         rz: f32,
         color: [f32; 4],
     ) -> engine::ecs::ComponentId {
-        let transform = world.add_component(
+        let transform = universe.world.add_component(
             TransformComponent::new()
                 .with_position(x, y, z)
                 .with_scale(s, s, s)
                 .with_rotation_euler(rx, ry, rz),
         );
-        let renderable = world.add_component(RenderableComponent::new(
+        let renderable = universe.world.add_component(RenderableComponent::new(
             engine::graphics::primitives::Renderable::new(mesh, MaterialHandle::TOON_MESH),
         ));
-        let color_c = world.add_component(ColorComponent { rgba: color });
+        let color_c = universe.world.add_component(ColorComponent { rgba: color });
 
-        let _ = world.add_child(transform, renderable);
-        let _ = world.add_child(renderable, color_c);
-        world.init_component_tree(transform, queue);
+        let _ = universe.attach(transform, renderable);
+        let _ = universe.attach(renderable, color_c);
+        universe.add(transform);
 
         transform
     }
@@ -99,7 +99,7 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
     let input_mode = universe
         .world
         .add_component(InputTransformModeComponent::forward_z().with_roll_axis_y());
-    let _ = universe.world.add_child(tri_input, input_mode);
+    let _ = universe.attach(tri_input, input_mode);
 
     // Start pulled back so the demo meshes at z=0 are in view.
     // The camera will be attached directly under this transform, so there is no local
@@ -107,11 +107,11 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
     let rig_transform = universe
         .world
         .add_component(TransformComponent::new().with_position(0.0, 0.0, 2.5));
-    let _ = universe.world.add_child(tri_input, rig_transform);
+    let _ = universe.attach(tri_input, rig_transform);
 
     // Camera: attached directly to the rig transform.
     let camera3d = universe.world.add_component(Camera3DComponent::new());
-    let _ = universe.world.add_child(rig_transform, camera3d);
+    let _ = universe.attach(rig_transform, camera3d);
 
     let tri_root_transform = universe
         .world
@@ -130,14 +130,10 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         .world
         .add_component(ColorComponent::rgba(0.2, 1.0, 0.2, 1.0));
 
-    let _ = universe.world.add_child(rig_transform, tri_root_transform);
-    let _ = universe
-        .world
-        .add_child(tri_root_transform, tri_visual_transform);
-    let _ = universe
-        .world
-        .add_child(tri_visual_transform, tri_renderable);
-    let _ = universe.world.add_child(tri_renderable, tri_color);
+    let _ = universe.attach(rig_transform, tri_root_transform);
+    let _ = universe.attach(tri_root_transform, tri_visual_transform);
+    let _ = universe.attach(tri_visual_transform, tri_renderable);
+    let _ = universe.attach(tri_renderable, tri_color);
 
     let tri_light = universe.world.add_component(
         PointLightComponent::new()
@@ -151,19 +147,13 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
             .with_scale(0.1, 0.1, 0.1),
     );
 
-    let _ = universe.world.add_child(light_transform, tri_light);
+    let _ = universe.attach(light_transform, tri_light);
 
-    universe
-        .world
-        .init_component_tree(tri_input, &mut universe.command_queue);
-
-    universe
-        .world
-        .init_component_tree(light_transform, &mut universe.command_queue);
+    universe.add(tri_input);
+    universe.add(light_transform);
 
     spawn(
-        &mut universe.world,
-        &mut universe.command_queue,
+        universe,
         square_mesh,
         -0.80,
         -0.30,
@@ -174,8 +164,7 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         true,
     );
     spawn(
-        &mut universe.world,
-        &mut universe.command_queue,
+        universe,
         square_mesh,
         -0.40,
         -0.30,
@@ -188,8 +177,7 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
 
     // 3D primitive: tetrahedron.
     spawn_3d(
-        &mut universe.world,
-        &mut universe.command_queue,
+        universe,
         tetra_mesh,
         0.55,
         -0.15,
@@ -201,8 +189,7 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         [0.2, 0.7, 1.0, 1.0],
     );
     spawn(
-        &mut universe.world,
-        &mut universe.command_queue,
+        universe,
         square_mesh,
         0.00,
         -0.30,
@@ -213,8 +200,7 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         true,
     );
     spawn(
-        &mut universe.world,
-        &mut universe.command_queue,
+        universe,
         square_mesh,
         0.40,
         -0.30,
@@ -225,8 +211,7 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         true,
     );
     spawn(
-        &mut universe.world,
-        &mut universe.command_queue,
+        universe,
         square_mesh,
         0.80,
         -0.30,
@@ -237,8 +222,7 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         true,
     );
     spawn(
-        &mut universe.world,
-        &mut universe.command_queue,
+        universe,
         tri_mesh,
         0.30,
         0.35,
@@ -265,12 +249,10 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         "assets/textures/cat-face-amused.dds",
     ));
 
-    let _ = universe.world.add_child(tex_transform, tex_renderable);
-    let _ = universe.world.add_child(tex_renderable, tex_color);
-    let _ = universe.world.add_child(tex_renderable, tex);
-    universe
-        .world
-        .init_component_tree(tex_transform, &mut universe.command_queue);
+    let _ = universe.attach(tex_transform, tex_renderable);
+    let _ = universe.attach(tex_renderable, tex_color);
+    let _ = universe.attach(tex_renderable, tex);
+    universe.add(tex_transform);
 
     // glTF: color-cat
     // Attach GLTFComponent under a Transform so GLTFSystem can use it as an anchor.
@@ -283,10 +265,8 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
     let cat_gltf = universe
         .world
         .add_component(GLTFComponent::new("assets/models/color-cat.2.glb"));
-    let _ = universe.world.add_child(cat_anchor, cat_gltf);
-    universe
-        .world
-        .init_component_tree(cat_anchor, &mut universe.command_queue);
+    let _ = universe.attach(cat_anchor, cat_gltf);
+    universe.add(cat_anchor);
 }
 
 fn main() {

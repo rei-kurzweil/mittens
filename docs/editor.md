@@ -157,6 +157,8 @@ When a ray hits a renderable, the editor can decide whether it belongs to an edi
 - Walk `parent_of` repeatedly.
 - If an `EditorComponent` is encountered, the renderable is within that editor scope.
 
+Note: outside engine internals, prefer the `Universe` query wrappers (`universe.parent_of`, `universe.children_of`, `universe.get_component_by_id_as`) rather than accessing `universe.world` directly.
+
 ## Selecting: attach a gizmo to the hit renderable
 
 ### Important nuance: gizmos attach to transforms
@@ -188,8 +190,8 @@ On selection:
 
 1. Remove existing editor-owned gizmo(s) (default single-selection behavior).
 2. `let gizmo_cid = world.add_component(GizmoComponent::new())`
-3. `world.add_child(target_transform, gizmo_cid)`
-4. `world.init_component_tree(gizmo_cid, queue)` (or rely on normal init path)
+3. `universe.attach(target_transform, gizmo_cid)`
+4. `universe.add(gizmo_cid)` (or rely on normal init path)
 
 Cleanup should remove the gizmo visual subtree via `GizmoComponent::cleanup`.
 

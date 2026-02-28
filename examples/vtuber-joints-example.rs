@@ -303,9 +303,7 @@ fn main() {
     }
 
     // Ensure Animation/Keyframes are registered.
-    universe
-        .world
-        .init_component_tree(anim, &mut universe.command_queue);
+    universe.add(anim);
     universe.systems.process_commands(
         &mut universe.world,
         &mut universe.visuals,

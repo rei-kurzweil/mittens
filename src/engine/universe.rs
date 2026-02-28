@@ -49,6 +49,19 @@ impl Universe {
             .init_component_tree(root, &mut self.command_queue);
     }
 
+    // --- Query helpers (read-only World access) ---
+    pub fn parent_of(&self, c: ecs::ComponentId) -> Option<ecs::ComponentId> {
+        self.world.parent_of(c)
+    }
+
+    pub fn children_of(&self, c: ecs::ComponentId) -> &[ecs::ComponentId] {
+        self.world.children_of(c)
+    }
+
+    pub fn get_component_by_id_as<T: 'static>(&self, c: ecs::ComponentId) -> Option<&T> {
+        self.world.get_component_by_id_as::<T>(c)
+    }
+
     /// Add a signal handler rooted at `scope_root`.
     ///
     /// The handler runs when a matching signal occurs within the `scope_root` subtree.

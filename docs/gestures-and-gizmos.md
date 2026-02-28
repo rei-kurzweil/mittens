@@ -15,15 +15,32 @@ The intent is to keep **gestures** as *system-owned state + signals* (not compon
 
 These are practical limitations of the current pipeline that show up immediately once gizmos are present.
 
-- Picking is effectively **AABB-only** today (broad-phase is treated as the hit distance).
-  - This means no “fine-grained” line-of-sight picking through holes (e.g. ring annulus).
-  - See `docs/bvh-and-raycast.md` and `docs/raycast-circles-and-cones.md`.
+- Broad-phase picking is **AABB-based** (BVH candidates come from world-space axis-aligned AABBs).
+  - We now do a **narrow-phase** per candidate for some shapes (ring annulus, box as OBB, cone proxy, triangle, tetrahedron), and can reject a “too-close” AABB candidate and continue to the next one.
+  - This enables basic line-of-sight behaviors like “click through the hole in a ring” when the ring’s AABB overlaps the object behind it.
+  - Broad-phase is still AABB-only, so rotated/complex meshes can still produce false positives that must be filtered by narrow-phase.
 - Mouse drag is currently a **global gesture** derived from “any mouse button is down + cursor moved”.
   - `InputState::mouse_dragging()` is not button-specific.
   - `InputSystem` uses mouse drag to rotate rigs/cameras (yaw/pitch), so **left-dragging a gizmo can also rotate the camera** unless you add routing/capture.
 - Gizmo TRS math uses **world axes** (X/Y/Z unit vectors), but gizmo visuals are parented under the target transform.
   - There is currently no explicit local/world space mode switch.
   - This becomes especially noticeable once we add more accurate narrow-phase picking (because interaction precision goes up).
+
+## TODOs (updated)
+
+- ☑️ 1. There’s no fine grained picking / line-of-sight selection.
+  - Partially addressed: multi-candidate broad-phase + narrow-phase lets us do “click-through” for some primitives (notably `ring_2d`).
+  - Still missing: general per-mesh fine picking for arbitrary geometry.
+- ☑️ 2. Axis aligned bounding boxes aren’t enough.
+  - Broad-phase BVH is still axis-aligned AABBs.
+  - Partially addressed: we now do shape-aware narrow-phase (including treating `box` as an OBB by ray→local transform).
+- ✅ 3. If an AABB/OBB wins broad-phase, we need to be able to reject it in narrow-phase and move on to other candidates behind it.
+  - Implemented: BVH query returns multiple candidates; raycast iterates candidates until narrow-phase accepts.
+  - Implemented narrow-phase coverage includes: `ring_2d` (used for `circle_2d`), `cone` (proxy), `triangle_2d`, `tetrahedron`, plus `box` and `quad_2d`.
+- ⬜ 4. Input routing is needed (or a control scheme like right click for camera, left click for interaction).
+- ⬜ 5. Gizmos need a local/world mode.
+- ⬜ 6. World-mode gizmo parenting constraints need a concrete solution.
+  - If world-mode exists and gizmo is parented under the target, we need detach/compensate logic so the gizmo stays neutral in world space.
 
 ## Terminology
 
