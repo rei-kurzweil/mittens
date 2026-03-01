@@ -5,9 +5,19 @@ use crate::utils::math;
 use winit::event::MouseButton;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum DragCoordinateSource {
-    RayCastCoords,
-    ScreenSpaceCoords,
+pub enum DragUpdatePolicy {
+    /// Only emit drag moves while the pointer still intersects the original target.
+    ///
+    /// This is the right default for “contact-driven” interactions (e.g. pushing/poking with a VR
+    /// hand), and for direct manipulation tools that should stop when leaving the target.
+    RequireTargetContact,
+
+    /// After `DragStart`, continue producing deltas by projecting the current pointer ray onto a
+    /// stable plane captured at drag start.
+    ///
+    /// This is the right default for editor gizmos, where requiring continuous intersection with a
+    /// thin handle geometry tends to feel unstable.
+    StartPlaneProjection,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -17,7 +27,7 @@ pub struct GestureState {
     pub drag_renderable: Option<ComponentId>,
     pub last_hit_point: Option<[f32; 3]>,
 
-    // Screen-space drag mode state.
+    // Start-plane projection drag mode state.
     pub last_cursor_pos: Option<(f32, f32)>,
     pub drag_plane_point_world: Option<[f32; 3]>,
     pub drag_plane_normal_world: Option<[f32; 3]>,
@@ -26,7 +36,7 @@ pub struct GestureState {
 #[derive(Debug)]
 pub struct GestureSystem {
     state: GestureState,
-    pub drag_coord_source: DragCoordinateSource,
+    pub drag_update_policy: DragUpdatePolicy,
 }
 
 impl GestureSystem {
@@ -34,8 +44,8 @@ impl GestureSystem {
         &self.state
     }
 
-    pub fn set_drag_coord_source(&mut self, source: DragCoordinateSource) {
-        self.drag_coord_source = source;
+    pub fn set_drag_update_policy(&mut self, policy: DragUpdatePolicy) {
+        self.drag_update_policy = policy;
     }
 
     fn mat4_mul(a: [[f32; 4]; 4], b: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
@@ -184,7 +194,7 @@ impl GestureSystem {
                 self.state.last_hit_point = hit_point;
                 self.state.last_cursor_pos = input.cursor_pos;
 
-                if self.drag_coord_source == DragCoordinateSource::ScreenSpaceCoords {
+                if self.drag_update_policy == DragUpdatePolicy::StartPlaneProjection {
                     if let Some((_rc, _r, _t, origin, dir)) = best {
                         let n = math::vec3_normalize(dir);
                         self.state.drag_plane_point_world = hit_point;
@@ -229,8 +239,8 @@ impl GestureSystem {
                     return;
                 };
 
-                match self.drag_coord_source {
-                    DragCoordinateSource::RayCastCoords => {
+                match self.drag_update_policy {
+                    DragUpdatePolicy::RequireTargetContact => {
                         // Only move when the hit is still on the captured renderable.
                         if let Some((raycaster, renderable, _t, _origin, _dir)) = best {
                             if raycaster == active_rc && renderable == active_renderable {
@@ -256,7 +266,7 @@ impl GestureSystem {
                         }
                     }
 
-                    DragCoordinateSource::ScreenSpaceCoords => {
+                    DragUpdatePolicy::StartPlaneProjection => {
                         // Continue emitting DragMove based on cursor motion projected onto a
                         // stable drag plane (captured at DragStart), even if we are no longer
                         // hovering the handle geometry.
@@ -331,8 +341,8 @@ impl Default for GestureSystem {
     fn default() -> Self {
         Self {
             state: GestureState::default(),
-            // Desktop/mobile tends to feel better in screen-space for gizmos.
-            drag_coord_source: DragCoordinateSource::ScreenSpaceCoords,
+            // Desktop/mobile tends to feel better with free-after-start gizmo dragging.
+            drag_update_policy: DragUpdatePolicy::StartPlaneProjection,
         }
     }
 }

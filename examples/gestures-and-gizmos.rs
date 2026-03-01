@@ -14,7 +14,8 @@ fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Scene {
     use engine::ecs::component::{
         BackgroundColorComponent, BackgroundComponent, Camera3DComponent, ColorComponent,
         DirectionalLightComponent, GizmoComponent, InputComponent, InputTransformModeComponent,
-        RayCastComponent, RaycastableComponent, RenderableComponent, TransformComponent,
+        PointerComponent, RayCastComponent, RaycastableComponent, RenderableComponent,
+        TransformComponent,
     };
     use engine::graphics::BuiltinMeshType;
     use engine::graphics::primitives::{MaterialHandle, Renderable};
@@ -34,7 +35,7 @@ fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Scene {
     // ambient light
     let ambient = universe
         .world
-        .register(AmbientLightComponent::rgb(0.25, 0.25, 0.25));
+        .add_component(AmbientLightComponent::rgb(0.25, 0.25, 0.25));
     universe.add(ambient);
 
     // ground plane
@@ -113,6 +114,10 @@ fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Scene {
         .world
         .add_component(RayCastComponent::event_driven().with_max_distance(100.0));
     let _ = universe.attach(rig_t, raycaster);
+
+    // Opt-in: treat this camera raycaster as a pointer.
+    let pointer = universe.world.add_component(PointerComponent::new());
+    let _ = universe.attach(raycaster, pointer);
 
     fn spawn_shape_with_gizmo(
         universe: &mut engine::Universe,

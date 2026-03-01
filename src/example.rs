@@ -15,7 +15,7 @@ pub struct GesturesAndGizmosScene {
 pub fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> GesturesAndGizmosScene {
     use crate::engine::ecs::component::{
         BackgroundColorComponent, BackgroundComponent, DirectionalLightComponent, GizmoComponent,
-        InputTransformModeComponent, RayCastComponent, RaycastableComponent,
+        InputTransformModeComponent, PointerComponent, RayCastComponent, RaycastableComponent,
     };
 
     let tri_mesh = universe.render_assets.get_mesh(BuiltinMeshType::Triangle2D);
@@ -81,6 +81,10 @@ pub fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Gestu
         .world
         .add_component(RayCastComponent::event_driven().with_max_distance(100.0));
     let _ = universe.world.add_child(rig, raycaster);
+
+    // Opt-in: treat this camera raycaster as a pointer.
+    let pointer = universe.world.add_component(PointerComponent::new());
+    let _ = universe.world.add_child(raycaster, pointer);
 
     fn spawn_shape_with_gizmo(
         universe: &mut engine::Universe,

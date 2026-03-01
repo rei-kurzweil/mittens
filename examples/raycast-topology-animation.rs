@@ -111,7 +111,7 @@ fn main() {
     // Background.
     let bg_color = universe
         .world
-        .register(engine::ecs::component::BackgroundColorComponent::rgba(
+        .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
             0.1, 0.1, 0.1, 1.0,
         ));
     universe.add(bg_color);
@@ -119,9 +119,9 @@ fn main() {
     // Camera rig so we can see the scene.
     let input = universe
         .world
-        .register(engine::ecs::component::InputComponent::new().with_speed(2.0));
+        .add_component(engine::ecs::component::InputComponent::new().with_speed(2.0));
 
-    let rig_transform = universe.world.register(
+    let rig_transform = universe.world.add_component(
         engine::ecs::component::TransformComponent::new()
             .with_position(0.0, 2.0, 8.0)
             .with_rotation_euler(-0.25, 0.0, 0.0),
@@ -129,9 +129,9 @@ fn main() {
 
     let camera3d = universe
         .world
-        .register(engine::ecs::component::Camera3DComponent::new());
+        .add_component(engine::ecs::component::Camera3DComponent::new());
 
-    let input_mode = universe.world.register(
+    let input_mode = universe.world.add_component(
         engine::ecs::component::InputTransformModeComponent::forward_z()
             .with_roll_axis_y()
             .with_fps_rotation(),
@@ -146,28 +146,28 @@ fn main() {
     // Each ring has its own anchor at a different height.
     let anchor_a = universe
         .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 1.0, 0.0));
+        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 1.0, 0.0));
     let anchor_b = universe
         .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 2.2, 0.0));
+        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 2.2, 0.0));
 
     // Visual markers for A/B.
     fn marker(universe: &mut engine::Universe, parent: engine::ecs::ComponentId, rgba: [f32; 4]) {
         let r = universe
             .world
-            .register(engine::ecs::component::RenderableComponent::cube());
+            .add_component(engine::ecs::component::RenderableComponent::cube());
         let rc = universe
             .world
-            .register(engine::ecs::component::RaycastableComponent::disabled());
+            .add_component(engine::ecs::component::RaycastableComponent::disabled());
         let c = universe
             .world
-            .register(engine::ecs::component::ColorComponent::rgba(
+            .add_component(engine::ecs::component::ColorComponent::rgba(
                 rgba[0], rgba[1], rgba[2], rgba[3],
             ));
         let e = universe
             .world
-            .register(engine::ecs::component::EmissiveComponent::on());
-        let t = universe.world.register(
+            .add_component(engine::ecs::component::EmissiveComponent::on());
+        let t = universe.world.add_component(
             engine::ecs::component::TransformComponent::new().with_scale(0.15, 0.15, 0.15),
         );
         let _ = universe.attach(parent, t);
@@ -192,20 +192,20 @@ fn main() {
         z: f32,
         rgba: [f32; 4],
     ) {
-        let t = universe.world.register(
+        let t = universe.world.add_component(
             engine::ecs::component::TransformComponent::new()
                 .with_position(x, y, z)
                 .with_scale(0.35, 0.35, 0.35),
         );
         let r = universe
             .world
-            .register(engine::ecs::component::RenderableComponent::cube());
+            .add_component(engine::ecs::component::RenderableComponent::cube());
         let rc = universe
             .world
-            .register(engine::ecs::component::RaycastableComponent::enabled());
+            .add_component(engine::ecs::component::RaycastableComponent::enabled());
         let c = universe
             .world
-            .register(engine::ecs::component::ColorComponent::rgba(
+            .add_component(engine::ecs::component::ColorComponent::rgba(
                 rgba[0], rgba[1], rgba[2], rgba[3],
             ));
         let _ = universe.attach(ring_root, t);
@@ -221,10 +221,10 @@ fn main() {
 
     let ring_a_root = universe
         .world
-        .register(engine::ecs::component::TransformComponent::new());
+        .add_component(engine::ecs::component::TransformComponent::new());
     let ring_b_root = universe
         .world
-        .register(engine::ecs::component::TransformComponent::new());
+        .add_component(engine::ecs::component::TransformComponent::new());
 
     for i in 0..n {
         let a = (i as f32) * (std::f32::consts::TAU / (n as f32));
@@ -268,21 +268,27 @@ fn main() {
     // - Under camera rig transform (has camera child) => cursor-through-camera
     let raycaster = universe
         .world
-        .register(engine::ecs::component::RayCastComponent::event_driven().with_max_distance(25.0));
+        .add_component(engine::ecs::component::RayCastComponent::event_driven().with_max_distance(25.0));
+
+    // Opt-in: treat this raycaster as a pointer (for the camera-rig portion of the demo).
+    let pointer = universe
+        .world
+        .add_component(engine::ecs::component::PointerComponent::new());
+    let _ = universe.attach(raycaster, pointer);
 
     // Global animation: move the raycaster between anchors.
     // Loop length is 8 beats (we include a noop keyframe at beat 7.0 to force loop_len=8).
     let anim_global = universe
         .world
-        .register(engine::ecs::component::AnimationComponent::new());
+        .add_component(engine::ecs::component::AnimationComponent::new());
     {
         // beat 0: attach to A.
         let kf0 = universe
             .world
-            .register(engine::ecs::component::KeyframeComponent::new(0.0));
+            .add_component(engine::ecs::component::KeyframeComponent::new(0.0));
         let act0 = universe
             .world
-            .register(engine::ecs::component::ActionComponent::new(
+            .add_component(engine::ecs::component::ActionComponent::new(
                 engine::ecs::component::Action::attach(anchor_a, raycaster),
             ));
         let _ = universe.attach(kf0, act0);
@@ -291,10 +297,10 @@ fn main() {
         // beat 4: attach to B.
         let kf4 = universe
             .world
-            .register(engine::ecs::component::KeyframeComponent::new(4.0));
+            .add_component(engine::ecs::component::KeyframeComponent::new(4.0));
         let act4 = universe
             .world
-            .register(engine::ecs::component::ActionComponent::new(
+            .add_component(engine::ecs::component::ActionComponent::new(
                 engine::ecs::component::Action::attach(anchor_b, raycaster),
             ));
         let _ = universe.attach(kf4, act4);
@@ -303,10 +309,10 @@ fn main() {
         // beat 7: noop to make loop_len=8.
         let kf7 = universe
             .world
-            .register(engine::ecs::component::KeyframeComponent::new(7.0));
+            .add_component(engine::ecs::component::KeyframeComponent::new(7.0));
         let noop = universe
             .world
-            .register(engine::ecs::component::ActionComponent::new(
+            .add_component(engine::ecs::component::ActionComponent::new(
                 engine::ecs::component::Action::default(),
             ));
         let _ = universe.attach(kf7, noop);
@@ -318,13 +324,13 @@ fn main() {
     // Also triggers Action::raycast(raycaster) on downbeats in the first half: beats 0,1,2,3.
     let anim_a = universe
         .world
-        .register(engine::ecs::component::AnimationComponent::new());
+        .add_component(engine::ecs::component::AnimationComponent::new());
 
     // Ring B animation: rotate anchor B differently (yaw + pitch).
     // Also triggers Action::raycast(raycaster) on offbeats in the second half: beats 4.5,5.5,6.5,7.5.
     let anim_b = universe
         .world
-        .register(engine::ecs::component::AnimationComponent::new());
+        .add_component(engine::ecs::component::AnimationComponent::new());
 
     let loop_beats = 8.0;
     let steps = 64;
@@ -336,10 +342,10 @@ fn main() {
         // Keyframe beats are per-animation local beats.
         let kf_a = universe
             .world
-            .register(engine::ecs::component::KeyframeComponent::new(beat));
+            .add_component(engine::ecs::component::KeyframeComponent::new(beat));
         let kf_b = universe
             .world
-            .register(engine::ecs::component::KeyframeComponent::new(beat));
+            .add_component(engine::ecs::component::KeyframeComponent::new(beat));
 
         // Anchor A rotation: smooth yaw.
         let yaw_a = t * std::f32::consts::TAU;
@@ -351,7 +357,7 @@ fn main() {
                 [1.0, 1.0, 1.0],
             ),
         );
-        let a_set_id = universe.world.register(a_set);
+        let a_set_id = universe.world.add_component(a_set);
         let _ = universe.attach(kf_a, a_set_id);
 
         // Anchor B rotation: yaw + pitch (different pattern).
@@ -366,7 +372,7 @@ fn main() {
                 [1.0, 1.0, 1.0],
             ),
         );
-        let b_set_id = universe.world.register(b_set);
+        let b_set_id = universe.world.add_component(b_set);
         let _ = universe.attach(kf_b, b_set_id);
 
         // Per-ring raycast patterns.
@@ -374,7 +380,7 @@ fn main() {
         if beat < 4.0 && step % 8 == 0 {
             let act = universe
                 .world
-                .register(engine::ecs::component::ActionComponent::new(
+                .add_component(engine::ecs::component::ActionComponent::new(
                     engine::ecs::component::Action::raycast(raycaster),
                 ));
             let _ = universe.attach(kf_a, act);
@@ -384,7 +390,7 @@ fn main() {
         if beat >= 4.0 && step % 8 == 4 {
             let act = universe
                 .world
-                .register(engine::ecs::component::ActionComponent::new(
+                .add_component(engine::ecs::component::ActionComponent::new(
                     engine::ecs::component::Action::raycast(raycaster),
                 ));
             let _ = universe.attach(kf_b, act);

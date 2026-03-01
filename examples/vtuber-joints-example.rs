@@ -20,26 +20,26 @@ fn main() {
     // Slow the global beat clock so beat-based animations run half as fast.
     let clock = universe
         .world
-        .register(ClockComponent::new().with_bpm(60.0));
+        .add_component(ClockComponent::new().with_bpm(60.0));
     universe.add(clock);
 
     // Light pink background.
     let background = universe
         .world
-        .register(BackgroundColorComponent::rgba(1.0, 0.82, 0.90, 1.0));
+        .add_component(BackgroundColorComponent::rgba(1.0, 0.82, 0.90, 1.0));
     universe.add(background);
 
     // Small ambient so shadowed areas aren't pure black.
     let ambient = universe
         .world
-        .register(AmbientLightComponent::rgb(0.10, 0.10, 0.12));
+        .add_component(AmbientLightComponent::rgb(0.10, 0.10, 0.12));
     universe.add(ambient);
 
     // --- Camera rig (WASD + mouse) ---
     let input = universe
         .world
-        .register(InputComponent::new().with_speed(1.5));
-    let input_mode = universe.world.register(
+        .add_component(InputComponent::new().with_speed(1.5));
+    let input_mode = universe.world.add_component(
         InputTransformModeComponent::forward_z()
             .with_fps_rotation()
             .with_roll_axis_y(),
@@ -49,32 +49,32 @@ fn main() {
     // Start slightly pulled back looking towards the origin.
     let rig_transform = universe
         .world
-        .register(TransformComponent::new().with_position(0.0, 0.0, 6.0));
+        .add_component(TransformComponent::new().with_position(0.0, 0.0, 6.0));
     let _ = universe.attach(input, rig_transform);
 
-    let camera3d = universe.world.register(Camera3DComponent::new());
+    let camera3d = universe.world.add_component(Camera3DComponent::new());
     let _ = universe.attach(rig_transform, camera3d);
 
     universe.add(input);
 
     // --- lighting ---
-    let sun = universe.world.register(
+    let sun = universe.world.add_component(
         DirectionalLightComponent::new()
             .with_intensity(1.2)
             .with_color(1.0, 0.98, 0.94),
     );
     let sun_dir = universe
         .world
-        .register(TransformComponent::new().with_position(0.0, -0.35, 1.0));
+        .add_component(TransformComponent::new().with_position(0.0, -0.35, 1.0));
     let _ = universe.attach(sun_dir, sun);
     universe.add(sun_dir);
 
-    let light_transform = universe.world.register(
+    let light_transform = universe.world.add_component(
         TransformComponent::new()
             .with_position(1.0, 6.0, 3.0)
             .with_scale(0.1, 0.1, 0.1),
     );
-    let light = universe.world.register(
+    let light = universe.world.add_component(
         engine::ecs::component::PointLightComponent::new()
             .with_distance(120.0)
             .with_color(1.0, 1.0, 1.0),
@@ -85,11 +85,11 @@ fn main() {
     // --- VTuber model ---
     let model_uri = "assets/models/pc-rei.hoodie.glb";
 
-    let model_root = universe.world.register(TransformComponent::new());
-    let model = universe.world.register(GLTFComponent::new(model_uri));
+    let model_root = universe.world.add_component(TransformComponent::new());
+    let model = universe.world.add_component(GLTFComponent::new(model_uri));
 
     // emissive for pc-rei
-    let emissive = universe.world.register(EmissiveComponent { enabled: true });
+    let emissive = universe.world.add_component(EmissiveComponent { enabled: true });
     let _ = universe.attach(model, emissive);
 
     let _ = universe.attach(model_root, model);
@@ -100,7 +100,7 @@ fn main() {
     // --- Background clouds (occluded + lit) ---
     let bg_root = universe
         .world
-        .register(engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting());
+        .add_component(engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting());
     universe.add(bg_root);
     let mut cloud_params = example_util::CloudRingParams::default();
     cloud_params.cloud_count = 8; // +3 clusters
@@ -115,15 +115,15 @@ fn main() {
                       position: (f32, f32, f32),
                       scale: (f32, f32, f32),
                       color: (f32, f32, f32, f32)| {
-        let transform = universe.world.register(
+        let transform = universe.world.add_component(
             TransformComponent::new()
                 .with_position(position.0, position.1, position.2)
                 .with_scale(scale.0, scale.1, scale.2),
         );
-        let renderable = universe.world.register(RenderableComponent::cube());
+        let renderable = universe.world.add_component(RenderableComponent::cube());
         let color = universe
             .world
-            .register(ColorComponent::rgba(color.0, color.1, color.2, color.3));
+            .add_component(ColorComponent::rgba(color.0, color.1, color.2, color.3));
 
         let _ = universe.attach(transform, renderable);
         let _ = universe.attach(renderable, color);
@@ -157,7 +157,7 @@ fn main() {
 
     let xr_root = universe
         .world
-        .register(engine::ecs::component::OpenXRComponent::on());
+        .add_component(engine::ecs::component::OpenXRComponent::on());
     universe.add(xr_root);
 
     universe.systems.process_commands(
@@ -252,7 +252,7 @@ fn main() {
     // Create a looping animation with many keyframes, and attach actions to the selected joints.
     let anim = universe
         .world
-        .register(AnimationComponent::new().with_state(AnimationState::Looping));
+        .add_component(AnimationComponent::new().with_state(AnimationState::Looping));
     let _ = universe.attach(model_root, anim);
 
     // Fill [0, 2) beats densely so it looks smooth at bpm=60 (2 beats = 2 seconds).
@@ -263,7 +263,7 @@ fn main() {
     let axis_parent: [f32; 3] = [0.0, 0.0, 1.0];
     for i in 0..steps {
         let beat = (i as f64) * (2.0 / (steps as f64));
-        let kf = universe.world.register(KeyframeComponent::new(beat));
+        let kf = universe.world.add_component(KeyframeComponent::new(beat));
         let _ = universe.attach(anim, kf);
 
         let angle = ((std::f64::consts::PI * beat).sin() as f32) * amplitude_rad;
@@ -298,12 +298,12 @@ fn main() {
                     rotation
                 );
                 let print_action = Action::print(msg);
-                let print_action_cid = universe.world.register(ActionComponent::new(print_action));
+                let print_action_cid = universe.world.add_component(ActionComponent::new(print_action));
                 let _ = universe.attach(kf, print_action_cid);
             }
 
             let action = Action::set_transform(vec![joint_tx], translation, rotation, scale);
-            let action_cid = universe.world.register(ActionComponent::new(action));
+            let action_cid = universe.world.add_component(ActionComponent::new(action));
             let _ = universe.attach(kf, action_cid);
         }
     }

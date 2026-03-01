@@ -8,7 +8,7 @@ fn main() {
 
     let bg_color = universe
         .world
-        .register(engine::ecs::component::BackgroundColorComponent::rgba(
+        .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
             0.1, 0.02, 0.05, 1.0,
         ));
 
@@ -18,22 +18,22 @@ fn main() {
     // Any KineticResponseComponent nested under this subtree will have gravity applied.
     let gravity_field = universe
         .world
-        .register(engine::ecs::component::GravityComponent::new().with_coefficient(0.5));
+        .add_component(engine::ecs::component::GravityComponent::new().with_coefficient(0.5));
     universe.add(gravity_field);
 
     // Input-driven camera rig.
     // Topology: I { T { C3D }  CN{Rigged { Sphere }} }
     let input = universe
         .world
-        .register(engine::ecs::component::InputComponent::new().with_speed(2.0));
+        .add_component(engine::ecs::component::InputComponent::new().with_speed(2.0));
 
     let rig_transform = universe
         .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.75, 0.0));
+        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.75, 0.0));
     let camera3d = universe
         .world
-        .register(engine::ecs::component::Camera3DComponent::new());
-    let input_mode = universe.world.register(
+        .add_component(engine::ecs::component::Camera3DComponent::new());
+    let input_mode = universe.world.add_component(
         engine::ecs::component::InputTransformModeComponent::forward_z()
             .with_roll_axis_y()
             .with_fps_rotation(),
@@ -41,17 +41,17 @@ fn main() {
 
     let rig_collision = universe
         .world
-        .register(engine::ecs::component::CollisionComponent::RIGGED());
+        .add_component(engine::ecs::component::CollisionComponent::RIGGED());
 
     // Opt-in to default kinematic-vs-static collision response.
     // Policy note: collisions still emit signals regardless; response only runs for entities
     // that explicitly add a KineticResponseComponent.
     let rig_response = universe
         .world
-        .register(engine::ecs::component::KineticResponseComponent::slide());
+        .add_component(engine::ecs::component::KineticResponseComponent::slide());
     let rig_shape = universe
         .world
-        .register(engine::ecs::component::CollisionShapeComponent::new(
+        .add_component(engine::ecs::component::CollisionShapeComponent::new(
             engine::ecs::component::CollisionShape::sphere_radius(0.25),
         ));
 
@@ -60,10 +60,16 @@ fn main() {
     let _ = universe.attach(rig_transform, camera3d);
 
     // Click-to-pick: raycast from the active camera through the cursor.
-    let raycast = universe.world.register(
+    let raycast = universe.world.add_component(
         engine::ecs::component::RayCastComponent::event_driven().with_max_distance(100.0),
     );
     let _ = universe.attach(rig_transform, raycast);
+
+    // Opt-in: treat this camera raycaster as a pointer.
+    let pointer = universe
+        .world
+        .add_component(engine::ecs::component::PointerComponent::new());
+    let _ = universe.attach(raycast, pointer);
 
     let _ = universe.attach(rig_transform, rig_collision);
     let _ = universe.attach(rig_collision, rig_response);
@@ -83,13 +89,13 @@ fn main() {
         intensity: f32,
         distance: f32,
     ) {
-        let t = universe.world.register(
+        let t = universe.world.add_component(
             engine::ecs::component::TransformComponent::new()
                 .with_position(x, y, z)
                 .with_scale(0.12, 0.12, 0.12),
         );
 
-        let l = universe.world.register(
+        let l = universe.world.add_component(
             engine::ecs::component::PointLightComponent::new()
                 .with_color(r, g, b)
                 .with_intensity(intensity)
@@ -99,10 +105,10 @@ fn main() {
         // White ensures it mostly shows the light color.
         let marker = universe
             .world
-            .register(engine::ecs::component::RenderableComponent::cube());
+            .add_component(engine::ecs::component::RenderableComponent::cube());
         let marker_color = universe
             .world
-            .register(engine::ecs::component::ColorComponent::rgba(
+            .add_component(engine::ecs::component::ColorComponent::rgba(
                 1.0, 1.0, 1.0, 1.0,
             ));
 
@@ -128,16 +134,16 @@ fn main() {
     fn spawn_wall_cube(universe: &mut engine::Universe, x: f32, y: f32, z: f32) {
         let t = universe
             .world
-            .register(engine::ecs::component::TransformComponent::new().with_position(x, y, z));
+            .add_component(engine::ecs::component::TransformComponent::new().with_position(x, y, z));
         let r = universe
             .world
-            .register(engine::ecs::component::RenderableComponent::cube());
+            .add_component(engine::ecs::component::RenderableComponent::cube());
         let cn = universe
             .world
-            .register(engine::ecs::component::CollisionComponent::STATIC());
+            .add_component(engine::ecs::component::CollisionComponent::STATIC());
         let c = universe
             .world
-            .register(engine::ecs::component::ColorComponent::rgba(
+            .add_component(engine::ecs::component::ColorComponent::rgba(
                 0.9, 0.2, 0.2, 1.0,
             ));
 
@@ -160,17 +166,17 @@ fn main() {
         g: f32,
         b: f32,
     ) {
-        let t = universe.world.register(
+        let t = universe.world.add_component(
             engine::ecs::component::TransformComponent::new()
                 .with_position(x, y, z)
                 .with_scale(sx, sy, sz),
         );
         let renderable = universe
             .world
-            .register(engine::ecs::component::RenderableComponent::cube());
+            .add_component(engine::ecs::component::RenderableComponent::cube());
         let color = universe
             .world
-            .register(engine::ecs::component::ColorComponent::rgba(r, g, b, 1.0));
+            .add_component(engine::ecs::component::ColorComponent::rgba(r, g, b, 1.0));
 
         let _ = universe.attach(t, renderable);
         let _ = universe.attach(renderable, color);
@@ -189,29 +195,29 @@ fn main() {
         g: f32,
         b: f32,
     ) {
-        let t = universe.world.register(
+        let t = universe.world.add_component(
             engine::ecs::component::TransformComponent::new()
                 .with_position(x, y, z)
                 .with_scale(s, s, s),
         );
         let renderable = universe
             .world
-            .register(engine::ecs::component::RenderableComponent::cube());
+            .add_component(engine::ecs::component::RenderableComponent::cube());
         let color = universe
             .world
-            .register(engine::ecs::component::ColorComponent::rgba(r, g, b, 1.0));
+            .add_component(engine::ecs::component::ColorComponent::rgba(r, g, b, 1.0));
 
         let cn = universe
             .world
-            .register(engine::ecs::component::CollisionComponent::KINEMATIC());
-        let response = universe.world.register(
+            .add_component(engine::ecs::component::CollisionComponent::KINEMATIC());
+        let response = universe.world.add_component(
             engine::ecs::component::KineticResponseComponent::push()
                 .with_push_strength(4.0)
                 .with_friction_y(10.0),
         );
         let shape = universe
             .world
-            .register(engine::ecs::component::CollisionShapeComponent::new(
+            .add_component(engine::ecs::component::CollisionShapeComponent::new(
                 engine::ecs::component::CollisionShape::cube_half_extents([
                     0.5 * s,
                     0.5 * s,
@@ -238,14 +244,14 @@ fn main() {
     ) {
         let t = universe
             .world
-            .register(engine::ecs::component::TransformComponent::new().with_position(x, y, z));
+            .add_component(engine::ecs::component::TransformComponent::new().with_position(x, y, z));
 
         let cn = universe
             .world
-            .register(engine::ecs::component::CollisionComponent::STATIC());
+            .add_component(engine::ecs::component::CollisionComponent::STATIC());
         let shape = universe
             .world
-            .register(engine::ecs::component::CollisionShapeComponent::new(
+            .add_component(engine::ecs::component::CollisionShapeComponent::new(
                 engine::ecs::component::CollisionShape::cube_half_extents(half_extents),
             ));
 
@@ -253,7 +259,7 @@ fn main() {
         // are not responders).
         let response = universe
             .world
-            .register(engine::ecs::component::KineticResponseComponent::slide());
+            .add_component(engine::ecs::component::KineticResponseComponent::slide());
 
         let _ = universe.attach(t, cn);
         let _ = universe.attach(cn, shape);
@@ -272,27 +278,27 @@ fn main() {
         // Top surface at y=0.
         let ground_root_t = universe
             .world
-            .register(engine::ecs::component::TransformComponent::new());
-        let ground_geom_t = universe.world.register(
+            .add_component(engine::ecs::component::TransformComponent::new());
+        let ground_geom_t = universe.world.add_component(
             engine::ecs::component::TransformComponent::new()
                 .with_position(0.0, -thickness, 0.0)
                 .with_scale(ground_half * 2.0, thickness * 2.0, ground_half * 2.0),
         );
         let ground_r = universe
             .world
-            .register(engine::ecs::component::RenderableComponent::cube());
+            .add_component(engine::ecs::component::RenderableComponent::cube());
         let ground_c = universe
             .world
-            .register(engine::ecs::component::ColorComponent::rgba(
+            .add_component(engine::ecs::component::ColorComponent::rgba(
                 0.08, 0.08, 0.09, 1.0,
             ));
         let ground_cn = universe
             .world
-            .register(engine::ecs::component::CollisionComponent::STATIC());
+            .add_component(engine::ecs::component::CollisionComponent::STATIC());
         let ground_shape =
             universe
                 .world
-                .register(engine::ecs::component::CollisionShapeComponent::new(
+                .add_component(engine::ecs::component::CollisionShapeComponent::new(
                     engine::ecs::component::CollisionShape::cube_half_extents([
                         ground_half,
                         thickness,

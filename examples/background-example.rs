@@ -23,7 +23,7 @@ fn main() {
     // Dark-ish background clear color so the effect reads.
     let clear = universe
         .world
-        .register(engine::ecs::component::BackgroundColorComponent::rgba(
+        .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
             0.01, 0.01, 0.02, 1.0,
         ));
     universe.add(clear);
@@ -31,8 +31,8 @@ fn main() {
     // --- Camera rig (WASD/QE) ---
     let input = universe
         .world
-        .register(engine::ecs::component::InputComponent::new().with_speed(2.0));
-    let input_mode = universe.world.register(
+        .add_component(engine::ecs::component::InputComponent::new().with_speed(2.0));
+    let input_mode = universe.world.add_component(
         engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y(),
     );
     let _ = universe.attach(input, input_mode);
@@ -40,23 +40,23 @@ fn main() {
     // Start pulled back so both background + foreground are in view.
     let rig_transform = universe
         .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 1.0, 6.0));
+        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 1.0, 6.0));
     let _ = universe.attach(input, rig_transform);
 
     let camera3d = universe
         .world
-        .register(engine::ecs::component::Camera3DComponent::new());
+        .add_component(engine::ecs::component::Camera3DComponent::new());
     let _ = universe.attach(rig_transform, camera3d);
 
     // Simple light for toon-shaded foreground.
-    let light = universe.world.register(
+    let light = universe.world.add_component(
         engine::ecs::component::PointLightComponent::new()
             .with_distance(50.0)
             .with_color(1.0, 1.0, 1.0),
     );
     let light_transform = universe
         .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 6.0, 2.0));
+        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 6.0, 2.0));
     let _ = universe.attach(light_transform, light);
 
     universe.add(input);
@@ -70,12 +70,12 @@ fn main() {
     // Any renderables under this node will go through the background draw list.
     let bg_root = universe
         .world
-        .register(engine::ecs::component::BackgroundComponent::new());
+        .add_component(engine::ecs::component::BackgroundComponent::new());
     universe.add(bg_root);
 
     // A large thin "ground" plane in the background layer.
     // (Using a scaled cube for now; visually it's a plane.)
-    let ground_tx = universe.world.register(
+    let ground_tx = universe.world.add_component(
         engine::ecs::component::TransformComponent::new()
             .with_position(0.0, -40.0, 0.0)
             .with_scale(200.0, 1.0, 200.0),
@@ -83,7 +83,7 @@ fn main() {
     let ground_renderable =
         universe
             .world
-            .register(engine::ecs::component::RenderableComponent::new(
+            .add_component(engine::ecs::component::RenderableComponent::new(
                 engine::graphics::primitives::Renderable::new(
                     cube_mesh,
                     engine::graphics::primitives::MaterialHandle::UNLIT_MESH,
@@ -91,7 +91,7 @@ fn main() {
             ));
     let ground_color = universe
         .world
-        .register(engine::ecs::component::ColorComponent::rgba(
+        .add_component(engine::ecs::component::ColorComponent::rgba(
             0.015, 0.02, 0.03, 1.0,
         ));
 
@@ -133,7 +133,7 @@ fn main() {
 
             let scale = 0.12 + rand01(cell.wrapping_add(12345)) * 0.20;
 
-            let tx = universe.world.register(
+            let tx = universe.world.add_component(
                 engine::ecs::component::TransformComponent::new()
                     .with_position(px, py, pz)
                     .with_scale(scale, scale, scale),
@@ -141,7 +141,7 @@ fn main() {
             let renderable =
                 universe
                     .world
-                    .register(engine::ecs::component::RenderableComponent::new(
+                    .add_component(engine::ecs::component::RenderableComponent::new(
                         engine::graphics::primitives::Renderable::new(
                             cube_mesh,
                             engine::graphics::primitives::MaterialHandle::UNLIT_MESH,
@@ -151,7 +151,7 @@ fn main() {
             let c = 0.75 + rand01(cell.wrapping_mul(3)) * 0.25;
             let color = universe
                 .world
-                .register(engine::ecs::component::ColorComponent::rgba(c, c, c, 1.0));
+                .add_component(engine::ecs::component::ColorComponent::rgba(c, c, c, 1.0));
 
             let _ = universe.attach(bg_root, tx);
             let _ = universe.attach(tx, renderable);
@@ -163,7 +163,7 @@ fn main() {
     // A small cube field that should parallax as you move.
     let fg_root = universe
         .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0));
+        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0));
 
     let n: i32 = 8;
     let step: f32 = 0.8;
@@ -172,7 +172,7 @@ fn main() {
             let px = (x - n / 2) as f32 * step;
             let pz = -(z as f32) * step;
 
-            let tx = universe.world.register(
+            let tx = universe.world.add_component(
                 engine::ecs::component::TransformComponent::new()
                     .with_position(px, 0.5, pz)
                     .with_scale(0.25, 0.25, 0.25),
@@ -180,7 +180,7 @@ fn main() {
             let renderable =
                 universe
                     .world
-                    .register(engine::ecs::component::RenderableComponent::new(
+                    .add_component(engine::ecs::component::RenderableComponent::new(
                         engine::graphics::primitives::Renderable::new(
                             cube_mesh,
                             engine::graphics::primitives::MaterialHandle::TOON_MESH,
@@ -191,7 +191,7 @@ fn main() {
             let fz = (z as f32) / ((n - 1) as f32);
             let color = universe
                 .world
-                .register(engine::ecs::component::ColorComponent::rgba(
+                .add_component(engine::ecs::component::ColorComponent::rgba(
                     0.2 + 0.8 * fx,
                     0.2 + 0.8 * (1.0 - fz),
                     0.4,

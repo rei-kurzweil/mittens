@@ -11,21 +11,21 @@ fn main() {
     // add a clock
     let clock = universe
         .world
-        .register(engine::ecs::component::ClockComponent::new().with_bpm(60.0));
+        .add_component(engine::ecs::component::ClockComponent::new().with_bpm(60.0));
     universe.add(clock);
 
     // Input-driven camera rig.
     // Topology: I { T { C3D } }
     let input = universe
         .world
-        .register(engine::ecs::component::InputComponent::new().with_speed(1.5));
+        .add_component(engine::ecs::component::InputComponent::new().with_speed(1.5));
     let camera3d = universe
         .world
-        .register(engine::ecs::component::Camera3DComponent::new());
+        .add_component(engine::ecs::component::Camera3DComponent::new());
     let rig_transform = universe
         .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 11.0));
-    let input_mode = universe.world.register(
+        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 11.0));
+    let input_mode = universe.world.add_component(
         engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y(),
     );
     let _ = universe.attach(input, input_mode);
@@ -36,8 +36,8 @@ fn main() {
     // Light.
     let light_transform = universe
         .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 2.0, 2.0));
-    let light = universe.world.register(
+        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 2.0, 2.0));
+    let light = universe.world.add_component(
         engine::ecs::component::PointLightComponent::new()
             .with_distance(50.0)
             .with_color(1.0, 1.0, 1.0),
@@ -62,7 +62,7 @@ fn main() {
         use engine::graphics::primitives::{MaterialHandle, Renderable};
 
         // Mesh.
-        let root = universe.world.register(
+        let root = universe.world.add_component(
             TransformComponent::new()
                 .with_position(x, y, 0.0)
                 .with_scale(scale[0], scale[1], scale[2]),
@@ -72,13 +72,13 @@ fn main() {
         // We fill [0, 2) beats densely so it looks smooth.
         let anim = universe
             .world
-            .register(AnimationComponent::new().with_state(AnimationState::Looping));
+            .add_component(AnimationComponent::new().with_state(AnimationState::Looping));
         let _ = universe.attach(root, anim);
 
         let steps: usize = 64;
         for i in 0..steps {
             let beat = (i as f64) * (2.0 / (steps as f64));
-            let kf = universe.world.register(KeyframeComponent::new(beat));
+            let kf = universe.world.add_component(KeyframeComponent::new(beat));
             let _ = universe.attach(anim, kf);
 
             // Full turn over 2 beats.
@@ -86,20 +86,20 @@ fn main() {
             let rotation = utils::math::quat_from_axis_angle([0.0, 1.0, 0.0], angle);
 
             let action = Action::set_transform(vec![root], [x, y, 0.0], rotation, scale);
-            let action_cid = universe.world.register(ActionComponent::new(action));
+            let action_cid = universe.world.add_component(ActionComponent::new(action));
             let _ = universe.attach(kf, action_cid);
         }
 
         let renderable = universe
             .world
-            .register(RenderableComponent::new(Renderable::new(
+            .add_component(RenderableComponent::new(Renderable::new(
                 mesh,
                 MaterialHandle::TOON_MESH,
             )));
         let color_c = universe
             .world
-            .register(ColorComponent::rgba(color[0], color[1], color[2], color[3]));
-        let emissive = universe.world.register(EmissiveComponent::on());
+            .add_component(ColorComponent::rgba(color[0], color[1], color[2], color[3]));
+        let emissive = universe.world.add_component(EmissiveComponent::on());
 
         let _ = universe.attach(root, renderable);
         let _ = universe.attach(renderable, color_c);
@@ -108,22 +108,22 @@ fn main() {
         universe.add(root);
 
         // Label (separate transform so we can scale text independently).
-        let text_root = universe.world.register(
+        let text_root = universe.world.add_component(
             TransformComponent::new()
                 .with_position(x, y + 0.75, 0.05)
                 .with_scale(0.09, 0.09, 1.0),
         );
         let text = universe
             .world
-            .register(TextComponent::with_word_wrap_tokens(
+            .add_component(TextComponent::with_word_wrap_tokens(
                 label,
                 LABEL_WRAP_AT,
                 ["::", "(", ")", ",", "."],
             ));
         let text_color = universe
             .world
-            .register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
-        let text_emissive = universe.world.register(EmissiveComponent::on());
+            .add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+        let text_emissive = universe.world.add_component(EmissiveComponent::on());
         let _ = universe.attach(text_root, text);
         let _ = universe.attach(text, text_color);
         let _ = universe.attach(text, text_emissive);

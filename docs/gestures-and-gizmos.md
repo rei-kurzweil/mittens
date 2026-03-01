@@ -93,32 +93,32 @@ Defined in `engine/ecs/rx/signal.rs`:
   - Emitted by `GestureSystem` when left mouse is released.
   - `hit_point` is the last known hit point, if any.
 
-### Proposed: drag coordinate sources (desktop vs VR)
+### Proposed: drag update policies (desktop vs VR)
 
 Right now, our drag events are implicitly “ray-hit-point-driven”: we keep raycasting and use the
 hit point to produce `delta_world`. That makes dragging dependent on continuing to hit the handle
 geometry.
 
-For gizmos, we often want a *different* source of drag coordinates once a handle is captured.
-Desktop/mobile UIs typically feel better with **screen-space** dragging (cursor delta), while VR
-controllers typically want **ray-cast** dragging.
+For gizmos, we often want a *different* update policy once a handle is captured.
+Desktop/mobile UIs typically feel better when the drag can continue after capture even if you’re
+no longer intersecting the thin handle geometry, while VR “hand push / contact” interactions often
+want to stop as soon as contact is lost.
 
-Proposed enum:
+Proposed enum (naming aligned with current code):
 
 ```rust
-enum DragCoordinateSource {
-    RAY_CAST_COORDS,
-    SCREEN_SPACE_COORDS,
+enum DragUpdatePolicy {
+  RequireTargetContact,
+  StartPlaneProjection,
 }
 ```
 
 Proposed signal change:
 
-- Add a `coord_source: DragCoordinateSource` field to `DragStart`/`DragMove`/`DragEnd`.
+- Add a `drag_update_policy: DragUpdatePolicy` field to `DragStart`/`DragMove`/`DragEnd`.
 - Keep `hit_point` in the signal, but interpret it as:
-  - `RAY_CAST_COORDS`: updated every tick from the raycast hit.
-  - `SCREEN_SPACE_COORDS`: typically “last known” (from `DragStart`) unless some derived constraint
-    (axis/plane) is used to compute a new world point.
+  - `RequireTargetContact`: updated every tick from the raycast hit.
+  - `StartPlaneProjection`: updated by intersecting the current pointer ray against a captured drag-start plane.
 - Add `delta_screen: [f32; 2]` (pixels or NDC; pick one and standardize) to `DragMove` so screen
   space mode has a first-class delta.
 
@@ -127,8 +127,8 @@ space drag continues even if the cursor ray no longer hits the handle.
 
 Implementation status (now):
 
-- `GestureSystem` has a `drag_coord_source` setting that switches between ray-hit-driven dragging
-  and screen-space dragging.
+- `GestureSystem` has a `drag_update_policy` setting that switches between “require target contact”
+  and “start-plane projection” dragging.
 - Signals are unchanged for now (still emitting `DragMove { hit_point, delta_world }` only); we
   have **not** added `coord_source` or `delta_screen` fields yet.
 
@@ -155,14 +155,14 @@ Typical fields:
 
 - While left button remains **down**:
 - While left button remains **down**:
-  - Behavior depends on `coord_source`.
-  - If `coord_source == RAY_CAST_COORDS` (current behavior):
+  - Behavior depends on `drag_update_policy`.
+  - If `drag_update_policy == RequireTargetContact`:
     - If the current frame’s best hit is still the captured `(raycaster, renderable)`, compute delta from `last_hit_point` and emit `DragMove`.
     - Update `last_hit_point`.
-  - If `coord_source == SCREEN_SPACE_COORDS` (proposed):
+  - If `drag_update_policy == StartPlaneProjection`:
     - Do **not** require that the current frame’s best ray hit is still the captured handle.
-    - Instead, compute `delta_screen` from the cursor position delta since the previous frame and emit `DragMove` every tick while the button is down.
-    - Still capture and update `last_cursor_pos` each frame (and optionally keep `last_hit_point` as the starting reference from `DragStart`).
+    - Instead, intersect the current pointer ray against the captured drag-start plane and emit `DragMove` every tick while the button is down.
+    - Still capture and update `last_cursor_pos` each frame.
 
 This explains the “drag only works while hovering the gizmo” behavior: when the cursor ray stops hitting the captured handle, the best hit is no longer the captured renderable, so no `DragMove` is emitted.
 

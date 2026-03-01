@@ -39,6 +39,7 @@ pub mod transparent_cutout;
 
 pub mod openxr;
 pub mod point_light;
+pub mod pointer;
 pub mod raycast;
 pub mod raycastable;
 pub mod raycastable_shape;
@@ -93,6 +94,7 @@ pub use music_note::{MusicNote, MusicNoteComponent};
 pub use opacity::OpacityComponent;
 pub use openxr::OpenXRComponent;
 pub use point_light::PointLightComponent;
+pub use pointer::PointerComponent;
 pub use raycast::{RayCastComponent, RayCastMode};
 pub use raycastable::RaycastableComponent;
 pub use raycastable_shape::{RaycastableShapeComponent, RaycastableShapeType};

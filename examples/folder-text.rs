@@ -167,14 +167,14 @@ fn main() {
     let background =
         universe
             .world
-            .register(engine::ecs::component::BackgroundColorComponent::rgba(
+            .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
                 bg_r, bg_g, bg_b, 1.00,
             ));
     universe.add(background);
 
     let ambient = universe
         .world
-        .register(engine::ecs::component::AmbientLightComponent::rgb(
+        .add_component(engine::ecs::component::AmbientLightComponent::rgb(
             bg_r, bg_g, bg_b,
         ));
     universe.add(ambient);
@@ -183,7 +183,7 @@ fn main() {
     // Topology: I { T { C3D } }
     let input = universe
         .world
-        .register(engine::ecs::component::InputComponent::new().with_speed(1.5));
+        .add_component(engine::ecs::component::InputComponent::new().with_speed(1.5));
 
     // Center the camera horizontally over the spawned columns.
     let center_x = if column_count <= 1 {
@@ -193,13 +193,13 @@ fn main() {
     };
 
     // Bring camera closer: these text blocks are tiny.
-    let rig_transform = universe.world.register(
+    let rig_transform = universe.world.add_component(
         engine::ecs::component::TransformComponent::new().with_position(center_x, 0.0, 1.2),
     );
     let camera3d = universe
         .world
-        .register(engine::ecs::component::Camera3DComponent::new());
-    let input_mode = universe.world.register(
+        .add_component(engine::ecs::component::Camera3DComponent::new());
+    let input_mode = universe.world.add_component(
         engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y(),
     );
     let _ = universe.attach(input, input_mode);
@@ -219,7 +219,7 @@ fn main() {
     let total_depth = (max_stacks as f32) * spacing;
     let floor_w = total_width.max(10.0);
     let floor_h = total_depth.max(10.0);
-    let floor_transform = universe.world.register(
+    let floor_transform = universe.world.add_component(
         engine::ecs::component::TransformComponent::new()
             .with_position(0.0, -2.0, 0.0)
             .with_rotation_euler(-std::f32::consts::FRAC_PI_2, 0.0, 0.0)
@@ -227,10 +227,10 @@ fn main() {
     );
     let floor_renderable = universe
         .world
-        .register(engine::ecs::component::RenderableComponent::square());
+        .add_component(engine::ecs::component::RenderableComponent::square());
     let floor_color = universe
         .world
-        .register(engine::ecs::component::ColorComponent::rgba(
+        .add_component(engine::ecs::component::ColorComponent::rgba(
             0.88, 0.88, 0.88, 1.0,
         ));
     let _ = universe.attach(floor_transform, floor_renderable);
@@ -239,24 +239,24 @@ fn main() {
 
     // 4 red cubes around the perimeter of the world (easy visual anchors).
     fn spawn_red_cube(universe: &mut engine::Universe, x: f32, y: f32, z: f32, s: f32) {
-        let t = universe.world.register(
+        let t = universe.world.add_component(
             engine::ecs::component::TransformComponent::new()
                 .with_position(x, y, z)
                 .with_scale(s, s, s),
         );
         let r = universe
             .world
-            .register(engine::ecs::component::RenderableComponent::cube());
+            .add_component(engine::ecs::component::RenderableComponent::cube());
         let c = universe
             .world
-            .register(engine::ecs::component::ColorComponent::rgba(
+            .add_component(engine::ecs::component::ColorComponent::rgba(
                 1.0, 0.0, 0.0, 1.0,
             ));
 
-        let light_transform = universe.world.register(
+        let light_transform = universe.world.add_component(
             engine::ecs::component::TransformComponent::new().with_position(0.0, s * 0.75, 0.0),
         );
-        let light = universe.world.register(
+        let light = universe.world.add_component(
             engine::ecs::component::PointLightComponent::new()
                 .with_intensity(1.5)
                 .with_distance(20.0)
@@ -294,14 +294,14 @@ fn main() {
     let tower_top_y = (7.0 * global_slot_h_world) + 4.0;
     let tower_center_z = total_depth * 0.5;
 
-    let tower_light_transform = universe.world.register(
+    let tower_light_transform = universe.world.add_component(
         engine::ecs::component::TransformComponent::new().with_position(
             0.0,
             tower_top_y,
             tower_center_z,
         ),
     );
-    let tower_light = universe.world.register(
+    let tower_light = universe.world.add_component(
         engine::ecs::component::PointLightComponent::new()
             .with_intensity(2.0)
             .with_distance(120.0)
@@ -330,13 +330,13 @@ fn main() {
             let file_y = row * slot_h_world;
             let file_z = stack * stack_depth;
 
-            let file_group = universe.world.register(
+            let file_group = universe.world.add_component(
                 engine::ecs::component::TransformComponent::new()
                     .with_position(col_x, file_y, file_z),
             );
 
             // Text subtree (tiny scale).
-            let file_root = universe.world.register(
+            let file_root = universe.world.add_component(
                 engine::ecs::component::TransformComponent::new()
                     .with_position(0.0, 1.0, 0.0)
                     .with_scale(TEXT_SCALE, TEXT_SCALE, 1.0)
@@ -360,23 +360,23 @@ fn main() {
             let bg_x = (max_cols as f32 - 1.0) * 0.5;
             let bg_y = -((rows as f32 - 1.0) * 0.5);
 
-            let bg_transform = universe.world.register(
+            let bg_transform = universe.world.add_component(
                 engine::ecs::component::TransformComponent::new()
                     .with_position(bg_x, bg_y, -0.05)
                     .with_scale(w, h, 1.0),
             );
             let bg_renderable = universe
                 .world
-                .register(engine::ecs::component::RenderableComponent::square());
+                .add_component(engine::ecs::component::RenderableComponent::square());
             let bg_quant =
                 universe
                     .world
-                    .register(engine::ecs::component::LightQuantizationComponent::steps(
+                    .add_component(engine::ecs::component::LightQuantizationComponent::steps(
                         5.0,
                     ));
             let bg_color = universe
                 .world
-                .register(engine::ecs::component::ColorComponent::rgba(
+                .add_component(engine::ecs::component::ColorComponent::rgba(
                     0.2, 0.2, 0.2, 1.0,
                 ));
             let _ = universe.attach(file_root, bg_transform);
@@ -386,14 +386,14 @@ fn main() {
 
             let text = universe
                 .world
-                .register(engine::ecs::component::TextComponent::with_wrap(
+                .add_component(engine::ecs::component::TextComponent::with_wrap(
                     entry.display_text,
                     WRAP_AT,
                 ));
             let cutout = universe
                 .world
-                .register(engine::ecs::component::TransparentCutoutComponent::new());
-            let filtering = universe.world.register(
+                .add_component(engine::ecs::component::TransparentCutoutComponent::new());
+            let filtering = universe.world.add_component(
                 engine::ecs::component::TextureFilteringComponent::nearest_magnification(),
             );
             // let color = universe
@@ -401,7 +401,7 @@ fn main() {
             //     .add_component(engine::ecs::component::ColorComponent::rgba(0.7, 0.7, 1.0, 1.0));
             let emissive = universe
                 .world
-                .register(engine::ecs::component::EmissiveComponent::on());
+                .add_component(engine::ecs::component::EmissiveComponent::on());
             let _ = universe.attach(file_root, text);
             let _ = universe.attach(text, cutout);
             let _ = universe.attach(text, filtering);

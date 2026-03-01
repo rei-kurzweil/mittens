@@ -79,7 +79,7 @@ pub fn spawn_cloud_ring(
 
         let center_tx = universe
             .world
-            .register(engine::ecs::component::TransformComponent::new().with_position(cx, cy, cz));
+            .add_component(engine::ecs::component::TransformComponent::new().with_position(cx, cy, cz));
         let _ = universe.attach(bg_root, center_tx);
 
         let base_seed = seed_i ^ 0x243f_6a88;
@@ -95,7 +95,7 @@ pub fn spawn_cloud_ring(
             let sy = base * (0.6 + rand01(seed ^ 0x85a3_08d3) * 1.0);
             let sz = base * (0.7 + rand01(seed ^ 0x1319_8a2e) * 0.9);
 
-            let tx = universe.world.register(
+            let tx = universe.world.add_component(
                 engine::ecs::component::TransformComponent::new()
                     .with_position(ox, oy, oz)
                     .with_scale(sx, sy, sz),
@@ -103,7 +103,7 @@ pub fn spawn_cloud_ring(
             let renderable =
                 universe
                     .world
-                    .register(engine::ecs::component::RenderableComponent::new(
+                    .add_component(engine::ecs::component::RenderableComponent::new(
                         engine::graphics::primitives::Renderable::new(
                             cube_mesh,
                             engine::graphics::primitives::MaterialHandle::TOON_MESH,
@@ -116,7 +116,7 @@ pub fn spawn_cloud_ring(
             let b = 0.80 + 0.12 * t;
             let color = universe
                 .world
-                .register(engine::ecs::component::ColorComponent::rgba(r, g, b, 1.0));
+                .add_component(engine::ecs::component::ColorComponent::rgba(r, g, b, 1.0));
 
             let _ = universe.attach(center_tx, tx);
             let _ = universe.attach(tx, renderable);

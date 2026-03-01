@@ -3,7 +3,7 @@
 
 This doc is *separate* from `docs/gesture-refactor.md`.
 
-It explores an alternative mapping for the mode currently named `ScreenSpaceCoords`.
+It explores an alternative mapping for the mode currently named `StartPlaneProjection` (formerly `ScreenSpaceCoords`).
 Today that mode is really “project onto a drag-start plane using the pointer ray”. That works well in many cases, but it can feel oddly inconsistent from some camera angles because the mapping depends on the ray/plane geometry (and can become ill-conditioned when the ray grazes the plane).
 
 The idea here is to offer a mode that is *actually screen-space driven*:
@@ -26,7 +26,7 @@ The idea here is to offer a mode that is *actually screen-space driven*:
 
 ## Why the current plane-projected approach can feel inconsistent
 
-The current `ScreenSpaceCoords` behavior is effectively:
+The current `StartPlaneProjection` behavior is effectively:
 
 1. On `DragStart`, capture a plane $(P_0, n)$.
    - In the current implementation, $n$ is derived from the drag-start ray direction.

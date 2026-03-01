@@ -9,7 +9,7 @@ fn main() {
     let background =
         universe
             .world
-            .register(engine::ecs::component::BackgroundColorComponent::rgba(
+            .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
                 0.3, 0.1, 1.0, 1.0,
             ));
 
@@ -19,8 +19,8 @@ fn main() {
     // Keep this similar to the main demo so we can fly around the cube field.
     let input = universe
         .world
-        .register(engine::ecs::component::InputComponent::new().with_speed(1.5));
-    let input_mode = universe.world.register(
+        .add_component(engine::ecs::component::InputComponent::new().with_speed(1.5));
+    let input_mode = universe.world.add_component(
         engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y(),
     );
     let _ = universe.attach(input, input_mode);
@@ -28,23 +28,23 @@ fn main() {
     // Start pulled back so the grid is in view.
     let rig_transform = universe
         .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 4.0));
+        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 4.0));
     let _ = universe.attach(input, rig_transform);
 
     let camera3d = universe
         .world
-        .register(engine::ecs::component::Camera3DComponent::new());
+        .add_component(engine::ecs::component::Camera3DComponent::new());
     let _ = universe.attach(rig_transform, camera3d);
 
     // Simple point light so the toon shader reads well.
-    let light = universe.world.register(
+    let light = universe.world.add_component(
         engine::ecs::component::PointLightComponent::new()
             .with_distance(50.0)
             .with_color(1.0, 1.0, 1.0),
     );
     let light_transform = universe
         .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 5.0, 2.0));
+        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 5.0, 2.0));
     let _ = universe.attach(light_transform, light);
 
     universe.add(input);
@@ -71,7 +71,7 @@ fn main() {
     let container_offset_y = half_extent_y + 0.5;
     let container_offset_z = -(half_extent_z + 1.0 + 0.5);
 
-    let container = universe.world.register(
+    let container = universe.world.add_component(
         engine::ecs::component::TransformComponent::new().with_position(
             0.0,
             container_offset_y,
@@ -86,7 +86,7 @@ fn main() {
                 let py = y as f32 * step - half_extent_y;
                 let pz = z as f32 * step - half_extent_z;
 
-                let tx = universe.world.register(
+                let tx = universe.world.add_component(
                     engine::ecs::component::TransformComponent::new()
                         .with_position(px, py, pz)
                         .with_scale(cube_scale, cube_scale, cube_scale),
@@ -94,7 +94,7 @@ fn main() {
                 let renderable =
                     universe
                         .world
-                        .register(engine::ecs::component::RenderableComponent::new(
+                        .add_component(engine::ecs::component::RenderableComponent::new(
                             engine::graphics::primitives::Renderable::new(
                                 cube_mesh,
                                 engine::graphics::primitives::MaterialHandle::TOON_MESH,
@@ -108,7 +108,7 @@ fn main() {
                     z as f32 / denom,
                     1.0,
                 );
-                let color_c = universe.world.register(color);
+                let color_c = universe.world.add_component(color);
 
                 let _ = universe.attach(container, tx);
                 let _ = universe.attach(tx, renderable);
@@ -127,7 +127,7 @@ fn main() {
     // Add an OpenXR component so OpenXRSystem initializes and starts polling events.
     let xr_root = universe
         .world
-        .register(engine::ecs::component::OpenXRComponent::on());
+        .add_component(engine::ecs::component::OpenXRComponent::on());
     universe.add(xr_root);
     universe.systems.process_commands(
         &mut universe.world,

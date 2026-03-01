@@ -250,6 +250,7 @@ impl ComponentCodec {
                 ),
             ))),
             "raycast" => Ok(Box::new(RayCastComponent::default())),
+            "pointer" => Ok(Box::new(PointerComponent::default())),
             "raycastable" => Ok(Box::new(RaycastableComponent::enabled())),
             "background" => Ok(Box::new(BackgroundComponent::new())),
             "background_color" => Ok(Box::new(BackgroundColorComponent::new())),

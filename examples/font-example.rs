@@ -2,7 +2,7 @@ use cat_engine::{engine, utils};
 
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, BackgroundComponent, Camera3DComponent,
-    ColorComponent, InputComponent, InputTransformModeComponent, RayCastComponent,
+    ColorComponent, InputComponent, InputTransformModeComponent, PointerComponent, RayCastComponent,
     RaycastableComponent, TextComponent, TextureComponent, TextureFilteringComponent,
     TransformComponent, TransparentCutoutComponent,
 };
@@ -19,19 +19,19 @@ fn main() {
     // Dark background so the font texture pops.
     let background = universe
         .world
-        .register(BackgroundColorComponent::rgba(0.20, 0.2, 0.20, 1.0));
+        .add_component(BackgroundColorComponent::rgba(0.20, 0.2, 0.20, 1.0));
     universe.add(background);
 
     // Ambient so text is readable even without explicit lights.
     let ambient = universe
         .world
-        .register(AmbientLightComponent::rgb(0.50, 0.50, 0.50));
+        .add_component(AmbientLightComponent::rgb(0.50, 0.50, 0.50));
     universe.add(ambient);
 
     let directional_tx = universe
         .world
-        .register(TransformComponent::new().with_position(0.0, 0.5, 1.0));
-    let directional_light = universe.world.register(
+        .add_component(TransformComponent::new().with_position(0.0, 0.5, 1.0));
+    let directional_light = universe.world.add_component(
         engine::ecs::component::DirectionalLightComponent::new()
             .with_color(1.0, 1.0, 1.0)
             .with_intensity(0.8),
@@ -44,7 +44,7 @@ fn main() {
     // the foreground text (renderer clears depth before foreground).
     let bg_root = universe
         .world
-        .register(BackgroundComponent::new().with_occlusion_and_lighting());
+        .add_component(BackgroundComponent::new().with_occlusion_and_lighting());
     universe.add(bg_root);
 
     let mut bg_cloud_params = example_util::CloudRingParams::default();
@@ -60,25 +60,29 @@ fn main() {
     // }
     let input = universe
         .world
-        .register(InputComponent::new().with_speed(2.0));
+        .add_component(InputComponent::new().with_speed(2.0));
     let input_mode = universe
         .world
-        .register(InputTransformModeComponent::forward_z().with_roll_axis_y());
+        .add_component(InputTransformModeComponent::forward_z().with_roll_axis_y());
     let _ = universe.attach(input, input_mode);
 
     let rig_transform = universe
         .world
-        .register(TransformComponent::new().with_position(1.8, -0.5, 2.5));
+        .add_component(TransformComponent::new().with_position(1.8, -0.5, 2.5));
     let _ = universe.attach(input, rig_transform);
 
-    let camera = universe.world.register(Camera3DComponent::new());
+    let camera = universe.world.add_component(Camera3DComponent::new());
     let _ = universe.attach(rig_transform, camera);
 
     // Click-to-pick: prints which renderable (glyph quad) is under the cursor.
     let raycast = universe
         .world
-        .register(RayCastComponent::event_driven().with_max_distance(50.0));
+        .add_component(RayCastComponent::event_driven().with_max_distance(50.0));
     let _ = universe.attach(rig_transform, raycast);
+
+    // Opt-in: treat this camera raycaster as a pointer.
+    let pointer = universe.world.add_component(PointerComponent::new());
+    let _ = universe.attach(raycast, pointer);
 
     universe.add(input);
 
@@ -87,7 +91,7 @@ fn main() {
     // Offset the ring forward (negative Z) so several clusters are in view.
     let fg_cloud_root = universe
         .world
-        .register(TransformComponent::new().with_position(0.0, -6.0, -10.0));
+        .add_component(TransformComponent::new().with_position(0.0, -6.0, -10.0));
     universe.add(fg_cloud_root);
 
     let mut fg_cloud_params = example_util::CloudRingParams::default();
@@ -127,42 +131,42 @@ fn main() {
         // T_root { T_scale { TXT { filtering } } }
         let text_root = universe
             .world
-            .register(TransformComponent::new().with_position(position.0, position.1, position.2));
+            .add_component(TransformComponent::new().with_position(position.0, position.1, position.2));
 
         let text_scale = universe
             .world
-            .register(TransformComponent::new().with_scale(scale, scale, 1.0));
+            .add_component(TransformComponent::new().with_scale(scale, scale, 1.0));
         let _ = universe.attach(text_root, text_scale);
 
-        let text_c = universe.world.register(TextComponent::new(text));
+        let text_c = universe.world.add_component(TextComponent::new(text));
         let _ = universe.attach(text_scale, text_c);
 
         // Explicit opt-in: make the glyph renderables pickable.
         // TextSystem will propagate this to all spawned glyph quads.
-        let raycastable = universe.world.register(RaycastableComponent::enabled());
+        let raycastable = universe.world.add_component(RaycastableComponent::enabled());
         let _ = universe.attach(text_c, raycastable);
 
         // Route glyph quads into the alpha-to-coverage cutout pass.
-        let cutout = universe.world.register(TransparentCutoutComponent::new());
+        let cutout = universe.world.add_component(TransparentCutoutComponent::new());
         let _ = universe.attach(text_c, cutout);
 
         // Optional: override the inherited color for this text block.
         if let Some([r, g, b, a]) = color_rgba {
-            let color = universe.world.register(ColorComponent::rgba(r, g, b, a));
+            let color = universe.world.add_component(ColorComponent::rgba(r, g, b, a));
             let _ = universe.attach(text_c, color);
         }
 
         // Optional: override the font atlas for this text block.
         // TextSystem will propagate this to all glyph renderables.
         if let Some(uri) = font_texture_uri {
-            let tex = universe.world.register(TextureComponent::with_uri(uri));
+            let tex = universe.world.add_component(TextureComponent::with_uri(uri));
             let _ = universe.attach(text_c, tex);
         }
 
         // Keep it crisp.
         let filtering = universe
             .world
-            .register(TextureFilteringComponent::nearest());
+            .add_component(TextureFilteringComponent::nearest());
         let _ = universe.attach(text_c, filtering);
 
         universe.add(text_root);
@@ -245,7 +249,7 @@ fn main() {
     // Add an OpenXR component so OpenXRSystem initializes and starts polling events.
     let xr_root = universe
         .world
-        .register(engine::ecs::component::OpenXRComponent::on());
+        .add_component(engine::ecs::component::OpenXRComponent::on());
     universe.add(xr_root);
 
     // Process init-time registrations (Text expands into glyph subtrees here).
