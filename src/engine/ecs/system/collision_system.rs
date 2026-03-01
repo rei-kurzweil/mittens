@@ -1,6 +1,6 @@
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::RxWorld;
 use crate::engine::ecs::EventSignal;
+use crate::engine::ecs::RxWorld;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     CollisionComponent, CollisionShapeComponent, RenderableComponent,
@@ -13,8 +13,8 @@ use bvh::Point3;
 use bvh::aabb::{AABB, Bounded};
 use bvh::bounding_hierarchy::BHShape;
 use bvh::bvh::{BVH, BVHNode};
-use slotmap::{SlotMap, new_key_type};
 use slotmap::Key;
+use slotmap::{SlotMap, new_key_type};
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use std::thread;
@@ -333,13 +333,17 @@ impl CollisionSystem {
                 };
                 if lo != hi {
                     if current_pairs.insert((lo, hi)) {
-                        let a_pos = TransformSystem::world_position(world, lo)
-                            .unwrap_or([0.0, 0.0, 0.0]);
-                        let b_pos = TransformSystem::world_position(world, hi)
-                            .unwrap_or([0.0, 0.0, 0.0]);
+                        let a_pos =
+                            TransformSystem::world_position(world, lo).unwrap_or([0.0, 0.0, 0.0]);
+                        let b_pos =
+                            TransformSystem::world_position(world, hi).unwrap_or([0.0, 0.0, 0.0]);
                         current_deltas.insert(
                             (lo, hi),
-                            [b_pos[0] - a_pos[0], b_pos[1] - a_pos[1], b_pos[2] - a_pos[2]],
+                            [
+                                b_pos[0] - a_pos[0],
+                                b_pos[1] - a_pos[1],
+                                b_pos[2] - a_pos[2],
+                            ],
                         );
                     }
                 }

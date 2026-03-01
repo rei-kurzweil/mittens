@@ -224,10 +224,7 @@ impl CommandQueue {
     }
 
     /// Queue a remove kinetic response command.
-    pub fn queue_remove_kinetic_response(
-        &mut self,
-        component_id: crate::engine::ecs::ComponentId,
-    ) {
+    pub fn queue_remove_kinetic_response(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
             command: Command::REMOVE_KINETIC_RESPONSE { component_id },
@@ -258,6 +255,14 @@ impl CommandQueue {
         self.commands.push(ComponentCommand {
             component_id,
             command: Command::REGISTER_OPENXR { component_id },
+        });
+    }
+
+    /// Queue a register ControllerXR command.
+    pub fn queue_register_controller_xr(&mut self, component_id: crate::engine::ecs::ComponentId) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REGISTER_CONTROLLER_XR { component_id },
         });
     }
 
@@ -404,6 +409,14 @@ impl CommandQueue {
         self.commands.push(ComponentCommand {
             component_id,
             command: Command::REMOVE_RAYCAST { component_id },
+        });
+    }
+
+    /// Queue a remove ControllerXR command.
+    pub fn queue_remove_controller_xr(&mut self, component_id: crate::engine::ecs::ComponentId) {
+        self.commands.push(ComponentCommand {
+            component_id,
+            command: Command::REMOVE_CONTROLLER_XR { component_id },
         });
     }
 
@@ -561,6 +574,9 @@ impl CommandQueue {
                     Command::REGISTER_OPENXR { component_id } => {
                         systems.register_openxr(world, visuals, component_id);
                     }
+                    Command::REGISTER_CONTROLLER_XR { component_id } => {
+                        systems.register_controller_xr(world, visuals, component_id);
+                    }
                     Command::REGISTER_RAYCAST { component_id } => {
                         systems.register_raycast(world, visuals, component_id);
                     }
@@ -607,6 +623,9 @@ impl CommandQueue {
                     }
                     Command::REMOVE_RAYCAST { component_id } => {
                         systems.remove_raycast(world, visuals, component_id);
+                    }
+                    Command::REMOVE_CONTROLLER_XR { component_id } => {
+                        systems.remove_controller_xr(world, visuals, component_id);
                     }
                     Command::REMOVE_RENDERABLE { component_id: _ } => {
                         systems.remove_renderable(world, visuals, cmd.component_id);
@@ -740,6 +759,10 @@ enum Command {
         component_id: crate::engine::ecs::ComponentId,
     },
 
+    REGISTER_CONTROLLER_XR {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+
     REGISTER_RAYCAST {
         component_id: crate::engine::ecs::ComponentId,
     },
@@ -795,6 +818,10 @@ enum Command {
     },
 
     REMOVE_RAYCAST {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+
+    REMOVE_CONTROLLER_XR {
         component_id: crate::engine::ecs::ComponentId,
     },
 

@@ -80,7 +80,9 @@ mod vulkano_backend {
     }
 
     fn env_usize(name: &str) -> Option<usize> {
-        std::env::var(name).ok().and_then(|s| s.trim().parse::<usize>().ok())
+        std::env::var(name)
+            .ok()
+            .and_then(|s| s.trim().parse::<usize>().ok())
     }
 
     use vulkano::device::DeviceExtensions;
@@ -1349,8 +1351,7 @@ mod vulkano_backend {
                     .filter(|&&idx| instances_ref[idx as usize].bones_count > 0)
                     .count();
 
-                if skinned_count > 0
-                    && !DID_LOG_SKIN_INSTANCE_RANGES.swap(true, Ordering::Relaxed)
+                if skinned_count > 0 && !DID_LOG_SKIN_INSTANCE_RANGES.swap(true, Ordering::Relaxed)
                 {
                     let mut skinned = Vec::new();
                     for &idx in order.iter() {
@@ -2228,40 +2229,44 @@ mod vulkano_backend {
                         let limit = env_usize("CAT_DEBUG_SKIN_UPLOAD_LIMIT").unwrap_or(3);
                         let n = SKIN_UPLOAD_LOG_COUNT.fetch_add(1, Ordering::Relaxed);
                         if n < limit {
-                        println!(
-                            "[VulkanoRenderer] skin upload: mesh={handle:?} verts={} indices={} joints0_verts={} weights0_verts={}",
-                            mesh.vertices.len(),
-                            mesh.indices_u32.len(),
-                            joints0.len(),
-                            weights0.len()
-                        );
-                        for vi in 0..mesh.vertices.len().min(8) {
-                            let j = joints0[vi];
-                            let w = weights0[vi];
-                            let sum = w[0] + w[1] + w[2] + w[3];
                             println!(
-                                "  v[{vi:04}] joints={j:?} weights={w:?} sum={sum:.6}",
+                                "[VulkanoRenderer] skin upload: mesh={handle:?} verts={} indices={} joints0_verts={} weights0_verts={}",
+                                mesh.vertices.len(),
+                                mesh.indices_u32.len(),
+                                joints0.len(),
+                                weights0.len()
                             );
-                        }
+                            for vi in 0..mesh.vertices.len().min(8) {
+                                let j = joints0[vi];
+                                let w = weights0[vi];
+                                let sum = w[0] + w[1] + w[2] + w[3];
+                                println!("  v[{vi:04}] joints={j:?} weights={w:?} sum={sum:.6}",);
+                            }
 
-                        if env_flag("CAT_DEBUG_SKIN_HIST") {
-                            let mut joint_weight: HashMap<u16, f32> = HashMap::new();
-                            for (j, w) in joints0.iter().copied().zip(weights0.iter().copied()) {
-                                for lane in 0..4 {
-                                    let jw = w[lane];
-                                    if jw > 0.0 {
-                                        *joint_weight.entry(j[lane]).or_insert(0.0) += jw;
+                            if env_flag("CAT_DEBUG_SKIN_HIST") {
+                                let mut joint_weight: HashMap<u16, f32> = HashMap::new();
+                                for (j, w) in joints0.iter().copied().zip(weights0.iter().copied())
+                                {
+                                    for lane in 0..4 {
+                                        let jw = w[lane];
+                                        if jw > 0.0 {
+                                            *joint_weight.entry(j[lane]).or_insert(0.0) += jw;
+                                        }
                                     }
                                 }
-                            }
 
-                            let mut entries: Vec<(u16, f32)> = joint_weight.into_iter().collect();
-                            entries.sort_by(|a, b| b.1.total_cmp(&a.1));
-                            println!("[VulkanoRenderer] skin joint histogram (top 12 by total weight):");
-                            for (rank, (joint, total)) in entries.into_iter().take(12).enumerate() {
-                                println!("  #{rank:02} joint={joint} total_weight={total:.3}");
+                                let mut entries: Vec<(u16, f32)> =
+                                    joint_weight.into_iter().collect();
+                                entries.sort_by(|a, b| b.1.total_cmp(&a.1));
+                                println!(
+                                    "[VulkanoRenderer] skin joint histogram (top 12 by total weight):"
+                                );
+                                for (rank, (joint, total)) in
+                                    entries.into_iter().take(12).enumerate()
+                                {
+                                    println!("  #{rank:02} joint={joint} total_weight={total:.3}");
+                                }
                             }
-                        }
                         }
                     }
 

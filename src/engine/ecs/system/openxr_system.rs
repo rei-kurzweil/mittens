@@ -1,22 +1,28 @@
 use crate::engine::ecs::component::CameraXRComponent;
 use crate::engine::ecs::component::OpenXRComponent;
+use crate::engine::ecs::component::{ControllerHand, ControllerPoseKind, ControllerXRComponent};
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
-use crate::engine::ecs::{ComponentId, World};
+use crate::engine::ecs::{CommandQueue, ComponentId, World};
 use crate::engine::graphics::CameraData;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::VulkanoRenderer;
 use crate::engine::graphics::XRSwapchain;
 use crate::engine::graphics::XrVulkanGraphics;
 use crate::engine::user_input::InputState;
+use crate::utils::math;
 
 use ash::vk::Handle as _;
+
+use std::collections::HashSet;
 
 pub struct OpenXRSystem {
     state: Option<OpenXRState>,
     last_init_error: Option<String>,
     vulkan_graphics: Option<XrVulkanGraphics>,
     preferred_swapchain_format: Option<u32>,
+
+    controller_components: HashSet<ComponentId>,
 }
 
 struct OpenXRState {
@@ -50,6 +56,31 @@ struct OpenXRSessionState {
     vk_queue: ash::vk::Queue,
     vk_command_pool: ash::vk::CommandPool,
     vk_command_buffer: ash::vk::CommandBuffer,
+
+    controller_input: Option<ControllerInput>,
+    controller_pose_cache: ControllerPoseCache,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct ControllerPoseCache {
+    left_aim: Option<openxr::Posef>,
+    right_aim: Option<openxr::Posef>,
+    left_grip: Option<openxr::Posef>,
+    right_grip: Option<openxr::Posef>,
+}
+
+struct ControllerInput {
+    action_set: openxr::ActionSet,
+    aim_pose: openxr::Action<openxr::Posef>,
+    grip_pose: openxr::Action<openxr::Posef>,
+
+    left: openxr::Path,
+    right: openxr::Path,
+
+    left_aim_space: openxr::Space,
+    right_aim_space: openxr::Space,
+    left_grip_space: openxr::Space,
+    right_grip_space: openxr::Space,
 }
 
 impl Default for OpenXRSystem {
@@ -59,6 +90,8 @@ impl Default for OpenXRSystem {
             last_init_error: None,
             vulkan_graphics: None,
             preferred_swapchain_format: None,
+
+            controller_components: HashSet::new(),
         }
     }
 }
@@ -164,6 +197,313 @@ impl OpenXRSystem {
                 eprintln!("[OpenXR] Init failed: {err}");
                 self.last_init_error = Some(err);
             }
+        }
+    }
+
+    pub fn register_controller_xr(
+        &mut self,
+        _world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.controller_components.insert(component);
+    }
+
+    pub fn remove_controller_xr(
+        &mut self,
+        _world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.controller_components.remove(&component);
+    }
+
+    fn nearest_ancestor_transform(world: &World, start: ComponentId) -> Option<ComponentId> {
+        if world
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(start)
+            .is_some()
+        {
+            return Some(start);
+        }
+
+        let mut cur = start;
+        while let Some(parent) = world.parent_of(cur) {
+            if world
+                .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(parent)
+                .is_some()
+            {
+                return Some(parent);
+            }
+            cur = parent;
+        }
+        None
+    }
+
+    fn pump_events(&mut self) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+
+        // Drain events; for now we just print key session state transitions.
+        loop {
+            let evt = match state.instance.poll_event(&mut state.events) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("[OpenXR] poll_event error: {e:?}");
+                    return;
+                }
+            };
+
+            let Some(evt) = evt else {
+                break;
+            };
+
+            match evt {
+                openxr::Event::InstanceLossPending(_) => {
+                    eprintln!("[OpenXR] Event: InstanceLossPending");
+                }
+                openxr::Event::SessionStateChanged(e) => {
+                    println!("[OpenXR] Event: SessionStateChanged -> {:?}", e.state());
+
+                    if let Some(sess) = state.session.as_mut() {
+                        match e.state() {
+                            openxr::SessionState::READY => {
+                                if !sess.running {
+                                    if let Err(err) = sess.session.begin(state.view_type) {
+                                        eprintln!("[OpenXR] session.begin failed: {err:?}");
+                                    } else {
+                                        sess.running = true;
+                                    }
+                                }
+                            }
+                            openxr::SessionState::STOPPING => {
+                                if sess.running {
+                                    if let Err(err) = sess.session.end() {
+                                        eprintln!("[OpenXR] session.end failed: {err:?}");
+                                    }
+                                    sess.running = false;
+                                }
+                            }
+                            openxr::SessionState::EXITING | openxr::SessionState::LOSS_PENDING => {
+                                sess.running = false;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                openxr::Event::EventsLost(e) => {
+                    eprintln!("[OpenXR] Event: EventsLost ({})", e.lost_event_count());
+                }
+                _ => {
+                    // Too noisy to print everything by default.
+                }
+            }
+        }
+    }
+
+    /// Like `tick`, but also queues transform updates for registered ControllerXRComponents.
+    ///
+    /// Controller poses are sourced from the last cache update performed during `render_xr`.
+    pub fn tick_with_queue(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        _input: &InputState,
+        queue: &mut CommandQueue,
+        _dt_sec: f32,
+    ) {
+        self.pump_events();
+
+        let Some(state) = self.state.as_ref() else {
+            return;
+        };
+        let Some(sess) = state.session.as_ref() else {
+            return;
+        };
+        if !sess.running {
+            return;
+        }
+
+        // Compose controller poses with the XR rig's world transform, matching `render_xr`.
+        let rig_world = visuals
+            .active_xr_camera()
+            .or_else(|| Self::first_enabled_camera_xr(world))
+            .and_then(|cid| TransformSystem::world_model(world, cid))
+            .unwrap_or([
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]);
+
+        let cache = sess.controller_pose_cache;
+
+        let controller_ids: Vec<ComponentId> = self.controller_components.iter().copied().collect();
+        for controller_cid in controller_ids {
+            let Some(cfg) = world.get_component_by_id_as::<ControllerXRComponent>(controller_cid)
+            else {
+                self.controller_components.remove(&controller_cid);
+                continue;
+            };
+
+            if !cfg.enabled {
+                continue;
+            }
+
+            let pose = match (cfg.hand, cfg.pose) {
+                (ControllerHand::Left, ControllerPoseKind::Aim) => cache.left_aim,
+                (ControllerHand::Right, ControllerPoseKind::Aim) => cache.right_aim,
+                (ControllerHand::Left, ControllerPoseKind::Grip) => cache.left_grip,
+                (ControllerHand::Right, ControllerPoseKind::Grip) => cache.right_grip,
+            };
+
+            let Some(pose) = pose else {
+                continue;
+            };
+
+            let Some(tcid) = Self::nearest_ancestor_transform(world, controller_cid) else {
+                continue;
+            };
+
+            // Pose is in OpenXR reference space; convert to engine world by applying rig transform.
+            let world_from_controller = Self::mul_mat4(&rig_world, &Self::mat4_from_pose(pose));
+            let desired_world_pos = [
+                world_from_controller[3][0],
+                world_from_controller[3][1],
+                world_from_controller[3][2],
+            ];
+            let desired_world_rot = Self::quat_from_mat4(&world_from_controller);
+
+            let local_translation =
+                Self::world_to_local_translation(world, tcid, desired_world_pos);
+            let parent_world_rot =
+                Self::parent_world_rotation_quat(world, tcid).unwrap_or([0.0, 0.0, 0.0, 1.0]);
+            let local_rotation =
+                math::quat_mul(math::quat_conjugate(parent_world_rot), desired_world_rot);
+
+            let Some(t) = world
+                .get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(
+                    tcid,
+                )
+            else {
+                continue;
+            };
+
+            // Convert world-space target into local-space values relative to the nearest parent
+            // transform above `tcid` (if any), matching how transform chains are composed.
+            t.transform.translation = local_translation;
+            t.transform.rotation = local_rotation;
+            t.transform.recompute_model();
+
+            queue.queue_update_transform(tcid, t.transform);
+        }
+    }
+
+    fn world_to_local_translation(
+        world: &World,
+        transform_cid: ComponentId,
+        desired_world: [f32; 3],
+    ) -> [f32; 3] {
+        let mut cur = transform_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(t) = world
+                .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(parent)
+            {
+                if let Some(inv) = math::mat4_inverse(t.transform.matrix_world) {
+                    let p_local = Self::mat4_mul_vec4(
+                        inv,
+                        [desired_world[0], desired_world[1], desired_world[2], 1.0],
+                    );
+                    return [p_local[0], p_local[1], p_local[2]];
+                }
+                break;
+            }
+            cur = parent;
+        }
+
+        desired_world
+    }
+
+    fn parent_world_rotation_quat(world: &World, transform_cid: ComponentId) -> Option<[f32; 4]> {
+        let mut cur = transform_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(t) = world
+                .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(parent)
+            {
+                return Some(Self::quat_from_mat4(&t.transform.matrix_world));
+            }
+            cur = parent;
+        }
+        None
+    }
+
+    fn mat4_mul_vec4(m: [[f32; 4]; 4], v: [f32; 4]) -> [f32; 4] {
+        [
+            m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2] + m[3][0] * v[3],
+            m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2] + m[3][1] * v[3],
+            m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2] + m[3][2] * v[3],
+            m[0][3] * v[0] + m[1][3] * v[1] + m[2][3] * v[2] + m[3][3] * v[3],
+        ]
+    }
+
+    /// Extract a unit quaternion from the rotation part of a column-major 4x4 matrix.
+    ///
+    /// Best-effort: normalizes basis vectors to remove uniform/non-uniform scale.
+    fn quat_from_mat4(m: &[[f32; 4]; 4]) -> [f32; 4] {
+        let mut x = [m[0][0], m[0][1], m[0][2]];
+        let mut y = [m[1][0], m[1][1], m[1][2]];
+        let mut z = [m[2][0], m[2][1], m[2][2]];
+
+        let nx = (x[0] * x[0] + x[1] * x[1] + x[2] * x[2]).sqrt();
+        let ny = (y[0] * y[0] + y[1] * y[1] + y[2] * y[2]).sqrt();
+        let nz = (z[0] * z[0] + z[1] * z[1] + z[2] * z[2]).sqrt();
+        if nx > 0.0 {
+            x[0] /= nx;
+            x[1] /= nx;
+            x[2] /= nx;
+        }
+        if ny > 0.0 {
+            y[0] /= ny;
+            y[1] /= ny;
+            y[2] /= ny;
+        }
+        if nz > 0.0 {
+            z[0] /= nz;
+            z[1] /= nz;
+            z[2] /= nz;
+        }
+
+        // Convert column-major basis into row-major rotation entries.
+        let r00 = x[0];
+        let r01 = y[0];
+        let r02 = z[0];
+        let r10 = x[1];
+        let r11 = y[1];
+        let r12 = z[1];
+        let r20 = x[2];
+        let r21 = y[2];
+        let r22 = z[2];
+
+        let trace = r00 + r11 + r22;
+        let (qx, qy, qz, qw) = if trace > 0.0 {
+            let s = (trace + 1.0).sqrt() * 2.0;
+            ((r21 - r12) / s, (r02 - r20) / s, (r10 - r01) / s, 0.25 * s)
+        } else if r00 > r11 && r00 > r22 {
+            let s = (1.0 + r00 - r11 - r22).sqrt() * 2.0;
+            (0.25 * s, (r01 + r10) / s, (r02 + r20) / s, (r21 - r12) / s)
+        } else if r11 > r22 {
+            let s = (1.0 + r11 - r00 - r22).sqrt() * 2.0;
+            ((r01 + r10) / s, 0.25 * s, (r12 + r21) / s, (r02 - r20) / s)
+        } else {
+            let s = (1.0 + r22 - r00 - r11).sqrt() * 2.0;
+            ((r02 + r20) / s, (r12 + r21) / s, 0.25 * s, (r10 - r01) / s)
+        };
+
+        let len = (qx * qx + qy * qy + qz * qz + qw * qw).sqrt();
+        if len > 0.0 {
+            [qx / len, qy / len, qz / len, qw / len]
+        } else {
+            [0.0, 0.0, 0.0, 1.0]
         }
     }
 
@@ -308,6 +648,14 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             .create_reference_space(openxr::ReferenceSpaceType::LOCAL, openxr::Posef::IDENTITY)
             .map_err(|e| format!("create_reference_space(LOCAL): {e:?}"))?;
 
+        let controller_input = match Self::try_init_controller_input(&state.instance, &session) {
+            Ok(v) => Some(v),
+            Err(err) => {
+                eprintln!("[OpenXR] Controller input init failed: {err}");
+                None
+            }
+        };
+
         let xr_swapchain = XRSwapchain::new(
             &state.instance,
             &session,
@@ -371,10 +719,106 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             vk_queue,
             vk_command_pool,
             vk_command_buffer,
+
+            controller_input,
+            controller_pose_cache: ControllerPoseCache::default(),
         });
 
         println!("[OpenXR] Session created (Vulkan)");
         Ok(())
+    }
+
+    fn try_init_controller_input(
+        instance: &openxr::Instance,
+        session: &openxr::Session<openxr::Vulkan>,
+    ) -> Result<ControllerInput, String> {
+        let left = instance
+            .string_to_path("/user/hand/left")
+            .map_err(|e| format!("string_to_path(/user/hand/left): {e:?}"))?;
+        let right = instance
+            .string_to_path("/user/hand/right")
+            .map_err(|e| format!("string_to_path(/user/hand/right): {e:?}"))?;
+
+        let action_set = instance
+            .create_action_set("cat_engine", "Cat Engine", 0)
+            .map_err(|e| format!("create_action_set: {e:?}"))?;
+
+        let subaction_paths = [left, right];
+        let aim_pose = action_set
+            .create_action::<openxr::Posef>("aim_pose", "Aim Pose", &subaction_paths)
+            .map_err(|e| format!("create_action(aim_pose): {e:?}"))?;
+        let grip_pose = action_set
+            .create_action::<openxr::Posef>("grip_pose", "Grip Pose", &subaction_paths)
+            .map_err(|e| format!("create_action(grip_pose): {e:?}"))?;
+
+        // Create spaces for each subaction path.
+        let left_aim_space = aim_pose
+            .create_space(session.clone(), left, openxr::Posef::IDENTITY)
+            .map_err(|e| format!("aim_pose.create_space(left): {e:?}"))?;
+        let right_aim_space = aim_pose
+            .create_space(session.clone(), right, openxr::Posef::IDENTITY)
+            .map_err(|e| format!("aim_pose.create_space(right): {e:?}"))?;
+        let left_grip_space = grip_pose
+            .create_space(session.clone(), left, openxr::Posef::IDENTITY)
+            .map_err(|e| format!("grip_pose.create_space(left): {e:?}"))?;
+        let right_grip_space = grip_pose
+            .create_space(session.clone(), right, openxr::Posef::IDENTITY)
+            .map_err(|e| format!("grip_pose.create_space(right): {e:?}"))?;
+
+        // Attach the action set so sync_actions can be called.
+        session
+            .attach_action_sets(&[&action_set])
+            .map_err(|e| format!("attach_action_sets: {e:?}"))?;
+
+        // Best-effort bindings for common interaction profiles.
+        // Runtimes will ignore profiles they don't support.
+        let profiles = [
+            "/interaction_profiles/khr/simple_controller",
+            "/interaction_profiles/oculus/touch_controller",
+            "/interaction_profiles/htc/vive_controller",
+            "/interaction_profiles/valve/index_controller",
+            "/interaction_profiles/microsoft/motion_controller",
+        ];
+
+        let left_aim_path = instance
+            .string_to_path("/user/hand/left/input/aim/pose")
+            .map_err(|e| format!("string_to_path(left aim): {e:?}"))?;
+        let right_aim_path = instance
+            .string_to_path("/user/hand/right/input/aim/pose")
+            .map_err(|e| format!("string_to_path(right aim): {e:?}"))?;
+        let left_grip_path = instance
+            .string_to_path("/user/hand/left/input/grip/pose")
+            .map_err(|e| format!("string_to_path(left grip): {e:?}"))?;
+        let right_grip_path = instance
+            .string_to_path("/user/hand/right/input/grip/pose")
+            .map_err(|e| format!("string_to_path(right grip): {e:?}"))?;
+
+        let bindings = [
+            openxr::Binding::new(&aim_pose, left_aim_path),
+            openxr::Binding::new(&aim_pose, right_aim_path),
+            openxr::Binding::new(&grip_pose, left_grip_path),
+            openxr::Binding::new(&grip_pose, right_grip_path),
+        ];
+
+        for profile_str in profiles {
+            let Ok(profile) = instance.string_to_path(profile_str) else {
+                continue;
+            };
+            // Not all runtimes support every profile; treat as best-effort.
+            let _ = instance.suggest_interaction_profile_bindings(profile, &bindings);
+        }
+
+        Ok(ControllerInput {
+            action_set,
+            aim_pose,
+            grip_pose,
+            left,
+            right,
+            left_aim_space,
+            right_aim_space,
+            left_grip_space,
+            right_grip_space,
+        })
     }
 
     fn first_enabled_camera_xr(world: &World) -> Option<ComponentId> {
@@ -622,68 +1066,7 @@ impl System for OpenXRSystem {
         _input: &InputState,
         _dt_sec: f32,
     ) {
-        let Some(state) = self.state.as_mut() else {
-            return;
-        };
-
-        // Drain events; for now we just print them so you can see the runtime is alive.
-        loop {
-            let evt = match state.instance.poll_event(&mut state.events) {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("[OpenXR] poll_event error: {e:?}");
-                    return;
-                }
-            };
-
-            let Some(evt) = evt else {
-                break;
-            };
-
-            // Avoid depending on Debug impls that might be missing.
-            match evt {
-                openxr::Event::InstanceLossPending(_) => {
-                    eprintln!("[OpenXR] Event: InstanceLossPending");
-                }
-                openxr::Event::SessionStateChanged(e) => {
-                    println!("[OpenXR] Event: SessionStateChanged -> {:?}", e.state());
-
-                    if let Some(sess) = state.session.as_mut() {
-                        match e.state() {
-                            openxr::SessionState::READY => {
-                                if !sess.running {
-                                    if let Err(err) = sess.session.begin(state.view_type) {
-                                        eprintln!("[OpenXR] session.begin failed: {err:?}");
-                                    } else {
-                                        sess.running = true;
-                                    }
-                                }
-                            }
-                            openxr::SessionState::STOPPING => {
-                                if sess.running {
-                                    if let Err(err) = sess.session.end() {
-                                        eprintln!("[OpenXR] session.end failed: {err:?}");
-                                    }
-                                    sess.running = false;
-                                }
-                            }
-                            openxr::SessionState::EXITING | openxr::SessionState::LOSS_PENDING => {
-                                sess.running = false;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                openxr::Event::EventsLost(e) => {
-                    eprintln!("[OpenXR] Event: EventsLost ({})", e.lost_event_count());
-                }
-                _ => {
-                    // Too noisy to print everything by default.
-                }
-            }
-        }
-
-        // Rendering is driven from Universe::render via `OpenXRSystem::render_xr`.
+        self.pump_events();
     }
 }
 
@@ -741,6 +1124,78 @@ impl OpenXRSystem {
                 return;
             }
         };
+
+        // Update controller pose cache at the same predicted time as views.
+        if let Some(ci) = sess.controller_input.as_ref() {
+            // Sync actions (best-effort).
+            let active = openxr::ActiveActionSet::new(&ci.action_set);
+            let _ = sess.session.sync_actions(&[active]);
+
+            let update_pose = |space: &openxr::Space, base: &openxr::Space, t: openxr::Time| {
+                space.locate(base, t).ok()
+            };
+
+            if let Some(loc) = update_pose(
+                &ci.left_aim_space,
+                &sess.reference_space,
+                frame_state.predicted_display_time,
+            ) {
+                if loc
+                    .location_flags
+                    .contains(openxr::SpaceLocationFlags::POSITION_VALID)
+                    && loc
+                        .location_flags
+                        .contains(openxr::SpaceLocationFlags::ORIENTATION_VALID)
+                {
+                    sess.controller_pose_cache.left_aim = Some(loc.pose);
+                }
+            }
+            if let Some(loc) = update_pose(
+                &ci.right_aim_space,
+                &sess.reference_space,
+                frame_state.predicted_display_time,
+            ) {
+                if loc
+                    .location_flags
+                    .contains(openxr::SpaceLocationFlags::POSITION_VALID)
+                    && loc
+                        .location_flags
+                        .contains(openxr::SpaceLocationFlags::ORIENTATION_VALID)
+                {
+                    sess.controller_pose_cache.right_aim = Some(loc.pose);
+                }
+            }
+            if let Some(loc) = update_pose(
+                &ci.left_grip_space,
+                &sess.reference_space,
+                frame_state.predicted_display_time,
+            ) {
+                if loc
+                    .location_flags
+                    .contains(openxr::SpaceLocationFlags::POSITION_VALID)
+                    && loc
+                        .location_flags
+                        .contains(openxr::SpaceLocationFlags::ORIENTATION_VALID)
+                {
+                    sess.controller_pose_cache.left_grip = Some(loc.pose);
+                }
+            }
+            if let Some(loc) = update_pose(
+                &ci.right_grip_space,
+                &sess.reference_space,
+                frame_state.predicted_display_time,
+            ) {
+                if loc
+                    .location_flags
+                    .contains(openxr::SpaceLocationFlags::POSITION_VALID)
+                    && loc
+                        .location_flags
+                        .contains(openxr::SpaceLocationFlags::ORIENTATION_VALID)
+                {
+                    sess.controller_pose_cache.right_grip = Some(loc.pose);
+                }
+            }
+        }
 
         // Publish XR per-eye camera matrices into VisualWorld (CameraTarget::Xr).
         let rig_world = visuals

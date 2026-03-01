@@ -1,25 +1,25 @@
 use super::World;
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::RxWorld;
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::CameraSystem;
 use crate::engine::ecs::system::ClockSystem;
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::InputSystem;
+use crate::engine::ecs::system::KineticResponseSystem;
 use crate::engine::ecs::system::LightSystem;
 use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::OpenXRSystem;
-use crate::engine::ecs::system::KineticResponseSystem;
 use crate::engine::ecs::system::RayCastSystem;
 use crate::engine::ecs::system::RenderableSystem;
 use crate::engine::ecs::system::SkinnedMeshSystem;
-use crate::engine::ecs::system::{GestureSystem, GizmoSystem};
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::{ActionSystem, AnimationSystem, AudioSystem};
-use crate::engine::ecs::RxWorld;
+use crate::engine::ecs::system::{GestureSystem, GizmoSystem};
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 
@@ -275,6 +275,27 @@ impl SystemWorld {
         component: ComponentId,
     ) {
         self.openxr.register_openxr(world, visuals, component);
+    }
+
+    /// Register a ControllerXRComponent (tracks an XR controller pose and drives a transform).
+    pub fn register_controller_xr(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.openxr
+            .register_controller_xr(world, visuals, component);
+    }
+
+    /// Remove a ControllerXRComponent from OpenXRSystem tracking.
+    pub fn remove_controller_xr(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.openxr.remove_controller_xr(world, visuals, component);
     }
 
     /// Register a PointLightComponent instance with the LightSystem.
@@ -632,8 +653,14 @@ impl SystemWorld {
         // Default kinematic-vs-static collision response (opt-in via KineticResponseComponent).
         // This may enqueue transform updates; flush them immediately so camera/OpenXR
         // consume resolved transforms this frame.
-        self.kinetic_response
-            .tick_with_queue(world, visuals, input, dt_sec, queue, &self.collision);
+        self.kinetic_response.tick_with_queue(
+            world,
+            visuals,
+            input,
+            dt_sec,
+            queue,
+            &self.collision,
+        );
         queue.flush(world, self, visuals);
 
         // Physics may have moved renderables; refit BVH so raycasts see the resolved state.
@@ -642,15 +669,26 @@ impl SystemWorld {
         // Update window camera + select active XR camera rig before OpenXR consumes it.
         self.camera.tick(world, visuals, input, dt_sec);
         // OpenXR consumes the latest rig transform + publishes per-eye cameras.
-        self.openxr.tick(world, visuals, input, dt_sec);
+        self.openxr
+            .tick_with_queue(world, visuals, input, queue, dt_sec);
+        // Controller pose updates should be visible to raycasting/gestures this frame.
+        queue.flush(world, self, visuals);
 
-        self.raycast
-            .tick_with_queue(world, visuals, input, queue, &mut self.rx, &self.bvh, dt_sec);
+        self.raycast.tick_with_queue(
+            world,
+            visuals,
+            input,
+            queue,
+            &mut self.rx,
+            &self.bvh,
+            dt_sec,
+        );
 
         // Gestures interpret ray hits + input into drag events.
         self.gesture.tick_with_rx(visuals, input, &mut self.rx);
         // Gizmos consume drag events and apply transform changes.
-        self.gizmo.tick_with_queue(world, input, queue, &mut self.rx);
+        self.gizmo
+            .tick_with_queue(world, input, queue, &mut self.rx);
         // Apply gizmo transform updates immediately so visuals reflect the drag this frame.
         queue.flush(world, self, visuals);
 

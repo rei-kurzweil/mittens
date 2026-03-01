@@ -1,13 +1,13 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
-use crate::engine::ecs::{EventSignal, RxWorld};
 use crate::engine::ecs::component::{
-    ColorComponent, RayCastComponent, RayCastMode, RaycastableShapeComponent, RaycastableShapeType,
+    RayCastComponent, RayCastMode, RaycastableShapeComponent, RaycastableShapeType,
     RenderableComponent,
 };
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
+use crate::engine::ecs::{EventSignal, RxWorld};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::{CpuMeshHandle, TransformMatrix};
 use crate::engine::user_input::InputState;
@@ -19,16 +19,11 @@ use winit::event::MouseButton;
 pub struct RayCastSystem {
     raycasters: HashSet<ComponentId>,
     last_hit: HashMap<ComponentId, Option<ComponentId>>,
-    debug_left_down_prev: bool,
 
     /// Renderables eligible for raycasting, maintained incrementally on renderable add/remove.
     ///
     /// This is used to avoid scanning `world.all_components()` for brute-force fallback tests.
     eligible_renderables: HashSet<ComponentId>,
-
-    // Debug highlight: currently-highlighted renderable (glyph).
-    highlighted_renderable: Option<ComponentId>,
-    highlighted_color_component: Option<ComponentId>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -48,7 +43,10 @@ enum RaySourceKind {
 }
 
 impl RayCastSystem {
-    fn explicit_shape_on_renderable(world: &World, renderable: ComponentId) -> Option<RaycastableShapeType> {
+    fn explicit_shape_on_renderable(
+        world: &World,
+        renderable: ComponentId,
+    ) -> Option<RaycastableShapeType> {
         world.children_of(renderable).iter().find_map(|&ch| {
             world
                 .get_component_by_id_as::<RaycastableShapeComponent>(ch)
@@ -68,7 +66,10 @@ impl RayCastSystem {
         }
     }
 
-    fn resolved_shape_for_renderable(world: &World, renderable: ComponentId) -> RaycastableShapeType {
+    fn resolved_shape_for_renderable(
+        world: &World,
+        renderable: ComponentId,
+    ) -> RaycastableShapeType {
         if let Some(shape) = Self::explicit_shape_on_renderable(world, renderable) {
             if shape != RaycastableShapeType::InferFromBaseMesh {
                 return shape;
@@ -167,7 +168,9 @@ impl RayCastSystem {
             let mut best: Option<f32> = None;
             for tri in tris {
                 let t_local = ray_triangle_mt(o_local, d_local, tri[0], tri[1], tri[2]);
-                let Some(t_local) = t_local else { continue; };
+                let Some(t_local) = t_local else {
+                    continue;
+                };
                 let p_local = [
                     o_local[0] + d_local[0] * t_local,
                     o_local[1] + d_local[1] * t_local,
@@ -190,7 +193,8 @@ impl RayCastSystem {
             RaycastableShapeType::Aabb => Some(t_aabb),
 
             RaycastableShapeType::Box => {
-                let t_local = Self::ray_aabb(o_local, d_local, [-0.5, -0.5, -0.5], [0.5, 0.5, 0.5])?;
+                let t_local =
+                    Self::ray_aabb(o_local, d_local, [-0.5, -0.5, -0.5], [0.5, 0.5, 0.5])?;
                 let p_local = [
                     o_local[0] + d_local[0] * t_local,
                     o_local[1] + d_local[1] * t_local,
@@ -202,7 +206,8 @@ impl RayCastSystem {
             RaycastableShapeType::Quad2D => {
                 // Keep quad as a slab proxy; triangle is handled precisely below.
                 let thick = 0.02_f32;
-                let t_local = Self::ray_aabb(o_local, d_local, [-0.5, -0.5, -thick], [0.5, 0.5, thick])?;
+                let t_local =
+                    Self::ray_aabb(o_local, d_local, [-0.5, -0.5, -thick], [0.5, 0.5, thick])?;
                 let p_local = [
                     o_local[0] + d_local[0] * t_local,
                     o_local[1] + d_local[1] * t_local,
@@ -319,11 +324,7 @@ impl RayCastSystem {
                 }
 
                 let t_local = best_t?;
-                let p_local = [
-                    ox + dx * t_local,
-                    oy + dy * t_local,
-                    oz + dz * t_local,
-                ];
+                let p_local = [ox + dx * t_local, oy + dy * t_local, oz + dz * t_local];
                 to_world_t(model, origin, dir, p_local)
             }
 
@@ -335,12 +336,7 @@ impl RayCastSystem {
                 let p3 = [0.0, 0.5773503, -0.2041241];
 
                 // Faces (CCW as authored):
-                let tris = [
-                    [p0, p1, p2],
-                    [p0, p3, p1],
-                    [p0, p2, p3],
-                    [p1, p3, p2],
-                ];
+                let tris = [[p0, p1, p2], [p0, p3, p1], [p0, p2, p3], [p1, p3, p2]];
                 best_triangle_hit_world_t(model, origin, dir, o_local, d_local, &tris[..])
             }
 
@@ -427,38 +423,6 @@ impl RayCastSystem {
 
     fn vec3_dot(a: [f32; 3], b: [f32; 3]) -> f32 {
         a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-    }
-
-    fn upsert_renderable_color(
-        &mut self,
-        world: &mut World,
-        queue: &mut crate::engine::ecs::CommandQueue,
-        renderable_cid: ComponentId,
-        rgba: [f32; 4],
-    ) -> Option<ComponentId> {
-        // Find an existing ColorComponent directly under the renderable.
-        let existing = world
-            .children_of(renderable_cid)
-            .iter()
-            .copied()
-            .find(|&ch| world.get_component_by_id_as::<ColorComponent>(ch).is_some());
-
-        let color_cid = match existing {
-            Some(cid) => cid,
-            None => {
-                let cid = world.add_component(ColorComponent::rgba(rgba[0], rgba[1], rgba[2], rgba[3]));
-                let _ = world.add_child(renderable_cid, cid);
-                cid
-            }
-        };
-
-        if let Some(c) = world.get_component_by_id_as_mut::<ColorComponent>(color_cid) {
-            c.rgba = rgba;
-        }
-
-        // Apply immediately via the existing color registration path.
-        queue.queue_register_color(color_cid);
-        Some(color_cid)
     }
 
     fn vec3_len(v: [f32; 3]) -> f32 {
@@ -587,7 +551,10 @@ impl RayCastSystem {
         }
     }
 
-    fn ray_from_parent_forward(world: &World, raycaster_cid: ComponentId) -> Option<([f32; 3], [f32; 3])> {
+    fn ray_from_parent_forward(
+        world: &World,
+        raycaster_cid: ComponentId,
+    ) -> Option<([f32; 3], [f32; 3])> {
         // World model matrix of nearest ancestor TransformComponent.
         let model = TransformSystem::world_model(world, raycaster_cid)?;
         let origin = [model[3][0], model[3][1], model[3][2]];
@@ -836,8 +803,8 @@ impl System for RayCastSystem {
         _dt_sec: f32,
     ) {
         // NOTE: RayCastSystem is normally ticked via `tick_with_queue` from SystemWorld so it can
-        // apply queued side effects (e.g., click highlight color upserts). If this gets called
-        // directly, we can still do hit testing and prints.
+        // integrate with RxWorld for events. If this gets called directly, we can still do hit
+        // testing and prints.
 
         if self.raycasters.is_empty() {
             return;
@@ -939,21 +906,6 @@ impl System for RayCastSystem {
 }
 
 impl RayCastSystem {
-    fn inherited_color_rgba(world: &World, start: ComponentId) -> Option<[f32; 4]> {
-        let mut cur = start;
-        while let Some(parent) = world.parent_of(cur) {
-            if let Some(rgba) = world.children_of(parent).iter().find_map(|&ch| {
-                world
-                    .get_component_by_id_as::<ColorComponent>(ch)
-                    .map(|c| c.rgba)
-            }) {
-                return Some(rgba);
-            }
-            cur = parent;
-        }
-        None
-    }
-
     pub fn tick_with_queue(
         &mut self,
         world: &mut World,
@@ -964,7 +916,7 @@ impl RayCastSystem {
         bvh: &BvhSystem,
         _dt_sec: f32,
     ) {
-        // Equivalent to `tick()` but uses BVH for hit testing and can apply queued side effects.
+        // Equivalent to `tick()` but uses BVH for hit testing.
         // Keep the debug prints so it's easy to see input edges.
         let left_down = input.mouse_down.contains(&MouseButton::Left);
 
@@ -1139,76 +1091,6 @@ impl RayCastSystem {
             }
         }
 
-        // Restore highlight when the click ends.
-        if input.mouse_released.contains(&MouseButton::Left) {
-            if let (Some(rid), Some(cid)) = (
-                self.highlighted_renderable,
-                self.highlighted_color_component,
-            ) {
-                if world
-                    .get_component_by_id_as::<RenderableComponent>(rid)
-                    .is_some()
-                    && world
-                        .get_component_by_id_as::<ColorComponent>(cid)
-                        .is_some()
-                {
-                    let restore_rgba =
-                        Self::inherited_color_rgba(world, rid).unwrap_or([1.0, 1.0, 1.0, 1.0]);
-                    if let Some(c) = world.get_component_by_id_as_mut::<ColorComponent>(cid) {
-                        c.rgba = restore_rgba;
-                    }
-                    queue.queue_register_color(cid);
-                }
-            }
-            self.highlighted_renderable = None;
-            self.highlighted_color_component = None;
-        }
-
-        // Click highlight: highlight the renderable under the cursor until mouse release.
-        if self.raycasters.is_empty() {
-            return;
-        }
-        if !input.mouse_pressed.contains(&MouseButton::Left) {
-            return;
-        }
-        // For highlight, use the *first* raycaster's inferred ray.
-        let mut highlight_ray: Option<([f32; 3], [f32; 3], f32)> = None;
-
-        for &rcid in self.raycasters.iter() {
-            if let Some(rc) = world.get_component_by_id_as::<RayCastComponent>(rcid) {
-                let source = Self::inferred_source_kind(world, rcid);
-                match source {
-                    RaySourceKind::CursorThroughActiveCamera => {
-                        let Some(r) = Self::ray_from_cursor(visuals, input) else {
-                            continue;
-                        };
-                        highlight_ray = Some((r.origin, r.dir, rc.max_distance));
-                        break;
-                    }
-                    RaySourceKind::ParentForward => {
-                        let Some((o, d)) = Self::ray_from_parent_forward(world, rcid) else {
-                            continue;
-                        };
-                        highlight_ray = Some((o, d, rc.max_distance));
-                        break;
-                    }
-                }
-            }
-        }
-
-        let Some((origin, dir, length)) = highlight_ray else {
-            return;
-        };
-
-        if let Some((hit_cid, _t)) = self
-            .cast_against_renderables_bvh(world, bvh, origin, dir, length)
-            .or_else(|| self.cast_against_renderables(world, origin, dir, length))
-        {
-            let green = [0.2, 1.0, 0.2, 1.0];
-            if let Some(color_cid) = self.upsert_renderable_color(world, queue, hit_cid, green) {
-                self.highlighted_renderable = Some(hit_cid);
-                self.highlighted_color_component = Some(color_cid);
-            }
-        }
+        let _ = queue; // raycast is read-only; queue is unused but kept for signature stability.
     }
 }

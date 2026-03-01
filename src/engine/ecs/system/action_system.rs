@@ -72,198 +72,197 @@ impl ActionSystem {
                 color_cids.sort();
 
                 for color_cid in color_cids {
-                    if let Some(c) = world.get_component_by_id_as_mut::<ColorComponent>(color_cid)
-                    {
+                    if let Some(c) = world.get_component_by_id_as_mut::<ColorComponent>(color_cid) {
                         c.rgba = rgba;
                         queue.queue_register_color(color_cid);
                     }
                 }
             }
             ActionMethod::SetText => {
-                    let Some(text) = action.params.get(0).and_then(|v| v.as_str()) else {
-                        println!(
-                            "[ActionSystem] set_text: missing/invalid text params={:?}",
-                            action.params
-                        );
-                        return;
-                    };
+                let Some(text) = action.params.get(0).and_then(|v| v.as_str()) else {
+                    println!(
+                        "[ActionSystem] set_text: missing/invalid text params={:?}",
+                        action.params
+                    );
+                    return;
+                };
 
-                    let mut text_cids = Vec::new();
-                    for &target in action.target.iter() {
-                        collect_text_targets(world, target, &mut text_cids);
-                    }
-                    text_cids.sort();
-                    text_cids.dedup();
+                let mut text_cids = Vec::new();
+                for &target in action.target.iter() {
+                    collect_text_targets(world, target, &mut text_cids);
+                }
+                text_cids.sort();
+                text_cids.dedup();
 
-                    for text_cid in text_cids {
-                        queue.queue_set_text(text_cid, text.to_string());
-                    }
+                for text_cid in text_cids {
+                    queue.queue_set_text(text_cid, text.to_string());
+                }
             }
             ActionMethod::SetPosition => {
-                    let Some(pos) = action.params.get(0).and_then(parse_vec3_f32) else {
-                        println!(
-                            "[ActionSystem] set_position: missing/invalid position params={:?}",
-                            action.params
-                        );
-                        return;
-                    };
+                let Some(pos) = action.params.get(0).and_then(parse_vec3_f32) else {
+                    println!(
+                        "[ActionSystem] set_position: missing/invalid position params={:?}",
+                        action.params
+                    );
+                    return;
+                };
 
-                    let mut transform_cids = Vec::new();
-                    for &target in action.target.iter() {
-                        collect_transform_targets(world, target, &mut transform_cids);
-                    }
-                    transform_cids.sort();
-                    transform_cids.dedup();
+                let mut transform_cids = Vec::new();
+                for &target in action.target.iter() {
+                    collect_transform_targets(world, target, &mut transform_cids);
+                }
+                transform_cids.sort();
+                transform_cids.dedup();
 
-                    for transform_cid in transform_cids {
-                        if let Some(t) =
-                            world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
-                        {
-                            t.set_position(queue, pos[0], pos[1], pos[2]);
-                        }
+                for transform_cid in transform_cids {
+                    if let Some(t) =
+                        world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
+                    {
+                        t.set_position(queue, pos[0], pos[1], pos[2]);
                     }
                 }
-                ActionMethod::SetTransform => {
-                    // Preferred schema: params=[translation vec3, rotation quat vec4, scale vec3]
-                    // (all numeric arrays).
-                    let Some(translation) = action.params.get(0).and_then(parse_vec3_f32) else {
-                        println!(
-                            "[ActionSystem] set_transform: missing/invalid translation params={:?}",
-                            action.params
-                        );
-                        return;
-                    };
-                    let Some(rotation) = action.params.get(1).and_then(parse_vec4_f32) else {
-                        println!(
-                            "[ActionSystem] set_transform: missing/invalid rotation params={:?}",
-                            action.params
-                        );
-                        return;
-                    };
-                    let Some(scale) = action.params.get(2).and_then(parse_vec3_f32) else {
-                        println!(
-                            "[ActionSystem] set_transform: missing/invalid scale params={:?}",
-                            action.params
-                        );
-                        return;
-                    };
+            }
+            ActionMethod::SetTransform => {
+                // Preferred schema: params=[translation vec3, rotation quat vec4, scale vec3]
+                // (all numeric arrays).
+                let Some(translation) = action.params.get(0).and_then(parse_vec3_f32) else {
+                    println!(
+                        "[ActionSystem] set_transform: missing/invalid translation params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+                let Some(rotation) = action.params.get(1).and_then(parse_vec4_f32) else {
+                    println!(
+                        "[ActionSystem] set_transform: missing/invalid rotation params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+                let Some(scale) = action.params.get(2).and_then(parse_vec3_f32) else {
+                    println!(
+                        "[ActionSystem] set_transform: missing/invalid scale params={:?}",
+                        action.params
+                    );
+                    return;
+                };
 
-                    let mut transform_cids = Vec::new();
-                    for &target in action.target.iter() {
-                        collect_transform_targets(world, target, &mut transform_cids);
-                    }
-                    transform_cids.sort();
-                    transform_cids.dedup();
+                let mut transform_cids = Vec::new();
+                for &target in action.target.iter() {
+                    collect_transform_targets(world, target, &mut transform_cids);
+                }
+                transform_cids.sort();
+                transform_cids.dedup();
 
-                    for transform_cid in transform_cids {
-                        if let Some(t) =
-                            world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
-                        {
-                            t.transform.translation = translation;
-                            t.transform.rotation = rotation;
-                            t.transform.scale = scale;
-                            t.transform.recompute_model();
-                            queue.queue_update_transform(transform_cid, t.transform);
-                        }
+                for transform_cid in transform_cids {
+                    if let Some(t) =
+                        world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
+                    {
+                        t.transform.translation = translation;
+                        t.transform.rotation = rotation;
+                        t.transform.scale = scale;
+                        t.transform.recompute_model();
+                        queue.queue_update_transform(transform_cid, t.transform);
                     }
                 }
-                ActionMethod::Attach => {
-                    let Some(child) = action.params.get(0).and_then(parse_component_id) else {
-                        println!(
-                            "[ActionSystem] attach: missing/invalid child params={:?}",
-                            action.params
-                        );
-                        return;
-                    };
+            }
+            ActionMethod::Attach => {
+                let Some(child) = action.params.get(0).and_then(parse_component_id) else {
+                    println!(
+                        "[ActionSystem] attach: missing/invalid child params={:?}",
+                        action.params
+                    );
+                    return;
+                };
 
-                    for &parent in action.target.iter() {
-                        let old_parent = world.parent_of(child);
-                        if let Err(e) = world.add_child(parent, child) {
-                            println!("[ActionSystem] attach failed: {e}");
-                            continue;
-                        }
+                for &parent in action.target.iter() {
+                    let old_parent = world.parent_of(child);
+                    if let Err(e) = world.add_child(parent, child) {
+                        println!("[ActionSystem] attach failed: {e}");
+                        continue;
+                    }
 
-                        rx.push(
+                    rx.push(
+                        child,
+                        EventSignal::ParentChanged {
                             child,
-                            EventSignal::ParentChanged {
-                                child,
-                                old_parent,
-                                new_parent: Some(parent),
-                            },
-                        );
+                            old_parent,
+                            new_parent: Some(parent),
+                        },
+                    );
 
-                        if world.is_initialized(parent) {
-                            world.init_component_tree(child, queue);
-                        }
-
-                        // Topology changes alter world transform composition. Our TransformSystem is
-                        // event-driven, so explicitly queue a transform refresh on the moved subtree.
-                        queue_topology_transform_refresh(world, queue, child);
-                        queue_topology_transform_refresh(world, queue, parent);
-
-                        // Topology change may affect audio compilation.
-                        queue.queue_audio_graph_dirty(parent);
-                        queue.queue_audio_graph_dirty(child);
+                    if world.is_initialized(parent) {
+                        world.init_component_tree(child, queue);
                     }
-                }
-                ActionMethod::AttachClone => {
-                    let Some(prefab_root) = action.params.get(0).and_then(parse_component_id) else {
-                        println!(
-                            "[ActionSystem] attach_clone: missing/invalid prefab_root params={:?}",
-                            action.params
-                        );
-                        return;
-                    };
 
-                    let node = match ComponentCodec::encode_subtree_node(&*world, prefab_root) {
-                        Ok(n) => n,
+                    // Topology changes alter world transform composition. Our TransformSystem is
+                    // event-driven, so explicitly queue a transform refresh on the moved subtree.
+                    queue_topology_transform_refresh(world, queue, child);
+                    queue_topology_transform_refresh(world, queue, parent);
+
+                    // Topology change may affect audio compilation.
+                    queue.queue_audio_graph_dirty(parent);
+                    queue.queue_audio_graph_dirty(child);
+                }
+            }
+            ActionMethod::AttachClone => {
+                let Some(prefab_root) = action.params.get(0).and_then(parse_component_id) else {
+                    println!(
+                        "[ActionSystem] attach_clone: missing/invalid prefab_root params={:?}",
+                        action.params
+                    );
+                    return;
+                };
+
+                let node = match ComponentCodec::encode_subtree_node(&*world, prefab_root) {
+                    Ok(n) => n,
+                    Err(e) => {
+                        println!("[ActionSystem] attach_clone failed: {e}");
+                        return;
+                    }
+                };
+
+                for &parent in action.target.iter() {
+                    let new_root = match ComponentCodec::decode_subtree_node_with_new_guids(
+                        world,
+                        Some(parent),
+                        &node,
+                    ) {
+                        Ok(id) => id,
                         Err(e) => {
                             println!("[ActionSystem] attach_clone failed: {e}");
-                            return;
+                            continue;
                         }
                     };
 
-                    for &parent in action.target.iter() {
-                        let new_root = match ComponentCodec::decode_subtree_node_with_new_guids(
-                            world,
-                            Some(parent),
-                            &node,
-                        ) {
-                            Ok(id) => id,
-                            Err(e) => {
-                                println!("[ActionSystem] attach_clone failed: {e}");
-                                continue;
-                            }
-                        };
-
-                        if world.get_component_record(new_root).is_none() {
-                            println!("[ActionSystem] attach_clone: new root missing after decode");
-                            continue;
-                        }
-
-                        if world.is_initialized(parent) {
-                            world.init_component_tree(new_root, queue);
-                        }
-
-                        rx.push(
-                            new_root,
-                            EventSignal::ParentChanged {
-                                child: new_root,
-                                old_parent: None,
-                                new_parent: Some(parent),
-                            },
-                        );
-
-                        // Topology changes alter world transform composition. Our TransformSystem is
-                        // event-driven, so explicitly queue a transform refresh on the moved subtree.
-                        queue_topology_transform_refresh(world, queue, new_root);
-                        queue_topology_transform_refresh(world, queue, parent);
-
-                        // Topology change may affect audio compilation.
-                        queue.queue_audio_graph_dirty(parent);
-                        queue.queue_audio_graph_dirty(new_root);
+                    if world.get_component_record(new_root).is_none() {
+                        println!("[ActionSystem] attach_clone: new root missing after decode");
+                        continue;
                     }
+
+                    if world.is_initialized(parent) {
+                        world.init_component_tree(new_root, queue);
+                    }
+
+                    rx.push(
+                        new_root,
+                        EventSignal::ParentChanged {
+                            child: new_root,
+                            old_parent: None,
+                            new_parent: Some(parent),
+                        },
+                    );
+
+                    // Topology changes alter world transform composition. Our TransformSystem is
+                    // event-driven, so explicitly queue a transform refresh on the moved subtree.
+                    queue_topology_transform_refresh(world, queue, new_root);
+                    queue_topology_transform_refresh(world, queue, parent);
+
+                    // Topology change may affect audio compilation.
+                    queue.queue_audio_graph_dirty(parent);
+                    queue.queue_audio_graph_dirty(new_root);
                 }
+            }
             ActionMethod::Detach => {
                 for &child in action.target.iter() {
                     let old_parent = world.parent_of(child);
@@ -689,7 +688,10 @@ impl ActionSystem {
 }
 
 fn collect_raycast_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {
-    if world.get_component_by_id_as::<RayCastComponent>(target).is_some() {
+    if world
+        .get_component_by_id_as::<RayCastComponent>(target)
+        .is_some()
+    {
         out.push(target);
         return;
     }
@@ -697,7 +699,10 @@ fn collect_raycast_targets(world: &World, target: ComponentId, out: &mut Vec<Com
     // Subtree search: collect all RayCastComponents under this target.
     let mut stack = vec![target];
     while let Some(node) = stack.pop() {
-        if world.get_component_by_id_as::<RayCastComponent>(node).is_some() {
+        if world
+            .get_component_by_id_as::<RayCastComponent>(node)
+            .is_some()
+        {
             out.push(node);
             continue;
         }

@@ -43,8 +43,7 @@ fn ensure_emissive_on(
         return;
     }
 
-    let emissive_cid =
-        world.register(engine::ecs::component::EmissiveComponent::on());
+    let emissive_cid = world.register(engine::ecs::component::EmissiveComponent::on());
     let _ = world.add_child(renderable_cid, emissive_cid);
     queue.queue_register_emissive(emissive_cid);
 }
@@ -66,10 +65,8 @@ fn ring_a_handler(
 
             ensure_emissive_on(world, queue, *renderable);
 
-            let action = engine::ecs::component::Action::set_color(
-                vec![*renderable],
-                [1.0, 1.0, 0.0, 1.0],
-            );
+            let action =
+                engine::ecs::component::Action::set_color(vec![*renderable], [1.0, 1.0, 0.0, 1.0]);
             let mut action_system = engine::ecs::system::ActionSystem::new();
             let mut dummy_rx = engine::ecs::RxWorld::default();
             action_system.execute(world, queue, &mut dummy_rx, 0.0, &action);
@@ -95,10 +92,8 @@ fn ring_b_handler(
 
             ensure_emissive_on(world, queue, *renderable);
 
-            let action = engine::ecs::component::Action::set_color(
-                vec![*renderable],
-                [0.0, 1.0, 1.0, 1.0],
-            );
+            let action =
+                engine::ecs::component::Action::set_color(vec![*renderable], [0.0, 1.0, 1.0, 1.0]);
             let mut action_system = engine::ecs::system::ActionSystem::new();
             let mut dummy_rx = engine::ecs::RxWorld::default();
             action_system.execute(world, queue, &mut dummy_rx, 0.0, &action);
@@ -106,7 +101,6 @@ fn ring_b_handler(
         _ => {}
     }
 }
-
 
 fn main() {
     utils::logger::init();
@@ -150,12 +144,12 @@ fn main() {
 
     // Two rotating anchor transforms that the raycaster will be reparented under.
     // Each ring has its own anchor at a different height.
-    let anchor_a = universe.world.register(
-        engine::ecs::component::TransformComponent::new().with_position(0.0, 1.0, 0.0),
-    );
-    let anchor_b = universe.world.register(
-        engine::ecs::component::TransformComponent::new().with_position(0.0, 2.2, 0.0),
-    );
+    let anchor_a = universe
+        .world
+        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 1.0, 0.0));
+    let anchor_b = universe
+        .world
+        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 2.2, 0.0));
 
     // Visual markers for A/B.
     fn marker(universe: &mut engine::Universe, parent: engine::ecs::ComponentId, rgba: [f32; 4]) {
@@ -165,9 +159,11 @@ fn main() {
         let rc = universe
             .world
             .register(engine::ecs::component::RaycastableComponent::disabled());
-        let c = universe.world.register(engine::ecs::component::ColorComponent::rgba(
-            rgba[0], rgba[1], rgba[2], rgba[3],
-        ));
+        let c = universe
+            .world
+            .register(engine::ecs::component::ColorComponent::rgba(
+                rgba[0], rgba[1], rgba[2], rgba[3],
+            ));
         let e = universe
             .world
             .register(engine::ecs::component::EmissiveComponent::on());
@@ -207,9 +203,11 @@ fn main() {
         let rc = universe
             .world
             .register(engine::ecs::component::RaycastableComponent::enabled());
-        let c = universe.world.register(engine::ecs::component::ColorComponent::rgba(
-            rgba[0], rgba[1], rgba[2], rgba[3],
-        ));
+        let c = universe
+            .world
+            .register(engine::ecs::component::ColorComponent::rgba(
+                rgba[0], rgba[1], rgba[2], rgba[3],
+            ));
         let _ = universe.attach(ring_root, t);
         let _ = universe.attach(t, r);
         let _ = universe.attach(r, rc);
@@ -268,9 +266,9 @@ fn main() {
     // Source is inferred from topology:
     // - Under transforms A/B (no camera child) => parent-forward (-Z)
     // - Under camera rig transform (has camera child) => cursor-through-camera
-    let raycaster = universe.world.register(
-        engine::ecs::component::RayCastComponent::event_driven().with_max_distance(25.0),
-    );
+    let raycaster = universe
+        .world
+        .register(engine::ecs::component::RayCastComponent::event_driven().with_max_distance(25.0));
 
     // Global animation: move the raycaster between anchors.
     // Loop length is 8 beats (we include a noop keyframe at beat 7.0 to force loop_len=8).
@@ -282,9 +280,11 @@ fn main() {
         let kf0 = universe
             .world
             .register(engine::ecs::component::KeyframeComponent::new(0.0));
-        let act0 = universe.world.register(engine::ecs::component::ActionComponent::new(
-            engine::ecs::component::Action::attach(anchor_a, raycaster),
-        ));
+        let act0 = universe
+            .world
+            .register(engine::ecs::component::ActionComponent::new(
+                engine::ecs::component::Action::attach(anchor_a, raycaster),
+            ));
         let _ = universe.attach(kf0, act0);
         let _ = universe.attach(anim_global, kf0);
 
@@ -292,9 +292,11 @@ fn main() {
         let kf4 = universe
             .world
             .register(engine::ecs::component::KeyframeComponent::new(4.0));
-        let act4 = universe.world.register(engine::ecs::component::ActionComponent::new(
-            engine::ecs::component::Action::attach(anchor_b, raycaster),
-        ));
+        let act4 = universe
+            .world
+            .register(engine::ecs::component::ActionComponent::new(
+                engine::ecs::component::Action::attach(anchor_b, raycaster),
+            ));
         let _ = universe.attach(kf4, act4);
         let _ = universe.attach(anim_global, kf4);
 
@@ -302,9 +304,11 @@ fn main() {
         let kf7 = universe
             .world
             .register(engine::ecs::component::KeyframeComponent::new(7.0));
-        let noop = universe.world.register(engine::ecs::component::ActionComponent::new(
-            engine::ecs::component::Action::default(),
-        ));
+        let noop = universe
+            .world
+            .register(engine::ecs::component::ActionComponent::new(
+                engine::ecs::component::Action::default(),
+            ));
         let _ = universe.attach(kf7, noop);
         let _ = universe.attach(anim_global, kf7);
     }
@@ -368,17 +372,21 @@ fn main() {
         // Per-ring raycast patterns.
         // A: downbeats in first half (0..4): step % 8 == 0 -> beats 0,1,2,3,4.
         if beat < 4.0 && step % 8 == 0 {
-            let act = universe.world.register(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::raycast(raycaster),
-            ));
+            let act = universe
+                .world
+                .register(engine::ecs::component::ActionComponent::new(
+                    engine::ecs::component::Action::raycast(raycaster),
+                ));
             let _ = universe.attach(kf_a, act);
         }
 
         // B: offbeats in second half (4..8): step % 8 == 4 -> beats 0.5,1.5,...,7.5.
         if beat >= 4.0 && step % 8 == 4 {
-            let act = universe.world.register(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::raycast(raycaster),
-            ));
+            let act = universe
+                .world
+                .register(engine::ecs::component::ActionComponent::new(
+                    engine::ecs::component::Action::raycast(raycaster),
+                ));
             let _ = universe.attach(kf_b, act);
         }
 

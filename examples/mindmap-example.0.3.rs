@@ -51,10 +51,10 @@ fn main() {
     universe.add(background);
 
     // Ambient so text/lines are readable without placing explicit lights.
-        let ambient = universe
-            .world
-            .register(AmbientLightComponent::rgb(0.75, 0.75, 0.85));
-        universe.add(ambient);
+    let ambient = universe
+        .world
+        .register(AmbientLightComponent::rgb(0.75, 0.75, 0.85));
+    universe.add(ambient);
 
     // I { T { C3D } }
     let input = universe

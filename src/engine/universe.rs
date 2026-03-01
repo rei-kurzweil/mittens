@@ -85,7 +85,6 @@ impl Universe {
         self.systems.rx.remove_handler(kind, scope_root, handler)
     }
 
-
     /// Attach `child` under `parent`.
     ///
     /// If `parent` is already initialized, the newly-attached subtree rooted at `child`

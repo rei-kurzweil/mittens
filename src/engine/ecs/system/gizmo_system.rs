@@ -4,6 +4,8 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::{CommandQueue, ComponentId, EventSignal, RxWorld, SignalValue, World};
 use crate::engine::user_input::InputState;
+use std::collections::HashMap;
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Copy)]
 enum GizmoOp {
@@ -44,7 +46,10 @@ impl GizmoSystem {
         let mut cur = component;
         let mut parent_transform: Option<ComponentId> = None;
         while let Some(p) = world.parent_of(cur) {
-            if world.get_component_by_id_as::<TransformComponent>(p).is_some() {
+            if world
+                .get_component_by_id_as::<TransformComponent>(p)
+                .is_some()
+            {
                 parent_transform = Some(p);
                 break;
             }
@@ -69,10 +74,8 @@ impl GizmoSystem {
         }
 
         // Create a root transform for the gizmo visuals under the GizmoComponent node.
-        let gizmo_root = world.add_component_boxed_named(
-            "gizmo_root",
-            Box::new(TransformComponent::new()),
-        );
+        let gizmo_root =
+            world.add_component_boxed_named("gizmo_root", Box::new(TransformComponent::new()));
         let _ = world.add_child(component, gizmo_root);
 
         // Write back visual root.
@@ -129,10 +132,15 @@ impl GizmoSystem {
 
         // Helper: create a single raycastable root node for a handle subtree.
         // Descendant renderables become BVH-eligible via ancestry.
-        fn spawn_raycastable_root(world: &mut World, parent: ComponentId, name: &str) -> ComponentId {
+        fn spawn_raycastable_root(
+            world: &mut World,
+            parent: ComponentId,
+            name: &str,
+        ) -> ComponentId {
             use crate::engine::ecs::component::RaycastableComponent;
 
-            let rc = world.add_component_boxed_named(name, Box::new(RaycastableComponent::enabled()));
+            let rc =
+                world.add_component_boxed_named(name, Box::new(RaycastableComponent::enabled()));
             let _ = world.add_child(parent, rc);
             rc
         }
@@ -143,10 +151,8 @@ impl GizmoSystem {
             axis: GizmoAxis,
             name: &str,
         ) -> ComponentId {
-            let h = world.add_component_boxed_named(
-                name,
-                Box::new(GizmoTranslateComponent::new(axis)),
-            );
+            let h =
+                world.add_component_boxed_named(name, Box::new(GizmoTranslateComponent::new(axis)));
             let _ = world.add_child(parent, h);
             h
         }
@@ -157,7 +163,8 @@ impl GizmoSystem {
             axis: GizmoAxis,
             name: &str,
         ) -> ComponentId {
-            let h = world.add_component_boxed_named(name, Box::new(GizmoRotateComponent::new(axis)));
+            let h =
+                world.add_component_boxed_named(name, Box::new(GizmoRotateComponent::new(axis)));
             let _ = world.add_child(parent, h);
             h
         }
@@ -323,7 +330,11 @@ impl GizmoSystem {
                 }
             }
 
-            if gizmo.is_none() && world.get_component_by_id_as::<GizmoComponent>(node).is_some() {
+            if gizmo.is_none()
+                && world
+                    .get_component_by_id_as::<GizmoComponent>(node)
+                    .is_some()
+            {
                 gizmo = Some(node);
             }
 
@@ -348,7 +359,10 @@ impl GizmoSystem {
         // Also support gizmo-as-ancestor (new gizmo visuals are children of the gizmo node).
         let mut cur = Some(renderable);
         while let Some(node) = cur {
-            if world.get_component_by_id_as::<GizmoComponent>(node).is_some() {
+            if world
+                .get_component_by_id_as::<GizmoComponent>(node)
+                .is_some()
+            {
                 out.push(node);
             }
             cur = world.parent_of(node);
@@ -393,6 +407,112 @@ impl GizmoSystem {
             ]
         }
 
+        fn debug_drag_plane_enabled() -> bool {
+            static ENABLED: OnceLock<bool> = OnceLock::new();
+            *ENABLED.get_or_init(|| {
+                let v = std::env::var("CAT_DEBUG_GIZMO_DRAG_PLANE").unwrap_or_default();
+                let v = v.trim().to_ascii_lowercase();
+                matches!(v.as_str(), "1" | "true" | "yes" | "on")
+            })
+        }
+
+        fn quat_from_z_to_dir(dir: [f32; 3]) -> [f32; 4] {
+            // Rotate local +Z to `dir`.
+            let z = [0.0f32, 0.0f32, 1.0f32];
+            let d = math::vec3_normalize(dir);
+            let dot_ = z[0] * d[0] + z[1] * d[1] + z[2] * d[2];
+
+            if dot_ >= 1.0 - 1e-6 {
+                return [0.0, 0.0, 0.0, 1.0];
+            }
+            if dot_ <= -1.0 + 1e-6 {
+                // 180-degree flip around X (any axis orthogonal to Z works).
+                return math::quat_from_axis_angle([1.0, 0.0, 0.0], std::f32::consts::PI);
+            }
+
+            let axis = cross(z, d);
+            let axis_len = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
+            if axis_len <= 1e-6 {
+                return [0.0, 0.0, 0.0, 1.0];
+            }
+            let axis_n = [axis[0] / axis_len, axis[1] / axis_len, axis[2] / axis_len];
+            let angle = dot_.clamp(-1.0, 1.0).acos();
+            math::quat_from_axis_angle(axis_n, angle)
+        }
+
+        fn spawn_debug_drag_plane(
+            world: &mut World,
+            queue: &mut CommandQueue,
+            hit_point: [f32; 3],
+            plane_normal: [f32; 3],
+        ) -> ComponentId {
+            use crate::engine::ecs::component::{
+                ColorComponent, EmissiveComponent, OpacityComponent, RenderableComponent,
+                TransformComponent,
+            };
+            use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Renderable};
+
+            let q = quat_from_z_to_dir(plane_normal);
+
+            // Use a very thin cube so it is visible from both sides (debug aid).
+            let size = 2.0_f32;
+            let thickness = 0.005_f32;
+
+            let t = world.add_component_boxed_named(
+                "gizmo_drag_plane_t",
+                Box::new(
+                    TransformComponent::new()
+                        .with_position(hit_point[0], hit_point[1], hit_point[2])
+                        .with_rotation_quat(q)
+                        .with_scale(size, size, thickness),
+                ),
+            );
+            let r = world.add_component_boxed_named(
+                "gizmo_drag_plane_r",
+                Box::new(RenderableComponent::new(Renderable::new(
+                    CpuMeshHandle::CUBE,
+                    MaterialHandle::UNLIT_MESH,
+                ))),
+            );
+            let c = world.add_component_boxed_named(
+                "gizmo_drag_plane_color",
+                Box::new(ColorComponent::rgba(1.0, 0.0, 1.0, 0.35)),
+            );
+            let o = world.add_component_boxed_named(
+                "gizmo_drag_plane_opacity",
+                Box::new(OpacityComponent::new().with_opacity(0.35).with_multiple_layers()),
+            );
+            let e = world.add_component_boxed_named(
+                "gizmo_drag_plane_emissive",
+                Box::new(EmissiveComponent::on()),
+            );
+
+            let _ = world.add_child(t, r);
+            let _ = world.add_child(r, c);
+            let _ = world.add_child(r, o);
+            let _ = world.add_child(r, e);
+
+            world.init_component_tree(t, queue);
+            t
+        }
+
+        // Build a lookup for the drag-start ray direction by (raycaster, renderable).
+        // GestureSystem emits DragStart after consuming RayIntersected, but both signals are
+        // present in the same tick's RxWorld.
+        let mut ray_dir_by_pair: HashMap<(ComponentId, ComponentId), [f32; 3]> = HashMap::new();
+        for s in rx.signals().iter() {
+            let SignalValue::Event(EventSignal::RayIntersected {
+                raycaster,
+                renderable,
+                dir,
+                ..
+            }) = &s.value
+            else {
+                continue;
+            };
+            ray_dir_by_pair.insert((*raycaster, *renderable), *dir);
+        }
+
         // Snapshot drag events first (avoid borrowing issues while mutating the world).
         let mut drag_events: Vec<EventSignal> = Vec::new();
         for s in rx.signals().iter() {
@@ -412,7 +532,7 @@ impl GizmoSystem {
                 EventSignal::DragStart {
                     raycaster,
                     renderable,
-                    ..
+                    hit_point,
                 } => {
                     let Some((gizmo_cid, _op)) =
                         Self::resolve_gizmo_op_for_renderable(world, renderable)
@@ -420,8 +540,31 @@ impl GizmoSystem {
                         continue;
                     };
 
-                    if let Some(g) = world.get_component_by_id_as_mut::<GizmoComponent>(gizmo_cid) {
+                    let mut old_debug_root: Option<ComponentId> = None;
+                    if let Some(g) = world.get_component_by_id_as_mut::<GizmoComponent>(gizmo_cid)
+                    {
                         g.active_raycaster = Some(raycaster);
+                        if debug_drag_plane_enabled() {
+                            old_debug_root = g.debug_drag_plane_root.take();
+                        }
+                    }
+
+                    if let Some(root) = old_debug_root {
+                        queue.queue_remove_subtree(root);
+                    }
+
+                    if debug_drag_plane_enabled() {
+                        if let Some(dir) =
+                            ray_dir_by_pair.get(&(raycaster, renderable)).copied()
+                        {
+                            let plane_root =
+                                spawn_debug_drag_plane(world, queue, hit_point, dir);
+                            if let Some(g) =
+                                world.get_component_by_id_as_mut::<GizmoComponent>(gizmo_cid)
+                            {
+                                g.debug_drag_plane_root = Some(plane_root);
+                            }
+                        }
                     }
                 }
                 EventSignal::DragMove {
@@ -459,8 +602,8 @@ impl GizmoSystem {
                             let d = dot(delta_world, axis_v);
                             let delta = mul(axis_v, d);
 
-                            let Some(t) =
-                                world.get_component_by_id_as_mut::<TransformComponent>(target_transform)
+                            let Some(t) = world
+                                .get_component_by_id_as_mut::<TransformComponent>(target_transform)
                             else {
                                 continue;
                             };
@@ -492,7 +635,9 @@ impl GizmoSystem {
 
                             if angle != 0.0 {
                                 let Some(t) = world
-                                    .get_component_by_id_as_mut::<TransformComponent>(target_transform)
+                                    .get_component_by_id_as_mut::<TransformComponent>(
+                                        target_transform,
+                                    )
                                 else {
                                     continue;
                                 };
@@ -504,8 +649,8 @@ impl GizmoSystem {
                         GizmoOp::Scale(axis) => {
                             let d = dot(delta_world, axis.unit_vec3());
 
-                            let Some(t) =
-                                world.get_component_by_id_as_mut::<TransformComponent>(target_transform)
+                            let Some(t) = world
+                                .get_component_by_id_as_mut::<TransformComponent>(target_transform)
                             else {
                                 continue;
                             };
@@ -534,6 +679,12 @@ impl GizmoSystem {
                     if let Some(g) = world.get_component_by_id_as_mut::<GizmoComponent>(gizmo_cid) {
                         if g.active_raycaster == Some(raycaster) {
                             g.active_raycaster = None;
+                        }
+
+                        if debug_drag_plane_enabled() {
+                            if let Some(root) = g.debug_drag_plane_root.take() {
+                                queue.queue_remove_subtree(root);
+                            }
                         }
                     }
                 }

@@ -72,12 +72,7 @@ impl RxWorld {
         removed
     }
 
-    pub fn dispatch_handlers(
-        &mut self,
-        world: &mut World,
-        queue: &mut CommandQueue,
-        env: &Signal,
-    ) {
+    pub fn dispatch_handlers(&mut self, world: &mut World, queue: &mut CommandQueue, env: &Signal) {
         let kind = env.kind();
         let scope_chain = compute_scope_chain(world, env.scope);
         for scope in scope_chain {

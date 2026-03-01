@@ -57,8 +57,7 @@ impl RenderableComponent {
     pub fn square_dynamic(render_assets: &mut RenderAssets) -> Self {
         let h = render_assets.register_mesh(MeshFactory::quad_2d());
         Self::new(
-            Renderable::new(h, MaterialHandle::TOON_MESH)
-                .with_base_mesh(CpuMeshHandle::QUAD_2D),
+            Renderable::new(h, MaterialHandle::TOON_MESH).with_base_mesh(CpuMeshHandle::QUAD_2D),
         )
     }
 
@@ -70,10 +69,7 @@ impl RenderableComponent {
     /// Predefined renderable: cube primitive (unique CPU mesh registered into `render_assets`).
     pub fn cube_dynamic(render_assets: &mut RenderAssets) -> Self {
         let h = render_assets.register_mesh(MeshFactory::cube());
-        Self::new(
-            Renderable::new(h, MaterialHandle::TOON_MESH)
-                .with_base_mesh(CpuMeshHandle::CUBE),
-        )
+        Self::new(Renderable::new(h, MaterialHandle::TOON_MESH).with_base_mesh(CpuMeshHandle::CUBE))
     }
 
     /// Predefined renderable: sphere primitive (shared built-in mesh handle).
@@ -85,8 +81,7 @@ impl RenderableComponent {
     pub fn sphere_dynamic(render_assets: &mut RenderAssets) -> Self {
         let h = render_assets.register_mesh(MeshFactory::sphere());
         Self::new(
-            Renderable::new(h, MaterialHandle::TOON_MESH)
-                .with_base_mesh(CpuMeshHandle::SPHERE),
+            Renderable::new(h, MaterialHandle::TOON_MESH).with_base_mesh(CpuMeshHandle::SPHERE),
         )
     }
 

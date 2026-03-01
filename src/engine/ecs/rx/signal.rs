@@ -1,6 +1,6 @@
+use crate::engine::ecs::CommandQueue;
 use crate::engine::ecs::component::Action;
 use crate::engine::ecs::{ComponentId, World};
-use crate::engine::ecs::CommandQueue;
 
 #[derive(Debug, Clone)]
 pub enum ActionSignal {
@@ -94,7 +94,9 @@ impl SignalValue {
             SignalValue::Action(ActionSignal::Action(_)) => SignalKind::Action,
             SignalValue::Event(EventSignal::ParentChanged { .. }) => SignalKind::ParentChanged,
             SignalValue::Event(EventSignal::RayIntersected { .. }) => SignalKind::RayIntersected,
-            SignalValue::Event(EventSignal::CollisionStarted { .. }) => SignalKind::CollisionStarted,
+            SignalValue::Event(EventSignal::CollisionStarted { .. }) => {
+                SignalKind::CollisionStarted
+            }
             SignalValue::Event(EventSignal::CollisionEnded { .. }) => SignalKind::CollisionEnded,
             SignalValue::Event(EventSignal::DragStart { .. }) => SignalKind::DragStart,
             SignalValue::Event(EventSignal::DragMove { .. }) => SignalKind::DragMove,

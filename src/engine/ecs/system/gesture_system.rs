@@ -43,10 +43,8 @@ impl GestureSystem {
         let mut out = [[0.0f32; 4]; 4];
         for c in 0..4 {
             for r in 0..4 {
-                out[c][r] = a[0][r] * b[c][0]
-                    + a[1][r] * b[c][1]
-                    + a[2][r] * b[c][2]
-                    + a[3][r] * b[c][3];
+                out[c][r] =
+                    a[0][r] * b[c][0] + a[1][r] * b[c][1] + a[2][r] * b[c][2] + a[3][r] * b[c][3];
             }
         }
         out
@@ -129,7 +127,11 @@ impl GestureSystem {
         if !t.is_finite() {
             return None;
         }
-        Some([origin[0] + dir[0] * t, origin[1] + dir[1] * t, origin[2] + dir[2] * t])
+        Some([
+            origin[0] + dir[0] * t,
+            origin[1] + dir[1] * t,
+            origin[2] + dir[2] * t,
+        ])
     }
 
     /// Consume RayIntersected signals (as inputs) and emit DragStart/DragMove/DragEnd signals.
@@ -166,7 +168,11 @@ impl GestureSystem {
         }
 
         let hit_point = best.map(|(_rc, _r, t, origin, dir)| {
-            [origin[0] + dir[0] * t, origin[1] + dir[1] * t, origin[2] + dir[2] * t]
+            [
+                origin[0] + dir[0] * t,
+                origin[1] + dir[1] * t,
+                origin[2] + dir[2] * t,
+            ]
         });
 
         // Start drag.
@@ -187,9 +193,10 @@ impl GestureSystem {
                         // Seed last_hit_point from the plane intersection if possible.
                         if let Some(p0) = hit_point {
                             self.state.last_hit_point = Some(p0);
-                        } else if let (Some(pp), Some(pn)) =
-                            (self.state.drag_plane_point_world, self.state.drag_plane_normal_world)
-                        {
+                        } else if let (Some(pp), Some(pn)) = (
+                            self.state.drag_plane_point_world,
+                            self.state.drag_plane_normal_world,
+                        ) {
                             if let Some(p) = Self::ray_plane_intersect(origin, dir, pp, pn) {
                                 self.state.last_hit_point = Some(p);
                             }

@@ -12,7 +12,9 @@ fn cube_renderable_sibling_of_collider(
         if sib == collider_cid {
             continue;
         }
-        let Some(r) = world.get_component_by_id_as::<engine::ecs::component::RenderableComponent>(sib) else {
+        let Some(r) =
+            world.get_component_by_id_as::<engine::ecs::component::RenderableComponent>(sib)
+        else {
             continue;
         };
         if r.renderable.base_mesh == engine::graphics::primitives::CpuMeshHandle::CUBE {
@@ -40,7 +42,9 @@ fn set_renderable_color_rgba(
         });
 
     if let Some(color_cid) = existing {
-        if let Some(c) = world.get_component_by_id_as_mut::<engine::ecs::component::ColorComponent>(color_cid) {
+        if let Some(c) =
+            world.get_component_by_id_as_mut::<engine::ecs::component::ColorComponent>(color_cid)
+        {
             c.rgba = rgba;
             queue.queue_register_color(color_cid);
         }
@@ -75,8 +79,9 @@ fn on_collision_turn_white(
     queue: &mut engine::ecs::CommandQueue,
     signal: &engine::ecs::Signal,
 ) {
-    let engine::ecs::SignalValue::Event(engine::ecs::EventSignal::CollisionStarted { a, b, .. }) =
-        &signal.value
+    let engine::ecs::SignalValue::Event(engine::ecs::EventSignal::CollisionStarted {
+        a, b, ..
+    }) = &signal.value
     else {
         return;
     };
@@ -91,7 +96,9 @@ fn on_collision_turn_white(
     };
 
     // Only react to cube-vs-cube touches (ignore static walls/floor and non-renderable colliders like camera).
-    let Some(other_cn) = world.get_component_by_id_as::<engine::ecs::component::CollisionComponent>(other) else {
+    let Some(other_cn) =
+        world.get_component_by_id_as::<engine::ecs::component::CollisionComponent>(other)
+    else {
         return;
     };
     if other_cn.mode == engine::ecs::component::CollisionMode::Static {
@@ -112,8 +119,9 @@ fn on_collision_freeze_gravity(
     _queue: &mut engine::ecs::CommandQueue,
     signal: &engine::ecs::Signal,
 ) {
-    let engine::ecs::SignalValue::Event(engine::ecs::EventSignal::CollisionStarted { a, b, .. }) =
-        &signal.value
+    let engine::ecs::SignalValue::Event(engine::ecs::EventSignal::CollisionStarted {
+        a, b, ..
+    }) = &signal.value
     else {
         return;
     };
@@ -128,7 +136,9 @@ fn on_collision_freeze_gravity(
     };
 
     // Only react to cube-vs-cube touches.
-    let Some(other_cn) = world.get_component_by_id_as::<engine::ecs::component::CollisionComponent>(other) else {
+    let Some(other_cn) =
+        world.get_component_by_id_as::<engine::ecs::component::CollisionComponent>(other)
+    else {
         return;
     };
     if other_cn.mode == engine::ecs::component::CollisionMode::Static {
@@ -141,7 +151,11 @@ fn on_collision_freeze_gravity(
     let Some(response_cid) = kinetic_response_child_of_collider(world, self_collider) else {
         return;
     };
-    if let Some(r) = world.get_component_by_id_as_mut::<engine::ecs::component::KineticResponseComponent>(response_cid) {
+    if let Some(r) = world
+        .get_component_by_id_as_mut::<engine::ecs::component::KineticResponseComponent>(
+            response_cid,
+        )
+    {
         // Gravity is a cached per-responder coefficient; set it to 0 once touched.
         r.gravity_coefficient = 0.0;
     }
@@ -163,24 +177,23 @@ fn main() {
     // overhead directional light
     let directional_light = universe.world.register(
         engine::ecs::component::DirectionalLightComponent::new()
-            .with_color( 0.16, 0.14, 0.12 )
+            .with_color(0.16, 0.14, 0.12)
             .with_intensity(0.7),
     );
-    let directional_light_t = universe.world.register(
-        engine::ecs::component::TransformComponent::new().with_position(0.0, 1.0, 0.0),
-    );
+    let directional_light_t = universe
+        .world
+        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 1.0, 0.0));
     let _ = universe.attach(directional_light_t, directional_light);
     universe.add(directional_light_t);
-
 
     // Simple input-driven camera.
     let input = universe
         .world
         .register(engine::ecs::component::InputComponent::new().with_speed(2.0));
 
-    let cam_t = universe.world.register(
-        engine::ecs::component::TransformComponent::new().with_position(0.0, 4.0, 10.0),
-    );
+    let cam_t = universe
+        .world
+        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 4.0, 10.0));
     let cam = universe.world.register(
         engine::ecs::component::Camera3DComponent::new()
             // The default (150) clips background dressing (city + clouds).
@@ -257,8 +270,11 @@ fn main() {
     // If we attach directly to `bg_root`, the ring can end up mostly out of view.
     // So we offset a cloud root forward along -Z and keep the radius within the camera far clip.
     let bg_cloud_root = universe.world.register(
-        engine::ecs::component::TransformComponent::new()
-            .with_position(0.0, 0.0, -arena_half * 2.8),
+        engine::ecs::component::TransformComponent::new().with_position(
+            0.0,
+            0.0,
+            -arena_half * 2.8,
+        ),
     );
     let _ = universe.attach(bg_root, bg_cloud_root);
 
@@ -317,20 +333,30 @@ fn main() {
         // IMPORTANT: don't put non-uniform scale on the node that windows attach to,
         // otherwise child window meshes inherit the scale and look stretched.
         let floor_root_t = universe.world.register(
-            engine::ecs::component::TransformComponent::new().with_position(0.0, floor_center_y, 0.0),
+            engine::ecs::component::TransformComponent::new().with_position(
+                0.0,
+                floor_center_y,
+                0.0,
+            ),
         );
         let floor_geom_t = universe.world.register(
-            engine::ecs::component::TransformComponent::new().with_scale(footprint_x, floor_h, footprint_z),
+            engine::ecs::component::TransformComponent::new().with_scale(
+                footprint_x,
+                floor_h,
+                footprint_z,
+            ),
         );
         let floor_r = universe
             .world
             .register(engine::ecs::component::RenderableComponent::cube());
-        let floor_c = universe.world.register(engine::ecs::component::ColorComponent::rgba(
-            floor_rgb[0],
-            floor_rgb[1],
-            floor_rgb[2],
-            floor_rgb[3],
-        ));
+        let floor_c = universe
+            .world
+            .register(engine::ecs::component::ColorComponent::rgba(
+                floor_rgb[0],
+                floor_rgb[1],
+                floor_rgb[2],
+                floor_rgb[3],
+            ));
 
         let _ = universe.attach(building_root, floor_root_t);
         let _ = universe.attach(floor_root_t, floor_geom_t);
@@ -454,9 +480,7 @@ fn main() {
         let window_fill_probability = 0.80_f32;
 
         for floor_i in 0..floors {
-            let floor_seed = seed
-                ^ floor_i.wrapping_mul(0x9E37_79B9)
-                ^ 0xB17D_1E55;
+            let floor_seed = seed ^ floor_i.wrapping_mul(0x9E37_79B9) ^ 0xB17D_1E55;
 
             let mut window_mask = Vec::with_capacity(windows_per_side);
             for i in 0..windows_per_side {
@@ -565,7 +589,6 @@ fn main() {
     );
 
     fn spawn_street_light(universe: &mut engine::Universe) -> engine::ecs::ComponentId {
-
         // Dimensions (world units).
         let shaft_height = 6.0;
         let shaft_thickness = 0.22;
@@ -637,13 +660,9 @@ fn main() {
         let _ = universe.attach(arm_r, arm_c);
 
         // Light housing at the end of the arm (+X end).
-        let housing_root_t = universe
-            .world
-            .register(engine::ecs::component::TransformComponent::new().with_position(
-                arm_length,
-                0.0,
-                0.0,
-            ));
+        let housing_root_t = universe.world.register(
+            engine::ecs::component::TransformComponent::new().with_position(arm_length, 0.0, 0.0),
+        );
         let housing_geom_t = universe.world.register(
             engine::ecs::component::TransformComponent::new()
                 .with_position(0.5, 0.0, 0.0)
@@ -684,7 +703,7 @@ fn main() {
                 diffuser_color[2],
                 diffuser_color[3],
             ));
-        
+
         let diffuser_emissive = universe
             .world
             .register(engine::ecs::component::EmissiveComponent::on());
@@ -749,16 +768,21 @@ fn main() {
             .register(engine::ecs::component::RenderableComponent::cube());
         let floor_color = universe
             .world
-            .register(engine::ecs::component::ColorComponent::rgba(0.08, 0.08, 0.09, 1.0));
+            .register(engine::ecs::component::ColorComponent::rgba(
+                0.08, 0.08, 0.09, 1.0,
+            ));
 
         let floor_cn = universe
             .world
             .register(engine::ecs::component::CollisionComponent::STATIC());
-        let floor_shape = universe
-            .world
-            .register(engine::ecs::component::CollisionShapeComponent::new(
-                engine::ecs::component::CollisionShape::cube_half_extents([floor_half, thickness, floor_half]),
-            ));
+        let floor_shape =
+            universe
+                .world
+                .register(engine::ecs::component::CollisionShapeComponent::new(
+                    engine::ecs::component::CollisionShape::cube_half_extents([
+                        floor_half, thickness, floor_half,
+                    ]),
+                ));
 
         let _ = universe.attach(floor_root_t, floor_geom_t);
         let _ = universe.attach(floor_geom_t, floor_r);
@@ -781,7 +805,11 @@ fn main() {
         let t = universe.world.register(
             engine::ecs::component::TransformComponent::new()
                 .with_position(x, y, z)
-                .with_scale(half_extents[0] * 2.0, half_extents[1] * 2.0, half_extents[2] * 2.0),
+                .with_scale(
+                    half_extents[0] * 2.0,
+                    half_extents[1] * 2.0,
+                    half_extents[2] * 2.0,
+                ),
         );
         let r = universe
             .world
@@ -894,7 +922,11 @@ fn main() {
         let shape = universe
             .world
             .register(engine::ecs::component::CollisionShapeComponent::new(
-                engine::ecs::component::CollisionShape::cube_half_extents([0.5 * s, 0.5 * s, 0.5 * s]),
+                engine::ecs::component::CollisionShape::cube_half_extents([
+                    0.5 * s,
+                    0.5 * s,
+                    0.5 * s,
+                ]),
             ));
 
         let _ = universe.attach(t, renderable);

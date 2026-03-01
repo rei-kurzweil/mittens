@@ -180,7 +180,10 @@ impl SkinnedMeshSystem {
 
             // Candidate 2: any GLTFComponent child of this node.
             for &child in world.children_of(cid) {
-                if world.get_component_by_id_as::<GLTFComponent>(child).is_some() {
+                if world
+                    .get_component_by_id_as::<GLTFComponent>(child)
+                    .is_some()
+                {
                     if self.instance_joints.contains_key(&(child, skin_id)) {
                         return Some(child);
                     }

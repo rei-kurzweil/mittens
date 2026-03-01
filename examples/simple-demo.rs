@@ -6,13 +6,15 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
         InputTransformModeComponent, PointLightComponent, RenderableComponent, TextureComponent,
         TransformComponent,
     };
-    use engine::graphics::primitives::MaterialHandle;
     use engine::graphics::BuiltinMeshType;
+    use engine::graphics::primitives::MaterialHandle;
 
     // Built-in CPU meshes are pre-registered; just fetch stable handles.
     let tri_mesh = universe.render_assets.get_mesh(BuiltinMeshType::Triangle2D);
     let square_mesh = universe.render_assets.get_mesh(BuiltinMeshType::Quad2D);
-    let tetra_mesh = universe.render_assets.get_mesh(BuiltinMeshType::Tetrahedron);
+    let tetra_mesh = universe
+        .render_assets
+        .get_mesh(BuiltinMeshType::Tetrahedron);
 
     fn spawn(
         universe: &mut engine::Universe,

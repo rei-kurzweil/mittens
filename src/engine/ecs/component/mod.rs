@@ -19,20 +19,21 @@ pub mod clock;
 pub mod collision;
 pub mod collision_shape;
 pub mod color;
+pub mod controller_xr;
 pub mod directional_light;
 pub mod emissive;
-pub mod gravity;
+pub mod gizmo;
 pub mod gltf;
+pub mod gravity;
 pub mod input;
 pub mod input_transform_mode;
 pub mod joint;
 pub mod keyframe;
+pub mod kinetic_response;
 pub mod light_quantization;
-pub mod gizmo;
 pub mod mesh;
 pub mod music_note;
 pub mod opacity;
-pub mod kinetic_response;
 pub mod skinned_mesh;
 pub mod transparent_cutout;
 
@@ -74,22 +75,22 @@ pub use clock::ClockComponent;
 pub use collision::CollisionComponent;
 pub use collision_shape::CollisionShapeComponent;
 pub use color::ColorComponent;
+pub use controller_xr::{ControllerHand, ControllerPoseKind, ControllerXRComponent};
 pub use directional_light::DirectionalLightComponent;
 pub use emissive::EmissiveComponent;
+pub use gizmo::{
+    GizmoAxis, GizmoComponent, GizmoRotateComponent, GizmoScaleComponent, GizmoTranslateComponent,
+};
 pub use gravity::GravityComponent;
 pub use input::InputComponent;
 pub use input_transform_mode::{ForwardAxis, InputTransformModeComponent, RollAxis};
-pub use gizmo::{
-    GizmoAxis, GizmoComponent, GizmoRotateComponent, GizmoScaleComponent,
-    GizmoTranslateComponent,
-};
 pub use joint::JointComponent;
 pub use keyframe::KeyframeComponent;
+pub use kinetic_response::{KineticResponseComponent, KineticResponseMode};
 pub use light_quantization::LightQuantizationComponent;
 pub(crate) use music_note::NotePitch;
 pub use music_note::{MusicNote, MusicNoteComponent};
 pub use opacity::OpacityComponent;
-pub use kinetic_response::{KineticResponseComponent, KineticResponseMode};
 pub use openxr::OpenXRComponent;
 pub use point_light::PointLightComponent;
 pub use raycast::{RayCastComponent, RayCastMode};

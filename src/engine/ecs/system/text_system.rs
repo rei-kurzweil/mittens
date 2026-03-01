@@ -1,8 +1,8 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    EmissiveComponent, RaycastableComponent, RenderableComponent, TextComponent,
-    TextureComponent, TextureFilteringComponent, TransformComponent, UVComponent,
+    EmissiveComponent, RaycastableComponent, RenderableComponent, TextComponent, TextureComponent,
+    TextureFilteringComponent, TransformComponent, UVComponent,
 };
 use crate::engine::graphics::VisualWorld;
 

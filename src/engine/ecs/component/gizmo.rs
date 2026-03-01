@@ -212,6 +212,12 @@ pub struct GizmoComponent {
     /// Root TransformComponent id of the gizmo visual subtree (spawned on init).
     pub visual_root: Option<ComponentId>,
 
+    /// Runtime: optional debug plane subtree root.
+    ///
+    /// When enabled, GizmoSystem spawns a thin quad/cube aligned to the drag plane captured at
+    /// DragStart to visualize the projection surface used by screen-space dragging.
+    pub debug_drag_plane_root: Option<ComponentId>,
+
     component: Option<ComponentId>,
 }
 
@@ -224,6 +230,7 @@ impl GizmoComponent {
             target_transform: None,
             active_raycaster: None,
             visual_root: None,
+            debug_drag_plane_root: None,
             component: None,
         }
     }
@@ -262,6 +269,10 @@ impl Component for GizmoComponent {
 
     fn cleanup(&mut self, queue: &mut crate::engine::ecs::CommandQueue, _component: ComponentId) {
         if let Some(root) = self.visual_root.take() {
+            queue.queue_remove_subtree(root);
+        }
+
+        if let Some(root) = self.debug_drag_plane_root.take() {
             queue.queue_remove_subtree(root);
         }
     }

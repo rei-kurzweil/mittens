@@ -1,9 +1,9 @@
 use cat_engine::engine::ecs::component::{
     Action, ActionComponent, AmbientLightComponent, AnimationComponent, AnimationState,
-    BackgroundColorComponent, Camera3DComponent, ColorComponent, DirectionalLightComponent,
-    ClockComponent, EmissiveComponent, GLTFComponent, InputComponent, InputTransformModeComponent,
-    JointComponent, KeyframeComponent, MeshComponent, RenderableComponent, SkinnedMeshComponent,
-    TransformComponent,
+    BackgroundColorComponent, Camera3DComponent, ClockComponent, ColorComponent,
+    DirectionalLightComponent, EmissiveComponent, GLTFComponent, InputComponent,
+    InputTransformModeComponent, JointComponent, KeyframeComponent, MeshComponent,
+    RenderableComponent, SkinnedMeshComponent, TransformComponent,
 };
 use cat_engine::{engine, utils};
 use std::collections::{HashMap, HashSet};
@@ -18,7 +18,9 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Slow the global beat clock so beat-based animations run half as fast.
-    let clock = universe.world.register(ClockComponent::new().with_bpm(60.0));
+    let clock = universe
+        .world
+        .register(ClockComponent::new().with_bpm(60.0));
     universe.add(clock);
 
     // Light pink background.
@@ -195,18 +197,18 @@ fn main() {
         println!("  joint[{i:03}] node_index={node_index} transform={joint_tx:?}");
     }
 
-    let node_index_to_transform: HashMap<usize, engine::ecs::ComponentId> = all_joints
-        .iter()
-        .copied()
-        .collect();
+    let node_index_to_transform: HashMap<usize, engine::ecs::ComponentId> =
+        all_joints.iter().copied().collect();
 
     // Example settings are hardcoded to keep this example simple.
     let joint_offset: usize = 0;
     let wiggle_count: usize = 16;
 
     let target_mesh_key = "pc-rei.hoodie:Body_(merged).baked:prim0".to_string();
-    let target_joint_names: Vec<String> =
-        vec!["J_Bip_L_UpperArm".to_string(), "J_Bip_R_UpperArm".to_string()];
+    let target_joint_names: Vec<String> = vec![
+        "J_Bip_L_UpperArm".to_string(),
+        "J_Bip_R_UpperArm".to_string(),
+    ];
 
     let print_transform_updates: bool = false;
 
@@ -230,7 +232,12 @@ fn main() {
         selected_joint_transforms.len()
     );
 
-    debug_print_selected_joint_influence(&universe, &target_mesh_key, model_root, &selected_joint_transforms);
+    debug_print_selected_joint_influence(
+        &universe,
+        &target_mesh_key,
+        model_root,
+        &selected_joint_transforms,
+    );
 
     println!("[vtuber-joints-example] selected joints:");
     for (i, (node_index, joint_tx)) in selected_joint_transforms.iter().enumerate() {
@@ -239,9 +246,7 @@ fn main() {
             .get_component_record(*joint_tx)
             .map(|n| n.name.as_str())
             .unwrap_or("<unknown>");
-        println!(
-            "  sel[{i:02}] node_index={node_index} name={name} transform={joint_tx:?}"
-        );
+        println!("  sel[{i:02}] node_index={node_index} name={name} transform={joint_tx:?}");
     }
 
     // Create a looping animation with many keyframes, and attach actions to the selected joints.
@@ -281,7 +286,8 @@ fn main() {
             // Joints often have exported local axes that don't match the model's visible axes.
             // To rotate around *parent/model-space* +Z, convert that axis into this joint's
             // local space and then apply a local delta.
-            let axis_local = quat_rotate_vec3(quat_conjugate(quat_normalize(base_rotation)), axis_parent);
+            let axis_local =
+                quat_rotate_vec3(quat_conjugate(quat_normalize(base_rotation)), axis_parent);
             let delta_local = quat_from_axis_angle(axis_local, angle);
             let rotation = quat_mul(base_rotation, delta_local);
 
@@ -347,11 +353,7 @@ fn select_named_joints(
         }
     }
 
-    if out.is_empty() {
-        None
-    } else {
-        Some(out)
-    }
+    if out.is_empty() { None } else { Some(out) }
 }
 
 fn debug_print_selected_joint_influence(
@@ -441,17 +443,13 @@ fn debug_print_selected_joint_influence(
                 let total = totals.get(j).copied().unwrap_or(0.0);
                 println!(
                     "  influence: name='{}' node_index={} skin_joint_index={} total_weight={:.3}",
-                    name,
-                    node_index,
-                    j,
-                    total
+                    name, node_index, j, total
                 );
             }
             None => {
                 println!(
                     "  influence: name='{}' node_index={} skin_joint_index=<none>",
-                    name,
-                    node_index
+                    name, node_index
                 );
             }
         }
@@ -521,11 +519,8 @@ fn select_body_prim0_influencers(
         }
     }
 
-    let mut ranked: Vec<(usize, f32)> = total_weight_per_joint
-        .iter()
-        .copied()
-        .enumerate()
-        .collect();
+    let mut ranked: Vec<(usize, f32)> =
+        total_weight_per_joint.iter().copied().enumerate().collect();
     ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let min_total: f32 = 10.0;
@@ -576,11 +571,7 @@ fn select_body_prim0_influencers(
         out.push((node_index, joint_tx));
     }
 
-    if out.is_empty() {
-        None
-    } else {
-        Some(out)
-    }
+    if out.is_empty() { None } else { Some(out) }
 }
 
 fn find_renderable_by_mesh_key(

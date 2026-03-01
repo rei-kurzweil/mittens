@@ -22,9 +22,9 @@ fn main() {
     let camera3d = universe
         .world
         .register(engine::ecs::component::Camera3DComponent::new());
-    let rig_transform = universe.world.register(
-        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 11.0),
-    );
+    let rig_transform = universe
+        .world
+        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 11.0));
     let input_mode = universe.world.register(
         engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y(),
     );
@@ -90,10 +90,12 @@ fn main() {
             let _ = universe.attach(kf, action_cid);
         }
 
-        let renderable = universe.world.register(RenderableComponent::new(Renderable::new(
-            mesh,
-            MaterialHandle::TOON_MESH,
-        )));
+        let renderable = universe
+            .world
+            .register(RenderableComponent::new(Renderable::new(
+                mesh,
+                MaterialHandle::TOON_MESH,
+            )));
         let color_c = universe
             .world
             .register(ColorComponent::rgba(color[0], color[1], color[2], color[3]));
@@ -111,11 +113,13 @@ fn main() {
                 .with_position(x, y + 0.75, 0.05)
                 .with_scale(0.09, 0.09, 1.0),
         );
-        let text = universe.world.register(TextComponent::with_word_wrap_tokens(
-            label,
-            LABEL_WRAP_AT,
-            ["::", "(", ")", ",", "."],
-        ));
+        let text = universe
+            .world
+            .register(TextComponent::with_word_wrap_tokens(
+                label,
+                LABEL_WRAP_AT,
+                ["::", "(", ")", ",", "."],
+            ));
         let text_color = universe
             .world
             .register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));

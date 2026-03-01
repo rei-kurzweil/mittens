@@ -262,6 +262,7 @@ impl ComponentCodec {
             "camera2d" => Ok(Box::new(Camera2DComponent::new())),
             "camera3d" => Ok(Box::new(Camera3DComponent::new())),
             "camera_xr" => Ok(Box::new(CameraXRComponent::off())),
+            "controller_xr" => Ok(Box::new(ControllerXRComponent::default())),
             "point_light" => Ok(Box::new(PointLightComponent::new())),
             "directional_light" => Ok(Box::new(DirectionalLightComponent::new())),
             "uv" => Ok(Box::new(UVComponent::new())),
