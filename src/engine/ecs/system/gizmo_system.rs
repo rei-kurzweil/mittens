@@ -73,9 +73,16 @@ impl GizmoSystem {
             }
         }
 
+        let gizmo_scale = world
+            .get_component_by_id_as::<GizmoComponent>(component)
+            .map(|g| g.scale)
+            .unwrap_or(1.0);
+
         // Create a root transform for the gizmo visuals under the GizmoComponent node.
-        let gizmo_root =
-            world.add_component_boxed_named("gizmo_root", Box::new(TransformComponent::new()));
+        let gizmo_root = world.add_component_boxed_named(
+            "gizmo_root",
+            Box::new(TransformComponent::new().with_scale(gizmo_scale, gizmo_scale, gizmo_scale)),
+        );
         let _ = world.add_child(component, gizmo_root);
 
         // Wrap all gizmo visuals in an overlay marker so they render in the overlay pass.
@@ -206,7 +213,7 @@ impl GizmoSystem {
             world,
             rot_x_root,
             "gizmo_rot_x_coord",
-            GestureCoordType::ScreenSpace1DSlider,
+            GestureCoordType::WorldPlane,
         );
         let rot_x_pick = spawn_raycastable_root(world, rot_x_coord, "gizmo_rot_x_pick");
         spawn_part(
@@ -226,7 +233,7 @@ impl GizmoSystem {
             world,
             rot_y_root,
             "gizmo_rot_y_coord",
-            GestureCoordType::ScreenSpace1DSlider,
+            GestureCoordType::WorldPlane,
         );
         let rot_y_pick = spawn_raycastable_root(world, rot_y_coord, "gizmo_rot_y_pick");
         spawn_part(
@@ -246,7 +253,7 @@ impl GizmoSystem {
             world,
             rot_z_root,
             "gizmo_rot_z_coord",
-            GestureCoordType::ScreenSpace1DSlider,
+            GestureCoordType::WorldPlane,
         );
         let rot_z_pick = spawn_raycastable_root(world, rot_z_coord, "gizmo_rot_z_pick");
         spawn_part(

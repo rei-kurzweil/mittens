@@ -200,6 +200,11 @@ impl Component for GizmoScaleComponent {
 /// to the TransformComponent it is attached under.
 #[derive(Debug, Clone, Copy)]
 pub struct GizmoComponent {
+    /// Visual scale applied to the gizmo's rendered/interactive subtree.
+    ///
+    /// This scales the gizmo visuals without affecting the target transform.
+    pub scale: f32,
+
     /// Runtime: resolved target TransformComponent id.
     ///
     /// This is bound during `REGISTER_GIZMO` by walking up ancestry and finding the nearest
@@ -227,12 +232,18 @@ impl GizmoComponent {
     /// The target transform is resolved automatically from gizmo ancestry on init.
     pub fn new() -> Self {
         Self {
+            scale: 1.0,
             target_transform: None,
             active_raycaster: None,
             visual_root: None,
             debug_drag_plane_root: None,
             component: None,
         }
+    }
+
+    pub fn with_scale(mut self, scale: f32) -> Self {
+        self.scale = scale;
+        self
     }
 
     /// Back-compat constructor name (gizmos are no longer mode-based).
@@ -260,6 +271,23 @@ impl Component for GizmoComponent {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+
+    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
+        let mut map = std::collections::HashMap::new();
+        map.insert("scale".to_string(), serde_json::json!(self.scale));
+        map
+    }
+
+    fn decode(
+        &mut self,
+        data: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> Result<(), String> {
+        if let Some(v) = data.get("scale") {
+            self.scale = serde_json::from_value(v.clone())
+                .map_err(|e| format!("Failed to decode scale: {e}"))?;
+        }
+        Ok(())
     }
 
     fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {

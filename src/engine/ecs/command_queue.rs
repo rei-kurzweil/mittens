@@ -38,7 +38,7 @@ impl CommandQueue {
     pub fn queue_register_renderable(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_RENDERABLE { component_id },
+            command: Command::RegisterRenderable { component_id },
         });
     }
 
@@ -46,7 +46,7 @@ impl CommandQueue {
     pub fn queue_remove_renderable(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REMOVE_RENDERABLE { component_id },
+            command: Command::RemoveRenderable { component_id },
         });
     }
 
@@ -54,7 +54,7 @@ impl CommandQueue {
     pub fn queue_register_transform(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_TRANSFORM { component_id },
+            command: Command::RegisterTransform { component_id },
         });
     }
 
@@ -66,7 +66,7 @@ impl CommandQueue {
     ) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::UPDATE_TRANSFORM {
+            command: Command::UpdateTransform {
                 component_id,
                 transform,
             },
@@ -77,7 +77,7 @@ impl CommandQueue {
     pub fn queue_register_camera_3d(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_CAMERA_3D { component_id },
+            command: Command::RegisterCamera3d { component_id },
         });
     }
 
@@ -85,7 +85,7 @@ impl CommandQueue {
     pub fn queue_register_camera2d(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_CAMERA2D { component_id },
+            command: Command::RegisterCamera2d { component_id },
         });
     }
 
@@ -93,7 +93,7 @@ impl CommandQueue {
     pub fn queue_make_active_camera(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::MAKE_ACTIVE_CAMERA { component_id },
+            command: Command::MakeActiveCamera { component_id },
         });
     }
 
@@ -101,7 +101,7 @@ impl CommandQueue {
     pub fn queue_register_input(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_INPUT { component_id },
+            command: Command::RegisterInput { component_id },
         });
     }
 
@@ -109,7 +109,7 @@ impl CommandQueue {
     pub fn queue_register_uv(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_UV { component_id },
+            command: Command::RegisterUv { component_id },
         });
     }
 
@@ -117,7 +117,7 @@ impl CommandQueue {
     pub fn queue_register_light(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_LIGHT { component_id },
+            command: Command::RegisterLight { component_id },
         });
     }
 
@@ -125,7 +125,7 @@ impl CommandQueue {
     pub fn queue_register_color(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_COLOR { component_id },
+            command: Command::RegisterColor { component_id },
         });
     }
 
@@ -133,7 +133,7 @@ impl CommandQueue {
     pub fn queue_register_opacity(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_OPACITY { component_id },
+            command: Command::RegisterOpacity { component_id },
         });
     }
 
@@ -144,7 +144,7 @@ impl CommandQueue {
     ) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_TRANSPARENT_CUTOUT { component_id },
+            command: Command::RegisterTransparentCutout { component_id },
         });
     }
 
@@ -155,7 +155,7 @@ impl CommandQueue {
     ) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_BACKGROUND_COLOR { component_id },
+            command: Command::RegisterBackgroundColor { component_id },
         });
     }
 
@@ -163,7 +163,7 @@ impl CommandQueue {
     pub fn queue_register_ambient_light(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_AMBIENT_LIGHT { component_id },
+            command: Command::RegisterAmbientLight { component_id },
         });
     }
 
@@ -171,7 +171,7 @@ impl CommandQueue {
     pub fn queue_register_texture(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_TEXTURE { component_id },
+            command: Command::RegisterTexture { component_id },
         });
     }
 
@@ -182,7 +182,7 @@ impl CommandQueue {
     ) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_TEXTURE_FILTERING { component_id },
+            command: Command::RegisterTextureFiltering { component_id },
         });
     }
 
@@ -190,7 +190,7 @@ impl CommandQueue {
     pub fn queue_register_text(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_TEXT { component_id },
+            command: Command::RegisterText { component_id },
         });
     }
 
@@ -200,7 +200,7 @@ impl CommandQueue {
     pub fn queue_set_text(&mut self, component_id: crate::engine::ecs::ComponentId, text: String) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::SET_TEXT { component_id, text },
+            command: Command::SetText { component_id, text },
         });
     }
 
@@ -208,7 +208,7 @@ impl CommandQueue {
     pub fn queue_register_emissive(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_EMISSIVE { component_id },
+            command: Command::RegisterEmissive { component_id },
         });
     }
 
@@ -219,7 +219,7 @@ impl CommandQueue {
     ) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_LIGHT_QUANTIZATION { component_id },
+            command: Command::RegisterLightQuantization { component_id },
         });
     }
 
@@ -227,7 +227,7 @@ impl CommandQueue {
     pub fn queue_register_collision(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_COLLISION { component_id },
+            command: Command::RegisterCollision { component_id },
         });
     }
 
@@ -238,7 +238,7 @@ impl CommandQueue {
     ) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_KINETIC_RESPONSE { component_id },
+            command: Command::RegisterKineticResponse { component_id },
         });
     }
 
@@ -246,7 +246,7 @@ impl CommandQueue {
     pub fn queue_remove_kinetic_response(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REMOVE_KINETIC_RESPONSE { component_id },
+            command: Command::RemoveKineticResponse { component_id },
         });
     }
 
@@ -254,7 +254,7 @@ impl CommandQueue {
     pub fn queue_remove_collision(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REMOVE_COLLISION { component_id },
+            command: Command::RemoveCollision { component_id },
         });
     }
 
@@ -265,7 +265,7 @@ impl CommandQueue {
     pub fn queue_remove_subtree(&mut self, root: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id: root,
-            command: Command::REMOVE_SUBTREE { root },
+            command: Command::RemoveSubtree { root },
         });
     }
 
@@ -273,7 +273,7 @@ impl CommandQueue {
     pub fn queue_register_openxr(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_OPENXR { component_id },
+            command: Command::RegisterOpenxr { component_id },
         });
     }
 
@@ -281,7 +281,7 @@ impl CommandQueue {
     pub fn queue_register_controller_xr(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_CONTROLLER_XR { component_id },
+            command: Command::RegisterControllerXr { component_id },
         });
     }
 
@@ -289,28 +289,28 @@ impl CommandQueue {
     pub fn queue_register_raycast(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_RAYCAST { component_id },
+            command: Command::RegisterRaycast { component_id },
         });
     }
 
     pub fn queue_register_animation(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_ANIMATION { component_id },
+            command: Command::RegisterAnimation { component_id },
         });
     }
 
     pub fn queue_register_keyframe(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_KEYFRAME { component_id },
+            command: Command::RegisterKeyframe { component_id },
         });
     }
 
     pub fn queue_register_audio_output(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_AUDIO_OUTPUT { component_id },
+            command: Command::RegisterAudioOutput { component_id },
         });
     }
 
@@ -318,7 +318,7 @@ impl CommandQueue {
     pub fn queue_audio_graph_dirty(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::AUDIO_GRAPH_DIRTY { component_id },
+            command: Command::AudioGraphDirty { component_id },
         });
     }
 
@@ -328,7 +328,7 @@ impl CommandQueue {
     ) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_AUDIO_OSCILLATOR { component_id },
+            command: Command::RegisterAudioOscillator { component_id },
         });
     }
 
@@ -338,7 +338,7 @@ impl CommandQueue {
     ) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_AUDIO_BUFFER_SIZE { component_id },
+            command: Command::RegisterAudioBufferSize { component_id },
         });
     }
 
@@ -350,7 +350,7 @@ impl CommandQueue {
     ) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::SCHEDULE_AUDIO_OP {
+            command: Command::ScheduleAudioOp {
                 component_id,
                 beat,
                 op,
@@ -365,7 +365,7 @@ impl CommandQueue {
     ) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::SCHEDULE_AUDIO_GRAPH_SWAP { component_id, beat },
+            command: Command::ScheduleAudioGraphSwap { component_id, beat },
         });
     }
 
@@ -411,7 +411,7 @@ impl CommandQueue {
     pub fn queue_register_clock(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_CLOCK { component_id },
+            command: Command::RegisterClock { component_id },
         });
     }
 
@@ -419,7 +419,7 @@ impl CommandQueue {
     pub fn queue_register_gizmo(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REGISTER_GIZMO { component_id },
+            command: Command::RegisterGizmo { component_id },
         });
     }
 
@@ -427,7 +427,7 @@ impl CommandQueue {
     pub fn queue_remove_raycast(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REMOVE_RAYCAST { component_id },
+            command: Command::RemoveRaycast { component_id },
         });
     }
 
@@ -435,7 +435,7 @@ impl CommandQueue {
     pub fn queue_remove_controller_xr(&mut self, component_id: crate::engine::ecs::ComponentId) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::REMOVE_CONTROLLER_XR { component_id },
+            command: Command::RemoveControllerXr { component_id },
         });
     }
 
@@ -459,64 +459,64 @@ impl CommandQueue {
             let commands = std::mem::take(&mut self.commands);
             for cmd in commands {
                 match cmd.command {
-                    Command::REGISTER_TRANSFORM { component_id } => {
+                    Command::RegisterTransform { component_id } => {
                         systems.transform_changed(world, visuals, component_id);
                     }
-                    Command::UPDATE_TRANSFORM {
+                    Command::UpdateTransform {
                         component_id,
                         transform,
                     } => {
                         systems.update_transform(world, visuals, component_id, transform);
                     }
-                    Command::REMOVE_TRANSFORM { component_id } => {
+                    Command::RemoveTransform { component_id } => {
                         systems.remove_transform(world, visuals, component_id);
                     }
-                    Command::REGISTER_CAMERA_3D { component_id } => {
+                    Command::RegisterCamera3d { component_id } => {
                         systems.register_camera(world, visuals, component_id);
                     }
-                    Command::REGISTER_CAMERA2D { component_id } => {
+                    Command::RegisterCamera2d { component_id } => {
                         systems.register_camera2d(world, visuals, component_id);
                     }
-                    Command::MAKE_ACTIVE_CAMERA { component_id } => {
+                    Command::MakeActiveCamera { component_id } => {
                         systems.make_active_camera(world, visuals, component_id);
                     }
-                    Command::REGISTER_INPUT { component_id } => {
+                    Command::RegisterInput { component_id } => {
                         systems.register_input(component_id);
                     }
-                    Command::REGISTER_RENDERABLE { component_id } => {
+                    Command::RegisterRenderable { component_id } => {
                         systems.register_renderable(world, visuals, component_id);
                     }
-                    Command::REGISTER_UV { component_id } => {
+                    Command::RegisterUv { component_id } => {
                         systems.register_uv(world, visuals, component_id);
                     }
-                    Command::REGISTER_LIGHT { component_id } => {
+                    Command::RegisterLight { component_id } => {
                         systems.register_light(world, visuals, component_id);
                     }
-                    Command::REGISTER_COLOR { component_id } => {
+                    Command::RegisterColor { component_id } => {
                         systems.register_color(world, visuals, component_id);
                     }
-                    Command::REGISTER_OPACITY { component_id } => {
+                    Command::RegisterOpacity { component_id } => {
                         systems.register_opacity(world, visuals, component_id);
                     }
-                    Command::REGISTER_TRANSPARENT_CUTOUT { component_id } => {
+                    Command::RegisterTransparentCutout { component_id } => {
                         systems.register_transparent_cutout(world, visuals, component_id);
                     }
-                    Command::REGISTER_BACKGROUND_COLOR { component_id } => {
+                    Command::RegisterBackgroundColor { component_id } => {
                         systems.register_background_color(world, visuals, component_id);
                     }
-                    Command::REGISTER_AMBIENT_LIGHT { component_id } => {
+                    Command::RegisterAmbientLight { component_id } => {
                         systems.register_ambient_light(world, visuals, component_id);
                     }
-                    Command::REGISTER_TEXTURE { component_id } => {
+                    Command::RegisterTexture { component_id } => {
                         systems.register_texture(world, visuals, component_id);
                     }
-                    Command::REGISTER_TEXTURE_FILTERING { component_id } => {
+                    Command::RegisterTextureFiltering { component_id } => {
                         systems.register_texture_filtering(world, visuals, component_id);
                     }
-                    Command::REGISTER_TEXT { component_id } => {
+                    Command::RegisterText { component_id } => {
                         systems.register_text(world, visuals, component_id, self);
                     }
-                    Command::SET_TEXT { component_id, text } => {
+                    Command::SetText { component_id, text } => {
                         use crate::engine::ecs::component::{
                             RenderableComponent, TextComponent, TransformComponent,
                         };
@@ -578,78 +578,78 @@ impl CommandQueue {
                         // Expand and register the new glyph tree.
                         systems.register_text(world, visuals, component_id, self);
                     }
-                    Command::REGISTER_EMISSIVE { component_id } => {
+                    Command::RegisterEmissive { component_id } => {
                         systems.register_emissive(world, visuals, component_id);
                     }
-                    Command::REGISTER_LIGHT_QUANTIZATION { component_id } => {
+                    Command::RegisterLightQuantization { component_id } => {
                         systems.register_light_quantization(world, visuals, component_id);
                     }
-                    Command::REGISTER_COLLISION { component_id } => {
+                    Command::RegisterCollision { component_id } => {
                         systems.register_collision(world, visuals, component_id);
                     }
-                    Command::REGISTER_KINETIC_RESPONSE { component_id } => {
+                    Command::RegisterKineticResponse { component_id } => {
                         systems.register_kinetic_response(world, visuals, component_id);
                     }
-                    Command::REGISTER_OPENXR { component_id } => {
+                    Command::RegisterOpenxr { component_id } => {
                         systems.register_openxr(world, visuals, component_id);
                     }
-                    Command::REGISTER_CONTROLLER_XR { component_id } => {
+                    Command::RegisterControllerXr { component_id } => {
                         systems.register_controller_xr(world, visuals, component_id);
                     }
-                    Command::REGISTER_RAYCAST { component_id } => {
+                    Command::RegisterRaycast { component_id } => {
                         systems.register_raycast(world, visuals, component_id);
                     }
-                    Command::REGISTER_ANIMATION { component_id } => {
+                    Command::RegisterAnimation { component_id } => {
                         systems.register_animation(world, visuals, component_id);
                     }
-                    Command::REGISTER_KEYFRAME { component_id } => {
+                    Command::RegisterKeyframe { component_id } => {
                         systems.register_keyframe(world, visuals, component_id);
                     }
-                    Command::REGISTER_AUDIO_OUTPUT { component_id } => {
+                    Command::RegisterAudioOutput { component_id } => {
                         systems.register_audio_output(world, visuals, component_id);
                     }
-                    Command::REGISTER_AUDIO_OSCILLATOR { component_id } => {
+                    Command::RegisterAudioOscillator { component_id } => {
                         systems.register_audio_oscillator(world, visuals, component_id);
                     }
-                    Command::REGISTER_AUDIO_BUFFER_SIZE { component_id } => {
+                    Command::RegisterAudioBufferSize { component_id } => {
                         systems.register_audio_buffer_size(world, visuals, component_id);
                     }
 
-                    Command::AUDIO_GRAPH_DIRTY { component_id } => {
+                    Command::AudioGraphDirty { component_id } => {
                         systems.audio_graph_dirty(world, visuals, component_id);
                     }
-                    Command::REGISTER_CLOCK { component_id } => {
+                    Command::RegisterClock { component_id } => {
                         systems.register_clock(world, visuals, component_id);
                     }
-                    Command::REGISTER_GIZMO { component_id } => {
+                    Command::RegisterGizmo { component_id } => {
                         systems.register_gizmo(world, visuals, component_id, self);
                     }
-                    Command::SCHEDULE_AUDIO_OP {
+                    Command::ScheduleAudioOp {
                         component_id,
                         beat,
                         op,
                     } => {
                         systems.audio.schedule_audio_op(component_id, beat, op);
                     }
-                    Command::SCHEDULE_AUDIO_GRAPH_SWAP { component_id, beat } => {
+                    Command::ScheduleAudioGraphSwap { component_id, beat } => {
                         systems.audio.schedule_graph_swap(world, component_id, beat);
                     }
-                    Command::REMOVE_COLLISION { component_id } => {
+                    Command::RemoveCollision { component_id } => {
                         systems.remove_collision(world, visuals, component_id);
                     }
-                    Command::REMOVE_KINETIC_RESPONSE { component_id } => {
+                    Command::RemoveKineticResponse { component_id } => {
                         systems.remove_kinetic_response(world, visuals, component_id);
                     }
-                    Command::REMOVE_RAYCAST { component_id } => {
+                    Command::RemoveRaycast { component_id } => {
                         systems.remove_raycast(world, visuals, component_id);
                     }
-                    Command::REMOVE_CONTROLLER_XR { component_id } => {
+                    Command::RemoveControllerXr { component_id } => {
                         systems.remove_controller_xr(world, visuals, component_id);
                     }
-                    Command::REMOVE_RENDERABLE { component_id: _ } => {
+                    Command::RemoveRenderable { component_id: _ } => {
                         systems.remove_renderable(world, visuals, cmd.component_id);
                     }
-                    Command::REMOVE_SUBTREE { root } => {
+                    Command::RemoveSubtree { root } => {
                         use crate::engine::ecs::component::{
                             CollisionComponent, RayCastComponent, RenderableComponent,
                         };
@@ -692,7 +692,7 @@ impl CommandQueue {
 
                         let _ = world.remove_component_subtree(root);
                     }
-                    Command::REMOVE_CAMERA { component_id: _ } => {
+                    Command::RemoveCamera { component_id: _ } => {
                         // TODO: implement when needed
                     }
                 }
@@ -713,154 +713,154 @@ pub struct ComponentCommand {
 }
 
 enum Command {
-    REGISTER_RENDERABLE {
+    RegisterRenderable {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_TRANSFORM {
+    RegisterTransform {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_INPUT {
+    RegisterInput {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_CAMERA_3D {
+    RegisterCamera3d {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_CAMERA2D {
+    RegisterCamera2d {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_UV {
+    RegisterUv {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_LIGHT {
+    RegisterLight {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_COLOR {
+    RegisterColor {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_OPACITY {
+    RegisterOpacity {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_TRANSPARENT_CUTOUT {
+    RegisterTransparentCutout {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_BACKGROUND_COLOR {
+    RegisterBackgroundColor {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_AMBIENT_LIGHT {
+    RegisterAmbientLight {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_TEXTURE {
+    RegisterTexture {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_TEXTURE_FILTERING {
+    RegisterTextureFiltering {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_TEXT {
+    RegisterText {
         component_id: crate::engine::ecs::ComponentId,
     },
-    SET_TEXT {
+    SetText {
         component_id: crate::engine::ecs::ComponentId,
         text: String,
     },
-    REGISTER_EMISSIVE {
+    RegisterEmissive {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_LIGHT_QUANTIZATION {
+    RegisterLightQuantization {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_COLLISION {
+    RegisterCollision {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_KINETIC_RESPONSE {
+    RegisterKineticResponse {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REGISTER_OPENXR {
-        component_id: crate::engine::ecs::ComponentId,
-    },
-
-    REGISTER_CONTROLLER_XR {
+    RegisterOpenxr {
         component_id: crate::engine::ecs::ComponentId,
     },
 
-    REGISTER_RAYCAST {
+    RegisterControllerXr {
         component_id: crate::engine::ecs::ComponentId,
     },
 
-    REGISTER_ANIMATION {
-        component_id: crate::engine::ecs::ComponentId,
-    },
-    REGISTER_KEYFRAME {
-        component_id: crate::engine::ecs::ComponentId,
-    },
-    REGISTER_AUDIO_OUTPUT {
+    RegisterRaycast {
         component_id: crate::engine::ecs::ComponentId,
     },
 
-    REGISTER_AUDIO_OSCILLATOR {
+    RegisterAnimation {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+    RegisterKeyframe {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+    RegisterAudioOutput {
         component_id: crate::engine::ecs::ComponentId,
     },
 
-    REGISTER_AUDIO_BUFFER_SIZE {
+    RegisterAudioOscillator {
         component_id: crate::engine::ecs::ComponentId,
     },
 
-    AUDIO_GRAPH_DIRTY {
+    RegisterAudioBufferSize {
         component_id: crate::engine::ecs::ComponentId,
     },
 
-    REGISTER_CLOCK {
+    AudioGraphDirty {
         component_id: crate::engine::ecs::ComponentId,
     },
 
-    REGISTER_GIZMO {
+    RegisterClock {
         component_id: crate::engine::ecs::ComponentId,
     },
 
-    SCHEDULE_AUDIO_OP {
+    RegisterGizmo {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+
+    ScheduleAudioOp {
         component_id: crate::engine::ecs::ComponentId,
         beat: f64,
         op: crate::engine::ecs::system::audio_system::AudioOp,
     },
-    SCHEDULE_AUDIO_GRAPH_SWAP {
+    ScheduleAudioGraphSwap {
         component_id: crate::engine::ecs::ComponentId,
         beat: f64,
     },
 
-    REMOVE_RENDERABLE {
+    RemoveRenderable {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REMOVE_TRANSFORM {
+    RemoveTransform {
         component_id: crate::engine::ecs::ComponentId,
     },
-    REMOVE_CAMERA {
-        component_id: crate::engine::ecs::ComponentId,
-    },
-
-    REMOVE_RAYCAST {
+    RemoveCamera {
         component_id: crate::engine::ecs::ComponentId,
     },
 
-    REMOVE_CONTROLLER_XR {
+    RemoveRaycast {
         component_id: crate::engine::ecs::ComponentId,
     },
 
-    REMOVE_COLLISION {
-        component_id: crate::engine::ecs::ComponentId,
-    },
-    REMOVE_KINETIC_RESPONSE {
+    RemoveControllerXr {
         component_id: crate::engine::ecs::ComponentId,
     },
 
-    REMOVE_SUBTREE {
+    RemoveCollision {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+    RemoveKineticResponse {
+        component_id: crate::engine::ecs::ComponentId,
+    },
+
+    RemoveSubtree {
         root: crate::engine::ecs::ComponentId,
     },
 
-    UPDATE_TRANSFORM {
+    UpdateTransform {
         component_id: crate::engine::ecs::ComponentId,
         transform: crate::engine::graphics::primitives::Transform,
     },
 
-    MAKE_ACTIVE_CAMERA {
+    MakeActiveCamera {
         component_id: crate::engine::ecs::ComponentId,
     },
 }

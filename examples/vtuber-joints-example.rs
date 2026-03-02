@@ -262,7 +262,9 @@ fn main() {
     // Attach one gizmo under each selected arm joint transform.
     // (Stop animating joints for now; use gizmos to poke them interactively.)
     for &(_node_index, joint_tx) in selected_joint_transforms.iter() {
-        let gizmo = universe.world.add_component(GizmoComponent::new());
+        let gizmo = universe
+            .world
+            .add_component(GizmoComponent::new().with_scale(0.25));
         let _ = universe.attach(joint_tx, gizmo);
     }
 

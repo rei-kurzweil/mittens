@@ -22,7 +22,7 @@ impl UVComponent {
     ///
     /// - If an inner vec has <2 values, missing values are treated as 0.
     /// - If it has >2 values, extras are ignored.
-    pub fn fromVec(uvs: Vec<Vec<f32>>) -> Self {
+    pub fn from_vec(uvs: Vec<Vec<f32>>) -> Self {
         let mut out: Vec<[f32; 2]> = Vec::with_capacity(uvs.len());
         for uv in uvs {
             let u = uv.get(0).copied().unwrap_or(0.0);
@@ -30,6 +30,12 @@ impl UVComponent {
             out.push([u, v]);
         }
         Self { uvs: out }
+    }
+
+    #[deprecated(note = "Use from_vec")] 
+    #[allow(non_snake_case)]
+    pub fn fromVec(uvs: Vec<Vec<f32>>) -> Self {
+        Self::from_vec(uvs)
     }
 
     pub fn with_uv(mut self, u: f32, v: f32) -> Self {
