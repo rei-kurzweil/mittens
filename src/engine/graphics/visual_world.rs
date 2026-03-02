@@ -106,6 +106,11 @@ pub struct VisualWorld {
     cutout_order: Vec<u32>,
     cutout_batches: Vec<DrawBatch>,
 
+    // Overlay draw data (rebuilt when dirty).
+    // Overlay is drawn on top of all other phases.
+    overlay_order: Vec<u32>,
+    overlay_batches: Vec<DrawBatch>,
+
     // Transparent draw data.
     // - Single-layer: cached (order does not depend on view), instanced.
     transparent_single_draw_order: Vec<u32>,
@@ -125,6 +130,7 @@ pub struct VisualInstance {
     pub transparent_cutout: bool,
     pub background: bool,
     pub background_occluded_lit: bool,
+    pub overlay: bool,
     pub emissive: u32,
     pub texture: Option<crate::engine::graphics::TextureHandle>,
     pub texture_filtering: TextureFiltering,
@@ -206,6 +212,9 @@ impl Default for VisualWorld {
 
             cutout_order: Vec::new(),
             cutout_batches: Vec::new(),
+
+            overlay_order: Vec::new(),
+            overlay_batches: Vec::new(),
 
             transparent_single_draw_order: Vec::new(),
             transparent_single_draw_batches: Vec::new(),
@@ -814,6 +823,15 @@ impl VisualWorld {
         &self.cutout_batches
     }
 
+    /// Indices into `instances()` in the order they should be drawn (overlay pass).
+    pub fn overlay_order(&self) -> &[u32] {
+        &self.overlay_order
+    }
+
+    pub fn overlay_batches(&self) -> &[DrawBatch] {
+        &self.overlay_batches
+    }
+
     /// Indices into `instances()` in the order they should be drawn (single-layer transparent pass).
     pub fn transparent_single_draw_order(&self) -> &[u32] {
         &self.transparent_single_draw_order
@@ -845,10 +863,13 @@ impl VisualWorld {
         self.draw_order.clear();
         self.cutout_order.clear();
         self.transparent_single_draw_order.clear();
+        self.overlay_order.clear();
         // Opaque pass: exclude anything that is transparent.
         for i in 0..self.instances.len() {
             let inst = &self.instances[i];
-            if inst.background {
+            if inst.overlay {
+                self.overlay_order.push(i as u32);
+            } else if inst.background {
                 if inst.background_occluded_lit {
                     self.background_occluded_lit_order.push(i as u32);
                 } else {
@@ -958,6 +979,22 @@ impl VisualWorld {
             &mut self.transparent_single_draw_batches,
         );
 
+        // Overlay pass: batch aggressively (order does not depend on view).
+        self.overlay_order.sort_by_key(|&i| {
+            let inst = self.instances[i as usize];
+            let r = inst.renderable;
+            let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
+            (
+                r.material.0,
+                r.mesh.0,
+                tex,
+                inst.texture_filtering as u8,
+                sanitize_quant_steps(inst.quant_steps).to_bits(),
+            )
+        });
+        let overlay_order = &self.overlay_order;
+        Self::build_draw_batches_for_order(instances, overlay_order, &mut self.overlay_batches);
+
         self.dirty_draw_cache = false;
         true
     }
@@ -974,6 +1011,15 @@ impl VisualWorld {
 
         for i in 0..self.instances.len() {
             let inst = &self.instances[i];
+            if inst.overlay {
+                continue;
+            }
+            if inst.background {
+                continue;
+            }
+            if inst.transparent_cutout {
+                continue;
+            }
             if inst.multiple_layers && Self::is_transparent(inst) {
                 self.transparent_multi_draw_order.push(i as u32);
             }
@@ -1017,6 +1063,7 @@ impl VisualWorld {
         transparent_cutout: bool,
         background: bool,
         background_occluded_lit: bool,
+        overlay: bool,
         emissive: u32,
         texture: Option<crate::engine::graphics::TextureHandle>,
         quant_steps: f32,
@@ -1038,6 +1085,7 @@ impl VisualWorld {
             transparent_cutout,
             background,
             background_occluded_lit,
+            overlay,
             emissive,
             texture,
             texture_filtering: TextureFiltering::default(),
@@ -1246,6 +1294,7 @@ impl VisualWorld {
             let transparent_cutout = self.instances[idx].transparent_cutout;
             let background = self.instances[idx].background;
             let background_occluded_lit = self.instances[idx].background_occluded_lit;
+            let overlay = self.instances[idx].overlay;
             let emissive = self.instances[idx].emissive;
             let texture = self.instances[idx].texture;
             let texture_filtering = self.instances[idx].texture_filtering;
@@ -1261,6 +1310,7 @@ impl VisualWorld {
                 transparent_cutout,
                 background,
                 background_occluded_lit,
+                overlay,
                 emissive,
                 texture,
                 texture_filtering,

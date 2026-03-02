@@ -54,6 +54,14 @@ The phases are ordered to balance correctness and performance:
 	 - The renderer still groups by pipeline/material/mesh/texture for binding efficiency, but
 		 draws each instance one-by-one in sorted order for correct alpha blending.
 
+7. **Overlay** (instanced)
+	 - A separate pass drawn *after* all other phases.
+	 - Intended for gizmos, selection outlines, debug overlays, etc.
+	 - The renderer clears the depth attachment right before the overlay phase so overlay
+	 	 instances draw on top of the scene.
+	 - Overlay is **not** combined with background/opaque/cutout/transparent; it has its own
+	 	 draw lists and batches.
+
 ## How instances get classified
 
 At draw-cache build time, `VisualWorld` partitions instances using instance flags (e.g.
@@ -63,6 +71,7 @@ opacity/color).
 At a high level:
 
 - Background instances go into background draw lists (excluded from foreground lists).
+- Overlay instances go into the overlay draw list (excluded from all other lists).
 - Cutout instances go into the cutout list.
 - Foreground opaque instances go into the opaque list.
 - Foreground transparent instances are split into:

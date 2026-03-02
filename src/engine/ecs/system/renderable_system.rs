@@ -4,6 +4,7 @@ use crate::engine::ecs::component::{
     BackgroundComponent, ColorComponent, EmissiveComponent, LightQuantizationComponent,
     MeshComponent, OpacityComponent, RenderableComponent, TransparentCutoutComponent, UVComponent,
 };
+use crate::engine::ecs::component::OverlayComponent;
 
 use crate::engine::ecs::World;
 use crate::engine::ecs::system::System;
@@ -133,6 +134,21 @@ impl RenderableSystem {
             cur = parent;
         }
         (false, false)
+    }
+
+    fn inherited_overlay_for_renderable(world: &World, renderable_cid: ComponentId) -> bool {
+        // Nearest OverlayComponent ancestor wins.
+        let mut cur = renderable_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if world
+                .get_component_by_id_as::<OverlayComponent>(parent)
+                .is_some()
+            {
+                return true;
+            }
+            cur = parent;
+        }
+        false
     }
 
     fn immediate_color_child(world: &World, node: ComponentId) -> Option<[f32; 4]> {
@@ -1035,6 +1051,8 @@ impl RenderableSystem {
             let (background, background_occluded_lit) =
                 Self::inherited_background_for_renderable(world, p.renderable_cid);
 
+            let overlay = Self::inherited_overlay_for_renderable(world, p.renderable_cid);
+
             let handle = visuals.register(
                 p.renderable_cid,
                 gpu_r,
@@ -1045,6 +1063,7 @@ impl RenderableSystem {
                 transparent_cutout,
                 background,
                 background_occluded_lit,
+                overlay,
                 emissive,
                 None,
                 quant_steps,

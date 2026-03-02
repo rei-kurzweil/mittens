@@ -35,6 +35,7 @@ pub mod light_quantization;
 pub mod mesh;
 pub mod music_note;
 pub mod opacity;
+pub mod overlay;
 pub mod skinned_mesh;
 pub mod transparent_cutout;
 
@@ -94,6 +95,7 @@ pub use light_quantization::LightQuantizationComponent;
 pub(crate) use music_note::NotePitch;
 pub use music_note::{MusicNote, MusicNoteComponent};
 pub use opacity::OpacityComponent;
+pub use overlay::OverlayComponent;
 pub use openxr::OpenXRComponent;
 pub use point_light::PointLightComponent;
 pub use pointer::PointerComponent;

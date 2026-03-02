@@ -249,6 +249,7 @@ impl ComponentCodec {
                     crate::engine::graphics::primitives::MaterialHandle::TOON_MESH,
                 ),
             ))),
+            "overlay" => Ok(Box::new(OverlayComponent::new())),
             "raycast" => Ok(Box::new(RayCastComponent::default())),
             "pointer" => Ok(Box::new(PointerComponent::default())),
             "gesture_coord_type" => Ok(Box::new(GestureCoordTypeComponent::default())),

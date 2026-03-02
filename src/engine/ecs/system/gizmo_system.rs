@@ -33,7 +33,7 @@ impl GizmoSystem {
     ) {
         use crate::engine::ecs::component::{
             GizmoAxis, GizmoComponent, GizmoRotateComponent, GizmoTranslateComponent,
-            TransformComponent,
+            OverlayComponent, TransformComponent,
         };
         use crate::engine::graphics::primitives::CpuMeshHandle;
 
@@ -77,6 +77,13 @@ impl GizmoSystem {
         let gizmo_root =
             world.add_component_boxed_named("gizmo_root", Box::new(TransformComponent::new()));
         let _ = world.add_child(component, gizmo_root);
+
+        // Wrap all gizmo visuals in an overlay marker so they render in the overlay pass.
+        let gizmo_overlay =
+            world.add_component_boxed_named("gizmo_overlay", Box::new(OverlayComponent::new()));
+        let _ = world.add_child(gizmo_root, gizmo_overlay);
+
+        let gizmo_visual_parent = gizmo_overlay;
 
         // Write back visual root.
         if let Some(g) = world.get_component_by_id_as_mut::<GizmoComponent>(component) {
@@ -193,7 +200,8 @@ impl GizmoSystem {
         let ring_scale = [1.4, 1.4, 1.0];
 
         // Rotation rings live under per-axis rotate handle components.
-        let rot_x_root = spawn_rotate_handle_root(world, gizmo_root, GizmoAxis::X, "gizmo_rot_x");
+        let rot_x_root =
+            spawn_rotate_handle_root(world, gizmo_visual_parent, GizmoAxis::X, "gizmo_rot_x");
         let rot_x_coord = spawn_gesture_coord_type_root(
             world,
             rot_x_root,
@@ -212,7 +220,8 @@ impl GizmoSystem {
             red,
         );
 
-        let rot_y_root = spawn_rotate_handle_root(world, gizmo_root, GizmoAxis::Y, "gizmo_rot_y");
+        let rot_y_root =
+            spawn_rotate_handle_root(world, gizmo_visual_parent, GizmoAxis::Y, "gizmo_rot_y");
         let rot_y_coord = spawn_gesture_coord_type_root(
             world,
             rot_y_root,
@@ -231,7 +240,8 @@ impl GizmoSystem {
             green,
         );
 
-        let rot_z_root = spawn_rotate_handle_root(world, gizmo_root, GizmoAxis::Z, "gizmo_rot_z");
+        let rot_z_root =
+            spawn_rotate_handle_root(world, gizmo_visual_parent, GizmoAxis::Z, "gizmo_rot_z");
         let rot_z_coord = spawn_gesture_coord_type_root(
             world,
             rot_z_root,
@@ -260,7 +270,7 @@ impl GizmoSystem {
 
         // Translation arrows live under per-axis translate handle components.
         let move_x_root =
-            spawn_translate_handle_root(world, gizmo_root, GizmoAxis::X, "gizmo_move_x");
+            spawn_translate_handle_root(world, gizmo_visual_parent, GizmoAxis::X, "gizmo_move_x");
         let move_x_pick = spawn_raycastable_root(world, move_x_root, "gizmo_move_x_pick");
         // +X arrow: rotate +Z axis to +X (yaw +90deg).
         let rot_x = [0.0, std::f32::consts::FRAC_PI_2, 0.0];
@@ -286,7 +296,7 @@ impl GizmoSystem {
         );
 
         let move_y_root =
-            spawn_translate_handle_root(world, gizmo_root, GizmoAxis::Y, "gizmo_move_y");
+            spawn_translate_handle_root(world, gizmo_visual_parent, GizmoAxis::Y, "gizmo_move_y");
         let move_y_pick = spawn_raycastable_root(world, move_y_root, "gizmo_move_y_pick");
         // +Y arrow: rotate +Z axis to +Y (pitch -90deg around X).
         let rot_y = [-std::f32::consts::FRAC_PI_2, 0.0, 0.0];
@@ -312,7 +322,7 @@ impl GizmoSystem {
         );
 
         let move_z_root =
-            spawn_translate_handle_root(world, gizmo_root, GizmoAxis::Z, "gizmo_move_z");
+            spawn_translate_handle_root(world, gizmo_visual_parent, GizmoAxis::Z, "gizmo_move_z");
         let move_z_pick = spawn_raycastable_root(world, move_z_root, "gizmo_move_z_pick");
         // +Z arrow: no rotation.
         spawn_part(

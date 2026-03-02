@@ -193,6 +193,33 @@ impl VulkanoState {
         )
     }
 
+    pub(super) fn record_overlay_draws(
+        &mut self,
+        cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
+        visual_world: &VisualWorld,
+        global_set: &Arc<DescriptorSet>,
+        rig_set: &Arc<DescriptorSet>,
+        instance_buffer: &Subbuffer<[InstanceData]>,
+        instance_count: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if instance_count == 0 {
+            return Ok(());
+        }
+
+        self.record_instanced_draws_for_batches(
+            cbb,
+            global_set,
+            rig_set,
+            instance_buffer,
+            instance_count,
+            visual_world.overlay_batches(),
+            // Overlay depth-tests with itself (depth write enabled). Depth gets cleared right
+            // before the overlay phase so it still draws on top of the scene.
+            self.pipeline_toon_mesh.clone(),
+            self.pipeline_skinned_toon_mesh.clone(),
+        )
+    }
+
     pub(super) fn record_transparent_single_draws(
         &mut self,
         cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,

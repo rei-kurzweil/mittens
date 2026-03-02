@@ -264,6 +264,9 @@ mod vulkano_backend {
 
         cached_cutout_instance_buffer: Option<Subbuffer<[InstanceData]>>,
         cached_cutout_instance_count: usize,
+
+        cached_overlay_instance_buffer: Option<Subbuffer<[InstanceData]>>,
+        cached_overlay_instance_count: usize,
         cached_material_sets: HashMap<
             (
                 crate::engine::graphics::MaterialHandle,
@@ -1037,6 +1040,9 @@ mod vulkano_backend {
 
                 cached_cutout_instance_buffer: None,
                 cached_cutout_instance_count: 0,
+
+                cached_overlay_instance_buffer: None,
+                cached_overlay_instance_count: 0,
                 cached_material_sets: HashMap::new(),
 
                 cached_bones_buffers: Vec::new(),
@@ -1577,6 +1583,9 @@ mod vulkano_backend {
             // --- Cutout pass ---
             let cutout_instance_count = visual_world.cutout_order().len();
 
+            // --- Overlay pass ---
+            let overlay_instance_count = visual_world.overlay_order().len();
+
             let need_instance_buffer = instance_data_dirty
                 || draw_cache_rebuilt
                 || self.cached_instance_buffer.is_none()
@@ -1644,6 +1653,21 @@ mod vulkano_backend {
                 )?;
                 self.cached_cutout_instance_count = cutout_instance_count;
                 self.cached_cutout_instance_buffer = buf.clone();
+                buf
+            };
+
+            let need_overlay_instance_buffer = instance_data_dirty
+                || draw_cache_rebuilt
+                || self.cached_overlay_instance_count != overlay_instance_count;
+            let overlay_instance_buffer = if !need_overlay_instance_buffer {
+                self.cached_overlay_instance_buffer.clone()
+            } else {
+                let buf = self.build_instance_buffer_for_order_opt(
+                    &*visual_world,
+                    visual_world.overlay_order(),
+                )?;
+                self.cached_overlay_instance_count = overlay_instance_count;
+                self.cached_overlay_instance_buffer = buf.clone();
                 buf
             };
 
@@ -2045,6 +2069,31 @@ mod vulkano_backend {
                 camera_target,
                 eye,
             )?;
+
+            // Overlay phase: clear depth so overlay draws on top.
+            if overlay_instance_count > 0 {
+                if let Some(overlay_instance_buffer) = overlay_instance_buffer.as_ref() {
+                    // NOTE: `clear_attachments` requires a bound graphics pipeline.
+                    cbb.bind_pipeline_graphics(self.pipeline_toon_mesh.clone())?;
+                    cbb.clear_attachments(
+                        smallvec::smallvec![ClearAttachment::Depth(1.0)],
+                        smallvec::smallvec![ClearRect {
+                            offset: [0, 0],
+                            extent: [extent[0], extent[1]],
+                            array_layers: 0..1,
+                        }],
+                    )?;
+
+                    self.record_overlay_draws(
+                        &mut cbb,
+                        visual_world,
+                        &global_set_fg,
+                        &rig_set,
+                        overlay_instance_buffer,
+                        overlay_instance_count,
+                    )?;
+                }
+            }
 
             cbb.end_rendering()?;
 
