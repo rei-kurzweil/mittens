@@ -2,7 +2,7 @@ use crate::engine::ecs::component::{
     GizmoAxis, GizmoComponent, GizmoRotateComponent, GizmoScaleComponent, GizmoTranslateComponent,
     GestureCoordType, GestureCoordTypeComponent, TransformComponent,
 };
-use crate::engine::ecs::{CommandQueue, ComponentId, EventSignal, RxWorld, SignalValue, World};
+use crate::engine::ecs::{CommandQueue, ComponentId, RxWorld, SignalValue, World};
 use crate::engine::user_input::InputState;
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -557,12 +557,12 @@ impl GizmoSystem {
         // present in the same tick's RxWorld.
         let mut ray_dir_by_pair: HashMap<(ComponentId, ComponentId), [f32; 3]> = HashMap::new();
         for s in rx.signals().iter() {
-            let SignalValue::Event(EventSignal::RayIntersected {
+            let SignalValue::RayIntersected {
                 raycaster,
                 renderable,
                 dir,
                 ..
-            }) = &s.value
+            } = &s.value
             else {
                 continue;
             };
@@ -570,22 +570,19 @@ impl GizmoSystem {
         }
 
         // Snapshot drag events first (avoid borrowing issues while mutating the world).
-        let mut drag_events: Vec<EventSignal> = Vec::new();
+        let mut drag_events: Vec<SignalValue> = Vec::new();
         for s in rx.signals().iter() {
-            let SignalValue::Event(ev) = &s.value else {
-                continue;
-            };
-            match ev {
-                EventSignal::DragStart { .. }
-                | EventSignal::DragMove { .. }
-                | EventSignal::DragEnd { .. } => drag_events.push(ev.clone()),
+            match &s.value {
+                SignalValue::DragStart { .. }
+                | SignalValue::DragMove { .. }
+                | SignalValue::DragEnd { .. } => drag_events.push(s.value.clone()),
                 _ => {}
             }
         }
 
         for ev in drag_events {
             match ev {
-                EventSignal::DragStart {
+                SignalValue::DragStart {
                     raycaster,
                     renderable,
                     hit_point,
@@ -624,7 +621,7 @@ impl GizmoSystem {
                         }
                     }
                 }
-                EventSignal::DragMove {
+                SignalValue::DragMove {
                     raycaster,
                     renderable,
                     delta_world,
@@ -742,7 +739,7 @@ impl GizmoSystem {
                         }
                     }
                 }
-                EventSignal::DragEnd {
+                SignalValue::DragEnd {
                     raycaster,
                     renderable,
                     ..

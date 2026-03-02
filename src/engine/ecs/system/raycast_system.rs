@@ -7,7 +7,7 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
-use crate::engine::ecs::{EventSignal, RxWorld};
+use crate::engine::ecs::{RxWorld, SignalValue};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::{CpuMeshHandle, TransformMatrix};
 use crate::engine::user_input::InputState;
@@ -1037,7 +1037,7 @@ impl RayCastSystem {
                     // subscribe at any ancestor (e.g. a ring root transform).
                     rx.push(
                         hit_cid,
-                        EventSignal::RayIntersected {
+                        SignalValue::RayIntersected {
                             raycaster: rcid,
                             renderable: hit_cid,
                             t,

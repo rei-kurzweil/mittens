@@ -1,316 +1,260 @@
 use crate::engine::ecs::component::{
-    Action, ActionComponent, ActionMethod, AudioOscillatorComponent, ColorComponent,
-    RayCastComponent, RenderableComponent, TextComponent, TransformComponent,
+    AudioBandPassFilterComponent, AudioLowPassFilterComponent, AudioOscillatorComponent,
+    ColorComponent, MusicNoteComponent, RayCastComponent, RenderableComponent, TextComponent,
+    TransformComponent,
 };
-use crate::engine::ecs::component::{AudioBandPassFilterComponent, AudioLowPassFilterComponent};
-use crate::engine::ecs::component::{MusicNote, MusicNoteComponent, NotePitch};
 use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::audio_system::AudioOp;
-use crate::engine::ecs::{CommandQueue, ComponentCodec, ComponentId, EventSignal, RxWorld, World};
+use crate::engine::ecs::{
+    CommandQueue, ComponentCodec, ComponentId, RxWorld, Signal, SignalEmitter, SignalKind,
+    SignalValue, World,
+};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
-use slotmap::KeyData;
 
 #[derive(Debug, Default)]
-pub struct ActionSystem;
+pub struct ActionSystem {
+    handlers_installed: bool,
+}
 
 impl ActionSystem {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
-    pub fn execute_action_component(
-        &mut self,
-        world: &mut World,
-        queue: &mut CommandQueue,
-        rx: &mut RxWorld,
-        action: &ActionComponent,
-    ) {
-        // Legacy callers don't provide beat context; treat "scheduled" offsets as immediate.
-        self.execute(world, queue, rx, 0.0, &action.action);
+    pub fn install_immediate_handlers(&mut self, rx: &mut RxWorld) {
+        if self.handlers_installed {
+            return;
+        }
+        rx.add_global_handler(SignalKind::Action, handle_action_signal);
+        self.handlers_installed = true;
     }
+}
 
-    pub fn execute(
-        &mut self,
-        world: &mut World,
-        queue: &mut CommandQueue,
-        rx: &mut RxWorld,
-        beat_now: f64,
-        action: &Action,
-    ) {
-        let mut executor = crate::engine::ecs::rx::action_executor::ActionExecutor::default();
-        executor.execute(world, queue, rx, beat_now, action);
-    }
+fn handle_action_signal(
+    world: &mut World,
+    queue: &mut CommandQueue,
+    emit: &mut dyn SignalEmitter,
+    env: &Signal,
+) {
+    let beat_now = queue.beat_now();
 
-    pub(crate) fn execute_impl(
-        &mut self,
-        world: &mut World,
-        queue: &mut CommandQueue,
-        rx: &mut RxWorld,
-        beat_now: f64,
-        action: &Action,
-    ) {
-        match &action.method {
-            ActionMethod::Noop => {}
-            ActionMethod::Print => {
-                let _msg = action.params.get(0).and_then(|v| v.as_str()).unwrap_or("");
-                //println!("[ActionSystem] print targets={:?} msg={}", action.target, msg);
+    match &env.value {
+        SignalValue::Noop => {}
+        SignalValue::Print { .. } => {}
+
+        SignalValue::SetColor { target, rgba } => {
+            let mut color_cids = Vec::new();
+            for &t in target.iter() {
+                collect_color_targets(world, t, &mut color_cids);
             }
-            ActionMethod::SetColor => {
-                let Some(rgba) = action.params.get(0).and_then(parse_rgba) else {
-                    println!(
-                        "[ActionSystem] set_color: missing/invalid rgba params={:?}",
-                        action.params
-                    );
-                    return;
-                };
-
-                let mut color_cids = Vec::new();
-                for &target in action.target.iter() {
-                    collect_color_targets(world, target, &mut color_cids);
-                }
-                color_cids.sort();
-
-                for color_cid in color_cids {
-                    if let Some(c) = world.get_component_by_id_as_mut::<ColorComponent>(color_cid) {
-                        c.rgba = rgba;
-                        queue.queue_register_color(color_cid);
-                    }
+            color_cids.sort();
+            for color_cid in color_cids {
+                if let Some(c) = world.get_component_by_id_as_mut::<ColorComponent>(color_cid) {
+                    c.rgba = *rgba;
+                    queue.queue_register_color(color_cid);
                 }
             }
-            ActionMethod::SetText => {
-                let Some(text) = action.params.get(0).and_then(|v| v.as_str()) else {
-                    println!(
-                        "[ActionSystem] set_text: missing/invalid text params={:?}",
-                        action.params
-                    );
-                    return;
-                };
+        }
 
-                let mut text_cids = Vec::new();
-                for &target in action.target.iter() {
-                    collect_text_targets(world, target, &mut text_cids);
-                }
-                text_cids.sort();
-                text_cids.dedup();
+        SignalValue::SetText { target, text } => {
+            let mut text_cids = Vec::new();
+            for &t in target.iter() {
+                collect_text_targets(world, t, &mut text_cids);
+            }
+            text_cids.sort();
+            text_cids.dedup();
+            for text_cid in text_cids {
+                queue.queue_set_text(text_cid, text.clone());
+            }
+        }
 
-                for text_cid in text_cids {
-                    queue.queue_set_text(text_cid, text.to_string());
+        SignalValue::SetPosition { target, position } => {
+            let mut transform_cids = Vec::new();
+            for &t in target.iter() {
+                collect_transform_targets(world, t, &mut transform_cids);
+            }
+            transform_cids.sort();
+            transform_cids.dedup();
+            for transform_cid in transform_cids {
+                if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
+                {
+                    t.set_position(queue, position[0], position[1], position[2]);
                 }
             }
-            ActionMethod::SetPosition => {
-                let Some(pos) = action.params.get(0).and_then(parse_vec3_f32) else {
-                    println!(
-                        "[ActionSystem] set_position: missing/invalid position params={:?}",
-                        action.params
-                    );
-                    return;
-                };
+        }
 
-                let mut transform_cids = Vec::new();
-                for &target in action.target.iter() {
-                    collect_transform_targets(world, target, &mut transform_cids);
-                }
-                transform_cids.sort();
-                transform_cids.dedup();
-
-                for transform_cid in transform_cids {
-                    if let Some(t) =
-                        world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
-                    {
-                        t.set_position(queue, pos[0], pos[1], pos[2]);
-                    }
+        SignalValue::SetTransform {
+            target,
+            translation,
+            rotation_quat_xyzw,
+            scale,
+        } => {
+            let mut transform_cids = Vec::new();
+            for &t in target.iter() {
+                collect_transform_targets(world, t, &mut transform_cids);
+            }
+            transform_cids.sort();
+            transform_cids.dedup();
+            for transform_cid in transform_cids {
+                if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
+                {
+                    t.transform.translation = *translation;
+                    t.transform.rotation = *rotation_quat_xyzw;
+                    t.transform.scale = *scale;
+                    t.transform.recompute_model();
+                    queue.queue_update_transform(transform_cid, t.transform);
                 }
             }
-            ActionMethod::SetTransform => {
-                // Preferred schema: params=[translation vec3, rotation quat vec4, scale vec3]
-                // (all numeric arrays).
-                let Some(translation) = action.params.get(0).and_then(parse_vec3_f32) else {
-                    println!(
-                        "[ActionSystem] set_transform: missing/invalid translation params={:?}",
-                        action.params
-                    );
-                    return;
-                };
-                let Some(rotation) = action.params.get(1).and_then(parse_vec4_f32) else {
-                    println!(
-                        "[ActionSystem] set_transform: missing/invalid rotation params={:?}",
-                        action.params
-                    );
-                    return;
-                };
-                let Some(scale) = action.params.get(2).and_then(parse_vec3_f32) else {
-                    println!(
-                        "[ActionSystem] set_transform: missing/invalid scale params={:?}",
-                        action.params
-                    );
-                    return;
-                };
+        }
 
-                let mut transform_cids = Vec::new();
-                for &target in action.target.iter() {
-                    collect_transform_targets(world, target, &mut transform_cids);
+        SignalValue::Attach { parents, child } => {
+            for &parent in parents.iter() {
+                let old_parent = world.parent_of(*child);
+                if let Err(e) = world.add_child(parent, *child) {
+                    println!("[ActionSystem] attach failed: {e}");
+                    continue;
                 }
-                transform_cids.sort();
-                transform_cids.dedup();
 
-                for transform_cid in transform_cids {
-                    if let Some(t) =
-                        world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
-                    {
-                        t.transform.translation = translation;
-                        t.transform.rotation = rotation;
-                        t.transform.scale = scale;
-                        t.transform.recompute_model();
-                        queue.queue_update_transform(transform_cid, t.transform);
-                    }
+                emit.push(
+                    *child,
+                    SignalValue::ParentChanged {
+                        child: *child,
+                        old_parent,
+                        new_parent: Some(parent),
+                    },
+                );
+
+                if world.is_initialized(parent) {
+                    world.init_component_tree(*child, queue);
                 }
+
+                queue_topology_transform_refresh(world, queue, *child);
+                queue_topology_transform_refresh(world, queue, parent);
+
+                queue.queue_audio_graph_dirty(parent);
+                queue.queue_audio_graph_dirty(*child);
             }
-            ActionMethod::Attach => {
-                let Some(child) = action.params.get(0).and_then(parse_component_id) else {
-                    println!(
-                        "[ActionSystem] attach: missing/invalid child params={:?}",
-                        action.params
-                    );
+        }
+
+        SignalValue::AttachClone {
+            parents,
+            prefab_root,
+        } => {
+            let node = match ComponentCodec::encode_subtree_node(&*world, *prefab_root) {
+                Ok(n) => n,
+                Err(e) => {
+                    println!("[ActionSystem] attach_clone failed: {e}");
                     return;
-                };
-
-                for &parent in action.target.iter() {
-                    let old_parent = world.parent_of(child);
-                    if let Err(e) = world.add_child(parent, child) {
-                        println!("[ActionSystem] attach failed: {e}");
-                        continue;
-                    }
-
-                    rx.push(
-                        child,
-                        EventSignal::ParentChanged {
-                            child,
-                            old_parent,
-                            new_parent: Some(parent),
-                        },
-                    );
-
-                    if world.is_initialized(parent) {
-                        world.init_component_tree(child, queue);
-                    }
-
-                    // Topology changes alter world transform composition. Our TransformSystem is
-                    // event-driven, so explicitly queue a transform refresh on the moved subtree.
-                    queue_topology_transform_refresh(world, queue, child);
-                    queue_topology_transform_refresh(world, queue, parent);
-
-                    // Topology change may affect audio compilation.
-                    queue.queue_audio_graph_dirty(parent);
-                    queue.queue_audio_graph_dirty(child);
                 }
-            }
-            ActionMethod::AttachClone => {
-                let Some(prefab_root) = action.params.get(0).and_then(parse_component_id) else {
-                    println!(
-                        "[ActionSystem] attach_clone: missing/invalid prefab_root params={:?}",
-                        action.params
-                    );
-                    return;
-                };
+            };
 
-                let node = match ComponentCodec::encode_subtree_node(&*world, prefab_root) {
-                    Ok(n) => n,
+            for &parent in parents.iter() {
+                let new_root = match ComponentCodec::decode_subtree_node_with_new_guids(
+                    world,
+                    Some(parent),
+                    &node,
+                ) {
+                    Ok(id) => id,
                     Err(e) => {
                         println!("[ActionSystem] attach_clone failed: {e}");
-                        return;
+                        continue;
                     }
                 };
 
-                for &parent in action.target.iter() {
-                    let new_root = match ComponentCodec::decode_subtree_node_with_new_guids(
-                        world,
-                        Some(parent),
-                        &node,
-                    ) {
-                        Ok(id) => id,
-                        Err(e) => {
-                            println!("[ActionSystem] attach_clone failed: {e}");
-                            continue;
-                        }
-                    };
-
-                    if world.get_component_record(new_root).is_none() {
-                        println!("[ActionSystem] attach_clone: new root missing after decode");
-                        continue;
-                    }
-
-                    if world.is_initialized(parent) {
-                        world.init_component_tree(new_root, queue);
-                    }
-
-                    rx.push(
-                        new_root,
-                        EventSignal::ParentChanged {
-                            child: new_root,
-                            old_parent: None,
-                            new_parent: Some(parent),
-                        },
-                    );
-
-                    // Topology changes alter world transform composition. Our TransformSystem is
-                    // event-driven, so explicitly queue a transform refresh on the moved subtree.
-                    queue_topology_transform_refresh(world, queue, new_root);
-                    queue_topology_transform_refresh(world, queue, parent);
-
-                    // Topology change may affect audio compilation.
-                    queue.queue_audio_graph_dirty(parent);
-                    queue.queue_audio_graph_dirty(new_root);
+                if world.get_component_record(new_root).is_none() {
+                    println!("[ActionSystem] attach_clone: new root missing after decode");
+                    continue;
                 }
-            }
-            ActionMethod::Detach => {
-                for &child in action.target.iter() {
-                    let old_parent = world.parent_of(child);
-                    world.detach_from_parent(child);
 
-                    rx.push(
+                if world.is_initialized(parent) {
+                    world.init_component_tree(new_root, queue);
+                }
+
+                emit.push(
+                    new_root,
+                    SignalValue::ParentChanged {
+                        child: new_root,
+                        old_parent: None,
+                        new_parent: Some(parent),
+                    },
+                );
+
+                queue_topology_transform_refresh(world, queue, new_root);
+                queue_topology_transform_refresh(world, queue, parent);
+
+                queue.queue_audio_graph_dirty(parent);
+                queue.queue_audio_graph_dirty(new_root);
+            }
+        }
+
+        SignalValue::Detach { target } => {
+            for &child in target.iter() {
+                let old_parent = world.parent_of(child);
+                world.detach_from_parent(child);
+
+                emit.push(
+                    child,
+                    SignalValue::ParentChanged {
                         child,
-                        EventSignal::ParentChanged {
-                            child,
-                            old_parent,
-                            new_parent: None,
-                        },
-                    );
+                        old_parent,
+                        new_parent: None,
+                    },
+                );
 
-                    if let Some(p) = old_parent {
-                        queue.queue_audio_graph_dirty(p);
-                    }
+                if let Some(p) = old_parent {
+                    queue.queue_audio_graph_dirty(p);
+                }
 
-                    queue_topology_transform_refresh(world, queue, child);
-                    if let Some(p) = old_parent {
-                        queue_topology_transform_refresh(world, queue, p);
-                    }
+                queue_topology_transform_refresh(world, queue, child);
+                if let Some(p) = old_parent {
+                    queue_topology_transform_refresh(world, queue, p);
                 }
             }
-            ActionMethod::RemoveChild => {
-                let Some(index) = action.params.get(0).and_then(parse_usize) else {
-                    println!(
-                        "[ActionSystem] remove_child: missing/invalid index params={:?}",
-                        action.params
-                    );
-                    return;
+        }
+
+        SignalValue::RemoveChild { parents, index } => {
+            for &parent in parents.iter() {
+                let child = world.children_of(parent).get(*index).copied();
+                let Some(child) = child else {
+                    continue;
                 };
 
-                for &parent in action.target.iter() {
-                    let child = world.children_of(parent).get(index).copied();
-                    let Some(child) = child else {
-                        // No-op when index is out of range (common when a parent has only marker children).
-                        continue;
-                    };
+                queue.queue_audio_graph_dirty(child);
+                queue.queue_audio_graph_dirty(parent);
 
+                world.detach_from_parent(child);
+
+                emit.push(
+                    child,
+                    SignalValue::ParentChanged {
+                        child,
+                        old_parent: Some(parent),
+                        new_parent: None,
+                    },
+                );
+
+                queue.queue_remove_subtree(child);
+
+                queue_topology_transform_refresh(world, queue, parent);
+            }
+        }
+
+        SignalValue::RemoveChildren { parents } => {
+            for &parent in parents.iter() {
+                let children: Vec<ComponentId> = world.children_of(parent).to_vec();
+                if children.is_empty() {
+                    continue;
+                }
+
+                queue.queue_audio_graph_dirty(parent);
+                for child in children {
                     queue.queue_audio_graph_dirty(child);
-                    queue.queue_audio_graph_dirty(parent);
-
                     world.detach_from_parent(child);
 
-                    rx.push(
+                    emit.push(
                         child,
-                        EventSignal::ParentChanged {
+                        SignalValue::ParentChanged {
                             child,
                             old_parent: Some(parent),
                             new_parent: None,
@@ -318,372 +262,247 @@ impl ActionSystem {
                     );
 
                     queue.queue_remove_subtree(child);
-
-                    queue_topology_transform_refresh(world, queue, parent);
-                }
-            }
-            ActionMethod::RemoveChildren => {
-                for &parent in action.target.iter() {
-                    let children: Vec<ComponentId> = world.children_of(parent).to_vec();
-                    if children.is_empty() {
-                        continue;
-                    }
-
-                    queue.queue_audio_graph_dirty(parent);
-                    for child in children {
-                        queue.queue_audio_graph_dirty(child);
-                        world.detach_from_parent(child);
-
-                        rx.push(
-                            child,
-                            EventSignal::ParentChanged {
-                                child,
-                                old_parent: Some(parent),
-                                new_parent: None,
-                            },
-                        );
-
-                        queue.queue_remove_subtree(child);
-                    }
-
-                    queue_topology_transform_refresh(world, queue, parent);
-                }
-            }
-            ActionMethod::RemoveSubtree => {
-                for &root in action.target.iter() {
-                    // Topology change may affect audio compilation. Mark before removal so we
-                    // can still walk to an AudioOutput ancestor.
-                    queue.queue_audio_graph_dirty(root);
-                    queue.queue_remove_subtree(root);
-                }
-            }
-            ActionMethod::AudioGraphRebuild => {
-                // Mark graphs dirty; AudioSystem will batch recompile + schedule a graph swap
-                // once after CommandQueue flush for this frame.
-                for &target in action.target.iter() {
-                    queue.queue_audio_graph_dirty(target);
-                }
-            }
-            ActionMethod::Raycast => {
-                // Request a cast this frame on all RayCastComponents addressed by the target.
-                // Common usage is `Action::raycast(raycaster_id)`.
-                let mut raycast_cids = Vec::new();
-                for &target in action.target.iter() {
-                    collect_raycast_targets(world, target, &mut raycast_cids);
-                }
-                raycast_cids.sort();
-                raycast_cids.dedup();
-
-                for rcid in raycast_cids {
-                    if let Some(rc) = world.get_component_by_id_as_mut::<RayCastComponent>(rcid) {
-                        rc.cast_requests = rc.cast_requests.saturating_add(1);
-                    }
                 }
 
-                // No CommandQueue interaction needed; RayCastSystem runs later in the frame.
-                let _ = (queue, rx, beat_now);
-            }
-            ActionMethod::AudioLowPassSetCutoffHz => {
-                let Some(cutoff_hz) = action.params.get(0).and_then(parse_f32) else {
-                    println!(
-                        "[ActionSystem] audio_low_pass_set_cutoff_hz: missing/invalid cutoff_hz params={:?}",
-                        action.params
-                    );
-                    return;
-                };
-
-                for &target in action.target.iter() {
-                    if let Some(c) =
-                        world.get_component_by_id_as_mut::<AudioLowPassFilterComponent>(target)
-                    {
-                        c.cutoff_hz = if cutoff_hz.is_finite() {
-                            cutoff_hz.max(0.0)
-                        } else {
-                            c.cutoff_hz
-                        };
-
-                        // Cutoff changes don't require rebuilding the entire graph; update the
-                        // compiled RT node in-place at the current beat.
-                        queue.queue_schedule_audio_op(
-                            target,
-                            beat_now,
-                            AudioOp::SetLowPassCutoffHz(c.cutoff_hz),
-                        );
-                    }
-                }
-            }
-            ActionMethod::AudioBandPassSetCenterHz => {
-                let Some(center_hz) = action.params.get(0).and_then(parse_f32) else {
-                    println!(
-                        "[ActionSystem] audio_band_pass_set_center_hz: missing/invalid center_hz params={:?}",
-                        action.params
-                    );
-                    return;
-                };
-
-                for &target in action.target.iter() {
-                    if let Some(c) =
-                        world.get_component_by_id_as_mut::<AudioBandPassFilterComponent>(target)
-                    {
-                        c.center_hz = if center_hz.is_finite() {
-                            center_hz.max(0.0)
-                        } else {
-                            c.center_hz
-                        };
-
-                        queue.queue_schedule_audio_op(
-                            target,
-                            beat_now,
-                            AudioOp::SetBandPassCenterHz(c.center_hz),
-                        );
-                    }
-                }
-            }
-            ActionMethod::OscillatorSetEnabled => {
-                let Some(enabled) = action.params.get(0).and_then(parse_bool) else {
-                    println!(
-                        "[ActionSystem] oscillator_set_enabled: missing/invalid enabled params={:?}",
-                        action.params
-                    );
-                    return;
-                };
-
-                let mut osc_cids = Vec::new();
-                for &target in action.target.iter() {
-                    collect_oscillator_targets(world, target, &mut osc_cids);
-                }
-                osc_cids.sort();
-                osc_cids.dedup();
-
-                for osc_cid in osc_cids {
-                    if let Some(c) =
-                        world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
-                    {
-                        for osc in c.oscillators.iter_mut() {
-                            osc.enabled = enabled;
-                        }
-                        queue.queue_register_audio_oscillator(osc_cid);
-                    }
-                }
-            }
-            ActionMethod::OscillatorSetPitch => {
-                let Some(frequency_hz) = action.params.get(0).and_then(parse_f32) else {
-                    println!(
-                        "[ActionSystem] oscillator_set_pitch: missing/invalid frequency params={:?}",
-                        action.params
-                    );
-                    return;
-                };
-                if !frequency_hz.is_finite() {
-                    println!(
-                        "[ActionSystem] oscillator_set_pitch: non-finite frequency_hz={frequency_hz}"
-                    );
-                    return;
-                }
-
-                let mut osc_cids = Vec::new();
-                for &target in action.target.iter() {
-                    collect_oscillator_targets(world, target, &mut osc_cids);
-                }
-                osc_cids.sort();
-                osc_cids.dedup();
-
-                for osc_cid in osc_cids {
-                    if let Some(c) =
-                        world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
-                    {
-                        for osc in c.oscillators.iter_mut() {
-                            osc.frequency = frequency_hz;
-                            osc.music_note_applied = true;
-                        }
-                        queue.queue_register_audio_oscillator(osc_cid);
-                    }
-                }
-            }
-            ActionMethod::OscillatorScheduleSetPitch => {
-                let Some(beat_offset) = action.params.get(0).and_then(parse_f64) else {
-                    println!(
-                        "[ActionSystem] oscillator_schedule_set_pitch: missing/invalid beat params={:?}",
-                        action.params
-                    );
-                    return;
-                };
-                let Some(frequency_hz) = action.params.get(1).and_then(parse_f32) else {
-                    println!(
-                        "[ActionSystem] oscillator_schedule_set_pitch: missing/invalid frequency params={:?}",
-                        action.params
-                    );
-                    return;
-                };
-
-                let beat = beat_now + beat_offset;
-
-                let mut osc_cids = Vec::new();
-                for &target in action.target.iter() {
-                    collect_oscillator_targets(world, target, &mut osc_cids);
-                }
-                osc_cids.sort();
-                osc_cids.dedup();
-
-                for osc_cid in osc_cids {
-                    queue.queue_schedule_audio_pitch_set_hz(osc_cid, beat, frequency_hz);
-                }
-            }
-            ActionMethod::OscillatorScheduleSetNote => {
-                let Some(beat_offset) = action.params.get(0).and_then(parse_f64) else {
-                    println!(
-                        "[ActionSystem] oscillator_schedule_set_note: missing/invalid beat params={:?}",
-                        action.params
-                    );
-                    return;
-                };
-                let Some(pitch) = action.params.get(1).and_then(parse_pitch) else {
-                    println!(
-                        "[ActionSystem] oscillator_schedule_set_note: missing/invalid pitch params={:?}",
-                        action.params
-                    );
-                    return;
-                };
-                let Some(octave) = action.params.get(2).and_then(parse_u16) else {
-                    println!(
-                        "[ActionSystem] oscillator_schedule_set_note: missing/invalid octave params={:?}",
-                        action.params
-                    );
-                    return;
-                };
-
-                let duration_beats = action
-                    .params
-                    .get(3)
-                    .and_then(parse_f32)
-                    .unwrap_or(0.25)
-                    .max(0.0) as f64;
-
-                let beat = beat_now + beat_offset;
-
-                let note = MusicNote::from_pitch(duration_beats as f32, pitch, octave);
-                let frequency_hz = MusicSystem::frequency_hz_for_note(note);
-
-                let mut osc_cids = Vec::new();
-                for &target in action.target.iter() {
-                    collect_oscillator_targets(world, target, &mut osc_cids);
-                }
-                osc_cids.sort();
-                osc_cids.dedup();
-
-                for osc_cid in osc_cids {
-                    queue.queue_schedule_audio_oscillator_enabled(osc_cid, beat, true);
-                    queue.queue_schedule_audio_pitch_set_hz(osc_cid, beat, frequency_hz);
-
-                    if duration_beats.is_finite() && duration_beats > 0.0 {
-                        queue.queue_schedule_audio_oscillator_enabled(
-                            osc_cid,
-                            beat + duration_beats,
-                            false,
-                        );
-                    }
-                }
-            }
-            ActionMethod::OscillatorScheduleMusicNote => {
-                let Some(beat_offset) = action.params.get(0).and_then(parse_f64) else {
-                    println!(
-                        "[ActionSystem] oscillator_schedule_music_note: missing/invalid beat params={:?}",
-                        action.params
-                    );
-                    return;
-                };
-
-                let Some(note) = action.params.get(1).and_then(parse_music_note) else {
-                    println!(
-                        "[ActionSystem] oscillator_schedule_music_note: missing/invalid note params={:?}",
-                        action.params
-                    );
-                    return;
-                };
-
-                // Velocity is part of MusicNote.
-                let velocity = note.velocity();
-                let velocity = if velocity.is_finite() {
-                    velocity.max(0.0)
-                } else {
-                    1.0
-                };
-
-                let frequency_hz = MusicSystem::frequency_hz_for_note(note);
-                let duration_beats = note.duration_beats() as f64;
-
-                let beat = beat_now + beat_offset;
-
-                let mut osc_cids = Vec::new();
-                for &target in action.target.iter() {
-                    collect_oscillator_targets(world, target, &mut osc_cids);
-                }
-                osc_cids.sort();
-                osc_cids.dedup();
-
-                for osc_cid in osc_cids {
-                    queue.queue_schedule_audio_oscillator_enabled(osc_cid, beat, true);
-                    queue.queue_schedule_audio_pitch_set_hz(osc_cid, beat, frequency_hz);
-                    queue.queue_schedule_audio_gain_set(osc_cid, beat, velocity);
-
-                    if duration_beats.is_finite() && duration_beats > 0.0 {
-                        queue.queue_schedule_audio_oscillator_enabled(
-                            osc_cid,
-                            beat + duration_beats,
-                            false,
-                        );
-
-                        // Reset gain after note-off for predictable one-shot behavior.
-                        queue.queue_schedule_audio_gain_set(osc_cid, beat + duration_beats, 1.0);
-                    }
-                }
-            }
-            ActionMethod::MusicSetNote => {
-                let Some(note) = action.params.get(0).and_then(parse_music_note) else {
-                    println!(
-                        "[ActionSystem] music_set_note: missing/invalid note params={:?}",
-                        action.params
-                    );
-                    return;
-                };
-
-                let mut osc_cids = Vec::new();
-                for &target in action.target.iter() {
-                    collect_oscillator_targets(world, target, &mut osc_cids);
-                }
-                osc_cids.sort();
-                osc_cids.dedup();
-
-                for osc_cid in osc_cids {
-                    // 1) Update note component under this oscillator (if present).
-                    if let Some(note_cid) = find_first_music_note_component(world, osc_cid) {
-                        if let Some(nc) =
-                            world.get_component_by_id_as_mut::<MusicNoteComponent>(note_cid)
-                        {
-                            nc.note = note;
-                        }
-                    }
-
-                    // 2) Apply computed frequency to oscillator(s).
-                    let freq = MusicSystem::frequency_hz_for_note(note);
-                    if let Some(c) =
-                        world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
-                    {
-                        for osc in c.oscillators.iter_mut() {
-                            osc.frequency = freq;
-                            osc.music_note_applied = true;
-                        }
-                        queue.queue_register_audio_oscillator(osc_cid);
-                    }
-                }
-            }
-            ActionMethod::CommandQueue { command_name } => {
-                println!(
-                    "[ActionSystem] command_queue '{}' targets={:?} params={:?}",
-                    command_name, action.target, action.params
-                );
+                queue_topology_transform_refresh(world, queue, parent);
             }
         }
+
+        SignalValue::RemoveSubtree { target } => {
+            for &root in target.iter() {
+                queue.queue_audio_graph_dirty(root);
+                queue.queue_remove_subtree(root);
+            }
+        }
+
+        SignalValue::AudioGraphRebuild { target } => {
+            for &t in target.iter() {
+                queue.queue_audio_graph_dirty(t);
+            }
+        }
+
+        SignalValue::RequestRaycast { target } => {
+            let mut raycast_cids = Vec::new();
+            for &t in target.iter() {
+                collect_raycast_targets(world, t, &mut raycast_cids);
+            }
+            raycast_cids.sort();
+            raycast_cids.dedup();
+
+            for rcid in raycast_cids {
+                if let Some(rc) = world.get_component_by_id_as_mut::<RayCastComponent>(rcid) {
+                    rc.cast_requests = rc.cast_requests.saturating_add(1);
+                }
+            }
+        }
+
+        SignalValue::AudioLowPassSetCutoffHz { target, cutoff_hz } => {
+            for &t in target.iter() {
+                if let Some(c) = world.get_component_by_id_as_mut::<AudioLowPassFilterComponent>(t)
+                {
+                    c.cutoff_hz = if cutoff_hz.is_finite() {
+                        cutoff_hz.max(0.0)
+                    } else {
+                        c.cutoff_hz
+                    };
+                    queue.queue_schedule_audio_op(t, beat_now, AudioOp::SetLowPassCutoffHz(c.cutoff_hz));
+                }
+            }
+        }
+
+        SignalValue::AudioBandPassSetCenterHz { target, center_hz } => {
+            for &t in target.iter() {
+                if let Some(c) = world.get_component_by_id_as_mut::<AudioBandPassFilterComponent>(t)
+                {
+                    c.center_hz = if center_hz.is_finite() {
+                        center_hz.max(0.0)
+                    } else {
+                        c.center_hz
+                    };
+                    queue.queue_schedule_audio_op(
+                        t,
+                        beat_now,
+                        AudioOp::SetBandPassCenterHz(c.center_hz),
+                    );
+                }
+            }
+        }
+
+        SignalValue::OscillatorSetEnabled { target, enabled } => {
+            let mut osc_cids = Vec::new();
+            for &t in target.iter() {
+                collect_oscillator_targets(world, t, &mut osc_cids);
+            }
+            osc_cids.sort();
+            osc_cids.dedup();
+            for osc_cid in osc_cids {
+                if let Some(c) = world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
+                {
+                    for osc in c.oscillators.iter_mut() {
+                        osc.enabled = *enabled;
+                    }
+                    queue.queue_register_audio_oscillator(osc_cid);
+                }
+            }
+        }
+
+        SignalValue::OscillatorSetPitch {
+            target,
+            frequency_hz,
+        } => {
+            if !frequency_hz.is_finite() {
+                println!("[ActionSystem] oscillator_set_pitch: non-finite frequency_hz={frequency_hz}");
+                return;
+            }
+
+            let mut osc_cids = Vec::new();
+            for &t in target.iter() {
+                collect_oscillator_targets(world, t, &mut osc_cids);
+            }
+            osc_cids.sort();
+            osc_cids.dedup();
+            for osc_cid in osc_cids {
+                if let Some(c) = world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
+                {
+                    for osc in c.oscillators.iter_mut() {
+                        osc.frequency = *frequency_hz;
+                        osc.music_note_applied = true;
+                    }
+                    queue.queue_register_audio_oscillator(osc_cid);
+                }
+            }
+        }
+
+        SignalValue::OscillatorScheduleSetPitch {
+            target,
+            beat_offset,
+            beat_context,
+            frequency_hz,
+        } => {
+            let beat = beat_context.unwrap_or(beat_now) + *beat_offset;
+
+            let mut osc_cids = Vec::new();
+            for &t in target.iter() {
+                collect_oscillator_targets(world, t, &mut osc_cids);
+            }
+            osc_cids.sort();
+            osc_cids.dedup();
+            for osc_cid in osc_cids {
+                queue.queue_schedule_audio_pitch_set_hz(osc_cid, beat, *frequency_hz);
+            }
+        }
+
+        SignalValue::OscillatorScheduleSetNote {
+            target,
+            beat_offset,
+            beat_context,
+            pitch,
+            octave,
+            duration_beats,
+        } => {
+            let duration_beats = (*duration_beats).max(0.0) as f64;
+            let beat = beat_context.unwrap_or(beat_now) + *beat_offset;
+
+            let note = crate::engine::ecs::component::MusicNote::from_pitch(
+                duration_beats as f32,
+                *pitch,
+                *octave,
+            );
+            let frequency_hz = MusicSystem::frequency_hz_for_note(note);
+
+            let mut osc_cids = Vec::new();
+            for &t in target.iter() {
+                collect_oscillator_targets(world, t, &mut osc_cids);
+            }
+            osc_cids.sort();
+            osc_cids.dedup();
+            for osc_cid in osc_cids {
+                queue.queue_schedule_audio_oscillator_enabled(osc_cid, beat, true);
+                queue.queue_schedule_audio_pitch_set_hz(osc_cid, beat, frequency_hz);
+                if duration_beats.is_finite() && duration_beats > 0.0 {
+                    queue.queue_schedule_audio_oscillator_enabled(
+                        osc_cid,
+                        beat + duration_beats,
+                        false,
+                    );
+                }
+            }
+        }
+
+        SignalValue::OscillatorScheduleMusicNote {
+            target,
+            beat_offset,
+            beat_context,
+            note,
+        } => {
+            let velocity = note.velocity();
+            let velocity = if velocity.is_finite() { velocity.max(0.0) } else { 1.0 };
+
+            let frequency_hz = MusicSystem::frequency_hz_for_note(*note);
+            let duration_beats = note.duration_beats() as f64;
+            let beat = beat_context.unwrap_or(beat_now) + *beat_offset;
+
+            let mut osc_cids = Vec::new();
+            for &t in target.iter() {
+                collect_oscillator_targets(world, t, &mut osc_cids);
+            }
+            osc_cids.sort();
+            osc_cids.dedup();
+            for osc_cid in osc_cids {
+                queue.queue_schedule_audio_oscillator_enabled(osc_cid, beat, true);
+                queue.queue_schedule_audio_pitch_set_hz(osc_cid, beat, frequency_hz);
+                queue.queue_schedule_audio_gain_set(osc_cid, beat, velocity);
+
+                if duration_beats.is_finite() && duration_beats > 0.0 {
+                    queue.queue_schedule_audio_oscillator_enabled(
+                        osc_cid,
+                        beat + duration_beats,
+                        false,
+                    );
+                    queue.queue_schedule_audio_gain_set(osc_cid, beat + duration_beats, 1.0);
+                }
+            }
+        }
+
+        SignalValue::MusicSetNote { target, note } => {
+            let mut osc_cids = Vec::new();
+            for &t in target.iter() {
+                collect_oscillator_targets(world, t, &mut osc_cids);
+            }
+            osc_cids.sort();
+            osc_cids.dedup();
+            for osc_cid in osc_cids {
+                if let Some(note_cid) = find_first_music_note_component(world, osc_cid) {
+                    if let Some(nc) = world.get_component_by_id_as_mut::<MusicNoteComponent>(note_cid)
+                    {
+                        nc.note = *note;
+                    }
+                }
+
+                let freq = MusicSystem::frequency_hz_for_note(*note);
+                if let Some(c) = world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
+                {
+                    for osc in c.oscillators.iter_mut() {
+                        osc.frequency = freq;
+                        osc.music_note_applied = true;
+                    }
+                    queue.queue_register_audio_oscillator(osc_cid);
+                }
+            }
+        }
+
+        SignalValue::CommandQueue {
+            target,
+            command_name,
+            params,
+        } => {
+            println!(
+                "[ActionSystem] command_queue '{}' targets={:?} params={:?}",
+                command_name, target, params
+            );
+        }
+
+        _ => {}
     }
 }
 
@@ -710,35 +529,6 @@ fn collect_raycast_targets(world: &World, target: ComponentId, out: &mut Vec<Com
             stack.push(ch);
         }
     }
-}
-
-fn parse_vec3_f32(v: &serde_json::Value) -> Option<[f32; 3]> {
-    let arr = v.as_array()?;
-    if arr.len() != 3 {
-        return None;
-    }
-    let x = arr[0].as_f64()? as f32;
-    let y = arr[1].as_f64()? as f32;
-    let z = arr[2].as_f64()? as f32;
-    if !(x.is_finite() && y.is_finite() && z.is_finite()) {
-        return None;
-    }
-    Some([x, y, z])
-}
-
-fn parse_vec4_f32(v: &serde_json::Value) -> Option<[f32; 4]> {
-    let arr = v.as_array()?;
-    if arr.len() != 4 {
-        return None;
-    }
-    let x = arr[0].as_f64()? as f32;
-    let y = arr[1].as_f64()? as f32;
-    let z = arr[2].as_f64()? as f32;
-    let w = arr[3].as_f64()? as f32;
-    if !(x.is_finite() && y.is_finite() && z.is_finite() && w.is_finite()) {
-        return None;
-    }
-    Some([x, y, z, w])
 }
 
 fn collect_transform_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {
@@ -793,109 +583,8 @@ impl crate::engine::ecs::system::System for ActionSystem {
         _input: &InputState,
         _dt_sec: f32,
     ) {
-        // Event-driven: executed by AnimationSystem when keyframes fire.
+        // Signal-driven: actions are executed via RxWorld handlers.
     }
-}
-
-fn parse_rgba(v: &serde_json::Value) -> Option<[f32; 4]> {
-    // Accept either a JSON array [r,g,b,a] or object {r,g,b,a} in the future.
-    let arr = v.as_array()?;
-    if arr.len() != 4 {
-        return None;
-    }
-    let mut rgba = [0.0; 4];
-    for i in 0..4 {
-        rgba[i] = arr[i].as_f64()? as f32;
-    }
-    Some(rgba)
-}
-
-fn parse_bool(v: &serde_json::Value) -> Option<bool> {
-    if let Some(b) = v.as_bool() {
-        return Some(b);
-    }
-    if let Some(i) = v.as_i64() {
-        return Some(i != 0);
-    }
-    if let Some(f) = v.as_f64() {
-        return Some(f != 0.0);
-    }
-    None
-}
-
-fn parse_f32(v: &serde_json::Value) -> Option<f32> {
-    if let Some(f) = v.as_f64() {
-        return Some(f as f32);
-    }
-    if let Some(i) = v.as_i64() {
-        return Some(i as f32);
-    }
-    if let Some(u) = v.as_u64() {
-        return Some(u as f32);
-    }
-    None
-}
-
-fn parse_component_id(v: &serde_json::Value) -> Option<ComponentId> {
-    let ffi = if let Some(u) = v.as_u64() {
-        u
-    } else if let Some(i) = v.as_i64() {
-        u64::try_from(i).ok()?
-    } else {
-        return None;
-    };
-    Some(KeyData::from_ffi(ffi).into())
-}
-
-fn parse_f64(v: &serde_json::Value) -> Option<f64> {
-    if let Some(f) = v.as_f64() {
-        return Some(f);
-    }
-    if let Some(i) = v.as_i64() {
-        return Some(i as f64);
-    }
-    if let Some(u) = v.as_u64() {
-        return Some(u as f64);
-    }
-    None
-}
-
-fn parse_u16(v: &serde_json::Value) -> Option<u16> {
-    if let Some(u) = v.as_u64() {
-        return u16::try_from(u).ok();
-    }
-    if let Some(i) = v.as_i64() {
-        return u16::try_from(i).ok();
-    }
-    if let Some(f) = v.as_f64() {
-        if f.is_finite() && f >= 0.0 {
-            return u16::try_from(f as u64).ok();
-        }
-    }
-    None
-}
-
-fn parse_usize(v: &serde_json::Value) -> Option<usize> {
-    if let Some(u) = v.as_u64() {
-        return usize::try_from(u).ok();
-    }
-    if let Some(i) = v.as_i64() {
-        return usize::try_from(i).ok();
-    }
-    if let Some(f) = v.as_f64() {
-        if f.is_finite() && f >= 0.0 {
-            return usize::try_from(f as u64).ok();
-        }
-    }
-    None
-}
-
-fn parse_pitch(v: &serde_json::Value) -> Option<NotePitch> {
-    serde_json::from_value::<NotePitch>(v.clone()).ok()
-}
-
-fn parse_music_note(v: &serde_json::Value) -> Option<MusicNote> {
-    serde_json::from_value::<MusicNote>(v.clone()).ok()
 }
 
 fn find_first_music_note_component(world: &World, target: ComponentId) -> Option<ComponentId> {

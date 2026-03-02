@@ -99,7 +99,7 @@ impl Universe {
 
         self.systems.rx.push(
             child,
-            ecs::EventSignal::ParentChanged {
+            ecs::SignalValue::ParentChanged {
                 child,
                 old_parent,
                 new_parent: Some(parent),
@@ -138,7 +138,7 @@ impl Universe {
 
         self.systems.rx.push(
             child,
-            ecs::EventSignal::ParentChanged {
+            ecs::SignalValue::ParentChanged {
                 child,
                 old_parent: Some(parent),
                 new_parent: None,
@@ -170,7 +170,7 @@ impl Universe {
 
             self.systems.rx.push(
                 child,
-                ecs::EventSignal::ParentChanged {
+                ecs::SignalValue::ParentChanged {
                     child,
                     old_parent: Some(parent),
                     new_parent: None,
@@ -213,7 +213,7 @@ impl Universe {
 
         self.systems.rx.push(
             new_root,
-            ecs::EventSignal::ParentChanged {
+            ecs::SignalValue::ParentChanged {
                 child: new_root,
                 old_parent: None,
                 new_parent: Some(parent),

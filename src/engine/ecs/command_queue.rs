@@ -6,13 +6,32 @@
 
 pub struct CommandQueue {
     commands: Vec<ComponentCommand>,
+
+    // Per-frame transport context.
+    frame_beat_now: f64,
+    frame_bpm: f64,
 }
 
 impl CommandQueue {
     pub fn new() -> Self {
         Self {
             commands: Vec::new(),
+            frame_beat_now: 0.0,
+            frame_bpm: 120.0,
         }
+    }
+
+    pub fn set_transport(&mut self, beat_now: f64, bpm: f64) {
+        self.frame_beat_now = beat_now;
+        self.frame_bpm = bpm;
+    }
+
+    pub fn beat_now(&self) -> f64 {
+        self.frame_beat_now
+    }
+
+    pub fn bpm(&self) -> f64 {
+        self.frame_bpm
     }
 
     /// Queue a register renderable command.

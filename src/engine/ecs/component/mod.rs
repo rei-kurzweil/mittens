@@ -56,7 +56,6 @@ pub use self::gltf::GLTFComponent;
 pub use self::mesh::MeshComponent;
 pub use crate::engine::ecs::system::model::collision_types::{CollisionMode, CollisionShape};
 pub use action::ActionComponent;
-pub use action::{Action, ActionMethod};
 pub use ambient_light::AmbientLightComponent;
 pub use animation::AnimationComponent;
 pub use animation::AnimationState;

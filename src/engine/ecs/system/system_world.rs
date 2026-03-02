@@ -607,6 +607,7 @@ impl SystemWorld {
         // Handlers are installed once; per-frame caches are reset here.
         self.rx.begin_frame();
         self.gesture.install_immediate_handlers(&mut self.rx);
+        self.action.install_immediate_handlers(&mut self.rx);
         self.gesture.begin_frame();
 
         // Process input first - it may queue commands
@@ -629,6 +630,10 @@ impl SystemWorld {
 
         self.clock.tick(world, visuals, input, dt_sec);
 
+        // Provide a per-frame beat context to any signal handlers that need it (e.g. ActionSystem
+        // scheduling audio ops).
+        queue.set_transport(self.clock.beat_now(), self.clock.bpm());
+
         // Provide tempo + transport to the audio thread scheduler.
         // ClockSystem may be using AudioClockDriver, so this keeps both timelines aligned.
         self.audio
@@ -638,10 +643,13 @@ impl SystemWorld {
             world,
             self.clock.beat_now(),
             self.clock.bpm(),
-            &mut self.action,
             &mut self.rx,
             queue,
         );
+
+        // Execute any action signals emitted by AnimationSystem before downstream systems run.
+        let _ = self.rx.dispatch_new_signals(world, queue, 100_000);
+        queue.flush(world, self, visuals);
 
         // Ensure transforms are propagated before any camera systems consume world matrices.
         self.transform.tick(world, visuals, input, dt_sec);

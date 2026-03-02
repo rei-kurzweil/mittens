@@ -2,11 +2,31 @@ use std::collections::HashMap;
 
 use crate::engine::ecs::{CommandQueue, ComponentId, World};
 
-use super::{Signal, SignalHandler, SignalKind, SignalValue};
+use super::{Signal, SignalEmitter, SignalHandler, SignalKind, SignalValue};
 
 enum Handler {
     Fn(SignalHandler),
-    Closure(Box<dyn FnMut(&mut World, &mut CommandQueue, &Signal) + Send + Sync + 'static>),
+    Closure(
+        Box<
+            dyn FnMut(&mut World, &mut CommandQueue, &mut dyn SignalEmitter, &Signal)
+                + Send
+                + Sync
+                + 'static,
+        >,
+    ),
+}
+
+struct Emitter {
+    signals: *mut Vec<Signal>,
+}
+
+impl SignalEmitter for Emitter {
+    fn push(&mut self, scope: ComponentId, value: SignalValue) {
+        // SAFETY: `signals` points at `RxWorld.signals` for the duration of a dispatch.
+        unsafe {
+            (*self.signals).push(Signal { scope, value });
+        }
+    }
 }
 
 /// Stores a unified signal stream and dispatches signals to scope-rooted handlers.
@@ -85,7 +105,10 @@ impl RxWorld {
         &mut self,
         kind: SignalKind,
         scope_root: ComponentId,
-        handler: impl FnMut(&mut World, &mut CommandQueue, &Signal) + Send + Sync + 'static,
+        handler: impl FnMut(&mut World, &mut CommandQueue, &mut dyn SignalEmitter, &Signal)
+            + Send
+            + Sync
+            + 'static,
     ) {
         self.scoped_handlers
             .entry(kind)
@@ -107,7 +130,10 @@ impl RxWorld {
     pub fn add_global_handler_closure(
         &mut self,
         kind: SignalKind,
-        handler: impl FnMut(&mut World, &mut CommandQueue, &Signal) + Send + Sync + 'static,
+        handler: impl FnMut(&mut World, &mut CommandQueue, &mut dyn SignalEmitter, &Signal)
+            + Send
+            + Sync
+            + 'static,
     ) {
         self.global_handlers
             .entry(kind)
@@ -196,14 +222,18 @@ impl RxWorld {
     pub fn dispatch_handlers(&mut self, world: &mut World, queue: &mut CommandQueue, env: &Signal) {
         let kind = env.kind();
 
+        let mut emitter = Emitter {
+            signals: &mut self.signals as *mut Vec<Signal>,
+        };
+
         // Global handlers (regardless of scope).
-        dispatch_global_kind(self, world, queue, SignalKind::Any, env);
-        dispatch_global_kind(self, world, queue, kind, env);
+        dispatch_global_kind(self, world, queue, &mut emitter, SignalKind::Any, env);
+        dispatch_global_kind(self, world, queue, &mut emitter, kind, env);
 
         let scope_chain = compute_scope_chain(world, env.scope);
         for scope in scope_chain {
-            dispatch_scoped_kind(self, world, queue, SignalKind::Any, scope, env);
-            dispatch_scoped_kind(self, world, queue, kind, scope, env);
+            dispatch_scoped_kind(self, world, queue, &mut emitter, SignalKind::Any, scope, env);
+            dispatch_scoped_kind(self, world, queue, &mut emitter, kind, scope, env);
         }
     }
 }
@@ -222,6 +252,7 @@ fn dispatch_global_kind(
     rx: &mut RxWorld,
     world: &mut World,
     queue: &mut CommandQueue,
+    emitter: &mut dyn SignalEmitter,
     kind: SignalKind,
     env: &Signal,
 ) {
@@ -236,8 +267,8 @@ fn dispatch_global_kind(
         // SAFETY: we only use this pointer for the duration of the call.
         unsafe {
             match &mut *handler_ptr {
-                Handler::Fn(fp) => fp(world, queue, env),
-                Handler::Closure(f) => f(world, queue, env),
+                Handler::Fn(fp) => fp(world, queue, emitter, env),
+                Handler::Closure(f) => f(world, queue, emitter, env),
             }
         }
     }
@@ -247,6 +278,7 @@ fn dispatch_scoped_kind(
     rx: &mut RxWorld,
     world: &mut World,
     queue: &mut CommandQueue,
+    emitter: &mut dyn SignalEmitter,
     kind: SignalKind,
     scope: ComponentId,
     env: &Signal,
@@ -262,8 +294,8 @@ fn dispatch_scoped_kind(
         let handler_ptr: *mut Handler = &mut handlers[idx];
         unsafe {
             match &mut *handler_ptr {
-                Handler::Fn(fp) => fp(world, queue, env),
-                Handler::Closure(f) => f(world, queue, env),
+                Handler::Fn(fp) => fp(world, queue, emitter, env),
+                Handler::Closure(f) => f(world, queue, emitter, env),
             }
         }
     }

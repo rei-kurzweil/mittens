@@ -1,23 +1,133 @@
 use crate::engine::ecs::CommandQueue;
-use crate::engine::ecs::component::Action;
 use crate::engine::ecs::{ComponentId, World};
 
+/// A single unified signal stream.
+///
+/// - "Actions" are just signal variants that request side effects.
+/// - "Facts" (what were previously called events) are just signal variants that describe
+///   something that happened.
 #[derive(Debug, Clone)]
-pub enum ActionSignal {
-    /// Intent: execute an action.
-    Action(Action),
-}
+pub enum SignalValue {
+    // --- User-facing / side-effectful signals (handled by ActionSystem) ---
+    Noop,
+    Print {
+        message: String,
+    },
 
-#[derive(Debug, Clone)]
-pub enum EventSignal {
-    /// Fact: topology changed.
+    SetColor {
+        target: Vec<ComponentId>,
+        rgba: [f32; 4],
+    },
+    SetText {
+        target: Vec<ComponentId>,
+        text: String,
+    },
+    SetPosition {
+        target: Vec<ComponentId>,
+        position: [f32; 3],
+    },
+    SetTransform {
+        target: Vec<ComponentId>,
+        translation: [f32; 3],
+        rotation_quat_xyzw: [f32; 4],
+        scale: [f32; 3],
+    },
+
+    Attach {
+        parents: Vec<ComponentId>,
+        child: ComponentId,
+    },
+    AttachClone {
+        parents: Vec<ComponentId>,
+        prefab_root: ComponentId,
+    },
+    Detach {
+        target: Vec<ComponentId>,
+    },
+    RemoveChild {
+        parents: Vec<ComponentId>,
+        index: usize,
+    },
+    RemoveChildren {
+        parents: Vec<ComponentId>,
+    },
+    RemoveSubtree {
+        target: Vec<ComponentId>,
+    },
+
+    AudioGraphRebuild {
+        target: Vec<ComponentId>,
+    },
+
+    /// Request a raycast on the target RayCastComponent(s) this frame.
+    RequestRaycast {
+        target: Vec<ComponentId>,
+    },
+
+    AudioLowPassSetCutoffHz {
+        target: Vec<ComponentId>,
+        cutoff_hz: f32,
+    },
+    AudioBandPassSetCenterHz {
+        target: Vec<ComponentId>,
+        center_hz: f32,
+    },
+    OscillatorSetEnabled {
+        target: Vec<ComponentId>,
+        enabled: bool,
+    },
+    OscillatorSetPitch {
+        target: Vec<ComponentId>,
+        frequency_hz: f32,
+    },
+
+    /// Schedule a pitch set at beat = beat_context + beat_offset.
+    OscillatorScheduleSetPitch {
+        target: Vec<ComponentId>,
+        beat_offset: f64,
+        beat_context: Option<f64>,
+        frequency_hz: f32,
+    },
+
+    /// Schedule a musical note at beat = beat_context + beat_offset.
+    OscillatorScheduleSetNote {
+        target: Vec<ComponentId>,
+        beat_offset: f64,
+        beat_context: Option<f64>,
+        pitch: crate::engine::ecs::component::NotePitch,
+        octave: u16,
+        duration_beats: f32,
+    },
+
+    /// Schedule a note represented by a MusicNote payload at beat = beat_context + beat_offset.
+    OscillatorScheduleMusicNote {
+        target: Vec<ComponentId>,
+        beat_offset: f64,
+        beat_context: Option<f64>,
+        note: crate::engine::ecs::component::MusicNote,
+    },
+
+    MusicSetNote {
+        target: Vec<ComponentId>,
+        note: crate::engine::ecs::component::MusicNote,
+    },
+
+    /// Escape hatch to invoke legacy command queue commands.
+    CommandQueue {
+        target: Vec<ComponentId>,
+        command_name: String,
+        params: Vec<serde_json::Value>,
+    },
+
+    // --- Facts (what used to be called events) ---
+    /// Topology changed.
     ParentChanged {
         child: ComponentId,
         old_parent: Option<ComponentId>,
         new_parent: Option<ComponentId>,
     },
 
-    /// Fact: a raycast intersected a renderable.
+    /// A raycast intersected a renderable.
     RayIntersected {
         raycaster: ComponentId,
         renderable: ComponentId,
@@ -26,7 +136,7 @@ pub enum EventSignal {
         dir: [f32; 3],
     },
 
-    /// Fact: two collision objects began overlapping this tick.
+    /// Two collision objects began overlapping this tick.
     ///
     /// `delta` is the vector from `a` to `b` in world space: `pos(b) - pos(a)`.
     CollisionStarted {
@@ -35,7 +145,7 @@ pub enum EventSignal {
         delta: [f32; 3],
     },
 
-    /// Fact: two collision objects stopped overlapping this tick.
+    /// Two collision objects stopped overlapping this tick.
     ///
     /// `delta` is the last known vector from `a` to `b` in world space: `pos(b) - pos(a)`.
     CollisionEnded {
@@ -44,7 +154,7 @@ pub enum EventSignal {
         delta: [f32; 3],
     },
 
-    /// Fact: a drag gesture started.
+    /// A drag gesture started.
     DragStart {
         raycaster: ComponentId,
         renderable: ComponentId,
@@ -56,7 +166,7 @@ pub enum EventSignal {
         screen_pos_px: Option<(f32, f32)>,
     },
 
-    /// Fact: a drag gesture moved this tick.
+    /// A drag gesture moved this tick.
     ///
     /// `delta_world` is the world-space movement since the last DragMove for this gesture.
     DragMove {
@@ -75,18 +185,12 @@ pub enum EventSignal {
         screen_delta_px: Option<(f32, f32)>,
     },
 
-    /// Fact: a drag gesture ended.
+    /// A drag gesture ended.
     DragEnd {
         raycaster: ComponentId,
         renderable: ComponentId,
         hit_point: Option<[f32; 3]>,
     },
-}
-
-#[derive(Debug, Clone)]
-pub enum SignalValue {
-    Action(ActionSignal),
-    Event(EventSignal),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -105,16 +209,39 @@ pub enum SignalKind {
 impl SignalValue {
     pub fn kind(&self) -> SignalKind {
         match self {
-            SignalValue::Action(ActionSignal::Action(_)) => SignalKind::Action,
-            SignalValue::Event(EventSignal::ParentChanged { .. }) => SignalKind::ParentChanged,
-            SignalValue::Event(EventSignal::RayIntersected { .. }) => SignalKind::RayIntersected,
-            SignalValue::Event(EventSignal::CollisionStarted { .. }) => {
-                SignalKind::CollisionStarted
-            }
-            SignalValue::Event(EventSignal::CollisionEnded { .. }) => SignalKind::CollisionEnded,
-            SignalValue::Event(EventSignal::DragStart { .. }) => SignalKind::DragStart,
-            SignalValue::Event(EventSignal::DragMove { .. }) => SignalKind::DragMove,
-            SignalValue::Event(EventSignal::DragEnd { .. }) => SignalKind::DragEnd,
+            // Side-effectful signals.
+            SignalValue::Noop
+            | SignalValue::Print { .. }
+            | SignalValue::SetColor { .. }
+            | SignalValue::SetText { .. }
+            | SignalValue::SetPosition { .. }
+            | SignalValue::SetTransform { .. }
+            | SignalValue::Attach { .. }
+            | SignalValue::AttachClone { .. }
+            | SignalValue::Detach { .. }
+            | SignalValue::RemoveChild { .. }
+            | SignalValue::RemoveChildren { .. }
+            | SignalValue::RemoveSubtree { .. }
+            | SignalValue::AudioGraphRebuild { .. }
+            | SignalValue::RequestRaycast { .. }
+            | SignalValue::AudioLowPassSetCutoffHz { .. }
+            | SignalValue::AudioBandPassSetCenterHz { .. }
+            | SignalValue::OscillatorSetEnabled { .. }
+            | SignalValue::OscillatorSetPitch { .. }
+            | SignalValue::OscillatorScheduleSetPitch { .. }
+            | SignalValue::OscillatorScheduleSetNote { .. }
+            | SignalValue::OscillatorScheduleMusicNote { .. }
+            | SignalValue::MusicSetNote { .. }
+            | SignalValue::CommandQueue { .. } => SignalKind::Action,
+
+            // Facts.
+            SignalValue::ParentChanged { .. } => SignalKind::ParentChanged,
+            SignalValue::RayIntersected { .. } => SignalKind::RayIntersected,
+            SignalValue::CollisionStarted { .. } => SignalKind::CollisionStarted,
+            SignalValue::CollisionEnded { .. } => SignalKind::CollisionEnded,
+            SignalValue::DragStart { .. } => SignalKind::DragStart,
+            SignalValue::DragMove { .. } => SignalKind::DragMove,
+            SignalValue::DragEnd { .. } => SignalKind::DragEnd,
         }
     }
 }
@@ -131,28 +258,8 @@ impl Signal {
     }
 }
 
-impl From<ActionSignal> for SignalValue {
-    fn from(v: ActionSignal) -> Self {
-        SignalValue::Action(v)
-    }
+pub trait SignalEmitter {
+    fn push(&mut self, scope: ComponentId, value: SignalValue);
 }
 
-impl From<EventSignal> for SignalValue {
-    fn from(v: EventSignal) -> Self {
-        SignalValue::Event(v)
-    }
-}
-
-impl From<Action> for ActionSignal {
-    fn from(v: Action) -> Self {
-        ActionSignal::Action(v)
-    }
-}
-
-impl From<Action> for SignalValue {
-    fn from(v: Action) -> Self {
-        SignalValue::Action(ActionSignal::Action(v))
-    }
-}
-
-pub type SignalHandler = fn(&mut World, &mut CommandQueue, &Signal);
+pub type SignalHandler = fn(&mut World, &mut CommandQueue, &mut dyn SignalEmitter, &Signal);

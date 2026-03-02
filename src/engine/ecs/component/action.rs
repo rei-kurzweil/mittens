@@ -1,411 +1,28 @@
 use super::Component;
-use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::{ComponentId, SignalValue};
 use slotmap::{Key, KeyData};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ActionMethod {
-    Noop,
-    Print,
-    SetColor,
-    SetText,
-    /// Set position (translation) on TransformComponents.
-    SetPosition,
-    /// Set full transform (translation + rotation quat + scale) on TransformComponents.
-    SetTransform,
-    /// Attach `child` under `parent` (component graph topology change).
-    Attach,
-    /// Clone a prefab subtree and attach the cloned root under each target parent.
-    AttachClone,
-    /// Detach each target from its parent.
-    Detach,
-    /// Remove (delete) the child at a given index from each target parent.
-    RemoveChild,
-    /// Remove (delete) all children from each target parent.
-    RemoveChildren,
-    /// Remove each target component and all descendants.
-    RemoveSubtree,
-    /// Mark the audio graph dirty (forces an end-of-frame recompile + RT graph swap scheduling).
-    AudioGraphRebuild,
-
-    /// Request a raycast on the target RayCastComponent(s) this frame.
-    ///
-    /// Intended for animations: keyframes can trigger raycasts without mouse input.
-    Raycast,
-    AudioLowPassSetCutoffHz,
-    AudioBandPassSetCenterHz,
-    OscillatorSetEnabled,
-    OscillatorSetPitch,
-    OscillatorScheduleSetPitch,
-    OscillatorScheduleSetNote,
-    OscillatorScheduleMusicNote,
-    MusicSetNote,
-    /// Placeholder for future unification with the command queue.
-    ///
-    /// Encoded as: method="command_queue", command_name="...".
-    CommandQueue {
-        command_name: String,
-    },
-}
-
-impl ActionMethod {
-    fn encode(&self, map: &mut std::collections::HashMap<String, serde_json::Value>) {
-        match self {
-            ActionMethod::Noop => {
-                map.insert("method".to_string(), serde_json::json!("noop"));
-            }
-            ActionMethod::Print => {
-                map.insert("method".to_string(), serde_json::json!("print"));
-            }
-            ActionMethod::SetColor => {
-                map.insert("method".to_string(), serde_json::json!("set_color"));
-            }
-            ActionMethod::SetText => {
-                map.insert("method".to_string(), serde_json::json!("set_text"));
-            }
-            ActionMethod::SetPosition => {
-                map.insert("method".to_string(), serde_json::json!("set_position"));
-            }
-            ActionMethod::SetTransform => {
-                map.insert("method".to_string(), serde_json::json!("set_transform"));
-            }
-            ActionMethod::Attach => {
-                map.insert("method".to_string(), serde_json::json!("attach"));
-            }
-            ActionMethod::AttachClone => {
-                map.insert("method".to_string(), serde_json::json!("attach_clone"));
-            }
-            ActionMethod::Detach => {
-                map.insert("method".to_string(), serde_json::json!("detach"));
-            }
-            ActionMethod::RemoveChild => {
-                map.insert("method".to_string(), serde_json::json!("remove_child"));
-            }
-            ActionMethod::RemoveChildren => {
-                map.insert("method".to_string(), serde_json::json!("remove_children"));
-            }
-            ActionMethod::RemoveSubtree => {
-                map.insert("method".to_string(), serde_json::json!("remove_subtree"));
-            }
-            ActionMethod::AudioGraphRebuild => {
-                map.insert(
-                    "method".to_string(),
-                    serde_json::json!("audio_graph_rebuild"),
-                );
-            }
-            ActionMethod::Raycast => {
-                map.insert("method".to_string(), serde_json::json!("raycast"));
-            }
-            ActionMethod::AudioLowPassSetCutoffHz => {
-                map.insert(
-                    "method".to_string(),
-                    serde_json::json!("audio_low_pass_set_cutoff_hz"),
-                );
-            }
-            ActionMethod::AudioBandPassSetCenterHz => {
-                map.insert(
-                    "method".to_string(),
-                    serde_json::json!("audio_band_pass_set_center_hz"),
-                );
-            }
-            ActionMethod::OscillatorSetEnabled => {
-                map.insert(
-                    "method".to_string(),
-                    serde_json::json!("oscillator_set_enabled"),
-                );
-            }
-            ActionMethod::OscillatorSetPitch => {
-                map.insert(
-                    "method".to_string(),
-                    serde_json::json!("oscillator_set_pitch"),
-                );
-            }
-            ActionMethod::OscillatorScheduleSetPitch => {
-                map.insert(
-                    "method".to_string(),
-                    serde_json::json!("oscillator_schedule_set_pitch"),
-                );
-            }
-            ActionMethod::OscillatorScheduleSetNote => {
-                map.insert(
-                    "method".to_string(),
-                    serde_json::json!("oscillator_schedule_set_note"),
-                );
-            }
-            ActionMethod::OscillatorScheduleMusicNote => {
-                map.insert(
-                    "method".to_string(),
-                    serde_json::json!("oscillator_schedule_music_note"),
-                );
-            }
-            ActionMethod::MusicSetNote => {
-                map.insert("method".to_string(), serde_json::json!("music_set_note"));
-            }
-            ActionMethod::CommandQueue { command_name } => {
-                map.insert("method".to_string(), serde_json::json!("command_queue"));
-                map.insert("command_name".to_string(), serde_json::json!(command_name));
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Action {
-    pub target: Vec<ComponentId>,
-    pub method: ActionMethod,
-    pub params: Vec<serde_json::Value>,
-}
-
-impl Default for Action {
-    fn default() -> Self {
-        Self {
-            target: Vec::new(),
-            method: ActionMethod::Noop,
-            params: Vec::new(),
-        }
-    }
-}
-
-impl Action {
-    pub fn print(message: impl Into<String>) -> Self {
-        Self {
-            target: Vec::new(),
-            method: ActionMethod::Print,
-            params: vec![serde_json::json!(message.into())],
-        }
-    }
-
-    pub fn set_color(target: Vec<ComponentId>, rgba: [f32; 4]) -> Self {
-        Self {
-            target,
-            method: ActionMethod::SetColor,
-            params: vec![serde_json::json!(rgba)],
-        }
-    }
-
-    pub fn set_text(target: Vec<ComponentId>, text: impl Into<String>) -> Self {
-        Self {
-            target,
-            method: ActionMethod::SetText,
-            params: vec![serde_json::json!(text.into())],
-        }
-    }
-
-    /// Set translation (x,y,z) on TransformComponents.
-    pub fn set_position(target: Vec<ComponentId>, x: f32, y: f32, z: f32) -> Self {
-        Self {
-            target,
-            method: ActionMethod::SetPosition,
-            params: vec![serde_json::json!([x, y, z])],
-        }
-    }
-
-    /// Set full transform on TransformComponents.
-    ///
-    /// Params are encoded as: [translation[x,y,z], rotation_quat[x,y,z,w], scale[x,y,z]].
-    pub fn set_transform(
-        target: Vec<ComponentId>,
-        translation: [f32; 3],
-        rotation_quat_xyzw: [f32; 4],
-        scale: [f32; 3],
-    ) -> Self {
-        Self {
-            target,
-            method: ActionMethod::SetTransform,
-            params: vec![
-                serde_json::json!(translation),
-                serde_json::json!(rotation_quat_xyzw),
-                serde_json::json!(scale),
-            ],
-        }
-    }
-
-    /// Attach `child` under `parent`.
-    ///
-    /// Mirrors `Universe::attach(parent, child)` / `World::add_child(parent, child)`.
-    pub fn attach(parent: ComponentId, child: ComponentId) -> Self {
-        Self {
-            target: vec![parent],
-            method: ActionMethod::Attach,
-            params: vec![serde_json::json!(child.data().as_ffi())],
-        }
-    }
-
-    /// Request a raycast on the given RayCastComponent this frame.
-    pub fn raycast(raycaster: ComponentId) -> Self {
-        Self {
-            target: vec![raycaster],
-            method: ActionMethod::Raycast,
-            params: vec![],
-        }
-    }
-
-    /// Clone the subtree rooted at `prefab_root` and attach the clone under `parent`.
-    pub fn attach_clone(parent: ComponentId, prefab_root: ComponentId) -> Self {
-        Self {
-            target: vec![parent],
-            method: ActionMethod::AttachClone,
-            params: vec![serde_json::json!(prefab_root.data().as_ffi())],
-        }
-    }
-
-    /// Detach each target from its current parent.
-    ///
-    /// Mirrors `World::detach_from_parent(child)`.
-    pub fn detach(target: Vec<ComponentId>) -> Self {
-        Self {
-            target,
-            method: ActionMethod::Detach,
-            params: Vec::new(),
-        }
-    }
-
-    /// Common misspelling alias (kept for convenience).
-    pub fn detatch(target: Vec<ComponentId>) -> Self {
-        Self::detach(target)
-    }
-
-    /// Remove (delete) the child at `index` from `parent`.
-    pub fn remove_child(parent: ComponentId, index: usize) -> Self {
-        Self {
-            target: vec![parent],
-            method: ActionMethod::RemoveChild,
-            params: vec![serde_json::json!(index as u64)],
-        }
-    }
-
-    /// Remove (delete) all direct children from `parent`.
-    pub fn remove_children(parent: ComponentId) -> Self {
-        Self {
-            target: vec![parent],
-            method: ActionMethod::RemoveChildren,
-            params: Vec::new(),
-        }
-    }
-
-    /// Remove each target component and all its descendants.
-    ///
-    /// Mirrors `World::remove_component_subtree(root)`.
-    pub fn remove_subtree(target: Vec<ComponentId>) -> Self {
-        Self {
-            target,
-            method: ActionMethod::RemoveSubtree,
-            params: Vec::new(),
-        }
-    }
-
-    /// Force the audio graph to be recompiled (and swapped into the audio worker).
-    ///
-    /// This doesn't change topology by itself; it just ensures any world mutations are
-    /// reflected in the RT graph.
-    pub fn audio_graph_rebuild(target: Vec<ComponentId>) -> Self {
-        Self {
-            target,
-            method: ActionMethod::AudioGraphRebuild,
-            params: Vec::new(),
-        }
-    }
-
-    pub fn audio_low_pass_set_cutoff_hz(target: Vec<ComponentId>, cutoff_hz: f32) -> Self {
-        Self {
-            target,
-            method: ActionMethod::AudioLowPassSetCutoffHz,
-            params: vec![serde_json::json!(cutoff_hz)],
-        }
-    }
-
-    pub fn audio_band_pass_set_center_hz(target: Vec<ComponentId>, center_hz: f32) -> Self {
-        Self {
-            target,
-            method: ActionMethod::AudioBandPassSetCenterHz,
-            params: vec![serde_json::json!(center_hz)],
-        }
-    }
-
-    pub fn oscillator_set_enabled(target: Vec<ComponentId>, enabled: bool) -> Self {
-        Self {
-            target,
-            method: ActionMethod::OscillatorSetEnabled,
-            params: vec![serde_json::json!(enabled)],
-        }
-    }
-
-    /// Set oscillator frequency directly (in Hz).
-    pub fn oscillator_set_pitch(target: Vec<ComponentId>, frequency_hz: f32) -> Self {
-        Self {
-            target,
-            method: ActionMethod::OscillatorSetPitch,
-            params: vec![serde_json::json!(frequency_hz)],
-        }
-    }
-
-    /// Schedule an oscillator frequency set (Hz) at a beat offset.
-    ///
-    /// The `beat` parameter is interpreted as an offset relative to the `beat_now`
-    /// value passed to `ActionSystem::execute(...)`.
-    pub fn oscillator_schedule_set_pitch(
-        target: Vec<ComponentId>,
-        beat: f64,
-        frequency_hz: f32,
-    ) -> Self {
-        Self {
-            target,
-            method: ActionMethod::OscillatorScheduleSetPitch,
-            params: vec![serde_json::json!(beat), serde_json::json!(frequency_hz)],
-        }
-    }
-
-    /// Schedule an oscillator to play a musical note at a beat offset.
-    ///
-    /// `note.duration_beats()` is interpreted in beats, and will schedule a note-off
-    /// (disable) at `beat + duration`.
-    ///
-    /// The `beat` parameter is interpreted as an offset relative to the `beat_now`
-    /// value passed to `ActionSystem::execute(...)`.
-    pub fn oscillator_schedule_music_note(
-        target: Vec<ComponentId>,
-        beat: f64,
-        note: crate::engine::ecs::component::MusicNote,
-    ) -> Self {
-        Self {
-            target,
-            method: ActionMethod::OscillatorScheduleMusicNote,
-            params: vec![serde_json::json!(beat), serde_json::json!(note)],
-        }
-    }
-
-    /// Update the first `MusicNoteComponent` found under each target oscillator (subtree search),
-    /// and re-apply its pitch/octave to the oscillator frequency.
-    pub fn music_set_note(
-        target: Vec<ComponentId>,
-        note: crate::engine::ecs::component::MusicNote,
-    ) -> Self {
-        Self {
-            target,
-            method: ActionMethod::MusicSetNote,
-            params: vec![serde_json::json!(note)],
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct ActionComponent {
-    pub action: Action,
+    pub signal: SignalValue,
 }
 
 impl ActionComponent {
-    pub fn new(action: Action) -> Self {
-        Self { action }
+    pub fn new(signal: SignalValue) -> Self {
+        Self { signal }
     }
 
     pub fn print(message: impl Into<String>) -> Self {
-        Self::new(Action::print(message))
+        Self::new(SignalValue::Print {
+            message: message.into(),
+        })
     }
 }
 
 impl Default for ActionComponent {
     fn default() -> Self {
         Self {
-            action: Action::default(),
+            signal: SignalValue::Noop,
         }
     }
 }
@@ -426,15 +43,191 @@ impl Component for ActionComponent {
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
         let mut map = std::collections::HashMap::new();
 
-        let target_ffi: Vec<u64> = self
-            .action
-            .target
-            .iter()
-            .map(|cid| cid.data().as_ffi())
-            .collect();
-        map.insert("target".to_string(), serde_json::json!(target_ffi));
-        self.action.method.encode(&mut map);
-        map.insert("params".to_string(), serde_json::json!(self.action.params));
+        match &self.signal {
+            SignalValue::Noop => {
+                map.insert("variant".to_string(), serde_json::json!("Noop"));
+            }
+            SignalValue::Print { message } => {
+                map.insert("variant".to_string(), serde_json::json!("Print"));
+                map.insert("message".to_string(), serde_json::json!(message));
+            }
+
+            SignalValue::SetColor { target, rgba } => {
+                map.insert("variant".to_string(), serde_json::json!("SetColor"));
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert("rgba".to_string(), serde_json::json!(rgba));
+            }
+            SignalValue::SetText { target, text } => {
+                map.insert("variant".to_string(), serde_json::json!("SetText"));
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert("text".to_string(), serde_json::json!(text));
+            }
+            SignalValue::SetPosition { target, position } => {
+                map.insert("variant".to_string(), serde_json::json!("SetPosition"));
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert("position".to_string(), serde_json::json!(position));
+            }
+            SignalValue::SetTransform {
+                target,
+                translation,
+                rotation_quat_xyzw,
+                scale,
+            } => {
+                map.insert("variant".to_string(), serde_json::json!("SetTransform"));
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert("translation".to_string(), serde_json::json!(translation));
+                map.insert(
+                    "rotation_quat_xyzw".to_string(),
+                    serde_json::json!(rotation_quat_xyzw),
+                );
+                map.insert("scale".to_string(), serde_json::json!(scale));
+            }
+
+            SignalValue::Attach { parents, child } => {
+                map.insert("variant".to_string(), serde_json::json!("Attach"));
+                map.insert("parents".to_string(), serde_json::json!(encode_ids(parents)));
+                map.insert("child".to_string(), serde_json::json!(encode_id(*child)));
+            }
+            SignalValue::AttachClone {
+                parents,
+                prefab_root,
+            } => {
+                map.insert("variant".to_string(), serde_json::json!("AttachClone"));
+                map.insert("parents".to_string(), serde_json::json!(encode_ids(parents)));
+                map.insert(
+                    "prefab_root".to_string(),
+                    serde_json::json!(encode_id(*prefab_root)),
+                );
+            }
+            SignalValue::Detach { target } => {
+                map.insert("variant".to_string(), serde_json::json!("Detach"));
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+            }
+            SignalValue::RemoveChild { parents, index } => {
+                map.insert("variant".to_string(), serde_json::json!("RemoveChild"));
+                map.insert("parents".to_string(), serde_json::json!(encode_ids(parents)));
+                map.insert("index".to_string(), serde_json::json!(index));
+            }
+            SignalValue::RemoveChildren { parents } => {
+                map.insert("variant".to_string(), serde_json::json!("RemoveChildren"));
+                map.insert("parents".to_string(), serde_json::json!(encode_ids(parents)));
+            }
+            SignalValue::RemoveSubtree { target } => {
+                map.insert("variant".to_string(), serde_json::json!("RemoveSubtree"));
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+            }
+
+            SignalValue::AudioGraphRebuild { target } => {
+                map.insert("variant".to_string(), serde_json::json!("AudioGraphRebuild"));
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+            }
+            SignalValue::RequestRaycast { target } => {
+                map.insert("variant".to_string(), serde_json::json!("RequestRaycast"));
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+            }
+            SignalValue::AudioLowPassSetCutoffHz { target, cutoff_hz } => {
+                map.insert(
+                    "variant".to_string(),
+                    serde_json::json!("AudioLowPassSetCutoffHz"),
+                );
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert("cutoff_hz".to_string(), serde_json::json!(cutoff_hz));
+            }
+            SignalValue::AudioBandPassSetCenterHz { target, center_hz } => {
+                map.insert(
+                    "variant".to_string(),
+                    serde_json::json!("AudioBandPassSetCenterHz"),
+                );
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert("center_hz".to_string(), serde_json::json!(center_hz));
+            }
+            SignalValue::OscillatorSetEnabled { target, enabled } => {
+                map.insert("variant".to_string(), serde_json::json!("OscillatorSetEnabled"));
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert("enabled".to_string(), serde_json::json!(enabled));
+            }
+            SignalValue::OscillatorSetPitch {
+                target,
+                frequency_hz,
+            } => {
+                map.insert("variant".to_string(), serde_json::json!("OscillatorSetPitch"));
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert("frequency_hz".to_string(), serde_json::json!(frequency_hz));
+            }
+            SignalValue::OscillatorScheduleSetPitch {
+                target,
+                beat_offset,
+                beat_context,
+                frequency_hz,
+            } => {
+                map.insert(
+                    "variant".to_string(),
+                    serde_json::json!("OscillatorScheduleSetPitch"),
+                );
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert("beat_offset".to_string(), serde_json::json!(beat_offset));
+                map.insert("beat_context".to_string(), serde_json::json!(beat_context));
+                map.insert("frequency_hz".to_string(), serde_json::json!(frequency_hz));
+            }
+            SignalValue::OscillatorScheduleSetNote {
+                target,
+                beat_offset,
+                beat_context,
+                pitch,
+                octave,
+                duration_beats,
+            } => {
+                map.insert(
+                    "variant".to_string(),
+                    serde_json::json!("OscillatorScheduleSetNote"),
+                );
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert("beat_offset".to_string(), serde_json::json!(beat_offset));
+                map.insert("beat_context".to_string(), serde_json::json!(beat_context));
+                map.insert("pitch".to_string(), serde_json::json!(pitch));
+                map.insert("octave".to_string(), serde_json::json!(octave));
+                map.insert("duration_beats".to_string(), serde_json::json!(duration_beats));
+            }
+            SignalValue::OscillatorScheduleMusicNote {
+                target,
+                beat_offset,
+                beat_context,
+                note,
+            } => {
+                map.insert(
+                    "variant".to_string(),
+                    serde_json::json!("OscillatorScheduleMusicNote"),
+                );
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert("beat_offset".to_string(), serde_json::json!(beat_offset));
+                map.insert("beat_context".to_string(), serde_json::json!(beat_context));
+                map.insert("note".to_string(), serde_json::json!(note));
+            }
+            SignalValue::MusicSetNote { target, note } => {
+                map.insert("variant".to_string(), serde_json::json!("MusicSetNote"));
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert("note".to_string(), serde_json::json!(note));
+            }
+            SignalValue::CommandQueue {
+                target,
+                command_name,
+                params,
+            } => {
+                map.insert("variant".to_string(), serde_json::json!("CommandQueue"));
+                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert("command_name".to_string(), serde_json::json!(command_name));
+                map.insert("params".to_string(), serde_json::json!(params));
+            }
+
+            // Non-action signals should not be persisted in ActionComponent.
+            other => {
+                map.insert("variant".to_string(), serde_json::json!("Noop"));
+                map.insert(
+                    "error".to_string(),
+                    serde_json::json!(format!("Non-action signal in ActionComponent: {other:?}")),
+                );
+            }
+        }
 
         map
     }
@@ -443,72 +236,172 @@ impl Component for ActionComponent {
         &mut self,
         data: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<(), String> {
-        // Backward compatibility: old schema used { message: String }.
-        if let Some(message) = data.get("message") {
-            let msg: String = serde_json::from_value(message.clone())
-                .map_err(|e| format!("Failed to decode message: {}", e))?;
-            self.action = Action::print(msg);
-            return Ok(());
-        }
-
-        if let Some(target) = data.get("target") {
-            let target_ffi: Vec<u64> = serde_json::from_value(target.clone())
-                .map_err(|e| format!("Failed to decode target: {}", e))?;
-            self.action.target = target_ffi
-                .into_iter()
-                .map(|ffi| KeyData::from_ffi(ffi).into())
-                .collect();
-        }
-
-        if let Some(params) = data.get("params") {
-            self.action.params = serde_json::from_value(params.clone())
-                .map_err(|e| format!("Failed to decode params: {}", e))?;
-        }
-
-        let method = data
-            .get("method")
+        let variant = data
+            .get("variant")
             .and_then(|v| v.as_str())
-            .unwrap_or("noop");
+            .ok_or_else(|| "ActionComponent missing 'variant'".to_string())?;
 
-        self.action.method = match method {
-            "noop" => ActionMethod::Noop,
-            "print" => ActionMethod::Print,
-            "set_color" => ActionMethod::SetColor,
-            "set_text" => ActionMethod::SetText,
-            "set_position" => ActionMethod::SetPosition,
-            "set_transform" => ActionMethod::SetTransform,
-            "attach" => ActionMethod::Attach,
-            "attach_clone" => ActionMethod::AttachClone,
-            "detach" => ActionMethod::Detach,
-            "remove_child" => ActionMethod::RemoveChild,
-            "remove_children" => ActionMethod::RemoveChildren,
-            "remove_subtree" => ActionMethod::RemoveSubtree,
-            "audio_graph_rebuild" => ActionMethod::AudioGraphRebuild,
-            "raycast" => ActionMethod::Raycast,
-            "audio_low_pass_set_cutoff_hz" => ActionMethod::AudioLowPassSetCutoffHz,
-            "audio_band_pass_set_center_hz" => ActionMethod::AudioBandPassSetCenterHz,
-            "oscillator_set_enabled" => ActionMethod::OscillatorSetEnabled,
-            // Deprecated/removed: keep backward compatibility but do nothing.
-            "oscillator_multiply_pitch" => ActionMethod::Noop,
-            "oscillator_set_pitch" => ActionMethod::OscillatorSetPitch,
-            // Deprecated/removed: keep backward compatibility but do nothing.
-            "oscillator_schedule_multiply_pitch" => ActionMethod::Noop,
-            "oscillator_schedule_set_pitch" => ActionMethod::OscillatorScheduleSetPitch,
-            "oscillator_schedule_set_note" => ActionMethod::OscillatorScheduleSetNote,
-            "oscillator_schedule_music_note" => ActionMethod::OscillatorScheduleMusicNote,
-            "music_set_note" => ActionMethod::MusicSetNote,
-            "command_queue" => ActionMethod::CommandQueue {
-                command_name: data
-                    .get("command_name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
+        self.signal = match variant {
+            "Noop" => SignalValue::Noop,
+            "Print" => SignalValue::Print {
+                message: get_string(data, "message")?,
             },
-            other => {
-                return Err(format!("Unknown action method: {}", other));
-            }
+
+            "SetColor" => SignalValue::SetColor {
+                target: get_ids(data, "target")?,
+                rgba: get_value_as(data, "rgba")?,
+            },
+            "SetText" => SignalValue::SetText {
+                target: get_ids(data, "target")?,
+                text: get_string(data, "text")?,
+            },
+            "SetPosition" => SignalValue::SetPosition {
+                target: get_ids(data, "target")?,
+                position: get_value_as(data, "position")?,
+            },
+            "SetTransform" => SignalValue::SetTransform {
+                target: get_ids(data, "target")?,
+                translation: get_value_as(data, "translation")?,
+                rotation_quat_xyzw: get_value_as(data, "rotation_quat_xyzw")?,
+                scale: get_value_as(data, "scale")?,
+            },
+
+            "Attach" => SignalValue::Attach {
+                parents: get_ids(data, "parents")?,
+                child: get_id(data, "child")?,
+            },
+            "AttachClone" => SignalValue::AttachClone {
+                parents: get_ids(data, "parents")?,
+                prefab_root: get_id(data, "prefab_root")?,
+            },
+            "Detach" => SignalValue::Detach {
+                target: get_ids(data, "target")?,
+            },
+            "RemoveChild" => SignalValue::RemoveChild {
+                parents: get_ids(data, "parents")?,
+                index: get_value_as(data, "index")?,
+            },
+            "RemoveChildren" => SignalValue::RemoveChildren {
+                parents: get_ids(data, "parents")?,
+            },
+            "RemoveSubtree" => SignalValue::RemoveSubtree {
+                target: get_ids(data, "target")?,
+            },
+            "AudioGraphRebuild" => SignalValue::AudioGraphRebuild {
+                target: get_ids(data, "target")?,
+            },
+            "RequestRaycast" => SignalValue::RequestRaycast {
+                target: get_ids(data, "target")?,
+            },
+            "AudioLowPassSetCutoffHz" => SignalValue::AudioLowPassSetCutoffHz {
+                target: get_ids(data, "target")?,
+                cutoff_hz: get_value_as(data, "cutoff_hz")?,
+            },
+            "AudioBandPassSetCenterHz" => SignalValue::AudioBandPassSetCenterHz {
+                target: get_ids(data, "target")?,
+                center_hz: get_value_as(data, "center_hz")?,
+            },
+            "OscillatorSetEnabled" => SignalValue::OscillatorSetEnabled {
+                target: get_ids(data, "target")?,
+                enabled: get_value_as(data, "enabled")?,
+            },
+            "OscillatorSetPitch" => SignalValue::OscillatorSetPitch {
+                target: get_ids(data, "target")?,
+                frequency_hz: get_value_as(data, "frequency_hz")?,
+            },
+            "OscillatorScheduleSetPitch" => SignalValue::OscillatorScheduleSetPitch {
+                target: get_ids(data, "target")?,
+                beat_offset: get_value_as(data, "beat_offset")?,
+                beat_context: get_value_as(data, "beat_context")?,
+                frequency_hz: get_value_as(data, "frequency_hz")?,
+            },
+            "OscillatorScheduleSetNote" => SignalValue::OscillatorScheduleSetNote {
+                target: get_ids(data, "target")?,
+                beat_offset: get_value_as(data, "beat_offset")?,
+                beat_context: get_value_as(data, "beat_context")?,
+                pitch: get_value_as(data, "pitch")?,
+                octave: get_value_as(data, "octave")?,
+                duration_beats: get_value_as(data, "duration_beats")?,
+            },
+            "OscillatorScheduleMusicNote" => SignalValue::OscillatorScheduleMusicNote {
+                target: get_ids(data, "target")?,
+                beat_offset: get_value_as(data, "beat_offset")?,
+                beat_context: get_value_as(data, "beat_context")?,
+                note: get_value_as(data, "note")?,
+            },
+            "MusicSetNote" => SignalValue::MusicSetNote {
+                target: get_ids(data, "target")?,
+                note: get_value_as(data, "note")?,
+            },
+            "CommandQueue" => SignalValue::CommandQueue {
+                target: get_ids(data, "target")?,
+                command_name: get_string(data, "command_name")?,
+                params: get_value_as(data, "params")?,
+            },
+
+            other => return Err(format!("Unknown action variant: {other}")),
         };
 
         Ok(())
     }
+}
+
+fn encode_id(id: ComponentId) -> u64 {
+    id.data().as_ffi()
+}
+
+fn encode_ids(ids: &[ComponentId]) -> Vec<u64> {
+    ids.iter().map(|id| encode_id(*id)).collect()
+}
+
+fn decode_id(v: &serde_json::Value) -> Result<ComponentId, String> {
+    let ffi: u64 = serde_json::from_value(v.clone())
+        .map_err(|e| format!("Failed to decode ComponentId (ffi u64): {e}"))?;
+    Ok(KeyData::from_ffi(ffi).into())
+}
+
+fn decode_ids(v: &serde_json::Value) -> Result<Vec<ComponentId>, String> {
+    let ffi: Vec<u64> = serde_json::from_value(v.clone())
+        .map_err(|e| format!("Failed to decode ComponentId list (ffi u64[]): {e}"))?;
+    Ok(ffi.into_iter().map(|x| KeyData::from_ffi(x).into()).collect())
+}
+
+fn get_string(
+    data: &std::collections::HashMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<String, String> {
+    data.get(key)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| format!("ActionComponent missing/invalid '{key}'"))
+}
+
+fn get_id(
+    data: &std::collections::HashMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<ComponentId, String> {
+    let v = data
+        .get(key)
+        .ok_or_else(|| format!("ActionComponent missing '{key}'"))?;
+    decode_id(v)
+}
+
+fn get_ids(
+    data: &std::collections::HashMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<Vec<ComponentId>, String> {
+    let v = data
+        .get(key)
+        .ok_or_else(|| format!("ActionComponent missing '{key}'"))?;
+    decode_ids(v)
+}
+
+fn get_value_as<T: serde::de::DeserializeOwned>(
+    data: &std::collections::HashMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<T, String> {
+    let v = data
+        .get(key)
+        .ok_or_else(|| format!("ActionComponent missing '{key}'"))?;
+    serde_json::from_value(v.clone()).map_err(|e| format!("ActionComponent bad '{key}': {e}"))
 }
