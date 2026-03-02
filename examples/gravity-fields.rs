@@ -77,11 +77,10 @@ fn kinetic_response_child_of_collider(
 fn on_collision_turn_white(
     world: &mut engine::ecs::World,
     queue: &mut engine::ecs::CommandQueue,
+    _emit: &mut dyn engine::ecs::SignalEmitter,
     signal: &engine::ecs::Signal,
 ) {
-    let engine::ecs::SignalValue::Event(engine::ecs::EventSignal::CollisionStarted {
-        a, b, ..
-    }) = &signal.value
+    let engine::ecs::SignalValue::CollisionStarted { a, b, .. } = &signal.value
     else {
         return;
     };
@@ -117,11 +116,10 @@ fn on_collision_turn_white(
 fn on_collision_freeze_gravity(
     world: &mut engine::ecs::World,
     _queue: &mut engine::ecs::CommandQueue,
+    _emit: &mut dyn engine::ecs::SignalEmitter,
     signal: &engine::ecs::Signal,
 ) {
-    let engine::ecs::SignalValue::Event(engine::ecs::EventSignal::CollisionStarted {
-        a, b, ..
-    }) = &signal.value
+    let engine::ecs::SignalValue::CollisionStarted { a, b, .. } = &signal.value
     else {
         return;
     };

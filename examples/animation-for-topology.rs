@@ -199,7 +199,7 @@ fn main() {
         let detach_action = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::detach(vec![cube]),
+                engine::ecs::SignalValue::Detach { target: vec![cube] },
             ));
         let _ = universe.attach(kf_detach, detach_action);
 
@@ -210,7 +210,10 @@ fn main() {
         let attach_action = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::attach(parent, cube),
+                engine::ecs::SignalValue::Attach {
+                    parents: vec![parent],
+                    child: cube,
+                },
             ));
         let _ = universe.attach(kf_attach, attach_action);
     }
@@ -273,7 +276,10 @@ fn main() {
         let attach_action = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::attach_clone(parent, prefab_b),
+                engine::ecs::SignalValue::AttachClone {
+                    parents: vec![parent],
+                    prefab_root: prefab_b,
+                },
             ));
         let _ = universe.attach(kf_attach, attach_action);
 
@@ -288,7 +294,10 @@ fn main() {
                 universe
                     .world
                     .add_component(engine::ecs::component::ActionComponent::new(
-                        engine::ecs::component::Action::remove_child(remove_parent, 0),
+                        engine::ecs::SignalValue::RemoveChild {
+                            parents: vec![remove_parent],
+                            index: 0,
+                        },
                     ));
             let _ = universe.attach(kf_remove, remove_action);
         }
@@ -307,7 +316,10 @@ fn main() {
         let remove_action = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::remove_child(remove_parent, 0),
+                engine::ecs::SignalValue::RemoveChild {
+                    parents: vec![remove_parent],
+                    index: 0,
+                },
             ));
         let _ = universe.attach(kf_remove, remove_action);
     }
@@ -361,7 +373,10 @@ fn main() {
         let setpos_action = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::set_position(vec![cube], x, y, z),
+                engine::ecs::SignalValue::SetPosition {
+                    target: vec![cube],
+                    position: [x, y, z],
+                },
             ));
         let _ = universe.attach(kf, setpos_action);
     }

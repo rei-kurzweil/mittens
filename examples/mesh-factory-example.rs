@@ -55,7 +55,7 @@ fn main() {
         color: [f32; 4],
     ) {
         use engine::ecs::component::{
-            Action, ActionComponent, AnimationComponent, AnimationState, ColorComponent,
+            ActionComponent, AnimationComponent, AnimationState, ColorComponent,
             EmissiveComponent, KeyframeComponent, RenderableComponent, TextComponent,
             TransformComponent,
         };
@@ -85,8 +85,14 @@ fn main() {
             let angle = (std::f64::consts::TAU * (beat / 2.0)) as f32;
             let rotation = utils::math::quat_from_axis_angle([0.0, 1.0, 0.0], angle);
 
-            let action = Action::set_transform(vec![root], [x, y, 0.0], rotation, scale);
-            let action_cid = universe.world.add_component(ActionComponent::new(action));
+            let action_cid = universe.world.add_component(ActionComponent::new(
+                engine::ecs::SignalValue::SetTransform {
+                    target: vec![root],
+                    translation: [x, y, 0.0],
+                    rotation_quat_xyzw: rotation,
+                    scale,
+                },
+            ));
             let _ = universe.attach(kf, action_cid);
         }
 

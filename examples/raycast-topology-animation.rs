@@ -51,13 +51,11 @@ fn ensure_emissive_on(
 fn ring_a_handler(
     world: &mut engine::ecs::World,
     queue: &mut engine::ecs::CommandQueue,
+    emit: &mut dyn engine::ecs::SignalEmitter,
     env: &engine::ecs::Signal,
 ) {
     match &env.value {
-        engine::ecs::SignalValue::Event(engine::ecs::EventSignal::RayIntersected {
-            renderable,
-            ..
-        }) => {
+        engine::ecs::SignalValue::RayIntersected { renderable, .. } => {
             println!(
                 "[ring_a_handler] fired scope={:?} renderable={:?}",
                 env.scope, renderable
@@ -65,11 +63,13 @@ fn ring_a_handler(
 
             ensure_emissive_on(world, queue, *renderable);
 
-            let action =
-                engine::ecs::component::Action::set_color(vec![*renderable], [1.0, 1.0, 0.0, 1.0]);
-            let mut action_system = engine::ecs::system::ActionSystem::new();
-            let mut dummy_rx = engine::ecs::RxWorld::default();
-            action_system.execute(world, queue, &mut dummy_rx, 0.0, &action);
+            emit.push(
+                env.scope,
+                engine::ecs::SignalValue::SetColor {
+                    target: vec![*renderable],
+                    rgba: [1.0, 1.0, 0.0, 1.0],
+                },
+            );
         }
         _ => {}
     }
@@ -78,13 +78,11 @@ fn ring_a_handler(
 fn ring_b_handler(
     world: &mut engine::ecs::World,
     queue: &mut engine::ecs::CommandQueue,
+    emit: &mut dyn engine::ecs::SignalEmitter,
     env: &engine::ecs::Signal,
 ) {
     match &env.value {
-        engine::ecs::SignalValue::Event(engine::ecs::EventSignal::RayIntersected {
-            renderable,
-            ..
-        }) => {
+        engine::ecs::SignalValue::RayIntersected { renderable, .. } => {
             println!(
                 "[ring_b_handler] fired scope={:?} renderable={:?}",
                 env.scope, renderable
@@ -92,11 +90,13 @@ fn ring_b_handler(
 
             ensure_emissive_on(world, queue, *renderable);
 
-            let action =
-                engine::ecs::component::Action::set_color(vec![*renderable], [0.0, 1.0, 1.0, 1.0]);
-            let mut action_system = engine::ecs::system::ActionSystem::new();
-            let mut dummy_rx = engine::ecs::RxWorld::default();
-            action_system.execute(world, queue, &mut dummy_rx, 0.0, &action);
+            emit.push(
+                env.scope,
+                engine::ecs::SignalValue::SetColor {
+                    target: vec![*renderable],
+                    rgba: [0.0, 1.0, 1.0, 1.0],
+                },
+            );
         }
         _ => {}
     }
@@ -289,7 +289,10 @@ fn main() {
         let act0 = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::attach(anchor_a, raycaster),
+                engine::ecs::SignalValue::Attach {
+                    parents: vec![anchor_a],
+                    child: raycaster,
+                },
             ));
         let _ = universe.attach(kf0, act0);
         let _ = universe.attach(anim_global, kf0);
@@ -301,7 +304,10 @@ fn main() {
         let act4 = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::attach(anchor_b, raycaster),
+                engine::ecs::SignalValue::Attach {
+                    parents: vec![anchor_b],
+                    child: raycaster,
+                },
             ));
         let _ = universe.attach(kf4, act4);
         let _ = universe.attach(anim_global, kf4);
@@ -313,7 +319,7 @@ fn main() {
         let noop = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::default(),
+                engine::ecs::SignalValue::Noop,
             ));
         let _ = universe.attach(kf7, noop);
         let _ = universe.attach(anim_global, kf7);
@@ -350,12 +356,12 @@ fn main() {
         // Anchor A rotation: smooth yaw.
         let yaw_a = t * std::f32::consts::TAU;
         let a_set = engine::ecs::component::ActionComponent::new(
-            engine::ecs::component::Action::set_transform(
-                vec![anchor_a],
-                [0.0, 1.0, 0.0],
-                quat_from_yaw(yaw_a),
-                [1.0, 1.0, 1.0],
-            ),
+            engine::ecs::SignalValue::SetTransform {
+                target: vec![anchor_a],
+                translation: [0.0, 1.0, 0.0],
+                rotation_quat_xyzw: quat_from_yaw(yaw_a),
+                scale: [1.0, 1.0, 1.0],
+            },
         );
         let a_set_id = universe.world.add_component(a_set);
         let _ = universe.attach(kf_a, a_set_id);
@@ -365,12 +371,12 @@ fn main() {
         let pitch_b = (t * std::f32::consts::TAU).sin() * 0.35;
         let rot_b = quat_mul(quat_from_yaw(yaw_b), quat_from_pitch(pitch_b));
         let b_set = engine::ecs::component::ActionComponent::new(
-            engine::ecs::component::Action::set_transform(
-                vec![anchor_b],
-                [0.0, 2.2, 0.0],
-                rot_b,
-                [1.0, 1.0, 1.0],
-            ),
+            engine::ecs::SignalValue::SetTransform {
+                target: vec![anchor_b],
+                translation: [0.0, 2.2, 0.0],
+                rotation_quat_xyzw: rot_b,
+                scale: [1.0, 1.0, 1.0],
+            },
         );
         let b_set_id = universe.world.add_component(b_set);
         let _ = universe.attach(kf_b, b_set_id);
@@ -381,7 +387,9 @@ fn main() {
             let act = universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::component::Action::raycast(raycaster),
+                    engine::ecs::SignalValue::RequestRaycast {
+                        target: vec![raycaster],
+                    },
                 ));
             let _ = universe.attach(kf_a, act);
         }
@@ -391,7 +399,9 @@ fn main() {
             let act = universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::component::Action::raycast(raycaster),
+                    engine::ecs::SignalValue::RequestRaycast {
+                        target: vec![raycaster],
+                    },
                 ));
             let _ = universe.attach(kf_b, act);
         }

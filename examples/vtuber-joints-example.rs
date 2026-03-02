@@ -1,9 +1,10 @@
 use cat_engine::engine::ecs::component::{
-    Action, ActionComponent, AmbientLightComponent, AnimationComponent, AnimationState,
+    AmbientLightComponent,
     BackgroundColorComponent, Camera3DComponent, ClockComponent, ColorComponent,
     DirectionalLightComponent, EmissiveComponent, GLTFComponent, InputComponent,
-    InputTransformModeComponent, JointComponent, KeyframeComponent, MeshComponent,
-    RenderableComponent, SkinnedMeshComponent, TransformComponent,
+    GizmoComponent, InputTransformModeComponent, JointComponent, MeshComponent,
+    PointerComponent, RayCastComponent, RenderableComponent, SkinnedMeshComponent,
+    TransformComponent,
 };
 use cat_engine::{engine, utils};
 use std::collections::{HashMap, HashSet};
@@ -54,6 +55,15 @@ fn main() {
 
     let camera3d = universe.world.add_component(Camera3DComponent::new());
     let _ = universe.attach(rig_transform, camera3d);
+
+    // Raycaster + pointer so gizmos can be interacted with.
+    let raycaster = universe
+        .world
+        .add_component(RayCastComponent::event_driven().with_max_distance(100.0));
+    let _ = universe.attach(rig_transform, raycaster);
+
+    let pointer = universe.world.add_component(PointerComponent::new());
+    let _ = universe.attach(raycaster, pointer);
 
     universe.add(input);
 
@@ -249,67 +259,17 @@ fn main() {
         println!("  sel[{i:02}] node_index={node_index} name={name} transform={joint_tx:?}");
     }
 
-    // Create a looping animation with many keyframes, and attach actions to the selected joints.
-    let anim = universe
-        .world
-        .add_component(AnimationComponent::new().with_state(AnimationState::Looping));
-    let _ = universe.attach(model_root, anim);
-
-    // Fill [0, 2) beats densely so it looks smooth at bpm=60 (2 beats = 2 seconds).
-    // Important: keep max beat < 2.0 so AnimationSystem uses loop_len=2.
-    let steps: usize = 32;
-    // Rotate around Z, with half the previous distance.
-    let amplitude_rad: f32 = 0.325;
-    let axis_parent: [f32; 3] = [0.0, 0.0, 1.0];
-    for i in 0..steps {
-        let beat = (i as f64) * (2.0 / (steps as f64));
-        let kf = universe.world.add_component(KeyframeComponent::new(beat));
-        let _ = universe.attach(anim, kf);
-
-        let angle = ((std::f64::consts::PI * beat).sin() as f32) * amplitude_rad;
-
-        for &(_node_index, joint_tx) in selected_joint_transforms.iter() {
-            let Some((translation, base_rotation, scale)) = universe
-                .world
-                .get_component_by_id_as::<TransformComponent>(joint_tx)
-                .map(|t| {
-                    (
-                        t.transform.translation,
-                        t.transform.rotation,
-                        t.transform.scale,
-                    )
-                })
-            else {
-                continue;
-            };
-
-            // Joints often have exported local axes that don't match the model's visible axes.
-            // To rotate around *parent/model-space* +Z, convert that axis into this joint's
-            // local space and then apply a local delta.
-            let axis_local =
-                quat_rotate_vec3(quat_conjugate(quat_normalize(base_rotation)), axis_parent);
-            let delta_local = quat_from_axis_angle(axis_local, angle);
-            let rotation = quat_mul(base_rotation, delta_local);
-
-            if print_transform_updates {
-                // Print at runtime (when the keyframe fires) which transforms are updated and to what.
-                let msg = format!(
-                    "[vtuber-joints-example] beat={beat:.3} set_transform target={joint_tx:?} rotation_quat_xyzw={:?}",
-                    rotation
-                );
-                let print_action = Action::print(msg);
-                let print_action_cid = universe.world.add_component(ActionComponent::new(print_action));
-                let _ = universe.attach(kf, print_action_cid);
-            }
-
-            let action = Action::set_transform(vec![joint_tx], translation, rotation, scale);
-            let action_cid = universe.world.add_component(ActionComponent::new(action));
-            let _ = universe.attach(kf, action_cid);
-        }
+    // Attach one gizmo under each selected arm joint transform.
+    // (Stop animating joints for now; use gizmos to poke them interactively.)
+    for &(_node_index, joint_tx) in selected_joint_transforms.iter() {
+        let gizmo = universe.world.add_component(GizmoComponent::new());
+        let _ = universe.attach(joint_tx, gizmo);
     }
 
-    // Ensure Animation/Keyframes are registered.
-    universe.add(anim);
+    if print_transform_updates {
+        println!("[vtuber-joints-example] note: joint animation disabled; gizmos enabled");
+    }
+
     universe.systems.process_commands(
         &mut universe.world,
         &mut universe.visuals,

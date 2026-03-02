@@ -648,11 +648,12 @@ fn main() {
             let act_a = universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::component::Action::oscillator_schedule_music_note(
-                        vec![osc_a_comp],
-                        0.0,
-                        note_a,
-                    ),
+                    engine::ecs::SignalValue::OscillatorScheduleMusicNote {
+                        target: vec![osc_a_comp],
+                        beat_offset: 0.0,
+                        beat_context: None,
+                        note: note_a,
+                    },
                 ));
 
             let _ = universe.attach(kf, act_a);
@@ -669,10 +670,10 @@ fn main() {
                     universe
                         .world
                         .add_component(engine::ecs::component::ActionComponent::new(
-                            engine::ecs::component::Action::audio_band_pass_set_center_hz(
-                                vec![bp_a_comp],
+                            engine::ecs::SignalValue::AudioBandPassSetCenterHz {
+                                target: vec![bp_a_comp],
                                 center_hz,
-                            ),
+                            },
                         ));
                 let _ = universe.attach(kf, bp_center);
 
@@ -682,10 +683,10 @@ fn main() {
                         universe
                             .world
                             .add_component(engine::ecs::component::ActionComponent::new(
-                                engine::ecs::component::Action::set_text(
-                                    vec![text_id],
-                                    format!("BandPass center={center_hz:.1}Hz"),
-                                ),
+                                engine::ecs::SignalValue::SetText {
+                                    target: vec![text_id],
+                                    text: format!("BandPass center={center_hz:.1}Hz"),
+                                },
                             ));
                     let _ = universe.attach(kf, label);
                 }
@@ -696,7 +697,10 @@ fn main() {
         let reset_a = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::set_color(vec![track_a_pattern_root], a_dark),
+                engine::ecs::SignalValue::SetColor {
+                    target: vec![track_a_pattern_root],
+                    rgba: a_dark,
+                },
             ));
         let _ = universe.attach(kf, reset_a);
 
@@ -713,7 +717,10 @@ fn main() {
         let bright_a = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::set_color(vec![cube_a], a_bright),
+                engine::ecs::SignalValue::SetColor {
+                    target: vec![cube_a],
+                    rgba: a_bright,
+                },
             ));
         let _ = universe.attach(kf, bright_a);
     }

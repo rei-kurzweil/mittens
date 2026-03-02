@@ -257,21 +257,23 @@ fn main() {
         let kick = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::oscillator_schedule_music_note(
-                    vec![osc_drum_comp],
-                    0.0,
-                    engine::ecs::component::MusicNote::c(0, kick_dur).with_velocity(0.9),
-                ),
+                engine::ecs::SignalValue::OscillatorScheduleMusicNote {
+                    target: vec![osc_drum_comp],
+                    beat_offset: 0.0,
+                    beat_context: None,
+                    note: engine::ecs::component::MusicNote::c(0, kick_dur).with_velocity(0.9),
+                },
             ));
 
         let noise = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::oscillator_schedule_music_note(
-                    vec![osc_noise_comp],
-                    0.5,
-                    engine::ecs::component::MusicNote::c(9, noise_dur).with_velocity(0.25),
-                ),
+                engine::ecs::SignalValue::OscillatorScheduleMusicNote {
+                    target: vec![osc_noise_comp],
+                    beat_offset: 0.5,
+                    beat_context: None,
+                    note: engine::ecs::component::MusicNote::c(9, noise_dur).with_velocity(0.25),
+                },
             ));
 
         let _ = universe.attach(anim, kf);
@@ -285,16 +287,19 @@ fn main() {
             universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::component::Action::set_color(vec![kick_timeline_root], kick_dark),
+                    engine::ecs::SignalValue::SetColor {
+                        target: vec![kick_timeline_root],
+                        rgba: kick_dark,
+                    },
                 ));
         let reset_noise_lane =
             universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::component::Action::set_color(
-                        vec![noise_timeline_root],
-                        noise_dark,
-                    ),
+                    engine::ecs::SignalValue::SetColor {
+                        target: vec![noise_timeline_root],
+                        rgba: noise_dark,
+                    },
                 ));
         let _ = universe.attach(kf, reset_kick_lane);
         let _ = universe.attach(kf, reset_noise_lane);
@@ -323,12 +328,18 @@ fn main() {
         let brighten_kick = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::set_color(vec![kick_cube], kick_bright),
+                engine::ecs::SignalValue::SetColor {
+                    target: vec![kick_cube],
+                    rgba: kick_bright,
+                },
             ));
         let brighten_noise = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::set_color(vec![noise_cube], noise_bright),
+                engine::ecs::SignalValue::SetColor {
+                    target: vec![noise_cube],
+                    rgba: noise_bright,
+                },
             ));
         let _ = universe.attach(kf, brighten_kick);
         let _ = universe.attach(kf, brighten_noise);
