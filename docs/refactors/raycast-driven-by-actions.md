@@ -169,4 +169,4 @@ This raycast refactor pairs naturally with the gesture refactor:
 - `DragUpdatePolicy` should be per pointer/raycaster
 - `StartPlaneProjection` should use the pointer’s ray source (not always cursor)
 
-Those are tracked in `docs/gizmo-and-gestures-2.md`.
+Those are tracked in `docs/gizmo-and-gestures-3.md`.

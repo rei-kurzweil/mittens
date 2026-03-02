@@ -49,6 +49,11 @@ pub enum EventSignal {
         raycaster: ComponentId,
         renderable: ComponentId,
         hit_point: [f32; 3],
+
+        /// Optional screen-space cursor/pointer position in pixels.
+        ///
+        /// Present for screen-space pointers (mouse/touch). Absent for non-screen pointers.
+        screen_pos_px: Option<(f32, f32)>,
     },
 
     /// Fact: a drag gesture moved this tick.
@@ -59,6 +64,15 @@ pub enum EventSignal {
         renderable: ComponentId,
         hit_point: [f32; 3],
         delta_world: [f32; 3],
+
+        /// Optional screen-space cursor/pointer position in pixels.
+        screen_pos_px: Option<(f32, f32)>,
+
+        /// Optional pixel delta since the previous DragMove for this drag.
+        ///
+        /// Present for screen-space pointers (mouse/touch) when previous screen position is
+        /// known. Absent for non-screen pointers.
+        screen_delta_px: Option<(f32, f32)>,
     },
 
     /// Fact: a drag gesture ended.

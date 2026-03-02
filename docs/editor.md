@@ -65,7 +65,7 @@ These are the main pain points you listed, mapped to what the codebase does toda
     - detaching gizmo visuals to a neutral world node, or
     - applying an inverse-parent transform at the gizmo root so it visually stays axis-aligned in world.
 
-See also: `docs/bvh-and-raycast.md`, `docs/raycast-circles-and-cones.md`, `docs/gestures-and-gizmos.md`.
+See also: `docs/bvh-and-raycast.md`, `docs/analysis/raycast-circles-and-cones.md`, `docs/gestures-and-gizmos.md`.
 
 ## Proposed components
 

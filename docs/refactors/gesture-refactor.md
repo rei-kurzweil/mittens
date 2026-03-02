@@ -11,7 +11,7 @@ This doc focuses on the *gesture-level* refactor (how we represent and update a 
 
 Two separate docs/threads:
 - This one: naming + architecture boundaries (gesture lifecycle vs hit testing vs mapping).
-- `docs/screen-space-gizmo-drag.md`: a separate proposal for making “screen space” mean literal pixel-driven mapping for gizmo handles.
+- `docs/refactors/screen-space-gizmo-drag.md`: a separate proposal for making “screen space” mean literal pixel-driven mapping for gizmo handles.
 
 ## What we have today
 
@@ -89,7 +89,7 @@ Examples:
 - `StartPlaneProjection` (what we do today in the “screen space” mode)
 - ring-plane angle for rotation gizmos
 - closest-point ray-to-axis for translation gizmos
-- literal screen-pixel mapping for gizmos (see `docs/screen-space-gizmo-drag.md`)
+- literal screen-pixel mapping for gizmos (see `docs/refactors/screen-space-gizmo-drag.md`)
 
 For gizmos, mapping often depends on *which handle is grabbed* (axis vs ring), so it may belong in `GizmoSystem` rather than being a global policy in `GestureSystem`.
 

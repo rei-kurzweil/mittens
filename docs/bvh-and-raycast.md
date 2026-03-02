@@ -6,7 +6,7 @@ For how meshes/handles flow through rendering (and why `base_mesh` exists), see 
 
 ## High-level idea
 If you’re looking for future picking improvements (gizmo handles like rings/cones), see:
-- `docs/raycast-circles-and-cones.md`
+- `docs/analysis/raycast-circles-and-cones.md`
 
 - `BvhSystem` maintains a broadphase acceleration structure over **world-space AABBs** of *renderable* components.
 - `RayCastSystem` turns the cursor + active camera into a **world-space ray**, then uses `BvhSystem` to find the closest hit.

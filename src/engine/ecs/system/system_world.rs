@@ -603,6 +603,12 @@ impl SystemWorld {
         queue: &mut crate::engine::ecs::CommandQueue,
         dt_sec: f32,
     ) {
+        // Immediate-mode signal graph setup.
+        // Handlers are installed once; per-frame caches are reset here.
+        self.rx.begin_frame();
+        self.gesture.install_immediate_handlers(&mut self.rx);
+        self.gesture.begin_frame();
+
         // Process input first - it may queue commands
         self.input.process_input(world, input, queue, dt_sec);
 
@@ -684,11 +690,22 @@ impl SystemWorld {
             dt_sec,
         );
 
+        // Dispatch any signals produced by raycast immediately (e.g. RayIntersected).
+        let _ = self.rx.dispatch_new_signals(world, queue, 100_000);
+
         // Gestures interpret ray hits + input into drag events.
         self.gesture.tick_with_rx(visuals, input, &mut self.rx);
+
+        // Dispatch gesture-produced signals immediately (e.g. DragStart/DragMove/DragEnd).
+        let _ = self.rx.dispatch_new_signals(world, queue, 100_000);
+
         // Gizmos consume drag events and apply transform changes.
         self.gizmo
             .tick_with_queue(world, input, queue, &mut self.rx);
+
+        // Dispatch gizmo-produced signals immediately (if any).
+        let _ = self.rx.dispatch_new_signals(world, queue, 100_000);
+
         // Apply gizmo transform updates immediately so visuals reflect the drag this frame.
         queue.flush(world, self, visuals);
 
@@ -708,13 +725,15 @@ impl SystemWorld {
     ) {
         commands.flush(world, self, visuals);
 
-        // Post-mutation change event phase.
-        let events = self.rx.drain();
-        for env in events.iter() {
-            self.rx.dispatch_handlers(world, commands, env);
-        }
+        // Immediate-mode: ensure any remaining undispatched signals get handled.
+        // This covers signals emitted after the last explicit dispatch point.
+        let _ = self.rx.dispatch_new_signals(world, commands, 100_000);
 
-        // Event handlers may have queued commands (e.g. register_color). Apply them now so
+        // Clear per-frame signals.
+        let _ = self.rx.drain();
+        self.rx.begin_frame();
+
+        // Signal handlers may have queued commands (e.g. register_color). Apply them now so
         // the effects are visible this frame.
         commands.flush(world, self, visuals);
 

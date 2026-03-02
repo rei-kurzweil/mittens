@@ -1,7 +1,7 @@
 
 # True screen-space gizmo dragging (proposal)
 
-This doc is *separate* from `docs/gesture-refactor.md`.
+This doc is *separate* from `docs/refactors/gesture-refactor.md`.
 
 It explores an alternative mapping for the mode currently named `StartPlaneProjection` (formerly `ScreenSpaceCoords`).
 Today that mode is really “project onto a drag-start plane using the pointer ray”. That works well in many cases, but it can feel oddly inconsistent from some camera angles because the mapping depends on the ray/plane geometry (and can become ill-conditioned when the ray grazes the plane).

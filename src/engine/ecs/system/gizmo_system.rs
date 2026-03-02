@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::{
     GizmoAxis, GizmoComponent, GizmoRotateComponent, GizmoScaleComponent, GizmoTranslateComponent,
-    TransformComponent,
+    GestureCoordType, GestureCoordTypeComponent, TransformComponent,
 };
 use crate::engine::ecs::{CommandQueue, ComponentId, EventSignal, RxWorld, SignalValue, World};
 use crate::engine::user_input::InputState;
@@ -145,6 +145,20 @@ impl GizmoSystem {
             rc
         }
 
+        fn spawn_gesture_coord_type_root(
+            world: &mut World,
+            parent: ComponentId,
+            name: &str,
+            coord_type: GestureCoordType,
+        ) -> ComponentId {
+            let c = world.add_component_boxed_named(
+                name,
+                Box::new(GestureCoordTypeComponent::new(coord_type)),
+            );
+            let _ = world.add_child(parent, c);
+            c
+        }
+
         fn spawn_translate_handle_root(
             world: &mut World,
             parent: ComponentId,
@@ -180,7 +194,13 @@ impl GizmoSystem {
 
         // Rotation rings live under per-axis rotate handle components.
         let rot_x_root = spawn_rotate_handle_root(world, gizmo_root, GizmoAxis::X, "gizmo_rot_x");
-        let rot_x_pick = spawn_raycastable_root(world, rot_x_root, "gizmo_rot_x_pick");
+        let rot_x_coord = spawn_gesture_coord_type_root(
+            world,
+            rot_x_root,
+            "gizmo_rot_x_coord",
+            GestureCoordType::ScreenSpace1DSlider,
+        );
+        let rot_x_pick = spawn_raycastable_root(world, rot_x_coord, "gizmo_rot_x_pick");
         spawn_part(
             world,
             rot_x_pick,
@@ -193,7 +213,13 @@ impl GizmoSystem {
         );
 
         let rot_y_root = spawn_rotate_handle_root(world, gizmo_root, GizmoAxis::Y, "gizmo_rot_y");
-        let rot_y_pick = spawn_raycastable_root(world, rot_y_root, "gizmo_rot_y_pick");
+        let rot_y_coord = spawn_gesture_coord_type_root(
+            world,
+            rot_y_root,
+            "gizmo_rot_y_coord",
+            GestureCoordType::ScreenSpace1DSlider,
+        );
+        let rot_y_pick = spawn_raycastable_root(world, rot_y_coord, "gizmo_rot_y_pick");
         spawn_part(
             world,
             rot_y_pick,
@@ -206,7 +232,13 @@ impl GizmoSystem {
         );
 
         let rot_z_root = spawn_rotate_handle_root(world, gizmo_root, GizmoAxis::Z, "gizmo_rot_z");
-        let rot_z_pick = spawn_raycastable_root(world, rot_z_root, "gizmo_rot_z_pick");
+        let rot_z_coord = spawn_gesture_coord_type_root(
+            world,
+            rot_z_root,
+            "gizmo_rot_z_coord",
+            GestureCoordType::ScreenSpace1DSlider,
+        );
+        let rot_z_pick = spawn_raycastable_root(world, rot_z_coord, "gizmo_rot_z_pick");
         spawn_part(
             world,
             rot_z_pick,
@@ -346,6 +378,20 @@ impl GizmoSystem {
         }
 
         Some((gizmo?, op?))
+    }
+
+    fn resolve_gesture_coord_type_for_renderable(
+        world: &World,
+        renderable: ComponentId,
+    ) -> Option<GestureCoordType> {
+        let mut cur = Some(renderable);
+        while let Some(node) = cur {
+            if let Some(c) = world.get_component_by_id_as::<GestureCoordTypeComponent>(node) {
+                return Some(c.coord_type);
+            }
+            cur = world.parent_of(node);
+        }
+        None
     }
 
     fn gizmos_for_hit_renderable(world: &World, renderable: ComponentId) -> Vec<ComponentId> {
@@ -533,6 +579,7 @@ impl GizmoSystem {
                     raycaster,
                     renderable,
                     hit_point,
+                    ..
                 } => {
                     let Some((gizmo_cid, _op)) =
                         Self::resolve_gizmo_op_for_renderable(world, renderable)
@@ -572,6 +619,7 @@ impl GizmoSystem {
                     renderable,
                     delta_world,
                     hit_point,
+                    screen_delta_px,
                     ..
                 } => {
                     let Some((gizmo_cid, op)) =
@@ -613,25 +661,44 @@ impl GizmoSystem {
                             t.set_position(queue, next[0], next[1], next[2]);
                         }
                         GizmoOp::Rotate(axis) => {
-                            let pivot = TransformSystem::world_position(world, target_transform)
-                                .unwrap_or([0.0, 0.0, 0.0]);
-                            let prev_hit = sub(hit_point, delta_world);
+                            let coord_type =
+                                Self::resolve_gesture_coord_type_for_renderable(world, renderable);
 
                             let axis_v = axis.unit_vec3();
-                            let mut v0 = sub(prev_hit, pivot);
-                            let mut v1 = sub(hit_point, pivot);
+                            let angle = match (coord_type, screen_delta_px) {
+                                (Some(GestureCoordType::ScreenSpace1DSlider), Some((dx, dy))) => {
+                                    // Simple first-pass slider mapping. We can refine sign
+                                    // selection later (camera-aware) without changing the signal.
+                                    let radians_per_px = 0.01_f32;
+                                    let px = match axis {
+                                        GizmoAxis::X => -dy,
+                                        GizmoAxis::Y => dx,
+                                        GizmoAxis::Z => dx,
+                                    };
+                                    px * radians_per_px
+                                }
+                                _ => {
+                                    let pivot =
+                                        TransformSystem::world_position(world, target_transform)
+                                            .unwrap_or([0.0, 0.0, 0.0]);
+                                    let prev_hit = sub(hit_point, delta_world);
 
-                            // Project onto plane orthogonal to the axis.
-                            v0 = sub(v0, mul(axis_v, dot(v0, axis_v)));
-                            v1 = sub(v1, mul(axis_v, dot(v1, axis_v)));
-                            v0 = math::vec3_normalize(v0);
-                            v1 = math::vec3_normalize(v1);
+                                    let mut v0 = sub(prev_hit, pivot);
+                                    let mut v1 = sub(hit_point, pivot);
 
-                            // Signed angle about axis.
-                            let c = cross(v0, v1);
-                            let s = dot(axis_v, c);
-                            let d = dot(v0, v1);
-                            let angle = s.atan2(d);
+                                    // Project onto plane orthogonal to the axis.
+                                    v0 = sub(v0, mul(axis_v, dot(v0, axis_v)));
+                                    v1 = sub(v1, mul(axis_v, dot(v1, axis_v)));
+                                    v0 = math::vec3_normalize(v0);
+                                    v1 = math::vec3_normalize(v1);
+
+                                    // Signed angle about axis.
+                                    let c = cross(v0, v1);
+                                    let s = dot(axis_v, c);
+                                    let d = dot(v0, v1);
+                                    s.atan2(d)
+                                }
+                            };
 
                             if angle != 0.0 {
                                 let Some(t) = world

@@ -3,7 +3,7 @@
 
 This is the canonical doc for the engine’s “signals-first” layer.
 
-If you were previously looking for `docs/events.md`: that file is now a deprecated redirect.
+If you were previously looking for the old events doc: it has been folded into this file.
 
 ## Practical examples (start here)
 

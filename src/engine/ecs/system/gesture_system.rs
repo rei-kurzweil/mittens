@@ -1,7 +1,8 @@
-use crate::engine::ecs::{ComponentId, EventSignal, RxWorld, SignalValue};
+use crate::engine::ecs::{ComponentId, EventSignal, RxWorld, SignalKind, SignalValue};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 use crate::utils::math;
+use std::sync::{Arc, Mutex};
 use winit::event::MouseButton;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -37,9 +38,61 @@ pub struct GestureState {
 pub struct GestureSystem {
     state: GestureState,
     pub drag_update_policy: DragUpdatePolicy,
+
+    ray_hit_best: Arc<Mutex<Option<(ComponentId, ComponentId, f32, [f32; 3], [f32; 3])>>>,
+    immediate_handlers_installed: bool,
 }
 
 impl GestureSystem {
+    pub fn begin_frame(&mut self) {
+        if let Ok(mut best) = self.ray_hit_best.lock() {
+            *best = None;
+        }
+    }
+
+    /// Install immediate-mode handlers into `RxWorld`.
+    ///
+    /// This lets GestureSystem consume `RayIntersected` without scanning `rx.signals()`.
+    pub fn install_immediate_handlers(&mut self, rx: &mut RxWorld) {
+        if self.immediate_handlers_installed {
+            return;
+        }
+
+        let best_ref = self.ray_hit_best.clone();
+        rx.add_global_handler_closure(SignalKind::RayIntersected, move |_world, _queue, env| {
+            let SignalValue::Event(EventSignal::RayIntersected {
+                raycaster,
+                renderable,
+                t,
+                origin,
+                dir,
+            }) = &env.value
+            else {
+                return;
+            };
+
+            if *t < 0.0 {
+                return;
+            }
+
+            let Ok(mut best) = best_ref.lock() else {
+                return;
+            };
+            match *best {
+                None => {
+                    *best = Some((*raycaster, *renderable, *t, *origin, *dir));
+                }
+                Some((_brc, _br, bt, _bo, _bd)) => {
+                    if *t < bt {
+                        *best = Some((*raycaster, *renderable, *t, *origin, *dir));
+                    }
+                }
+            }
+        });
+
+        self.immediate_handlers_installed = true;
+    }
+
     pub fn state(&self) -> &GestureState {
         &self.state
     }
@@ -148,34 +201,9 @@ impl GestureSystem {
     ///
     /// This is mouse-only for now: left button + cursor ray.
     pub fn tick_with_rx(&mut self, visuals: &VisualWorld, input: &InputState, rx: &mut RxWorld) {
-        // Find the closest RayIntersected this frame (across all raycasters).
-        // RayCastSystem emits at most one RayIntersected per raycaster per tick.
-        let mut best: Option<(ComponentId, ComponentId, f32, [f32; 3], [f32; 3])> = None;
-        for s in rx.signals().iter() {
-            let SignalValue::Event(EventSignal::RayIntersected {
-                raycaster,
-                renderable,
-                t,
-                origin,
-                dir,
-            }) = &s.value
-            else {
-                continue;
-            };
-
-            if *t < 0.0 {
-                continue;
-            }
-
-            match best {
-                None => best = Some((*raycaster, *renderable, *t, *origin, *dir)),
-                Some((_, _, bt, _, _)) => {
-                    if *t < bt {
-                        best = Some((*raycaster, *renderable, *t, *origin, *dir));
-                    }
-                }
-            }
-        }
+        // Immediate-mode: RayIntersected is cached by a handler as raycasts are emitted.
+        let best: Option<(ComponentId, ComponentId, f32, [f32; 3], [f32; 3])> =
+            self.ray_hit_best.lock().ok().and_then(|g| *g);
 
         let hit_point = best.map(|(_rc, _r, t, origin, dir)| {
             [
@@ -221,6 +249,7 @@ impl GestureSystem {
                             raycaster,
                             renderable,
                             hit_point: p,
+                            screen_pos_px: input.cursor_pos,
                         },
                     );
                 }
@@ -250,6 +279,12 @@ impl GestureSystem {
                                     let delta =
                                         [cur[0] - prev[0], cur[1] - prev[1], cur[2] - prev[2]];
                                     if delta[0] != 0.0 || delta[1] != 0.0 || delta[2] != 0.0 {
+                                        let screen_pos_px = input.cursor_pos;
+                                        let screen_delta_px = match (self.state.last_cursor_pos, screen_pos_px) {
+                                            (Some((px, py)), Some((cx, cy))) => Some((cx - px, cy - py)),
+                                            _ => None,
+                                        };
+
                                         rx.push(
                                             active_renderable,
                                             EventSignal::DragMove {
@@ -257,10 +292,13 @@ impl GestureSystem {
                                                 renderable: active_renderable,
                                                 hit_point: cur,
                                                 delta_world: delta,
+                                                screen_pos_px,
+                                                screen_delta_px,
                                             },
                                         );
                                     }
                                     self.state.last_hit_point = Some(cur);
+                                    self.state.last_cursor_pos = input.cursor_pos;
                                 }
                             }
                         }
@@ -292,6 +330,12 @@ impl GestureSystem {
                         if let Some(prev) = self.state.last_hit_point {
                             let delta = [cur[0] - prev[0], cur[1] - prev[1], cur[2] - prev[2]];
                             if delta[0] != 0.0 || delta[1] != 0.0 || delta[2] != 0.0 {
+                                let screen_pos_px = input.cursor_pos;
+                                let screen_delta_px = match (self.state.last_cursor_pos, screen_pos_px) {
+                                    (Some((px, py)), Some((cx, cy))) => Some((cx - px, cy - py)),
+                                    _ => None,
+                                };
+
                                 rx.push(
                                     active_renderable,
                                     EventSignal::DragMove {
@@ -299,6 +343,8 @@ impl GestureSystem {
                                         renderable: active_renderable,
                                         hit_point: cur,
                                         delta_world: delta,
+                                        screen_pos_px,
+                                        screen_delta_px,
                                     },
                                 );
                             }
@@ -343,6 +389,9 @@ impl Default for GestureSystem {
             state: GestureState::default(),
             // Desktop/mobile tends to feel better with free-after-start gizmo dragging.
             drag_update_policy: DragUpdatePolicy::StartPlaneProjection,
+
+            ray_hit_best: Arc::new(Mutex::new(None)),
+            immediate_handlers_installed: false,
         }
     }
 }

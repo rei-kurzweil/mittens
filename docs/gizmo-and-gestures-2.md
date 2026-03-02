@@ -3,8 +3,9 @@
 This doc is a re-contextualized follow-up to:
 - `docs/gestures-and-gizmos.md`
 - `docs/input-intent-data-flow.md`
-- `docs/gesture-refactor.md`
-- `docs/screen-space-gizmo-drag.md`
+- `docs/refactors/gesture-refactor.md`
+- `docs/refactors/screen-space-gizmo-drag.md`
+- `docs/gizmo-and-gestures-3.md`
 - `docs/refactors/raycast-driven-by-actions.md`
 
 Goal: map out what we need to change so gestures + gizmos work cleanly with:
