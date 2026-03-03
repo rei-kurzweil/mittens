@@ -1,6 +1,7 @@
 use crate::engine::ecs::component::{
-    GizmoAxis, GizmoComponent, GizmoRotateComponent, GizmoScaleComponent, GizmoTranslateComponent,
-    GestureCoordType, GestureCoordTypeComponent, TransformComponent,
+    GestureCoordType, GestureCoordTypeComponent, TransformComponent, TransformGizmoAxis,
+    TransformGizmoComponent, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
+    TransformGizmoTranslateComponent,
 };
 use crate::engine::ecs::{CommandQueue, ComponentId, RxWorld, SignalValue, World};
 use crate::engine::user_input::InputState;
@@ -8,37 +9,37 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Copy)]
-enum GizmoOp {
-    Translate(GizmoAxis),
-    Rotate(GizmoAxis),
-    Scale(GizmoAxis),
+enum TransformGizmoOp {
+    Translate(TransformGizmoAxis),
+    Rotate(TransformGizmoAxis),
+    Scale(TransformGizmoAxis),
 }
 
 #[derive(Debug, Default)]
-pub struct GizmoSystem;
+pub struct TransformGizmoSystem;
 
-impl GizmoSystem {
+impl TransformGizmoSystem {
     pub fn new() -> Self {
         Self
     }
 
-    /// Spawn the 9-part gizmo visual subtree for a GizmoComponent.
+    /// Spawn the 9-part gizmo visual subtree for a TransformGizmoComponent.
     ///
-    /// Contract: GizmoComponent is expected to be attached under a TransformComponent.
-    pub fn register_gizmo(
+    /// Contract: TransformGizmoComponent is expected to be attached under a TransformComponent.
+    pub fn register_transform_gizmo(
         &mut self,
         world: &mut World,
         component: ComponentId,
         queue: &mut CommandQueue,
     ) {
         use crate::engine::ecs::component::{
-            GizmoAxis, GizmoComponent, GizmoRotateComponent, GizmoTranslateComponent,
-            OverlayComponent, TransformComponent,
+            OverlayComponent, TransformComponent, TransformGizmoAxis, TransformGizmoComponent,
+            TransformGizmoRotateComponent, TransformGizmoTranslateComponent,
         };
         use crate::engine::graphics::primitives::CpuMeshHandle;
 
         // Must be a gizmo.
-        let Some(_) = world.get_component_by_id_as::<GizmoComponent>(component) else {
+        let Some(_) = world.get_component_by_id_as::<TransformGizmoComponent>(component) else {
             return;
         };
 
@@ -62,19 +63,19 @@ impl GizmoSystem {
 
         // Bind gizmo target to the attached TransformComponent.
         // This is the only supported targeting mode (works for joints/armatures and normal transforms).
-        if let Some(g) = world.get_component_by_id_as_mut::<GizmoComponent>(component) {
+        if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(component) {
             g.target_transform = Some(parent_transform);
         }
 
         // Avoid respawn.
-        if let Some(g) = world.get_component_by_id_as::<GizmoComponent>(component) {
+        if let Some(g) = world.get_component_by_id_as::<TransformGizmoComponent>(component) {
             if g.visual_root.is_some() {
                 return;
             }
         }
 
         let gizmo_scale = world
-            .get_component_by_id_as::<GizmoComponent>(component)
+            .get_component_by_id_as::<TransformGizmoComponent>(component)
             .map(|g| g.scale)
             .unwrap_or(1.0);
 
@@ -93,7 +94,7 @@ impl GizmoSystem {
         let gizmo_visual_parent = gizmo_overlay;
 
         // Write back visual root.
-        if let Some(g) = world.get_component_by_id_as_mut::<GizmoComponent>(component) {
+        if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(component) {
             g.visual_root = Some(gizmo_root);
         }
 
@@ -176,11 +177,13 @@ impl GizmoSystem {
         fn spawn_translate_handle_root(
             world: &mut World,
             parent: ComponentId,
-            axis: GizmoAxis,
+            axis: TransformGizmoAxis,
             name: &str,
         ) -> ComponentId {
-            let h =
-                world.add_component_boxed_named(name, Box::new(GizmoTranslateComponent::new(axis)));
+            let h = world.add_component_boxed_named(
+                name,
+                Box::new(TransformGizmoTranslateComponent::new(axis)),
+            );
             let _ = world.add_child(parent, h);
             h
         }
@@ -188,11 +191,11 @@ impl GizmoSystem {
         fn spawn_rotate_handle_root(
             world: &mut World,
             parent: ComponentId,
-            axis: GizmoAxis,
+            axis: TransformGizmoAxis,
             name: &str,
         ) -> ComponentId {
             let h =
-                world.add_component_boxed_named(name, Box::new(GizmoRotateComponent::new(axis)));
+                world.add_component_boxed_named(name, Box::new(TransformGizmoRotateComponent::new(axis)));
             let _ = world.add_child(parent, h);
             h
         }
@@ -208,7 +211,7 @@ impl GizmoSystem {
 
         // Rotation rings live under per-axis rotate handle components.
         let rot_x_root =
-            spawn_rotate_handle_root(world, gizmo_visual_parent, GizmoAxis::X, "gizmo_rot_x");
+            spawn_rotate_handle_root(world, gizmo_visual_parent, TransformGizmoAxis::X, "gizmo_rot_x");
         let rot_x_coord = spawn_gesture_coord_type_root(
             world,
             rot_x_root,
@@ -228,7 +231,7 @@ impl GizmoSystem {
         );
 
         let rot_y_root =
-            spawn_rotate_handle_root(world, gizmo_visual_parent, GizmoAxis::Y, "gizmo_rot_y");
+            spawn_rotate_handle_root(world, gizmo_visual_parent, TransformGizmoAxis::Y, "gizmo_rot_y");
         let rot_y_coord = spawn_gesture_coord_type_root(
             world,
             rot_y_root,
@@ -248,7 +251,7 @@ impl GizmoSystem {
         );
 
         let rot_z_root =
-            spawn_rotate_handle_root(world, gizmo_visual_parent, GizmoAxis::Z, "gizmo_rot_z");
+            spawn_rotate_handle_root(world, gizmo_visual_parent, TransformGizmoAxis::Z, "gizmo_rot_z");
         let rot_z_coord = spawn_gesture_coord_type_root(
             world,
             rot_z_root,
@@ -277,7 +280,7 @@ impl GizmoSystem {
 
         // Translation arrows live under per-axis translate handle components.
         let move_x_root =
-            spawn_translate_handle_root(world, gizmo_visual_parent, GizmoAxis::X, "gizmo_move_x");
+            spawn_translate_handle_root(world, gizmo_visual_parent, TransformGizmoAxis::X, "gizmo_move_x");
         let move_x_pick = spawn_raycastable_root(world, move_x_root, "gizmo_move_x_pick");
         // +X arrow: rotate +Z axis to +X (yaw +90deg).
         let rot_x = [0.0, std::f32::consts::FRAC_PI_2, 0.0];
@@ -303,7 +306,7 @@ impl GizmoSystem {
         );
 
         let move_y_root =
-            spawn_translate_handle_root(world, gizmo_visual_parent, GizmoAxis::Y, "gizmo_move_y");
+            spawn_translate_handle_root(world, gizmo_visual_parent, TransformGizmoAxis::Y, "gizmo_move_y");
         let move_y_pick = spawn_raycastable_root(world, move_y_root, "gizmo_move_y_pick");
         // +Y arrow: rotate +Z axis to +Y (pitch -90deg around X).
         let rot_y = [-std::f32::consts::FRAC_PI_2, 0.0, 0.0];
@@ -329,7 +332,7 @@ impl GizmoSystem {
         );
 
         let move_z_root =
-            spawn_translate_handle_root(world, gizmo_visual_parent, GizmoAxis::Z, "gizmo_move_z");
+            spawn_translate_handle_root(world, gizmo_visual_parent, TransformGizmoAxis::Z, "gizmo_move_z");
         let move_z_pick = spawn_raycastable_root(world, move_z_root, "gizmo_move_z_pick");
         // +Z arrow: no rotation.
         spawn_part(
@@ -363,25 +366,31 @@ impl GizmoSystem {
     fn resolve_gizmo_op_for_renderable(
         world: &World,
         renderable: ComponentId,
-    ) -> Option<(ComponentId, GizmoOp)> {
+    ) -> Option<(ComponentId, TransformGizmoOp)> {
         let mut cur = Some(renderable);
-        let mut op: Option<GizmoOp> = None;
+        let mut op: Option<TransformGizmoOp> = None;
         let mut gizmo: Option<ComponentId> = None;
 
         while let Some(node) = cur {
             if op.is_none() {
-                if let Some(h) = world.get_component_by_id_as::<GizmoTranslateComponent>(node) {
-                    op = Some(GizmoOp::Translate(h.axis));
-                } else if let Some(h) = world.get_component_by_id_as::<GizmoRotateComponent>(node) {
-                    op = Some(GizmoOp::Rotate(h.axis));
-                } else if let Some(h) = world.get_component_by_id_as::<GizmoScaleComponent>(node) {
-                    op = Some(GizmoOp::Scale(h.axis));
+                if let Some(h) =
+                    world.get_component_by_id_as::<TransformGizmoTranslateComponent>(node)
+                {
+                    op = Some(TransformGizmoOp::Translate(h.axis));
+                } else if let Some(h) =
+                    world.get_component_by_id_as::<TransformGizmoRotateComponent>(node)
+                {
+                    op = Some(TransformGizmoOp::Rotate(h.axis));
+                } else if let Some(h) =
+                    world.get_component_by_id_as::<TransformGizmoScaleComponent>(node)
+                {
+                    op = Some(TransformGizmoOp::Scale(h.axis));
                 }
             }
 
             if gizmo.is_none()
                 && world
-                    .get_component_by_id_as::<GizmoComponent>(node)
+                    .get_component_by_id_as::<TransformGizmoComponent>(node)
                     .is_some()
             {
                 gizmo = Some(node);
@@ -416,14 +425,14 @@ impl GizmoSystem {
             .children_of(renderable)
             .iter()
             .copied()
-            .filter(|&ch| world.get_component_by_id_as::<GizmoComponent>(ch).is_some())
+            .filter(|&ch| world.get_component_by_id_as::<TransformGizmoComponent>(ch).is_some())
             .collect();
 
         // Also support gizmo-as-ancestor (new gizmo visuals are children of the gizmo node).
         let mut cur = Some(renderable);
         while let Some(node) = cur {
             if world
-                .get_component_by_id_as::<GizmoComponent>(node)
+                .get_component_by_id_as::<TransformGizmoComponent>(node)
                 .is_some()
             {
                 out.push(node);
@@ -559,6 +568,43 @@ impl GizmoSystem {
             t
         }
 
+        // If a gizmo was reparented (e.g. by EditorSystem selection), rebind its target transform.
+        for s in rx.signals().iter() {
+            let SignalValue::ParentChanged {
+                child,
+                new_parent,
+                ..
+            } = &s.value
+            else {
+                continue;
+            };
+
+            if world
+                .get_component_by_id_as::<TransformGizmoComponent>(*child)
+                .is_none()
+            {
+                continue;
+            }
+
+            let mut target: Option<ComponentId> = None;
+            let mut cur = *new_parent;
+            while let Some(node) = cur {
+                if world
+                    .get_component_by_id_as::<TransformComponent>(node)
+                    .is_some()
+                {
+                    target = Some(node);
+                    break;
+                }
+                cur = world.parent_of(node);
+            }
+
+            if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(*child) {
+                g.target_transform = target;
+                g.active_raycaster = None;
+            }
+        }
+
         // Build a lookup for the drag-start ray direction by (raycaster, renderable).
         // GestureSystem emits DragStart after consuming RayIntersected, but both signals are
         // present in the same tick's RxWorld.
@@ -602,7 +648,8 @@ impl GizmoSystem {
                     };
 
                     let mut old_debug_root: Option<ComponentId> = None;
-                    if let Some(g) = world.get_component_by_id_as_mut::<GizmoComponent>(gizmo_cid)
+                    if let Some(g) =
+                        world.get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid)
                     {
                         g.active_raycaster = Some(raycaster);
                         if debug_drag_plane_enabled() {
@@ -621,7 +668,7 @@ impl GizmoSystem {
                             let plane_root =
                                 spawn_debug_drag_plane(world, queue, hit_point, dir);
                             if let Some(g) =
-                                world.get_component_by_id_as_mut::<GizmoComponent>(gizmo_cid)
+                                world.get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid)
                             {
                                 g.debug_drag_plane_root = Some(plane_root);
                             }
@@ -644,7 +691,7 @@ impl GizmoSystem {
 
                     // Copy out what we need without holding a mutable borrow.
                     let Some((target_transform, active)) = world
-                        .get_component_by_id_as::<GizmoComponent>(gizmo_cid)
+                        .get_component_by_id_as::<TransformGizmoComponent>(gizmo_cid)
                         .map(|g| (g.target_transform, g.active_raycaster))
                     else {
                         continue;
@@ -659,7 +706,7 @@ impl GizmoSystem {
                     }
 
                     match op {
-                        GizmoOp::Translate(axis) => {
+                        TransformGizmoOp::Translate(axis) => {
                             let axis_v = axis.unit_vec3();
                             let d = dot(delta_world, axis_v);
                             let delta = mul(axis_v, d);
@@ -674,7 +721,7 @@ impl GizmoSystem {
                             let next = add(cur, delta);
                             t.set_position(queue, next[0], next[1], next[2]);
                         }
-                        GizmoOp::Rotate(axis) => {
+                        TransformGizmoOp::Rotate(axis) => {
                             let coord_type =
                                 Self::resolve_gesture_coord_type_for_renderable(world, renderable);
 
@@ -685,9 +732,9 @@ impl GizmoSystem {
                                     // selection later (camera-aware) without changing the signal.
                                     let radians_per_px = 0.01_f32;
                                     let px = match axis {
-                                        GizmoAxis::X => -dy,
-                                        GizmoAxis::Y => dx,
-                                        GizmoAxis::Z => dx,
+                                        TransformGizmoAxis::X => -dy,
+                                        TransformGizmoAxis::Y => dx,
+                                        TransformGizmoAxis::Z => dx,
                                     };
                                     px * radians_per_px
                                 }
@@ -727,7 +774,7 @@ impl GizmoSystem {
                                 t.set_rotation_quat(queue, q_next);
                             }
                         }
-                        GizmoOp::Scale(axis) => {
+                        TransformGizmoOp::Scale(axis) => {
                             let d = dot(delta_world, axis.unit_vec3());
 
                             let Some(t) = world
@@ -738,9 +785,9 @@ impl GizmoSystem {
 
                             let mut s = t.transform.scale;
                             match axis {
-                                GizmoAxis::X => s[0] = (s[0] + d).max(0.001),
-                                GizmoAxis::Y => s[1] = (s[1] + d).max(0.001),
-                                GizmoAxis::Z => s[2] = (s[2] + d).max(0.001),
+                                TransformGizmoAxis::X => s[0] = (s[0] + d).max(0.001),
+                                TransformGizmoAxis::Y => s[1] = (s[1] + d).max(0.001),
+                                TransformGizmoAxis::Z => s[2] = (s[2] + d).max(0.001),
                             }
                             t.set_scale(queue, s[0], s[1], s[2]);
                         }
@@ -757,7 +804,9 @@ impl GizmoSystem {
                         continue;
                     };
 
-                    if let Some(g) = world.get_component_by_id_as_mut::<GizmoComponent>(gizmo_cid) {
+                    if let Some(g) =
+                        world.get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid)
+                    {
                         if g.active_raycaster == Some(raycaster) {
                             g.active_raycaster = None;
                         }

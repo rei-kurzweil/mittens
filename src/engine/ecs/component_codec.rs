@@ -242,6 +242,7 @@ impl ComponentCodec {
         use crate::engine::ecs::component::*;
 
         match type_name {
+            "editor" => Ok(Box::new(EditorComponent::new())),
             "transform" => Ok(Box::new(TransformComponent::new())),
             "renderable" => Ok(Box::new(RenderableComponent::new(
                 crate::engine::graphics::primitives::Renderable::new(
@@ -289,6 +290,19 @@ impl ComponentCodec {
             "kinetic_response" => Ok(Box::new(KineticResponseComponent::default())),
             "joint" => Ok(Box::new(JointComponent::new(0, Vec::new()))),
             "skinned_mesh" => Ok(Box::new(SkinnedMeshComponent::new(0))),
+
+            // Transform gizmo (renamed from "gizmo").
+            "transform_gizmo" | "gizmo" => Ok(Box::new(TransformGizmoComponent::new())),
+            "transform_gizmo_translate" | "gizmo_translate" => Ok(Box::new(
+                TransformGizmoTranslateComponent::new(TransformGizmoAxis::X),
+            )),
+            "transform_gizmo_rotate" | "gizmo_rotate" => Ok(Box::new(
+                TransformGizmoRotateComponent::new(TransformGizmoAxis::X),
+            )),
+            "transform_gizmo_scale" | "gizmo_scale" => Ok(Box::new(
+                TransformGizmoScaleComponent::new(TransformGizmoAxis::X),
+            )),
+
             _ => Err(format!("Unknown component type: '{}'", type_name)),
         }
     }

@@ -32,12 +32,6 @@ impl UVComponent {
         Self { uvs: out }
     }
 
-    #[deprecated(note = "Use from_vec")] 
-    #[allow(non_snake_case)]
-    pub fn fromVec(uvs: Vec<Vec<f32>>) -> Self {
-        Self::from_vec(uvs)
-    }
-
     pub fn with_uv(mut self, u: f32, v: f32) -> Self {
         self.uvs.push([u, v]);
         self

@@ -14,8 +14,9 @@ pub struct GesturesAndGizmosScene {
 
 pub fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> GesturesAndGizmosScene {
     use crate::engine::ecs::component::{
-        BackgroundColorComponent, BackgroundComponent, DirectionalLightComponent, GizmoComponent,
+        BackgroundColorComponent, BackgroundComponent, DirectionalLightComponent,
         InputTransformModeComponent, PointerComponent, RayCastComponent, RaycastableComponent,
+        TransformGizmoComponent,
     };
 
     let tri_mesh = universe.render_assets.get_mesh(BuiltinMeshType::Triangle2D);
@@ -109,7 +110,7 @@ pub fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Gestu
         )));
         let c = universe.world.add_component(ColorComponent::rgba(color[0], color[1], color[2], color[3]));
         let rc = universe.world.add_component(RaycastableComponent::enabled());
-        let g = universe.world.add_component(GizmoComponent::new());
+        let g = universe.world.add_component(TransformGizmoComponent::new());
 
         let _ = universe.world.add_child(t, r);
         let _ = universe.world.add_child(r, c);

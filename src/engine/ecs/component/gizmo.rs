@@ -2,18 +2,18 @@ use super::Component;
 use crate::engine::ecs::ComponentId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GizmoAxis {
+pub enum TransformGizmoAxis {
     X,
     Y,
     Z,
 }
 
-impl GizmoAxis {
+impl TransformGizmoAxis {
     pub fn unit_vec3(self) -> [f32; 3] {
         match self {
-            GizmoAxis::X => [1.0, 0.0, 0.0],
-            GizmoAxis::Y => [0.0, 1.0, 0.0],
-            GizmoAxis::Z => [0.0, 0.0, 1.0],
+            TransformGizmoAxis::X => [1.0, 0.0, 0.0],
+            TransformGizmoAxis::Y => [0.0, 1.0, 0.0],
+            TransformGizmoAxis::Z => [0.0, 0.0, 1.0],
         }
     }
 }
@@ -22,19 +22,19 @@ impl GizmoAxis {
 ///
 /// This component is intended to be an ancestor of the entire clickable handle subtree.
 #[derive(Debug, Clone, Copy)]
-pub struct GizmoTranslateComponent {
-    pub axis: GizmoAxis,
+pub struct TransformGizmoTranslateComponent {
+    pub axis: TransformGizmoAxis,
 }
 
-impl GizmoTranslateComponent {
-    pub fn new(axis: GizmoAxis) -> Self {
+impl TransformGizmoTranslateComponent {
+    pub fn new(axis: TransformGizmoAxis) -> Self {
         Self { axis }
     }
 }
 
-impl Component for GizmoTranslateComponent {
+impl Component for TransformGizmoTranslateComponent {
     fn name(&self) -> &'static str {
-        "gizmo_translate"
+        "transform_gizmo_translate"
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -50,9 +50,9 @@ impl Component for GizmoTranslateComponent {
         map.insert(
             "axis".to_string(),
             serde_json::json!(match self.axis {
-                GizmoAxis::X => "x",
-                GizmoAxis::Y => "y",
-                GizmoAxis::Z => "z",
+                TransformGizmoAxis::X => "x",
+                TransformGizmoAxis::Y => "y",
+                TransformGizmoAxis::Z => "z",
             }),
         );
         map
@@ -66,9 +66,9 @@ impl Component for GizmoTranslateComponent {
             let axis: String = serde_json::from_value(axis.clone())
                 .map_err(|e| format!("Failed to decode axis: {e}"))?;
             self.axis = match axis.as_str() {
-                "x" | "X" => GizmoAxis::X,
-                "y" | "Y" => GizmoAxis::Y,
-                "z" | "Z" => GizmoAxis::Z,
+                "x" | "X" => TransformGizmoAxis::X,
+                "y" | "Y" => TransformGizmoAxis::Y,
+                "z" | "Z" => TransformGizmoAxis::Z,
                 other => return Err(format!("Unknown axis '{other}'")),
             };
         }
@@ -80,19 +80,19 @@ impl Component for GizmoTranslateComponent {
 ///
 /// This component is intended to be an ancestor of the entire clickable handle subtree.
 #[derive(Debug, Clone, Copy)]
-pub struct GizmoRotateComponent {
-    pub axis: GizmoAxis,
+pub struct TransformGizmoRotateComponent {
+    pub axis: TransformGizmoAxis,
 }
 
-impl GizmoRotateComponent {
-    pub fn new(axis: GizmoAxis) -> Self {
+impl TransformGizmoRotateComponent {
+    pub fn new(axis: TransformGizmoAxis) -> Self {
         Self { axis }
     }
 }
 
-impl Component for GizmoRotateComponent {
+impl Component for TransformGizmoRotateComponent {
     fn name(&self) -> &'static str {
-        "gizmo_rotate"
+        "transform_gizmo_rotate"
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -108,9 +108,9 @@ impl Component for GizmoRotateComponent {
         map.insert(
             "axis".to_string(),
             serde_json::json!(match self.axis {
-                GizmoAxis::X => "x",
-                GizmoAxis::Y => "y",
-                GizmoAxis::Z => "z",
+                TransformGizmoAxis::X => "x",
+                TransformGizmoAxis::Y => "y",
+                TransformGizmoAxis::Z => "z",
             }),
         );
         map
@@ -124,9 +124,9 @@ impl Component for GizmoRotateComponent {
             let axis: String = serde_json::from_value(axis.clone())
                 .map_err(|e| format!("Failed to decode axis: {e}"))?;
             self.axis = match axis.as_str() {
-                "x" | "X" => GizmoAxis::X,
-                "y" | "Y" => GizmoAxis::Y,
-                "z" | "Z" => GizmoAxis::Z,
+                "x" | "X" => TransformGizmoAxis::X,
+                "y" | "Y" => TransformGizmoAxis::Y,
+                "z" | "Z" => TransformGizmoAxis::Z,
                 other => return Err(format!("Unknown axis '{other}'")),
             };
         }
@@ -138,19 +138,19 @@ impl Component for GizmoRotateComponent {
 ///
 /// This component is intended to be an ancestor of the entire clickable handle subtree.
 #[derive(Debug, Clone, Copy)]
-pub struct GizmoScaleComponent {
-    pub axis: GizmoAxis,
+pub struct TransformGizmoScaleComponent {
+    pub axis: TransformGizmoAxis,
 }
 
-impl GizmoScaleComponent {
-    pub fn new(axis: GizmoAxis) -> Self {
+impl TransformGizmoScaleComponent {
+    pub fn new(axis: TransformGizmoAxis) -> Self {
         Self { axis }
     }
 }
 
-impl Component for GizmoScaleComponent {
+impl Component for TransformGizmoScaleComponent {
     fn name(&self) -> &'static str {
-        "gizmo_scale"
+        "transform_gizmo_scale"
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -166,9 +166,9 @@ impl Component for GizmoScaleComponent {
         map.insert(
             "axis".to_string(),
             serde_json::json!(match self.axis {
-                GizmoAxis::X => "x",
-                GizmoAxis::Y => "y",
-                GizmoAxis::Z => "z",
+                TransformGizmoAxis::X => "x",
+                TransformGizmoAxis::Y => "y",
+                TransformGizmoAxis::Z => "z",
             }),
         );
         map
@@ -182,9 +182,9 @@ impl Component for GizmoScaleComponent {
             let axis: String = serde_json::from_value(axis.clone())
                 .map_err(|e| format!("Failed to decode axis: {e}"))?;
             self.axis = match axis.as_str() {
-                "x" | "X" => GizmoAxis::X,
-                "y" | "Y" => GizmoAxis::Y,
-                "z" | "Z" => GizmoAxis::Z,
+                "x" | "X" => TransformGizmoAxis::X,
+                "y" | "Y" => TransformGizmoAxis::Y,
+                "z" | "Z" => TransformGizmoAxis::Z,
                 other => return Err(format!("Unknown axis '{other}'")),
             };
         }
@@ -196,10 +196,10 @@ impl Component for GizmoScaleComponent {
 ///
 /// Attach this as a child of a TransformComponent you want to manipulate.
 /// On init, a 9-part visual subtree is spawned under the gizmo component.
-/// When a drag gesture is active on a gizmo renderable, GizmoSystem applies the drag delta
+/// When a drag gesture is active on a gizmo renderable, TransformGizmoSystem applies the drag delta
 /// to the TransformComponent it is attached under.
 #[derive(Debug, Clone, Copy)]
-pub struct GizmoComponent {
+pub struct TransformGizmoComponent {
     /// Visual scale applied to the gizmo's rendered/interactive subtree.
     ///
     /// This scales the gizmo visuals without affecting the target transform.
@@ -226,7 +226,7 @@ pub struct GizmoComponent {
     component: Option<ComponentId>,
 }
 
-impl GizmoComponent {
+impl TransformGizmoComponent {
     /// Create a gizmo.
     ///
     /// The target transform is resolved automatically from gizmo ancestry on init.
@@ -256,13 +256,13 @@ impl GizmoComponent {
     }
 }
 
-impl Component for GizmoComponent {
+impl Component for TransformGizmoComponent {
     fn set_id(&mut self, component: ComponentId) {
         self.component = Some(component);
     }
 
     fn name(&self) -> &'static str {
-        "gizmo"
+        "transform_gizmo"
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -292,7 +292,7 @@ impl Component for GizmoComponent {
 
     fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
         // Defer spawning the visual subtree to the command queue flush phase.
-        queue.queue_register_gizmo(component);
+        queue.queue_register_transform_gizmo(component);
     }
 
     fn cleanup(&mut self, queue: &mut crate::engine::ecs::CommandQueue, _component: ComponentId) {

@@ -22,6 +22,7 @@ pub mod color;
 pub mod controller_xr;
 pub mod directional_light;
 pub mod emissive;
+pub mod editor;
 pub mod gesture_coord_type;
 pub mod gizmo;
 pub mod gltf;
@@ -80,9 +81,11 @@ pub use color::ColorComponent;
 pub use controller_xr::{ControllerHand, ControllerPoseKind, ControllerXRComponent};
 pub use directional_light::DirectionalLightComponent;
 pub use emissive::EmissiveComponent;
+pub use editor::EditorComponent;
 pub use gesture_coord_type::{GestureCoordType, GestureCoordTypeComponent};
 pub use gizmo::{
-    GizmoAxis, GizmoComponent, GizmoRotateComponent, GizmoScaleComponent, GizmoTranslateComponent,
+    TransformGizmoAxis, TransformGizmoComponent, TransformGizmoRotateComponent,
+    TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
 };
 pub use gravity::GravityComponent;
 pub use input::InputComponent;

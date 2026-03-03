@@ -19,7 +19,7 @@ use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::{ActionSystem, AnimationSystem, AudioSystem};
-use crate::engine::ecs::system::{GestureSystem, GizmoSystem};
+use crate::engine::ecs::system::{EditorSystem, GestureSystem, TransformGizmoSystem};
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 
@@ -43,8 +43,10 @@ pub struct SystemWorld {
 
     pub raycast: RayCastSystem,
 
+    pub editor: EditorSystem,
+
     pub gesture: GestureSystem,
-    pub gizmo: GizmoSystem,
+    pub transform_gizmo: TransformGizmoSystem,
 
     pub gltf: GLTFSystem,
 
@@ -63,17 +65,18 @@ impl SystemWorld {
         Self::default()
     }
 
-    /// Register a GizmoComponent by spawning its visual subtree.
+    /// Register a TransformGizmoComponent by spawning its visual subtree.
     ///
-    /// Contract: GizmoComponent is expected to be attached under a TransformComponent.
-    pub fn register_gizmo(
+    /// Contract: TransformGizmoComponent is expected to be attached under a TransformComponent.
+    pub fn register_transform_gizmo(
         &mut self,
         world: &mut World,
         _visuals: &mut VisualWorld,
         component: ComponentId,
         queue: &mut crate::engine::ecs::CommandQueue,
     ) {
-        self.gizmo.register_gizmo(world, component, queue);
+        self.transform_gizmo
+            .register_transform_gizmo(world, component, queue);
     }
 
     /// Register a RenderableComponent instance with the RenderableSystem.
@@ -608,6 +611,7 @@ impl SystemWorld {
         self.rx.begin_frame();
         self.gesture.install_immediate_handlers(&mut self.rx);
         self.action.install_immediate_handlers(&mut self.rx);
+        self.editor.install_immediate_handlers(&mut self.rx);
         self.gesture.begin_frame();
 
         // Process input first - it may queue commands
@@ -708,7 +712,7 @@ impl SystemWorld {
         let _ = self.rx.dispatch_new_signals(world, queue, 100_000);
 
         // Gizmos consume drag events and apply transform changes.
-        self.gizmo
+        self.transform_gizmo
             .tick_with_queue(world, input, queue, &mut self.rx);
 
         // Dispatch gizmo-produced signals immediately (if any).

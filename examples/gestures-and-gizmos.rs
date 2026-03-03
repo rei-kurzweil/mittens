@@ -13,7 +13,8 @@ struct Scene {
 fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Scene {
     use engine::ecs::component::{
         BackgroundColorComponent, BackgroundComponent, Camera3DComponent, ColorComponent,
-        DirectionalLightComponent, GizmoComponent, InputComponent, InputTransformModeComponent,
+        DirectionalLightComponent, InputComponent, InputTransformModeComponent,
+        TransformGizmoComponent,
         PointerComponent, RayCastComponent, RaycastableComponent, RenderableComponent,
         TransformComponent,
     };
@@ -145,7 +146,7 @@ fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Scene {
         let rc = universe
             .world
             .add_component(RaycastableComponent::enabled());
-        let g = universe.world.add_component(GizmoComponent::new());
+        let g = universe.world.add_component(TransformGizmoComponent::new());
 
         let _ = universe.attach(t, r);
         let _ = universe.attach(r, c);

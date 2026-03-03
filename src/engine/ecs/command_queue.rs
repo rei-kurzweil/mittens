@@ -415,11 +415,14 @@ impl CommandQueue {
         });
     }
 
-    /// Queue a register gizmo command.
-    pub fn queue_register_gizmo(&mut self, component_id: crate::engine::ecs::ComponentId) {
+    /// Queue a register transform gizmo command.
+    pub fn queue_register_transform_gizmo(
+        &mut self,
+        component_id: crate::engine::ecs::ComponentId,
+    ) {
         self.commands.push(ComponentCommand {
             component_id,
-            command: Command::RegisterGizmo { component_id },
+            command: Command::RegisterTransformGizmo { component_id },
         });
     }
 
@@ -621,8 +624,8 @@ impl CommandQueue {
                     Command::RegisterClock { component_id } => {
                         systems.register_clock(world, visuals, component_id);
                     }
-                    Command::RegisterGizmo { component_id } => {
-                        systems.register_gizmo(world, visuals, component_id, self);
+                    Command::RegisterTransformGizmo { component_id } => {
+                        systems.register_transform_gizmo(world, visuals, component_id, self);
                     }
                     Command::ScheduleAudioOp {
                         component_id,
@@ -812,7 +815,7 @@ enum Command {
         component_id: crate::engine::ecs::ComponentId,
     },
 
-    RegisterGizmo {
+    RegisterTransformGizmo {
         component_id: crate::engine::ecs::ComponentId,
     },
 

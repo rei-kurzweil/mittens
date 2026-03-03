@@ -2,7 +2,7 @@ use cat_engine::engine::ecs::component::{
     AmbientLightComponent,
     BackgroundColorComponent, Camera3DComponent, ClockComponent, ColorComponent,
     DirectionalLightComponent, EmissiveComponent, GLTFComponent, InputComponent,
-    GizmoComponent, InputTransformModeComponent, JointComponent, MeshComponent,
+    InputTransformModeComponent, JointComponent, MeshComponent, TransformGizmoComponent,
     PointerComponent, RayCastComponent, RenderableComponent, SkinnedMeshComponent,
     TransformComponent,
 };
@@ -264,7 +264,7 @@ fn main() {
     for &(_node_index, joint_tx) in selected_joint_transforms.iter() {
         let gizmo = universe
             .world
-            .add_component(GizmoComponent::new().with_scale(0.25));
+            .add_component(TransformGizmoComponent::new().with_scale(0.25));
         let _ = universe.attach(joint_tx, gizmo);
     }
 
