@@ -1,5 +1,8 @@
 use cat_engine::{engine, utils};
 
+#[path = "example_util/mod.rs"]
+mod example_util;
+
 fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
     use engine::ecs::component::{
         Camera3DComponent, ColorComponent, EmissiveComponent, GLTFComponent, InputComponent,
@@ -114,6 +117,9 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
     // Camera: attached directly to the rig transform.
     let camera3d = universe.world.add_component(Camera3DComponent::new());
     let _ = universe.attach(rig_transform, camera3d);
+
+    // Topology: I { T { C3D } } — add a small camera-attached controls hint.
+    example_util::spawn_desktop_camera_controls_hint(universe, rig_transform);
 
     let tri_root_transform = universe
         .world

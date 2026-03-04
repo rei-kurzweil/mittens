@@ -1,5 +1,8 @@
 use cat_engine::{engine, utils};
 
+#[path = "example_util/mod.rs"]
+mod example_util;
+
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ColorComponent,
     InputComponent, InputTransformModeComponent, RenderableComponent, TextComponent,
@@ -76,6 +79,9 @@ fn main() {
 
     let camera = universe.world.add_component(Camera3DComponent::new());
     let _ = universe.attach(cam_transform, camera);
+
+    // Topology: I { T { C3D } } — add a small camera-attached controls hint.
+    example_util::spawn_desktop_camera_controls_hint(&mut universe, cam_transform);
 
     universe.add(input);
 

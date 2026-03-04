@@ -1,9 +1,11 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    EmissiveComponent, RaycastableComponent, RenderableComponent, TextComponent, TextureComponent,
-    TextureFilteringComponent, TransformComponent, UVComponent,
+    ColorComponent, EmissiveComponent, RaycastableComponent, RenderableComponent, TextComponent,
+    TextShadowComponent, TextureComponent, TextureFilteringComponent, TransformComponent,
+    UVComponent,
 };
+use crate::engine::graphics::TextureFiltering;
 use crate::engine::graphics::VisualWorld;
 
 #[derive(Debug, Default)]
@@ -92,6 +94,52 @@ pub struct SpawnedGlyph {
 }
 
 impl TextSystem {
+    fn spawn_glyph_quad(
+        world: &mut World,
+        parent: ComponentId,
+        uvs: Vec<[f32; 2]>,
+        texture_uri: &str,
+        filtering: Option<TextureFiltering>,
+        emissive: Option<bool>,
+        raycastable: Option<bool>,
+        color_override: Option<[f32; 4]>,
+    ) -> (ComponentId, ComponentId, ComponentId) {
+        // Optional color override: insert a ColorComponent above the renderable.
+        let renderable_parent = if let Some(rgba) = color_override {
+            let c_id = world.add_component(ColorComponent { rgba });
+            let _ = world.add_child(parent, c_id);
+            c_id
+        } else {
+            parent
+        };
+
+        let r_id = world.add_component(RenderableComponent::square());
+        let _ = world.add_child(renderable_parent, r_id);
+
+        if let Some(enable) = raycastable {
+            let rc_id = world.add_component(RaycastableComponent::new(enable));
+            let _ = world.add_child(r_id, rc_id);
+        }
+
+        let uv_id = world.add_component(UVComponent { uvs });
+        let _ = world.add_child(r_id, uv_id);
+
+        let tex_id = world.add_component(TextureComponent::with_uri(texture_uri.to_string()));
+        let _ = world.add_child(r_id, tex_id);
+
+        if let Some(filtering) = filtering {
+            let f_id = world.add_component(TextureFilteringComponent::new(filtering));
+            let _ = world.add_child(r_id, f_id);
+        }
+
+        if let Some(enabled) = emissive {
+            let e_id = world.add_component(EmissiveComponent { enabled });
+            let _ = world.add_child(r_id, e_id);
+        }
+
+        (r_id, uv_id, tex_id)
+    }
+
     fn handle_word_wrap_for(
         ch: char,
         i: usize,
@@ -174,6 +222,13 @@ impl TextSystem {
                 .map(|r| r.enable)
         });
 
+        // Optional per-glyph shadow pass.
+        // Requested topology: TextShadowComponent is parented to the TextComponent.
+        let shadow: Option<TextShadowComponent> = world
+            .children_of(component)
+            .iter()
+            .find_map(|&ch| world.get_component_by_id_as::<TextShadowComponent>(ch).copied());
+
         // Mark built immediately to avoid re-entrancy/double-build.
         if let Some(text_comp) = world.get_component_by_id_as_mut::<TextComponent>(component) {
             text_comp.mark_built();
@@ -196,31 +251,47 @@ impl TextSystem {
             let t_id = world.add_component(t);
             let _ = world.add_child(component, t_id);
 
-            let r_id = world.add_component(RenderableComponent::square());
-            let _ = world.add_child(t_id, r_id);
+            let glyph_uvs = uvs_for_glyph(ch);
+            let (r_id, uv_id, tex_id) = Self::spawn_glyph_quad(
+                world,
+                t_id,
+                glyph_uvs.clone(),
+                &inherited_font_texture_uri,
+                inherited_filtering,
+                inherited_emissive,
+                inherited_raycastable,
+                None,
+            );
 
-            if let Some(enable) = inherited_raycastable {
-                let rc_id = world.add_component(RaycastableComponent::new(enable));
-                let _ = world.add_child(r_id, rc_id);
-            }
+            if let Some(shadow) = shadow {
+                let z_back = -shadow.offset[2].abs();
+                let mut spawn_shadow = |scale: f32, z: f32| {
+                    let ot = TransformComponent::new()
+                        .with_position(shadow.offset[0], shadow.offset[1], z)
+                        .with_scale(scale, scale, 1.0);
+                    let ot_id = world.add_component(ot);
+                    let _ = world.add_child(t_id, ot_id);
 
-            let uvs = uvs_for_glyph(ch);
-            let uv_id = world.add_component(UVComponent { uvs });
-            let _ = world.add_child(r_id, uv_id);
+                    // Shadow quad: no raycasting by default.
+                    let _ = Self::spawn_glyph_quad(
+                        world,
+                        ot_id,
+                        glyph_uvs.clone(),
+                        &inherited_font_texture_uri,
+                        inherited_filtering,
+                        inherited_emissive,
+                        None,
+                        Some(shadow.rgba),
+                    );
+                };
 
-            let tex_id = world.add_component(TextureComponent::with_uri(
-                inherited_font_texture_uri.clone(),
-            ));
-            let _ = world.add_child(r_id, tex_id);
-
-            if let Some(filtering) = inherited_filtering {
-                let f_id = world.add_component(TextureFilteringComponent::new(filtering));
-                let _ = world.add_child(r_id, f_id);
-            }
-
-            if let Some(enabled) = inherited_emissive {
-                let e_id = world.add_component(EmissiveComponent { enabled });
-                let _ = world.add_child(r_id, e_id);
+                // If the shadow is expanded (>1.0), spawn two shadow glyphs.
+                if shadow.scale > 1.0 {
+                    spawn_shadow(1.0 / (shadow.scale * 1.3), z_back);
+                    spawn_shadow(shadow.scale, z_back * 2.0);
+                } else {
+                    spawn_shadow(shadow.scale, z_back);
+                }
             }
 
             spawned.push(SpawnedGlyph {

@@ -1,4 +1,6 @@
-use cat_engine::engine;
+#![allow(dead_code)]
+
+use cat_engine::engine::{self, ecs::component::TextShadowComponent};
 
 fn hash_u32(mut x: u32) -> u32 {
     x ^= x >> 16;
@@ -123,4 +125,79 @@ pub fn spawn_cloud_ring(
             let _ = universe.attach(renderable, color);
         }
     }
+}
+
+/// Spawn a small camera-attached help text for desktop controls.
+///
+/// The returned component is the hint root `TransformComponent`.
+///
+/// This is intended for examples that use the common topology:
+///
+/// `I { T { C3D } }` (InputComponent → TransformComponent → Camera3DComponent)
+pub fn spawn_desktop_camera_controls_hint(
+    universe: &mut engine::Universe,
+    camera_transform: engine::ecs::ComponentId,
+) -> engine::ecs::ComponentId {
+    use engine::ecs::component::{
+        ColorComponent, EmissiveComponent, TextComponent, TextureFilteringComponent,
+        TransformComponent,
+    };
+
+    // We intentionally do NOT parent the hint under the camera rig.
+    // This keeps it out of the camera subtree (and avoids inheriting camera motion/rotation).
+    //
+    // Instead, we place it in world space based on the camera rig's current pose.
+    // That makes it start out “in front-right of the camera” without being attached.
+    let (cam_pos, cam_rot) = universe
+        .world
+        .get_component_by_id_as::<TransformComponent>(camera_transform)
+        .map(|t| (t.transform.translation, t.transform.rotation))
+        .unwrap_or(([0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]));
+
+    // Camera convention in examples: forward is -Z.
+    // Local-space offset from the camera rig at spawn time.
+    let local_offset = [0.45, 0.25, -1.7];
+
+    // Rotate the offset by the camera rig's rotation so it appears in front-right of the view.
+    let world_offset = cat_engine::utils::math::quat_rotate_vec3(cam_rot, local_offset);
+    let world_pos = [
+        cam_pos[0] + world_offset[0],
+        cam_pos[1] + world_offset[1],
+        cam_pos[2] + world_offset[2],
+    ];
+
+    let hint_root = universe.world.add_component(
+        TransformComponent::new()
+            .with_position(world_pos[0], world_pos[1], world_pos[2])
+            .with_scale(0.055, 0.055, 1.0),
+    );
+
+    // Make the text readable against most backgrounds.
+    // (Color inheritance is ancestor-based, so we put Color above the TextComponent in the tree.)
+    let color = universe
+        .world
+        .add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+
+    let text = universe.world.add_component(TextComponent::new(
+        "use wasd/rf/qe\nand right-mouse\nclick and drag\nto move/look",
+    ));
+
+    let text_shadow = universe.world.add_component(TextShadowComponent::new());
+    let _ = universe.attach(text, text_shadow);
+
+    // TextSystem looks for these as immediate children of the TextComponent root.
+    let emissive = universe.world.add_component(EmissiveComponent::on());
+    let filtering = universe
+        .world
+        .add_component(TextureFilteringComponent::nearest_magnification());
+
+    let _ = universe.attach(hint_root, color);
+    let _ = universe.attach(color, text);
+    let _ = universe.attach(text, emissive);
+    let _ = universe.attach(text, filtering);
+
+    // Ensure the text is initialized even if the caller only adds the camera rig.
+    universe.add(hint_root);
+
+    hint_root
 }

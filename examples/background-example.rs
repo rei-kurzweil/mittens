@@ -1,5 +1,8 @@
 use cat_engine::{engine, utils};
 
+#[path = "example_util/mod.rs"]
+mod example_util;
+
 fn hash_u32(mut x: u32) -> u32 {
     // A tiny integer hash (deterministic, cheap, less linear than an LCG).
     x ^= x >> 16;
@@ -58,6 +61,9 @@ fn main() {
         .world
         .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 6.0, 2.0));
     let _ = universe.attach(light_transform, light);
+
+    // Topology: I { T { C3D } } — add a small camera-attached controls hint.
+    example_util::spawn_desktop_camera_controls_hint(&mut universe, rig_transform);
 
     universe.add(input);
     universe.add(light_transform);

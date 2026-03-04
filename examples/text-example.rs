@@ -1,5 +1,8 @@
 use cat_engine::{engine, utils};
 
+#[path = "example_util/mod.rs"]
+mod example_util;
+
 fn main() {
     utils::logger::init();
 
@@ -23,6 +26,9 @@ fn main() {
     let _ = universe.attach(input, input_mode);
     let _ = universe.attach(input, rig_transform);
     let _ = universe.attach(rig_transform, camera3d);
+
+    // Topology: I { T { C3D } } — add a small camera-attached controls hint.
+    example_util::spawn_desktop_camera_controls_hint(&mut universe, rig_transform);
     universe.add(input);
 
     // Debug square: show the full font texture.
@@ -92,19 +98,95 @@ fn main() {
     spawn_red_cube(&mut universe, -p, p, 0.0, s);
     spawn_red_cube(&mut universe, p, p, 0.0, s);
 
-    // Text anchor transform (scale down so glyph spacing fits in view).
-    let text_root = universe.world.add_component(
-        engine::ecs::component::TransformComponent::new()
-            .with_position(-0.9, 0.2, 0.0)
-            .with_scale(0.12, 0.12, 1.0),
+    use engine::ecs::component::{
+        ColorComponent, TextComponent, TextShadowComponent, TextureComponent,
+        TextureFilteringComponent, TransformComponent, TransparentCutoutComponent,
+    };
+
+    fn spawn_text_style(
+        universe: &mut engine::Universe,
+        pos: [f32; 3],
+        scale: f32,
+        text: &str,
+        color: [f32; 4],
+        shadow: TextShadowComponent,
+        filtering: TextureFilteringComponent,
+    ) {
+        let root = universe.world.add_component(
+            TransformComponent::new()
+                .with_position(pos[0], pos[1], pos[2])
+                .with_scale(scale, scale, 1.0),
+        );
+
+        // Color must be an ancestor of the glyph renderables.
+        let color_id = universe
+            .world
+            .add_component(ColorComponent::rgba(color[0], color[1], color[2], color[3]));
+        let _ = universe.attach(root, color_id);
+
+        let text_id = universe.world.add_component(TextComponent::new(text));
+        let _ = universe.attach(color_id, text_id);
+
+        // Route into cutout pass for cleaner edges.
+        let cutout = universe.world.add_component(TransparentCutoutComponent::new());
+        let _ = universe.attach(text_id, cutout);
+
+        // Use the same atlas as the debug quad.
+        let tex = universe
+            .world
+            .add_component(TextureComponent::with_uri("assets/textures/font.dds"));
+        let _ = universe.attach(text_id, tex);
+
+        let shadow_id = universe.world.add_component(shadow);
+        let _ = universe.attach(text_id, shadow_id);
+
+        let filtering_id = universe.world.add_component(filtering);
+        let _ = universe.attach(text_id, filtering_id);
+
+        universe.add(root);
+    }
+
+    // Multiple text samples to show:
+    // - different inherited colors
+    // - different shadow settings
+    // - different texture filtering
+    spawn_text_style(
+        &mut universe,
+        [-0.95, 0.45, 0.0],
+        0.12,
+        "NEAREST_MAG\n(crisp)\nAaBbCc 123",
+        [1.0, 1.0, 1.0, 1.0],
+        TextShadowComponent::new()
+            .with_scale(1.35)
+            .with_offset([0.06, -0.06, 0.0015]),
+        TextureFilteringComponent::nearest_magnification(),
     );
 
-    let text = universe
-        .world
-        .add_component(engine::ecs::component::TextComponent::new("a b c d e f"));
-    let _ = universe.attach(text_root, text);
+    spawn_text_style(
+        &mut universe,
+        [-0.95, 0.05, 0.0],
+        0.12,
+        "LINEAR\n(softer)\nAaBbCc 123",
+        [0.55, 0.90, 1.0, 1.0],
+        TextShadowComponent::new()
+            .with_rgba([0.0, 0.0, 0.15, 1.0])
+            .with_scale(1.20)
+            .with_offset([0.05, -0.04, 0.0015]),
+        TextureFilteringComponent::linear(),
+    );
 
-    universe.add(text_root);
+    spawn_text_style(
+        &mut universe,
+        [-0.95, -0.35, 0.0],
+        0.12,
+        "NEAREST\n(pixelly)\nAaBbCc 123",
+        [1.0, 0.85, 0.35, 1.0],
+        TextShadowComponent::new()
+            .with_rgba([0.15, 0.0, 0.0, 1.0])
+            .with_scale(1.55)
+            .with_offset([0.08, -0.08, 0.0015]),
+        TextureFilteringComponent::nearest(),
+    );
 
     // Process init-time registrations (Text expands into glyph subtrees here).
     universe.systems.process_commands(

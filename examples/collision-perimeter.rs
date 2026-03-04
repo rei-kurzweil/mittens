@@ -1,5 +1,8 @@
 use cat_engine::{engine, utils};
 
+#[path = "example_util/mod.rs"]
+mod example_util;
+
 fn main() {
     utils::logger::init();
 
@@ -70,6 +73,9 @@ fn main() {
         .world
         .add_component(engine::ecs::component::PointerComponent::new());
     let _ = universe.attach(raycast, pointer);
+
+    // Topology: I { T { C3D } } — add a small camera-attached controls hint.
+    example_util::spawn_desktop_camera_controls_hint(&mut universe, rig_transform);
 
     let _ = universe.attach(rig_transform, rig_collision);
     let _ = universe.attach(rig_collision, rig_response);

@@ -274,6 +274,7 @@ impl ComponentCodec {
             "input_transform_mode" => Ok(Box::new(InputTransformModeComponent::default())),
             "openxr" => Ok(Box::new(OpenXRComponent::off())),
             "text" => Ok(Box::new(TextComponent::new(""))),
+            "text_shadow" => Ok(Box::new(TextShadowComponent::new())),
             "animation" => Ok(Box::new(AnimationComponent::new())),
             "keyframe" => Ok(Box::new(KeyframeComponent::new(0.0))),
             "action" => Ok(Box::new(ActionComponent::default())),

@@ -224,6 +224,9 @@ fn main() {
     let _ = universe.attach(cam_t, cam_collision);
     let _ = universe.attach(cam_collision, cam_response);
     let _ = universe.attach(cam_collision, cam_shape);
+
+    // Topology: I { T { C3D } } — add a small camera-attached controls hint.
+    example_util::spawn_desktop_camera_controls_hint(&mut universe, cam_t);
     universe.add(input);
 
     let arena_half = 30.0;

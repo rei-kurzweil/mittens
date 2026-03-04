@@ -1,5 +1,8 @@
 use cat_engine::{engine, utils};
 
+#[path = "example_util/mod.rs"]
+mod example_util;
+
 fn quat_from_yaw(yaw_y: f32) -> [f32; 4] {
     // Y-axis rotation.
     let (s, c) = (0.5 * yaw_y).sin_cos();
@@ -140,6 +143,9 @@ fn main() {
     let _ = universe.attach(input, input_mode);
     let _ = universe.attach(input, rig_transform);
     let _ = universe.attach(rig_transform, camera3d);
+
+    // Topology: I { T { C3D } } — add a small camera-attached controls hint.
+    example_util::spawn_desktop_camera_controls_hint(&mut universe, rig_transform);
     universe.add(input);
 
     // Two rotating anchor transforms that the raycaster will be reparented under.

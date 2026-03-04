@@ -120,6 +120,9 @@ fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Scene {
     let pointer = universe.world.add_component(PointerComponent::new());
     let _ = universe.attach(raycaster, pointer);
 
+    // Topology: I { T { C3D } } — add a small camera-attached controls hint.
+    example_util::spawn_desktop_camera_controls_hint(universe, rig_t);
+
     fn spawn_shape_with_gizmo(
         universe: &mut engine::Universe,
         mesh: engine::graphics::primitives::CpuMeshHandle,
