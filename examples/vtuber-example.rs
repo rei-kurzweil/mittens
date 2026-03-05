@@ -94,9 +94,9 @@ fn main() {
     universe.add(model_root);
 
     // --- Background clouds (occluded + lit) ---
-    let bg_root = universe
-        .world
-        .add_component(engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting());
+    let bg_root = universe.world.add_component(
+        engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting(),
+    );
     universe.add(bg_root);
     let mut cloud_params = example_util::CloudRingParams::default();
     cloud_params.cloud_count = 8; // +3 clusters

@@ -23,7 +23,7 @@ pub use crate::engine::graphics::primitives::{Renderable, Transform, TransformMa
 
 pub use command_queue::CommandQueue;
 pub use component_codec::ComponentCodec;
-pub use rx::{RxWorld, Signal, SignalEmitter, SignalHandler, SignalKind, SignalValue};
+pub use rx::{RxWorld, Signal, SignalEmitter, SignalHandler, SignalKind, SignalValue, SignalWhen};
 pub use system::{System, SystemWorld};
 
 /// Bundle of mutable engine state passed to component mutation APIs.
@@ -387,7 +387,7 @@ impl World {
     pub fn init_component_tree(
         &mut self,
         root: ComponentId,
-        queue: &mut crate::engine::ecs::CommandQueue,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
     ) {
         use std::collections::HashSet;
 
@@ -413,7 +413,7 @@ impl World {
             // Initialize the component (idempotent).
             if let Some(node) = self.get_component_record_mut(node_id) {
                 if !node.initialized {
-                    node.component.init(queue, node_id);
+                    node.component.init(emit, node_id);
                     node.initialized = true;
                 }
             }

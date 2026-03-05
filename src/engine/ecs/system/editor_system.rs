@@ -11,28 +11,30 @@ impl EditorSystem {
         Self::default()
     }
 
-    pub fn install_immediate_handlers(&mut self, rx: &mut RxWorld) {
+    pub fn install_handlers(&mut self, rx: &mut RxWorld) {
         if self.immediate_handlers_installed {
             return;
         }
 
-        rx.add_global_handler_closure(SignalKind::DragStart, move |world, _queue, emit, env| {
+        rx.add_global_handler_closure(SignalKind::DragStart, move |world, emit, env| {
             let SignalValue::DragStart { renderable, .. } = &env.value else {
                 return;
             };
 
+            let renderable = renderable.clone();
+
             // Ignore clicks on transform gizmo handles themselves.
-            if has_transform_gizmo_ancestor(world, *renderable) {
+            if has_transform_gizmo_ancestor(world, renderable) {
                 return;
             }
 
             // Only act when the clicked renderable lives under an editor root.
-            let Some(editor_root) = nearest_editor_ancestor(world, *renderable) else {
+            let Some(editor_root) = nearest_editor_ancestor(world, renderable) else {
                 return;
             };
 
             // Resolve the clicked target's nearest TransformComponent.
-            let Some(target_transform) = nearest_transform_ancestor(world, *renderable) else {
+            let Some(target_transform) = nearest_transform_ancestor(world, renderable) else {
                 return;
             };
 
@@ -98,7 +100,10 @@ fn has_transform_gizmo_ancestor(world: &World, start: ComponentId) -> bool {
     false
 }
 
-fn resolve_editor_transform_gizmo(world: &mut World, editor_root: ComponentId) -> Option<ComponentId> {
+fn resolve_editor_transform_gizmo(
+    world: &mut World,
+    editor_root: ComponentId,
+) -> Option<ComponentId> {
     // Fast path: cached id.
     if let Some(ed) = world.get_component_by_id_as::<EditorComponent>(editor_root) {
         if let Some(g) = ed.transform_gizmo {

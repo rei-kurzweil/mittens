@@ -87,7 +87,7 @@ impl Component for TextShadowComponent {
         self
     }
 
-    fn init(&mut self, _queue: &mut crate::engine::ecs::CommandQueue, _component: ComponentId) {
+    fn init(&mut self, _emit: &mut dyn crate::engine::ecs::SignalEmitter, _component: ComponentId) {
         // TextShadow is consumed by TextSystem at TextComponent expansion time.
     }
 

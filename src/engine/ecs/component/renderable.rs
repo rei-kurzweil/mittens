@@ -122,13 +122,22 @@ impl Component for RenderableComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        // Queue registration command instead of immediately registering
-        queue.queue_register_renderable(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push(
+            component,
+            crate::engine::ecs::SignalValue::RegisterRenderable { component },
+        );
     }
 
-    fn cleanup(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_remove_renderable(component);
+    fn cleanup(
+        &mut self,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        component: ComponentId,
+    ) {
+        emit.push(
+            component,
+            crate::engine::ecs::SignalValue::RemoveRenderable { component },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

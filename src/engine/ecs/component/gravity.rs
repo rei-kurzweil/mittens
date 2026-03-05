@@ -68,9 +68,15 @@ impl Component for GravityComponent {
         self
     }
 
-    fn init(&mut self, _queue: &mut crate::engine::ecs::CommandQueue, _component: ComponentId) {}
+    fn init(&mut self, _emit: &mut dyn crate::engine::ecs::SignalEmitter, _component: ComponentId) {
+    }
 
-    fn cleanup(&mut self, _queue: &mut crate::engine::ecs::CommandQueue, _component: ComponentId) {}
+    fn cleanup(
+        &mut self,
+        _emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        _component: ComponentId,
+    ) {
+    }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
         let mut map = std::collections::HashMap::new();

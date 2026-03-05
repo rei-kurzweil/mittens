@@ -25,9 +25,9 @@ fn main() {
     let camera3d = universe
         .world
         .add_component(engine::ecs::component::Camera3DComponent::new());
-    let rig_transform = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 11.0));
+    let rig_transform = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 11.0),
+    );
     let input_mode = universe.world.add_component(
         engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y(),
     );
@@ -40,9 +40,9 @@ fn main() {
     universe.add(input);
 
     // Light.
-    let light_transform = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 2.0, 2.0));
+    let light_transform = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 2.0, 2.0),
+    );
     let light = universe.world.add_component(
         engine::ecs::component::PointLightComponent::new()
             .with_distance(50.0)
@@ -61,9 +61,8 @@ fn main() {
         color: [f32; 4],
     ) {
         use engine::ecs::component::{
-            ActionComponent, AnimationComponent, AnimationState, ColorComponent,
-            EmissiveComponent, KeyframeComponent, RenderableComponent, TextComponent,
-            TransformComponent,
+            ActionComponent, AnimationComponent, AnimationState, ColorComponent, EmissiveComponent,
+            KeyframeComponent, RenderableComponent, TextComponent, TransformComponent,
         };
         use engine::graphics::primitives::{MaterialHandle, Renderable};
 

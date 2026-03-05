@@ -145,7 +145,7 @@ impl Universe {
             },
         );
 
-        self.command_queue.queue_remove_subtree(child);
+        self.command_queue.remove_subtree(child);
         Ok(child)
     }
 
@@ -177,7 +177,7 @@ impl Universe {
                 },
             );
 
-            self.command_queue.queue_remove_subtree(child);
+            self.command_queue.remove_subtree(child);
         }
 
         Ok(children)

@@ -42,7 +42,7 @@ impl Component for SkinnedMeshComponent {
 
     fn init(
         &mut self,
-        _queue: &mut crate::engine::ecs::CommandQueue,
+        _emit: &mut dyn crate::engine::ecs::SignalEmitter,
         _component: crate::engine::ecs::ComponentId,
     ) {
         // No-op: SkinnedMeshSystem discovers these each frame.

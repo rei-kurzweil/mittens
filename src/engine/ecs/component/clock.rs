@@ -44,8 +44,11 @@ impl Component for ClockComponent {
         "clock"
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_register_clock(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push(
+            component,
+            crate::engine::ecs::SignalValue::RegisterClock { component },
+        );
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

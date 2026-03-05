@@ -44,10 +44,16 @@ impl Component for AudioOutputComponent {
         "audio_output"
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         if self.enabled {
-            queue.queue_register_audio_output(component);
-            queue.queue_audio_graph_dirty(component);
+            emit.push(
+                component,
+                crate::engine::ecs::SignalValue::RegisterAudioOutput { component },
+            );
+            emit.push(
+                component,
+                crate::engine::ecs::SignalValue::AudioGraphDirtyImmediate { component },
+            );
         }
     }
 

@@ -85,7 +85,10 @@ impl Component for ActionComponent {
 
             SignalValue::Attach { parents, child } => {
                 map.insert("variant".to_string(), serde_json::json!("Attach"));
-                map.insert("parents".to_string(), serde_json::json!(encode_ids(parents)));
+                map.insert(
+                    "parents".to_string(),
+                    serde_json::json!(encode_ids(parents)),
+                );
                 map.insert("child".to_string(), serde_json::json!(encode_id(*child)));
             }
             SignalValue::AttachClone {
@@ -93,7 +96,10 @@ impl Component for ActionComponent {
                 prefab_root,
             } => {
                 map.insert("variant".to_string(), serde_json::json!("AttachClone"));
-                map.insert("parents".to_string(), serde_json::json!(encode_ids(parents)));
+                map.insert(
+                    "parents".to_string(),
+                    serde_json::json!(encode_ids(parents)),
+                );
                 map.insert(
                     "prefab_root".to_string(),
                     serde_json::json!(encode_id(*prefab_root)),
@@ -105,12 +111,18 @@ impl Component for ActionComponent {
             }
             SignalValue::RemoveChild { parents, index } => {
                 map.insert("variant".to_string(), serde_json::json!("RemoveChild"));
-                map.insert("parents".to_string(), serde_json::json!(encode_ids(parents)));
+                map.insert(
+                    "parents".to_string(),
+                    serde_json::json!(encode_ids(parents)),
+                );
                 map.insert("index".to_string(), serde_json::json!(index));
             }
             SignalValue::RemoveChildren { parents } => {
                 map.insert("variant".to_string(), serde_json::json!("RemoveChildren"));
-                map.insert("parents".to_string(), serde_json::json!(encode_ids(parents)));
+                map.insert(
+                    "parents".to_string(),
+                    serde_json::json!(encode_ids(parents)),
+                );
             }
             SignalValue::RemoveSubtree { target } => {
                 map.insert("variant".to_string(), serde_json::json!("RemoveSubtree"));
@@ -118,7 +130,10 @@ impl Component for ActionComponent {
             }
 
             SignalValue::AudioGraphRebuild { target } => {
-                map.insert("variant".to_string(), serde_json::json!("AudioGraphRebuild"));
+                map.insert(
+                    "variant".to_string(),
+                    serde_json::json!("AudioGraphRebuild"),
+                );
                 map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
             }
             SignalValue::RequestRaycast { target } => {
@@ -142,7 +157,10 @@ impl Component for ActionComponent {
                 map.insert("center_hz".to_string(), serde_json::json!(center_hz));
             }
             SignalValue::OscillatorSetEnabled { target, enabled } => {
-                map.insert("variant".to_string(), serde_json::json!("OscillatorSetEnabled"));
+                map.insert(
+                    "variant".to_string(),
+                    serde_json::json!("OscillatorSetEnabled"),
+                );
                 map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
                 map.insert("enabled".to_string(), serde_json::json!(enabled));
             }
@@ -150,7 +168,10 @@ impl Component for ActionComponent {
                 target,
                 frequency_hz,
             } => {
-                map.insert("variant".to_string(), serde_json::json!("OscillatorSetPitch"));
+                map.insert(
+                    "variant".to_string(),
+                    serde_json::json!("OscillatorSetPitch"),
+                );
                 map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
                 map.insert("frequency_hz".to_string(), serde_json::json!(frequency_hz));
             }
@@ -186,7 +207,10 @@ impl Component for ActionComponent {
                 map.insert("beat_context".to_string(), serde_json::json!(beat_context));
                 map.insert("pitch".to_string(), serde_json::json!(pitch));
                 map.insert("octave".to_string(), serde_json::json!(octave));
-                map.insert("duration_beats".to_string(), serde_json::json!(duration_beats));
+                map.insert(
+                    "duration_beats".to_string(),
+                    serde_json::json!(duration_beats),
+                );
             }
             SignalValue::OscillatorScheduleMusicNote {
                 target,
@@ -208,16 +232,6 @@ impl Component for ActionComponent {
                 map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
                 map.insert("note".to_string(), serde_json::json!(note));
             }
-            SignalValue::CommandQueue {
-                target,
-                command_name,
-                params,
-            } => {
-                map.insert("variant".to_string(), serde_json::json!("CommandQueue"));
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
-                map.insert("command_name".to_string(), serde_json::json!(command_name));
-                map.insert("params".to_string(), serde_json::json!(params));
-            }
 
             // Non-action signals should not be persisted in ActionComponent.
             other => {
@@ -236,12 +250,9 @@ impl Component for ActionComponent {
         &mut self,
         data: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<(), String> {
-        let variant = data
-            .get("variant")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "ActionComponent missing 'variant'".to_string())?;
+        let variant = get_string(data, "variant")?;
 
-        self.signal = match variant {
+        self.signal = match variant.as_str() {
             "Noop" => SignalValue::Noop,
             "Print" => SignalValue::Print {
                 message: get_string(data, "message")?,
@@ -333,11 +344,6 @@ impl Component for ActionComponent {
                 target: get_ids(data, "target")?,
                 note: get_value_as(data, "note")?,
             },
-            "CommandQueue" => SignalValue::CommandQueue {
-                target: get_ids(data, "target")?,
-                command_name: get_string(data, "command_name")?,
-                params: get_value_as(data, "params")?,
-            },
 
             other => return Err(format!("Unknown action variant: {other}")),
         };
@@ -363,7 +369,10 @@ fn decode_id(v: &serde_json::Value) -> Result<ComponentId, String> {
 fn decode_ids(v: &serde_json::Value) -> Result<Vec<ComponentId>, String> {
     let ffi: Vec<u64> = serde_json::from_value(v.clone())
         .map_err(|e| format!("Failed to decode ComponentId list (ffi u64[]): {e}"))?;
-    Ok(ffi.into_iter().map(|x| KeyData::from_ffi(x).into()).collect())
+    Ok(ffi
+        .into_iter()
+        .map(|x| KeyData::from_ffi(x).into())
+        .collect())
 }
 
 fn get_string(

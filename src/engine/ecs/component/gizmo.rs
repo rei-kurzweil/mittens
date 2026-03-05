@@ -290,18 +290,30 @@ impl Component for TransformGizmoComponent {
         Ok(())
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        // Defer spawning the visual subtree to the command queue flush phase.
-        queue.queue_register_transform_gizmo(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push(
+            component,
+            crate::engine::ecs::SignalValue::RegisterTransformGizmo { component },
+        );
     }
 
-    fn cleanup(&mut self, queue: &mut crate::engine::ecs::CommandQueue, _component: ComponentId) {
+    fn cleanup(
+        &mut self,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        _component: ComponentId,
+    ) {
         if let Some(root) = self.visual_root.take() {
-            queue.queue_remove_subtree(root);
+            emit.push(
+                root,
+                crate::engine::ecs::SignalValue::RemoveSubtreeImmediate { root },
+            );
         }
 
         if let Some(root) = self.debug_drag_plane_root.take() {
-            queue.queue_remove_subtree(root);
+            emit.push(
+                root,
+                crate::engine::ecs::SignalValue::RemoveSubtreeImmediate { root },
+            );
         }
     }
 }

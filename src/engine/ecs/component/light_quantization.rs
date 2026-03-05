@@ -49,8 +49,11 @@ impl Component for LightQuantizationComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_register_light_quantization(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push(
+            component,
+            crate::engine::ecs::SignalValue::RegisterLightQuantization { component },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

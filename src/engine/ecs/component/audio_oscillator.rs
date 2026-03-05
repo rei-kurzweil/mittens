@@ -132,9 +132,15 @@ impl Component for AudioOscillatorComponent {
         "audio_oscillator"
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_register_audio_oscillator(component);
-        queue.queue_audio_graph_dirty(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push(
+            component,
+            crate::engine::ecs::SignalValue::RegisterAudioOscillator { component },
+        );
+        emit.push(
+            component,
+            crate::engine::ecs::SignalValue::AudioGraphDirtyImmediate { component },
+        );
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

@@ -5,7 +5,7 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::animation_system_evaluator::AnimationEvaluator;
-use crate::engine::ecs::{CommandQueue, ComponentId, RxWorld, SignalValue, World};
+use crate::engine::ecs::{ComponentId, RxWorld, SignalValue, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 
@@ -101,14 +101,7 @@ impl AnimationSystem {
         }
     }
 
-    pub fn tick_with_beat(
-        &mut self,
-        world: &mut World,
-        beat_now: f64,
-        bpm: f64,
-        rx: &mut RxWorld,
-        queue: &mut CommandQueue,
-    ) {
+    pub fn tick_with_beat(&mut self, world: &mut World, beat_now: f64, bpm: f64, rx: &mut RxWorld) {
         // If time jumps backwards, reset fired state.
         if beat_now + 1e-9 < self.last_beat {
             for runtime in self.animations.values_mut() {

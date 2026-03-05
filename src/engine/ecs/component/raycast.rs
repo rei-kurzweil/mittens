@@ -1,5 +1,4 @@
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::command_queue::CommandQueue;
 use crate::engine::ecs::component::Component;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,13 +75,23 @@ impl Component for RayCastComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut CommandQueue, component: ComponentId) {
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         self.component = Some(component);
-        queue.queue_register_raycast(component);
+        emit.push(
+            component,
+            crate::engine::ecs::SignalValue::RegisterRaycast { component },
+        );
     }
 
-    fn cleanup(&mut self, queue: &mut CommandQueue, component: ComponentId) {
-        queue.queue_remove_raycast(component);
+    fn cleanup(
+        &mut self,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        component: ComponentId,
+    ) {
+        emit.push(
+            component,
+            crate::engine::ecs::SignalValue::RemoveRaycast { component },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

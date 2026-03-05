@@ -43,7 +43,7 @@ impl Component for GLTFComponent {
         self
     }
 
-    fn init(&mut self, _queue: &mut crate::engine::ecs::CommandQueue, _component: ComponentId) {
+    fn init(&mut self, _emit: &mut dyn crate::engine::ecs::SignalEmitter, _component: ComponentId) {
         // No-op: GLTFSystem discovers these during tick().
     }
 

@@ -21,8 +21,8 @@ pub mod collision_shape;
 pub mod color;
 pub mod controller_xr;
 pub mod directional_light;
-pub mod emissive;
 pub mod editor;
+pub mod emissive;
 pub mod gesture_coord_type;
 pub mod gizmo;
 pub mod gltf;
@@ -81,8 +81,8 @@ pub use collision_shape::CollisionShapeComponent;
 pub use color::ColorComponent;
 pub use controller_xr::{ControllerHand, ControllerPoseKind, ControllerXRComponent};
 pub use directional_light::DirectionalLightComponent;
-pub use emissive::EmissiveComponent;
 pub use editor::EditorComponent;
+pub use emissive::EmissiveComponent;
 pub use gesture_coord_type::{GestureCoordType, GestureCoordTypeComponent};
 pub use gizmo::{
     TransformGizmoAxis, TransformGizmoComponent, TransformGizmoRotateComponent,
@@ -98,8 +98,8 @@ pub use light_quantization::LightQuantizationComponent;
 pub(crate) use music_note::NotePitch;
 pub use music_note::{MusicNote, MusicNoteComponent};
 pub use opacity::OpacityComponent;
-pub use overlay::OverlayComponent;
 pub use openxr::OpenXRComponent;
+pub use overlay::OverlayComponent;
 pub use point_light::PointLightComponent;
 pub use pointer::PointerComponent;
 pub use raycast::{RayCastComponent, RayCastMode};
@@ -186,7 +186,7 @@ pub trait Component: std::any::Any {
     /// Called when component is added to the World
     fn init(
         &mut self,
-        _queue: &mut crate::engine::ecs::CommandQueue,
+        _emit: &mut dyn crate::engine::ecs::SignalEmitter,
         _component: crate::engine::ecs::ComponentId,
     ) {
     }
@@ -194,7 +194,7 @@ pub trait Component: std::any::Any {
     /// Called when component is removed from the World.
     fn cleanup(
         &mut self,
-        _queue: &mut crate::engine::ecs::CommandQueue,
+        _emit: &mut dyn crate::engine::ecs::SignalEmitter,
         _component: crate::engine::ecs::ComponentId,
     ) {
     }

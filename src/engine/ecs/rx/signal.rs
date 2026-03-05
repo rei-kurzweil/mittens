@@ -1,4 +1,3 @@
-use crate::engine::ecs::CommandQueue;
 use crate::engine::ecs::{ComponentId, World};
 
 /// A single unified signal stream.
@@ -112,11 +111,169 @@ pub enum SignalValue {
         note: crate::engine::ecs::component::MusicNote,
     },
 
-    /// Escape hatch to invoke legacy command queue commands.
-    CommandQueue {
-        target: Vec<ComponentId>,
-        command_name: String,
-        params: Vec<serde_json::Value>,
+    // --- Immediate mutation signals (formerly CommandQueue commands) ---
+    RegisterRenderable {
+        component: ComponentId,
+    },
+    RemoveRenderable {
+        component: ComponentId,
+    },
+
+    RegisterTransform {
+        component: ComponentId,
+    },
+    UpdateTransform {
+        component: ComponentId,
+        translation: [f32; 3],
+        rotation_quat_xyzw: [f32; 4],
+        scale: [f32; 3],
+    },
+    RemoveTransform {
+        component: ComponentId,
+    },
+
+    RegisterCamera3d {
+        component: ComponentId,
+    },
+    RegisterCamera2d {
+        component: ComponentId,
+    },
+    MakeActiveCamera {
+        component: ComponentId,
+    },
+
+    RegisterInput {
+        component: ComponentId,
+    },
+    RegisterUv {
+        component: ComponentId,
+    },
+
+    RegisterLight {
+        component: ComponentId,
+    },
+    RegisterColor {
+        component: ComponentId,
+    },
+    RegisterOpacity {
+        component: ComponentId,
+    },
+    RegisterTransparentCutout {
+        component: ComponentId,
+    },
+    RegisterBackgroundColor {
+        component: ComponentId,
+    },
+    RegisterAmbientLight {
+        component: ComponentId,
+    },
+    RegisterEmissive {
+        component: ComponentId,
+    },
+    RegisterLightQuantization {
+        component: ComponentId,
+    },
+
+    RegisterTexture {
+        component: ComponentId,
+    },
+    RegisterTextureFiltering {
+        component: ComponentId,
+    },
+
+    RegisterText {
+        component: ComponentId,
+    },
+    SetTextImmediate {
+        component: ComponentId,
+        text: String,
+    },
+
+    RegisterCollision {
+        component: ComponentId,
+    },
+    RemoveCollision {
+        component: ComponentId,
+    },
+    RegisterKineticResponse {
+        component: ComponentId,
+    },
+    RemoveKineticResponse {
+        component: ComponentId,
+    },
+
+    RemoveSubtreeImmediate {
+        root: ComponentId,
+    },
+
+    RegisterOpenxr {
+        component: ComponentId,
+    },
+    RegisterControllerXr {
+        component: ComponentId,
+    },
+    RemoveControllerXr {
+        component: ComponentId,
+    },
+
+    RegisterRaycast {
+        component: ComponentId,
+    },
+    RemoveRaycast {
+        component: ComponentId,
+    },
+
+    RegisterAnimation {
+        component: ComponentId,
+    },
+    RegisterKeyframe {
+        component: ComponentId,
+    },
+
+    RegisterAudioOutput {
+        component: ComponentId,
+    },
+    AudioGraphDirtyImmediate {
+        component: ComponentId,
+    },
+    RegisterAudioOscillator {
+        component: ComponentId,
+    },
+    RegisterAudioBufferSize {
+        component: ComponentId,
+    },
+
+    RegisterClock {
+        component: ComponentId,
+    },
+
+    RegisterTransformGizmo {
+        component: ComponentId,
+    },
+
+    ScheduleAudioOp {
+        component: ComponentId,
+        beat: f64,
+        op: crate::engine::ecs::system::audio_system::AudioOp,
+    },
+    ScheduleAudioGraphSwap {
+        component: ComponentId,
+        beat: f64,
+    },
+    ScheduleAudioPitchSetHz {
+        component: ComponentId,
+        beat: f64,
+        frequency_hz: f32,
+    },
+    ScheduleAudioOscillatorEnabled {
+        component: ComponentId,
+        beat: f64,
+        enabled: bool,
+    },
+    ScheduleAudioGainSet {
+        component: ComponentId,
+        beat: f64,
+        gain: f32,
     },
 
     // --- Facts (what used to be called events) ---
@@ -232,7 +389,51 @@ impl SignalValue {
             | SignalValue::OscillatorScheduleSetNote { .. }
             | SignalValue::OscillatorScheduleMusicNote { .. }
             | SignalValue::MusicSetNote { .. }
-            | SignalValue::CommandQueue { .. } => SignalKind::Action,
+            | SignalValue::RegisterRenderable { .. }
+            | SignalValue::RemoveRenderable { .. }
+            | SignalValue::RegisterTransform { .. }
+            | SignalValue::UpdateTransform { .. }
+            | SignalValue::RemoveTransform { .. }
+            | SignalValue::RegisterCamera3d { .. }
+            | SignalValue::RegisterCamera2d { .. }
+            | SignalValue::MakeActiveCamera { .. }
+            | SignalValue::RegisterInput { .. }
+            | SignalValue::RegisterUv { .. }
+            | SignalValue::RegisterLight { .. }
+            | SignalValue::RegisterColor { .. }
+            | SignalValue::RegisterOpacity { .. }
+            | SignalValue::RegisterTransparentCutout { .. }
+            | SignalValue::RegisterBackgroundColor { .. }
+            | SignalValue::RegisterAmbientLight { .. }
+            | SignalValue::RegisterEmissive { .. }
+            | SignalValue::RegisterLightQuantization { .. }
+            | SignalValue::RegisterTexture { .. }
+            | SignalValue::RegisterTextureFiltering { .. }
+            | SignalValue::RegisterText { .. }
+            | SignalValue::SetTextImmediate { .. }
+            | SignalValue::RegisterCollision { .. }
+            | SignalValue::RemoveCollision { .. }
+            | SignalValue::RegisterKineticResponse { .. }
+            | SignalValue::RemoveKineticResponse { .. }
+            | SignalValue::RemoveSubtreeImmediate { .. }
+            | SignalValue::RegisterOpenxr { .. }
+            | SignalValue::RegisterControllerXr { .. }
+            | SignalValue::RemoveControllerXr { .. }
+            | SignalValue::RegisterRaycast { .. }
+            | SignalValue::RemoveRaycast { .. }
+            | SignalValue::RegisterAnimation { .. }
+            | SignalValue::RegisterKeyframe { .. }
+            | SignalValue::RegisterAudioOutput { .. }
+            | SignalValue::AudioGraphDirtyImmediate { .. }
+            | SignalValue::RegisterAudioOscillator { .. }
+            | SignalValue::RegisterAudioBufferSize { .. }
+            | SignalValue::RegisterClock { .. }
+            | SignalValue::RegisterTransformGizmo { .. }
+            | SignalValue::ScheduleAudioOp { .. }
+            | SignalValue::ScheduleAudioGraphSwap { .. }
+            | SignalValue::ScheduleAudioPitchSetHz { .. }
+            | SignalValue::ScheduleAudioOscillatorEnabled { .. }
+            | SignalValue::ScheduleAudioGainSet { .. } => SignalKind::Action,
 
             // Facts.
             SignalValue::ParentChanged { .. } => SignalKind::ParentChanged,
@@ -250,6 +451,7 @@ impl SignalValue {
 pub struct Signal {
     pub scope: ComponentId,
     pub value: SignalValue,
+    pub when: SignalWhen,
 }
 
 impl Signal {
@@ -258,8 +460,46 @@ impl Signal {
     }
 }
 
-pub trait SignalEmitter {
-    fn push(&mut self, scope: ComponentId, value: SignalValue);
+/// Optional timing metadata on the signal envelope.
+///
+/// Semantics:
+/// - `Now`: signal is eligible for execution/dispatch immediately at the next drain point.
+/// - `AtBeat(b)`: signal is held in a pending queue until the transport beat is >= `b`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SignalWhen {
+    Now,
+    AtBeat(f64),
 }
 
-pub type SignalHandler = fn(&mut World, &mut CommandQueue, &mut dyn SignalEmitter, &Signal);
+impl Default for SignalWhen {
+    fn default() -> Self {
+        Self::Now
+    }
+}
+
+impl SignalWhen {
+    pub fn at_beat(beat: f64) -> Self {
+        Self::AtBeat(beat)
+    }
+
+    pub fn beat(&self) -> Option<f64> {
+        match *self {
+            Self::Now => None,
+            Self::AtBeat(b) => Some(b),
+        }
+    }
+}
+
+pub trait SignalEmitter {
+    fn push(&mut self, scope: ComponentId, value: SignalValue);
+
+    /// Push a signal with a target transport beat. By default this degrades to `push`.
+    ///
+    /// Implementors that support a timed holding-pen should override this.
+    fn push_at_beat(&mut self, scope: ComponentId, beat: f64, value: SignalValue) {
+        let _ = beat;
+        self.push(scope, value);
+    }
+}
+
+pub type SignalHandler = fn(&mut World, &mut dyn SignalEmitter, &Signal);

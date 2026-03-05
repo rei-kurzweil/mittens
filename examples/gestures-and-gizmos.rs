@@ -13,10 +13,9 @@ struct Scene {
 fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Scene {
     use engine::ecs::component::{
         BackgroundColorComponent, BackgroundComponent, Camera3DComponent, ColorComponent,
-        DirectionalLightComponent, InputComponent, InputTransformModeComponent,
+        DirectionalLightComponent, InputComponent, InputTransformModeComponent, PointerComponent,
+        RayCastComponent, RaycastableComponent, RenderableComponent, TransformComponent,
         TransformGizmoComponent,
-        PointerComponent, RayCastComponent, RaycastableComponent, RenderableComponent,
-        TransformComponent,
     };
     use engine::graphics::BuiltinMeshType;
     use engine::graphics::primitives::{MaterialHandle, Renderable};

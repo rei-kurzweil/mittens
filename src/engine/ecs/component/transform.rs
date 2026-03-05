@@ -1,6 +1,5 @@
 use super::Component;
-use crate::engine::ecs::CommandQueue;
-use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::{ComponentId, SignalEmitter, SignalValue};
 use crate::engine::graphics::primitives::Transform;
 
 #[derive(Debug, Clone, Copy)]
@@ -86,7 +85,7 @@ impl TransformComponent {
     /// Set rotation from Euler angles (radians), XYZ order, and queue update.
     pub fn set_rotation_euler(
         &mut self,
-        queue: &mut CommandQueue,
+        emit: &mut dyn SignalEmitter,
         pitch_x: f32,
         yaw_y: f32,
         roll_z: f32,
@@ -96,37 +95,69 @@ impl TransformComponent {
         let Some(cid) = self.component else {
             return;
         };
-        queue.queue_update_transform(cid, self.transform);
+        emit.push(
+            cid,
+            SignalValue::UpdateTransform {
+                component: cid,
+                translation: self.transform.translation,
+                rotation_quat_xyzw: self.transform.rotation,
+                scale: self.transform.scale,
+            },
+        );
     }
 
     /// Set rotation from a quaternion (xyzw) and queue update.
-    pub fn set_rotation_quat(&mut self, queue: &mut CommandQueue, quat_xyzw: [f32; 4]) {
+    pub fn set_rotation_quat(&mut self, emit: &mut dyn SignalEmitter, quat_xyzw: [f32; 4]) {
         self.set_rotation_quat_internal(quat_xyzw);
 
         let Some(cid) = self.component else {
             return;
         };
-        queue.queue_update_transform(cid, self.transform);
+        emit.push(
+            cid,
+            SignalValue::UpdateTransform {
+                component: cid,
+                translation: self.transform.translation,
+                rotation_quat_xyzw: self.transform.rotation,
+                scale: self.transform.scale,
+            },
+        );
     }
 
     /// Set translation and queue update.
-    pub fn set_position(&mut self, queue: &mut CommandQueue, x: f32, y: f32, z: f32) {
+    pub fn set_position(&mut self, emit: &mut dyn SignalEmitter, x: f32, y: f32, z: f32) {
         self.transform.translation = [x, y, z];
         self.recompute_model();
         let Some(cid) = self.component else {
             return;
         };
-        queue.queue_update_transform(cid, self.transform);
+        emit.push(
+            cid,
+            SignalValue::UpdateTransform {
+                component: cid,
+                translation: self.transform.translation,
+                rotation_quat_xyzw: self.transform.rotation,
+                scale: self.transform.scale,
+            },
+        );
     }
 
     /// Set non-uniform scale and queue update.
-    pub fn set_scale(&mut self, queue: &mut CommandQueue, x: f32, y: f32, z: f32) {
+    pub fn set_scale(&mut self, emit: &mut dyn SignalEmitter, x: f32, y: f32, z: f32) {
         self.transform.scale = [x, y, z];
         self.recompute_model();
         let Some(cid) = self.component else {
             return;
         };
-        queue.queue_update_transform(cid, self.transform);
+        emit.push(
+            cid,
+            SignalValue::UpdateTransform {
+                component: cid,
+                translation: self.transform.translation,
+                rotation_quat_xyzw: self.transform.rotation,
+                scale: self.transform.scale,
+            },
+        );
     }
 }
 
@@ -147,9 +178,11 @@ impl Component for TransformComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut CommandQueue, component: ComponentId) {
-        // Queue registration command so transform system knows about this component
-        queue.queue_register_transform(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push(
+            component,
+            crate::engine::ecs::SignalValue::RegisterTransform { component },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

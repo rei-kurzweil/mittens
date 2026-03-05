@@ -56,11 +56,14 @@ impl Component for DirectionalLightComponent {
 
     fn init(
         &mut self,
-        queue: &mut crate::engine::ecs::CommandQueue,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
         component: crate::engine::ecs::ComponentId,
     ) {
         // Uses the same light registration path as point lights.
-        queue.queue_register_light(component);
+        emit.push(
+            component,
+            crate::engine::ecs::SignalValue::RegisterLight { component },
+        );
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

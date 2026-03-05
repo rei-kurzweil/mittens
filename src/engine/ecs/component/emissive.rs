@@ -1,4 +1,3 @@
-use crate::engine::ecs::CommandQueue;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
 
@@ -34,8 +33,11 @@ impl Component for EmissiveComponent {
         "emissive"
     }
 
-    fn init(&mut self, queue: &mut CommandQueue, component: ComponentId) {
-        queue.queue_register_emissive(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push(
+            component,
+            crate::engine::ecs::SignalValue::RegisterEmissive { component },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

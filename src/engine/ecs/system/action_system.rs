@@ -6,8 +6,7 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::audio_system::AudioOp;
 use crate::engine::ecs::{
-    CommandQueue, ComponentCodec, ComponentId, RxWorld, Signal, SignalEmitter, SignalKind,
-    SignalValue, World,
+    ComponentCodec, ComponentId, RxWorld, Signal, SignalEmitter, SignalKind, SignalValue, World,
 };
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
@@ -22,22 +21,17 @@ impl ActionSystem {
         Self::default()
     }
 
-    pub fn install_immediate_handlers(&mut self, rx: &mut RxWorld) {
+    pub fn install_handlers(&mut self, rx: &mut RxWorld) {
         if self.handlers_installed {
             return;
         }
-        rx.add_global_handler(SignalKind::Action, handle_action_signal);
+        rx.add_global_handler_closure(SignalKind::Action, handle_action_signal);
         self.handlers_installed = true;
     }
 }
 
-fn handle_action_signal(
-    world: &mut World,
-    queue: &mut CommandQueue,
-    emit: &mut dyn SignalEmitter,
-    env: &Signal,
-) {
-    let beat_now = queue.beat_now();
+fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &Signal) {
+    let beat_now = 0.0;
 
     match &env.value {
         SignalValue::Noop => {}
@@ -52,7 +46,12 @@ fn handle_action_signal(
             for color_cid in color_cids {
                 if let Some(c) = world.get_component_by_id_as_mut::<ColorComponent>(color_cid) {
                     c.rgba = *rgba;
-                    queue.queue_register_color(color_cid);
+                    emit.push(
+                        color_cid,
+                        SignalValue::RegisterColor {
+                            component: color_cid,
+                        },
+                    );
                 }
             }
         }
@@ -65,7 +64,13 @@ fn handle_action_signal(
             text_cids.sort();
             text_cids.dedup();
             for text_cid in text_cids {
-                queue.queue_set_text(text_cid, text.clone());
+                emit.push(
+                    text_cid,
+                    SignalValue::SetTextImmediate {
+                        component: text_cid,
+                        text: text.clone(),
+                    },
+                );
             }
         }
 
@@ -77,9 +82,10 @@ fn handle_action_signal(
             transform_cids.sort();
             transform_cids.dedup();
             for transform_cid in transform_cids {
-                if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
+                if let Some(t) =
+                    world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
                 {
-                    t.set_position(queue, position[0], position[1], position[2]);
+                    t.set_position(emit, position[0], position[1], position[2]);
                 }
             }
         }
@@ -97,13 +103,22 @@ fn handle_action_signal(
             transform_cids.sort();
             transform_cids.dedup();
             for transform_cid in transform_cids {
-                if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
+                if let Some(t) =
+                    world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
                 {
                     t.transform.translation = *translation;
                     t.transform.rotation = *rotation_quat_xyzw;
                     t.transform.scale = *scale;
                     t.transform.recompute_model();
-                    queue.queue_update_transform(transform_cid, t.transform);
+                    emit.push(
+                        transform_cid,
+                        SignalValue::UpdateTransform {
+                            component: transform_cid,
+                            translation: *translation,
+                            rotation_quat_xyzw: *rotation_quat_xyzw,
+                            scale: *scale,
+                        },
+                    );
                 }
             }
         }
@@ -126,14 +141,20 @@ fn handle_action_signal(
                 );
 
                 if world.is_initialized(parent) {
-                    world.init_component_tree(*child, queue);
+                    world.init_component_tree(*child, emit);
                 }
 
-                queue_topology_transform_refresh(world, queue, *child);
-                queue_topology_transform_refresh(world, queue, parent);
+                emit_topology_transform_refresh(world, emit, *child);
+                emit_topology_transform_refresh(world, emit, parent);
 
-                queue.queue_audio_graph_dirty(parent);
-                queue.queue_audio_graph_dirty(*child);
+                emit.push(
+                    parent,
+                    SignalValue::AudioGraphDirtyImmediate { component: parent },
+                );
+                emit.push(
+                    *child,
+                    SignalValue::AudioGraphDirtyImmediate { component: *child },
+                );
             }
         }
 
@@ -168,7 +189,7 @@ fn handle_action_signal(
                 }
 
                 if world.is_initialized(parent) {
-                    world.init_component_tree(new_root, queue);
+                    world.init_component_tree(new_root, emit);
                 }
 
                 emit.push(
@@ -180,11 +201,19 @@ fn handle_action_signal(
                     },
                 );
 
-                queue_topology_transform_refresh(world, queue, new_root);
-                queue_topology_transform_refresh(world, queue, parent);
+                emit_topology_transform_refresh(world, emit, new_root);
+                emit_topology_transform_refresh(world, emit, parent);
 
-                queue.queue_audio_graph_dirty(parent);
-                queue.queue_audio_graph_dirty(new_root);
+                emit.push(
+                    parent,
+                    SignalValue::AudioGraphDirtyImmediate { component: parent },
+                );
+                emit.push(
+                    new_root,
+                    SignalValue::AudioGraphDirtyImmediate {
+                        component: new_root,
+                    },
+                );
             }
         }
 
@@ -203,12 +232,12 @@ fn handle_action_signal(
                 );
 
                 if let Some(p) = old_parent {
-                    queue.queue_audio_graph_dirty(p);
+                    emit.push(p, SignalValue::AudioGraphDirtyImmediate { component: p });
                 }
 
-                queue_topology_transform_refresh(world, queue, child);
+                emit_topology_transform_refresh(world, emit, child);
                 if let Some(p) = old_parent {
-                    queue_topology_transform_refresh(world, queue, p);
+                    emit_topology_transform_refresh(world, emit, p);
                 }
             }
         }
@@ -220,8 +249,14 @@ fn handle_action_signal(
                     continue;
                 };
 
-                queue.queue_audio_graph_dirty(child);
-                queue.queue_audio_graph_dirty(parent);
+                emit.push(
+                    child,
+                    SignalValue::AudioGraphDirtyImmediate { component: child },
+                );
+                emit.push(
+                    parent,
+                    SignalValue::AudioGraphDirtyImmediate { component: parent },
+                );
 
                 world.detach_from_parent(child);
 
@@ -234,9 +269,9 @@ fn handle_action_signal(
                     },
                 );
 
-                queue.queue_remove_subtree(child);
+                emit.push(child, SignalValue::RemoveSubtreeImmediate { root: child });
 
-                queue_topology_transform_refresh(world, queue, parent);
+                emit_topology_transform_refresh(world, emit, parent);
             }
         }
 
@@ -247,9 +282,15 @@ fn handle_action_signal(
                     continue;
                 }
 
-                queue.queue_audio_graph_dirty(parent);
+                emit.push(
+                    parent,
+                    SignalValue::AudioGraphDirtyImmediate { component: parent },
+                );
                 for child in children {
-                    queue.queue_audio_graph_dirty(child);
+                    emit.push(
+                        child,
+                        SignalValue::AudioGraphDirtyImmediate { component: child },
+                    );
                     world.detach_from_parent(child);
 
                     emit.push(
@@ -261,23 +302,26 @@ fn handle_action_signal(
                         },
                     );
 
-                    queue.queue_remove_subtree(child);
+                    emit.push(child, SignalValue::RemoveSubtreeImmediate { root: child });
                 }
 
-                queue_topology_transform_refresh(world, queue, parent);
+                emit_topology_transform_refresh(world, emit, parent);
             }
         }
 
         SignalValue::RemoveSubtree { target } => {
             for &root in target.iter() {
-                queue.queue_audio_graph_dirty(root);
-                queue.queue_remove_subtree(root);
+                emit.push(
+                    root,
+                    SignalValue::AudioGraphDirtyImmediate { component: root },
+                );
+                emit.push(root, SignalValue::RemoveSubtreeImmediate { root });
             }
         }
 
         SignalValue::AudioGraphRebuild { target } => {
             for &t in target.iter() {
-                queue.queue_audio_graph_dirty(t);
+                emit.push(t, SignalValue::AudioGraphDirtyImmediate { component: t });
             }
         }
 
@@ -305,7 +349,14 @@ fn handle_action_signal(
                     } else {
                         c.cutoff_hz
                     };
-                    queue.queue_schedule_audio_op(t, beat_now, AudioOp::SetLowPassCutoffHz(c.cutoff_hz));
+                    emit.push(
+                        t,
+                        SignalValue::ScheduleAudioOp {
+                            component: t,
+                            beat: beat_now,
+                            op: AudioOp::SetLowPassCutoffHz(c.cutoff_hz),
+                        },
+                    );
                 }
             }
         }
@@ -319,10 +370,13 @@ fn handle_action_signal(
                     } else {
                         c.center_hz
                     };
-                    queue.queue_schedule_audio_op(
+                    emit.push(
                         t,
-                        beat_now,
-                        AudioOp::SetBandPassCenterHz(c.center_hz),
+                        SignalValue::ScheduleAudioOp {
+                            component: t,
+                            beat: beat_now,
+                            op: AudioOp::SetBandPassCenterHz(c.center_hz),
+                        },
                     );
                 }
             }
@@ -336,12 +390,16 @@ fn handle_action_signal(
             osc_cids.sort();
             osc_cids.dedup();
             for osc_cid in osc_cids {
-                if let Some(c) = world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
+                if let Some(c) =
+                    world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
                 {
                     for osc in c.oscillators.iter_mut() {
                         osc.enabled = *enabled;
                     }
-                    queue.queue_register_audio_oscillator(osc_cid);
+                    emit.push(
+                        osc_cid,
+                        SignalValue::RegisterAudioOscillator { component: osc_cid },
+                    );
                 }
             }
         }
@@ -351,7 +409,9 @@ fn handle_action_signal(
             frequency_hz,
         } => {
             if !frequency_hz.is_finite() {
-                println!("[ActionSystem] oscillator_set_pitch: non-finite frequency_hz={frequency_hz}");
+                println!(
+                    "[ActionSystem] oscillator_set_pitch: non-finite frequency_hz={frequency_hz}"
+                );
                 return;
             }
 
@@ -362,13 +422,17 @@ fn handle_action_signal(
             osc_cids.sort();
             osc_cids.dedup();
             for osc_cid in osc_cids {
-                if let Some(c) = world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
+                if let Some(c) =
+                    world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
                 {
                     for osc in c.oscillators.iter_mut() {
                         osc.frequency = *frequency_hz;
                         osc.music_note_applied = true;
                     }
-                    queue.queue_register_audio_oscillator(osc_cid);
+                    emit.push(
+                        osc_cid,
+                        SignalValue::RegisterAudioOscillator { component: osc_cid },
+                    );
                 }
             }
         }
@@ -388,7 +452,14 @@ fn handle_action_signal(
             osc_cids.sort();
             osc_cids.dedup();
             for osc_cid in osc_cids {
-                queue.queue_schedule_audio_pitch_set_hz(osc_cid, beat, *frequency_hz);
+                emit.push(
+                    osc_cid,
+                    SignalValue::ScheduleAudioPitchSetHz {
+                        component: osc_cid,
+                        beat,
+                        frequency_hz: *frequency_hz,
+                    },
+                );
             }
         }
 
@@ -417,13 +488,30 @@ fn handle_action_signal(
             osc_cids.sort();
             osc_cids.dedup();
             for osc_cid in osc_cids {
-                queue.queue_schedule_audio_oscillator_enabled(osc_cid, beat, true);
-                queue.queue_schedule_audio_pitch_set_hz(osc_cid, beat, frequency_hz);
+                emit.push(
+                    osc_cid,
+                    SignalValue::ScheduleAudioOscillatorEnabled {
+                        component: osc_cid,
+                        beat,
+                        enabled: true,
+                    },
+                );
+                emit.push(
+                    osc_cid,
+                    SignalValue::ScheduleAudioPitchSetHz {
+                        component: osc_cid,
+                        beat,
+                        frequency_hz,
+                    },
+                );
                 if duration_beats.is_finite() && duration_beats > 0.0 {
-                    queue.queue_schedule_audio_oscillator_enabled(
+                    emit.push(
                         osc_cid,
-                        beat + duration_beats,
-                        false,
+                        SignalValue::ScheduleAudioOscillatorEnabled {
+                            component: osc_cid,
+                            beat: beat + duration_beats,
+                            enabled: false,
+                        },
                     );
                 }
             }
@@ -436,7 +524,11 @@ fn handle_action_signal(
             note,
         } => {
             let velocity = note.velocity();
-            let velocity = if velocity.is_finite() { velocity.max(0.0) } else { 1.0 };
+            let velocity = if velocity.is_finite() {
+                velocity.max(0.0)
+            } else {
+                1.0
+            };
 
             let frequency_hz = MusicSystem::frequency_hz_for_note(*note);
             let duration_beats = note.duration_beats() as f64;
@@ -449,17 +541,48 @@ fn handle_action_signal(
             osc_cids.sort();
             osc_cids.dedup();
             for osc_cid in osc_cids {
-                queue.queue_schedule_audio_oscillator_enabled(osc_cid, beat, true);
-                queue.queue_schedule_audio_pitch_set_hz(osc_cid, beat, frequency_hz);
-                queue.queue_schedule_audio_gain_set(osc_cid, beat, velocity);
+                emit.push(
+                    osc_cid,
+                    SignalValue::ScheduleAudioOscillatorEnabled {
+                        component: osc_cid,
+                        beat,
+                        enabled: true,
+                    },
+                );
+                emit.push(
+                    osc_cid,
+                    SignalValue::ScheduleAudioPitchSetHz {
+                        component: osc_cid,
+                        beat,
+                        frequency_hz,
+                    },
+                );
+                emit.push(
+                    osc_cid,
+                    SignalValue::ScheduleAudioGainSet {
+                        component: osc_cid,
+                        beat,
+                        gain: velocity,
+                    },
+                );
 
                 if duration_beats.is_finite() && duration_beats > 0.0 {
-                    queue.queue_schedule_audio_oscillator_enabled(
+                    emit.push(
                         osc_cid,
-                        beat + duration_beats,
-                        false,
+                        SignalValue::ScheduleAudioOscillatorEnabled {
+                            component: osc_cid,
+                            beat: beat + duration_beats,
+                            enabled: false,
+                        },
                     );
-                    queue.queue_schedule_audio_gain_set(osc_cid, beat + duration_beats, 1.0);
+                    emit.push(
+                        osc_cid,
+                        SignalValue::ScheduleAudioGainSet {
+                            component: osc_cid,
+                            beat: beat + duration_beats,
+                            gain: 1.0,
+                        },
+                    );
                 }
             }
         }
@@ -473,33 +596,27 @@ fn handle_action_signal(
             osc_cids.dedup();
             for osc_cid in osc_cids {
                 if let Some(note_cid) = find_first_music_note_component(world, osc_cid) {
-                    if let Some(nc) = world.get_component_by_id_as_mut::<MusicNoteComponent>(note_cid)
+                    if let Some(nc) =
+                        world.get_component_by_id_as_mut::<MusicNoteComponent>(note_cid)
                     {
                         nc.note = *note;
                     }
                 }
 
                 let freq = MusicSystem::frequency_hz_for_note(*note);
-                if let Some(c) = world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
+                if let Some(c) =
+                    world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
                 {
                     for osc in c.oscillators.iter_mut() {
                         osc.frequency = freq;
                         osc.music_note_applied = true;
                     }
-                    queue.queue_register_audio_oscillator(osc_cid);
+                    emit.push(
+                        osc_cid,
+                        SignalValue::RegisterAudioOscillator { component: osc_cid },
+                    );
                 }
             }
-        }
-
-        SignalValue::CommandQueue {
-            target,
-            command_name,
-            params,
-        } => {
-            println!(
-                "[ActionSystem] command_queue '{}' targets={:?} params={:?}",
-                command_name, target, params
-            );
         }
 
         _ => {}
@@ -556,11 +673,19 @@ fn collect_transform_targets(world: &World, target: ComponentId, out: &mut Vec<C
     }
 }
 
-fn queue_topology_transform_refresh(world: &World, queue: &mut CommandQueue, cid: ComponentId) {
+fn emit_topology_transform_refresh(world: &World, emit: &mut dyn SignalEmitter, cid: ComponentId) {
     // If this node is a TransformComponent, refreshing it updates cached world matrices
     // for its whole subtree.
     if let Some(t) = world.get_component_by_id_as::<TransformComponent>(cid) {
-        queue.queue_update_transform(cid, t.transform);
+        emit.push(
+            cid,
+            SignalValue::UpdateTransform {
+                component: cid,
+                translation: t.transform.translation,
+                rotation_quat_xyzw: t.transform.rotation,
+                scale: t.transform.scale,
+            },
+        );
         return;
     }
 
@@ -568,7 +693,15 @@ fn queue_topology_transform_refresh(world: &World, queue: &mut CommandQueue, cid
     let mut cur = cid;
     while let Some(p) = world.parent_of(cur) {
         if let Some(t) = world.get_component_by_id_as::<TransformComponent>(p) {
-            queue.queue_update_transform(p, t.transform);
+            emit.push(
+                p,
+                SignalValue::UpdateTransform {
+                    component: p,
+                    translation: t.transform.translation,
+                    rotation_quat_xyzw: t.transform.rotation,
+                    scale: t.transform.scale,
+                },
+            );
             return;
         }
         cur = p;

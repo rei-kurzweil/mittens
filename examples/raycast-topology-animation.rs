@@ -29,7 +29,7 @@ fn quat_mul(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
 
 fn ensure_emissive_on(
     world: &mut engine::ecs::World,
-    queue: &mut engine::ecs::CommandQueue,
+    emit: &mut dyn engine::ecs::SignalEmitter,
     renderable_cid: engine::ecs::ComponentId,
 ) {
     let existing = world
@@ -48,12 +48,16 @@ fn ensure_emissive_on(
 
     let emissive_cid = world.register(engine::ecs::component::EmissiveComponent::on());
     let _ = world.add_child(renderable_cid, emissive_cid);
-    queue.queue_register_emissive(emissive_cid);
+    emit.push(
+        emissive_cid,
+        engine::ecs::SignalValue::RegisterEmissive {
+            component: emissive_cid,
+        },
+    );
 }
 
 fn ring_a_handler(
     world: &mut engine::ecs::World,
-    queue: &mut engine::ecs::CommandQueue,
     emit: &mut dyn engine::ecs::SignalEmitter,
     env: &engine::ecs::Signal,
 ) {
@@ -64,7 +68,7 @@ fn ring_a_handler(
                 env.scope, renderable
             );
 
-            ensure_emissive_on(world, queue, *renderable);
+            ensure_emissive_on(world, emit, *renderable);
 
             emit.push(
                 env.scope,
@@ -80,7 +84,6 @@ fn ring_a_handler(
 
 fn ring_b_handler(
     world: &mut engine::ecs::World,
-    queue: &mut engine::ecs::CommandQueue,
     emit: &mut dyn engine::ecs::SignalEmitter,
     env: &engine::ecs::Signal,
 ) {
@@ -91,7 +94,7 @@ fn ring_b_handler(
                 env.scope, renderable
             );
 
-            ensure_emissive_on(world, queue, *renderable);
+            ensure_emissive_on(world, emit, *renderable);
 
             emit.push(
                 env.scope,
@@ -112,11 +115,12 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Background.
-    let bg_color = universe
-        .world
-        .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
-            0.1, 0.1, 0.1, 1.0,
-        ));
+    let bg_color =
+        universe
+            .world
+            .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
+                0.1, 0.1, 0.1, 1.0,
+            ));
     universe.add(bg_color);
 
     // Camera rig so we can see the scene.
@@ -150,12 +154,12 @@ fn main() {
 
     // Two rotating anchor transforms that the raycaster will be reparented under.
     // Each ring has its own anchor at a different height.
-    let anchor_a = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 1.0, 0.0));
-    let anchor_b = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 2.2, 0.0));
+    let anchor_a = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 1.0, 0.0),
+    );
+    let anchor_b = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 2.2, 0.0),
+    );
 
     // Visual markers for A/B.
     fn marker(universe: &mut engine::Universe, parent: engine::ecs::ComponentId, rgba: [f32; 4]) {
@@ -272,9 +276,9 @@ fn main() {
     // Source is inferred from topology:
     // - Under transforms A/B (no camera child) => parent-forward (-Z)
     // - Under camera rig transform (has camera child) => cursor-through-camera
-    let raycaster = universe
-        .world
-        .add_component(engine::ecs::component::RayCastComponent::event_driven().with_max_distance(25.0));
+    let raycaster = universe.world.add_component(
+        engine::ecs::component::RayCastComponent::event_driven().with_max_distance(25.0),
+    );
 
     // Opt-in: treat this raycaster as a pointer (for the camera-rig portion of the demo).
     let pointer = universe
@@ -361,14 +365,13 @@ fn main() {
 
         // Anchor A rotation: smooth yaw.
         let yaw_a = t * std::f32::consts::TAU;
-        let a_set = engine::ecs::component::ActionComponent::new(
-            engine::ecs::SignalValue::SetTransform {
+        let a_set =
+            engine::ecs::component::ActionComponent::new(engine::ecs::SignalValue::SetTransform {
                 target: vec![anchor_a],
                 translation: [0.0, 1.0, 0.0],
                 rotation_quat_xyzw: quat_from_yaw(yaw_a),
                 scale: [1.0, 1.0, 1.0],
-            },
-        );
+            });
         let a_set_id = universe.world.add_component(a_set);
         let _ = universe.attach(kf_a, a_set_id);
 
@@ -376,14 +379,13 @@ fn main() {
         let yaw_b = -t * std::f32::consts::TAU * 1.5;
         let pitch_b = (t * std::f32::consts::TAU).sin() * 0.35;
         let rot_b = quat_mul(quat_from_yaw(yaw_b), quat_from_pitch(pitch_b));
-        let b_set = engine::ecs::component::ActionComponent::new(
-            engine::ecs::SignalValue::SetTransform {
+        let b_set =
+            engine::ecs::component::ActionComponent::new(engine::ecs::SignalValue::SetTransform {
                 target: vec![anchor_b],
                 translation: [0.0, 2.2, 0.0],
                 rotation_quat_xyzw: rot_b,
                 scale: [1.0, 1.0, 1.0],
-            },
-        );
+            });
         let b_set_id = universe.world.add_component(b_set);
         let _ = universe.attach(kf_b, b_set_id);
 

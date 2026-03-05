@@ -133,9 +133,12 @@ impl Component for TextComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         let _ = self.component;
-        queue.queue_register_text(component);
+        emit.push(
+            component,
+            crate::engine::ecs::SignalValue::RegisterText { component },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

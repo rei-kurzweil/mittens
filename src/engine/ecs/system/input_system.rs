@@ -377,7 +377,7 @@ impl InputSystem {
                 );
 
                 transform_comp_mut.transform.recompute_model();
-                queue.queue_update_transform(transform_cid, transform_comp_mut.transform);
+                queue.update_transform(transform_cid, transform_comp_mut.transform);
             }
         }
     }

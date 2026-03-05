@@ -65,6 +65,338 @@ impl SystemWorld {
         Self::default()
     }
 
+    /// Execute pending signals up to `max_signals`.
+    ///
+    /// For each signal:
+    /// - If `signal.kind() == SignalKind::Action`, run the engine's default executor for
+    ///   action/command signals (Register/Remove/Update/etc).
+    /// - Then, dispatch handlers as observers.
+    pub fn process_signals(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        queue: &mut crate::engine::ecs::CommandQueue,
+        max_signals: usize,
+    ) -> usize {
+        let mut processed = 0usize;
+
+        // Drain locally-queued mutation signals into `RxWorld` before we start.
+        let _ = queue.drain_into_rx(&mut self.rx);
+
+        // Timed holding-pen: promote any pending signals that are now due.
+        let now_beat = self.clock.beat_now();
+        let _ = self.rx.promote_due_signals(now_beat);
+
+        loop {
+            if processed >= max_signals {
+                break;
+            }
+
+            let Some(env) = self.rx.take_next_undispatched() else {
+                // If the executor queued more mutation signals during processing, drain them
+                // into `RxWorld` and continue.
+                if queue.drain_into_rx(&mut self.rx) > 0 {
+                    continue;
+                }
+
+                // If handlers scheduled additional timed signals that are already due at
+                // this beat, promote them and continue draining.
+                if self.rx.promote_due_signals(now_beat) > 0 {
+                    continue;
+                }
+                break;
+            };
+
+            processed += 1;
+
+            if env.kind() == crate::engine::ecs::SignalKind::Action {
+                self.execute_action_signal(world, visuals, queue, &env);
+            }
+
+            // Handlers observe after the default executor.
+            self.rx.dispatch_handlers(world, &env);
+        }
+
+        processed
+    }
+
+    fn execute_action_signal(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        queue: &mut crate::engine::ecs::CommandQueue,
+        env: &crate::engine::ecs::Signal,
+    ) {
+        use crate::engine::ecs::SignalValue;
+        use crate::engine::ecs::component::{
+            CollisionComponent, ControllerXRComponent, KineticResponseComponent, RayCastComponent,
+            RenderableComponent, TextComponent, TransformComponent,
+        };
+        use crate::engine::ecs::system::audio_system::AudioOp;
+        use crate::engine::graphics::primitives::Transform;
+
+        match &env.value {
+            SignalValue::RegisterRenderable { component } => {
+                self.register_renderable(world, visuals, *component);
+            }
+            SignalValue::RemoveRenderable { component } => {
+                self.remove_renderable(world, visuals, *component);
+            }
+
+            SignalValue::RegisterTransform { component } => {
+                self.transform_changed(world, visuals, *component);
+            }
+            SignalValue::UpdateTransform {
+                component,
+                translation,
+                rotation_quat_xyzw,
+                scale,
+            } => {
+                let mut t = Transform::default();
+                t.translation = *translation;
+                t.rotation = *rotation_quat_xyzw;
+                t.scale = *scale;
+                t.recompute_model();
+                self.update_transform(world, visuals, *component, t);
+            }
+            SignalValue::RemoveTransform { component } => {
+                self.remove_transform(world, visuals, *component);
+            }
+
+            SignalValue::RegisterCamera3d { component } => {
+                self.register_camera(world, visuals, *component);
+            }
+            SignalValue::RegisterCamera2d { component } => {
+                self.register_camera2d(world, visuals, *component);
+            }
+            SignalValue::MakeActiveCamera { component } => {
+                self.make_active_camera(world, visuals, *component);
+            }
+
+            SignalValue::RegisterInput { component } => {
+                self.register_input(*component);
+            }
+            SignalValue::RegisterUv { component } => {
+                self.register_uv(world, visuals, *component);
+            }
+
+            SignalValue::RegisterLight { component } => {
+                self.register_light(world, visuals, *component);
+            }
+            SignalValue::RegisterColor { component } => {
+                self.register_color(world, visuals, *component);
+            }
+            SignalValue::RegisterOpacity { component } => {
+                self.register_opacity(world, visuals, *component);
+            }
+            SignalValue::RegisterTransparentCutout { component } => {
+                self.register_transparent_cutout(world, visuals, *component);
+            }
+            SignalValue::RegisterBackgroundColor { component } => {
+                self.register_background_color(world, visuals, *component);
+            }
+            SignalValue::RegisterAmbientLight { component } => {
+                self.register_ambient_light(world, visuals, *component);
+            }
+            SignalValue::RegisterEmissive { component } => {
+                self.register_emissive(world, visuals, *component);
+            }
+            SignalValue::RegisterLightQuantization { component } => {
+                self.register_light_quantization(world, visuals, *component);
+            }
+
+            SignalValue::RegisterTexture { component } => {
+                self.register_texture(world, visuals, *component);
+            }
+            SignalValue::RegisterTextureFiltering { component } => {
+                self.register_texture_filtering(world, visuals, *component);
+            }
+
+            SignalValue::RegisterText { component } => {
+                self.register_text(world, visuals, *component, queue);
+            }
+            SignalValue::SetTextImmediate { component, text } => {
+                // Update text payload and force a rebuild.
+                if let Some(tc) = world.get_component_by_id_as_mut::<TextComponent>(*component) {
+                    tc.text = text.clone();
+                    tc.mark_unbuilt();
+
+                    // Best-effort: delete glyph transform children (keep style components).
+                    let children: Vec<ComponentId> = world.children_of(*component).to_vec();
+                    for ch in children {
+                        if world
+                            .get_component_by_id_as::<TransformComponent>(ch)
+                            .is_none()
+                        {
+                            continue;
+                        }
+
+                        let has_renderable_child = world.children_of(ch).iter().any(|&gch| {
+                            world
+                                .get_component_by_id_as::<RenderableComponent>(gch)
+                                .is_some()
+                        });
+                        if has_renderable_child {
+                            // This is very likely a glyph root.
+                            let _ = world.remove_component_subtree(ch);
+                        }
+                    }
+                }
+
+                self.register_text(world, visuals, *component, queue);
+            }
+
+            SignalValue::RegisterCollision { component } => {
+                self.register_collision(world, visuals, *component);
+            }
+            SignalValue::RemoveCollision { component } => {
+                self.remove_collision(world, visuals, *component);
+            }
+            SignalValue::RegisterKineticResponse { component } => {
+                self.register_kinetic_response(world, visuals, *component);
+            }
+            SignalValue::RemoveKineticResponse { component } => {
+                self.remove_kinetic_response(world, visuals, *component);
+            }
+
+            SignalValue::RemoveSubtreeImmediate { root } => {
+                // Best-effort: remove system state for known component types before deleting.
+                let mut stack = vec![*root];
+                let mut nodes = Vec::new();
+                while let Some(n) = stack.pop() {
+                    nodes.push(n);
+                    for &ch in world.children_of(n) {
+                        stack.push(ch);
+                    }
+                }
+
+                for n in nodes.iter().copied().rev() {
+                    if world
+                        .get_component_by_id_as::<RenderableComponent>(n)
+                        .is_some()
+                    {
+                        self.remove_renderable(world, visuals, n);
+                    }
+                    if world
+                        .get_component_by_id_as::<CollisionComponent>(n)
+                        .is_some()
+                    {
+                        self.remove_collision(world, visuals, n);
+                    }
+                    if world
+                        .get_component_by_id_as::<KineticResponseComponent>(n)
+                        .is_some()
+                    {
+                        self.remove_kinetic_response(world, visuals, n);
+                    }
+                    if world
+                        .get_component_by_id_as::<RayCastComponent>(n)
+                        .is_some()
+                    {
+                        self.remove_raycast(world, visuals, n);
+                    }
+                    if world
+                        .get_component_by_id_as::<ControllerXRComponent>(n)
+                        .is_some()
+                    {
+                        self.remove_controller_xr(world, visuals, n);
+                    }
+                    if world
+                        .get_component_by_id_as::<TransformComponent>(n)
+                        .is_some()
+                    {
+                        self.remove_transform(world, visuals, n);
+                    }
+                }
+
+                let _ = world.remove_component_subtree(*root);
+            }
+
+            SignalValue::RegisterOpenxr { component } => {
+                self.register_openxr(world, visuals, *component);
+            }
+            SignalValue::RegisterControllerXr { component } => {
+                self.register_controller_xr(world, visuals, *component);
+            }
+            SignalValue::RemoveControllerXr { component } => {
+                self.remove_controller_xr(world, visuals, *component);
+            }
+
+            SignalValue::RegisterRaycast { component } => {
+                self.register_raycast(world, visuals, *component);
+            }
+            SignalValue::RemoveRaycast { component } => {
+                self.remove_raycast(world, visuals, *component);
+            }
+
+            SignalValue::RegisterAnimation { component } => {
+                self.register_animation(world, visuals, *component);
+            }
+            SignalValue::RegisterKeyframe { component } => {
+                self.register_keyframe(world, visuals, *component);
+            }
+
+            SignalValue::RegisterAudioOutput { component } => {
+                self.register_audio_output(world, visuals, *component);
+            }
+            SignalValue::AudioGraphDirtyImmediate { component } => {
+                self.audio_graph_dirty(world, visuals, *component);
+            }
+            SignalValue::RegisterAudioOscillator { component } => {
+                self.register_audio_oscillator(world, visuals, *component);
+            }
+            SignalValue::RegisterAudioBufferSize { component } => {
+                self.register_audio_buffer_size(world, visuals, *component);
+            }
+
+            SignalValue::RegisterClock { component } => {
+                self.register_clock(world, visuals, *component);
+            }
+
+            SignalValue::RegisterTransformGizmo { component } => {
+                self.register_transform_gizmo(world, visuals, *component, queue);
+            }
+
+            SignalValue::ScheduleAudioOp {
+                component,
+                beat,
+                op,
+            } => {
+                self.audio.schedule_audio_op(*component, *beat, *op);
+            }
+            SignalValue::ScheduleAudioGraphSwap { component, beat } => {
+                self.audio.schedule_graph_swap(&*world, *component, *beat);
+            }
+            SignalValue::ScheduleAudioPitchSetHz {
+                component,
+                beat,
+                frequency_hz,
+            } => {
+                self.audio
+                    .schedule_audio_op(*component, *beat, AudioOp::SetHz(*frequency_hz));
+            }
+            SignalValue::ScheduleAudioOscillatorEnabled {
+                component,
+                beat,
+                enabled,
+            } => {
+                self.audio
+                    .schedule_audio_op(*component, *beat, AudioOp::SetEnabled(*enabled));
+            }
+            SignalValue::ScheduleAudioGainSet {
+                component,
+                beat,
+                gain,
+            } => {
+                self.audio
+                    .schedule_audio_op(*component, *beat, AudioOp::SetGain(*gain));
+            }
+
+            // Not executed by the default executor.
+            _ => {}
+        }
+    }
+
     /// Register a TransformGizmoComponent by spawning its visual subtree.
     ///
     /// Contract: TransformGizmoComponent is expected to be attached under a TransformComponent.
@@ -606,12 +938,12 @@ impl SystemWorld {
         queue: &mut crate::engine::ecs::CommandQueue,
         dt_sec: f32,
     ) {
-        // Immediate-mode signal graph setup.
+        // Drain-point signal graph setup.
         // Handlers are installed once; per-frame caches are reset here.
         self.rx.begin_frame();
-        self.gesture.install_immediate_handlers(&mut self.rx);
-        self.action.install_immediate_handlers(&mut self.rx);
-        self.editor.install_immediate_handlers(&mut self.rx);
+        self.gesture.install_handlers(&mut self.rx);
+        self.action.install_handlers(&mut self.rx);
+        self.editor.install_handlers(&mut self.rx);
         self.gesture.begin_frame();
 
         // Process input first - it may queue commands
@@ -643,16 +975,11 @@ impl SystemWorld {
         self.audio
             .update_transport_from_clock(self.clock.beat_now(), self.clock.bpm());
 
-        self.animation.tick_with_beat(
-            world,
-            self.clock.beat_now(),
-            self.clock.bpm(),
-            &mut self.rx,
-            queue,
-        );
+        self.animation
+            .tick_with_beat(world, self.clock.beat_now(), self.clock.bpm(), &mut self.rx);
 
-        // Execute any action signals emitted by AnimationSystem before downstream systems run.
-        let _ = self.rx.dispatch_new_signals(world, queue, 100_000);
+        // Execute/dispatch any signals emitted by AnimationSystem before downstream systems run.
+        let _ = self.process_signals(world, visuals, queue, 100_000);
         queue.flush(world, self, visuals);
 
         // Ensure transforms are propagated before any camera systems consume world matrices.
@@ -702,21 +1029,21 @@ impl SystemWorld {
             dt_sec,
         );
 
-        // Dispatch any signals produced by raycast immediately (e.g. RayIntersected).
-        let _ = self.rx.dispatch_new_signals(world, queue, 100_000);
+        // Execute/dispatch any signals produced by raycast immediately (e.g. RayIntersected).
+        let _ = self.process_signals(world, visuals, queue, 100_000);
 
         // Gestures interpret ray hits + input into drag events.
         self.gesture.tick_with_rx(visuals, input, &mut self.rx);
 
-        // Dispatch gesture-produced signals immediately (e.g. DragStart/DragMove/DragEnd).
-        let _ = self.rx.dispatch_new_signals(world, queue, 100_000);
+        // Execute/dispatch gesture-produced signals immediately (e.g. DragStart/DragMove/DragEnd).
+        let _ = self.process_signals(world, visuals, queue, 100_000);
 
         // Gizmos consume drag events and apply transform changes.
         self.transform_gizmo
             .tick_with_queue(world, input, queue, &mut self.rx);
 
-        // Dispatch gizmo-produced signals immediately (if any).
-        let _ = self.rx.dispatch_new_signals(world, queue, 100_000);
+        // Execute/dispatch gizmo-produced signals immediately (if any).
+        let _ = self.process_signals(world, visuals, queue, 100_000);
 
         // Apply gizmo transform updates immediately so visuals reflect the drag this frame.
         queue.flush(world, self, visuals);
@@ -737,9 +1064,9 @@ impl SystemWorld {
     ) {
         commands.flush(world, self, visuals);
 
-        // Immediate-mode: ensure any remaining undispatched signals get handled.
+        // Drain-point: ensure any remaining undispatched signals get handled.
         // This covers signals emitted after the last explicit dispatch point.
-        let _ = self.rx.dispatch_new_signals(world, commands, 100_000);
+        let _ = self.process_signals(world, visuals, commands, 100_000);
 
         // Clear per-frame signals.
         let _ = self.rx.drain();

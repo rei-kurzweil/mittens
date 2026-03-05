@@ -10,20 +10,21 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Minimal scene with a camera so the window opens.
-    let clear = universe
-        .world
-        .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
-            0.08, 0.08, 0.08, 1.0,
-        ));
+    let clear =
+        universe
+            .world
+            .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
+                0.08, 0.08, 0.08, 1.0,
+            ));
     universe.add(clear);
 
     // Input-driven camera rig.
     let input = universe
         .world
         .add_component(engine::ecs::component::InputComponent::new().with_speed(2.0));
-    let rig_transform = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(2.0, 0.0, 7.0));
+    let rig_transform = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(2.0, 0.0, 7.0),
+    );
     let input_mode = universe.world.add_component(
         engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y(),
     );
@@ -41,9 +42,9 @@ fn main() {
     universe.add(input);
 
     // Light so we can see non-emissive materials (even though our cubes are emissive).
-    let light_tx = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 2.5, 4.0));
+    let light_tx = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 2.5, 4.0),
+    );
     let light = universe.world.add_component(
         engine::ecs::component::PointLightComponent::new()
             .with_distance(25.0)
@@ -99,11 +100,12 @@ fn main() {
                 .with_position(pos.0, pos.1, pos.2)
                 .with_scale(scale, scale, 1.0),
         );
-        let t = universe
-            .world
-            .add_component(engine::ecs::component::TextComponent::with_word_wrap(
-                text, 38,
-            ));
+        let t =
+            universe
+                .world
+                .add_component(engine::ecs::component::TextComponent::with_word_wrap(
+                    text, 38,
+                ));
         let _ = universe.attach(tx, t);
         universe.add(tx);
     }
@@ -207,9 +209,9 @@ fn main() {
     );
 
     // Representative cubes for the two audio sources.
-    let viz_root = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0));
+    let viz_root = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0),
+    );
     universe.add(viz_root);
     spawn_emissive_cube(
         &mut universe,
@@ -227,12 +229,12 @@ fn main() {
     );
 
     // Timeline roots so we can "reset all" via a single set_color action.
-    let kick_timeline_root = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0));
-    let noise_timeline_root = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0));
+    let kick_timeline_root = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0),
+    );
+    let noise_timeline_root = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0),
+    );
     let _ = universe.attach(viz_root, kick_timeline_root);
     let _ = universe.attach(viz_root, noise_timeline_root);
 
@@ -331,22 +333,24 @@ fn main() {
             noise_dark,
         );
 
-        let brighten_kick = universe
-            .world
-            .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::SignalValue::SetColor {
-                    target: vec![kick_cube],
-                    rgba: kick_bright,
-                },
-            ));
-        let brighten_noise = universe
-            .world
-            .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::SignalValue::SetColor {
-                    target: vec![noise_cube],
-                    rgba: noise_bright,
-                },
-            ));
+        let brighten_kick =
+            universe
+                .world
+                .add_component(engine::ecs::component::ActionComponent::new(
+                    engine::ecs::SignalValue::SetColor {
+                        target: vec![kick_cube],
+                        rgba: kick_bright,
+                    },
+                ));
+        let brighten_noise =
+            universe
+                .world
+                .add_component(engine::ecs::component::ActionComponent::new(
+                    engine::ecs::SignalValue::SetColor {
+                        target: vec![noise_cube],
+                        rgba: noise_bright,
+                    },
+                ));
         let _ = universe.attach(kf, brighten_kick);
         let _ = universe.attach(kf, brighten_noise);
     }

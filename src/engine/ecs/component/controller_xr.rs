@@ -1,5 +1,4 @@
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::command_queue::CommandQueue;
 use crate::engine::ecs::component::Component;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,13 +78,23 @@ impl Component for ControllerXRComponent {
         self.component_id = Some(component);
     }
 
-    fn init(&mut self, queue: &mut CommandQueue, component: ComponentId) {
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         self.component_id = Some(component);
-        queue.queue_register_controller_xr(component);
+        emit.push(
+            component,
+            crate::engine::ecs::SignalValue::RegisterControllerXr { component },
+        );
     }
 
-    fn cleanup(&mut self, queue: &mut CommandQueue, component: ComponentId) {
-        queue.queue_remove_controller_xr(component);
+    fn cleanup(
+        &mut self,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        component: ComponentId,
+    ) {
+        emit.push(
+            component,
+            crate::engine::ecs::SignalValue::RemoveControllerXr { component },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

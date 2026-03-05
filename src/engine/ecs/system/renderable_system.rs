@@ -1,10 +1,10 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::BackgroundColorComponent;
+use crate::engine::ecs::component::OverlayComponent;
 use crate::engine::ecs::component::{
     BackgroundComponent, ColorComponent, EmissiveComponent, LightQuantizationComponent,
     MeshComponent, OpacityComponent, RenderableComponent, TransparentCutoutComponent, UVComponent,
 };
-use crate::engine::ecs::component::OverlayComponent;
 
 use crate::engine::ecs::World;
 use crate::engine::ecs::system::System;

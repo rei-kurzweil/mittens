@@ -50,18 +50,16 @@ impl GestureSystem {
         }
     }
 
-    /// Install immediate-mode handlers into `RxWorld`.
+    /// Install drain-point handlers into `RxWorld`.
     ///
     /// This lets GestureSystem consume `RayIntersected` without scanning `rx.signals()`.
-    pub fn install_immediate_handlers(&mut self, rx: &mut RxWorld) {
+    pub fn install_handlers(&mut self, rx: &mut RxWorld) {
         if self.immediate_handlers_installed {
             return;
         }
 
         let best_ref = self.ray_hit_best.clone();
-        rx.add_global_handler_closure(
-            SignalKind::RayIntersected,
-            move |_world, _queue, _emit, env| {
+        rx.add_global_handler_closure(SignalKind::RayIntersected, move |_world, _emit, env| {
             let SignalValue::RayIntersected {
                 raycaster,
                 renderable,
@@ -73,7 +71,7 @@ impl GestureSystem {
                 return;
             };
 
-            if *t < 0.0 {
+            if !t.is_finite() || *t < 0.0 {
                 return;
             }
 
@@ -82,16 +80,15 @@ impl GestureSystem {
             };
             match *best {
                 None => {
-                    *best = Some((*raycaster, *renderable, *t, *origin, *dir));
+                    *best = Some((raycaster.clone(), renderable.clone(), *t, *origin, *dir));
                 }
                 Some((_brc, _br, bt, _bo, _bd)) => {
                     if *t < bt {
-                        *best = Some((*raycaster, *renderable, *t, *origin, *dir));
+                        *best = Some((raycaster.clone(), renderable.clone(), *t, *origin, *dir));
                     }
                 }
             }
-            },
-        );
+        });
 
         self.immediate_handlers_installed = true;
     }
@@ -283,14 +280,17 @@ impl GestureSystem {
                                         [cur[0] - prev[0], cur[1] - prev[1], cur[2] - prev[2]];
                                     if delta[0] != 0.0 || delta[1] != 0.0 || delta[2] != 0.0 {
                                         let screen_pos_px = input.cursor_pos;
-                                        let screen_delta_px = match (self.state.last_cursor_pos, screen_pos_px) {
-                                            (Some((px, py)), Some((cx, cy))) => Some((cx - px, cy - py)),
-                                            _ => None,
-                                        };
+                                        let screen_delta_px =
+                                            match (self.state.last_cursor_pos, screen_pos_px) {
+                                                (Some((px, py)), Some((cx, cy))) => {
+                                                    Some((cx - px, cy - py))
+                                                }
+                                                _ => None,
+                                            };
 
                                         rx.push(
                                             active_renderable,
-                                        SignalValue::DragMove {
+                                            SignalValue::DragMove {
                                                 raycaster: active_rc,
                                                 renderable: active_renderable,
                                                 hit_point: cur,
@@ -334,14 +334,17 @@ impl GestureSystem {
                             let delta = [cur[0] - prev[0], cur[1] - prev[1], cur[2] - prev[2]];
                             if delta[0] != 0.0 || delta[1] != 0.0 || delta[2] != 0.0 {
                                 let screen_pos_px = input.cursor_pos;
-                                let screen_delta_px = match (self.state.last_cursor_pos, screen_pos_px) {
-                                    (Some((px, py)), Some((cx, cy))) => Some((cx - px, cy - py)),
-                                    _ => None,
-                                };
+                                let screen_delta_px =
+                                    match (self.state.last_cursor_pos, screen_pos_px) {
+                                        (Some((px, py)), Some((cx, cy))) => {
+                                            Some((cx - px, cy - py))
+                                        }
+                                        _ => None,
+                                    };
 
                                 rx.push(
                                     active_renderable,
-                                SignalValue::DragMove {
+                                    SignalValue::DragMove {
                                         raycaster: active_rc,
                                         renderable: active_renderable,
                                         hit_point: cur,
@@ -366,7 +369,7 @@ impl GestureSystem {
                 {
                     rx.push(
                         active_renderable,
-                    SignalValue::DragEnd {
+                        SignalValue::DragEnd {
                             raycaster: active_rc,
                             renderable: active_renderable,
                             hit_point: self.state.last_hit_point,

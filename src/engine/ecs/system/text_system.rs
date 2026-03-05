@@ -224,10 +224,12 @@ impl TextSystem {
 
         // Optional per-glyph shadow pass.
         // Requested topology: TextShadowComponent is parented to the TextComponent.
-        let shadow: Option<TextShadowComponent> = world
-            .children_of(component)
-            .iter()
-            .find_map(|&ch| world.get_component_by_id_as::<TextShadowComponent>(ch).copied());
+        let shadow: Option<TextShadowComponent> =
+            world.children_of(component).iter().find_map(|&ch| {
+                world
+                    .get_component_by_id_as::<TextShadowComponent>(ch)
+                    .copied()
+            });
 
         // Mark built immediately to avoid re-entrancy/double-build.
         if let Some(text_comp) = world.get_component_by_id_as_mut::<TextComponent>(component) {

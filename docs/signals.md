@@ -1,5 +1,5 @@
 
-# Signals: `{ actions, events }`
+# Signals: one stream, drain points
 
 This is the canonical doc for the engine’s “signals-first” layer.
 
@@ -19,15 +19,15 @@ use cat_engine::engine::ecs;
 
 fn on_topology_change(
     _world: &mut ecs::World,
-    _queue: &mut ecs::CommandQueue,
+    _emit: &mut dyn ecs::SignalEmitter,
     signal: &ecs::Signal,
 ) {
     match &signal.value {
-        ecs::SignalValue::Event(ecs::EventSignal::ParentChanged {
+        ecs::SignalValue::ParentChanged {
             child,
             old_parent,
             new_parent,
-        }) => {
+        } => {
             println!(
                 "parent changed: child={child:?} old={old_parent:?} new={new_parent:?} (scope={:?})",
                 signal.scope
@@ -46,7 +46,8 @@ Key idea: listeners are subtree-scoped by default. You don’t subscribe globall
 
 ### Example 2: actions are intent, events are facts
 
-When you run an action (from animation keyframes, input, tools, etc), the action executes.
+When you run an action (from animation keyframes, input, tools, etc), the action is queued as a
+signal and executes when the engine drains signals at an explicit drain point.
 
 If that action performs a meaningful state transition (like a topology move), it emits an **event
 signal** (a fact).
@@ -89,8 +90,11 @@ A function registered to run when a signal is dispatched.
 In the current implementation handlers are plain function pointers:
 
 ```rust
-type SignalHandler = fn(&mut World, &mut CommandQueue, &Signal);
+type SignalHandler = fn(&mut World, &mut dyn SignalEmitter, &Signal);
 ```
+
+Note: the public `Universe::add_signal_handler(...)` API takes a `SignalHandler` function pointer.
+Internally, `RxWorld` also supports closure-based handlers for engine systems that need state.
 
 ### Action signal
 A signal representing intent.
@@ -133,32 +137,25 @@ Today the engine represents signals roughly like this (see `engine::ecs::rx`):
 pub struct Signal {
     pub scope: ComponentId,
     pub value: SignalValue,
+
+    /// Whether the engine should execute this signal via the default executor.
+    ///
+    /// Handlers still run after execution.
+    pub immediate: bool,
 }
 
 pub enum SignalValue {
-    Action(ActionSignal),
-    Event(EventSignal),
-}
+    // Intent-ish “actions” (requests).
+    SetColor { target: Vec<ComponentId>, rgba: [f32; 4] },
+    Attach { parents: Vec<ComponentId>, child: ComponentId },
 
-pub enum ActionSignal {
-    Action(Action),
-}
+    // Command/mutation signals (formerly CommandQueue commands).
+    UpdateTransform { component: ComponentId, translation: [f32; 3], rotation_quat_xyzw: [f32; 4], scale: [f32; 3] },
+    RegisterRenderable { component: ComponentId },
 
-pub enum EventSignal {
-    ParentChanged {
-        child: ComponentId,
-        old_parent: Option<ComponentId>,
-        new_parent: Option<ComponentId>,
-    },
-    RayIntersected {
-        raycaster: ComponentId,
-        renderable: ComponentId,
-        t: f32,
-        origin: [f32; 3],
-        dir: [f32; 3],
-    },
-    CollisionStarted { a: ComponentId, b: ComponentId, delta: [f32; 3] },
-    CollisionEnded { a: ComponentId, b: ComponentId, delta: [f32; 3] },
+    // Facts.
+    ParentChanged { child: ComponentId, old_parent: Option<ComponentId>, new_parent: Option<ComponentId> },
+    RayIntersected { raycaster: ComponentId, renderable: ComponentId, t: f32, origin: [f32; 3], dir: [f32; 3] },
 }
 
 pub enum SignalKind {
@@ -170,23 +167,27 @@ pub enum SignalKind {
     CollisionEnded,
 }
 
-type SignalHandler = fn(&mut World, &mut CommandQueue, &Signal);
+type SignalHandler = fn(&mut World, &mut dyn SignalEmitter, &Signal);
 ```
 
 Notes:
 - `SignalKind` exists so the handler registry doesn’t need to do pattern matching.
 - `Signal` does not store the kind; it’s derived by calling `signal.kind()`.
 
+`SignalValue` includes both intent-ish requests and fact-ish observations, but the engine also
+uses `Signal.immediate` to decide whether a given signal should run through the default executor.
+
 ## Why fn pointers (not closures) for handlers?
 
-Using `fn(&mut World, &mut CommandQueue, &Signal)` buys a few pragmatic wins:
+Using `fn(&mut World, &mut dyn SignalEmitter, &Signal)` buys a few pragmatic wins:
 
 - **Simple storage + identity**: a function pointer is `Copy` and comparable by address, so `remove_signal_handler(kind, scope, handler)` is trivial.
 - **No allocation / no trait objects**: avoids `Box<dyn Fn...>` and dynamic dispatch in the hot path.
 - **No lifetime/capture complexity**: closures want captured environment, which quickly forces handler registries to be generic over lifetimes or to heap-allocate captured state.
 - **State lives in the ECS**: if a handler needs state, store it as components/resources under its `scope_root` and look it up from `World` when the handler runs.
 
-When we eventually need closure ergonomics (editor UI callbacks, scripting), a common evolution is:
+If we want closure ergonomics in the public API (editor UI callbacks, scripting), a common
+evolution is:
 
 - `add_signal_handler(...) -> HandlerId` and `remove_signal_handler(HandlerId)`
 - internally store `Box<dyn FnMut(...) + 'static>` (or `Fn`) keyed by the ID
@@ -213,13 +214,19 @@ This avoids global scanning: there’s no “iterate all listeners and test pred
 
 ## When handlers run (important)
 
-Signals are dispatched in `SystemWorld::process_commands`, immediately after a command-queue flush.
+Signals are processed at explicit drain points driven by `SystemWorld::process_signals(...)`.
 
 Implications:
 
-- handlers observe a stable “post-mutation result”
-- handlers can enqueue new commands; the engine flushes again after dispatch so effects can be
-    visible in the same frame
+- execution happens at drain points, not at emission time
+- handlers observe during the drain (after the engine’s execution stage)
+- handlers can emit follow-up signals via `SignalEmitter`; those signals join the same stream and can be executed/observed in order
+
+Terminology note:
+
+- The current code uses `Signal.immediate`.
+- The intended name is **direct mode** (not “immediate”), because it does not mean “run sooner”, it means “execute via a direct-call executor at drain time”.
+- v1 goal: have no per-signal direct/immediate flag at all; drain points run a fixed execution stage.
 
 ### RxWorld
 
@@ -228,14 +235,16 @@ The bus that stores + dispatches signals:
 ```rust
 pub struct RxWorld {
     signals: Vec<Signal>,
-    handlers: HashMap<SignalKind, HashMap<ComponentId, Vec<SignalHandler>>>,
+    dispatched_cursor: usize,
+    global_handlers: HashMap<SignalKind, Vec<Handler>>,
+    scoped_handlers: HashMap<SignalKind, HashMap<ComponentId, Vec<Handler>>>,
 }
 
 impl RxWorld {
     pub fn push(&mut self, scope: ComponentId, value: impl Into<SignalValue>) { ... }
     pub fn drain(&mut self) -> Vec<Signal> { ... }
     pub fn add_handler(&mut self, kind: SignalKind, scope_root: ComponentId, h: SignalHandler) { ... }
-    pub fn dispatch_handlers(&mut self, world: &mut World, queue: &mut CommandQueue, signal: &Signal) { ... }
+    pub fn dispatch_handlers(&mut self, world: &mut World, signal: &Signal) { ... }
 }
 ```
 
@@ -247,22 +256,33 @@ Dispatch semantics:
 
 ## Where phases live today
 
-There is no separate `ReactiveWorld` type right now. In practice:
-- systems push signals into `SystemWorld::rx` (`RxWorld`)
-- command flushing + signal dispatch is centralized in `SystemWorld::process_commands`
+There is no separate “reactive runtime” type beyond `SystemWorld` + `RxWorld`.
+
+In practice:
+
+- Systems and helpers push signals into `SystemWorld::rx` (`RxWorld`).
+- The engine processes signals at explicit drain points via `SystemWorld::process_signals(...)`.
+
+If you want a current end-to-end spec of the drain/execution model, see:
+
+- `docs/analysis/unified-signal-graph.md`
 
 ### Frame phases (sketch)
 
 A deterministic frame looks like:
 
-1. **Systems tick** (may queue commands and/or push signals)
-2. **Flush commands** (`CommandQueue::flush`)
-3. **Drain + dispatch signals** (`RxWorld::drain` then `dispatch_handlers`)
-4. **Flush commands again** (handlers may have queued commands)
+1. **Systems tick** (push signals)
+2. **Drain signals at explicit points** (execute action/command stage, then run handlers)
+3. **End-of-frame cleanup** (drain remaining signals; reset per-frame cursor)
 
-The key is to avoid re-entrancy:
-- handlers shouldn’t directly mutate the world; they should enqueue commands (or future “intent” signals)
-- mutations happen via the command queue flush
+The key is to keep ordering deterministic:
+
+- action/command execution happens at drain time (executor stage)
+- handlers observe after execution
+- follow-up signals are appended and processed in order
+
+This is why “queueing up world mutations” is fine: as long as you drain between dependent
+systems in `tick()`, you get deterministic ordering and up-to-date caches where needed.
 
 ---
 
@@ -275,7 +295,7 @@ Pros:
 - clearer naming: `SignalWorld` doesn’t feel ECS-specific.
 
 Cons:
-- more cross-module wiring (`engine::rx` needs to know about `ecs::World`, `CommandQueue`, `ComponentId`).
+- more cross-module wiring (`engine::rx` needs to know about `ecs::World`, `SignalEmitter`, `ComponentId`).
 - might feel weird if rx becomes “just for ECS anyway”.
 
 ### Option B: `engine::ecs::rx` (current)
@@ -307,7 +327,7 @@ Cons:
 
 ### Option 2: make action execution an explicit RX stage
 - RX owns: `ActionExecutor`
-- systems produce `SignalValue::Action(ActionSignal::Action(_))`; RX executes actions in a dedicated phase
+- systems produce intent-ish `SignalValue` variants; RX executes them in a dedicated phase
 
 Pros:
 - extremely clear pipeline: produce signals → execute → emit facts → dispatch
@@ -329,14 +349,22 @@ This makes the pipeline explicit without relocating all code.
 ## How does this map to the current code?
 
 Current reality:
-- `ecs::RxWorld` already provides scoped queue + dispatch.
-- `ActionSystem` delegates the core execution logic to `ecs::rx::ActionExecutor`.
-- Some systems emit fact signals (e.g. raycast hits, collisions).
-- `SystemWorld::process_commands` flushes → drain+dispatch → flush.
+
+- `ecs::RxWorld` provides the scoped signal stream and handler dispatch.
+- `SystemWorld::process_signals(...)` implements “execute (executor stage) then observe (handlers)”.
+- The default executor in `SystemWorld::execute_immediate_signal(...)` applies typed mutation signals.
+
+Goal direction:
+
+- Rename “immediate” to “direct mode” in code/docs.
+- Eventually remove per-signal direct/immediate entirely and treat execution as a drain-stage pipeline.
+- Remove the `CommandQueue` facade and thread `&mut dyn SignalEmitter` (or `&mut RxWorld`) directly.
+- Emitting signals should not require being inside a handler; engine code should be able to grab an emitter from context (e.g. `SystemWorld.rx`).
+- `ActionSystem` installs a global handler for `SignalKind::Action` and handles higher-level intent-ish signals.
 
 Possible next steps (optional):
-1. Make “intent vs fact” phases explicit (even if both still use `RxWorld` underneath).
-2. Decide whether action signals should be dispatched to handlers, or executed directly by an executor.
+1. Make a clearer split between intent vs mutation vs fact.
+2. Remove per-signal direct/immediate and run execution as a drain stage.
 3. Add tooling: tracing/logging, record/replay, and debugging UI.
 
 ---

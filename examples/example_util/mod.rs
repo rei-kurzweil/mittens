@@ -79,9 +79,9 @@ pub fn spawn_cloud_ring(
             p.center_y
         };
 
-        let center_tx = universe
-            .world
-            .add_component(engine::ecs::component::TransformComponent::new().with_position(cx, cy, cz));
+        let center_tx = universe.world.add_component(
+            engine::ecs::component::TransformComponent::new().with_position(cx, cy, cz),
+        );
         let _ = universe.attach(bg_root, center_tx);
 
         let base_seed = seed_i ^ 0x243f_6a88;

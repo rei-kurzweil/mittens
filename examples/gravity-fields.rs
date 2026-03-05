@@ -26,7 +26,7 @@ fn cube_renderable_sibling_of_collider(
 
 fn set_renderable_color_rgba(
     world: &mut engine::ecs::World,
-    queue: &mut engine::ecs::CommandQueue,
+    emit: &mut dyn engine::ecs::SignalEmitter,
     renderable_cid: engine::ecs::ComponentId,
     rgba: [f32; 4],
 ) {
@@ -46,7 +46,12 @@ fn set_renderable_color_rgba(
             world.get_component_by_id_as_mut::<engine::ecs::component::ColorComponent>(color_cid)
         {
             c.rgba = rgba;
-            queue.queue_register_color(color_cid);
+            emit.push(
+                color_cid,
+                engine::ecs::SignalValue::RegisterColor {
+                    component: color_cid,
+                },
+            );
         }
         return;
     }
@@ -56,7 +61,12 @@ fn set_renderable_color_rgba(
         rgba[0], rgba[1], rgba[2], rgba[3],
     ));
     let _ = world.add_child(renderable_cid, color_cid);
-    queue.queue_register_color(color_cid);
+    emit.push(
+        color_cid,
+        engine::ecs::SignalValue::RegisterColor {
+            component: color_cid,
+        },
+    );
 }
 
 fn kinetic_response_child_of_collider(
@@ -76,12 +86,10 @@ fn kinetic_response_child_of_collider(
 
 fn on_collision_turn_white(
     world: &mut engine::ecs::World,
-    queue: &mut engine::ecs::CommandQueue,
-    _emit: &mut dyn engine::ecs::SignalEmitter,
+    emit: &mut dyn engine::ecs::SignalEmitter,
     signal: &engine::ecs::Signal,
 ) {
-    let engine::ecs::SignalValue::CollisionStarted { a, b, .. } = &signal.value
-    else {
+    let engine::ecs::SignalValue::CollisionStarted { a, b, .. } = &signal.value else {
         return;
     };
 
@@ -110,17 +118,15 @@ fn on_collision_turn_white(
     let Some(self_renderable) = cube_renderable_sibling_of_collider(world, self_collider) else {
         return;
     };
-    set_renderable_color_rgba(world, queue, self_renderable, [1.0, 1.0, 1.0, 1.0]);
+    set_renderable_color_rgba(world, emit, self_renderable, [1.0, 1.0, 1.0, 1.0]);
 }
 
 fn on_collision_freeze_gravity(
     world: &mut engine::ecs::World,
-    _queue: &mut engine::ecs::CommandQueue,
     _emit: &mut dyn engine::ecs::SignalEmitter,
     signal: &engine::ecs::Signal,
 ) {
-    let engine::ecs::SignalValue::CollisionStarted { a, b, .. } = &signal.value
-    else {
+    let engine::ecs::SignalValue::CollisionStarted { a, b, .. } = &signal.value else {
         return;
     };
 
@@ -165,11 +171,12 @@ fn main() {
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
 
-    let bg_color = universe
-        .world
-        .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
-            0.06, 0.04, 0.07, 1.0,
-        ));
+    let bg_color =
+        universe
+            .world
+            .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
+                0.06, 0.04, 0.07, 1.0,
+            ));
     universe.add(bg_color);
 
     // overhead directional light
@@ -178,9 +185,9 @@ fn main() {
             .with_color(0.16, 0.14, 0.12)
             .with_intensity(0.7),
     );
-    let directional_light_t = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 1.0, 0.0));
+    let directional_light_t = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 1.0, 0.0),
+    );
     let _ = universe.attach(directional_light_t, directional_light);
     universe.add(directional_light_t);
 
@@ -189,9 +196,9 @@ fn main() {
         .world
         .add_component(engine::ecs::component::InputComponent::new().with_speed(2.0));
 
-    let cam_t = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 4.0, 10.0));
+    let cam_t = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 4.0, 10.0),
+    );
     let cam = universe.world.add_component(
         engine::ecs::component::Camera3DComponent::new()
             // The default (150) clips background dressing (city + clouds).
@@ -206,11 +213,12 @@ fn main() {
     let cam_response = universe
         .world
         .add_component(engine::ecs::component::KineticResponseComponent::slide());
-    let cam_shape = universe
-        .world
-        .add_component(engine::ecs::component::CollisionShapeComponent::new(
-            engine::ecs::component::CollisionShape::sphere_radius(0.25),
-        ));
+    let cam_shape =
+        universe
+            .world
+            .add_component(engine::ecs::component::CollisionShapeComponent::new(
+                engine::ecs::component::CollisionShape::sphere_radius(0.25),
+            ));
 
     let input_mode = universe.world.add_component(
         engine::ecs::component::InputTransformModeComponent::forward_z()
@@ -233,9 +241,9 @@ fn main() {
 
     // --- Background world (occluded + lit) ---
     // Buildings are scene dressing and should not occlude foreground cubes.
-    let bg_root = universe
-        .world
-        .add_component(engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting());
+    let bg_root = universe.world.add_component(
+        engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting(),
+    );
     universe.add(bg_root);
 
     // Background ground plane (rendered in background pass) with top surface at y=0.
@@ -398,14 +406,15 @@ fn main() {
             let window_r = universe
                 .world
                 .add_component(engine::ecs::component::RenderableComponent::cube());
-            let window_c = universe
-                .world
-                .add_component(engine::ecs::component::ColorComponent::rgba(
-                    window_rgb[0],
-                    window_rgb[1],
-                    window_rgb[2],
-                    window_rgb[3],
-                ));
+            let window_c =
+                universe
+                    .world
+                    .add_component(engine::ecs::component::ColorComponent::rgba(
+                        window_rgb[0],
+                        window_rgb[1],
+                        window_rgb[2],
+                        window_rgb[3],
+                    ));
             let window_e = universe
                 .world
                 .add_component(engine::ecs::component::EmissiveComponent::on());
@@ -696,14 +705,15 @@ fn main() {
         let diffuser_r = universe
             .world
             .add_component(engine::ecs::component::RenderableComponent::cube());
-        let diffuser_c = universe
-            .world
-            .add_component(engine::ecs::component::ColorComponent::rgba(
-                diffuser_color[0],
-                diffuser_color[1],
-                diffuser_color[2],
-                diffuser_color[3],
-            ));
+        let diffuser_c =
+            universe
+                .world
+                .add_component(engine::ecs::component::ColorComponent::rgba(
+                    diffuser_color[0],
+                    diffuser_color[1],
+                    diffuser_color[2],
+                    diffuser_color[3],
+                ));
 
         let diffuser_emissive = universe
             .world
@@ -767,11 +777,12 @@ fn main() {
         let floor_r = universe
             .world
             .add_component(engine::ecs::component::RenderableComponent::cube());
-        let floor_color = universe
-            .world
-            .add_component(engine::ecs::component::ColorComponent::rgba(
-                0.08, 0.08, 0.09, 1.0,
-            ));
+        let floor_color =
+            universe
+                .world
+                .add_component(engine::ecs::component::ColorComponent::rgba(
+                    0.08, 0.08, 0.09, 1.0,
+                ));
 
         let floor_cn = universe
             .world
@@ -824,11 +835,12 @@ fn main() {
         let cn = universe
             .world
             .add_component(engine::ecs::component::CollisionComponent::STATIC());
-        let shape = universe
-            .world
-            .add_component(engine::ecs::component::CollisionShapeComponent::new(
-                engine::ecs::component::CollisionShape::cube_half_extents(half_extents),
-            ));
+        let shape =
+            universe
+                .world
+                .add_component(engine::ecs::component::CollisionShapeComponent::new(
+                    engine::ecs::component::CollisionShape::cube_half_extents(half_extents),
+                ));
 
         let _ = universe.attach(t, r);
         let _ = universe.attach(r, c);
@@ -920,15 +932,16 @@ fn main() {
             r
         });
 
-        let shape = universe
-            .world
-            .add_component(engine::ecs::component::CollisionShapeComponent::new(
-                engine::ecs::component::CollisionShape::cube_half_extents([
-                    0.5 * s,
-                    0.5 * s,
-                    0.5 * s,
-                ]),
-            ));
+        let shape =
+            universe
+                .world
+                .add_component(engine::ecs::component::CollisionShapeComponent::new(
+                    engine::ecs::component::CollisionShape::cube_half_extents([
+                        0.5 * s,
+                        0.5 * s,
+                        0.5 * s,
+                    ]),
+                ));
 
         let _ = universe.attach(t, renderable);
         let _ = universe.attach(renderable, color);

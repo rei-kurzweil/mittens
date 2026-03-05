@@ -2,10 +2,9 @@ use cat_engine::{engine, utils};
 
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, BackgroundComponent, Camera3DComponent,
-    ColorComponent, InputComponent, InputTransformModeComponent, PointerComponent, RayCastComponent,
-    RaycastableComponent, TextComponent, TextShadowComponent, TextureComponent,
-    TextureFilteringComponent,
-    TransformComponent, TransparentCutoutComponent,
+    ColorComponent, InputComponent, InputTransformModeComponent, PointerComponent,
+    RayCastComponent, RaycastableComponent, TextComponent, TextShadowComponent, TextureComponent,
+    TextureFilteringComponent, TransformComponent, TransparentCutoutComponent,
 };
 
 #[path = "example_util/mod.rs"]
@@ -135,9 +134,9 @@ fn main() {
         filtering: TextureFilteringComponent,
     ) -> f32 {
         // T_root { T_scale { [Color] { TXT { shadow, filtering } } } }
-        let text_root = universe
-            .world
-            .add_component(TransformComponent::new().with_position(position.0, position.1, position.2));
+        let text_root = universe.world.add_component(
+            TransformComponent::new().with_position(position.0, position.1, position.2),
+        );
 
         let text_scale = universe
             .world
@@ -145,7 +144,9 @@ fn main() {
         let _ = universe.attach(text_root, text_scale);
 
         let text_parent = if let Some([r, g, b, a]) = text_color_rgba {
-            let color = universe.world.add_component(ColorComponent::rgba(r, g, b, a));
+            let color = universe
+                .world
+                .add_component(ColorComponent::rgba(r, g, b, a));
             let _ = universe.attach(text_scale, color);
             color
         } else {
@@ -157,11 +158,15 @@ fn main() {
 
         // Explicit opt-in: make the glyph renderables pickable.
         // TextSystem will propagate this to all spawned glyph quads.
-        let raycastable = universe.world.add_component(RaycastableComponent::enabled());
+        let raycastable = universe
+            .world
+            .add_component(RaycastableComponent::enabled());
         let _ = universe.attach(text_c, raycastable);
 
         // Route glyph quads into the alpha-to-coverage cutout pass.
-        let cutout = universe.world.add_component(TransparentCutoutComponent::new());
+        let cutout = universe
+            .world
+            .add_component(TransparentCutoutComponent::new());
         let _ = universe.attach(text_c, cutout);
 
         if let Some(shadow) = shadow {
@@ -172,7 +177,9 @@ fn main() {
         // Optional: override the font atlas for this text block.
         // TextSystem will propagate this to all glyph renderables.
         if let Some(uri) = font_texture_uri {
-            let tex = universe.world.add_component(TextureComponent::with_uri(uri));
+            let tex = universe
+                .world
+                .add_component(TextureComponent::with_uri(uri));
             let _ = universe.attach(text_c, tex);
         }
 

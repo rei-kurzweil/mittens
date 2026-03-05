@@ -314,7 +314,7 @@ impl KineticResponseSystem {
             if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(transform_cid) {
                 t.transform.translation = new_local_translation;
                 t.transform.recompute_model();
-                queue.queue_update_transform(transform_cid, t.transform);
+                queue.update_transform(transform_cid, t.transform);
             }
         }
     }

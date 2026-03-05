@@ -24,11 +24,12 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Dark-ish background clear color so the effect reads.
-    let clear = universe
-        .world
-        .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
-            0.01, 0.01, 0.02, 1.0,
-        ));
+    let clear =
+        universe
+            .world
+            .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
+                0.01, 0.01, 0.02, 1.0,
+            ));
     universe.add(clear);
 
     // --- Camera rig (WASD/QE) ---
@@ -41,9 +42,9 @@ fn main() {
     let _ = universe.attach(input, input_mode);
 
     // Start pulled back so both background + foreground are in view.
-    let rig_transform = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 1.0, 6.0));
+    let rig_transform = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 1.0, 6.0),
+    );
     let _ = universe.attach(input, rig_transform);
 
     let camera3d = universe
@@ -57,9 +58,9 @@ fn main() {
             .with_distance(50.0)
             .with_color(1.0, 1.0, 1.0),
     );
-    let light_transform = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 6.0, 2.0));
+    let light_transform = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 6.0, 2.0),
+    );
     let _ = universe.attach(light_transform, light);
 
     // Topology: I { T { C3D } } — add a small camera-attached controls hint.
@@ -167,9 +168,9 @@ fn main() {
 
     // --- Foreground world ---
     // A small cube field that should parallax as you move.
-    let fg_root = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0));
+    let fg_root = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0),
+    );
 
     let n: i32 = 8;
     let step: f32 = 0.8;

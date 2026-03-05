@@ -194,8 +194,10 @@ impl TransformGizmoSystem {
             axis: TransformGizmoAxis,
             name: &str,
         ) -> ComponentId {
-            let h =
-                world.add_component_boxed_named(name, Box::new(TransformGizmoRotateComponent::new(axis)));
+            let h = world.add_component_boxed_named(
+                name,
+                Box::new(TransformGizmoRotateComponent::new(axis)),
+            );
             let _ = world.add_child(parent, h);
             h
         }
@@ -210,8 +212,12 @@ impl TransformGizmoSystem {
         let ring_scale = [1.4, 1.4, 1.0];
 
         // Rotation rings live under per-axis rotate handle components.
-        let rot_x_root =
-            spawn_rotate_handle_root(world, gizmo_visual_parent, TransformGizmoAxis::X, "gizmo_rot_x");
+        let rot_x_root = spawn_rotate_handle_root(
+            world,
+            gizmo_visual_parent,
+            TransformGizmoAxis::X,
+            "gizmo_rot_x",
+        );
         let rot_x_coord = spawn_gesture_coord_type_root(
             world,
             rot_x_root,
@@ -230,8 +236,12 @@ impl TransformGizmoSystem {
             red,
         );
 
-        let rot_y_root =
-            spawn_rotate_handle_root(world, gizmo_visual_parent, TransformGizmoAxis::Y, "gizmo_rot_y");
+        let rot_y_root = spawn_rotate_handle_root(
+            world,
+            gizmo_visual_parent,
+            TransformGizmoAxis::Y,
+            "gizmo_rot_y",
+        );
         let rot_y_coord = spawn_gesture_coord_type_root(
             world,
             rot_y_root,
@@ -250,8 +260,12 @@ impl TransformGizmoSystem {
             green,
         );
 
-        let rot_z_root =
-            spawn_rotate_handle_root(world, gizmo_visual_parent, TransformGizmoAxis::Z, "gizmo_rot_z");
+        let rot_z_root = spawn_rotate_handle_root(
+            world,
+            gizmo_visual_parent,
+            TransformGizmoAxis::Z,
+            "gizmo_rot_z",
+        );
         let rot_z_coord = spawn_gesture_coord_type_root(
             world,
             rot_z_root,
@@ -279,8 +293,12 @@ impl TransformGizmoSystem {
         let cone_radius = 0.12_f32;
 
         // Translation arrows live under per-axis translate handle components.
-        let move_x_root =
-            spawn_translate_handle_root(world, gizmo_visual_parent, TransformGizmoAxis::X, "gizmo_move_x");
+        let move_x_root = spawn_translate_handle_root(
+            world,
+            gizmo_visual_parent,
+            TransformGizmoAxis::X,
+            "gizmo_move_x",
+        );
         let move_x_pick = spawn_raycastable_root(world, move_x_root, "gizmo_move_x_pick");
         // +X arrow: rotate +Z axis to +X (yaw +90deg).
         let rot_x = [0.0, std::f32::consts::FRAC_PI_2, 0.0];
@@ -305,8 +323,12 @@ impl TransformGizmoSystem {
             red,
         );
 
-        let move_y_root =
-            spawn_translate_handle_root(world, gizmo_visual_parent, TransformGizmoAxis::Y, "gizmo_move_y");
+        let move_y_root = spawn_translate_handle_root(
+            world,
+            gizmo_visual_parent,
+            TransformGizmoAxis::Y,
+            "gizmo_move_y",
+        );
         let move_y_pick = spawn_raycastable_root(world, move_y_root, "gizmo_move_y_pick");
         // +Y arrow: rotate +Z axis to +Y (pitch -90deg around X).
         let rot_y = [-std::f32::consts::FRAC_PI_2, 0.0, 0.0];
@@ -331,8 +353,12 @@ impl TransformGizmoSystem {
             green,
         );
 
-        let move_z_root =
-            spawn_translate_handle_root(world, gizmo_visual_parent, TransformGizmoAxis::Z, "gizmo_move_z");
+        let move_z_root = spawn_translate_handle_root(
+            world,
+            gizmo_visual_parent,
+            TransformGizmoAxis::Z,
+            "gizmo_move_z",
+        );
         let move_z_pick = spawn_raycastable_root(world, move_z_root, "gizmo_move_z_pick");
         // +Z arrow: no rotation.
         spawn_part(
@@ -425,7 +451,11 @@ impl TransformGizmoSystem {
             .children_of(renderable)
             .iter()
             .copied()
-            .filter(|&ch| world.get_component_by_id_as::<TransformGizmoComponent>(ch).is_some())
+            .filter(|&ch| {
+                world
+                    .get_component_by_id_as::<TransformGizmoComponent>(ch)
+                    .is_some()
+            })
             .collect();
 
         // Also support gizmo-as-ancestor (new gizmo visuals are children of the gizmo node).
@@ -552,7 +582,11 @@ impl TransformGizmoSystem {
             );
             let o = world.add_component_boxed_named(
                 "gizmo_drag_plane_opacity",
-                Box::new(OpacityComponent::new().with_opacity(0.35).with_multiple_layers()),
+                Box::new(
+                    OpacityComponent::new()
+                        .with_opacity(0.35)
+                        .with_multiple_layers(),
+                ),
             );
             let e = world.add_component_boxed_named(
                 "gizmo_drag_plane_emissive",
@@ -571,9 +605,7 @@ impl TransformGizmoSystem {
         // If a gizmo was reparented (e.g. by EditorSystem selection), rebind its target transform.
         for s in rx.signals().iter() {
             let SignalValue::ParentChanged {
-                child,
-                new_parent,
-                ..
+                child, new_parent, ..
             } = &s.value
             else {
                 continue;
@@ -658,17 +690,14 @@ impl TransformGizmoSystem {
                     }
 
                     if let Some(root) = old_debug_root {
-                        queue.queue_remove_subtree(root);
+                        queue.remove_subtree(root);
                     }
 
                     if debug_drag_plane_enabled() {
-                        if let Some(dir) =
-                            ray_dir_by_pair.get(&(raycaster, renderable)).copied()
-                        {
-                            let plane_root =
-                                spawn_debug_drag_plane(world, queue, hit_point, dir);
-                            if let Some(g) =
-                                world.get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid)
+                        if let Some(dir) = ray_dir_by_pair.get(&(raycaster, renderable)).copied() {
+                            let plane_root = spawn_debug_drag_plane(world, queue, hit_point, dir);
+                            if let Some(g) = world
+                                .get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid)
                             {
                                 g.debug_drag_plane_root = Some(plane_root);
                             }
@@ -813,7 +842,7 @@ impl TransformGizmoSystem {
 
                         if debug_drag_plane_enabled() {
                             if let Some(root) = g.debug_drag_plane_root.take() {
-                                queue.queue_remove_subtree(root);
+                                queue.remove_subtree(root);
                             }
                         }
                     }

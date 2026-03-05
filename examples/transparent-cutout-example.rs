@@ -118,8 +118,12 @@ fn main() {
             let quad_tex = universe.world.add_component(TextureComponent::with_uri(
                 "assets/textures/cat-face-amused.dds",
             ));
-            let quad_filtering = universe.world.add_component(TextureFilteringComponent::linear());
-            let quad_cutout = universe.world.add_component(TransparentCutoutComponent::new());
+            let quad_filtering = universe
+                .world
+                .add_component(TextureFilteringComponent::linear());
+            let quad_cutout = universe
+                .world
+                .add_component(TransparentCutoutComponent::new());
             let quad_color = universe
                 .world
                 .add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));

@@ -84,20 +84,21 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Minimal scene with a camera so the window opens.
-    let clear = universe
-        .world
-        .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
-            0.06, 0.06, 0.07, 1.0,
-        ));
+    let clear =
+        universe
+            .world
+            .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
+                0.06, 0.06, 0.07, 1.0,
+            ));
     universe.add(clear);
 
     // Input-driven camera rig.
     let input = universe
         .world
         .add_component(engine::ecs::component::InputComponent::new().with_speed(2.0));
-    let rig_transform = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 9.0));
+    let rig_transform = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 9.0),
+    );
     let input_mode = universe.world.add_component(
         engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y(),
     );
@@ -115,9 +116,9 @@ fn main() {
     universe.add(input);
 
     // Light so we can see non-emissive materials.
-    let light_tx = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(2.0, 3.5, 6.0));
+    let light_tx = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(2.0, 3.5, 6.0),
+    );
     let light = universe.world.add_component(
         engine::ecs::component::PointLightComponent::new()
             .with_distance(30.0)
@@ -133,9 +134,9 @@ fn main() {
     universe.add(clock);
 
     // Root for all visualization objects.
-    let viz_root = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0));
+    let viz_root = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0),
+    );
     universe.add(viz_root);
 
     let anchor_count = 16usize;
@@ -164,9 +165,9 @@ fn main() {
     let mut anchors_a: Vec<engine::ecs::ComponentId> = Vec::with_capacity(anchor_count);
     for i in 0..anchor_count {
         let (x, y, z) = grid_anchor_local(layout_a, i);
-        let anchor = universe
-            .world
-            .add_component(engine::ecs::component::TransformComponent::new().with_position(x, y, z));
+        let anchor = universe.world.add_component(
+            engine::ecs::component::TransformComponent::new().with_position(x, y, z),
+        );
         let _ = universe.attach(grid_a_root, anchor);
         anchors_a.push(anchor);
         spawn_emissive_marker_cube(
@@ -202,25 +203,27 @@ fn main() {
             .world
             .add_component(engine::ecs::component::KeyframeComponent::new(beat_detach));
         let _ = universe.attach(anim_a, kf_detach);
-        let detach_action = universe
-            .world
-            .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::SignalValue::Detach { target: vec![cube] },
-            ));
+        let detach_action =
+            universe
+                .world
+                .add_component(engine::ecs::component::ActionComponent::new(
+                    engine::ecs::SignalValue::Detach { target: vec![cube] },
+                ));
         let _ = universe.attach(kf_detach, detach_action);
 
         let kf_attach = universe
             .world
             .add_component(engine::ecs::component::KeyframeComponent::new(beat_attach));
         let _ = universe.attach(anim_a, kf_attach);
-        let attach_action = universe
-            .world
-            .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::SignalValue::Attach {
-                    parents: vec![parent],
-                    child: cube,
-                },
-            ));
+        let attach_action =
+            universe
+                .world
+                .add_component(engine::ecs::component::ActionComponent::new(
+                    engine::ecs::SignalValue::Attach {
+                        parents: vec![parent],
+                        child: cube,
+                    },
+                ));
         let _ = universe.attach(kf_attach, attach_action);
     }
     universe.add(anim_a);
@@ -240,9 +243,9 @@ fn main() {
     let mut anchors_b: Vec<engine::ecs::ComponentId> = Vec::with_capacity(anchor_count);
     for i in 0..anchor_count {
         let (x, y, z) = grid_anchor_local(layout_b, i);
-        let anchor = universe
-            .world
-            .add_component(engine::ecs::component::TransformComponent::new().with_position(x, y, z));
+        let anchor = universe.world.add_component(
+            engine::ecs::component::TransformComponent::new().with_position(x, y, z),
+        );
         let _ = universe.attach(grid_b_root, anchor);
         anchors_b.push(anchor);
 
@@ -279,14 +282,15 @@ fn main() {
             .add_component(engine::ecs::component::KeyframeComponent::new(beat_attach));
         let _ = universe.attach(anim_b, kf_attach);
 
-        let attach_action = universe
-            .world
-            .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::SignalValue::AttachClone {
-                    parents: vec![parent],
-                    prefab_root: prefab_b,
-                },
-            ));
+        let attach_action =
+            universe
+                .world
+                .add_component(engine::ecs::component::ActionComponent::new(
+                    engine::ecs::SignalValue::AttachClone {
+                        parents: vec![parent],
+                        prefab_root: prefab_b,
+                    },
+                ));
         let _ = universe.attach(kf_attach, attach_action);
 
         if i >= window {
@@ -319,14 +323,15 @@ fn main() {
             .add_component(engine::ecs::component::KeyframeComponent::new(beat_remove));
         let _ = universe.attach(anim_b, kf_remove);
 
-        let remove_action = universe
-            .world
-            .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::SignalValue::RemoveChild {
-                    parents: vec![remove_parent],
-                    index: 0,
-                },
-            ));
+        let remove_action =
+            universe
+                .world
+                .add_component(engine::ecs::component::ActionComponent::new(
+                    engine::ecs::SignalValue::RemoveChild {
+                        parents: vec![remove_parent],
+                        index: 0,
+                    },
+                ));
         let _ = universe.attach(kf_remove, remove_action);
     }
 
@@ -343,9 +348,9 @@ fn main() {
         let (x, y, z) = grid_anchor_local(layout_c, i);
         anchors_c.push((x, y, z));
 
-        let anchor = universe
-            .world
-            .add_component(engine::ecs::component::TransformComponent::new().with_position(x, y, z));
+        let anchor = universe.world.add_component(
+            engine::ecs::component::TransformComponent::new().with_position(x, y, z),
+        );
         let _ = universe.attach(grid_c_root, anchor);
         spawn_emissive_marker_cube(
             &mut universe,
@@ -376,14 +381,15 @@ fn main() {
 
         let cube = cubes_c[i % cube_pool_size];
         let (x, y, z) = anchors_c[i];
-        let setpos_action = universe
-            .world
-            .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::SignalValue::SetPosition {
-                    target: vec![cube],
-                    position: [x, y, z],
-                },
-            ));
+        let setpos_action =
+            universe
+                .world
+                .add_component(engine::ecs::component::ActionComponent::new(
+                    engine::ecs::SignalValue::SetPosition {
+                        target: vec![cube],
+                        position: [x, y, z],
+                    },
+                ));
         let _ = universe.attach(kf, setpos_action);
     }
     universe.add(anim_c);

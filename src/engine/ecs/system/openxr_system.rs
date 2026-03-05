@@ -395,7 +395,7 @@ impl OpenXRSystem {
             t.transform.rotation = local_rotation;
             t.transform.recompute_model();
 
-            queue.queue_update_transform(tcid, t.transform);
+            queue.update_transform(tcid, t.transform);
         }
     }
 

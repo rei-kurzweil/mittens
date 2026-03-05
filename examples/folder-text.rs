@@ -374,28 +374,27 @@ fn main() {
             let bg_renderable = universe
                 .world
                 .add_component(engine::ecs::component::RenderableComponent::square());
-            let bg_quant =
+            let bg_quant = universe.world.add_component(
+                engine::ecs::component::LightQuantizationComponent::steps(5.0),
+            );
+            let bg_color =
                 universe
                     .world
-                    .add_component(engine::ecs::component::LightQuantizationComponent::steps(
-                        5.0,
+                    .add_component(engine::ecs::component::ColorComponent::rgba(
+                        0.2, 0.2, 0.2, 1.0,
                     ));
-            let bg_color = universe
-                .world
-                .add_component(engine::ecs::component::ColorComponent::rgba(
-                    0.2, 0.2, 0.2, 1.0,
-                ));
             let _ = universe.attach(file_root, bg_transform);
             let _ = universe.attach(bg_transform, bg_renderable);
             let _ = universe.attach(bg_renderable, bg_quant);
             let _ = universe.attach(bg_renderable, bg_color);
 
-            let text = universe
-                .world
-                .add_component(engine::ecs::component::TextComponent::with_wrap(
-                    entry.display_text,
-                    WRAP_AT,
-                ));
+            let text =
+                universe
+                    .world
+                    .add_component(engine::ecs::component::TextComponent::with_wrap(
+                        entry.display_text,
+                        WRAP_AT,
+                    ));
             let cutout = universe
                 .world
                 .add_component(engine::ecs::component::TransparentCutoutComponent::new());

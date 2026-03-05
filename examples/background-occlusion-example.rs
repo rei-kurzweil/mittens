@@ -23,11 +23,12 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Light purple-red background so the occlusion reads.
-    let clear = universe
-        .world
-        .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
-            0.62, 0.38, 0.56, 1.0,
-        ));
+    let clear =
+        universe
+            .world
+            .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
+                0.62, 0.38, 0.56, 1.0,
+            ));
     universe.add(clear);
 
     // A bit of ambient so the cluster volume reads.
@@ -47,9 +48,9 @@ fn main() {
     );
     let _ = universe.attach(input, input_mode);
 
-    let rig_transform = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 6.0));
+    let rig_transform = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 6.0),
+    );
     let _ = universe.attach(input, rig_transform);
 
     let camera3d = universe.world.add_component(
@@ -84,9 +85,9 @@ fn main() {
             .with_intensity(3.0)
             .with_color(0.9, 0.95, 1.0),
     );
-    let light_a_tx = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(8.0, 8.0, 5.0));
+    let light_a_tx = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(8.0, 8.0, 5.0),
+    );
     let _ = universe.attach(light_a_tx, light_a);
 
     let light_b = universe.world.add_component(
@@ -112,9 +113,9 @@ fn main() {
     // --- Background occluded+lit world ---
     // Renderables under this node participate in a background stage that depth-writes for
     // self-occlusion + uses the normal lighting shader inputs.
-    let bg_root = universe
-        .world
-        .add_component(engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting());
+    let bg_root = universe.world.add_component(
+        engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting(),
+    );
     universe.add(bg_root);
 
     // Create overlapping cube clusters like cloud puffs.
@@ -191,14 +192,15 @@ fn main() {
             .with_position(0.0, -0.5, -4.0)
             .with_scale(1.2, 0.8, 1.2),
     );
-    let fg_renderable = universe
-        .world
-        .add_component(engine::ecs::component::RenderableComponent::new(
-            engine::graphics::primitives::Renderable::new(
-                cube_mesh,
-                engine::graphics::primitives::MaterialHandle::TOON_MESH,
-            ),
-        ));
+    let fg_renderable =
+        universe
+            .world
+            .add_component(engine::ecs::component::RenderableComponent::new(
+                engine::graphics::primitives::Renderable::new(
+                    cube_mesh,
+                    engine::graphics::primitives::MaterialHandle::TOON_MESH,
+                ),
+            ));
     let fg_color = universe
         .world
         .add_component(engine::ecs::component::ColorComponent::rgba(

@@ -1,10 +1,8 @@
 use cat_engine::engine::ecs::component::{
-    AmbientLightComponent,
-    BackgroundColorComponent, Camera3DComponent, ClockComponent, ColorComponent,
-    DirectionalLightComponent, EmissiveComponent, GLTFComponent, InputComponent,
-    InputTransformModeComponent, JointComponent, MeshComponent, TransformGizmoComponent,
-    PointerComponent, RayCastComponent, RenderableComponent, SkinnedMeshComponent,
-    TransformComponent,
+    AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ClockComponent,
+    ColorComponent, DirectionalLightComponent, EmissiveComponent, GLTFComponent, InputComponent,
+    InputTransformModeComponent, JointComponent, MeshComponent, PointerComponent, RayCastComponent,
+    RenderableComponent, SkinnedMeshComponent, TransformComponent, TransformGizmoComponent,
 };
 use cat_engine::{engine, utils};
 use std::collections::{HashMap, HashSet};
@@ -102,7 +100,9 @@ fn main() {
     let model = universe.world.add_component(GLTFComponent::new(model_uri));
 
     // emissive for pc-rei
-    let emissive = universe.world.add_component(EmissiveComponent { enabled: true });
+    let emissive = universe
+        .world
+        .add_component(EmissiveComponent { enabled: true });
     let _ = universe.attach(model, emissive);
 
     let _ = universe.attach(model_root, model);
@@ -111,9 +111,9 @@ fn main() {
     universe.add(model_root);
 
     // --- Background clouds (occluded + lit) ---
-    let bg_root = universe
-        .world
-        .add_component(engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting());
+    let bg_root = universe.world.add_component(
+        engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting(),
+    );
     universe.add(bg_root);
     let mut cloud_params = example_util::CloudRingParams::default();
     cloud_params.cloud_count = 8; // +3 clusters

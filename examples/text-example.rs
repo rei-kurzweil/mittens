@@ -17,9 +17,9 @@ fn main() {
     let camera3d = universe
         .world
         .add_component(engine::ecs::component::Camera3DComponent::new());
-    let rig_transform = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 2.5));
+    let rig_transform = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 2.5),
+    );
     let input_mode = universe.world.add_component(
         engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y(),
     );
@@ -40,11 +40,12 @@ fn main() {
     let debug_renderable = universe
         .world
         .add_component(engine::ecs::component::RenderableComponent::square());
-    let debug_tex = universe
-        .world
-        .add_component(engine::ecs::component::TextureComponent::with_uri(
-            "assets/textures/font.dds",
-        ));
+    let debug_tex =
+        universe
+            .world
+            .add_component(engine::ecs::component::TextureComponent::with_uri(
+                "assets/textures/font.dds",
+            ));
     let debug_filtering = universe
         .world
         .add_component(engine::ecs::component::TextureFilteringComponent::nearest_magnification());
@@ -54,9 +55,9 @@ fn main() {
     universe.add(debug_root);
 
     // Light so we can actually see non-emissive materials.
-    let light_transform = universe
-        .world
-        .add_component(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 2.0));
+    let light_transform = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 2.0),
+    );
     let light = universe.world.add_component(
         engine::ecs::component::PointLightComponent::new()
             .with_distance(25.0)
@@ -128,7 +129,9 @@ fn main() {
         let _ = universe.attach(color_id, text_id);
 
         // Route into cutout pass for cleaner edges.
-        let cutout = universe.world.add_component(TransparentCutoutComponent::new());
+        let cutout = universe
+            .world
+            .add_component(TransparentCutoutComponent::new());
         let _ = universe.attach(text_id, cutout);
 
         // Use the same atlas as the debug quad.

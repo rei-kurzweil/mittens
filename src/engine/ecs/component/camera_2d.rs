@@ -25,10 +25,13 @@ impl Camera2DComponent {
     }
 
     /// Ask the CameraSystem to make this the active camera.
-    pub fn make_active_camera(&mut self, queue: &mut crate::engine::ecs::CommandQueue) {
+    pub fn make_active_camera(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter) {
         if self.handle.is_some() {
             if let Some(component) = self.component_id {
-                queue.queue_make_active_camera(component);
+                emit.push(
+                    component,
+                    crate::engine::ecs::SignalValue::MakeActiveCamera { component },
+                );
             }
         }
     }
@@ -53,9 +56,12 @@ impl Component for Camera2DComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         self.component_id = Some(component);
-        queue.queue_register_camera2d(component);
+        emit.push(
+            component,
+            crate::engine::ecs::SignalValue::RegisterCamera2d { component },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
