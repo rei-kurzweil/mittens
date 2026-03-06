@@ -1,5 +1,4 @@
-use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::World;
+use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::engine::ecs::component::{
     CollisionComponent, CollisionMode, CollisionShape, CollisionShapeComponent,
     KineticResponseComponent, KineticResponseMode, RenderableComponent, TransformComponent,
@@ -55,7 +54,7 @@ impl KineticResponseSystem {
         _visuals: &mut VisualWorld,
         _input: &InputState,
         dt_sec: f32,
-        queue: &mut crate::engine::ecs::CommandQueue,
+        emit: &mut dyn SignalEmitter,
         collision: &CollisionSystem,
     ) {
         if self.responders.is_empty() {
@@ -332,7 +331,16 @@ impl KineticResponseSystem {
             if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(transform_cid) {
                 t.transform.translation = new_local_translation;
                 t.transform.recompute_model();
-                queue.update_transform(transform_cid, t.transform);
+                let transform = t.transform;
+                emit.push_intent_now(
+                    transform_cid,
+                    IntentValue::UpdateTransform {
+                        component: transform_cid,
+                        translation: transform.translation,
+                        rotation_quat_xyzw: transform.rotation,
+                        scale: transform.scale,
+                    },
+                );
             }
         }
     }

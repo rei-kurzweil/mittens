@@ -1,5 +1,4 @@
-use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::World;
+use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::engine::ecs::component::{
     ColorComponent, EmissiveComponent, GLTFComponent, JointComponent, MeshComponent,
     RenderableComponent, SkinnedMeshComponent, TextureComponent, TransformComponent,
@@ -239,14 +238,14 @@ impl GLTFSystem {
 
     /// Discover GLTFComponents and spawn their node/renderable hierarchy.
     ///
-    /// This runs during `SystemWorld::tick` so we have access to the CommandQueue via
-    /// `world.init_component_tree(..., queue)`.
+    /// This runs during `SystemWorld::tick` so we have access to a `SignalEmitter` via
+    /// `world.init_component_tree(..., emit)`.
     pub fn tick_with_queue(
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
         skinned_mesh: &mut crate::engine::ecs::system::SkinnedMeshSystem,
-        queue: &mut crate::engine::ecs::CommandQueue,
+        emit: &mut dyn SignalEmitter,
         _dt_sec: f32,
     ) {
         let gltf_components: Vec<ComponentId> = world
@@ -340,7 +339,7 @@ impl GLTFSystem {
                     &joint_node_to_skin_indices,
                 );
                 if let Some(root) = root {
-                    world.init_component_tree(root, queue);
+                    world.init_component_tree(root, emit);
                 }
             }
 

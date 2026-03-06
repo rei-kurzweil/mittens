@@ -3,7 +3,7 @@ use crate::engine::ecs::component::OpenXRComponent;
 use crate::engine::ecs::component::{ControllerHand, ControllerPoseKind, ControllerXRComponent};
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
-use crate::engine::ecs::{CommandQueue, ComponentId, World};
+use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::engine::graphics::CameraData;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::VulkanoRenderer;
@@ -309,7 +309,7 @@ impl OpenXRSystem {
         world: &mut World,
         visuals: &mut VisualWorld,
         _input: &InputState,
-        queue: &mut CommandQueue,
+        emit: &mut dyn SignalEmitter,
         _dt_sec: f32,
     ) {
         self.pump_events();
@@ -395,7 +395,16 @@ impl OpenXRSystem {
             t.transform.rotation = local_rotation;
             t.transform.recompute_model();
 
-            queue.update_transform(tcid, t.transform);
+            let transform = t.transform;
+            emit.push_intent_now(
+                tcid,
+                IntentValue::UpdateTransform {
+                    component: tcid,
+                    translation: transform.translation,
+                    rotation_quat_xyzw: transform.rotation,
+                    scale: transform.scale,
+                },
+            );
         }
     }
 

@@ -64,9 +64,9 @@ impl Component for PointLightComponent {
         emit: &mut dyn crate::engine::ecs::SignalEmitter,
         component: crate::engine::ecs::ComponentId,
     ) {
-        emit.push(
+        emit.push_intent_now(
             component,
-            crate::engine::ecs::SignalValue::RegisterLight { component },
+            crate::engine::ecs::IntentValue::RegisterLight { component },
         );
     }
 

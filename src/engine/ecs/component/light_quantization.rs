@@ -50,9 +50,9 @@ impl Component for LightQuantizationComponent {
     }
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
-        emit.push(
+        emit.push_intent_now(
             component,
-            crate::engine::ecs::SignalValue::RegisterLightQuantization { component },
+            crate::engine::ecs::IntentValue::RegisterLightQuantization { component },
         );
     }
 

@@ -58,10 +58,7 @@ impl Component for UVComponent {
     }
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
-        emit.push(
-            component,
-            crate::engine::ecs::SignalValue::RegisterUv { component },
-        );
+        emit.push_intent_now(component, crate::engine::ecs::IntentValue::RegisterUv { component });
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

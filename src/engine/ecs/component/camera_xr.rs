@@ -35,9 +35,9 @@ impl CameraXRComponent {
     /// Ask the CameraSystem to make this the active XR camera rig.
     pub fn make_active_camera(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter) {
         if let Some(component) = self.component_id {
-            emit.push(
+            emit.push_intent_now(
                 component,
-                crate::engine::ecs::SignalValue::MakeActiveCamera { component },
+                crate::engine::ecs::IntentValue::MakeActiveCamera { component },
             );
         }
     }

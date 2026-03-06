@@ -46,13 +46,13 @@ impl Component for AudioOutputComponent {
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         if self.enabled {
-            emit.push(
+            emit.push_intent_now(
                 component,
-                crate::engine::ecs::SignalValue::RegisterAudioOutput { component },
+                crate::engine::ecs::IntentValue::RegisterAudioOutput { component },
             );
-            emit.push(
+            emit.push_intent_now(
                 component,
-                crate::engine::ecs::SignalValue::AudioGraphDirtyImmediate { component },
+                crate::engine::ecs::IntentValue::AudioGraphDirtyImmediate { component },
             );
         }
     }

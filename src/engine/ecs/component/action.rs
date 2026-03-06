@@ -1,19 +1,19 @@
 use super::Component;
-use crate::engine::ecs::{ComponentId, SignalValue};
+use crate::engine::ecs::{ComponentId, IntentValue};
 use slotmap::{Key, KeyData};
 
 #[derive(Debug, Clone)]
 pub struct ActionComponent {
-    pub signal: SignalValue,
+    pub signal: IntentValue,
 }
 
 impl ActionComponent {
-    pub fn new(signal: SignalValue) -> Self {
+    pub fn new(signal: IntentValue) -> Self {
         Self { signal }
     }
 
     pub fn print(message: impl Into<String>) -> Self {
-        Self::new(SignalValue::Print {
+        Self::new(IntentValue::Print {
             message: message.into(),
         })
     }
@@ -22,7 +22,7 @@ impl ActionComponent {
 impl Default for ActionComponent {
     fn default() -> Self {
         Self {
-            signal: SignalValue::Noop,
+            signal: IntentValue::Noop,
         }
     }
 }
@@ -44,30 +44,30 @@ impl Component for ActionComponent {
         let mut map = std::collections::HashMap::new();
 
         match &self.signal {
-            SignalValue::Noop => {
+            IntentValue::Noop => {
                 map.insert("variant".to_string(), serde_json::json!("Noop"));
             }
-            SignalValue::Print { message } => {
+            IntentValue::Print { message } => {
                 map.insert("variant".to_string(), serde_json::json!("Print"));
                 map.insert("message".to_string(), serde_json::json!(message));
             }
 
-            SignalValue::SetColor { target, rgba } => {
+            IntentValue::SetColor { target, rgba } => {
                 map.insert("variant".to_string(), serde_json::json!("SetColor"));
                 map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
                 map.insert("rgba".to_string(), serde_json::json!(rgba));
             }
-            SignalValue::SetText { target, text } => {
+            IntentValue::SetText { target, text } => {
                 map.insert("variant".to_string(), serde_json::json!("SetText"));
                 map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
                 map.insert("text".to_string(), serde_json::json!(text));
             }
-            SignalValue::SetPosition { target, position } => {
+            IntentValue::SetPosition { target, position } => {
                 map.insert("variant".to_string(), serde_json::json!("SetPosition"));
                 map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
                 map.insert("position".to_string(), serde_json::json!(position));
             }
-            SignalValue::SetTransform {
+            IntentValue::SetTransform {
                 target,
                 translation,
                 rotation_quat_xyzw,
@@ -83,7 +83,7 @@ impl Component for ActionComponent {
                 map.insert("scale".to_string(), serde_json::json!(scale));
             }
 
-            SignalValue::Attach { parents, child } => {
+            IntentValue::Attach { parents, child } => {
                 map.insert("variant".to_string(), serde_json::json!("Attach"));
                 map.insert(
                     "parents".to_string(),
@@ -91,7 +91,7 @@ impl Component for ActionComponent {
                 );
                 map.insert("child".to_string(), serde_json::json!(encode_id(*child)));
             }
-            SignalValue::AttachClone {
+            IntentValue::AttachClone {
                 parents,
                 prefab_root,
             } => {
@@ -105,11 +105,11 @@ impl Component for ActionComponent {
                     serde_json::json!(encode_id(*prefab_root)),
                 );
             }
-            SignalValue::Detach { target } => {
+            IntentValue::Detach { target } => {
                 map.insert("variant".to_string(), serde_json::json!("Detach"));
                 map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
             }
-            SignalValue::RemoveChild { parents, index } => {
+            IntentValue::RemoveChild { parents, index } => {
                 map.insert("variant".to_string(), serde_json::json!("RemoveChild"));
                 map.insert(
                     "parents".to_string(),
@@ -117,30 +117,30 @@ impl Component for ActionComponent {
                 );
                 map.insert("index".to_string(), serde_json::json!(index));
             }
-            SignalValue::RemoveChildren { parents } => {
+            IntentValue::RemoveChildren { parents } => {
                 map.insert("variant".to_string(), serde_json::json!("RemoveChildren"));
                 map.insert(
                     "parents".to_string(),
                     serde_json::json!(encode_ids(parents)),
                 );
             }
-            SignalValue::RemoveSubtree { target } => {
+            IntentValue::RemoveSubtree { target } => {
                 map.insert("variant".to_string(), serde_json::json!("RemoveSubtree"));
                 map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
             }
 
-            SignalValue::AudioGraphRebuild { target } => {
+            IntentValue::AudioGraphRebuild { target } => {
                 map.insert(
                     "variant".to_string(),
                     serde_json::json!("AudioGraphRebuild"),
                 );
                 map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
             }
-            SignalValue::RequestRaycast { target } => {
+            IntentValue::RequestRaycast { target } => {
                 map.insert("variant".to_string(), serde_json::json!("RequestRaycast"));
                 map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
             }
-            SignalValue::AudioLowPassSetCutoffHz { target, cutoff_hz } => {
+            IntentValue::AudioLowPassSetCutoffHz { target, cutoff_hz } => {
                 map.insert(
                     "variant".to_string(),
                     serde_json::json!("AudioLowPassSetCutoffHz"),
@@ -148,7 +148,7 @@ impl Component for ActionComponent {
                 map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
                 map.insert("cutoff_hz".to_string(), serde_json::json!(cutoff_hz));
             }
-            SignalValue::AudioBandPassSetCenterHz { target, center_hz } => {
+            IntentValue::AudioBandPassSetCenterHz { target, center_hz } => {
                 map.insert(
                     "variant".to_string(),
                     serde_json::json!("AudioBandPassSetCenterHz"),
@@ -156,7 +156,7 @@ impl Component for ActionComponent {
                 map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
                 map.insert("center_hz".to_string(), serde_json::json!(center_hz));
             }
-            SignalValue::OscillatorSetEnabled { target, enabled } => {
+            IntentValue::OscillatorSetEnabled { target, enabled } => {
                 map.insert(
                     "variant".to_string(),
                     serde_json::json!("OscillatorSetEnabled"),
@@ -164,7 +164,7 @@ impl Component for ActionComponent {
                 map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
                 map.insert("enabled".to_string(), serde_json::json!(enabled));
             }
-            SignalValue::OscillatorSetPitch {
+            IntentValue::OscillatorSetPitch {
                 target,
                 frequency_hz,
             } => {
@@ -175,7 +175,7 @@ impl Component for ActionComponent {
                 map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
                 map.insert("frequency_hz".to_string(), serde_json::json!(frequency_hz));
             }
-            SignalValue::OscillatorScheduleSetPitch {
+            IntentValue::OscillatorScheduleSetPitch {
                 target,
                 beat_offset,
                 beat_context,
@@ -190,7 +190,7 @@ impl Component for ActionComponent {
                 map.insert("beat_context".to_string(), serde_json::json!(beat_context));
                 map.insert("frequency_hz".to_string(), serde_json::json!(frequency_hz));
             }
-            SignalValue::OscillatorScheduleSetNote {
+            IntentValue::OscillatorScheduleSetNote {
                 target,
                 beat_offset,
                 beat_context,
@@ -212,7 +212,7 @@ impl Component for ActionComponent {
                     serde_json::json!(duration_beats),
                 );
             }
-            SignalValue::OscillatorScheduleMusicNote {
+            IntentValue::OscillatorScheduleMusicNote {
                 target,
                 beat_offset,
                 beat_context,
@@ -227,18 +227,17 @@ impl Component for ActionComponent {
                 map.insert("beat_context".to_string(), serde_json::json!(beat_context));
                 map.insert("note".to_string(), serde_json::json!(note));
             }
-            SignalValue::MusicSetNote { target, note } => {
+            IntentValue::MusicSetNote { target, note } => {
                 map.insert("variant".to_string(), serde_json::json!("MusicSetNote"));
                 map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
                 map.insert("note".to_string(), serde_json::json!(note));
             }
 
-            // Non-action signals should not be persisted in ActionComponent.
             other => {
                 map.insert("variant".to_string(), serde_json::json!("Noop"));
                 map.insert(
                     "error".to_string(),
-                    serde_json::json!(format!("Non-action signal in ActionComponent: {other:?}")),
+                    serde_json::json!(format!("Unsupported intent variant in ActionComponent: {other:?}")),
                 );
             }
         }
@@ -253,80 +252,80 @@ impl Component for ActionComponent {
         let variant = get_string(data, "variant")?;
 
         self.signal = match variant.as_str() {
-            "Noop" => SignalValue::Noop,
-            "Print" => SignalValue::Print {
+            "Noop" => IntentValue::Noop,
+            "Print" => IntentValue::Print {
                 message: get_string(data, "message")?,
             },
 
-            "SetColor" => SignalValue::SetColor {
+            "SetColor" => IntentValue::SetColor {
                 target: get_ids(data, "target")?,
                 rgba: get_value_as(data, "rgba")?,
             },
-            "SetText" => SignalValue::SetText {
+            "SetText" => IntentValue::SetText {
                 target: get_ids(data, "target")?,
                 text: get_string(data, "text")?,
             },
-            "SetPosition" => SignalValue::SetPosition {
+            "SetPosition" => IntentValue::SetPosition {
                 target: get_ids(data, "target")?,
                 position: get_value_as(data, "position")?,
             },
-            "SetTransform" => SignalValue::SetTransform {
+            "SetTransform" => IntentValue::SetTransform {
                 target: get_ids(data, "target")?,
                 translation: get_value_as(data, "translation")?,
                 rotation_quat_xyzw: get_value_as(data, "rotation_quat_xyzw")?,
                 scale: get_value_as(data, "scale")?,
             },
 
-            "Attach" => SignalValue::Attach {
+            "Attach" => IntentValue::Attach {
                 parents: get_ids(data, "parents")?,
                 child: get_id(data, "child")?,
             },
-            "AttachClone" => SignalValue::AttachClone {
+            "AttachClone" => IntentValue::AttachClone {
                 parents: get_ids(data, "parents")?,
                 prefab_root: get_id(data, "prefab_root")?,
             },
-            "Detach" => SignalValue::Detach {
+            "Detach" => IntentValue::Detach {
                 target: get_ids(data, "target")?,
             },
-            "RemoveChild" => SignalValue::RemoveChild {
+            "RemoveChild" => IntentValue::RemoveChild {
                 parents: get_ids(data, "parents")?,
                 index: get_value_as(data, "index")?,
             },
-            "RemoveChildren" => SignalValue::RemoveChildren {
+            "RemoveChildren" => IntentValue::RemoveChildren {
                 parents: get_ids(data, "parents")?,
             },
-            "RemoveSubtree" => SignalValue::RemoveSubtree {
+            "RemoveSubtree" => IntentValue::RemoveSubtree {
                 target: get_ids(data, "target")?,
             },
-            "AudioGraphRebuild" => SignalValue::AudioGraphRebuild {
+            "AudioGraphRebuild" => IntentValue::AudioGraphRebuild {
                 target: get_ids(data, "target")?,
             },
-            "RequestRaycast" => SignalValue::RequestRaycast {
+            "RequestRaycast" => IntentValue::RequestRaycast {
                 target: get_ids(data, "target")?,
             },
-            "AudioLowPassSetCutoffHz" => SignalValue::AudioLowPassSetCutoffHz {
+            "AudioLowPassSetCutoffHz" => IntentValue::AudioLowPassSetCutoffHz {
                 target: get_ids(data, "target")?,
                 cutoff_hz: get_value_as(data, "cutoff_hz")?,
             },
-            "AudioBandPassSetCenterHz" => SignalValue::AudioBandPassSetCenterHz {
+            "AudioBandPassSetCenterHz" => IntentValue::AudioBandPassSetCenterHz {
                 target: get_ids(data, "target")?,
                 center_hz: get_value_as(data, "center_hz")?,
             },
-            "OscillatorSetEnabled" => SignalValue::OscillatorSetEnabled {
+            "OscillatorSetEnabled" => IntentValue::OscillatorSetEnabled {
                 target: get_ids(data, "target")?,
                 enabled: get_value_as(data, "enabled")?,
             },
-            "OscillatorSetPitch" => SignalValue::OscillatorSetPitch {
+            "OscillatorSetPitch" => IntentValue::OscillatorSetPitch {
                 target: get_ids(data, "target")?,
                 frequency_hz: get_value_as(data, "frequency_hz")?,
             },
-            "OscillatorScheduleSetPitch" => SignalValue::OscillatorScheduleSetPitch {
+            "OscillatorScheduleSetPitch" => IntentValue::OscillatorScheduleSetPitch {
                 target: get_ids(data, "target")?,
                 beat_offset: get_value_as(data, "beat_offset")?,
                 beat_context: get_value_as(data, "beat_context")?,
                 frequency_hz: get_value_as(data, "frequency_hz")?,
             },
-            "OscillatorScheduleSetNote" => SignalValue::OscillatorScheduleSetNote {
+            "OscillatorScheduleSetNote" => IntentValue::OscillatorScheduleSetNote {
                 target: get_ids(data, "target")?,
                 beat_offset: get_value_as(data, "beat_offset")?,
                 beat_context: get_value_as(data, "beat_context")?,
@@ -334,13 +333,13 @@ impl Component for ActionComponent {
                 octave: get_value_as(data, "octave")?,
                 duration_beats: get_value_as(data, "duration_beats")?,
             },
-            "OscillatorScheduleMusicNote" => SignalValue::OscillatorScheduleMusicNote {
+            "OscillatorScheduleMusicNote" => IntentValue::OscillatorScheduleMusicNote {
                 target: get_ids(data, "target")?,
                 beat_offset: get_value_as(data, "beat_offset")?,
                 beat_context: get_value_as(data, "beat_context")?,
                 note: get_value_as(data, "note")?,
             },
-            "MusicSetNote" => SignalValue::MusicSetNote {
+            "MusicSetNote" => IntentValue::MusicSetNote {
                 target: get_ids(data, "target")?,
                 note: get_value_as(data, "note")?,
             },

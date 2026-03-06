@@ -3,7 +3,7 @@ use crate::engine::ecs::component::{
     TransformGizmoComponent, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
     TransformGizmoTranslateComponent,
 };
-use crate::engine::ecs::{CommandQueue, ComponentId, RxWorld, SignalValue, World};
+use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, World};
 use crate::engine::user_input::InputState;
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -30,7 +30,7 @@ impl TransformGizmoSystem {
         &mut self,
         world: &mut World,
         component: ComponentId,
-        queue: &mut CommandQueue,
+        emit: &mut dyn SignalEmitter,
     ) {
         use crate::engine::ecs::component::{
             OverlayComponent, TransformComponent, TransformGizmoAxis, TransformGizmoComponent,
@@ -383,7 +383,7 @@ impl TransformGizmoSystem {
         );
 
         // Init the subtree (queues renderable/transform/color registrations).
-        world.init_component_tree(gizmo_root, queue);
+        world.init_component_tree(gizmo_root, emit);
     }
 
     /// Resolve (gizmo, operation) for a hit renderable by walking up ancestry.
@@ -479,7 +479,7 @@ impl TransformGizmoSystem {
         &mut self,
         world: &mut World,
         _input: &InputState,
-        queue: &mut crate::engine::ecs::CommandQueue,
+        emit: &mut dyn SignalEmitter,
         rx: &mut RxWorld,
     ) {
         use crate::engine::ecs::system::transform_system::TransformSystem;
@@ -544,7 +544,7 @@ impl TransformGizmoSystem {
 
         fn spawn_debug_drag_plane(
             world: &mut World,
-            queue: &mut CommandQueue,
+            emit: &mut dyn SignalEmitter,
             hit_point: [f32; 3],
             plane_normal: [f32; 3],
         ) -> ComponentId {
@@ -598,15 +598,17 @@ impl TransformGizmoSystem {
             let _ = world.add_child(r, o);
             let _ = world.add_child(r, e);
 
-            world.init_component_tree(t, queue);
+            world.init_component_tree(t, emit);
             t
         }
 
         // If a gizmo was reparented (e.g. by EditorSystem selection), rebind its target transform.
-        for s in rx.signals().iter() {
-            let SignalValue::ParentChanged {
-                child, new_parent, ..
-            } = &s.value
+        for s in rx.frame_events().iter() {
+            let Some(EventSignal::ParentChanged {
+                child,
+                new_parent,
+                ..
+            }) = s.event.as_ref()
             else {
                 continue;
             };
@@ -641,13 +643,13 @@ impl TransformGizmoSystem {
         // GestureSystem emits DragStart after consuming RayIntersected, but both signals are
         // present in the same tick's RxWorld.
         let mut ray_dir_by_pair: HashMap<(ComponentId, ComponentId), [f32; 3]> = HashMap::new();
-        for s in rx.signals().iter() {
-            let SignalValue::RayIntersected {
+        for s in rx.frame_events().iter() {
+            let Some(EventSignal::RayIntersected {
                 raycaster,
                 renderable,
                 dir,
                 ..
-            } = &s.value
+            }) = s.event.as_ref()
             else {
                 continue;
             };
@@ -655,19 +657,22 @@ impl TransformGizmoSystem {
         }
 
         // Snapshot drag events first (avoid borrowing issues while mutating the world).
-        let mut drag_events: Vec<SignalValue> = Vec::new();
-        for s in rx.signals().iter() {
-            match &s.value {
-                SignalValue::DragStart { .. }
-                | SignalValue::DragMove { .. }
-                | SignalValue::DragEnd { .. } => drag_events.push(s.value.clone()),
+        let mut drag_events: Vec<EventSignal> = Vec::new();
+        for s in rx.frame_events().iter() {
+            let Some(ev) = s.event.as_ref() else {
+                continue;
+            };
+            match ev {
+                EventSignal::DragStart { .. }
+                | EventSignal::DragMove { .. }
+                | EventSignal::DragEnd { .. } => drag_events.push(ev.clone()),
                 _ => {}
             }
         }
 
         for ev in drag_events {
             match ev {
-                SignalValue::DragStart {
+                EventSignal::DragStart {
                     raycaster,
                     renderable,
                     hit_point,
@@ -690,12 +695,15 @@ impl TransformGizmoSystem {
                     }
 
                     if let Some(root) = old_debug_root {
-                        queue.remove_subtree(root);
+                        emit.push_intent_now(
+                            root,
+                            IntentValue::RemoveSubtree { target: vec![root] },
+                        );
                     }
 
                     if debug_drag_plane_enabled() {
                         if let Some(dir) = ray_dir_by_pair.get(&(raycaster, renderable)).copied() {
-                            let plane_root = spawn_debug_drag_plane(world, queue, hit_point, dir);
+                            let plane_root = spawn_debug_drag_plane(world, emit, hit_point, dir);
                             if let Some(g) = world
                                 .get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid)
                             {
@@ -704,7 +712,7 @@ impl TransformGizmoSystem {
                         }
                     }
                 }
-                SignalValue::DragMove {
+                EventSignal::DragMove {
                     raycaster,
                     renderable,
                     delta_world,
@@ -748,7 +756,7 @@ impl TransformGizmoSystem {
 
                             let cur = t.transform.translation;
                             let next = add(cur, delta);
-                            t.set_position(queue, next[0], next[1], next[2]);
+                            t.set_position(emit, next[0], next[1], next[2]);
                         }
                         TransformGizmoOp::Rotate(axis) => {
                             let coord_type =
@@ -800,7 +808,7 @@ impl TransformGizmoSystem {
                                 };
                                 let q_delta = math::quat_from_axis_angle(axis_v, angle);
                                 let q_next = math::quat_mul(q_delta, t.transform.rotation);
-                                t.set_rotation_quat(queue, q_next);
+                                t.set_rotation_quat(emit, q_next);
                             }
                         }
                         TransformGizmoOp::Scale(axis) => {
@@ -818,11 +826,11 @@ impl TransformGizmoSystem {
                                 TransformGizmoAxis::Y => s[1] = (s[1] + d).max(0.001),
                                 TransformGizmoAxis::Z => s[2] = (s[2] + d).max(0.001),
                             }
-                            t.set_scale(queue, s[0], s[1], s[2]);
+                            t.set_scale(emit, s[0], s[1], s[2]);
                         }
                     }
                 }
-                SignalValue::DragEnd {
+                EventSignal::DragEnd {
                     raycaster,
                     renderable,
                     ..
@@ -842,7 +850,10 @@ impl TransformGizmoSystem {
 
                         if debug_drag_plane_enabled() {
                             if let Some(root) = g.debug_drag_plane_root.take() {
-                                queue.remove_subtree(root);
+                                emit.push_intent_now(
+                                    root,
+                                    IntentValue::RemoveSubtree { target: vec![root] },
+                                );
                             }
                         }
                     }

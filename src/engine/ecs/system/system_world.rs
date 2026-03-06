@@ -18,7 +18,7 @@ use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::TransformSystem;
-use crate::engine::ecs::system::{ActionSystem, AnimationSystem, AudioSystem};
+use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
 use crate::engine::ecs::system::{EditorSystem, GestureSystem, TransformGizmoSystem};
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
@@ -32,7 +32,6 @@ pub struct SystemWorld {
     pub audio: AudioSystem,
     pub music: MusicSystem,
     pub animation: AnimationSystem,
-    pub action: ActionSystem,
 
     pub transform: TransformSystem,
     pub bvh: BvhSystem,
@@ -61,16 +60,80 @@ pub struct SystemWorld {
 }
 
 impl SystemWorld {
+    fn remove_subtree_immediate(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        root: ComponentId,
+    ) {
+        use crate::engine::ecs::component::{
+            CollisionComponent, ControllerXRComponent, KineticResponseComponent, RayCastComponent,
+            RenderableComponent, TransformComponent,
+        };
+
+        // Best-effort: remove system state for known component types before deleting.
+        let mut stack = vec![root];
+        let mut nodes = Vec::new();
+        while let Some(n) = stack.pop() {
+            nodes.push(n);
+            for &ch in world.children_of(n) {
+                stack.push(ch);
+            }
+        }
+
+        for n in nodes.iter().copied().rev() {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(n)
+                .is_some()
+            {
+                self.remove_renderable(world, visuals, n);
+            }
+            if world
+                .get_component_by_id_as::<CollisionComponent>(n)
+                .is_some()
+            {
+                self.remove_collision(world, visuals, n);
+            }
+            if world
+                .get_component_by_id_as::<KineticResponseComponent>(n)
+                .is_some()
+            {
+                self.remove_kinetic_response(world, visuals, n);
+            }
+            if world
+                .get_component_by_id_as::<RayCastComponent>(n)
+                .is_some()
+            {
+                self.remove_raycast(world, visuals, n);
+            }
+            if world
+                .get_component_by_id_as::<ControllerXRComponent>(n)
+                .is_some()
+            {
+                self.remove_controller_xr(world, visuals, n);
+            }
+            if world
+                .get_component_by_id_as::<TransformComponent>(n)
+                .is_some()
+            {
+                self.remove_transform(world, visuals, n);
+            }
+        }
+
+        let _ = world.remove_component_subtree(root);
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Execute pending signals up to `max_signals`.
     ///
-    /// For each signal:
-    /// - If `signal.kind() == SignalKind::Action`, run the engine's default executor for
-    ///   action/command signals (Register/Remove/Update/etc).
-    /// - Then, dispatch handlers as observers.
+    /// Semantics:
+    /// - Events are dispatched to handlers first.
+    /// - Intents are then executed.
+    /// - Intents emitted by event handlers run later in the same tick.
+    /// - Events emitted by event handlers are deferred to the next tick.
     pub fn process_signals(
         &mut self,
         world: &mut World,
@@ -80,73 +143,183 @@ impl SystemWorld {
     ) -> usize {
         let mut processed = 0usize;
 
-        // Drain locally-queued mutation signals into `RxWorld` before we start.
+        let mut intent_executor = crate::engine::ecs::rx::RxIntentExecutor::default();
+
+        // Drain locally-queued signals into `RxWorld` before we start.
         let _ = queue.drain_into_rx(&mut self.rx);
 
-        // Timed holding-pen: promote any pending signals that are now due.
+        // Timed holding-pen: promote any pending intents that are now due.
         let now_beat = self.clock.beat_now();
-        let _ = self.rx.promote_due_signals(now_beat);
+        let _ = self.rx.promote_due_intents(now_beat);
 
         loop {
             if processed >= max_signals {
                 break;
             }
 
-            let Some(env) = self.rx.take_next_undispatched() else {
-                // If the executor queued more mutation signals during processing, drain them
-                // into `RxWorld` and continue.
-                if queue.drain_into_rx(&mut self.rx) > 0 {
-                    continue;
+            // 1) Dispatch all ready events.
+            let events = self.rx.drain_ready_events();
+            if !events.is_empty() {
+                let mut leftover = Vec::new();
+                for env in events {
+                    if processed >= max_signals {
+                        leftover.push(env);
+                        continue;
+                    }
+                    processed += 1;
+                    self.rx.dispatch_event_handlers(world, &env);
                 }
-
-                // If handlers scheduled additional timed signals that are already due at
-                // this beat, promote them and continue draining.
-                if self.rx.promote_due_signals(now_beat) > 0 {
-                    continue;
+                if !leftover.is_empty() {
+                    self.rx.requeue_ready_events(leftover);
+                    return processed;
                 }
-                break;
-            };
-
-            processed += 1;
-
-            if env.kind() == crate::engine::ecs::SignalKind::Action {
-                self.execute_action_signal(world, visuals, queue, &env);
             }
 
-            // Handlers observe after the default executor.
-            self.rx.dispatch_handlers(world, &env);
+            // 2) Promote any newly-due timed intents.
+            let _ = self.rx.promote_due_intents(now_beat);
+
+            // 3) Execute all ready intents.
+            let intents = self.rx.drain_ready_intents();
+            if !intents.is_empty() {
+                let mut leftover = Vec::new();
+                for env in intents {
+                    if processed >= max_signals {
+                        leftover.push(env);
+                        continue;
+                    }
+                    processed += 1;
+
+                    let Some(intent) = env.intent.as_ref() else {
+                        continue;
+                    };
+
+                    if crate::engine::ecs::rx::RxIntentExecutor::handles_value(&intent.value) {
+                        // Emit follow-up intent work directly into the per-frame queue to avoid
+                        // borrowing `self.rx` while also mutably borrowing `self`.
+                        intent_executor.execute(world, queue, &env);
+                    } else {
+                        self.execute_intent_signal(world, visuals, queue, &env);
+                    }
+                }
+                if !leftover.is_empty() {
+                    self.rx.requeue_ready_intents(leftover);
+                    return processed;
+                }
+            }
+
+            // If the executor queued more signals during processing, drain them and continue.
+            if queue.drain_into_rx(&mut self.rx) > 0 {
+                continue;
+            }
+
+            // If timed intents became due, keep going.
+            if self.rx.promote_due_intents(now_beat) > 0 {
+                continue;
+            }
+
+            // If new ready work was produced (unlikely without queue drain), keep draining.
+            if self.rx.has_ready_events() || self.rx.has_ready_intents() {
+                continue;
+            }
+
+            break;
         }
 
         processed
     }
 
-    fn execute_action_signal(
+    fn execute_intent_signal(
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
-        queue: &mut crate::engine::ecs::CommandQueue,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
         env: &crate::engine::ecs::Signal,
     ) {
-        use crate::engine::ecs::SignalValue;
+        use crate::engine::ecs::{EventSignal, IntentValue};
         use crate::engine::ecs::component::{
-            CollisionComponent, ControllerXRComponent, KineticResponseComponent, RayCastComponent,
             RenderableComponent, TextComponent, TransformComponent,
         };
         use crate::engine::ecs::system::audio_system::AudioOp;
         use crate::engine::graphics::primitives::Transform;
 
-        match &env.value {
-            SignalValue::RegisterRenderable { component } => {
+        fn collect_text_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {
+            if world
+                .get_component_by_id_as::<TextComponent>(target)
+                .is_some()
+            {
+                out.push(target);
+                return;
+            }
+
+            let mut stack = vec![target];
+            while let Some(node) = stack.pop() {
+                for &ch in world.children_of(node) {
+                    stack.push(ch);
+                }
+
+                if world
+                    .get_component_by_id_as::<TextComponent>(node)
+                    .is_some()
+                {
+                    out.push(node);
+                }
+            }
+        }
+
+        fn apply_set_text_to_component(
+            this: &mut SystemWorld,
+            world: &mut World,
+            visuals: &mut VisualWorld,
+            emit: &mut dyn crate::engine::ecs::SignalEmitter,
+            component: ComponentId,
+            text: &String,
+        ) {
+            // Update text payload and force a rebuild.
+            if let Some(tc) = world.get_component_by_id_as_mut::<TextComponent>(component) {
+                tc.text = text.clone();
+                tc.mark_unbuilt();
+
+                // Best-effort: delete glyph transform children (keep style components).
+                let children: Vec<ComponentId> = world.children_of(component).to_vec();
+                for ch in children {
+                    if world
+                        .get_component_by_id_as::<TransformComponent>(ch)
+                        .is_none()
+                    {
+                        continue;
+                    }
+
+                    let has_renderable_child = world.children_of(ch).iter().any(|&gch| {
+                        world
+                            .get_component_by_id_as::<RenderableComponent>(gch)
+                            .is_some()
+                    });
+                    if has_renderable_child {
+                        // This is very likely a glyph root.
+                        this.remove_subtree_immediate(world, visuals, ch);
+                    }
+                }
+            }
+
+            this.register_text(world, visuals, component, emit);
+        }
+
+        let Some(intent) = env.intent.as_ref() else {
+            return;
+        };
+
+        match &intent.value {
+            IntentValue::RegisterRenderable { component } => {
                 self.register_renderable(world, visuals, *component);
             }
-            SignalValue::RemoveRenderable { component } => {
+            IntentValue::RemoveRenderable { component } => {
                 self.remove_renderable(world, visuals, *component);
             }
 
-            SignalValue::RegisterTransform { component } => {
+            IntentValue::RegisterTransform { component } => {
                 self.transform_changed(world, visuals, *component);
             }
-            SignalValue::UpdateTransform {
+            IntentValue::UpdateTransform {
                 component,
                 translation,
                 rotation_quat_xyzw,
@@ -159,215 +332,166 @@ impl SystemWorld {
                 t.recompute_model();
                 self.update_transform(world, visuals, *component, t);
             }
-            SignalValue::RemoveTransform { component } => {
+            IntentValue::RemoveTransform { component } => {
                 self.remove_transform(world, visuals, *component);
             }
 
-            SignalValue::RegisterCamera3d { component } => {
+            IntentValue::RegisterCamera3d { component } => {
                 self.register_camera(world, visuals, *component);
             }
-            SignalValue::RegisterCamera2d { component } => {
+            IntentValue::RegisterCamera2d { component } => {
                 self.register_camera2d(world, visuals, *component);
             }
-            SignalValue::MakeActiveCamera { component } => {
+            IntentValue::MakeActiveCamera { component } => {
                 self.make_active_camera(world, visuals, *component);
             }
 
-            SignalValue::RegisterInput { component } => {
+            IntentValue::RegisterInput { component } => {
                 self.register_input(*component);
             }
-            SignalValue::RegisterUv { component } => {
+            IntentValue::RegisterUv { component } => {
                 self.register_uv(world, visuals, *component);
             }
 
-            SignalValue::RegisterLight { component } => {
+            IntentValue::RegisterLight { component } => {
                 self.register_light(world, visuals, *component);
             }
-            SignalValue::RegisterColor { component } => {
+            IntentValue::RegisterColor { component } => {
                 self.register_color(world, visuals, *component);
             }
-            SignalValue::RegisterOpacity { component } => {
+            IntentValue::RegisterOpacity { component } => {
                 self.register_opacity(world, visuals, *component);
             }
-            SignalValue::RegisterTransparentCutout { component } => {
+            IntentValue::RegisterTransparentCutout { component } => {
                 self.register_transparent_cutout(world, visuals, *component);
             }
-            SignalValue::RegisterBackgroundColor { component } => {
+            IntentValue::RegisterBackgroundColor { component } => {
                 self.register_background_color(world, visuals, *component);
             }
-            SignalValue::RegisterAmbientLight { component } => {
+            IntentValue::RegisterAmbientLight { component } => {
                 self.register_ambient_light(world, visuals, *component);
             }
-            SignalValue::RegisterEmissive { component } => {
+            IntentValue::RegisterEmissive { component } => {
                 self.register_emissive(world, visuals, *component);
             }
-            SignalValue::RegisterLightQuantization { component } => {
+            IntentValue::RegisterLightQuantization { component } => {
                 self.register_light_quantization(world, visuals, *component);
             }
 
-            SignalValue::RegisterTexture { component } => {
+            IntentValue::RegisterTexture { component } => {
                 self.register_texture(world, visuals, *component);
             }
-            SignalValue::RegisterTextureFiltering { component } => {
+            IntentValue::RegisterTextureFiltering { component } => {
                 self.register_texture_filtering(world, visuals, *component);
             }
 
-            SignalValue::RegisterText { component } => {
-                self.register_text(world, visuals, *component, queue);
+            IntentValue::RegisterText { component } => {
+                self.register_text(world, visuals, *component, emit);
             }
-            SignalValue::SetTextImmediate { component, text } => {
-                // Update text payload and force a rebuild.
-                if let Some(tc) = world.get_component_by_id_as_mut::<TextComponent>(*component) {
-                    tc.text = text.clone();
-                    tc.mark_unbuilt();
-
-                    // Best-effort: delete glyph transform children (keep style components).
-                    let children: Vec<ComponentId> = world.children_of(*component).to_vec();
-                    for ch in children {
-                        if world
-                            .get_component_by_id_as::<TransformComponent>(ch)
-                            .is_none()
-                        {
-                            continue;
-                        }
-
-                        let has_renderable_child = world.children_of(ch).iter().any(|&gch| {
-                            world
-                                .get_component_by_id_as::<RenderableComponent>(gch)
-                                .is_some()
-                        });
-                        if has_renderable_child {
-                            // This is very likely a glyph root.
-                            let _ = world.remove_component_subtree(ch);
-                        }
-                    }
+            IntentValue::SetText { target, text } => {
+                let mut text_cids = Vec::new();
+                for &t in target.iter() {
+                    collect_text_targets(world, t, &mut text_cids);
                 }
+                text_cids.sort();
+                text_cids.dedup();
 
-                self.register_text(world, visuals, *component, queue);
+                for text_cid in text_cids {
+                    apply_set_text_to_component(self, world, visuals, emit, text_cid, text);
+                }
             }
 
-            SignalValue::RegisterCollision { component } => {
+            IntentValue::RegisterCollision { component } => {
                 self.register_collision(world, visuals, *component);
             }
-            SignalValue::RemoveCollision { component } => {
+            IntentValue::RemoveCollision { component } => {
                 self.remove_collision(world, visuals, *component);
             }
-            SignalValue::RegisterKineticResponse { component } => {
+            IntentValue::RegisterKineticResponse { component } => {
                 self.register_kinetic_response(world, visuals, *component);
             }
-            SignalValue::RemoveKineticResponse { component } => {
+            IntentValue::RemoveKineticResponse { component } => {
                 self.remove_kinetic_response(world, visuals, *component);
             }
 
-            SignalValue::RemoveSubtreeImmediate { root } => {
-                // Best-effort: remove system state for known component types before deleting.
-                let mut stack = vec![*root];
-                let mut nodes = Vec::new();
-                while let Some(n) = stack.pop() {
-                    nodes.push(n);
-                    for &ch in world.children_of(n) {
-                        stack.push(ch);
+            IntentValue::RemoveSubtree { target } => {
+                let mut roots: Vec<ComponentId> = target.iter().copied().collect();
+                roots.sort();
+                roots.dedup();
+                for root in roots {
+                    // Best-effort: if the root is still attached, detach it first and publish
+                    // a topology fact before deletion.
+                    if let Some(old_parent) = world.parent_of(root) {
+                        world.detach_from_parent(root);
+                        emit.push_event(
+                            root,
+                            EventSignal::ParentChanged {
+                                child: root,
+                                old_parent: Some(old_parent),
+                                new_parent: None,
+                            },
+                        );
                     }
+                    self.remove_subtree_immediate(world, visuals, root);
                 }
-
-                for n in nodes.iter().copied().rev() {
-                    if world
-                        .get_component_by_id_as::<RenderableComponent>(n)
-                        .is_some()
-                    {
-                        self.remove_renderable(world, visuals, n);
-                    }
-                    if world
-                        .get_component_by_id_as::<CollisionComponent>(n)
-                        .is_some()
-                    {
-                        self.remove_collision(world, visuals, n);
-                    }
-                    if world
-                        .get_component_by_id_as::<KineticResponseComponent>(n)
-                        .is_some()
-                    {
-                        self.remove_kinetic_response(world, visuals, n);
-                    }
-                    if world
-                        .get_component_by_id_as::<RayCastComponent>(n)
-                        .is_some()
-                    {
-                        self.remove_raycast(world, visuals, n);
-                    }
-                    if world
-                        .get_component_by_id_as::<ControllerXRComponent>(n)
-                        .is_some()
-                    {
-                        self.remove_controller_xr(world, visuals, n);
-                    }
-                    if world
-                        .get_component_by_id_as::<TransformComponent>(n)
-                        .is_some()
-                    {
-                        self.remove_transform(world, visuals, n);
-                    }
-                }
-
-                let _ = world.remove_component_subtree(*root);
             }
 
-            SignalValue::RegisterOpenxr { component } => {
+            IntentValue::RegisterOpenxr { component } => {
                 self.register_openxr(world, visuals, *component);
             }
-            SignalValue::RegisterControllerXr { component } => {
+            IntentValue::RegisterControllerXr { component } => {
                 self.register_controller_xr(world, visuals, *component);
             }
-            SignalValue::RemoveControllerXr { component } => {
+            IntentValue::RemoveControllerXr { component } => {
                 self.remove_controller_xr(world, visuals, *component);
             }
 
-            SignalValue::RegisterRaycast { component } => {
+            IntentValue::RegisterRaycast { component } => {
                 self.register_raycast(world, visuals, *component);
             }
-            SignalValue::RemoveRaycast { component } => {
+            IntentValue::RemoveRaycast { component } => {
                 self.remove_raycast(world, visuals, *component);
             }
 
-            SignalValue::RegisterAnimation { component } => {
+            IntentValue::RegisterAnimation { component } => {
                 self.register_animation(world, visuals, *component);
             }
-            SignalValue::RegisterKeyframe { component } => {
+            IntentValue::RegisterKeyframe { component } => {
                 self.register_keyframe(world, visuals, *component);
             }
 
-            SignalValue::RegisterAudioOutput { component } => {
+            IntentValue::RegisterAudioOutput { component } => {
                 self.register_audio_output(world, visuals, *component);
             }
-            SignalValue::AudioGraphDirtyImmediate { component } => {
+            IntentValue::AudioGraphDirtyImmediate { component } => {
                 self.audio_graph_dirty(world, visuals, *component);
             }
-            SignalValue::RegisterAudioOscillator { component } => {
+            IntentValue::RegisterAudioOscillator { component } => {
                 self.register_audio_oscillator(world, visuals, *component);
             }
-            SignalValue::RegisterAudioBufferSize { component } => {
+            IntentValue::RegisterAudioBufferSize { component } => {
                 self.register_audio_buffer_size(world, visuals, *component);
             }
 
-            SignalValue::RegisterClock { component } => {
+            IntentValue::RegisterClock { component } => {
                 self.register_clock(world, visuals, *component);
             }
 
-            SignalValue::RegisterTransformGizmo { component } => {
-                self.register_transform_gizmo(world, visuals, *component, queue);
+            IntentValue::RegisterTransformGizmo { component } => {
+                self.register_transform_gizmo(world, visuals, *component, emit);
             }
 
-            SignalValue::ScheduleAudioOp {
+            IntentValue::ScheduleAudioOp {
                 component,
                 beat,
                 op,
             } => {
                 self.audio.schedule_audio_op(*component, *beat, *op);
             }
-            SignalValue::ScheduleAudioGraphSwap { component, beat } => {
+            IntentValue::ScheduleAudioGraphSwap { component, beat } => {
                 self.audio.schedule_graph_swap(&*world, *component, *beat);
             }
-            SignalValue::ScheduleAudioPitchSetHz {
+            IntentValue::ScheduleAudioPitchSetHz {
                 component,
                 beat,
                 frequency_hz,
@@ -375,7 +499,7 @@ impl SystemWorld {
                 self.audio
                     .schedule_audio_op(*component, *beat, AudioOp::SetHz(*frequency_hz));
             }
-            SignalValue::ScheduleAudioOscillatorEnabled {
+            IntentValue::ScheduleAudioOscillatorEnabled {
                 component,
                 beat,
                 enabled,
@@ -383,7 +507,7 @@ impl SystemWorld {
                 self.audio
                     .schedule_audio_op(*component, *beat, AudioOp::SetEnabled(*enabled));
             }
-            SignalValue::ScheduleAudioGainSet {
+            IntentValue::ScheduleAudioGainSet {
                 component,
                 beat,
                 gain,
@@ -405,10 +529,10 @@ impl SystemWorld {
         world: &mut World,
         _visuals: &mut VisualWorld,
         component: ComponentId,
-        queue: &mut crate::engine::ecs::CommandQueue,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
     ) {
         self.transform_gizmo
-            .register_transform_gizmo(world, component, queue);
+            .register_transform_gizmo(world, component, emit);
     }
 
     /// Register a RenderableComponent instance with the RenderableSystem.
@@ -531,13 +655,13 @@ impl SystemWorld {
         world: &mut World,
         visuals: &mut VisualWorld,
         component: ComponentId,
-        queue: &mut crate::engine::ecs::CommandQueue,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
     ) {
         let _spawned = self.text.register_text(world, visuals, component);
 
         // Initialize any newly spawned glyph/background subtrees.
         // This is idempotent: nodes that were already initialized are skipped.
-        world.init_component_tree(component, queue);
+        world.init_component_tree(component, emit);
     }
 
     /// Register an EmissiveComponent and apply it to its ancestor RenderableComponent.
@@ -942,7 +1066,6 @@ impl SystemWorld {
         // Handlers are installed once; per-frame caches are reset here.
         self.rx.begin_frame();
         self.gesture.install_handlers(&mut self.rx);
-        self.action.install_handlers(&mut self.rx);
         self.editor.install_handlers(&mut self.rx);
         self.gesture.begin_frame();
 
@@ -965,10 +1088,6 @@ impl SystemWorld {
         }
 
         self.clock.tick(world, visuals, input, dt_sec);
-
-        // Provide a per-frame beat context to any signal handlers that need it (e.g. ActionSystem
-        // scheduling audio ops).
-        queue.set_transport(self.clock.beat_now(), self.clock.bpm());
 
         // Provide tempo + transport to the audio thread scheduler.
         // ClockSystem may be using AudioClockDriver, so this keeps both timelines aligned.
@@ -1023,7 +1142,6 @@ impl SystemWorld {
             world,
             visuals,
             input,
-            queue,
             &mut self.rx,
             &self.bvh,
             dt_sec,
@@ -1067,10 +1185,6 @@ impl SystemWorld {
         // Drain-point: ensure any remaining undispatched signals get handled.
         // This covers signals emitted after the last explicit dispatch point.
         let _ = self.process_signals(world, visuals, commands, 100_000);
-
-        // Clear per-frame signals.
-        let _ = self.rx.drain();
-        self.rx.begin_frame();
 
         // Signal handlers may have queued commands (e.g. register_color). Apply them now so
         // the effects are visible this frame.

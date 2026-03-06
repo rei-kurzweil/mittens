@@ -42,10 +42,10 @@ impl Component for AudioBufferSizeComponent {
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         if self.frames > 0 {
-            emit.push(
-                component,
-                crate::engine::ecs::SignalValue::RegisterAudioBufferSize { component },
-            );
+                emit.push_intent_now(
+                    component,
+                    crate::engine::ecs::IntentValue::RegisterAudioBufferSize { component },
+                );
         }
     }
 

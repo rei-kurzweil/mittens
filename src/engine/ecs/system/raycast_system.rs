@@ -7,7 +7,7 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
-use crate::engine::ecs::{RxWorld, SignalValue};
+use crate::engine::ecs::{EventSignal, RxWorld};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::{CpuMeshHandle, TransformMatrix};
 use crate::engine::user_input::InputState;
@@ -911,7 +911,6 @@ impl RayCastSystem {
         world: &mut World,
         visuals: &mut VisualWorld,
         input: &InputState,
-        queue: &mut crate::engine::ecs::CommandQueue,
         rx: &mut RxWorld,
         bvh: &BvhSystem,
         _dt_sec: f32,
@@ -1035,9 +1034,9 @@ impl RayCastSystem {
                 if let Some((hit_cid, t)) = hit {
                     // Scope the interaction to the intersected renderable so listeners can
                     // subscribe at any ancestor (e.g. a ring root transform).
-                    rx.push(
+                    rx.push_event(
                         hit_cid,
-                        SignalValue::RayIntersected {
+                        EventSignal::RayIntersected {
                             raycaster: rcid,
                             renderable: hit_cid,
                             t,
@@ -1091,6 +1090,5 @@ impl RayCastSystem {
             }
         }
 
-        let _ = queue; // raycast is read-only; queue is unused but kept for signature stability.
     }
 }

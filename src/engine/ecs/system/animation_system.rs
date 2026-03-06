@@ -5,7 +5,7 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::animation_system_evaluator::AnimationEvaluator;
-use crate::engine::ecs::{ComponentId, RxWorld, SignalValue, World};
+use crate::engine::ecs::{ComponentId, IntentValue, RxWorld, SignalEmitter, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 
@@ -231,13 +231,13 @@ impl AnimationSystem {
 
                         let mut signal = action_comp.signal.clone();
                         match &mut signal {
-                            SignalValue::OscillatorScheduleSetPitch { beat_context, .. }
-                            | SignalValue::OscillatorScheduleSetNote { beat_context, .. }
-                            | SignalValue::OscillatorScheduleMusicNote { beat_context, .. } => {
+                            IntentValue::OscillatorScheduleSetPitch { beat_context, .. }
+                            | IntentValue::OscillatorScheduleSetNote { beat_context, .. }
+                            | IntentValue::OscillatorScheduleMusicNote { beat_context, .. } => {
                                 // For lookahead, use the keyframe's intended global beat as
                                 // the scheduling context (so beat_offset is relative to kf beat).
                                 *beat_context = Some(kf_global_beat);
-                                rx.push(action_cid, signal);
+                                rx.push_intent_now(action_cid, signal);
                             }
                             _ => {
                                 // Non-audio-scheduled actions must not run in lookahead
@@ -304,25 +304,25 @@ impl AnimationSystem {
                             == Some(runtime.audio_cycle)
                         {
                             match action_comp.signal {
-                                SignalValue::OscillatorScheduleSetPitch { .. }
-                                | SignalValue::OscillatorScheduleSetNote { .. }
-                                | SignalValue::OscillatorScheduleMusicNote { .. } => continue,
+                                IntentValue::OscillatorScheduleSetPitch { .. }
+                                | IntentValue::OscillatorScheduleSetNote { .. }
+                                | IntentValue::OscillatorScheduleMusicNote { .. } => continue,
                                 _ => {}
                             };
                         }
 
                         let mut signal = action_comp.signal.clone();
                         match &mut signal {
-                            SignalValue::OscillatorScheduleSetPitch { beat_context, .. }
-                            | SignalValue::OscillatorScheduleSetNote { beat_context, .. }
-                            | SignalValue::OscillatorScheduleMusicNote { beat_context, .. } => {
+                            IntentValue::OscillatorScheduleSetPitch { beat_context, .. }
+                            | IntentValue::OscillatorScheduleSetNote { beat_context, .. }
+                            | IntentValue::OscillatorScheduleMusicNote { beat_context, .. } => {
                                 // Real-time execution uses the current beat as context.
                                 *beat_context = Some(beat_now);
                             }
                             _ => {}
                         };
 
-                        rx.push(action_cid, signal);
+                        rx.push_intent_now(action_cid, signal);
                     }
 
                     if !saw_any_action {

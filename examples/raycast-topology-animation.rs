@@ -48,9 +48,9 @@ fn ensure_emissive_on(
 
     let emissive_cid = world.register(engine::ecs::component::EmissiveComponent::on());
     let _ = world.add_child(renderable_cid, emissive_cid);
-    emit.push(
+    emit.push_intent_now(
         emissive_cid,
-        engine::ecs::SignalValue::RegisterEmissive {
+        engine::ecs::IntentValue::RegisterEmissive {
             component: emissive_cid,
         },
     );
@@ -61,8 +61,8 @@ fn ring_a_handler(
     emit: &mut dyn engine::ecs::SignalEmitter,
     env: &engine::ecs::Signal,
 ) {
-    match &env.value {
-        engine::ecs::SignalValue::RayIntersected { renderable, .. } => {
+    match env.event.as_ref() {
+        Some(engine::ecs::EventSignal::RayIntersected { renderable, .. }) => {
             println!(
                 "[ring_a_handler] fired scope={:?} renderable={:?}",
                 env.scope, renderable
@@ -70,9 +70,9 @@ fn ring_a_handler(
 
             ensure_emissive_on(world, emit, *renderable);
 
-            emit.push(
+            emit.push_intent_now(
                 env.scope,
-                engine::ecs::SignalValue::SetColor {
+                engine::ecs::IntentValue::SetColor {
                     target: vec![*renderable],
                     rgba: [1.0, 1.0, 0.0, 1.0],
                 },
@@ -87,8 +87,8 @@ fn ring_b_handler(
     emit: &mut dyn engine::ecs::SignalEmitter,
     env: &engine::ecs::Signal,
 ) {
-    match &env.value {
-        engine::ecs::SignalValue::RayIntersected { renderable, .. } => {
+    match env.event.as_ref() {
+        Some(engine::ecs::EventSignal::RayIntersected { renderable, .. }) => {
             println!(
                 "[ring_b_handler] fired scope={:?} renderable={:?}",
                 env.scope, renderable
@@ -96,9 +96,9 @@ fn ring_b_handler(
 
             ensure_emissive_on(world, emit, *renderable);
 
-            emit.push(
+            emit.push_intent_now(
                 env.scope,
-                engine::ecs::SignalValue::SetColor {
+                engine::ecs::IntentValue::SetColor {
                     target: vec![*renderable],
                     rgba: [0.0, 1.0, 1.0, 1.0],
                 },
@@ -299,7 +299,7 @@ fn main() {
         let act0 = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::SignalValue::Attach {
+                engine::ecs::IntentValue::Attach {
                     parents: vec![anchor_a],
                     child: raycaster,
                 },
@@ -314,7 +314,7 @@ fn main() {
         let act4 = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::SignalValue::Attach {
+                engine::ecs::IntentValue::Attach {
                     parents: vec![anchor_b],
                     child: raycaster,
                 },
@@ -329,7 +329,7 @@ fn main() {
         let noop = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::SignalValue::Noop,
+                engine::ecs::IntentValue::Noop,
             ));
         let _ = universe.attach(kf7, noop);
         let _ = universe.attach(anim_global, kf7);
@@ -366,7 +366,7 @@ fn main() {
         // Anchor A rotation: smooth yaw.
         let yaw_a = t * std::f32::consts::TAU;
         let a_set =
-            engine::ecs::component::ActionComponent::new(engine::ecs::SignalValue::SetTransform {
+            engine::ecs::component::ActionComponent::new(engine::ecs::IntentValue::SetTransform {
                 target: vec![anchor_a],
                 translation: [0.0, 1.0, 0.0],
                 rotation_quat_xyzw: quat_from_yaw(yaw_a),
@@ -380,7 +380,7 @@ fn main() {
         let pitch_b = (t * std::f32::consts::TAU).sin() * 0.35;
         let rot_b = quat_mul(quat_from_yaw(yaw_b), quat_from_pitch(pitch_b));
         let b_set =
-            engine::ecs::component::ActionComponent::new(engine::ecs::SignalValue::SetTransform {
+            engine::ecs::component::ActionComponent::new(engine::ecs::IntentValue::SetTransform {
                 target: vec![anchor_b],
                 translation: [0.0, 2.2, 0.0],
                 rotation_quat_xyzw: rot_b,
@@ -395,7 +395,7 @@ fn main() {
             let act = universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::SignalValue::RequestRaycast {
+                    engine::ecs::IntentValue::RequestRaycast {
                         target: vec![raycaster],
                     },
                 ));
@@ -407,7 +407,7 @@ fn main() {
             let act = universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::SignalValue::RequestRaycast {
+                    engine::ecs::IntentValue::RequestRaycast {
                         target: vec![raycaster],
                     },
                 ));

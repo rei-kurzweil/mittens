@@ -4,7 +4,7 @@ This doc proposes unifying “actions” and “events” into **one signal stre
 
 This is a **design sketch only**: no code changes.
 
-Prerequisite: the immediate-mode signal graph proposal in `docs/refactors/immediate-mode-signal-graph.md`.
+Prerequisite: read `docs/signals.md` (current design + drain-point execution model).
 
 
 ## Motivation

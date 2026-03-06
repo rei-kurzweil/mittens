@@ -265,7 +265,7 @@ fn main() {
         let kick = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::SignalValue::OscillatorScheduleMusicNote {
+                engine::ecs::IntentValue::OscillatorScheduleMusicNote {
                     target: vec![osc_drum_comp],
                     beat_offset: 0.0,
                     beat_context: None,
@@ -276,7 +276,7 @@ fn main() {
         let noise = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::SignalValue::OscillatorScheduleMusicNote {
+                engine::ecs::IntentValue::OscillatorScheduleMusicNote {
                     target: vec![osc_noise_comp],
                     beat_offset: 0.5,
                     beat_context: None,
@@ -295,7 +295,7 @@ fn main() {
             universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::SignalValue::SetColor {
+                    engine::ecs::IntentValue::SetColor {
                         target: vec![kick_timeline_root],
                         rgba: kick_dark,
                     },
@@ -304,7 +304,7 @@ fn main() {
             universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::SignalValue::SetColor {
+                    engine::ecs::IntentValue::SetColor {
                         target: vec![noise_timeline_root],
                         rgba: noise_dark,
                     },
@@ -337,7 +337,7 @@ fn main() {
             universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::SignalValue::SetColor {
+                    engine::ecs::IntentValue::SetColor {
                         target: vec![kick_cube],
                         rgba: kick_bright,
                     },
@@ -346,7 +346,7 @@ fn main() {
             universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::SignalValue::SetColor {
+                    engine::ecs::IntentValue::SetColor {
                         target: vec![noise_cube],
                         rgba: noise_bright,
                     },

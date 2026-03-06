@@ -288,7 +288,7 @@ impl InputSystem {
         &mut self,
         world: &mut World,
         input: &InputState,
-        queue: &mut crate::engine::ecs::CommandQueue,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
         dt_sec: f32,
     ) {
         // We gate early to avoid scanning inputs if nothing relevant is pressed.
@@ -377,7 +377,15 @@ impl InputSystem {
                 );
 
                 transform_comp_mut.transform.recompute_model();
-                queue.update_transform(transform_cid, transform_comp_mut.transform);
+                emit.push_intent_now(
+                    transform_cid,
+                    crate::engine::ecs::IntentValue::UpdateTransform {
+                        component: transform_cid,
+                        translation: transform_comp_mut.transform.translation,
+                        rotation_quat_xyzw: transform_comp_mut.transform.rotation,
+                        scale: transform_comp_mut.transform.scale,
+                    },
+                );
             }
         }
     }

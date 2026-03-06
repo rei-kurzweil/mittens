@@ -1,5 +1,5 @@
 use super::Component;
-use crate::engine::ecs::{ComponentId, SignalEmitter, SignalValue};
+use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter};
 use crate::engine::graphics::primitives::Transform;
 
 #[derive(Debug, Clone, Copy)]
@@ -95,9 +95,9 @@ impl TransformComponent {
         let Some(cid) = self.component else {
             return;
         };
-        emit.push(
+        emit.push_intent_now(
             cid,
-            SignalValue::UpdateTransform {
+            IntentValue::UpdateTransform {
                 component: cid,
                 translation: self.transform.translation,
                 rotation_quat_xyzw: self.transform.rotation,
@@ -113,9 +113,9 @@ impl TransformComponent {
         let Some(cid) = self.component else {
             return;
         };
-        emit.push(
+        emit.push_intent_now(
             cid,
-            SignalValue::UpdateTransform {
+            IntentValue::UpdateTransform {
                 component: cid,
                 translation: self.transform.translation,
                 rotation_quat_xyzw: self.transform.rotation,
@@ -131,9 +131,9 @@ impl TransformComponent {
         let Some(cid) = self.component else {
             return;
         };
-        emit.push(
+        emit.push_intent_now(
             cid,
-            SignalValue::UpdateTransform {
+            IntentValue::UpdateTransform {
                 component: cid,
                 translation: self.transform.translation,
                 rotation_quat_xyzw: self.transform.rotation,
@@ -149,9 +149,9 @@ impl TransformComponent {
         let Some(cid) = self.component else {
             return;
         };
-        emit.push(
+        emit.push_intent_now(
             cid,
-            SignalValue::UpdateTransform {
+            IntentValue::UpdateTransform {
                 component: cid,
                 translation: self.transform.translation,
                 rotation_quat_xyzw: self.transform.rotation,
@@ -179,10 +179,7 @@ impl Component for TransformComponent {
     }
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
-        emit.push(
-            component,
-            crate::engine::ecs::SignalValue::RegisterTransform { component },
-        );
+        emit.push_intent_now(component, crate::engine::ecs::IntentValue::RegisterTransform { component });
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

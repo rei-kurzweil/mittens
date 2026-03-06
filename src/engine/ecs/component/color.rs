@@ -46,9 +46,9 @@ impl Component for ColorComponent {
     }
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
-        emit.push(
+        emit.push_intent_now(
             component,
-            crate::engine::ecs::SignalValue::RegisterColor { component },
+            crate::engine::ecs::IntentValue::RegisterColor { component },
         );
     }
 

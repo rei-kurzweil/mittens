@@ -207,7 +207,7 @@ fn main() {
             universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::SignalValue::Detach { target: vec![cube] },
+                    engine::ecs::IntentValue::Detach { target: vec![cube] },
                 ));
         let _ = universe.attach(kf_detach, detach_action);
 
@@ -219,7 +219,7 @@ fn main() {
             universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::SignalValue::Attach {
+                    engine::ecs::IntentValue::Attach {
                         parents: vec![parent],
                         child: cube,
                     },
@@ -286,7 +286,7 @@ fn main() {
             universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::SignalValue::AttachClone {
+                    engine::ecs::IntentValue::AttachClone {
                         parents: vec![parent],
                         prefab_root: prefab_b,
                     },
@@ -304,7 +304,7 @@ fn main() {
                 universe
                     .world
                     .add_component(engine::ecs::component::ActionComponent::new(
-                        engine::ecs::SignalValue::RemoveChild {
+                        engine::ecs::IntentValue::RemoveChild {
                             parents: vec![remove_parent],
                             index: 0,
                         },
@@ -327,7 +327,7 @@ fn main() {
             universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::SignalValue::RemoveChild {
+                    engine::ecs::IntentValue::RemoveChild {
                         parents: vec![remove_parent],
                         index: 0,
                     },
@@ -385,7 +385,7 @@ fn main() {
             universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::SignalValue::SetPosition {
+                    engine::ecs::IntentValue::SetPosition {
                         target: vec![cube],
                         position: [x, y, z],
                     },

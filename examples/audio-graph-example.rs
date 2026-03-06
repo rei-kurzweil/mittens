@@ -647,7 +647,7 @@ fn main() {
             let act_a = universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::SignalValue::OscillatorScheduleMusicNote {
+                    engine::ecs::IntentValue::OscillatorScheduleMusicNote {
                         target: vec![osc_a_comp],
                         beat_offset: 0.0,
                         beat_context: None,
@@ -669,7 +669,7 @@ fn main() {
                     universe
                         .world
                         .add_component(engine::ecs::component::ActionComponent::new(
-                            engine::ecs::SignalValue::AudioBandPassSetCenterHz {
+                            engine::ecs::IntentValue::AudioBandPassSetCenterHz {
                                 target: vec![bp_a_comp],
                                 center_hz,
                             },
@@ -682,7 +682,7 @@ fn main() {
                         universe
                             .world
                             .add_component(engine::ecs::component::ActionComponent::new(
-                                engine::ecs::SignalValue::SetText {
+                                engine::ecs::IntentValue::SetText {
                                     target: vec![text_id],
                                     text: format!("BandPass center={center_hz:.1}Hz"),
                                 },
@@ -696,7 +696,7 @@ fn main() {
         let reset_a = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::SignalValue::SetColor {
+                engine::ecs::IntentValue::SetColor {
                     target: vec![track_a_pattern_root],
                     rgba: a_dark,
                 },
@@ -716,7 +716,7 @@ fn main() {
         let bright_a = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::SignalValue::SetColor {
+                engine::ecs::IntentValue::SetColor {
                     target: vec![cube_a],
                     rgba: a_bright,
                 },

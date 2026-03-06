@@ -58,9 +58,9 @@ impl Component for AnimationComponent {
     }
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
-        emit.push(
+        emit.push_intent_now(
             component,
-            crate::engine::ecs::SignalValue::RegisterAnimation { component },
+            crate::engine::ecs::IntentValue::RegisterAnimation { component },
         );
     }
 

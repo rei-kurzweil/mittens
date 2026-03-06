@@ -46,9 +46,9 @@ fn set_renderable_color_rgba(
             world.get_component_by_id_as_mut::<engine::ecs::component::ColorComponent>(color_cid)
         {
             c.rgba = rgba;
-            emit.push(
+            emit.push_intent_now(
                 color_cid,
-                engine::ecs::SignalValue::RegisterColor {
+                engine::ecs::IntentValue::RegisterColor {
                     component: color_cid,
                 },
             );
@@ -61,9 +61,9 @@ fn set_renderable_color_rgba(
         rgba[0], rgba[1], rgba[2], rgba[3],
     ));
     let _ = world.add_child(renderable_cid, color_cid);
-    emit.push(
+    emit.push_intent_now(
         color_cid,
-        engine::ecs::SignalValue::RegisterColor {
+        engine::ecs::IntentValue::RegisterColor {
             component: color_cid,
         },
     );
@@ -89,7 +89,8 @@ fn on_collision_turn_white(
     emit: &mut dyn engine::ecs::SignalEmitter,
     signal: &engine::ecs::Signal,
 ) {
-    let engine::ecs::SignalValue::CollisionStarted { a, b, .. } = &signal.value else {
+    let Some(engine::ecs::EventSignal::CollisionStarted { a, b, .. }) = signal.event.as_ref()
+    else {
         return;
     };
 
@@ -126,7 +127,8 @@ fn on_collision_freeze_gravity(
     _emit: &mut dyn engine::ecs::SignalEmitter,
     signal: &engine::ecs::Signal,
 ) {
-    let engine::ecs::SignalValue::CollisionStarted { a, b, .. } = &signal.value else {
+    let Some(engine::ecs::EventSignal::CollisionStarted { a, b, .. }) = signal.event.as_ref()
+    else {
         return;
     };
 

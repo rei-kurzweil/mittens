@@ -44,7 +44,7 @@ fn main() {
         universe
             .world
             .add_component(engine::ecs::component::TextureComponent::with_uri(
-                "assets/textures/font.dds",
+                "assets/textures/font_system.dds",
             ));
     let debug_filtering = universe
         .world

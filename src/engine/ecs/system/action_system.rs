@@ -1,43 +1,24 @@
 use crate::engine::ecs::component::{
     AudioBandPassFilterComponent, AudioLowPassFilterComponent, AudioOscillatorComponent,
-    ColorComponent, MusicNoteComponent, RayCastComponent, RenderableComponent, TextComponent,
-    TransformComponent,
+    ColorComponent, MusicNoteComponent, RayCastComponent, RenderableComponent, TransformComponent,
 };
 use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::audio_system::AudioOp;
 use crate::engine::ecs::{
-    ComponentCodec, ComponentId, RxWorld, Signal, SignalEmitter, SignalKind, SignalValue, World,
+    ComponentCodec, ComponentId, EventSignal, IntentValue, Signal, SignalEmitter, World,
 };
-use crate::engine::graphics::VisualWorld;
-use crate::engine::user_input::InputState;
-
-#[derive(Debug, Default)]
-pub struct ActionSystem {
-    handlers_installed: bool,
-}
-
-impl ActionSystem {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn install_handlers(&mut self, rx: &mut RxWorld) {
-        if self.handlers_installed {
-            return;
-        }
-        rx.add_global_handler_closure(SignalKind::Action, handle_action_signal);
-        self.handlers_installed = true;
-    }
-}
-
-fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &Signal) {
+pub(crate) fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &Signal) {
     let beat_now = 0.0;
 
-    match &env.value {
-        SignalValue::Noop => {}
-        SignalValue::Print { .. } => {}
+    let Some(intent) = env.intent.as_ref() else {
+        return;
+    };
 
-        SignalValue::SetColor { target, rgba } => {
+    match &intent.value {
+        IntentValue::Noop => {}
+        IntentValue::Print { .. } => {}
+
+        IntentValue::SetColor { target, rgba } => {
             let mut color_cids = Vec::new();
             for &t in target.iter() {
                 collect_color_targets(world, t, &mut color_cids);
@@ -46,9 +27,9 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             for color_cid in color_cids {
                 if let Some(c) = world.get_component_by_id_as_mut::<ColorComponent>(color_cid) {
                     c.rgba = *rgba;
-                    emit.push(
+                    emit.push_intent_now(
                         color_cid,
-                        SignalValue::RegisterColor {
+                        IntentValue::RegisterColor {
                             component: color_cid,
                         },
                     );
@@ -56,25 +37,11 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        SignalValue::SetText { target, text } => {
-            let mut text_cids = Vec::new();
-            for &t in target.iter() {
-                collect_text_targets(world, t, &mut text_cids);
-            }
-            text_cids.sort();
-            text_cids.dedup();
-            for text_cid in text_cids {
-                emit.push(
-                    text_cid,
-                    SignalValue::SetTextImmediate {
-                        component: text_cid,
-                        text: text.clone(),
-                    },
-                );
-            }
+        IntentValue::SetText { .. } => {
+            // Executed by the default executor.
         }
 
-        SignalValue::SetPosition { target, position } => {
+        IntentValue::SetPosition { target, position } => {
             let mut transform_cids = Vec::new();
             for &t in target.iter() {
                 collect_transform_targets(world, t, &mut transform_cids);
@@ -90,7 +57,7 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        SignalValue::SetTransform {
+        IntentValue::SetTransform {
             target,
             translation,
             rotation_quat_xyzw,
@@ -110,9 +77,9 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     t.transform.rotation = *rotation_quat_xyzw;
                     t.transform.scale = *scale;
                     t.transform.recompute_model();
-                    emit.push(
+                    emit.push_intent_now(
                         transform_cid,
-                        SignalValue::UpdateTransform {
+                        IntentValue::UpdateTransform {
                             component: transform_cid,
                             translation: *translation,
                             rotation_quat_xyzw: *rotation_quat_xyzw,
@@ -123,7 +90,7 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        SignalValue::Attach { parents, child } => {
+        IntentValue::Attach { parents, child } => {
             for &parent in parents.iter() {
                 let old_parent = world.parent_of(*child);
                 if let Err(e) = world.add_child(parent, *child) {
@@ -131,9 +98,9 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     continue;
                 }
 
-                emit.push(
+                emit.push_event(
                     *child,
-                    SignalValue::ParentChanged {
+                    EventSignal::ParentChanged {
                         child: *child,
                         old_parent,
                         new_parent: Some(parent),
@@ -147,18 +114,18 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 emit_topology_transform_refresh(world, emit, *child);
                 emit_topology_transform_refresh(world, emit, parent);
 
-                emit.push(
+                emit.push_intent_now(
                     parent,
-                    SignalValue::AudioGraphDirtyImmediate { component: parent },
+                    IntentValue::AudioGraphDirtyImmediate { component: parent },
                 );
-                emit.push(
+                emit.push_intent_now(
                     *child,
-                    SignalValue::AudioGraphDirtyImmediate { component: *child },
+                    IntentValue::AudioGraphDirtyImmediate { component: *child },
                 );
             }
         }
 
-        SignalValue::AttachClone {
+        IntentValue::AttachClone {
             parents,
             prefab_root,
         } => {
@@ -192,9 +159,9 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     world.init_component_tree(new_root, emit);
                 }
 
-                emit.push(
+                emit.push_event(
                     new_root,
-                    SignalValue::ParentChanged {
+                    EventSignal::ParentChanged {
                         child: new_root,
                         old_parent: None,
                         new_parent: Some(parent),
@@ -204,27 +171,27 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 emit_topology_transform_refresh(world, emit, new_root);
                 emit_topology_transform_refresh(world, emit, parent);
 
-                emit.push(
+                emit.push_intent_now(
                     parent,
-                    SignalValue::AudioGraphDirtyImmediate { component: parent },
+                    IntentValue::AudioGraphDirtyImmediate { component: parent },
                 );
-                emit.push(
+                emit.push_intent_now(
                     new_root,
-                    SignalValue::AudioGraphDirtyImmediate {
+                    IntentValue::AudioGraphDirtyImmediate {
                         component: new_root,
                     },
                 );
             }
         }
 
-        SignalValue::Detach { target } => {
+        IntentValue::Detach { target } => {
             for &child in target.iter() {
                 let old_parent = world.parent_of(child);
                 world.detach_from_parent(child);
 
-                emit.push(
+                emit.push_event(
                     child,
-                    SignalValue::ParentChanged {
+                    EventSignal::ParentChanged {
                         child,
                         old_parent,
                         new_parent: None,
@@ -232,7 +199,7 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 );
 
                 if let Some(p) = old_parent {
-                    emit.push(p, SignalValue::AudioGraphDirtyImmediate { component: p });
+                    emit.push_intent_now(p, IntentValue::AudioGraphDirtyImmediate { component: p });
                 }
 
                 emit_topology_transform_refresh(world, emit, child);
@@ -242,90 +209,99 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        SignalValue::RemoveChild { parents, index } => {
+        IntentValue::RemoveChild { parents, index } => {
             for &parent in parents.iter() {
                 let child = world.children_of(parent).get(*index).copied();
                 let Some(child) = child else {
                     continue;
                 };
 
-                emit.push(
-                    child,
-                    SignalValue::AudioGraphDirtyImmediate { component: child },
-                );
-                emit.push(
+                emit.push_intent_now(
                     parent,
-                    SignalValue::AudioGraphDirtyImmediate { component: parent },
+                    IntentValue::AudioGraphDirtyImmediate { component: parent },
+                );
+                emit.push_intent_now(
+                    child,
+                    IntentValue::AudioGraphDirtyImmediate { component: child },
                 );
 
                 world.detach_from_parent(child);
 
-                emit.push(
+                emit.push_event(
                     child,
-                    SignalValue::ParentChanged {
+                    EventSignal::ParentChanged {
                         child,
                         old_parent: Some(parent),
                         new_parent: None,
                     },
                 );
 
-                emit.push(child, SignalValue::RemoveSubtreeImmediate { root: child });
+                emit.push_intent_now(
+                    child,
+                    IntentValue::RemoveSubtree {
+                        target: vec![child],
+                    },
+                );
 
                 emit_topology_transform_refresh(world, emit, parent);
             }
         }
 
-        SignalValue::RemoveChildren { parents } => {
+        IntentValue::RemoveChildren { parents } => {
             for &parent in parents.iter() {
                 let children: Vec<ComponentId> = world.children_of(parent).to_vec();
                 if children.is_empty() {
                     continue;
                 }
 
-                emit.push(
+                emit.push_intent_now(
                     parent,
-                    SignalValue::AudioGraphDirtyImmediate { component: parent },
+                    IntentValue::AudioGraphDirtyImmediate { component: parent },
                 );
                 for child in children {
-                    emit.push(
+                    emit.push_intent_now(
                         child,
-                        SignalValue::AudioGraphDirtyImmediate { component: child },
+                        IntentValue::AudioGraphDirtyImmediate { component: child },
                     );
-                    world.detach_from_parent(child);
 
-                    emit.push(
+                    world.detach_from_parent(child);
+                    emit.push_event(
                         child,
-                        SignalValue::ParentChanged {
+                        EventSignal::ParentChanged {
                             child,
                             old_parent: Some(parent),
                             new_parent: None,
                         },
                     );
 
-                    emit.push(child, SignalValue::RemoveSubtreeImmediate { root: child });
+                    emit.push_intent_now(
+                        child,
+                        IntentValue::RemoveSubtree {
+                            target: vec![child],
+                        },
+                    );
                 }
 
                 emit_topology_transform_refresh(world, emit, parent);
             }
         }
 
-        SignalValue::RemoveSubtree { target } => {
+        IntentValue::RemoveSubtree { target } => {
             for &root in target.iter() {
-                emit.push(
+                emit.push_intent_now(
                     root,
-                    SignalValue::AudioGraphDirtyImmediate { component: root },
+                    IntentValue::AudioGraphDirtyImmediate { component: root },
                 );
-                emit.push(root, SignalValue::RemoveSubtreeImmediate { root });
             }
         }
 
-        SignalValue::AudioGraphRebuild { target } => {
+        IntentValue::AudioGraphRebuild { target } => {
             for &t in target.iter() {
-                emit.push(t, SignalValue::AudioGraphDirtyImmediate { component: t });
+                emit.push_intent_now(t, IntentValue::AudioGraphDirtyImmediate { component: t });
             }
         }
 
-        SignalValue::RequestRaycast { target } => {
+        IntentValue::RequestRaycast { target } => {
             let mut raycast_cids = Vec::new();
             for &t in target.iter() {
                 collect_raycast_targets(world, t, &mut raycast_cids);
@@ -340,7 +316,7 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        SignalValue::AudioLowPassSetCutoffHz { target, cutoff_hz } => {
+        IntentValue::AudioLowPassSetCutoffHz { target, cutoff_hz } => {
             for &t in target.iter() {
                 if let Some(c) = world.get_component_by_id_as_mut::<AudioLowPassFilterComponent>(t)
                 {
@@ -349,9 +325,9 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     } else {
                         c.cutoff_hz
                     };
-                    emit.push(
+                    emit.push_intent_now(
                         t,
-                        SignalValue::ScheduleAudioOp {
+                        IntentValue::ScheduleAudioOp {
                             component: t,
                             beat: beat_now,
                             op: AudioOp::SetLowPassCutoffHz(c.cutoff_hz),
@@ -361,7 +337,7 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        SignalValue::AudioBandPassSetCenterHz { target, center_hz } => {
+        IntentValue::AudioBandPassSetCenterHz { target, center_hz } => {
             for &t in target.iter() {
                 if let Some(c) = world.get_component_by_id_as_mut::<AudioBandPassFilterComponent>(t)
                 {
@@ -370,9 +346,9 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     } else {
                         c.center_hz
                     };
-                    emit.push(
+                    emit.push_intent_now(
                         t,
-                        SignalValue::ScheduleAudioOp {
+                        IntentValue::ScheduleAudioOp {
                             component: t,
                             beat: beat_now,
                             op: AudioOp::SetBandPassCenterHz(c.center_hz),
@@ -382,7 +358,7 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        SignalValue::OscillatorSetEnabled { target, enabled } => {
+        IntentValue::OscillatorSetEnabled { target, enabled } => {
             let mut osc_cids = Vec::new();
             for &t in target.iter() {
                 collect_oscillator_targets(world, t, &mut osc_cids);
@@ -396,15 +372,15 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     for osc in c.oscillators.iter_mut() {
                         osc.enabled = *enabled;
                     }
-                    emit.push(
+                    emit.push_intent_now(
                         osc_cid,
-                        SignalValue::RegisterAudioOscillator { component: osc_cid },
+                        IntentValue::RegisterAudioOscillator { component: osc_cid },
                     );
                 }
             }
         }
 
-        SignalValue::OscillatorSetPitch {
+        IntentValue::OscillatorSetPitch {
             target,
             frequency_hz,
         } => {
@@ -429,15 +405,15 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                         osc.frequency = *frequency_hz;
                         osc.music_note_applied = true;
                     }
-                    emit.push(
+                    emit.push_intent_now(
                         osc_cid,
-                        SignalValue::RegisterAudioOscillator { component: osc_cid },
+                        IntentValue::RegisterAudioOscillator { component: osc_cid },
                     );
                 }
             }
         }
 
-        SignalValue::OscillatorScheduleSetPitch {
+        IntentValue::OscillatorScheduleSetPitch {
             target,
             beat_offset,
             beat_context,
@@ -452,9 +428,9 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             osc_cids.sort();
             osc_cids.dedup();
             for osc_cid in osc_cids {
-                emit.push(
+                emit.push_intent_now(
                     osc_cid,
-                    SignalValue::ScheduleAudioPitchSetHz {
+                    IntentValue::ScheduleAudioPitchSetHz {
                         component: osc_cid,
                         beat,
                         frequency_hz: *frequency_hz,
@@ -463,7 +439,7 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        SignalValue::OscillatorScheduleSetNote {
+        IntentValue::OscillatorScheduleSetNote {
             target,
             beat_offset,
             beat_context,
@@ -488,26 +464,26 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             osc_cids.sort();
             osc_cids.dedup();
             for osc_cid in osc_cids {
-                emit.push(
+                emit.push_intent_now(
                     osc_cid,
-                    SignalValue::ScheduleAudioOscillatorEnabled {
+                    IntentValue::ScheduleAudioOscillatorEnabled {
                         component: osc_cid,
                         beat,
                         enabled: true,
                     },
                 );
-                emit.push(
+                emit.push_intent_now(
                     osc_cid,
-                    SignalValue::ScheduleAudioPitchSetHz {
+                    IntentValue::ScheduleAudioPitchSetHz {
                         component: osc_cid,
                         beat,
                         frequency_hz,
                     },
                 );
                 if duration_beats.is_finite() && duration_beats > 0.0 {
-                    emit.push(
+                    emit.push_intent_now(
                         osc_cid,
-                        SignalValue::ScheduleAudioOscillatorEnabled {
+                        IntentValue::ScheduleAudioOscillatorEnabled {
                             component: osc_cid,
                             beat: beat + duration_beats,
                             enabled: false,
@@ -517,7 +493,7 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        SignalValue::OscillatorScheduleMusicNote {
+        IntentValue::OscillatorScheduleMusicNote {
             target,
             beat_offset,
             beat_context,
@@ -541,25 +517,25 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             osc_cids.sort();
             osc_cids.dedup();
             for osc_cid in osc_cids {
-                emit.push(
+                emit.push_intent_now(
                     osc_cid,
-                    SignalValue::ScheduleAudioOscillatorEnabled {
+                    IntentValue::ScheduleAudioOscillatorEnabled {
                         component: osc_cid,
                         beat,
                         enabled: true,
                     },
                 );
-                emit.push(
+                emit.push_intent_now(
                     osc_cid,
-                    SignalValue::ScheduleAudioPitchSetHz {
+                    IntentValue::ScheduleAudioPitchSetHz {
                         component: osc_cid,
                         beat,
                         frequency_hz,
                     },
                 );
-                emit.push(
+                emit.push_intent_now(
                     osc_cid,
-                    SignalValue::ScheduleAudioGainSet {
+                    IntentValue::ScheduleAudioGainSet {
                         component: osc_cid,
                         beat,
                         gain: velocity,
@@ -567,17 +543,17 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 );
 
                 if duration_beats.is_finite() && duration_beats > 0.0 {
-                    emit.push(
+                    emit.push_intent_now(
                         osc_cid,
-                        SignalValue::ScheduleAudioOscillatorEnabled {
+                        IntentValue::ScheduleAudioOscillatorEnabled {
                             component: osc_cid,
                             beat: beat + duration_beats,
                             enabled: false,
                         },
                     );
-                    emit.push(
+                    emit.push_intent_now(
                         osc_cid,
-                        SignalValue::ScheduleAudioGainSet {
+                        IntentValue::ScheduleAudioGainSet {
                             component: osc_cid,
                             beat: beat + duration_beats,
                             gain: 1.0,
@@ -587,7 +563,7 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        SignalValue::MusicSetNote { target, note } => {
+        IntentValue::MusicSetNote { target, note } => {
             let mut osc_cids = Vec::new();
             for &t in target.iter() {
                 collect_oscillator_targets(world, t, &mut osc_cids);
@@ -611,9 +587,9 @@ fn handle_action_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                         osc.frequency = freq;
                         osc.music_note_applied = true;
                     }
-                    emit.push(
+                    emit.push_intent_now(
                         osc_cid,
-                        SignalValue::RegisterAudioOscillator { component: osc_cid },
+                        IntentValue::RegisterAudioOscillator { component: osc_cid },
                     );
                 }
             }
@@ -677,9 +653,9 @@ fn emit_topology_transform_refresh(world: &World, emit: &mut dyn SignalEmitter, 
     // If this node is a TransformComponent, refreshing it updates cached world matrices
     // for its whole subtree.
     if let Some(t) = world.get_component_by_id_as::<TransformComponent>(cid) {
-        emit.push(
+        emit.push_intent_now(
             cid,
-            SignalValue::UpdateTransform {
+            IntentValue::UpdateTransform {
                 component: cid,
                 translation: t.transform.translation,
                 rotation_quat_xyzw: t.transform.rotation,
@@ -693,9 +669,9 @@ fn emit_topology_transform_refresh(world: &World, emit: &mut dyn SignalEmitter, 
     let mut cur = cid;
     while let Some(p) = world.parent_of(cur) {
         if let Some(t) = world.get_component_by_id_as::<TransformComponent>(p) {
-            emit.push(
+            emit.push_intent_now(
                 p,
-                SignalValue::UpdateTransform {
+                IntentValue::UpdateTransform {
                     component: p,
                     translation: t.transform.translation,
                     rotation_quat_xyzw: t.transform.rotation,
@@ -705,18 +681,6 @@ fn emit_topology_transform_refresh(world: &World, emit: &mut dyn SignalEmitter, 
             return;
         }
         cur = p;
-    }
-}
-
-impl crate::engine::ecs::system::System for ActionSystem {
-    fn tick(
-        &mut self,
-        _world: &mut World,
-        _visuals: &mut VisualWorld,
-        _input: &InputState,
-        _dt_sec: f32,
-    ) {
-        // Signal-driven: actions are executed via RxWorld handlers.
     }
 }
 
@@ -805,30 +769,6 @@ fn collect_oscillator_targets(world: &World, target: ComponentId, out: &mut Vec<
 
         if world
             .get_component_by_id_as::<AudioOscillatorComponent>(node)
-            .is_some()
-        {
-            out.push(node);
-        }
-    }
-}
-
-fn collect_text_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {
-    if world
-        .get_component_by_id_as::<TextComponent>(target)
-        .is_some()
-    {
-        out.push(target);
-        return;
-    }
-
-    let mut stack = vec![target];
-    while let Some(node) = stack.pop() {
-        for &ch in world.children_of(node) {
-            stack.push(ch);
-        }
-
-        if world
-            .get_component_by_id_as::<TextComponent>(node)
             .is_some()
         {
             out.push(node);

@@ -28,9 +28,9 @@ impl Camera2DComponent {
     pub fn make_active_camera(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter) {
         if self.handle.is_some() {
             if let Some(component) = self.component_id {
-                emit.push(
+                emit.push_intent_now(
                     component,
-                    crate::engine::ecs::SignalValue::MakeActiveCamera { component },
+                    crate::engine::ecs::IntentValue::MakeActiveCamera { component },
                 );
             }
         }
@@ -58,9 +58,9 @@ impl Component for Camera2DComponent {
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         self.component_id = Some(component);
-        emit.push(
+        emit.push_intent_now(
             component,
-            crate::engine::ecs::SignalValue::RegisterCamera2d { component },
+            crate::engine::ecs::IntentValue::RegisterCamera2d { component },
         );
     }
 

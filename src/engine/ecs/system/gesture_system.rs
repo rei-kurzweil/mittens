@@ -1,4 +1,4 @@
-use crate::engine::ecs::{ComponentId, RxWorld, SignalKind, SignalValue};
+use crate::engine::ecs::{ComponentId, EventSignal, RxWorld, SignalKind};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 use crate::utils::math;
@@ -60,13 +60,13 @@ impl GestureSystem {
 
         let best_ref = self.ray_hit_best.clone();
         rx.add_global_handler_closure(SignalKind::RayIntersected, move |_world, _emit, env| {
-            let SignalValue::RayIntersected {
+            let Some(EventSignal::RayIntersected {
                 raycaster,
                 renderable,
                 t,
                 origin,
                 dir,
-            } = &env.value
+            }) = env.event.as_ref()
             else {
                 return;
             };
@@ -243,9 +243,9 @@ impl GestureSystem {
                 }
 
                 if let Some(p) = hit_point {
-                    rx.push(
+                    rx.push_event(
                         renderable,
-                        SignalValue::DragStart {
+                        EventSignal::DragStart {
                             raycaster,
                             renderable,
                             hit_point: p,
@@ -288,9 +288,9 @@ impl GestureSystem {
                                                 _ => None,
                                             };
 
-                                        rx.push(
+                                        rx.push_event(
                                             active_renderable,
-                                            SignalValue::DragMove {
+                                            EventSignal::DragMove {
                                                 raycaster: active_rc,
                                                 renderable: active_renderable,
                                                 hit_point: cur,
@@ -342,9 +342,9 @@ impl GestureSystem {
                                         _ => None,
                                     };
 
-                                rx.push(
+                                rx.push_event(
                                     active_renderable,
-                                    SignalValue::DragMove {
+                                    EventSignal::DragMove {
                                         raycaster: active_rc,
                                         renderable: active_renderable,
                                         hit_point: cur,
@@ -367,9 +367,9 @@ impl GestureSystem {
                 if let (Some(active_rc), Some(active_renderable)) =
                     (self.state.drag_raycaster, self.state.drag_renderable)
                 {
-                    rx.push(
+                    rx.push_event(
                         active_renderable,
-                        SignalValue::DragEnd {
+                        EventSignal::DragEnd {
                             raycaster: active_rc,
                             renderable: active_renderable,
                             hit_point: self.state.last_hit_point,

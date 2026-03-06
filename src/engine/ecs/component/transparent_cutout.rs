@@ -44,9 +44,9 @@ impl Component for TransparentCutoutComponent {
     }
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
-        emit.push(
+        emit.push_intent_now(
             component,
-            crate::engine::ecs::SignalValue::RegisterTransparentCutout { component },
+            crate::engine::ecs::IntentValue::RegisterTransparentCutout { component },
         );
     }
 

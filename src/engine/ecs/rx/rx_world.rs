@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use crate::engine::ecs::{ComponentId, World};
 
-use super::{Signal, SignalEmitter, SignalHandler, SignalKind, SignalValue, SignalWhen};
+use super::{
+    EventSignal, IntentSignal, Signal, SignalEmitter, SignalHandler, SignalKind, SignalWhen,
+};
 
 enum Handler {
     Fn(SignalHandler),
@@ -10,53 +12,40 @@ enum Handler {
 }
 
 struct Emitter {
-    signals: *mut Vec<Signal>,
-    pending: *mut Vec<Signal>,
+    intents: *mut Vec<Signal>,
+    pending_intents: *mut Vec<Signal>,
+    events_out: *mut Vec<Signal>,
 }
 
 impl SignalEmitter for Emitter {
-    fn push(&mut self, scope: ComponentId, value: SignalValue) {
+    fn push_event(&mut self, scope: ComponentId, event: EventSignal) {
         // SAFETY: pointers refer to `RxWorld` storage for the duration of dispatch.
         unsafe {
-            (*self.signals).push(Signal {
-                scope,
-                value,
-                when: SignalWhen::Now,
-            });
+            (*self.events_out).push(Signal::event(scope, event));
         }
     }
 
-    fn push_at_beat(&mut self, scope: ComponentId, beat: f64, value: SignalValue) {
-        if !beat.is_finite() {
-            self.push(scope, value);
-            return;
-        }
-
+    fn push_intent(&mut self, scope: ComponentId, intent: IntentSignal) {
         // SAFETY: pointers refer to `RxWorld` storage for the duration of dispatch.
         unsafe {
-            (*self.pending).push(Signal {
-                scope,
-                value,
-                when: SignalWhen::AtBeat(beat),
-            });
-
-            // Keep pending signals sorted by beat.
-            (*self.pending).sort_by(|a, b| {
-                let ba = a.when.beat().unwrap_or(f64::NEG_INFINITY);
-                let bb = b.when.beat().unwrap_or(f64::NEG_INFINITY);
-                ba.partial_cmp(&bb).unwrap_or(std::cmp::Ordering::Equal)
-            });
+            match intent.when {
+                SignalWhen::Now => (*self.intents).push(Signal::intent(scope, intent)),
+                SignalWhen::AtBeat(_) => {
+                    (*self.pending_intents).push(Signal::intent(scope, intent));
+                    sort_pending_intents_by_beat(&mut *self.pending_intents);
+                }
+            }
         }
     }
 }
 
 impl SignalEmitter for RxWorld {
-    fn push(&mut self, scope: ComponentId, value: SignalValue) {
-        RxWorld::push(self, scope, value);
+    fn push_event(&mut self, scope: ComponentId, event: EventSignal) {
+        RxWorld::push_event(self, scope, event);
     }
 
-    fn push_at_beat(&mut self, scope: ComponentId, beat: f64, value: SignalValue) {
-        RxWorld::push_at_beat(self, scope, beat, value);
+    fn push_intent(&mut self, scope: ComponentId, intent: IntentSignal) {
+        RxWorld::push_intent(self, scope, intent);
     }
 }
 
@@ -66,29 +55,45 @@ impl SignalEmitter for RxWorld {
 /// handlers attached to `S` or any ancestor of `S` are invoked.
 #[derive(Default)]
 pub struct RxWorld {
-    signals: Vec<Signal>,
+    /// Ready event signals for this tick.
+    ready_events: Vec<Signal>,
 
-    /// Timed holding-pen for signals that should not run until a target transport beat.
+    /// Event signals produced while processing (handlers/executor). These are deferred until the
+    /// next tick.
+    deferred_events: Vec<Signal>,
+
+    /// Event signals that were dispatched during the current frame.
+    ///
+    /// This is a read-only per-frame log useful for systems that consume the results of upstream
+    /// systems (e.g. gizmos consuming drag events) without installing their own handlers.
+    frame_events: Vec<Signal>,
+
+    /// Ready intent signals for this tick.
+    ready_intents: Vec<Signal>,
+
+    /// Timed holding-pen for intent signals that should not run until a target transport beat.
     ///
     /// Invariant: this list is kept sorted by target beat ascending.
-    pending: Vec<Signal>,
-
-    /// Cursor for drain-point dispatch. Signals before this index have already had handlers run.
-    dispatched_cursor: usize,
-
-    /// Global handlers run for every matching signal regardless of scope.
-    global_handlers: HashMap<SignalKind, Vec<Handler>>,
+    pending_intents: Vec<Signal>,
 
     /// Scoped handlers keyed by (kind, scope_root).
     scoped_handlers: HashMap<SignalKind, HashMap<ComponentId, Vec<Handler>>>,
+
+    /// Optional global handlers keyed by signal kind.
+    ///
+    /// These are useful for system-level observers (gesture/editor) that need to see events
+    /// regardless of scope.
+    global_handlers: HashMap<SignalKind, Vec<Handler>>,
 }
 
 impl std::fmt::Debug for RxWorld {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RxWorld")
-            .field("signals_len", &self.signals.len())
-            .field("pending_len", &self.pending.len())
-            .field("dispatched_cursor", &self.dispatched_cursor)
+            .field("ready_events_len", &self.ready_events.len())
+            .field("deferred_events_len", &self.deferred_events.len())
+            .field("frame_events_len", &self.frame_events.len())
+            .field("ready_intents_len", &self.ready_intents.len())
+            .field("pending_intents_len", &self.pending_intents.len())
             .field("global_kinds", &self.global_handlers.len())
             .field("scoped_kinds", &self.scoped_handlers.len())
             .finish()
@@ -96,48 +101,36 @@ impl std::fmt::Debug for RxWorld {
 }
 
 impl RxWorld {
-    pub fn push(&mut self, scope: ComponentId, value: impl Into<SignalValue>) {
-        let value = value.into();
-        self.signals.push(Signal {
-            scope,
-            value,
-            when: SignalWhen::Now,
-        });
+    pub fn push_event(&mut self, scope: ComponentId, event: EventSignal) {
+        self.ready_events.push(Signal::event(scope, event));
     }
 
-    pub fn push_at_beat(&mut self, scope: ComponentId, beat: f64, value: impl Into<SignalValue>) {
-        let value = value.into();
-        if !beat.is_finite() {
-            self.push(scope, value);
-            return;
+    pub fn push_intent(&mut self, scope: ComponentId, intent: IntentSignal) {
+        match intent.when {
+            SignalWhen::Now => self.ready_intents.push(Signal::intent(scope, intent)),
+            SignalWhen::AtBeat(_) => {
+                self.pending_intents.push(Signal::intent(scope, intent));
+                sort_pending_intents_by_beat(&mut self.pending_intents);
+            }
         }
-
-        self.pending.push(Signal {
-            scope,
-            value,
-            when: SignalWhen::AtBeat(beat),
-        });
-
-        // Keep pending signals sorted by beat.
-        self.pending.sort_by(|a, b| {
-            let ba = a.when.beat().unwrap_or(f64::NEG_INFINITY);
-            let bb = b.when.beat().unwrap_or(f64::NEG_INFINITY);
-            ba.partial_cmp(&bb).unwrap_or(std::cmp::Ordering::Equal)
-        });
     }
 
     /// Move any pending timed signals whose target beat is now due into the per-frame queue.
     ///
     /// Returns the number of promoted signals.
-    pub fn promote_due_signals(&mut self, now_beat: f64) -> usize {
-        if self.pending.is_empty() {
+    pub fn promote_due_intents(&mut self, now_beat: f64) -> usize {
+        if self.pending_intents.is_empty() {
             return 0;
         }
 
         let eps = 1e-9;
         let mut end = 0usize;
-        while end < self.pending.len() {
-            let SignalWhen::AtBeat(b) = self.pending[end].when else {
+        while end < self.pending_intents.len() {
+            let Some(intent) = self.pending_intents[end].intent.as_ref() else {
+                end += 1;
+                continue;
+            };
+            let SignalWhen::AtBeat(b) = intent.when else {
                 end += 1;
                 continue;
             };
@@ -152,9 +145,9 @@ impl RxWorld {
             return 0;
         }
 
-        let due: Vec<Signal> = self.pending.drain(..end).collect();
+        let due: Vec<Signal> = self.pending_intents.drain(..end).collect();
         let promoted = due.len();
-        self.signals.extend(due);
+        self.ready_intents.extend(due);
         promoted
     }
 
@@ -163,35 +156,49 @@ impl RxWorld {
     /// In the current architecture, signals are typically drained once per frame in
     /// `SystemWorld::process_commands`, which also implicitly resets this cursor.
     pub fn begin_frame(&mut self) {
-        self.dispatched_cursor = 0;
+        self.frame_events.clear();
+        if !self.deferred_events.is_empty() {
+            self.ready_events
+                .extend(std::mem::take(&mut self.deferred_events));
+        }
+    }
+
+    pub fn frame_events(&self) -> &[Signal] {
+        &self.frame_events
     }
 
     /// Returns the current queued signals for this frame.
     ///
     /// This is intentionally read-only: signals are drained and dispatched later in
     /// `SystemWorld::process_commands`.
-    pub fn signals(&self) -> &[Signal] {
-        &self.signals
+    pub fn drain_ready_events(&mut self) -> Vec<Signal> {
+        std::mem::take(&mut self.ready_events)
     }
 
-    pub fn drain(&mut self) -> Vec<Signal> {
-        self.dispatched_cursor = 0;
-        // NOTE: timed pending signals persist across frames; draining clears only the
-        // per-frame queue.
-        std::mem::take(&mut self.signals)
+    pub fn drain_ready_intents(&mut self) -> Vec<Signal> {
+        std::mem::take(&mut self.ready_intents)
     }
 
-    /// Take the next undispatched signal (cursor).
-    ///
-    /// This is used when `SystemWorld` wants to drive dispatch so it can execute
-    /// action/command signals before notifying handlers.
-    pub fn take_next_undispatched(&mut self) -> Option<Signal> {
-        if self.dispatched_cursor >= self.signals.len() {
-            return None;
+    pub fn has_ready_events(&self) -> bool {
+        !self.ready_events.is_empty()
+    }
+
+    pub fn has_ready_intents(&self) -> bool {
+        !self.ready_intents.is_empty()
+    }
+
+    pub fn requeue_ready_events(&mut self, mut events: Vec<Signal>) {
+        if events.is_empty() {
+            return;
         }
-        let i = self.dispatched_cursor;
-        self.dispatched_cursor += 1;
-        Some(self.signals[i].clone())
+        self.ready_events.append(&mut events);
+    }
+
+    pub fn requeue_ready_intents(&mut self, mut intents: Vec<Signal>) {
+        if intents.is_empty() {
+            return;
+        }
+        self.ready_intents.append(&mut intents);
     }
 
     /// Add a scoped handler rooted at `scope_root`.
@@ -227,7 +234,10 @@ impl RxWorld {
             .push(Handler::Closure(Box::new(handler)));
     }
 
-    /// Add a global handler (runs regardless of scope).
+    /// Add a global handler rooted at no scope.
+    ///
+    /// Note: this is a function pointer (no captures). Use `add_global_handler_closure`
+    /// when you need stateful handlers.
     pub fn add_global_handler(&mut self, kind: SignalKind, handler: SignalHandler) {
         self.global_handlers
             .entry(kind)
@@ -235,7 +245,7 @@ impl RxWorld {
             .push(Handler::Fn(handler));
     }
 
-    /// Add a global handler closure (runs regardless of scope).
+    /// Add a global handler closure rooted at no scope.
     pub fn add_global_handler_closure(
         &mut self,
         kind: SignalKind,
@@ -246,6 +256,7 @@ impl RxWorld {
             .or_default()
             .push(Handler::Closure(Box::new(handler)));
     }
+
 
     pub fn remove_handler(
         &mut self,
@@ -277,53 +288,20 @@ impl RxWorld {
         removed
     }
 
-    pub fn remove_global_handler(&mut self, kind: SignalKind, handler: SignalHandler) -> bool {
-        let Some(list) = self.global_handlers.get_mut(&kind) else {
-            return false;
+    pub fn dispatch_event_handlers(&mut self, world: &mut World, env: &Signal) {
+        let Some(event) = env.event.as_ref() else {
+            return;
         };
+        let kind = event.kind();
 
-        let before = list.len();
-        list.retain(|h| match h {
-            Handler::Fn(fp) => *fp as usize != handler as usize,
-            Handler::Closure(_) => true,
-        });
-        let removed = list.len() != before;
-
-        if list.is_empty() {
-            self.global_handlers.remove(&kind);
-        }
-
-        removed
-    }
-
-    /// Dispatch all signals pushed since the last dispatch.
-    ///
-    /// This supports drain-point signal graphs: you can call this multiple times per frame
-    /// at explicit points (e.g. after RayCastSystem runs) so downstream systems can react
-    /// without scanning `rx.signals()`.
-    ///
-    /// Returns the number of signals dispatched.
-    pub fn dispatch_new_signals(&mut self, world: &mut World, max_signals: usize) -> usize {
-        let mut dispatched = 0usize;
-        while let Some(env) = self.take_next_undispatched() {
-            if dispatched >= max_signals {
-                break;
-            }
-            dispatched += 1;
-            self.dispatch_handlers(world, &env);
-        }
-        dispatched
-    }
-
-    pub fn dispatch_handlers(&mut self, world: &mut World, env: &Signal) {
-        let kind = env.kind();
+        self.frame_events.push(env.clone());
 
         let mut emitter = Emitter {
-            signals: &mut self.signals as *mut Vec<Signal>,
-            pending: &mut self.pending as *mut Vec<Signal>,
+            intents: &mut self.ready_intents as *mut Vec<Signal>,
+            pending_intents: &mut self.pending_intents as *mut Vec<Signal>,
+            events_out: &mut self.deferred_events as *mut Vec<Signal>,
         };
 
-        // Global handlers (regardless of scope).
         dispatch_global_kind(self, world, &mut emitter, SignalKind::Any, env);
         dispatch_global_kind(self, world, &mut emitter, kind, env);
 
@@ -331,6 +309,25 @@ impl RxWorld {
         for scope in scope_chain {
             dispatch_scoped_kind(self, world, &mut emitter, SignalKind::Any, scope, env);
             dispatch_scoped_kind(self, world, &mut emitter, kind, scope, env);
+        }
+    }
+}
+
+fn dispatch_global_kind(
+    rx: &mut RxWorld,
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    kind: SignalKind,
+    env: &Signal,
+) {
+    let Some(list) = rx.global_handlers.get_mut(&kind) else {
+        return;
+    };
+
+    for handler in list {
+        match handler {
+            Handler::Fn(fp) => fp(world, emit, env),
+            Handler::Closure(c) => c(world, emit, env),
         }
     }
 }
@@ -348,6 +345,7 @@ fn compute_scope_chain(world: &World, start: ComponentId) -> Vec<ComponentId> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::ecs::IntentValue;
     use slotmap::KeyData;
 
     fn cid(ffi: u64) -> ComponentId {
@@ -358,53 +356,44 @@ mod tests {
     fn timed_signals_are_held_until_due() {
         let mut rx = RxWorld::default();
 
-        rx.push_at_beat(cid(1), 10.0, SignalValue::Noop);
-        assert_eq!(rx.signals().len(), 0);
+        rx.push_intent(cid(1), IntentSignal::at_beat(10.0, IntentValue::Noop));
+        assert_eq!(rx.ready_intents.len(), 0);
 
-        rx.push(
+        rx.push_intent_now(
             cid(1),
-            SignalValue::Print {
+            IntentValue::Print {
                 message: "hi".to_string(),
             },
         );
-        assert_eq!(rx.signals().len(), 1);
+        assert_eq!(rx.ready_intents.len(), 1);
 
-        assert_eq!(rx.promote_due_signals(0.0), 0);
-        assert_eq!(rx.signals().len(), 1);
+        assert_eq!(rx.promote_due_intents(0.0), 0);
+        assert_eq!(rx.ready_intents.len(), 1);
 
-        assert_eq!(rx.promote_due_signals(10.0), 1);
-        assert_eq!(rx.signals().len(), 2);
+        assert_eq!(rx.promote_due_intents(10.0), 1);
+        assert_eq!(rx.ready_intents.len(), 2);
 
-        // Drain should clear only the per-frame queue.
-        let drained = rx.drain();
+        // Drain should clear only ready intents.
+        let drained = rx.drain_ready_intents();
         assert_eq!(drained.len(), 2);
-        assert_eq!(rx.signals().len(), 0);
+        assert_eq!(rx.ready_intents.len(), 0);
     }
 }
 
-fn dispatch_global_kind(
-    rx: &mut RxWorld,
-    world: &mut World,
-    emitter: &mut dyn SignalEmitter,
-    kind: SignalKind,
-    env: &Signal,
-) {
-    let Some(handlers) = rx.global_handlers.get_mut(&kind) else {
-        return;
-    };
-
-    // Index-based iteration to avoid borrow issues if a handler mutates handler lists.
-    for idx in 0..handlers.len() {
-        // SAFETY: idx is in-bounds for current length snapshot.
-        let handler_ptr: *mut Handler = &mut handlers[idx];
-        // SAFETY: we only use this pointer for the duration of the call.
-        unsafe {
-            match &mut *handler_ptr {
-                Handler::Fn(fp) => fp(world, emitter, env),
-                Handler::Closure(f) => f(world, emitter, env),
-            }
-        }
-    }
+fn sort_pending_intents_by_beat(pending: &mut Vec<Signal>) {
+    pending.sort_by(|a, b| {
+        let ba = a
+            .intent
+            .as_ref()
+            .and_then(|i| i.when.beat())
+            .unwrap_or(f64::NEG_INFINITY);
+        let bb = b
+            .intent
+            .as_ref()
+            .and_then(|i| i.when.beat())
+            .unwrap_or(f64::NEG_INFINITY);
+        ba.partial_cmp(&bb).unwrap_or(std::cmp::Ordering::Equal)
+    });
 }
 
 fn dispatch_scoped_kind(

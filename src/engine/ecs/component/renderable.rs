@@ -123,10 +123,7 @@ impl Component for RenderableComponent {
     }
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
-        emit.push(
-            component,
-            crate::engine::ecs::SignalValue::RegisterRenderable { component },
-        );
+        emit.push_intent_now(component, crate::engine::ecs::IntentValue::RegisterRenderable { component });
     }
 
     fn cleanup(
@@ -134,10 +131,7 @@ impl Component for RenderableComponent {
         emit: &mut dyn crate::engine::ecs::SignalEmitter,
         component: ComponentId,
     ) {
-        emit.push(
-            component,
-            crate::engine::ecs::SignalValue::RemoveRenderable { component },
-        );
+        emit.push_intent_now(component, crate::engine::ecs::IntentValue::RemoveRenderable { component });
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

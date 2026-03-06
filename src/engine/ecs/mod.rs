@@ -23,7 +23,10 @@ pub use crate::engine::graphics::primitives::{Renderable, Transform, TransformMa
 
 pub use command_queue::CommandQueue;
 pub use component_codec::ComponentCodec;
-pub use rx::{RxWorld, Signal, SignalEmitter, SignalHandler, SignalKind, SignalValue, SignalWhen};
+pub use rx::{
+    EventSignal, IntentSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalHandler,
+    SignalKind, SignalWhen,
+};
 pub use system::{System, SystemWorld};
 
 /// Bundle of mutable engine state passed to component mutation APIs.

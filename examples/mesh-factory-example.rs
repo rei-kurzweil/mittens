@@ -91,7 +91,7 @@ fn main() {
             let rotation = utils::math::quat_from_axis_angle([0.0, 1.0, 0.0], angle);
 
             let action_cid = universe.world.add_component(ActionComponent::new(
-                engine::ecs::SignalValue::SetTransform {
+                engine::ecs::IntentValue::SetTransform {
                     target: vec![root],
                     translation: [x, y, 0.0],
                     rotation_quat_xyzw: rotation,

@@ -1,5 +1,5 @@
 use crate::engine::ecs::component::{EditorComponent, TransformComponent, TransformGizmoComponent};
-use crate::engine::ecs::{ComponentId, RxWorld, SignalKind, SignalValue, World};
+use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, RxWorld, SignalKind, World};
 
 #[derive(Debug, Default)]
 pub struct EditorSystem {
@@ -17,7 +17,7 @@ impl EditorSystem {
         }
 
         rx.add_global_handler_closure(SignalKind::DragStart, move |world, emit, env| {
-            let SignalValue::DragStart { renderable, .. } = &env.value else {
+            let Some(EventSignal::DragStart { renderable, .. }) = env.event.as_ref() else {
                 return;
             };
 
@@ -45,9 +45,9 @@ impl EditorSystem {
             };
 
             // Reparent the gizmo under the clicked transform via ActionSystem.
-            emit.push(
+            emit.push_intent_now(
                 editor_root,
-                SignalValue::Attach {
+                IntentValue::Attach {
                     parents: vec![target_transform],
                     child: gizmo,
                 },

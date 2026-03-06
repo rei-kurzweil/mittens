@@ -1,5 +1,6 @@
 use crate::engine::user_input::InputState;
 use crate::engine::{ecs, graphics};
+use crate::engine::ecs::SignalEmitter;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -97,9 +98,9 @@ impl Universe {
         let old_parent = self.world.parent_of(child);
         self.world.add_child(parent, child)?;
 
-        self.systems.rx.push(
+        self.systems.rx.push_event(
             child,
-            ecs::SignalValue::ParentChanged {
+            ecs::EventSignal::ParentChanged {
                 child,
                 old_parent,
                 new_parent: Some(parent),
@@ -136,16 +137,17 @@ impl Universe {
         // Detach immediately to avoid dangling parent->child edges until the queue flush.
         self.world.detach_from_parent(child);
 
-        self.systems.rx.push(
+        self.systems.rx.push_event(
             child,
-            ecs::SignalValue::ParentChanged {
+            ecs::EventSignal::ParentChanged {
                 child,
                 old_parent: Some(parent),
                 new_parent: None,
             },
         );
 
-        self.command_queue.remove_subtree(child);
+        self.command_queue
+            .push_intent_now(child, ecs::IntentValue::RemoveSubtree { target: vec![child] });
         Ok(child)
     }
 
@@ -168,16 +170,17 @@ impl Universe {
         for child in children.iter().copied() {
             self.world.detach_from_parent(child);
 
-            self.systems.rx.push(
+            self.systems.rx.push_event(
                 child,
-                ecs::SignalValue::ParentChanged {
+                ecs::EventSignal::ParentChanged {
                     child,
                     old_parent: Some(parent),
                     new_parent: None,
                 },
             );
 
-            self.command_queue.remove_subtree(child);
+            self.command_queue
+                .push_intent_now(child, ecs::IntentValue::RemoveSubtree { target: vec![child] });
         }
 
         Ok(children)
@@ -211,9 +214,9 @@ impl Universe {
                 .init_component_tree(new_root, &mut self.command_queue);
         }
 
-        self.systems.rx.push(
+        self.systems.rx.push_event(
             new_root,
-            ecs::SignalValue::ParentChanged {
+            ecs::EventSignal::ParentChanged {
                 child: new_root,
                 old_parent: None,
                 new_parent: Some(parent),

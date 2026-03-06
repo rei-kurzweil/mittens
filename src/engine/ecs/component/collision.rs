@@ -63,10 +63,7 @@ impl Component for CollisionComponent {
     }
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
-        emit.push(
-            component,
-            crate::engine::ecs::SignalValue::RegisterCollision { component },
-        );
+        emit.push_intent_now(component, crate::engine::ecs::IntentValue::RegisterCollision { component });
     }
 
     fn cleanup(
@@ -74,10 +71,7 @@ impl Component for CollisionComponent {
         emit: &mut dyn crate::engine::ecs::SignalEmitter,
         component: ComponentId,
     ) {
-        emit.push(
-            component,
-            crate::engine::ecs::SignalValue::RemoveCollision { component },
-        );
+        emit.push_intent_now(component, crate::engine::ecs::IntentValue::RemoveCollision { component });
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

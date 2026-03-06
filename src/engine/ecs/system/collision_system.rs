@@ -1,6 +1,6 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::RxWorld;
-use crate::engine::ecs::SignalValue;
+use crate::engine::ecs::EventSignal;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     CollisionComponent, CollisionShapeComponent, RenderableComponent,
@@ -356,8 +356,8 @@ impl CollisionSystem {
                 .get(&(a, b))
                 .copied()
                 .unwrap_or([0.0, 0.0, 0.0]);
-            rx.push(a, SignalValue::CollisionStarted { a, b, delta });
-            rx.push(b, SignalValue::CollisionStarted { a, b, delta });
+            rx.push_event(a, EventSignal::CollisionStarted { a, b, delta });
+            rx.push_event(b, EventSignal::CollisionStarted { a, b, delta });
         }
 
         for &(a, b) in self.active_pairs.difference(&current_pairs) {
@@ -366,8 +366,8 @@ impl CollisionSystem {
                 .get(&(a, b))
                 .copied()
                 .unwrap_or([0.0, 0.0, 0.0]);
-            rx.push(a, SignalValue::CollisionEnded { a, b, delta });
-            rx.push(b, SignalValue::CollisionEnded { a, b, delta });
+            rx.push_event(a, EventSignal::CollisionEnded { a, b, delta });
+            rx.push_event(b, EventSignal::CollisionEnded { a, b, delta });
         }
 
         self.active_pairs = current_pairs;
