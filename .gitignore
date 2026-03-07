@@ -1,2 +1,5 @@
 /target
 .vscode
+
+# Profiling artifacts
+docs/analysis/perf.data*
