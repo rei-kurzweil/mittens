@@ -75,6 +75,13 @@ pub enum EventSignal {
         renderable: ComponentId,
         hit_point: [f32; 3],
 
+        /// World-space ray direction at the time the drag started.
+        ///
+        /// This makes DragStart self-contained for consumers that need a stable plane normal
+        /// (e.g. gizmo debug drag plane / plane-projection drags) without also observing
+        /// RayIntersected events.
+        ray_dir_world: [f32; 3],
+
         /// Optional screen-space cursor/pointer position in pixels.
         ///
         /// Present for screen-space pointers (mouse/touch). Absent for non-screen pointers.
@@ -293,6 +300,8 @@ pub enum IntentValue {
     RegisterAudioBufferSize { component: ComponentId },
     RegisterClock { component: ComponentId },
     RegisterTransformGizmo { component: ComponentId },
+
+    RegisterAction { component: ComponentId },
 
     ScheduleAudioOp {
         component: ComponentId,

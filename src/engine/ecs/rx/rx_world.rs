@@ -62,12 +62,6 @@ pub struct RxWorld {
     /// next tick.
     deferred_events: Vec<Signal>,
 
-    /// Event signals that were dispatched during the current frame.
-    ///
-    /// This is a read-only per-frame log useful for systems that consume the results of upstream
-    /// systems (e.g. gizmos consuming drag events) without installing their own handlers.
-    frame_events: Vec<Signal>,
-
     /// Ready intent signals for this tick.
     ready_intents: Vec<Signal>,
 
@@ -91,7 +85,6 @@ impl std::fmt::Debug for RxWorld {
         f.debug_struct("RxWorld")
             .field("ready_events_len", &self.ready_events.len())
             .field("deferred_events_len", &self.deferred_events.len())
-            .field("frame_events_len", &self.frame_events.len())
             .field("ready_intents_len", &self.ready_intents.len())
             .field("pending_intents_len", &self.pending_intents.len())
             .field("global_kinds", &self.global_handlers.len())
@@ -156,15 +149,10 @@ impl RxWorld {
     /// In the current architecture, signals are typically drained once per frame in
     /// `SystemWorld::process_commands`, which also implicitly resets this cursor.
     pub fn begin_frame(&mut self) {
-        self.frame_events.clear();
         if !self.deferred_events.is_empty() {
             self.ready_events
                 .extend(std::mem::take(&mut self.deferred_events));
         }
-    }
-
-    pub fn frame_events(&self) -> &[Signal] {
-        &self.frame_events
     }
 
     /// Returns the current queued signals for this frame.
@@ -211,12 +199,22 @@ impl RxWorld {
         scope_root: ComponentId,
         handler: SignalHandler,
     ) {
-        self.scoped_handlers
+        let list = self
+            .scoped_handlers
             .entry(kind)
             .or_default()
             .entry(scope_root)
-            .or_default()
-            .push(Handler::Fn(handler));
+            .or_default();
+
+        // Idempotent registration for function-pointer handlers.
+        // This avoids duplicate dispatches if a system registers handlers multiple times
+        // for the same (kind, scope_root).
+        let handler_usize = handler as usize;
+        if list.iter().any(|h| matches!(h, Handler::Fn(fp) if *fp as usize == handler_usize)) {
+            return;
+        }
+
+        list.push(Handler::Fn(handler));
     }
 
     /// Add a scoped handler closure rooted at `scope_root`.
@@ -239,10 +237,14 @@ impl RxWorld {
     /// Note: this is a function pointer (no captures). Use `add_global_handler_closure`
     /// when you need stateful handlers.
     pub fn add_global_handler(&mut self, kind: SignalKind, handler: SignalHandler) {
-        self.global_handlers
-            .entry(kind)
-            .or_default()
-            .push(Handler::Fn(handler));
+        let list = self.global_handlers.entry(kind).or_default();
+
+        let handler_usize = handler as usize;
+        if list.iter().any(|h| matches!(h, Handler::Fn(fp) if *fp as usize == handler_usize)) {
+            return;
+        }
+
+        list.push(Handler::Fn(handler));
     }
 
     /// Add a global handler closure rooted at no scope.
@@ -288,13 +290,53 @@ impl RxWorld {
         removed
     }
 
+    /// Remove all *scoped* handlers rooted at `scope_root`.
+    ///
+    /// This is intended for component lifecycle cleanup: when a component (or subtree) is removed
+    /// from the `World`, any handlers rooted at those component ids should be removed to avoid
+    /// unbounded growth of the handler maps.
+    pub fn remove_all_scoped_handlers_for_scope(&mut self, scope_root: ComponentId) -> usize {
+        if self.scoped_handlers.is_empty() {
+            return 0;
+        }
+
+        let mut removed = 0usize;
+
+        // Clone keys to avoid borrowing issues while mutating the map.
+        let kinds: Vec<SignalKind> = self.scoped_handlers.keys().copied().collect();
+        for kind in kinds {
+            let Some(by_scope) = self.scoped_handlers.get_mut(&kind) else {
+                continue;
+            };
+
+            if let Some(list) = by_scope.remove(&scope_root) {
+                removed += list.len();
+            }
+
+            if by_scope.is_empty() {
+                self.scoped_handlers.remove(&kind);
+            }
+        }
+
+        removed
+    }
+
+    pub fn remove_all_scoped_handlers_for_scopes(
+        &mut self,
+        scopes: impl IntoIterator<Item = ComponentId>,
+    ) -> usize {
+        let mut removed = 0usize;
+        for scope in scopes {
+            removed += self.remove_all_scoped_handlers_for_scope(scope);
+        }
+        removed
+    }
+
     pub fn dispatch_event_handlers(&mut self, world: &mut World, env: &Signal) {
         let Some(event) = env.event.as_ref() else {
             return;
         };
         let kind = event.kind();
-
-        self.frame_events.push(env.clone());
 
         let mut emitter = Emitter {
             intents: &mut self.ready_intents as *mut Vec<Signal>,

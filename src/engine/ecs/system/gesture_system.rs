@@ -215,7 +215,7 @@ impl GestureSystem {
 
         // Start drag.
         if input.mouse_pressed.contains(&MouseButton::Left) {
-            if let Some((raycaster, renderable, _t, _origin, _dir)) = best {
+            if let Some((raycaster, renderable, _t, _origin, dir)) = best {
                 self.state.dragging = true;
                 self.state.drag_raycaster = Some(raycaster);
                 self.state.drag_renderable = Some(renderable);
@@ -249,6 +249,7 @@ impl GestureSystem {
                             raycaster,
                             renderable,
                             hit_point: p,
+                            ray_dir_world: dir,
                             screen_pos_px: input.cursor_pos,
                         },
                     );

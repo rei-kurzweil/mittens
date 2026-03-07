@@ -60,7 +60,7 @@ pub struct SystemWorld {
 }
 
 impl SystemWorld {
-    fn remove_subtree_immediate(
+    pub(crate) fn remove_subtree_immediate(
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
@@ -121,6 +121,10 @@ impl SystemWorld {
         }
 
         let _ = world.remove_component_subtree(root);
+
+        // Component lifecycle: remove any scoped handlers rooted in the deleted subtree.
+        // Global handlers are unaffected.
+        let _ = self.rx.remove_all_scoped_handlers_for_scopes(nodes);
     }
 
     pub fn new() -> Self {
@@ -144,6 +148,7 @@ impl SystemWorld {
         let mut processed = 0usize;
 
         let mut intent_executor = crate::engine::ecs::rx::RxIntentExecutor::default();
+        let mut mutation_executor = crate::engine::ecs::rx::RxMutationExecutor::default();
 
         // Drain locally-queued signals into `RxWorld` before we start.
         let _ = queue.drain_into_rx(&mut self.rx);
@@ -198,7 +203,7 @@ impl SystemWorld {
                         // borrowing `self.rx` while also mutably borrowing `self`.
                         intent_executor.execute(world, queue, &env);
                     } else {
-                        self.execute_intent_signal(world, visuals, queue, &env);
+                        mutation_executor.execute(self, world, visuals, queue, &env);
                     }
                 }
                 if !leftover.is_empty() {
@@ -228,6 +233,7 @@ impl SystemWorld {
         processed
     }
 
+    #[cfg(any())]
     fn execute_intent_signal(
         &mut self,
         world: &mut World,
@@ -531,6 +537,8 @@ impl SystemWorld {
         component: ComponentId,
         emit: &mut dyn crate::engine::ecs::SignalEmitter,
     ) {
+        self.transform_gizmo
+            .install_scoped_handlers_for_gizmo(&mut self.rx, component);
         self.transform_gizmo
             .register_transform_gizmo(world, component, emit);
     }
@@ -1063,7 +1071,8 @@ impl SystemWorld {
         dt_sec: f32,
     ) {
         // Drain-point signal graph setup.
-        // Handlers are installed once; per-frame caches are reset here.
+        // Per-frame caches are reset here; global handlers are installed idempotently.
+        // (Per-gizmo scoped handlers are installed when the gizmo is registered.)
         self.rx.begin_frame();
         self.gesture.install_handlers(&mut self.rx);
         self.editor.install_handlers(&mut self.rx);

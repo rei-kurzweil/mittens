@@ -1,6 +1,7 @@
 use crate::engine::user_input::InputState;
 use crate::engine::{ecs, graphics};
 use crate::engine::ecs::SignalEmitter;
+use std::collections::HashSet;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -50,6 +51,13 @@ impl Universe {
             .init_component_tree(root, &mut self.command_queue);
     }
 
+    fn drain_pending_signals(&mut self) {
+        // Universe helpers are synchronous convenience APIs.
+        // They emit intents and then drain them immediately so the caller sees the effect.
+        self.systems
+            .process_commands(&mut self.world, &mut self.visuals, &mut self.command_queue);
+    }
+
     // --- Query helpers (read-only World access) ---
     pub fn parent_of(&self, c: ecs::ComponentId) -> Option<ecs::ComponentId> {
         self.world.parent_of(c)
@@ -95,22 +103,21 @@ impl Universe {
         parent: ecs::ComponentId,
         child: ecs::ComponentId,
     ) -> Result<(), &'static str> {
-        let old_parent = self.world.parent_of(child);
-        self.world.add_child(parent, child)?;
+        if self.world.get_component_record(parent).is_none() {
+            return Err("parent does not exist");
+        }
+        if self.world.get_component_record(child).is_none() {
+            return Err("child does not exist");
+        }
 
-        self.systems.rx.push_event(
+        self.command_queue.push_intent_now(
             child,
-            ecs::EventSignal::ParentChanged {
+            ecs::IntentValue::Attach {
+                parents: vec![parent],
                 child,
-                old_parent,
-                new_parent: Some(parent),
             },
         );
-
-        if self.world.is_initialized(parent) {
-            self.world
-                .init_component_tree(child, &mut self.command_queue);
-        }
+        self.drain_pending_signals();
         Ok(())
     }
 
@@ -134,20 +141,14 @@ impl Universe {
             .get(index)
             .ok_or("child index out of range")?;
 
-        // Detach immediately to avoid dangling parent->child edges until the queue flush.
-        self.world.detach_from_parent(child);
-
-        self.systems.rx.push_event(
-            child,
-            ecs::EventSignal::ParentChanged {
-                child,
-                old_parent: Some(parent),
-                new_parent: None,
+        self.command_queue.push_intent_now(
+            parent,
+            ecs::IntentValue::RemoveChild {
+                parents: vec![parent],
+                index,
             },
         );
-
-        self.command_queue
-            .push_intent_now(child, ecs::IntentValue::RemoveSubtree { target: vec![child] });
+        self.drain_pending_signals();
         Ok(child)
     }
 
@@ -165,24 +166,16 @@ impl Universe {
             return Err("parent does not exist");
         }
 
-        // Snapshot child list because it mutates as we detach and queue deletions.
+        // Snapshot child list for the return value.
         let children: Vec<ecs::ComponentId> = self.world.children_of(parent).to_vec();
-        for child in children.iter().copied() {
-            self.world.detach_from_parent(child);
 
-            self.systems.rx.push_event(
-                child,
-                ecs::EventSignal::ParentChanged {
-                    child,
-                    old_parent: Some(parent),
-                    new_parent: None,
-                },
-            );
-
-            self.command_queue
-                .push_intent_now(child, ecs::IntentValue::RemoveSubtree { target: vec![child] });
-        }
-
+        self.command_queue.push_intent_now(
+            parent,
+            ecs::IntentValue::RemoveChildren {
+                parents: vec![parent],
+            },
+        );
+        self.drain_pending_signals();
         Ok(children)
     }
 
@@ -198,32 +191,40 @@ impl Universe {
         parent: ecs::ComponentId,
         prefab_root: ecs::ComponentId,
     ) -> Result<ecs::ComponentId, String> {
-        let node = ecs::ComponentCodec::encode_subtree_node(&self.world, prefab_root)?;
-        let new_root = ecs::ComponentCodec::decode_subtree_node_with_new_guids(
-            &mut self.world,
-            Some(parent),
-            &node,
-        )?;
-
-        if self.world.get_component_record(new_root).is_none() {
-            return Err("attach_clone: new root missing after decode".to_string());
+        if self.world.get_component_record(parent).is_none() {
+            return Err("attach_clone: parent does not exist".to_string());
+        }
+        if self.world.get_component_record(prefab_root).is_none() {
+            return Err("attach_clone: prefab_root does not exist".to_string());
         }
 
-        if self.world.is_initialized(parent) {
-            self.world
-                .init_component_tree(new_root, &mut self.command_queue);
-        }
+        let before: HashSet<ecs::ComponentId> = self.world.children_of(parent).iter().copied().collect();
 
-        self.systems.rx.push_event(
-            new_root,
-            ecs::EventSignal::ParentChanged {
-                child: new_root,
-                old_parent: None,
-                new_parent: Some(parent),
+        self.command_queue.push_intent_now(
+            parent,
+            ecs::IntentValue::AttachClone {
+                parents: vec![parent],
+                prefab_root,
             },
         );
+        self.drain_pending_signals();
 
-        Ok(new_root)
+        let after_children = self.world.children_of(parent);
+        let mut new_children = after_children
+            .iter()
+            .copied()
+            .filter(|c| !before.contains(c))
+            .collect::<Vec<_>>();
+
+        if new_children.len() != 1 {
+            new_children.sort();
+            return Err(format!(
+                "attach_clone: expected exactly 1 new child under parent; got {} ({new_children:?})",
+                new_children.len()
+            ));
+        }
+
+        Ok(new_children[0])
     }
 
     fn sync_repl(&mut self) {

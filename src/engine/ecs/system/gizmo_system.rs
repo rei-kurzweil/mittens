@@ -3,9 +3,10 @@ use crate::engine::ecs::component::{
     TransformGizmoComponent, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
     TransformGizmoTranslateComponent,
 };
-use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, World};
+use crate::engine::ecs::{
+    ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
+};
 use crate::engine::user_input::InputState;
-use std::collections::HashMap;
 use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Copy)]
@@ -20,7 +21,356 @@ pub struct TransformGizmoSystem;
 
 impl TransformGizmoSystem {
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    /// Install per-gizmo scoped handlers rooted at the `TransformGizmoComponent` node.
+    ///
+    /// Drag events are scoped to the hit renderable; because gizmo handle renderables live under
+    /// the gizmo node, scoped handlers rooted at the gizmo will run for drag events on its handles.
+    pub fn install_scoped_handlers_for_gizmo(&mut self, rx: &mut RxWorld, gizmo_root: ComponentId) {
+        rx.add_handler(SignalKind::ParentChanged, gizmo_root, Self::on_parent_changed);
+        rx.add_handler(SignalKind::DragStart, gizmo_root, Self::on_drag_start);
+        rx.add_handler(SignalKind::DragMove, gizmo_root, Self::on_drag_move);
+        rx.add_handler(SignalKind::DragEnd, gizmo_root, Self::on_drag_end);
+    }
+
+    fn debug_drag_plane_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            let v = std::env::var("CAT_DEBUG_GIZMO_DRAG_PLANE").unwrap_or_default();
+            let v = v.trim().to_ascii_lowercase();
+            matches!(v.as_str(), "1" | "true" | "yes" | "on")
+        })
+    }
+
+    fn quat_from_z_to_dir(dir: [f32; 3]) -> [f32; 4] {
+        use crate::utils::math;
+
+        fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+            [
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0],
+            ]
+        }
+
+        // Rotate local +Z to `dir`.
+        let z = [0.0f32, 0.0f32, 1.0f32];
+        let d = math::vec3_normalize(dir);
+        let dot_ = z[0] * d[0] + z[1] * d[1] + z[2] * d[2];
+
+        if dot_ >= 1.0 - 1e-6 {
+            return [0.0, 0.0, 0.0, 1.0];
+        }
+        if dot_ <= -1.0 + 1e-6 {
+            // 180-degree flip around X (any axis orthogonal to Z works).
+            return math::quat_from_axis_angle([1.0, 0.0, 0.0], std::f32::consts::PI);
+        }
+
+        let axis = cross(z, d);
+        let axis_len = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
+        if axis_len <= 1e-6 {
+            return [0.0, 0.0, 0.0, 1.0];
+        }
+        let axis_n = [axis[0] / axis_len, axis[1] / axis_len, axis[2] / axis_len];
+        let angle = dot_.clamp(-1.0, 1.0).acos();
+        math::quat_from_axis_angle(axis_n, angle)
+    }
+
+    fn spawn_debug_drag_plane(
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        hit_point: [f32; 3],
+        plane_normal: [f32; 3],
+    ) -> ComponentId {
+        use crate::engine::ecs::component::{
+            ColorComponent, EmissiveComponent, OpacityComponent, RenderableComponent,
+            TransformComponent,
+        };
+        use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Renderable};
+
+        let q = Self::quat_from_z_to_dir(plane_normal);
+
+        // Use a very thin cube so it is visible from both sides (debug aid).
+        let size = 2.0_f32;
+        let thickness = 0.005_f32;
+
+        let t = world.add_component_boxed_named(
+            "gizmo_drag_plane_t",
+            Box::new(
+                TransformComponent::new()
+                    .with_position(hit_point[0], hit_point[1], hit_point[2])
+                    .with_rotation_quat(q)
+                    .with_scale(size, size, thickness),
+            ),
+        );
+        let r = world.add_component_boxed_named(
+            "gizmo_drag_plane_r",
+            Box::new(RenderableComponent::new(Renderable::new(
+                CpuMeshHandle::CUBE,
+                MaterialHandle::UNLIT_MESH,
+            ))),
+        );
+        let c = world.add_component_boxed_named(
+            "gizmo_drag_plane_color",
+            Box::new(ColorComponent::rgba(1.0, 0.0, 1.0, 0.35)),
+        );
+        let o = world.add_component_boxed_named(
+            "gizmo_drag_plane_opacity",
+            Box::new(
+                OpacityComponent::new()
+                    .with_opacity(0.35)
+                    .with_multiple_layers(),
+            ),
+        );
+        let e = world.add_component_boxed_named(
+            "gizmo_drag_plane_emissive",
+            Box::new(EmissiveComponent::on()),
+        );
+
+        let _ = world.add_child(t, r);
+        let _ = world.add_child(r, c);
+        let _ = world.add_child(r, o);
+        let _ = world.add_child(r, e);
+
+        world.init_component_tree(t, emit);
+        t
+    }
+
+    fn on_parent_changed(world: &mut World, _emit: &mut dyn SignalEmitter, env: &crate::engine::ecs::Signal) {
+        let Some(EventSignal::ParentChanged {
+            child,
+            new_parent,
+            ..
+        }) = env.event.as_ref()
+        else {
+            return;
+        };
+
+        if world
+            .get_component_by_id_as::<TransformGizmoComponent>(*child)
+            .is_none()
+        {
+            return;
+        }
+
+        let mut target: Option<ComponentId> = None;
+        let mut cur = *new_parent;
+        while let Some(node) = cur {
+            if world.get_component_by_id_as::<TransformComponent>(node).is_some() {
+                target = Some(node);
+                break;
+            }
+            cur = world.parent_of(node);
+        }
+
+        if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(*child) {
+            g.target_transform = target;
+            g.active_raycaster = None;
+        }
+    }
+
+    fn on_drag_start(world: &mut World, emit: &mut dyn SignalEmitter, env: &crate::engine::ecs::Signal) {
+        let Some(EventSignal::DragStart {
+            raycaster,
+            renderable,
+            hit_point,
+            ray_dir_world,
+            ..
+        }) = env.event.as_ref()
+        else {
+            return;
+        };
+
+        let Some((gizmo_cid, _op)) = Self::resolve_gizmo_op_for_renderable(world, *renderable) else {
+            return;
+        };
+
+        let mut old_debug_root: Option<ComponentId> = None;
+        if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid) {
+            g.active_raycaster = Some(*raycaster);
+            if Self::debug_drag_plane_enabled() {
+                old_debug_root = g.debug_drag_plane_root.take();
+            }
+        }
+
+        if let Some(root) = old_debug_root {
+            emit.push_intent_now(root, IntentValue::RemoveSubtree { target: vec![root] });
+        }
+
+        if Self::debug_drag_plane_enabled() {
+            let plane_root = Self::spawn_debug_drag_plane(world, emit, *hit_point, *ray_dir_world);
+            if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid) {
+                g.debug_drag_plane_root = Some(plane_root);
+            }
+        }
+    }
+
+    fn on_drag_move(world: &mut World, emit: &mut dyn SignalEmitter, env: &crate::engine::ecs::Signal) {
+        use crate::engine::ecs::system::transform_system::TransformSystem;
+        use crate::utils::math;
+
+        fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+            a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+        }
+
+        fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+            [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+        }
+
+        fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+            [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+        }
+
+        fn mul(v: [f32; 3], s: f32) -> [f32; 3] {
+            [v[0] * s, v[1] * s, v[2] * s]
+        }
+
+        fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+            [
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0],
+            ]
+        }
+
+        let Some(EventSignal::DragMove {
+            raycaster,
+            renderable,
+            delta_world,
+            hit_point,
+            screen_delta_px,
+            ..
+        }) = env.event.as_ref()
+        else {
+            return;
+        };
+
+        let Some((gizmo_cid, op)) = Self::resolve_gizmo_op_for_renderable(world, *renderable) else {
+            return;
+        };
+
+        // Copy out what we need without holding a mutable borrow.
+        let Some((target_transform, active)) = world
+            .get_component_by_id_as::<TransformGizmoComponent>(gizmo_cid)
+            .map(|g| (g.target_transform, g.active_raycaster))
+        else {
+            return;
+        };
+
+        let Some(target_transform) = target_transform else {
+            return;
+        };
+
+        if active != Some(*raycaster) {
+            return;
+        }
+
+        match op {
+            TransformGizmoOp::Translate(axis) => {
+                let axis_v = axis.unit_vec3();
+                let d = dot(*delta_world, axis_v);
+                let delta = mul(axis_v, d);
+
+                let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_transform) else {
+                    return;
+                };
+
+                let cur = t.transform.translation;
+                let next = add(cur, delta);
+                t.set_position(emit, next[0], next[1], next[2]);
+            }
+            TransformGizmoOp::Rotate(axis) => {
+                let coord_type = Self::resolve_gesture_coord_type_for_renderable(world, *renderable);
+
+                let axis_v = axis.unit_vec3();
+                let angle = match (coord_type, *screen_delta_px) {
+                    (Some(GestureCoordType::ScreenSpace1DSlider), Some((dx, dy))) => {
+                        // Simple first-pass slider mapping. We can refine sign selection later
+                        // (camera-aware) without changing the signal.
+                        let radians_per_px = 0.01_f32;
+                        let px = match axis {
+                            TransformGizmoAxis::X => -dy,
+                            TransformGizmoAxis::Y => dx,
+                            TransformGizmoAxis::Z => dx,
+                        };
+                        px * radians_per_px
+                    }
+                    _ => {
+                        let pivot = TransformSystem::world_position(world, target_transform)
+                            .unwrap_or([0.0, 0.0, 0.0]);
+                        let prev_hit = sub(*hit_point, *delta_world);
+
+                        let mut v0 = sub(prev_hit, pivot);
+                        let mut v1 = sub(*hit_point, pivot);
+
+                        // Project onto plane orthogonal to the axis.
+                        v0 = sub(v0, mul(axis_v, dot(v0, axis_v)));
+                        v1 = sub(v1, mul(axis_v, dot(v1, axis_v)));
+                        v0 = math::vec3_normalize(v0);
+                        v1 = math::vec3_normalize(v1);
+
+                        // Signed angle about axis.
+                        let c = cross(v0, v1);
+                        let s = dot(axis_v, c);
+                        let d = dot(v0, v1);
+                        s.atan2(d)
+                    }
+                };
+
+                if angle != 0.0 {
+                    let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_transform) else {
+                        return;
+                    };
+                    let q_delta = math::quat_from_axis_angle(axis_v, angle);
+                    let q_next = math::quat_mul(q_delta, t.transform.rotation);
+                    t.set_rotation_quat(emit, q_next);
+                }
+            }
+            TransformGizmoOp::Scale(axis) => {
+                let d = dot(*delta_world, axis.unit_vec3());
+
+                let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_transform) else {
+                    return;
+                };
+
+                let mut s = t.transform.scale;
+                match axis {
+                    TransformGizmoAxis::X => s[0] = (s[0] + d).max(0.001),
+                    TransformGizmoAxis::Y => s[1] = (s[1] + d).max(0.001),
+                    TransformGizmoAxis::Z => s[2] = (s[2] + d).max(0.001),
+                }
+                t.set_scale(emit, s[0], s[1], s[2]);
+            }
+        }
+    }
+
+    fn on_drag_end(world: &mut World, emit: &mut dyn SignalEmitter, env: &crate::engine::ecs::Signal) {
+        let Some(EventSignal::DragEnd {
+            raycaster,
+            renderable,
+            ..
+        }) = env.event.as_ref()
+        else {
+            return;
+        };
+
+        let Some((gizmo_cid, _op)) = Self::resolve_gizmo_op_for_renderable(world, *renderable) else {
+            return;
+        };
+
+        if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid) {
+            if g.active_raycaster == Some(*raycaster) {
+                g.active_raycaster = None;
+            }
+
+            if Self::debug_drag_plane_enabled() {
+                if let Some(root) = g.debug_drag_plane_root.take() {
+                    emit.push_intent_now(root, IntentValue::RemoveSubtree { target: vec![root] });
+                }
+            }
+        }
     }
 
     /// Spawn the 9-part gizmo visual subtree for a TransformGizmoComponent.
@@ -480,386 +830,10 @@ impl TransformGizmoSystem {
         world: &mut World,
         _input: &InputState,
         emit: &mut dyn SignalEmitter,
-        rx: &mut RxWorld,
+        _rx: &mut RxWorld,
     ) {
-        use crate::engine::ecs::system::transform_system::TransformSystem;
-        use crate::utils::math;
-
-        fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
-            a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-        }
-
-        fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-            [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-        }
-
-        fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-            [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-        }
-
-        fn mul(v: [f32; 3], s: f32) -> [f32; 3] {
-            [v[0] * s, v[1] * s, v[2] * s]
-        }
-
-        fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-            [
-                a[1] * b[2] - a[2] * b[1],
-                a[2] * b[0] - a[0] * b[2],
-                a[0] * b[1] - a[1] * b[0],
-            ]
-        }
-
-        fn debug_drag_plane_enabled() -> bool {
-            static ENABLED: OnceLock<bool> = OnceLock::new();
-            *ENABLED.get_or_init(|| {
-                let v = std::env::var("CAT_DEBUG_GIZMO_DRAG_PLANE").unwrap_or_default();
-                let v = v.trim().to_ascii_lowercase();
-                matches!(v.as_str(), "1" | "true" | "yes" | "on")
-            })
-        }
-
-        fn quat_from_z_to_dir(dir: [f32; 3]) -> [f32; 4] {
-            // Rotate local +Z to `dir`.
-            let z = [0.0f32, 0.0f32, 1.0f32];
-            let d = math::vec3_normalize(dir);
-            let dot_ = z[0] * d[0] + z[1] * d[1] + z[2] * d[2];
-
-            if dot_ >= 1.0 - 1e-6 {
-                return [0.0, 0.0, 0.0, 1.0];
-            }
-            if dot_ <= -1.0 + 1e-6 {
-                // 180-degree flip around X (any axis orthogonal to Z works).
-                return math::quat_from_axis_angle([1.0, 0.0, 0.0], std::f32::consts::PI);
-            }
-
-            let axis = cross(z, d);
-            let axis_len = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
-            if axis_len <= 1e-6 {
-                return [0.0, 0.0, 0.0, 1.0];
-            }
-            let axis_n = [axis[0] / axis_len, axis[1] / axis_len, axis[2] / axis_len];
-            let angle = dot_.clamp(-1.0, 1.0).acos();
-            math::quat_from_axis_angle(axis_n, angle)
-        }
-
-        fn spawn_debug_drag_plane(
-            world: &mut World,
-            emit: &mut dyn SignalEmitter,
-            hit_point: [f32; 3],
-            plane_normal: [f32; 3],
-        ) -> ComponentId {
-            use crate::engine::ecs::component::{
-                ColorComponent, EmissiveComponent, OpacityComponent, RenderableComponent,
-                TransformComponent,
-            };
-            use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Renderable};
-
-            let q = quat_from_z_to_dir(plane_normal);
-
-            // Use a very thin cube so it is visible from both sides (debug aid).
-            let size = 2.0_f32;
-            let thickness = 0.005_f32;
-
-            let t = world.add_component_boxed_named(
-                "gizmo_drag_plane_t",
-                Box::new(
-                    TransformComponent::new()
-                        .with_position(hit_point[0], hit_point[1], hit_point[2])
-                        .with_rotation_quat(q)
-                        .with_scale(size, size, thickness),
-                ),
-            );
-            let r = world.add_component_boxed_named(
-                "gizmo_drag_plane_r",
-                Box::new(RenderableComponent::new(Renderable::new(
-                    CpuMeshHandle::CUBE,
-                    MaterialHandle::UNLIT_MESH,
-                ))),
-            );
-            let c = world.add_component_boxed_named(
-                "gizmo_drag_plane_color",
-                Box::new(ColorComponent::rgba(1.0, 0.0, 1.0, 0.35)),
-            );
-            let o = world.add_component_boxed_named(
-                "gizmo_drag_plane_opacity",
-                Box::new(
-                    OpacityComponent::new()
-                        .with_opacity(0.35)
-                        .with_multiple_layers(),
-                ),
-            );
-            let e = world.add_component_boxed_named(
-                "gizmo_drag_plane_emissive",
-                Box::new(EmissiveComponent::on()),
-            );
-
-            let _ = world.add_child(t, r);
-            let _ = world.add_child(r, c);
-            let _ = world.add_child(r, o);
-            let _ = world.add_child(r, e);
-
-            world.init_component_tree(t, emit);
-            t
-        }
-
-        // If a gizmo was reparented (e.g. by EditorSystem selection), rebind its target transform.
-        for s in rx.frame_events().iter() {
-            let Some(EventSignal::ParentChanged {
-                child,
-                new_parent,
-                ..
-            }) = s.event.as_ref()
-            else {
-                continue;
-            };
-
-            if world
-                .get_component_by_id_as::<TransformGizmoComponent>(*child)
-                .is_none()
-            {
-                continue;
-            }
-
-            let mut target: Option<ComponentId> = None;
-            let mut cur = *new_parent;
-            while let Some(node) = cur {
-                if world
-                    .get_component_by_id_as::<TransformComponent>(node)
-                    .is_some()
-                {
-                    target = Some(node);
-                    break;
-                }
-                cur = world.parent_of(node);
-            }
-
-            if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(*child) {
-                g.target_transform = target;
-                g.active_raycaster = None;
-            }
-        }
-
-        // Build a lookup for the drag-start ray direction by (raycaster, renderable).
-        // GestureSystem emits DragStart after consuming RayIntersected, but both signals are
-        // present in the same tick's RxWorld.
-        let mut ray_dir_by_pair: HashMap<(ComponentId, ComponentId), [f32; 3]> = HashMap::new();
-        for s in rx.frame_events().iter() {
-            let Some(EventSignal::RayIntersected {
-                raycaster,
-                renderable,
-                dir,
-                ..
-            }) = s.event.as_ref()
-            else {
-                continue;
-            };
-            ray_dir_by_pair.insert((*raycaster, *renderable), *dir);
-        }
-
-        // Snapshot drag events first (avoid borrowing issues while mutating the world).
-        let mut drag_events: Vec<EventSignal> = Vec::new();
-        for s in rx.frame_events().iter() {
-            let Some(ev) = s.event.as_ref() else {
-                continue;
-            };
-            match ev {
-                EventSignal::DragStart { .. }
-                | EventSignal::DragMove { .. }
-                | EventSignal::DragEnd { .. } => drag_events.push(ev.clone()),
-                _ => {}
-            }
-        }
-
-        for ev in drag_events {
-            match ev {
-                EventSignal::DragStart {
-                    raycaster,
-                    renderable,
-                    hit_point,
-                    ..
-                } => {
-                    let Some((gizmo_cid, _op)) =
-                        Self::resolve_gizmo_op_for_renderable(world, renderable)
-                    else {
-                        continue;
-                    };
-
-                    let mut old_debug_root: Option<ComponentId> = None;
-                    if let Some(g) =
-                        world.get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid)
-                    {
-                        g.active_raycaster = Some(raycaster);
-                        if debug_drag_plane_enabled() {
-                            old_debug_root = g.debug_drag_plane_root.take();
-                        }
-                    }
-
-                    if let Some(root) = old_debug_root {
-                        emit.push_intent_now(
-                            root,
-                            IntentValue::RemoveSubtree { target: vec![root] },
-                        );
-                    }
-
-                    if debug_drag_plane_enabled() {
-                        if let Some(dir) = ray_dir_by_pair.get(&(raycaster, renderable)).copied() {
-                            let plane_root = spawn_debug_drag_plane(world, emit, hit_point, dir);
-                            if let Some(g) = world
-                                .get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid)
-                            {
-                                g.debug_drag_plane_root = Some(plane_root);
-                            }
-                        }
-                    }
-                }
-                EventSignal::DragMove {
-                    raycaster,
-                    renderable,
-                    delta_world,
-                    hit_point,
-                    screen_delta_px,
-                    ..
-                } => {
-                    let Some((gizmo_cid, op)) =
-                        Self::resolve_gizmo_op_for_renderable(world, renderable)
-                    else {
-                        continue;
-                    };
-
-                    // Copy out what we need without holding a mutable borrow.
-                    let Some((target_transform, active)) = world
-                        .get_component_by_id_as::<TransformGizmoComponent>(gizmo_cid)
-                        .map(|g| (g.target_transform, g.active_raycaster))
-                    else {
-                        continue;
-                    };
-
-                    let Some(target_transform) = target_transform else {
-                        continue;
-                    };
-
-                    if active != Some(raycaster) {
-                        continue;
-                    }
-
-                    match op {
-                        TransformGizmoOp::Translate(axis) => {
-                            let axis_v = axis.unit_vec3();
-                            let d = dot(delta_world, axis_v);
-                            let delta = mul(axis_v, d);
-
-                            let Some(t) = world
-                                .get_component_by_id_as_mut::<TransformComponent>(target_transform)
-                            else {
-                                continue;
-                            };
-
-                            let cur = t.transform.translation;
-                            let next = add(cur, delta);
-                            t.set_position(emit, next[0], next[1], next[2]);
-                        }
-                        TransformGizmoOp::Rotate(axis) => {
-                            let coord_type =
-                                Self::resolve_gesture_coord_type_for_renderable(world, renderable);
-
-                            let axis_v = axis.unit_vec3();
-                            let angle = match (coord_type, screen_delta_px) {
-                                (Some(GestureCoordType::ScreenSpace1DSlider), Some((dx, dy))) => {
-                                    // Simple first-pass slider mapping. We can refine sign
-                                    // selection later (camera-aware) without changing the signal.
-                                    let radians_per_px = 0.01_f32;
-                                    let px = match axis {
-                                        TransformGizmoAxis::X => -dy,
-                                        TransformGizmoAxis::Y => dx,
-                                        TransformGizmoAxis::Z => dx,
-                                    };
-                                    px * radians_per_px
-                                }
-                                _ => {
-                                    let pivot =
-                                        TransformSystem::world_position(world, target_transform)
-                                            .unwrap_or([0.0, 0.0, 0.0]);
-                                    let prev_hit = sub(hit_point, delta_world);
-
-                                    let mut v0 = sub(prev_hit, pivot);
-                                    let mut v1 = sub(hit_point, pivot);
-
-                                    // Project onto plane orthogonal to the axis.
-                                    v0 = sub(v0, mul(axis_v, dot(v0, axis_v)));
-                                    v1 = sub(v1, mul(axis_v, dot(v1, axis_v)));
-                                    v0 = math::vec3_normalize(v0);
-                                    v1 = math::vec3_normalize(v1);
-
-                                    // Signed angle about axis.
-                                    let c = cross(v0, v1);
-                                    let s = dot(axis_v, c);
-                                    let d = dot(v0, v1);
-                                    s.atan2(d)
-                                }
-                            };
-
-                            if angle != 0.0 {
-                                let Some(t) = world
-                                    .get_component_by_id_as_mut::<TransformComponent>(
-                                        target_transform,
-                                    )
-                                else {
-                                    continue;
-                                };
-                                let q_delta = math::quat_from_axis_angle(axis_v, angle);
-                                let q_next = math::quat_mul(q_delta, t.transform.rotation);
-                                t.set_rotation_quat(emit, q_next);
-                            }
-                        }
-                        TransformGizmoOp::Scale(axis) => {
-                            let d = dot(delta_world, axis.unit_vec3());
-
-                            let Some(t) = world
-                                .get_component_by_id_as_mut::<TransformComponent>(target_transform)
-                            else {
-                                continue;
-                            };
-
-                            let mut s = t.transform.scale;
-                            match axis {
-                                TransformGizmoAxis::X => s[0] = (s[0] + d).max(0.001),
-                                TransformGizmoAxis::Y => s[1] = (s[1] + d).max(0.001),
-                                TransformGizmoAxis::Z => s[2] = (s[2] + d).max(0.001),
-                            }
-                            t.set_scale(emit, s[0], s[1], s[2]);
-                        }
-                    }
-                }
-                EventSignal::DragEnd {
-                    raycaster,
-                    renderable,
-                    ..
-                } => {
-                    let Some((gizmo_cid, _op)) =
-                        Self::resolve_gizmo_op_for_renderable(world, renderable)
-                    else {
-                        continue;
-                    };
-
-                    if let Some(g) =
-                        world.get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid)
-                    {
-                        if g.active_raycaster == Some(raycaster) {
-                            g.active_raycaster = None;
-                        }
-
-                        if debug_drag_plane_enabled() {
-                            if let Some(root) = g.debug_drag_plane_root.take() {
-                                emit.push_intent_now(
-                                    root,
-                                    IntentValue::RemoveSubtree { target: vec![root] },
-                                );
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
+        // Handler-driven: drag + parent events are handled during drain points.
+        // Keep `tick_with_queue` as a no-op entrypoint for now.
+        let _ = (world, emit);
     }
 }

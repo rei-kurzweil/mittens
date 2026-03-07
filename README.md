@@ -1,4 +1,4 @@
-# cat engine「0.4」
+# cat-engine 0.5 "mittens"
 
 <img width="498" height="400" alt="Screenshot_20260106_094219" src="https://github.com/user-attachments/assets/83c00897-aa61-4520-8756-cd7263289800" />
 
@@ -262,57 +262,42 @@ GravityComponent {
   + handles session, frame loop, and input events from XR runtime
 
 
-# Actions
+# Signals
 
-Actions are data-driven “commands” stored in the component graph as `ActionComponent`s.
-They are typically executed by the `AnimationSystem` when a `KeyframeComponent` fires, but can also be executed directly via `ActionSystem`.
+This engine uses an explicit **drain-point** signal model.
 
-## ActionComponent schema
+Instead of letting systems mutate everything immediately (and in arbitrary order), code emits **signals** into the per-frame queue, and the engine drains them in a consistent sequence.
 
-An `ActionComponent` encodes to a small JSON-ish record:
+Signal types:
 
-- `target: [u64, ...]` — list of component ids (slotmap FFI ids)
-- `method: "..."` — action method string
-- `params: [ ... ]` — method-specific parameters
+- **Events** (`EventSignal`): facts/observations ("parent changed", "drag started", ...).
+  - Dispatched to handlers (global handlers and/or scoped handlers rooted at a scope subtree).
+  - Event handlers should be *observers*: they typically emit follow-up intents rather than directly performing large mutations.
 
-## Supported actions
+- **Intents** (`IntentSignal` carrying an `IntentValue`): requests for side effects ("attach", "set transform", "remove subtree", ...).
+  - Executed at drain points.
+  - Can be scheduled for the future via `at_beat(...)` (timed intents sit in a holding-pen until due).
 
-Common topology/scene actions:
+Execution order (inside `SystemWorld::process_signals`):
 
-- `set_color(target, rgba)` (`method = "set_color"`)
-- `set_text(target, text)` (`method = "set_text"`)
-- `set_position(target, x, y, z)` (`method = "set_position"`)
+1. **Dispatch ready events** to handlers.
+   - Any *events emitted by handlers* are **deferred to the next tick**.
+   - Any *intents emitted by handlers* are queued for later execution.
 
-- `attach(parent, child)` (`method = "attach"`)
-- `detach(targets)` (`method = "detach"`)
-- `remove_subtree(targets)` (`method = "remove_subtree"`)
+2. **Promote timed intents** that have become due at the current beat.
 
-Prefab + child removal helpers (mirror the `Universe` helpers):
+3. **Execute ready intents**.
+   - Intents may emit more intents; those will run later in the same tick (after queue draining), up to the `max_signals` cap.
+   - Intents may also emit events, but (like handler-emitted events) those are deferred to the next tick.
 
-- `attach_clone(parent, prefab_root)` (`method = "attach_clone"`)
-  - Clones the prefab subtree and attaches the cloned root under each target parent.
+Implementation detail: intent execution is split into two layers:
 
-- `remove_child(parent, index)` (`method = "remove_child"`)
-  - Detaches the selected child immediately and queues deletion of that subtree.
-  - `index` is based on the current `children_of(parent)` order; if you want a stable index, avoid attaching other “marker” children under the same parent.
+- `RxIntentExecutor`: “interpretation” intents that expand into follow-up work.
+- `RxMutationExecutor`: low-level canonical mutations (register/update/remove, etc.).
 
-- `remove_children(parent)` (`method = "remove_children"`)
-  - Detaches + queues deletion for all direct children.
+Scoped handler lifecycle: systems can install handlers rooted at a component subtree (e.g. gizmos). When a subtree is removed, any scoped handlers rooted in that deleted subtree are removed automatically.
 
-Audio actions:
-
-- `audio_graph_rebuild(targets)` (`method = "audio_graph_rebuild"`)
-- `audio_low_pass_set_cutoff_hz(targets, cutoff_hz)` (`method = "audio_low_pass_set_cutoff_hz"`)
-- `audio_band_pass_set_center_hz(targets, center_hz)` (`method = "audio_band_pass_set_center_hz"`)
-
-Oscillator/music actions:
-
-- `oscillator_set_enabled(targets, enabled)` (`method = "oscillator_set_enabled"`)
-- `oscillator_set_pitch(targets, frequency_hz)` (`method = "oscillator_set_pitch"`)
-- `oscillator_schedule_set_pitch(targets, beat_offset, frequency_hz)` (`method = "oscillator_schedule_set_pitch"`)
-- `oscillator_schedule_set_note(targets, beat_offset, pitch, octave)` (`method = "oscillator_schedule_set_note"`)
-- `oscillator_schedule_music_note(targets, beat_offset, note)` (`method = "oscillator_schedule_music_note"`)
-- `music_set_note(targets, note)` (`method = "music_set_note"`)
+See [docs/signals.md](docs/signals.md) for the deeper rationale.
 
 
 # REPL / CLI
@@ -382,7 +367,26 @@ Pipes use `|` but they pipe *component objects* (ComponentIds), not strings.
 https://github.com/user-attachments/assets/ce4ac311-1087-4792-bec8-5dd012d848f2
 
 
-Credits:
+
+## Profiling (flamegraph)
+
+You can profile binaries (including examples) using `cargo-flamegraph` without adding any dependency to this project.
+
+Prereqs:
+
+- Install the Cargo subcommand: `cargo install cargo-flamegraph`
+- Linux: install `perf` (Arch/EndeavourOS: `sudo pacman -S perf`)
+
+Example (profile an optimized release build of an example with debug symbols and frame pointers):
+
+```bash
+CARGO_PROFILE_RELEASE_DEBUG=true \
+  RUSTFLAGS="-C debuginfo=1 -C force-frame-pointers=yes" \
+  cargo flamegraph --release --example vtuber-joints-example
+```
+
+
+# Credits:
 
 Special thanks to [2gd4.me](https://2gd4.me) for designing font_system.png
  

@@ -79,12 +79,12 @@ impl LightSystem {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        let mut visited_nodes = 0usize;
-        let mut updated_lights = 0usize;
+        let mut _visited_nodes = 0usize;
+        let mut _updated_lights = 0usize;
 
         let mut stack = vec![component];
         while let Some(node) = stack.pop() {
-            visited_nodes += 1;
+            _visited_nodes += 1;
             for &child in world.children_of(node) {
                 stack.push(child);
 
@@ -92,7 +92,7 @@ impl LightSystem {
                     TransformSystem::world_position(world, child).unwrap_or([0.0, 0.0, 0.0]);
 
                 if let Some(light) = world.get_component_by_id_as::<PointLightComponent>(child) {
-                    updated_lights += 1;
+                    _updated_lights += 1;
                     visuals.upsert_point_light(
                         child,
                         crate::engine::graphics::visual_world::VisualPointLight {
@@ -109,7 +109,7 @@ impl LightSystem {
                 if let Some(light) =
                     world.get_component_by_id_as::<DirectionalLightComponent>(child)
                 {
-                    updated_lights += 1;
+                    _updated_lights += 1;
                     visuals.upsert_point_light(
                         child,
                         crate::engine::graphics::visual_world::VisualPointLight {
