@@ -1,5 +1,7 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::IntentValue;
+use crate::engine::ecs::SignalEmitter;
 
 /// Marks an "editor root" subtree.
 ///
@@ -40,5 +42,9 @@ impl Component for EditorComponent {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+
+    fn init(&mut self, emit: &mut dyn SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(component, IntentValue::RegisterEditor { component });
     }
 }

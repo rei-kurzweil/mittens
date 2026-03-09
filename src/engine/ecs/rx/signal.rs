@@ -301,6 +301,8 @@ pub enum IntentValue {
     RegisterClock { component: ComponentId },
     RegisterTransformGizmo { component: ComponentId },
 
+    RegisterEditor { component: ComponentId },
+
     RegisterAction { component: ComponentId },
 
     ScheduleAudioOp {

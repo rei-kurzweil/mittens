@@ -254,6 +254,10 @@ impl RxMutationExecutor {
                 systems.register_transform_gizmo(world, visuals, *component, emit);
             }
 
+            IntentValue::RegisterEditor { component } => {
+                systems.register_editor(world, visuals, *component, emit);
+            }
+
             IntentValue::RegisterAction { component } => {
                 crate::engine::ecs::system::action_system::register_action(world, emit, *component);
             }

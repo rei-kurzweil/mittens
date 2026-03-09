@@ -1,8 +1,8 @@
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ClockComponent,
-    ColorComponent, DirectionalLightComponent, EmissiveComponent, GLTFComponent, InputComponent,
-    InputTransformModeComponent, JointComponent, MeshComponent, PointerComponent, RayCastComponent,
-    RenderableComponent, SkinnedMeshComponent, TransformComponent, TransformGizmoComponent,
+    ColorComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent, GLTFComponent,
+    InputComponent, InputTransformModeComponent, JointComponent, MeshComponent, PointerComponent,
+    RayCastComponent, RenderableComponent, SkinnedMeshComponent, TransformComponent,
 };
 use cat_engine::{engine, utils};
 use std::collections::{HashMap, HashSet};
@@ -96,6 +96,10 @@ fn main() {
     // --- VTuber model ---
     let model_uri = "assets/models/pc-rei.hoodie.glb";
 
+    // Wrap the model subtree in an editor root so transform-only glTF nodes can be visualized
+    // (and thus raycasted/selected) without affecting non-editor scenes.
+    let editor_root = universe.world.add_component(EditorComponent::new());
+
     let model_root = universe.world.add_component(TransformComponent::new());
     let model = universe.world.add_component(GLTFComponent::new(model_uri));
 
@@ -107,8 +111,10 @@ fn main() {
 
     let _ = universe.attach(model_root, model);
 
-    // Initialize the model root so GLTFComponent gets registered.
-    universe.add(model_root);
+    let _ = universe.attach(editor_root, model_root);
+
+    // Initialize the editor root so GLTFComponent gets registered.
+    universe.add(editor_root);
 
     // --- Background clouds (occluded + lit) ---
     let bg_root = universe.world.add_component(
@@ -262,17 +268,8 @@ fn main() {
         println!("  sel[{i:02}] node_index={node_index} name={name} transform={joint_tx:?}");
     }
 
-    // Attach one gizmo under each selected arm joint transform.
-    // (Stop animating joints for now; use gizmos to poke them interactively.)
-    for &(_node_index, joint_tx) in selected_joint_transforms.iter() {
-        let gizmo = universe
-            .world
-            .add_component(TransformGizmoComponent::new().with_scale(0.25));
-        let _ = universe.attach(joint_tx, gizmo);
-    }
-
     if print_transform_updates {
-        println!("[vtuber-joints-example] note: joint animation disabled; gizmos enabled");
+        println!("[vtuber-joints-example] note: joint animation disabled");
     }
 
     universe.systems.process_commands(

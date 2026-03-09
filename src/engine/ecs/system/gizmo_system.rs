@@ -44,6 +44,15 @@ impl TransformGizmoSystem {
         })
     }
 
+    fn debug_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            let v = std::env::var("CAT_DEBUG_GIZMO").unwrap_or_default();
+            let v = v.trim().to_ascii_lowercase();
+            matches!(v.as_str(), "1" | "true" | "yes" | "on")
+        })
+    }
+
     fn quat_from_z_to_dir(dir: [f32; 3]) -> [f32; 4] {
         use crate::utils::math;
 
@@ -165,9 +174,20 @@ impl TransformGizmoSystem {
             cur = world.parent_of(node);
         }
 
+        let old_target = world
+            .get_component_by_id_as::<TransformGizmoComponent>(*child)
+            .and_then(|g| g.target_transform);
+
         if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(*child) {
             g.target_transform = target;
             g.active_raycaster = None;
+        }
+
+        if Self::debug_enabled() {
+            println!(
+                "[TransformGizmoSystem] ParentChanged gizmo={:?} new_parent={:?} old_target={:?} new_target={:?}",
+                child, new_parent, old_target, target
+            );
         }
     }
 
@@ -429,10 +449,92 @@ impl TransformGizmoSystem {
             .map(|g| g.scale)
             .unwrap_or(1.0);
 
+        // Gizmos are parented under the target transform, so by default they'd inherit whatever
+        // scale the target (and its ancestors) have. For joints/armatures this can make gizmos
+        // extremely tiny.
+        //
+        // Interpret `TransformGizmoComponent.scale` as an intended *world-space* scale multiplier
+        // and compensate for the target's current world scale when choosing the local scale for
+        // the gizmo visual root.
+        fn mat4_identity() -> crate::engine::graphics::primitives::TransformMatrix {
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        }
+
+        fn mat4_mul(
+            a: crate::engine::graphics::primitives::TransformMatrix,
+            b: crate::engine::graphics::primitives::TransformMatrix,
+        ) -> crate::engine::graphics::primitives::TransformMatrix {
+            let mut out = [[0.0f32; 4]; 4];
+            for c in 0..4 {
+                for r in 0..4 {
+                    out[c][r] = a[0][r] * b[c][0]
+                        + a[1][r] * b[c][1]
+                        + a[2][r] * b[c][2]
+                        + a[3][r] * b[c][3];
+                }
+            }
+            out
+        }
+
+        fn max_basis_scale(m: crate::engine::graphics::primitives::TransformMatrix) -> f32 {
+            fn len3(v: [f32; 4]) -> f32 {
+                (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+            }
+            // Column-major: columns 0..2 are the scaled basis vectors.
+            len3(m[0]).max(len3(m[1])).max(len3(m[2]))
+        }
+
+        fn world_model_uncached(
+            world: &World,
+            start_transform: ComponentId,
+        ) -> crate::engine::graphics::primitives::TransformMatrix {
+            // Collect local model matrices for all ancestor transforms, then multiply root->leaf.
+            let mut chain: Vec<crate::engine::graphics::primitives::TransformMatrix> = Vec::new();
+            let mut cur: Option<ComponentId> = Some(start_transform);
+            while let Some(node) = cur {
+                if let Some(t) = world.get_component_by_id_as::<TransformComponent>(node) {
+                    chain.push(t.transform.model);
+                }
+                cur = world.parent_of(node);
+            }
+            chain.reverse();
+            let mut out = mat4_identity();
+            for m in chain {
+                out = mat4_mul(out, m);
+            }
+            out
+        }
+
+        let parent_world = world_model_uncached(world, parent_transform);
+        let parent_world_scale = max_basis_scale(parent_world).max(1e-4);
+        let gizmo_local_scale = gizmo_scale / parent_world_scale;
+
+        if Self::debug_enabled() {
+            println!(
+                "[TransformGizmoSystem] register gizmo={:?} target_transform={:?} requested_world_scale={:.4} parent_world_scale={:.4} gizmo_local_scale={:.4}",
+                component,
+                parent_transform,
+                gizmo_scale,
+                parent_world_scale,
+                gizmo_local_scale
+            );
+        }
+
         // Create a root transform for the gizmo visuals under the GizmoComponent node.
         let gizmo_root = world.add_component_boxed_named(
             "gizmo_root",
-            Box::new(TransformComponent::new().with_scale(gizmo_scale, gizmo_scale, gizmo_scale)),
+            Box::new(
+                TransformComponent::new().with_scale(
+                    gizmo_local_scale,
+                    gizmo_local_scale,
+                    gizmo_local_scale,
+                ),
+            ),
         );
         let _ = world.add_child(component, gizmo_root);
 

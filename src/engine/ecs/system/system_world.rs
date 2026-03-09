@@ -543,6 +543,24 @@ impl SystemWorld {
             .register_transform_gizmo(world, component, emit);
     }
 
+    pub fn register_editor(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+        _emit: &mut dyn crate::engine::ecs::SignalEmitter,
+    ) {
+        // Install editor gesture/picking handlers scoped to this editor root.
+        // (Editor selection is driven by DragStart events under the subtree.)
+        if world
+            .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(component)
+            .is_some()
+        {
+            self.editor
+                .install_scoped_handlers_for_editor(&mut self.rx, component);
+        }
+    }
+
     /// Register a RenderableComponent instance with the RenderableSystem.
     pub fn register_renderable(
         &mut self,
@@ -1075,7 +1093,6 @@ impl SystemWorld {
         // (Per-gizmo scoped handlers are installed when the gizmo is registered.)
         self.rx.begin_frame();
         self.gesture.install_handlers(&mut self.rx);
-        self.editor.install_handlers(&mut self.rx);
         self.gesture.begin_frame();
 
         // Process input first - it may queue commands
