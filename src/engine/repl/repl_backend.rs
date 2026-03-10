@@ -241,6 +241,7 @@ impl ReplBackend {
                 println!("🐈   cd ..");
                 println!("🐈   cd /");
                 println!("🐈   pwd");
+                println!("🐈   type [path]");
                 println!("🐈   cat <path>");
                 println!("🐈   ls | grep <pattern>");
                 println!("🐈   cat <path> | grep <pattern>");
@@ -274,6 +275,38 @@ impl ReplBackend {
                     println!("🐈 /{}", parts.join("/"));
                 }
             },
+            "type" | "kind" => {
+                // If no arg is provided, default to the current working directory.
+                // At root (cwd=None), print a sentinel.
+                let target = match it.next() {
+                    None => self.cwd,
+                    Some(arg) => match self.resolve_path_or_item(world, arg) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            println!("🐈 type: {}", e);
+                            return;
+                        }
+                    },
+                };
+
+                match target {
+                    None => println!("🐈 type: <root>"),
+                    Some(cid) => {
+                        let Some(node) = world.get_component_node(cid) else {
+                            println!("🐈 type: not found");
+                            return;
+                        };
+                        let kind = node.component.name();
+                        println!(
+                            "🐈 type: {} (name='{}' id={} guid={})",
+                            kind,
+                            node.name,
+                            Self::format_component_id_short(cid),
+                            node.guid
+                        );
+                    }
+                }
+            }
             "ls" => {
                 let ids: Vec<ecs::ComponentId> = self.current_listing(world);
 

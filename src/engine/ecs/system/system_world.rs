@@ -11,6 +11,7 @@ use crate::engine::ecs::system::KineticResponseSystem;
 use crate::engine::ecs::system::LightSystem;
 use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::OpenXRSystem;
+use crate::engine::ecs::system::PipelineSystem;
 use crate::engine::ecs::system::RayCastSystem;
 use crate::engine::ecs::system::RenderableSystem;
 use crate::engine::ecs::system::SkinnedMeshSystem;
@@ -27,6 +28,9 @@ use crate::engine::user_input::InputState;
 #[derive(Debug, Default)]
 pub struct SystemWorld {
     pub rx: RxWorld,
+
+    /// REPL command queue (executed by Universe on the main thread).
+    repl_command_queue: Vec<String>,
 
     pub clock: ClockSystem,
     pub audio: AudioSystem,
@@ -51,6 +55,8 @@ pub struct SystemWorld {
 
     pub openxr: OpenXRSystem,
 
+    pub pipeline: PipelineSystem,
+
     pub camera: CameraSystem,
     pub input: InputSystem,
     pub light: LightSystem,
@@ -68,7 +74,7 @@ impl SystemWorld {
     ) {
         use crate::engine::ecs::component::{
             CollisionComponent, ControllerXRComponent, KineticResponseComponent, RayCastComponent,
-            RenderableComponent, TransformComponent,
+            RenderableComponent, SignalRouteUpwardComponent, TransformComponent,
         };
 
         // Best-effort: remove system state for known component types before deleting.
@@ -82,6 +88,12 @@ impl SystemWorld {
         }
 
         for n in nodes.iter().copied().rev() {
+            if world
+                .get_component_by_id_as::<SignalRouteUpwardComponent>(n)
+                .is_some()
+            {
+                self.rx.remove_pipelines_from_operator(n);
+            }
             if world
                 .get_component_by_id_as::<RenderableComponent>(n)
                 .is_some()
@@ -131,6 +143,18 @@ impl SystemWorld {
         Self::default()
     }
 
+    pub fn queue_repl_command(&mut self, command: String) {
+        // Avoid unbounded growth if something spams this.
+        if self.repl_command_queue.len() >= 128 {
+            self.repl_command_queue.drain(0..64);
+        }
+        self.repl_command_queue.push(command);
+    }
+
+    pub fn take_repl_commands(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.repl_command_queue)
+    }
+
     /// Execute pending signals up to `max_signals`.
     ///
     /// Semantics:
@@ -149,6 +173,7 @@ impl SystemWorld {
 
         let mut intent_executor = crate::engine::ecs::rx::RxIntentExecutor::default();
         let mut mutation_executor = crate::engine::ecs::rx::RxMutationExecutor::default();
+        let mut pipeline_processor = crate::engine::ecs::rx::SignalPipelineProcessor::default();
 
         // Drain locally-queued signals into `RxWorld` before we start.
         let _ = queue.drain_into_rx(&mut self.rx);
@@ -193,6 +218,8 @@ impl SystemWorld {
                         continue;
                     }
                     processed += 1;
+
+                    let env = pipeline_processor.process_intent(world, &self.rx, env);
 
                     let Some(intent) = env.intent.as_ref() else {
                         continue;

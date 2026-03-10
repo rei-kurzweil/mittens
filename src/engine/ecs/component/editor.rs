@@ -45,6 +45,11 @@ impl Component for EditorComponent {
     }
 
     fn init(&mut self, emit: &mut dyn SignalEmitter, component: ComponentId) {
-        emit.push_intent_now(component, IntentValue::RegisterEditor { component });
+        emit.push_intent_now(
+            component,
+            IntentValue::RegisterEditor {
+                component_ids: vec![component],
+            },
+        );
     }
 }

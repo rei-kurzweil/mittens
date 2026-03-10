@@ -66,7 +66,9 @@ impl Camera3DComponent {
             if let Some(component) = self.component_id {
                 emit.push_intent_now(
                     component,
-                    crate::engine::ecs::IntentValue::MakeActiveCamera { component },
+                    crate::engine::ecs::IntentValue::MakeActiveCamera {
+                        component_ids: vec![component],
+                    },
                 );
             }
         }
@@ -96,7 +98,9 @@ impl Component for Camera3DComponent {
         self.component_id = Some(component);
         emit.push_intent_now(
             component,
-            crate::engine::ecs::IntentValue::RegisterCamera3d { component },
+            crate::engine::ecs::IntentValue::RegisterCamera3d {
+                component_ids: vec![component],
+            },
         );
     }
 

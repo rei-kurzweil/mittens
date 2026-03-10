@@ -2,7 +2,8 @@ use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ClockComponent,
     ColorComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent, GLTFComponent,
     InputComponent, InputTransformModeComponent, JointComponent, MeshComponent, PointerComponent,
-    RayCastComponent, RenderableComponent, SkinnedMeshComponent, TransformComponent,
+    RayCastComponent, RaycastableComponent, RenderableComponent, SkinnedMeshComponent,
+    TransformComponent,
 };
 use cat_engine::{engine, utils};
 use std::collections::{HashMap, HashSet};
@@ -173,6 +174,84 @@ fn main() {
         (1.0, 0.75, 0.5),
         (0.75, 0.70, 0.65, 1.0),
     );
+
+    // --- Editor-side stacked cubes (inside the editor subtree for picking/gizmos) ---
+    {
+        let spawn_editor_cube = |universe: &mut engine::Universe,
+                                 editor_root: engine::ecs::ComponentId,
+                                 name: &str,
+                                 position: (f32, f32, f32),
+                                 scale: (f32, f32, f32),
+                                 color: (f32, f32, f32, f32)| {
+            let transform = universe.world.add_component_boxed_named(
+                format!("{name}_t"),
+                Box::new(
+                    TransformComponent::new()
+                        .with_position(position.0, position.1, position.2)
+                        .with_scale(scale.0, scale.1, scale.2),
+                ),
+            );
+            let renderable = universe
+                .world
+                .add_component_boxed_named(format!("{name}_r"), Box::new(RenderableComponent::cube()));
+            let color_comp = universe.world.add_component_boxed_named(
+                format!("{name}_color"),
+                Box::new(ColorComponent::rgba(color.0, color.1, color.2, color.3)),
+            );
+            let raycastable = universe.world.add_component_boxed_named(
+                format!("{name}_raycastable"),
+                Box::new(RaycastableComponent::enabled()),
+            );
+
+            let _ = universe.world.add_child(transform, renderable);
+            let _ = universe.world.add_child(renderable, color_comp);
+            let _ = universe.world.add_child(renderable, raycastable);
+
+            // One attach into the initialized editor subtree triggers init for the new subtree.
+            let _ = universe.attach(editor_root, transform);
+        };
+
+        // Place the stack beside the desk (a bit to the right).
+        let stack_x = 1.35;
+        let stack_z = 1.0;
+        let s = 0.25;
+        let half = 0.5 * s;
+        let light_brown = (0.80, 0.72, 0.55, 1.0);
+        let cyan = (0.20, 1.00, 1.00, 1.0);
+
+        spawn_editor_cube(
+            &mut universe,
+            editor_root,
+            "editor_stack_0",
+            (stack_x, half, stack_z),
+            (s, s, s),
+            light_brown,
+        );
+        spawn_editor_cube(
+            &mut universe,
+            editor_root,
+            "editor_stack_1",
+            (stack_x, half + 1.0 * s, stack_z),
+            (s, s, s),
+            light_brown,
+        );
+        spawn_editor_cube(
+            &mut universe,
+            editor_root,
+            "editor_stack_2",
+            (stack_x, half + 2.0 * s, stack_z),
+            (s, s, s),
+            light_brown,
+        );
+        spawn_editor_cube(
+            &mut universe,
+            editor_root,
+            "editor_stack_top",
+            (stack_x, half + 3.0 * s, stack_z),
+            (s, s, s),
+            cyan,
+        );
+    }
 
     let xr_root = universe
         .world

@@ -49,7 +49,7 @@ fn set_renderable_color_rgba(
             emit.push_intent_now(
                 color_cid,
                 engine::ecs::IntentValue::RegisterColor {
-                    component: color_cid,
+                    component_ids: vec![color_cid],
                 },
             );
         }
@@ -64,7 +64,7 @@ fn set_renderable_color_rgba(
     emit.push_intent_now(
         color_cid,
         engine::ecs::IntentValue::RegisterColor {
-            component: color_cid,
+            component_ids: vec![color_cid],
         },
     );
 }

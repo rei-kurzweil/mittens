@@ -62,7 +62,9 @@ impl Component for DirectionalLightComponent {
         // Uses the same light registration path as point lights.
         emit.push_intent_now(
             component,
-            crate::engine::ecs::IntentValue::RegisterLight { component },
+            crate::engine::ecs::IntentValue::RegisterLight {
+                component_ids: vec![component],
+            },
         );
     }
 

@@ -2,12 +2,14 @@ use crate::engine::ecs::component::{
     GestureCoordType, GestureCoordTypeComponent, TransformComponent, TransformGizmoAxis,
     TransformGizmoComponent, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
     TransformGizmoTranslateComponent,
+    SignalRouteUpwardComponent,
 };
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
 };
 use crate::engine::user_input::InputState;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug, Clone, Copy)]
 enum TransformGizmoOp {
@@ -51,6 +53,229 @@ impl TransformGizmoSystem {
             let v = v.trim().to_ascii_lowercase();
             matches!(v.as_str(), "1" | "true" | "yes" | "on")
         })
+    }
+
+    fn debug_target_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            let v = std::env::var("CAT_DEBUG_GIZMO_TARGET").unwrap_or_default();
+            let v = v.trim().to_ascii_lowercase();
+            matches!(v.as_str(), "1" | "true" | "yes" | "on")
+        })
+    }
+
+    fn debug_sanity_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            let v = std::env::var("CAT_DEBUG_GIZMO_SANITY").unwrap_or_default();
+            let v = v.trim().to_ascii_lowercase();
+            matches!(v.as_str(), "1" | "true" | "yes" | "on")
+        })
+    }
+
+    fn debug_apply_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            let v = std::env::var("CAT_DEBUG_GIZMO_APPLY").unwrap_or_default();
+            let v = v.trim().to_ascii_lowercase();
+            matches!(v.as_str(), "1" | "true" | "yes" | "on")
+        })
+    }
+
+    fn log_apply(
+        world: &World,
+        op: &str,
+        target_transform: ComponentId,
+        extra: &str,
+    ) {
+        static LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
+        let n = LOG_COUNT.fetch_add(1, Ordering::Relaxed);
+        if n >= 96 {
+            return;
+        }
+
+        let name = world
+            .get_component_record(target_transform)
+            .map(|n| n.name.clone())
+            .unwrap_or_else(|| "<missing>".to_string());
+
+        println!(
+            "[TransformGizmoSystem] APPLY op={} target={:?} '{}' {}",
+            op, target_transform, name, extra
+        );
+    }
+
+    fn use_parent_inverse_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            // Default OFF to preserve previous gizmo behavior unless explicitly enabled.
+            let v = std::env::var("CAT_GIZMO_USE_PARENT_INVERSE").unwrap_or_default();
+            let v = v.trim().to_ascii_lowercase();
+            matches!(v.as_str(), "1" | "true" | "yes" | "on")
+        })
+    }
+
+    fn sanity_check_transform_values(
+        world: &World,
+        target_transform: ComponentId,
+        translation: [f32; 3],
+        rotation_xyzw: [f32; 4],
+        scale: [f32; 3],
+    ) {
+        fn finite_f32(x: f32) -> bool {
+            x.is_finite()
+        }
+        fn finite3(v: [f32; 3]) -> bool {
+            finite_f32(v[0]) && finite_f32(v[1]) && finite_f32(v[2])
+        }
+        fn finite4(v: [f32; 4]) -> bool {
+            finite_f32(v[0]) && finite_f32(v[1]) && finite_f32(v[2]) && finite_f32(v[3])
+        }
+        fn too_large3(v: [f32; 3]) -> bool {
+            let lim = 1.0e6_f32;
+            v[0].abs() > lim || v[1].abs() > lim || v[2].abs() > lim
+        }
+
+        if finite3(translation)
+            && finite4(rotation_xyzw)
+            && finite3(scale)
+            && !too_large3(translation)
+            && !too_large3(scale)
+        {
+            return;
+        }
+
+        static LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
+        let n = LOG_COUNT.fetch_add(1, Ordering::Relaxed);
+        if n >= 32 {
+            return;
+        }
+
+        let name = world
+            .get_component_record(target_transform)
+            .map(|n| n.name.clone())
+            .unwrap_or_else(|| "<missing>".to_string());
+
+        println!(
+            "[TransformGizmoSystem] SANITY target={:?} '{}' translation={:?} rotation={:?} scale={:?}",
+            target_transform,
+            name,
+            translation,
+            rotation_xyzw,
+            scale
+        );
+    }
+
+    fn apply_route_upward_if_present(
+        world: &World,
+        kind_name: &str,
+        start: ComponentId,
+    ) -> ComponentId {
+        let mut cur_target = start;
+
+        // Apply all child route-up operators in order of appearance.
+        // (In current usage there will typically be 0 or 1.)
+        for &ch in world.children_of(start) {
+            let Some(op) = world.get_component_by_id_as::<SignalRouteUpwardComponent>(ch) else {
+                continue;
+            };
+
+            let want = op.intent_kind.trim();
+            let applies = want.is_empty() || want == "any" || want == kind_name;
+            if !applies {
+                continue;
+            }
+
+            let parent_type = op.parent_type.trim();
+            if parent_type.is_empty() {
+                continue;
+            }
+
+            // Ancestor search: do not match the start node itself.
+            let mut cur = world.parent_of(cur_target);
+            while let Some(cid) = cur {
+                let Some(node) = world.get_component_node(cid) else {
+                    break;
+                };
+
+                if node.component.name() == parent_type {
+                    cur_target = cid;
+                    break;
+                }
+
+                cur = world.parent_of(cid);
+            }
+        }
+
+        cur_target
+    }
+
+    fn mat4_identity() -> crate::engine::graphics::primitives::TransformMatrix {
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    }
+
+    fn mat4_mul_vec4(m: crate::engine::graphics::primitives::TransformMatrix, v: [f32; 4]) -> [f32; 4] {
+        [
+            m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2] + m[3][0] * v[3],
+            m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2] + m[3][1] * v[3],
+            m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2] + m[3][2] * v[3],
+            m[0][3] * v[0] + m[1][3] * v[1] + m[2][3] * v[2] + m[3][3] * v[3],
+        ]
+    }
+
+    fn parent_transform_world_matrix(
+        world: &World,
+        transform_cid: ComponentId,
+    ) -> Option<crate::engine::graphics::primitives::TransformMatrix> {
+        let mut cur = transform_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(t) = world
+                .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(parent)
+            {
+                return Some(t.transform.matrix_world);
+            }
+            cur = parent;
+        }
+        None
+    }
+
+    fn world_delta_to_target_local(
+        world: &World,
+        target_transform: ComponentId,
+        delta_world: [f32; 3],
+    ) -> [f32; 3] {
+        use crate::utils::math;
+
+        if !Self::use_parent_inverse_enabled() {
+            return delta_world;
+        }
+
+        let parent_world = Self::parent_transform_world_matrix(world, target_transform)
+            .unwrap_or_else(Self::mat4_identity);
+        let inv_parent_world = math::mat4_inverse(parent_world).unwrap_or_else(Self::mat4_identity);
+
+        let v = Self::mat4_mul_vec4(inv_parent_world, [delta_world[0], delta_world[1], delta_world[2], 0.0]);
+        [v[0], v[1], v[2]]
+    }
+
+    fn world_dir_to_target_local(
+        world: &World,
+        target_transform: ComponentId,
+        dir_world: [f32; 3],
+    ) -> [f32; 3] {
+        use crate::utils::math;
+
+        if !Self::use_parent_inverse_enabled() {
+            return math::vec3_normalize(dir_world);
+        }
+
+        let d = Self::world_delta_to_target_local(world, target_transform, dir_world);
+        math::vec3_normalize(d)
     }
 
     fn quat_from_z_to_dir(dir: [f32; 3]) -> [f32; 4] {
@@ -178,8 +403,31 @@ impl TransformGizmoSystem {
             .get_component_by_id_as::<TransformGizmoComponent>(*child)
             .and_then(|g| g.target_transform);
 
+        // If the newly-selected transform is a proxy (e.g. glTF viz:* transform), allow it to
+        // carry routing operators that redirect gizmo edits to an ancestor target.
+        let routed_target = target.map(|t| Self::apply_route_upward_if_present(world, "update_transform", t));
+
+        if Self::debug_target_enabled() {
+            if let (Some(orig), Some(routed)) = (target, routed_target) {
+                if orig != routed {
+                    let orig_name = world
+                        .get_component_record(orig)
+                        .map(|n| n.name.clone())
+                        .unwrap_or_else(|| "<missing>".to_string());
+                    let routed_name = world
+                        .get_component_record(routed)
+                        .map(|n| n.name.clone())
+                        .unwrap_or_else(|| "<missing>".to_string());
+                    println!(
+                        "[TransformGizmoSystem] routed target_transform {:?} '{}' -> {:?} '{}'",
+                        orig, orig_name, routed, routed_name
+                    );
+                }
+            }
+        }
+
         if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(*child) {
-            g.target_transform = target;
+            g.target_transform = routed_target;
             g.active_raycaster = None;
         }
 
@@ -216,7 +464,12 @@ impl TransformGizmoSystem {
         }
 
         if let Some(root) = old_debug_root {
-            emit.push_intent_now(root, IntentValue::RemoveSubtree { target: vec![root] });
+            emit.push_intent_now(
+                root,
+                IntentValue::RemoveSubtree {
+                    component_ids: vec![root],
+                },
+            );
         }
 
         if Self::debug_drag_plane_enabled() {
@@ -291,14 +544,49 @@ impl TransformGizmoSystem {
             TransformGizmoOp::Translate(axis) => {
                 let axis_v = axis.unit_vec3();
                 let d = dot(*delta_world, axis_v);
-                let delta = mul(axis_v, d);
+                let delta_world_axis = mul(axis_v, d);
+                let delta = Self::world_delta_to_target_local(world, target_transform, delta_world_axis);
 
-                let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_transform) else {
+                let Some(t_ro) = world.get_component_by_id_as::<TransformComponent>(target_transform)
+                else {
                     return;
                 };
-
-                let cur = t.transform.translation;
+                let cur = t_ro.transform.translation;
                 let next = add(cur, delta);
+
+                if Self::debug_apply_enabled() {
+                    Self::log_apply(
+                        world,
+                        "translate",
+                        target_transform,
+                        &format!(
+                            "delta_world={:?} axis={:?} d={:.6} delta_world_axis={:?} delta_applied={:?} cur_t={:?} next_t={:?} use_parent_inverse={}",
+                            *delta_world,
+                            axis_v,
+                            d,
+                            delta_world_axis,
+                            delta,
+                            cur,
+                            next,
+                            Self::use_parent_inverse_enabled(),
+                        ),
+                    );
+                }
+
+                if Self::debug_sanity_enabled() {
+                    Self::sanity_check_transform_values(
+                        world,
+                        target_transform,
+                        next,
+                        t_ro.transform.rotation,
+                        t_ro.transform.scale,
+                    );
+                }
+
+                let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_transform)
+                else {
+                    return;
+                };
                 t.set_position(emit, next[0], next[1], next[2]);
             }
             TransformGizmoOp::Rotate(axis) => {
@@ -340,27 +628,107 @@ impl TransformGizmoSystem {
                 };
 
                 if angle != 0.0 {
-                    let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_transform) else {
+                    let axis_local = Self::world_dir_to_target_local(world, target_transform, axis_v);
+
+                    let Some(t_ro) = world.get_component_by_id_as::<TransformComponent>(target_transform)
+                    else {
                         return;
                     };
-                    let q_delta = math::quat_from_axis_angle(axis_v, angle);
-                    let q_next = math::quat_mul(q_delta, t.transform.rotation);
+                    let q_delta_local = math::quat_from_axis_angle(axis_local, angle);
+                    let q_next = math::quat_mul(q_delta_local, t_ro.transform.rotation);
+
+                    if Self::debug_apply_enabled() {
+                        Self::log_apply(
+                            world,
+                            "rotate",
+                            target_transform,
+                            &format!(
+                                "delta_world={:?} axis_world={:?} axis_local={:?} angle={:.6} cur_q={:?} next_q={:?} pivot_world={:?} use_parent_inverse={}",
+                                *delta_world,
+                                axis_v,
+                                axis_local,
+                                angle,
+                                t_ro.transform.rotation,
+                                q_next,
+                                TransformSystem::world_position(world, target_transform).unwrap_or([0.0, 0.0, 0.0]),
+                                Self::use_parent_inverse_enabled(),
+                            ),
+                        );
+                    }
+
+                    if Self::debug_sanity_enabled() {
+                        Self::sanity_check_transform_values(
+                            world,
+                            target_transform,
+                            t_ro.transform.translation,
+                            q_next,
+                            t_ro.transform.scale,
+                        );
+                    }
+
+                    let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_transform)
+                    else {
+                        return;
+                    };
                     t.set_rotation_quat(emit, q_next);
                 }
             }
             TransformGizmoOp::Scale(axis) => {
                 let d = dot(*delta_world, axis.unit_vec3());
 
-                let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_transform) else {
+                // Convert the world-space drag delta into target-local space so scaling behaves
+                // consistently even when the target has a rotated/scaled parent.
+                let delta_world_axis = mul(axis.unit_vec3(), d);
+                let delta_local_axis = Self::world_delta_to_target_local(world, target_transform, delta_world_axis);
+                let axis_local_dir = Self::world_dir_to_target_local(world, target_transform, axis.unit_vec3());
+                let d_local = dot(delta_local_axis, axis_local_dir);
+
+                let Some(t_ro) = world.get_component_by_id_as::<TransformComponent>(target_transform)
+                else {
                     return;
                 };
-
-                let mut s = t.transform.scale;
+                let mut s = t_ro.transform.scale;
                 match axis {
-                    TransformGizmoAxis::X => s[0] = (s[0] + d).max(0.001),
-                    TransformGizmoAxis::Y => s[1] = (s[1] + d).max(0.001),
-                    TransformGizmoAxis::Z => s[2] = (s[2] + d).max(0.001),
+                    TransformGizmoAxis::X => s[0] = (s[0] + d_local).max(0.001),
+                    TransformGizmoAxis::Y => s[1] = (s[1] + d_local).max(0.001),
+                    TransformGizmoAxis::Z => s[2] = (s[2] + d_local).max(0.001),
                 }
+
+                if Self::debug_apply_enabled() {
+                    Self::log_apply(
+                        world,
+                        "scale",
+                        target_transform,
+                        &format!(
+                            "delta_world={:?} axis_world={:?} d_world={:.6} delta_world_axis={:?} delta_local_axis={:?} axis_local_dir={:?} d_local={:.6} cur_s={:?} next_s={:?} use_parent_inverse={}",
+                            *delta_world,
+                            axis.unit_vec3(),
+                            d,
+                            delta_world_axis,
+                            delta_local_axis,
+                            axis_local_dir,
+                            d_local,
+                            t_ro.transform.scale,
+                            s,
+                            Self::use_parent_inverse_enabled(),
+                        ),
+                    );
+                }
+
+                if Self::debug_sanity_enabled() {
+                    Self::sanity_check_transform_values(
+                        world,
+                        target_transform,
+                        t_ro.transform.translation,
+                        t_ro.transform.rotation,
+                        s,
+                    );
+                }
+
+                let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_transform)
+                else {
+                    return;
+                };
                 t.set_scale(emit, s[0], s[1], s[2]);
             }
         }
@@ -387,7 +755,12 @@ impl TransformGizmoSystem {
 
             if Self::debug_drag_plane_enabled() {
                 if let Some(root) = g.debug_drag_plane_root.take() {
-                    emit.push_intent_now(root, IntentValue::RemoveSubtree { target: vec![root] });
+                    emit.push_intent_now(
+                        root,
+                        IntentValue::RemoveSubtree {
+                            component_ids: vec![root],
+                        },
+                    );
                 }
             }
         }

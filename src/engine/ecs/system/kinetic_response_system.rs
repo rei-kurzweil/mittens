@@ -335,7 +335,7 @@ impl KineticResponseSystem {
                 emit.push_intent_now(
                     transform_cid,
                     IntentValue::UpdateTransform {
-                        component: transform_cid,
+                        component_ids: vec![transform_cid],
                         translation: transform.translation,
                         rotation_quat_xyzw: transform.rotation,
                         scale: transform.scale,

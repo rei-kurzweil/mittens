@@ -228,10 +228,16 @@ impl Universe {
     }
 
     fn sync_repl(&mut self) {
+        // Always drain queued system-driven REPL commands so they don't grow unbounded
+        // when REPL is disabled.
+        let scripted = self.systems.take_repl_commands();
+
         let (Some(repl), Some(backend)) = (&self.repl, self.repl_backend.as_mut()) else {
             return;
         };
+
         backend.exec_all(&self.world, repl.try_recv_all());
+        backend.exec_all(&self.world, scripted);
     }
 
     /// Initialize the renderer for a window.
@@ -305,6 +311,10 @@ impl Universe {
         // Process commands after tick so any commands queued during tick are processed in the same frame
         self.systems
             .process_commands(&mut self.world, &mut self.visuals, &mut self.command_queue);
+
+        // Editor systems may enqueue REPL navigation commands during this update.
+        // Sync once more so the REPL reflects the just-applied world topology.
+        self.sync_repl();
     }
 
     pub fn render(&mut self) {

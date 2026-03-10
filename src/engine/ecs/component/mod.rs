@@ -38,6 +38,7 @@ pub mod music_note;
 pub mod opacity;
 pub mod overlay;
 pub mod skinned_mesh;
+pub mod signal_route_upward;
 pub mod transparent_cutout;
 
 pub mod openxr;
@@ -107,6 +108,7 @@ pub use raycastable::RaycastableComponent;
 pub use raycastable_shape::{RaycastableShapeComponent, RaycastableShapeType};
 pub use renderable::RenderableComponent;
 pub use skinned_mesh::SkinnedMeshComponent;
+pub use signal_route_upward::SignalRouteUpwardComponent;
 pub use text::TextComponent;
 pub use text_shadow::TextShadowComponent;
 pub use texture::{CatEngineTextureFormat, TextureComponent};

@@ -37,7 +37,9 @@ impl CameraXRComponent {
         if let Some(component) = self.component_id {
             emit.push_intent_now(
                 component,
-                crate::engine::ecs::IntentValue::MakeActiveCamera { component },
+                crate::engine::ecs::IntentValue::MakeActiveCamera {
+                    component_ids: vec![component],
+                },
             );
         }
     }

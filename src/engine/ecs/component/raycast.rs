@@ -77,7 +77,12 @@ impl Component for RayCastComponent {
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         self.component = Some(component);
-        emit.push_intent_now(component, crate::engine::ecs::IntentValue::RegisterRaycast { component });
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterRaycast {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn cleanup(
@@ -85,7 +90,12 @@ impl Component for RayCastComponent {
         emit: &mut dyn crate::engine::ecs::SignalEmitter,
         component: ComponentId,
     ) {
-        emit.push_intent_now(component, crate::engine::ecs::IntentValue::RemoveRaycast { component });
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RemoveRaycast {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

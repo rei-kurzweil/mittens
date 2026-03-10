@@ -2,7 +2,7 @@ use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::engine::ecs::component::{
     ColorComponent, EditorComponent, EmissiveComponent, GLTFComponent, JointComponent,
     MeshComponent, OverlayComponent, RaycastableComponent, RenderableComponent,
-    SkinnedMeshComponent, TextureComponent, TransformComponent,
+    SignalRouteUpwardComponent, SkinnedMeshComponent, TextureComponent, TransformComponent,
 };
 use crate::engine::graphics::mesh::{CpuMesh, CpuVertex};
 use crate::engine::graphics::primitives::TransformMatrix;
@@ -992,6 +992,14 @@ impl GLTFSystem {
                 Box::new(viz_tc),
             );
             let _ = world.add_child(overlay, viz_transform);
+
+            // Treat viz transforms as interaction proxies: route SetTransform intents to the
+            // nearest ancestor Transform.
+            let route_up = world.add_component_boxed_named(
+                format!("route_upward:viz:{}", node_display_name),
+                Box::new(SignalRouteUpwardComponent::new("update_transform", "transform")),
+            );
+            let _ = world.add_child(viz_transform, route_up);
 
             let viz_renderable = world.add_component_boxed_named(
                 format!("viz_box:{}", node_display_name),

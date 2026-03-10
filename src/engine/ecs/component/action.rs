@@ -43,7 +43,9 @@ impl Component for ActionComponent {
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         emit.push_intent_now(
             component,
-            crate::engine::ecs::IntentValue::RegisterAction { component },
+            crate::engine::ecs::IntentValue::RegisterAction {
+                component_ids: vec![component],
+            },
         );
     }
 
@@ -59,29 +61,44 @@ impl Component for ActionComponent {
                 map.insert("message".to_string(), serde_json::json!(message));
             }
 
-            IntentValue::SetColor { target, rgba } => {
+            IntentValue::SetColor { component_ids, rgba } => {
                 map.insert("variant".to_string(), serde_json::json!("SetColor"));
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert(
+                    "component_ids".to_string(),
+                    serde_json::json!(encode_ids(component_ids)),
+                );
                 map.insert("rgba".to_string(), serde_json::json!(rgba));
             }
-            IntentValue::SetText { target, text } => {
+            IntentValue::SetText { component_ids, text } => {
                 map.insert("variant".to_string(), serde_json::json!("SetText"));
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert(
+                    "component_ids".to_string(),
+                    serde_json::json!(encode_ids(component_ids)),
+                );
                 map.insert("text".to_string(), serde_json::json!(text));
             }
-            IntentValue::SetPosition { target, position } => {
+            IntentValue::SetPosition {
+                component_ids,
+                position,
+            } => {
                 map.insert("variant".to_string(), serde_json::json!("SetPosition"));
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert(
+                    "component_ids".to_string(),
+                    serde_json::json!(encode_ids(component_ids)),
+                );
                 map.insert("position".to_string(), serde_json::json!(position));
             }
             IntentValue::SetTransform {
-                target,
+                component_ids,
                 translation,
                 rotation_quat_xyzw,
                 scale,
             } => {
                 map.insert("variant".to_string(), serde_json::json!("SetTransform"));
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert(
+                    "component_ids".to_string(),
+                    serde_json::json!(encode_ids(component_ids)),
+                );
                 map.insert("translation".to_string(), serde_json::json!(translation));
                 map.insert(
                     "rotation_quat_xyzw".to_string(),
@@ -112,9 +129,12 @@ impl Component for ActionComponent {
                     serde_json::json!(encode_id(*prefab_root)),
                 );
             }
-            IntentValue::Detach { target } => {
+            IntentValue::Detach { component_ids } => {
                 map.insert("variant".to_string(), serde_json::json!("Detach"));
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert(
+                    "component_ids".to_string(),
+                    serde_json::json!(encode_ids(component_ids)),
+                );
             }
             IntentValue::RemoveChild { parents, index } => {
                 map.insert("variant".to_string(), serde_json::json!("RemoveChild"));
@@ -131,59 +151,89 @@ impl Component for ActionComponent {
                     serde_json::json!(encode_ids(parents)),
                 );
             }
-            IntentValue::RemoveSubtree { target } => {
+            IntentValue::RemoveSubtree { component_ids } => {
                 map.insert("variant".to_string(), serde_json::json!("RemoveSubtree"));
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert(
+                    "component_ids".to_string(),
+                    serde_json::json!(encode_ids(component_ids)),
+                );
             }
 
-            IntentValue::AudioGraphRebuild { target } => {
+            IntentValue::AudioGraphRebuild { component_ids } => {
                 map.insert(
                     "variant".to_string(),
                     serde_json::json!("AudioGraphRebuild"),
                 );
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert(
+                    "component_ids".to_string(),
+                    serde_json::json!(encode_ids(component_ids)),
+                );
             }
-            IntentValue::RequestRaycast { target } => {
+            IntentValue::RequestRaycast { component_ids } => {
                 map.insert("variant".to_string(), serde_json::json!("RequestRaycast"));
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert(
+                    "component_ids".to_string(),
+                    serde_json::json!(encode_ids(component_ids)),
+                );
             }
-            IntentValue::AudioLowPassSetCutoffHz { target, cutoff_hz } => {
+            IntentValue::AudioLowPassSetCutoffHz {
+                component_ids,
+                cutoff_hz,
+            } => {
                 map.insert(
                     "variant".to_string(),
                     serde_json::json!("AudioLowPassSetCutoffHz"),
                 );
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert(
+                    "component_ids".to_string(),
+                    serde_json::json!(encode_ids(component_ids)),
+                );
                 map.insert("cutoff_hz".to_string(), serde_json::json!(cutoff_hz));
             }
-            IntentValue::AudioBandPassSetCenterHz { target, center_hz } => {
+            IntentValue::AudioBandPassSetCenterHz {
+                component_ids,
+                center_hz,
+            } => {
                 map.insert(
                     "variant".to_string(),
                     serde_json::json!("AudioBandPassSetCenterHz"),
                 );
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert(
+                    "component_ids".to_string(),
+                    serde_json::json!(encode_ids(component_ids)),
+                );
                 map.insert("center_hz".to_string(), serde_json::json!(center_hz));
             }
-            IntentValue::OscillatorSetEnabled { target, enabled } => {
+            IntentValue::OscillatorSetEnabled {
+                component_ids,
+                enabled,
+            } => {
                 map.insert(
                     "variant".to_string(),
                     serde_json::json!("OscillatorSetEnabled"),
                 );
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert(
+                    "component_ids".to_string(),
+                    serde_json::json!(encode_ids(component_ids)),
+                );
                 map.insert("enabled".to_string(), serde_json::json!(enabled));
             }
             IntentValue::OscillatorSetPitch {
-                target,
+                component_ids,
                 frequency_hz,
             } => {
                 map.insert(
                     "variant".to_string(),
                     serde_json::json!("OscillatorSetPitch"),
                 );
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert(
+                    "component_ids".to_string(),
+                    serde_json::json!(encode_ids(component_ids)),
+                );
                 map.insert("frequency_hz".to_string(), serde_json::json!(frequency_hz));
             }
             IntentValue::OscillatorScheduleSetPitch {
-                target,
+                component_ids,
                 beat_offset,
                 beat_context,
                 frequency_hz,
@@ -192,13 +242,16 @@ impl Component for ActionComponent {
                     "variant".to_string(),
                     serde_json::json!("OscillatorScheduleSetPitch"),
                 );
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert(
+                    "component_ids".to_string(),
+                    serde_json::json!(encode_ids(component_ids)),
+                );
                 map.insert("beat_offset".to_string(), serde_json::json!(beat_offset));
                 map.insert("beat_context".to_string(), serde_json::json!(beat_context));
                 map.insert("frequency_hz".to_string(), serde_json::json!(frequency_hz));
             }
             IntentValue::OscillatorScheduleSetNote {
-                target,
+                component_ids,
                 beat_offset,
                 beat_context,
                 pitch,
@@ -209,7 +262,10 @@ impl Component for ActionComponent {
                     "variant".to_string(),
                     serde_json::json!("OscillatorScheduleSetNote"),
                 );
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert(
+                    "component_ids".to_string(),
+                    serde_json::json!(encode_ids(component_ids)),
+                );
                 map.insert("beat_offset".to_string(), serde_json::json!(beat_offset));
                 map.insert("beat_context".to_string(), serde_json::json!(beat_context));
                 map.insert("pitch".to_string(), serde_json::json!(pitch));
@@ -220,7 +276,7 @@ impl Component for ActionComponent {
                 );
             }
             IntentValue::OscillatorScheduleMusicNote {
-                target,
+                component_ids,
                 beat_offset,
                 beat_context,
                 note,
@@ -229,14 +285,23 @@ impl Component for ActionComponent {
                     "variant".to_string(),
                     serde_json::json!("OscillatorScheduleMusicNote"),
                 );
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert(
+                    "component_ids".to_string(),
+                    serde_json::json!(encode_ids(component_ids)),
+                );
                 map.insert("beat_offset".to_string(), serde_json::json!(beat_offset));
                 map.insert("beat_context".to_string(), serde_json::json!(beat_context));
                 map.insert("note".to_string(), serde_json::json!(note));
             }
-            IntentValue::MusicSetNote { target, note } => {
+            IntentValue::MusicSetNote {
+                component_ids,
+                note,
+            } => {
                 map.insert("variant".to_string(), serde_json::json!("MusicSetNote"));
-                map.insert("target".to_string(), serde_json::json!(encode_ids(target)));
+                map.insert(
+                    "component_ids".to_string(),
+                    serde_json::json!(encode_ids(component_ids)),
+                );
                 map.insert("note".to_string(), serde_json::json!(note));
             }
 
@@ -265,19 +330,19 @@ impl Component for ActionComponent {
             },
 
             "SetColor" => IntentValue::SetColor {
-                target: get_ids(data, "target")?,
+                component_ids: get_ids(data, "component_ids")?,
                 rgba: get_value_as(data, "rgba")?,
             },
             "SetText" => IntentValue::SetText {
-                target: get_ids(data, "target")?,
+                component_ids: get_ids(data, "component_ids")?,
                 text: get_string(data, "text")?,
             },
             "SetPosition" => IntentValue::SetPosition {
-                target: get_ids(data, "target")?,
+                component_ids: get_ids(data, "component_ids")?,
                 position: get_value_as(data, "position")?,
             },
             "SetTransform" => IntentValue::SetTransform {
-                target: get_ids(data, "target")?,
+                component_ids: get_ids(data, "component_ids")?,
                 translation: get_value_as(data, "translation")?,
                 rotation_quat_xyzw: get_value_as(data, "rotation_quat_xyzw")?,
                 scale: get_value_as(data, "scale")?,
@@ -292,7 +357,7 @@ impl Component for ActionComponent {
                 prefab_root: get_id(data, "prefab_root")?,
             },
             "Detach" => IntentValue::Detach {
-                target: get_ids(data, "target")?,
+                component_ids: get_ids(data, "component_ids")?,
             },
             "RemoveChild" => IntentValue::RemoveChild {
                 parents: get_ids(data, "parents")?,
@@ -302,38 +367,38 @@ impl Component for ActionComponent {
                 parents: get_ids(data, "parents")?,
             },
             "RemoveSubtree" => IntentValue::RemoveSubtree {
-                target: get_ids(data, "target")?,
+                component_ids: get_ids(data, "component_ids")?,
             },
             "AudioGraphRebuild" => IntentValue::AudioGraphRebuild {
-                target: get_ids(data, "target")?,
+                component_ids: get_ids(data, "component_ids")?,
             },
             "RequestRaycast" => IntentValue::RequestRaycast {
-                target: get_ids(data, "target")?,
+                component_ids: get_ids(data, "component_ids")?,
             },
             "AudioLowPassSetCutoffHz" => IntentValue::AudioLowPassSetCutoffHz {
-                target: get_ids(data, "target")?,
+                component_ids: get_ids(data, "component_ids")?,
                 cutoff_hz: get_value_as(data, "cutoff_hz")?,
             },
             "AudioBandPassSetCenterHz" => IntentValue::AudioBandPassSetCenterHz {
-                target: get_ids(data, "target")?,
+                component_ids: get_ids(data, "component_ids")?,
                 center_hz: get_value_as(data, "center_hz")?,
             },
             "OscillatorSetEnabled" => IntentValue::OscillatorSetEnabled {
-                target: get_ids(data, "target")?,
+                component_ids: get_ids(data, "component_ids")?,
                 enabled: get_value_as(data, "enabled")?,
             },
             "OscillatorSetPitch" => IntentValue::OscillatorSetPitch {
-                target: get_ids(data, "target")?,
+                component_ids: get_ids(data, "component_ids")?,
                 frequency_hz: get_value_as(data, "frequency_hz")?,
             },
             "OscillatorScheduleSetPitch" => IntentValue::OscillatorScheduleSetPitch {
-                target: get_ids(data, "target")?,
+                component_ids: get_ids(data, "component_ids")?,
                 beat_offset: get_value_as(data, "beat_offset")?,
                 beat_context: get_value_as(data, "beat_context")?,
                 frequency_hz: get_value_as(data, "frequency_hz")?,
             },
             "OscillatorScheduleSetNote" => IntentValue::OscillatorScheduleSetNote {
-                target: get_ids(data, "target")?,
+                component_ids: get_ids(data, "component_ids")?,
                 beat_offset: get_value_as(data, "beat_offset")?,
                 beat_context: get_value_as(data, "beat_context")?,
                 pitch: get_value_as(data, "pitch")?,
@@ -341,13 +406,13 @@ impl Component for ActionComponent {
                 duration_beats: get_value_as(data, "duration_beats")?,
             },
             "OscillatorScheduleMusicNote" => IntentValue::OscillatorScheduleMusicNote {
-                target: get_ids(data, "target")?,
+                component_ids: get_ids(data, "component_ids")?,
                 beat_offset: get_value_as(data, "beat_offset")?,
                 beat_context: get_value_as(data, "beat_context")?,
                 note: get_value_as(data, "note")?,
             },
             "MusicSetNote" => IntentValue::MusicSetNote {
-                target: get_ids(data, "target")?,
+                component_ids: get_ids(data, "component_ids")?,
                 note: get_value_as(data, "note")?,
             },
 

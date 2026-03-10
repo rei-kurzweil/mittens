@@ -135,11 +135,15 @@ impl Component for AudioOscillatorComponent {
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         emit.push_intent_now(
             component,
-            crate::engine::ecs::IntentValue::RegisterAudioOscillator { component },
+            crate::engine::ecs::IntentValue::RegisterAudioOscillator {
+                component_ids: vec![component],
+            },
         );
         emit.push_intent_now(
             component,
-            crate::engine::ecs::IntentValue::AudioGraphDirtyImmediate { component },
+            crate::engine::ecs::IntentValue::AudioGraphDirtyImmediate {
+                component_ids: vec![component],
+            },
         );
     }
 

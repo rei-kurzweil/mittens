@@ -49,7 +49,9 @@ impl Component for AmbientLightComponent {
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         emit.push_intent_now(
             component,
-            crate::engine::ecs::IntentValue::RegisterAmbientLight { component },
+            crate::engine::ecs::IntentValue::RegisterAmbientLight {
+                component_ids: vec![component],
+            },
         );
     }
 

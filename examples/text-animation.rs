@@ -112,7 +112,7 @@ fn main() {
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
                 engine::ecs::IntentValue::SetText {
-                    target: vec![text_id],
+                    component_ids: vec![text_id],
                     text: face.to_string(),
                 },
             ));

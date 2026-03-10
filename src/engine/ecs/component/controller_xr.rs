@@ -80,7 +80,12 @@ impl Component for ControllerXRComponent {
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         self.component_id = Some(component);
-        emit.push_intent_now(component, crate::engine::ecs::IntentValue::RegisterControllerXr { component });
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterControllerXr {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn cleanup(
@@ -88,7 +93,12 @@ impl Component for ControllerXRComponent {
         emit: &mut dyn crate::engine::ecs::SignalEmitter,
         component: ComponentId,
     ) {
-        emit.push_intent_now(component, crate::engine::ecs::IntentValue::RemoveControllerXr { component });
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RemoveControllerXr {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

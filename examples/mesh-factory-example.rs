@@ -92,7 +92,7 @@ fn main() {
 
             let action_cid = universe.world.add_component(ActionComponent::new(
                 engine::ecs::IntentValue::SetTransform {
-                    target: vec![root],
+                    component_ids: vec![root],
                     translation: [x, y, 0.0],
                     rotation_quat_xyzw: rotation,
                     scale,

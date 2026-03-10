@@ -51,7 +51,7 @@ fn ensure_emissive_on(
     emit.push_intent_now(
         emissive_cid,
         engine::ecs::IntentValue::RegisterEmissive {
-            component: emissive_cid,
+            component_ids: vec![emissive_cid],
         },
     );
 }
@@ -73,7 +73,7 @@ fn ring_a_handler(
             emit.push_intent_now(
                 env.scope,
                 engine::ecs::IntentValue::SetColor {
-                    target: vec![*renderable],
+                    component_ids: vec![*renderable],
                     rgba: [1.0, 1.0, 0.0, 1.0],
                 },
             );
@@ -99,7 +99,7 @@ fn ring_b_handler(
             emit.push_intent_now(
                 env.scope,
                 engine::ecs::IntentValue::SetColor {
-                    target: vec![*renderable],
+                    component_ids: vec![*renderable],
                     rgba: [0.0, 1.0, 1.0, 1.0],
                 },
             );
@@ -367,7 +367,7 @@ fn main() {
         let yaw_a = t * std::f32::consts::TAU;
         let a_set =
             engine::ecs::component::ActionComponent::new(engine::ecs::IntentValue::SetTransform {
-                target: vec![anchor_a],
+                component_ids: vec![anchor_a],
                 translation: [0.0, 1.0, 0.0],
                 rotation_quat_xyzw: quat_from_yaw(yaw_a),
                 scale: [1.0, 1.0, 1.0],
@@ -381,7 +381,7 @@ fn main() {
         let rot_b = quat_mul(quat_from_yaw(yaw_b), quat_from_pitch(pitch_b));
         let b_set =
             engine::ecs::component::ActionComponent::new(engine::ecs::IntentValue::SetTransform {
-                target: vec![anchor_b],
+                component_ids: vec![anchor_b],
                 translation: [0.0, 2.2, 0.0],
                 rotation_quat_xyzw: rot_b,
                 scale: [1.0, 1.0, 1.0],
@@ -396,7 +396,7 @@ fn main() {
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
                     engine::ecs::IntentValue::RequestRaycast {
-                        target: vec![raycaster],
+                        component_ids: vec![raycaster],
                     },
                 ));
             let _ = universe.attach(kf_a, act);
@@ -408,7 +408,7 @@ fn main() {
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
                     engine::ecs::IntentValue::RequestRaycast {
-                        target: vec![raycaster],
+                        component_ids: vec![raycaster],
                     },
                 ));
             let _ = universe.attach(kf_b, act);

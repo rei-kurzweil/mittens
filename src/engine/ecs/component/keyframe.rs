@@ -32,7 +32,12 @@ impl Component for KeyframeComponent {
     }
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
-        emit.push_intent_now(component, crate::engine::ecs::IntentValue::RegisterKeyframe { component });
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterKeyframe {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

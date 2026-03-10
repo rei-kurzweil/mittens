@@ -293,7 +293,9 @@ impl Component for TransformGizmoComponent {
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         emit.push_intent_now(
             component,
-            crate::engine::ecs::IntentValue::RegisterTransformGizmo { component },
+            crate::engine::ecs::IntentValue::RegisterTransformGizmo {
+                component_ids: vec![component],
+            },
         );
     }
 
@@ -305,14 +307,18 @@ impl Component for TransformGizmoComponent {
         if let Some(root) = self.visual_root.take() {
             emit.push_intent_now(
                 root,
-                crate::engine::ecs::IntentValue::RemoveSubtree { target: vec![root] },
+                crate::engine::ecs::IntentValue::RemoveSubtree {
+                    component_ids: vec![root],
+                },
             );
         }
 
         if let Some(root) = self.debug_drag_plane_root.take() {
             emit.push_intent_now(
                 root,
-                crate::engine::ecs::IntentValue::RemoveSubtree { target: vec![root] },
+                crate::engine::ecs::IntentValue::RemoveSubtree {
+                    component_ids: vec![root],
+                },
             );
         }
     }

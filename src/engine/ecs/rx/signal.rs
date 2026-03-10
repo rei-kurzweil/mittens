@@ -161,20 +161,25 @@ pub enum IntentValue {
     Noop,
     Print { message: String },
 
+    /// Queue a REPL command to be executed on the main thread (if the REPL is enabled).
+    ///
+    /// This is used for editor integration (e.g. jump to the clicked component).
+    ReplExec { command: String },
+
     SetColor {
-        target: Vec<ComponentId>,
+        component_ids: Vec<ComponentId>,
         rgba: [f32; 4],
     },
     SetText {
-        target: Vec<ComponentId>,
+        component_ids: Vec<ComponentId>,
         text: String,
     },
     SetPosition {
-        target: Vec<ComponentId>,
+        component_ids: Vec<ComponentId>,
         position: [f32; 3],
     },
     SetTransform {
-        target: Vec<ComponentId>,
+        component_ids: Vec<ComponentId>,
         translation: [f32; 3],
         rotation_quat_xyzw: [f32; 4],
         scale: [f32; 3],
@@ -188,37 +193,37 @@ pub enum IntentValue {
         parents: Vec<ComponentId>,
         prefab_root: ComponentId,
     },
-    Detach { target: Vec<ComponentId> },
+    Detach { component_ids: Vec<ComponentId> },
     RemoveChild {
         parents: Vec<ComponentId>,
         index: usize,
     },
     RemoveChildren { parents: Vec<ComponentId> },
-    RemoveSubtree { target: Vec<ComponentId> },
+    RemoveSubtree { component_ids: Vec<ComponentId> },
 
-    AudioGraphRebuild { target: Vec<ComponentId> },
-    RequestRaycast { target: Vec<ComponentId> },
+    AudioGraphRebuild { component_ids: Vec<ComponentId> },
+    RequestRaycast { component_ids: Vec<ComponentId> },
 
     AudioLowPassSetCutoffHz {
-        target: Vec<ComponentId>,
+        component_ids: Vec<ComponentId>,
         cutoff_hz: f32,
     },
     AudioBandPassSetCenterHz {
-        target: Vec<ComponentId>,
+        component_ids: Vec<ComponentId>,
         center_hz: f32,
     },
     OscillatorSetEnabled {
-        target: Vec<ComponentId>,
+        component_ids: Vec<ComponentId>,
         enabled: bool,
     },
     OscillatorSetPitch {
-        target: Vec<ComponentId>,
+        component_ids: Vec<ComponentId>,
         frequency_hz: f32,
     },
 
     /// Schedule a pitch set at beat = beat_context + beat_offset.
     OscillatorScheduleSetPitch {
-        target: Vec<ComponentId>,
+        component_ids: Vec<ComponentId>,
         beat_offset: f64,
         beat_context: Option<f64>,
         frequency_hz: f32,
@@ -226,7 +231,7 @@ pub enum IntentValue {
 
     /// Schedule a musical note at beat = beat_context + beat_offset.
     OscillatorScheduleSetNote {
-        target: Vec<ComponentId>,
+        component_ids: Vec<ComponentId>,
         beat_offset: f64,
         beat_context: Option<f64>,
         pitch: crate::engine::ecs::component::NotePitch,
@@ -236,96 +241,206 @@ pub enum IntentValue {
 
     /// Schedule a note represented by a MusicNote payload at beat = beat_context + beat_offset.
     OscillatorScheduleMusicNote {
-        target: Vec<ComponentId>,
+        component_ids: Vec<ComponentId>,
         beat_offset: f64,
         beat_context: Option<f64>,
         note: crate::engine::ecs::component::MusicNote,
     },
 
     MusicSetNote {
-        target: Vec<ComponentId>,
+        component_ids: Vec<ComponentId>,
         note: crate::engine::ecs::component::MusicNote,
     },
 
-    RegisterRenderable { component: ComponentId },
-    RemoveRenderable { component: ComponentId },
-    RegisterTransform { component: ComponentId },
+    RegisterRenderable { component_ids: Vec<ComponentId> },
+    RemoveRenderable { component_ids: Vec<ComponentId> },
+    RegisterTransform { component_ids: Vec<ComponentId> },
+    /// Refresh transform-derived caches (world matrices, skinning, BVH) without modifying the transform value.
+    ///
+    /// Intended for topology changes (e.g. Attach/Detach) where world matrices need recomputation.
+    RefreshTransform { component_ids: Vec<ComponentId> },
     UpdateTransform {
-        component: ComponentId,
+        component_ids: Vec<ComponentId>,
         translation: [f32; 3],
         rotation_quat_xyzw: [f32; 4],
         scale: [f32; 3],
     },
-    RemoveTransform { component: ComponentId },
+    RemoveTransform { component_ids: Vec<ComponentId> },
 
-    RegisterCamera3d { component: ComponentId },
-    RegisterCamera2d { component: ComponentId },
-    MakeActiveCamera { component: ComponentId },
+    RegisterCamera3d { component_ids: Vec<ComponentId> },
+    RegisterCamera2d { component_ids: Vec<ComponentId> },
+    MakeActiveCamera { component_ids: Vec<ComponentId> },
 
-    RegisterInput { component: ComponentId },
-    RegisterUv { component: ComponentId },
+    RegisterInput { component_ids: Vec<ComponentId> },
+    RegisterUv { component_ids: Vec<ComponentId> },
 
-    RegisterLight { component: ComponentId },
-    RegisterColor { component: ComponentId },
-    RegisterOpacity { component: ComponentId },
-    RegisterTransparentCutout { component: ComponentId },
-    RegisterBackgroundColor { component: ComponentId },
-    RegisterAmbientLight { component: ComponentId },
-    RegisterEmissive { component: ComponentId },
-    RegisterLightQuantization { component: ComponentId },
+    RegisterLight { component_ids: Vec<ComponentId> },
+    RegisterColor { component_ids: Vec<ComponentId> },
+    RegisterOpacity { component_ids: Vec<ComponentId> },
+    RegisterTransparentCutout { component_ids: Vec<ComponentId> },
+    RegisterBackgroundColor { component_ids: Vec<ComponentId> },
+    RegisterAmbientLight { component_ids: Vec<ComponentId> },
+    RegisterEmissive { component_ids: Vec<ComponentId> },
+    RegisterLightQuantization { component_ids: Vec<ComponentId> },
 
-    RegisterTexture { component: ComponentId },
-    RegisterTextureFiltering { component: ComponentId },
+    RegisterTexture { component_ids: Vec<ComponentId> },
+    RegisterTextureFiltering { component_ids: Vec<ComponentId> },
 
-    RegisterText { component: ComponentId },
+    RegisterText { component_ids: Vec<ComponentId> },
 
-    RegisterCollision { component: ComponentId },
-    RemoveCollision { component: ComponentId },
-    RegisterKineticResponse { component: ComponentId },
-    RemoveKineticResponse { component: ComponentId },
+    RegisterCollision { component_ids: Vec<ComponentId> },
+    RemoveCollision { component_ids: Vec<ComponentId> },
+    RegisterKineticResponse { component_ids: Vec<ComponentId> },
+    RemoveKineticResponse { component_ids: Vec<ComponentId> },
 
-    RegisterOpenxr { component: ComponentId },
-    RegisterControllerXr { component: ComponentId },
-    RemoveControllerXr { component: ComponentId },
+    RegisterOpenxr { component_ids: Vec<ComponentId> },
+    RegisterControllerXr { component_ids: Vec<ComponentId> },
+    RemoveControllerXr { component_ids: Vec<ComponentId> },
 
-    RegisterRaycast { component: ComponentId },
-    RemoveRaycast { component: ComponentId },
+    RegisterRaycast { component_ids: Vec<ComponentId> },
+    RemoveRaycast { component_ids: Vec<ComponentId> },
 
-    RegisterAnimation { component: ComponentId },
-    RegisterKeyframe { component: ComponentId },
+    RegisterAnimation { component_ids: Vec<ComponentId> },
+    RegisterKeyframe { component_ids: Vec<ComponentId> },
 
-    RegisterAudioOutput { component: ComponentId },
-    AudioGraphDirtyImmediate { component: ComponentId },
-    RegisterAudioOscillator { component: ComponentId },
-    RegisterAudioBufferSize { component: ComponentId },
-    RegisterClock { component: ComponentId },
-    RegisterTransformGizmo { component: ComponentId },
+    RegisterAudioOutput { component_ids: Vec<ComponentId> },
+    AudioGraphDirtyImmediate { component_ids: Vec<ComponentId> },
+    RegisterAudioOscillator { component_ids: Vec<ComponentId> },
+    RegisterAudioBufferSize { component_ids: Vec<ComponentId> },
+    RegisterClock { component_ids: Vec<ComponentId> },
+    RegisterTransformGizmo { component_ids: Vec<ComponentId> },
 
-    RegisterEditor { component: ComponentId },
+    RegisterEditor { component_ids: Vec<ComponentId> },
 
-    RegisterAction { component: ComponentId },
+    RegisterAction { component_ids: Vec<ComponentId> },
+
+    /// Register/unregister routing operators.
+    ///
+    /// These are internal mutation-style intents executed by the pipeline system.
+    RegisterSignalRouteUpward { component_ids: Vec<ComponentId> },
+    RemoveSignalRouteUpward { component_ids: Vec<ComponentId> },
 
     ScheduleAudioOp {
-        component: ComponentId,
+        component_ids: Vec<ComponentId>,
         beat: f64,
         op: crate::engine::ecs::system::audio_system::AudioOp,
     },
-    ScheduleAudioGraphSwap { component: ComponentId, beat: f64 },
+    ScheduleAudioGraphSwap { component_ids: Vec<ComponentId>, beat: f64 },
     ScheduleAudioPitchSetHz {
-        component: ComponentId,
+        component_ids: Vec<ComponentId>,
         beat: f64,
         frequency_hz: f32,
     },
     ScheduleAudioOscillatorEnabled {
-        component: ComponentId,
+        component_ids: Vec<ComponentId>,
         beat: f64,
         enabled: bool,
     },
     ScheduleAudioGainSet {
-        component: ComponentId,
+        component_ids: Vec<ComponentId>,
         beat: f64,
         gain: f32,
     },
+}
+
+impl IntentValue {
+    /// Stable, human-readable kind name for routing/filtering.
+    ///
+    /// Convention: snake_case.
+    pub fn kind_name(&self) -> &'static str {
+        match self {
+            IntentValue::Noop => "noop",
+            IntentValue::Print { .. } => "print",
+            IntentValue::ReplExec { .. } => "repl_exec",
+
+            IntentValue::SetColor { .. } => "set_color",
+            IntentValue::SetText { .. } => "set_text",
+            IntentValue::SetPosition { .. } => "set_position",
+            IntentValue::SetTransform { .. } => "set_transform",
+
+            IntentValue::Attach { .. } => "attach",
+            IntentValue::AttachClone { .. } => "attach_clone",
+            IntentValue::Detach { .. } => "detach",
+            IntentValue::RemoveChild { .. } => "remove_child",
+            IntentValue::RemoveChildren { .. } => "remove_children",
+            IntentValue::RemoveSubtree { .. } => "remove_subtree",
+
+            IntentValue::AudioGraphRebuild { .. } => "audio_graph_rebuild",
+            IntentValue::RequestRaycast { .. } => "request_raycast",
+
+            IntentValue::AudioLowPassSetCutoffHz { .. } => "audio_low_pass_set_cutoff_hz",
+            IntentValue::AudioBandPassSetCenterHz { .. } => "audio_band_pass_set_center_hz",
+            IntentValue::OscillatorSetEnabled { .. } => "oscillator_set_enabled",
+            IntentValue::OscillatorSetPitch { .. } => "oscillator_set_pitch",
+            IntentValue::OscillatorScheduleSetPitch { .. } => "oscillator_schedule_set_pitch",
+            IntentValue::OscillatorScheduleSetNote { .. } => "oscillator_schedule_set_note",
+            IntentValue::OscillatorScheduleMusicNote { .. } => "oscillator_schedule_music_note",
+            IntentValue::MusicSetNote { .. } => "music_set_note",
+
+            IntentValue::RegisterRenderable { .. } => "register_renderable",
+            IntentValue::RemoveRenderable { .. } => "remove_renderable",
+            IntentValue::RegisterTransform { .. } => "register_transform",
+            IntentValue::RefreshTransform { .. } => "refresh_transform",
+            IntentValue::UpdateTransform { .. } => "update_transform",
+            IntentValue::RemoveTransform { .. } => "remove_transform",
+
+            IntentValue::RegisterCamera3d { .. } => "register_camera3d",
+            IntentValue::RegisterCamera2d { .. } => "register_camera2d",
+            IntentValue::MakeActiveCamera { .. } => "make_active_camera",
+
+            IntentValue::RegisterInput { .. } => "register_input",
+            IntentValue::RegisterUv { .. } => "register_uv",
+
+            IntentValue::RegisterLight { .. } => "register_light",
+            IntentValue::RegisterColor { .. } => "register_color",
+            IntentValue::RegisterOpacity { .. } => "register_opacity",
+            IntentValue::RegisterTransparentCutout { .. } => "register_transparent_cutout",
+            IntentValue::RegisterBackgroundColor { .. } => "register_background_color",
+            IntentValue::RegisterAmbientLight { .. } => "register_ambient_light",
+            IntentValue::RegisterEmissive { .. } => "register_emissive",
+            IntentValue::RegisterLightQuantization { .. } => "register_light_quantization",
+
+            IntentValue::RegisterTexture { .. } => "register_texture",
+            IntentValue::RegisterTextureFiltering { .. } => "register_texture_filtering",
+
+            IntentValue::RegisterText { .. } => "register_text",
+
+            IntentValue::RegisterCollision { .. } => "register_collision",
+            IntentValue::RemoveCollision { .. } => "remove_collision",
+            IntentValue::RegisterKineticResponse { .. } => "register_kinetic_response",
+            IntentValue::RemoveKineticResponse { .. } => "remove_kinetic_response",
+
+            IntentValue::RegisterOpenxr { .. } => "register_openxr",
+            IntentValue::RegisterControllerXr { .. } => "register_controller_xr",
+            IntentValue::RemoveControllerXr { .. } => "remove_controller_xr",
+
+            IntentValue::RegisterRaycast { .. } => "register_raycast",
+            IntentValue::RemoveRaycast { .. } => "remove_raycast",
+
+            IntentValue::RegisterAnimation { .. } => "register_animation",
+            IntentValue::RegisterKeyframe { .. } => "register_keyframe",
+
+            IntentValue::RegisterAudioOutput { .. } => "register_audio_output",
+            IntentValue::AudioGraphDirtyImmediate { .. } => "audio_graph_dirty_immediate",
+            IntentValue::RegisterAudioOscillator { .. } => "register_audio_oscillator",
+            IntentValue::RegisterAudioBufferSize { .. } => "register_audio_buffer_size",
+            IntentValue::RegisterClock { .. } => "register_clock",
+            IntentValue::RegisterTransformGizmo { .. } => "register_transform_gizmo",
+            IntentValue::RegisterEditor { .. } => "register_editor",
+            IntentValue::RegisterAction { .. } => "register_action",
+
+            IntentValue::RegisterSignalRouteUpward { .. } => "register_signal_route_upward",
+            IntentValue::RemoveSignalRouteUpward { .. } => "remove_signal_route_upward",
+
+            IntentValue::ScheduleAudioOp { .. } => "schedule_audio_op",
+            IntentValue::ScheduleAudioGraphSwap { .. } => "schedule_audio_graph_swap",
+            IntentValue::ScheduleAudioPitchSetHz { .. } => "schedule_audio_pitch_set_hz",
+            IntentValue::ScheduleAudioOscillatorEnabled { .. } => {
+                "schedule_audio_oscillator_enabled"
+            }
+            IntentValue::ScheduleAudioGainSet { .. } => "schedule_audio_gain_set",
+        }
+    }
 }
 
 /// Event kinds used for handler routing.

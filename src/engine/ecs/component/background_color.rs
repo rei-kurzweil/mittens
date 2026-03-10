@@ -48,7 +48,9 @@ impl Component for BackgroundColorComponent {
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         emit.push_intent_now(
             component,
-            crate::engine::ecs::IntentValue::RegisterBackgroundColor { component },
+            crate::engine::ecs::IntentValue::RegisterBackgroundColor {
+                component_ids: vec![component],
+            },
         );
     }
 

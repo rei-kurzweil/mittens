@@ -79,6 +79,22 @@ impl EditorSystem {
                     child: gizmo,
                 },
             );
+
+            // Jump the REPL cwd to the clicked target so we can inspect topology quickly.
+            if let Some(node) = world.get_component_node(target_transform) {
+                emit.push_intent_now(
+                    editor_root,
+                    IntentValue::ReplExec {
+                        command: format!("cd {}", node.guid),
+                    },
+                );
+                emit.push_intent_now(
+                    editor_root,
+                    IntentValue::ReplExec {
+                        command: "pwd".to_string(),
+                    },
+                );
+            }
         });
     }
 }
@@ -88,7 +104,7 @@ fn spawn_editor_transform_gizmo(
     emit: &mut dyn crate::engine::ecs::SignalEmitter,
     editor_root: ComponentId,
 ) -> Option<ComponentId> {
-    // Create a tiny anchor transform under the editor root so the gizmo has a Transform ancestor
+    // Create a tiny anchor transform under the eot so the gizmo has a Transform ancestor
     // before it is first moved onto a clicked target.
     let anchor = world.add_component_boxed_named(
         "editor_gizmo_anchor",

@@ -98,7 +98,7 @@ impl TransformComponent {
         emit.push_intent_now(
             cid,
             IntentValue::UpdateTransform {
-                component: cid,
+                component_ids: vec![cid],
                 translation: self.transform.translation,
                 rotation_quat_xyzw: self.transform.rotation,
                 scale: self.transform.scale,
@@ -116,7 +116,7 @@ impl TransformComponent {
         emit.push_intent_now(
             cid,
             IntentValue::UpdateTransform {
-                component: cid,
+                component_ids: vec![cid],
                 translation: self.transform.translation,
                 rotation_quat_xyzw: self.transform.rotation,
                 scale: self.transform.scale,
@@ -134,7 +134,7 @@ impl TransformComponent {
         emit.push_intent_now(
             cid,
             IntentValue::UpdateTransform {
-                component: cid,
+                component_ids: vec![cid],
                 translation: self.transform.translation,
                 rotation_quat_xyzw: self.transform.rotation,
                 scale: self.transform.scale,
@@ -152,7 +152,7 @@ impl TransformComponent {
         emit.push_intent_now(
             cid,
             IntentValue::UpdateTransform {
-                component: cid,
+                component_ids: vec![cid],
                 translation: self.transform.translation,
                 rotation_quat_xyzw: self.transform.rotation,
                 scale: self.transform.scale,
@@ -179,7 +179,12 @@ impl Component for TransformComponent {
     }
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
-        emit.push_intent_now(component, crate::engine::ecs::IntentValue::RegisterTransform { component });
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterTransform {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

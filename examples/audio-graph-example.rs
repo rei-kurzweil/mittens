@@ -648,7 +648,7 @@ fn main() {
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
                     engine::ecs::IntentValue::OscillatorScheduleMusicNote {
-                        target: vec![osc_a_comp],
+                        component_ids: vec![osc_a_comp],
                         beat_offset: 0.0,
                         beat_context: None,
                         note: note_a,
@@ -670,7 +670,7 @@ fn main() {
                         .world
                         .add_component(engine::ecs::component::ActionComponent::new(
                             engine::ecs::IntentValue::AudioBandPassSetCenterHz {
-                                target: vec![bp_a_comp],
+                                component_ids: vec![bp_a_comp],
                                 center_hz,
                             },
                         ));
@@ -683,7 +683,7 @@ fn main() {
                             .world
                             .add_component(engine::ecs::component::ActionComponent::new(
                                 engine::ecs::IntentValue::SetText {
-                                    target: vec![text_id],
+                                    component_ids: vec![text_id],
                                     text: format!("BandPass center={center_hz:.1}Hz"),
                                 },
                             ));
@@ -697,7 +697,7 @@ fn main() {
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
                 engine::ecs::IntentValue::SetColor {
-                    target: vec![track_a_pattern_root],
+                    component_ids: vec![track_a_pattern_root],
                     rgba: a_dark,
                 },
             ));
@@ -717,7 +717,7 @@ fn main() {
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
                 engine::ecs::IntentValue::SetColor {
-                    target: vec![cube_a],
+                    component_ids: vec![cube_a],
                     rgba: a_bright,
                 },
             ));

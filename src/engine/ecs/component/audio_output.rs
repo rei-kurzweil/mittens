@@ -48,11 +48,15 @@ impl Component for AudioOutputComponent {
         if self.enabled {
             emit.push_intent_now(
                 component,
-                crate::engine::ecs::IntentValue::RegisterAudioOutput { component },
+                crate::engine::ecs::IntentValue::RegisterAudioOutput {
+                    component_ids: vec![component],
+                },
             );
             emit.push_intent_now(
                 component,
-                crate::engine::ecs::IntentValue::AudioGraphDirtyImmediate { component },
+                crate::engine::ecs::IntentValue::AudioGraphDirtyImmediate {
+                    component_ids: vec![component],
+                },
             );
         }
     }

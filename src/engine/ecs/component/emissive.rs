@@ -36,7 +36,9 @@ impl Component for EmissiveComponent {
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         emit.push_intent_now(
             component,
-            crate::engine::ecs::IntentValue::RegisterEmissive { component },
+            crate::engine::ecs::IntentValue::RegisterEmissive {
+                component_ids: vec![component],
+            },
         );
     }
 

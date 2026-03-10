@@ -266,7 +266,7 @@ fn main() {
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
                 engine::ecs::IntentValue::OscillatorScheduleMusicNote {
-                    target: vec![osc_drum_comp],
+                    component_ids: vec![osc_drum_comp],
                     beat_offset: 0.0,
                     beat_context: None,
                     note: engine::ecs::component::MusicNote::c(0, kick_dur).with_velocity(0.9),
@@ -277,7 +277,7 @@ fn main() {
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
                 engine::ecs::IntentValue::OscillatorScheduleMusicNote {
-                    target: vec![osc_noise_comp],
+                    component_ids: vec![osc_noise_comp],
                     beat_offset: 0.5,
                     beat_context: None,
                     note: engine::ecs::component::MusicNote::c(9, noise_dur).with_velocity(0.25),
@@ -296,7 +296,7 @@ fn main() {
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
                     engine::ecs::IntentValue::SetColor {
-                        target: vec![kick_timeline_root],
+                        component_ids: vec![kick_timeline_root],
                         rgba: kick_dark,
                     },
                 ));
@@ -305,7 +305,7 @@ fn main() {
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
                     engine::ecs::IntentValue::SetColor {
-                        target: vec![noise_timeline_root],
+                        component_ids: vec![noise_timeline_root],
                         rgba: noise_dark,
                     },
                 ));
@@ -338,7 +338,7 @@ fn main() {
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
                     engine::ecs::IntentValue::SetColor {
-                        target: vec![kick_cube],
+                        component_ids: vec![kick_cube],
                         rgba: kick_bright,
                     },
                 ));
@@ -347,7 +347,7 @@ fn main() {
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
                     engine::ecs::IntentValue::SetColor {
-                        target: vec![noise_cube],
+                        component_ids: vec![noise_cube],
                         rgba: noise_bright,
                     },
                 ));

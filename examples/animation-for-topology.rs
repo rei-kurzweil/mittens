@@ -207,7 +207,9 @@ fn main() {
             universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::IntentValue::Detach { target: vec![cube] },
+                    engine::ecs::IntentValue::Detach {
+                        component_ids: vec![cube],
+                    },
                 ));
         let _ = universe.attach(kf_detach, detach_action);
 
@@ -386,7 +388,7 @@ fn main() {
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
                     engine::ecs::IntentValue::SetPosition {
-                        target: vec![cube],
+                        component_ids: vec![cube],
                         position: [x, y, z],
                     },
                 ));

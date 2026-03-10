@@ -74,9 +74,9 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
         IntentValue::Noop => {}
         IntentValue::Print { .. } => {}
 
-        IntentValue::SetColor { target, rgba } => {
+        IntentValue::SetColor { component_ids, rgba } => {
             let mut color_cids = Vec::new();
-            for &t in target.iter() {
+            for &t in component_ids.iter() {
                 collect_color_targets(world, t, &mut color_cids);
             }
             color_cids.sort();
@@ -86,7 +86,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     emit.push_intent_now(
                         color_cid,
                         IntentValue::RegisterColor {
-                            component: color_cid,
+                            component_ids: vec![color_cid],
                         },
                     );
                 }
@@ -97,9 +97,12 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             // Executed by the mutation executor.
         }
 
-        IntentValue::SetPosition { target, position } => {
+        IntentValue::SetPosition {
+            component_ids,
+            position,
+        } => {
             let mut transform_cids = Vec::new();
-            for &t in target.iter() {
+            for &t in component_ids.iter() {
                 collect_transform_targets(world, t, &mut transform_cids);
             }
             transform_cids.sort();
@@ -113,13 +116,13 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
         }
 
         IntentValue::SetTransform {
-            target,
+            component_ids,
             translation,
             rotation_quat_xyzw,
             scale,
         } => {
             let mut transform_cids = Vec::new();
-            for &t in target.iter() {
+            for &t in component_ids.iter() {
                 collect_transform_targets(world, t, &mut transform_cids);
             }
             transform_cids.sort();
@@ -134,7 +137,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     emit.push_intent_now(
                         transform_cid,
                         IntentValue::UpdateTransform {
-                            component: transform_cid,
+                            component_ids: vec![transform_cid],
                             translation: *translation,
                             rotation_quat_xyzw: *rotation_quat_xyzw,
                             scale: *scale,
@@ -170,11 +173,15 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
 
                 emit.push_intent_now(
                     parent,
-                    IntentValue::AudioGraphDirtyImmediate { component: parent },
+                    IntentValue::AudioGraphDirtyImmediate {
+                        component_ids: vec![parent],
+                    },
                 );
                 emit.push_intent_now(
                     *child,
-                    IntentValue::AudioGraphDirtyImmediate { component: *child },
+                    IntentValue::AudioGraphDirtyImmediate {
+                        component_ids: vec![*child],
+                    },
                 );
             }
         }
@@ -224,19 +231,21 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
 
                 emit.push_intent_now(
                     parent,
-                    IntentValue::AudioGraphDirtyImmediate { component: parent },
+                    IntentValue::AudioGraphDirtyImmediate {
+                        component_ids: vec![parent],
+                    },
                 );
                 emit.push_intent_now(
                     new_root,
                     IntentValue::AudioGraphDirtyImmediate {
-                        component: new_root,
+                        component_ids: vec![new_root],
                     },
                 );
             }
         }
 
-        IntentValue::Detach { target } => {
-            for &child in target.iter() {
+        IntentValue::Detach { component_ids } => {
+            for &child in component_ids.iter() {
                 let old_parent = world.parent_of(child);
                 world.detach_from_parent(child);
 
@@ -250,7 +259,12 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 );
 
                 if let Some(p) = old_parent {
-                    emit.push_intent_now(p, IntentValue::AudioGraphDirtyImmediate { component: p });
+                    emit.push_intent_now(
+                        p,
+                        IntentValue::AudioGraphDirtyImmediate {
+                            component_ids: vec![p],
+                        },
+                    );
                 }
 
                 emit_topology_transform_refresh(world, emit, child);
@@ -269,11 +283,15 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
 
                 emit.push_intent_now(
                     parent,
-                    IntentValue::AudioGraphDirtyImmediate { component: parent },
+                    IntentValue::AudioGraphDirtyImmediate {
+                        component_ids: vec![parent],
+                    },
                 );
                 emit.push_intent_now(
                     child,
-                    IntentValue::AudioGraphDirtyImmediate { component: child },
+                    IntentValue::AudioGraphDirtyImmediate {
+                        component_ids: vec![child],
+                    },
                 );
 
                 world.detach_from_parent(child);
@@ -290,7 +308,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 emit.push_intent_now(
                     child,
                     IntentValue::RemoveSubtree {
-                        target: vec![child],
+                        component_ids: vec![child],
                     },
                 );
 
@@ -307,12 +325,16 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
 
                 emit.push_intent_now(
                     parent,
-                    IntentValue::AudioGraphDirtyImmediate { component: parent },
+                    IntentValue::AudioGraphDirtyImmediate {
+                        component_ids: vec![parent],
+                    },
                 );
                 for child in children {
                     emit.push_intent_now(
                         child,
-                        IntentValue::AudioGraphDirtyImmediate { component: child },
+                        IntentValue::AudioGraphDirtyImmediate {
+                            component_ids: vec![child],
+                        },
                     );
 
                     world.detach_from_parent(child);
@@ -328,7 +350,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     emit.push_intent_now(
                         child,
                         IntentValue::RemoveSubtree {
-                            target: vec![child],
+                            component_ids: vec![child],
                         },
                     );
                 }
@@ -337,24 +359,31 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        IntentValue::RemoveSubtree { target } => {
-            for &root in target.iter() {
+        IntentValue::RemoveSubtree { component_ids } => {
+            for &root in component_ids.iter() {
                 emit.push_intent_now(
                     root,
-                    IntentValue::AudioGraphDirtyImmediate { component: root },
+                    IntentValue::AudioGraphDirtyImmediate {
+                        component_ids: vec![root],
+                    },
                 );
             }
         }
 
-        IntentValue::AudioGraphRebuild { target } => {
-            for &t in target.iter() {
-                emit.push_intent_now(t, IntentValue::AudioGraphDirtyImmediate { component: t });
+        IntentValue::AudioGraphRebuild { component_ids } => {
+            for &t in component_ids.iter() {
+                emit.push_intent_now(
+                    t,
+                    IntentValue::AudioGraphDirtyImmediate {
+                        component_ids: vec![t],
+                    },
+                );
             }
         }
 
-        IntentValue::RequestRaycast { target } => {
+        IntentValue::RequestRaycast { component_ids } => {
             let mut raycast_cids = Vec::new();
-            for &t in target.iter() {
+            for &t in component_ids.iter() {
                 collect_raycast_targets(world, t, &mut raycast_cids);
             }
             raycast_cids.sort();
@@ -367,8 +396,11 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        IntentValue::AudioLowPassSetCutoffHz { target, cutoff_hz } => {
-            for &t in target.iter() {
+        IntentValue::AudioLowPassSetCutoffHz {
+            component_ids,
+            cutoff_hz,
+        } => {
+            for &t in component_ids.iter() {
                 if let Some(c) = world.get_component_by_id_as_mut::<AudioLowPassFilterComponent>(t)
                 {
                     c.cutoff_hz = if cutoff_hz.is_finite() {
@@ -379,7 +411,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     emit.push_intent_now(
                         t,
                         IntentValue::ScheduleAudioOp {
-                            component: t,
+                            component_ids: vec![t],
                             beat: beat_now,
                             op: AudioOp::SetLowPassCutoffHz(c.cutoff_hz),
                         },
@@ -388,8 +420,11 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        IntentValue::AudioBandPassSetCenterHz { target, center_hz } => {
-            for &t in target.iter() {
+        IntentValue::AudioBandPassSetCenterHz {
+            component_ids,
+            center_hz,
+        } => {
+            for &t in component_ids.iter() {
                 if let Some(c) =
                     world.get_component_by_id_as_mut::<AudioBandPassFilterComponent>(t)
                 {
@@ -401,7 +436,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     emit.push_intent_now(
                         t,
                         IntentValue::ScheduleAudioOp {
-                            component: t,
+                            component_ids: vec![t],
                             beat: beat_now,
                             op: AudioOp::SetBandPassCenterHz(c.center_hz),
                         },
@@ -410,9 +445,12 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        IntentValue::OscillatorSetEnabled { target, enabled } => {
+        IntentValue::OscillatorSetEnabled {
+            component_ids,
+            enabled,
+        } => {
             let mut osc_cids = Vec::new();
-            for &t in target.iter() {
+            for &t in component_ids.iter() {
                 collect_oscillator_targets(world, t, &mut osc_cids);
             }
             osc_cids.sort();
@@ -425,14 +463,16 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     }
                     emit.push_intent_now(
                         osc_cid,
-                        IntentValue::RegisterAudioOscillator { component: osc_cid },
+                        IntentValue::RegisterAudioOscillator {
+                            component_ids: vec![osc_cid],
+                        },
                     );
                 }
             }
         }
 
         IntentValue::OscillatorSetPitch {
-            target,
+            component_ids,
             frequency_hz,
         } => {
             if !frequency_hz.is_finite() {
@@ -443,7 +483,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
 
             let mut osc_cids = Vec::new();
-            for &t in target.iter() {
+            for &t in component_ids.iter() {
                 collect_oscillator_targets(world, t, &mut osc_cids);
             }
             osc_cids.sort();
@@ -457,14 +497,16 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     }
                     emit.push_intent_now(
                         osc_cid,
-                        IntentValue::RegisterAudioOscillator { component: osc_cid },
+                        IntentValue::RegisterAudioOscillator {
+                            component_ids: vec![osc_cid],
+                        },
                     );
                 }
             }
         }
 
         IntentValue::OscillatorScheduleSetPitch {
-            target,
+            component_ids,
             beat_offset,
             beat_context,
             frequency_hz,
@@ -472,7 +514,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             let beat = beat_context.unwrap_or(beat_now) + *beat_offset;
 
             let mut osc_cids = Vec::new();
-            for &t in target.iter() {
+            for &t in component_ids.iter() {
                 collect_oscillator_targets(world, t, &mut osc_cids);
             }
             osc_cids.sort();
@@ -481,7 +523,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 emit.push_intent_now(
                     osc_cid,
                     IntentValue::ScheduleAudioPitchSetHz {
-                        component: osc_cid,
+                        component_ids: vec![osc_cid],
                         beat,
                         frequency_hz: *frequency_hz,
                     },
@@ -490,7 +532,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
         }
 
         IntentValue::OscillatorScheduleSetNote {
-            target,
+            component_ids,
             beat_offset,
             beat_context,
             pitch,
@@ -508,7 +550,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             let frequency_hz = MusicSystem::frequency_hz_for_note(note);
 
             let mut osc_cids = Vec::new();
-            for &t in target.iter() {
+            for &t in component_ids.iter() {
                 collect_oscillator_targets(world, t, &mut osc_cids);
             }
             osc_cids.sort();
@@ -517,7 +559,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 emit.push_intent_now(
                     osc_cid,
                     IntentValue::ScheduleAudioOscillatorEnabled {
-                        component: osc_cid,
+                        component_ids: vec![osc_cid],
                         beat,
                         enabled: true,
                     },
@@ -525,7 +567,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 emit.push_intent_now(
                     osc_cid,
                     IntentValue::ScheduleAudioPitchSetHz {
-                        component: osc_cid,
+                        component_ids: vec![osc_cid],
                         beat,
                         frequency_hz,
                     },
@@ -534,7 +576,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     emit.push_intent_now(
                         osc_cid,
                         IntentValue::ScheduleAudioOscillatorEnabled {
-                            component: osc_cid,
+                            component_ids: vec![osc_cid],
                             beat: beat + duration_beats,
                             enabled: false,
                         },
@@ -544,7 +586,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
         }
 
         IntentValue::OscillatorScheduleMusicNote {
-            target,
+            component_ids,
             beat_offset,
             beat_context,
             note,
@@ -561,7 +603,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             let beat = beat_context.unwrap_or(beat_now) + *beat_offset;
 
             let mut osc_cids = Vec::new();
-            for &t in target.iter() {
+            for &t in component_ids.iter() {
                 collect_oscillator_targets(world, t, &mut osc_cids);
             }
             osc_cids.sort();
@@ -570,7 +612,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 emit.push_intent_now(
                     osc_cid,
                     IntentValue::ScheduleAudioOscillatorEnabled {
-                        component: osc_cid,
+                        component_ids: vec![osc_cid],
                         beat,
                         enabled: true,
                     },
@@ -578,7 +620,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 emit.push_intent_now(
                     osc_cid,
                     IntentValue::ScheduleAudioPitchSetHz {
-                        component: osc_cid,
+                        component_ids: vec![osc_cid],
                         beat,
                         frequency_hz,
                     },
@@ -586,7 +628,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 emit.push_intent_now(
                     osc_cid,
                     IntentValue::ScheduleAudioGainSet {
-                        component: osc_cid,
+                        component_ids: vec![osc_cid],
                         beat,
                         gain: velocity,
                     },
@@ -596,7 +638,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     emit.push_intent_now(
                         osc_cid,
                         IntentValue::ScheduleAudioOscillatorEnabled {
-                            component: osc_cid,
+                            component_ids: vec![osc_cid],
                             beat: beat + duration_beats,
                             enabled: false,
                         },
@@ -604,7 +646,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     emit.push_intent_now(
                         osc_cid,
                         IntentValue::ScheduleAudioGainSet {
-                            component: osc_cid,
+                            component_ids: vec![osc_cid],
                             beat: beat + duration_beats,
                             gain: 1.0,
                         },
@@ -613,9 +655,12 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        IntentValue::MusicSetNote { target, note } => {
+        IntentValue::MusicSetNote {
+            component_ids,
+            note,
+        } => {
             let mut osc_cids = Vec::new();
-            for &t in target.iter() {
+            for &t in component_ids.iter() {
                 collect_oscillator_targets(world, t, &mut osc_cids);
             }
             osc_cids.sort();
@@ -637,7 +682,9 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     }
                     emit.push_intent_now(
                         osc_cid,
-                        IntentValue::RegisterAudioOscillator { component: osc_cid },
+                        IntentValue::RegisterAudioOscillator {
+                            component_ids: vec![osc_cid],
+                        },
                     );
                 }
             }
@@ -696,13 +743,11 @@ fn emit_topology_transform_refresh(world: &World, emit: &mut dyn SignalEmitter, 
     // If this node is a TransformComponent, refreshing it updates cached world matrices
     // for its whole subtree.
     if let Some(t) = world.get_component_by_id_as::<TransformComponent>(cid) {
+        let _ = t;
         emit.push_intent_now(
             cid,
-            IntentValue::UpdateTransform {
-                component: cid,
-                translation: t.transform.translation,
-                rotation_quat_xyzw: t.transform.rotation,
-                scale: t.transform.scale,
+            IntentValue::RefreshTransform {
+                component_ids: vec![cid],
             },
         );
         return;
@@ -712,13 +757,11 @@ fn emit_topology_transform_refresh(world: &World, emit: &mut dyn SignalEmitter, 
     let mut cur = cid;
     while let Some(p) = world.parent_of(cur) {
         if let Some(t) = world.get_component_by_id_as::<TransformComponent>(p) {
+            let _ = t;
             emit.push_intent_now(
                 p,
-                IntentValue::UpdateTransform {
-                    component: p,
-                    translation: t.transform.translation,
-                    rotation_quat_xyzw: t.transform.rotation,
-                    scale: t.transform.scale,
+                IntentValue::RefreshTransform {
+                    component_ids: vec![p],
                 },
             );
             return;

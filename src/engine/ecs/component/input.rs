@@ -32,7 +32,12 @@ impl Component for InputComponent {
     }
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
-        emit.push_intent_now(component, crate::engine::ecs::IntentValue::RegisterInput { component });
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterInput {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

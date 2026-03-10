@@ -125,7 +125,12 @@ impl Component for KineticResponseComponent {
     }
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
-        emit.push_intent_now(component, crate::engine::ecs::IntentValue::RegisterKineticResponse { component });
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterKineticResponse {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn cleanup(
@@ -133,7 +138,12 @@ impl Component for KineticResponseComponent {
         emit: &mut dyn crate::engine::ecs::SignalEmitter,
         component: ComponentId,
     ) {
-        emit.push_intent_now(component, crate::engine::ecs::IntentValue::RemoveKineticResponse { component });
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RemoveKineticResponse {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

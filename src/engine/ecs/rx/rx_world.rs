@@ -6,6 +6,8 @@ use super::{
     EventSignal, IntentSignal, Signal, SignalEmitter, SignalHandler, SignalKind, SignalWhen,
 };
 
+use super::signal_pipeline::SignalPipeline;
+
 enum Handler {
     Fn(SignalHandler),
     Closure(Box<dyn FnMut(&mut World, &mut dyn SignalEmitter, &Signal) + Send + Sync + 'static>),
@@ -78,6 +80,14 @@ pub struct RxWorld {
     /// These are useful for system-level observers (gesture/editor) that need to see events
     /// regardless of scope.
     global_handlers: HashMap<SignalKind, Vec<Handler>>,
+
+    /// Component-targeted intent routing pipelines.
+    ///
+    /// Keyed by the component id the pipeline applies to.
+    pipelines_by_component: HashMap<ComponentId, Vec<SignalPipeline>>,
+
+    /// Reverse index for efficient removal: operator component id -> pipeline owner component id.
+    pipeline_owner_by_operator: HashMap<ComponentId, ComponentId>,
 }
 
 impl std::fmt::Debug for RxWorld {
@@ -89,11 +99,50 @@ impl std::fmt::Debug for RxWorld {
             .field("pending_intents_len", &self.pending_intents.len())
             .field("global_kinds", &self.global_handlers.len())
             .field("scoped_kinds", &self.scoped_handlers.len())
+            .field(
+                "pipeline_owner_by_operator_len",
+                &self.pipeline_owner_by_operator.len(),
+            )
+            .field("pipelines_by_component_len", &self.pipelines_by_component.len())
             .finish()
     }
 }
 
 impl RxWorld {
+    pub(crate) fn pipelines_for_component(&self, component: ComponentId) -> &[SignalPipeline] {
+        static EMPTY: [SignalPipeline; 0] = [];
+        self.pipelines_by_component
+            .get(&component)
+            .map(|v| v.as_slice())
+            .unwrap_or(&EMPTY)
+    }
+
+    pub(crate) fn register_pipeline(&mut self, owner: ComponentId, pipeline: SignalPipeline) {
+        self.remove_pipelines_from_operator(pipeline.source_operator);
+
+        self.pipeline_owner_by_operator
+            .insert(pipeline.source_operator, owner);
+        self.pipelines_by_component
+            .entry(owner)
+            .or_default()
+            .push(pipeline);
+    }
+
+    pub(crate) fn remove_pipelines_from_operator(&mut self, operator: ComponentId) {
+        let Some(owner) = self.pipeline_owner_by_operator.remove(&operator) else {
+            return;
+        };
+
+        let Some(list) = self.pipelines_by_component.get_mut(&owner) else {
+            return;
+        };
+
+        list.retain(|p| p.source_operator != operator);
+        if list.is_empty() {
+            self.pipelines_by_component.remove(&owner);
+        }
+    }
+
     pub fn push_event(&mut self, scope: ComponentId, event: EventSignal) {
         self.ready_events.push(Signal::event(scope, event));
     }

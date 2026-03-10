@@ -380,7 +380,7 @@ impl InputSystem {
                 emit.push_intent_now(
                     transform_cid,
                     crate::engine::ecs::IntentValue::UpdateTransform {
-                        component: transform_cid,
+                        component_ids: vec![transform_cid],
                         translation: transform_comp_mut.transform.translation,
                         rotation_quat_xyzw: transform_comp_mut.transform.rotation,
                         scale: transform_comp_mut.transform.scale,

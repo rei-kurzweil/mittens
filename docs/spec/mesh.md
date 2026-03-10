@@ -177,4 +177,4 @@ This keeps collision authoring light for simple primitives, and avoids coupling 
 
 - `docs/bvh-and-raycast.md` (raycast BVH + cursor ray details)
 - `docs/render-phases.md` (how `VisualWorld` instances get batched and drawn)
-- `docs/skinned-toon-mesh.md` (skinning pipeline; touches `CpuMesh.joints0/weights0` and instance flow)
+- `docs/spec/skinned-mesh-system.md` (skinning pipeline; touches `CpuMesh.joints0/weights0` and instance flow)

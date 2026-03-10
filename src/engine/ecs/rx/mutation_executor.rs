@@ -82,18 +82,29 @@ impl RxMutationExecutor {
         };
 
         match &intent.value {
-            IntentValue::RegisterRenderable { component } => {
-                systems.register_renderable(world, visuals, *component);
+            IntentValue::RegisterRenderable { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_renderable(world, visuals, component);
+                }
             }
-            IntentValue::RemoveRenderable { component } => {
-                systems.remove_renderable(world, visuals, *component);
+            IntentValue::RemoveRenderable { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.remove_renderable(world, visuals, component);
+                }
             }
 
-            IntentValue::RegisterTransform { component } => {
-                systems.transform_changed(world, visuals, *component);
+            IntentValue::RegisterTransform { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.transform_changed(world, visuals, component);
+                }
+            }
+            IntentValue::RefreshTransform { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.transform_changed(world, visuals, component);
+                }
             }
             IntentValue::UpdateTransform {
-                component,
+                component_ids,
                 translation,
                 rotation_quat_xyzw,
                 scale,
@@ -103,67 +114,107 @@ impl RxMutationExecutor {
                 t.rotation = *rotation_quat_xyzw;
                 t.scale = *scale;
                 t.recompute_model();
-                systems.update_transform(world, visuals, *component, t);
+
+                for &component in component_ids.iter() {
+                    systems.update_transform(world, visuals, component, t);
+                }
             }
-            IntentValue::RemoveTransform { component } => {
-                systems.remove_transform(world, visuals, *component);
+            IntentValue::RemoveTransform { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.remove_transform(world, visuals, component);
+                }
             }
 
-            IntentValue::RegisterCamera3d { component } => {
-                systems.register_camera(world, visuals, *component);
+            IntentValue::RegisterCamera3d { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_camera(world, visuals, component);
+                }
             }
-            IntentValue::RegisterCamera2d { component } => {
-                systems.register_camera2d(world, visuals, *component);
+            IntentValue::RegisterCamera2d { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_camera2d(world, visuals, component);
+                }
             }
-            IntentValue::MakeActiveCamera { component } => {
-                systems.make_active_camera(world, visuals, *component);
-            }
-
-            IntentValue::RegisterInput { component } => {
-                systems.register_input(*component);
-            }
-            IntentValue::RegisterUv { component } => {
-                systems.register_uv(world, visuals, *component);
-            }
-
-            IntentValue::RegisterLight { component } => {
-                systems.register_light(world, visuals, *component);
-            }
-            IntentValue::RegisterColor { component } => {
-                systems.register_color(world, visuals, *component);
-            }
-            IntentValue::RegisterOpacity { component } => {
-                systems.register_opacity(world, visuals, *component);
-            }
-            IntentValue::RegisterTransparentCutout { component } => {
-                systems.register_transparent_cutout(world, visuals, *component);
-            }
-            IntentValue::RegisterBackgroundColor { component } => {
-                systems.register_background_color(world, visuals, *component);
-            }
-            IntentValue::RegisterAmbientLight { component } => {
-                systems.register_ambient_light(world, visuals, *component);
-            }
-            IntentValue::RegisterEmissive { component } => {
-                systems.register_emissive(world, visuals, *component);
-            }
-            IntentValue::RegisterLightQuantization { component } => {
-                systems.register_light_quantization(world, visuals, *component);
+            IntentValue::MakeActiveCamera { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.make_active_camera(world, visuals, component);
+                }
             }
 
-            IntentValue::RegisterTexture { component } => {
-                systems.register_texture(world, visuals, *component);
+            IntentValue::RegisterInput { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_input(component);
+                }
             }
-            IntentValue::RegisterTextureFiltering { component } => {
-                systems.register_texture_filtering(world, visuals, *component);
+            IntentValue::RegisterUv { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_uv(world, visuals, component);
+                }
             }
 
-            IntentValue::RegisterText { component } => {
-                systems.register_text(world, visuals, *component, emit);
+            IntentValue::RegisterLight { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_light(world, visuals, component);
+                }
             }
-            IntentValue::SetText { target, text } => {
+            IntentValue::RegisterColor { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_color(world, visuals, component);
+                }
+            }
+            IntentValue::RegisterOpacity { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_opacity(world, visuals, component);
+                }
+            }
+            IntentValue::RegisterTransparentCutout { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_transparent_cutout(world, visuals, component);
+                }
+            }
+            IntentValue::RegisterBackgroundColor { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_background_color(world, visuals, component);
+                }
+            }
+            IntentValue::RegisterAmbientLight { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_ambient_light(world, visuals, component);
+                }
+            }
+            IntentValue::RegisterEmissive { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_emissive(world, visuals, component);
+                }
+            }
+            IntentValue::RegisterLightQuantization { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_light_quantization(world, visuals, component);
+                }
+            }
+
+            IntentValue::RegisterTexture { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_texture(world, visuals, component);
+                }
+            }
+            IntentValue::RegisterTextureFiltering { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_texture_filtering(world, visuals, component);
+                }
+            }
+
+            IntentValue::RegisterText { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_text(world, visuals, component, emit);
+                }
+            }
+            IntentValue::SetText {
+                component_ids,
+                text,
+            } => {
                 let mut text_cids = Vec::new();
-                for &t in target.iter() {
+                for &t in component_ids.iter() {
                     collect_text_targets(world, t, &mut text_cids);
                 }
                 text_cids.sort();
@@ -174,21 +225,29 @@ impl RxMutationExecutor {
                 }
             }
 
-            IntentValue::RegisterCollision { component } => {
-                systems.register_collision(world, visuals, *component);
+            IntentValue::RegisterCollision { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_collision(world, visuals, component);
+                }
             }
-            IntentValue::RemoveCollision { component } => {
-                systems.remove_collision(world, visuals, *component);
+            IntentValue::RemoveCollision { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.remove_collision(world, visuals, component);
+                }
             }
-            IntentValue::RegisterKineticResponse { component } => {
-                systems.register_kinetic_response(world, visuals, *component);
+            IntentValue::RegisterKineticResponse { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_kinetic_response(world, visuals, component);
+                }
             }
-            IntentValue::RemoveKineticResponse { component } => {
-                systems.remove_kinetic_response(world, visuals, *component);
+            IntentValue::RemoveKineticResponse { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.remove_kinetic_response(world, visuals, component);
+                }
             }
 
-            IntentValue::RemoveSubtree { target } => {
-                let mut roots: Vec<ComponentId> = target.iter().copied().collect();
+            IntentValue::RemoveSubtree { component_ids } => {
+                let mut roots: Vec<ComponentId> = component_ids.iter().copied().collect();
                 roots.sort();
                 roots.dedup();
                 for root in roots {
@@ -209,91 +268,154 @@ impl RxMutationExecutor {
                 }
             }
 
-            IntentValue::RegisterOpenxr { component } => {
-                systems.register_openxr(world, visuals, *component);
+            IntentValue::RegisterOpenxr { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_openxr(world, visuals, component);
+                }
             }
-            IntentValue::RegisterControllerXr { component } => {
-                systems.register_controller_xr(world, visuals, *component);
+            IntentValue::RegisterControllerXr { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_controller_xr(world, visuals, component);
+                }
             }
-            IntentValue::RemoveControllerXr { component } => {
-                systems.remove_controller_xr(world, visuals, *component);
-            }
-
-            IntentValue::RegisterRaycast { component } => {
-                systems.register_raycast(world, visuals, *component);
-            }
-            IntentValue::RemoveRaycast { component } => {
-                systems.remove_raycast(world, visuals, *component);
-            }
-
-            IntentValue::RegisterAnimation { component } => {
-                systems.register_animation(world, visuals, *component);
-            }
-            IntentValue::RegisterKeyframe { component } => {
-                systems.register_keyframe(world, visuals, *component);
+            IntentValue::RemoveControllerXr { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.remove_controller_xr(world, visuals, component);
+                }
             }
 
-            IntentValue::RegisterAudioOutput { component } => {
-                systems.register_audio_output(world, visuals, *component);
+            IntentValue::RegisterRaycast { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_raycast(world, visuals, component);
+                }
             }
-            IntentValue::AudioGraphDirtyImmediate { component } => {
-                systems.audio_graph_dirty(world, visuals, *component);
-            }
-            IntentValue::RegisterAudioOscillator { component } => {
-                systems.register_audio_oscillator(world, visuals, *component);
-            }
-            IntentValue::RegisterAudioBufferSize { component } => {
-                systems.register_audio_buffer_size(world, visuals, *component);
+            IntentValue::RemoveRaycast { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.remove_raycast(world, visuals, component);
+                }
             }
 
-            IntentValue::RegisterClock { component } => {
-                systems.register_clock(world, visuals, *component);
+            IntentValue::RegisterAnimation { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_animation(world, visuals, component);
+                }
+            }
+            IntentValue::RegisterKeyframe { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_keyframe(world, visuals, component);
+                }
             }
 
-            IntentValue::RegisterTransformGizmo { component } => {
-                systems.register_transform_gizmo(world, visuals, *component, emit);
+            IntentValue::RegisterAudioOutput { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_audio_output(world, visuals, component);
+                }
+            }
+            IntentValue::AudioGraphDirtyImmediate { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.audio_graph_dirty(world, visuals, component);
+                }
+            }
+            IntentValue::RegisterAudioOscillator { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_audio_oscillator(world, visuals, component);
+                }
+            }
+            IntentValue::RegisterAudioBufferSize { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_audio_buffer_size(world, visuals, component);
+                }
             }
 
-            IntentValue::RegisterEditor { component } => {
-                systems.register_editor(world, visuals, *component, emit);
+            IntentValue::RegisterClock { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_clock(world, visuals, component);
+                }
             }
 
-            IntentValue::RegisterAction { component } => {
-                crate::engine::ecs::system::action_system::register_action(world, emit, *component);
+            IntentValue::RegisterTransformGizmo { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_transform_gizmo(world, visuals, component, emit);
+                }
             }
 
-            IntentValue::ScheduleAudioOp { component, beat, op } => {
-                systems.audio.schedule_audio_op(*component, *beat, *op);
+            IntentValue::ReplExec { command } => {
+                systems.queue_repl_command(command.clone());
             }
-            IntentValue::ScheduleAudioGraphSwap { component, beat } => {
-                systems.audio.schedule_graph_swap(&*world, *component, *beat);
+
+            IntentValue::RegisterEditor { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_editor(world, visuals, component, emit);
+                }
+            }
+
+            IntentValue::RegisterAction { component_ids } => {
+                for &component in component_ids.iter() {
+                    crate::engine::ecs::system::action_system::register_action(world, emit, component);
+                }
+            }
+
+            IntentValue::RegisterSignalRouteUpward { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems
+                        .pipeline
+                        .register_signal_route_upward(world, &mut systems.rx, component);
+                }
+            }
+            IntentValue::RemoveSignalRouteUpward { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems
+                        .pipeline
+                        .remove_signal_route_upward(&mut systems.rx, component);
+                }
+            }
+
+            IntentValue::ScheduleAudioOp {
+                component_ids,
+                beat,
+                op,
+            } => {
+                for &component in component_ids.iter() {
+                    systems.audio.schedule_audio_op(component, *beat, *op);
+                }
+            }
+            IntentValue::ScheduleAudioGraphSwap { component_ids, beat } => {
+                for &component in component_ids.iter() {
+                    systems.audio.schedule_graph_swap(&*world, component, *beat);
+                }
             }
             IntentValue::ScheduleAudioPitchSetHz {
-                component,
+                component_ids,
                 beat,
                 frequency_hz,
             } => {
-                systems
-                    .audio
-                    .schedule_audio_op(*component, *beat, AudioOp::SetHz(*frequency_hz));
+                for &component in component_ids.iter() {
+                    systems
+                        .audio
+                        .schedule_audio_op(component, *beat, AudioOp::SetHz(*frequency_hz));
+                }
             }
             IntentValue::ScheduleAudioOscillatorEnabled {
-                component,
+                component_ids,
                 beat,
                 enabled,
             } => {
-                systems
-                    .audio
-                    .schedule_audio_op(*component, *beat, AudioOp::SetEnabled(*enabled));
+                for &component in component_ids.iter() {
+                    systems
+                        .audio
+                        .schedule_audio_op(component, *beat, AudioOp::SetEnabled(*enabled));
+                }
             }
             IntentValue::ScheduleAudioGainSet {
-                component,
+                component_ids,
                 beat,
                 gain,
             } => {
-                systems
-                    .audio
-                    .schedule_audio_op(*component, *beat, AudioOp::SetGain(*gain));
+                for &component in component_ids.iter() {
+                    systems
+                        .audio
+                        .schedule_audio_op(component, *beat, AudioOp::SetGain(*gain));
+                }
             }
 
             // Not executed by the mutation executor.

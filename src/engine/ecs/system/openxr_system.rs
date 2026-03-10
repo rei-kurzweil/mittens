@@ -399,7 +399,7 @@ impl OpenXRSystem {
             emit.push_intent_now(
                 tcid,
                 IntentValue::UpdateTransform {
-                    component: tcid,
+                    component_ids: vec![tcid],
                     translation: transform.translation,
                     rotation_quat_xyzw: transform.rotation,
                     scale: transform.scale,

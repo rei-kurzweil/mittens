@@ -34,7 +34,12 @@ impl Component for OpenXRComponent {
     }
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
-        emit.push_intent_now(component, crate::engine::ecs::IntentValue::RegisterOpenxr { component });
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterOpenxr {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

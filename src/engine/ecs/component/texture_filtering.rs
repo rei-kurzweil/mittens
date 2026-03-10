@@ -47,7 +47,9 @@ impl Component for TextureFilteringComponent {
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         emit.push_intent_now(
             component,
-            crate::engine::ecs::IntentValue::RegisterTextureFiltering { component },
+            crate::engine::ecs::IntentValue::RegisterTextureFiltering {
+                component_ids: vec![component],
+            },
         );
     }
 
