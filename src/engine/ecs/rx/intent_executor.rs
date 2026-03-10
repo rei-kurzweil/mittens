@@ -28,7 +28,6 @@ impl RxIntentExecutor {
                 | IntentValue::Print { .. }
                 | IntentValue::SetColor { .. }
                 | IntentValue::SetPosition { .. }
-                | IntentValue::SetTransform { .. }
                 | IntentValue::Attach { .. }
                 | IntentValue::AttachClone { .. }
                 | IntentValue::Detach { .. }
@@ -111,38 +110,6 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
                 {
                     t.set_position(emit, position[0], position[1], position[2]);
-                }
-            }
-        }
-
-        IntentValue::SetTransform {
-            component_ids,
-            translation,
-            rotation_quat_xyzw,
-            scale,
-        } => {
-            let mut transform_cids = Vec::new();
-            for &t in component_ids.iter() {
-                collect_transform_targets(world, t, &mut transform_cids);
-            }
-            transform_cids.sort();
-            transform_cids.dedup();
-            for transform_cid in transform_cids {
-                if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
-                {
-                    t.transform.translation = *translation;
-                    t.transform.rotation = *rotation_quat_xyzw;
-                    t.transform.scale = *scale;
-                    t.transform.recompute_model();
-                    emit.push_intent_now(
-                        transform_cid,
-                        IntentValue::UpdateTransform {
-                            component_ids: vec![transform_cid],
-                            translation: *translation,
-                            rotation_quat_xyzw: *rotation_quat_xyzw,
-                            scale: *scale,
-                        },
-                    );
                 }
             }
         }
@@ -746,7 +713,7 @@ fn emit_topology_transform_refresh(world: &World, emit: &mut dyn SignalEmitter, 
         let _ = t;
         emit.push_intent_now(
             cid,
-            IntentValue::RefreshTransform {
+            IntentValue::UpdateTransformWorld {
                 component_ids: vec![cid],
             },
         );
@@ -760,7 +727,7 @@ fn emit_topology_transform_refresh(world: &World, emit: &mut dyn SignalEmitter, 
             let _ = t;
             emit.push_intent_now(
                 p,
-                IntentValue::RefreshTransform {
+                IntentValue::UpdateTransformWorld {
                     component_ids: vec![p],
                 },
             );

@@ -1,6 +1,6 @@
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::engine::ecs::component::{
-    ColorComponent, EditorComponent, EmissiveComponent, GLTFComponent, JointComponent,
+    ColorComponent, EditorComponent, EmissiveComponent, GLTFComponent,
     MeshComponent, OverlayComponent, RaycastableComponent, RenderableComponent,
     SignalRouteUpwardComponent, SkinnedMeshComponent, TextureComponent, TransformComponent,
 };
@@ -328,18 +328,6 @@ impl GLTFSystem {
             let mut node_index_to_component: HashMap<usize, ComponentId> = HashMap::new();
             let mut pending_skin_components: Vec<(ComponentId, usize)> = Vec::new();
 
-            // Precompute joint membership for debug markers.
-            // Map: joint node index -> list of skin indices that reference it.
-            let mut joint_node_to_skin_indices: HashMap<usize, Vec<usize>> = HashMap::new();
-            for (skin_index, skin) in loaded.skins.iter().enumerate() {
-                for &joint_node in &skin.joints {
-                    joint_node_to_skin_indices
-                        .entry(joint_node)
-                        .or_default()
-                        .push(skin_index);
-                }
-            }
-
             for node in scene.nodes() {
                 let root = self.spawn_node_recursive(
                     world,
@@ -349,7 +337,6 @@ impl GLTFSystem {
                     node,
                     &mut node_index_to_component,
                     &mut pending_skin_components,
-                    &joint_node_to_skin_indices,
                     with_visualized_transforms,
                 );
                 if let Some(root) = root {
@@ -817,7 +804,6 @@ impl GLTFSystem {
         node: gltf::Node,
         node_index_to_component: &mut HashMap<usize, ComponentId>,
         pending_skin_components: &mut Vec<(ComponentId, usize)>,
-        joint_node_to_skin_indices: &HashMap<usize, Vec<usize>>,
         with_visualized_transforms: bool,
     ) -> Option<ComponentId> {
         let node_display_name = node
@@ -839,14 +825,7 @@ impl GLTFSystem {
 
         node_index_to_component.insert(node.index(), this_transform);
 
-        // If this node is a joint in any skin, attach a debug marker component.
-        if let Some(skin_indices) = joint_node_to_skin_indices.get(&node.index()) {
-            let joint_comp = world.add_component_boxed_named(
-                format!("joint_marker:{}", node_display_name),
-                Box::new(JointComponent::new(node.index(), skin_indices.clone())),
-            );
-            let _ = world.add_child(this_transform, joint_comp);
-        }
+        // Note: we intentionally do not spawn per-joint marker components.
 
         let node_skin_index = node.skin().map(|s| s.index());
 
@@ -993,7 +972,7 @@ impl GLTFSystem {
             );
             let _ = world.add_child(overlay, viz_transform);
 
-            // Treat viz transforms as interaction proxies: route SetTransform intents to the
+            // Treat viz transforms as interaction proxies: route UpdateTransform intents to the
             // nearest ancestor Transform.
             let route_up = world.add_component_boxed_named(
                 format!("route_upward:viz:{}", node_display_name),
@@ -1024,7 +1003,6 @@ impl GLTFSystem {
                 ch,
                 node_index_to_component,
                 pending_skin_components,
-                joint_node_to_skin_indices,
                 with_visualized_transforms,
             );
         }

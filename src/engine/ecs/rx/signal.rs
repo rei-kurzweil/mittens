@@ -178,12 +178,6 @@ pub enum IntentValue {
         component_ids: Vec<ComponentId>,
         position: [f32; 3],
     },
-    SetTransform {
-        component_ids: Vec<ComponentId>,
-        translation: [f32; 3],
-        rotation_quat_xyzw: [f32; 4],
-        scale: [f32; 3],
-    },
 
     Attach {
         parents: Vec<ComponentId>,
@@ -255,10 +249,10 @@ pub enum IntentValue {
     RegisterRenderable { component_ids: Vec<ComponentId> },
     RemoveRenderable { component_ids: Vec<ComponentId> },
     RegisterTransform { component_ids: Vec<ComponentId> },
-    /// Refresh transform-derived caches (world matrices, skinning, BVH) without modifying the transform value.
+    /// Recompute transform-derived caches (world matrices, skinning, BVH) without modifying the transform value.
     ///
     /// Intended for topology changes (e.g. Attach/Detach) where world matrices need recomputation.
-    RefreshTransform { component_ids: Vec<ComponentId> },
+    UpdateTransformWorld { component_ids: Vec<ComponentId> },
     UpdateTransform {
         component_ids: Vec<ComponentId>,
         translation: [f32; 3],
@@ -356,7 +350,6 @@ impl IntentValue {
             IntentValue::SetColor { .. } => "set_color",
             IntentValue::SetText { .. } => "set_text",
             IntentValue::SetPosition { .. } => "set_position",
-            IntentValue::SetTransform { .. } => "set_transform",
 
             IntentValue::Attach { .. } => "attach",
             IntentValue::AttachClone { .. } => "attach_clone",
@@ -380,7 +373,7 @@ impl IntentValue {
             IntentValue::RegisterRenderable { .. } => "register_renderable",
             IntentValue::RemoveRenderable { .. } => "remove_renderable",
             IntentValue::RegisterTransform { .. } => "register_transform",
-            IntentValue::RefreshTransform { .. } => "refresh_transform",
+            IntentValue::UpdateTransformWorld { .. } => "update_transform_world",
             IntentValue::UpdateTransform { .. } => "update_transform",
             IntentValue::RemoveTransform { .. } => "remove_transform",
 

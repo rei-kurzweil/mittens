@@ -229,7 +229,7 @@ In this engine’s ECS model, each `ComponentId` stores exactly one concrete com
 
 Sharp edge to be aware of: intents do *not* have a single uniform `target: ComponentId` field today.
 
-- Some intents have `target: Vec<ComponentId>` (e.g. `SetTransform`).
+- Some intents have `component_ids: Vec<ComponentId>` (e.g. `UpdateTransform`).
 - Some have a singular `component: ComponentId` (e.g. `UpdateTransform`).
 - Some have multiple participant ids (`Attach { parents, child }`).
 - Some are effectively “untargeted” payloads (`Print`, `Noop`, `ReplExec`).
@@ -271,7 +271,7 @@ There are two good options:
 
 If we adopted Option 2, a rough mapping from current variants would look like:
 
-- `SetColor/SetText/SetPosition/SetTransform`: `subjects = target`
+- `SetColor/SetText/SetPosition/UpdateTransform`: `subjects = component_ids`
 - `Detach/RemoveSubtree/AudioGraphRebuild/RequestRaycast`: `subjects = target`
 - All the `Audio*` and `Oscillator*` variants that have `target`: `subjects = target`
 - `Register*/Remove*/*DirtyImmediate/MakeActiveCamera`: `subjects = vec![component]`
@@ -397,7 +397,7 @@ The op needs either:
 There are two natural application points:
 
 1) **Before semantic intent expansion** (Intent stage)
-  - rewrite high-level intents (`SetPosition`, `SetTransform`, etc.)
+  - rewrite routable intents (`SetPosition`, `UpdateTransform`, etc.)
   - pros: keeps semantics consistent
 
 2) **Right before mutation** (Mutation stage)

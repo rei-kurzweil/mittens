@@ -1,7 +1,7 @@
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ClockComponent,
     ColorComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent, GLTFComponent,
-    InputComponent, InputTransformModeComponent, JointComponent, MeshComponent, PointerComponent,
+    InputComponent, InputTransformModeComponent, MeshComponent, PointerComponent,
     RayCastComponent, RaycastableComponent, RenderableComponent, SkinnedMeshComponent,
     TransformComponent,
 };
@@ -289,7 +289,13 @@ fn main() {
         .flush_mesh_imports_only(&mut universe.render_assets);
 
     // --- Joint printout + animation binding (in the example) ---
-    let all_joints = collect_joint_transforms(&universe.world, model_root);
+    let all_joints = collect_joint_transforms(
+        &universe.world,
+        &universe.systems.skinned_mesh,
+        &universe.visuals,
+        model,
+        model_root,
+    );
     println!("[vtuber-joints-example] joints found: {}", all_joints.len());
     for (i, (node_index, joint_tx)) in all_joints.iter().enumerate() {
         println!("  joint[{i:03}] node_index={node_index} transform={joint_tx:?}");
@@ -670,29 +676,50 @@ fn find_skin_id_for_renderable(
 
 fn collect_joint_transforms(
     world: &engine::ecs::World,
+    skinned_mesh: &engine::ecs::system::SkinnedMeshSystem,
+    visuals: &engine::graphics::VisualWorld,
+    gltf_component: engine::ecs::ComponentId,
     root: engine::ecs::ComponentId,
 ) -> Vec<(usize, engine::ecs::ComponentId)> {
-    let mut joints: Vec<(usize, engine::ecs::ComponentId)> = Vec::new();
-
-    let mut stack = vec![root];
-    while let Some(node) = stack.pop() {
-        if let Some(j) = world.get_component_by_id_as::<JointComponent>(node) {
-            if let Some(parent_tx) = world.parent_of(node) {
-                if world
-                    .get_component_by_id_as::<TransformComponent>(parent_tx)
-                    .is_some()
-                {
-                    joints.push((j.node_index, parent_tx));
+    fn find_first_skin_id_in_subtree(
+        world: &engine::ecs::World,
+        root: engine::ecs::ComponentId,
+    ) -> Option<engine::graphics::SkinId> {
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            if let Some(sm) = world.get_component_by_id_as::<SkinnedMeshComponent>(node) {
+                if let Some(id) = sm.skin_id {
+                    return Some(id);
                 }
             }
+            for &ch in world.children_of(node) {
+                stack.push(ch);
+            }
         }
-        for &ch in world.children_of(node) {
-            stack.push(ch);
-        }
+        None
     }
 
-    joints.sort_by_key(|(idx, _)| *idx);
-    joints
+    let Some(skin_id) = find_first_skin_id_in_subtree(world, root) else {
+        return Vec::new();
+    };
+    let Some(skin) = visuals.skin(skin_id) else {
+        return Vec::new();
+    };
+    let Some(joints) = skinned_mesh.instance_joints_for_skin(gltf_component, skin_id) else {
+        return Vec::new();
+    };
+
+    let joint_count = skin.joint_count().min(joints.len());
+    let mut out: Vec<(usize, engine::ecs::ComponentId)> = Vec::with_capacity(joint_count);
+    for i in 0..joint_count {
+        let Some(joint_tx) = joints[i] else {
+            continue;
+        };
+        let node_index = skin.joint_node_indices[i];
+        out.push((node_index, joint_tx));
+    }
+
+    out
 }
 
 fn select_joint_range(

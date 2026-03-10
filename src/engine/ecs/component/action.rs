@@ -88,25 +88,6 @@ impl Component for ActionComponent {
                 );
                 map.insert("position".to_string(), serde_json::json!(position));
             }
-            IntentValue::SetTransform {
-                component_ids,
-                translation,
-                rotation_quat_xyzw,
-                scale,
-            } => {
-                map.insert("variant".to_string(), serde_json::json!("SetTransform"));
-                map.insert(
-                    "component_ids".to_string(),
-                    serde_json::json!(encode_ids(component_ids)),
-                );
-                map.insert("translation".to_string(), serde_json::json!(translation));
-                map.insert(
-                    "rotation_quat_xyzw".to_string(),
-                    serde_json::json!(rotation_quat_xyzw),
-                );
-                map.insert("scale".to_string(), serde_json::json!(scale));
-            }
-
             IntentValue::Attach { parents, child } => {
                 map.insert("variant".to_string(), serde_json::json!("Attach"));
                 map.insert(
@@ -341,13 +322,6 @@ impl Component for ActionComponent {
                 component_ids: get_ids(data, "component_ids")?,
                 position: get_value_as(data, "position")?,
             },
-            "SetTransform" => IntentValue::SetTransform {
-                component_ids: get_ids(data, "component_ids")?,
-                translation: get_value_as(data, "translation")?,
-                rotation_quat_xyzw: get_value_as(data, "rotation_quat_xyzw")?,
-                scale: get_value_as(data, "scale")?,
-            },
-
             "Attach" => IntentValue::Attach {
                 parents: get_ids(data, "parents")?,
                 child: get_id(data, "child")?,

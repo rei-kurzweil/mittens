@@ -29,7 +29,6 @@ pub mod gltf;
 pub mod gravity;
 pub mod input;
 pub mod input_transform_mode;
-pub mod joint;
 pub mod keyframe;
 pub mod kinetic_response;
 pub mod light_quantization;
@@ -92,7 +91,6 @@ pub use gizmo::{
 pub use gravity::GravityComponent;
 pub use input::InputComponent;
 pub use input_transform_mode::{ForwardAxis, InputTransformModeComponent, RollAxis};
-pub use joint::JointComponent;
 pub use keyframe::KeyframeComponent;
 pub use kinetic_response::{KineticResponseComponent, KineticResponseMode};
 pub use light_quantization::LightQuantizationComponent;

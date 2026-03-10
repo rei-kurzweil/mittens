@@ -98,7 +98,7 @@ impl RxMutationExecutor {
                     systems.transform_changed(world, visuals, component);
                 }
             }
-            IntentValue::RefreshTransform { component_ids } => {
+            IntentValue::UpdateTransformWorld { component_ids } => {
                 for &component in component_ids.iter() {
                     systems.transform_changed(world, visuals, component);
                 }

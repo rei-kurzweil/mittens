@@ -48,7 +48,7 @@ This mixing is the root reason we still have migration debt: it’s unclear whic
 ## What’s already done
 
 - No legacy `SignalKind::Action` exists (explicitly documented in `SignalKind`).
-- Most user-facing mutations already exist as intents (`Attach`, `RemoveSubtree`, `SetTransform`, etc).
+- Most user-facing mutations already exist as intents (`Attach`, `RemoveSubtree`, `UpdateTransform`, etc).
 - Scoped handler lifecycle cleanup exists when deleting a subtree.
 
 ## Inventory: remaining “action-like” mutation pathways
@@ -60,7 +60,7 @@ This mixing is the root reason we still have migration debt: it’s unclear whic
 Examples:
 
 - `IntentValue::SetColor` mutates `ColorComponent.rgba` directly, then emits `IntentValue::RegisterColor`.
-- `IntentValue::SetTransform` mutates `TransformComponent` directly, then emits `IntentValue::UpdateTransform`.
+- `IntentValue::UpdateTransform` mutates `TransformComponent` and triggers `transform_changed`.
 - `IntentValue::Attach` / `Detach` mutate topology via `World::add_child` / `World::detach_from_parent`, then emit `EventSignal::ParentChanged` and other follow-ups.
 
 This is “action-system style” behavior: interpretation + mutation are mixed.
@@ -139,7 +139,7 @@ B) Remove it
 
 Example hotspot:
 
-- `SetTransform` currently mutates `TransformComponent`, then emits `UpdateTransform`, whose executor also mutates the component and triggers transform propagation.
+- `UpdateTransform` mutates `TransformComponent` and triggers transform propagation.
 
 **Task:** For each high-level intent, ensure we don’t mutate the same state twice.
 

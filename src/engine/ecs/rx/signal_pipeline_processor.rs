@@ -66,7 +66,6 @@ impl SignalPipelineProcessor {
             IntentValue::SetColor { component_ids, .. }
             | IntentValue::SetText { component_ids, .. }
             | IntentValue::SetPosition { component_ids, .. }
-            | IntentValue::SetTransform { component_ids, .. }
             | IntentValue::Detach { component_ids }
             | IntentValue::RemoveSubtree { component_ids }
             | IntentValue::AudioGraphRebuild { component_ids }
@@ -132,7 +131,7 @@ impl SignalPipelineProcessor {
             | IntentValue::AttachClone { .. }
             | IntentValue::RemoveChild { .. }
             | IntentValue::RemoveChildren { .. }
-            | IntentValue::RefreshTransform { .. }
+            | IntentValue::UpdateTransformWorld { .. }
             | IntentValue::RegisterSignalRouteUpward { .. }
             | IntentValue::RemoveSignalRouteUpward { .. } => None,
         }
@@ -143,7 +142,6 @@ impl SignalPipelineProcessor {
             IntentValue::SetColor { component_ids, .. }
             | IntentValue::SetText { component_ids, .. }
             | IntentValue::SetPosition { component_ids, .. }
-            | IntentValue::SetTransform { component_ids, .. }
             | IntentValue::Detach { component_ids }
             | IntentValue::RemoveSubtree { component_ids }
             | IntentValue::AudioGraphRebuild { component_ids }
@@ -212,7 +210,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RemoveChild { .. }
             | IntentValue::RemoveChildren { .. } => None,
 
-            IntentValue::RefreshTransform { .. } => None,
+            IntentValue::UpdateTransformWorld { .. } => None,
         }
     }
 }

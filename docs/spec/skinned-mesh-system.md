@@ -37,8 +37,8 @@ So: skinning is driven by **world-space** transforms, but computed from local va
 | Spawn ECS nodes | `GLTFSystem` | Transform/renderable subtrees; `SkinnedMeshComponent` | component init | ECS World | Skinned meshes are discovered by system scan (no explicit register intent). |
 | Resolve joints (per instance) | `GLTFSystem` | `instance_joints[(gltf_component, skin_id)] -> Vec<Option<ComponentId>>` | import/spawn | `SkinnedMeshSystem` | Per-instance because multiple GLTF instances can share a `SkinId`. |
 | Create instances | `RenderableSystem` | `InstanceHandle` for each `RenderableComponent` | `RegisterRenderable` / flush | `VisualWorld` | Required before `set_skin_matrices(handle, ...)` can succeed. |
-| Change transform value | user code / gizmo / animation | local TRS updated | `UpdateTransform` (and sometimes `SetTransform`) | `MutationExecutor` → `SystemWorld` | `UpdateTransform` mutates a specific transform and calls `transform_changed`. |
-| Topology change refresh | `Attach`/`Detach` intents | cache recompute request | `RefreshTransform` | `MutationExecutor` → `SystemWorld` | **Does not modify any TRS**; avoids routing hazards. |
+| Change transform value | user code / gizmo / animation | local TRS updated | `UpdateTransform` | `MutationExecutor` → `SystemWorld` | `UpdateTransform` mutates a specific transform and calls `transform_changed`. |
+| Topology change refresh | `Attach`/`Detach` intents | cache recompute request | `UpdateTransformWorld` | `MutationExecutor` → `SystemWorld` | **Does not modify any TRS**; avoids routing hazards. |
 | Mark skins dirty | `SystemWorld::transform_changed` | dirty bindings | direct call | `SkinnedMeshSystem` | Uses reverse indices so only affected bindings recompute. |
 | Recompute skin mats | `SkinnedMeshSystem` | `SkinMat[]` per binding | on tick if dirty | `VisualWorld::set_skin_matrices` | Computes: `inv(mesh_world) * joint_world * IBM`. |
 | Upload palette | renderer | SSBO writes | frame build | GPU | Palette is per-frame-slot to avoid read/write hazards. |
@@ -99,31 +99,26 @@ Owns the renderer-facing skin state:
 
 ## Signals and intent shapes (and why routing matters)
 
-There are three different concepts that look similar but behave differently:
+There are two different concepts that look similar but behave differently:
 
-1) **`SetTransform` (high-level intent)**
-   - executed by the intent executor
-   - traverses targets using `collect_transform_targets(...)` (subtree search)
-   - mutates transform values and emits `UpdateTransform` per resolved transform
-
-2) **`UpdateTransform` (mutation intent)**
+1) **`UpdateTransform` (mutation intent)**
    - executed by the mutation executor
    - applies directly to its explicit `component_ids`
    - mutates transform values and calls `transform_changed`
    - **routable**: `SignalPipelineProcessor` may rewrite `component_ids`
 
-3) **`RefreshTransform` (mutation intent)**
+2) **`UpdateTransformWorld` (mutation intent)**
    - executed by the mutation executor
    - applies directly to its explicit `component_ids`
    - recomputes derived caches via `transform_changed` **without changing transform values**
    - **non-routable**: pipeline processor does not rewrite it
 
-### Why `RefreshTransform` exists
+### Why `UpdateTransformWorld` exists
 Topology operations (`Attach`, `Detach`, etc.) need to recompute cached world matrices after parent/child relations change.
 
 Historically this used `UpdateTransform` as a “poke”, but once routing existed for `update_transform` (e.g. `viz:*` route-up), that poke could be redirected to a different component and overwrite joint values.
 
-`RefreshTransform` encodes the real intent: “recompute caches for *this* transform”, not “set this transform’s TRS again”.
+`UpdateTransformWorld` encodes the real intent: “recompute caches for *this* transform”, not “set this transform’s TRS again”.
 
 ## Editor gizmos + viz proxies (transform visualization mode)
 
@@ -142,7 +137,7 @@ Viz transforms can be configured with a route-up operator so editing the viz tar
 
 ### Routing hazards to avoid
 - **Do not** use routable intents as “refresh” operations during topology changes.
-- If you need to recompute caches after selection/reparenting, use `RefreshTransform`.
+- If you need to recompute caches after selection/reparenting, use `UpdateTransformWorld`.
 
 ## How glTF armatures are adapted to cat-engine
 

@@ -110,7 +110,7 @@ Below is a sketch of the kinds of `UserSignal` variants we would create.
 ### Transform / topology
 
 - `SetPosition { target: Vec<ComponentId>, x: f32, y: f32, z: f32 }`
-- `SetTransform { target: Vec<ComponentId>, translation: [f32; 3], rotation_quat_xyzw: [f32; 4], scale: [f32; 3] }`
+- `UpdateTransform { component_ids: Vec<ComponentId>, translation: [f32; 3], rotation_quat_xyzw: [f32; 4], scale: [f32; 3] }`
 - `Attach { parent: ComponentId, child: ComponentId }`
 - `AttachClone { parent: ComponentId, prefab_root: ComponentId }`
 - `Detach { target: Vec<ComponentId> }`

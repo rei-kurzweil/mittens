@@ -290,7 +290,6 @@ impl ComponentCodec {
             ))),
             "gravity" => Ok(Box::new(GravityComponent::default())),
             "kinetic_response" => Ok(Box::new(KineticResponseComponent::default())),
-            "joint" => Ok(Box::new(JointComponent::new(0, Vec::new()))),
             "skinned_mesh" => Ok(Box::new(SkinnedMeshComponent::new(0))),
 
             // Transform gizmo (renamed from "gizmo").

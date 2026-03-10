@@ -1,7 +1,7 @@
-# RefreshTransform: topology refresh without value mutation
+# UpdateTransformWorld: topology refresh without value mutation
 
 ## Summary
-`RefreshTransform` is an internal intent used to recompute *transform-derived caches* (world matrices, renderable instance models, skinning dirtiness, BVH refits, etc.) **without changing any `TransformComponent` values**.
+`UpdateTransformWorld` is an internal intent used to recompute *transform-derived caches* (world matrices, renderable instance models, skinning dirtiness, BVH refits, etc.) **without changing any `TransformComponent` values**.
 
 This exists because the previous implementation used `UpdateTransform` as a “refresh” mechanism after topology changes (e.g. `Attach`). Once intent routing was introduced for `update_transform`, that refresh path could be routed onto *different components*, accidentally overwriting joint transforms just from clicking a viz proxy.
 
@@ -32,20 +32,20 @@ Before routing existed, emitting `UpdateTransform` with the same values for the 
 That expectation breaks once recipient routing can change *which* component receives the `UpdateTransform`.
 
 ## New behavior (fixed)
-### `RefreshTransform` intent semantics
+### `UpdateTransformWorld` intent semantics
 - Recompute all transform-derived caches for the specified `component_ids`.
 - **Do not modify** `TransformComponent.transform.translation/rotation/scale/model`.
 - **Must not be routed** by the pipeline processor.
 
 ### Implementation notes
-- `emit_topology_transform_refresh()` now emits `RefreshTransform` instead of `UpdateTransform`.
-- The mutation executor handles `RefreshTransform` by calling `systems.transform_changed(world, visuals, component)`.
-- The pipeline processor treats `RefreshTransform` as non-routable (it does not expose `component_ids` for rewriting).
+- `emit_topology_transform_refresh()` now emits `UpdateTransformWorld` instead of `UpdateTransform`.
+- The mutation executor handles `UpdateTransformWorld` by calling `systems.transform_changed(world, visuals, component)`.
+- The pipeline processor treats `UpdateTransformWorld` as non-routable (it does not expose `component_ids` for rewriting).
 
-## Where `RefreshTransform` is used / emitted
+## Where `UpdateTransformWorld` is used / emitted
 ### Emitted
 - [src/engine/ecs/rx/intent_executor.rs](../../src/engine/ecs/rx/intent_executor.rs)
-  - `emit_topology_transform_refresh(...)` emits `IntentValue::RefreshTransform { component_ids: vec![...] }`
+  - `emit_topology_transform_refresh(...)` emits `IntentValue::UpdateTransformWorld { component_ids: vec![...] }`
   - Called after topology-changing operations:
     - `Attach`
     - `AttachClone`
@@ -54,16 +54,16 @@ That expectation breaks once recipient routing can change *which* component rece
 
 ### Executed
 - [src/engine/ecs/rx/mutation_executor.rs](../../src/engine/ecs/rx/mutation_executor.rs)
-  - `IntentValue::RefreshTransform { component_ids }` => `systems.transform_changed(...)`
+  - `IntentValue::UpdateTransformWorld { component_ids }` => `systems.transform_changed(...)`
 
 ### Defined / named
 - [src/engine/ecs/rx/signal.rs](../../src/engine/ecs/rx/signal.rs)
-  - `IntentValue::RefreshTransform { component_ids }`
-  - `kind_name()` maps it to `"refresh_transform"`
+  - `IntentValue::UpdateTransformWorld { component_ids }`
+  - `kind_name()` maps it to `"update_transform_world"`
 
 ### Explicitly non-routable
 - [src/engine/ecs/rx/signal_pipeline_processor.rs](../../src/engine/ecs/rx/signal_pipeline_processor.rs)
-  - `recipient_component_ids(_mut)` returns `None` for `RefreshTransform` so routing never rewrites it.
+  - `recipient_component_ids(_mut)` returns `None` for `UpdateTransformWorld` so routing never rewrites it.
 
 ## What counts as “transform-derived caches”
 In this engine, calling `SystemWorld::transform_changed(...)` triggers:
@@ -77,31 +77,24 @@ In this engine, calling `SystemWorld::transform_changed(...)` triggers:
 
 None of that requires changing the transform’s stored local values.
 
-## Relationship to `SetTransform` / `UpdateTransform` traversal
-There are three different “shapes” here:
+## Relationship to `UpdateTransform` traversal
+There are two different “shapes” here:
 
-1. **`SetTransform` (high-level intent)**
-   - Executed by the intent executor.
-   - Uses `collect_transform_targets(...)` to find transform components:
-     - If the target is itself a `TransformComponent`, it is the target.
-     - Otherwise, it walks the subtree and collects the **first** `TransformComponent` encountered per branch.
-   - Mutates `TransformComponent.transform.*` and then emits `UpdateTransform` per resolved transform.
-
-2. **`UpdateTransform` (mutation intent)**
+1. **`UpdateTransform` (mutation intent)**
    - Executed by the mutation executor.
    - Does **not** traverse descendants.
    - Directly calls `systems.update_transform(world, visuals, component, t)` for each `component_id`.
    - This *updates transform values* (sets `transform_comp.transform = t`) and then calls `transform_changed`.
 
-3. **`RefreshTransform` (mutation intent)**
+2. **`UpdateTransformWorld` (mutation intent)**
    - Executed by the mutation executor.
    - Does **not** traverse descendants.
    - Calls `systems.transform_changed(world, visuals, component)`.
    - This recomputes caches but does not alter the transform value.
 
-The key difference: topology refresh needs (3), not (2).
+The key difference: topology refresh needs (2), not (1).
 
 ## Why not just keep using `UpdateTransform` with identical values?
 Because intent routing can rewrite recipients. A refresh intent must be semantically “about this component’s caches” and must not be redirected to another component.
 
-Even in non-routed cases, `RefreshTransform` is also clearer: it communicates intent (recompute derived state) without implying a value mutation.
+Even in non-routed cases, `UpdateTransformWorld` is also clearer: it communicates intent (recompute derived state) without implying a value mutation.
