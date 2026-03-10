@@ -106,7 +106,7 @@ Per-handle mapping:
 - `GestureCoordTypeComponent { coord_type }`
   - `GestureCoordType::WorldPlane` (plane / hit-point delta)
   - `GestureCoordType::ScreenSpace1DSlider` (pixel delta → scalar)
-  - Current status: rotate handles are spawned with `WorldPlane` so rotation uses plane/hit-point deltas.
+  - Current status: rotate handles are spawned with `ScreenSpace1DSlider` so rotation is driven by screen-space deltas.
 
 ## Systems (interaction-relevant)
 

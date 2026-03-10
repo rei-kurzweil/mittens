@@ -299,6 +299,50 @@ Scoped handler lifecycle: systems can install handlers rooted at a component sub
 See [docs/signals.md](docs/signals.md) for the deeper rationale.
 
 
+# Building Widgets
+
+This engine’s “widgets” (gizmos, editor handles, debug UI-in-world) are usually built as **component subtrees** plus **scoped signal handlers**.
+
+At a high level:
+
+- A widget is a small subtree of components that contains renderable geometry (things you can see) and `RaycastableComponent` markers (things you can click/drag).
+- Interaction comes in as signals (`RayIntersected`, `DragStart`, `DragMove`, `DragEnd`). Systems install scoped handlers rooted at the widget subtree, so the widget can respond to events happening on any of its descendants.
+
+## Transform gizmo (example widget)
+
+The transform gizmo is a reference implementation of this pattern:
+
+- `TransformGizmoComponent` is attached under a target `TransformComponent`.
+- On init, `TransformGizmoSystem` spawns a visual subtree (rotate rings, translate arrows) and marks the clickable parts as raycastable.
+- During a drag, the gizmo figures out “what operation is this?” by walking up ancestry from the hit renderable and looking for handle marker components:
+  - `TransformGizmoTranslateComponent { axis }`
+  - `TransformGizmoRotateComponent { axis }`
+  - `TransformGizmoScaleComponent { axis }`
+
+## GestureCoordType (how a handle interprets motion)
+
+Some handles need different coordinate mappings. This is controlled by attaching a `GestureCoordTypeComponent` somewhere in the ancestry of the clicked handle renderable:
+
+- `GestureCoordType::WorldPlane`
+  - Use world-space hit-point deltas (good for translation along an axis, with the gesture system providing a stable drag plane).
+- `GestureCoordType::ScreenSpace1DSlider`
+  - Use screen-space deltas (good for rotation rings, where you want “drag anywhere” behavior).
+
+The up-to-date, code-matching interaction pipeline docs are:
+
+- [docs/spec/gestures-and-gizmos.md](docs/spec/gestures-and-gizmos.md)
+- [docs/refactor/gesture-screen-distance.md](docs/refactor/gesture-screen-distance.md)
+
+## Building your own widget
+
+Typical steps:
+
+1. Create a root marker component for the widget (stores runtime state like “active pointer”, “drag start value”, etc.).
+2. Spawn a visual subtree under that root, including raycastable renderables.
+3. Install scoped handlers for `DragStart/DragMove/DragEnd` rooted at the widget.
+4. In handlers, mutate the target component(s) directly (or emit intents if you need the changes to flow through the drain-point signal model).
+
+
 # REPL / CLI
 
 There is a small stdin-driven REPL (processed on the main thread in `Universe::update()`) for inspecting the component tree.
