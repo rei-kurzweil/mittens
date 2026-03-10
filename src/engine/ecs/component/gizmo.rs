@@ -214,6 +214,9 @@ pub struct TransformGizmoComponent {
     /// Runtime: raycaster currently driving this gizmo (single-pointer for now).
     pub active_raycaster: Option<ComponentId>,
 
+    /// Runtime: accumulated slider angle (radians) since drag start.
+    pub active_drag_slider_last_angle: f32,
+
     /// Root TransformComponent id of the gizmo visual subtree (spawned on init).
     pub visual_root: Option<ComponentId>,
 
@@ -235,6 +238,7 @@ impl TransformGizmoComponent {
             scale: 1.0,
             target_transform: None,
             active_raycaster: None,
+            active_drag_slider_last_angle: 0.0,
             visual_root: None,
             debug_drag_plane_root: None,
             component: None,

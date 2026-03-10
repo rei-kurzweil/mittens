@@ -458,6 +458,7 @@ impl TransformGizmoSystem {
         let mut old_debug_root: Option<ComponentId> = None;
         if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid) {
             g.active_raycaster = Some(*raycaster);
+            g.active_drag_slider_last_angle = 0.0;
             if Self::debug_drag_plane_enabled() {
                 old_debug_root = g.debug_drag_plane_root.take();
             }
@@ -513,6 +514,7 @@ impl TransformGizmoSystem {
             renderable,
             delta_world,
             hit_point,
+            screen_pos_px: _screen_pos_px,
             screen_delta_px,
             ..
         }) = env.event.as_ref()
@@ -525,9 +527,16 @@ impl TransformGizmoSystem {
         };
 
         // Copy out what we need without holding a mutable borrow.
-        let Some((target_transform, active)) = world
-            .get_component_by_id_as::<TransformGizmoComponent>(gizmo_cid)
-            .map(|g| (g.target_transform, g.active_raycaster))
+        let Some((target_transform, active, slider_last_angle)) =
+            world
+                .get_component_by_id_as::<TransformGizmoComponent>(gizmo_cid)
+                .map(|g| {
+                    (
+                        g.target_transform,
+                        g.active_raycaster,
+                        g.active_drag_slider_last_angle,
+                    )
+                })
         else {
             return;
         };
@@ -593,17 +602,22 @@ impl TransformGizmoSystem {
                 let coord_type = Self::resolve_gesture_coord_type_for_renderable(world, *renderable);
 
                 let axis_v = axis.unit_vec3();
-                let angle = match (coord_type, *screen_delta_px) {
-                    (Some(GestureCoordType::ScreenSpace1DSlider), Some((dx, dy))) => {
-                        // Simple first-pass slider mapping. We can refine sign selection later
-                        // (camera-aware) without changing the signal.
-                        let radians_per_px = 0.01_f32;
-                        let px = match axis {
-                            TransformGizmoAxis::X => -dy,
-                            TransformGizmoAxis::Y => dx,
-                            TransformGizmoAxis::Z => dx,
-                        };
-                        px * radians_per_px
+                let (angle, new_slider_last_angle) = match coord_type {
+                    Some(GestureCoordType::ScreenSpace1DSlider) => {
+                        match *screen_delta_px {
+                            Some((dx, dy)) => {
+                                // Incremental mapping: avoid any “flip” behavior caused by crossing
+                                // a reference vector/origin by only integrating the per-move delta.
+                                let radians_per_px = 0.01_f32;
+                                let delta_px = dx + dy;
+                                let delta_angle = delta_px * radians_per_px;
+                                (delta_angle, slider_last_angle + delta_angle)
+                            }
+                            None => {
+                                // If screen deltas aren't available (e.g. XR pointers), do nothing.
+                                (0.0_f32, slider_last_angle)
+                            }
+                        }
                     }
                     _ => {
                         let pivot = TransformSystem::world_position(world, target_transform)
@@ -623,7 +637,7 @@ impl TransformGizmoSystem {
                         let c = cross(v0, v1);
                         let s = dot(axis_v, c);
                         let d = dot(v0, v1);
-                        s.atan2(d)
+                        (s.atan2(d), slider_last_angle)
                     }
                 };
 
@@ -671,6 +685,12 @@ impl TransformGizmoSystem {
                         return;
                     };
                     t.set_rotation_quat(emit, q_next);
+                }
+
+                if coord_type == Some(GestureCoordType::ScreenSpace1DSlider) {
+                    if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid) {
+                        g.active_drag_slider_last_angle = new_slider_last_angle;
+                    }
                 }
             }
             TransformGizmoOp::Scale(axis) => {
@@ -752,6 +772,7 @@ impl TransformGizmoSystem {
             if g.active_raycaster == Some(*raycaster) {
                 g.active_raycaster = None;
             }
+            g.active_drag_slider_last_angle = 0.0;
 
             if Self::debug_drag_plane_enabled() {
                 if let Some(root) = g.debug_drag_plane_root.take() {
@@ -1047,7 +1068,7 @@ impl TransformGizmoSystem {
             world,
             rot_x_root,
             "gizmo_rot_x_coord",
-            GestureCoordType::WorldPlane,
+            GestureCoordType::ScreenSpace1DSlider,
         );
         let rot_x_pick = spawn_raycastable_root(world, rot_x_coord, "gizmo_rot_x_pick");
         spawn_part(
@@ -1071,7 +1092,7 @@ impl TransformGizmoSystem {
             world,
             rot_y_root,
             "gizmo_rot_y_coord",
-            GestureCoordType::WorldPlane,
+            GestureCoordType::ScreenSpace1DSlider,
         );
         let rot_y_pick = spawn_raycastable_root(world, rot_y_coord, "gizmo_rot_y_pick");
         spawn_part(
@@ -1095,7 +1116,7 @@ impl TransformGizmoSystem {
             world,
             rot_z_root,
             "gizmo_rot_z_coord",
-            GestureCoordType::WorldPlane,
+            GestureCoordType::ScreenSpace1DSlider,
         );
         let rot_z_pick = spawn_raycastable_root(world, rot_z_coord, "gizmo_rot_z_pick");
         spawn_part(

@@ -1,7 +1,6 @@
 # cat-engine 0.5 "mittens"
 
-<img width="498" height="400" alt="Screenshot_20260106_094219" src="https://github.com/user-attachments/assets/83c00897-aa61-4520-8756-cd7263289800" />
-
+<img width="1920" height="745" alt="Screenshot_20260303_015535" src="https://github.com/user-attachments/assets/16d9656c-9df3-4a96-89bd-658d222e78d0" />
 
 small game engine `[obstensively]` for making cats,
 using vulkan instanced rendering and several layers to describe game objects:
