@@ -601,6 +601,20 @@ impl TransformGizmoSystem {
             TransformGizmoOp::Rotate(axis) => {
                 let coord_type = Self::resolve_gesture_coord_type_for_renderable(world, *renderable);
 
+                // Resolve rotation coord space (default Local). This controls how we interpret the
+                // axis when applying the drag angle.
+                let mut rotation_space = crate::engine::ecs::component::TransformGizmoCoordSpace::Local;
+                {
+                    let mut cur = Some(gizmo_cid);
+                    while let Some(node) = cur {
+                        if let Some(ed) = world.get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(node) {
+                            rotation_space = ed.transform_gizmo_rotation_space;
+                            break;
+                        }
+                        cur = world.parent_of(node);
+                    }
+                }
+
                 let axis_v = axis.unit_vec3();
                 let (angle, new_slider_last_angle) = match coord_type {
                     Some(GestureCoordType::ScreenSpace1DSlider) => {
@@ -642,14 +656,31 @@ impl TransformGizmoSystem {
                 };
 
                 if angle != 0.0 {
-                    let axis_local = Self::world_dir_to_target_local(world, target_transform, axis_v);
+                    let axis_local = match rotation_space {
+                        crate::engine::ecs::component::TransformGizmoCoordSpace::Local => axis_v,
+                        // World mode will be implemented next; for now keep the previous behavior
+                        // (convert the world axis into target-local space).
+                        crate::engine::ecs::component::TransformGizmoCoordSpace::World => {
+                            Self::world_dir_to_target_local(world, target_transform, axis_v)
+                        }
+                    };
 
                     let Some(t_ro) = world.get_component_by_id_as::<TransformComponent>(target_transform)
                     else {
                         return;
                     };
                     let q_delta_local = math::quat_from_axis_angle(axis_local, angle);
-                    let q_next = math::quat_mul(q_delta_local, t_ro.transform.rotation);
+                    // Quaternion multiplication order determines the frame the delta is applied in:
+                    // - Local: post-multiply (rotate in the object's local frame)
+                    // - World: pre-multiply (rotate in the parent/world frame)
+                    let q_next = match rotation_space {
+                        crate::engine::ecs::component::TransformGizmoCoordSpace::Local => {
+                            math::quat_mul(t_ro.transform.rotation, q_delta_local)
+                        }
+                        crate::engine::ecs::component::TransformGizmoCoordSpace::World => {
+                            math::quat_mul(q_delta_local, t_ro.transform.rotation)
+                        }
+                    };
 
                     if Self::debug_apply_enabled() {
                         Self::log_apply(
@@ -797,8 +828,9 @@ impl TransformGizmoSystem {
         emit: &mut dyn SignalEmitter,
     ) {
         use crate::engine::ecs::component::{
-            OverlayComponent, TransformComponent, TransformGizmoAxis, TransformGizmoComponent,
-            TransformGizmoRotateComponent, TransformGizmoTranslateComponent,
+            EditorComponent, OverlayComponent, TransformComponent, TransformGizmoAxis,
+            TransformGizmoComponent, TransformGizmoCoordSpace, TransformGizmoRotateComponent,
+            TransformGizmoTranslateComponent,
         };
         use crate::engine::graphics::primitives::CpuMeshHandle;
 
@@ -844,12 +876,12 @@ impl TransformGizmoSystem {
             .unwrap_or(1.0);
 
         // Gizmos are parented under the target transform, so by default they'd inherit whatever
-        // scale the target (and its ancestors) have. For joints/armatures this can make gizmos
-        // extremely tiny.
+        // scale the target (and its ancestors) have.
         //
-        // Interpret `TransformGizmoComponent.scale` as an intended *world-space* scale multiplier
-        // and compensate for the target's current world scale when choosing the local scale for
-        // the gizmo visual root.
+        // We now spawn gizmo visuals under a TransformFilterComponent that inherits translation +
+        // rotation but NOT scale. This prevents non-uniform target scales from squashing the gizmo
+        // and means `TransformGizmoComponent.scale` can be interpreted directly as a world-ish
+        // size knob (modulo camera projection).
         fn mat4_identity() -> crate::engine::graphics::primitives::TransformMatrix {
             [
                 [1.0, 0.0, 0.0, 0.0],
@@ -906,7 +938,7 @@ impl TransformGizmoSystem {
 
         let parent_world = world_model_uncached(world, parent_transform);
         let parent_world_scale = max_basis_scale(parent_world).max(1e-4);
-        let gizmo_local_scale = gizmo_scale / parent_world_scale;
+        let gizmo_local_scale = gizmo_scale;
 
         if Self::debug_enabled() {
             println!(
@@ -919,6 +951,13 @@ impl TransformGizmoSystem {
             );
         }
 
+        // Filter inherited transforms from the target: inherit translation+rotation, drop scale.
+        let gizmo_filter = world.add_component_boxed_named(
+            "gizmo_filter",
+            Box::new(crate::engine::ecs::component::TransformFilterComponent::inherit_tr()),
+        );
+        let _ = world.add_child(component, gizmo_filter);
+
         // Create a root transform for the gizmo visuals under the GizmoComponent node.
         let gizmo_root = world.add_component_boxed_named(
             "gizmo_root",
@@ -930,7 +969,7 @@ impl TransformGizmoSystem {
                 ),
             ),
         );
-        let _ = world.add_child(component, gizmo_root);
+        let _ = world.add_child(gizmo_filter, gizmo_root);
 
         // Wrap all gizmo visuals in an overlay marker so they render in the overlay pass.
         let gizmo_overlay =
@@ -938,6 +977,58 @@ impl TransformGizmoSystem {
         let _ = world.add_child(gizmo_root, gizmo_overlay);
 
         let gizmo_visual_parent = gizmo_overlay;
+
+        // Resolve editor settings (coord spaces) by walking up ancestry to the nearest EditorComponent.
+        let mut translation_space = TransformGizmoCoordSpace::World;
+        let mut rotation_space = TransformGizmoCoordSpace::Local;
+        {
+            let mut cur = Some(component);
+            while let Some(node) = cur {
+                if let Some(ed) = world.get_component_by_id_as::<EditorComponent>(node) {
+                    translation_space = ed.transform_gizmo_translation_space;
+                    rotation_space = ed.transform_gizmo_rotation_space;
+                    break;
+                }
+                cur = world.parent_of(node);
+            }
+        }
+
+        // Create two coord-space groups so translation and rotation handles can be oriented
+        // independently (e.g. translate in World while rotating in Local).
+        //
+        // These filters sit under the gizmo's uniform scale transform (`gizmo_root`), so they keep
+        // the gizmo size but can optionally drop inherited rotation.
+        let gizmo_space_world = world.add_component_boxed_named(
+            "gizmo_space_world",
+            Box::new(
+                crate::engine::ecs::component::TransformFilterComponent::new()
+                    .with_inherit_translation(true)
+                    .with_inherit_rotation(false)
+                    .with_inherit_scale(true),
+            ),
+        );
+        let _ = world.add_child(gizmo_visual_parent, gizmo_space_world);
+
+        let gizmo_space_local = world.add_component_boxed_named(
+            "gizmo_space_local",
+            Box::new(
+                crate::engine::ecs::component::TransformFilterComponent::new()
+                    .with_inherit_translation(true)
+                    .with_inherit_rotation(true)
+                    .with_inherit_scale(true),
+            ),
+        );
+        let _ = world.add_child(gizmo_visual_parent, gizmo_space_local);
+
+        let translate_parent = match translation_space {
+            TransformGizmoCoordSpace::World => gizmo_space_world,
+            TransformGizmoCoordSpace::Local => gizmo_space_local,
+        };
+
+        let rotate_parent = match rotation_space {
+            TransformGizmoCoordSpace::World => gizmo_space_world,
+            TransformGizmoCoordSpace::Local => gizmo_space_local,
+        };
 
         // Write back visual root.
         if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(component) {
@@ -1060,7 +1151,7 @@ impl TransformGizmoSystem {
         // Rotation rings live under per-axis rotate handle components.
         let rot_x_root = spawn_rotate_handle_root(
             world,
-            gizmo_visual_parent,
+            rotate_parent,
             TransformGizmoAxis::X,
             "gizmo_rot_x",
         );
@@ -1084,7 +1175,7 @@ impl TransformGizmoSystem {
 
         let rot_y_root = spawn_rotate_handle_root(
             world,
-            gizmo_visual_parent,
+            rotate_parent,
             TransformGizmoAxis::Y,
             "gizmo_rot_y",
         );
@@ -1108,7 +1199,7 @@ impl TransformGizmoSystem {
 
         let rot_z_root = spawn_rotate_handle_root(
             world,
-            gizmo_visual_parent,
+            rotate_parent,
             TransformGizmoAxis::Z,
             "gizmo_rot_z",
         );
@@ -1141,7 +1232,7 @@ impl TransformGizmoSystem {
         // Translation arrows live under per-axis translate handle components.
         let move_x_root = spawn_translate_handle_root(
             world,
-            gizmo_visual_parent,
+            translate_parent,
             TransformGizmoAxis::X,
             "gizmo_move_x",
         );
@@ -1171,7 +1262,7 @@ impl TransformGizmoSystem {
 
         let move_y_root = spawn_translate_handle_root(
             world,
-            gizmo_visual_parent,
+            translate_parent,
             TransformGizmoAxis::Y,
             "gizmo_move_y",
         );
@@ -1201,7 +1292,7 @@ impl TransformGizmoSystem {
 
         let move_z_root = spawn_translate_handle_root(
             world,
-            gizmo_visual_parent,
+            translate_parent,
             TransformGizmoAxis::Z,
             "gizmo_move_z",
         );
@@ -1292,6 +1383,7 @@ impl TransformGizmoSystem {
         None
     }
 
+    #[allow(dead_code)]
     fn gizmos_for_hit_renderable(world: &World, renderable: ComponentId) -> Vec<ComponentId> {
         let mut out: Vec<ComponentId> = world
             .children_of(renderable)

@@ -5,6 +5,7 @@ use crate::engine::ecs::component::{
     TextShadowComponent, TextureComponent, TextureFilteringComponent, TransformComponent,
     UVComponent,
 };
+use crate::engine::ecs::{EventSignal, IntentValue};
 use crate::engine::graphics::TextureFiltering;
 use crate::engine::graphics::VisualWorld;
 
@@ -94,6 +95,41 @@ pub struct SpawnedGlyph {
 }
 
 impl TextSystem {
+    pub(crate) fn on_parent_changed(
+        world: &mut World,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        env: &crate::engine::ecs::Signal,
+    ) {
+        let Some(EventSignal::ParentChanged {
+            child,
+            new_parent,
+            ..
+        }) = env.event.as_ref()
+        else {
+            return;
+        };
+
+        // Only care about style nodes being attached directly under a TextComponent root.
+        let Some(parent) = *new_parent else {
+            return;
+        };
+
+        if world.get_component_by_id_as::<TextComponent>(parent).is_none() {
+            return;
+        }
+
+        // Late-attached ColorComponent: trigger re-registration so existing glyph renderables
+        // update immediately.
+        if world.get_component_by_id_as::<ColorComponent>(*child).is_some() {
+            emit.push_intent_now(
+                *child,
+                IntentValue::RegisterColor {
+                    component_ids: vec![*child],
+                },
+            );
+        }
+    }
+
     fn spawn_glyph_quad(
         world: &mut World,
         parent: ComponentId,

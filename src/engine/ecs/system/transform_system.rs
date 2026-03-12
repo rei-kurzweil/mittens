@@ -2,10 +2,11 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     Camera2DComponent, Camera3DComponent, CollisionComponent, RenderableComponent,
-    TransformComponent,
+    TransformComponent, TransformFilterComponent,
 };
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::System;
+use crate::engine::ecs::system::TransformFilterSystem;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::user_input::InputState;
@@ -139,6 +140,17 @@ impl TransformSystem {
         // TransformComponent ancestor along the path.
         let mut stack: Vec<(ComponentId, TransformMatrix)> = vec![(component, root_world)];
         while let Some((node, current_world)) = stack.pop() {
+            // TransformFilterComponent is a filter-as-node modifier: it does not introduce a new
+            // transform, but it can change what descendant nodes inherit from the nearest
+            // transform ancestor's world matrix.
+            let current_world = if let Some(filter) =
+                world.get_component_by_id_as::<TransformFilterComponent>(node)
+            {
+                TransformFilterSystem::filter_inherited_world(current_world, filter)
+            } else {
+                current_world
+            };
+
             let children: Vec<ComponentId> = world.children_of(node).to_vec();
             for child in children {
                 // If we encounter a TransformComponent, update its cached world matrix and

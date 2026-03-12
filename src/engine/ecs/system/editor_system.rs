@@ -115,7 +115,7 @@ fn spawn_editor_transform_gizmo(
     // Interpret `scale` as world-space size (GizmoSystem compensates for inherited scales).
     let gizmo = world.add_component_boxed_named(
         "editor_transform_gizmo",
-        Box::new(TransformGizmoComponent::new().with_scale(3.0)),
+        Box::new(TransformGizmoComponent::new().with_scale(0.5)),
     );
     let _ = world.add_child(anchor, gizmo);
 

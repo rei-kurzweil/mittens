@@ -139,8 +139,8 @@ pub fn spawn_desktop_camera_controls_hint(
     camera_transform: engine::ecs::ComponentId,
 ) -> engine::ecs::ComponentId {
     use engine::ecs::component::{
-        ColorComponent, EmissiveComponent, TextComponent, TextureFilteringComponent,
-        TransformComponent,
+        ColorComponent, EditorComponent, EmissiveComponent, RaycastableComponent, TextComponent,
+        TextureFilteringComponent, TransformComponent,
     };
 
     // We intentionally do NOT parent the hint under the camera rig.
@@ -156,7 +156,7 @@ pub fn spawn_desktop_camera_controls_hint(
 
     // Camera convention in examples: forward is -Z.
     // Local-space offset from the camera rig at spawn time.
-    let local_offset = [0.45, 0.25, -1.7];
+    let local_offset = [0.65, 0.25, -1.7];
 
     // Rotate the offset by the camera rig's rotation so it appears in front-right of the view.
     let world_offset = cat_engine::utils::math::quat_rotate_vec3(cam_rot, local_offset);
@@ -172,17 +172,29 @@ pub fn spawn_desktop_camera_controls_hint(
             .with_scale(0.055, 0.055, 1.0),
     );
 
-    // Make the text readable against most backgrounds.
-    // (Color inheritance is ancestor-based, so we put Color above the TextComponent in the tree.)
-    let color = universe
-        .world
-        .add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+    // Put the hint into an editor subtree so clicking it attaches gizmos.
+    let editor_root = universe.world.add_component(EditorComponent::new());
+    let _ = universe.attach(hint_root, editor_root);
 
     let text = universe.world.add_component(TextComponent::new(
         "use wasd/rf/qe\nand right-mouse\nclick and drag\nto move/look",
     ));
 
-    let text_shadow = universe.world.add_component(TextShadowComponent::new());
+    // Make glyph renderables raycastable so the hint can be clicked without adding a
+    // large invisible pick plane (clicking is per-glyph / per-text-quad).
+    let raycastable = universe
+        .world
+        .add_component(RaycastableComponent::enabled());
+    let _ = universe.attach(text, raycastable);
+
+    // Text color should be an immediate child of the TextComponent root.
+    let color = universe
+        .world
+        .add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+    let _ = universe.attach(text, color);
+
+    let text_shadow = universe.world.add_component(
+        TextShadowComponent::new().with_offset_xy([0.06, -0.06]).with_z_offset(0.0025));
     let _ = universe.attach(text, text_shadow);
 
     // TextSystem looks for these as immediate children of the TextComponent root.
@@ -191,8 +203,7 @@ pub fn spawn_desktop_camera_controls_hint(
         .world
         .add_component(TextureFilteringComponent::nearest_magnification());
 
-    let _ = universe.attach(hint_root, color);
-    let _ = universe.attach(color, text);
+    let _ = universe.attach(editor_root, text);
     let _ = universe.attach(text, emissive);
     let _ = universe.attach(text, filtering);
 

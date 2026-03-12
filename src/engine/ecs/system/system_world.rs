@@ -21,6 +21,7 @@ use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
 use crate::engine::ecs::system::{EditorSystem, GestureSystem, TransformGizmoSystem};
+use crate::engine::ecs::SignalKind;
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 
@@ -710,6 +711,10 @@ impl SystemWorld {
         component: ComponentId,
         emit: &mut dyn crate::engine::ecs::SignalEmitter,
     ) {
+        // Allow text to react to late-attached style nodes (e.g. ColorComponent).
+        self.rx
+            .add_handler(SignalKind::ParentChanged, component, TextSystem::on_parent_changed);
+
         let _spawned = self.text.register_text(world, visuals, component);
 
         // Initialize any newly spawned glyph/background subtrees.

@@ -244,6 +244,7 @@ impl ComponentCodec {
         match type_name {
             "editor" => Ok(Box::new(EditorComponent::new())),
             "transform" => Ok(Box::new(TransformComponent::new())),
+            "transform_filter" => Ok(Box::new(TransformFilterComponent::new())),
             "renderable" => Ok(Box::new(RenderableComponent::new(
                 crate::engine::graphics::primitives::Renderable::new(
                     crate::engine::graphics::primitives::CpuMeshHandle(0),

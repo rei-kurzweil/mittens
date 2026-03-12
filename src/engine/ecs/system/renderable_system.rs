@@ -496,7 +496,12 @@ impl RenderableSystem {
         // Inheritance case: ColorComponent is attached above renderables (e.g., on TextComponent).
         // Apply it to descendant renderables that do NOT have an explicit per-renderable ColorComponent.
         let mut q = VecDeque::new();
-        q.push_back(component);
+
+        // Style nodes (like ColorComponent) are typically attached as immediate children of a
+        // container node (e.g. TextComponent root). In that case the renderables we want to affect
+        // are descendants of the *container*, not descendants of the ColorComponent itself.
+        let start = world.parent_of(component).unwrap_or(component);
+        q.push_back(start);
 
         while let Some(node) = q.pop_front() {
             for &ch in world.children_of(node).iter() {

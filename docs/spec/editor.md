@@ -318,3 +318,7 @@ Longer-term, the editor can maintain an “inspector view model” and/or emit s
 - `SelectionChanged { selected: Vec<ComponentId> }`
 
 so UI or scripts can respond.
+
+See also:
+
+- [docs/spec/inspector-panel.md](docs/spec/inspector-panel.md)

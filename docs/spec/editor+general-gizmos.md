@@ -24,6 +24,12 @@ This document describes the current “editor root + gizmos” model and how it 
 - It is reparented under the selected target’s `TransformComponent`.
 - It spawns its own visual/interactive subtree on init (handles, rings, etc.).
 
+### Coordinate spaces
+
+Translation and rotation gizmos may operate in either **World** or **Local** coordinate space (independently). See:
+
+- [docs/spec/editor-gizmo-coord-spaces.md](docs/spec/editor-gizmo-coord-spaces.md)
+
 ## Interaction flow (signals)
 
 The engine input pipeline is signal-driven:

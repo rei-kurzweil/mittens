@@ -52,6 +52,7 @@ pub mod text_shadow;
 pub mod texture;
 pub mod texture_filtering;
 pub mod transform;
+pub mod transform_filter;
 pub mod uv;
 
 pub use self::gltf::GLTFComponent;
@@ -82,6 +83,7 @@ pub use color::ColorComponent;
 pub use controller_xr::{ControllerHand, ControllerPoseKind, ControllerXRComponent};
 pub use directional_light::DirectionalLightComponent;
 pub use editor::EditorComponent;
+pub use editor::TransformGizmoCoordSpace;
 pub use emissive::EmissiveComponent;
 pub use gesture_coord_type::{GestureCoordType, GestureCoordTypeComponent};
 pub use gizmo::{
@@ -112,6 +114,7 @@ pub use text_shadow::TextShadowComponent;
 pub use texture::{CatEngineTextureFormat, TextureComponent};
 pub use texture_filtering::TextureFilteringComponent;
 pub use transform::TransformComponent;
+pub use transform_filter::TransformFilterComponent;
 pub use transparent_cutout::TransparentCutoutComponent;
 pub use uv::UVComponent;
 
