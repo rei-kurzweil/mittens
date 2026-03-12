@@ -194,7 +194,10 @@ pub fn spawn_desktop_camera_controls_hint(
     let _ = universe.attach(text, color);
 
     let text_shadow = universe.world.add_component(
-        TextShadowComponent::new().with_offset_xy([0.06, -0.06]).with_z_offset(0.0025));
+        TextShadowComponent::new()
+            .with_offset_xy([0.06, -0.06])
+            .with_z_offset(0.0025),
+    );
     let _ = universe.attach(text, text_shadow);
 
     // TextSystem looks for these as immediate children of the TextComponent root.

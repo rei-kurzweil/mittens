@@ -159,12 +159,16 @@ impl IntentSignal {
 #[derive(Debug, Clone)]
 pub enum IntentValue {
     Noop,
-    Print { message: String },
+    Print {
+        message: String,
+    },
 
     /// Queue a REPL command to be executed on the main thread (if the REPL is enabled).
     ///
     /// This is used for editor integration (e.g. jump to the clicked component).
-    ReplExec { command: String },
+    ReplExec {
+        command: String,
+    },
 
     SetColor {
         component_ids: Vec<ComponentId>,
@@ -187,16 +191,26 @@ pub enum IntentValue {
         parents: Vec<ComponentId>,
         prefab_root: ComponentId,
     },
-    Detach { component_ids: Vec<ComponentId> },
+    Detach {
+        component_ids: Vec<ComponentId>,
+    },
     RemoveChild {
         parents: Vec<ComponentId>,
         index: usize,
     },
-    RemoveChildren { parents: Vec<ComponentId> },
-    RemoveSubtree { component_ids: Vec<ComponentId> },
+    RemoveChildren {
+        parents: Vec<ComponentId>,
+    },
+    RemoveSubtree {
+        component_ids: Vec<ComponentId>,
+    },
 
-    AudioGraphRebuild { component_ids: Vec<ComponentId> },
-    RequestRaycast { component_ids: Vec<ComponentId> },
+    AudioGraphRebuild {
+        component_ids: Vec<ComponentId>,
+    },
+    RequestRaycast {
+        component_ids: Vec<ComponentId>,
+    },
 
     AudioLowPassSetCutoffHz {
         component_ids: Vec<ComponentId>,
@@ -246,80 +260,167 @@ pub enum IntentValue {
         note: crate::engine::ecs::component::MusicNote,
     },
 
-    RegisterRenderable { component_ids: Vec<ComponentId> },
-    RemoveRenderable { component_ids: Vec<ComponentId> },
-    RegisterTransform { component_ids: Vec<ComponentId> },
+    RegisterRenderable {
+        component_ids: Vec<ComponentId>,
+    },
+    RemoveRenderable {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterTransform {
+        component_ids: Vec<ComponentId>,
+    },
     /// Recompute transform-derived caches (world matrices, skinning, BVH) without modifying the transform value.
     ///
     /// Intended for topology changes (e.g. Attach/Detach) where world matrices need recomputation.
-    UpdateTransformWorld { component_ids: Vec<ComponentId> },
+    UpdateTransformWorld {
+        component_ids: Vec<ComponentId>,
+    },
     UpdateTransform {
         component_ids: Vec<ComponentId>,
         translation: [f32; 3],
         rotation_quat_xyzw: [f32; 4],
         scale: [f32; 3],
     },
-    RemoveTransform { component_ids: Vec<ComponentId> },
+    RemoveTransform {
+        component_ids: Vec<ComponentId>,
+    },
 
-    RegisterCamera3d { component_ids: Vec<ComponentId> },
-    RegisterCamera2d { component_ids: Vec<ComponentId> },
-    MakeActiveCamera { component_ids: Vec<ComponentId> },
+    RegisterCamera3d {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterCamera2d {
+        component_ids: Vec<ComponentId>,
+    },
+    MakeActiveCamera {
+        component_ids: Vec<ComponentId>,
+    },
 
-    RegisterInput { component_ids: Vec<ComponentId> },
-    RegisterUv { component_ids: Vec<ComponentId> },
+    RegisterInput {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterUv {
+        component_ids: Vec<ComponentId>,
+    },
 
-    RegisterLight { component_ids: Vec<ComponentId> },
-    RegisterColor { component_ids: Vec<ComponentId> },
-    RegisterOpacity { component_ids: Vec<ComponentId> },
-    RegisterTransparentCutout { component_ids: Vec<ComponentId> },
-    RegisterBackgroundColor { component_ids: Vec<ComponentId> },
-    RegisterAmbientLight { component_ids: Vec<ComponentId> },
-    RegisterEmissive { component_ids: Vec<ComponentId> },
-    RegisterLightQuantization { component_ids: Vec<ComponentId> },
+    RegisterLight {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterColor {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterOpacity {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterTransparentCutout {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterBackgroundColor {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterAmbientLight {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterEmissive {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterLightQuantization {
+        component_ids: Vec<ComponentId>,
+    },
 
-    RegisterTexture { component_ids: Vec<ComponentId> },
-    RegisterTextureFiltering { component_ids: Vec<ComponentId> },
+    RegisterTexture {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterTextureFiltering {
+        component_ids: Vec<ComponentId>,
+    },
 
-    RegisterText { component_ids: Vec<ComponentId> },
+    RegisterText {
+        component_ids: Vec<ComponentId>,
+    },
 
-    RegisterCollision { component_ids: Vec<ComponentId> },
-    RemoveCollision { component_ids: Vec<ComponentId> },
-    RegisterKineticResponse { component_ids: Vec<ComponentId> },
-    RemoveKineticResponse { component_ids: Vec<ComponentId> },
+    RegisterCollision {
+        component_ids: Vec<ComponentId>,
+    },
+    RemoveCollision {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterKineticResponse {
+        component_ids: Vec<ComponentId>,
+    },
+    RemoveKineticResponse {
+        component_ids: Vec<ComponentId>,
+    },
 
-    RegisterOpenxr { component_ids: Vec<ComponentId> },
-    RegisterControllerXr { component_ids: Vec<ComponentId> },
-    RemoveControllerXr { component_ids: Vec<ComponentId> },
+    RegisterOpenxr {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterControllerXr {
+        component_ids: Vec<ComponentId>,
+    },
+    RemoveControllerXr {
+        component_ids: Vec<ComponentId>,
+    },
 
-    RegisterRaycast { component_ids: Vec<ComponentId> },
-    RemoveRaycast { component_ids: Vec<ComponentId> },
+    RegisterRaycast {
+        component_ids: Vec<ComponentId>,
+    },
+    RemoveRaycast {
+        component_ids: Vec<ComponentId>,
+    },
 
-    RegisterAnimation { component_ids: Vec<ComponentId> },
-    RegisterKeyframe { component_ids: Vec<ComponentId> },
+    RegisterAnimation {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterKeyframe {
+        component_ids: Vec<ComponentId>,
+    },
 
-    RegisterAudioOutput { component_ids: Vec<ComponentId> },
-    AudioGraphDirtyImmediate { component_ids: Vec<ComponentId> },
-    RegisterAudioOscillator { component_ids: Vec<ComponentId> },
-    RegisterAudioBufferSize { component_ids: Vec<ComponentId> },
-    RegisterClock { component_ids: Vec<ComponentId> },
-    RegisterTransformGizmo { component_ids: Vec<ComponentId> },
+    RegisterAudioOutput {
+        component_ids: Vec<ComponentId>,
+    },
+    AudioGraphDirtyImmediate {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterAudioOscillator {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterAudioBufferSize {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterClock {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterTransformGizmo {
+        component_ids: Vec<ComponentId>,
+    },
 
-    RegisterEditor { component_ids: Vec<ComponentId> },
+    RegisterEditor {
+        component_ids: Vec<ComponentId>,
+    },
 
-    RegisterAction { component_ids: Vec<ComponentId> },
+    RegisterAction {
+        component_ids: Vec<ComponentId>,
+    },
 
     /// Register/unregister routing operators.
     ///
     /// These are internal mutation-style intents executed by the pipeline system.
-    RegisterSignalRouteUpward { component_ids: Vec<ComponentId> },
-    RemoveSignalRouteUpward { component_ids: Vec<ComponentId> },
+    RegisterSignalRouteUpward {
+        component_ids: Vec<ComponentId>,
+    },
+    RemoveSignalRouteUpward {
+        component_ids: Vec<ComponentId>,
+    },
 
     ScheduleAudioOp {
         component_ids: Vec<ComponentId>,
         beat: f64,
         op: crate::engine::ecs::system::audio_system::AudioOp,
     },
-    ScheduleAudioGraphSwap { component_ids: Vec<ComponentId>, beat: f64 },
+    ScheduleAudioGraphSwap {
+        component_ids: Vec<ComponentId>,
+        beat: f64,
+    },
     ScheduleAudioPitchSetHz {
         component_ids: Vec<ComponentId>,
         beat: f64,

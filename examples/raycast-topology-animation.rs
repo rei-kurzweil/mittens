@@ -365,13 +365,14 @@ fn main() {
 
         // Anchor A rotation: smooth yaw.
         let yaw_a = t * std::f32::consts::TAU;
-        let a_set =
-            engine::ecs::component::ActionComponent::new(engine::ecs::IntentValue::UpdateTransform {
+        let a_set = engine::ecs::component::ActionComponent::new(
+            engine::ecs::IntentValue::UpdateTransform {
                 component_ids: vec![anchor_a],
                 translation: [0.0, 1.0, 0.0],
                 rotation_quat_xyzw: quat_from_yaw(yaw_a),
                 scale: [1.0, 1.0, 1.0],
-            });
+            },
+        );
         let a_set_id = universe.world.add_component(a_set);
         let _ = universe.attach(kf_a, a_set_id);
 
@@ -379,13 +380,14 @@ fn main() {
         let yaw_b = -t * std::f32::consts::TAU * 1.5;
         let pitch_b = (t * std::f32::consts::TAU).sin() * 0.35;
         let rot_b = quat_mul(quat_from_yaw(yaw_b), quat_from_pitch(pitch_b));
-        let b_set =
-            engine::ecs::component::ActionComponent::new(engine::ecs::IntentValue::UpdateTransform {
+        let b_set = engine::ecs::component::ActionComponent::new(
+            engine::ecs::IntentValue::UpdateTransform {
                 component_ids: vec![anchor_b],
                 translation: [0.0, 2.2, 0.0],
                 rotation_quat_xyzw: rot_b,
                 scale: [1.0, 1.0, 1.0],
-            });
+            },
+        );
         let b_set_id = universe.world.add_component(b_set);
         let _ = universe.attach(kf_b, b_set_id);
 

@@ -93,16 +93,53 @@ See [docs/render-phases.md](docs/render-phases.md) for details and the relevant 
 
 # Components
 
+## Transforms
+
+Transforms are central in cat-engine: most component subtrees are rooted at a `TransformComponent`, and many engine systems interpret the component tree as “a scene graph of nested transforms + things attached under them”.
+
+0. **Brief intro: `TransformComponent`**
+  - Stores local TRS (translation / rotation / scale) and a cached `matrix_world`.
+  - Local TRS is represented as a *model matrix* (`transform.model`), and the engine propagates it through the component tree to compute `matrix_world` for nested transforms.
+
+1. **How transforms can be nested**
+  - A `TransformComponent` can parent other `TransformComponent`s.
+  - Nesting is defined by the ECS topology (parent/child relationships in the component tree).
+
+2. **What that means for model vs `matrix_world` propagation**
+  - Each transform has a local `model` matrix derived from its TRS.
+  - World-space transforms are computed by multiplying ancestor models down the tree:
+    - `matrix_world(child) = matrix_world(parent) * model(child)`
+  - `TransformSystem` caches `matrix_world` on each `TransformComponent` and uses it as the source of truth for systems that need world-space.
+  - Topology changes (Attach/Detach) can require recomputation even if local TRS didn’t change; the engine has a dedicated intent for that (`UpdateTransformWorld`).
+
+3. **Which systems are affected by transforms**
+  - `RenderableSystem` / `VisualWorld`: instance model matrices for renderables
+  - `CameraSystem`: camera view/projection updates when parent transform changes
+  - `LightSystem`: point light world-space position updates
+  - `CollisionSystem`: collider world-space updates
+  - `SkinnedMeshSystem`: joint world matrices / skinning matrices become dirty
+  - `BvhSystem` + `RaycastSystem`: BVH refit and raycast correctness depends on world matrices
+  - `OpenXRSystem`: XR devices/cameras often read/write world transforms
+  - Editor gizmos: visual alignment + drag application depend on consistent `matrix_world`
+
+4. **Which systems determine / write transform intents**
+  - User code: calling `TransformComponent::{set_position,set_rotation_*,set_scale}` queues `UpdateTransform`
+  - `InputSystem`: movement/controls update transforms via `UpdateTransform`
+  - `OpenXRSystem`: device pose application uses `UpdateTransform`
+  - `KineticResponseSystem`: kinematic collision response integrates motion via `UpdateTransform`
+  - `TransformGizmoSystem`: editor gestures call transform setters (which queue `UpdateTransform`)
+
+4.1 **Transform propagation pipelines / transform operators**
+  - `TransformSystem::transform_changed(...)` is the core propagation pipeline: it recomputes cached `matrix_world` for a transform subtree and pushes side effects to dependent systems.
+  - `TransformFilterComponent` is a “filter-as-node” operator that changes what descendants inherit (e.g. inherit translation+rotation but *not* scale). It’s used heavily for editor/gizmo visuals.
+  - For deeper notes/specs:
+    - `TransformFilterComponent` motivation: `docs/analysis/gizmo-transform-propagation.md`
+    - Gizmo coord spaces (Local/World): `docs/spec/editor-gizmo-coord-spaces.md`
+    - Transform update flow and refit/rebuild behavior: `docs/analysis/refresh-transform.md`
+
 + TransformComponent
-  + lets position anything in space (and rotate and scale it)
-  + affects children:
-    + RenderableComponent
-    + Camera2DComponent
-    + Camera3DComponent
-    + PointLightComponent
-    + CollisionComponent
-  + affected by parents:
-    + InputComponent (recieves transform input from InputComponent)
+  + lets position anything in space (translation/rotation/scale)
+  + can be nested to build scene graphs; see “Transforms” above for propagation + affected systems
 
 + RenderableComponent
   + Several built-in RenderableComponents are available as special constructors on the impl.
@@ -194,58 +231,9 @@ InputComponent {
   + (see `GravityComponent` below) gravity is inherited from ancestors.
 
   + KineticResponseComponent
-    + Opt-in kinematic collision response for a collider.
-    + **Policy:** collision detection/queries still work without this; collision signals still emit. This component only controls *automatic movement* in response to overlaps.
-    + **Topology requirement:** attach as a direct child of a `CollisionComponent` (which itself should be a direct child of a `TransformComponent`).
-
-Example topology:
-
-```rust
-TransformComponent {
-  CollisionComponent::KINEMATIC() {
-    CollisionShapeComponent { ... }
-    KineticResponseComponent::push() { ... }
-  }
-    RenderableComponent { ... }
-}
-
-GravityComponent {
-  TransformComponent {
-    CollisionComponent::KINEMATIC() {
-      CollisionShapeComponent { ... }
-      KineticResponseComponent::push() { ... }
-    }
-  }
-}
-```
-
-  + **Modes**
-    + `slide` (`KineticResponseComponent::slide()`)
-      + Classic kinematic “push out of statics” behavior.
-      + Each tick, if overlapping static colliders, pushes the transform out along the minimum-penetration axis (AABB).
-      + Good for camera rigs and players sliding along level geometry.
-    + `push` (`KineticResponseComponent::push()`)
-      + “Pushable” behavior.
-      + Accumulates a runtime velocity away from overlapping **non-static** colliders, integrates it every tick, and still resolves overlaps against static colliders.
-      + Includes a simple horizontal bounce on static side-wall contacts (X/Z velocity reflection) so bodies don’t just stick while being corrected.
-
-  + **Tuning fields (encode/decode keys shown)**
-    + `enabled: bool` — master toggle.
-    + `mode: "slide" | "push"`
-    + `max_iterations: u32` — max static push-out iterations per tick.
-    + `push_out_epsilon: f32` — tiny extra separation to reduce jitter at exact contact.
-    + `push_strength: f32` — strength of push-mode acceleration from non-static overlaps.
-      + Builder: `with_push_strength(f32)`
-    + `max_speed: f32` — clamp on push-mode speed (world units/sec).
-    + `friction: f32` — per-second velocity damping applied every tick in push-mode.
-      + Off by default (`0.0`).
-      + Builder: `with_friction(f32)`
-    + `friction_y: f32` — per-second damping applied to **Y velocity only**, and only when resolving a **vertical (Y-axis) static overlap** (e.g. floor/roof contact).
-      + Off by default (`0.0`).
-      + Builder: `with_friction_y(f32)`
-
-  + **Runtime state**
-    + `velocity: [f32; 3]` is runtime-only (not serialized).
+    + Opt-in kinematic collision response (automatic movement/push-out in response to overlaps).
+    + **Topology requirement:** attach as a direct child of a `CollisionComponent`.
+    + Modes and tuning fields are documented in: [docs/spec/kinetic-response.md](docs/spec/kinetic-response.md)
 
 + GravityComponent
   + Gravity field component.

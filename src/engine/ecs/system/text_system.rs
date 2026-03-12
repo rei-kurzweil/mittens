@@ -101,9 +101,7 @@ impl TextSystem {
         env: &crate::engine::ecs::Signal,
     ) {
         let Some(EventSignal::ParentChanged {
-            child,
-            new_parent,
-            ..
+            child, new_parent, ..
         }) = env.event.as_ref()
         else {
             return;
@@ -114,13 +112,19 @@ impl TextSystem {
             return;
         };
 
-        if world.get_component_by_id_as::<TextComponent>(parent).is_none() {
+        if world
+            .get_component_by_id_as::<TextComponent>(parent)
+            .is_none()
+        {
             return;
         }
 
         // Late-attached ColorComponent: trigger re-registration so existing glyph renderables
         // update immediately.
-        if world.get_component_by_id_as::<ColorComponent>(*child).is_some() {
+        if world
+            .get_component_by_id_as::<ColorComponent>(*child)
+            .is_some()
+        {
             emit.push_intent_now(
                 *child,
                 IntentValue::RegisterColor {

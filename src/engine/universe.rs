@@ -1,6 +1,6 @@
+use crate::engine::ecs::SignalEmitter;
 use crate::engine::user_input::InputState;
 use crate::engine::{ecs, graphics};
-use crate::engine::ecs::SignalEmitter;
 use std::collections::HashSet;
 use std::sync::Arc;
 use winit::window::Window;
@@ -198,7 +198,8 @@ impl Universe {
             return Err("attach_clone: prefab_root does not exist".to_string());
         }
 
-        let before: HashSet<ecs::ComponentId> = self.world.children_of(parent).iter().copied().collect();
+        let before: HashSet<ecs::ComponentId> =
+            self.world.children_of(parent).iter().copied().collect();
 
         self.command_queue.push_intent_now(
             parent,

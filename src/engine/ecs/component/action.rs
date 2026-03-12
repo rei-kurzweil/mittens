@@ -61,7 +61,10 @@ impl Component for ActionComponent {
                 map.insert("message".to_string(), serde_json::json!(message));
             }
 
-            IntentValue::SetColor { component_ids, rgba } => {
+            IntentValue::SetColor {
+                component_ids,
+                rgba,
+            } => {
                 map.insert("variant".to_string(), serde_json::json!("SetColor"));
                 map.insert(
                     "component_ids".to_string(),
@@ -69,7 +72,10 @@ impl Component for ActionComponent {
                 );
                 map.insert("rgba".to_string(), serde_json::json!(rgba));
             }
-            IntentValue::SetText { component_ids, text } => {
+            IntentValue::SetText {
+                component_ids,
+                text,
+            } => {
                 map.insert("variant".to_string(), serde_json::json!("SetText"));
                 map.insert(
                     "component_ids".to_string(),
@@ -290,7 +296,9 @@ impl Component for ActionComponent {
                 map.insert("variant".to_string(), serde_json::json!("Noop"));
                 map.insert(
                     "error".to_string(),
-                    serde_json::json!(format!("Unsupported intent variant in ActionComponent: {other:?}")),
+                    serde_json::json!(format!(
+                        "Unsupported intent variant in ActionComponent: {other:?}"
+                    )),
                 );
             }
         }

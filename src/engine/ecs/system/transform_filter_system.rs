@@ -10,7 +10,10 @@ impl TransformFilterSystem {
         Self
     }
 
-    pub fn filter_inherited_world(parent_world: TransformMatrix, filter: &TransformFilterComponent) -> TransformMatrix {
+    pub fn filter_inherited_world(
+        parent_world: TransformMatrix,
+        filter: &TransformFilterComponent,
+    ) -> TransformMatrix {
         fn col3(m: TransformMatrix, c: usize) -> [f32; 3] {
             [m[c][0], m[c][1], m[c][2]]
         }

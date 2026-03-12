@@ -103,7 +103,10 @@ impl std::fmt::Debug for RxWorld {
                 "pipeline_owner_by_operator_len",
                 &self.pipeline_owner_by_operator.len(),
             )
-            .field("pipelines_by_component_len", &self.pipelines_by_component.len())
+            .field(
+                "pipelines_by_component_len",
+                &self.pipelines_by_component.len(),
+            )
             .finish()
     }
 }
@@ -259,7 +262,10 @@ impl RxWorld {
         // This avoids duplicate dispatches if a system registers handlers multiple times
         // for the same (kind, scope_root).
         let handler_usize = handler as usize;
-        if list.iter().any(|h| matches!(h, Handler::Fn(fp) if *fp as usize == handler_usize)) {
+        if list
+            .iter()
+            .any(|h| matches!(h, Handler::Fn(fp) if *fp as usize == handler_usize))
+        {
             return;
         }
 
@@ -289,7 +295,10 @@ impl RxWorld {
         let list = self.global_handlers.entry(kind).or_default();
 
         let handler_usize = handler as usize;
-        if list.iter().any(|h| matches!(h, Handler::Fn(fp) if *fp as usize == handler_usize)) {
+        if list
+            .iter()
+            .any(|h| matches!(h, Handler::Fn(fp) if *fp as usize == handler_usize))
+        {
             return;
         }
 
@@ -307,7 +316,6 @@ impl RxWorld {
             .or_default()
             .push(Handler::Closure(Box::new(handler)));
     }
-
 
     pub fn remove_handler(
         &mut self,

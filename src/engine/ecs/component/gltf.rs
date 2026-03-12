@@ -82,8 +82,9 @@ impl Component for GLTFComponent {
         let with_visualized_transforms = data
             .get("with_visualized_transforms")
             .ok_or_else(|| "Missing required field: with_visualized_transforms".to_string())?;
-        self.with_visualized_transforms = serde_json::from_value(with_visualized_transforms.clone())
-            .map_err(|e| format!("Failed to decode with_visualized_transforms: {e}"))?;
+        self.with_visualized_transforms =
+            serde_json::from_value(with_visualized_transforms.clone())
+                .map_err(|e| format!("Failed to decode with_visualized_transforms: {e}"))?;
 
         self.spawned = false;
         Ok(())

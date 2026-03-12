@@ -15,7 +15,11 @@ impl EditorSystem {
     /// Install gesture/picking handlers scoped to a specific editor root subtree.
     ///
     /// This allows multiple EditorComponent subtrees, each with independent selection/gizmo state.
-    pub fn install_scoped_handlers_for_editor(&mut self, rx: &mut RxWorld, editor_root: ComponentId) {
+    pub fn install_scoped_handlers_for_editor(
+        &mut self,
+        rx: &mut RxWorld,
+        editor_root: ComponentId,
+    ) {
         if self.installed_editor_roots.contains(&editor_root) {
             return;
         }
@@ -106,10 +110,8 @@ fn spawn_editor_transform_gizmo(
 ) -> Option<ComponentId> {
     // Create a tiny anchor transform under the eot so the gizmo has a Transform ancestor
     // before it is first moved onto a clicked target.
-    let anchor = world.add_component_boxed_named(
-        "editor_gizmo_anchor",
-        Box::new(TransformComponent::new()),
-    );
+    let anchor =
+        world.add_component_boxed_named("editor_gizmo_anchor", Box::new(TransformComponent::new()));
     let _ = world.add_child(editor_root, anchor);
 
     // Interpret `scale` as world-space size (GizmoSystem compensates for inherited scales).

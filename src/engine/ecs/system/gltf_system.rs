@@ -1,9 +1,9 @@
-use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::engine::ecs::component::{
-    ColorComponent, EditorComponent, EmissiveComponent, GLTFComponent,
-    MeshComponent, OverlayComponent, RaycastableComponent, RenderableComponent,
-    SignalRouteUpwardComponent, SkinnedMeshComponent, TextureComponent, TransformComponent,
+    ColorComponent, EditorComponent, EmissiveComponent, GLTFComponent, MeshComponent,
+    OverlayComponent, RaycastableComponent, RenderableComponent, SignalRouteUpwardComponent,
+    SkinnedMeshComponent, TextureComponent, TransformComponent,
 };
+use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::engine::graphics::mesh::{CpuMesh, CpuVertex};
 use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Renderable};
@@ -483,7 +483,10 @@ impl GLTFSystem {
     fn has_editor_ancestor(world: &World, start: ComponentId) -> bool {
         let mut cur = Some(start);
         while let Some(node) = cur {
-            if world.get_component_by_id_as::<EditorComponent>(node).is_some() {
+            if world
+                .get_component_by_id_as::<EditorComponent>(node)
+                .is_some()
+            {
                 return true;
             }
             cur = world.parent_of(node);
@@ -966,17 +969,18 @@ impl GLTFSystem {
             viz_tc.transform.scale = [VIZ_BOX_SCALE, VIZ_BOX_SCALE, VIZ_BOX_SCALE];
             viz_tc.transform.recompute_model();
 
-            let viz_transform = world.add_component_boxed_named(
-                format!("viz:{}", node_display_name),
-                Box::new(viz_tc),
-            );
+            let viz_transform = world
+                .add_component_boxed_named(format!("viz:{}", node_display_name), Box::new(viz_tc));
             let _ = world.add_child(overlay, viz_transform);
 
             // Treat viz transforms as interaction proxies: route UpdateTransform intents to the
             // nearest ancestor Transform.
             let route_up = world.add_component_boxed_named(
                 format!("route_upward:viz:{}", node_display_name),
-                Box::new(SignalRouteUpwardComponent::new("update_transform", "transform")),
+                Box::new(SignalRouteUpwardComponent::new(
+                    "update_transform",
+                    "transform",
+                )),
             );
             let _ = world.add_child(viz_transform, route_up);
 
@@ -989,7 +993,9 @@ impl GLTFSystem {
             let raycastable = world.add_component(RaycastableComponent::enabled());
             let _ = world.add_child(viz_renderable, raycastable);
 
-            let color = world.add_component(ColorComponent { rgba: [1.0, 1.0, 1.0, 1.0] });
+            let color = world.add_component(ColorComponent {
+                rgba: [1.0, 1.0, 1.0, 1.0],
+            });
             let _ = world.add_child(viz_renderable, color);
         }
 

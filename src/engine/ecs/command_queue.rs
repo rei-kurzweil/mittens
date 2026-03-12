@@ -9,9 +9,7 @@
 //! - Instead, we queue signals locally and drain them into `SystemWorld.rx` at explicit
 //!   drain points.
 
-use crate::engine::ecs::{
-    ComponentId, EventSignal, IntentSignal, RxWorld, Signal, SignalEmitter,
-};
+use crate::engine::ecs::{ComponentId, EventSignal, IntentSignal, RxWorld, Signal, SignalEmitter};
 
 pub struct CommandQueue {
     queued: Vec<Signal>,
@@ -19,9 +17,7 @@ pub struct CommandQueue {
 
 impl CommandQueue {
     pub fn new() -> Self {
-        Self {
-            queued: Vec::new(),
-        }
+        Self { queued: Vec::new() }
     }
 
     /// Drain locally-queued signals into the target `RxWorld`.

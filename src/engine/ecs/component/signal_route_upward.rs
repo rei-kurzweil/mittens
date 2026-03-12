@@ -50,8 +50,14 @@ impl Component for SignalRouteUpwardComponent {
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
         let mut map = std::collections::HashMap::new();
-        map.insert("intent_kind".to_string(), serde_json::json!(self.intent_kind));
-        map.insert("parent_type".to_string(), serde_json::json!(self.parent_type));
+        map.insert(
+            "intent_kind".to_string(),
+            serde_json::json!(self.intent_kind),
+        );
+        map.insert(
+            "parent_type".to_string(),
+            serde_json::json!(self.parent_type),
+        );
         map
     }
 

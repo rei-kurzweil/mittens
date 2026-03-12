@@ -27,7 +27,10 @@ impl RxMutationExecutor {
         use crate::engine::graphics::primitives::Transform;
 
         fn collect_text_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {
-            if world.get_component_by_id_as::<TextComponent>(target).is_some() {
+            if world
+                .get_component_by_id_as::<TextComponent>(target)
+                .is_some()
+            {
                 out.push(target);
                 return;
             }
@@ -38,7 +41,10 @@ impl RxMutationExecutor {
                     stack.push(ch);
                 }
 
-                if world.get_component_by_id_as::<TextComponent>(node).is_some() {
+                if world
+                    .get_component_by_id_as::<TextComponent>(node)
+                    .is_some()
+                {
                     out.push(node);
                 }
             }
@@ -60,12 +66,17 @@ impl RxMutationExecutor {
                 // Best-effort: delete glyph transform children (keep style components).
                 let children: Vec<ComponentId> = world.children_of(component).to_vec();
                 for ch in children {
-                    if world.get_component_by_id_as::<TransformComponent>(ch).is_none() {
+                    if world
+                        .get_component_by_id_as::<TransformComponent>(ch)
+                        .is_none()
+                    {
                         continue;
                     }
 
                     let has_renderable_child = world.children_of(ch).iter().any(|&gch| {
-                        world.get_component_by_id_as::<RenderableComponent>(gch).is_some()
+                        world
+                            .get_component_by_id_as::<RenderableComponent>(gch)
+                            .is_some()
                     });
                     if has_renderable_child {
                         // This is very likely a glyph root.
@@ -351,15 +362,19 @@ impl RxMutationExecutor {
 
             IntentValue::RegisterAction { component_ids } => {
                 for &component in component_ids.iter() {
-                    crate::engine::ecs::system::action_system::register_action(world, emit, component);
+                    crate::engine::ecs::system::action_system::register_action(
+                        world, emit, component,
+                    );
                 }
             }
 
             IntentValue::RegisterSignalRouteUpward { component_ids } => {
                 for &component in component_ids.iter() {
-                    systems
-                        .pipeline
-                        .register_signal_route_upward(world, &mut systems.rx, component);
+                    systems.pipeline.register_signal_route_upward(
+                        world,
+                        &mut systems.rx,
+                        component,
+                    );
                 }
             }
             IntentValue::RemoveSignalRouteUpward { component_ids } => {
@@ -379,7 +394,10 @@ impl RxMutationExecutor {
                     systems.audio.schedule_audio_op(component, *beat, *op);
                 }
             }
-            IntentValue::ScheduleAudioGraphSwap { component_ids, beat } => {
+            IntentValue::ScheduleAudioGraphSwap {
+                component_ids,
+                beat,
+            } => {
                 for &component in component_ids.iter() {
                     systems.audio.schedule_graph_swap(&*world, component, *beat);
                 }
@@ -390,9 +408,11 @@ impl RxMutationExecutor {
                 frequency_hz,
             } => {
                 for &component in component_ids.iter() {
-                    systems
-                        .audio
-                        .schedule_audio_op(component, *beat, AudioOp::SetHz(*frequency_hz));
+                    systems.audio.schedule_audio_op(
+                        component,
+                        *beat,
+                        AudioOp::SetHz(*frequency_hz),
+                    );
                 }
             }
             IntentValue::ScheduleAudioOscillatorEnabled {
@@ -401,9 +421,11 @@ impl RxMutationExecutor {
                 enabled,
             } => {
                 for &component in component_ids.iter() {
-                    systems
-                        .audio
-                        .schedule_audio_op(component, *beat, AudioOp::SetEnabled(*enabled));
+                    systems.audio.schedule_audio_op(
+                        component,
+                        *beat,
+                        AudioOp::SetEnabled(*enabled),
+                    );
                 }
             }
             IntentValue::ScheduleAudioGainSet {

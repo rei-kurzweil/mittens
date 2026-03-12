@@ -1,7 +1,7 @@
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::Component;
 use crate::engine::ecs::IntentValue;
 use crate::engine::ecs::SignalEmitter;
+use crate::engine::ecs::component::Component;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransformGizmoCoordSpace {
@@ -52,7 +52,10 @@ impl EditorComponent {
         Self::default()
     }
 
-    pub fn with_transform_gizmo_translation_space(mut self, space: TransformGizmoCoordSpace) -> Self {
+    pub fn with_transform_gizmo_translation_space(
+        mut self,
+        space: TransformGizmoCoordSpace,
+    ) -> Self {
         self.transform_gizmo_translation_space = space;
         self
     }
@@ -122,7 +125,11 @@ impl Component for EditorComponent {
             self.transform_gizmo_translation_space = match s.trim().to_ascii_lowercase().as_str() {
                 "local" => TransformGizmoCoordSpace::Local,
                 "world" => TransformGizmoCoordSpace::World,
-                other => return Err(format!("Unknown transform_gizmo_translation_space '{other}'")),
+                other => {
+                    return Err(format!(
+                        "Unknown transform_gizmo_translation_space '{other}'"
+                    ));
+                }
             };
         }
 

@@ -13,7 +13,7 @@ struct ButtonBorder {
     right: f32,
     bottom: f32,
 }
-    
+
 impl ButtonBorder {
     fn new(left: f32, top: f32, right: f32, bottom: f32) -> Self {
         Self {
@@ -135,7 +135,8 @@ fn set_button_pressed(
             component_ids: vec![state.text_color],
         },
     );
-    let new_text_color = world.add_component(engine::ecs::component::ColorComponent { rgba: text_rgba });
+    let new_text_color =
+        world.add_component(engine::ecs::component::ColorComponent { rgba: text_rgba });
     emit.push_intent_now(
         button_root,
         engine::ecs::IntentValue::Attach {
@@ -207,7 +208,9 @@ fn spawn_raycastable_colored_cube(
     use engine::ecs::component::ColorComponent;
 
     let r = spawn_raycastable_cube(universe, parent, pos, scale);
-    let c = universe.world.add_component(ColorComponent::rgba(rgba[0], rgba[1], rgba[2], rgba[3]));
+    let c = universe
+        .world
+        .add_component(ColorComponent::rgba(rgba[0], rgba[1], rgba[2], rgba[3]));
     let _ = universe.attach(r, c);
     r
 }
@@ -300,9 +303,9 @@ fn spawn_button(
     // Cap: pressable face + text.
     let cap_raised_z = 0.030;
     let cap_pressed_z = 0.000;
-    let cap_root = universe.world.add_component(
-        TransformComponent::new().with_position(0.0, 0.0, cap_raised_z),
-    );
+    let cap_root = universe
+        .world
+        .add_component(TransformComponent::new().with_position(0.0, 0.0, cap_raised_z));
     let _ = universe.attach(button_root, cap_root);
 
     let face_color = universe.world.add_component(ColorComponent::rgba(
@@ -395,9 +398,6 @@ fn spawn_button(
         .add_component(TextureFilteringComponent::nearest_magnification());
     let _ = universe.attach(text_id, filtering);
 
-
-
-
     universe.add(button_root);
 
     // Attach text color *after* text has been built/initialized.
@@ -444,9 +444,9 @@ fn main() {
 
     // Minimal lit scene + pointer raycaster.
     use engine::ecs::component::{
-        AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, DirectionalLightComponent,
-        InputComponent, InputTransformModeComponent, PointerComponent, RayCastComponent,
-        TransformComponent,
+        AmbientLightComponent, BackgroundColorComponent, Camera3DComponent,
+        DirectionalLightComponent, InputComponent, InputTransformModeComponent, PointerComponent,
+        RayCastComponent, TransformComponent,
     };
 
     let bg = universe
@@ -522,9 +522,9 @@ fn main() {
         let editor_root = universe.world.add_component(EditorComponent::new());
 
         // Position the stack in world space (left of the button).
-        let stack_root = universe.world.add_component(
-            TransformComponent::new().with_position(-1.55, 0.0, 0.0),
-        );
+        let stack_root = universe
+            .world
+            .add_component(TransformComponent::new().with_position(-1.55, 0.0, 0.0));
         let _ = universe.attach(editor_root, stack_root);
 
         let cube = 0.22_f32;

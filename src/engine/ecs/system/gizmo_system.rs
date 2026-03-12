@@ -1,8 +1,7 @@
 use crate::engine::ecs::component::{
-    GestureCoordType, GestureCoordTypeComponent, TransformComponent, TransformGizmoAxis,
-    TransformGizmoComponent, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
-    TransformGizmoTranslateComponent,
-    SignalRouteUpwardComponent,
+    GestureCoordType, GestureCoordTypeComponent, SignalRouteUpwardComponent, TransformComponent,
+    TransformGizmoAxis, TransformGizmoComponent, TransformGizmoRotateComponent,
+    TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
 };
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
@@ -31,7 +30,11 @@ impl TransformGizmoSystem {
     /// Drag events are scoped to the hit renderable; because gizmo handle renderables live under
     /// the gizmo node, scoped handlers rooted at the gizmo will run for drag events on its handles.
     pub fn install_scoped_handlers_for_gizmo(&mut self, rx: &mut RxWorld, gizmo_root: ComponentId) {
-        rx.add_handler(SignalKind::ParentChanged, gizmo_root, Self::on_parent_changed);
+        rx.add_handler(
+            SignalKind::ParentChanged,
+            gizmo_root,
+            Self::on_parent_changed,
+        );
         rx.add_handler(SignalKind::DragStart, gizmo_root, Self::on_drag_start);
         rx.add_handler(SignalKind::DragMove, gizmo_root, Self::on_drag_move);
         rx.add_handler(SignalKind::DragEnd, gizmo_root, Self::on_drag_end);
@@ -82,12 +85,7 @@ impl TransformGizmoSystem {
         })
     }
 
-    fn log_apply(
-        world: &World,
-        op: &str,
-        target_transform: ComponentId,
-        extra: &str,
-    ) {
+    fn log_apply(world: &World, op: &str, target_transform: ComponentId, extra: &str) {
         static LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
         let n = LOG_COUNT.fetch_add(1, Ordering::Relaxed);
         if n >= 96 {
@@ -158,11 +156,7 @@ impl TransformGizmoSystem {
 
         println!(
             "[TransformGizmoSystem] SANITY target={:?} '{}' translation={:?} rotation={:?} scale={:?}",
-            target_transform,
-            name,
-            translation,
-            rotation_xyzw,
-            scale
+            target_transform, name, translation, rotation_xyzw, scale
         );
     }
 
@@ -219,7 +213,10 @@ impl TransformGizmoSystem {
         ]
     }
 
-    fn mat4_mul_vec4(m: crate::engine::graphics::primitives::TransformMatrix, v: [f32; 4]) -> [f32; 4] {
+    fn mat4_mul_vec4(
+        m: crate::engine::graphics::primitives::TransformMatrix,
+        v: [f32; 4],
+    ) -> [f32; 4] {
         [
             m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2] + m[3][0] * v[3],
             m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2] + m[3][1] * v[3],
@@ -259,7 +256,10 @@ impl TransformGizmoSystem {
             .unwrap_or_else(Self::mat4_identity);
         let inv_parent_world = math::mat4_inverse(parent_world).unwrap_or_else(Self::mat4_identity);
 
-        let v = Self::mat4_mul_vec4(inv_parent_world, [delta_world[0], delta_world[1], delta_world[2], 0.0]);
+        let v = Self::mat4_mul_vec4(
+            inv_parent_world,
+            [delta_world[0], delta_world[1], delta_world[2], 0.0],
+        );
         [v[0], v[1], v[2]]
     }
 
@@ -372,11 +372,13 @@ impl TransformGizmoSystem {
         t
     }
 
-    fn on_parent_changed(world: &mut World, _emit: &mut dyn SignalEmitter, env: &crate::engine::ecs::Signal) {
+    fn on_parent_changed(
+        world: &mut World,
+        _emit: &mut dyn SignalEmitter,
+        env: &crate::engine::ecs::Signal,
+    ) {
         let Some(EventSignal::ParentChanged {
-            child,
-            new_parent,
-            ..
+            child, new_parent, ..
         }) = env.event.as_ref()
         else {
             return;
@@ -392,7 +394,10 @@ impl TransformGizmoSystem {
         let mut target: Option<ComponentId> = None;
         let mut cur = *new_parent;
         while let Some(node) = cur {
-            if world.get_component_by_id_as::<TransformComponent>(node).is_some() {
+            if world
+                .get_component_by_id_as::<TransformComponent>(node)
+                .is_some()
+            {
                 target = Some(node);
                 break;
             }
@@ -405,7 +410,8 @@ impl TransformGizmoSystem {
 
         // If the newly-selected transform is a proxy (e.g. glTF viz:* transform), allow it to
         // carry routing operators that redirect gizmo edits to an ancestor target.
-        let routed_target = target.map(|t| Self::apply_route_upward_if_present(world, "update_transform", t));
+        let routed_target =
+            target.map(|t| Self::apply_route_upward_if_present(world, "update_transform", t));
 
         if Self::debug_target_enabled() {
             if let (Some(orig), Some(routed)) = (target, routed_target) {
@@ -439,7 +445,11 @@ impl TransformGizmoSystem {
         }
     }
 
-    fn on_drag_start(world: &mut World, emit: &mut dyn SignalEmitter, env: &crate::engine::ecs::Signal) {
+    fn on_drag_start(
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        env: &crate::engine::ecs::Signal,
+    ) {
         let Some(EventSignal::DragStart {
             raycaster,
             renderable,
@@ -451,7 +461,8 @@ impl TransformGizmoSystem {
             return;
         };
 
-        let Some((gizmo_cid, _op)) = Self::resolve_gizmo_op_for_renderable(world, *renderable) else {
+        let Some((gizmo_cid, _op)) = Self::resolve_gizmo_op_for_renderable(world, *renderable)
+        else {
             return;
         };
 
@@ -475,13 +486,18 @@ impl TransformGizmoSystem {
 
         if Self::debug_drag_plane_enabled() {
             let plane_root = Self::spawn_debug_drag_plane(world, emit, *hit_point, *ray_dir_world);
-            if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid) {
+            if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid)
+            {
                 g.debug_drag_plane_root = Some(plane_root);
             }
         }
     }
 
-    fn on_drag_move(world: &mut World, emit: &mut dyn SignalEmitter, env: &crate::engine::ecs::Signal) {
+    fn on_drag_move(
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        env: &crate::engine::ecs::Signal,
+    ) {
         use crate::engine::ecs::system::transform_system::TransformSystem;
         use crate::utils::math;
 
@@ -522,21 +538,21 @@ impl TransformGizmoSystem {
             return;
         };
 
-        let Some((gizmo_cid, op)) = Self::resolve_gizmo_op_for_renderable(world, *renderable) else {
+        let Some((gizmo_cid, op)) = Self::resolve_gizmo_op_for_renderable(world, *renderable)
+        else {
             return;
         };
 
         // Copy out what we need without holding a mutable borrow.
-        let Some((target_transform, active, slider_last_angle)) =
-            world
-                .get_component_by_id_as::<TransformGizmoComponent>(gizmo_cid)
-                .map(|g| {
-                    (
-                        g.target_transform,
-                        g.active_raycaster,
-                        g.active_drag_slider_last_angle,
-                    )
-                })
+        let Some((target_transform, active, slider_last_angle)) = world
+            .get_component_by_id_as::<TransformGizmoComponent>(gizmo_cid)
+            .map(|g| {
+                (
+                    g.target_transform,
+                    g.active_raycaster,
+                    g.active_drag_slider_last_angle,
+                )
+            })
         else {
             return;
         };
@@ -554,9 +570,11 @@ impl TransformGizmoSystem {
                 let axis_v = axis.unit_vec3();
                 let d = dot(*delta_world, axis_v);
                 let delta_world_axis = mul(axis_v, d);
-                let delta = Self::world_delta_to_target_local(world, target_transform, delta_world_axis);
+                let delta =
+                    Self::world_delta_to_target_local(world, target_transform, delta_world_axis);
 
-                let Some(t_ro) = world.get_component_by_id_as::<TransformComponent>(target_transform)
+                let Some(t_ro) =
+                    world.get_component_by_id_as::<TransformComponent>(target_transform)
                 else {
                     return;
                 };
@@ -592,18 +610,21 @@ impl TransformGizmoSystem {
                     );
                 }
 
-                let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_transform)
+                let Some(t) =
+                    world.get_component_by_id_as_mut::<TransformComponent>(target_transform)
                 else {
                     return;
                 };
                 t.set_position(emit, next[0], next[1], next[2]);
             }
             TransformGizmoOp::Rotate(axis) => {
-                let coord_type = Self::resolve_gesture_coord_type_for_renderable(world, *renderable);
+                let coord_type =
+                    Self::resolve_gesture_coord_type_for_renderable(world, *renderable);
 
                 // Resolve rotation coord space (default Local). This controls how we interpret the
                 // axis when applying the drag angle.
-                let mut rotation_space = crate::engine::ecs::component::TransformGizmoCoordSpace::Local;
+                let mut rotation_space =
+                    crate::engine::ecs::component::TransformGizmoCoordSpace::Local;
                 {
                     let mut cur = Some(gizmo_cid);
                     while let Some(node) = cur {
@@ -665,7 +686,8 @@ impl TransformGizmoSystem {
                         }
                     };
 
-                    let Some(t_ro) = world.get_component_by_id_as::<TransformComponent>(target_transform)
+                    let Some(t_ro) =
+                        world.get_component_by_id_as::<TransformComponent>(target_transform)
                     else {
                         return;
                     };
@@ -695,7 +717,8 @@ impl TransformGizmoSystem {
                                 angle,
                                 t_ro.transform.rotation,
                                 q_next,
-                                TransformSystem::world_position(world, target_transform).unwrap_or([0.0, 0.0, 0.0]),
+                                TransformSystem::world_position(world, target_transform)
+                                    .unwrap_or([0.0, 0.0, 0.0]),
                                 Self::use_parent_inverse_enabled(),
                             ),
                         );
@@ -711,7 +734,8 @@ impl TransformGizmoSystem {
                         );
                     }
 
-                    let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_transform)
+                    let Some(t) =
+                        world.get_component_by_id_as_mut::<TransformComponent>(target_transform)
                     else {
                         return;
                     };
@@ -719,7 +743,9 @@ impl TransformGizmoSystem {
                 }
 
                 if coord_type == Some(GestureCoordType::ScreenSpace1DSlider) {
-                    if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid) {
+                    if let Some(g) =
+                        world.get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid)
+                    {
                         g.active_drag_slider_last_angle = new_slider_last_angle;
                     }
                 }
@@ -730,11 +756,14 @@ impl TransformGizmoSystem {
                 // Convert the world-space drag delta into target-local space so scaling behaves
                 // consistently even when the target has a rotated/scaled parent.
                 let delta_world_axis = mul(axis.unit_vec3(), d);
-                let delta_local_axis = Self::world_delta_to_target_local(world, target_transform, delta_world_axis);
-                let axis_local_dir = Self::world_dir_to_target_local(world, target_transform, axis.unit_vec3());
+                let delta_local_axis =
+                    Self::world_delta_to_target_local(world, target_transform, delta_world_axis);
+                let axis_local_dir =
+                    Self::world_dir_to_target_local(world, target_transform, axis.unit_vec3());
                 let d_local = dot(delta_local_axis, axis_local_dir);
 
-                let Some(t_ro) = world.get_component_by_id_as::<TransformComponent>(target_transform)
+                let Some(t_ro) =
+                    world.get_component_by_id_as::<TransformComponent>(target_transform)
                 else {
                     return;
                 };
@@ -776,7 +805,8 @@ impl TransformGizmoSystem {
                     );
                 }
 
-                let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_transform)
+                let Some(t) =
+                    world.get_component_by_id_as_mut::<TransformComponent>(target_transform)
                 else {
                     return;
                 };
@@ -785,7 +815,11 @@ impl TransformGizmoSystem {
         }
     }
 
-    fn on_drag_end(world: &mut World, emit: &mut dyn SignalEmitter, env: &crate::engine::ecs::Signal) {
+    fn on_drag_end(
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        env: &crate::engine::ecs::Signal,
+    ) {
         let Some(EventSignal::DragEnd {
             raycaster,
             renderable,
@@ -795,7 +829,8 @@ impl TransformGizmoSystem {
             return;
         };
 
-        let Some((gizmo_cid, _op)) = Self::resolve_gizmo_op_for_renderable(world, *renderable) else {
+        let Some((gizmo_cid, _op)) = Self::resolve_gizmo_op_for_renderable(world, *renderable)
+        else {
             return;
         };
 
@@ -943,11 +978,7 @@ impl TransformGizmoSystem {
         if Self::debug_enabled() {
             println!(
                 "[TransformGizmoSystem] register gizmo={:?} target_transform={:?} requested_world_scale={:.4} parent_world_scale={:.4} gizmo_local_scale={:.4}",
-                component,
-                parent_transform,
-                gizmo_scale,
-                parent_world_scale,
-                gizmo_local_scale
+                component, parent_transform, gizmo_scale, parent_world_scale, gizmo_local_scale
             );
         }
 
@@ -961,13 +992,11 @@ impl TransformGizmoSystem {
         // Create a root transform for the gizmo visuals under the GizmoComponent node.
         let gizmo_root = world.add_component_boxed_named(
             "gizmo_root",
-            Box::new(
-                TransformComponent::new().with_scale(
-                    gizmo_local_scale,
-                    gizmo_local_scale,
-                    gizmo_local_scale,
-                ),
-            ),
+            Box::new(TransformComponent::new().with_scale(
+                gizmo_local_scale,
+                gizmo_local_scale,
+                gizmo_local_scale,
+            )),
         );
         let _ = world.add_child(gizmo_filter, gizmo_root);
 
@@ -1149,12 +1178,8 @@ impl TransformGizmoSystem {
         let ring_scale = [1.4, 1.4, 1.0];
 
         // Rotation rings live under per-axis rotate handle components.
-        let rot_x_root = spawn_rotate_handle_root(
-            world,
-            rotate_parent,
-            TransformGizmoAxis::X,
-            "gizmo_rot_x",
-        );
+        let rot_x_root =
+            spawn_rotate_handle_root(world, rotate_parent, TransformGizmoAxis::X, "gizmo_rot_x");
         let rot_x_coord = spawn_gesture_coord_type_root(
             world,
             rot_x_root,
@@ -1173,12 +1198,8 @@ impl TransformGizmoSystem {
             red,
         );
 
-        let rot_y_root = spawn_rotate_handle_root(
-            world,
-            rotate_parent,
-            TransformGizmoAxis::Y,
-            "gizmo_rot_y",
-        );
+        let rot_y_root =
+            spawn_rotate_handle_root(world, rotate_parent, TransformGizmoAxis::Y, "gizmo_rot_y");
         let rot_y_coord = spawn_gesture_coord_type_root(
             world,
             rot_y_root,
@@ -1197,12 +1218,8 @@ impl TransformGizmoSystem {
             green,
         );
 
-        let rot_z_root = spawn_rotate_handle_root(
-            world,
-            rotate_parent,
-            TransformGizmoAxis::Z,
-            "gizmo_rot_z",
-        );
+        let rot_z_root =
+            spawn_rotate_handle_root(world, rotate_parent, TransformGizmoAxis::Z, "gizmo_rot_z");
         let rot_z_coord = spawn_gesture_coord_type_root(
             world,
             rot_z_root,

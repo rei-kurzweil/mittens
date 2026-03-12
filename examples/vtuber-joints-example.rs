@@ -1,9 +1,8 @@
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ClockComponent,
     ColorComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent, GLTFComponent,
-    InputComponent, InputTransformModeComponent, MeshComponent, PointerComponent,
-    RayCastComponent, RaycastableComponent, RenderableComponent, SkinnedMeshComponent,
-    TransformComponent,
+    InputComponent, InputTransformModeComponent, MeshComponent, PointerComponent, RayCastComponent,
+    RaycastableComponent, RenderableComponent, SkinnedMeshComponent, TransformComponent,
 };
 use cat_engine::{engine, utils};
 use std::collections::{HashMap, HashSet};
@@ -191,9 +190,10 @@ fn main() {
                         .with_scale(scale.0, scale.1, scale.2),
                 ),
             );
-            let renderable = universe
-                .world
-                .add_component_boxed_named(format!("{name}_r"), Box::new(RenderableComponent::cube()));
+            let renderable = universe.world.add_component_boxed_named(
+                format!("{name}_r"),
+                Box::new(RenderableComponent::cube()),
+            );
             let color_comp = universe.world.add_component_boxed_named(
                 format!("{name}_color"),
                 Box::new(ColorComponent::rgba(color.0, color.1, color.2, color.3)),

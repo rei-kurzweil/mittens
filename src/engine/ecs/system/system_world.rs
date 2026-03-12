@@ -1,6 +1,7 @@
 use super::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::RxWorld;
+use crate::engine::ecs::SignalKind;
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::CameraSystem;
 use crate::engine::ecs::system::ClockSystem;
@@ -21,7 +22,6 @@ use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
 use crate::engine::ecs::system::{EditorSystem, GestureSystem, TransformGizmoSystem};
-use crate::engine::ecs::SignalKind;
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 
@@ -269,11 +269,11 @@ impl SystemWorld {
         emit: &mut dyn crate::engine::ecs::SignalEmitter,
         env: &crate::engine::ecs::Signal,
     ) {
-        use crate::engine::ecs::{EventSignal, IntentValue};
         use crate::engine::ecs::component::{
             RenderableComponent, TextComponent, TransformComponent,
         };
         use crate::engine::ecs::system::audio_system::AudioOp;
+        use crate::engine::ecs::{EventSignal, IntentValue};
         use crate::engine::graphics::primitives::Transform;
 
         fn collect_text_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {
@@ -712,8 +712,11 @@ impl SystemWorld {
         emit: &mut dyn crate::engine::ecs::SignalEmitter,
     ) {
         // Allow text to react to late-attached style nodes (e.g. ColorComponent).
-        self.rx
-            .add_handler(SignalKind::ParentChanged, component, TextSystem::on_parent_changed);
+        self.rx.add_handler(
+            SignalKind::ParentChanged,
+            component,
+            TextSystem::on_parent_changed,
+        );
 
         let _spawned = self.text.register_text(world, visuals, component);
 
@@ -1196,14 +1199,8 @@ impl SystemWorld {
         // Controller pose updates should be visible to raycasting/gestures this frame.
         queue.flush(world, self, visuals);
 
-        self.raycast.tick_with_queue(
-            world,
-            visuals,
-            input,
-            &mut self.rx,
-            &self.bvh,
-            dt_sec,
-        );
+        self.raycast
+            .tick_with_queue(world, visuals, input, &mut self.rx, &self.bvh, dt_sec);
 
         // Execute/dispatch any signals produced by raycast immediately (e.g. RayIntersected).
         let _ = self.process_signals(world, visuals, queue, 100_000);

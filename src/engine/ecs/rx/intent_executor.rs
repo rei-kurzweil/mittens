@@ -73,7 +73,10 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
         IntentValue::Noop => {}
         IntentValue::Print { .. } => {}
 
-        IntentValue::SetColor { component_ids, rgba } => {
+        IntentValue::SetColor {
+            component_ids,
+            rgba,
+        } => {
             let mut color_cids = Vec::new();
             for &t in component_ids.iter() {
                 collect_color_targets(world, t, &mut color_cids);
@@ -107,7 +110,8 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             transform_cids.sort();
             transform_cids.dedup();
             for transform_cid in transform_cids {
-                if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
+                if let Some(t) =
+                    world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
                 {
                     t.set_position(emit, position[0], position[1], position[2]);
                 }
@@ -153,7 +157,10 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        IntentValue::AttachClone { parents, prefab_root } => {
+        IntentValue::AttachClone {
+            parents,
+            prefab_root,
+        } => {
             let node = match ComponentCodec::encode_subtree_node(&*world, *prefab_root) {
                 Ok(n) => n,
                 Err(e) => {
@@ -392,8 +399,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             center_hz,
         } => {
             for &t in component_ids.iter() {
-                if let Some(c) =
-                    world.get_component_by_id_as_mut::<AudioBandPassFilterComponent>(t)
+                if let Some(c) = world.get_component_by_id_as_mut::<AudioBandPassFilterComponent>(t)
                 {
                     c.center_hz = if center_hz.is_finite() {
                         center_hz.max(0.0)
@@ -423,7 +429,8 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             osc_cids.sort();
             osc_cids.dedup();
             for osc_cid in osc_cids {
-                if let Some(c) = world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
+                if let Some(c) =
+                    world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
                 {
                     for osc in c.oscillators.iter_mut() {
                         osc.enabled = *enabled;
@@ -456,7 +463,8 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             osc_cids.sort();
             osc_cids.dedup();
             for osc_cid in osc_cids {
-                if let Some(c) = world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
+                if let Some(c) =
+                    world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
                 {
                     for osc in c.oscillators.iter_mut() {
                         osc.frequency = *frequency_hz;
@@ -634,14 +642,16 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             osc_cids.dedup();
             for osc_cid in osc_cids {
                 if let Some(note_cid) = find_first_music_note_component(world, osc_cid) {
-                    if let Some(nc) = world.get_component_by_id_as_mut::<MusicNoteComponent>(note_cid)
+                    if let Some(nc) =
+                        world.get_component_by_id_as_mut::<MusicNoteComponent>(note_cid)
                     {
                         nc.note = *note;
                     }
                 }
 
                 let freq = MusicSystem::frequency_hz_for_note(*note);
-                if let Some(c) = world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
+                if let Some(c) =
+                    world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
                 {
                     for osc in c.oscillators.iter_mut() {
                         osc.frequency = freq;
@@ -664,7 +674,10 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
 fn collect_raycast_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {
     use crate::engine::ecs::component::RayCastComponent;
 
-    if world.get_component_by_id_as::<RayCastComponent>(target).is_some() {
+    if world
+        .get_component_by_id_as::<RayCastComponent>(target)
+        .is_some()
+    {
         out.push(target);
         return;
     }
@@ -672,7 +685,10 @@ fn collect_raycast_targets(world: &World, target: ComponentId, out: &mut Vec<Com
     // Subtree search: collect all RayCastComponents under this target.
     let mut stack = vec![target];
     while let Some(node) = stack.pop() {
-        if world.get_component_by_id_as::<RayCastComponent>(node).is_some() {
+        if world
+            .get_component_by_id_as::<RayCastComponent>(node)
+            .is_some()
+        {
             out.push(node);
             continue;
         }
@@ -685,7 +701,10 @@ fn collect_raycast_targets(world: &World, target: ComponentId, out: &mut Vec<Com
 fn collect_transform_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {
     use crate::engine::ecs::component::TransformComponent;
 
-    if world.get_component_by_id_as::<TransformComponent>(target).is_some() {
+    if world
+        .get_component_by_id_as::<TransformComponent>(target)
+        .is_some()
+    {
         out.push(target);
         return;
     }
@@ -693,7 +712,10 @@ fn collect_transform_targets(world: &World, target: ComponentId, out: &mut Vec<C
     // Subtree search: pick the first TransformComponent encountered per branch.
     let mut stack = vec![target];
     while let Some(node) = stack.pop() {
-        if world.get_component_by_id_as::<TransformComponent>(node).is_some() {
+        if world
+            .get_component_by_id_as::<TransformComponent>(node)
+            .is_some()
+        {
             out.push(node);
             continue;
         }
@@ -704,8 +726,8 @@ fn collect_transform_targets(world: &World, target: ComponentId, out: &mut Vec<C
 }
 
 fn emit_topology_transform_refresh(world: &World, emit: &mut dyn SignalEmitter, cid: ComponentId) {
-    use crate::engine::ecs::component::TransformComponent;
     use crate::engine::ecs::IntentValue;
+    use crate::engine::ecs::component::TransformComponent;
 
     // If this node is a TransformComponent, refreshing it updates cached world matrices
     // for its whole subtree.
@@ -741,14 +763,20 @@ fn find_first_music_note_component(world: &World, target: ComponentId) -> Option
     use crate::engine::ecs::component::MusicNoteComponent;
 
     // Find the first MusicNoteComponent anywhere in the subtree.
-    if world.get_component_by_id_as::<MusicNoteComponent>(target).is_some() {
+    if world
+        .get_component_by_id_as::<MusicNoteComponent>(target)
+        .is_some()
+    {
         return Some(target);
     }
 
     let mut stack = vec![target];
     while let Some(node) = stack.pop() {
         for &ch in world.children_of(node) {
-            if world.get_component_by_id_as::<MusicNoteComponent>(ch).is_some() {
+            if world
+                .get_component_by_id_as::<MusicNoteComponent>(ch)
+                .is_some()
+            {
                 return Some(ch);
             }
             stack.push(ch);
@@ -761,7 +789,10 @@ fn collect_color_targets(world: &World, target: ComponentId, out: &mut Vec<Compo
     use crate::engine::ecs::component::{ColorComponent, RenderableComponent};
 
     // 1) Direct ColorComponent target.
-    if world.get_component_by_id_as::<ColorComponent>(target).is_some() {
+    if world
+        .get_component_by_id_as::<ColorComponent>(target)
+        .is_some()
+    {
         out.push(target);
         return;
     }

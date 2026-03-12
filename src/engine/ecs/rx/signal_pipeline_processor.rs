@@ -1,5 +1,5 @@
-use crate::engine::ecs::rx::signal_pipeline::SignalPipelineOp;
 use crate::engine::ecs::RxWorld;
+use crate::engine::ecs::rx::signal_pipeline::SignalPipelineOp;
 use crate::engine::ecs::{ComponentId, IntentValue, Signal, World};
 
 /// Pre-execution processor for intent signals.
