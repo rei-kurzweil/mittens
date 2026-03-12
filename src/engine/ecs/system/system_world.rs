@@ -672,6 +672,17 @@ impl SystemWorld {
             .register_background_color(world, visuals, component);
     }
 
+    /// Register a RendererSettingsComponent and apply it to VisualWorld.
+    pub fn register_renderer_settings(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.renderable
+            .register_renderer_settings(world, visuals, component);
+    }
+
     /// Register an AmbientLightComponent and apply it to VisualWorld.
     pub fn register_ambient_light(
         &mut self,

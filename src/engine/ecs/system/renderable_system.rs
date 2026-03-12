@@ -3,7 +3,8 @@ use crate::engine::ecs::component::BackgroundColorComponent;
 use crate::engine::ecs::component::OverlayComponent;
 use crate::engine::ecs::component::{
     BackgroundComponent, ColorComponent, EmissiveComponent, LightQuantizationComponent,
-    MeshComponent, OpacityComponent, RenderableComponent, TransparentCutoutComponent, UVComponent,
+    MeshComponent, OpacityComponent, RenderableComponent, RendererSettingsComponent,
+    TransparentCutoutComponent, UVComponent,
 };
 
 use crate::engine::ecs::World;
@@ -781,6 +782,21 @@ impl RenderableSystem {
 
         // Global state: last registered wins.
         visuals.set_clear_color(bg.rgba);
+    }
+
+    pub fn register_renderer_settings(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let Some(settings) = world.get_component_by_id_as::<RendererSettingsComponent>(component)
+        else {
+            return;
+        };
+
+        // Global state: last registered wins.
+        visuals.set_renderer_msaa_mode(settings.msaa_mode());
     }
 
     /// Register a renderable component with this system.

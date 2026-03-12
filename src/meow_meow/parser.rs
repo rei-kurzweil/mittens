@@ -1,6 +1,6 @@
 use crate::meow_meow::ast::expression::{CallExpression, ComponentExpression, Expression, Ident, Parameter};
 use crate::meow_meow::ast::statement::{AssignmentStatement, BlockStatement, IfStatement, ReturnStatement, Statement};
-use crate::meow_meow::tokenizer::{Token, TokenKind};
+use crate::meow_meow::token::{Token, TokenKind};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParseError {

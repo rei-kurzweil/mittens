@@ -258,6 +258,7 @@ impl ComponentCodec {
             "raycastable" => Ok(Box::new(RaycastableComponent::enabled())),
             "background" => Ok(Box::new(BackgroundComponent::new())),
             "background_color" => Ok(Box::new(BackgroundColorComponent::new())),
+            "renderer_settings" => Ok(Box::new(RendererSettingsComponent::new())),
             "ambient_light" => Ok(Box::new(AmbientLightComponent::new())),
             "color" => Ok(Box::new(ColorComponent::new())),
             "opacity" => Ok(Box::new(OpacityComponent::new())),

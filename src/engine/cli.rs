@@ -1,5 +1,6 @@
 //! Command-line interface for cat-engine.
 
+use crate::engine::graphics::MsaaMode;
 use std::env;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -14,6 +15,7 @@ pub enum CliCommand {
 
 pub struct CLI {
     pub command: CliCommand,
+    pub msaa_mode: Option<MsaaMode>,
 }
 
 impl CLI {
@@ -24,25 +26,36 @@ impl CLI {
     /// - `./cat-engine load <filename>` - Load a scene from file
     /// - `./cat-engine` (no args) - Run normally
     pub fn parse() -> Self {
-        let args: Vec<String> = env::args().collect();
+        let args: Vec<String> = env::args().skip(1).collect();
 
-        let command = if args.len() >= 3 {
-            match args[1].as_str() {
-                "save" => CliCommand::Save {
-                    filename: args[2].clone(),
-                },
-                "load" => CliCommand::Load {
-                    filename: args[2].clone(),
-                },
-                _ => {
-                    eprintln!("Unknown command: {}. Running normally.", args[1]);
-                    CliCommand::Run
+        let mut msaa_mode: Option<MsaaMode> = None;
+        let mut positional: Vec<String> = Vec::new();
+
+        for arg in args {
+            match arg.as_str() {
+                "--no-msaa" | "--msaa=off" => msaa_mode = Some(MsaaMode::Off),
+                "--msaa4x" | "--msaa=4x" => msaa_mode = Some(MsaaMode::Msaa4x),
+                _ if arg.starts_with("--") => {
+                    eprintln!("Unknown flag: {arg}");
                 }
+                _ => positional.push(arg),
             }
-        } else {
-            CliCommand::Run
+        }
+
+        let command = match positional.as_slice() {
+            [cmd, filename] if cmd == "save" => CliCommand::Save {
+                filename: filename.to_string(),
+            },
+            [cmd, filename] if cmd == "load" => CliCommand::Load {
+                filename: filename.to_string(),
+            },
+            [] => CliCommand::Run,
+            [unknown, ..] => {
+                eprintln!("Unknown command: {unknown}. Running normally.");
+                CliCommand::Run
+            }
         };
 
-        CLI { command }
+        CLI { command, msaa_mode }
     }
 }

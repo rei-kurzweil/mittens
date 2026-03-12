@@ -7,6 +7,7 @@ pub mod skin;
 pub mod visual_world;
 pub mod vulkano_renderer;
 pub(crate) mod vulkano_swapchain;
+pub mod xr_renderer;
 pub mod xr_swapchain;
 
 pub use mesh::{CpuMesh, CpuVertex, MeshFactory};
@@ -24,6 +25,18 @@ pub use visual_world::{CameraData, CameraTarget, VisualCamera};
 pub(crate) mod vulkano_texture_upload;
 pub use vulkano_renderer::VulkanoRenderer;
 pub use xr_swapchain::XRSwapchain;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MsaaMode {
+    Off,
+    Msaa4x,
+}
+
+impl Default for MsaaMode {
+    fn default() -> Self {
+        Self::Msaa4x
+    }
+}
 
 /// Minimal Vulkan handle bundle for OpenXR session creation.
 ///

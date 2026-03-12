@@ -1,46 +1,5 @@
 use crate::meow_meow::ast::expression::Span;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum TokenKind {
-    Ident(String),
-    String(String),
-    Number(f64),
-
-    Let,
-    If,
-    Else,
-    Return,
-    New,
-    True,
-    False,
-    Null,
-
-    LBrace,
-    RBrace,
-    LParen,
-    RParen,
-    LBracket,
-    RBracket,
-
-    Comma,
-    Dot,
-    Eq,
-    Semicolon,
-
-    Eof,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Token {
-    pub kind: TokenKind,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct TokenizeError {
-    pub message: String,
-    pub span: Span,
-}
+use crate::meow_meow::token::{Token, TokenKind, TokenizeError};
 
 pub struct MeowMeowTokenizer<'a> {
     input: &'a str,

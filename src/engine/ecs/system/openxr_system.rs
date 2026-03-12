@@ -9,6 +9,7 @@ use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::VulkanoRenderer;
 use crate::engine::graphics::XRSwapchain;
 use crate::engine::graphics::XrVulkanGraphics;
+use crate::engine::graphics::xr_renderer;
 use crate::engine::user_input::InputState;
 use crate::utils::math;
 
@@ -54,6 +55,8 @@ struct OpenXRSessionState {
 
     vk_device: ash::Device,
     vk_queue: ash::vk::Queue,
+
+    #[allow(dead_code)]
     vk_command_pool: ash::vk::CommandPool,
     vk_command_buffer: ash::vk::CommandBuffer,
 
@@ -69,6 +72,7 @@ struct ControllerPoseCache {
     right_grip: Option<openxr::Posef>,
 }
 
+#[allow(dead_code)]
 struct ControllerInput {
     action_set: openxr::ActionSet,
     aim_pose: openxr::Action<openxr::Posef>,
@@ -963,108 +967,6 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
         ]
     }
 
-    fn clear_xr_swapchain_image(
-        sess: &OpenXRSessionState,
-        image: ash::vk::Image,
-        rgba: [f32; 4],
-        was_initialized: bool,
-    ) -> Result<(), ash::vk::Result> {
-        let clear = ash::vk::ClearColorValue { float32: rgba };
-
-        let old_layout = if was_initialized {
-            ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
-        } else {
-            ash::vk::ImageLayout::UNDEFINED
-        };
-
-        let src_stage = if was_initialized {
-            ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT
-        } else {
-            ash::vk::PipelineStageFlags::TOP_OF_PIPE
-        };
-
-        let src_access = if was_initialized {
-            ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE
-        } else {
-            ash::vk::AccessFlags::empty()
-        };
-
-        unsafe {
-            sess.vk_device.reset_command_buffer(
-                sess.vk_command_buffer,
-                ash::vk::CommandBufferResetFlags::empty(),
-            )?;
-
-            sess.vk_device.begin_command_buffer(
-                sess.vk_command_buffer,
-                &ash::vk::CommandBufferBeginInfo::default()
-                    .flags(ash::vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
-            )?;
-
-            let range = ash::vk::ImageSubresourceRange::default()
-                .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
-                .base_mip_level(0)
-                .level_count(1)
-                .base_array_layer(0)
-                .layer_count(sess.xr_swapchain.view_count());
-
-            // Transition UNDEFINED -> TRANSFER_DST_OPTIMAL.
-            let barrier_to_transfer = ash::vk::ImageMemoryBarrier::default()
-                .old_layout(old_layout)
-                .new_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                .src_access_mask(src_access)
-                .dst_access_mask(ash::vk::AccessFlags::TRANSFER_WRITE)
-                .image(image)
-                .subresource_range(range);
-
-            sess.vk_device.cmd_pipeline_barrier(
-                sess.vk_command_buffer,
-                src_stage,
-                ash::vk::PipelineStageFlags::TRANSFER,
-                ash::vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[barrier_to_transfer],
-            );
-
-            sess.vk_device.cmd_clear_color_image(
-                sess.vk_command_buffer,
-                image,
-                ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                &clear,
-                &[range],
-            );
-
-            // Transition TRANSFER_DST_OPTIMAL -> COLOR_ATTACHMENT_OPTIMAL.
-            let barrier_to_color = ash::vk::ImageMemoryBarrier::default()
-                .old_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                .new_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .src_access_mask(ash::vk::AccessFlags::TRANSFER_WRITE)
-                .dst_access_mask(ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                .image(image)
-                .subresource_range(range);
-
-            sess.vk_device.cmd_pipeline_barrier(
-                sess.vk_command_buffer,
-                ash::vk::PipelineStageFlags::TRANSFER,
-                ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                ash::vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[barrier_to_color],
-            );
-
-            sess.vk_device.end_command_buffer(sess.vk_command_buffer)?;
-
-            let command_buffers = [sess.vk_command_buffer];
-            let submit_info = ash::vk::SubmitInfo::default().command_buffers(&command_buffers);
-            sess.vk_device
-                .queue_submit(sess.vk_queue, &[submit_info], ash::vk::Fence::null())?;
-            sess.vk_device.queue_wait_idle(sess.vk_queue)?;
-        }
-
-        Ok(())
-    }
 }
 
 impl System for OpenXRSystem {
@@ -1286,8 +1188,11 @@ impl OpenXRSystem {
                     );
                 }
 
-                if let Err(e) = Self::clear_xr_swapchain_image(
-                    sess,
+                if let Err(e) = xr_renderer::clear_xr_swapchain_image(
+                    &sess.vk_device,
+                    sess.vk_queue,
+                    sess.vk_command_buffer,
+                    sess.xr_swapchain.view_count(),
                     dst_image,
                     visuals.clear_color(),
                     dst_was_initialized,
@@ -1305,14 +1210,21 @@ impl OpenXRSystem {
                     }
                 }
 
-                if let Err(e) = Self::copy_offscreen_to_xr_layers(
-                    sess,
+                if let Err(e) = xr_renderer::copy_offscreen_to_xr_layers(
+                    &sess.vk_device,
+                    sess.vk_queue,
+                    sess.vk_command_buffer,
+                    &sess.xr_swapchain,
                     renderer,
-                    image_index_usize,
                     dst_image,
+                    dst_was_initialized,
                     view_count,
                 ) {
                     eprintln!("[OpenXR] copy to XR image failed: {e:?}");
+                } else if let Some(slot) =
+                    sess.swapchain_image_initialized.get_mut(image_index_usize)
+                {
+                    *slot = true;
                 }
             }
         }
@@ -1372,163 +1284,4 @@ impl OpenXRSystem {
         }
     }
 
-    fn copy_offscreen_to_xr_layers(
-        sess: &mut OpenXRSessionState,
-        renderer: &VulkanoRenderer,
-        image_index: usize,
-        dst_image: ash::vk::Image,
-        view_count: usize,
-    ) -> Result<(), ash::vk::Result> {
-        let dst_was_initialized = sess
-            .swapchain_image_initialized
-            .get(image_index)
-            .copied()
-            .unwrap_or(false);
-
-        let dst_old_layout = if dst_was_initialized {
-            ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
-        } else {
-            ash::vk::ImageLayout::UNDEFINED
-        };
-
-        let dst_src_access = if dst_was_initialized {
-            ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE
-        } else {
-            ash::vk::AccessFlags::empty()
-        };
-
-        unsafe {
-            sess.vk_device.reset_command_buffer(
-                sess.vk_command_buffer,
-                ash::vk::CommandBufferResetFlags::empty(),
-            )?;
-
-            sess.vk_device.begin_command_buffer(
-                sess.vk_command_buffer,
-                &ash::vk::CommandBufferBeginInfo::default()
-                    .flags(ash::vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
-            )?;
-
-            for eye in 0..view_count {
-                let Some(src_image) = renderer.xr_offscreen_vk_image(eye) else {
-                    continue;
-                };
-
-                let src_range = ash::vk::ImageSubresourceRange::default()
-                    .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
-                    .base_mip_level(0)
-                    .level_count(1)
-                    .base_array_layer(0)
-                    .layer_count(1);
-
-                let dst_range = ash::vk::ImageSubresourceRange::default()
-                    .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
-                    .base_mip_level(0)
-                    .level_count(1)
-                    .base_array_layer(eye as u32)
-                    .layer_count(1);
-
-                // src: COLOR_ATTACHMENT_OPTIMAL -> TRANSFER_SRC_OPTIMAL
-                let barrier_src_to_copy = ash::vk::ImageMemoryBarrier::default()
-                    .old_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .new_layout(ash::vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-                    .src_access_mask(ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                    .dst_access_mask(ash::vk::AccessFlags::TRANSFER_READ)
-                    .image(src_image)
-                    .subresource_range(src_range);
-
-                // dst: UNDEFINED -> TRANSFER_DST_OPTIMAL (we overwrite whole layer)
-                let barrier_dst_to_copy = ash::vk::ImageMemoryBarrier::default()
-                    .old_layout(dst_old_layout)
-                    .new_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                    .src_access_mask(dst_src_access)
-                    .dst_access_mask(ash::vk::AccessFlags::TRANSFER_WRITE)
-                    .image(dst_image)
-                    .subresource_range(dst_range);
-
-                sess.vk_device.cmd_pipeline_barrier(
-                    sess.vk_command_buffer,
-                    ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                    ash::vk::PipelineStageFlags::TRANSFER,
-                    ash::vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    &[barrier_src_to_copy, barrier_dst_to_copy],
-                );
-
-                let extent = sess.xr_swapchain.extent();
-                let region = ash::vk::ImageCopy::default()
-                    .src_subresource(
-                        ash::vk::ImageSubresourceLayers::default()
-                            .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
-                            .mip_level(0)
-                            .base_array_layer(0)
-                            .layer_count(1),
-                    )
-                    .dst_subresource(
-                        ash::vk::ImageSubresourceLayers::default()
-                            .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
-                            .mip_level(0)
-                            .base_array_layer(eye as u32)
-                            .layer_count(1),
-                    )
-                    .extent(ash::vk::Extent3D {
-                        width: extent.width as u32,
-                        height: extent.height as u32,
-                        depth: 1,
-                    });
-
-                sess.vk_device.cmd_copy_image(
-                    sess.vk_command_buffer,
-                    src_image,
-                    ash::vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                    dst_image,
-                    ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    &[region],
-                );
-
-                // src: TRANSFER_SRC_OPTIMAL -> COLOR_ATTACHMENT_OPTIMAL (ready for next frame)
-                let barrier_src_back = ash::vk::ImageMemoryBarrier::default()
-                    .old_layout(ash::vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-                    .new_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .src_access_mask(ash::vk::AccessFlags::TRANSFER_READ)
-                    .dst_access_mask(ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                    .image(src_image)
-                    .subresource_range(src_range);
-
-                // dst: TRANSFER_DST_OPTIMAL -> COLOR_ATTACHMENT_OPTIMAL (common OpenXR expectation)
-                let barrier_dst_back = ash::vk::ImageMemoryBarrier::default()
-                    .old_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                    .new_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .src_access_mask(ash::vk::AccessFlags::TRANSFER_WRITE)
-                    .dst_access_mask(ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                    .image(dst_image)
-                    .subresource_range(dst_range);
-
-                sess.vk_device.cmd_pipeline_barrier(
-                    sess.vk_command_buffer,
-                    ash::vk::PipelineStageFlags::TRANSFER,
-                    ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                    ash::vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    &[barrier_src_back, barrier_dst_back],
-                );
-            }
-
-            sess.vk_device.end_command_buffer(sess.vk_command_buffer)?;
-
-            let command_buffers = [sess.vk_command_buffer];
-            let submit_info = ash::vk::SubmitInfo::default().command_buffers(&command_buffers);
-            sess.vk_device
-                .queue_submit(sess.vk_queue, &[submit_info], ash::vk::Fence::null())?;
-            sess.vk_device.queue_wait_idle(sess.vk_queue)?;
-        }
-
-        if let Some(slot) = sess.swapchain_image_initialized.get_mut(image_index) {
-            *slot = true;
-        }
-
-        Ok(())
-    }
 }

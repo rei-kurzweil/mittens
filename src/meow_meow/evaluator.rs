@@ -3,7 +3,8 @@ use std::thread::{self, JoinHandle};
 use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::meow_meow::parser::{MeowMeowParser, ParseError};
-use crate::meow_meow::tokenizer::{MeowMeowTokenizer, TokenizeError};
+use crate::meow_meow::token::TokenizeError;
+use crate::meow_meow::tokenizer::MeowMeowTokenizer;
 
 #[derive(Debug, Clone)]
 pub enum EvalRequest {

@@ -4,6 +4,7 @@ use crate::engine::graphics::mesh::CpuMesh;
 use crate::engine::graphics::primitives::MeshHandle;
 use crate::engine::graphics::primitives::TextureHandle;
 use crate::engine::graphics::visual_world::VisualWorld;
+use crate::engine::graphics::MsaaMode;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -18,6 +19,7 @@ mod vulkano_backend {
     use crate::engine::graphics::primitives::MeshHandle;
     use crate::engine::graphics::primitives::TextureHandle;
     use crate::engine::graphics::visual_world::{TextureFiltering, VisualWorld};
+    use crate::engine::graphics::MsaaMode;
     use crate::engine::graphics::vulkano_swapchain::VulkanoSwapchainState;
     use crate::engine::graphics::vulkano_texture_upload;
     use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
@@ -382,6 +384,7 @@ mod vulkano_backend {
         pub fn new(
             window: Arc<Window>,
             xr_required: Option<(&[String], &[String])>,
+            msaa_mode: MsaaMode,
         ) -> Result<Self, Box<dyn std::error::Error>> {
             // Prefer the helper context while we're migrating: it enables surface extensions
             // and sets up graphics/compute queues and allocators.
@@ -511,26 +514,24 @@ mod vulkano_backend {
             };
             let device = context.device().clone();
 
-            // Prefer 4x MSAA if the device supports it (color+depth).
-            let msaa_samples = {
-                let props = device.physical_device().properties();
-                let counts =
-                    props.framebuffer_color_sample_counts & props.framebuffer_depth_sample_counts;
-                if counts.intersects(SampleCounts::SAMPLE_4) {
-                    SampleCount::Sample4
-                } else if counts.intersects(SampleCounts::SAMPLE_2) {
-                    SampleCount::Sample2
-                } else {
-                    SampleCount::Sample1
+            // Global toggle: either 4x MSAA (if supported) or no multisampling.
+            let msaa_samples = match msaa_mode {
+                MsaaMode::Off => SampleCount::Sample1,
+                MsaaMode::Msaa4x => {
+                    let props = device.physical_device().properties();
+                    let counts = props.framebuffer_color_sample_counts
+                        & props.framebuffer_depth_sample_counts;
+                    if counts.intersects(SampleCounts::SAMPLE_4) {
+                        SampleCount::Sample4
+                    } else {
+                        SampleCount::Sample1
+                    }
                 }
             };
 
-            if msaa_samples == SampleCount::Sample4 {
-                println!("[VulkanoRenderer] MSAA enabled: 4x");
-            } else if msaa_samples == SampleCount::Sample2 {
-                println!("[VulkanoRenderer] MSAA enabled: 2x (4x unsupported)");
-            } else {
-                println!("[VulkanoRenderer] MSAA disabled (unsupported)");
+            match msaa_samples {
+                SampleCount::Sample4 => println!("[VulkanoRenderer] MSAA enabled: 4x"),
+                _ => println!("[VulkanoRenderer] MSAA disabled"),
             }
 
             let swapchain_state =
@@ -932,7 +933,7 @@ mod vulkano_backend {
             let mut pipeline_ci_cutout = pipeline_ci.clone();
             pipeline_ci_cutout.multisample_state = Some(MultisampleState {
                 rasterization_samples: msaa_samples,
-                alpha_to_coverage_enable: true,
+                alpha_to_coverage_enable: msaa_samples != SampleCount::Sample1,
                 ..Default::default()
             });
             pipeline_ci_cutout.color_blend_state = Some(ColorBlendState::with_attachment_states(
@@ -2476,6 +2477,7 @@ pub struct VulkanoRenderer {
     next_mesh_handle: u32,
     next_texture_handle: u32,
     did_enable_present_loop_log: bool,
+    msaa_mode_override: Option<MsaaMode>,
 }
 
 impl VulkanoRenderer {
@@ -2486,7 +2488,20 @@ impl VulkanoRenderer {
             // Reserve handle 0 for the default white texture.
             next_texture_handle: 1,
             did_enable_present_loop_log: false,
+            msaa_mode_override: None,
         }
+    }
+
+    pub fn msaa_mode_override(&self) -> Option<MsaaMode> {
+        self.msaa_mode_override
+    }
+
+    pub fn set_msaa_mode(&mut self, mode: MsaaMode) -> Result<(), &'static str> {
+        if self.vulkano.is_some() {
+            return Err("cannot change MSAA mode after renderer initialization");
+        }
+        self.msaa_mode_override = Some(mode);
+        Ok(())
     }
 
     pub fn init_for_window(
@@ -2495,9 +2510,11 @@ impl VulkanoRenderer {
         xr_required: Option<(&[String], &[String])>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if self.vulkano.is_none() {
+            let msaa_mode = self.msaa_mode_override.unwrap_or_default();
             self.vulkano = Some(vulkano_backend::VulkanoState::new(
                 window.clone(),
                 xr_required,
+                msaa_mode,
             )?);
             println!("[VulkanoRenderer] Vulkano swapchain/render-pass initialized");
         }

@@ -188,6 +188,11 @@ impl RxMutationExecutor {
                     systems.register_background_color(world, visuals, component);
                 }
             }
+            IntentValue::RegisterRendererSettings { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_renderer_settings(world, visuals, component);
+                }
+            }
             IntentValue::RegisterAmbientLight { component_ids } => {
                 for &component in component_ids.iter() {
                     systems.register_ambient_light(world, visuals, component);

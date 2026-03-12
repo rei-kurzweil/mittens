@@ -286,6 +286,12 @@ fn main() {
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
 
+    if let Some(mode) = cli.msaa_mode {
+        if let Err(e) = universe.set_msaa_mode(mode) {
+            eprintln!("[CLI] Failed to apply MSAA mode: {e}");
+        }
+    }
+
     // Handle load command before building scene
     if let engine::cli::CliCommand::Load { ref filename } = cli.command {
         println!("[CLI] Loading scene from '{}'...", filename);

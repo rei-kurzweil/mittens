@@ -3,6 +3,7 @@ use crate::engine::ecs::Transform;
 use crate::engine::graphics::GpuRenderable;
 use crate::engine::graphics::primitives::InstanceHandle;
 use crate::engine::graphics::primitives::TransformMatrix;
+use crate::engine::graphics::MsaaMode;
 use crate::engine::graphics::{Skin, SkinId};
 use slotmap::{Key, SlotMap};
 
@@ -51,6 +52,7 @@ pub struct DrawBatch {
 pub struct VisualWorld {
     instances: Vec<VisualInstance>,
     clear_color: [f32; 4],
+    renderer_msaa_mode: MsaaMode,
 
     // Shared bones palette for all skinned instances.
     // Instances reference a subrange via (bones_base, bones_count).
@@ -165,6 +167,7 @@ impl Default for VisualWorld {
         Self {
             instances: Vec::new(),
             clear_color: [0.0, 0.0, 0.0, 1.0],
+            renderer_msaa_mode: MsaaMode::default(),
 
             bones_palette: vec![ident4],
             bones_free_ranges: Vec::new(),
@@ -560,6 +563,14 @@ impl VisualWorld {
 
     pub fn set_clear_color(&mut self, rgba: [f32; 4]) {
         self.clear_color = rgba;
+    }
+
+    pub fn renderer_msaa_mode(&self) -> MsaaMode {
+        self.renderer_msaa_mode
+    }
+
+    pub fn set_renderer_msaa_mode(&mut self, mode: MsaaMode) {
+        self.renderer_msaa_mode = mode;
     }
 
     pub fn ambient_light(&self) -> [f32; 3] {

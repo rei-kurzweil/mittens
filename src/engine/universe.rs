@@ -35,6 +35,10 @@ impl Universe {
         }
     }
 
+    pub fn set_msaa_mode(&mut self, mode: graphics::MsaaMode) -> Result<(), &'static str> {
+        self.renderer.set_msaa_mode(mode)
+    }
+
     pub fn enable_repl(&mut self) {
         if self.repl.is_none() {
             self.repl = Some(crate::engine::repl::Repl::new());
@@ -250,6 +254,19 @@ impl Universe {
         let size = window.inner_size();
         self.visuals
             .set_viewport([size.width as f32, size.height as f32]);
+
+        // Apply renderer settings from the component graph if the caller didn't explicitly
+        // override them (e.g. via CLI).
+        if self.renderer.msaa_mode_override().is_none() {
+            for cid in self.world.all_components() {
+                if let Some(s) = self
+                    .world
+                    .get_component_by_id_as::<ecs::component::RendererSettingsComponent>(cid)
+                {
+                    let _ = self.renderer.set_msaa_mode(s.msaa_mode());
+                }
+            }
+        }
 
         let xr_required = self.systems.openxr.required_vulkan_extensions();
         if let Some((ref instance_exts, ref device_exts)) = xr_required {
