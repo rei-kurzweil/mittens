@@ -1,6 +1,7 @@
 use cat_engine::engine::ecs::component::{
-    AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, CameraXRComponent, ColorComponent, ControllerHand, ControllerPoseKind, ControllerXRComponent, DirectionalLightComponent, EmissiveComponent, GLTFComponent, InputComponent, InputTransformModeComponent, OpenXRComponent, RenderableComponent, RendererSettingsComponent, TransformComponent
+    AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, CameraXRComponent, ColorComponent, ControllerHand, ControllerPoseKind, ControllerXRComponent, DirectionalLightComponent, EmissiveComponent, GLTFComponent, InputComponent, InputTransformModeComponent, OpenXRComponent, RenderableComponent, RendererSettingsComponent, RendererStatsComponent, TransformComponent
 };
+use cat_engine::engine::graphics::CameraTarget;
 use cat_engine::engine::graphics::primitives::{MaterialHandle, Renderable};
 use cat_engine::engine::graphics::BuiltinMeshType;
 use cat_engine::{engine, utils};
@@ -59,20 +60,18 @@ fn spawn_controller_cube(
     hand: ControllerHand,
     color: (f32, f32, f32, f32),
 ) -> engine::ecs::ComponentId {
-    // Transform driven by OpenXRSystem (nearest ancestor of ControllerXRComponent).
-    let controller_t = universe.world.add_component(
-        TransformComponent::new()
-            .with_position(0.0, 1.2, -0.5)
-            .with_scale(0.06, 0.06, 0.12),
-    );
-    let _ = universe.attach(xr_rig, controller_t);
-
     let controller_marker = universe.world.add_component(ControllerXRComponent::new(
         true,
         hand,
         ControllerPoseKind::Grip,
     ));
-    let _ = universe.attach(controller_t, controller_marker);
+    let _ = universe.attach(xr_rig, controller_marker);
+
+    // Transform driven by OpenXRSystem (TransformComponent child of ControllerXRComponent).
+    let controller_t = universe.world.add_component(
+        TransformComponent::new().with_scale(0.06, 0.06, 0.12),
+    );
+    let _ = universe.attach(controller_marker, controller_t);
 
     let cube = universe.world.add_component(RenderableComponent::cube());
     let cube_color = universe
@@ -82,7 +81,7 @@ fn spawn_controller_cube(
     let _ = universe.attach(controller_t, cube);
     let _ = universe.attach(cube, cube_color);
 
-    controller_t
+    controller_marker
 }
 
 fn main() {
@@ -97,6 +96,7 @@ fn main() {
         .add_component(RendererSettingsComponent::msaa_off());
     universe.add(renderer_settings);
 
+   
     // Sky base.
     let background = universe
         .world
@@ -145,6 +145,16 @@ fn main() {
     // --- XR rig ---
     let xr_rig = universe.world.add_component(TransformComponent::new());
     let camera_xr = universe.world.add_component(CameraXRComponent::on());
+   
+    // renderer stats
+    let renderer_stats = universe
+        .world
+        .add_component(RendererStatsComponent::new().with_camera_target(CameraTarget::Xr));
+    let render_stats_rig = universe.world.add_component(TransformComponent::new().with_position(0.0, 1.85, 0.6));
+    let _ = universe.attach(render_stats_rig, renderer_stats);
+    
+    let _ = universe.attach(xr_rig, render_stats_rig);
+    
     let _ = universe.attach(xr_rig, camera_xr);
 
     universe.add(xr_rig);

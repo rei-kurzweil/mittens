@@ -16,6 +16,7 @@ use crate::utils::math;
 use ash::vk::Handle as _;
 
 use std::collections::HashSet;
+use std::time::Instant;
 
 pub struct OpenXRSystem {
     state: Option<OpenXRState>,
@@ -23,7 +24,13 @@ pub struct OpenXRSystem {
     vulkan_graphics: Option<XrVulkanGraphics>,
     preferred_swapchain_format: Option<u32>,
 
+    // Best-effort XR frame timing diagnostics.
+    last_render_instant: Option<Instant>,
+    last_render_dt_sec: Option<f32>,
+
     controller_components: HashSet<ComponentId>,
+
+    controller_debug_last_log_instant: Option<Instant>,
 }
 
 struct OpenXRState {
@@ -95,7 +102,12 @@ impl Default for OpenXRSystem {
             vulkan_graphics: None,
             preferred_swapchain_format: None,
 
+            last_render_instant: None,
+            last_render_dt_sec: None,
+
             controller_components: HashSet::new(),
+
+            controller_debug_last_log_instant: None,
         }
     }
 }
@@ -105,11 +117,20 @@ impl std::fmt::Debug for OpenXRSystem {
         f.debug_struct("OpenXRSystem")
             .field("initialized", &self.state.is_some())
             .field("last_init_error", &self.last_init_error)
+            .field("last_render_dt_sec", &self.last_render_dt_sec)
             .finish()
     }
 }
 
 impl OpenXRSystem {
+    fn transform_child_of(world: &World, component: ComponentId) -> Option<ComponentId> {
+        world.children_of(component).iter().copied().find(|&cid| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(cid)
+                .is_some()
+        })
+    }
+
     /// Hint: prefer this Vulkan `VkFormat` (as raw `u32`) when creating the OpenXR swapchain.
     ///
     /// This is used to match the window renderer's color attachment format, so we can copy
@@ -222,27 +243,6 @@ impl OpenXRSystem {
         self.controller_components.remove(&component);
     }
 
-    fn nearest_ancestor_transform(world: &World, start: ComponentId) -> Option<ComponentId> {
-        if world
-            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(start)
-            .is_some()
-        {
-            return Some(start);
-        }
-
-        let mut cur = start;
-        while let Some(parent) = world.parent_of(cur) {
-            if world
-                .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(parent)
-                .is_some()
-            {
-                return Some(parent);
-            }
-            cur = parent;
-        }
-        None
-    }
-
     fn pump_events(&mut self) {
         let Some(state) = self.state.as_mut() else {
             return;
@@ -342,6 +342,16 @@ impl OpenXRSystem {
 
         let cache = sess.controller_pose_cache;
 
+        // Throttle controller pose logs (they're useful for debugging, but too noisy at XR rates).
+        let now = Instant::now();
+        let log_this_tick = self
+            .controller_debug_last_log_instant
+            .map(|t| now.duration_since(t).as_secs_f32() >= 0.25)
+            .unwrap_or(true);
+        if log_this_tick {
+            self.controller_debug_last_log_instant = Some(now);
+        }
+
         let controller_ids: Vec<ComponentId> = self.controller_components.iter().copied().collect();
         for controller_cid in controller_ids {
             let Some(cfg) = world.get_component_by_id_as::<ControllerXRComponent>(controller_cid)
@@ -365,7 +375,8 @@ impl OpenXRSystem {
                 continue;
             };
 
-            let Some(tcid) = Self::nearest_ancestor_transform(world, controller_cid) else {
+            // Semantics: ControllerXRComponent drives a TransformComponent child, if present.
+            let Some(tcid) = Self::transform_child_of(world, controller_cid) else {
                 continue;
             };
 
@@ -384,6 +395,17 @@ impl OpenXRSystem {
                 Self::parent_world_rotation_quat(world, tcid).unwrap_or([0.0, 0.0, 0.0, 1.0]);
             let local_rotation =
                 math::quat_mul(math::quat_conjugate(parent_world_rot), desired_world_rot);
+
+            if log_this_tick {
+                println!(
+                    "[OpenXR] controller={controller_cid:?} hand={:?} pose={:?} world_pos={:?} local_pos={:?} local_rot={:?} drive_transform={tcid:?}",
+                    cfg.hand,
+                    cfg.pose,
+                    desired_world_pos,
+                    local_translation,
+                    local_rotation,
+                );
+            }
 
             let Some(t) = world
                 .get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(
@@ -982,6 +1004,10 @@ impl System for OpenXRSystem {
 }
 
 impl OpenXRSystem {
+    pub fn last_render_dt_sec(&self) -> Option<f32> {
+        self.last_render_dt_sec
+    }
+
     pub fn render_xr(
         &mut self,
         world: &World,
@@ -989,14 +1015,27 @@ impl OpenXRSystem {
         renderer: &mut VulkanoRenderer,
     ) {
         let Some(state) = self.state.as_mut() else {
+            visuals.set_xr_frame_dt_sec(None);
             return;
         };
 
         let Some(sess) = state.session.as_mut() else {
+            visuals.set_xr_frame_dt_sec(None);
             return;
         };
         if !sess.running {
+            visuals.set_xr_frame_dt_sec(None);
             return;
+        }
+
+        let now = Instant::now();
+        let dt_sec = self
+            .last_render_instant
+            .map(|prev| now.saturating_duration_since(prev).as_secs_f32());
+        self.last_render_instant = Some(now);
+        if let Some(dt_sec) = dt_sec {
+            self.last_render_dt_sec = Some(dt_sec);
+            visuals.set_xr_frame_dt_sec(Some(dt_sec));
         }
 
         let frame_state = match sess.frame_waiter.wait() {

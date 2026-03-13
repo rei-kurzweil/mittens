@@ -54,6 +54,11 @@ pub struct VisualWorld {
     clear_color: [f32; 4],
     renderer_msaa_mode: MsaaMode,
 
+    // Frame timing stats captured from the main loop (window) and the XR render path.
+    // These are best-effort diagnostics and are not used for simulation.
+    window_frame_dt_sec: f32,
+    xr_frame_dt_sec: Option<f32>,
+
     // Shared bones palette for all skinned instances.
     // Instances reference a subrange via (bones_base, bones_count).
     //
@@ -168,6 +173,9 @@ impl Default for VisualWorld {
             instances: Vec::new(),
             clear_color: [0.0, 0.0, 0.0, 1.0],
             renderer_msaa_mode: MsaaMode::default(),
+
+            window_frame_dt_sec: 0.0,
+            xr_frame_dt_sec: None,
 
             bones_palette: vec![ident4],
             bones_free_ranges: Vec::new(),
@@ -571,6 +579,39 @@ impl VisualWorld {
 
     pub fn set_renderer_msaa_mode(&mut self, mode: MsaaMode) {
         self.renderer_msaa_mode = mode;
+    }
+
+    pub fn window_frame_dt_sec(&self) -> f32 {
+        self.window_frame_dt_sec
+    }
+
+    pub fn window_frame_fps(&self) -> f32 {
+        if self.window_frame_dt_sec > 0.0 {
+            1.0 / self.window_frame_dt_sec
+        } else {
+            0.0
+        }
+    }
+
+    pub fn set_window_frame_dt_sec(&mut self, dt_sec: f32) {
+        self.window_frame_dt_sec = dt_sec.max(0.0);
+    }
+
+    pub fn xr_frame_dt_sec(&self) -> Option<f32> {
+        self.xr_frame_dt_sec
+    }
+
+    pub fn xr_frame_fps(&self) -> Option<f32> {
+        let dt = self.xr_frame_dt_sec?;
+        if dt > 0.0 {
+            Some(1.0 / dt)
+        } else {
+            None
+        }
+    }
+
+    pub fn set_xr_frame_dt_sec(&mut self, dt_sec: Option<f32>) {
+        self.xr_frame_dt_sec = dt_sec.and_then(|dt| if dt.is_finite() { Some(dt.max(0.0)) } else { None });
     }
 
     pub fn ambient_light(&self) -> [f32; 3] {

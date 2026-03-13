@@ -15,6 +15,7 @@ use crate::engine::ecs::system::OpenXRSystem;
 use crate::engine::ecs::system::PipelineSystem;
 use crate::engine::ecs::system::RayCastSystem;
 use crate::engine::ecs::system::RenderableSystem;
+use crate::engine::ecs::system::RendererStatsSystem;
 use crate::engine::ecs::system::SkinnedMeshSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TextSystem;
@@ -44,6 +45,7 @@ pub struct SystemWorld {
     pub kinetic_response: KineticResponseSystem,
     pub skinned_mesh: SkinnedMeshSystem,
     pub renderable: RenderableSystem,
+    pub renderer_stats: RendererStatsSystem,
 
     pub raycast: RayCastSystem,
 
@@ -1134,6 +1136,8 @@ impl SystemWorld {
         queue: &mut crate::engine::ecs::CommandQueue,
         dt_sec: f32,
     ) {
+        visuals.set_window_frame_dt_sec(dt_sec);
+
         // Drain-point signal graph setup.
         // Per-frame caches are reset here; global handlers are installed idempotently.
         // (Per-gizmo scoped handlers are installed when the gizmo is registered.)
@@ -1233,6 +1237,9 @@ impl SystemWorld {
         queue.flush(world, self, visuals);
 
         self.renderable.tick(world, visuals, input, dt_sec);
+
+        self.renderer_stats
+            .tick_with_queue(world, visuals, queue, dt_sec);
 
         self.text.tick(world, visuals, input, dt_sec);
 

@@ -30,8 +30,8 @@ impl Default for ControllerPoseKind {
 /// Marker/config for an XR controller tracked pose.
 ///
 /// Semantics:
-/// - Attach under a `TransformComponent` that represents the controller root.
-/// - `OpenXRSystem` will drive the nearest ancestor transform from OpenXR pose tracking.
+/// - Attach a `TransformComponent` as a child of this component.
+/// - `OpenXRSystem` will drive that transform child from OpenXR pose tracking.
 #[derive(Debug, Clone, Default)]
 pub struct ControllerXRComponent {
     pub enabled: bool,
