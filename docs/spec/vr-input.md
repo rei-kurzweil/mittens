@@ -28,6 +28,12 @@ A `ControllerXRComponent` is a lightweight marker/config component that declares
 
 It does **not** store the pose itself; it only identifies what pose stream the node wants.
 
+Authoring shape:
+
+- `ControllerXRComponent`
+  - `TransformComponent` (driven by OpenXR)
+    - renderables / raycasters / other children
+
 Implementation:
 - Component type: `ControllerXRComponent`
 - Hand enum: `ControllerHand`
@@ -99,7 +105,8 @@ For each registered `ControllerXRComponent`:
 
 1. Lookup `ControllerXRComponent` in the world; drop stale IDs.
 2. Pick the correct cached pose based on `(hand, pose)`.
-3. Find the **nearest ancestor** `TransformComponent` (controller components can be nested).
+3. Find a `TransformComponent` **child** of the `ControllerXRComponent`.
+  - If no transform child exists, nothing is updated for that controller node.
 4. Convert the OpenXR pose into the correct transform space:
 
 #### Space conversion details
@@ -119,6 +126,8 @@ Then we convert the desired world pose into a **local** pose relative to the tra
 - local rotation: $q_{local} = q_{parent}^{-1} \otimes q_{world}$
 
 Finally we write to the `TransformComponent` and queue `queue_update_transform(...)`.
+
+This means the controller component acts like a pose source / driver node, and the child transform is the authored attachment point for visible geometry or interaction helpers.
 
 ### Tick ordering
 

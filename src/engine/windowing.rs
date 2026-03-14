@@ -55,9 +55,18 @@ impl ApplicationHandler for App {
             return;
         }
 
+        let preferred_window_size = self
+            .universe
+            .as_ref()
+            .and_then(|universe| universe.preferred_window_size())
+            .unwrap_or([1024, 768]);
+
         let attrs: WindowAttributes = Window::default_attributes()
             .with_title("cat engine 0.5 \"mittens\" ")
-            .with_inner_size(winit::dpi::LogicalSize::new(1024.0, 768.0))
+            .with_inner_size(winit::dpi::LogicalSize::new(
+                preferred_window_size[0] as f64,
+                preferred_window_size[1] as f64,
+            ))
             .with_resizable(true);
 
         let window = event_loop
@@ -119,6 +128,18 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::RedrawRequested => {
+                if let (Some(window), Some(universe)) = (&self.window, self.universe.as_ref()) {
+                    if let Some([width, height]) = universe.preferred_window_size() {
+                        let current = window.inner_size();
+                        if current.width != width || current.height != height {
+                            let _ = window.request_inner_size(winit::dpi::LogicalSize::new(
+                                width as f64,
+                                height as f64,
+                            ));
+                        }
+                    }
+                }
+
                 // Start of our "frame" from an input perspective: compute deltas, but keep
                 // edge-triggered sets so they remain visible during `universe.update`.
                 self.user_input.start_frame();

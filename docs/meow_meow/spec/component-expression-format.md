@@ -16,7 +16,7 @@ Component expressions are a declarative tree-building form designed to map clean
 - Parse a component tree expression into an AST.
 - Evaluate a component expression into an engine component subtree (host-provided constructors).
 - Support:
-  - header parameters (named attributes)
+  - named parameters (in-body named assignments)
   - method-like calls during construction
   - children (nested component expressions)
   - positional/sugary items in the body
@@ -63,11 +63,36 @@ ComponentType header_param="value" other=123 {
 }
 ```
 
-There are three “kinds of things” inside a component body:
+There are two useful ways to think about the things inside a component body from the receiving component's point of view:
 
-- Calls: `ident(...)`
-- Children: `Ident ... { ... }`
-- Positional expressions: literals/arrays/identifiers used as flags/sugar
+- Named assignments (property-like)
+  - Syntax: `Ident = Expr` inside the body (in addition to header params after the type).
+  - Meaning: these are applied to the component instance being constructed. They behave like setting properties or configuration fields on the current component.
+  - Use when you want to set a specific named parameter on the current component (for example transforms, flags with values, or other explicit config).
+
+- Positional items
+  - These are delivered positionally to the receiver and include:
+    - Positional calls: Builder-style calls: `ident(...)` (treated as builder steps and considered positional calls)
+    - Child component expressions: `Ident ... { ... }` (nested components attached as children)
+    - Bare positional expressions: literals or identifiers (flags, enum-like tags, resource shorthands)
+  - Meaning: order and position can matter to the receiving component or builder API.
+
+Example showing the split between a named property and positional children/positional parameters:
+
+```txt
+T {
+    rotation = [0, 0, PI]   // named parameter applied to T
+    R {                     // positional child (first positional item)
+       Mesh {
+         QUAD_2D            // positional parameter passed to Mesh
+       }
+    }
+}
+```
+
+Notes:
+
+- v1 AST currently stores `positional`, `calls`, and `children` in separate lists, so the relative ordering of different positional item kinds is not preserved. If ordering matters for the host API, prefer a single ordered body list or define a clear evaluation order (for example: apply named assignments first, then calls, then children).
 
 ### Grammar sketch (EBNF-ish)
 
@@ -95,15 +120,15 @@ IdentLeading := Ident (
 
 CallExprTail := '(' (Expr (',' Expr)*)? ')'
 
-ComponentExprTail := HeaderAttrs? '{' ComponentBody '}'
-HeaderAttrs  := (Ident '=' Expr)*
+ComponentExprTail := '{' ComponentBody '}'
 
 ComponentBody := ComponentItem* '}'
-ComponentItem := CallExpr | ChildComponentExpr | PositionalExpr | Separator
+ComponentItem := CallExpr | ChildComponentExpr | PositionalExpr | NamedAssignment | Separator
 Separator    := ',' | ';'
 
 CallExpr     := Ident '(' (Expr (',' Expr)*)? ')'
-ChildComponentExpr := Ident HeaderAttrs? '{' ComponentBody
+ChildComponentExpr := Ident '{' ComponentBody
+NamedAssignment := Ident '=' Expr
 PositionalExpr := Expr
 ```
 
@@ -126,51 +151,26 @@ TXT { ... }
 - If the component type is unknown, evaluation fails.
 - The registry maps a name → a constructor/builder entrypoint.
 
-### 2) Component header parameters (properties)
+### 2) Named properties (in-body)
 
-Immediately after the component type, the header may contain **named parameters**:
-
-```txt
-Background name="bg" guid="..." { ... }
-```
-
-**Meaning:** each parameter name is interpreted by the component constructor.
-
-- v1 recommendation: standardize these as “common meta” when present:
-  - `name`: human-friendly name for debugging/editor tooling
-  - `guid`: stable identifier for tooling and round-tripping
-- Values are expressions and are evaluated before construction.
-
-### 3) Component method invocations (builder calls)
-
-Within the body, `ident(...)` is parsed as a call expression:
+The language does not support "header" parameters placed immediately after the component type. Instead, any named parameters for a component are specified as assignments inside the component body.
 
 ```txt
-Background {
-    with_occlusion_and_lighting()
-    with_color([1, 0, 0, 1])
-}
-```
+// NOT supported:
+// T name="special-transform" { ... }
 
-**Meaning:** calls are “builder steps” performed during component construction.
-
-- The host resolves `callee` names against the current component’s builder API.
-- Arguments are expressions evaluated to runtime values.
-
-### 4) Positional / sugary identifiers
-
-Inside a component body, a bare identifier that is neither a call nor a child component is treated as a positional expression:
-
-```txt
+// Supported (preferred):
 T {
-    QUAD_2D
+    name = "special-transform"            // named property applied to T
+    SOME_PRESET_POSITIONAL_IDENT_FOR_THIS   // positional identifier
+    do_something()                          // positional call / builder step
+    R {                                     // positional child
+        ...
+    }
 }
 ```
 
-**Meaning:** this is a *symbol* whose meaning is component-specific.
-
-- Common uses: flags, enum-like tags, shorthand for common resources.
-- v1: treat it as an `Identifier` runtime value; the receiving component interprets it.
+**Meaning:** named assignments inside the body are applied to the component instance being constructed and behave like setting properties or configuration fields on the current component. Use these for transforms, metadata, flags-with-values, and other explicit configuration.
 
 ## Evaluation model (v1)
 
@@ -188,9 +188,9 @@ Foo a=1 {
 A typical evaluation strategy is:
 
 1. Resolve `Foo` in the host registry.
-2. Evaluate header params (`a=1`) into runtime values.
+2. Evaluate in-body named properties (`name = ...`) into runtime values.
 3. Create the component instance (or a builder for it).
-4. Apply body calls (`with_bar("x")`).
+4. Apply body calls (`with_bar("x")`) as positional calls.
 5. Evaluate child component expressions and attach them as children.
 
 ### Ordering note
@@ -219,10 +219,11 @@ Background {
 }
 ```
 
-### With header params
+### With in-body named properties
 
 ```txt
-Background name="bg" {
+Background {
+    name = "bg"
     // ...
 }
 ```

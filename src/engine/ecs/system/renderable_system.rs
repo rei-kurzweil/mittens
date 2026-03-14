@@ -797,6 +797,7 @@ impl RenderableSystem {
 
         // Global state: last registered wins.
         visuals.set_renderer_msaa_mode(settings.msaa_mode());
+        visuals.set_preferred_window_size(settings.window_size);
     }
 
     /// Register a renderable component with this system.

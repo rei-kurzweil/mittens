@@ -8,15 +8,29 @@ use crate::engine::graphics::MsaaMode;
 #[derive(Debug, Clone, Copy)]
 pub struct RendererSettingsComponent {
     pub msaa4x: bool,
+    pub window_size: Option<[u32; 2]>,
 }
 
 impl RendererSettingsComponent {
     pub fn new() -> Self {
-        Self { msaa4x: true }
+        Self {
+            msaa4x: true,
+            window_size: None,
+        }
     }
 
     pub fn msaa_off() -> Self {
-        Self { msaa4x: false }
+        Self {
+            msaa4x: false,
+            window_size: None,
+        }
+    }
+
+    pub fn with_window_size(mut self, width: u32, height: u32) -> Self {
+        if width > 0 && height > 0 {
+            self.window_size = Some([width, height]);
+        }
+        self
     }
 
     pub fn msaa_mode(&self) -> MsaaMode {
@@ -59,6 +73,9 @@ impl Component for RendererSettingsComponent {
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
         let mut map = std::collections::HashMap::new();
         map.insert("msaa4x".to_string(), serde_json::json!(self.msaa4x));
+        if let Some(window_size) = self.window_size {
+            map.insert("window_size".to_string(), serde_json::json!(window_size));
+        }
         map
     }
 
@@ -69,6 +86,12 @@ impl Component for RendererSettingsComponent {
         if let Some(msaa4x) = data.get("msaa4x") {
             self.msaa4x = serde_json::from_value(msaa4x.clone())
                 .map_err(|e| format!("Failed to decode msaa4x: {e}"))?;
+        }
+        if let Some(window_size) = data.get("window_size") {
+            self.window_size = Some(
+                serde_json::from_value(window_size.clone())
+                    .map_err(|e| format!("Failed to decode window_size: {e}"))?,
+            );
         }
         Ok(())
     }

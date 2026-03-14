@@ -53,6 +53,7 @@ pub struct VisualWorld {
     instances: Vec<VisualInstance>,
     clear_color: [f32; 4],
     renderer_msaa_mode: MsaaMode,
+    preferred_window_size: Option<[u32; 2]>,
 
     // Frame timing stats captured from the main loop (window) and the XR render path.
     // These are best-effort diagnostics and are not used for simulation.
@@ -173,6 +174,7 @@ impl Default for VisualWorld {
             instances: Vec::new(),
             clear_color: [0.0, 0.0, 0.0, 1.0],
             renderer_msaa_mode: MsaaMode::default(),
+            preferred_window_size: None,
 
             window_frame_dt_sec: 0.0,
             xr_frame_dt_sec: None,
@@ -579,6 +581,14 @@ impl VisualWorld {
 
     pub fn set_renderer_msaa_mode(&mut self, mode: MsaaMode) {
         self.renderer_msaa_mode = mode;
+    }
+
+    pub fn preferred_window_size(&self) -> Option<[u32; 2]> {
+        self.preferred_window_size
+    }
+
+    pub fn set_preferred_window_size(&mut self, size: Option<[u32; 2]>) {
+        self.preferred_window_size = size.filter(|[w, h]| *w > 0 && *h > 0);
     }
 
     pub fn window_frame_dt_sec(&self) -> f32 {

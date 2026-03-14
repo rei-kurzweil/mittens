@@ -39,6 +39,16 @@ impl Universe {
         self.renderer.set_msaa_mode(mode)
     }
 
+    pub fn preferred_window_size(&self) -> Option<[u32; 2]> {
+        self.visuals.preferred_window_size().or_else(|| {
+            self.world.all_components().find_map(|cid| {
+                self.world
+                    .get_component_by_id_as::<ecs::component::RendererSettingsComponent>(cid)
+                    .and_then(|s| s.window_size)
+            })
+        })
+    }
+
     pub fn enable_repl(&mut self) {
         if self.repl.is_none() {
             self.repl = Some(crate::engine::repl::Repl::new());

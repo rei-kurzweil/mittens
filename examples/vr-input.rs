@@ -63,7 +63,7 @@ fn spawn_controller_cube(
     let controller_marker = universe.world.add_component(ControllerXRComponent::new(
         true,
         hand,
-        ControllerPoseKind::Grip,
+        ControllerPoseKind::Aim,
     ));
     let _ = universe.attach(xr_rig, controller_marker);
 
@@ -93,7 +93,7 @@ fn main() {
     // disable aa
     let renderer_settings = universe
         .world
-        .add_component(RendererSettingsComponent::msaa_off());
+        .add_component(RendererSettingsComponent::msaa_off().with_window_size(320, 240));
     universe.add(renderer_settings);
 
    
