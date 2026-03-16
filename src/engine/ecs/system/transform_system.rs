@@ -2,11 +2,11 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     Camera2DComponent, Camera3DComponent, CollisionComponent, RenderableComponent,
-    TransformComponent, TransformFilterComponent,
+    TransformComponent,
 };
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::System;
-use crate::engine::ecs::system::TransformFilterSystem;
+use crate::engine::ecs::system::TransformPipelineSystem;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::user_input::InputState;
@@ -85,6 +85,7 @@ impl TransformSystem {
         world: &mut World,
         visuals: &mut VisualWorld,
         component: ComponentId,
+        transform_pipeline_system: &mut TransformPipelineSystem,
         camera_system: &mut crate::engine::ecs::system::CameraSystem,
         light_system: &mut crate::engine::ecs::system::LightSystem,
         collision_system: &mut CollisionSystem,
@@ -136,22 +137,33 @@ impl TransformSystem {
             None => return,
         };
 
-        // DFS the component subtree. `current_world` is the world matrix of the nearest
-        // TransformComponent ancestor along the path.
+        // DFS the component subtree.
+        //
+        // `current_world` means: the world-space transform basis that descendants of `node`
+        // should currently inherit from.
+        //
+        // More concretely, this starts as the changed transform's cached `matrix_world`, then
+        // may be modified by filter/pipeline nodes that do not themselves introduce a new
+        // `TransformComponent`, but still alter the inherited transform stream seen by their
+        // descendants. When we later hit a real `TransformComponent` child, we compose that
+        // child's local model against this `current_world` to produce its new cached world
+        // matrix.
         let mut stack: Vec<(ComponentId, TransformMatrix)> = vec![(component, root_world)];
         while let Some((node, current_world)) = stack.pop() {
-            // TransformFilterComponent is a filter-as-node modifier: it does not introduce a new
-            // transform, but it can change what descendant nodes inherit from the nearest
-            // transform ancestor's world matrix.
-            let current_world = if let Some(filter) =
-                world.get_component_by_id_as::<TransformFilterComponent>(node)
-            {
-                TransformFilterSystem::filter_inherited_world(current_world, filter)
-            } else {
-                current_world
+            let pipeline_evaluated = transform_pipeline_system.evaluate_pipeline_node(
+                world,
+                node,
+                current_world,
+            );
+            let (current_world, pipeline_output_roots) = match pipeline_evaluated {
+                Some((processed_world, outputs)) => (processed_world, Some(outputs)),
+                None => (current_world, None),
             };
 
-            let children: Vec<ComponentId> = world.children_of(node).to_vec();
+            let children: Vec<ComponentId> = match pipeline_output_roots {
+                Some(outputs) if !outputs.is_empty() => outputs,
+                _ => world.children_of(node).to_vec(),
+            };
             for child in children {
                 // If we encounter a TransformComponent, update its cached world matrix and
                 // use it for its subtree.

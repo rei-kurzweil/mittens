@@ -1,7 +1,10 @@
 use crate::engine::ecs::component::{
     GestureCoordType, GestureCoordTypeComponent, SignalRouteUpwardComponent, TransformComponent,
-    TransformGizmoAxis, TransformGizmoComponent, TransformGizmoRotateComponent,
-    TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
+    TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis,
+    TransformGizmoComponent, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
+    TransformGizmoTranslateComponent, TransformMapRotationComponent,
+    TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
+    TransformPipelineComponent, TransformPipelineOutputComponent,
 };
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
@@ -913,10 +916,10 @@ impl TransformGizmoSystem {
         // Gizmos are parented under the target transform, so by default they'd inherit whatever
         // scale the target (and its ancestors) have.
         //
-        // We now spawn gizmo visuals under a TransformFilterComponent that inherits translation +
-        // rotation but NOT scale. This prevents non-uniform target scales from squashing the gizmo
-        // and means `TransformGizmoComponent.scale` can be interpreted directly as a world-ish
-        // size knob (modulo camera projection).
+        // We now spawn gizmo visuals under an explicit transform pipeline that keeps translation
+        // + rotation but drops inherited scale. This prevents non-uniform target scales from
+        // squashing the gizmo and means `TransformGizmoComponent.scale` can be interpreted
+        // directly as a world-ish size knob (modulo camera projection).
         fn mat4_identity() -> crate::engine::graphics::primitives::TransformMatrix {
             [
                 [1.0, 0.0, 0.0, 0.0],
@@ -975,6 +978,92 @@ impl TransformGizmoSystem {
         let parent_world_scale = max_basis_scale(parent_world).max(1e-4);
         let gizmo_local_scale = gizmo_scale;
 
+        fn add_pipeline_group(
+            world: &mut World,
+            parent: ComponentId,
+            pipeline_name: &str,
+            output_name: &str,
+            include_translation_map: bool,
+            include_rotation_map: bool,
+            include_scale_map: bool,
+            drop_translation: bool,
+            drop_rotation: bool,
+            drop_scale: bool,
+            explicit_merge: bool,
+        ) -> ComponentId {
+            let pipeline = world.add_component_boxed_named(
+                pipeline_name,
+                Box::new(TransformPipelineComponent::new()),
+            );
+            let _ = world.add_child(parent, pipeline);
+
+            let fork = world.add_component_boxed_named(
+                format!("{pipeline_name}:fork"),
+                Box::new(TransformForkTRSComponent::new()),
+            );
+            let _ = world.add_child(pipeline, fork);
+
+            if include_translation_map {
+                let map = world.add_component_boxed_named(
+                    format!("{pipeline_name}:map_translation"),
+                    Box::new(TransformMapTranslationComponent::new()),
+                );
+                let _ = world.add_child(fork, map);
+                if drop_translation {
+                    let drop = world.add_component_boxed_named(
+                        format!("{pipeline_name}:drop_translation"),
+                        Box::new(TransformDropComponent::new()),
+                    );
+                    let _ = world.add_child(map, drop);
+                }
+            }
+
+            if include_rotation_map {
+                let map = world.add_component_boxed_named(
+                    format!("{pipeline_name}:map_rotation"),
+                    Box::new(TransformMapRotationComponent::new()),
+                );
+                let _ = world.add_child(fork, map);
+                if drop_rotation {
+                    let drop = world.add_component_boxed_named(
+                        format!("{pipeline_name}:drop_rotation"),
+                        Box::new(TransformDropComponent::new()),
+                    );
+                    let _ = world.add_child(map, drop);
+                }
+            }
+
+            if include_scale_map {
+                let map = world.add_component_boxed_named(
+                    format!("{pipeline_name}:map_scale"),
+                    Box::new(TransformMapScaleComponent::new()),
+                );
+                let _ = world.add_child(fork, map);
+                if drop_scale {
+                    let drop = world.add_component_boxed_named(
+                        format!("{pipeline_name}:drop_scale"),
+                        Box::new(TransformDropComponent::new()),
+                    );
+                    let _ = world.add_child(map, drop);
+                }
+            }
+
+            if explicit_merge {
+                let merge = world.add_component_boxed_named(
+                    format!("{pipeline_name}:merge"),
+                    Box::new(TransformMergeTRSComponent::new()),
+                );
+                let _ = world.add_child(fork, merge);
+            }
+
+            let output = world.add_component_boxed_named(
+                output_name,
+                Box::new(TransformPipelineOutputComponent::new()),
+            );
+            let _ = world.add_child(pipeline, output);
+            output
+        }
+
         if Self::debug_enabled() {
             println!(
                 "[TransformGizmoSystem] register gizmo={:?} target_transform={:?} requested_world_scale={:.4} parent_world_scale={:.4} gizmo_local_scale={:.4}",
@@ -982,12 +1071,21 @@ impl TransformGizmoSystem {
             );
         }
 
-        // Filter inherited transforms from the target: inherit translation+rotation, drop scale.
-        let gizmo_filter = world.add_component_boxed_named(
-            "gizmo_filter",
-            Box::new(crate::engine::ecs::component::TransformFilterComponent::inherit_tr()),
+        // Process inherited transforms from the target explicitly via a transform pipeline:
+        // keep translation + rotation, drop scale.
+        let gizmo_output = add_pipeline_group(
+            world,
+            component,
+            "gizmo_pipeline",
+            "gizmo_pipeline_output",
+            true,
+            true,
+            true,
+            false,
+            false,
+            true,
+            true,
         );
-        let _ = world.add_child(component, gizmo_filter);
 
         // Create a root transform for the gizmo visuals under the GizmoComponent node.
         let gizmo_root = world.add_component_boxed_named(
@@ -998,7 +1096,7 @@ impl TransformGizmoSystem {
                 gizmo_local_scale,
             )),
         );
-        let _ = world.add_child(gizmo_filter, gizmo_root);
+        let _ = world.add_child(gizmo_output, gizmo_root);
 
         // Wrap all gizmo visuals in an overlay marker so they render in the overlay pass.
         let gizmo_overlay =
@@ -1025,29 +1123,34 @@ impl TransformGizmoSystem {
         // Create two coord-space groups so translation and rotation handles can be oriented
         // independently (e.g. translate in World while rotating in Local).
         //
-        // These filters sit under the gizmo's uniform scale transform (`gizmo_root`), so they keep
-        // the gizmo size but can optionally drop inherited rotation.
-        let gizmo_space_world = world.add_component_boxed_named(
-            "gizmo_space_world",
-            Box::new(
-                crate::engine::ecs::component::TransformFilterComponent::new()
-                    .with_inherit_translation(true)
-                    .with_inherit_rotation(false)
-                    .with_inherit_scale(true),
-            ),
+        // These pipeline groups sit under the gizmo's uniform scale transform (`gizmo_root`), so
+        // they keep gizmo size but can optionally drop inherited rotation.
+        let gizmo_space_world = add_pipeline_group(
+            world,
+            gizmo_visual_parent,
+            "gizmo_space_world_pipeline",
+            "gizmo_space_world_output",
+            true,
+            true,
+            true,
+            false,
+            true,
+            false,
+            true,
         );
-        let _ = world.add_child(gizmo_visual_parent, gizmo_space_world);
-
-        let gizmo_space_local = world.add_component_boxed_named(
-            "gizmo_space_local",
-            Box::new(
-                crate::engine::ecs::component::TransformFilterComponent::new()
-                    .with_inherit_translation(true)
-                    .with_inherit_rotation(true)
-                    .with_inherit_scale(true),
-            ),
+        let gizmo_space_local = add_pipeline_group(
+            world,
+            gizmo_visual_parent,
+            "gizmo_space_local_pipeline",
+            "gizmo_space_local_output",
+            true,
+            true,
+            true,
+            false,
+            false,
+            false,
+            true,
         );
-        let _ = world.add_child(gizmo_visual_parent, gizmo_space_local);
 
         let translate_parent = match translation_space {
             TransformGizmoCoordSpace::World => gizmo_space_world,

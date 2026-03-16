@@ -67,7 +67,6 @@ pub const COMPONENT_SHORTFORMS: &[ComponentShortformEntry] = &[
     // User-provided core set
     ComponentShortformEntry { short: "I", full: "Input" },
     ComponentShortformEntry { short: "T", full: "Transform" },
-    ComponentShortformEntry { short: "TF", full: "TransformFilter" },
     ComponentShortformEntry { short: "R", full: "Renderable" },
     ComponentShortformEntry { short: "C", full: "Color" },
     ComponentShortformEntry { short: "RC", full: "Raycast" },

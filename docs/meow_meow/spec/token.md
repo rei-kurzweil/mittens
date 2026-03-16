@@ -57,7 +57,6 @@ Evaluation expands shortforms into canonical component type names before resolvi
 |------:|-----------|
 | `I` | `Input` |
 | `T` | `Transform` |
-| `TF` | `TransformFilter` |
 | `R` | `Renderable` |
 | `C` | `Color` |
 | `RC` | `Raycast` |

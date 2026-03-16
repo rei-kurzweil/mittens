@@ -244,7 +244,22 @@ impl ComponentCodec {
         match type_name {
             "editor" => Ok(Box::new(EditorComponent::new())),
             "transform" => Ok(Box::new(TransformComponent::new())),
-            "transform_filter" => Ok(Box::new(TransformFilterComponent::new())),
+            "transform_pipeline" => Ok(Box::new(TransformPipelineComponent::new())),
+            "transform_fork_trs" => Ok(Box::new(TransformForkTRSComponent::new())),
+            "transform_map_translation" => {
+                Ok(Box::new(TransformMapTranslationComponent::new()))
+            }
+            "transform_map_rotation" => Ok(Box::new(TransformMapRotationComponent::new())),
+            "transform_map_scale" => Ok(Box::new(TransformMapScaleComponent::new())),
+            "transform_merge_trs" => Ok(Box::new(TransformMergeTRSComponent::new())),
+            "transform_pipeline_output" => {
+                Ok(Box::new(TransformPipelineOutputComponent::new()))
+            }
+            "transform_drop" => Ok(Box::new(TransformDropComponent::new())),
+            "vector3_temporal_filter" => {
+                Ok(Box::new(Vector3TemporalFilterComponent::new()))
+            }
+            "quat_temporal_filter" => Ok(Box::new(QuatTemporalFilterComponent::new())),
             "renderable" => Ok(Box::new(RenderableComponent::new(
                 crate::engine::graphics::primitives::Renderable::new(
                     crate::engine::graphics::primitives::CpuMeshHandle(0),

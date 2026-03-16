@@ -4,7 +4,7 @@ This doc sketches a renderer-facing approach for **gizmo visuals** (and other UI
 
 - camera FOV,
 - distance from camera,
-- and parent transform scale (already handled at the ECS level via `TransformFilterComponent`).
+- and parent transform scale (already handled at the ECS level via the gizmo's explicit transform-pipeline setup that drops inherited scale).
 
 No engine code changes are included here; this is a design note for a future `MaterialHandle` + shader.
 

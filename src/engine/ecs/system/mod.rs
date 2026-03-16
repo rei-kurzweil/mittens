@@ -26,7 +26,7 @@ pub mod skinned_mesh_system;
 pub mod system_world;
 pub mod text_system;
 pub mod texture_system;
-pub mod transform_filter_system;
+pub mod transform_pipeline_system;
 pub mod transform_system;
 
 pub use animation_system::AnimationSystem;
@@ -52,7 +52,7 @@ pub use skinned_mesh_system::SkinnedMeshSystem;
 pub use system_world::SystemWorld;
 pub use text_system::TextSystem;
 pub use texture_system::TextureSystem;
-pub use transform_filter_system::TransformFilterSystem;
+pub use transform_pipeline_system::TransformPipelineSystem;
 pub use transform_system::TransformSystem;
 
 use super::World;

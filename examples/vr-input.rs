@@ -1,5 +1,12 @@
 use cat_engine::engine::ecs::component::{
-    AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, CameraXRComponent, ColorComponent, ControllerHand, ControllerPoseKind, ControllerXRComponent, DirectionalLightComponent, EmissiveComponent, GLTFComponent, InputComponent, InputTransformModeComponent, OpenXRComponent, RenderableComponent, RendererSettingsComponent, RendererStatsComponent, TransformComponent
+    AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, CameraXRComponent,
+    ColorComponent, ControllerHand, ControllerPoseKind, ControllerXRComponent,
+    DirectionalLightComponent, EmissiveComponent, GLTFComponent, InputComponent,
+    InputTransformModeComponent, OpenXRComponent, QuatTemporalFilterComponent,
+    RenderableComponent, RendererSettingsComponent, RendererStatsComponent,
+    TransformComponent, TransformForkTRSComponent, TransformMapRotationComponent,
+    TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
+    TransformPipelineComponent, TransformPipelineOutputComponent,
 };
 use cat_engine::engine::graphics::CameraTarget;
 use cat_engine::engine::graphics::primitives::{MaterialHandle, Renderable};
@@ -59,6 +66,7 @@ fn spawn_controller_cube(
     xr_rig: engine::ecs::ComponentId,
     hand: ControllerHand,
     color: (f32, f32, f32, f32),
+    rotation_smoothing: f32,
 ) -> engine::ecs::ComponentId {
     let controller_marker = universe.world.add_component(ControllerXRComponent::new(
         true,
@@ -68,17 +76,53 @@ fn spawn_controller_cube(
     let _ = universe.attach(xr_rig, controller_marker);
 
     // Transform driven by OpenXRSystem (TransformComponent child of ControllerXRComponent).
-    let controller_t = universe.world.add_component(
-        TransformComponent::new().with_scale(0.06, 0.06, 0.12),
-    );
+    let controller_t = universe
+        .world
+        .add_component(TransformComponent::new().with_scale(0.06, 0.06, 0.12));
     let _ = universe.attach(controller_marker, controller_t);
+
+    let pipeline = universe
+        .world
+        .add_component(TransformPipelineComponent::new());
+    let _ = universe.attach(controller_t, pipeline);
+
+    let fork = universe.world.add_component(TransformForkTRSComponent::new());
+    let _ = universe.attach(pipeline, fork);
+
+    let map_translation = universe
+        .world
+        .add_component(TransformMapTranslationComponent::new());
+    let _ = universe.attach(fork, map_translation);
+
+    let map_rotation = universe
+        .world
+        .add_component(TransformMapRotationComponent::new());
+    let _ = universe.attach(fork, map_rotation);
+    let rotation_filter = universe.world.add_component(
+        QuatTemporalFilterComponent::new().with_smoothing_factor(rotation_smoothing),
+    );
+    let _ = universe.attach(map_rotation, rotation_filter);
+
+    let map_scale = universe.world.add_component(TransformMapScaleComponent::new());
+    let _ = universe.attach(fork, map_scale);
+
+    let merge = universe.world.add_component(TransformMergeTRSComponent::new());
+    let _ = universe.attach(fork, merge);
+
+    let output = universe
+        .world
+        .add_component(TransformPipelineOutputComponent::new());
+    let _ = universe.attach(pipeline, output);
+
+    let filtered_t = universe.world.add_component(TransformComponent::new());
+    let _ = universe.attach(output, filtered_t);
 
     let cube = universe.world.add_component(RenderableComponent::cube());
     let cube_color = universe
         .world
         .add_component(ColorComponent::rgba(color.0, color.1, color.2, color.3));
 
-    let _ = universe.attach(controller_t, cube);
+    let _ = universe.attach(filtered_t, cube);
     let _ = universe.attach(cube, cube_color);
 
     controller_marker
@@ -185,12 +229,14 @@ fn main() {
         xr_rig,
         ControllerHand::Left,
         (0.10, 0.90, 1.00, 1.0),
+        22.0,
     );
     let _right = spawn_controller_cube(
         &mut universe,
         xr_rig,
         ControllerHand::Right,
         (1.00, 0.35, 0.35, 1.0),
+        14.0,
     );
 
     // Enable OpenXR runtime.

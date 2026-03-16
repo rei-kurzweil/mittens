@@ -40,7 +40,7 @@ We want to support both behaviors explicitly.
 
 As of now, in [src/engine/ecs/system/gizmo_system.rs](src/engine/ecs/system/gizmo_system.rs):
 
-- Gizmo visuals inherit rotation from the target (`TransformFilterComponent::inherit_tr()` is used for the visual subtree).
+- Gizmo visuals inherit translation and rotation from the target through an explicit transform pipeline, while dropping inherited scale for the visual subtree.
 - Translation drag logic projects the world drag delta onto a hard-coded axis `axis.unit_vec3()`.
 - Rotation drag logic also starts from a hard-coded world axis `axis.unit_vec3()`, but it then converts it to a “local” axis via `world_dir_to_target_local`.
 - That conversion currently depends on `CAT_GIZMO_USE_PARENT_INVERSE` and is **off by default**.
@@ -88,7 +88,7 @@ That implies we should allow translation handles and rotation handles to be orie
 
 Because gizmo visuals are parented under the target transform, they naturally inherit the target’s world matrix.
 
-We already have `TransformFilterComponent` which can selectively inherit translation/rotation/scale. We can use it to create two visual “spaces” under the gizmo:
+We can model selective translation/rotation/scale inheritance with explicit transform-pipeline primitives. That lets us create two visual “spaces” under the gizmo:
 
 - **World-aligned visual group**: inherit translation only
   - `inherit_translation=true`
@@ -98,7 +98,7 @@ We already have `TransformFilterComponent` which can selectively inherit transla
 - **Local-aligned visual group**: inherit translation + rotation
   - `inherit_translation=true`
   - `inherit_rotation=true`
-  - `inherit_scale=false` (current `inherit_tr()`)
+  - drop inherited scale in the top-level gizmo pipeline
 
 Then:
 

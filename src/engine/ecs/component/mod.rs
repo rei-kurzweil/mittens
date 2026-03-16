@@ -54,7 +54,9 @@ pub mod text_shadow;
 pub mod texture;
 pub mod texture_filtering;
 pub mod transform;
-pub mod transform_filter;
+pub mod transform_pipeline;
+pub mod transform_pipeline_map;
+pub mod transform_temporal_filter;
 pub mod uv;
 
 pub use self::gltf::GLTFComponent;
@@ -118,7 +120,16 @@ pub use text_shadow::TextShadowComponent;
 pub use texture::{CatEngineTextureFormat, TextureComponent};
 pub use texture_filtering::TextureFilteringComponent;
 pub use transform::TransformComponent;
-pub use transform_filter::TransformFilterComponent;
+pub use transform_pipeline::{
+    TransformDropComponent, TransformForkTRSComponent, TransformMergeTRSComponent,
+    TransformPipelineComponent, TransformPipelineOutputComponent,
+};
+pub use transform_pipeline_map::{
+    TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
+};
+pub use transform_temporal_filter::{
+    QuatTemporalFilterComponent, Vector3TemporalFilterComponent,
+};
 pub use transparent_cutout::TransparentCutoutComponent;
 pub use uv::UVComponent;
 

@@ -20,6 +20,7 @@ use crate::engine::ecs::system::SkinnedMeshSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextureSystem;
+use crate::engine::ecs::system::TransformPipelineSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
 use crate::engine::ecs::system::{EditorSystem, GestureSystem, TransformGizmoSystem};
@@ -39,6 +40,7 @@ pub struct SystemWorld {
     pub music: MusicSystem,
     pub animation: AnimationSystem,
 
+    pub transform_pipeline: TransformPipelineSystem,
     pub transform: TransformSystem,
     pub bvh: BvhSystem,
     pub collision: CollisionSystem,
@@ -963,6 +965,7 @@ impl SystemWorld {
             world,
             visuals,
             component,
+            &mut self.transform_pipeline,
             &mut self.camera,
             &mut self.light,
             &mut self.collision,
@@ -1176,6 +1179,8 @@ impl SystemWorld {
         // Execute/dispatch any signals emitted by AnimationSystem before downstream systems run.
         let _ = self.process_signals(world, visuals, queue, 100_000);
         queue.flush(world, self, visuals);
+
+        self.transform_pipeline.tick(world, visuals, input, dt_sec);
 
         // Ensure transforms are propagated before any camera systems consume world matrices.
         self.transform.tick(world, visuals, input, dt_sec);
