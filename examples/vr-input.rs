@@ -68,6 +68,30 @@ fn spawn_controller_cube(
     color: (f32, f32, f32, f32),
     rotation_smoothing: f32,
 ) -> engine::ecs::ComponentId {
+        /*
+        mms:
+        ControllerXR.new(true, hand, Aim) {
+            T.with_scale(0.06, 0.06, 0.12) {
+                TransformPipeline {
+                    TransformForkTRS {
+                        TransformMapTranslation {}
+                        TransformMapRotation {
+                            QuatTemporalFilter.with_smoothing_factor(rotation_smoothing)
+                        }
+                        TransformMapScale {}
+                        TransformMergeTRS {}
+                    }
+                    TransformPipelineOutput {
+                        T {
+                            Renderable.cube() {
+                                Color.rgba(color.0, color.1, color.2, color.3)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        */
     let controller_marker = universe.world.add_component(ControllerXRComponent::new(
         true,
         hand,
@@ -229,14 +253,14 @@ fn main() {
         xr_rig,
         ControllerHand::Left,
         (0.10, 0.90, 1.00, 1.0),
-        22.0,
+        220.0,
     );
     let _right = spawn_controller_cube(
         &mut universe,
         xr_rig,
         ControllerHand::Right,
         (1.00, 0.35, 0.35, 1.0),
-        14.0,
+        220.0,
     );
 
     // Enable OpenXR runtime.

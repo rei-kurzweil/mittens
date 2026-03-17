@@ -120,14 +120,15 @@ IdentLeading := Ident (
 
 CallExprTail := '(' (Expr (',' Expr)*)? ')'
 
-ComponentExprTail := '{' ComponentBody '}'
+ComponentExprHead    := Ident ('.' Ident CallExprTail)?
+ComponentExprTail    := ('{' ComponentBody)?
 
 ComponentBody := ComponentItem* '}'
 ComponentItem := CallExpr | ChildComponentExpr | PositionalExpr | NamedAssignment | Separator
 Separator    := ',' | ';'
 
 CallExpr     := Ident '(' (Expr (',' Expr)*)? ')'
-ChildComponentExpr := Ident '{' ComponentBody
+ChildComponentExpr := ComponentExprHead ComponentExprTail
 NamedAssignment := Ident '=' Expr
 PositionalExpr := Expr
 ```
@@ -171,6 +172,102 @@ T {
 ```
 
 **Meaning:** named assignments inside the body are applied to the component instance being constructed and behave like setting properties or configuration fields on the current component. Use these for transforms, metadata, flags-with-values, and other explicit configuration.
+
+## Constructor arguments and pre-body calls
+
+Component expressions look like a declarative tree — but they are not a static data format. Every node in the tree encodes one or more **function calls**.
+
+### The pre-body call
+
+A component expression head is not just a bare type name. It can include a dot-call that runs at construction time, before any body items are evaluated:
+
+```txt
+ControllerXR.new(true, hand, Aim) { ... }
+T.with_scale(0.06, 0.06, 0.12) { ... }
+Renderable.cube() { ... }
+Color.rgba(r, g, b, a)
+QuatTemporalFilter.with_smoothing_factor(rotation_smoothing)
+```
+
+**Semantics:**
+
+- `Type.new(args)` — passes positional arguments directly to the component constructor. These arguments are evaluated first, before any body items. This is the escape hatch for components whose constructor requires runtime values that cannot be expressed as named assignments (enum variants, handles, tuples, variables from the enclosing scope).
+- `Type.method(args)` — a factory or builder method invoked on the type. Equivalent to `Type::method(args)` on the host side. The result is the constructed component instance (or builder).
+- `Type.factory()` (zero-arg variant) — same as above, just a named constructor. `Renderable.cube()` is not the same as `Renderable {}` — it selects a specific construction path.
+
+**The body `{}` is optional.** If a component has no children and no in-body configuration, the braces can be omitted entirely:
+
+```txt
+// both valid:
+QuatTemporalFilter.with_smoothing_factor(0.8)
+QuatTemporalFilter.with_smoothing_factor(0.8) {}
+```
+
+### Component expressions look declarative but are function calls
+
+The visual structure resembles HTML or JSX — indented trees of named things. This is intentional: it maps directly onto cat-engine's component-tree model. But it is important to understand that **every node is a constructor call**, not a data literal.
+
+Consider the full vr-input controller example (from `examples/vr-input.rs`):
+
+```txt
+ControllerXR.new(true, hand, Aim) {
+    T.with_scale(0.06, 0.06, 0.12) {
+        TransformPipeline {
+            TransformForkTRS {
+                TransformMapTranslation {}
+                TransformMapRotation {
+                    QuatTemporalFilter.with_smoothing_factor(rotation_smoothing)
+                }
+                TransformMapScale {}
+                TransformMergeTRS {}
+            }
+            TransformPipelineOutput {
+                T {
+                    Renderable.cube() {
+                        Color.rgba(color.0, color.1, color.2, color.3)
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+At a glance this reads like a tree description. Under the hood, every line that begins a component expression is a constructor invocation:
+
+| Expression | What it actually calls |
+|---|---|
+| `ControllerXR.new(true, hand, Aim)` | `ControllerXRComponent::new(true, hand, ControllerPoseKind::Aim)` |
+| `T.with_scale(0.06, 0.06, 0.12)` | `TransformComponent::new().with_scale(0.06, 0.06, 0.12)` |
+| `TransformPipeline {}` | `TransformPipelineComponent::new()` |
+| `QuatTemporalFilter.with_smoothing_factor(rotation_smoothing)` | `QuatTemporalFilterComponent::new().with_smoothing_factor(rotation_smoothing)` |
+| `Renderable.cube()` | `RenderableComponent::cube()` (named constructor, not `::new`) |
+| `Color.rgba(r, g, b, a)` | `ColorComponent::rgba(r, g, b, a)` |
+
+This matters for a few reasons:
+
+- **Evaluation order is defined and sequential**, not declarative/simultaneous. The constructor runs first, then in-body builder calls, then children are constructed and attached. Side effects (component registration, intent emission) happen in that order.
+- **Runtime values flow in naturally.** `rotation_smoothing` and `hand` in the example above are variables from the enclosing scope. There is no special "data-binding" mechanism — they are just arguments to a function call.
+- **Named constructors are first-class.** `Renderable.cube()` and `Color.rgba(...)` are distinct construction paths, not properties set on a default instance. The pre-body call selects *which* constructor runs.
+- **The grammar must support this.** The current grammar sketch has `ChildComponentExpr := Ident '{' ComponentBody` — this needs to be extended to allow a dot-call chain between the type identifier and the opening brace. See the grammar section below.
+
+### Grammar: updated component expression head
+
+The `ChildComponentExpr` production (and the top-level component expression) should allow an optional dot-call after the type name:
+
+```txt
+ComponentExprHead := Ident ('.' Ident CallArgList)?
+CallArgList       := '(' (Expr (',' Expr)*)? ')'
+
+ComponentExpr     := ComponentExprHead ('{' ComponentBody)?
+ChildComponentExpr := ComponentExpr   // same production, used in child position
+```
+
+Notes:
+
+- Only a **single** dot-call is shown here. Chained calls (e.g. `T.new().with_scale(...)`) are possible but deferred to a later revision once evaluation semantics are settled.
+- The body `{}` is optional in both the top-level and child positions.
+- Pre-body call arguments are evaluated in the enclosing scope (the same scope as named assignments and in-body expressions).
 
 ## Evaluation model (v1)
 

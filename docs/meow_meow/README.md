@@ -10,6 +10,7 @@ Meow Meow Script (“MMS”) is the scripting + authoring language for cat-engin
 ### Spec
 
 - [Component expression format](spec/component-expression-format.md)
+  - Includes: constructor arguments, pre-body calls (`.new()`, `.with_xxx()`, `.cube()`), the "looks declarative but is function calls" model, and the updated grammar head.
 - [Tokens](spec/token.md)
 
 ### Analysis

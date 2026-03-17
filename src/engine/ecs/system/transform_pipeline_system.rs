@@ -54,11 +54,11 @@ pub struct TransformForkTrsStage {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TransformPipelineStage {
     ForkTrs(TransformForkTrsStage),
-    Block(Box<TransformPipelineBlock>),
+    Pipeline(Box<TransformPipeline>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TransformPipelineBlock {
+pub struct TransformPipeline {
     pub owner_component: Option<ComponentId>,
     pub input: TransformPipelineInput,
     pub stages: Vec<TransformPipelineStage>,
@@ -104,7 +104,7 @@ impl TransformPipelineSystem {
         &self,
         world: &World,
         root: ComponentId,
-    ) -> Option<TransformPipelineBlock> {
+    ) -> Option<TransformPipeline> {
         if world
             .get_component_by_id_as::<TransformPipelineComponent>(root)
             .is_some()
@@ -132,8 +132,8 @@ impl TransformPipelineSystem {
     pub fn pipeline_for_controller_rotation_smoothing(
         owner_component: Option<ComponentId>,
         smoothing_factor: f32,
-    ) -> TransformPipelineBlock {
-        TransformPipelineBlock {
+    ) -> TransformPipeline {
+        TransformPipeline {
             owner_component,
             input: TransformPipelineInput::ParentWorld,
             stages: vec![TransformPipelineStage::ForkTrs(TransformForkTrsStage {
@@ -150,7 +150,7 @@ impl TransformPipelineSystem {
         &self,
         world: &World,
         root: ComponentId,
-    ) -> Option<TransformPipelineBlock> {
+    ) -> Option<TransformPipeline> {
         if world
             .get_component_by_id_as::<TransformPipelineComponent>(root)
             .is_none()
@@ -175,7 +175,7 @@ impl TransformPipelineSystem {
             }
         }
 
-        Some(TransformPipelineBlock {
+        Some(TransformPipeline {
             owner_component: Some(root),
             input: TransformPipelineInput::ParentWorld,
             stages,
@@ -201,7 +201,7 @@ impl TransformPipelineSystem {
         {
             return self
                 .parse_pipeline_block(world, node)
-                .map(|block| TransformPipelineStage::Block(Box::new(block)));
+                .map(|pipeline| TransformPipelineStage::Pipeline(Box::new(pipeline)));
         }
 
         None
@@ -296,14 +296,14 @@ impl TransformPipelineSystem {
 
     pub fn evaluate_block(
         &mut self,
-        block: &TransformPipelineBlock,
+        pipeline: &TransformPipeline,
         input_world: TransformMatrix,
         dt_sec: Option<f32>,
     ) -> TransformMatrix {
         let mut channels = Self::decompose_matrix(input_world);
-        for (stage_index, stage) in block.stages.iter().enumerate() {
+        for (stage_index, stage) in pipeline.stages.iter().enumerate() {
             let mut stage_path = vec![stage_index];
-            channels = self.evaluate_stage(block.owner_component, stage, channels, &mut stage_path, dt_sec);
+            channels = self.evaluate_stage(pipeline.owner_component, stage, channels, &mut stage_path, dt_sec);
         }
         Self::recompose_matrix(channels)
     }
@@ -320,7 +320,9 @@ impl TransformPipelineSystem {
             TransformPipelineStage::ForkTrs(fork) => {
                 self.evaluate_fork_trs(owner_component, fork, input, stage_path, dt_sec)
             }
-            TransformPipelineStage::Block(block) => self.evaluate_block(block, Self::recompose_matrix(input), dt_sec).into(),
+            TransformPipelineStage::Pipeline(pipeline) => {
+                self.evaluate_block(pipeline, Self::recompose_matrix(input), dt_sec).into()
+            }
         }
     }
 

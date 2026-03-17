@@ -1,687 +1,514 @@
 # Transform pipeline
 
-This doc defines a speculative but reusable model for transform processing in the engine.
+This doc describes the current transform-pipeline direction in the engine.
 
-It is intentionally broader than XR. The same transform pipeline should be able to power:
+It is broader than XR. The same transform-pipeline machinery should be able to cover:
 
-- XR hand / controller transform stabilization
+- XR controller / hand transform stabilization
 - gizmo inheritance shaping
-- dynamic bones
-- hair
-- cat ears
-- body fat / soft follow motion
-- clothing follow / lag
-- jiggle-style secondary motion
 - stabilized helper transforms
+- dynamic-bone-style follow later
+- secondary motion later
 
-This doc is about the **general transform-processing vocabulary**.
+The important current design shift is:
 
-Related docs:
-
-- [docs/spec/vr-input-2.md](docs/spec/vr-input-2.md) for how XR input currently works and how it could feed into this pipeline model.
-- [docs/analysis/gizmo-transform-propagation.md](docs/analysis/gizmo-transform-propagation.md) for earlier motivation around gizmo transform shaping.
+- authored transform shaping is primitive-only
+- there is no filter sugar/desugaring layer
+- the runtime evaluator is `TransformPipelineSystem`
 
 ---
 
 ## Goals
 
-- Define a declarative way to process transforms in topology.
-- Allow processing only part of a transform.
-- Support both spatial filtering and temporal filtering.
-- Keep the model compatible with the engine’s topology-first component tree.
-- Keep the authored model primitive and explicit around TRS/channel operators.
+- Keep transform processing explicit in topology.
+- Support per-channel transform operations.
+- Support temporal operators without pushing runtime state into serialized authored data.
+- Keep the current runtime shape simple enough for the use cases we actually have.
 
 ## Non-goals
 
-- This doc does not fully specify implementation details of numeric integration or spring tuning.
-- This doc does not define final serialization syntax.
+- This doc does not define a final editor authoring UI.
+- This doc does not fully specify future spring / constraint / blending operators.
+- This doc does not assume we already need a general multi-input graph runtime.
 
 ---
 
-## 1. Core idea
+## 1. Current authored model
 
-The current engine mostly treats transforms as values that are authored locally and propagated through the hierarchy.
+Authoring is done with explicit pipeline primitives in the component tree.
 
-The transform pipeline idea adds a second layer:
+Current primitive components are:
 
-- transforms can be treated as **streams** flowing through topology
-- intermediate nodes can **process** those streams before they reach the final subtree
+- `TransformPipelineComponent`
+- `TransformForkTRSComponent`
+- `TransformMapTranslationComponent`
+- `TransformMapRotationComponent`
+- `TransformMapScaleComponent`
+- `TransformDropComponent`
+- `TransformMergeTRSComponent`
+- `TransformPipelineOutputComponent`
+- `Vector3TemporalFilterComponent`
+- `QuatTemporalFilterComponent`
 
-So instead of only having:
+The common authored shape today is:
 
 ```text
-ParentTransform -> ChildTransform -> Renderable
-```
-
-we could have:
-
-```text
-Transform source -> Transform pipeline -> Processed transform -> Renderable subtree
-```
-
-This lets the engine express:
-
-- channel filtering
-- smoothing
-- spring follow
-- parent-space remapping
-- local/world overrides
-- TRS splitting and recomposition
-
----
-
-## 2. `TransformPipeline` vs `TransformPipelineProcessor`
-
-A useful separation is:
-
-- `TransformPipeline`: the **authored topology-side** representation
-- `TransformPipelineProcessor`: the **runtime/system-side** evaluator
-
-### `TransformPipeline`
-
-This is the component-tree analog.
-
-It would be represented by nodes/components in the ECS topology, such as:
-
-- `TransformForkTRS`
-- `TransformMapRotation`
-- `QuatTemporalSmooth`
-- `TransformMergeTRS`
-- `TransformPipelineOutput`
-
-This keeps the authored structure declarative and inspectable.
-
-### `TransformPipelineProcessor`
-
-This is more of a system/runtime concern.
-
-Its job would be to:
-
-- walk the relevant transform-pipeline topology
-- evaluate operators in order
-- maintain state for temporal operators
-- produce the processed transform stream that downstream nodes use
-
-That means the processor is not really “just another component”; it is a system that interprets authored pipeline nodes.
-
-### Internal parsed shape in `TransformPipelineSystem`
-
-Even if authored topology stays component-tree-shaped, the runtime system should probably parse that topology into a simpler internal node graph before evaluation.
-
-The MVP internal shape can stay small:
-
-```rust
-struct TransformPipelineBlock {
-  owner_component: Option<ComponentId>,
-  input: TransformPipelineInput,
-  stages: Vec<TransformPipelineStage>,
-  output: TransformPipelineOutput,
-}
-
-enum TransformPipelineInput {
-  ParentWorld,
-}
-
-enum TransformPipelineStage {
-  ForkTrs(TransformForkTrsStage),
-  Block(Box<TransformPipelineBlock>),
-}
-
-struct TransformForkTrsStage {
-  translation_ops: Vec<TransformPipelineVec3Op>,
-  rotation_ops: Vec<TransformPipelineQuatOp>,
-  scale_ops: Vec<TransformPipelineVec3Op>,
-  merge_mode: TransformPipelineMergeMode,
-}
-
-enum TransformPipelineVec3Op {
-  Pass,
-  Drop,
-  TemporalSmooth { smoothing_factor: f32 },
-}
-
-enum TransformPipelineQuatOp {
-  Pass,
-  Drop,
-  TemporalFilter { smoothing_factor: f32 },
-}
-```
-
-That shape matches the goals you described:
-
-- one pipeline block has an input, an output, and one or more processing stages
-- a stage can contain vector/quaternion operators
-- a stage can also contain another pipeline block
-- the runtime can preserve a compact execution form even if authored topology later grows more expressive
-
-The current MVP parser can stay narrow:
-
-- parse explicit `TransformPipelineComponent` / fork / map / merge / output topology
-- synthesize controller-rotation-smoothing blocks for tests or helper construction when useful
-- later expand to parse additional dedicated authored pipeline components from topology
-
----
-
-## 3. Primitive-only authored model
-
-The current direction is to model transform processing directly in terms of primitive authored operators.
-
-That means authored topology is expected to use nodes like:
-
-- `TransformPipeline`
-- `TransformForkTRS`
-- `TransformMapTranslation`
-- `TransformMapRotation`
-- `TransformMapScale`
-- `TransformDrop`
-- `TransformMergeTRS`
-- `TransformPipelineOutput`
-
-The runtime evaluator should not need a separate sugar/desugaring path for transform filtering.
-
-Instead, even simple “inherit some channels, drop others” behavior should be authored as an explicit primitive operator subtree.
-
----
-
-## 4. Transform stream / operator mental model
-
-The important mental model is:
-
-- a transform source produces a transform stream
-- operators fork, filter, smooth, or remap that stream
-- the processed result is reattached to a visible or interactive subtree
-
-For XR this might look like:
-
-```text
-ControllerXRComponent
-  T(raw)
-    TransformPipeline
-      TransformForkTRS
-        TransformMapRotation
-          QuatTemporalSmooth
-      TransformMergeTRS
-        T(filtered)
-          hand mesh / helper / ray subtree
-```
-
-But the same idea also fits:
-
-- dynamic-bone chains
-- jiggle follow helpers
-- gizmo visual subtrees
-- camera-relative attached props
-
----
-
-## 5. Split into TRS is a fork, not a map
-
-This terminology matters.
-
-Breaking a transform into:
-
-- translation
-- rotation
-- scale
-
-is not really a “map”. It is a **fork** into channels.
-
-So the cleaner vocabulary is:
-
-- `TransformForkTRS`
-- `TransformMapTranslation`
-- `TransformMapRotation`
-- `TransformMapScale`
-- `TransformMergeTRS`
-
-Conceptually:
-
-```text
-Transform
-  -> TransformForkTRS
-    -> T channel
-    -> R channel
-    -> S channel
-  -> per-channel operators
-  -> TransformMergeTRS
-  -> Transform
-```
-
-This is clearer than saying “TransformMap splits TRS”, because splitting is branch creation, not transformation.
-
----
-
-## 6. Proposed operator taxonomy
-
-If the engine adopts a transform pipeline model, the operators likely fall into a few classes.
-
-### A. Structural / channel operators
-
-- `TransformForkTRS`
-- `TransformMergeTRS`
-- `TransformCompose`
-- `TransformDecompose`
-
-These are about representation changes.
-
-### B. Spatial operators
-
-- `TransformFilterChannels`
-- `TransformOverrideTranslation`
-- `TransformOverrideRotation`
-- `TransformOverrideScale`
-- `TransformParentSpaceMap`
-- `TransformLocalSpaceMap`
-
-These are about what spatial data flows through.
-
-### C. Temporal operators
-
-- `Vector3TemporalSmooth`
-- `QuatTemporalSmooth`
-- `TransformTemporalSmooth`
-- `TransformSpring`
-- `TransformCriticallyDamped`
-
-These are stateful and operate over time.
-
-Important distinction:
-
-- `QuatTemporalSmooth` is the natural fit for rotation channels
-- `Vector3TemporalSmooth` is still very useful, but mostly for translation, velocity-like streams, and other physics-style vector targets
-
-### D. Routing / attachment operators
-
-- `TransformPipelineInput`
-- `TransformPipelineOutput`
-- `TransformPipelineTarget`
-
-These are about where the processed transform comes from and where it is applied.
-
----
-
-## 7. Example authored shapes
-
-### XR hand / controller stabilization
-
-The more explicit authored shape probably wants to look like this:
-
-```text
-ControllerXRComponent {
-  T {
-    TransformPipeline {
-      with_processing(
-        TransformForkTRS {
-          TransformMapRotation {
-            QuatTemporalFilter {
-              smoothing_factor = 1.0
-            }
-          }
-        }
-      )
-      with_output(
-        T {
-          R {
-            CUBE
-          }
-        }
-      )
-    }
-  }
-}
-```
-
-Important parts of this shape:
-
-- the input transform is explicit from the parent `T {}` context
-- `TransformPipeline` does not need a separate input node for the common case
-- a future `with_input(...)` form could still exist for non-parent inputs or multi-source pipelines
-- the output subtree is also explicit, which fits the topology-first style of the engine
-
-### Direct no-scale inheritance equivalent
-
-An authored subtree that keeps translation + rotation while dropping scale can be written directly as:
-
-```text
-TransformPipeline {
-  with_processing(
-    TransformForkTRS {
+TransformComponent
+  TransformPipeline
+    TransformForkTRS
       TransformMapTranslation
       TransformMapRotation
-      TransformMapScale {
-        TransformDrop
-      }
-    }
-  )
+        QuatTemporalFilter
+      TransformMapScale
+    TransformMergeTRS
+    TransformPipelineOutput
+      TransformComponent
+        ... driven subtree ...
+```
+
+Two important current examples:
+
+- `examples/vr-input.rs` uses a pipeline to smooth controller rotation while leaving translation and scale effectively passthrough.
+- `src/engine/ecs/system/gizmo_system.rs` uses pipelines to keep or drop inherited translation / rotation / scale for gizmo visual groups.
+
+So the authored model is already doing real work; this is not just speculative vocabulary anymore.
+
+---
+
+## 2. Runtime ownership: `TransformPipelineSystem`
+
+There is no separate `TransformPipelineProcessor` type in the codebase.
+
+That term is redundant for the current architecture.
+
+The runtime evaluator is simply:
+
+- `TransformPipelineSystem`
+
+Today it is responsible for:
+
+- parsing authored pipeline topology rooted at a `TransformPipelineComponent`
+- evaluating the parsed pipeline against an inherited world transform
+- owning temporal operator state
+- returning the processed world transform and any explicit output roots
+
+`TransformSystem` stays responsible for ordinary transform-tree propagation.
+
+Its relationship to the pipeline system is:
+
+1. walk the normal transform subtree
+2. when a node is a transform-pipeline boundary, ask `TransformPipelineSystem` to evaluate it
+3. continue traversal from the pipeline output roots, or from normal children if there are none
+
+So the clean runtime split is:
+
+- `TransformSystem`: subtree propagation / cached world matrices / side effects
+- `TransformPipelineSystem`: transform-processing evaluation
+
+That is enough. We do not need a second “processor” abstraction unless we later introduce a genuinely separate compiled-runtime layer.
+
+---
+
+## 3. What shape pipelines have in memory today
+
+The current in-memory shape is not a general graph.
+
+It is a parsed rooted program-like tree:
+
+```rust
+pub struct TransformPipeline {
+    pub owner_component: Option<ComponentId>,
+    pub input: TransformPipelineInput,
+    pub stages: Vec<TransformPipelineStage>,
+    pub output: TransformPipelineOutput,
+}
+
+pub enum TransformPipelineStage {
+    ForkTrs(TransformForkTrsStage),
+  Pipeline(Box<TransformPipeline>),
+}
+
+pub struct TransformForkTrsStage {
+    pub translation_ops: Vec<TransformPipelineVec3Op>,
+    pub rotation_ops: Vec<TransformPipelineQuatOp>,
+    pub scale_ops: Vec<TransformPipelineVec3Op>,
+    pub merge_mode: TransformPipelineMergeMode,
 }
 ```
 
-### Dynamic bone / secondary motion shape
+And channel values are carried in:
 
-For dynamic-bone-style follow, the pipeline may be attached to a driven authored transform:
-
-```text
-HeadBoneTransform {
-  EarBaseTransform {
-    TransformPipeline {
-      with_processing(
-        TransformForkTRS {
-          TransformMapRotation {
-            TransformSpring {
-              stiffness = ...
-              damping = ...
-            }
-          }
-        }
-      )
-      with_output(
-        T {
-          cat ear renderable
-        }
-      )
-    }
-  }
+```rust
+pub struct TransformPipelineChannels {
+    pub translation: [f32; 3],
+    pub rotation_quat_xyzw: [f32; 4],
+    pub scale: [f32; 3],
 }
 ```
 
-This same pattern can be adapted for:
+The important properties of this runtime shape are:
 
-- hair strands
-- tails
-- clothing anchors
-- body fat / soft tissue follow
+- one parsed block represents one rooted pipeline subtree
+- input is currently only `ParentWorld`
+- evaluation is stage-ordered, not edge-scheduled
+- the main stage type today is TRS fork + per-channel op lists
+- nested pipeline blocks are possible structurally
+- output is either:
+  - `ImplicitTransform`, or
+  - `OutputRoots(Vec<ComponentId>)`
 
-### Does fork need merge?
+So the current runtime model is much closer to:
 
-Not always.
+- a small compiled pipeline program
 
-There are really at least three useful shapes:
+than to:
 
-1. **fork only, implicit passthrough merge**
-   - useful when only one or two channels are modified
-   - unspecified channels inherit the input transform unchanged
-   - this is probably the nicest authored UX for common XR smoothing cases
-
-2. **fork + explicit merge**
-   - useful when the authored graph wants to make recomposition visible
-   - useful when multiple channel branches or multiple intermediate values need to be combined explicitly
-   - likely best for more advanced pipeline authoring and debugging
-
-3. **fork to non-transform outputs**
-   - useful when a branch drives something that is not immediately recomposed into a full transform
-   - plausible for dynamic-bone internals, helper state, or future constraint systems
-
-So the likely direction is:
-
-- `TransformForkTRS` is fundamental
-- `TransformMergeTRS` exists, but is not mandatory in every authored shape
-- common cases can treat merge as implicit at pipeline output time if only a partial set of channels was processed
-
-For XR controller smoothing, implicit merge is probably fine.
-
-For dynamic bones and richer secondary motion, explicit merge may become more useful.
+- a graph of arbitrary nodes and edges
 
 ---
 
-## 8. Temporal smoothing specifically
+## 4. What `TransformPipeline` does in memory
 
-If the main immediate need is “smooth only part of a transform”, then the most useful first operator is probably a rotation-focused temporal operator.
+`TransformPipeline` is the runtime representation of one authored pipeline root.
 
-Examples:
+Conceptually it means:
 
-- `QuatTemporalFilter`
-- `QuatTemporalSmooth`
-- `RotationTemporalFilter`
-- `Vector3TemporalSmooth` for translation or other vector-valued streams
+- take one input transform stream
+- run an ordered list of processing stages on it
+- produce one processed transform stream
+- optionally redirect traversal to explicit output roots
 
-For XR controller/hand proxies, practical use cases are:
+In other words, a block is not “a transform node” in world topology.
 
-- keep translation responsive
-- smooth small rotational jitter
-- optionally smooth translation less aggressively than rotation
+It is an internal executable description for:
 
-For dynamic bones / jiggle-like systems, translation and rotation may both be temporal targets, but they likely want different operators than plain exponential smoothing.
+- one pipeline boundary
+- one input
+- one ordered body of work
+- one output routing decision
 
-Examples:
+That means the in-memory `TransformPipeline` type is not the authored ECS component of the same name.
 
-- hair strands may want spring / lag behavior on rotation and/or tip position
-- cat ears may want head-follow rotation plus delayed secondary motion
-- body fat / soft tissue may want translation-oriented follow with damping
-- clothing anchors may want filtered transforms that lag behind the driver slightly
+It is a parsed runtime pipeline description whose semantics are closer to:
 
-So it is useful to think in terms of:
+- pipeline program
+- compiled subtree
+- executable transform-processing block
 
-- simple smoothing operators
-- spring / lag operators
-- eventually constraint-aware operators
+than to a reusable graph block with free-form incoming and outgoing edges.
 
-rather than one monolithic temporal filter type.
+### Why blocks exist at all
+
+Blocks let the runtime separate two concerns:
+
+- authored topology shape
+- execution shape
+
+The authored topology is a component subtree.
+
+The runtime does not want to evaluate that raw topology directly every time at the level of individual ECS component checks while also applying math.
+
+So it parses the topology into a smaller internal representation that says, in effect:
+
+- here is the input source
+- here are the stages
+- here are the channel ops
+- here is where traversal should continue afterward
+
+That is what the block is for.
+
+### Why the current block shape is a bit awkward
+
+The current parsed `TransformPipeline` shape works, but it is slightly more abstract than what we actually need today.
+
+Current reality:
+
+- we have one input source
+- we have ordered stages
+- we mostly have one real stage family: TRS fork with per-channel ops
+- we are not doing graph scheduling
+- we are not doing multi-input composition
+- we are not sharing subgraphs across pipelines
+
+So the current `Pipeline(Box<TransformPipeline>)` recursion is more general than our current authored use cases require.
+
+That does not make it wrong, but it does mean:
+
+- the runtime shape is currently “tree of blocks/stages”
+- not “graph of nodes/edges”
+- and not “flat instruction list” either
 
 ---
 
-## 9. Common runtime machinery for `src/engine/ecs/system/transform_pipeline_system.rs`
+## 5. How evaluation works today
 
-There is not a `src/engine/ecs/system/transform_pipeline_system.rs` yet, but the current code already shows what common machinery belongs there.
+At runtime, evaluation is:
 
-Today:
+1. parse the rooted component subtree if the current node is a `TransformPipelineComponent`
+2. decompose the inherited world matrix into channels:
+   - translation
+   - rotation quaternion
+   - scale
+3. apply stages in order
+4. recompose a world matrix
+5. return the processed world matrix plus output roots
 
-- subtree traversal and inherited-world propagation live in `TransformSystem`
-- transform-pipeline parsing/evaluation lives in `TransformPipelineSystem`
+The main evaluator functions are:
 
-The common responsibilities likely include:
+- `parse_component_tree(...)`
+- `parse_pipeline_block(...)`
+- `parse_fork_trs(...)`
+- `evaluate_pipeline_node(...)`
+- `evaluate_block(...)`
+- `evaluate_stage(...)`
+- `evaluate_fork_trs(...)`
 
-- reading the input transform for a pipeline boundary
-- decomposing a transform into translation / basis / scale channels
-- orthonormalizing rotation when scale is removed
-- extracting scale magnitudes from basis vectors
-- recomposing a final transform from partially processed channels
-- storing per-node temporal state for filters, springs, and dampers
-- evaluating authored operator subtrees in a deterministic order
-- publishing the resulting transform to the output subtree
+Current operator behavior is intentionally simple:
 
-The transform-pipeline runtime already owns the seed of this shared layer:
+- vec3 ops: `Pass`, `Drop`, `TemporalSmooth`
+- quat ops: `Pass`, `Drop`, `TemporalFilter`
 
-- translation passthrough logic
-- basis extraction from the inherited world matrix
-- rotation-only reconstruction via orthonormalization
-- scale-only reconstruction via axis magnitudes
+Current merge behavior is also simple:
 
-So the likely structure is:
+- `ImplicitPassthrough`
+- `Explicit`
 
-- keep decomposition / recomposition helpers in `src/engine/ecs/system/transform_pipeline_system.rs`
-- keep `TransformSystem` focused on general transform propagation while delegating transform-processing nodes to the pipeline system
+But today both modes reassemble the same channel set in practice; explicit merge is mostly an authored/runtime marker, not a distinct recomposition algorithm yet.
 
-This is the key architectural benefit: spatial filtering, temporal filtering, and dynamic-bone follow stop being separate ad hoc systems.
+---
 
-### Where temporal state can live
+## 6. Temporal state shape
 
-There are a few reasonable options for where filter state should live.
+Temporal state currently lives in `TransformPipelineSystem`, not on authored components.
 
-#### Option A: system-owned state keyed by parsed operator path
+It is keyed by:
 
-This is the current MVP direction.
+- `owner_component`
+- parsed `stage_path`
 
-- `TransformPipelineSystem` owns temporal state caches
-- each state entry is keyed by the owning component plus the parsed stage/operator path
-- authored components stay purely declarative
+via:
 
-Pros:
-
-- no runtime state leaks into serialized component data
-- easy to reset/rebuild when topology changes
-- one place to manage vec3/quat/spring operator history
-
-Cons:
-
-- requires stable path/key generation when parsing authored topology
-- reparsing or topology churn has to preserve identity carefully if state continuity matters
-
-#### Option B: runtime state attached directly to operator components
-
-In this model, each temporal operator component stores non-serialized runtime state.
-
-Pros:
-
-- state identity is naturally tied to the operator node itself
-- reparsing becomes simpler because the state is already located on the authored node
-
-Cons:
-
-- mixes authored config and runtime state inside component payloads
-- makes serialization/lifecycle boundaries less clean
-- gets awkward if one authored node is reused in multiple evaluation contexts later
-
-#### Option C: state attached to output transforms or driven targets
-
-In this model, the driven transform stores the temporal state that produced it.
-
-Pros:
-
-- easy to think about from the perspective of “this output is smoothed”
-
-Cons:
-
-- poor fit for pipelines that fork into multiple channels or multiple outputs
-- awkward for nested blocks or non-transform intermediate values
-- couples filter state to targets instead of operators
-
-The strongest current direction is still Option A: system-owned state keyed by parsed operator identity.
-
-### How temporal filtering should scale with frame rate
-
-There are also a few reasonable update models.
-
-#### Option 1: raw per-frame alpha
-
-Example:
-
-```text
-output = lerp(previous, input, smoothing_factor)
+```rust
+struct TransformPipelineStageKey {
+    owner_component: Option<ComponentId>,
+    stage_path: Vec<usize>,
+}
 ```
 
-Pros:
+And the system stores separate state maps for:
 
-- very simple
+- vec3 temporal filters
+- quat temporal filters
 
-Cons:
+This is a good match for the current goals:
 
-- frame-rate dependent
-- the same authored value feels different at 72 Hz vs 144 Hz
+- authored components stay declarative
+- runtime state is not serialized
+- state identity follows the parsed operator location inside a pipeline root
 
-#### Option 2: exponential decay using `dt`
+The tradeoff is that reparsing identity has to remain stable enough for temporal continuity.
 
-Example:
+---
 
-```text
-alpha = 1 - exp(-lambda * dt)
-output = lerp(previous, input, alpha)
+## 7. What our current use cases actually need
+
+The current real use cases are narrower than a general graph system.
+
+### A. XR controller rotation smoothing
+
+Needed behavior:
+
+- single input transform
+- decompose to TRS
+- smooth rotation only
+- pass translation through
+- pass scale through
+- drive an output subtree
+
+This is exactly what the current block + fork + per-channel-op shape is good at.
+
+### B. Gizmo inheritance shaping
+
+Needed behavior:
+
+- single input transform
+- keep or drop selected channels
+- optionally produce multiple authored visual groups with different inheritance behavior
+- continue traversal from explicit output roots
+
+This is also a strong fit for the current shape.
+
+### C. Likely near-future use cases
+
+Still likely to fit the current shape:
+
+- translation smoothing
+- no-scale attachment helpers
+- world/local visual-space shaping
+- simple follow or damping operators
+
+### D. Not required yet
+
+Not actually needed yet:
+
+- multiple input streams blended into one output
+- arbitrary fan-in between operators
+- arbitrary fan-out between internal operators
+- edge-level routing semantics
+- shared reusable subgraphs
+- cycle handling
+- topological scheduling of arbitrary node graphs
+
+That distinction matters. It suggests we should not over-design the runtime around graph problems we do not have yet.
+
+---
+
+## 8. Should this be `TransformPipelineNode` / `TransformPipelineEdge` instead?
+
+Probably not yet.
+
+A node/edge runtime becomes attractive when at least one of these becomes real:
+
+- multiple upstream sources can feed one operator
+- one operator’s result can feed multiple downstream operators independently
+- subgraphs are shared or instanced internally
+- evaluation order is no longer just rooted-tree traversal
+- operators need explicit typed ports and edge routing
+
+That is not the current system.
+
+Current reality is:
+
+- rooted authored subtree
+- one inherited input transform
+- ordered stage evaluation
+- per-channel op lists
+- optional nested pipeline blocks
+
+So a `Node` / `Edge` runtime would mostly add ceremony right now.
+
+It would likely complicate:
+
+- parsing
+- temporal-state identity
+- debugging
+- authored/runtime correspondence
+
+without clearly helping the current use cases.
+
+### When a graph model would start making sense
+
+If we later add real features like:
+
+- blend between parent world and another transform source
+- mix multiple constraints into one output
+- branch one channel stream into multiple independent consumers
+- explicit retargeting and recombination flows
+
+then a graph runtime may become the better abstraction.
+
+At that point, a shape like this could make sense:
+
+```rust
+struct TransformPipelineNode {
+    id: TransformPipelineNodeId,
+    op: TransformPipelineOp,
+    inputs: Vec<TransformPipelinePort>,
+    outputs: Vec<TransformPipelinePort>,
+}
+
+struct TransformPipelineEdge {
+    from_node: TransformPipelineNodeId,
+    from_port: usize,
+    to_node: TransformPipelineNodeId,
+    to_port: usize,
+}
 ```
 
-Pros:
-
-- much more frame-rate stable
-- one authored smoothing parameter can behave consistently across different runtimes
-- works well for both vec3 and quat filters
-
-Cons:
-
-- authored parameter semantics need to be documented clearly (`lambda`, half-life, or time constant)
-
-#### Option 3: fixed-step simulation with an accumulator
-
-Example:
-
-- accumulate frame time
-- step the filter at a fixed simulation rate (for example 120 Hz)
-- optionally interpolate presentation output
-
-Pros:
-
-- best determinism
-- often a better fit for spring/dynamic-bone operators
-
-Cons:
-
-- more machinery
-- may be overkill for the first smoothing/filter MVP
-
-The current MVP implementation uses Option 2 when `dt` is available:
-
-- state lives in `TransformPipelineSystem`
-- vec3/quat filters are keyed by parsed stage path
-- alpha is computed as `1 - exp(-smoothing_factor * dt)`
-- if `dt` is unavailable, the implementation falls back to a clamped raw alpha as a best-effort path
-
-That is a good starting point for XR smoothing.
-
-If dynamic bones and springs become a primary use case, a later fixed-step path may make sense for those operators specifically.
-
-## 10. Integration with the current topology model
-
-There is one architectural constraint that matters here:
-
-- this ECS is topology-first and node-oriented
-- it is not a free-form “many arbitrary components on one entity” model
-
-So whatever transform pipeline exists likely needs to be representable as a subtree of nodes/components.
-
-That is why the operator-tree framing is appealing.
-
-It matches the style of:
-
-- source node
-- processor node(s)
-- output node
-- actual renderable / interaction subtree
-
-That is also why the transform filter proposal in the gizmo docs naturally ended up as a node in the topology.
-
-So the likely direction is:
-
-- **transform processing as subtree topology**, not hidden magical flags on `TransformComponent`
-- **runtime execution as `TransformPipelineProcessor`**, not ad hoc logic scattered across unrelated systems
+But that should be introduced when the use cases demand it, not in advance.
 
 ---
 
-## 11. Practical recommendation
+## 9. What would be a better flexible shape if we want to evolve carefully
 
-The strongest current recommendation seems to be:
+The best near-term direction is probably:
 
-1. define a broader **transform pipeline** concept in the spec
-2. treat TRS split as a **fork**
-3. allow both implicit merge and explicit `TransformMergeTRS`, depending on authored complexity
-4. use explicit primitive operator subtrees for channel inheritance/drop behavior
-5. introduce temporal smoothing as one operator family inside that model
-6. keep `TransformPipeline` as the component-tree analog
-7. keep shared channel-processing math in `TransformPipelineSystem`
-8. keep `TransformPipelineProcessor` as the runtime/system that evaluates it
+- keep the authored topology exactly as it is now
+- keep `TransformPipelineSystem` as the sole runtime evaluator
+- keep the internal representation rooted and tree-shaped
+- make the internal names a little more honest about what they are
 
-This avoids painting the engine into a corner where:
+In practice there are two reasonable choices.
 
-- `TransformFilter` is one system
-- temporal smoothing is another unrelated system
-- dynamic-bone follow is a third unrelated system
+### Option A: keep the current shapes, just clarify semantics
 
-Instead, they become different uses of the same transform-processing vocabulary.
+That means:
+
+- keep the current parsed `TransformPipeline` type
+- keep `TransformPipelineStage`
+- keep `TransformForkTrsStage`
+
+and document that:
+
+- a block is an executable rooted pipeline description
+- not a general graph block
+
+This is the smallest change and is probably good enough today.
+
+### Option B: rename toward “program” / “plan” terminology later
+
+If names start feeling misleading, a future rename could be cleaner:
+
+- parsed `TransformPipeline` -> `TransformPipelineProgram` or `TransformPipelinePlan`
+- `TransformPipelineStage` -> `TransformPipelineOpGroup` or `TransformPipelineStep`
+
+That would better reflect current semantics:
+
+- one input
+- ordered execution
+- rooted subtree
+- no explicit edges
+
+This may read more clearly than “block inside block inside stage”.
 
 ---
 
-## 12. Summary
+## 10. Recommended direction
 
-The broader transform-pipeline model should:
+The strongest current recommendation is:
 
-- provide a reusable transform-processing vocabulary
-- unify spatial filtering and temporal filtering under one authored topology model
-- allow simple pipelines to omit explicit merge when recomposition can be implicit
-- keep quaternion-first smoothing for rotation channels
-- keep vector smoothing available for translation and other physics-style vector streams
-- scale from XR stabilization to dynamic bones and secondary motion
+1. keep the authored model primitive-only
+2. treat `TransformPipelineSystem` as the runtime evaluator; do not introduce a separate `TransformPipelineProcessor` concept
+3. treat the current internal shape as a rooted parsed execution plan, not a general graph
+4. keep `TransformPipeline` for now unless the parsed/runtime-vs-authored name overlap starts getting in the way
+5. only move to `Node` / `Edge` if we gain real multi-input or shared-subgraph use cases
 
-That broader model could cover:
+This keeps the architecture aligned with what we actually need today:
 
-- XR hands/controllers
+- XR smoothing
 - gizmo inheritance shaping
-- stabilized helper transforms
-- dynamic bones
-- jiggle / follow motion
-- hair / ears / clothing / soft secondary motion
+- simple future follow/damping operators
+
+without prematurely paying graph-runtime complexity costs.
+
+---
+
+## 11. Summary
+
+Today, transform pipelines are:
+
+- authored as explicit topology primitives
+- evaluated by `TransformPipelineSystem`
+- represented in memory as rooted parsed blocks/stages
+- executed as ordered channel-processing steps over one inherited world transform
+
+The parsed in-memory `TransformPipeline` currently means:
+
+- one compiled pipeline boundary
+- one input
+- ordered processing stages
+- one output routing decision
+
+That is a good fit for the real use cases we have now.
+
+`TransformPipelineNode` / `TransformPipelineEdge` is a plausible future direction only if we start needing true graph semantics such as multi-input blending, shared subgraphs, or explicit port routing.
