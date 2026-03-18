@@ -18,7 +18,7 @@ The current parser/tokenizer live in `src/meow_meow/`.
 The component expression AST intentionally mirrors the authoring model:
 
 - `component_type`: identifier
-- `parameters`: header `k=v`
+- `head_call`: optional pre-body constructor/factory call like `.new(...)` or `.cube(...)`
 - `positional`: sugary body expressions
 - `calls`: method-like invocations
 - `children`: nested component expressions

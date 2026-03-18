@@ -56,7 +56,7 @@ These are reserved and cannot be used as bare identifiers:
 A component expression looks like:
 
 ```txt
-ComponentType header_param="value" other=123 {
+ComponentType.method_like_constructor(arg1, arg2) {
     with_builder_style_call()
     ChildType { "positional", 1, true }
     SOME_FLAG
@@ -66,7 +66,7 @@ ComponentType header_param="value" other=123 {
 There are two useful ways to think about the things inside a component body from the receiving component's point of view:
 
 - Named assignments (property-like)
-  - Syntax: `Ident = Expr` inside the body (in addition to header params after the type).
+  - Syntax: `Ident = Expr` inside the body.
   - Meaning: these are applied to the component instance being constructed. They behave like setting properties or configuration fields on the current component.
   - Use when you want to set a specific named parameter on the current component (for example transforms, flags with values, or other explicit config).
 
@@ -189,6 +189,26 @@ Color.rgba(r, g, b, a)
 QuatTemporalFilter.with_smoothing_factor(rotation_smoothing)
 ```
 
+We intentionally use `.` here, not `::`.
+
+Reasoning:
+
+- it reads like a constructor/factory/builder method on the component type
+- it keeps MMS component expressions looking like normal callable syntax rather than Rust path syntax
+- it makes alternate constructors and named factories read naturally, e.g. `Renderable.cube()` and `Color.rgba(...)`
+
+So the intended style is:
+
+- `ControllerXR.new(...)`
+- `T.with_scale(...)`
+- `Renderable.cube()`
+
+and not:
+
+- `ControllerXR::new(...)`
+- `T::with_scale(...)`
+- `Renderable::cube()`
+
 **Semantics:**
 
 - `Type.new(args)` — passes positional arguments directly to the component constructor. These arguments are evaluated first, before any body items. This is the escape hatch for components whose constructor requires runtime values that cannot be expressed as named assignments (enum variants, handles, tuples, variables from the enclosing scope).
@@ -276,7 +296,8 @@ Component expressions evaluate into an engine component subtree.
 For a component expression:
 
 ```txt
-Foo a=1 {
+Foo {
+  a = 1
   with_bar("x")
   Child { 2 }
 }

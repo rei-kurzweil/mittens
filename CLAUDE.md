@@ -129,3 +129,5 @@ Architecture decisions with significant non-obvious reasoning are documented in 
 - `docs/spec/vr-input.md` — OpenXR controller/hand-root pose flow
 - `docs/spec/hand-tracking-armature.md` — design for driving glTF skeletons from hand tracking
 - `docs/spec/render-phases.md` — render graph details
+- `docs/spec/inspector-panel.md` — inspector + component-tree panel design; panel-prefab pattern
+- `docs/spec/file-tree-panel.md` — `FileTreePanel`, `AssetSystem`, and the general panel-prefab vocabulary
