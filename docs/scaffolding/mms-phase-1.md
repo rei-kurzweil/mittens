@@ -10,6 +10,10 @@ emitter interface) is designed here because encoding to MMS *is* un-parsing —
 and designing the printer with a target-language emitter trait from the start
 costs almost nothing while keeping the future transpiler path open.
 
+For the relationship between the evaluator output, `ComponentCodec`, and the
+intent system — including why `BuildCommand` is a temporary scaffold and what
+replaces it — see `mms-runtime-and-intents.md`.
+
 ---
 
 ## 1. Current state audit

@@ -46,12 +46,18 @@ details and rationale.
 - [ ] Integration test: send `ParseAndEval`, receive `Commands` with correct `CreateComponent`
 - [ ] Integration test: malformed source → `Error` response
 
-## Step 6 — ComponentRegistry
+## Step 6 — SpawnComponentTree intent (replace BuildCommand)
 
-- [ ] Extract `ComponentCodec::create_component` match into `ComponentRegistry`
-- [ ] `ComponentRegistry::standard()` populates all known types
-- [ ] `ComponentCodec` uses `ComponentRegistry` (no behavior change)
-- [ ] Main thread command executor uses the same `ComponentRegistry` to dispatch `BuildCommand::CreateComponent`
+`BuildCommand` from steps 4–5 is a temporary scaffold. Before phase 1 is
+done, replace it with the proper pathway. See `mms-runtime-and-intents.md`
+and `mms-world-topology-api.md`.
+
+- [ ] Add `IntentValue::SpawnComponentTree { root: Box<ComponentExpression>, parent: Option<ComponentId> }`
+- [ ] Move `ComponentCodec::create_component` to the intent executor as a private helper (no separate struct needed — this is where the type→factory mapping lives)
+- [ ] Implement `SpawnComponentTree` handler in the intent executor: walk `ComponentExpression`, call factory by type name, apply named assignments + calls, wire topology, let each component's `init()` emit its own `Register*` intents
+- [ ] Update evaluator thread to produce `SpawnComponentTree` intent instead of `Vec<BuildCommand>`
+- [ ] Update integration test: send `ParseAndEval`, evaluator returns a `SpawnComponentTree` intent that the main thread can execute
+- NOTE: `IntentValue::AttachClone` currently calls `ComponentCodec` directly inside the intent executor. This must be refactored to use `encode_mms` + `SpawnComponentTree` when ComponentCodec is removed (tracked here; not required to complete before phase 1 if ComponentCodec removal is deferred)
 
 ## Step 7 — MmsPrinter
 
