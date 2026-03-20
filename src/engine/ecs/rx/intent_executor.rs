@@ -30,6 +30,8 @@ impl RxIntentExecutor {
                 | IntentValue::SetColor { .. }
                 | IntentValue::SetPosition { .. }
                 | IntentValue::Attach { .. }
+                | IntentValue::QueryFindComponent { .. }
+                | IntentValue::QueryFindAllComponents { .. }
                 | IntentValue::AttachClone { .. }
                 | IntentValue::Detach { .. }
                 | IntentValue::RemoveChild { .. }
@@ -164,6 +166,22 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     },
                 );
             }
+        }
+
+        IntentValue::QueryFindComponent {
+            root,
+            selector,
+            reply,
+        } => {
+            let _ = reply.send(world.find_component(*root, selector));
+        }
+
+        IntentValue::QueryFindAllComponents {
+            root,
+            selector,
+            reply,
+        } => {
+            let _ = reply.send(world.find_all_components(*root, selector));
         }
 
         IntentValue::AttachClone {

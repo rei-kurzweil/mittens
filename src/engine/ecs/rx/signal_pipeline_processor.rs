@@ -130,6 +130,8 @@ impl SignalPipelineProcessor {
             | IntentValue::ReplExec { .. }
             | IntentValue::Attach { .. }
             | IntentValue::AttachClone { .. }
+            | IntentValue::QueryFindComponent { .. }
+            | IntentValue::QueryFindAllComponents { .. }
             | IntentValue::RemoveChild { .. }
             | IntentValue::RemoveChildren { .. }
             | IntentValue::UpdateTransformWorld { .. }
@@ -210,6 +212,8 @@ impl SignalPipelineProcessor {
             | IntentValue::ReplExec { .. }
             | IntentValue::Attach { .. }
             | IntentValue::AttachClone { .. }
+            | IntentValue::QueryFindComponent { .. }
+            | IntentValue::QueryFindAllComponents { .. }
             | IntentValue::RemoveChild { .. }
             | IntentValue::RemoveChildren { .. } => None,
 

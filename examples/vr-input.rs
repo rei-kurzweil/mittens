@@ -16,6 +16,70 @@ use cat_engine::{engine, utils};
 #[path = "example_util/mod.rs"]
 mod example_util;
 
+fn print_named_transform_subtree(universe: &engine::Universe, root: engine::ecs::ComponentId) {
+    let mut stack = vec![(root, 0usize)];
+    println!("[vr-input] spawned transform subtree under {:?}:", root);
+    while let Some((node, depth)) = stack.pop() {
+        let Some(record) = universe.world.get_component_record(node) else {
+            continue;
+        };
+        if universe
+            .world
+            .get_component_by_id_as::<TransformComponent>(node)
+            .is_some()
+        {
+            println!(
+                "[vr-input] {indent}- {:?} name='{}' kind='{}'",
+                node,
+                record.name,
+                record.component.name(),
+                indent = "  ".repeat(depth),
+            );
+        }
+
+        for &child in record.children.iter().rev() {
+            stack.push((child, depth + 1));
+        }
+    }
+}
+
+fn attach_controller_parent_to_named_wrist(
+    universe: &mut engine::Universe,
+    avatar_root: engine::ecs::ComponentId,
+    selector: &str,
+    hand: ControllerHand,
+) -> Result<engine::ecs::ComponentId, String> {
+    let wrist = universe
+        .find_component(avatar_root, selector)
+        .ok_or_else(|| format!("wrist selector did not match: {selector}"))?;
+    let lower_arm = universe
+        .parent_of(wrist)
+        .ok_or_else(|| format!("matched wrist has no parent: {selector}"))?;
+
+    let controller = universe.world.add_component(ControllerXRComponent::new(
+        true,
+        hand,
+        ControllerPoseKind::Grip,
+    ));
+
+    universe
+        .attach(lower_arm, controller)
+        .map_err(|e| format!("attach lower_arm -> controller failed: {e}"))?;
+    universe
+        .attach(controller, wrist)
+        .map_err(|e| format!("attach controller -> wrist failed: {e}"))?;
+
+    println!(
+        "[vr-input] inserted {:?} controller {:?} between parent='{}' and wrist='{}'",
+        hand,
+        controller,
+        universe.component_name(lower_arm).unwrap_or("<unnamed>"),
+        universe.component_name(wrist).unwrap_or("<unnamed>"),
+    );
+
+    Ok(controller)
+}
+
 fn spawn_sun_background(universe: &mut engine::Universe, parent: engine::ecs::ComponentId) {
     let bg_root = universe.world.add_component(engine::ecs::component::BackgroundComponent::new());
     let _ = universe.attach(parent, bg_root);
@@ -273,11 +337,51 @@ fn main() {
         &mut universe.command_queue,
     );
 
-    // TODO (next): drive the VTuber skeleton hands using controller poses.
-    // Likely approach:
-    // - Find bone/joint ids for left/right hand + upperarm + lowerarm in the imported Skin.
-    // - Implement a 2-bone IK solve (shoulder->elbow->wrist) targeting controller grip pose.
-    // - Write joint local transforms each tick (similar to vtuber-joints-example).
+    // Force the glTF subtree to spawn now so we can inspect/query the armature.
+    {
+        let systems = &mut universe.systems;
+        systems.gltf.tick_with_queue(
+            &mut universe.world,
+            &mut universe.visuals,
+            &mut systems.skinned_mesh,
+            &mut universe.command_queue,
+            0.0,
+        );
+    }
+    universe.systems.process_commands(
+        &mut universe.world,
+        &mut universe.visuals,
+        &mut universe.command_queue,
+    );
+
+    print_named_transform_subtree(&universe, model_root);
+
+    let left_wrist_selector = "[name='J_Bip_L_Hand']";
+    let right_wrist_selector = "[name='J_Bip_R_Hand']";
+
+    if let Err(err) = attach_controller_parent_to_named_wrist(
+        &mut universe,
+        model_root,
+        left_wrist_selector,
+        ControllerHand::Left,
+    ) {
+        eprintln!("[vr-input] left wrist attach failed: {err}");
+    }
+
+    if let Err(err) = attach_controller_parent_to_named_wrist(
+        &mut universe,
+        model_root,
+        right_wrist_selector,
+        ControllerHand::Right,
+    ) {
+        eprintln!("[vr-input] right wrist attach failed: {err}");
+    }
+
+    println!(
+        "[vr-input] wrist selectors: left={} right={} (update after checking printed armature if needed)",
+        left_wrist_selector,
+        right_wrist_selector,
+    );
 
     universe.enable_repl();
     engine::Windowing::run_app(universe).expect("Windowing failed");

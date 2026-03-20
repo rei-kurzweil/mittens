@@ -78,4 +78,57 @@ mod tests {
         assert!(w.get_component_record(child).is_none());
         assert!(w.get_component_record(grandchild).is_none());
     }
+
+    #[test]
+    fn find_component_matches_exact_name_selector() {
+        let mut w = World::default();
+
+        let root = w.add_component_boxed_named(
+            "avatar_root",
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
+        let lower_arm = w.add_component_boxed_named(
+            "J_Bip_L_Lower_Arm",
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
+        let hand = w.add_component_boxed_named(
+            "J_Bip_L_Hand",
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
+
+        w.add_child(root, lower_arm).unwrap();
+        w.add_child(lower_arm, hand).unwrap();
+
+        let found = w.find_component(root, "[name='J_Bip_L_Hand']");
+        assert_eq!(found, Some(hand));
+    }
+
+    #[test]
+    fn find_all_components_returns_all_name_matches_in_dfs_order() {
+        let mut w = World::default();
+
+        let root = w.add_component_boxed_named(
+            "root",
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
+        let left = w.add_component_boxed_named(
+            "match",
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
+        let middle = w.add_component_boxed_named(
+            "middle",
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
+        let right = w.add_component_boxed_named(
+            "match",
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
+
+        w.add_child(root, left).unwrap();
+        w.add_child(root, middle).unwrap();
+        w.add_child(middle, right).unwrap();
+
+        let found = w.find_all_components(root, "[name='match']");
+        assert_eq!(found, vec![left, right]);
+    }
 }

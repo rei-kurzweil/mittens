@@ -44,4 +44,6 @@ See [v1 execution model](analysis/v1-component-expression-execution-model.md#ope
 - [Emission semantics and component value model](analysis/emission-and-component-value-model.md) — what "emitting" means, AstTransform / EmitLiftTransform, ComponentObject, function emission, emit() builtin
 - [Emission policy options](analysis/emission-policy-options.md) — design space for when ComponentObjects auto-emit vs require explicit emit(); v1 decision and future directions
 - [AST vs runtime object model](analysis/ast-vs-runtime-object-model.md) — AST vs runtime Value split, AstTransform layering, un-parser direction
+- [Script runner helper](analysis/script-runner-helper.md) — `MeowMeowRunner` / synchronous intent collection; name options, API sketch, where it lives
+- [Signal emission in MMS](analysis/signal-emission-in-mms.md) — should `emit()` unify component spawning with intent/event dispatch? Options A/B/C, key distinctions, recommendation
 - [v1 execution model sketch](analysis/v1-component-expression-execution-model.md)

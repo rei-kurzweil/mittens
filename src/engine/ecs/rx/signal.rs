@@ -1,4 +1,5 @@
 use crate::engine::ecs::{ComponentId, World};
+use std::sync::mpsc::Sender;
 
 /// Signal envelope.
 ///
@@ -193,6 +194,16 @@ pub enum IntentValue {
     Attach {
         parents: Vec<ComponentId>,
         child: ComponentId,
+    },
+    QueryFindComponent {
+        root: ComponentId,
+        selector: String,
+        reply: Sender<Option<ComponentId>>,
+    },
+    QueryFindAllComponents {
+        root: ComponentId,
+        selector: String,
+        reply: Sender<Vec<ComponentId>>,
     },
     AttachClone {
         parents: Vec<ComponentId>,
@@ -464,6 +475,8 @@ impl IntentValue {
             IntentValue::SetPosition { .. } => "set_position",
 
             IntentValue::Attach { .. } => "attach",
+            IntentValue::QueryFindComponent { .. } => "query_find_component",
+            IntentValue::QueryFindAllComponents { .. } => "query_find_all_components",
             IntentValue::AttachClone { .. } => "attach_clone",
             IntentValue::Detach { .. } => "detach",
             IntentValue::RemoveChild { .. } => "remove_child",

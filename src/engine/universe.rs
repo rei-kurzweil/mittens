@@ -2,6 +2,7 @@ use crate::engine::ecs::SignalEmitter;
 use crate::engine::user_input::InputState;
 use crate::engine::{ecs, graphics};
 use std::collections::HashSet;
+use std::sync::mpsc;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -83,6 +84,46 @@ impl Universe {
 
     pub fn get_component_by_id_as<T: 'static>(&self, c: ecs::ComponentId) -> Option<&T> {
         self.world.get_component_by_id_as::<T>(c)
+    }
+
+    pub fn component_name(&self, c: ecs::ComponentId) -> Option<&str> {
+        self.world.component_name(c)
+    }
+
+    pub fn find_component(
+        &mut self,
+        root: ecs::ComponentId,
+        selector: &str,
+    ) -> Option<ecs::ComponentId> {
+        let (tx, rx) = mpsc::channel();
+        self.command_queue.push_intent_now(
+            root,
+            ecs::IntentValue::QueryFindComponent {
+                root,
+                selector: selector.to_string(),
+                reply: tx,
+            },
+        );
+        self.drain_pending_signals();
+        rx.recv().ok().flatten()
+    }
+
+    pub fn find_all_components(
+        &mut self,
+        root: ecs::ComponentId,
+        selector: &str,
+    ) -> Vec<ecs::ComponentId> {
+        let (tx, rx) = mpsc::channel();
+        self.command_queue.push_intent_now(
+            root,
+            ecs::IntentValue::QueryFindAllComponents {
+                root,
+                selector: selector.to_string(),
+                reply: tx,
+            },
+        );
+        self.drain_pending_signals();
+        rx.recv().unwrap_or_default()
     }
 
     /// Add a signal handler rooted at `scope_root`.
