@@ -10,7 +10,8 @@ use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::user_input::InputState;
 use crate::utils::math;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransformPipelineInput {
@@ -78,9 +79,19 @@ struct TransformPipelineStageKey {
     stage_path: Vec<usize>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct QuatTemporalState {
     output_quat_xyzw: [f32; 4],
+    last_input_quat_xyzw: [f32; 4],
+    debug_window: QuatTemporalDebugWindow,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+struct QuatTemporalDebugWindow {
+    raw_step_deg: VecDeque<f32>,
+    filtered_step_deg: VecDeque<f32>,
+    lag_deg: VecDeque<f32>,
+    sample_count: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -430,21 +441,76 @@ impl TransformPipelineSystem {
                     full_path.push(op_index);
                     let key = TransformPipelineStageKey {
                         owner_component,
-                        stage_path: full_path,
+                        stage_path: full_path.clone(),
                     };
                     let alpha = Self::alpha_from_smoothing_factor(smoothing_factor, dt_sec);
-                    let previous = self
-                        .quat_temporal_state
-                        .get(&key)
+                    let previous_state = self.quat_temporal_state.get(&key).cloned();
+                    let previous_output = previous_state
+                        .as_ref()
                         .map(|state| state.output_quat_xyzw)
                         .unwrap_or(current);
-                    let filtered = Self::quat_nlerp(previous, current, alpha);
-                    self.quat_temporal_state.insert(
-                        key,
-                        QuatTemporalState {
-                            output_quat_xyzw: filtered,
-                        },
-                    );
+                    let previous_input = previous_state
+                        .as_ref()
+                        .map(|state| state.last_input_quat_xyzw)
+                        .unwrap_or(current);
+                    let filtered = Self::quat_nlerp(previous_output, current, alpha);
+
+                    let mut next_state = previous_state.unwrap_or(QuatTemporalState {
+                        output_quat_xyzw: filtered,
+                        last_input_quat_xyzw: current,
+                        debug_window: QuatTemporalDebugWindow::default(),
+                    });
+                    next_state.output_quat_xyzw = filtered;
+                    next_state.last_input_quat_xyzw = current;
+
+                    if Self::debug_quat_filter_enabled() {
+                        let window_len = Self::debug_quat_filter_window_len();
+                        let raw_step_deg = Self::quat_angle_degrees(previous_input, current);
+                        let filtered_step_deg =
+                            Self::quat_angle_degrees(previous_output, filtered);
+                        let lag_deg = Self::quat_angle_degrees(filtered, current);
+
+                        Self::push_rolling_sample(
+                            &mut next_state.debug_window.raw_step_deg,
+                            raw_step_deg,
+                            window_len,
+                        );
+                        Self::push_rolling_sample(
+                            &mut next_state.debug_window.filtered_step_deg,
+                            filtered_step_deg,
+                            window_len,
+                        );
+                        Self::push_rolling_sample(
+                            &mut next_state.debug_window.lag_deg,
+                            lag_deg,
+                            window_len,
+                        );
+                        next_state.debug_window.sample_count += 1;
+
+                        if next_state.debug_window.sample_count % window_len as u64 == 0 {
+                            let avg_raw = Self::rolling_avg(&next_state.debug_window.raw_step_deg);
+                            let avg_filtered =
+                                Self::rolling_avg(&next_state.debug_window.filtered_step_deg);
+                            let avg_lag = Self::rolling_avg(&next_state.debug_window.lag_deg);
+                            let max_raw = Self::rolling_max(&next_state.debug_window.raw_step_deg);
+                            let max_filtered =
+                                Self::rolling_max(&next_state.debug_window.filtered_step_deg);
+                            let attenuation_pct = if avg_raw > 1e-4 {
+                                (1.0 - (avg_filtered / avg_raw)).clamp(-10.0, 1.0) * 100.0
+                            } else {
+                                0.0
+                            };
+
+                            eprintln!(
+                                "[TransformPipeline][QuatFilter] owner={owner_component:?} stage_path={full_path:?} smoothing_factor={smoothing_factor:.3} dt={:.5} alpha={alpha:.5} raw_avg_deg={avg_raw:.3} filtered_avg_deg={avg_filtered:.3} lag_avg_deg={avg_lag:.3} raw_max_deg={max_raw:.3} filtered_max_deg={max_filtered:.3} attenuation_pct={attenuation_pct:.1} window={} samples={}",
+                                dt_sec.unwrap_or(0.0),
+                                next_state.debug_window.raw_step_deg.len(),
+                                next_state.debug_window.sample_count,
+                            );
+                        }
+                    }
+
+                    self.quat_temporal_state.insert(key, next_state);
                     filtered
                 }
             };
@@ -588,6 +654,58 @@ impl TransformPipelineSystem {
             Some(dt) if dt > 0.0 => 1.0 - (-smoothing_factor.max(0.0) * dt).exp(),
             _ => smoothing_factor.clamp(0.0, 1.0),
         }
+    }
+
+    fn debug_quat_filter_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            std::env::var("CAT_DEBUG_QUAT_FILTER")
+                .ok()
+                .map(|value| {
+                    let value = value.trim().to_ascii_lowercase();
+                    matches!(value.as_str(), "1" | "true" | "yes" | "on")
+                })
+                .unwrap_or(false)
+        })
+    }
+
+    fn debug_quat_filter_window_len() -> usize {
+        static WINDOW_LEN: OnceLock<usize> = OnceLock::new();
+        *WINDOW_LEN.get_or_init(|| {
+            std::env::var("CAT_DEBUG_QUAT_FILTER_WINDOW")
+                .ok()
+                .and_then(|value| value.parse::<usize>().ok())
+                .map(|value| value.clamp(1, 600))
+                .unwrap_or(60)
+        })
+    }
+
+    fn push_rolling_sample(window: &mut VecDeque<f32>, value: f32, max_len: usize) {
+        if window.len() >= max_len {
+            let _ = window.pop_front();
+        }
+        window.push_back(value);
+    }
+
+    fn rolling_avg(window: &VecDeque<f32>) -> f32 {
+        if window.is_empty() {
+            0.0
+        } else {
+            window.iter().copied().sum::<f32>() / window.len() as f32
+        }
+    }
+
+    fn rolling_max(window: &VecDeque<f32>) -> f32 {
+        window.iter().copied().fold(0.0, f32::max)
+    }
+
+    fn quat_angle_degrees(a: [f32; 4], b: [f32; 4]) -> f32 {
+        let a = Self::quat_normalize(a);
+        let b = Self::quat_normalize(b);
+        let dot = (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3])
+            .abs()
+            .clamp(0.0, 1.0);
+        (2.0 * dot.acos()).to_degrees()
     }
 }
 

@@ -15,7 +15,8 @@ use crate::utils::math;
 
 use ash::vk::Handle as _;
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
+use std::sync::OnceLock;
 use std::time::Instant;
 
 pub struct OpenXRSystem {
@@ -72,6 +73,7 @@ struct OpenXRSessionState {
 
     hand_tracking: Option<HandTrackingState>,
     hand_root_pose_cache: HandRootPoseCache,
+    hand_rotation_debug: HandRotationDebugState,
     controller_input: Option<ControllerInput>,
     controller_pose_cache: ControllerPoseCache,
 }
@@ -95,6 +97,19 @@ struct HandRootPoseCache {
     right_root: Option<openxr::Posef>,
     left_root_joint: Option<openxr::HandJointEXT>,
     right_root_joint: Option<openxr::HandJointEXT>,
+}
+
+#[derive(Debug, Default)]
+struct HandRotationDebugState {
+    left: RollingAngleWindow,
+    right: RollingAngleWindow,
+}
+
+#[derive(Debug, Default)]
+struct RollingAngleWindow {
+    previous_quat_xyzw: Option<[f32; 4]>,
+    step_deg: VecDeque<f32>,
+    sample_count: u64,
 }
 
 #[allow(dead_code)]
@@ -143,6 +158,109 @@ impl std::fmt::Debug for OpenXRSystem {
 }
 
 impl OpenXRSystem {
+    fn debug_hand_rotation_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            std::env::var("CAT_DEBUG_XR_HAND_ROTATION")
+                .ok()
+                .map(|value| {
+                    let value = value.trim().to_ascii_lowercase();
+                    matches!(value.as_str(), "1" | "true" | "yes" | "on")
+                })
+                .unwrap_or(false)
+        })
+    }
+
+    fn debug_hand_rotation_window_len() -> usize {
+        static WINDOW_LEN: OnceLock<usize> = OnceLock::new();
+        *WINDOW_LEN.get_or_init(|| {
+            std::env::var("CAT_DEBUG_XR_HAND_ROTATION_WINDOW")
+                .ok()
+                .and_then(|value| value.parse::<usize>().ok())
+                .map(|value| value.clamp(1, 600))
+                .unwrap_or(60)
+        })
+    }
+
+    fn quat_from_posef(pose: openxr::Posef) -> [f32; 4] {
+        [
+            pose.orientation.x,
+            pose.orientation.y,
+            pose.orientation.z,
+            pose.orientation.w,
+        ]
+    }
+
+    fn quat_normalize(q: [f32; 4]) -> [f32; 4] {
+        let len = (q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]).sqrt();
+        if len > 0.0 {
+            [q[0] / len, q[1] / len, q[2] / len, q[3] / len]
+        } else {
+            [0.0, 0.0, 0.0, 1.0]
+        }
+    }
+
+    fn quat_angle_degrees(a: [f32; 4], b: [f32; 4]) -> f32 {
+        let a = Self::quat_normalize(a);
+        let b = Self::quat_normalize(b);
+        let dot = (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3])
+            .abs()
+            .clamp(0.0, 1.0);
+        (2.0 * dot.acos()).to_degrees()
+    }
+
+    fn rolling_avg(window: &VecDeque<f32>) -> f32 {
+        if window.is_empty() {
+            0.0
+        } else {
+            window.iter().copied().sum::<f32>() / window.len() as f32
+        }
+    }
+
+    fn rolling_max(window: &VecDeque<f32>) -> f32 {
+        window.iter().copied().fold(0.0, f32::max)
+    }
+
+    fn update_hand_rotation_debug(
+        debug_state: &mut HandRotationDebugState,
+        hand: ControllerHand,
+        joint: Option<openxr::HandJointEXT>,
+        pose: openxr::Posef,
+    ) {
+        if !Self::debug_hand_rotation_enabled() {
+            return;
+        }
+
+        let quat = Self::quat_from_posef(pose);
+        let window_len = Self::debug_hand_rotation_window_len();
+        let debug = match hand {
+            ControllerHand::Left => &mut debug_state.left,
+            ControllerHand::Right => &mut debug_state.right,
+        };
+
+        let step_deg = debug
+            .previous_quat_xyzw
+            .map(|previous| Self::quat_angle_degrees(previous, quat))
+            .unwrap_or(0.0);
+        debug.previous_quat_xyzw = Some(quat);
+
+        if debug.step_deg.len() >= window_len {
+            let _ = debug.step_deg.pop_front();
+        }
+        debug.step_deg.push_back(step_deg);
+        debug.sample_count += 1;
+
+        if debug.sample_count % window_len as u64 == 0 {
+            let avg_step_deg = Self::rolling_avg(&debug.step_deg);
+            let max_step_deg = Self::rolling_max(&debug.step_deg);
+            eprintln!(
+                "[OpenXR][HandRotation] hand={hand:?} root_joint={joint:?} raw_step_avg_deg={avg_step_deg:.3} raw_step_max_deg={max_step_deg:.3} window={} samples={}",
+                debug.step_deg.len(),
+                debug.sample_count,
+            );
+        }
+    }
+
     fn preferred_pose(
         sess: &OpenXRSessionState,
         hand: ControllerHand,
@@ -933,6 +1051,7 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
 
             hand_tracking,
             hand_root_pose_cache: HandRootPoseCache::default(),
+            hand_rotation_debug: HandRotationDebugState::default(),
             controller_input,
             controller_pose_cache: ControllerPoseCache::default(),
         });
@@ -1263,6 +1382,9 @@ impl OpenXRSystem {
             }
         };
 
+        let mut left_root_for_debug: Option<(openxr::Posef, openxr::HandJointEXT)> = None;
+        let mut right_root_for_debug: Option<(openxr::Posef, openxr::HandJointEXT)> = None;
+
         if let Some(hand_tracking) = sess.hand_tracking.as_ref() {
             let left_joints = sess.reference_space.locate_hand_joints(
                 &hand_tracking.left,
@@ -1278,6 +1400,7 @@ impl OpenXRSystem {
                     let root = Self::select_hand_root_pose(&joints);
                     sess.hand_root_pose_cache.left_root = root.map(|(pose, _)| pose);
                     sess.hand_root_pose_cache.left_root_joint = root.map(|(_, joint)| joint);
+                    left_root_for_debug = root;
 
                     if debug_input_this_frame {
                         let wrist_flags = joints[openxr::HandJointEXT::WRIST].location_flags;
@@ -1309,6 +1432,7 @@ impl OpenXRSystem {
                     let root = Self::select_hand_root_pose(&joints);
                     sess.hand_root_pose_cache.right_root = root.map(|(pose, _)| pose);
                     sess.hand_root_pose_cache.right_root_joint = root.map(|(_, joint)| joint);
+                    right_root_for_debug = root;
 
                     if debug_input_this_frame {
                         let wrist_flags = joints[openxr::HandJointEXT::WRIST].location_flags;
@@ -1336,6 +1460,23 @@ impl OpenXRSystem {
             }
         } else {
             sess.hand_root_pose_cache = HandRootPoseCache::default();
+        }
+
+        if let Some((pose, joint)) = left_root_for_debug {
+            Self::update_hand_rotation_debug(
+                &mut sess.hand_rotation_debug,
+                ControllerHand::Left,
+                Some(joint),
+                pose,
+            );
+        }
+        if let Some((pose, joint)) = right_root_for_debug {
+            Self::update_hand_rotation_debug(
+                &mut sess.hand_rotation_debug,
+                ControllerHand::Right,
+                Some(joint),
+                pose,
+            );
         }
 
         // Update controller pose cache at the same predicted time as views.
