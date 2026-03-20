@@ -134,7 +134,8 @@ impl SignalPipelineProcessor {
             | IntentValue::RemoveChildren { .. }
             | IntentValue::UpdateTransformWorld { .. }
             | IntentValue::RegisterSignalRouteUpward { .. }
-            | IntentValue::RemoveSignalRouteUpward { .. } => None,
+            | IntentValue::RemoveSignalRouteUpward { .. }
+            | IntentValue::SpawnComponentTree { .. } => None,
         }
     }
 
@@ -213,6 +214,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RemoveChildren { .. } => None,
 
             IntentValue::UpdateTransformWorld { .. } => None,
+            IntentValue::SpawnComponentTree { .. } => None,
         }
     }
 }

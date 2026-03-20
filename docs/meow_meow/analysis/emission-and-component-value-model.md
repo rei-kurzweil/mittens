@@ -107,16 +107,18 @@ let make_cube = fn(r, g, b) {
     }
 }
 
-make_cube(1.0, 0.0, 0.0)   // ← emits a red cube into the engine
-make_cube(0.0, 1.0, 0.0)   // ← emits a green cube into the engine
+make_cube(1.0, 0.0, 0.0)   // ← emits a red cube (world root — top-level call)
+make_cube(0.0, 1.0, 0.0)   // ← emits a green cube (world root — top-level call)
+
+T.with_position(0, 0, 0) {
+    make_cube(0.0, 0.0, 1.0)  // ← emits a blue cube as a child of T
+}
 ```
 
 `R.cube() { ... }` is free-standing in the function body → `EmitLiftTransform` converts it
-to `Statement::Emit`. Calling `make_cube(...)` runs that emit. The caller does not need to do
-anything — the emission is a side effect of calling the function.
-
-This is the same rule as the top-level: free-standing component expression in any block emits.
-Function bodies are blocks. There is no special case.
+to `Statement::Emit`. Calling `make_cube(...)` runs that emit. The emission target (world root
+vs. child) is determined by the **emit context** at the call site — see the emit context
+section below. The function definition itself has no special case: it just emits.
 
 A function that **returns** a `ComponentObject` instead of emitting uses `return`:
 
@@ -197,21 +199,80 @@ needed when the object has been configured or passed around before emission.
 
 ---
 
+## Emit context: where do emitted components attach?
+
+Every `emit()` call — whether from `EmitLiftTransform`, `emit(x)`, or Option B runtime check
+— produces a `SpawnComponentTree` intent. That intent carries an optional `parent`:
+
+```
+SpawnComponentTree {
+    root: ce,
+    parent: None,            // → world root
+    // or:
+    parent: Some(parent_id), // → attached as a child of parent_id
+}
+```
+
+**The emit context stack** determines which applies:
+
+- At top level (program body), the emit context stack is **empty** → `parent: None` → world root.
+- When evaluating a `ComponentExpression` body, the parent component's `ComponentId` is
+  **pushed** onto the emit context stack for the duration of that body's evaluation.
+- Any `emit()` call that fires during body evaluation — including inside free-standing function
+  calls made from the body — uses the **top of the stack** as the parent.
+- When the body finishes evaluating, its entry is **popped**.
+
+This applies transitively through function calls (dynamic scoping of the emit context):
+
+```mms
+let make_cube = fn(r, g, b) {
+    R.cube() { C.rgba(r, g, b, 1.0) }   // emits; parent depends on call site
+}
+
+make_cube(1, 0, 0)                         // emit context empty → world root
+
+T.with_position(0, 0, 0) {
+    make_cube(1, 0, 0)                     // emit context = T → child of T
+    make_cube(0, 1, 0)                     // emit context = T → another child of T
+}
+```
+
+The function definition is the same in both cases. Where it emits is determined by where it
+is called — top-level call sites produce world roots, body call sites produce children of the
+enclosing component.
+
+For nested bodies:
+
+```mms
+T {
+    A {
+        make_cube(1, 0, 0)    // emit context = A (innermost) → child of A
+    }
+    make_cube(0, 1, 0)        // emit context = T → child of T
+}
+```
+
+**Compatibility with Option B:** The runtime check "if expression-statement yields a
+`ComponentObject`, emit it" still applies. The emit context stack just determines the parent
+for that emission. The rule is uniform: emit always goes to the current emit context.
+
+---
+
 ## What gets emitted: one component tree, one `SpawnComponentTree`
 
 When `Statement::Emit(ce)` evaluates:
 
 ```
 SpawnComponentTree {
-    root: ce,       // full ComponentExpression tree
-    parent: None,   // or Some(ComponentId) if inserting into an existing subtree
+    root: ce,
+    parent: None,   // or Some(ComponentId) from the emit context stack
 }
 ```
 
 The main thread executor walks the `ComponentExpression` tree and creates all components.
 Multiple `Statement::Emit` in one file → multiple `SpawnComponentTree` intents → multiple
-independent world roots. `vr-input.mms` has nine root-level statements, producing nine
-independently rooted subtrees.
+independent world roots (when called at top level). `vr-input.mms` has nine root-level
+statements, producing nine independently rooted subtrees.
 
 ---
 

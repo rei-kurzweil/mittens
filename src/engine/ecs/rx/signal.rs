@@ -159,6 +159,13 @@ impl IntentSignal {
 #[derive(Debug, Clone)]
 pub enum IntentValue {
     Noop,
+
+    /// Spawn a component tree described by a MMS `ComponentExpression` and optionally attach
+    /// it to a parent. If `parent` is `None` the root becomes a world root (`universe.add`).
+    SpawnComponentTree {
+        root: Box<crate::meow_meow::ast::expression::ComponentExpression>,
+        parent: Option<ComponentId>,
+    },
     Print {
         message: String,
     },
@@ -448,6 +455,7 @@ impl IntentValue {
     pub fn kind_name(&self) -> &'static str {
         match self {
             IntentValue::Noop => "noop",
+            IntentValue::SpawnComponentTree { .. } => "spawn_component_tree",
             IntentValue::Print { .. } => "print",
             IntentValue::ReplExec { .. } => "repl_exec",
 

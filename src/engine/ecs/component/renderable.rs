@@ -103,6 +103,11 @@ impl RenderableComponent {
     pub fn color_tetrahedron() -> Self {
         Self::tetrahedron()
     }
+
+    /// Predefined renderable: 2D circle (shared built-in mesh handle).
+    pub fn circle2d() -> Self {
+        Self::from_cpu_mesh_handle(CpuMeshHandle::CIRCLE_2D, MaterialHandle::TOON_MESH)
+    }
 }
 
 impl Component for RenderableComponent {

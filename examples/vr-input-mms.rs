@@ -1,44 +1,65 @@
-use cat_engine::meow_meow::ast::expression::{ComponentBodyItem, Expression};
-use cat_engine::meow_meow::ast::statement::Statement;
-use cat_engine::meow_meow::parser::MeowMeowParser;
-use cat_engine::meow_meow::tokenizer::MeowMeowTokenizer;
+use std::time::{Duration, Instant};
+
+use cat_engine::{engine, engine::ecs::SignalEmitter, meow_meow, utils};
 
 fn main() {
+    utils::logger::init();
+
     let src = include_str!("vr-input.mms");
 
-    let tokens = MeowMeowTokenizer::new(src).tokenize().expect("tokenize vr-input.mms");
-    let program = MeowMeowParser::new(tokens).parse_program().expect("parse vr-input.mms");
+    // -----------------------------------------------------------------------
+    // Evaluate the MMS script on the evaluator thread, collect intents.
+    // -----------------------------------------------------------------------
+    let mut eval = meow_meow::MeowMeowEvaluator::spawn(64);
 
-    println!("vr-input.mms parsed ok — {} top-level statements", program.len());
-    for (i, stmt) in program.iter().enumerate() {
-        match stmt {
-            Statement::Expression(Expression::Component(c)) => {
-                let head = c
-                    .constructor
-                    .as_ref()
-                    .map(|hc| format!(".{}({})", hc.method.0, hc.args.len()))
-                    .unwrap_or_default();
-                let child_count = c
-                    .body
-                    .iter()
-                    .filter(|b| matches!(b, ComponentBodyItem::Child(_)))
-                    .count();
-                println!(
-                    "  [{i}] {}{head}  ({} body items, {child_count} children)",
-                    c.component_type.0,
-                    c.body.len(),
-                );
+    eval.requests
+        .push(meow_meow::EvalRequest::EvalScript { source: src.to_string() })
+        .expect("push EvalScript");
+    eval.requests
+        .push(meow_meow::EvalRequest::Shutdown)
+        .expect("push Shutdown");
+
+    let mut intents: Vec<engine::ecs::IntentValue> = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(2);
+
+    loop {
+        match eval.responses.pop() {
+            Ok(meow_meow::EvalResponse::Intent(iv)) => {
+                intents.push(iv);
             }
-            Statement::Expression(_) => println!("  [{i}] <expr>"),
-            Statement::Assignment(a) => println!("  [{i}] let {} = ...", a.name.0),
-            Statement::Return(_) => println!("  [{i}] return"),
-            Statement::If(_) => println!("  [{i}] if"),
-            Statement::Block(_) => println!("  [{i}] block"),
+            Ok(meow_meow::EvalResponse::Error { message }) => {
+                eprintln!("[mms] eval error: {message}");
+            }
+            Ok(meow_meow::EvalResponse::ParsedOk { .. }) => {}
+            Ok(meow_meow::EvalResponse::ShutdownAck) => break,
+            Err(rtrb::PopError::Empty) => {
+                if Instant::now() > deadline {
+                    eprintln!("[mms] timed out waiting for evaluator");
+                    break;
+                }
+                std::thread::yield_now();
+            }
         }
     }
 
-    // TODO: evaluate program → SpawnComponentTree intents → live scene
-    // This requires the SpawnComponentTree IntentValue variant and the component
-    // registry executor (phase 1 checklist steps 4-6).
-    println!("\n(scene spawning not yet implemented — parser wiring complete)");
+    println!("[mms] collected {} intent(s) from vr-input.mms", intents.len());
+
+    // -----------------------------------------------------------------------
+    // Boot the engine and inject the intents.
+    // -----------------------------------------------------------------------
+    let world = engine::ecs::World::default();
+    let mut universe = engine::Universe::new(world);
+
+    let scope = engine::ecs::ComponentId::default();
+    for intent in intents {
+        universe.command_queue.push_intent_now(scope, intent);
+    }
+
+    universe.systems.process_commands(
+        &mut universe.world,
+        &mut universe.visuals,
+        &mut universe.command_queue,
+    );
+
+    engine::Windowing::run_app(universe).expect("Windowing failed");
 }

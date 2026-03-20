@@ -25,6 +25,7 @@ impl RxIntentExecutor {
         matches!(
             value,
             IntentValue::Noop
+                | IntentValue::SpawnComponentTree { .. }
                 | IntentValue::Print { .. }
                 | IntentValue::SetColor { .. }
                 | IntentValue::SetPosition { .. }
@@ -71,6 +72,14 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
 
     match &intent.value {
         IntentValue::Noop => {}
+
+        IntentValue::SpawnComponentTree { root, parent } => {
+            match crate::meow_meow::component_registry::spawn_tree(root, *parent, world, emit) {
+                Ok(id) => println!("[SpawnComponentTree] spawned root {id:?}"),
+                Err(e) => println!("[SpawnComponentTree] error: {e}"),
+            }
+        }
+
         IntentValue::Print { .. } => {}
 
         IntentValue::SetColor {

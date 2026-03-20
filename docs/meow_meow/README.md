@@ -2,8 +2,31 @@
 
 Meow Meow Script (“MMS”) is the scripting + authoring language for cat-engine.
 
-- v1 goal: **component expressions** that evaluate into engine component trees.
-- next step: replace JSON component serialization with `.mms` scene files.
+- v1 goal: **component expressions** that evaluate into engine component trees. ✅ **done**
+- next: replace JSON component serialization with `.mms` scene files.
+
+## v1 status
+
+| Area | Status |
+|------|--------|
+| Tokenizer + parser | ✅ done |
+| `ConstructorCall` (`.method(args)` head) | ✅ done |
+| `EmitLiftTransform` (bare CE → `emit(ce)`) | ✅ done |
+| Evaluator thread + ring buffer protocol | ✅ done |
+| `SpawnComponentTree` intent | ✅ done |
+| Component registry (30+ component types) | ✅ done |
+| All builtin mesh shapes (`cube`, `circle2d`, `sphere`, …) | ✅ done |
+| `vr-input-mms.rs` end-to-end scene spawn | ✅ done |
+| `let x = T { }` → live `ComponentId` reply channel | ⏳ deferred (v1 stores `ComponentExpression`, not handle) |
+| Emit context stack (body-call → child, not world root) | ⏳ deferred (gated on reply channel) |
+| Scripted mutation (`x.set_color(...)` after spawn) | ⏳ deferred |
+| Chained constructor calls (`T.new().with_scale(...)`) | ⏳ deferred |
+| `name`/`guid` as universal body items | ⏳ open question |
+| Asset path resolution (`”foo.gltf”` → `ComponentId`) | ⏳ open question |
+
+## Open questions
+
+See [v1 execution model](analysis/v1-component-expression-execution-model.md#open-questions) for the current list.
 
 ## Docs
 

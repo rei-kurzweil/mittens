@@ -255,6 +255,7 @@ fn evaluator_thread_parses_and_responds() {
                 got_ok = true;
                 break;
             }
+            Ok(EvalResponse::Intent(_)) => {} // ParseScript shouldn't emit intents, skip
             Ok(EvalResponse::Error { message }) => panic!("unexpected eval error: {message}"),
             Ok(EvalResponse::ShutdownAck) => panic!("unexpected shutdown ack"),
             Err(rtrb::PopError::Empty) => std::thread::yield_now(),
