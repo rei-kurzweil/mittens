@@ -60,7 +60,6 @@ Evaluation expands shortforms into canonical component type names before resolvi
 | `R` | `Renderable` |
 | `C` | `Color` |
 | `RC` | `Raycast` |
-| `RCB` | `Raycastable` |
 | `A` | `Animation` |
 | `KF` | `Keyframe` |
 | `AC` | `Action` |
@@ -69,7 +68,6 @@ Evaluation expands shortforms into canonical component type names before resolvi
 | `OP` | `Opacity` |
 | `BGC` | `BackgroundColor` |
 | `TXT` | `Text` |
-| `TXTR` | `Texture` |
 | `C3D` | `Camera3D` |
 | `C2D` | `Camera2D` |
 | `PL` | `PointLight` |
@@ -95,13 +93,10 @@ These exist in `src/engine/ecs/component/` today and are likely useful in script
 | `KIN` | `KineticResponse` |
 | `LQ` | `LightQuantization` |
 | `TC` | `TransparentCutout` |
-| `TS` | `TextShadow` |
 | `SM` | `SkinnedMesh` |
-| `ITM` | `InputTransformMode` |
 | `MESH` | `Mesh` |
 | `SRU` | `SignalRouteUpward` |
 | `NOTE` | `MusicNote` |
-| `TFILT` | `TextureFiltering` |
 
 Audio (optional):
 
@@ -123,7 +118,7 @@ XR (optional):
 |------:|-----------|
 | `XR` | `OpenXR` |
 | `CXR` | `CameraXR` |
-| `CCTL` | `ControllerXR` |
+| `CTLXR` | `ControllerXR` |
 
 ### Source of truth
 

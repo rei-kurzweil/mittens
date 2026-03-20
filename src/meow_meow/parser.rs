@@ -1,5 +1,9 @@
-use crate::meow_meow::ast::expression::{CallExpression, ComponentExpression, Expression, Ident, Parameter};
-use crate::meow_meow::ast::statement::{AssignmentStatement, BlockStatement, IfStatement, ReturnStatement, Statement};
+use crate::meow_meow::ast::expression::{
+    CallExpression, ComponentBodyItem, ComponentExpression, ConstructorCall, Expression, Ident,
+};
+use crate::meow_meow::ast::statement::{
+    AssignmentStatement, BlockStatement, IfStatement, ReturnStatement, Statement,
+};
 use crate::meow_meow::token::{Token, TokenKind};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -21,7 +25,6 @@ impl MeowMeowParser {
     pub fn parse_program(mut self) -> Result<Vec<Statement>, ParseError> {
         let mut statements = Vec::new();
         while !self.is_eof() {
-            // allow stray semicolons
             if self.try_consume(&TokenKind::Semicolon) {
                 continue;
             }
@@ -48,9 +51,7 @@ impl MeowMeowParser {
                 }
                 let value = self.parse_expression()?;
                 self.try_consume(&TokenKind::Semicolon);
-                Ok(Statement::Return(ReturnStatement {
-                    value: Some(value),
-                }))
+                Ok(Statement::Return(ReturnStatement { value: Some(value) }))
             }
             TokenKind::If => {
                 self.consume(&TokenKind::If)?;
@@ -61,11 +62,7 @@ impl MeowMeowParser {
                 } else {
                     None
                 };
-                Ok(Statement::If(IfStatement {
-                    condition,
-                    then_branch,
-                    else_branch,
-                }))
+                Ok(Statement::If(IfStatement { condition, then_branch, else_branch }))
             }
             TokenKind::LBrace => Ok(Statement::Block(self.parse_block_statement()?)),
             _ => {
@@ -92,12 +89,6 @@ impl MeowMeowParser {
     }
 
     fn parse_expression(&mut self) -> Result<Expression, ParseError> {
-        // Minimal expression grammar for the first iteration:
-        // - literals: string/number/bool/null
-        // - array literals
-        // - identifiers
-        // - call expressions: ident '(' ... ')'
-        // - component expressions: ident (attrs)* '{' body '}'
         match self.peek_kind() {
             TokenKind::String(_) => {
                 if let TokenKind::String(s) = self.bump().kind {
@@ -151,96 +142,126 @@ impl MeowMeowParser {
         Ok(Expression::Array(items))
     }
 
+    /// Parse an expression that starts with an identifier.
+    ///
+    /// Disambiguates:
+    /// - `Ident '.' Ident '(' args ')' ('{' body)?` → component expression with head call
+    /// - `Ident '(' args ')'`                        → free call expression
+    /// - `Ident '{' body`                            → component expression, no head call
+    /// - `Ident`                                     → bare identifier
     fn parse_ident_leading_expression(&mut self) -> Result<Expression, ParseError> {
         let ident = self.expect_ident()?;
 
-        // function call: foo(...)
+        // `Type.method(args) ...` → component expression with head call
+        if self.try_consume(&TokenKind::Dot) {
+            let method = self.expect_ident()?;
+            self.consume(&TokenKind::LParen)?;
+            let args = self.parse_call_args()?;
+            let constructor = Some(ConstructorCall { method, args });
+            let body = if self.try_consume(&TokenKind::LBrace) {
+                self.parse_component_body()?
+            } else {
+                vec![]
+            };
+            return Ok(Expression::Component(ComponentExpression {
+                component_type: ident,
+                constructor,
+                body,
+            }));
+        }
+
+        // `ident(args)` → free call expression
         if self.try_consume(&TokenKind::LParen) {
             let args = self.parse_call_args()?;
             return Ok(Expression::Call(CallExpression { callee: ident, args }));
         }
 
-        // component expression: T name="x" guid="y" { ... }
-        // We allow attributes *only* in the header (before the '{').
-        let mut parameters = Vec::new();
-        while matches!(self.peek_kind(), TokenKind::Ident(_)) {
-            // attribute name
-            let name = self.expect_ident()?;
-            if !self.try_consume(&TokenKind::Eq) {
-                // not an attribute; rewind by 1 token and stop scanning attrs
-                self.pos -= 1;
-                break;
-            }
-            let value = self.parse_expression()?;
-            parameters.push(Parameter { name, value });
+        // `ident { body }` → component expression, no head call
+        if self.try_consume(&TokenKind::LBrace) {
+            let body = self.parse_component_body()?;
+            return Ok(Expression::Component(ComponentExpression {
+                component_type: ident,
+                constructor: None,
+                body,
+            }));
         }
 
-        if self.try_consume(&TokenKind::LBrace) {
-            let component = self.parse_component_body(ident, parameters)?;
-            Ok(Expression::Component(component))
-        } else {
-            // plain identifier expression
-            Ok(Expression::Identifier(ident))
-        }
+        // bare identifier
+        Ok(Expression::Identifier(ident))
     }
 
-    fn parse_component_body(
-        &mut self,
-        component_type: Ident,
-        parameters: Vec<Parameter>,
-    ) -> Result<ComponentExpression, ParseError> {
-        let mut positional = Vec::new();
-        let mut calls = Vec::new();
-        let mut children = Vec::new();
+    /// Parse the inside of a component body, up to and including the closing `}`.
+    /// Called after the `{` has already been consumed.
+    fn parse_component_body(&mut self) -> Result<Vec<ComponentBodyItem>, ParseError> {
+        let mut body = Vec::new();
 
-        while !self.try_consume(&TokenKind::RBrace) {
+        loop {
+            if self.try_consume(&TokenKind::RBrace) {
+                break;
+            }
             if self.is_eof() {
                 return Err(self.err("Unterminated component body"));
             }
-
-            // Allow commas/semicolons as separators.
             if self.try_consume(&TokenKind::Comma) || self.try_consume(&TokenKind::Semicolon) {
                 continue;
             }
 
             match self.peek_kind() {
                 TokenKind::Ident(_) => {
-                    // Lookahead to decide between:
-                    // - call: ident '(' ... ')'
-                    // - child component: ident (attrs)* '{' ... '}'
-                    // - positional expression: bare ident (e.g. QUAD_2D)
                     let save = self.pos;
                     let leading = self.expect_ident()?;
+
+                    // `Type.method(args) ...` → child component with head call
+                    if self.try_consume(&TokenKind::Dot) {
+                        let method = self.expect_ident()?;
+                        self.consume(&TokenKind::LParen)?;
+                        let args = self.parse_call_args()?;
+                        let constructor = Some(ConstructorCall { method, args });
+                        let child_body = if self.try_consume(&TokenKind::LBrace) {
+                            self.parse_component_body()?
+                        } else {
+                            vec![]
+                        };
+                        body.push(ComponentBodyItem::Child(ComponentExpression {
+                            component_type: leading,
+                            constructor,
+                            body: child_body,
+                        }));
+                        continue;
+                    }
+
+                    // `ident = expr` → named assignment
+                    if self.try_consume(&TokenKind::Eq) {
+                        let value = self.parse_expression()?;
+                        body.push(ComponentBodyItem::NamedAssignment { name: leading, value });
+                        continue;
+                    }
+
+                    // `ident(args)` → builder call
                     if self.try_consume(&TokenKind::LParen) {
                         let args = self.parse_call_args()?;
-                        calls.push(CallExpression {
+                        body.push(ComponentBodyItem::Call(CallExpression {
                             callee: leading,
                             args,
-                        });
+                        }));
                         continue;
                     }
 
-                    // Try parse header attrs + '{'
-                    let mut child_params = Vec::new();
-                    while matches!(self.peek_kind(), TokenKind::Ident(_)) {
-                        let name = self.expect_ident()?;
-                        if !self.try_consume(&TokenKind::Eq) {
-                            self.pos -= 1;
-                            break;
-                        }
-                        let value = self.parse_expression()?;
-                        child_params.push(Parameter { name, value });
-                    }
-
+                    // `ident { body }` → child component, no head call
                     if self.try_consume(&TokenKind::LBrace) {
-                        let child = self.parse_component_body(leading, child_params)?;
-                        children.push(child);
+                        let child_body = self.parse_component_body()?;
+                        body.push(ComponentBodyItem::Child(ComponentExpression {
+                            component_type: leading,
+                            constructor: None,
+                            body: child_body,
+                        }));
                         continue;
                     }
 
-                    // Not a call nor a child component; treat as positional ident.
+                    // bare identifier → positional; rewind and re-parse as expression
                     self.pos = save;
-                    positional.push(self.parse_expression()?);
+                    let expr = self.parse_expression()?;
+                    body.push(ComponentBodyItem::Positional(expr));
                 }
                 TokenKind::String(_)
                 | TokenKind::Number(_)
@@ -248,11 +269,8 @@ impl MeowMeowParser {
                 | TokenKind::False
                 | TokenKind::Null
                 | TokenKind::LBracket => {
-                    positional.push(self.parse_expression()?);
-                }
-                TokenKind::RBrace => {
-                    self.consume(&TokenKind::RBrace)?;
-                    break;
+                    let expr = self.parse_expression()?;
+                    body.push(ComponentBodyItem::Positional(expr));
                 }
                 _ => {
                     return Err(self.err("Unexpected token in component body"));
@@ -260,13 +278,7 @@ impl MeowMeowParser {
             }
         }
 
-        Ok(ComponentExpression {
-            component_type,
-            parameters,
-            positional,
-            calls,
-            children,
-        })
+        Ok(body)
     }
 
     fn parse_call_args(&mut self) -> Result<Vec<Expression>, ParseError> {
@@ -277,6 +289,9 @@ impl MeowMeowParser {
         loop {
             args.push(self.parse_expression()?);
             if self.try_consume(&TokenKind::Comma) {
+                if self.try_consume(&TokenKind::RParen) {
+                    break;
+                }
                 continue;
             }
             self.consume(&TokenKind::RParen)?;
@@ -319,10 +334,7 @@ impl MeowMeowParser {
     }
 
     fn peek_kind(&self) -> &TokenKind {
-        self.tokens
-            .get(self.pos)
-            .map(|t| &t.kind)
-            .unwrap_or(&TokenKind::Eof)
+        self.tokens.get(self.pos).map(|t| &t.kind).unwrap_or(&TokenKind::Eof)
     }
 
     fn is_eof(&self) -> bool {
@@ -330,9 +342,6 @@ impl MeowMeowParser {
     }
 
     fn err(&self, message: &str) -> ParseError {
-        ParseError {
-            message: message.to_string(),
-            token_index: self.pos,
-        }
+        ParseError { message: message.to_string(), token_index: self.pos }
     }
 }

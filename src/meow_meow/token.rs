@@ -14,7 +14,6 @@ pub enum TokenKind {
     If,
     Else,
     Return,
-    New,
     True,
     False,
     Null,
@@ -70,7 +69,6 @@ pub const COMPONENT_SHORTFORMS: &[ComponentShortformEntry] = &[
     ComponentShortformEntry { short: "R", full: "Renderable" },
     ComponentShortformEntry { short: "C", full: "Color" },
     ComponentShortformEntry { short: "RC", full: "Raycast" },
-    ComponentShortformEntry { short: "RCB", full: "Raycastable" },
     ComponentShortformEntry { short: "A", full: "Animation" },
     ComponentShortformEntry { short: "KF", full: "Keyframe" },
     ComponentShortformEntry { short: "AC", full: "Action" },
@@ -79,7 +77,6 @@ pub const COMPONENT_SHORTFORMS: &[ComponentShortformEntry] = &[
     ComponentShortformEntry { short: "OP", full: "Opacity" },
     ComponentShortformEntry { short: "BGC", full: "BackgroundColor" },
     ComponentShortformEntry { short: "TXT", full: "Text" },
-    ComponentShortformEntry { short: "TXTR", full: "Texture" },
     ComponentShortformEntry { short: "C3D", full: "Camera3D" },
     ComponentShortformEntry { short: "C2D", full: "Camera2D" },
     ComponentShortformEntry { short: "PL", full: "PointLight" },
@@ -100,12 +97,10 @@ pub const COMPONENT_SHORTFORMS: &[ComponentShortformEntry] = &[
     ComponentShortformEntry { short: "KIN", full: "KineticResponse" },
     ComponentShortformEntry { short: "LQ", full: "LightQuantization" },
     ComponentShortformEntry { short: "TC", full: "TransparentCutout" },
-    ComponentShortformEntry { short: "TS", full: "TextShadow" },
     ComponentShortformEntry { short: "SM", full: "SkinnedMesh" },
     ComponentShortformEntry { short: "XR", full: "OpenXR" },
     ComponentShortformEntry { short: "CXR", full: "CameraXR" },
-    ComponentShortformEntry { short: "CCTL", full: "ControllerXR" },
-    ComponentShortformEntry { short: "ITM", full: "InputTransformMode" },
+    ComponentShortformEntry { short: "CTLXR", full: "ControllerXR" },
     ComponentShortformEntry { short: "MESH", full: "Mesh" },
 
     // Audio graph-ish components (optional; names kept explicit)
@@ -125,8 +120,6 @@ pub const COMPONENT_SHORTFORMS: &[ComponentShortformEntry] = &[
     // Music
     ComponentShortformEntry { short: "NOTE", full: "MusicNote" },
 
-    // Textures
-    ComponentShortformEntry { short: "TXTRF", full: "TextureFiltering" },
 ];
 
 pub fn expand_component_shortform(ident: &str) -> Option<&'static str> {

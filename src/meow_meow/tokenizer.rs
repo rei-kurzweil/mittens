@@ -91,7 +91,6 @@ impl<'a> MeowMeowTokenizer<'a> {
                         "if" => TokenKind::If,
                         "else" => TokenKind::Else,
                         "return" => TokenKind::Return,
-                        "new" => TokenKind::New,
                         "true" => TokenKind::True,
                         "false" => TokenKind::False,
                         "null" => TokenKind::Null,

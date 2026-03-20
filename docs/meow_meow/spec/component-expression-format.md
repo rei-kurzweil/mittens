@@ -47,7 +47,11 @@ Component expressions are a declarative tree-building form designed to map clean
 
 These are reserved and cannot be used as bare identifiers:
 
-- `let`, `if`, `else`, `return`, `new`, `true`, `false`, `null`
+- `let`, `if`, `else`, `return`, `true`, `false`, `null`
+
+Note: `new` is **not** a keyword — it is a valid method name used in constructor calls like
+`ControllerXR.new(true, Left, Aim)`. Keeping it as a plain identifier avoids reserving a
+name that appears frequently as a host-defined factory method.
 
 ## Syntax
 
@@ -92,7 +96,9 @@ T {
 
 Notes:
 
-- v1 AST currently stores `positional`, `calls`, and `children` in separate lists, so the relative ordering of different positional item kinds is not preserved. If ordering matters for the host API, prefer a single ordered body list or define a clear evaluation order (for example: apply named assignments first, then calls, then children).
+- The AST stores all body items in a single `body: Vec<ComponentBodyItem>` preserving source
+  order. The variants are `NamedAssignment`, `Call`, `Child`, and `Positional`. No information
+  about relative ordering between different kinds is lost.
 
 ### Grammar sketch (EBNF-ish)
 
@@ -313,10 +319,10 @@ A typical evaluation strategy is:
 
 ### Ordering note
 
-The current Rust AST stores `positional`, `calls`, and `children` in **separate lists**.
-That means the relative ordering between (for example) a call and a child is not represented.
-
-v1 recommendation: define an explicit evaluation order (e.g. calls before children), or evolve the AST to preserve a single ordered body list.
+The AST preserves source order via `body: Vec<ComponentBodyItem>`. Evaluation order mirrors
+source order: body items are processed in the order they appear. Named assignments can be
+applied first as a batch optimization if the host needs them before calls, but the AST itself
+makes no such guarantee — it preserves source order faithfully.
 
 ## Examples
 

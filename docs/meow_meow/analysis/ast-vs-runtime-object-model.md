@@ -1,58 +1,145 @@
 # AST vs runtime object model
 
-Meow Meow has (at least) two distinct “shapes” of data:
+Meow Meow has (at least) two distinct "shapes" of data:
 
 1. **AST (syntax)**: what the parser produces.
-2. **Runtime objects (values/heap)**: what evaluation produces and manipulates.
+2. **Runtime values**: what evaluation produces and manipulates.
 
-This document sketches the split so we can keep using the parsed component tree as part of the AST while still having a coherent runtime memory model.
+This document sketches the split so the two layers stay well-separated.
 
-## AST (today)
+---
 
-The current parser/tokenizer live in `src/meow_meow/`.
+## AST (current)
+
+The parser/tokenizer lives in `src/meow_meow/`.
 
 - Tokenizer: produces `Token { kind, span }`.
 - Parser: produces `Vec<Statement>`.
-- Expressions include `Expression::Component(ComponentExpression)`.
 
-The component expression AST intentionally mirrors the authoring model:
+Key AST types in `src/meow_meow/ast/`:
 
-- `component_type`: identifier
-- `head_call`: optional pre-body constructor/factory call like `.new(...)` or `.cube(...)`
-- `positional`: sugary body expressions
-- `calls`: method-like invocations
-- `children`: nested component expressions
+```rust
+// A component expression as it appears in source
+pub struct ComponentExpression {
+    pub component_type: Ident,
+    pub constructor: Option<ConstructorCall>,  // .method(args) before the body
+    pub body: Vec<ComponentBodyItem>,           // in-source order: assignments, calls, children, positionals
+}
 
-## Runtime object model (why it’s separate)
+// Body item kinds — source order preserved
+pub enum ComponentBodyItem {
+    NamedAssignment { name: Ident, value: Expression },
+    Call(CallExpression),
+    Child(ComponentExpression),
+    Positional(Expression),
+}
+```
 
-Even if we compile a component expression directly into engine components, the scripting language still needs a runtime value model for:
+The AST mirrors the authoring model closely. It is what you see in the source file, represented
+as a tree. Spans and source positions live here.
+
+### AstTransforms
+
+Between parsing and evaluation, **AstTransforms** restructure the AST without changing
+semantics. The most important one is `EmitLiftTransform`, which desugars free-standing
+component expression statements into explicit `emit(...)` calls:
+
+```
+Statement::Expression(Expression::Component(ce))
+    →  Statement::Expression(Expression::Call { callee: "emit", args: [Component(ce)] })
+```
+
+No new `Statement` variant is needed. After the transform, `T { }` as a bare statement and
+`emit(T { })` written explicitly are identical in the AST. The evaluator handles both via the
+normal `Statement::Expression` path. See [emission semantics](emission-and-component-value-model.md)
+for the full rationale.
+
+---
+
+## Runtime value model
+
+Even compiling directly to engine components, the scripting language needs a runtime value
+model for:
 
 - evaluated literals (`"hi"`, `123`, `true`, `null`)
 - arrays (`[1, 2, 3]`)
-- later: objects/maps, instances, closures, modules, etc.
+- `ComponentObject` handles (see below)
+- later: closures, modules, etc.
 
-If/when we compile to bytecode and run a VM, we still need:
+```rust
+pub enum Value {
+    Null,
+    Bool(bool),
+    Number(f64),
+    String(String),
+    Array(Vec<Value>),
+    ComponentObject(ComponentId),   // ← live, unattached engine component
+    // future: Closure, Handle, ...
+}
+```
 
-- **heap objects** (arrays, objects, strings, instances)
-- **value representation** (tagged union / NaN-boxing / etc.)
-- **host interop values** (engine component handles, asset handles)
+---
 
-So: the AST describes *what to do*, and the runtime object model describes *what exists* while doing it.
+## `ComponentObject`: the runtime handle for component expressions
 
-## Proposed layering (v1)
+When a component expression is **captured** (not emitted) — appearing as the RHS of a `let`
+binding, a `return` value, a function argument, or inside an array — it evaluates to a
+`ComponentObject`.
 
-- AST: stay close to syntax, spans, and source mapping.
-- Runtime: a small `Value` + `Heap` that evaluation can use.
-- Host interface: adapters between runtime values and engine-side constructors.
+A `ComponentObject` is **not** an inert AST snapshot. It is a live handle to a `ComponentId`:
+the component has been created in the engine but is unattached (no parent, not a world root).
+Through the handle, MMS code can issue mutations back to the main thread and later emit
+(attach) the component.
 
-In code, this starts as `src/meow_meow/object.rs`.
+The key distinction:
 
-## Future note: preserving component-body order
+| | AST | Runtime |
+|---|---|---|
+| Type | `ComponentExpression` | `Value::ComponentObject(ComponentId)` |
+| Lives in | Parser output / `EmitLiftTransform` input | Evaluator heap |
+| Engine state | None — pure data | Component exists in world (unattached) |
+| Used for | Structural analysis, transforms, printing | Evaluation, mutation API, emission |
 
-Today the AST stores `positional`/`calls`/`children` separately.
+The AST describes *what to do*. The runtime `ComponentObject` is *what exists* after doing it.
 
-If we want precise semantics (and later things like `await`, conditional children, etc.), the AST should likely move to something like:
+---
 
-- `body: Vec<ComponentBodyItem>` where `ComponentBodyItem` can be `Call`, `Child`, `Positional`, `Separator`.
+## Proposed layering
 
-That change is intentionally deferred until v1 evaluation semantics are nailed down.
+```
+.mms source
+    ↓ tokenizer → parser
+Vec<Statement>  (raw AST; ComponentExpression nodes)
+    ↓ AstTransform (EmitLiftTransform, etc.)
+Vec<Statement>  (lowered AST; bare Component statements desugared to emit(...) calls)
+    ↓ evaluator
+  - Statement::Expression(Call("emit", [ce]))  → SpawnComponentTree intent → main thread
+  - Statement::Expression(anything → ComponentObject)  → same emit path (Option B rule)
+  - Statement::Assignment   → Value::ComponentObject stored in ObjectWorld env
+  - Statement::Expression(anything → other Value)  → discarded
+  - etc.
+```
+
+The evaluator does not see raw `Statement::Expression(Expression::Component(...))` at the
+top level — the `EmitLiftTransform` has already desugared those to `emit(...)` calls before
+evaluation begins.
+
+---
+
+## Un-parser direction
+
+The un-parser runs in reverse:
+
+```
+ComponentId (live engine component)
+    ↓ un-parser (reads component state, walks children)
+ComponentExpression AST
+    ↓ AstTransforms (ShortformTransform, DefaultPruneTransform, etc.)
+ComponentExpression AST (normalized)
+    ↓ MmsPrinter
+.mms source string
+```
+
+AstTransforms apply here too — the same named-concept infrastructure, different transforms.
+`ShortformTransform` replaces `Transform` with `T`, `Color` with `C`, etc. `DefaultPruneTransform`
+removes named assignments whose values match the component's defaults.
