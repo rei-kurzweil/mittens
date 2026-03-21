@@ -130,6 +130,19 @@ fn main() {
         &mut universe.command_queue,
     );
 
+    let xr_input = universe
+        .world
+        .add_component(engine::ecs::component::InputXRComponent::on());
+    let xr_head = universe
+        .world
+        .add_component(engine::ecs::component::TransformComponent::new());
+    let camera_xr = universe
+        .world
+        .add_component(engine::ecs::component::CameraXRComponent::on());
+    let _ = universe.attach(xr_input, xr_head);
+    let _ = universe.attach(xr_head, camera_xr);
+    universe.add(xr_input);
+
     // Add an OpenXR component so OpenXRSystem initializes and starts polling events.
     let xr_root = universe
         .world

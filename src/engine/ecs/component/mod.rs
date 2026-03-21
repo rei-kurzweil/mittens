@@ -28,6 +28,7 @@ pub mod gizmo;
 pub mod gltf;
 pub mod gravity;
 pub mod input;
+pub mod input_xr;
 pub mod input_transform_mode;
 pub mod keyframe;
 pub mod kinetic_response;
@@ -96,6 +97,7 @@ pub use gizmo::{
 };
 pub use gravity::GravityComponent;
 pub use input::InputComponent;
+pub use input_xr::InputXRComponent;
 pub use input_transform_mode::{ForwardAxis, InputTransformModeComponent, RollAxis};
 pub use keyframe::KeyframeComponent;
 pub use kinetic_response::{KineticResponseComponent, KineticResponseMode};
@@ -123,6 +125,7 @@ pub use transform::TransformComponent;
 pub use transform_pipeline::{
     TransformDropComponent, TransformForkTRSComponent, TransformMergeTRSComponent,
     TransformPipelineComponent, TransformPipelineOutputComponent,
+    TransformSampleAncestorComponent,
 };
 pub use transform_pipeline_map::{
     TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,

@@ -1,7 +1,8 @@
 use crate::engine::ecs::component::{
-    QuatTemporalFilterComponent, TransformDropComponent, TransformForkTRSComponent,
-    TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
-    TransformMergeTRSComponent, TransformPipelineComponent, TransformPipelineOutputComponent,
+    QuatTemporalFilterComponent, TransformComponent, TransformDropComponent,
+    TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
+    TransformMapTranslationComponent, TransformMergeTRSComponent, TransformPipelineComponent,
+    TransformPipelineOutputComponent, TransformSampleAncestorComponent,
     Vector3TemporalFilterComponent,
 };
 use crate::engine::ecs::system::System;
@@ -35,6 +36,11 @@ pub enum TransformPipelineVec3Op {
     Pass,
     Drop,
     TemporalSmooth { smoothing_factor: f32 },
+    /// Replace this channel's value with the world translation of an ancestor
+    /// TransformComponent. `skip` counts TransformComponent ancestors upward from the
+    /// pipeline owner: 0 = the driven T directly above the pipeline, 1 = the next T above
+    /// that (e.g. the armature bone above an InputXR splice), etc.
+    SampleAncestorTranslation { skip: usize },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -42,6 +48,9 @@ pub enum TransformPipelineQuatOp {
     Pass,
     Drop,
     TemporalFilter { smoothing_factor: f32 },
+    /// Replace this channel's value with the world rotation of an ancestor
+    /// TransformComponent. Same `skip` semantics as `SampleAncestorTranslation`.
+    SampleAncestorRotation { skip: usize },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -136,7 +145,7 @@ impl TransformPipelineSystem {
             TransformPipelineOutput::ImplicitTransform => Vec::new(),
             TransformPipelineOutput::OutputRoots(roots) => roots.clone(),
         };
-        let world_matrix = self.evaluate_block(&block, input_world, self.last_dt_sec);
+        let world_matrix = self.evaluate_block(&block, input_world, world, self.last_dt_sec);
         Some((world_matrix, outputs))
     }
 
@@ -272,8 +281,11 @@ impl TransformPipelineSystem {
                 ops.push(TransformPipelineVec3Op::Drop);
                 continue;
             }
-            if let Some(filter) = world.get_component_by_id_as::<Vector3TemporalFilterComponent>(child)
-            {
+            if let Some(s) = world.get_component_by_id_as::<TransformSampleAncestorComponent>(child) {
+                ops.push(TransformPipelineVec3Op::SampleAncestorTranslation { skip: s.skip });
+                continue;
+            }
+            if let Some(filter) = world.get_component_by_id_as::<Vector3TemporalFilterComponent>(child) {
                 ops.push(TransformPipelineVec3Op::TemporalSmooth {
                     smoothing_factor: filter.smoothing_factor,
                 });
@@ -292,8 +304,11 @@ impl TransformPipelineSystem {
                 ops.push(TransformPipelineQuatOp::Drop);
                 continue;
             }
-            if let Some(filter) = world.get_component_by_id_as::<QuatTemporalFilterComponent>(child)
-            {
+            if let Some(s) = world.get_component_by_id_as::<TransformSampleAncestorComponent>(child) {
+                ops.push(TransformPipelineQuatOp::SampleAncestorRotation { skip: s.skip });
+                continue;
+            }
+            if let Some(filter) = world.get_component_by_id_as::<QuatTemporalFilterComponent>(child) {
                 ops.push(TransformPipelineQuatOp::TemporalFilter {
                     smoothing_factor: filter.smoothing_factor,
                 });
@@ -309,12 +324,13 @@ impl TransformPipelineSystem {
         &mut self,
         pipeline: &TransformPipeline,
         input_world: TransformMatrix,
+        world: &World,
         dt_sec: Option<f32>,
     ) -> TransformMatrix {
         let mut channels = Self::decompose_matrix(input_world);
         for (stage_index, stage) in pipeline.stages.iter().enumerate() {
             let mut stage_path = vec![stage_index];
-            channels = self.evaluate_stage(pipeline.owner_component, stage, channels, &mut stage_path, dt_sec);
+            channels = self.evaluate_stage(pipeline.owner_component, stage, channels, &mut stage_path, world, dt_sec);
         }
         Self::recompose_matrix(channels)
     }
@@ -325,14 +341,15 @@ impl TransformPipelineSystem {
         stage: &TransformPipelineStage,
         input: TransformPipelineChannels,
         stage_path: &mut Vec<usize>,
+        world: &World,
         dt_sec: Option<f32>,
     ) -> TransformPipelineChannels {
         match stage {
             TransformPipelineStage::ForkTrs(fork) => {
-                self.evaluate_fork_trs(owner_component, fork, input, stage_path, dt_sec)
+                self.evaluate_fork_trs(owner_component, fork, input, stage_path, world, dt_sec)
             }
             TransformPipelineStage::Pipeline(pipeline) => {
-                self.evaluate_block(pipeline, Self::recompose_matrix(input), dt_sec).into()
+                self.evaluate_block(pipeline, Self::recompose_matrix(input), world, dt_sec).into()
             }
         }
     }
@@ -343,6 +360,7 @@ impl TransformPipelineSystem {
         fork: &TransformForkTrsStage,
         input: TransformPipelineChannels,
         stage_path: &[usize],
+        world: &World,
         dt_sec: Option<f32>,
     ) -> TransformPipelineChannels {
         let translation = self.apply_vec3_ops(
@@ -351,6 +369,7 @@ impl TransformPipelineSystem {
             input.translation,
             [0.0, 0.0, 0.0],
             stage_path,
+            world,
             dt_sec,
         );
         let rotation_quat_xyzw = self.apply_quat_ops(
@@ -359,6 +378,7 @@ impl TransformPipelineSystem {
             input.rotation_quat_xyzw,
             [0.0, 0.0, 0.0, 1.0],
             stage_path,
+            world,
             dt_sec,
         );
         let scale = self.apply_vec3_ops(
@@ -367,6 +387,7 @@ impl TransformPipelineSystem {
             input.scale,
             [1.0, 1.0, 1.0],
             stage_path,
+            world,
             dt_sec,
         );
 
@@ -381,6 +402,23 @@ impl TransformPipelineSystem {
         }
     }
 
+    /// Walk ancestor TransformComponents from `owner` upward. Returns the world matrix of the
+    /// `skip`-th TransformComponent found (0 = first / nearest ancestor, 1 = second, etc.).
+    fn sample_ancestor_world(world: &World, owner: ComponentId, skip: usize) -> Option<TransformMatrix> {
+        let mut found = 0usize;
+        let mut cur = owner;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(t) = world.get_component_by_id_as::<TransformComponent>(parent) {
+                if found == skip {
+                    return Some(t.transform.matrix_world);
+                }
+                found += 1;
+            }
+            cur = parent;
+        }
+        None
+    }
+
     fn apply_vec3_ops(
         &mut self,
         owner_component: Option<ComponentId>,
@@ -388,6 +426,7 @@ impl TransformPipelineSystem {
         input: [f32; 3],
         dropped_value: [f32; 3],
         stage_path: &[usize],
+        world: &World,
         dt_sec: Option<f32>,
     ) -> [f32; 3] {
         let mut current = input;
@@ -395,6 +434,12 @@ impl TransformPipelineSystem {
             current = match *op {
                 TransformPipelineVec3Op::Pass => current,
                 TransformPipelineVec3Op::Drop => dropped_value,
+                TransformPipelineVec3Op::SampleAncestorTranslation { skip } => {
+                    owner_component
+                        .and_then(|owner| Self::sample_ancestor_world(world, owner, skip))
+                        .map(|m| [m[3][0], m[3][1], m[3][2]])
+                        .unwrap_or(current)
+                }
                 TransformPipelineVec3Op::TemporalSmooth { smoothing_factor } => {
                     let mut full_path = stage_path.to_vec();
                     full_path.push(op_index);
@@ -429,6 +474,7 @@ impl TransformPipelineSystem {
         input: [f32; 4],
         dropped_value: [f32; 4],
         stage_path: &[usize],
+        world: &World,
         dt_sec: Option<f32>,
     ) -> [f32; 4] {
         let mut current = Self::quat_normalize(input);
@@ -436,6 +482,12 @@ impl TransformPipelineSystem {
             current = match *op {
                 TransformPipelineQuatOp::Pass => current,
                 TransformPipelineQuatOp::Drop => dropped_value,
+                TransformPipelineQuatOp::SampleAncestorRotation { skip } => {
+                    owner_component
+                        .and_then(|owner| Self::sample_ancestor_world(world, owner, skip))
+                        .map(|m| Self::decompose_matrix(m).rotation_quat_xyzw)
+                        .unwrap_or(current)
+                }
                 TransformPipelineQuatOp::TemporalFilter { smoothing_factor } => {
                     let mut full_path = stage_path.to_vec();
                     full_path.push(op_index);
@@ -453,7 +505,10 @@ impl TransformPipelineSystem {
                         .as_ref()
                         .map(|state| state.last_input_quat_xyzw)
                         .unwrap_or(current);
-                    let filtered = Self::quat_nlerp(previous_output, current, alpha);
+                    let filtered = previous_state
+                        .as_ref()
+                        .map(|state| state.output_quat_xyzw)
+                        .unwrap_or(current);
 
                     let mut next_state = previous_state.unwrap_or(QuatTemporalState {
                         output_quat_xyzw: filtered,
@@ -623,21 +678,6 @@ impl TransformPipelineSystem {
         } else {
             [0.0, 0.0, 0.0, 1.0]
         }
-    }
-
-    fn quat_nlerp(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
-        let mut end = b;
-        let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
-        if dot < 0.0 {
-            end = [-b[0], -b[1], -b[2], -b[3]];
-        }
-        let one_minus_t = 1.0 - t;
-        Self::quat_normalize([
-            a[0] * one_minus_t + end[0] * t,
-            a[1] * one_minus_t + end[1] * t,
-            a[2] * one_minus_t + end[2] * t,
-            a[3] * one_minus_t + end[3] * t,
-        ])
     }
 
     fn vec3_lerp(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {

@@ -47,7 +47,7 @@ impl CameraXRComponent {
 
 impl Default for CameraXRComponent {
     fn default() -> Self {
-        Self::off()
+        Self::on()
     }
 }
 

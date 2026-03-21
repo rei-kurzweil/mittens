@@ -1,7 +1,7 @@
 use cat_engine::engine::ecs::component::{
-    AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ColorComponent,
-    DirectionalLightComponent, GLTFComponent, InputComponent, InputTransformModeComponent,
-    RenderableComponent, TransformComponent,
+    AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, CameraXRComponent,
+    ColorComponent, DirectionalLightComponent, GLTFComponent, InputComponent,
+    InputTransformModeComponent, InputXRComponent, RenderableComponent, TransformComponent,
 };
 use cat_engine::{engine, utils};
 
@@ -90,7 +90,15 @@ fn main() {
 
     let _ = universe.attach(model, emissive);
 
+    let xr_input = universe.world.add_component(InputXRComponent::on());
+    let xr_head = universe.world.add_component(TransformComponent::new());
+    let xr_camera = universe.world.add_component(CameraXRComponent::on());
+    let _ = universe.attach(xr_input, xr_head);
+    let _ = universe.attach(xr_head, xr_camera);
+    let _ = universe.attach(xr_head, model_root);
+
     let _ = universe.attach(model_root, model);
+    universe.add(xr_input);
     universe.add(model_root);
 
     // --- Background clouds (occluded + lit) ---

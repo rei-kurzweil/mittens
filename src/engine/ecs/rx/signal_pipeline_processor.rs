@@ -105,7 +105,9 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterKineticResponse { component_ids }
             | IntentValue::RemoveKineticResponse { component_ids }
             | IntentValue::RegisterOpenxr { component_ids }
+            | IntentValue::RegisterInputXr { component_ids }
             | IntentValue::RegisterControllerXr { component_ids }
+            | IntentValue::RemoveInputXr { component_ids }
             | IntentValue::RemoveControllerXr { component_ids }
             | IntentValue::RegisterRaycast { component_ids }
             | IntentValue::RemoveRaycast { component_ids }
@@ -185,7 +187,9 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterKineticResponse { component_ids }
             | IntentValue::RemoveKineticResponse { component_ids }
             | IntentValue::RegisterOpenxr { component_ids }
+            | IntentValue::RegisterInputXr { component_ids }
             | IntentValue::RegisterControllerXr { component_ids }
+            | IntentValue::RemoveInputXr { component_ids }
             | IntentValue::RemoveControllerXr { component_ids }
             | IntentValue::RegisterRaycast { component_ids }
             | IntentValue::RemoveRaycast { component_ids }

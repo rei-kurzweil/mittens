@@ -289,9 +289,19 @@ impl RxMutationExecutor {
                     systems.register_openxr(world, visuals, component);
                 }
             }
+            IntentValue::RegisterInputXr { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_input_xr(world, visuals, component);
+                }
+            }
             IntentValue::RegisterControllerXr { component_ids } => {
                 for &component in component_ids.iter() {
                     systems.register_controller_xr(world, visuals, component);
+                }
+            }
+            IntentValue::RemoveInputXr { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.remove_input_xr(world, visuals, component);
                 }
             }
             IntentValue::RemoveControllerXr { component_ids } => {

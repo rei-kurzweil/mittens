@@ -375,7 +375,13 @@ pub enum IntentValue {
     RegisterOpenxr {
         component_ids: Vec<ComponentId>,
     },
+    RegisterInputXr {
+        component_ids: Vec<ComponentId>,
+    },
     RegisterControllerXr {
+        component_ids: Vec<ComponentId>,
+    },
+    RemoveInputXr {
         component_ids: Vec<ComponentId>,
     },
     RemoveControllerXr {
@@ -530,7 +536,9 @@ impl IntentValue {
             IntentValue::RemoveKineticResponse { .. } => "remove_kinetic_response",
 
             IntentValue::RegisterOpenxr { .. } => "register_openxr",
+            IntentValue::RegisterInputXr { .. } => "register_input_xr",
             IntentValue::RegisterControllerXr { .. } => "register_controller_xr",
+            IntentValue::RemoveInputXr { .. } => "remove_input_xr",
             IntentValue::RemoveControllerXr { .. } => "remove_controller_xr",
 
             IntentValue::RegisterRaycast { .. } => "register_raycast",

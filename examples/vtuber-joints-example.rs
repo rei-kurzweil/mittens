@@ -1,8 +1,9 @@
 use cat_engine::engine::ecs::component::{
-    AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ClockComponent,
-    ColorComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent, GLTFComponent,
-    InputComponent, InputTransformModeComponent, MeshComponent, PointerComponent, RayCastComponent,
-    RaycastableComponent, RenderableComponent, SkinnedMeshComponent, TransformComponent,
+    AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, CameraXRComponent,
+    ClockComponent, ColorComponent, DirectionalLightComponent, EditorComponent,
+    EmissiveComponent, GLTFComponent, InputComponent, InputTransformModeComponent,
+    InputXRComponent, MeshComponent, PointerComponent, RayCastComponent, RaycastableComponent,
+    RenderableComponent, SkinnedMeshComponent, TransformComponent,
 };
 use cat_engine::{engine, utils};
 use std::collections::{HashMap, HashSet};
@@ -109,11 +110,19 @@ fn main() {
         .add_component(EmissiveComponent { enabled: true });
     let _ = universe.attach(model, emissive);
 
+    let xr_input = universe.world.add_component(InputXRComponent::on());
+    let xr_head = universe.world.add_component(TransformComponent::new());
+    let xr_camera = universe.world.add_component(CameraXRComponent::on());
+    let _ = universe.attach(xr_input, xr_head);
+    let _ = universe.attach(xr_head, xr_camera);
+    let _ = universe.attach(xr_head, editor_root);
+
     let _ = universe.attach(model_root, model);
 
     let _ = universe.attach(editor_root, model_root);
 
     // Initialize the editor root so GLTFComponent gets registered.
+    universe.add(xr_input);
     universe.add(editor_root);
 
     // --- Background clouds (occluded + lit) ---

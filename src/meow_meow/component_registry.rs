@@ -13,13 +13,15 @@ use crate::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, BackgroundComponent, Camera3DComponent,
     CameraXRComponent, ColorComponent, ControllerHand, ControllerPoseKind,
     ControllerXRComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent,
-    GLTFComponent, InputComponent, InputTransformModeComponent, OpenXRComponent,
+    GLTFComponent, InputComponent, InputTransformModeComponent, InputXRComponent,
+    OpenXRComponent,
     QuatTemporalFilterComponent, RayCastComponent, RayCastMode, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TextComponent, TextShadowComponent,
-    TextureFilteringComponent, TransformComponent, TransformForkTRSComponent,
-    TransformMapRotationComponent, TransformMapScaleComponent,
+    TextureFilteringComponent, TransformComponent, TransformDropComponent,
+    TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
     TransformMapTranslationComponent, TransformMergeTRSComponent,
     TransformPipelineComponent, TransformPipelineOutputComponent,
+    TransformSampleAncestorComponent,
 };
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::ecs::SignalEmitter;
@@ -219,6 +221,11 @@ fn create_component(
             }
             add!(c)
         }
+        "InputXR" => match ctor {
+            Some("on") => add!(InputXRComponent::on()),
+            Some("off") => add!(InputXRComponent::off()),
+            _ => add!(InputXRComponent::on()),
+        },
         "InputTransformMode" => {
             let c = match ctor {
                 Some("forward_z") => InputTransformModeComponent::forward_z(),
@@ -259,6 +266,14 @@ fn create_component(
         "TransformMapScale" => add!(TransformMapScaleComponent::new()),
         "TransformMergeTRS" => add!(TransformMergeTRSComponent::new()),
         "TransformPipelineOutput" => add!(TransformPipelineOutputComponent::new()),
+        "TransformDrop" => add!(TransformDropComponent::new()),
+        "TransformSampleAncestor" => {
+            let mut c = TransformSampleAncestorComponent::new();
+            if let Some("with_skip") = ctor {
+                c = c.with_skip(args[0].as_f32()? as usize);
+            }
+            add!(c)
+        }
         "QuatTemporalFilter" => {
             let mut c = QuatTemporalFilterComponent::new();
             if let Some("with_smoothing_factor") = ctor {

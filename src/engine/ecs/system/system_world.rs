@@ -78,8 +78,8 @@ impl SystemWorld {
         root: ComponentId,
     ) {
         use crate::engine::ecs::component::{
-            CollisionComponent, ControllerXRComponent, KineticResponseComponent, RayCastComponent,
-            RenderableComponent, SignalRouteUpwardComponent, TransformComponent,
+            CollisionComponent, ControllerXRComponent, InputXRComponent, KineticResponseComponent,
+            RayCastComponent, RenderableComponent, SignalRouteUpwardComponent, TransformComponent,
         };
 
         // Best-effort: remove system state for known component types before deleting.
@@ -122,6 +122,12 @@ impl SystemWorld {
                 .is_some()
             {
                 self.remove_raycast(world, visuals, n);
+            }
+            if world
+                .get_component_by_id_as::<InputXRComponent>(n)
+                .is_some()
+            {
+                self.remove_input_xr(world, visuals, n);
             }
             if world
                 .get_component_by_id_as::<ControllerXRComponent>(n)
@@ -812,6 +818,16 @@ impl SystemWorld {
         self.openxr.register_openxr(world, visuals, component);
     }
 
+    /// Register an InputXRComponent (tracks the headset/root XR pose and drives a transform).
+    pub fn register_input_xr(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.openxr.register_input_xr(world, visuals, component);
+    }
+
     /// Register a ControllerXRComponent (tracks an XR controller pose and drives a transform).
     pub fn register_controller_xr(
         &mut self,
@@ -831,6 +847,16 @@ impl SystemWorld {
         component: ComponentId,
     ) {
         self.openxr.remove_controller_xr(world, visuals, component);
+    }
+
+    /// Remove an InputXRComponent from OpenXRSystem tracking.
+    pub fn remove_input_xr(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.openxr.remove_input_xr(world, visuals, component);
     }
 
     /// Register a PointLightComponent instance with the LightSystem.

@@ -61,90 +61,97 @@ T {
     }
 }
 
-// --- XR rig ---
-T {
-    T.with_position(0.0, 1.85, 0.6) {
-        RendererStats {
-            with_camera_target(Xr)
+BG {
+    T {
+        with_position(2.0, 1.5, -8.0)
+        with_scale(3.5, 3.5, 3.5)
+        R.circle2d() {
+            C.rgba(1.0, 0.85, 0.15, 1.0)
+            EM.on()
         }
-    }
-
-    CXR.on()
-
-    // Background skybox layer (view translation stripped by renderer)
-    // NOTE: R.circle2d() needs a host-provided named constructor.
-    BG {
         T {
-            with_position(2.0, 1.5, -8.0)
-            with_scale(3.5, 3.5, 3.5)
+            with_position(-0.35, 0.35, -0.01)
+            with_scale(0.45, 0.45, 0.45)
             R.circle2d() {
-                C.rgba(1.0, 0.85, 0.15, 1.0)
+                C.rgba(1.0, 1.0, 1.0, 1.0)
                 EM.on()
             }
-            T {
-                with_position(-0.35, 0.35, -0.01)
-                with_scale(0.45, 0.45, 0.45)
-                R.circle2d() {
-                    C.rgba(1.0, 1.0, 1.0, 1.0)
-                    EM.on()
-                }
-            }
-        }
-    }
-
-    // Controller cubes (ControllerHand and ControllerPoseKind variants as bare identifiers)
-    CTLXR.new(true, Left, Aim) {
-        T.with_scale(0.06, 0.06, 0.12) {
-            TransformPipeline {
-                TransformForkTRS {
-                    TransformMapTranslation {}
-                    TransformMapRotation {
-                        QuatTemporalFilter.with_smoothing_factor(220.0)
-                    }
-                    TransformMapScale {}
-                    TransformMergeTRS {}
-                }
-                TransformPipelineOutput {
-                    T {
-                        R.cube() {
-                            C.rgba(0.10, 0.90, 1.00, 1.0)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    CTLXR.new(true, Right, Aim) {
-        T.with_scale(0.06, 0.06, 0.12) {
-            TransformPipeline {
-                TransformForkTRS {
-                    TransformMapTranslation {}
-                    TransformMapRotation {
-                        QuatTemporalFilter.with_smoothing_factor(220.0)
-                    }
-                    TransformMapScale {}
-                    TransformMergeTRS {}
-                }
-                TransformPipelineOutput {
-                    T {
-                        R.cube() {
-                            C.rgba(1.00, 0.35, 0.35, 1.0)
-                        }
-                    }
-                }
-            }
         }
     }
 }
+
 
 // --- VTuber model ---
-let vtuber = T {
-    GLTF.new("assets/models/pc-rei.hoodie.glb") {
-        EM.on()
+// Outer InputXR drives avatar body translation to follow HMD.
+// Head bone rotation splice (see vr-input.rs) wires a second InputXR
+// into the neck with SampleAncestorTranslation to restore bone position.
+InputXR {
+    T {
+        GLTF.new("assets/models/pc-rei.hoodie.glb") {
+            EM.on()
+        }
     }
 }
-vtuber
+
+// --- XR rig ---
+InputXR {
+    T {
+        T.with_position(0.0, 1.85, 0.6) {
+            RendererStats {
+                with_camera_target(Xr)
+            }
+        }
+
+        CXR {}
+
+
+        // Controller cubes (ControllerHand and ControllerPoseKind variants as bare identifiers)
+        CTLXR.new(true, Left, Aim) {
+            T.with_scale(0.06, 0.06, 0.12) {
+                TransformPipeline {
+                    TransformForkTRS {
+                        TransformMapTranslation {}
+                        TransformMapRotation {
+                            QuatTemporalFilter.with_smoothing_factor(220.0)
+                        }
+                        TransformMapScale {}
+                        TransformMergeTRS {}
+                    }
+                    TransformPipelineOutput {
+                        T {
+                            R.cube() {
+                                C.rgba(0.10, 0.90, 1.00, 1.0)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        CTLXR.new(true, Right, Aim) {
+            T.with_scale(0.06, 0.06, 0.12) {
+                TransformPipeline {
+                    TransformForkTRS {
+                        TransformMapTranslation {}
+                        TransformMapRotation {
+                            QuatTemporalFilter.with_smoothing_factor(220.0)
+                        }
+                        TransformMapScale {}
+                        TransformMergeTRS {}
+                    }
+                    TransformPipelineOutput {
+                        T {
+                            R.cube() {
+                                C.rgba(1.00, 0.35, 0.35, 1.0)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+    }
+}
 
 // --- OpenXR runtime ---
 XR.on()

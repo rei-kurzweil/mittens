@@ -256,6 +256,7 @@ impl ComponentCodec {
                 Ok(Box::new(TransformPipelineOutputComponent::new()))
             }
             "transform_drop" => Ok(Box::new(TransformDropComponent::new())),
+            "transform_sample_ancestor" => Ok(Box::new(TransformSampleAncestorComponent::new())),
             "vector3_temporal_filter" => {
                 Ok(Box::new(Vector3TemporalFilterComponent::new()))
             }
@@ -283,12 +284,13 @@ impl ComponentCodec {
             "texture" => Ok(Box::new(TextureComponent::new(""))),
             "camera2d" => Ok(Box::new(Camera2DComponent::new())),
             "camera3d" => Ok(Box::new(Camera3DComponent::new())),
-            "camera_xr" => Ok(Box::new(CameraXRComponent::off())),
+            "camera_xr" => Ok(Box::new(CameraXRComponent::default())),
             "controller_xr" => Ok(Box::new(ControllerXRComponent::default())),
             "point_light" => Ok(Box::new(PointLightComponent::new())),
             "directional_light" => Ok(Box::new(DirectionalLightComponent::new())),
             "uv" => Ok(Box::new(UVComponent::new())),
             "input" => Ok(Box::new(InputComponent::new())),
+            "input_xr" => Ok(Box::new(InputXRComponent::default())),
             "input_transform_mode" => Ok(Box::new(InputTransformModeComponent::default())),
             "openxr" => Ok(Box::new(OpenXRComponent::off())),
             "text" => Ok(Box::new(TextComponent::new(""))),

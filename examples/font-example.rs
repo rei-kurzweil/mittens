@@ -2,9 +2,10 @@ use cat_engine::{engine, utils};
 
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, BackgroundComponent, Camera3DComponent,
-    ColorComponent, InputComponent, InputTransformModeComponent, PointerComponent,
-    RayCastComponent, RaycastableComponent, TextComponent, TextShadowComponent, TextureComponent,
-    TextureFilteringComponent, TransformComponent, TransparentCutoutComponent,
+    CameraXRComponent, ColorComponent, InputComponent, InputTransformModeComponent,
+    InputXRComponent, PointerComponent, RayCastComponent, RaycastableComponent, TextComponent,
+    TextShadowComponent, TextureComponent, TextureFilteringComponent, TransformComponent,
+    TransparentCutoutComponent,
 };
 
 #[path = "example_util/mod.rs"]
@@ -348,6 +349,13 @@ fn main() {
     );
 
     universe.enable_repl();
+
+    let xr_input = universe.world.add_component(InputXRComponent::on());
+    let xr_head = universe.world.add_component(TransformComponent::new());
+    let xr_camera = universe.world.add_component(CameraXRComponent::on());
+    let _ = universe.attach(xr_input, xr_head);
+    let _ = universe.attach(xr_head, xr_camera);
+    universe.add(xr_input);
 
     // Add an OpenXR component so OpenXRSystem initializes and starts polling events.
     let xr_root = universe
