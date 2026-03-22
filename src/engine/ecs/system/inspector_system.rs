@@ -130,7 +130,6 @@ fn spawn_world_panel(
         Box::new(TransformComponent::new().with_position(pos.0, pos.1, pos.2)),
     );
 
-    let _ = world.add_child(editor_root, wpa);
     let _ = world.add_child(wpa, wpo);
     let _ = world.add_child(wpo, wpc);
     let _ = world.add_child(wpc, wpr);
@@ -167,7 +166,6 @@ fn spawn_inspector_panel(
         Box::new(TransformComponent::new().with_position(pos.0, pos.1, pos.2)),
     );
 
-    let _ = world.add_child(editor_root, ipa);
     let _ = world.add_child(ipa, ipo);
     let _ = world.add_child(ipo, ipc);
     let _ = world.add_child(ipc, ipr);

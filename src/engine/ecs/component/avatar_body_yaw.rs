@@ -28,6 +28,11 @@ pub struct AvatarBodyYawComponent {
     /// model_root's initial `rotation_euler(0, π, 0)` base flip.
     pub(crate) body_yaw: f32,
 
+    /// When true, use +Z as the forward axis when extracting yaw from the driven
+    /// transform's world matrix. Use for desktop/keyboard setups with
+    /// `InputTransformModeComponent::forward_z()`. Default false = -Z (OpenXR).
+    pub forward_plus_z: bool,
+
     component: Option<ComponentId>,
 }
 
@@ -50,6 +55,20 @@ impl AvatarBodyYawComponent {
         self.hmd_driven_transform = Some(id);
         self
     }
+
+    /// Override the starting body yaw (radians). Defaults to π to match the vr-input
+    /// model_root base flip. Set to 0.0 for setups with no base rotation on model_root.
+    pub fn with_initial_yaw(mut self, yaw: f32) -> Self {
+        self.body_yaw = yaw;
+        self
+    }
+
+    /// Use +Z as the forward axis for yaw extraction. Required for desktop setups
+    /// using `InputTransformModeComponent::forward_z()`.
+    pub fn with_forward_plus_z(mut self) -> Self {
+        self.forward_plus_z = true;
+        self
+    }
 }
 
 impl Default for AvatarBodyYawComponent {
@@ -59,6 +78,7 @@ impl Default for AvatarBodyYawComponent {
             rate: 3.0,
             hmd_driven_transform: None,
             body_yaw: std::f32::consts::PI,
+            forward_plus_z: false,
             component: None,
         }
     }

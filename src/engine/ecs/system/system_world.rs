@@ -588,16 +588,28 @@ impl SystemWorld {
         world: &mut World,
         _visuals: &mut VisualWorld,
         component: ComponentId,
-        _emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
     ) {
-        // Install editor gesture/picking handlers scoped to this editor root.
-        // (Editor selection is driven by DragStart events under the subtree.)
-        if world
+        let panel_cfg = world
             .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(component)
-            .is_some()
-        {
-            self.editor
-                .install_scoped_handlers_for_editor(&mut self.rx, component);
+            .map(|ed| (ed.spawn_panels, ed.world_panel_pos, ed.inspector_panel_pos));
+
+        let Some((spawn_panels, world_panel_pos, inspector_panel_pos)) = panel_cfg else {
+            return;
+        };
+
+        self.editor
+            .install_scoped_handlers_for_editor(&mut self.rx, component);
+
+        if spawn_panels {
+            self.inspector.setup_panels_for_editor(
+                &mut self.rx,
+                world,
+                emit,
+                component,
+                world_panel_pos,
+                inspector_panel_pos,
+            );
         }
     }
 

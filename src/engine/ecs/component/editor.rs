@@ -38,6 +38,15 @@ pub struct EditorComponent {
     /// Coordinate space used for rotation handles (rings).
     pub transform_gizmo_rotation_space: TransformGizmoCoordSpace,
 
+    /// Spawn world-tree and inspector panels automatically on init. Default: true.
+    pub spawn_panels: bool,
+
+    /// World-space position of the world-tree panel. Default: (-0.7, 1.6, -1.2).
+    pub world_panel_pos: (f32, f32, f32),
+
+    /// World-space position of the inspector panel. Default: (0.5, 1.6, -1.2).
+    pub inspector_panel_pos: (f32, f32, f32),
+
     component: Option<ComponentId>,
 }
 
@@ -49,6 +58,9 @@ impl Default for EditorComponent {
             // Default to the common editor expectation: translate in World, rotate in Local.
             transform_gizmo_translation_space: TransformGizmoCoordSpace::World,
             transform_gizmo_rotation_space: TransformGizmoCoordSpace::Local,
+            spawn_panels: true,
+            world_panel_pos: (-0.7, 1.6, -1.2),
+            inspector_panel_pos: (0.5, 1.6, -1.2),
             component: None,
         }
     }
@@ -69,6 +81,23 @@ impl EditorComponent {
 
     pub fn with_transform_gizmo_rotation_space(mut self, space: TransformGizmoCoordSpace) -> Self {
         self.transform_gizmo_rotation_space = space;
+        self
+    }
+
+    /// Suppress automatic panel spawning. Call as `.with_panels(false)`.
+    pub fn with_panels(mut self, enabled: bool) -> Self {
+        self.spawn_panels = enabled;
+        self
+    }
+
+    /// Override panel positions (world_panel, inspector_panel).
+    pub fn with_panel_positions(
+        mut self,
+        world_panel: (f32, f32, f32),
+        inspector_panel: (f32, f32, f32),
+    ) -> Self {
+        self.world_panel_pos = world_panel;
+        self.inspector_panel_pos = inspector_panel;
         self
     }
 

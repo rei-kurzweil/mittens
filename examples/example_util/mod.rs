@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use cat_engine::engine::{self, ecs::component::TextShadowComponent};
+use cat_engine::engine::{self, ecs::component::{TextBackgroundComponent, TextShadowComponent}};
 
 fn hash_u32(mut x: u32) -> u32 {
     x ^= x >> 16;
@@ -190,15 +190,12 @@ pub fn spawn_desktop_camera_controls_hint(
     // Text color should be an immediate child of the TextComponent root.
     let color = universe
         .world
-        .add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+        .add_component(ColorComponent::rgba(0.0, 0.0, 0.0, 1.0));
     let _ = universe.attach(text, color);
 
-    let text_shadow = universe.world.add_component(
-        TextShadowComponent::new()
-            .with_offset_xy([0.06, -0.06])
-            .with_z_offset(0.0025),
-    );
-    let _ = universe.attach(text, text_shadow);
+    let text_background = universe.world.add_component(
+        TextBackgroundComponent::new().with_color(0.9, 0.9, 0.9, 0.8));
+    let _ = universe.attach(text, text_background);
 
     // TextSystem looks for these as immediate children of the TextComponent root.
     let emissive = universe.world.add_component(EmissiveComponent::on());

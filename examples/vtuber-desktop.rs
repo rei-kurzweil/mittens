@@ -1,6 +1,6 @@
 use cat_engine::engine::ecs::component::{
-    AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ColorComponent,
-    DirectionalLightComponent, EditorComponent, EmissiveComponent, GLTFComponent,
+    AmbientLightComponent, AvatarBodyYawComponent, BackgroundColorComponent, Camera3DComponent,
+    ColorComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent, GLTFComponent,
     InputComponent, InputTransformModeComponent, PointerComponent, RayCastComponent,
     RaycastableComponent, RenderableComponent, RendererSettingsComponent,
     TransformComponent, TransformDropComponent, TransformForkTRSComponent,
@@ -118,20 +118,20 @@ fn main() {
 
     // --- Viewer camera (separate from avatar) ---
     // Positioned behind and above the avatar so the streaming audience sees the model.
-    let camera_input = universe
-        .world
-        .add_component(InputComponent::new().with_speed(2.0));
-    let camera_input_mode = universe.world.add_component(
-        InputTransformModeComponent::forward_z()
-            .with_fps_rotation()
-            .with_roll_axis_y(),
-    );
-    let _ = universe.attach(camera_input, camera_input_mode);
+    // let camera_input = universe
+    //     .world
+    //     .add_component(InputComponent::new().with_speed(2.0));
+    // let camera_input_mode = universe.world.add_component(
+    //     InputTransformModeComponent::forward_z()
+    //         .with_fps_rotation()
+    //         .with_roll_axis_y(),
+    // );
+    // let _ = universe.attach(camera_input, camera_input_mode);
 
     let camera_rig = universe.world.add_component(
         TransformComponent::new().with_position(0.0, 1.2, 3.0),
     );
-    let _ = universe.attach(camera_input, camera_rig);
+    //let _ = universe.attach(camera_input, camera_rig);
 
     let camera3d = universe.world.add_component(Camera3DComponent::new());
     let _ = universe.attach(camera_rig, camera3d);
@@ -145,7 +145,7 @@ fn main() {
     let _ = universe.attach(raycaster, pointer);
 
     example_util::spawn_desktop_camera_controls_hint(&mut universe, camera_rig);
-    universe.add(camera_input);
+    universe.add(camera_rig);
 
     // --- VTuber avatar ---
     // Body InputComponent drives the avatar's position via a translation-only pipeline.
@@ -184,9 +184,21 @@ fn main() {
     let _ = universe.attach(av_fork, av_merge);
     let _ = universe.attach(av_pipeline, av_output);
 
-    // EditorComponent makes the avatar subtree selectable + gizmo-interactive.
+    // EditorComponent is the scene root — it contains the whole avatar pipeline so the
+    // world-tree panel shows the full hierarchy.
     let editor_root = universe.world.add_component(EditorComponent::new());
-    let _ = universe.attach(av_output, editor_root);
+
+    // AvatarBodyYawComponent: smoothly rotates the body to follow body_driven_t yaw.
+    // forward_plus_z: desktop uses +Z forward (InputTransformModeComponent::forward_z).
+    // initial_yaw(0.0): at rest body_driven_t is identity → +Z yaw = 0, model_root starts at identity.
+    // hmd_driven_transform wired to body_driven_t below.
+    let avatar_body_yaw = universe.world.add_component(
+        AvatarBodyYawComponent::new()
+            .with_initial_yaw(0.0)
+            .with_threshold(std::f32::consts::FRAC_PI_4)
+            .with_rate(3.0)
+            .with_forward_plus_z(),
+    );
 
     // model_root sits at -AVATAR_HEIGHT_M so the avatar stands at floor level
     // (the body pipeline carries only translation, model_root local Y offsets below that).
@@ -201,10 +213,13 @@ fn main() {
     let emissive = universe.world.add_component(EmissiveComponent::on());
     let _ = universe.attach(model, emissive);
 
-    let _ = universe.attach(editor_root, model_root);
+    // Topology: editor_root → body_input → ... → av_output → avatar_body_yaw → model_root → model
+    let _ = universe.attach(editor_root, body_input);
+    let _ = universe.attach(av_output, avatar_body_yaw);
+    let _ = universe.attach(avatar_body_yaw, model_root);
     let _ = universe.attach(model_root, model);
 
-    universe.add(body_input);
+    universe.add(editor_root);
 
     universe.systems.process_commands(
         &mut universe.world,
@@ -261,12 +276,21 @@ fn main() {
         let _ = universe.attach(bone, marker_t);
     }
 
+    // Wire body_driven_t as the yaw source: body_driven_t is in world space and
+    // tracks the character's facing direction cleanly (no bone-hierarchy offsets).
+    if let Some(ayc) = universe
+        .world
+        .get_component_by_id_as_mut::<AvatarBodyYawComponent>(avatar_body_yaw)
+    {
+        ayc.hmd_driven_transform = Some(body_driven_t);
+    }
+
     // Splice head rotation: Q/E drives head bone yaw.
     let head_selector = "[name='J_Bip_C_Head']";
     match attach_head_rotation_splice(&mut universe, model_root, head_selector) {
-        Ok(input_id) => println!(
+        Ok(head_input_id) => println!(
             "[vtuber-desktop] head rotation splice done: Input {:?} drives '{}'",
-            input_id, head_selector,
+            head_input_id, head_selector,
         ),
         Err(e) => eprintln!("[vtuber-desktop] head rotation splice failed: {e}"),
     }

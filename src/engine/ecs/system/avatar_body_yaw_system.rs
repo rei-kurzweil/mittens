@@ -31,11 +31,11 @@ fn tick_one(
     emit: &mut dyn SignalEmitter,
     dt_sec: f32,
 ) {
-    let (hmd_id, threshold, rate, body_yaw) = {
+    let (hmd_id, threshold, rate, body_yaw, forward_plus_z) = {
         let Some(c) = world.get_component_by_id_as::<AvatarBodyYawComponent>(id) else {
             return;
         };
-        (c.hmd_driven_transform, c.threshold, c.rate, c.body_yaw)
+        (c.hmd_driven_transform, c.threshold, c.rate, c.body_yaw, c.forward_plus_z)
     };
 
     let Some(hmd_id) = hmd_id else { return };
@@ -44,7 +44,7 @@ fn tick_one(
         let Some(t) = world.get_component_by_id_as::<TransformComponent>(hmd_id) else {
             return;
         };
-        extract_world_yaw(t.transform.matrix_world)
+        extract_world_yaw(t.transform.matrix_world, forward_plus_z)
     };
 
     let delta = signed_yaw_diff(hmd_yaw, body_yaw);
@@ -95,13 +95,15 @@ fn tick_one(
 // ---------------------------------------------------------------------------
 
 /// Extract world-space yaw (Y-axis rotation) from a column-major 4×4 matrix.
-/// Returns the angle in radians. The forward direction is -Z in OpenXR space,
-/// so we use the X and Z components of the -Z column (column 2, negated).
-fn extract_world_yaw(m: [[f32; 4]; 4]) -> f32 {
-    // -Z column: forward direction in world space.
-    let fwd_x = -m[2][0];
-    let fwd_z = -m[2][2];
-    fwd_x.atan2(fwd_z)
+/// `plus_z_forward`: use +Z as forward (desktop/keyboard). false = -Z (OpenXR).
+fn extract_world_yaw(m: [[f32; 4]; 4], plus_z_forward: bool) -> f32 {
+    if plus_z_forward {
+        // +Z column: forward direction in world space.
+        m[2][0].atan2(m[2][2])
+    } else {
+        // -Z column: forward direction in OpenXR space.
+        (-m[2][0]).atan2(-m[2][2])
+    }
 }
 
 /// Signed difference a - b, wrapped to [-π, π].

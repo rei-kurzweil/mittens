@@ -14,7 +14,6 @@ use cat_engine::engine::graphics::primitives::{MaterialHandle, Renderable};
 use cat_engine::engine::graphics::BuiltinMeshType;
 use cat_engine::engine::ecs::{IntentValue, SignalEmitter};
 use cat_engine::{engine, utils};
-use std::collections::HashMap;
 
 #[path = "example_util/mod.rs"]
 mod example_util;
@@ -597,7 +596,7 @@ fn main() {
     // Original parents are recorded HERE (before the initial splice) so the move
     // handler always knows the natural parent to restore displaced bones to.
     //
-    // Colors: head=purple, neck=teal, upper-chest=blue, shoulders=yellow/orange.
+    // Colored bone markers for editor inspection.
     let marker_joints: &[(&str, (f32, f32, f32, f32))] = &[
         ("[name='J_Bip_C_Head']",       (0.85, 0.20, 0.85, 0.9)),
         ("[name='J_Bip_C_Neck']",        (0.20, 0.85, 0.85, 0.9)),
@@ -606,20 +605,8 @@ fn main() {
         ("[name='J_Bip_R_UpperArm']",    (0.85, 0.60, 0.20, 0.9)),
     ];
 
-    // Maps bone ComponentId → original_parent_of_bone (before any splice).
-    // Keyed on the bone itself so DragStart can find it by walking up the ancestor chain —
-    // the clicked renderable may be a viz:* node (added by the GLTF system) or our marker cube,
-    // but both are descendants of the bone.
-    let mut bone_markers: HashMap<
-        engine::ecs::ComponentId,
-        engine::ecs::ComponentId,
-    > = HashMap::new();
-
     for &(selector, color) in marker_joints {
         let Some(bone) = universe.find_component(model_root, selector) else {
-            continue;
-        };
-        let Some(original_parent) = universe.parent_of(bone) else {
             continue;
         };
         let marker_t = universe.world.add_component(
@@ -634,7 +621,6 @@ fn main() {
         let _ = universe.world.add_child(marker_r, marker_rcast);
         let _ = universe.world.add_child(marker_t, marker_r);
         let _ = universe.attach(bone, marker_t);
-        bone_markers.insert(bone, original_parent);
     }
 
     // Build the head-rotation splice pipeline as a floating subtree.
@@ -667,106 +653,6 @@ fn main() {
             println!("[vr-input] head rotation splice attached to J_Bip_C_Neck by default");
         }
     }
-
-    // Tracks which bone is currently displaced under splice_yaw_correction.
-    // Initialized to the neck if the default splice succeeded.
-    let neck_default = universe.find_component(model_root, "[name='J_Bip_C_Neck']");
-    let splice_displaced: std::sync::Arc<std::sync::Mutex<Option<engine::ecs::ComponentId>>> =
-        std::sync::Arc::new(std::sync::Mutex::new(neck_default));
-    let splice_displaced_handler = std::sync::Arc::clone(&splice_displaced);
-
-    // DragStart on any bone marker: activate or move the splice pipeline.
-    //
-    // On first click: attach splice_input_xr to the bone's original parent, displace the
-    // bone under yaw_correction (initialises the whole pipeline subtree automatically).
-    //
-    // On subsequent clicks (3 Attach intents):
-    //   1. Restore currently displaced bone → its natural parent.
-    //   2. Move splice_input_xr → original_parent[target_bone].
-    //   3. Displace target_bone → splice_yaw_correction.
-    universe.systems.rx.add_handler_closure(
-        engine::ecs::SignalKind::DragStart,
-        editor_root,
-        move |world, emit, signal| {
-            let Some(engine::ecs::EventSignal::DragStart { renderable, .. }) = &signal.event
-            else {
-                return;
-            };
-
-            // Walk up from the clicked renderable to find the nearest ancestor bone in our map.
-            // The clicked component may be a viz:* node, our marker cube, or a raycaster child —
-            // all are descendants of the bone.
-            let mut target_bone = None;
-            let mut cur = Some(*renderable);
-            while let Some(node) = cur {
-                if bone_markers.contains_key(&node) {
-                    target_bone = Some(node);
-                    break;
-                }
-                cur = world.parent_of(node);
-            }
-            let Some(target_bone) = target_bone else {
-                return;
-            };
-            let Some(&original_parent) = bone_markers.get(&target_bone) else {
-                return;
-            };
-
-            let mut displaced = splice_displaced_handler.lock().unwrap();
-
-            // Step 1: restore currently displaced bone (if any) to its natural parent.
-            if let Some(prev_bone) = *displaced {
-                if let Some(&prev_parent) = bone_markers.get(&prev_bone) {
-                    emit.push_intent_now(
-                        prev_parent,
-                        IntentValue::Attach {
-                            parents: vec![prev_parent],
-                            child: prev_bone,
-                        },
-                    );
-                }
-            }
-
-            // Step 2: move the splice root to the original parent of the new target bone.
-            emit.push_intent_now(
-                original_parent,
-                IntentValue::Attach {
-                    parents: vec![original_parent],
-                    child: splice_input_xr,
-                },
-            );
-
-            // Step 3: displace the new target bone under yaw_correction (child of output).
-            emit.push_intent_now(
-                splice_yaw_correction,
-                IntentValue::Attach {
-                    parents: vec![splice_yaw_correction],
-                    child: target_bone,
-                },
-            );
-
-            *displaced = Some(target_bone);
-
-            let bone_name = world.component_name(target_bone).unwrap_or("<unknown>").to_string();
-            println!("[vr-input] splice moved to bone '{bone_name}'");
-        },
-    );
-
-    // Install editor selection/gizmo handlers.
-    universe
-        .systems
-        .editor
-        .install_scoped_handlers_for_editor(&mut universe.systems.rx, editor_root);
-
-    // Spawn world-tree + inspector panels.
-    universe.systems.inspector.setup_panels_for_editor(
-        &mut universe.systems.rx,
-        &mut universe.world,
-        &mut universe.command_queue,
-        editor_root,
-        (-0.7, 1.6, -1.2),
-        (0.5, 1.6, -1.2),
-    );
 
     universe.enable_repl();
     engine::Windowing::run_app(universe).expect("Windowing failed");
