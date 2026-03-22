@@ -1,4 +1,6 @@
-use crate::engine::ecs::component::{EditorComponent, TransformComponent, TransformGizmoComponent};
+use crate::engine::ecs::component::{
+    EditorComponent, SelectableComponent, TransformComponent, TransformGizmoComponent,
+};
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, RxWorld, SignalKind, World};
 use std::collections::HashSet;
 
@@ -37,6 +39,11 @@ impl EditorSystem {
                 return;
             }
 
+            // Ignore clicks inside a SelectableComponent::off() subtree (panel UI etc.).
+            if has_selectable_off_ancestor(world, renderable) {
+                return;
+            }
+
             // Ignore clicks on transform gizmo handles themselves.
             if has_transform_gizmo_ancestor(world, renderable) {
                 return;
@@ -52,35 +59,24 @@ impl EditorSystem {
                 .or_else(|| spawn_editor_transform_gizmo(world, emit, editor_root));
             let Some(gizmo) = gizmo else { return; };
 
-            let renderable_name = world
-                .get_component_record(renderable)
-                .map(|r| r.name.clone())
-                .unwrap_or_else(|| "<unknown>".to_string());
-            let target_name = world
-                .get_component_record(target_transform)
-                .map(|r| r.name.clone())
-                .unwrap_or_else(|| "<unknown>".to_string());
-            let old_parent = world.parent_of(gizmo);
-            let old_parent_name = old_parent
-                .and_then(|p| world.get_component_record(p).map(|r| r.name.clone()))
-                .unwrap_or_else(|| "<none>".to_string());
-            println!(
-                "[EditorSystem] DragStart hit renderable={:?} name='{}' -> moving gizmo={:?} (old_parent={:?} '{}') under target_transform={:?} '{}'",
-                renderable,
-                renderable_name,
-                gizmo,
-                old_parent,
-                old_parent_name,
-                target_transform,
-                target_name
-            );
-
             // Reparent the gizmo under the clicked transform.
             emit.push_intent_now(
                 editor_root,
                 IntentValue::Attach {
                     parents: vec![target_transform],
                     child: gizmo,
+                },
+            );
+
+            // Record selection on EditorComponent and emit SelectionChanged.
+            if let Some(ed) = world.get_component_by_id_as_mut::<EditorComponent>(editor_root) {
+                ed.selected = Some(target_transform);
+            }
+            emit.push_event(
+                editor_root,
+                EventSignal::SelectionChanged {
+                    editor_root,
+                    selected: Some(target_transform),
                 },
             );
 
@@ -108,8 +104,9 @@ fn spawn_editor_transform_gizmo(
     emit: &mut dyn crate::engine::ecs::SignalEmitter,
     editor_root: ComponentId,
 ) -> Option<ComponentId> {
-    // Create a tiny anchor transform under the eot so the gizmo has a Transform ancestor
-    // before it is first moved onto a clicked target.
+    // --- Transform gizmo ---
+    // Create a tiny anchor transform under the editor root so the gizmo has a Transform
+    // ancestor before it is first moved onto a clicked target.
     let anchor =
         world.add_component_boxed_named("editor_gizmo_anchor", Box::new(TransformComponent::new()));
     let _ = world.add_child(editor_root, anchor);
@@ -127,11 +124,6 @@ fn spawn_editor_transform_gizmo(
     if let Some(ed) = world.get_component_by_id_as_mut::<EditorComponent>(editor_root) {
         ed.transform_gizmo = Some(gizmo);
     }
-
-    println!(
-        "[EditorSystem] spawned editor transform gizmo={:?} under anchor={:?} (editor_root={:?})",
-        gizmo, anchor, editor_root
-    );
 
     Some(gizmo)
 }
@@ -170,6 +162,21 @@ fn has_transform_gizmo_ancestor(world: &World, start: ComponentId) -> bool {
         if world
             .get_component_by_id_as::<TransformGizmoComponent>(node)
             .is_some()
+        {
+            return true;
+        }
+        cur = world.parent_of(node);
+    }
+    false
+}
+
+fn has_selectable_off_ancestor(world: &World, start: ComponentId) -> bool {
+    let mut cur = Some(start);
+    while let Some(node) = cur {
+        if world
+            .get_component_by_id_as::<SelectableComponent>(node)
+            .map(|s| !s.enabled)
+            .unwrap_or(false)
         {
             return true;
         }

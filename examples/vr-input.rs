@@ -1,18 +1,20 @@
 use cat_engine::engine::ecs::component::{
-    AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, CameraXRComponent,
-    ColorComponent, ControllerHand, ControllerPoseKind, ControllerXRComponent,
-    DirectionalLightComponent, EmissiveComponent, GLTFComponent, InputComponent,
-    InputTransformModeComponent, InputXRComponent, OpenXRComponent, QuatTemporalFilterComponent,
-    RenderableComponent, RendererSettingsComponent, RendererStatsComponent,
-    TransformComponent, TransformDropComponent, TransformForkTRSComponent,
-    TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
-    TransformMergeTRSComponent, TransformPipelineComponent, TransformPipelineOutputComponent,
-    TransformSampleAncestorComponent,
+    AmbientLightComponent, AvatarBodyYawComponent, BackgroundColorComponent, Camera3DComponent,
+    CameraXRComponent, ColorComponent, ControllerHand, ControllerPoseKind, ControllerXRComponent,
+    DirectionalLightComponent, EditorComponent, EmissiveComponent, GLTFComponent, InputComponent,
+    InputTransformModeComponent, InputXRComponent, OpenXRComponent, PointerComponent,
+    QuatTemporalFilterComponent, RayCastComponent, RaycastableComponent, RenderableComponent,
+    RendererSettingsComponent, RendererStatsComponent, TransformComponent, TransformDropComponent,
+    TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
+    TransformMapTranslationComponent, TransformMergeTRSComponent, TransformPipelineComponent,
+    TransformPipelineOutputComponent, TransformSampleAncestorComponent,
 };
 use cat_engine::engine::graphics::CameraTarget;
 use cat_engine::engine::graphics::primitives::{MaterialHandle, Renderable};
 use cat_engine::engine::graphics::BuiltinMeshType;
+use cat_engine::engine::ecs::{IntentValue, SignalEmitter};
 use cat_engine::{engine, utils};
+use std::collections::HashMap;
 
 #[path = "example_util/mod.rs"]
 mod example_util;
@@ -59,32 +61,6 @@ fn parse_options() -> Result<VrInputOptions, String> {
     Ok(options)
 }
 
-fn print_named_transform_subtree(universe: &engine::Universe, root: engine::ecs::ComponentId) {
-    let mut stack = vec![(root, 0usize)];
-    println!("[vr-input] spawned transform subtree under {:?}:", root);
-    while let Some((node, depth)) = stack.pop() {
-        let Some(record) = universe.world.get_component_record(node) else {
-            continue;
-        };
-        if universe
-            .world
-            .get_component_by_id_as::<TransformComponent>(node)
-            .is_some()
-        {
-            println!(
-                "[vr-input] {indent}- {:?} name='{}' kind='{}'",
-                node,
-                record.name,
-                record.component.name(),
-                indent = "  ".repeat(depth),
-            );
-        }
-
-        for &child in record.children.iter().rev() {
-            stack.push((child, depth + 1));
-        }
-    }
-}
 
 fn attach_controller_parent_to_named_wrist(
     universe: &mut engine::Universe,
@@ -316,52 +292,54 @@ fn spawn_controller_cube(
     controller_marker
 }
 
-fn attach_head_rotation_splice(
+/// Returns `(input_xr, output, yaw_correction)`.
+///
+/// `yaw_correction` is a TransformComponent with π Y rotation permanently under `output`.
+/// Displaced bones always sit under `yaw_correction` (not directly under `output`) so that
+/// the HMD world rotation is composed with the avatar's π flip before being applied to the bone.
+/// Without this, head forward (+Z model space) maps to +Z world instead of -Z world, making the
+/// head appear mirrored relative to the π-rotated body.
+/// Build the head-rotation splice pipeline as a floating, uninitialized subtree.
+///
+/// The pipeline is NOT attached to the armature here. Call this once at setup time,
+/// then use `IntentValue::Attach` from a DragStart handler to wire it to a clicked bone.
+/// The subtree is initialized automatically when `splice_input_xr` is first attached
+/// to an initialized parent.
+fn create_head_rotation_splice(
     universe: &mut engine::Universe,
-    avatar_root: engine::ecs::ComponentId,
-    selector: &str,
-) -> Result<engine::ecs::ComponentId, String> {
-    let head = universe
-        .find_component(avatar_root, selector)
-        .ok_or_else(|| format!("head selector did not match: {selector}"))?;
-    let neck = universe
-        .parent_of(head)
-        .ok_or_else(|| format!("matched head bone has no parent: {selector}"))?;
-
+) -> (engine::ecs::ComponentId, engine::ecs::ComponentId, engine::ecs::ComponentId) {
     let input_xr = universe.world.add_component(InputXRComponent::on());
     let driven_t = universe.world.add_component(TransformComponent::new());
     let pipeline = universe.world.add_component(TransformPipelineComponent::new());
     let fork = universe.world.add_component(TransformForkTRSComponent::new());
     let map_translation = universe.world.add_component(TransformMapTranslationComponent::new());
-    // skip=1: pipeline owner walks up → driven_T (skip=0) → Neck1 (skip=1)
+    // skip=1: pipeline owner walks up → driven_T (skip=0) → bone parent (skip=1)
     let sample_ancestor = universe
         .world
-        .add_component(TransformSampleAncestorComponent::new()); // default skip=1
+        .add_component(TransformSampleAncestorComponent::new());
     let map_rotation = universe.world.add_component(TransformMapRotationComponent::new());
     let map_scale = universe.world.add_component(TransformMapScaleComponent::new());
     let merge = universe.world.add_component(TransformMergeTRSComponent::new());
     let output = universe.world.add_component(TransformPipelineOutputComponent::new());
-
-    let _ = universe.attach(neck, input_xr);
-    let _ = universe.attach(input_xr, driven_t);
-    let _ = universe.attach(driven_t, pipeline);
-    let _ = universe.attach(pipeline, fork);
-    let _ = universe.attach(fork, map_translation);
-    let _ = universe.attach(map_translation, sample_ancestor);
-    let _ = universe.attach(fork, map_rotation);
-    let _ = universe.attach(fork, map_scale);
-    let _ = universe.attach(fork, merge);
-    let _ = universe.attach(pipeline, output);
-    let _ = universe.attach(output, head);
-
-    println!(
-        "[vr-input] head rotation splice: InputXR {:?} above '{}' under '{}'",
-        input_xr,
-        universe.component_name(head).unwrap_or("<unnamed>"),
-        universe.component_name(neck).unwrap_or("<unnamed>"),
+    // π Y rotation so that HMD identity (facing -Z) maps to the bone facing -Z (same as body).
+    let yaw_correction = universe.world.add_component(
+        TransformComponent::new().with_rotation_euler(0.0, std::f32::consts::PI, 0.0),
     );
 
-    Ok(input_xr)
+    // Wire the internal pipeline topology. These are all uninitialized; they will be
+    // initialized when splice_input_xr is attached to an initialized armature node.
+    let _ = universe.world.add_child(input_xr, driven_t);
+    let _ = universe.world.add_child(driven_t, pipeline);
+    let _ = universe.world.add_child(pipeline, fork);
+    let _ = universe.world.add_child(fork, map_translation);
+    let _ = universe.world.add_child(map_translation, sample_ancestor);
+    let _ = universe.world.add_child(fork, map_rotation);
+    let _ = universe.world.add_child(fork, map_scale);
+    let _ = universe.world.add_child(fork, merge);
+    let _ = universe.world.add_child(pipeline, output);
+    let _ = universe.world.add_child(output, yaw_correction);
+
+    (input_xr, output, yaw_correction)
 }
 
 fn main() {
@@ -436,6 +414,15 @@ fn main() {
     let camera3d = universe.world.add_component(Camera3DComponent::new());
     let _ = universe.attach(desktop_rig, camera3d);
 
+    // Raycaster + pointer for desktop bone-picking. Allows clicking on bone markers
+    // to interactively select the head-rotation splice target.
+    let raycaster = universe
+        .world
+        .add_component(RayCastComponent::event_driven().with_max_distance(100.0));
+    let _ = universe.attach(desktop_rig, raycaster);
+    let pointer = universe.world.add_component(PointerComponent::new());
+    let _ = universe.attach(raycaster, pointer);
+
     example_util::spawn_desktop_camera_controls_hint(&mut universe, desktop_rig);
     universe.add(input);
 
@@ -475,6 +462,9 @@ fn main() {
     // Tune this constant if the avatar still floats or sinks.
     const AVATAR_HEIGHT_M: f32 = 1.6;
 
+    // EditorComponent wraps the entire scene so any renderable is selectable.
+    let editor_root = universe.world.add_component(EditorComponent::new());
+
     let avatar_input_xr = universe.world.add_component(InputXRComponent::on());
     // OpenXRSystem requires a direct TransformComponent child to drive.
     let avatar_driven_t = universe.world.add_component(TransformComponent::new());
@@ -489,6 +479,7 @@ fn main() {
     let av_merge = universe.world.add_component(TransformMergeTRSComponent::new());
     let av_output = universe.world.add_component(TransformPipelineOutputComponent::new());
 
+    let _ = universe.attach(editor_root, avatar_input_xr);
     let _ = universe.attach(avatar_input_xr, avatar_driven_t);
     let _ = universe.attach(avatar_driven_t, av_pipeline);
     let _ = universe.attach(av_pipeline, av_fork);
@@ -499,11 +490,24 @@ fn main() {
     let _ = universe.attach(av_fork, av_merge);
     let _ = universe.attach(av_pipeline, av_output);
 
-    // model_root: local Y = -AVATAR_HEIGHT_M so the feet sit at floor level
-    // (pipeline output carries HMD translation-only, model_root.model is applied on top).
+    // AvatarBodyYawComponent sits between pipeline output and model_root.
+    // It reads head yaw from avatar_driven_t and smoothly rotates the body to follow.
+    let avatar_body_yaw = universe.world.add_component(
+        AvatarBodyYawComponent::new()
+            .with_threshold(std::f32::consts::FRAC_PI_4) // 45°
+            .with_rate(3.0)
+            .with_hmd_driven_transform(avatar_driven_t),
+    );
+    let _ = universe.attach(av_output, avatar_body_yaw);
+
+    // model_root: local Y = -AVATAR_HEIGHT_M so the feet sit at floor level.
+    // Rotated 180° around Y because the VRM model faces +Z by default, but OpenXR LOCAL
+    // space uses -Z as forward (in front of the user). Without this, the avatar's back faces
+    // the direction the user walks toward.
     let model_root = universe.world.add_component(
         TransformComponent::new()
             .with_position(0.0, -AVATAR_HEIGHT_M, 0.0)
+            .with_rotation_euler(0.0, std::f32::consts::PI, 0.0)
             .with_scale(1.0, 1.0, 1.0),
     );
     let model = universe
@@ -514,9 +518,9 @@ fn main() {
     let emissive = universe.world.add_component(EmissiveComponent::on());
     let _ = universe.attach(model, emissive);
 
-    let _ = universe.attach(av_output, model_root);
+    let _ = universe.attach(avatar_body_yaw, model_root);
     let _ = universe.attach(model_root, model);
-    universe.add(avatar_input_xr);
+    universe.add(editor_root);
 
     // --- Controller debug cubes (tracked poses) ---
     let _left = spawn_controller_cube(
@@ -563,8 +567,6 @@ fn main() {
         &mut universe.command_queue,
     );
 
-    print_named_transform_subtree(&universe, model_root);
-
     let left_wrist_selector = "[name='J_Bip_L_Hand']";
     let right_wrist_selector = "[name='J_Bip_R_Hand']";
 
@@ -588,16 +590,183 @@ fn main() {
         eprintln!("[vr-input] right wrist attach failed: {err}");
     }
 
-    println!(
-        "[vr-input] wrist selectors: left={} right={} (update after checking printed armature if needed)",
-        left_wrist_selector,
-        right_wrist_selector,
+    // --- Bone markers for interactive splice target selection ---
+    // Small colored cubes are attached at key joints. Clicking one (on the desktop
+    // window) moves the existing head-rotation splice to that bone.
+    //
+    // Original parents are recorded HERE (before the initial splice) so the move
+    // handler always knows the natural parent to restore displaced bones to.
+    //
+    // Colors: head=purple, neck=teal, upper-chest=blue, shoulders=yellow/orange.
+    let marker_joints: &[(&str, (f32, f32, f32, f32))] = &[
+        ("[name='J_Bip_C_Head']",       (0.85, 0.20, 0.85, 0.9)),
+        ("[name='J_Bip_C_Neck']",        (0.20, 0.85, 0.85, 0.9)),
+        ("[name='J_Bip_C_UpperChest']",  (0.20, 0.20, 0.85, 0.9)),
+        ("[name='J_Bip_L_UpperArm']",    (0.85, 0.85, 0.20, 0.9)),
+        ("[name='J_Bip_R_UpperArm']",    (0.85, 0.60, 0.20, 0.9)),
+    ];
+
+    // Maps bone ComponentId → original_parent_of_bone (before any splice).
+    // Keyed on the bone itself so DragStart can find it by walking up the ancestor chain —
+    // the clicked renderable may be a viz:* node (added by the GLTF system) or our marker cube,
+    // but both are descendants of the bone.
+    let mut bone_markers: HashMap<
+        engine::ecs::ComponentId,
+        engine::ecs::ComponentId,
+    > = HashMap::new();
+
+    for &(selector, color) in marker_joints {
+        let Some(bone) = universe.find_component(model_root, selector) else {
+            continue;
+        };
+        let Some(original_parent) = universe.parent_of(bone) else {
+            continue;
+        };
+        let marker_t = universe.world.add_component(
+            TransformComponent::new().with_scale(0.025, 0.025, 0.025),
+        );
+        let marker_r = universe.world.add_component(RenderableComponent::cube());
+        let marker_c = universe
+            .world
+            .add_component(ColorComponent::rgba(color.0, color.1, color.2, color.3));
+        let marker_rcast = universe.world.add_component(RaycastableComponent::enabled());
+        let _ = universe.world.add_child(marker_r, marker_c);
+        let _ = universe.world.add_child(marker_r, marker_rcast);
+        let _ = universe.world.add_child(marker_t, marker_r);
+        let _ = universe.attach(bone, marker_t);
+        bone_markers.insert(bone, original_parent);
+    }
+
+    // Build the head-rotation splice pipeline as a floating subtree.
+    let (splice_input_xr, _splice_output, splice_yaw_correction) =
+        create_head_rotation_splice(&mut universe);
+
+    // Apply the splice to J_Bip_C_Neck by default so head rotation drives the neck from
+    // the start. The splice can be moved to a different bone by clicking a bone marker.
+    if let Some(neck) = universe.find_component(model_root, "[name='J_Bip_C_Neck']") {
+        if let Some(neck_parent) = universe.parent_of(neck) {
+            universe.command_queue.push_intent_now(
+                neck_parent,
+                IntentValue::Attach {
+                    parents: vec![neck_parent],
+                    child: splice_input_xr,
+                },
+            );
+            universe.command_queue.push_intent_now(
+                splice_yaw_correction,
+                IntentValue::Attach {
+                    parents: vec![splice_yaw_correction],
+                    child: neck,
+                },
+            );
+            universe.systems.process_commands(
+                &mut universe.world,
+                &mut universe.visuals,
+                &mut universe.command_queue,
+            );
+            println!("[vr-input] head rotation splice attached to J_Bip_C_Neck by default");
+        }
+    }
+
+    // Tracks which bone is currently displaced under splice_yaw_correction.
+    // Initialized to the neck if the default splice succeeded.
+    let neck_default = universe.find_component(model_root, "[name='J_Bip_C_Neck']");
+    let splice_displaced: std::sync::Arc<std::sync::Mutex<Option<engine::ecs::ComponentId>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(neck_default));
+    let splice_displaced_handler = std::sync::Arc::clone(&splice_displaced);
+
+    // DragStart on any bone marker: activate or move the splice pipeline.
+    //
+    // On first click: attach splice_input_xr to the bone's original parent, displace the
+    // bone under yaw_correction (initialises the whole pipeline subtree automatically).
+    //
+    // On subsequent clicks (3 Attach intents):
+    //   1. Restore currently displaced bone → its natural parent.
+    //   2. Move splice_input_xr → original_parent[target_bone].
+    //   3. Displace target_bone → splice_yaw_correction.
+    universe.systems.rx.add_handler_closure(
+        engine::ecs::SignalKind::DragStart,
+        editor_root,
+        move |world, emit, signal| {
+            let Some(engine::ecs::EventSignal::DragStart { renderable, .. }) = &signal.event
+            else {
+                return;
+            };
+
+            // Walk up from the clicked renderable to find the nearest ancestor bone in our map.
+            // The clicked component may be a viz:* node, our marker cube, or a raycaster child —
+            // all are descendants of the bone.
+            let mut target_bone = None;
+            let mut cur = Some(*renderable);
+            while let Some(node) = cur {
+                if bone_markers.contains_key(&node) {
+                    target_bone = Some(node);
+                    break;
+                }
+                cur = world.parent_of(node);
+            }
+            let Some(target_bone) = target_bone else {
+                return;
+            };
+            let Some(&original_parent) = bone_markers.get(&target_bone) else {
+                return;
+            };
+
+            let mut displaced = splice_displaced_handler.lock().unwrap();
+
+            // Step 1: restore currently displaced bone (if any) to its natural parent.
+            if let Some(prev_bone) = *displaced {
+                if let Some(&prev_parent) = bone_markers.get(&prev_bone) {
+                    emit.push_intent_now(
+                        prev_parent,
+                        IntentValue::Attach {
+                            parents: vec![prev_parent],
+                            child: prev_bone,
+                        },
+                    );
+                }
+            }
+
+            // Step 2: move the splice root to the original parent of the new target bone.
+            emit.push_intent_now(
+                original_parent,
+                IntentValue::Attach {
+                    parents: vec![original_parent],
+                    child: splice_input_xr,
+                },
+            );
+
+            // Step 3: displace the new target bone under yaw_correction (child of output).
+            emit.push_intent_now(
+                splice_yaw_correction,
+                IntentValue::Attach {
+                    parents: vec![splice_yaw_correction],
+                    child: target_bone,
+                },
+            );
+
+            *displaced = Some(target_bone);
+
+            let bone_name = world.component_name(target_bone).unwrap_or("<unknown>").to_string();
+            println!("[vr-input] splice moved to bone '{bone_name}'");
+        },
     );
 
-    let head_selector = "[name='J_Bip_C_Head']";
-    if let Err(err) = attach_head_rotation_splice(&mut universe, model_root, head_selector) {
-        eprintln!("[vr-input] head rotation splice failed: {err}");
-    }
+    // Install editor selection/gizmo handlers.
+    universe
+        .systems
+        .editor
+        .install_scoped_handlers_for_editor(&mut universe.systems.rx, editor_root);
+
+    // Spawn world-tree + inspector panels.
+    universe.systems.inspector.setup_panels_for_editor(
+        &mut universe.systems.rx,
+        &mut universe.world,
+        &mut universe.command_queue,
+        editor_root,
+        (-0.7, 1.6, -1.2),
+        (0.5, 1.6, -1.2),
+    );
 
     universe.enable_repl();
     engine::Windowing::run_app(universe).expect("Windowing failed");

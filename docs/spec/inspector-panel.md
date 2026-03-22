@@ -45,14 +45,14 @@ There is no dedicated `SelectionChanged` event signal yet.
 ## Goals
 
 - Provide two panels under each editor:
-  - a component-tree navigation panel
-  - a component inspector panel
+  - a **world panel** for navigating the component tree
+  - an **inspector panel** for showing/editing the currently inspected component
 - Panels are **dynamic** (system-constructed); no prefab cloning.
-- Tree panel displays an outline of the currently relevant component subtree.
+- World panel displays all components in the editor subtree, collapsed by default (root-level nodes visible, children collapsed until expanded).
 - Inspector panel displays:
   - the currently inspected component header (`name: type`)
   - known fields for that component (initially: editor gizmo-space toggles)
-- The panel subtrees should not steal selection from the scene.
+- Panel subtrees wrap themselves in `SelectableComponent::off()` so they are never accidentally selected.
 
 ## Key UX clarification: don’t “select the gizmo”
 
@@ -74,22 +74,14 @@ We still might want to inspect gizmo components for debugging, but it should be 
 
 The system is built around two panel marker components plus one system.
 
-### Tree panel marker
+### World panel marker
 
-Primary name option:
+`WorldPanelComponent` marks a subtree that `InspectorSystem` owns as the **world/component-tree UI**.
 
-- `ComponentTreePanelComponent`
-
-Alternative (more general):
-
-- `TreePanelComponent`
-
-This component marks a subtree that `InspectorSystem` owns as the **tree UI**.
-
-Suggested runtime state (stored on the component or adjacent state component):
+Suggested runtime state:
 
 - `editor_root: ComponentId`
-- `tree_root: Option<ComponentId>` (what the tree is currently showing)
+- `expanded: HashSet<ComponentId>` (which nodes are expanded; all others collapsed)
 - `selected: Option<ComponentId>` (what the inspector is currently inspecting)
 - `scroll_offset_rows: i32`
 
@@ -111,141 +103,114 @@ Suggested runtime state:
 - `inspected: Option<ComponentId>`
 - `scroll_offset_rows: i32`
 
-### Optional opt-out marker
+### Selection model
 
-We likely still need a marker so inspector UI subtrees are not treated as inspectable targets.
+**Everything in an editor subtree is selectable by default.** No opt-in marker is needed.
 
-Name options:
+Panels wrap their entire subtree in `SelectableComponent::off()`. Any descendant of a
+`SelectableComponent { enabled: false }` node is excluded from editor selection — clicking it
+will not move the gizmo, will not update the inspector context, and will not trigger
+`SelectionChanged`.
 
-- `InspectableComponent { enabled: bool }` (opt-out)
-- `NonInspectableComponent` (simpler semantic)
+```
+WorldPanelComponent
+  └── SelectableComponent::off()     ← panels self-exclude
+        └── ... panel UI rows ...
+```
 
-Exact selection semantics can be decided alongside the picking/selection model.
+`SelectableComponent` fields:
+
+```rust
+pub struct SelectableComponent {
+    pub enabled: bool,
+}
+```
+
+`EditorSystem` checks for a `SelectableComponent { enabled: false }` ancestor before processing
+a `DragStart` hit. If found, the event is ignored for selection purposes.
 
 ## `InspectorSystem`
 
 `InspectorSystem` is responsible for:
 
 1) **Ensuring the panels exist** under each editor root
-- Create (attach) the tree panel subtree if missing
+- Create (attach) the world panel subtree if missing
 - Create (attach) the inspector panel subtree if missing
 
-2) **Tracking editor-local inspection state**
-- Current selection root (what subtree we’re interested in)
-- Current inspected component (what the inspector panel is showing)
+2) **Tracking editor-local selection state**
+- Currently selected component (drives inspector panel)
 
-3) **Rendering the tree panel**
-- Convert a component subtree into a list of visible “rows”
-- Create/update the row UI nodes (icon + text)
-- Handle indentation, truncation, and scrolling
+3) **Rendering the world panel**
+- Walk the full editor subtree; show root-level nodes, collapsed by default
+- Expand/collapse on click
+- Create/update row UI nodes (icon + text)
+- Handle indentation and scrolling
 
 4) **Rendering the inspector panel**
-- Show header (`name: type`)
+- Show header (`name: type`) for the selected component
 - Show known fields for known component types
 - Emit intents to mutate engine/editor state when toggles are clicked
 
-## Tree panel display model
+## World panel display model
 
-The tree panel displays a **component tree** (the actual topology).
+The world panel displays **all components** in the editor subtree.
 
-Each row shows:
+- Root-level children of the editor root are shown by default.
+- All other nodes are **collapsed** until the user expands them.
+- Each row shows: a small node icon + `name: type`.
 
-- a small **node icon**: a cube rotated so one corner faces forward
-- a text label: `name: type`
+`type` = the component’s type name (same string used in codec / debug output).
+`name` = the component’s name from `Component::name()` / the `ComponentNode` name field — already available on every component, no `NameComponent` needed.
 
-Where:
+### Icon
 
-- `type` = component type name (what we already use in codec / debug output)
-- `name` = best-effort display name
-  - preferred: a `NameComponent` or equivalent if/when we add one
-  - fallback: something stable like the `ComponentId`
+Small cube renderable in overlay space, corner-facing-camera orientation.
+Color can vary by depth or component type.
 
-### Icon details
+### Indentation
 
-The icon is a cube (or box) renderable in overlay space.
-
-- Rotation should be fixed so a corner faces the camera (to visually read as a “node”).
-- Color can be derived from depth, selection state, or component type.
-
-### Indentation and nesting
-
-Indentation represents parent/child relationships in the component tree.
-
-- Depth $d$ offsets the row’s content by `$d * indent_px` (or equivalent world units in overlay space).
-- Children appear directly below the parent.
-
-### “Child components” vs “child nodes”
-
-In this engine, the topology already *is* a component tree, so “child components” are the children in the tree.
-
-The tree panel therefore naturally displays “child components” by recursively walking children.
+Depth `d` offsets the row by `d * indent_unit` in overlay space. Children appear below their parent.
 
 ## Inspector panel display model
 
-The inspector panel is driven by the currently inspected `ComponentId` (selected from the tree panel).
+Driven by the currently selected `ComponentId` (set by clicking in the world panel or the scene).
 
 Minimum content:
 
 - Header: `name: type`
-- For `EditorComponent`: show tool settings toggles
+- For `EditorComponent`: gizmo-space toggles
   - `transform_gizmo_translation_space`: World / Local
   - `transform_gizmo_rotation_space`: World / Local
 
-Editing model:
-
-- Clicking toggles emits an intent targeted at the editor root.
-- A system applies the mutation to `EditorComponent`.
-- Optionally emit an “editor settings changed” event so dependent systems update visuals.
+Editing model: clicks emit intents to the editor root; a system applies mutations.
 
 ## Signals / intents
 
-We can start without new events by having `InspectorSystem` infer selection from current editor state, but a real event is cleaner.
+### Selection changed
 
-### Selection changed (recommended)
+`SelectionChanged` event emitted whenever the selected component changes.
 
-Introduce a `SelectionChanged` event emitted when the selection target changes.
-
-Payload (sketch):
+Payload:
 
 - `editor_root: ComponentId`
 - `selected: Option<ComponentId>`
 
-### Inspect target changed (tree → inspector)
+Emitted by both scene picks (DragStart → EditorSystem) and world panel row clicks.
 
-The tree panel should update the inspector target on click.
-
-This can be an intent (preferred) so UI doesn’t mutate state directly:
+### Inspect target intent
 
 - `IntentValue::EditorSetInspectedComponent { editor_root, inspected: Option<ComponentId> }`
 
-Or a dedicated event consumed by `InspectorSystem`.
-
 ### Editor settings intents
-
-For gizmo coord-space toggles:
 
 - `IntentValue::EditorSetGizmoSpaces { editor_root, translation_space, rotation_space }`
 
-## Naming exploration
+## Component names
 
-We can keep names specific until we have more panel types:
-
-- `ComponentTreePanelComponent`
-- `ComponentInspectorPanelComponent`
-
-Or we can generalize earlier:
-
-- `TreePanelComponent`
-- `InspectorPanelComponent`
-
-Heuristic:
-
-- If the engine will likely have multiple tree panels (scene tree, asset browser, etc.), prefer generic names now.
-- If this is the only tree UI for a while, prefer specific names to avoid premature abstraction.
+- `WorldPanelComponent` — the world/component-tree panel
+- `InspectorPanelComponent` — the details/property panel
+- `SelectableComponent` — opt-out selection marker (`enabled: bool`, default `true`)
 
 ## Open questions
 
-- Do we want the tree panel to show the editor root + selection root as two top-level sections, or only the selection root?
-- How do we represent “name” today (do we add a `NameComponent`)?
-- How should clicks in the panel subtree be excluded from scene picking?
-- Do we need multi-select in the tree panel?
+- Do we need multi-select?

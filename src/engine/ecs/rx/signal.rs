@@ -114,6 +114,12 @@ pub enum EventSignal {
         renderable: ComponentId,
         hit_point: Option<[f32; 3]>,
     },
+
+    /// The editor selection changed (emitted by EditorSystem on DragStart).
+    SelectionChanged {
+        editor_root: ComponentId,
+        selected: Option<ComponentId>,
+    },
 }
 
 impl EventSignal {
@@ -126,6 +132,7 @@ impl EventSignal {
             EventSignal::DragStart { .. } => SignalKind::DragStart,
             EventSignal::DragMove { .. } => SignalKind::DragMove,
             EventSignal::DragEnd { .. } => SignalKind::DragEnd,
+            EventSignal::SelectionChanged { .. } => SignalKind::SelectionChanged,
         }
     }
 }
@@ -583,6 +590,7 @@ pub enum SignalKind {
     DragStart,
     DragMove,
     DragEnd,
+    SelectionChanged,
 }
 
 /// Optional timing metadata on the signal envelope.

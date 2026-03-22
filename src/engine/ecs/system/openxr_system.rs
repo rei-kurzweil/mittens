@@ -34,9 +34,6 @@ pub struct OpenXRSystem {
     input_xr_components: HashSet<ComponentId>,
     controller_components: HashSet<ComponentId>,
 
-    controller_debug_last_log_instant: Option<Instant>,
-    input_debug_last_log_instant: Option<Instant>,
-    did_log_missing_controller_input: bool,
 }
 
 struct OpenXRState {
@@ -145,9 +142,6 @@ impl Default for OpenXRSystem {
             input_xr_components: HashSet::new(),
             controller_components: HashSet::new(),
 
-            controller_debug_last_log_instant: None,
-            input_debug_last_log_instant: None,
-            did_log_missing_controller_input: false,
         }
     }
 }
@@ -281,7 +275,7 @@ impl OpenXRSystem {
     fn update_hand_rotation_debug(
         debug_state: &mut HandRotationDebugState,
         hand: ControllerHand,
-        joint: Option<openxr::HandJointEXT>,
+        _joint: Option<openxr::HandJointEXT>,
         pose: openxr::Posef,
     ) {
         if !Self::debug_hand_rotation_enabled() {
@@ -307,15 +301,7 @@ impl OpenXRSystem {
         debug.step_deg.push_back(step_deg);
         debug.sample_count += 1;
 
-        if debug.sample_count % window_len as u64 == 0 {
-            let avg_step_deg = Self::rolling_avg(&debug.step_deg);
-            let max_step_deg = Self::rolling_max(&debug.step_deg);
-            eprintln!(
-                "[OpenXR][HandRotation] hand={hand:?} root_joint={joint:?} raw_step_avg_deg={avg_step_deg:.3} raw_step_max_deg={max_step_deg:.3} window={} samples={}",
-                debug.step_deg.len(),
-                debug.sample_count,
-            );
-        }
+        let _ = window_len;
     }
 
     fn preferred_pose(
@@ -627,25 +613,8 @@ impl OpenXRSystem {
             return;
         }
 
-        if sess.controller_input.is_none() && !self.did_log_missing_controller_input {
-            eprintln!(
-                "[OpenXR] Controller input is unavailable; pose cache will stay empty until controller input init succeeds."
-            );
-            self.did_log_missing_controller_input = true;
-        }
-
         // Compose headset/controller poses with the authored XR rig origin.
         let rig_world = Self::xr_rig_origin_world(world, visuals);
-
-        // Throttle controller pose logs (they're useful for debugging, but too noisy at XR rates).
-        let now = Instant::now();
-        let log_this_tick = self
-            .controller_debug_last_log_instant
-            .map(|t| now.duration_since(t).as_secs_f32() >= 1.0)
-            .unwrap_or(true);
-        if log_this_tick {
-            self.controller_debug_last_log_instant = Some(now);
-        }
 
         let input_xr_ids: Vec<ComponentId> = self.input_xr_components.iter().copied().collect();
         for input_xr_cid in input_xr_ids {
@@ -709,9 +678,6 @@ impl OpenXRSystem {
         }
 
         let controller_ids: Vec<ComponentId> = self.controller_components.iter().copied().collect();
-        if log_this_tick && controller_ids.is_empty() {
-            eprintln!("[OpenXR] No ControllerXRComponent instances are registered.");
-        }
         for controller_cid in controller_ids {
             let Some(cfg) = world.get_component_by_id_as::<ControllerXRComponent>(controller_cid)
             else {
@@ -723,38 +689,9 @@ impl OpenXRSystem {
                 continue;
             }
 
-            let (pose, pose_source) = Self::preferred_pose(sess, cfg.hand, cfg.pose);
+            let (pose, _pose_source) = Self::preferred_pose(sess, cfg.hand, cfg.pose);
 
             let Some(pose) = pose else {
-                if log_this_tick {
-                    let (aim_valid, grip_valid, hand_root_valid, hand_root_joint) = match cfg.hand {
-                        ControllerHand::Left => {
-                            (
-                                sess.controller_pose_cache.left_aim.is_some(),
-                                sess.controller_pose_cache.left_grip.is_some(),
-                                sess.hand_root_pose_cache.left_root.is_some(),
-                                sess.hand_root_pose_cache.left_root_joint,
-                            )
-                        }
-                        ControllerHand::Right => {
-                            (
-                                sess.controller_pose_cache.right_aim.is_some(),
-                                sess.controller_pose_cache.right_grip.is_some(),
-                                sess.hand_root_pose_cache.right_root.is_some(),
-                                sess.hand_root_pose_cache.right_root_joint,
-                            )
-                        }
-                    };
-                    eprintln!(
-                        "[OpenXR] controller={controller_cid:?} hand={:?} pose={:?} has no cached pose yet (hand_root_valid={} hand_root_joint={:?} aim_valid={} grip_valid={}).",
-                        cfg.hand,
-                        cfg.pose,
-                        hand_root_valid,
-                        hand_root_joint,
-                        aim_valid,
-                        grip_valid,
-                    );
-                }
                 continue;
             };
 
@@ -778,18 +715,6 @@ impl OpenXRSystem {
                 Self::parent_world_rotation_quat(world, tcid).unwrap_or([0.0, 0.0, 0.0, 1.0]);
             let local_rotation =
                 math::quat_mul(math::quat_conjugate(parent_world_rot), desired_world_rot);
-
-            if log_this_tick {
-                eprintln!(
-                    "[OpenXR] controller={controller_cid:?} hand={:?} pose={:?} source={} world_pos={:?} local_pos={:?} local_rot={:?} drive_transform={tcid:?}",
-                    cfg.hand,
-                    cfg.pose,
-                    pose_source,
-                    desired_world_pos,
-                    local_translation,
-                    local_rotation,
-                );
-            }
 
             let Some(t) = world
                 .get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(
@@ -1517,14 +1442,6 @@ impl OpenXRSystem {
             visuals.set_xr_frame_dt_sec(Some(dt_sec));
         }
 
-        let debug_input_this_frame = self
-            .input_debug_last_log_instant
-            .map(|t| now.duration_since(t).as_secs_f32() >= 1.0)
-            .unwrap_or(true);
-        if debug_input_this_frame {
-            self.input_debug_last_log_instant = Some(now);
-        }
-
         let frame_state = match sess.frame_waiter.wait() {
             Ok(s) => s,
             Err(e) => {
@@ -1583,24 +1500,10 @@ impl OpenXRSystem {
                     sess.hand_root_pose_cache.left_root = root.map(|(pose, _)| pose);
                     sess.hand_root_pose_cache.left_root_joint = root.map(|(_, joint)| joint);
                     left_root_for_debug = root;
-
-                    if debug_input_this_frame {
-                        let wrist_flags = joints[openxr::HandJointEXT::WRIST].location_flags;
-                        let palm_flags = joints[openxr::HandJointEXT::PALM].location_flags;
-                        eprintln!(
-                            "[OpenXR] left hand active root_joint={:?} wrist_flags={:?} palm_flags={:?}",
-                            sess.hand_root_pose_cache.left_root_joint,
-                            wrist_flags,
-                            palm_flags,
-                        );
-                    }
                 }
                 Ok(None) => {
                     sess.hand_root_pose_cache.left_root = None;
                     sess.hand_root_pose_cache.left_root_joint = None;
-                    if debug_input_this_frame {
-                        eprintln!("[OpenXR] left hand inactive");
-                    }
                 }
                 Err(e) => {
                     sess.hand_root_pose_cache.left_root = None;
@@ -1615,24 +1518,10 @@ impl OpenXRSystem {
                     sess.hand_root_pose_cache.right_root = root.map(|(pose, _)| pose);
                     sess.hand_root_pose_cache.right_root_joint = root.map(|(_, joint)| joint);
                     right_root_for_debug = root;
-
-                    if debug_input_this_frame {
-                        let wrist_flags = joints[openxr::HandJointEXT::WRIST].location_flags;
-                        let palm_flags = joints[openxr::HandJointEXT::PALM].location_flags;
-                        eprintln!(
-                            "[OpenXR] right hand active root_joint={:?} wrist_flags={:?} palm_flags={:?}",
-                            sess.hand_root_pose_cache.right_root_joint,
-                            wrist_flags,
-                            palm_flags,
-                        );
-                    }
                 }
                 Ok(None) => {
                     sess.hand_root_pose_cache.right_root = None;
                     sess.hand_root_pose_cache.right_root_joint = None;
-                    if debug_input_this_frame {
-                        eprintln!("[OpenXR] right hand inactive");
-                    }
                 }
                 Err(e) => {
                     sess.hand_root_pose_cache.right_root = None;
@@ -1666,94 +1555,10 @@ impl OpenXRSystem {
             // Sync actions (best-effort).
             let active = openxr::ActiveActionSet::new(&ci.action_set);
             match sess.session.sync_actions(&[active]) {
-                Ok(()) => {
-                    if debug_input_this_frame {
-                        eprintln!("[OpenXR] sync_actions ok");
-                    }
-                }
+                Ok(()) => {}
                 Err(e) => {
                     eprintln!("[OpenXR] sync_actions failed: {e:?}");
                 }
-            }
-
-            if debug_input_this_frame {
-                eprintln!(
-                    "[OpenXR] session_state={:?} running={} focused={}",
-                    sess.current_state,
-                    sess.running,
-                    sess.current_state == openxr::SessionState::FOCUSED,
-                );
-
-                let log_profile = |label: &str, user_path: openxr::Path| match sess
-                    .session
-                    .current_interaction_profile(user_path)
-                {
-                    Ok(profile) => {
-                        let profile_str = state
-                            .instance
-                            .path_to_string(profile)
-                            .unwrap_or_else(|_| format!("{profile:?}"));
-                        eprintln!("[OpenXR] interaction_profile {label}: {profile_str}");
-                    }
-                    Err(e) => {
-                        eprintln!("[OpenXR] interaction_profile {label} query failed: {e:?}");
-                    }
-                };
-
-                log_profile("left", ci.left);
-                log_profile("right", ci.right);
-
-                let localized_name_flags = openxr::InputSourceLocalizedNameFlags::USER_PATH
-                    | openxr::InputSourceLocalizedNameFlags::INTERACTION_PROFILE
-                    | openxr::InputSourceLocalizedNameFlags::COMPONENT;
-
-                let log_bound_sources =
-                    |label: &str, action: &openxr::Action<openxr::Posef>| match action
-                        .bound_sources(&sess.session)
-                    {
-                        Ok(paths) if paths.is_empty() => {
-                            eprintln!("[OpenXR] {label} bound_sources: []");
-                        }
-                        Ok(paths) => {
-                            let sources = paths
-                                .into_iter()
-                                .map(|path| {
-                                    let raw = state
-                                        .instance
-                                        .path_to_string(path)
-                                        .unwrap_or_else(|_| format!("{path:?}"));
-                                    let localized = sess
-                                        .session
-                                        .input_source_localized_name(path, localized_name_flags)
-                                        .unwrap_or_else(|_| raw.clone());
-                                    format!("{raw} ({localized})")
-                                })
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            eprintln!("[OpenXR] {label} bound_sources: [{sources}]");
-                        }
-                        Err(e) => {
-                            eprintln!("[OpenXR] {label} bound_sources query failed: {e:?}");
-                        }
-                    };
-
-                log_bound_sources("aim_pose", &ci.aim_pose);
-                log_bound_sources("grip_pose", &ci.grip_pose);
-
-                let log_action_active =
-                    |label: &str, action: &openxr::Action<openxr::Posef>, subaction_path| {
-                        match action.is_active(&sess.session, subaction_path) {
-                            Ok(active) => eprintln!("[OpenXR] action_active {label}: {active}"),
-                            Err(e) => {
-                                eprintln!("[OpenXR] action_active {label} query failed: {e:?}")
-                            }
-                        }
-                    };
-
-                log_action_active("left aim", &ci.aim_pose, ci.left);
-                log_action_active("right aim", &ci.aim_pose, ci.right);
-                log_action_active("left grip", &ci.grip_pose, ci.left);
-                log_action_active("right grip", &ci.grip_pose, ci.right);
             }
 
             let update_pose = |space: &openxr::Space, base: &openxr::Space, t: openxr::Time| {
@@ -1765,12 +1570,6 @@ impl OpenXRSystem {
                 &sess.reference_space,
                 frame_state.predicted_display_time,
             ) {
-                if debug_input_this_frame {
-                    eprintln!(
-                        "[OpenXR] left aim flags: {:?}",
-                        loc.location_flags
-                    );
-                }
                 if loc
                     .location_flags
                     .contains(openxr::SpaceLocationFlags::POSITION_VALID)
@@ -1790,12 +1589,6 @@ impl OpenXRSystem {
                 &sess.reference_space,
                 frame_state.predicted_display_time,
             ) {
-                if debug_input_this_frame {
-                    eprintln!(
-                        "[OpenXR] right aim flags: {:?}",
-                        loc.location_flags
-                    );
-                }
                 if loc
                     .location_flags
                     .contains(openxr::SpaceLocationFlags::POSITION_VALID)
@@ -1815,12 +1608,6 @@ impl OpenXRSystem {
                 &sess.reference_space,
                 frame_state.predicted_display_time,
             ) {
-                if debug_input_this_frame {
-                    eprintln!(
-                        "[OpenXR] left grip flags: {:?}",
-                        loc.location_flags
-                    );
-                }
                 if loc
                     .location_flags
                     .contains(openxr::SpaceLocationFlags::POSITION_VALID)
@@ -1840,12 +1627,6 @@ impl OpenXRSystem {
                 &sess.reference_space,
                 frame_state.predicted_display_time,
             ) {
-                if debug_input_this_frame {
-                    eprintln!(
-                        "[OpenXR] right grip flags: {:?}",
-                        loc.location_flags
-                    );
-                }
                 if loc
                     .location_flags
                     .contains(openxr::SpaceLocationFlags::POSITION_VALID)

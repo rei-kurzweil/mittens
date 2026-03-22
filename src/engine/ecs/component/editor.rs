@@ -26,6 +26,12 @@ pub struct EditorComponent {
     /// Not serialized.
     pub transform_gizmo: Option<ComponentId>,
 
+    /// Runtime: currently selected TransformComponent.
+    ///
+    /// Set by EditorSystem on DragStart. Read by InspectorSystem to drive panel content.
+    /// Not serialized.
+    pub selected: Option<ComponentId>,
+
     /// Coordinate space used for translation handles (arrows).
     pub transform_gizmo_translation_space: TransformGizmoCoordSpace,
 
@@ -39,6 +45,7 @@ impl Default for EditorComponent {
     fn default() -> Self {
         Self {
             transform_gizmo: None,
+            selected: None,
             // Default to the common editor expectation: translate in World, rotate in Local.
             transform_gizmo_translation_space: TransformGizmoCoordSpace::World,
             transform_gizmo_rotation_space: TransformGizmoCoordSpace::Local,

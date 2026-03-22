@@ -10,11 +10,11 @@
 /// Unknown type names or unrecognised methods produce an error string; the executor logs
 /// them and continues rather than panicking.
 use crate::engine::ecs::component::{
-    AmbientLightComponent, BackgroundColorComponent, BackgroundComponent, Camera3DComponent,
+    AmbientLightComponent, AvatarBodyYawComponent, BackgroundColorComponent, BackgroundComponent, Camera3DComponent,
     CameraXRComponent, ColorComponent, ControllerHand, ControllerPoseKind,
     ControllerXRComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent,
     GLTFComponent, InputComponent, InputTransformModeComponent, InputXRComponent,
-    OpenXRComponent,
+    InspectorPanelComponent, OpenXRComponent, SelectableComponent, WorldPanelComponent,
     QuatTemporalFilterComponent, RayCastComponent, RayCastMode, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TextComponent, TextShadowComponent,
     TextureFilteringComponent, TransformComponent, TransformDropComponent,
@@ -295,7 +295,14 @@ fn create_component(
         "RendererStats" => add!(RendererStatsComponent::new()),
         "Text" => add!(TextComponent::new("")),
         "TextShadow" => add!(TextShadowComponent::new()),
+        "AvatarBodyYaw" => add!(AvatarBodyYawComponent::new()),
         "Editor" => add!(EditorComponent::new()),
+        "Selectable" => match ctor {
+            Some("off") => add!(SelectableComponent::off()),
+            _ => add!(SelectableComponent::on()),
+        },
+        "InspectorPanel" => add!(InspectorPanelComponent::new()),
+        "WorldPanel" => add!(WorldPanelComponent::new()),
         "Raycastable" => match ctor {
             Some("enabled") => add!(RayCastComponent::new(RayCastMode::Continuous)),
             _ => add!(RayCastComponent::new(RayCastMode::Continuous)),
