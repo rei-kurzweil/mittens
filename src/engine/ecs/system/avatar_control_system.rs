@@ -1,8 +1,8 @@
 use crate::engine::ecs::component::{
-    AvatarControlComponent, ControllerHand, ControllerXRComponent, QuatTemporalFilterComponent,
-    QuatYawFollowComponent, TransformComponent, TransformForkTRSComponent,
-    TransformMapRotationComponent, TransformMergeTRSComponent, TransformPipelineComponent,
-    TransformPipelineOutputComponent,
+    AvatarControlComponent, Camera3DComponent, CameraXRComponent, ControllerHand,
+    ControllerXRComponent, QuatTemporalFilterComponent, QuatYawFollowComponent,
+    TransformComponent, TransformForkTRSComponent, TransformMapRotationComponent,
+    TransformMergeTRSComponent, TransformPipelineComponent, TransformPipelineOutputComponent,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 
@@ -100,7 +100,8 @@ fn tick_one(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter, _d
 fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter) {
     let (head_bone_name, left_hand_bone, right_hand_bone,
          body_yaw_threshold, body_yaw_rate, forward_plus_z,
-         initial_body_yaw, hand_rotation_smoothing, skip_body_pipeline) = {
+         initial_body_yaw, hand_rotation_smoothing, skip_body_pipeline,
+         camera_bone_name, avatar_height_override) = {
         let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
             return;
         };
@@ -114,6 +115,8 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             c.initial_body_yaw,
             c.hand_rotation_smoothing,
             c.skip_body_pipeline,
+            c.camera_bone.clone(),
+            c.avatar_height,
         )
     };
 
@@ -161,10 +164,83 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     let left  = resolve_hand_splice(world, model_root_id, left_hand_bone.as_deref(),  left_ctrl);
     let right = resolve_hand_splice(world, model_root_id, right_hand_bone.as_deref(), right_ctrl);
 
+    // --- Camera bone: auto-calibrate model_root.y + discover camera children ---
+    //
+    // Priority:
+    //   1. avatar_height_override — use directly, skip bone measurement.
+    //   2. camera_bone auto-calibration — measure bone local Y in rest pose.
+    // Either way, emit UpdateTransform(model_root, y = -height).
+    //
+    // Any Camera3D or CameraXR direct children of AVC are re-parented under the
+    // camera bone so they inherit its world transform each tick.
+    let camera_bone_id: Option<ComponentId> = camera_bone_name.as_deref().and_then(|name| {
+        let sel = format!("[name='{}']", name);
+        let found = world.find_component(model_root_id, &sel);
+        if found.is_none() {
+            println!("[AVC] camera_bone '{}' not found under model_root {:?}", name, model_root_id);
+        }
+        found
+    });
+
+    let model_root_y: Option<f32> = if let Some(h) = avatar_height_override {
+        println!("[AVC] using avatar_height_override = {}", h);
+        Some(-h)
+    } else if let Some(cam_bone_id) = camera_bone_id {
+        let cam_bone_world_y = world
+            .get_component_by_id_as::<TransformComponent>(cam_bone_id)
+            .map(|t| t.transform.matrix_world[3][1])
+            .unwrap_or(0.0);
+        let model_root_world_y = world
+            .get_component_by_id_as::<TransformComponent>(model_root_id)
+            .map(|t| t.transform.matrix_world[3][1])
+            .unwrap_or(0.0);
+        let bone_local_y = cam_bone_world_y - model_root_world_y;
+        println!(
+            "[AVC] camera_bone found: cam_bone_world_y={:.4} model_root_world_y={:.4} bone_local_y={:.4} → model_root.y={:.4}",
+            cam_bone_world_y, model_root_world_y, bone_local_y, -bone_local_y
+        );
+        Some(-bone_local_y)
+    } else {
+        if camera_bone_name.is_some() {
+            println!("[AVC] camera_bone not found and no avatar_height_override — model_root.y unchanged");
+        }
+        None
+    };
+
+    if let Some(y) = model_root_y {
+        emit.push_intent_now(
+            model_root_id,
+            IntentValue::UpdateTransform {
+                component_ids: vec![model_root_id],
+                translation: [0.0, y, 0.0],
+                rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0, 1.0, 1.0],
+            },
+        );
+    }
+
+    // Discover Camera3D and CameraXR direct children of AVC.
+    let camera_children: Vec<ComponentId> = world
+        .children_of(id)
+        .iter()
+        .copied()
+        .filter(|&ch| {
+            let is_c3d = world.get_component_by_id_as::<Camera3DComponent>(ch).is_some();
+            let is_cxr = world.get_component_by_id_as::<CameraXRComponent>(ch).is_some();
+            if is_c3d { println!("[AVC] found Camera3D child {:?} — will re-parent to camera_bone", ch); }
+            if is_cxr { println!("[AVC] found CameraXR child {:?} — will re-parent to camera_bone", ch); }
+            is_c3d || is_cxr
+        })
+        .collect();
+    if camera_children.is_empty() && camera_bone_id.is_some() {
+        println!("[AVC] WARNING: camera_bone set but no Camera3D/CameraXR direct children of AVC found");
+    }
+
     // Store runtime IDs (body_pipeline_id stored after pipeline creation below).
     if let Some(c) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
-        c.splice_head    = Some(head_splice_id);
-        c.displaced_head = Some(head_bone_id);
+        c.splice_head       = Some(head_splice_id);
+        c.displaced_head    = Some(head_bone_id);
+        c.splice_camera_bone = camera_bone_id;
         if let Some((_, driver, bone)) = left  { c.splice_left_hand  = Some(driver); c.displaced_left_hand  = Some(bone); }
         if let Some((_, driver, bone)) = right { c.splice_right_hand = Some(driver); c.displaced_right_hand = Some(bone); }
     }
@@ -254,6 +330,19 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         } else {
             emit_attach(emit, raw_driver, bone);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Camera re-parenting: move discovered Camera3D/CameraXR children of AVC
+    // under the camera bone so they inherit its world transform each tick.
+    // -----------------------------------------------------------------------
+    if let Some(cam_bone_id) = camera_bone_id {
+        for cam in &camera_children {
+            println!("[AVC] re-parenting camera {:?} under camera_bone {:?}", cam, cam_bone_id);
+            emit_attach(emit, cam_bone_id, *cam);
+        }
+    } else if !camera_children.is_empty() {
+        println!("[AVC] WARNING: camera children found but camera_bone not resolved — no re-parenting");
     }
 }
 

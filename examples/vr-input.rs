@@ -266,10 +266,9 @@ fn main() {
     example_util::spawn_desktop_camera_controls_hint(&mut universe, desktop_rig);
     universe.add(input);
 
-    // --- XR rig ---
+    // --- XR rig (Aim controller debug cubes only; camera has moved to AVC) ---
     let xr_input = universe.world.add_component(InputXRComponent::on());
     let xr_rig = universe.world.add_component(TransformComponent::new());
-    let camera_xr = universe.world.add_component(CameraXRComponent::on());
     let _ = universe.attach(xr_input, xr_rig);
 
     // renderer stats
@@ -281,7 +280,6 @@ fn main() {
     );
     let _ = universe.attach(render_stats_rig, renderer_stats);
     let _ = universe.attach(xr_rig, render_stats_rig);
-    let _ = universe.attach(xr_rig, camera_xr);
 
     universe.add(xr_input);
 
@@ -296,15 +294,21 @@ fn main() {
     //   - Strips rotation from model_root (body faces body_yaw, not raw HMD yaw).
     //   - Bakes the π Y handedness correction into the head rotation math.
     //   - Smoothly rotates body to follow head when yaw delta exceeds threshold.
+    //   - Measures J_Bip_C_Head local Y in the rest pose and sets model_root.y = -bone_local_y,
+    //     so the head bone sits at driven_t world Y (= HMD height) with no hardcoded constant.
+    //   - Re-parents CameraXRComponent under J_Bip_C_Head for first-person alignment.
     //
-    // Topology:
+    // Topology (after AVC init):
     //   editor_root
     //     └── avatar_input_xr (InputXRComponent)
     //           └── avatar_driven_t (TransformComponent)
     //                 └── AvatarControlComponent
-    //                       └── model_root (TransformComponent, Y offset)
-    //                             └── GLTFComponent
-    const AVATAR_HEIGHT_M: f32 = 1.6;
+    //                       ├── body_pipeline → pipeline_output
+    //                       │     └── model_root (y auto-calibrated from J_Bip_C_Head)
+    //                       │           └── GLTFComponent → ... → J_Bip_C_Head
+    //                       │                                           └── CameraXRComponent
+    //                       ├── CTLXR(Left, Grip) → re-parented to lower_arm
+    //                       └── CTLXR(Right, Grip) → re-parented to lower_arm
 
     let editor_root = universe.world.add_component(EditorComponent::new());
 
@@ -313,17 +317,22 @@ fn main() {
     let _ = universe.attach(avatar_input_xr, avatar_driven_t);
 
     // AvatarControlComponent: -Z forward (OpenXR default), body starts facing -Z (π yaw).
-    // Hand controllers are registered by topology: ControllerXRComponent children
-    // of AvatarControlComponent are auto-discovered by AvatarControlSystem.
+    // camera_bone triggers auto-calibration of model_root.y from J_Bip_C_Head rest pose height,
+    // and causes any CameraXR/Camera3D direct children of AVC to be re-parented to that bone.
     let avatar_control = universe.world.add_component(
         AvatarControlComponent::new()
             .with_head_bone("J_Bip_C_Neck")
+            .with_camera_bone("J_Bip_C_Head")
             .with_left_hand_bone("J_Bip_L_Hand")
             .with_right_hand_bone("J_Bip_R_Hand")
             .with_initial_yaw(std::f32::consts::PI)
             .with_hand_rotation_smoothing(220.0),
     );
     let _ = universe.attach(avatar_driven_t, avatar_control);
+
+    // CameraXR as a direct child of AVC — discovered and re-parented to J_Bip_C_Head at init.
+    let camera_xr = universe.world.add_component(CameraXRComponent::on());
+    let _ = universe.attach(avatar_control, camera_xr);
 
     // Grip controllers for hand bone splicing — children of AvatarControlComponent so
     // AvatarControlSystem discovers them by topology. Each needs a TransformComponent
@@ -342,13 +351,8 @@ fn main() {
     let _ = universe.attach(right_grip, right_grip_t);
     let _ = universe.attach(avatar_control, right_grip);
 
-    // model_root: Y offset so avatar stands at floor level.
-    // No explicit rotation needed — AvatarControlSystem handles the π Y flip.
-    let model_root = universe.world.add_component(
-        TransformComponent::new()
-            .with_position(0.0, -AVATAR_HEIGHT_M, 0.0)
-            .with_scale(1.0, 1.0, 1.0),
-    );
+    // model_root: no explicit Y offset — AvatarControlSystem calibrates it from J_Bip_C_Head.
+    let model_root = universe.world.add_component(TransformComponent::new());
     let model = universe
         .world
         .add_component(GLTFComponent::new("assets/models/pc-rei.hoodie.glb"));

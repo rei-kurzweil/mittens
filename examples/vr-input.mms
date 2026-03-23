@@ -75,24 +75,28 @@ BG {
 // --- VTuber avatar — single-input topology ---
 //
 // InputXR drives body translation and head rotation via AvatarControlSystem.
-// ControllerXR children (Grip) are discovered by topology and spliced onto
-// the hand bones automatically — no manual wrist attachment needed.
+// ControllerXR and CameraXR children are discovered by topology.
+// with_camera_bone triggers two things at AVC init:
+//   1. model_root.y is auto-calibrated to -J_Bip_C_Head_local_y (no hardcoded constant).
+//   2. CXR is re-parented under J_Bip_C_Head for first-person XR alignment.
 //
 // Topology (after AvatarControlSystem init):
 //   ED
 //     └── InputXR
 //           └── T (driven_t)
-//                 └── AVC { head, left_hand, right_hand bones, initial_yaw: π }
-//                       ├── TransformPipeline (body pipeline, created by AVC init)
+//                 └── AVC
+//                       ├── TransformPipeline (body pipeline)
 //                       │     TransformForkTRS
 //                       │       TransformMapRotation
 //                       │         QuatYawFollow { threshold, rate, initial_yaw: π }
 //                       │       TransformMergeTRS
 //                       │     TransformPipelineOutput
-//                       │       └── T.with_position(0, -1.6, 0)  ← model_root (re-parented here)
+//                       │       └── T  ← model_root (y auto-calibrated from J_Bip_C_Head)
 //                       │             └── GLTF { EM }
-//                       ├── CTLXR(Left, Grip)             ← discovered; re-parented to lower_arm
-//                       │     └── T                       ← driven by OpenXRSystem; hand bone displaced here
+//                       │                   └── ... → J_Bip_C_Head
+//                       │                                 └── CXR  ← re-parented here
+//                       ├── CTLXR(Left, Grip)   ← discovered; re-parented to lower_arm
+//                       │     └── T
 //                       └── CTLXR(Right, Grip)
 //                             └── T
 ED {
@@ -100,15 +104,18 @@ ED {
         T {
             AVC {
                 with_head_bone("J_Bip_C_Neck")
+                //with_avatar_height(1.85)
+                with_camera_bone("J_Bip_C_Head")
                 with_left_hand_bone("J_Bip_L_Hand")
                 with_right_hand_bone("J_Bip_R_Hand")
                 with_initial_yaw(3.14159)
                 with_hand_rotation_smoothing(220.0)
 
-                T.with_position(0.0, -1.6, 0.0) {
+                T {
                     GLTF.new("assets/models/pc-rei.hoodie.glb") { EM.on() }
                 }
 
+                CXR {}
                 CTLXR.new(true, Left, Grip) { T {} }
                 CTLXR.new(true, Right, Grip) { T {} }
             }
@@ -116,7 +123,7 @@ ED {
     }
 }
 
-// --- XR rig (camera + controller debug cubes) ---
+// --- XR rig (Aim controller debug cubes; camera has moved to AVC above) ---
 InputXR.on() {
     T {
         T.with_position(0.0, 1.85, 0.6) {
@@ -124,8 +131,6 @@ InputXR.on() {
                 with_camera_target(Xr)
             }
         }
-
-        CXR {}
 
         // Controller debug cubes (Aim pose, rotation-smoothed)
         CTLXR.new(true, Left, Aim) {

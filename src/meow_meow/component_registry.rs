@@ -441,6 +441,8 @@ fn apply_call(
             "with_body_yaw_threshold" => *avc = avc.clone().with_body_yaw_threshold(args[0].as_f32()?),
             "with_body_yaw_rate"            => *avc = avc.clone().with_body_yaw_rate(args[0].as_f32()?),
             "with_hand_rotation_smoothing"  => *avc = avc.clone().with_hand_rotation_smoothing(args[0].as_f32()?),
+            "with_camera_bone"              => *avc = avc.clone().with_camera_bone(args[0].as_str()?),
+            "with_avatar_height"            => *avc = avc.clone().with_avatar_height(args[0].as_f32()?),
             _ => {}
         }
         return Ok(());

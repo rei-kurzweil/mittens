@@ -75,6 +75,25 @@ pub struct AvatarControlComponent {
     /// Equivalent to `QuatTemporalFilter` smoothing_factor. `None` = no smoothing pipeline.
     pub hand_rotation_smoothing: Option<f32>,
 
+    /// Bone used as the camera anchor and as the source for auto-calibrating model_root.y.
+    ///
+    /// When set, `AvatarControlSystem` will:
+    ///   1. Measure this bone's local Y height above model_root in the GLTF rest pose.
+    ///   2. Override model_root's Y translation to `-bone_local_y`, so the bone sits
+    ///      exactly at `driven_t`'s world position (= HMD height in XR; body origin on desktop).
+    ///   3. Re-parent any `Camera3DComponent` or `CameraXRComponent` direct children of
+    ///      this AVC under this bone, giving them the bone's world transform each tick.
+    ///
+    /// Typically set one joint above `head_bone`: e.g. `"J_Bip_C_Head"` when
+    /// `head_bone` is `"J_Bip_C_Neck"`.  If `None`, no auto-calibration or camera
+    /// re-parenting is performed.
+    pub camera_bone: Option<String>,
+
+    /// Explicit avatar height (metres) used to set model_root.y = -avatar_height.
+    /// Overrides the camera_bone auto-calibration if both are set.
+    /// Use this when the camera bone lookup fails or the mesh height is known in advance.
+    pub avatar_height: Option<f32>,
+
     // Runtime IDs set by AvatarControlSystem on first tick:
     pub(crate) splice_head:          Option<ComponentId>,
     pub(crate) displaced_head:       Option<ComponentId>,
@@ -88,6 +107,10 @@ pub struct AvatarControlComponent {
     /// ComponentId of the body pipeline root (`TransformPipelineComponent`).
     /// Set by `try_init_splices`.
     pub(crate) body_pipeline_id: Option<ComponentId>,
+
+    /// The bone component that cameras were re-parented under (= `camera_bone` lookup result).
+    /// Set by `try_init_splices` when `camera_bone` is `Some`.
+    pub(crate) splice_camera_bone: Option<ComponentId>,
 
     /// Debug/diagnostic flag: skip creation of the body-rotation pipeline entirely.
     /// When `true`, model_root stays directly under AVC and only head rotation is applied.
@@ -155,6 +178,25 @@ impl AvatarControlComponent {
         self.skip_body_pipeline = true;
         self
     }
+
+    /// Set the bone used as the camera anchor and for auto-calibrating `model_root.y`.
+    ///
+    /// `AvatarControlSystem` will measure this bone's local Y in the rest pose and set
+    /// `model_root.y = -bone_local_y` so the bone sits at `driven_t`'s world position.
+    /// Any `Camera3DComponent` or `CameraXRComponent` direct children of this AVC are
+    /// re-parented under this bone during init.
+    pub fn with_camera_bone(mut self, name: impl Into<String>) -> Self {
+        self.camera_bone = Some(name.into());
+        self
+    }
+
+    /// Explicitly set `model_root.y = -height` during init, bypassing camera_bone
+    /// auto-calibration.  Use when the bone lookup is unreliable or the mesh height
+    /// is known in advance.  Camera re-parenting still uses `camera_bone` if set.
+    pub fn with_avatar_height(mut self, height: f32) -> Self {
+        self.avatar_height = Some(height);
+        self
+    }
 }
 
 impl Default for AvatarControlComponent {
@@ -168,6 +210,8 @@ impl Default for AvatarControlComponent {
             forward_plus_z: false,
             initial_body_yaw: 0.0,
             hand_rotation_smoothing: None,
+            camera_bone: None,
+            avatar_height: None,
             splice_head: None,
             displaced_head: None,
             splice_left_hand: None,
@@ -175,6 +219,7 @@ impl Default for AvatarControlComponent {
             splice_right_hand: None,
             displaced_right_hand: None,
             body_pipeline_id: None,
+            splice_camera_bone: None,
             skip_body_pipeline: false,
             component: None,
         }
@@ -205,6 +250,12 @@ impl Component for AvatarControlComponent {
         map.insert("body_yaw_threshold".to_string(), serde_json::json!(self.body_yaw_threshold));
         map.insert("body_yaw_rate".to_string(), serde_json::json!(self.body_yaw_rate));
         map.insert("forward_plus_z".to_string(), serde_json::json!(self.forward_plus_z));
+        if let Some(ref b) = self.camera_bone {
+            map.insert("camera_bone".to_string(), serde_json::json!(b));
+        }
+        if let Some(h) = self.avatar_height {
+            map.insert("avatar_height".to_string(), serde_json::json!(h));
+        }
         map
     }
 
@@ -229,6 +280,12 @@ impl Component for AvatarControlComponent {
         }
         if let Some(v) = data.get("forward_plus_z") {
             if let Some(b) = v.as_bool() { self.forward_plus_z = b; }
+        }
+        if let Some(v) = data.get("camera_bone") {
+            self.camera_bone = v.as_str().map(|s| s.to_string());
+        }
+        if let Some(v) = data.get("avatar_height") {
+            self.avatar_height = v.as_f64().map(|f| f as f32);
         }
         Ok(())
     }

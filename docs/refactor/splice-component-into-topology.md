@@ -398,3 +398,75 @@ The immediate doc-level recommendation is:
 - keep raw graph rewrites out of user/example code.
 
 That gives us a clean way to experiment with topology edits like inserting `ControllerXRComponent` into an imported armature edge without forcing subtree rebuilds or ad hoc lifecycle handling.
+
+---
+
+## 15. Tree splice: the output-node problem (2026-03-23)
+
+The sections above all treat the inserted value as a **single component**.  In practice,
+the insertions we actually perform (body pipeline, hand smoothing pipeline, head splice)
+are whole **trees**, not single components.  This surfaces a design problem that
+`splice_between(parent, child, inserted_root)` cannot express cleanly.
+
+### The core problem
+
+When a tree is spliced in, the old child must be re-parented under a **specific node
+within that tree** — not necessarily the root, and not necessarily a leaf.  The caller
+must be able to nominate that output node.
+
+Examples from the current codebase:
+
+| Splice site | Inserted tree root | Output node (where old child lands) |
+|---|---|---|
+| Head bone | `splice_head` (plain TC) | same — root IS the output |
+| Hand bone | `ControllerXRComponent` | `driven_t` → `TransformPipelineOutput` → `smoothed_t` |
+| Body rotation | `TransformPipelineComponent` | `TransformPipelineOutputComponent` |
+
+The head splice is degenerate (single node, root = output).  The others have a non-trivial
+depth between root and output.  A generic tree splice therefore needs four endpoints:
+
+```
+splice_tree(parent, child, inserted_root, inserted_output)
+```
+
+where `inserted_output` is some descendant of `inserted_root` under which `child` is
+re-parented.
+
+### Options for nominating the output node
+
+**A. Explicit 4th argument** — caller holds both IDs and passes both.  Most explicit,
+no new component conventions required.  Works naturally with the programmatic assembly
+already done in `AvatarControlSystem::try_init_splices`.
+
+**B. Marker component** — a `SpliceOutputComponent` (or reuse
+`TransformPipelineOutputComponent`) signals "this is where the old child goes".
+`splice_tree` walks the inserted tree to find it.  Declarative, but couples the splice
+API to a specific component convention; ambiguous if multiple outputs exist.
+
+**C. Closure** — `splice_tree(parent, child, fn(root) -> output)` — caller resolves the
+output node after the tree is constructed.  Flexible but harder to express declaratively
+in MMS.
+
+Option A is the most straightforward given current usage — the caller always has both IDs
+in scope by the time they are splicing.
+
+### The sideways-graft case is not a splice
+
+The body pipeline attachment in `AvatarControlSystem` is often described as a splice,
+but it does not fit the `parent → new_tree → child` shape:
+
+- the pipeline root is attached as a **new child of AVC** (a sibling of `model_root`),
+- then `model_root` is re-parented under the pipeline output.
+
+The old parent (`AVC`) does not change; only `model_root`'s parent changes.  This is a
+**sideways graft** — inserting a processing branch beside an existing node and then
+redirecting the node into it — rather than an inline splice between two existing edges.
+A `splice_tree` API should not try to express this case; it belongs to a separate
+`graft` concept or remains handled by explicit `emit_attach` sequences.
+
+### Current state
+
+No `splice_tree` (or `splice_between`) helper exists yet.  All splice operations in
+`AvatarControlSystem` and the examples are performed manually via sequences of
+`emit_attach` / `emit.push_intent_now`.  The four-argument form above is the natural
+next step once a helper is warranted.
