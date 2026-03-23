@@ -91,7 +91,8 @@ fn main() {
         AvatarControlComponent::new()
             .with_head_bone("J_Bip_C_Neck")
             .with_forward_plus_z()
-            .with_initial_yaw(0.0),
+            .with_initial_yaw(0.0)
+            //.with_body_pipeline_disabled(),
     );
     let _ = universe.attach(driven_t, avatar_control);
 

@@ -320,7 +320,8 @@ fn main() {
             .with_head_bone("J_Bip_C_Neck")
             .with_left_hand_bone("J_Bip_L_Hand")
             .with_right_hand_bone("J_Bip_R_Hand")
-            .with_initial_yaw(std::f32::consts::PI),
+            .with_initial_yaw(std::f32::consts::PI)
+            .with_hand_rotation_smoothing(220.0),
     );
     let _ = universe.attach(avatar_driven_t, avatar_control);
 

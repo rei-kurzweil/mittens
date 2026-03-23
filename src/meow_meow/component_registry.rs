@@ -439,7 +439,8 @@ fn apply_call(
             "with_initial_yaw"        => *avc = avc.clone().with_initial_yaw(args[0].as_f32()?),
             "with_forward_plus_z"     => *avc = avc.clone().with_forward_plus_z(),
             "with_body_yaw_threshold" => *avc = avc.clone().with_body_yaw_threshold(args[0].as_f32()?),
-            "with_body_yaw_rate"      => *avc = avc.clone().with_body_yaw_rate(args[0].as_f32()?),
+            "with_body_yaw_rate"            => *avc = avc.clone().with_body_yaw_rate(args[0].as_f32()?),
+            "with_hand_rotation_smoothing"  => *avc = avc.clone().with_hand_rotation_smoothing(args[0].as_f32()?),
             _ => {}
         }
         return Ok(());

@@ -1,9 +1,9 @@
 use crate::engine::ecs::component::{
-    QuatTemporalFilterComponent, TransformComponent, TransformDropComponent,
-    TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
-    TransformMapTranslationComponent, TransformMergeTRSComponent, TransformPipelineComponent,
-    TransformPipelineOutputComponent, TransformSampleAncestorComponent,
-    Vector3TemporalFilterComponent,
+    QuatExtractYawComponent, QuatTemporalFilterComponent, QuatYawFollowComponent,
+    TransformComponent, TransformDropComponent, TransformForkTRSComponent,
+    TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
+    TransformMergeTRSComponent, TransformPipelineComponent, TransformPipelineOutputComponent,
+    TransformSampleAncestorComponent, Vector3TemporalFilterComponent,
 };
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::{ComponentId, World};
@@ -51,6 +51,14 @@ pub enum TransformPipelineQuatOp {
     /// Replace this channel's value with the world rotation of an ancestor
     /// TransformComponent. Same `skip` semantics as `SampleAncestorTranslation`.
     SampleAncestorRotation { skip: usize },
+    /// Project the rotation onto the Y-rotation subspace: `normalize([0, q.y, 0, q.w])`.
+    /// Strips pitch and roll, keeping only the Y-axis component. Convention-independent.
+    ExtractYaw,
+    /// Stateful body-yaw follow. Extracts world-Y yaw from the input quaternion using
+    /// the specified forward convention, then advances a running `body_yaw` toward the
+    /// extracted head yaw when the delta exceeds `threshold`, at `rate` rad/s.
+    /// Outputs a pure-Y quaternion for `body_yaw`.
+    YawFollow { threshold: f32, rate: f32, initial_yaw: f32, forward_plus_z: bool },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -113,6 +121,7 @@ pub struct TransformPipelineSystem {
     last_dt_sec: Option<f32>,
     vec3_temporal_state: HashMap<TransformPipelineStageKey, Vec3TemporalState>,
     quat_temporal_state: HashMap<TransformPipelineStageKey, QuatTemporalState>,
+    yaw_follow_state: HashMap<TransformPipelineStageKey, f32>,
 }
 
 impl TransformPipelineSystem {
@@ -312,6 +321,19 @@ impl TransformPipelineSystem {
                 ops.push(TransformPipelineQuatOp::TemporalFilter {
                     smoothing_factor: filter.smoothing_factor,
                 });
+                continue;
+            }
+            if world.get_component_by_id_as::<QuatExtractYawComponent>(child).is_some() {
+                ops.push(TransformPipelineQuatOp::ExtractYaw);
+                continue;
+            }
+            if let Some(c) = world.get_component_by_id_as::<QuatYawFollowComponent>(child) {
+                ops.push(TransformPipelineQuatOp::YawFollow {
+                    threshold: c.threshold,
+                    rate: c.rate,
+                    initial_yaw: c.initial_yaw,
+                    forward_plus_z: c.forward_plus_z,
+                });
             }
         }
         if ops.is_empty() {
@@ -488,6 +510,36 @@ impl TransformPipelineSystem {
                         .map(|m| Self::decompose_matrix(m).rotation_quat_xyzw)
                         .unwrap_or(current)
                 }
+                TransformPipelineQuatOp::ExtractYaw => {
+                    // Project onto Y-rotation subspace: normalize([0, q.y, 0, q.w])
+                    let (qy, qw) = (current[1], current[3]);
+                    let len = (qy * qy + qw * qw).sqrt().max(1e-8);
+                    [0.0, qy / len, 0.0, qw / len]
+                }
+                TransformPipelineQuatOp::YawFollow { threshold, rate, initial_yaw, forward_plus_z } => {
+                    let mut full_path = stage_path.to_vec();
+                    full_path.push(op_index);
+                    let key = TransformPipelineStageKey {
+                        owner_component,
+                        stage_path: full_path,
+                    };
+                    let head_yaw = Self::extract_yaw_from_quat(current, forward_plus_z);
+                    let body_yaw = self.yaw_follow_state.get(&key).copied().unwrap_or(initial_yaw);
+                    let new_body_yaw = if let Some(dt) = dt_sec {
+                        let delta = Self::signed_yaw_diff(head_yaw, body_yaw);
+                        if delta.abs() > threshold {
+                            let target = head_yaw - delta.signum() * threshold;
+                            let step = rate * dt;
+                            Self::lerp_angle(body_yaw, target, step.min(delta.abs()) / delta.abs().max(1e-9))
+                        } else {
+                            body_yaw
+                        }
+                    } else {
+                        body_yaw
+                    };
+                    self.yaw_follow_state.insert(key, new_body_yaw);
+                    Self::quat_rotation_y(new_body_yaw)
+                }
                 TransformPipelineQuatOp::TemporalFilter { smoothing_factor } => {
                     let mut full_path = stage_path.to_vec();
                     full_path.push(op_index);
@@ -571,6 +623,32 @@ impl TransformPipelineSystem {
             };
         }
         Self::quat_normalize(current)
+    }
+
+    fn extract_yaw_from_quat(q: [f32; 4], forward_plus_z: bool) -> f32 {
+        let z = math::quat_rotate_vec3(q, [0.0, 0.0, 1.0]);
+        if forward_plus_z {
+            z[0].atan2(z[2])
+        } else {
+            (-z[0]).atan2(-z[2])
+        }
+    }
+
+    fn quat_rotation_y(yaw: f32) -> [f32; 4] {
+        let h = yaw * 0.5;
+        [0.0, h.sin(), 0.0, h.cos()]
+    }
+
+    fn signed_yaw_diff(a: f32, b: f32) -> f32 {
+        let pi = std::f32::consts::PI;
+        let mut d = (a - b) % (2.0 * pi);
+        if d > pi { d -= 2.0 * pi; }
+        if d < -pi { d += 2.0 * pi; }
+        d
+    }
+
+    fn lerp_angle(from: f32, to: f32, t: f32) -> f32 {
+        from + Self::signed_yaw_diff(to, from) * t.clamp(0.0, 1.0)
     }
 
     fn decompose_matrix(m: TransformMatrix) -> TransformPipelineChannels {

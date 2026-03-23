@@ -95,6 +95,7 @@ InputXR.on() {
             with_left_hand_bone("J_Bip_L_Hand")
             with_right_hand_bone("J_Bip_R_Hand")
             with_initial_yaw(3.14159)
+            with_hand_rotation_smoothing(220.0)
 
             T.with_position(0.0, -1.6, 0.0) {
                 GLTF.new("assets/models/pc-rei.hoodie.glb") { EM.on() }

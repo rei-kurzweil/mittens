@@ -143,7 +143,8 @@ pub use transform_pipeline_map::{
     TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
 };
 pub use transform_temporal_filter::{
-    QuatTemporalFilterComponent, Vector3TemporalFilterComponent,
+    QuatExtractYawComponent, QuatTemporalFilterComponent, QuatYawFollowComponent,
+    Vector3TemporalFilterComponent,
 };
 pub use transparent_cutout::TransparentCutoutComponent;
 pub use uv::UVComponent;

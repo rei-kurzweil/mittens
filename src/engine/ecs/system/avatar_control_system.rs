@@ -1,5 +1,8 @@
 use crate::engine::ecs::component::{
-    AvatarControlComponent, ControllerHand, ControllerXRComponent, TransformComponent,
+    AvatarControlComponent, ControllerHand, ControllerXRComponent, QuatTemporalFilterComponent,
+    QuatYawFollowComponent, TransformComponent, TransformForkTRSComponent,
+    TransformMapRotationComponent, TransformMergeTRSComponent, TransformPipelineComponent,
+    TransformPipelineOutputComponent,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 
@@ -27,7 +30,7 @@ impl AvatarControlSystem {
     }
 }
 
-fn tick_one(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter, dt_sec: f32) {
+fn tick_one(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter, _dt_sec: f32) {
     // --- Init phase ---
     let needs_init = {
         let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
@@ -41,24 +44,24 @@ fn tick_one(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter, dt
         return; // regular tick runs next frame after Attach intents are flushed
     }
 
-    // --- Regular tick ---
-    let (threshold, rate, body_yaw, forward_plus_z, splice_head_id, model_root_rest_local) = {
+    // --- Regular tick: head rotation only ---
+    // Body rotation is handled by the body pipeline (YawFollow op in TransformPipelineSystem).
+    let (forward_plus_z, splice_head_id) = {
         let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
             return;
         };
         let Some(splice_head_id) = c.splice_head else { return };
-        (c.body_yaw_threshold, c.body_yaw_rate, c.body_yaw, c.forward_plus_z, splice_head_id, c.model_root_rest_local)
+        (c.forward_plus_z, splice_head_id)
     };
 
     // driven_t is the parent of AvatarControlComponent.
     let Some(driven_t_id) = world.parent_of(id) else { return };
-    let driven_matrix_world = {
+    let driven_world_rot = {
         let Some(t) = world.get_component_by_id_as::<TransformComponent>(driven_t_id) else {
             return;
         };
-        t.transform.matrix_world
+        mat_to_quat(t.transform.matrix_world)
     };
-    let driven_world_rot = mat_to_quat(driven_matrix_world);
 
     // neck_parent is the parent of splice_head (stable after init).
     let Some(neck_parent_id) = world.parent_of(splice_head_id) else { return };
@@ -68,39 +71,6 @@ fn tick_one(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter, dt
         };
         mat_to_quat(t.transform.matrix_world)
     };
-
-    // First TransformComponent child of AvatarControlComponent is model_root.
-    let Some(model_root_id) = world
-        .children_of(id)
-        .iter()
-        .copied()
-        .find(|&ch| world.get_component_by_id_as::<TransformComponent>(ch).is_some())
-    else {
-        return;
-    };
-    let model_root_scale = {
-        let Some(t) = world.get_component_by_id_as::<TransformComponent>(model_root_id) else {
-            return;
-        };
-        t.transform.scale
-    };
-
-    // Counteract driven_t pitch on model_root's translation: express the rest-pose offset
-    // in world space so it is always a straight-down vector regardless of head pitch.
-    // local_translation = quat_inverse(driven_world_rot) * rest_world_offset
-    let model_root_translation = rotate_vec_by_quat(quat_inverse(driven_world_rot), model_root_rest_local);
-
-    // --- Body rotation: counteract driven_t rotation, apply body_yaw ---
-    let body_rot = quat_mul(quat_inverse(driven_world_rot), quat_rotation_y(body_yaw));
-    emit.push_intent_now(
-        model_root_id,
-        IntentValue::UpdateTransform {
-            component_ids: vec![model_root_id],
-            translation: model_root_translation,
-            rotation_quat_xyzw: body_rot,
-            scale: model_root_scale,
-        },
-    );
 
     // --- Head rotation ---
     // For VR (-Z forward): multiply by quat_rotation_y(π) to bake the VRM/OpenXR handedness flip.
@@ -117,46 +87,20 @@ fn tick_one(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter, dt
             scale: [1.0, 1.0, 1.0],
         },
     );
-
-    // --- Body yaw follow ---
-    let head_yaw = extract_world_yaw(driven_matrix_world, forward_plus_z);
-    let delta = signed_yaw_diff(head_yaw, body_yaw);
-    if delta.abs() > threshold {
-        let target = head_yaw - delta.signum() * threshold;
-        let step = rate * dt_sec;
-        let new_body_yaw =
-            lerp_angle(body_yaw, target, step.min(delta.abs()) / delta.abs().max(1e-9));
-
-        if (new_body_yaw - body_yaw).abs() >= 1e-6 {
-            if let Some(c) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
-                c.body_yaw = new_body_yaw;
-            }
-            let updated_body_rot =
-                quat_mul(quat_inverse(driven_world_rot), quat_rotation_y(new_body_yaw));
-            emit.push_intent_now(
-                model_root_id,
-                IntentValue::UpdateTransform {
-                    component_ids: vec![model_root_id],
-                    translation: model_root_translation,
-                    rotation_quat_xyzw: updated_body_rot,
-                    scale: model_root_scale,
-                },
-            );
-        }
-    }
 }
 
-/// First-time setup: splice the head bone and any configured hand bones.
+/// First-time setup: splice bones, create body pipeline, and (optionally) hand smoothing pipelines.
 ///
 /// Controllers are discovered by topology: any `ControllerXRComponent` that is a
 /// **direct child** of this `AvatarControlComponent` is treated as a hand driver.
 /// Its `hand` field (`Left` / `Right`) determines which hand bone it drives.
-/// The bone is displaced under the controller's first `TransformComponent` child.
 ///
-/// If no controller is present for a configured hand bone, a plain
-/// `TransformComponent` splice is inserted instead.
+/// Body pipeline created here reads `driven_t`'s world matrix, strips pitch/roll via `YawFollow`,
+/// and writes the result to `model_root` (which is re-parented under the pipeline output).
 fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter) {
-    let (head_bone_name, left_hand_bone, right_hand_bone) = {
+    let (head_bone_name, left_hand_bone, right_hand_bone,
+         body_yaw_threshold, body_yaw_rate, forward_plus_z,
+         initial_body_yaw, hand_rotation_smoothing, skip_body_pipeline) = {
         let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
             return;
         };
@@ -164,6 +108,12 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             c.head_bone.clone(),
             c.left_hand_bone.clone(),
             c.right_hand_bone.clone(),
+            c.body_yaw_threshold,
+            c.body_yaw_rate,
+            c.forward_plus_z,
+            c.initial_body_yaw,
+            c.hand_rotation_smoothing,
+            c.skip_body_pipeline,
         )
     };
 
@@ -177,8 +127,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         return;
     };
 
-    // Discover hand controllers by topology: direct ControllerXRComponent children,
-    // matched by ControllerHand field.
+    // Discover hand controllers by topology: direct ControllerXRComponent children.
     let left_ctrl = world
         .children_of(id)
         .iter()
@@ -208,50 +157,110 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     let Some(head_parent_id) = world.parent_of(head_bone_id) else { return };
     let head_splice_id = world.add_component(TransformComponent::new());
 
-    // Resolve hand splices.
-    // Returns (bone_original_parent, driver_node, bone_id):
-    //   driver_node = the node bone is displaced under (controller's driven_t or plain TC).
+    // Resolve hand splices (raw driver = controller's driven_t or plain TC).
     let left  = resolve_hand_splice(world, model_root_id, left_hand_bone.as_deref(),  left_ctrl);
     let right = resolve_hand_splice(world, model_root_id, right_hand_bone.as_deref(), right_ctrl);
 
-    // Cache model_root's rest-pose local translation so tick_one can compensate driven_t pitch.
-    let model_root_rest_local = world
-        .get_component_by_id_as::<TransformComponent>(model_root_id)
-        .map(|t| t.transform.translation)
-        .unwrap_or([0.0, 0.0, 0.0]);
-
-    // Store runtime IDs before emitting intents.
+    // Store runtime IDs (body_pipeline_id stored after pipeline creation below).
     if let Some(c) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
-        c.model_root_rest_local = model_root_rest_local;
         c.splice_head    = Some(head_splice_id);
         c.displaced_head = Some(head_bone_id);
         if let Some((_, driver, bone)) = left  { c.splice_left_hand  = Some(driver); c.displaced_left_hand  = Some(bone); }
         if let Some((_, driver, bone)) = right { c.splice_right_hand = Some(driver); c.displaced_right_hand = Some(bone); }
     }
 
+    // -----------------------------------------------------------------------
+    // Body pipeline: created as a child of AVC; model_root re-parented under it.
+    //
+    // Topology:
+    //   AVC
+    //     └── body_pipeline  (TransformPipelineComponent)
+    //           TransformForkTRSComponent
+    //             TransformMapRotationComponent
+    //               QuatYawFollowComponent { threshold, rate, initial_yaw, forward_plus_z }
+    //             TransformMergeTRSComponent
+    //           TransformPipelineOutputComponent
+    //             model_root  ← re-parented here
+    // -----------------------------------------------------------------------
+    if !skip_body_pipeline {
+        let body_pipeline_id  = world.add_component(TransformPipelineComponent::new());
+        let fork_id           = world.add_component(TransformForkTRSComponent::new());
+        let map_rot_id        = world.add_component(TransformMapRotationComponent::new());
+        let yaw_follow_id     = world.add_component(
+            QuatYawFollowComponent::new(body_yaw_threshold, body_yaw_rate)
+                .with_initial_yaw(initial_body_yaw)
+                .with_forward_plus_z_if(forward_plus_z),
+        );
+        let merge_id          = world.add_component(TransformMergeTRSComponent::new());
+        let pipeline_output_id = world.add_component(TransformPipelineOutputComponent::new());
+
+        // Wire internal pipeline structure (all new, uninitialized).
+        let _ = world.set_parent(fork_id,           Some(body_pipeline_id));
+        let _ = world.set_parent(map_rot_id,         Some(fork_id));
+        let _ = world.set_parent(yaw_follow_id,      Some(map_rot_id));
+        let _ = world.set_parent(merge_id,           Some(fork_id));
+        let _ = world.set_parent(pipeline_output_id, Some(body_pipeline_id));
+
+        if let Some(c) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
+            c.body_pipeline_id = Some(body_pipeline_id);
+        }
+
+        // Attach pipeline to AVC (initializes the pipeline tree).
+        emit_attach(emit, id, body_pipeline_id);
+        // Re-parent model_root under the pipeline output.
+        emit_attach(emit, pipeline_output_id, model_root_id);
+    }
+
+    // -----------------------------------------------------------------------
     // Head splice: splice_head under neck_parent, head bone under splice_head.
+    // -----------------------------------------------------------------------
     emit_attach(emit, head_parent_id, head_splice_id);
     emit_attach(emit, head_splice_id, head_bone_id);
 
-    // Hand splices: for each hand, bone_parent → splice_root → driver → bone.
-    // If a controller was resolved, splice_root is the controller (parent of driver);
-    // otherwise splice_root == driver (the plain TC).
+    // -----------------------------------------------------------------------
+    // Hand splices.
+    // For each hand:
+    //   - Re-parent controller (or plain-TC splice) under bone's original parent.
+    //   - If hand_rotation_smoothing is Some: create a smoothing pipeline under the
+    //     raw driver (controller_driven_t), displace bone under smoothed_t.
+    //   - If None: displace bone directly under the raw driver.
+    // -----------------------------------------------------------------------
     for hand in [left, right].into_iter().flatten() {
-        let (bone_parent, driver, bone) = hand;
-        let splice_root = world.parent_of(driver).filter(|&p| p != bone_parent).unwrap_or(driver);
+        let (bone_parent, raw_driver, bone) = hand;
+        let splice_root = world.parent_of(raw_driver).filter(|&p| p != bone_parent).unwrap_or(raw_driver);
         emit_attach(emit, bone_parent, splice_root);
-        emit_attach(emit, driver, bone);
+
+        if let Some(smoothing_factor) = hand_rotation_smoothing {
+            // Create smoothing pipeline under raw_driver.
+            let hp_id     = world.add_component(TransformPipelineComponent::new());
+            let hfork_id  = world.add_component(TransformForkTRSComponent::new());
+            let hmrot_id  = world.add_component(TransformMapRotationComponent::new());
+            let hfilt_id  = world.add_component(
+                QuatTemporalFilterComponent::new().with_smoothing_factor(smoothing_factor),
+            );
+            let hmerge_id  = world.add_component(TransformMergeTRSComponent::new());
+            let hout_id    = world.add_component(TransformPipelineOutputComponent::new());
+            let smoothed_t = world.add_component(TransformComponent::new());
+
+            let _ = world.set_parent(hfork_id,  Some(hp_id));
+            let _ = world.set_parent(hmrot_id,  Some(hfork_id));
+            let _ = world.set_parent(hfilt_id,  Some(hmrot_id));
+            let _ = world.set_parent(hmerge_id, Some(hfork_id));
+            let _ = world.set_parent(hout_id,   Some(hp_id));
+            let _ = world.set_parent(smoothed_t, Some(hout_id));
+
+            emit_attach(emit, raw_driver, hp_id);
+            emit_attach(emit, smoothed_t, bone);
+        } else {
+            emit_attach(emit, raw_driver, bone);
+        }
     }
 }
 
-/// Find a hand bone by name and determine its driver node.
+/// Find a hand bone by name and determine its raw driver node.
 ///
-/// Returns `(bone_original_parent, driver_node, bone_id)` or `None` if the bone
+/// Returns `(bone_original_parent, raw_driver, bone_id)` or `None` if the bone
 /// wasn't found (model may not have this joint — silently skip).
-///
-/// `driver_node` is:
-/// - The controller's first `TransformComponent` child (driven_t), if `controller` is `Some`.
-/// - A freshly created plain `TransformComponent`, if `controller` is `None`.
 fn resolve_hand_splice(
     world: &mut World,
     model_root: ComponentId,
@@ -264,17 +273,12 @@ fn resolve_hand_splice(
     let bone_parent = world.parent_of(bone)?;
 
     let driver = if let Some(ctrl) = controller {
-        // Use the controller's first TC child (driven_t) as the driver.
-        // The example must have pre-attached driven_t to the controller.
         world
             .children_of(ctrl)
             .iter()
             .copied()
             .find(|&ch| world.get_component_by_id_as::<TransformComponent>(ch).is_some())
-            .unwrap_or_else(|| {
-                // Fallback: create a plain TC if the controller somehow has no TC child yet.
-                world.add_component(TransformComponent::new())
-            })
+            .unwrap_or_else(|| world.add_component(TransformComponent::new()))
     } else {
         world.add_component(TransformComponent::new())
     };
@@ -289,11 +293,6 @@ fn emit_attach(emit: &mut dyn SignalEmitter, parent: ComponentId, child: Compone
 // ---------------------------------------------------------------------------
 // Math helpers
 // ---------------------------------------------------------------------------
-
-fn extract_world_yaw(m: [[f32; 4]; 4], plus_z_forward: bool) -> f32 {
-    if plus_z_forward { m[2][0].atan2(m[2][2]) }
-    else              { (-m[2][0]).atan2(-m[2][2]) }
-}
 
 fn mat_to_quat(m: [[f32; 4]; 4]) -> [f32; 4] {
     fn col_len(m: [[f32; 4]; 4], c: usize) -> f32 {
@@ -343,35 +342,7 @@ fn quat_mul(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
 
 fn quat_inverse(q: [f32; 4]) -> [f32; 4] { [-q[0], -q[1], -q[2], q[3]] }
 
-/// Rotate a 3-vector by a unit quaternion: v' = q * (0,v) * q^-1.
-fn rotate_vec_by_quat(q: [f32; 4], v: [f32; 3]) -> [f32; 3] {
-    // Using the sandwich product shortcut: t = 2 * cross(q.xyz, v); v' = v + q.w*t + cross(q.xyz, t)
-    let (qx, qy, qz, qw) = (q[0], q[1], q[2], q[3]);
-    let (vx, vy, vz) = (v[0], v[1], v[2]);
-    let tx = 2.0 * (qy * vz - qz * vy);
-    let ty = 2.0 * (qz * vx - qx * vz);
-    let tz = 2.0 * (qx * vy - qy * vx);
-    [
-        vx + qw * tx + qy * tz - qz * ty,
-        vy + qw * ty + qz * tx - qx * tz,
-        vz + qw * tz + qx * ty - qy * tx,
-    ]
-}
-
 fn quat_rotation_y(yaw: f32) -> [f32; 4] {
     let half = yaw * 0.5;
     [0.0, half.sin(), 0.0, half.cos()]
-}
-
-fn signed_yaw_diff(a: f32, b: f32) -> f32 { wrap_angle(a - b) }
-
-fn wrap_angle(a: f32) -> f32 {
-    let mut v = a % (2.0 * std::f32::consts::PI);
-    if v >  std::f32::consts::PI { v -= 2.0 * std::f32::consts::PI; }
-    if v < -std::f32::consts::PI { v += 2.0 * std::f32::consts::PI; }
-    v
-}
-
-fn lerp_angle(from: f32, to: f32, t: f32) -> f32 {
-    from + signed_yaw_diff(to, from) * t.clamp(0.0, 1.0)
 }

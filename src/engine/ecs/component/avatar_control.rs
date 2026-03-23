@@ -66,13 +66,16 @@ pub struct AvatarControlComponent {
     /// Use +Z as the forward axis (desktop). Default false = -Z (OpenXR).
     pub forward_plus_z: bool,
 
-    /// Current world-space body yaw (radians). Maintained by AvatarControlSystem.
-    pub(crate) body_yaw: f32,
+    /// Initial body yaw (radians) seeded into the `YawFollow` pipeline op.
+    /// Set to `π` for VR setups (OpenXR -Z forward at rest). Default: 0.0.
+    pub initial_body_yaw: f32,
+
+    /// Optional rotation smoothing for hand pose drivers (ControllerXR etc.).
+    /// Applied to the rotation channel of each discovered hand driver's pipeline.
+    /// Equivalent to `QuatTemporalFilter` smoothing_factor. `None` = no smoothing pipeline.
+    pub hand_rotation_smoothing: Option<f32>,
 
     // Runtime IDs set by AvatarControlSystem on first tick:
-    /// model_root's local translation at init time, used as the intended world-space
-    /// Y offset each tick. Stored so pitch of driven_t can be compensated.
-    pub(crate) model_root_rest_local: [f32; 3],
     pub(crate) splice_head:          Option<ComponentId>,
     pub(crate) displaced_head:       Option<ComponentId>,
     /// Immediate parent of the displaced left hand bone (controller's driven_t or plain TC).
@@ -81,6 +84,15 @@ pub struct AvatarControlComponent {
     /// Immediate parent of the displaced right hand bone.
     pub(crate) splice_right_hand:    Option<ComponentId>,
     pub(crate) displaced_right_hand: Option<ComponentId>,
+
+    /// ComponentId of the body pipeline root (`TransformPipelineComponent`).
+    /// Set by `try_init_splices`.
+    pub(crate) body_pipeline_id: Option<ComponentId>,
+
+    /// Debug/diagnostic flag: skip creation of the body-rotation pipeline entirely.
+    /// When `true`, model_root stays directly under AVC and only head rotation is applied.
+    /// Use this to isolate whether torso-twist bugs originate in the body pipeline.
+    pub skip_body_pipeline: bool,
 
     component: Option<ComponentId>,
 }
@@ -115,11 +127,11 @@ impl AvatarControlComponent {
         self
     }
 
-    /// Override the starting body yaw (radians).
+    /// Override the initial body yaw (radians) seeded into the `YawFollow` pipeline op.
     /// Use `std::f32::consts::PI` for VR setups where the model faces -Z at rest.
     /// Default: 0.0 (model faces +Z, standard for `forward_plus_z` desktop setups).
     pub fn with_initial_yaw(mut self, yaw: f32) -> Self {
-        self.body_yaw = yaw;
+        self.initial_body_yaw = yaw;
         self
     }
 
@@ -127,6 +139,20 @@ impl AvatarControlComponent {
     /// `InputTransformModeComponent::forward_z()`.
     pub fn with_forward_plus_z(mut self) -> Self {
         self.forward_plus_z = true;
+        self
+    }
+
+    /// Enable rotation smoothing for hand pose drivers.
+    /// Set to e.g. `220.0` for smooth VR controller rotation.
+    pub fn with_hand_rotation_smoothing(mut self, factor: f32) -> Self {
+        self.hand_rotation_smoothing = Some(factor);
+        self
+    }
+
+    /// Skip creation of the body-rotation pipeline. Only head rotation will be applied.
+    /// Use to isolate whether torso-twist bugs originate in the body pipeline.
+    pub fn with_body_pipeline_disabled(mut self) -> Self {
+        self.skip_body_pipeline = true;
         self
     }
 }
@@ -140,14 +166,16 @@ impl Default for AvatarControlComponent {
             body_yaw_threshold: std::f32::consts::FRAC_PI_4,
             body_yaw_rate: 3.0,
             forward_plus_z: false,
-            body_yaw: 0.0,
-            model_root_rest_local: [0.0, 0.0, 0.0],
+            initial_body_yaw: 0.0,
+            hand_rotation_smoothing: None,
             splice_head: None,
             displaced_head: None,
             splice_left_hand: None,
             displaced_left_hand: None,
             splice_right_hand: None,
             displaced_right_hand: None,
+            body_pipeline_id: None,
+            skip_body_pipeline: false,
             component: None,
         }
     }

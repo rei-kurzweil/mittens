@@ -2,7 +2,7 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     Camera2DComponent, Camera3DComponent, CollisionComponent, RenderableComponent,
-    TransformComponent,
+    TransformComponent, TransformPipelineOutputComponent,
 };
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::System;
@@ -94,27 +94,55 @@ impl TransformSystem {
         // Then update any dependent renderables/cameras under the subtree.
 
         // Build the chain of ancestor transforms (including `component`) from root -> leaf,
-        // and update cached `matrix_world` along that chain so we can start propagation from
-        // a correct world matrix even if registration order was odd.
+        // stopping at any TC whose immediate non-TC ancestors include a
+        // `TransformPipelineOutputComponent`.  Such a TC's `matrix_world` is owned by the
+        // pipeline: walking further up and recomputing from local matrices would bypass the
+        // pipeline and overwrite its output with incorrect values.  Instead we treat that TC
+        // as the chain root and start the chain-world from its cached `matrix_world`.
         let mut transform_chain: Vec<ComponentId> = Vec::new();
+        let mut pipeline_boundary = false; // true → transform_chain[0] is a pipeline-output TC
         let mut cur = component;
-        loop {
-            if world
-                .get_component_by_id_as::<TransformComponent>(cur)
-                .is_some()
-            {
+        'chain: loop {
+            if world.get_component_by_id_as::<TransformComponent>(cur).is_some() {
                 transform_chain.push(cur);
+                // Check whether this TC sits directly under a TransformPipelineOutputComponent
+                // (i.e., any non-TC node on the path to the next TC ancestor is a pipeline
+                // output node).  If so, its world is pipeline-managed — stop here.
+                let mut probe = cur;
+                while let Some(p) = world.parent_of(probe) {
+                    if world
+                        .get_component_by_id_as::<TransformPipelineOutputComponent>(p)
+                        .is_some()
+                    {
+                        pipeline_boundary = true;
+                        break 'chain;
+                    }
+                    if world.get_component_by_id_as::<TransformComponent>(p).is_some() {
+                        break; // reached next TC ancestor without finding a pipeline output
+                    }
+                    probe = p;
+                }
             }
-            let Some(parent) = world.parent_of(cur) else {
-                break;
-            };
+            let Some(parent) = world.parent_of(cur) else { break };
             cur = parent;
         }
         transform_chain.reverse();
 
         // Compute world matrices down the chain and write them back.
-        let mut chain_world = Self::mat4_identity();
-        for tid in transform_chain.iter().copied() {
+        //
+        // If `pipeline_boundary` is set, transform_chain[0] is under a pipeline output.
+        // Its cached `matrix_world` is the pipeline's result — use it as the starting world
+        // and skip recomputing it from local matrices (which would bypass the pipeline).
+        let (start_idx, mut chain_world) = if pipeline_boundary && !transform_chain.is_empty() {
+            let cached = world
+                .get_component_by_id_as::<TransformComponent>(transform_chain[0])
+                .map(|t| t.transform.matrix_world)
+                .unwrap_or_else(Self::mat4_identity);
+            (1, cached)
+        } else {
+            (0, Self::mat4_identity())
+        };
+        for tid in transform_chain[start_idx..].iter().copied() {
             let local = match world
                 .get_component_by_id_as::<TransformComponent>(tid)
                 .map(|t| t.transform.model)

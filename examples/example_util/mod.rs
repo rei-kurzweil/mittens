@@ -194,7 +194,11 @@ pub fn spawn_desktop_camera_controls_hint(
     let _ = universe.attach(text, color);
 
     let text_background = universe.world.add_component(
-        TextBackgroundComponent::new().with_color(0.9, 0.9, 0.9, 0.8));
+        TextBackgroundComponent::new()
+            .with_color(0.9, 0.9, 0.9, 0.8)
+            .with_padding_top(0.5)
+            .with_padding_right(0.75),
+    );
     let _ = universe.attach(text, text_background);
 
     // TextSystem looks for these as immediate children of the TextComponent root.
