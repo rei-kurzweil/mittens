@@ -23,7 +23,7 @@ use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::TransformPipelineSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
-use crate::engine::ecs::system::{AvatarBodyYawSystem, EditorSystem, GestureSystem, InspectorSystem, TransformGizmoSystem};
+use crate::engine::ecs::system::{AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, GestureSystem, InspectorSystem, TransformGizmoSystem};
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 
@@ -54,6 +54,7 @@ pub struct SystemWorld {
     pub editor: EditorSystem,
     pub inspector: InspectorSystem,
     pub avatar_body_yaw: AvatarBodyYawSystem,
+    pub avatar_control: AvatarControlSystem,
 
     pub gesture: GestureSystem,
     pub transform_gizmo: TransformGizmoSystem,
@@ -1284,6 +1285,7 @@ impl SystemWorld {
         // Avatar body yaw: smoothly rotate body to follow head when yaw diverges.
         // Runs after OpenXR + raycasts + gestures so avatar_driven_t.matrix_world is current.
         self.avatar_body_yaw.tick(world, queue, dt_sec);
+        self.avatar_control.tick(world, queue, dt_sec);
         queue.flush(world, self, visuals);
 
         self.renderable.tick(world, visuals, input, dt_sec);

@@ -1,10 +1,5 @@
 // vr-input scene
 // Corresponds to examples/vr-input.rs
-//
-// Demonstrates:
-//   - free-standing component expressions (auto-emitted via EmitLiftTransform)
-//   - let-bindings capturing ComponentObjects (created in engine, unattached)
-//   - bare variable in statement position auto-emits (Option B runtime rule)
 
 // --- Renderer settings ---
 let renderer = RendererSettings.msaa_off() {
@@ -15,12 +10,11 @@ let renderer = RendererSettings.msaa_off() {
 let sky     = BGC.rgba(0.62, 0.80, 1.00, 1.0)
 let ambient = AL.rgb(0.18, 0.18, 0.22)
 
-// Bare identifiers in statement position — each emits its ComponentObject.
 renderer
 sky
 ambient
 
-// --- Directional light (sun direction rig) ---
+// --- Directional light ---
 T.with_position(0.15, -0.45, 1.0) {
     DL {
         with_intensity(1.1)
@@ -40,9 +34,6 @@ I.with_speed(1.5) {
 }
 
 // --- Desktop camera controls hint ---
-// NOTE: world-space position computed from camera rig spawn pose
-// (camera at 0,1.2,3.5 + local offset 0.65,0.25,-1.7 → world ≈ 0.65,1.45,1.8).
-// Intentionally not parented to the camera rig.
 T {
     with_position(0.65, 1.45, 1.8)
     with_scale(0.055, 0.055, 1.0)
@@ -61,6 +52,7 @@ T {
     }
 }
 
+// --- Background sun ---
 BG {
     T {
         with_position(2.0, 1.5, -8.0)
@@ -80,21 +72,42 @@ BG {
     }
 }
 
-
-// --- VTuber model ---
-// Outer InputXR drives avatar body translation to follow HMD.
-// Head bone rotation splice (see vr-input.rs) wires a second InputXR
-// into the neck with SampleAncestorTranslation to restore bone position.
-InputXR {
+// --- VTuber avatar — single-input topology ---
+//
+// InputXR drives body translation and head rotation via AvatarControlSystem.
+// ControllerXR children (Grip) are discovered by topology and spliced onto
+// the hand bones automatically — no manual wrist attachment needed.
+//
+// Topology (after AvatarControlSystem init):
+//   InputXR
+//     └── T (driven_t)
+//           └── AVC { head, left_hand, right_hand bones, initial_yaw: π }
+//                 ├── T.with_position(0, -1.6, 0)  ← model_root
+//                 │     └── GLTF { EM }
+//                 ├── CTLXR(Left, Grip)             ← discovered; re-parented to lower_arm
+//                 │     └── T                       ← driven by OpenXRSystem; hand bone displaced here
+//                 └── CTLXR(Right, Grip)
+//                       └── T
+InputXR.on() {
     T {
-        GLTF.new("assets/models/pc-rei.hoodie.glb") {
-            EM.on()
+        AVC {
+            with_head_bone("J_Bip_C_Neck")
+            with_left_hand_bone("J_Bip_L_Hand")
+            with_right_hand_bone("J_Bip_R_Hand")
+            with_initial_yaw(3.14159)
+
+            T.with_position(0.0, -1.6, 0.0) {
+                GLTF.new("assets/models/pc-rei.hoodie.glb") { EM.on() }
+            }
+
+            CTLXR.new(true, Left, Grip) { T {} }
+            CTLXR.new(true, Right, Grip) { T {} }
         }
     }
 }
 
-// --- XR rig ---
-InputXR {
+// --- XR rig (camera + controller debug cubes) ---
+InputXR.on() {
     T {
         T.with_position(0.0, 1.85, 0.6) {
             RendererStats {
@@ -104,8 +117,7 @@ InputXR {
 
         CXR {}
 
-
-        // Controller cubes (ControllerHand and ControllerPoseKind variants as bare identifiers)
+        // Controller debug cubes (Aim pose, rotation-smoothed)
         CTLXR.new(true, Left, Aim) {
             T.with_scale(0.06, 0.06, 0.12) {
                 TransformPipeline {
@@ -149,7 +161,6 @@ InputXR {
                 }
             }
         }
-
     }
 }
 

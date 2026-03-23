@@ -1,5 +1,6 @@
 pub mod action;
 pub mod avatar_body_yaw;
+pub mod avatar_control;
 pub mod ambient_light;
 pub mod animation;
 pub mod audio_band_pass_filter;
@@ -70,6 +71,7 @@ pub use self::mesh::MeshComponent;
 pub use crate::engine::ecs::system::model::collision_types::{CollisionMode, CollisionShape};
 pub use action::ActionComponent;
 pub use avatar_body_yaw::AvatarBodyYawComponent;
+pub use avatar_control::AvatarControlComponent;
 pub use ambient_light::AmbientLightComponent;
 pub use animation::AnimationComponent;
 pub use animation::AnimationState;

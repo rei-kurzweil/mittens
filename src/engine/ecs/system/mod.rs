@@ -1,5 +1,6 @@
 pub mod action_system;
 pub mod avatar_body_yaw_system;
+pub mod avatar_control_system;
 pub mod animation_system;
 pub(crate) mod animation_system_evaluator;
 pub mod audio_graph_compiler;
@@ -38,6 +39,7 @@ pub use camera_system::{Camera3D, CameraHandle, CameraSystem};
 pub use clock_system::{ClockDriver, ClockSystem};
 pub use collision_system::CollisionSystem;
 pub use avatar_body_yaw_system::AvatarBodyYawSystem;
+pub use avatar_control_system::AvatarControlSystem;
 pub use editor_system::EditorSystem;
 pub use inspector_system::InspectorSystem;
 pub use gesture_system::{GestureState, GestureSystem};

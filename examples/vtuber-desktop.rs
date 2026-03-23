@@ -1,88 +1,13 @@
 use cat_engine::engine::ecs::component::{
-    AmbientLightComponent, AvatarBodyYawComponent, BackgroundColorComponent, Camera3DComponent,
+    AmbientLightComponent, AvatarControlComponent, BackgroundColorComponent, Camera3DComponent,
     ColorComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent, GLTFComponent,
     InputComponent, InputTransformModeComponent, PointerComponent, RayCastComponent,
-    RaycastableComponent, RenderableComponent, RendererSettingsComponent,
-    TransformComponent, TransformDropComponent, TransformForkTRSComponent,
-    TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
-    TransformMergeTRSComponent, TransformPipelineComponent, TransformPipelineOutputComponent,
-    TransformSampleAncestorComponent,
+    RaycastableComponent, RenderableComponent, RendererSettingsComponent, TransformComponent,
 };
 use cat_engine::{engine, utils};
 
 #[path = "example_util/mod.rs"]
 mod example_util;
-
-/// Splices a head-rotation InputComponent pipeline between a bone and its parent.
-///
-/// The splice inserts:
-///   parent_of(head_bone)
-///     └── Input (fps, Q/E = head yaw)
-///           └── T (driven by InputSystem)
-///                 └── TransformPipeline
-///                       ├── TransformForkTRS
-///                       │     ├── TransformMapTranslation
-///                       │     │     └── TransformSampleAncestor (skip=1 → parent world pos)
-///                       │     ├── TransformMapRotation
-///                       │     ├── TransformMapScale
-///                       │     └── TransformMergeTRS
-///                       └── TransformPipelineOutput
-///                             └── head_bone  (displaced from original parent)
-fn attach_head_rotation_splice(
-    universe: &mut engine::Universe,
-    avatar_root: engine::ecs::ComponentId,
-    selector: &str,
-) -> Result<engine::ecs::ComponentId, String> {
-    let head = universe
-        .find_component(avatar_root, selector)
-        .ok_or_else(|| format!("head selector did not match: {selector}"))?;
-    let neck = universe
-        .parent_of(head)
-        .ok_or_else(|| format!("matched head bone has no parent: {selector}"))?;
-
-    // Q/E rotate the head around Y (yaw). Speed 0 disables WASD translation on this input
-    // so the pipeline's SampleAncestor always provides the correct head world position.
-    let head_input = universe
-        .world
-        .add_component(InputComponent::new().with_speed(0.0));
-    let head_input_mode = universe.world.add_component(
-        InputTransformModeComponent::forward_z()
-            .with_fps_rotation()
-            .with_roll_axis_y(),
-    );
-    let _ = universe.attach(head_input, head_input_mode);
-
-    let driven_t = universe.world.add_component(TransformComponent::new());
-    let pipeline = universe.world.add_component(TransformPipelineComponent::new());
-    let fork = universe.world.add_component(TransformForkTRSComponent::new());
-    let map_translation = universe
-        .world
-        .add_component(TransformMapTranslationComponent::new());
-    // skip=1: pipeline owner walks up → driven_T (skip=0) → neck bone (skip=1)
-    let sample_ancestor = universe
-        .world
-        .add_component(TransformSampleAncestorComponent::new());
-    let map_rotation = universe.world.add_component(TransformMapRotationComponent::new());
-    let map_scale = universe.world.add_component(TransformMapScaleComponent::new());
-    let merge = universe.world.add_component(TransformMergeTRSComponent::new());
-    let output = universe
-        .world
-        .add_component(TransformPipelineOutputComponent::new());
-
-    let _ = universe.attach(neck, head_input);
-    let _ = universe.attach(head_input, driven_t);
-    let _ = universe.attach(driven_t, pipeline);
-    let _ = universe.attach(pipeline, fork);
-    let _ = universe.attach(fork, map_translation);
-    let _ = universe.attach(map_translation, sample_ancestor);
-    let _ = universe.attach(fork, map_rotation);
-    let _ = universe.attach(fork, map_scale);
-    let _ = universe.attach(fork, merge);
-    let _ = universe.attach(pipeline, output);
-    let _ = universe.attach(output, head);
-
-    Ok(head_input)
-}
 
 fn main() {
     utils::logger::init();
@@ -116,27 +41,12 @@ fn main() {
     let _ = universe.attach(sun_dir, sun);
     universe.add(sun_dir);
 
-    // --- Viewer camera (separate from avatar) ---
-    // Positioned behind and above the avatar so the streaming audience sees the model.
-    // let camera_input = universe
-    //     .world
-    //     .add_component(InputComponent::new().with_speed(2.0));
-    // let camera_input_mode = universe.world.add_component(
-    //     InputTransformModeComponent::forward_z()
-    //         .with_fps_rotation()
-    //         .with_roll_axis_y(),
-    // );
-    // let _ = universe.attach(camera_input, camera_input_mode);
-
     let camera_rig = universe.world.add_component(
         TransformComponent::new().with_position(0.0, 1.2, 3.0),
     );
-    //let _ = universe.attach(camera_input, camera_rig);
-
     let camera3d = universe.world.add_component(Camera3DComponent::new());
     let _ = universe.attach(camera_rig, camera3d);
 
-    // Raycaster + pointer for desktop bone-picking / gizmo interaction.
     let raycaster = universe
         .world
         .add_component(RayCastComponent::event_driven().with_max_distance(100.0));
@@ -147,61 +57,44 @@ fn main() {
     example_util::spawn_desktop_camera_controls_hint(&mut universe, camera_rig);
     universe.add(camera_rig);
 
-    // --- VTuber avatar ---
-    // Body InputComponent drives the avatar's position via a translation-only pipeline.
-    // Rotation is stripped so the avatar never tilts with the camera view.
-    // Q/E are bound to roll_axis_y here, but rotation is dropped downstream, so they have
-    // no effect on the body — only on the head splice below.
+    // --- VTuber avatar — single-input topology ---
+    //
+    // InputComponent (fps_rotation, forward_z) drives both body translation and head rotation.
+    // AvatarControlSystem:
+    //   - Strips rotation from model_root (body faces body_yaw, not head yaw).
+    //   - Splices a TransformComponent under J_Bip_C_Neck's parent to drive head rotation.
+    //   - Smoothly rotates body to follow head when yaw delta exceeds threshold.
+    //
+    // Topology:
+    //   editor_root
+    //     └── body_input (InputComponent)
+    //           └── driven_t (TransformComponent)
+    //                 └── AvatarControlComponent
+    //                       └── model_root (TransformComponent, Y offset)
+    //                             └── GLTFComponent
     const AVATAR_HEIGHT_M: f32 = 1.6;
 
     let body_input = universe
         .world
         .add_component(InputComponent::new().with_speed(1.5));
     let body_input_mode = universe.world.add_component(
-        InputTransformModeComponent::forward_z().with_fps_rotation(),
+        InputTransformModeComponent::forward_z()
+            .with_fps_rotation()
+            .with_roll_axis_y(),
     );
     let _ = universe.attach(body_input, body_input_mode);
 
-    let body_driven_t = universe.world.add_component(TransformComponent::new());
+    let driven_t = universe.world.add_component(TransformComponent::new());
+    let _ = universe.attach(body_input, driven_t);
 
-    // Translation-only pipeline: strips rotation from the body input.
-    let av_pipeline = universe.world.add_component(TransformPipelineComponent::new());
-    let av_fork = universe.world.add_component(TransformForkTRSComponent::new());
-    let av_map_t = universe.world.add_component(TransformMapTranslationComponent::new());
-    let av_map_r = universe.world.add_component(TransformMapRotationComponent::new());
-    let av_drop_r = universe.world.add_component(TransformDropComponent::new());
-    let av_map_s = universe.world.add_component(TransformMapScaleComponent::new());
-    let av_merge = universe.world.add_component(TransformMergeTRSComponent::new());
-    let av_output = universe.world.add_component(TransformPipelineOutputComponent::new());
-
-    let _ = universe.attach(body_input, body_driven_t);
-    let _ = universe.attach(body_driven_t, av_pipeline);
-    let _ = universe.attach(av_pipeline, av_fork);
-    let _ = universe.attach(av_fork, av_map_t);
-    let _ = universe.attach(av_fork, av_map_r);
-    let _ = universe.attach(av_map_r, av_drop_r);
-    let _ = universe.attach(av_fork, av_map_s);
-    let _ = universe.attach(av_fork, av_merge);
-    let _ = universe.attach(av_pipeline, av_output);
-
-    // EditorComponent is the scene root — it contains the whole avatar pipeline so the
-    // world-tree panel shows the full hierarchy.
-    let editor_root = universe.world.add_component(EditorComponent::new());
-
-    // AvatarBodyYawComponent: smoothly rotates the body to follow body_driven_t yaw.
-    // forward_plus_z: desktop uses +Z forward (InputTransformModeComponent::forward_z).
-    // initial_yaw(0.0): at rest body_driven_t is identity → +Z yaw = 0, model_root starts at identity.
-    // hmd_driven_transform wired to body_driven_t below.
-    let avatar_body_yaw = universe.world.add_component(
-        AvatarBodyYawComponent::new()
-            .with_initial_yaw(0.0)
-            .with_threshold(std::f32::consts::FRAC_PI_4)
-            .with_rate(3.0)
-            .with_forward_plus_z(),
+    let avatar_control = universe.world.add_component(
+        AvatarControlComponent::new()
+            .with_head_bone("J_Bip_C_Neck")
+            .with_forward_plus_z()
+            .with_initial_yaw(0.0),
     );
+    let _ = universe.attach(driven_t, avatar_control);
 
-    // model_root sits at -AVATAR_HEIGHT_M so the avatar stands at floor level
-    // (the body pipeline carries only translation, model_root local Y offsets below that).
     let model_root = universe.world.add_component(
         TransformComponent::new()
             .with_position(0.0, -AVATAR_HEIGHT_M, 0.0)
@@ -212,13 +105,12 @@ fn main() {
         .add_component(GLTFComponent::new("assets/models/pc-rei.hoodie.glb"));
     let emissive = universe.world.add_component(EmissiveComponent::on());
     let _ = universe.attach(model, emissive);
-
-    // Topology: editor_root → body_input → ... → av_output → avatar_body_yaw → model_root → model
-    let _ = universe.attach(editor_root, body_input);
-    let _ = universe.attach(av_output, avatar_body_yaw);
-    let _ = universe.attach(avatar_body_yaw, model_root);
+    let _ = universe.attach(avatar_control, model_root);
     let _ = universe.attach(model_root, model);
 
+    // EditorComponent is the scene root containing the whole avatar pipeline.
+    let editor_root = universe.world.add_component(EditorComponent::new());
+    let _ = universe.attach(editor_root, body_input);
     universe.add(editor_root);
 
     universe.systems.process_commands(
@@ -227,7 +119,7 @@ fn main() {
         &mut universe.command_queue,
     );
 
-    // Force GLTF spawn so we can query bone ComponentIds.
+    // Force GLTF spawn so bones are available for marker placement.
     {
         let systems = &mut universe.systems;
         systems.gltf.tick_with_queue(
@@ -244,15 +136,13 @@ fn main() {
         &mut universe.command_queue,
     );
 
-    // Add small colored bone markers (raycastable cubes) at key joints so they can be
-    // inspected or selected via the editor/raycaster. Markers are tiny (scale 0.025)
-    // to not obstruct the avatar visuals.
+    // Small colored bone markers for inspection.
     let marker_joints: &[(&str, (f32, f32, f32, f32))] = &[
-        ("[name='J_Bip_C_Head']",       (0.85, 0.20, 0.85, 0.9)),
-        ("[name='J_Bip_C_Neck']",        (0.20, 0.85, 0.85, 0.9)),
-        ("[name='J_Bip_C_UpperChest']",  (0.20, 0.20, 0.85, 0.9)),
-        ("[name='J_Bip_L_UpperArm']",    (0.85, 0.85, 0.20, 0.9)),
-        ("[name='J_Bip_R_UpperArm']",    (0.85, 0.60, 0.20, 0.9)),
+        ("[name='J_Bip_C_Head']",      (0.85, 0.20, 0.85, 0.9)),
+        ("[name='J_Bip_C_Neck']",      (0.20, 0.85, 0.85, 0.9)),
+        ("[name='J_Bip_C_UpperChest']",(0.20, 0.20, 0.85, 0.9)),
+        ("[name='J_Bip_L_UpperArm']",  (0.85, 0.85, 0.20, 0.9)),
+        ("[name='J_Bip_R_UpperArm']",  (0.85, 0.60, 0.20, 0.9)),
     ];
     for &(selector, color) in marker_joints {
         let Some(bone) = universe.find_component(model_root, selector) else {
@@ -261,38 +151,15 @@ fn main() {
         let marker_t = universe.world.add_component(
             TransformComponent::new().with_scale(0.025, 0.025, 0.025),
         );
-        let marker_r = universe
-            .world
-            .add_component(RenderableComponent::cube());
+        let marker_r = universe.world.add_component(RenderableComponent::cube());
         let marker_c = universe
             .world
             .add_component(ColorComponent::rgba(color.0, color.1, color.2, color.3));
-        let marker_rcast = universe
-            .world
-            .add_component(RaycastableComponent::enabled());
+        let marker_rcast = universe.world.add_component(RaycastableComponent::enabled());
         let _ = universe.world.add_child(marker_r, marker_c);
         let _ = universe.world.add_child(marker_r, marker_rcast);
         let _ = universe.world.add_child(marker_t, marker_r);
         let _ = universe.attach(bone, marker_t);
-    }
-
-    // Wire body_driven_t as the yaw source: body_driven_t is in world space and
-    // tracks the character's facing direction cleanly (no bone-hierarchy offsets).
-    if let Some(ayc) = universe
-        .world
-        .get_component_by_id_as_mut::<AvatarBodyYawComponent>(avatar_body_yaw)
-    {
-        ayc.hmd_driven_transform = Some(body_driven_t);
-    }
-
-    // Splice head rotation: Q/E drives head bone yaw.
-    let head_selector = "[name='J_Bip_C_Head']";
-    match attach_head_rotation_splice(&mut universe, model_root, head_selector) {
-        Ok(head_input_id) => println!(
-            "[vtuber-desktop] head rotation splice done: Input {:?} drives '{}'",
-            head_input_id, head_selector,
-        ),
-        Err(e) => eprintln!("[vtuber-desktop] head rotation splice failed: {e}"),
     }
 
     universe.enable_repl();

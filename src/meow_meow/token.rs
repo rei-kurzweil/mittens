@@ -101,6 +101,7 @@ pub const COMPONENT_SHORTFORMS: &[ComponentShortformEntry] = &[
     ComponentShortformEntry { short: "XR", full: "OpenXR" },
     ComponentShortformEntry { short: "CXR", full: "CameraXR" },
     ComponentShortformEntry { short: "CTLXR", full: "ControllerXR" },
+    ComponentShortformEntry { short: "AVC", full: "AvatarControl" },
     ComponentShortformEntry { short: "MESH", full: "Mesh" },
 
     // Audio graph-ish components (optional; names kept explicit)

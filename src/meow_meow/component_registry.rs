@@ -10,7 +10,7 @@
 /// Unknown type names or unrecognised methods produce an error string; the executor logs
 /// them and continues rather than panicking.
 use crate::engine::ecs::component::{
-    AmbientLightComponent, AvatarBodyYawComponent, BackgroundColorComponent, BackgroundComponent, Camera3DComponent,
+    AmbientLightComponent, AvatarBodyYawComponent, AvatarControlComponent, BackgroundColorComponent, BackgroundComponent, Camera3DComponent,
     CameraXRComponent, ColorComponent, ControllerHand, ControllerPoseKind,
     ControllerXRComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent,
     GLTFComponent, InputComponent, InputTransformModeComponent, InputXRComponent,
@@ -296,6 +296,7 @@ fn create_component(
         "Text" => add!(TextComponent::new("")),
         "TextShadow" => add!(TextShadowComponent::new()),
         "AvatarBodyYaw" => add!(AvatarBodyYawComponent::new()),
+        "AvatarControl" => add!(AvatarControlComponent::new()),
         "Editor" => add!(EditorComponent::new()),
         "Selectable" => match ctor {
             Some("off") => add!(SelectableComponent::off()),
@@ -427,6 +428,19 @@ fn apply_call(
     if let Some(qtf) = world.get_component_by_id_as_mut::<QuatTemporalFilterComponent>(id) {
         if method == "with_smoothing_factor" {
             *qtf = qtf.clone().with_smoothing_factor(args[0].as_f32()?);
+        }
+        return Ok(());
+    }
+    if let Some(avc) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
+        match method {
+            "with_head_bone"          => *avc = avc.clone().with_head_bone(args[0].as_str()?),
+            "with_left_hand_bone"     => *avc = avc.clone().with_left_hand_bone(args[0].as_str()?),
+            "with_right_hand_bone"    => *avc = avc.clone().with_right_hand_bone(args[0].as_str()?),
+            "with_initial_yaw"        => *avc = avc.clone().with_initial_yaw(args[0].as_f32()?),
+            "with_forward_plus_z"     => *avc = avc.clone().with_forward_plus_z(),
+            "with_body_yaw_threshold" => *avc = avc.clone().with_body_yaw_threshold(args[0].as_f32()?),
+            "with_body_yaw_rate"      => *avc = avc.clone().with_body_yaw_rate(args[0].as_f32()?),
+            _ => {}
         }
         return Ok(());
     }
