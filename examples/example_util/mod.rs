@@ -196,8 +196,8 @@ pub fn spawn_desktop_camera_controls_hint(
     let text_background = universe.world.add_component(
         TextBackgroundComponent::new()
             .with_color(0.9, 0.9, 0.9, 0.8)
-            .with_padding_top(0.5)
-            .with_padding_right(0.75),
+            .with_padding_top(0.75)
+            .with_padding_right(3.75),
     );
     let _ = universe.attach(text, text_background);
 

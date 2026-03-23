@@ -79,30 +79,39 @@ BG {
 // the hand bones automatically — no manual wrist attachment needed.
 //
 // Topology (after AvatarControlSystem init):
-//   InputXR
-//     └── T (driven_t)
-//           └── AVC { head, left_hand, right_hand bones, initial_yaw: π }
-//                 ├── T.with_position(0, -1.6, 0)  ← model_root
-//                 │     └── GLTF { EM }
-//                 ├── CTLXR(Left, Grip)             ← discovered; re-parented to lower_arm
-//                 │     └── T                       ← driven by OpenXRSystem; hand bone displaced here
-//                 └── CTLXR(Right, Grip)
-//                       └── T
-InputXR.on() {
-    T {
-        AVC {
-            with_head_bone("J_Bip_C_Neck")
-            with_left_hand_bone("J_Bip_L_Hand")
-            with_right_hand_bone("J_Bip_R_Hand")
-            with_initial_yaw(3.14159)
-            with_hand_rotation_smoothing(220.0)
+//   ED
+//     └── InputXR
+//           └── T (driven_t)
+//                 └── AVC { head, left_hand, right_hand bones, initial_yaw: π }
+//                       ├── TransformPipeline (body pipeline, created by AVC init)
+//                       │     TransformForkTRS
+//                       │       TransformMapRotation
+//                       │         QuatYawFollow { threshold, rate, initial_yaw: π }
+//                       │       TransformMergeTRS
+//                       │     TransformPipelineOutput
+//                       │       └── T.with_position(0, -1.6, 0)  ← model_root (re-parented here)
+//                       │             └── GLTF { EM }
+//                       ├── CTLXR(Left, Grip)             ← discovered; re-parented to lower_arm
+//                       │     └── T                       ← driven by OpenXRSystem; hand bone displaced here
+//                       └── CTLXR(Right, Grip)
+//                             └── T
+ED {
+    InputXR.on() {
+        T {
+            AVC {
+                with_head_bone("J_Bip_C_Neck")
+                with_left_hand_bone("J_Bip_L_Hand")
+                with_right_hand_bone("J_Bip_R_Hand")
+                with_initial_yaw(3.14159)
+                with_hand_rotation_smoothing(220.0)
 
-            T.with_position(0.0, -1.6, 0.0) {
-                GLTF.new("assets/models/pc-rei.hoodie.glb") { EM.on() }
+                T.with_position(0.0, -1.6, 0.0) {
+                    GLTF.new("assets/models/pc-rei.hoodie.glb") { EM.on() }
+                }
+
+                CTLXR.new(true, Left, Grip) { T {} }
+                CTLXR.new(true, Right, Grip) { T {} }
             }
-
-            CTLXR.new(true, Left, Grip) { T {} }
-            CTLXR.new(true, Right, Grip) { T {} }
         }
     }
 }
