@@ -74,6 +74,82 @@ pub fn mat4_mul(a: [[f32; 4]; 4], b: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
     out
 }
 
+pub fn vec3_add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+pub fn vec3_lerp(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+    vec3_add(a, vec3_scale(vec3_sub(b, a), t))
+}
+
+pub fn quat_normalize(q: [f32; 4]) -> [f32; 4] {
+    let len2 = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
+    if len2 < 1e-12 {
+        return [0.0, 0.0, 0.0, 1.0];
+    }
+    let inv = len2.sqrt().recip();
+    [q[0] * inv, q[1] * inv, q[2] * inv, q[3] * inv]
+}
+
+pub fn quat_rotation_y(yaw: f32) -> [f32; 4] {
+    let half = yaw * 0.5;
+    [0.0, half.sin(), 0.0, half.cos()]
+}
+
+/// Normalised linear interpolation between two unit quaternions.
+/// Ensures shortest-path by negating `b` if the dot product is negative.
+pub fn quat_nlerp(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
+    let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+    let b = if dot < 0.0 { [-b[0], -b[1], -b[2], -b[3]] } else { b };
+    quat_normalize([
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t,
+        a[2] + (b[2] - a[2]) * t,
+        a[3] + (b[3] - a[3]) * t,
+    ])
+}
+
+/// Minimum-arc quaternion rotating unit vector `from` to unit vector `to`.
+pub fn shortest_arc_quat(from: [f32; 3], to: [f32; 3]) -> [f32; 4] {
+    let d = vec3_dot(from, to);
+    if d < -0.9999 {
+        let perp = if from[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
+        let axis = vec3_normalize(vec3_cross(from, perp));
+        return [axis[0], axis[1], axis[2], 0.0];
+    }
+    let c = vec3_cross(from, to);
+    quat_normalize([c[0], c[1], c[2], 1.0 + d])
+}
+
+/// Extract a unit quaternion from a column-major 4x4 world matrix (may have scale).
+pub fn mat_to_quat(m: [[f32; 4]; 4]) -> [f32; 4] {
+    fn col_len(m: [[f32; 4]; 4], c: usize) -> f32 {
+        (m[c][0] * m[c][0] + m[c][1] * m[c][1] + m[c][2] * m[c][2])
+            .sqrt()
+            .max(1e-9)
+    }
+    let s0 = col_len(m, 0).recip();
+    let s1 = col_len(m, 1).recip();
+    let s2 = col_len(m, 2).recip();
+    let r00 = m[0][0] * s0; let r10 = m[0][1] * s0; let r20 = m[0][2] * s0;
+    let r01 = m[1][0] * s1; let r11 = m[1][1] * s1; let r21 = m[1][2] * s1;
+    let r02 = m[2][0] * s2; let r12 = m[2][1] * s2; let r22 = m[2][2] * s2;
+    let trace = r00 + r11 + r22;
+    if trace > 0.0 {
+        let s = 0.5 / (trace + 1.0).sqrt();
+        quat_normalize([(r21 - r12) * s, (r02 - r20) * s, (r10 - r01) * s, 0.25 / s])
+    } else if r00 > r11 && r00 > r22 {
+        let s = 2.0 * (1.0 + r00 - r11 - r22).sqrt();
+        quat_normalize([0.25 * s, (r01 + r10) / s, (r02 + r20) / s, (r21 - r12) / s])
+    } else if r11 > r22 {
+        let s = 2.0 * (1.0 + r11 - r00 - r22).sqrt();
+        quat_normalize([(r01 + r10) / s, 0.25 * s, (r12 + r21) / s, (r02 - r20) / s])
+    } else {
+        let s = 2.0 * (1.0 + r22 - r00 - r11).sqrt();
+        quat_normalize([(r02 + r20) / s, (r12 + r21) / s, 0.25 * s, (r10 - r01) / s])
+    }
+}
+
 pub fn quat_from_axis_angle(axis: [f32; 3], angle_rad: f32) -> [f32; 4] {
     let axis = vec3_normalize(axis);
     let (s, c) = (0.5 * angle_rad).sin_cos();

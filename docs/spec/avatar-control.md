@@ -118,6 +118,10 @@ TransformPipeline  (input = driven_t world matrix, via nearest TC ancestor)
 Stripping pitch and roll before `model_root` means the model Y offset (`-camera_bone_height`)
 is only ever rotated by a pure-Y quaternion — feet cannot arc when looking up.
 
+**No transform pipeline for the head.** Head rotation is handled entirely by
+`IKSystem` via the `AimConstraint` solver — no `TransformPipeline` node is created
+for it.
+
 ### Head IK detail
 
 ```

@@ -1,5 +1,10 @@
 use crate::engine::ecs::component::{IKChainComponent, IKSolver, TransformComponent};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
+use crate::utils::math::{
+    mat_to_quat, quat_conjugate, quat_mul, quat_nlerp, quat_rotate_vec3, quat_rotation_y,
+    shortest_arc_quat, vec3_add, vec3_cross, vec3_dot, vec3_len, vec3_normalize, vec3_scale,
+    vec3_sub, vec3_lerp,
+};
 
 #[derive(Debug, Default)]
 pub struct IKSystem;
@@ -119,7 +124,7 @@ fn solve_aim(
         .map(|t| mat_to_quat(t.transform.matrix_world))
         .unwrap_or([0.0, 0.0, 0.0, 1.0]);
 
-    let full_local_rot = quat_mul(quat_inverse(parent_world_rot), desired_world_rot);
+    let full_local_rot = quat_mul(quat_conjugate(parent_world_rot), desired_world_rot);
 
     let local_rot = if weight < 1.0 {
         let cur = world
@@ -226,7 +231,7 @@ fn solve_two_bone(
     let delta_upper = shortest_arc_quat(old_upper_fwd, elbow_dir);
     let new_upper_world_rot = quat_mul(delta_upper, root_world_rot);
 
-    let full_upper_local = quat_mul(quat_inverse(root_parent_world_rot), new_upper_world_rot);
+    let full_upper_local = quat_mul(quat_conjugate(root_parent_world_rot), new_upper_world_rot);
     let upper_local = if weight < 1.0 {
         let cur = world
             .get_component_by_id_as::<TransformComponent>(root_tc)
@@ -244,7 +249,7 @@ fn solve_two_bone(
         [0.0, 0.0, 1.0]
     };
     // After the upper arm delta, the lower arm's FK forward rotates by delta_upper too.
-    let lower_fwd_after_upper = rotate_vec_by_quat(old_lower_fwd, delta_upper);
+    let lower_fwd_after_upper = quat_rotate_vec3(delta_upper, old_lower_fwd);
     let new_lower_fwd = if vec3_len(vec3_sub(target_pos, elbow_pos)) > 1e-6 {
         vec3_normalize(vec3_sub(target_pos, elbow_pos))
     } else {
@@ -254,7 +259,7 @@ fn solve_two_bone(
     let new_lower_world_rot = quat_mul(delta_lower, quat_mul(delta_upper, mid_world_rot));
 
     // Parent of lower arm is now upper arm with new_upper_world_rot.
-    let full_lower_local = quat_mul(quat_inverse(new_upper_world_rot), new_lower_world_rot);
+    let full_lower_local = quat_mul(quat_conjugate(new_upper_world_rot), new_lower_world_rot);
     let lower_local = if weight < 1.0 {
         let cur = world
             .get_component_by_id_as::<TransformComponent>(mid_tc)
@@ -298,7 +303,7 @@ fn solve_two_bone(
     // Optionally copy target rotation to end-effector bone.
     if copy_end_rotation {
         let target_world_rot = tc_world_rot(world, target_id);
-        let full_end_local = quat_mul(quat_inverse(new_lower_world_rot), target_world_rot);
+        let full_end_local = quat_mul(quat_conjugate(new_lower_world_rot), target_world_rot);
         let end_local = if weight < 1.0 {
             let cur = world
                 .get_component_by_id_as::<TransformComponent>(end_tc)
@@ -372,7 +377,7 @@ fn solve_fabrik(
         .parent_of(chain[0])
         .and_then(|p| world.get_component_by_id_as::<TransformComponent>(p))
         .map(|t| mat_to_quat(t.transform.matrix_world))
-        .unwrap_or([0.0, 0.0, 0.0, 1.0]);
+        .unwrap_or([0.0, 0.0, 0.0, 1.0f32]);
 
     for i in 0..n - 1 {
         let tc = chain[i];
@@ -391,7 +396,7 @@ fn solve_fabrik(
 
         let delta = shortest_arc_quat(cur_fwd, desired_fwd);
         let new_world_rot = quat_mul(delta, cur_world_rot);
-        let full_local = quat_mul(quat_inverse(parent_world_rot), new_world_rot);
+        let full_local = quat_mul(quat_conjugate(parent_world_rot), new_world_rot);
 
         let local_rot = if weight < 1.0 {
             let cur = world
@@ -442,132 +447,3 @@ fn tc_world_rot(world: &World, id: ComponentId) -> [f32; 4] {
         .unwrap_or([0.0, 0.0, 0.0, 1.0])
 }
 
-// ---------------------------------------------------------------------------
-// Math helpers
-// ---------------------------------------------------------------------------
-
-fn mat_to_quat(m: [[f32; 4]; 4]) -> [f32; 4] {
-    fn col_len(m: [[f32; 4]; 4], c: usize) -> f32 {
-        (m[c][0] * m[c][0] + m[c][1] * m[c][1] + m[c][2] * m[c][2])
-            .sqrt()
-            .max(1e-9)
-    }
-    let s0 = col_len(m, 0).recip();
-    let s1 = col_len(m, 1).recip();
-    let s2 = col_len(m, 2).recip();
-    let r00 = m[0][0] * s0; let r10 = m[0][1] * s0; let r20 = m[0][2] * s0;
-    let r01 = m[1][0] * s1; let r11 = m[1][1] * s1; let r21 = m[1][2] * s1;
-    let r02 = m[2][0] * s2; let r12 = m[2][1] * s2; let r22 = m[2][2] * s2;
-    let trace = r00 + r11 + r22;
-    if trace > 0.0 {
-        let s = 0.5 / (trace + 1.0).sqrt();
-        normalise_quat([(r21 - r12) * s, (r02 - r20) * s, (r10 - r01) * s, 0.25 / s])
-    } else if r00 > r11 && r00 > r22 {
-        let s = 2.0 * (1.0 + r00 - r11 - r22).sqrt();
-        normalise_quat([0.25 * s, (r01 + r10) / s, (r02 + r20) / s, (r21 - r12) / s])
-    } else if r11 > r22 {
-        let s = 2.0 * (1.0 + r11 - r00 - r22).sqrt();
-        normalise_quat([(r01 + r10) / s, 0.25 * s, (r12 + r21) / s, (r02 - r20) / s])
-    } else {
-        let s = 2.0 * (1.0 + r22 - r00 - r11).sqrt();
-        normalise_quat([(r02 + r20) / s, (r12 + r21) / s, 0.25 * s, (r10 - r01) / s])
-    }
-}
-
-fn normalise_quat(q: [f32; 4]) -> [f32; 4] {
-    let len2 = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
-    if len2 < 1e-12 {
-        return [0.0, 0.0, 0.0, 1.0];
-    }
-    let inv = len2.sqrt().recip();
-    [q[0] * inv, q[1] * inv, q[2] * inv, q[3] * inv]
-}
-
-fn quat_mul(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
-    let (ax, ay, az, aw) = (a[0], a[1], a[2], a[3]);
-    let (bx, by, bz, bw) = (b[0], b[1], b[2], b[3]);
-    [
-        aw * bx + ax * bw + ay * bz - az * by,
-        aw * by - ax * bz + ay * bw + az * bx,
-        aw * bz + ax * by - ay * bx + az * bw,
-        aw * bw - ax * bx - ay * by - az * bz,
-    ]
-}
-
-fn quat_inverse(q: [f32; 4]) -> [f32; 4] {
-    [-q[0], -q[1], -q[2], q[3]]
-}
-
-fn quat_rotation_y(yaw: f32) -> [f32; 4] {
-    let half = yaw * 0.5;
-    [0.0, half.sin(), 0.0, half.cos()]
-}
-
-/// Normalised linear interpolation — fast approximate slerp.
-fn quat_nlerp(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
-    let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
-    let b = if dot < 0.0 { [-b[0], -b[1], -b[2], -b[3]] } else { b };
-    normalise_quat([
-        a[0] + (b[0] - a[0]) * t,
-        a[1] + (b[1] - a[1]) * t,
-        a[2] + (b[2] - a[2]) * t,
-        a[3] + (b[3] - a[3]) * t,
-    ])
-}
-
-/// Minimum-arc quaternion that rotates unit vector `from` to unit vector `to`.
-fn shortest_arc_quat(from: [f32; 3], to: [f32; 3]) -> [f32; 4] {
-    let d = vec3_dot(from, to);
-    if d < -0.9999 {
-        // Anti-parallel: 180° rotation around an arbitrary perpendicular.
-        let perp = if from[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
-        let axis = vec3_normalize(vec3_cross(from, perp));
-        return [axis[0], axis[1], axis[2], 0.0];
-    }
-    let c = vec3_cross(from, to);
-    normalise_quat([c[0], c[1], c[2], 1.0 + d])
-}
-
-/// Rotate a 3-vector by a unit quaternion: v' = q * v * q⁻¹.
-fn rotate_vec_by_quat(v: [f32; 3], q: [f32; 4]) -> [f32; 3] {
-    let (qx, qy, qz, qw) = (q[0], q[1], q[2], q[3]);
-    let (vx, vy, vz) = (v[0], v[1], v[2]);
-    let tx = 2.0 * (qy * vz - qz * vy);
-    let ty = 2.0 * (qz * vx - qx * vz);
-    let tz = 2.0 * (qx * vy - qy * vx);
-    [
-        vx + qw * tx + qy * tz - qz * ty,
-        vy + qw * ty + qz * tx - qx * tz,
-        vz + qw * tz + qx * ty - qy * tx,
-    ]
-}
-
-fn vec3_sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-fn vec3_add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-}
-fn vec3_scale(v: [f32; 3], s: f32) -> [f32; 3] {
-    [v[0] * s, v[1] * s, v[2] * s]
-}
-fn vec3_dot(a: [f32; 3], b: [f32; 3]) -> f32 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-fn vec3_cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
-}
-fn vec3_len(v: [f32; 3]) -> f32 {
-    (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
-}
-fn vec3_normalize(v: [f32; 3]) -> [f32; 3] {
-    let l = vec3_len(v).max(1e-9);
-    vec3_scale(v, 1.0 / l)
-}
-fn vec3_lerp(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
-    vec3_add(a, vec3_scale(vec3_sub(b, a), t))
-}

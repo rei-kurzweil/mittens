@@ -1,5 +1,6 @@
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::{ComponentId, World};
+use crate::utils::math::{vec3_len, vec3_sub};
 
 /// Stateless utility for resolving semantic bone landmarks to ComponentIds in a live skeleton.
 ///
@@ -135,10 +136,3 @@ fn tc_world_pos(world: &World, id: ComponentId) -> Option<[f32; 3]> {
         })
 }
 
-fn vec3_sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn vec3_len(v: [f32; 3]) -> f32 {
-    (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
-}
