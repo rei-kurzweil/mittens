@@ -37,18 +37,18 @@ I.with_speed(1.5) {
 T {
     with_position(0.65, 1.45, 1.8)
     with_scale(0.055, 0.055, 1.0)
-    ED {
-        TXT {
-            "use wasd/rf/qe\nand right-mouse\nclick and drag\nto move/look"
-            Raycastable.enabled()
-            C.rgba(1.0, 1.0, 1.0, 1.0)
-            TextShadow {
-                with_offset_xy([0.06, -0.06])
-                with_z_offset(0.0025)
-            }
-            EM.on()
-            TextureFiltering.nearest_magnification()
+    TXT {
+        "use wasd/rf/qe\nand right-mouse\nclick and drag\nto move/look"
+        Raycastable.enabled()
+        C.rgba(0.0, 0.0, 0.0, 1.0)
+        TextBackground {
+            with_padding(0.5)
+            with_padding_right(1.5)
+            with_color(0.9, 0.9, 0.9, 1.0)
         }
+        EM.on()
+        TextureFiltering.linear()
+    
     }
 }
 

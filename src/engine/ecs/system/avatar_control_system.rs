@@ -1,9 +1,11 @@
 use crate::engine::ecs::component::{
     AvatarControlComponent, Camera3DComponent, CameraXRComponent, ControllerHand,
-    ControllerXRComponent, QuatTemporalFilterComponent, QuatYawFollowComponent,
-    TransformComponent, TransformForkTRSComponent, TransformMapRotationComponent,
-    TransformMergeTRSComponent, TransformPipelineComponent, TransformPipelineOutputComponent,
+    ControllerXRComponent, IKChainComponent, IKSolver, QuatTemporalFilterComponent,
+    QuatYawFollowComponent, TransformComponent, TransformForkTRSComponent,
+    TransformMapRotationComponent, TransformMergeTRSComponent, TransformPipelineComponent,
+    TransformPipelineOutputComponent,
 };
+use crate::engine::ecs::system::bone_mapping_system::BoneMappingSystem;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 
 #[derive(Debug, Default)]
@@ -41,52 +43,8 @@ fn tick_one(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter, _d
 
     if needs_init {
         try_init_splices(id, world, emit);
-        return; // regular tick runs next frame after Attach intents are flushed
+        // Head rotation is handled by IKSystem (AimConstraint on splice_head) after init.
     }
-
-    // --- Regular tick: head rotation only ---
-    // Body rotation is handled by the body pipeline (YawFollow op in TransformPipelineSystem).
-    let (forward_plus_z, splice_head_id) = {
-        let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
-            return;
-        };
-        let Some(splice_head_id) = c.splice_head else { return };
-        (c.forward_plus_z, splice_head_id)
-    };
-
-    // driven_t is the parent of AvatarControlComponent.
-    let Some(driven_t_id) = world.parent_of(id) else { return };
-    let driven_world_rot = {
-        let Some(t) = world.get_component_by_id_as::<TransformComponent>(driven_t_id) else {
-            return;
-        };
-        mat_to_quat(t.transform.matrix_world)
-    };
-
-    // neck_parent is the parent of splice_head (stable after init).
-    let Some(neck_parent_id) = world.parent_of(splice_head_id) else { return };
-    let neck_parent_world_rot = {
-        let Some(t) = world.get_component_by_id_as::<TransformComponent>(neck_parent_id) else {
-            return;
-        };
-        mat_to_quat(t.transform.matrix_world)
-    };
-
-    // --- Head rotation ---
-    // For VR (-Z forward): multiply by quat_rotation_y(π) to bake the VRM/OpenXR handedness flip.
-    // For desktop (+Z forward): both input and VRM face +Z — no correction needed.
-    let handedness_correction = if forward_plus_z { 0.0 } else { std::f32::consts::PI };
-    let head_world_rot = quat_mul(driven_world_rot, quat_rotation_y(handedness_correction));
-    let splice_local_rot = quat_mul(quat_inverse(neck_parent_world_rot), head_world_rot);
-    emit.push_intent_now(
-        splice_head_id,
-        IntentValue::UpdateTransform {
-            component_ids: vec![splice_head_id],
-            translation: [0.0, 0.0, 0.0],
-            rotation_quat_xyzw: splice_local_rot,
-            scale: [1.0, 1.0, 1.0],
-        },
-    );
 }
 
 /// First-time setup: splice bones, create body pipeline, and (optionally) hand smoothing pipelines.
@@ -101,7 +59,9 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     let (head_bone_name, left_hand_bone, right_hand_bone,
          body_yaw_threshold, body_yaw_rate, forward_plus_z,
          initial_body_yaw, hand_rotation_smoothing, skip_body_pipeline,
-         camera_bone_name, avatar_height_override) = {
+         camera_bone_name, avatar_height_override,
+         left_upper_arm_bone, left_lower_arm_bone,
+         right_upper_arm_bone, right_lower_arm_bone) = {
         let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
             return;
         };
@@ -117,6 +77,10 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             c.skip_body_pipeline,
             c.camera_bone.clone(),
             c.avatar_height,
+            c.left_upper_arm_bone.clone(),
+            c.left_lower_arm_bone.clone(),
+            c.right_upper_arm_bone.clone(),
+            c.right_lower_arm_bone.clone(),
         )
     };
 
@@ -152,6 +116,9 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
                 .unwrap_or(false)
         });
 
+    // driven_t is the parent of AVC — needed as IK target for the head AimConstraint.
+    let Some(driven_t_id) = world.parent_of(id) else { return };
+
     // Head bone is required — retry next tick if GLTF hasn't spawned yet.
     let head_selector = format!("[name='{}']", head_bone_name);
     let Some(head_bone_id) = world.find_component(model_root_id, &head_selector) else {
@@ -163,6 +130,39 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // Resolve hand splices (raw driver = controller's driven_t or plain TC).
     let left  = resolve_hand_splice(world, model_root_id, left_hand_bone.as_deref(),  left_ctrl);
     let right = resolve_hand_splice(world, model_root_id, right_hand_bone.as_deref(), right_ctrl);
+
+    // Attempt arm chain resolution for TwoBoneIK.  Only attempted when a controller
+    // is present — without a real driver the IK target would be stuck at origin.
+    let arm_left = if left_ctrl.is_some() {
+        left_hand_bone.as_deref().and_then(|hand_name| {
+            BoneMappingSystem::resolve_arm_chain(
+                world,
+                model_root_id,
+                hand_name,
+                left_lower_arm_bone.as_deref(),
+                left_upper_arm_bone.as_deref(),
+                Some(0.03),
+            )
+        })
+    } else {
+        None
+    };
+    let arm_right = if right_ctrl.is_some() {
+        right_hand_bone.as_deref().and_then(|hand_name| {
+            BoneMappingSystem::resolve_arm_chain(
+                world,
+                model_root_id,
+                hand_name,
+                right_lower_arm_bone.as_deref(),
+                right_upper_arm_bone.as_deref(),
+                Some(0.03),
+            )
+        })
+    } else {
+        None
+    };
+    if arm_left.is_some()  { println!("[AVC] left arm chain resolved for TwoBoneIK"); }
+    if arm_right.is_some() { println!("[AVC] right arm chain resolved for TwoBoneIK"); }
 
     // --- Camera bone: auto-calibrate model_root.y + discover camera children ---
     //
@@ -289,46 +289,85 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
 
     // -----------------------------------------------------------------------
     // Head splice: splice_head under neck_parent, head bone under splice_head.
+    // IKChainComponent (AimConstraint) wired under splice_head drives rotation
+    // each tick via IKSystem — reads driven_t world rot, applies handedness flip.
     // -----------------------------------------------------------------------
+    let head_ik_offset_yaw = if forward_plus_z { 0.0 } else { std::f32::consts::PI };
+    let head_ik_id = world.add_component(IKChainComponent::new(
+        IKSolver::AimConstraint { offset_yaw: head_ik_offset_yaw },
+        driven_t_id,
+        head_splice_id,
+    ));
+    let _ = world.set_parent(head_ik_id, Some(head_splice_id));
+
     emit_attach(emit, head_parent_id, head_splice_id);
     emit_attach(emit, head_splice_id, head_bone_id);
 
     // -----------------------------------------------------------------------
-    // Hand splices.
-    // For each hand:
-    //   - Re-parent controller (or plain-TC splice) under bone's original parent.
-    //   - If hand_rotation_smoothing is Some: create a smoothing pipeline under the
-    //     raw driver (controller_driven_t), displace bone under smoothed_t.
-    //   - If None: displace bone directly under the raw driver.
+    // Hand splices and arm IK.
+    //
+    // For each hand, two modes:
+    //
+    //   Arm IK mode (BoneMappingSystem resolved upper/lower arm):
+    //     - Controller stays under AVC — OpenXRSystem handles world→local correctly.
+    //     - Arm bone stays in FK skeleton (not displaced under controller).
+    //     - IKChainComponent { TwoBoneIK } placed under upper_arm drives the chain.
+    //     - target_id = raw_driver (controller), end_effector_id = hand bone.
+    //     - copy_end_rotation: true — wrist rotation copied from controller.
+    //
+    //   Simple splice mode (arm chain not available):
+    //     - Controller re-parented under bone's original parent.
+    //     - Hand bone displaced under controller (or smoothing pipeline output).
+    //     - Optional QuatTemporalFilter smoothing pipeline on rotation.
     // -----------------------------------------------------------------------
-    for hand in [left, right].into_iter().flatten() {
-        let (bone_parent, raw_driver, bone) = hand;
-        let splice_root = world.parent_of(raw_driver).filter(|&p| p != bone_parent).unwrap_or(raw_driver);
-        emit_attach(emit, bone_parent, splice_root);
+    for (hand, arm_chain) in [(left, arm_left), (right, arm_right)] {
+        let Some((bone_parent, raw_driver, bone)) = hand else { continue };
 
-        if let Some(smoothing_factor) = hand_rotation_smoothing {
-            // Create smoothing pipeline under raw_driver.
-            let hp_id     = world.add_component(TransformPipelineComponent::new());
-            let hfork_id  = world.add_component(TransformForkTRSComponent::new());
-            let hmrot_id  = world.add_component(TransformMapRotationComponent::new());
-            let hfilt_id  = world.add_component(
-                QuatTemporalFilterComponent::new().with_smoothing_factor(smoothing_factor),
-            );
-            let hmerge_id  = world.add_component(TransformMergeTRSComponent::new());
-            let hout_id    = world.add_component(TransformPipelineOutputComponent::new());
-            let smoothed_t = world.add_component(TransformComponent::new());
-
-            let _ = world.set_parent(hfork_id,  Some(hp_id));
-            let _ = world.set_parent(hmrot_id,  Some(hfork_id));
-            let _ = world.set_parent(hfilt_id,  Some(hmrot_id));
-            let _ = world.set_parent(hmerge_id, Some(hfork_id));
-            let _ = world.set_parent(hout_id,   Some(hp_id));
-            let _ = world.set_parent(smoothed_t, Some(hout_id));
-
-            emit_attach(emit, raw_driver, hp_id);
-            emit_attach(emit, smoothed_t, bone);
+        if let Some(arm) = arm_chain {
+            // --- Arm IK mode ---
+            // Pole hint: elbow pointing down is a safe neutral for arms at rest.
+            // Body-local pole direction (open question; world-space for now).
+            let ik_id = world.add_component(IKChainComponent::new(
+                IKSolver::TwoBoneIK {
+                    pole_direction: [0.0, -1.0, 0.0],
+                    copy_end_rotation: true,
+                },
+                raw_driver, // IK target = controller driven_t world position
+                arm.hand,   // end effector = hand bone (stays in FK skeleton)
+            ));
+            let _ = world.set_parent(ik_id, Some(arm.upper_arm));
         } else {
-            emit_attach(emit, raw_driver, bone);
+            // --- Simple splice mode ---
+            let splice_root = world
+                .parent_of(raw_driver)
+                .filter(|&p| p != bone_parent)
+                .unwrap_or(raw_driver);
+            emit_attach(emit, bone_parent, splice_root);
+
+            if let Some(smoothing_factor) = hand_rotation_smoothing {
+                // Create smoothing pipeline under raw_driver.
+                let hp_id      = world.add_component(TransformPipelineComponent::new());
+                let hfork_id   = world.add_component(TransformForkTRSComponent::new());
+                let hmrot_id   = world.add_component(TransformMapRotationComponent::new());
+                let hfilt_id   = world.add_component(
+                    QuatTemporalFilterComponent::new().with_smoothing_factor(smoothing_factor),
+                );
+                let hmerge_id  = world.add_component(TransformMergeTRSComponent::new());
+                let hout_id    = world.add_component(TransformPipelineOutputComponent::new());
+                let smoothed_t = world.add_component(TransformComponent::new());
+
+                let _ = world.set_parent(hfork_id,   Some(hp_id));
+                let _ = world.set_parent(hmrot_id,   Some(hfork_id));
+                let _ = world.set_parent(hfilt_id,   Some(hmrot_id));
+                let _ = world.set_parent(hmerge_id,  Some(hfork_id));
+                let _ = world.set_parent(hout_id,    Some(hp_id));
+                let _ = world.set_parent(smoothed_t, Some(hout_id));
+
+                emit_attach(emit, raw_driver, hp_id);
+                emit_attach(emit, smoothed_t, bone);
+            } else {
+                emit_attach(emit, raw_driver, bone);
+            }
         }
     }
 
@@ -379,59 +418,3 @@ fn emit_attach(emit: &mut dyn SignalEmitter, parent: ComponentId, child: Compone
     emit.push_intent_now(parent, IntentValue::Attach { parents: vec![parent], child });
 }
 
-// ---------------------------------------------------------------------------
-// Math helpers
-// ---------------------------------------------------------------------------
-
-fn mat_to_quat(m: [[f32; 4]; 4]) -> [f32; 4] {
-    fn col_len(m: [[f32; 4]; 4], c: usize) -> f32 {
-        (m[c][0] * m[c][0] + m[c][1] * m[c][1] + m[c][2] * m[c][2]).sqrt().max(1e-9)
-    }
-    let s0 = col_len(m, 0).recip();
-    let s1 = col_len(m, 1).recip();
-    let s2 = col_len(m, 2).recip();
-
-    let r00 = m[0][0]*s0; let r10 = m[0][1]*s0; let r20 = m[0][2]*s0;
-    let r01 = m[1][0]*s1; let r11 = m[1][1]*s1; let r21 = m[1][2]*s1;
-    let r02 = m[2][0]*s2; let r12 = m[2][1]*s2; let r22 = m[2][2]*s2;
-
-    let trace = r00 + r11 + r22;
-    if trace > 0.0 {
-        let s = 0.5 / (trace + 1.0).sqrt();
-        normalise_quat([(r21-r12)*s, (r02-r20)*s, (r10-r01)*s, 0.25/s])
-    } else if r00 > r11 && r00 > r22 {
-        let s = 2.0 * (1.0 + r00 - r11 - r22).sqrt();
-        normalise_quat([0.25*s, (r01+r10)/s, (r02+r20)/s, (r21-r12)/s])
-    } else if r11 > r22 {
-        let s = 2.0 * (1.0 + r11 - r00 - r22).sqrt();
-        normalise_quat([(r01+r10)/s, 0.25*s, (r12+r21)/s, (r02-r20)/s])
-    } else {
-        let s = 2.0 * (1.0 + r22 - r00 - r11).sqrt();
-        normalise_quat([(r02+r20)/s, (r12+r21)/s, 0.25*s, (r10-r01)/s])
-    }
-}
-
-fn normalise_quat(q: [f32; 4]) -> [f32; 4] {
-    let len2 = q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3];
-    if len2 < 1e-12 { return [0.0, 0.0, 0.0, 1.0]; }
-    let inv = len2.sqrt().recip();
-    [q[0]*inv, q[1]*inv, q[2]*inv, q[3]*inv]
-}
-
-fn quat_mul(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
-    let (ax, ay, az, aw) = (a[0], a[1], a[2], a[3]);
-    let (bx, by, bz, bw) = (b[0], b[1], b[2], b[3]);
-    [
-        aw*bx + ax*bw + ay*bz - az*by,
-        aw*by - ax*bz + ay*bw + az*bx,
-        aw*bz + ax*by - ay*bx + az*bw,
-        aw*bw - ax*bx - ay*by - az*bz,
-    ]
-}
-
-fn quat_inverse(q: [f32; 4]) -> [f32; 4] { [-q[0], -q[1], -q[2], q[3]] }
-
-fn quat_rotation_y(yaw: f32) -> [f32; 4] {
-    let half = yaw * 0.5;
-    [0.0, half.sin(), 0.0, half.cos()]
-}

@@ -1,0 +1,144 @@
+use crate::engine::ecs::component::TransformComponent;
+use crate::engine::ecs::{ComponentId, World};
+
+/// Stateless utility for resolving semantic bone landmarks to ComponentIds in a live skeleton.
+///
+/// All functions are free (associated) functions — no instance state.
+/// Called once during `AvatarControlSystem::try_init_splices`; returns resolved IDs
+/// that AVC uses to wire IK chains.
+pub struct BoneMappingSystem;
+
+/// Resolved upper-arm → lower-arm → hand chain for TwoBoneIK setup.
+pub struct ResolvedArmChain {
+    pub upper_arm: ComponentId,
+    pub lower_arm: ComponentId,
+    pub hand: ComponentId,
+}
+
+impl BoneMappingSystem {
+    /// Resolve a 2-bone arm chain from (optional) explicit names + topology fallback.
+    ///
+    /// Resolution order for each joint:
+    ///   1. Explicit name, if provided — look up by `[name='...']` selector under `model_root`.
+    ///   2. Topology derivation — walk TC parent chain from the joint below, using
+    ///      `tc_ancestor_at_distance` with the given `min_bone_length` threshold.
+    ///
+    /// `min_bone_length`: if `Some(d)`, topology derivation skips TC ancestors closer
+    /// than `d` metres to the previous anchor, filtering out short helper bones.
+    /// Pass `None` to always use the immediate TC parent.
+    ///
+    /// Returns `None` if `hand_name` is not found under `model_root`.
+    pub fn resolve_arm_chain(
+        world: &World,
+        model_root: ComponentId,
+        hand_name: &str,
+        lower_arm_name: Option<&str>,
+        upper_arm_name: Option<&str>,
+        min_bone_length: Option<f32>,
+    ) -> Option<ResolvedArmChain> {
+        let hand_sel = format!("[name='{}']", hand_name);
+        let hand = world.find_component(model_root, &hand_sel)?;
+
+        let lower_arm = if let Some(name) = lower_arm_name {
+            let sel = format!("[name='{}']", name);
+            world.find_component(model_root, &sel)?
+        } else {
+            Self::tc_ancestor_at_distance(world, hand, min_bone_length)?
+        };
+
+        let upper_arm = if let Some(name) = upper_arm_name {
+            let sel = format!("[name='{}']", name);
+            world.find_component(model_root, &sel)?
+        } else {
+            Self::tc_ancestor_at_distance(world, lower_arm, min_bone_length)?
+        };
+
+        Some(ResolvedArmChain { upper_arm, lower_arm, hand })
+    }
+
+    /// Walk upward from `start`, returning the nearest TC ancestor whose world position
+    /// is at least `min_dist` metres away from `start`.
+    ///
+    /// If `min_dist` is `None`, returns the immediate TC parent (no distance filtering).
+    /// Returns `None` if no TC parent is found, or if the walk exceeds 32 steps.
+    pub fn tc_ancestor_at_distance(
+        world: &World,
+        start: ComponentId,
+        min_dist: Option<f32>,
+    ) -> Option<ComponentId> {
+        let anchor_pos = tc_world_pos(world, start)?;
+        let mut cur = start;
+
+        for _ in 0..32 {
+            let parent = world.parent_of(cur)?;
+            // Parent must be a TC to count as an arm joint.
+            if world.get_component_by_id_as::<TransformComponent>(parent).is_none() {
+                return None;
+            }
+            if let Some(min_d) = min_dist {
+                let parent_pos = tc_world_pos(world, parent)?;
+                let dist = vec3_len(vec3_sub(parent_pos, anchor_pos));
+                if dist < min_d {
+                    // Too close — this is a helper bone; keep walking.
+                    cur = parent;
+                    continue;
+                }
+            }
+            return Some(parent);
+        }
+        None
+    }
+
+    /// Find the first TC ancestor of `start` that has >= `min_tc_children` TC children.
+    ///
+    /// Used for shoulder girdle detection (first 3-way split above hips) and hip detection.
+    /// Returns `None` if no such ancestor exists within 32 steps.
+    pub fn find_branching_ancestor(
+        world: &World,
+        start: ComponentId,
+        min_tc_children: usize,
+    ) -> Option<ComponentId> {
+        let mut cur = start;
+        for _ in 0..32 {
+            let parent = world.parent_of(cur)?;
+            if world.get_component_by_id_as::<TransformComponent>(parent).is_none() {
+                return None;
+            }
+            let tc_child_count = world
+                .children_of(parent)
+                .iter()
+                .filter(|&&ch| {
+                    world
+                        .get_component_by_id_as::<TransformComponent>(ch)
+                        .is_some()
+                })
+                .count();
+            if tc_child_count >= min_tc_children {
+                return Some(parent);
+            }
+            cur = parent;
+        }
+        None
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+fn tc_world_pos(world: &World, id: ComponentId) -> Option<[f32; 3]> {
+    world
+        .get_component_by_id_as::<TransformComponent>(id)
+        .map(|t| {
+            let m = t.transform.matrix_world;
+            [m[3][0], m[3][1], m[3][2]]
+        })
+}
+
+fn vec3_sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn vec3_len(v: [f32; 3]) -> f32 {
+    (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+}

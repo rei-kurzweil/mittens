@@ -14,7 +14,8 @@ use crate::engine::ecs::component::{
     CameraXRComponent, ColorComponent, ControllerHand, ControllerPoseKind,
     ControllerXRComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent,
     GLTFComponent, InputComponent, InputTransformModeComponent, InputXRComponent,
-    InspectorPanelComponent, OpenXRComponent, SelectableComponent, WorldPanelComponent,
+    InspectorPanelComponent, OpenXRComponent, SelectableComponent, TextBackgroundComponent,
+    WorldPanelComponent,
     QuatTemporalFilterComponent, RayCastComponent, RayCastMode, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TextComponent, TextShadowComponent,
     TextureFilteringComponent, TransformComponent, TransformDropComponent,
@@ -294,6 +295,7 @@ fn create_component(
         }
         "RendererStats" => add!(RendererStatsComponent::new()),
         "Text" => add!(TextComponent::new("")),
+        "TextBackground" => add!(TextBackgroundComponent::new()),
         "TextShadow" => add!(TextShadowComponent::new()),
         "AvatarBodyYaw" => add!(AvatarBodyYawComponent::new()),
         "AvatarControl" => add!(AvatarControlComponent::new()),
@@ -443,6 +445,19 @@ fn apply_call(
             "with_hand_rotation_smoothing"  => *avc = avc.clone().with_hand_rotation_smoothing(args[0].as_f32()?),
             "with_camera_bone"              => *avc = avc.clone().with_camera_bone(args[0].as_str()?),
             "with_avatar_height"            => *avc = avc.clone().with_avatar_height(args[0].as_f32()?),
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(tb) = world.get_component_by_id_as_mut::<TextBackgroundComponent>(id) {
+        match method {
+            "with_padding"        => *tb = tb.clone().with_padding(args[0].as_f32()?),
+            "with_padding_top"    => *tb = tb.clone().with_padding_top(args[0].as_f32()?),
+            "with_padding_right"  => *tb = tb.clone().with_padding_right(args[0].as_f32()?),
+            "with_padding_bottom" => *tb = tb.clone().with_padding_bottom(args[0].as_f32()?),
+            "with_padding_left"   => *tb = tb.clone().with_padding_left(args[0].as_f32()?),
+            "with_color"          => *tb = tb.clone().with_color(args[0].as_f32()?, args[1].as_f32()?, args[2].as_f32()?, args[3].as_f32()?),
+            "with_z_offset"       => *tb = tb.clone().with_z_offset(args[0].as_f32()?),
             _ => {}
         }
         return Ok(());

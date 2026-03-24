@@ -30,6 +30,7 @@ pub mod gesture_coord_type;
 pub mod gizmo;
 pub mod gltf;
 pub mod gravity;
+pub mod ik_chain;
 pub mod input;
 pub mod input_xr;
 pub mod input_transform_mode;
@@ -105,6 +106,7 @@ pub use gizmo::{
     TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
 };
 pub use gravity::GravityComponent;
+pub use ik_chain::{IKChainComponent, IKSolver};
 pub use input::InputComponent;
 pub use input_xr::InputXRComponent;
 pub use input_transform_mode::{ForwardAxis, InputTransformModeComponent, RollAxis};

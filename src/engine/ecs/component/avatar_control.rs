@@ -57,6 +57,22 @@ pub struct AvatarControlComponent {
     /// Name of the right hand bone to splice. `None` = no right hand splice.
     pub right_hand_bone: Option<String>,
 
+    /// Explicit left upper arm bone name for TwoBoneIK.
+    /// If `None` and `left_hand_bone` is set, topology derivation fills it in.
+    pub left_upper_arm_bone: Option<String>,
+
+    /// Explicit left lower arm bone name for TwoBoneIK.
+    /// If `None` and `left_hand_bone` is set, topology derivation fills it in.
+    pub left_lower_arm_bone: Option<String>,
+
+    /// Explicit right upper arm bone name for TwoBoneIK.
+    /// If `None` and `right_hand_bone` is set, topology derivation fills it in.
+    pub right_upper_arm_bone: Option<String>,
+
+    /// Explicit right lower arm bone name for TwoBoneIK.
+    /// If `None` and `right_hand_bone` is set, topology derivation fills it in.
+    pub right_lower_arm_bone: Option<String>,
+
     /// Yaw delta (radians) that triggers body rotation. Default: π/4 (45°).
     pub body_yaw_threshold: f32,
 
@@ -140,6 +156,26 @@ impl AvatarControlComponent {
         self
     }
 
+    pub fn with_left_upper_arm_bone(mut self, name: impl Into<String>) -> Self {
+        self.left_upper_arm_bone = Some(name.into());
+        self
+    }
+
+    pub fn with_left_lower_arm_bone(mut self, name: impl Into<String>) -> Self {
+        self.left_lower_arm_bone = Some(name.into());
+        self
+    }
+
+    pub fn with_right_upper_arm_bone(mut self, name: impl Into<String>) -> Self {
+        self.right_upper_arm_bone = Some(name.into());
+        self
+    }
+
+    pub fn with_right_lower_arm_bone(mut self, name: impl Into<String>) -> Self {
+        self.right_lower_arm_bone = Some(name.into());
+        self
+    }
+
     pub fn with_body_yaw_threshold(mut self, t: f32) -> Self {
         self.body_yaw_threshold = t;
         self
@@ -205,6 +241,10 @@ impl Default for AvatarControlComponent {
             head_bone: "J_Bip_C_Neck".to_string(),
             left_hand_bone: None,
             right_hand_bone: None,
+            left_upper_arm_bone: None,
+            left_lower_arm_bone: None,
+            right_upper_arm_bone: None,
+            right_lower_arm_bone: None,
             body_yaw_threshold: std::f32::consts::FRAC_PI_4,
             body_yaw_rate: 3.0,
             forward_plus_z: false,
@@ -247,6 +287,18 @@ impl Component for AvatarControlComponent {
         if let Some(ref b) = self.right_hand_bone {
             map.insert("right_hand_bone".to_string(), serde_json::json!(b));
         }
+        if let Some(ref b) = self.left_upper_arm_bone {
+            map.insert("left_upper_arm_bone".to_string(), serde_json::json!(b));
+        }
+        if let Some(ref b) = self.left_lower_arm_bone {
+            map.insert("left_lower_arm_bone".to_string(), serde_json::json!(b));
+        }
+        if let Some(ref b) = self.right_upper_arm_bone {
+            map.insert("right_upper_arm_bone".to_string(), serde_json::json!(b));
+        }
+        if let Some(ref b) = self.right_lower_arm_bone {
+            map.insert("right_lower_arm_bone".to_string(), serde_json::json!(b));
+        }
         map.insert("body_yaw_threshold".to_string(), serde_json::json!(self.body_yaw_threshold));
         map.insert("body_yaw_rate".to_string(), serde_json::json!(self.body_yaw_rate));
         map.insert("forward_plus_z".to_string(), serde_json::json!(self.forward_plus_z));
@@ -271,6 +323,18 @@ impl Component for AvatarControlComponent {
         }
         if let Some(v) = data.get("right_hand_bone") {
             self.right_hand_bone = v.as_str().map(|s| s.to_string());
+        }
+        if let Some(v) = data.get("left_upper_arm_bone") {
+            self.left_upper_arm_bone = v.as_str().map(|s| s.to_string());
+        }
+        if let Some(v) = data.get("left_lower_arm_bone") {
+            self.left_lower_arm_bone = v.as_str().map(|s| s.to_string());
+        }
+        if let Some(v) = data.get("right_upper_arm_bone") {
+            self.right_upper_arm_bone = v.as_str().map(|s| s.to_string());
+        }
+        if let Some(v) = data.get("right_lower_arm_bone") {
+            self.right_lower_arm_bone = v.as_str().map(|s| s.to_string());
         }
         if let Some(v) = data.get("body_yaw_threshold") {
             if let Some(f) = v.as_f64() { self.body_yaw_threshold = f as f32; }
