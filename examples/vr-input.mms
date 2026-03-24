@@ -44,7 +44,7 @@ T {
         TextBackground {
             with_padding(0.5)
             with_padding_right(1.5)
-            with_color(0.9, 0.9, 0.9, 1.0)
+            C.rgba(0.9, 0.9, 0.9, 1.0)
         }
         EM.on()
         TextureFiltering.linear()

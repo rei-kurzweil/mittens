@@ -456,7 +456,6 @@ fn apply_call(
             "with_padding_right"  => *tb = tb.clone().with_padding_right(args[0].as_f32()?),
             "with_padding_bottom" => *tb = tb.clone().with_padding_bottom(args[0].as_f32()?),
             "with_padding_left"   => *tb = tb.clone().with_padding_left(args[0].as_f32()?),
-            "with_color"          => *tb = tb.clone().with_color(args[0].as_f32()?, args[1].as_f32()?, args[2].as_f32()?, args[3].as_f32()?),
             "with_z_offset"       => *tb = tb.clone().with_z_offset(args[0].as_f32()?),
             _ => {}
         }

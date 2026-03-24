@@ -355,18 +355,32 @@ impl TextSystem {
         wrap_state.max_col = wrap_state.max_col.max(wrap_state.col);
 
         // Spawn a background quad if a TextBackgroundComponent is present.
-        let background: Option<TextBackgroundComponent> =
+        let background: Option<(ComponentId, TextBackgroundComponent)> =
             world.children_of(component).iter().find_map(|&ch| {
                 world
                     .get_component_by_id_as::<TextBackgroundComponent>(ch)
                     .copied()
+                    .map(|bg| (ch, bg))
             });
 
-        if let Some(bg) = background {
+        if let Some((bg_id, bg)) = background {
             let cols = wrap_state.max_col as f32;
             let rows = (wrap_state.row + 1) as f32;
 
             if cols > 0.0 {
+                // Color comes from an optional ColorComponent child of the TextBackgroundComponent.
+                // Alpha drives the OpacityComponent that routes the quad into the transparent pass.
+                const DEFAULT_BG_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 0.75];
+                let color = world
+                    .children_of(bg_id)
+                    .iter()
+                    .find_map(|&ch| {
+                        world
+                            .get_component_by_id_as::<ColorComponent>(ch)
+                            .map(|c| c.rgba)
+                    })
+                    .unwrap_or(DEFAULT_BG_COLOR);
+
                 // Glyph grid X spans [-0.5, cols-0.5], Y spans [0.5, -(rows-0.5)].
                 // Background edges: left = -0.5 - pad_left, right = cols-0.5 + pad_right,
                 //                   top  =  0.5 + pad_top,  bottom = -(rows-0.5) - pad_bottom.
@@ -383,7 +397,7 @@ impl TextSystem {
                 let _ = world.add_child(component, bg_t);
 
                 let bg_col = world.add_component(ColorComponent {
-                    rgba: [bg.color[0], bg.color[1], bg.color[2], 1.0],
+                    rgba: [color[0], color[1], color[2], 1.0],
                 });
                 let _ = world.add_child(bg_t, bg_col);
 
@@ -392,7 +406,7 @@ impl TextSystem {
 
                 // Route the quad into the transparent pass.
                 let bg_op = world
-                    .add_component(OpacityComponent::new().with_opacity(bg.color[3]));
+                    .add_component(OpacityComponent::new().with_opacity(color[3]));
                 let _ = world.add_child(bg_r, bg_op);
             }
         }

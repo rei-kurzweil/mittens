@@ -266,6 +266,11 @@ fn rebuild_world_panel(
         let bg = world
             .add_component_boxed_named("wp_bg", Box::new(panel_row_bg(i, total_rows)));
         let _ = world.add_child(row_text, bg);
+        let bg_col = world.add_component_boxed_named(
+            "wp_bg_color",
+            Box::new(ColorComponent::rgba(BG_COLOR[0], BG_COLOR[1], BG_COLOR[2], BG_COLOR[3])),
+        );
+        let _ = world.add_child(bg, bg_col);
 
         new_rows.push(row_t);
         new_row_to_node.push(*node_id);
@@ -361,6 +366,11 @@ fn rebuild_inspector_panel(
         let bg = world
             .add_component_boxed_named("ip_bg", Box::new(panel_row_bg(i, total_rows)));
         let _ = world.add_child(row_text, bg);
+        let bg_col = world.add_component_boxed_named(
+            "ip_bg_color",
+            Box::new(ColorComponent::rgba(BG_COLOR[0], BG_COLOR[1], BG_COLOR[2], BG_COLOR[3])),
+        );
+        let _ = world.add_child(bg, bg_col);
 
         new_rows.push(row_t);
     }
@@ -379,7 +389,6 @@ fn rebuild_inspector_panel(
 
 fn panel_row_bg(i: usize, total: usize) -> TextBackgroundComponent {
     TextBackgroundComponent::new()
-        .with_color(BG_COLOR[0], BG_COLOR[1], BG_COLOR[2], BG_COLOR[3])
         .with_padding_top(if i == 0 { PANEL_V_PADDING } else { 0.0 })
         .with_padding_bottom(if i + 1 == total { PANEL_V_PADDING } else { ROW_GAP_FILL })
 }

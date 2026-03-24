@@ -9,10 +9,15 @@ use crate::engine::ecs::component::Component;
 /// Padding is specified per-side in glyph-space units, mirroring CSS conventions.
 /// Use `with_padding(v)` to set all four sides at once.
 ///
+/// **Color** is set by attaching a `ColorComponent` as an immediate child of this node.
+/// Its alpha drives the `OpacityComponent` on the spawned quad. If no `ColorComponent`
+/// child is present, the background defaults to opaque black (`[0, 0, 0, 0.75]`).
+///
 /// Topology spawned at build time (as children of the `TextComponent`):
 /// ```text
 /// TextComponent
 ///   TextBackgroundComponent   ← this node (marker/config)
+///     ColorComponent          ← optional; sets background color + opacity
 ///   TransformComponent        ← sized/positioned background
 ///     ColorComponent
 ///       RenderableComponent   ← the actual quad
@@ -24,9 +29,6 @@ pub struct TextBackgroundComponent {
     pub padding_right: f32,
     pub padding_bottom: f32,
     pub padding_left: f32,
-
-    /// Background RGBA color. Alpha drives opacity.
-    pub color: [f32; 4],
 
     /// Z offset relative to the text origin (negative = behind glyphs).
     pub z_offset: f32,
@@ -68,11 +70,6 @@ impl TextBackgroundComponent {
         self
     }
 
-    pub fn with_color(mut self, r: f32, g: f32, b: f32, a: f32) -> Self {
-        self.color = [r, g, b, a];
-        self
-    }
-
     pub fn with_z_offset(mut self, z: f32) -> Self {
         self.z_offset = z;
         self
@@ -86,7 +83,6 @@ impl Default for TextBackgroundComponent {
             padding_right: 0.5,
             padding_bottom: 0.35,
             padding_left: 0.5,
-            color: [0.0, 0.0, 0.0, 0.75],
             z_offset: -0.1,
             component: None,
         }
@@ -125,7 +121,6 @@ impl Component for TextBackgroundComponent {
             "padding_left".to_string(),
             serde_json::json!(self.padding_left),
         );
-        map.insert("color".to_string(), serde_json::json!(self.color));
         map.insert("z_offset".to_string(), serde_json::json!(self.z_offset));
         map
     }
@@ -163,10 +158,6 @@ impl Component for TextBackgroundComponent {
             if let Some(f) = v.as_f64() {
                 self.padding_left = f as f32;
             }
-        }
-        if let Some(v) = data.get("color") {
-            self.color = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode color: {e}"))?;
         }
         if let Some(v) = data.get("z_offset") {
             if let Some(f) = v.as_f64() {
