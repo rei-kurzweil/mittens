@@ -13,6 +13,76 @@ No code changes are proposed here; this is a design/spec document only.
 
 ---
 
+## 0. Unified query language — design direction note
+
+> **Cross-cutting design note added later.** The query language described in this doc
+> should be the **single** selector language used across all of cat-engine and MMS:
+>
+> - `World` / `Universe` live component queries (the main subject of this doc)
+> - MMS module import / CE-tree queries (see `docs/meow_meow/analysis/module-import-export.md`)
+> - Future REPL / editor find-in-scene commands
+> - Any other place that needs to locate components or component expressions by structure
+>
+> The selector string grammar (`[name='foo']`, `.transform > .renderable`, etc.) is the
+> same in all contexts. What varies is the **root** — where the search starts.
+>
+> ### Root as part of the query
+>
+> Currently the root is a separate `ComponentId` argument:
+> ```rust
+> world.find_component(root: ComponentId, selector: &str)
+> ```
+>
+> The direction is to make the root **part of the query** — either embedded in the
+> selector string, or as a field in a `ComponentQuery` struct — so the same query value
+> can be passed around, stored, and executed in different contexts (world, MMS file,
+> REPL):
+>
+> ```rust
+> // Proposed query struct — root + selector together
+> struct ComponentQuery {
+>     root: QueryRoot,
+>     selector: String,   // or a parsed Selector value
+> }
+>
+> enum QueryRoot {
+>     Component(ComponentId),                         // live world
+>     MmsFile { path: String, index: Option<usize> }, // MMS file, optional CE index
+>     Implicit,                                       // caller supplies root at execution time
+> }
+> ```
+>
+> The string representation of a rooted query (for editor/REPL/MMS use):
+>
+> ```text
+> // Root by component name (within an already-known subtree):
+> [name='avatar_root'] [name='J_Bip_L_Hand']
+>
+> // Root pinned to a specific MMS file emission index:
+> "scene.mms"[0] [name='torso'] .transform
+>
+> // Root by GUID (stable across sessions, editor use):
+> #550e8400-e29b-41d4-a716-446655440000 [name='spine']
+> ```
+>
+> An `Implicit` root means "the caller provides the root when executing the query" —
+> this is the current API behaviour and remains valid for programmatic use where a
+> `ComponentId` is already in scope.
+>
+> ### Why this matters
+>
+> - A query written in an MMS script (`"scene.mms"[0] .transform`) is structurally
+>   identical to a query run against the live world — only the root type differs.
+> - Editor tools, REPL commands, and MMS scripts can share the same selector parser and
+>   evaluator. Only the root resolver branch changes.
+> - Queries become first-class values: storable in variables, passed to functions,
+>   serialized to disk.
+>
+> This is a **design direction**, not yet implemented. The rest of this doc specifies
+> the selector grammar; the root encoding is an open design question (§17).
+
+---
+
 ## 1. Current state
 
 Today the publicly encouraged read-only query surface is very small:
@@ -527,6 +597,79 @@ Example future REPL command:
 find [name='J_Bip_L_Lower_Arm']
 find-all .transform > .renderable
 ```
+
+---
+
+## 17. Root encoding — open design question
+
+See §0 for context. The question is: what is the string syntax for a self-contained,
+rooted query that works across both the live world and MMS file contexts?
+
+Options:
+
+### Option A: Root as a leading token in the selector string
+
+```text
+"scene.mms"[0] [name='torso'] .transform   // MMS file root
+#<guid> [name='spine']                      // world root by GUID
+```
+
+**Pros:** single string, no extra API surface.
+**Cons:** parser must handle two different leading token types; `"..."` already means
+something in MMS.
+
+### Option B: `ComponentQuery` struct with explicit root field
+
+```rust
+ComponentQuery::new(QueryRoot::MmsFile { path: "scene.mms", index: Some(0) }, "[name='torso'] .transform")
+ComponentQuery::new(QueryRoot::Component(id), "[name='spine']")
+```
+
+**Pros:** clean separation of root and selector; typed, no parsing ambiguity.
+**Cons:** less ergonomic for one-liners; not naturally writable in MMS syntax.
+
+### Option C: Method call on a loaded/resolved root
+
+```mms
+load("scene.mms")[0].query("[name='torso'] .transform")
+universe.root(avatar_id).query("[name='spine']")
+```
+
+**Pros:** feels natural in MMS and in Rust; root and selector are clearly separate;
+the loaded module is already the root, no encoding needed.
+**Cons:** two-step for ad-hoc cases.
+
+**Leaning:** Option C for the primary API; Option B as the underlying struct that
+`.query(...)` constructs. Option A (string-embedded root) probably only for
+editor/REPL serialization where a query needs to be a bare string.
+
+### Root is always optional at the selector level
+
+When the context already implies a root (a live `ComponentId`, an open MMS module, the
+current scene), the root specifier can simply be omitted — the selector string is just
+the CSS-like part:
+
+```text
+// No root prefix — caller supplies root:
+[name='J_Bip_L_Hand']
+.transform > .renderable
+
+// With explicit root for a world component (GUID-based):
+#550e8400-e29b-41d4-a716-446655440000 [name='spine']
+
+// With explicit root for an MMS file:
+"scene.mms"[0] [name='torso'] .transform
+"scene.mms" .transform           // root = whole file's emission sequence
+```
+
+The rule: **if the query string starts with `"..."` it is an MMS file root; if it
+starts with `#<guid>` it is a world-component root; otherwise the root is `Implicit`
+and must be provided by the call site.** Internal / live-world queries almost always
+use `Implicit` — the caller already has a `ComponentId` in scope and passes it
+separately (or via `.query(...)` on a resolved handle).
+
+This keeps the common case (`world.query(id, "[name='foo']")`) clean while allowing
+fully self-contained queries when needed.
 
 ---
 

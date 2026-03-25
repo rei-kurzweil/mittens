@@ -2,6 +2,70 @@
 
 use cat_engine::engine::{self, ecs::component::{ColorComponent, TextBackgroundComponent, TextShadowComponent}};
 
+/// Standard MMS demo scene rig: dark-blue background, navigable camera, and three
+/// coloured point lights (cyan, magenta, yellow) arranged around the scene.
+///
+/// Returns the camera `TransformComponent` id so callers can attach things to it.
+///
+/// `cam_pos` — world-space starting position of the camera.
+pub fn spawn_mms_demo_rig(
+    universe: &mut engine::Universe,
+    cam_pos: [f32; 3],
+) -> engine::ecs::ComponentId {
+    use engine::ecs::component::{
+        BackgroundColorComponent, Camera3DComponent, InputComponent,
+        InputTransformModeComponent, PointLightComponent, TransformComponent,
+    };
+
+    // Dark blue clear colour.
+    let bg_color = universe
+        .world
+        .add_component(BackgroundColorComponent::rgba(0.02, 0.03, 0.10, 1.0));
+    universe.add(bg_color);
+
+    // Camera rig: Input → Transform → Camera3D.
+    let input = universe
+        .world
+        .add_component(InputComponent::new().with_speed(3.0));
+    let input_mode = universe
+        .world
+        .add_component(InputTransformModeComponent::forward_z().with_roll_axis_y());
+    let _ = universe.attach(input, input_mode);
+
+    let cam_transform = universe.world.add_component(
+        TransformComponent::new().with_position(cam_pos[0], cam_pos[1], cam_pos[2]),
+    );
+    let _ = universe.attach(input, cam_transform);
+
+    let camera = universe.world.add_component(Camera3DComponent::new());
+    let _ = universe.attach(cam_transform, camera);
+
+    universe.add(input);
+
+    spawn_desktop_camera_controls_hint(universe, cam_transform);
+
+    // Three coloured point lights.
+    let lights: &[([f32; 3], [f32; 3])] = &[
+        ([0.0, 1.0, 1.0],  [ 4.0, 5.0,  2.0]),  // cyan   — above right front
+        ([1.0, 0.0, 1.0],  [-4.0, 3.0,  4.0]),  // magenta — above left back
+        ([1.0, 1.0, 0.0],  [ 0.0, 2.0, -3.0]),  // yellow  — behind the scene
+    ];
+    for &(color, pos) in lights {
+        let light = universe.world.add_component(
+            PointLightComponent::new()
+                .with_distance(40.0)
+                .with_color(color[0], color[1], color[2]),
+        );
+        let light_tx = universe.world.add_component(
+            TransformComponent::new().with_position(pos[0], pos[1], pos[2]),
+        );
+        let _ = universe.attach(light_tx, light);
+        universe.add(light_tx);
+    }
+
+    cam_transform
+}
+
 fn hash_u32(mut x: u32) -> u32 {
     x ^= x >> 16;
     x = x.wrapping_mul(0x7feb_352d);

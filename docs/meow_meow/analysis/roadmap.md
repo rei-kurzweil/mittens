@@ -254,15 +254,35 @@ which is a separate design problem from `for`. Deferred until there is a concret
 
 ## Phase 9: Module / import system
 
-Long-horizon. Required before `.mms` files can import shared helpers.
+Long-horizon. **Implementation deferred** — the retrieval/query model needs more design
+time before committing to syntax. See [module-import-export.md](module-import-export.md).
 
-- [ ] `import "path/to/file.mms"` syntax
-- [ ] Export mechanism (`pub let` or explicit `export`)
+**Current direction:**
+- `export let` / `export fn` for named exports — almost certainly happening
+- Root CEs are implicitly positionally exported (no `export` keyword needed on bare emits)
+- Named export retrieval and CE selector queries should be **unified** — one access model,
+  not two separate mechanisms
+- `import` as a keyword may not exist, or if it does it IS the query mechanism
+- File loading returns an object where named exports, positional indices, and selector
+  results are all accessed the same way
+
+- [ ] Decide the retrieval syntax / keyword (or no keyword — function call? operator?)
+- [ ] `export` keyword + modifier on `let`/`fn`
+- [ ] `Value::Module` runtime type: `named` map + `sequence` emission list
+- [ ] Sandboxed eval context — emits collected into module sequence, not world queue
+- [ ] Positional index: `mod[n]`
+- [ ] Selector queries: `mod.query("T")`, `mod.query("[name=foo] T")`, `mod[0].query(...)`
 - [ ] Module resolution (relative paths, asset system integration)
+- [ ] Circular import detection
 
-🔷 **Design decision: import semantics**
-Does importing a file *run* it (side effects) or just bind its exports? In most authoring
-contexts you want to import helpers without triggering scene construction. Needs a doc.
+🔷 **Design decision: retrieval syntax**
+The verb/syntax for loading a file and getting things out of it — `import`, `load()`, a
+special operator — not yet decided. Must unify named-by-string, positional-by-int, and
+selector-by-string into one model.
+
+🔷 **Design decision: CE clone vs reference on index/query**
+Pre-Phase-6: clone (safe, cheap). Phase-6+ (live `ComponentObject`): needs explicit
+`.clone()` or it's a reference to an already-spawned component.
 
 ---
 
