@@ -1,4 +1,4 @@
-use crate::meow_meow::ast::expression::Span;
+use crate::meow_meow::ast::Span;
 
 // -----------------------------------------------------------------------------
 // Lexical tokens
@@ -29,6 +29,22 @@ pub enum TokenKind {
     Dot,
     Eq,
     Semicolon,
+
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    EqEq,
+    BangEq,
+    Lt,
+    Gt,
+    LtEq,
+    GtEq,
+    AmpAmp,
+    PipePipe,
+    Bang,
+    Fn,
 
     Eof,
 }

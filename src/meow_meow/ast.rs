@@ -1,11 +1,25 @@
+// All AST types in one place to avoid circular module dependencies.
+// `Expression::Function` contains `BlockStatement` which contains `Vec<Statement>` which
+// contains `Expression` — putting them in separate files would create a true circular import.
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
 }
 
+impl Span {
+    pub fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Ident(pub String);
+
+// ---------------------------------------------------------------------------
+// Expressions
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
@@ -15,9 +29,24 @@ pub enum Expression {
     Null,
     Identifier(Ident),
     Array(Vec<Expression>),
-
     Call(CallExpression),
     Component(ComponentExpression),
+    BinaryOp { op: BinOpKind, lhs: Box<Expression>, rhs: Box<Expression> },
+    UnaryOp { op: UnaryOpKind, operand: Box<Expression> },
+    Function { params: Vec<Ident>, body: BlockStatement },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BinOpKind {
+    Add, Sub, Mul, Div, Rem,
+    Eq, NotEq, Lt, Gt, LtEq, GtEq,
+    And, Or,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UnaryOpKind {
+    Neg,
+    Not,
 }
 
 /// A free-standing function call: `foo(a, b)`.
@@ -67,8 +96,38 @@ pub struct ComponentExpression {
     pub body: Vec<ComponentBodyItem>,
 }
 
-impl Span {
-    pub fn new(start: usize, end: usize) -> Self {
-        Self { start, end }
-    }
+// ---------------------------------------------------------------------------
+// Statements
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BlockStatement {
+    pub statements: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Statement {
+    Assignment(AssignmentStatement),
+    Return(ReturnStatement),
+    If(IfStatement),
+    Block(BlockStatement),
+    Expression(Expression),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssignmentStatement {
+    pub name: Ident,
+    pub value: Expression,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReturnStatement {
+    pub value: Option<Expression>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct IfStatement {
+    pub condition: Expression,
+    pub then_branch: BlockStatement,
+    pub else_branch: Option<BlockStatement>,
 }

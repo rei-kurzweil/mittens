@@ -1,9 +1,8 @@
 use std::time::{Duration, Instant};
 
-use crate::meow_meow::ast::expression::{
-    ComponentBodyItem, Expression,
+use crate::meow_meow::ast::{
+    ComponentBodyItem, Expression, Statement,
 };
-use crate::meow_meow::ast::statement::Statement;
 use crate::meow_meow::evaluator::{EvalRequest, EvalResponse, MeowMeowEvaluator};
 use crate::meow_meow::parser::MeowMeowParser;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;

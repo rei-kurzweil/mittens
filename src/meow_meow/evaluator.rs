@@ -4,8 +4,11 @@ use std::thread::{self, JoinHandle};
 use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::engine::ecs::IntentValue;
-use crate::meow_meow::ast::expression::{Expression, Ident};
-use crate::meow_meow::ast::statement::Statement;
+use crate::meow_meow::ast::{
+    BinOpKind, CallExpression, Expression, Ident, IfStatement, Statement,
+    UnaryOpKind,
+};
+use crate::meow_meow::object::Value;
 use crate::meow_meow::parser::{MeowMeowParser, ParseError};
 use crate::meow_meow::token::TokenizeError;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;
@@ -101,6 +104,8 @@ fn evaluator_thread(mut requests: Consumer<EvalRequest>, mut responses: Producer
 // Script evaluation
 // ---------------------------------------------------------------------------
 
+type Env = HashMap<String, Value>;
+
 /// Evaluate a script: parse → EmitLiftTransform → walk statements.
 /// Each `emit(ce)` call produces an `EvalResponse::Intent(SpawnComponentTree)`.
 fn eval_script(source: &str, responses: &mut Producer<EvalResponse>) {
@@ -114,138 +119,319 @@ fn eval_script(source: &str, responses: &mut Producer<EvalResponse>) {
 
     EmitLiftTransform::apply(&mut stmts);
 
-    let mut env: HashMap<String, StoredValue> = HashMap::new();
+    let env: Env = HashMap::new();
+    let mut emits: Vec<IntentValue> = Vec::new();
 
-    for stmt in &stmts {
-        match eval_stmt(stmt, &env) {
-            Ok(StmtEffect::Emit(intent)) => {
-                // Keep pushing until there's space (simple back-pressure).
-                while responses.push(EvalResponse::Intent(intent.clone())).is_err() {
-                    std::thread::yield_now();
-                }
-            }
-            Ok(StmtEffect::Bind(name, val)) => {
-                env.insert(name, val);
-            }
-            Ok(StmtEffect::None) => {}
-            Err(msg) => {
-                let _ = responses.push(EvalResponse::Error { message: msg });
-            }
+    match eval_block_stmts(&stmts, &env, &mut emits) {
+        Ok(_) => {}
+        Err(msg) => {
+            let _ = responses.push(EvalResponse::Error { message: msg });
         }
     }
-}
 
-// ---------------------------------------------------------------------------
-// Stored value (ObjectWorld v1 — flat env, no heap)
-// ---------------------------------------------------------------------------
-
-/// A value stored in the evaluator's flat variable environment.
-/// In v1, the only interesting case is a captured ComponentExpression.
-#[derive(Debug, Clone)]
-enum StoredValue {
-    /// A ComponentExpression captured via `let x = T { }`.
-    /// Not yet live in the engine — becomes a SpawnComponentTree intent when emitted.
-    ComponentExpr(Box<crate::meow_meow::ast::expression::ComponentExpression>),
-    /// Primitive (numbers, strings, bools — not yet used, but reserved for future eval).
-    #[allow(dead_code)]
-    Primitive(String),
+    for intent in emits {
+        while responses.push(EvalResponse::Intent(intent.clone())).is_err() {
+            std::thread::yield_now();
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Statement evaluation
 // ---------------------------------------------------------------------------
 
+/// Effect produced by evaluating a statement (excluding emits, which go to the emits vec).
 enum StmtEffect {
     None,
-    Emit(IntentValue),
-    Bind(String, StoredValue),
+    Bind(String, Value),
+    Return(Value),
 }
 
-fn eval_stmt(stmt: &Statement, env: &HashMap<String, StoredValue>) -> Result<StmtEffect, String> {
+/// Evaluate a block of statements in a local scope (cloned from parent env).
+/// Returns `Some(value)` if a `return` statement was hit, `None` otherwise.
+/// Emits are pushed directly to `emits`.
+fn eval_block_stmts(
+    stmts: &[Statement],
+    env: &Env,
+    emits: &mut Vec<IntentValue>,
+) -> Result<Option<Value>, String> {
+    let mut local_env = env.clone();
+    for stmt in stmts {
+        match eval_stmt(stmt, &local_env, emits)? {
+            StmtEffect::Bind(name, val) => {
+                local_env.insert(name, val);
+            }
+            StmtEffect::None => {}
+            StmtEffect::Return(val) => return Ok(Some(val)),
+        }
+    }
+    Ok(None)
+}
+
+fn eval_stmt(
+    stmt: &Statement,
+    env: &Env,
+    emits: &mut Vec<IntentValue>,
+) -> Result<StmtEffect, String> {
     match stmt {
-        Statement::Expression(expr) => eval_expr_stmt(expr, env),
         Statement::Assignment(a) => {
-            let val = capture_expr(&a.value)?;
+            let val = eval_expr(&a.value, env, emits)?;
             Ok(StmtEffect::Bind(a.name.0.clone(), val))
         }
-        Statement::Return(_) | Statement::If(_) | Statement::Block(_) => {
-            // Not yet evaluated — ignored in v1 top-level scripts.
+        Statement::Expression(expr) => {
+            eval_expr_stmt(expr, env, emits)?;
             Ok(StmtEffect::None)
+        }
+        Statement::Return(r) => {
+            let val = match &r.value {
+                Some(expr) => eval_expr(expr, env, emits)?,
+                None => Value::Null,
+            };
+            Ok(StmtEffect::Return(val))
+        }
+        Statement::If(if_stmt) => eval_if(if_stmt, env, emits),
+        Statement::Block(block) => {
+            match eval_block_stmts(&block.statements, env, emits)? {
+                Some(val) => Ok(StmtEffect::Return(val)),
+                None => Ok(StmtEffect::None),
+            }
         }
     }
 }
 
-/// Evaluate an expression in statement position.
-/// After `EmitLiftTransform`, any bare `ComponentExpression` has been wrapped as
-/// `Call("emit", [ce])`. We handle that call here.
-/// Option B: any expression that resolves to a ComponentExpr also emits.
 fn eval_expr_stmt(
     expr: &Expression,
-    env: &HashMap<String, StoredValue>,
-) -> Result<StmtEffect, String> {
-    match expr {
-        // emit(ce) — produced by EmitLiftTransform or written explicitly
-        Expression::Call(call) if call.callee == Ident("emit".into()) => {
+    env: &Env,
+    emits: &mut Vec<IntentValue>,
+) -> Result<(), String> {
+    // Special case: emit(expr) — produced by EmitLiftTransform or written explicitly.
+    if let Expression::Call(call) = expr {
+        if call.callee == Ident("emit".into()) {
             if let Some(arg) = call.args.first() {
-                return emit_expr(arg, env);
+                let val = eval_expr(arg, env, emits)?;
+                push_component_emit(val, emits);
             }
-            Ok(StmtEffect::None)
+            return Ok(());
         }
+    }
 
-        // Bare identifier — Option B: emit if it holds a ComponentExpr
-        Expression::Identifier(id) => {
-            if let Some(StoredValue::ComponentExpr(ce)) = env.get(&id.0) {
-                return Ok(StmtEffect::Emit(IntentValue::SpawnComponentTree {
-                    root: ce.clone(),
-                    parent: None,
-                }));
-            }
-            Ok(StmtEffect::None)
-        }
+    // General case: evaluate and emit if the result is a ComponentExpr.
+    let val = eval_expr(expr, env, emits)?;
+    push_component_emit(val, emits);
+    Ok(())
+}
 
-        // Any other call result — ignored in v1
-        _ => Ok(StmtEffect::None),
+fn push_component_emit(val: Value, emits: &mut Vec<IntentValue>) {
+    if let Value::ComponentExpr(ce) = val {
+        emits.push(IntentValue::SpawnComponentTree { root: ce, parent: None });
     }
 }
 
-fn emit_expr(
-    expr: &Expression,
-    env: &HashMap<String, StoredValue>,
+fn eval_if(
+    if_stmt: &IfStatement,
+    env: &Env,
+    emits: &mut Vec<IntentValue>,
 ) -> Result<StmtEffect, String> {
-    match expr {
-        Expression::Component(ce) => Ok(StmtEffect::Emit(IntentValue::SpawnComponentTree {
-            root: Box::new(ce.clone()),
-            parent: None,
-        })),
-        Expression::Identifier(id) => {
-            if let Some(StoredValue::ComponentExpr(ce)) = env.get(&id.0) {
-                Ok(StmtEffect::Emit(IntentValue::SpawnComponentTree {
-                    root: ce.clone(),
-                    parent: None,
-                }))
-            } else {
-                Err(format!("emit: '{}' is not a ComponentExpression", id.0))
-            }
+    let cond = eval_expr(&if_stmt.condition, env, emits)?;
+    if is_truthy(&cond) {
+        match eval_block_stmts(&if_stmt.then_branch.statements, env, emits)? {
+            Some(val) => Ok(StmtEffect::Return(val)),
+            None => Ok(StmtEffect::None),
         }
-        other => Err(format!("emit: cannot emit {other:?}")),
+    } else if let Some(else_branch) = &if_stmt.else_branch {
+        match eval_block_stmts(&else_branch.statements, env, emits)? {
+            Some(val) => Ok(StmtEffect::Return(val)),
+            None => Ok(StmtEffect::None),
+        }
+    } else {
+        Ok(StmtEffect::None)
     }
 }
 
-/// Capture an expression as a `StoredValue` for a `let` binding.
-fn capture_expr(expr: &Expression) -> Result<StoredValue, String> {
+// ---------------------------------------------------------------------------
+// Expression evaluation
+// ---------------------------------------------------------------------------
+
+fn eval_expr(
+    expr: &Expression,
+    env: &Env,
+    emits: &mut Vec<IntentValue>,
+) -> Result<Value, String> {
     match expr {
-        Expression::Component(ce) => Ok(StoredValue::ComponentExpr(Box::new(ce.clone()))),
-        Expression::Number(n) => Ok(StoredValue::Primitive(n.to_string())),
-        Expression::String(s) => Ok(StoredValue::Primitive(s.clone())),
-        Expression::Bool(b) => Ok(StoredValue::Primitive(b.to_string())),
-        Expression::Null => Ok(StoredValue::Primitive("null".into())),
-        other => Err(format!("let binding: cannot capture {other:?}")),
+        Expression::Null => Ok(Value::Null),
+        Expression::Bool(b) => Ok(Value::Bool(*b)),
+        Expression::Number(n) => Ok(Value::Number(*n)),
+        Expression::String(s) => Ok(Value::String(s.clone())),
+        Expression::Array(items) => {
+            let vals = items
+                .iter()
+                .map(|e| eval_expr(e, env, emits))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::Array(vals))
+        }
+        Expression::Identifier(id) => {
+            // Look up in env; fall back to bare identifier value (for enum-like flags).
+            match env.get(&id.0) {
+                Some(val) => Ok(val.clone()),
+                None => Ok(Value::Identifier(id.0.clone())),
+            }
+        }
+        Expression::Component(ce) => Ok(Value::ComponentExpr(Box::new(ce.clone()))),
+        Expression::Function { params, body } => Ok(Value::Function {
+            params: params.iter().map(|p| p.0.clone()).collect(),
+            body: body.clone(),
+            captured_env: env.clone(),
+        }),
+        Expression::Call(call) => eval_call(call, env, emits),
+        Expression::BinaryOp { op, lhs, rhs } => eval_binop(op, lhs, rhs, env, emits),
+        Expression::UnaryOp { op, operand } => eval_unaryop(op, operand, env, emits),
+    }
+}
+
+fn eval_call(
+    call: &CallExpression,
+    env: &Env,
+    emits: &mut Vec<IntentValue>,
+) -> Result<Value, String> {
+    let callee_val = match env.get(&call.callee.0) {
+        Some(v) => v.clone(),
+        None => return Err(format!("undefined: '{}'", call.callee.0)),
+    };
+
+    match callee_val {
+        Value::Function { params, body, captured_env } => {
+            let args: Vec<Value> = call
+                .args
+                .iter()
+                .map(|a| eval_expr(a, env, emits))
+                .collect::<Result<_, _>>()?;
+
+            let mut call_env = captured_env;
+            for (param, arg) in params.iter().zip(args.iter()) {
+                call_env.insert(param.clone(), arg.clone());
+            }
+
+            match eval_block_stmts(&body.statements, &call_env, emits)? {
+                Some(val) => Ok(val),
+                None => Ok(Value::Null),
+            }
+        }
+        other => Err(format!("cannot call {:?} as a function", other)),
+    }
+}
+
+fn eval_binop(
+    op: &BinOpKind,
+    lhs: &Expression,
+    rhs: &Expression,
+    env: &Env,
+    emits: &mut Vec<IntentValue>,
+) -> Result<Value, String> {
+    // Short-circuit logical ops.
+    match op {
+        BinOpKind::And => {
+            let l = eval_expr(lhs, env, emits)?;
+            if !is_truthy(&l) {
+                return Ok(Value::Bool(false));
+            }
+            let r = eval_expr(rhs, env, emits)?;
+            return Ok(Value::Bool(is_truthy(&r)));
+        }
+        BinOpKind::Or => {
+            let l = eval_expr(lhs, env, emits)?;
+            if is_truthy(&l) {
+                return Ok(Value::Bool(true));
+            }
+            let r = eval_expr(rhs, env, emits)?;
+            return Ok(Value::Bool(is_truthy(&r)));
+        }
+        _ => {}
+    }
+
+    let l = eval_expr(lhs, env, emits)?;
+    let r = eval_expr(rhs, env, emits)?;
+
+    match op {
+        BinOpKind::Add => match (l, r) {
+            (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
+            (Value::String(a), Value::String(b)) => Ok(Value::String(a + &b)),
+            (l, r) => Err(format!("type error: cannot add {:?} and {:?}", l, r)),
+        },
+        BinOpKind::Sub => match (l, r) {
+            (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a - b)),
+            (l, r) => Err(format!("type error: cannot subtract {:?} from {:?}", r, l)),
+        },
+        BinOpKind::Mul => match (l, r) {
+            (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a * b)),
+            (l, r) => Err(format!("type error: cannot multiply {:?} and {:?}", l, r)),
+        },
+        BinOpKind::Div => match (l, r) {
+            (Value::Number(a), Value::Number(b)) => {
+                if b == 0.0 {
+                    return Err("division by zero".to_string());
+                }
+                Ok(Value::Number(a / b))
+            }
+            (l, r) => Err(format!("type error: cannot divide {:?} by {:?}", l, r)),
+        },
+        BinOpKind::Rem => match (l, r) {
+            (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a % b)),
+            (l, r) => Err(format!("type error: cannot rem {:?} by {:?}", l, r)),
+        },
+        BinOpKind::Eq    => Ok(Value::Bool(values_equal(&l, &r))),
+        BinOpKind::NotEq => Ok(Value::Bool(!values_equal(&l, &r))),
+        BinOpKind::Lt    => num_cmp(l, r, |a, b| a < b),
+        BinOpKind::Gt    => num_cmp(l, r, |a, b| a > b),
+        BinOpKind::LtEq  => num_cmp(l, r, |a, b| a <= b),
+        BinOpKind::GtEq  => num_cmp(l, r, |a, b| a >= b),
+        BinOpKind::And | BinOpKind::Or => unreachable!("handled above"),
+    }
+}
+
+fn eval_unaryop(
+    op: &UnaryOpKind,
+    operand: &Expression,
+    env: &Env,
+    emits: &mut Vec<IntentValue>,
+) -> Result<Value, String> {
+    let val = eval_expr(operand, env, emits)?;
+    match op {
+        UnaryOpKind::Neg => match val {
+            Value::Number(n) => Ok(Value::Number(-n)),
+            v => Err(format!("type error: cannot negate {:?}", v)),
+        },
+        UnaryOpKind::Not => Ok(Value::Bool(!is_truthy(&val))),
     }
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+fn is_truthy(val: &Value) -> bool {
+    match val {
+        Value::Bool(b) => *b,
+        Value::Null => false,
+        _ => true,
+    }
+}
+
+fn values_equal(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Null, Value::Null)           => true,
+        (Value::Bool(a), Value::Bool(b))     => a == b,
+        (Value::Number(a), Value::Number(b)) => a == b,
+        (Value::String(a), Value::String(b)) => a == b,
+        _ => false,
+    }
+}
+
+fn num_cmp(l: Value, r: Value, f: impl Fn(f64, f64) -> bool) -> Result<Value, String> {
+    match (l, r) {
+        (Value::Number(a), Value::Number(b)) => Ok(Value::Bool(f(a, b))),
+        (l, r) => Err(format!("type error: cannot compare {:?} and {:?}", l, r)),
+    }
+}
 
 fn parse_source(source: &str) -> Result<Vec<Statement>, String> {
     let tokens = MeowMeowTokenizer::new(source)

@@ -35,6 +35,17 @@ pub enum Value {
     /// Kept distinct from `String` to preserve intent when passing
     /// enum-variant-like bare identifiers to host-defined component constructors.
     Identifier(String),
+
+    /// Unresolved component expression (pre-Phase-6 placeholder).
+    /// Captured from a `let x = ComponentType { ... }` binding or expression.
+    ComponentExpr(Box<crate::meow_meow::ast::ComponentExpression>),
+
+    /// A closure: params + body AST + captured environment snapshot.
+    Function {
+        params: Vec<String>,
+        body: crate::meow_meow::ast::BlockStatement,
+        captured_env: HashMap<String, Value>,
+    },
 }
 
 // ---------------------------------------------------------------------------

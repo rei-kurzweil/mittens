@@ -1,4 +1,4 @@
-use crate::meow_meow::ast::expression::Span;
+use crate::meow_meow::ast::Span;
 use crate::meow_meow::token::{Token, TokenKind, TokenizeError};
 
 pub struct MeowMeowTokenizer<'a> {
@@ -73,16 +73,77 @@ impl<'a> MeowMeowTokenizer<'a> {
                 self.idx += 1;
                 TokenKind::Dot
             }
-            b'=' => {
-                self.idx += 1;
-                TokenKind::Eq
-            }
             b';' => {
                 self.idx += 1;
                 TokenKind::Semicolon
             }
+            b'+' => { self.idx += 1; TokenKind::Plus }
+            b'-' => { self.idx += 1; TokenKind::Minus }
+            b'*' => { self.idx += 1; TokenKind::Star }
+            b'/' => { self.idx += 1; TokenKind::Slash }
+            b'%' => { self.idx += 1; TokenKind::Percent }
+            b'=' => {
+                self.idx += 1;
+                if self.idx < self.bytes.len() && self.bytes[self.idx] == b'=' {
+                    self.idx += 1;
+                    TokenKind::EqEq
+                } else {
+                    TokenKind::Eq
+                }
+            }
+            b'!' => {
+                self.idx += 1;
+                if self.idx < self.bytes.len() && self.bytes[self.idx] == b'=' {
+                    self.idx += 1;
+                    TokenKind::BangEq
+                } else {
+                    TokenKind::Bang
+                }
+            }
+            b'<' => {
+                self.idx += 1;
+                if self.idx < self.bytes.len() && self.bytes[self.idx] == b'=' {
+                    self.idx += 1;
+                    TokenKind::LtEq
+                } else {
+                    TokenKind::Lt
+                }
+            }
+            b'>' => {
+                self.idx += 1;
+                if self.idx < self.bytes.len() && self.bytes[self.idx] == b'=' {
+                    self.idx += 1;
+                    TokenKind::GtEq
+                } else {
+                    TokenKind::Gt
+                }
+            }
+            b'&' => {
+                self.idx += 1;
+                if self.idx < self.bytes.len() && self.bytes[self.idx] == b'&' {
+                    self.idx += 1;
+                    TokenKind::AmpAmp
+                } else {
+                    return Err(TokenizeError {
+                        message: "Expected '&&'".to_string(),
+                        span: Span::new(start, self.idx),
+                    });
+                }
+            }
+            b'|' => {
+                self.idx += 1;
+                if self.idx < self.bytes.len() && self.bytes[self.idx] == b'|' {
+                    self.idx += 1;
+                    TokenKind::PipePipe
+                } else {
+                    return Err(TokenizeError {
+                        message: "Expected '||'".to_string(),
+                        span: Span::new(start, self.idx),
+                    });
+                }
+            }
             b'"' => TokenKind::String(self.read_string()?),
-            b'-' | b'0'..=b'9' => TokenKind::Number(self.read_number()?),
+            b'0'..=b'9' => TokenKind::Number(self.read_number()?),
             _ => {
                 if is_ident_start(b) {
                     let ident = self.read_ident();
@@ -94,6 +155,7 @@ impl<'a> MeowMeowTokenizer<'a> {
                         "true" => TokenKind::True,
                         "false" => TokenKind::False,
                         "null" => TokenKind::Null,
+                        "fn" => TokenKind::Fn,
                         _ => TokenKind::Ident(ident),
                     }
                 } else {
@@ -218,9 +280,6 @@ impl<'a> MeowMeowTokenizer<'a> {
 
     fn read_number(&mut self) -> Result<f64, TokenizeError> {
         let start = self.idx;
-        if self.bytes[self.idx] == b'-' {
-            self.idx += 1;
-        }
         while self.idx < self.bytes.len() {
             match self.bytes[self.idx] {
                 b'0'..=b'9' => self.idx += 1,
@@ -266,5 +325,5 @@ fn is_ident_start(b: u8) -> bool {
 }
 
 fn is_ident_continue(b: u8) -> bool {
-    is_ident_start(b) || matches!(b, b'0'..=b'9' | b'-')
+    is_ident_start(b) || matches!(b, b'0'..=b'9')
 }

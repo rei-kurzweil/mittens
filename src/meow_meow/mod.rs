@@ -8,9 +8,11 @@ pub mod token;
 pub mod tokenizer;
 pub mod transform;
 
-pub use ast::{expression::{
-    CallExpression, ComponentBodyItem, ComponentExpression, ConstructorCall, Expression, Ident, Span,
-}, statement::*};
+pub use ast::{
+    AssignmentStatement, BinOpKind, BlockStatement, CallExpression, ComponentBodyItem,
+    ComponentExpression, ConstructorCall, Expression, Ident, IfStatement, ReturnStatement,
+    Span, Statement, UnaryOpKind,
+};
 pub use evaluator::*;
 pub use runner::*;
 pub use object::*;

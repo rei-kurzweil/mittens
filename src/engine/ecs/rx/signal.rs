@@ -171,7 +171,7 @@ pub enum IntentValue {
     /// Spawn a component tree described by a MMS `ComponentExpression` and optionally attach
     /// it to a parent. If `parent` is `None` the root becomes a world root (`universe.add`).
     SpawnComponentTree {
-        root: Box<crate::meow_meow::ast::expression::ComponentExpression>,
+        root: Box<crate::meow_meow::ast::ComponentExpression>,
         parent: Option<ComponentId>,
     },
     Print {

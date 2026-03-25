@@ -1,6 +1,5 @@
 /// AstTransform passes applied between parsing and evaluation.
-use crate::meow_meow::ast::expression::{CallExpression, Expression, Ident};
-use crate::meow_meow::ast::statement::{BlockStatement, IfStatement, Statement};
+use crate::meow_meow::ast::{BlockStatement, CallExpression, Expression, Ident, IfStatement, Statement};
 
 // ---------------------------------------------------------------------------
 // EmitLiftTransform
@@ -35,16 +34,18 @@ fn lift_stmt(stmt: &mut Statement) {
                     callee: Ident("emit".into()),
                     args: vec![inner],
                 });
+            } else if let Expression::Function { body, .. } = expr {
+                lift_block(body);
             }
-            // Recurse into sub-expressions that contain blocks (not needed for v1,
-            // but keeps the transform complete for if/closure bodies).
+        }
+        Statement::Assignment(a) => {
+            if let Expression::Function { body, .. } = &mut a.value {
+                lift_block(body);
+            }
         }
         Statement::Block(block) => lift_block(block),
         Statement::If(if_stmt) => lift_if(if_stmt),
-        Statement::Assignment(_) | Statement::Return(_) => {
-            // Component expressions on the RHS of let or in return are NOT lifted —
-            // they become ComponentObject values (Option B: captured, not emitted).
-        }
+        Statement::Return(_) => {}
     }
 }
 

@@ -27,7 +27,7 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::graphics::CameraTarget;
-use crate::meow_meow::ast::expression::{ComponentBodyItem, ComponentExpression, Expression};
+use crate::meow_meow::ast::{ComponentBodyItem, ComponentExpression, Expression, UnaryOpKind};
 use crate::meow_meow::token::expand_component_shortform;
 
 // ---------------------------------------------------------------------------
@@ -114,7 +114,16 @@ fn eval_literal(expr: &Expression) -> Result<Value, String> {
             let vals: Result<Vec<_>, _> = items.iter().map(eval_literal).collect();
             Ok(Value::Array(vals?))
         }
-        Expression::Component(_) | Expression::Call(_) => {
+        // Unary minus on a number literal: handles `-0.45` which now tokenizes as Minus Number(0.45)
+        Expression::UnaryOp { op: UnaryOpKind::Neg, operand } => {
+            if let Expression::Number(n) = operand.as_ref() {
+                Ok(Value::F32(-*n as f32))
+            } else {
+                Err("component constructor args: unary minus only supported on number literals".into())
+            }
+        }
+        Expression::Component(_) | Expression::Call(_) | Expression::BinaryOp { .. }
+        | Expression::UnaryOp { .. } | Expression::Function { .. } => {
             Err("complex expression in constructor args not supported in v1".into())
         }
     }
