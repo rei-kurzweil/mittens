@@ -6,18 +6,34 @@ Design decisions for Phase 4 of the MMS roadmap.
 
 ## Syntax
 
-Named functions are `let` bindings with a function expression on the RHS. No separate
-`fn name(args)` declaration syntax is needed — `let` covers it uniformly:
+Two equivalent forms for named functions:
 
 ```mms
-let make_cube = fn(r, g, b) {
-    R.cube() { C.rgba(r, g, b, 1.0) }
+// Recommended — matches most scripting languages; reads clearly as a declaration
+fn make_cube(r, g, b) {
+    R { CUBE; C.rgba(r, g, b, 1.0) }
 }
+
+// Also valid — `let` binding of a function expression; same semantics
+let make_cube = fn(r, g, b) {
+    R { CUBE; C.rgba(r, g, b, 1.0) }
+}
+
 make_cube(1, 0, 0)
 ```
 
-A `fn name(args) { }` shorthand at the top level could be added as sugar later, but `let`
-is the canonical form and sufficient for v1.
+`fn name(args) { }` is sugar for `let name = fn(args) { }`. Both produce the same
+`Value::Function` bound to the same name. The `fn` declaration form is preferred for
+top-level named functions — it reads as a declaration rather than an assignment, and
+it pairs cleanly with call-style handler registration:
+
+```mms
+fn on_press() { ... }
+
+let button = T { R { Raycastable; GestureStart(on_press) } }
+```
+
+The `let` form is preferred for anonymous or higher-order functions passed inline.
 
 ---
 
