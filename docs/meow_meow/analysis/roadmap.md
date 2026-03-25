@@ -142,43 +142,48 @@ v1 doesn't need this but the AST should leave room for it.
 
 ---
 
-## Phase 5: Arrays and `for` loops
+## Phase 5: `for`/`in` loop with `range(n)`, `break`, `continue`
+
+**Scope decision:** Phase 5 implements exactly one loop construct — `for x in iterable { }`.
+No `while`, no `loop`, no `..` range syntax. `while` and mutable loop variables are deferred
+to Phase 8 (they require `var` / mutable bindings, which is a separate design problem).
+`break` and `continue` are included in Phase 5 since they are needed for `for` to be useful.
 
 **What's missing from tokenizer:**
 - [ ] `for` keyword token
-- [ ] `in` keyword token (or treat as ident?)
+- [ ] `in` keyword token
+- [ ] `break` keyword token
+- [ ] `continue` keyword token
 
 **What's missing from AST:**
 - [ ] `Statement::ForIn { binding: Ident, iterable: Expression, body: BlockStatement }`
+- [ ] `Statement::Break`
+- [ ] `Statement::Continue`
 
 **What already exists:**
 - `Expression::Array(Vec<Expression>)` — in AST ✅
 - `TokenKind::LBracket` / `RBracket` — in tokenizer ✅
-- Array literal parsing — check parser (likely partial)
+- Array literal parsing in parser ✅
+- `Value::Array(Vec<Value>)` — in object.rs ✅
+- `eval_expr` for `Expression::Array` — in evaluator ✅
+- Unwind mechanism (`StmtEffect::Return`) — already used by `return` ✅
 
 **What's missing from evaluator:**
-- [ ] `Value::Array(Vec<Value>)` — currently `StoredValue::Primitive` for everything
-      non-component
-- [ ] `eval_expr` for `Expression::Array` → evaluate each element
-- [ ] Iterate `Value::Array` in `Statement::ForIn`
-- [ ] `range(n)` builtin or `0..n` syntax for numeric iteration
+- [ ] `StmtEffect::Break` and `StmtEffect::Continue` variants
+- [ ] `eval_stmt` arm for `Statement::ForIn` — iterate, bind, eval body, catch Break/Continue
+- [ ] `eval_stmt` arms for `Statement::Break` and `Statement::Continue`
+- [ ] `range(n)` builtin in `eval_call`: `range(n)` → `Value::Array([0..n])`,
+      `range(start, end)` → `Value::Array([start..end])`
 
 **Checklist:**
-- [ ] Add `For`, `In` tokens
-- [ ] Add `Statement::ForIn` to AST
-- [ ] Parse `for x in expr { body }`
-- [ ] Implement array eval + for-in eval
-- [ ] Tests: `for x in [1, 2, 3]`, emit in a loop, nested for
-
-🔷 **Design decision: `range()` builtin vs `0..n` syntax**
-Numeric iteration is essential (`for i in range(10)`). Options: `range(n)` builtin
-returning an array-like; `0..n` range syntax (needs new `DotDot` token and `Range`
-expression); `[0, 1, 2, ...]` is unwieldy. Most likely: `range(n)` as a builtin first.
-
-🔷 **Design decision: `break`/`continue`**
-Needed for useful loops. Requires unwind mechanism through the evaluator (similar to
-`return`). Adds `Break`/`Continue` tokens and statement variants. Can be deferred past
-initial for-loop support but should be planned.
+- [ ] Add `For`, `In`, `Break`, `Continue` tokens to `token.rs` and `tokenizer.rs`
+- [ ] Add `Statement::ForIn`, `Statement::Break`, `Statement::Continue` to `ast.rs`
+- [ ] Parse `for x in expr { body }`, `break`, `continue` in `parser.rs`
+- [ ] Add `StmtEffect::Break` / `StmtEffect::Continue` to evaluator
+- [ ] Implement `eval_stmt` for ForIn, Break, Continue
+- [ ] Implement `range(n)` / `range(start, end)` builtin in `eval_call`
+- [ ] Tests: `for x in [1, 2, 3]`, `for i in range(10)`, emit in a loop, break, continue,
+      nested for, loop produces correct intent count
 
 ---
 
@@ -231,14 +236,18 @@ discussed in [signal-emission-in-mms.md](signal-emission-in-mms.md))?
 
 ---
 
-## Phase 8: `while` and `loop`
+## Phase 8: `while` and mutable bindings
 
-Lower priority than `for`. Depends on Phase 4 (functions) and Phase 2 (boolean eval).
+`while` requires mutable loop variables (`var i = 0; while i < 10 { i = i + 1 }`),
+which is a separate design problem from `for`. Deferred until there is a concrete need.
 
-- [ ] `While` token
-- [ ] `Statement::While { condition, body }`
-- [ ] Parser + evaluator for while
-- [ ] `loop { }` (infinite loop with `break`) — optional
+`break` and `continue` are already implemented in Phase 5 and will work here too.
+
+- [ ] Design decision: `var` for mutable bindings vs rebinding with `let` (see `loop-semantics.md`)
+- [ ] `While` / `Var` tokens
+- [ ] `Statement::While { condition, body }`, `Statement::VarDecl`, `Statement::Assign`
+- [ ] Parser + evaluator for while and mutable assignment
+- [ ] `loop { }` (infinite loop with `break`) — can be sugar for `while true { }`, probably not needed
 - [ ] Tests
 
 ---

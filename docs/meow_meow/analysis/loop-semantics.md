@@ -56,9 +56,8 @@ Requires a new `DotDot` (`..`) and `DotDotEq` (`..=`) token, a `Expression::Rang
 node, and a lazy iterator value (or eager materialization). Does not need `Value::Array`
 materialization.
 
-**Recommendation:** start with `range(n)` (Option A) for Phase 5 since it requires no new
-tokens and the array size is bounded by practical use (cloud puffs, bone counts, etc.).
-Add `..` syntax if lazy ranges become important.
+**Decision: `range(n)` (Option A).** No `..` syntax in Phase 5. `range(n)` and
+`range(start, end)` as builtins. `..` deferred indefinitely.
 
 ---
 
@@ -261,8 +260,8 @@ This is the most ergonomic but requires:
 For the Phase 5 cloud use case, `for i in range(n)` covers all needed iteration. `while`
 loops that require mutation can be deferred to a later phase when `var` is introduced.
 
-**Recommendation:** Phase 5 ships `for` with `range(n)` only. Defer `while` and `var`
-to Phase 8 with explicit mutable binding design.
+**Decision:** Phase 5 ships `for`/`in` with `range(n)`, `break`, and `continue` only.
+`while` and `var` deferred to Phase 8.
 
 ---
 
