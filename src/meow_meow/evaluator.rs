@@ -145,16 +145,18 @@ enum StmtEffect {
     None,
     Bind(String, Value),
     Return(Value),
+    Break,
+    Continue,
 }
 
 /// Evaluate a block of statements in a local scope (cloned from parent env).
-/// Returns `Some(value)` if a `return` statement was hit, `None` otherwise.
+/// Returns the first non-None/non-Bind effect (Return, Break, Continue), or None.
 /// Emits are pushed directly to `emits`.
 fn eval_block_stmts(
     stmts: &[Statement],
     env: &Env,
     emits: &mut Vec<IntentValue>,
-) -> Result<Option<Value>, String> {
+) -> Result<StmtEffect, String> {
     let mut local_env = env.clone();
     for stmt in stmts {
         match eval_stmt(stmt, &local_env, emits)? {
@@ -162,10 +164,10 @@ fn eval_block_stmts(
                 local_env.insert(name, val);
             }
             StmtEffect::None => {}
-            StmtEffect::Return(val) => return Ok(Some(val)),
+            effect => return Ok(effect),
         }
     }
-    Ok(None)
+    Ok(StmtEffect::None)
 }
 
 fn eval_stmt(
@@ -190,11 +192,25 @@ fn eval_stmt(
             Ok(StmtEffect::Return(val))
         }
         Statement::If(if_stmt) => eval_if(if_stmt, env, emits),
-        Statement::Block(block) => {
-            match eval_block_stmts(&block.statements, env, emits)? {
-                Some(val) => Ok(StmtEffect::Return(val)),
-                None => Ok(StmtEffect::None),
+        Statement::Block(block) => eval_block_stmts(&block.statements, env, emits),
+        Statement::Break => Ok(StmtEffect::Break),
+        Statement::Continue => Ok(StmtEffect::Continue),
+        Statement::ForIn { binding, iterable, body } => {
+            let items = match eval_expr(iterable, env, emits)? {
+                Value::Array(a) => a,
+                other => return Err(format!("for/in: expected array, got {:?}", other)),
+            };
+            for item in items {
+                let mut iter_env = env.clone();
+                iter_env.insert(binding.0.clone(), item);
+                match eval_block_stmts(&body.statements, &iter_env, emits)? {
+                    StmtEffect::None | StmtEffect::Bind(_, _) => {}
+                    StmtEffect::Return(val) => return Ok(StmtEffect::Return(val)),
+                    StmtEffect::Break => return Ok(StmtEffect::None),
+                    StmtEffect::Continue => continue,
+                }
             }
+            Ok(StmtEffect::None)
         }
     }
 }
@@ -234,15 +250,9 @@ fn eval_if(
 ) -> Result<StmtEffect, String> {
     let cond = eval_expr(&if_stmt.condition, env, emits)?;
     if is_truthy(&cond) {
-        match eval_block_stmts(&if_stmt.then_branch.statements, env, emits)? {
-            Some(val) => Ok(StmtEffect::Return(val)),
-            None => Ok(StmtEffect::None),
-        }
+        eval_block_stmts(&if_stmt.then_branch.statements, env, emits)
     } else if let Some(else_branch) = &if_stmt.else_branch {
-        match eval_block_stmts(&else_branch.statements, env, emits)? {
-            Some(val) => Ok(StmtEffect::Return(val)),
-            None => Ok(StmtEffect::None),
-        }
+        eval_block_stmts(&else_branch.statements, env, emits)
     } else {
         Ok(StmtEffect::None)
     }
@@ -293,6 +303,25 @@ fn eval_call(
     env: &Env,
     emits: &mut Vec<IntentValue>,
 ) -> Result<Value, String> {
+    // Built-in: range(n) or range(start, end)
+    if call.callee.0 == "range" {
+        let args: Vec<Value> = call
+            .args
+            .iter()
+            .map(|a| eval_expr(a, env, emits))
+            .collect::<Result<_, _>>()?;
+        let (start, end) = match args.as_slice() {
+            [Value::Number(n)] => (0.0_f64, *n),
+            [Value::Number(s), Value::Number(e)] => (*s, *e),
+            _ => return Err("range() takes 1 or 2 numeric arguments".into()),
+        };
+        let count = ((end - start).max(0.0).floor()) as usize;
+        let arr = (0..count)
+            .map(|i| Value::Number(start + i as f64))
+            .collect();
+        return Ok(Value::Array(arr));
+    }
+
     let callee_val = match env.get(&call.callee.0) {
         Some(v) => v.clone(),
         None => return Err(format!("undefined: '{}'", call.callee.0)),
@@ -312,8 +341,12 @@ fn eval_call(
             }
 
             match eval_block_stmts(&body.statements, &call_env, emits)? {
-                Some(val) => Ok(val),
-                None => Ok(Value::Null),
+                StmtEffect::Return(val) => Ok(val),
+                StmtEffect::None => Ok(Value::Null),
+                StmtEffect::Break | StmtEffect::Continue => {
+                    Err("break/continue cannot escape a function body".into())
+                }
+                StmtEffect::Bind(_, _) => Ok(Value::Null),
             }
         }
         other => Err(format!("cannot call {:?} as a function", other)),

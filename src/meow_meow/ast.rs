@@ -112,6 +112,9 @@ pub enum Statement {
     If(IfStatement),
     Block(BlockStatement),
     Expression(Expression),
+    ForIn { binding: Ident, iterable: Expression, body: BlockStatement },
+    Break,
+    Continue,
 }
 
 #[derive(Debug, Clone, PartialEq)]

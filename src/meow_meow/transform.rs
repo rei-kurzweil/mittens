@@ -46,6 +46,8 @@ fn lift_stmt(stmt: &mut Statement) {
         Statement::Block(block) => lift_block(block),
         Statement::If(if_stmt) => lift_if(if_stmt),
         Statement::Return(_) => {}
+        Statement::ForIn { body, .. } => lift_block(body),
+        Statement::Break | Statement::Continue => {}
     }
 }
 

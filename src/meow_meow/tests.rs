@@ -5,6 +5,7 @@ use crate::meow_meow::ast::{
 };
 use crate::meow_meow::evaluator::{EvalRequest, EvalResponse, MeowMeowEvaluator};
 use crate::meow_meow::parser::MeowMeowParser;
+use crate::meow_meow::runner::MeowMeowRunner;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;
 
 fn parse(src: &str) -> Vec<Statement> {
@@ -263,4 +264,136 @@ fn evaluator_thread_parses_and_responds() {
 
     assert!(got_ok, "timed out waiting for evaluator response");
     handle.shutdown_and_join();
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5: for/in, range(), break, continue
+// ---------------------------------------------------------------------------
+
+// --- parse tests ---
+
+#[test]
+fn parse_for_in_array_literal() {
+    let prog = parse("for x in [1, 2, 3] { T {} }");
+    assert_eq!(prog.len(), 1);
+    let Statement::ForIn { binding, iterable, body } = &prog[0] else { panic!() };
+    assert_eq!(binding.0, "x");
+    assert!(matches!(iterable, Expression::Array(_)));
+    assert_eq!(body.statements.len(), 1);
+}
+
+#[test]
+fn parse_for_in_range_call() {
+    let prog = parse("for i in range(10) { T {} }");
+    assert_eq!(prog.len(), 1);
+    let Statement::ForIn { binding, iterable, .. } = &prog[0] else { panic!() };
+    assert_eq!(binding.0, "i");
+    let Expression::Call(call) = iterable else { panic!() };
+    assert_eq!(call.callee.0, "range");
+    assert_eq!(call.args.len(), 1);
+}
+
+#[test]
+fn parse_break_and_continue() {
+    let prog = parse("for i in range(5) { break; continue }");
+    let Statement::ForIn { body, .. } = &prog[0] else { panic!() };
+    assert!(matches!(body.statements[0], Statement::Break));
+    assert!(matches!(body.statements[1], Statement::Continue));
+}
+
+// --- eval tests ---
+
+fn eval(src: &str) -> crate::meow_meow::runner::EvalOutput {
+    MeowMeowRunner::eval(src)
+}
+
+#[test]
+fn eval_for_in_array_emits_correct_count() {
+    // 3 elements → 3 SpawnComponentTree intents
+    let out = eval("for x in [1, 2, 3] { T {} }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 3);
+}
+
+#[test]
+fn eval_for_in_range_emits_correct_count() {
+    let out = eval("for i in range(5) { T {} }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 5);
+}
+
+#[test]
+fn eval_range_two_arg() {
+    // range(2, 5) → [2, 3, 4] → 3 intents
+    let out = eval("for i in range(2, 5) { T {} }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 3);
+}
+
+#[test]
+fn eval_break_stops_loop_early() {
+    // break after first iteration → only 1 intent despite 10-element range
+    let out = eval("for i in range(10) { T {} break }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+}
+
+#[test]
+fn eval_continue_skips_rest_of_body() {
+    // continue before second emit → only the first emit fires each iteration
+    // 3 iterations × 1 emit each = 3 intents (second T {} never reached)
+    let out = eval("for i in range(3) { T {} continue T {} }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 3);
+}
+
+#[test]
+fn eval_break_inside_if() {
+    // break inside an if branch propagates out of the loop
+    let out = eval("for i in range(10) { if i == 3.0 { break } T {} }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    // iterations 0,1,2 emit T (i==3 is the 4th iteration, 0-indexed, so 3 emits before break)
+    assert_eq!(out.intents.len(), 3);
+}
+
+#[test]
+fn eval_nested_for_loops() {
+    // outer 3 × inner 2 = 6 intents
+    let out = eval("for i in range(3) { for j in range(2) { T {} } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 6);
+}
+
+#[test]
+fn eval_break_only_exits_inner_loop() {
+    // break only exits inner loop; outer loop continues
+    // outer 3 iters, inner breaks after 1 → 3 intents
+    let out = eval("for i in range(3) { for j in range(5) { T {} break } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 3);
+}
+
+#[test]
+fn eval_for_binding_accessible_in_body() {
+    // loop variable used in condition — if it works, the loop runs 0 times after i==0 check fails
+    // range(0) → empty → 0 intents
+    let out = eval("for i in range(0) { T {} }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 0);
+}
+
+#[test]
+fn eval_return_propagates_through_for() {
+    // return inside a for loop inside a function exits the function, not just the loop
+    let out = eval(r#"
+        fn f() {
+            for i in range(10) {
+                T {}
+                return null
+            }
+        }
+        f()
+    "#);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
 }

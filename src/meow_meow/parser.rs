@@ -79,6 +79,24 @@ impl MeowMeowParser {
                 };
                 Ok(Statement::If(IfStatement { condition, then_branch, else_branch }))
             }
+            TokenKind::For => {
+                self.consume(&TokenKind::For)?;
+                let binding = self.expect_ident()?;
+                self.consume(&TokenKind::In)?;
+                let iterable = self.parse_expression()?;
+                let body = self.parse_block_statement()?;
+                Ok(Statement::ForIn { binding, iterable, body })
+            }
+            TokenKind::Break => {
+                self.bump();
+                self.try_consume(&TokenKind::Semicolon);
+                Ok(Statement::Break)
+            }
+            TokenKind::Continue => {
+                self.bump();
+                self.try_consume(&TokenKind::Semicolon);
+                Ok(Statement::Continue)
+            }
             TokenKind::LBrace => Ok(Statement::Block(self.parse_block_statement()?)),
             _ => {
                 let expr = self.parse_expression()?;

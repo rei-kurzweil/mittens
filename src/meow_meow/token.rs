@@ -45,6 +45,10 @@ pub enum TokenKind {
     PipePipe,
     Bang,
     Fn,
+    For,
+    In,
+    Break,
+    Continue,
 
     Eof,
 }

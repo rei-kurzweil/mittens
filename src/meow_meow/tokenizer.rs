@@ -155,7 +155,11 @@ impl<'a> MeowMeowTokenizer<'a> {
                         "true" => TokenKind::True,
                         "false" => TokenKind::False,
                         "null" => TokenKind::Null,
-                        "fn" => TokenKind::Fn,
+                        "fn"       => TokenKind::Fn,
+                        "for"      => TokenKind::For,
+                        "in"       => TokenKind::In,
+                        "break"    => TokenKind::Break,
+                        "continue" => TokenKind::Continue,
                         _ => TokenKind::Ident(ident),
                     }
                 } else {
