@@ -585,6 +585,10 @@ impl SystemWorld {
             .register_transform_gizmo(world, component, emit);
     }
 
+    pub fn register_normal_vis(&mut self, world: &World, component: ComponentId) {
+        self.renderable.register_normal_vis(world, component);
+    }
+
     pub fn register_editor(
         &mut self,
         world: &mut World,
@@ -984,13 +988,14 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         render_assets: &mut RenderAssets,
         uploader: &mut dyn RenderUploader,
+        queue: &mut crate::engine::ecs::CommandQueue,
     ) {
         // Ensure any imported assets are registered before renderables try to resolve meshes/textures.
         self.gltf
             .flush_imports(render_assets, &mut self.texture, uploader);
 
         self.renderable
-            .flush_pending(world, visuals, render_assets, uploader);
+            .flush_pending(world, visuals, render_assets, uploader, queue);
 
         // Must run after renderables are flushed so instance handles exist.
         self.texture.flush_pending(world, visuals, uploader);

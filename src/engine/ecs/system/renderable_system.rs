@@ -69,6 +69,13 @@ pub struct RenderableSystem {
     ///
     /// Keyed by the RenderableComponent's ComponentId.
     pending_quant_steps: HashMap<ComponentId, f32>,
+
+    /// NormalVisualisationComponents waiting for their subtree to be spawned.
+    ///
+    /// Populated by `register_normal_vis` during the intent phase.
+    /// Consumed in `flush_pending` where `RenderAssets` is available.
+    /// Tuple: (normal_vis_component_id, parent_renderable_id, base_mesh_handle, thickness)
+    pending_normal_vis: Vec<(ComponentId, ComponentId, CpuMeshHandle, f32)>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -800,6 +807,40 @@ impl RenderableSystem {
         visuals.set_preferred_window_size(settings.window_size);
     }
 
+    /// Register a `NormalVisualisationComponent` for deferred spawning.
+    ///
+    /// Called from the `RegisterNormalVis` intent handler during tick (where `World` is
+    /// available but `RenderAssets` is not). Walks up to the nearest parent
+    /// `RenderableComponent`, records its `base_mesh` handle, and queues the spawn for
+    /// `flush_pending` where mesh vertex data can be read.
+    pub fn register_normal_vis(&mut self, world: &World, component: ComponentId) {
+        use crate::engine::ecs::component::{NormalVisualisationComponent, RenderableComponent};
+
+        let Some(nv) = world.get_component_by_id_as::<NormalVisualisationComponent>(component)
+        else {
+            return;
+        };
+        let thickness = nv.thickness;
+
+        // Walk up to find the nearest ancestor RenderableComponent.
+        let mut cur = component;
+        let mut parent_renderable: Option<(ComponentId, CpuMeshHandle)> = None;
+        while let Some(p) = world.parent_of(cur) {
+            if let Some(r) = world.get_component_by_id_as::<RenderableComponent>(p) {
+                parent_renderable = Some((p, r.renderable.base_mesh));
+                break;
+            }
+            cur = p;
+        }
+
+        let Some((renderable_id, base_mesh)) = parent_renderable else {
+            return;
+        };
+
+        self.pending_normal_vis
+            .push((component, renderable_id, base_mesh, thickness));
+    }
+
     /// Register a renderable component with this system.
     ///
     /// This is also where we ensure a `VisualWorld` instance exists for it.
@@ -909,6 +950,7 @@ impl RenderableSystem {
         visuals: &mut VisualWorld,
         render_assets: &mut RenderAssets,
         uploader: &mut dyn MeshUploader,
+        queue: &mut crate::engine::ecs::CommandQueue,
     ) {
         let parse_bool_env = |name: &str| {
             std::env::var(name)
@@ -1129,6 +1171,94 @@ impl RenderableSystem {
         self.apply_pending_cutout_updates_to_registered_renderables(world, visuals);
         self.apply_pending_emissive_updates_to_registered_renderables(world, visuals);
         self.apply_pending_quant_updates_to_registered_renderables(world, visuals);
+
+        self.spawn_pending_normal_vis(world, render_assets, queue);
+    }
+
+    fn spawn_pending_normal_vis(
+        &mut self,
+        world: &mut World,
+        render_assets: &RenderAssets,
+        queue: &mut crate::engine::ecs::CommandQueue,
+    ) {
+        use crate::engine::ecs::component::{
+            ColorComponent, EmissiveComponent, NormalVisualisationComponent, RenderableComponent,
+            TransformComponent,
+        };
+        use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Renderable};
+
+        let pending = std::mem::take(&mut self.pending_normal_vis);
+        for (nv_id, _renderable_id, base_mesh, thickness) in pending {
+            // Skip if already spawned (double-init guard).
+            if let Some(nv) =
+                world.get_component_by_id_as::<NormalVisualisationComponent>(nv_id)
+            {
+                if !nv.spawned_roots.is_empty() {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+
+            let Some(cpu_mesh) = render_assets.cpu_mesh(base_mesh) else {
+                // Mesh not loaded yet — try again next frame.
+                self.pending_normal_vis
+                    .push((nv_id, _renderable_id, base_mesh, thickness));
+                continue;
+            };
+
+            let half_height = thickness * 5.0;
+            let mut spawned_roots: Vec<ComponentId> = Vec::new();
+
+            for vertex in &cpu_mesh.vertices {
+                let pos = vertex.pos;
+                let n = vertex.normal;
+
+                // Normalize the normal (defensive).
+                let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+                let n = if len > 1e-6 {
+                    [n[0] / len, n[1] / len, n[2] / len]
+                } else {
+                    [0.0, 1.0, 0.0]
+                };
+
+                // Cube center: offset half-height along the normal from the vertex.
+                let cx = pos[0] + n[0] * half_height;
+                let cy = pos[1] + n[1] * half_height;
+                let cz = pos[2] + n[2] * half_height;
+
+                // Quaternion to rotate Y-axis [0,1,0] onto the normal.
+                let quat = crate::utils::math::shortest_arc_quat([0.0, 1.0, 0.0], n);
+
+                let t_id = world.add_component(
+                    TransformComponent::new()
+                        .with_position(cx, cy, cz)
+                        .with_rotation_quat(quat)
+                        .with_scale(thickness, thickness * 10.0, thickness),
+                );
+                let r_id = world.add_component(RenderableComponent::new(Renderable::new(
+                    CpuMeshHandle::CUBE,
+                    MaterialHandle::TOON_MESH,
+                )));
+                let c_id =
+                    world.add_component(ColorComponent::rgba(0.0, 1.0, 1.0, 1.0));
+                let e_id = world.add_component(EmissiveComponent::on());
+
+                let _ = world.add_child(nv_id, t_id);
+                let _ = world.add_child(t_id, r_id);
+                let _ = world.add_child(r_id, c_id);
+                let _ = world.add_child(r_id, e_id);
+
+                world.init_component_tree(t_id, queue);
+                spawned_roots.push(t_id);
+            }
+
+            if let Some(nv) =
+                world.get_component_by_id_as_mut::<NormalVisualisationComponent>(nv_id)
+            {
+                nv.spawned_roots = spawned_roots;
+            }
+        }
     }
 }
 

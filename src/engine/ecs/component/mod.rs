@@ -28,6 +28,7 @@ pub mod emissive;
 pub mod inspector_panel;
 pub mod gesture_coord_type;
 pub mod gizmo;
+pub mod normal_visualisation;
 pub mod gltf;
 pub mod gravity;
 pub mod ik_chain;
@@ -100,6 +101,7 @@ pub use editor::EditorComponent;
 pub use editor::TransformGizmoCoordSpace;
 pub use inspector_panel::InspectorPanelComponent;
 pub use emissive::EmissiveComponent;
+pub use normal_visualisation::NormalVisualisationComponent;
 pub use gesture_coord_type::{GestureCoordType, GestureCoordTypeComponent};
 pub use gizmo::{
     TransformGizmoAxis, TransformGizmoComponent, TransformGizmoRotateComponent,

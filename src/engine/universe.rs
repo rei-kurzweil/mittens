@@ -393,6 +393,7 @@ impl Universe {
             &mut self.visuals,
             &mut self.render_assets,
             &mut self.renderer as &mut dyn graphics::RenderUploader,
+            &mut self.command_queue,
         );
 
         // Render XR (if enabled) before the window present.

@@ -21,6 +21,7 @@ for i in range(4) {
         T.position(i*1.1, 0.0, j*1.1) {
             R.cube() {
                 C.rgba(r, 0.4, 0.8, 1.0)
+                NV {}
             }
         }
     }

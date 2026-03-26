@@ -15,8 +15,8 @@ use crate::engine::ecs::component::{
     Camera3DComponent, CameraXRComponent, ClockComponent, ColorComponent, ControllerHand,
     ControllerPoseKind, ControllerXRComponent, DirectionalLightComponent, EditorComponent,
     EmissiveComponent, GLTFComponent, InputComponent, InputTransformModeComponent, InputXRComponent,
-    InspectorPanelComponent, KeyframeComponent, OpenXRComponent, SelectableComponent,
-    TextBackgroundComponent, WorldPanelComponent,
+    InspectorPanelComponent, KeyframeComponent, NormalVisualisationComponent, OpenXRComponent,
+    SelectableComponent, TextBackgroundComponent, WorldPanelComponent,
     QuatTemporalFilterComponent, RayCastComponent, RayCastMode, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TextComponent, TextShadowComponent,
     TextureFilteringComponent, TransformComponent, TransformDropComponent,
@@ -357,6 +357,13 @@ fn create_component(
             Some("print") => add!(ActionComponent::print(arg(args, 0)?.as_str()?)),
             _ => add!(ActionComponent::default()),
         },
+        "NormalVis" => {
+            let mut c = NormalVisualisationComponent::new();
+            if let Some("thickness") = ctor {
+                c = c.with_thickness(arg(args, 0)?.as_f32()?);
+            }
+            add!(c)
+        }
         other => Err(format!("unknown component type: '{other}'")),
     }
 }

@@ -427,6 +427,9 @@ pub enum IntentValue {
     RegisterTransformGizmo {
         component_ids: Vec<ComponentId>,
     },
+    RegisterNormalVis {
+        component_ids: Vec<ComponentId>,
+    },
 
     RegisterEditor {
         component_ids: Vec<ComponentId>,
@@ -560,6 +563,7 @@ impl IntentValue {
             IntentValue::RegisterAudioBufferSize { .. } => "register_audio_buffer_size",
             IntentValue::RegisterClock { .. } => "register_clock",
             IntentValue::RegisterTransformGizmo { .. } => "register_transform_gizmo",
+            IntentValue::RegisterNormalVis { .. } => "register_normal_vis",
             IntentValue::RegisterEditor { .. } => "register_editor",
             IntentValue::RegisterAction { .. } => "register_action",
 

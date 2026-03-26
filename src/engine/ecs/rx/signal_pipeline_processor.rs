@@ -119,6 +119,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterAudioBufferSize { component_ids }
             | IntentValue::RegisterClock { component_ids }
             | IntentValue::RegisterTransformGizmo { component_ids }
+            | IntentValue::RegisterNormalVis { component_ids }
             | IntentValue::RegisterEditor { component_ids }
             | IntentValue::RegisterAction { component_ids }
             | IntentValue::ScheduleAudioOp { component_ids, .. }
@@ -201,6 +202,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterAudioBufferSize { component_ids }
             | IntentValue::RegisterClock { component_ids }
             | IntentValue::RegisterTransformGizmo { component_ids }
+            | IntentValue::RegisterNormalVis { component_ids }
             | IntentValue::RegisterEditor { component_ids }
             | IntentValue::RegisterAction { component_ids }
             | IntentValue::ScheduleAudioOp { component_ids, .. }

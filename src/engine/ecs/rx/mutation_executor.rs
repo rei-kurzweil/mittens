@@ -365,6 +365,12 @@ impl RxMutationExecutor {
                 }
             }
 
+            IntentValue::RegisterNormalVis { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_normal_vis(world, component);
+                }
+            }
+
             IntentValue::ReplExec { command } => {
                 systems.queue_repl_command(command.clone());
             }
