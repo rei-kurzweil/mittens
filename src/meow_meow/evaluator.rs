@@ -5,8 +5,8 @@ use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::engine::ecs::IntentValue;
 use crate::meow_meow::ast::{
-    BinOpKind, CallExpression, Expression, Ident, IfStatement, Statement,
-    UnaryOpKind,
+    BinOpKind, CallExpression, ComponentBodyItem, ComponentExpression, ConstructorCall,
+    Expression, Ident, IfStatement, Statement, UnaryOpKind,
 };
 use crate::meow_meow::object::Value;
 use crate::meow_meow::parser::{MeowMeowParser, ParseError};
@@ -262,6 +262,69 @@ fn eval_if(
 // Expression evaluation
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// CE environment substitution
+// ---------------------------------------------------------------------------
+
+/// Convert an evaluated `Value` back to a literal `Expression` so it can be
+/// stored inside a `ComponentExpression` (which holds `Expression`, not `Value`).
+/// Non-literal values (functions, live component objects) become `Null`.
+fn value_to_expr(val: Value) -> Expression {
+    match val {
+        Value::Null => Expression::Null,
+        Value::Bool(b) => Expression::Bool(b),
+        Value::Number(n) => Expression::Number(n),
+        Value::String(s) => Expression::String(s),
+        Value::Identifier(s) => Expression::Identifier(Ident(s)),
+        Value::Array(items) => Expression::Array(items.into_iter().map(value_to_expr).collect()),
+        Value::ComponentExpr(ce) => Expression::Component(*ce),
+        _ => Expression::Null,
+    }
+}
+
+/// Evaluate an expression against the env and return a literal expression.
+/// If evaluation fails, fall back to the original expression unchanged.
+fn eval_to_literal(expr: &Expression, env: &Env, emits: &mut Vec<IntentValue>) -> Expression {
+    match eval_expr(expr, env, emits) {
+        Ok(val) => value_to_expr(val),
+        Err(_) => expr.clone(),
+    }
+}
+
+/// Recursively substitute all expressions in a ComponentExpression with their
+/// evaluated-and-literalized equivalents from the current environment. This
+/// ensures that loop variables, computed values, etc. are captured as concrete
+/// literals when the CE is emitted, rather than stored as unresolved identifiers.
+fn subst_ce(ce: &ComponentExpression, env: &Env, emits: &mut Vec<IntentValue>) -> ComponentExpression {
+    ComponentExpression {
+        component_type: ce.component_type.clone(),
+        constructor: ce.constructor.as_ref().map(|c| ConstructorCall {
+            method: c.method.clone(),
+            args: c.args.iter().map(|a| eval_to_literal(a, env, emits)).collect(),
+        }),
+        body: ce.body.iter().map(|item| subst_body_item(item, env, emits)).collect(),
+    }
+}
+
+fn subst_body_item(item: &ComponentBodyItem, env: &Env, emits: &mut Vec<IntentValue>) -> ComponentBodyItem {
+    match item {
+        ComponentBodyItem::NamedAssignment { name, value } => ComponentBodyItem::NamedAssignment {
+            name: name.clone(),
+            value: eval_to_literal(value, env, emits),
+        },
+        ComponentBodyItem::Call(call) => ComponentBodyItem::Call(CallExpression {
+            callee: call.callee.clone(),
+            args: call.args.iter().map(|a| eval_to_literal(a, env, emits)).collect(),
+        }),
+        ComponentBodyItem::Child(child_ce) => {
+            ComponentBodyItem::Child(subst_ce(child_ce, env, emits))
+        }
+        ComponentBodyItem::Positional(expr) => {
+            ComponentBodyItem::Positional(eval_to_literal(expr, env, emits))
+        }
+    }
+}
+
 fn eval_expr(
     expr: &Expression,
     env: &Env,
@@ -286,7 +349,7 @@ fn eval_expr(
                 None => Ok(Value::Identifier(id.0.clone())),
             }
         }
-        Expression::Component(ce) => Ok(Value::ComponentExpr(Box::new(ce.clone()))),
+        Expression::Component(ce) => Ok(Value::ComponentExpr(Box::new(subst_ce(ce, env, emits)))),
         Expression::Function { params, body } => Ok(Value::Function {
             params: params.iter().map(|p| p.0.clone()).collect(),
             body: body.clone(),
@@ -469,10 +532,10 @@ fn num_cmp(l: Value, r: Value, f: impl Fn(f64, f64) -> bool) -> Result<Value, St
 fn parse_source(source: &str) -> Result<Vec<Statement>, String> {
     let tokens = MeowMeowTokenizer::new(source)
         .tokenize()
-        .map_err(tokenize_err_to_string)?;
+        .map_err(|e| tokenize_err_to_string(source, e))?;
     MeowMeowParser::new(tokens)
         .parse_program()
-        .map_err(parse_err_to_string)
+        .map_err(|e| parse_err_to_string(source, e))
 }
 
 fn parse_only(source: &str) -> Result<String, String> {
@@ -480,10 +543,20 @@ fn parse_only(source: &str) -> Result<String, String> {
     Ok(format!("{stmts:#?}"))
 }
 
-fn tokenize_err_to_string(e: TokenizeError) -> String {
-    format!("tokenize error at {}..{}: {}", e.span.start, e.span.end, e.message)
+fn byte_offset_to_line_col(source: &str, offset: usize) -> (usize, usize) {
+    let offset = offset.min(source.len());
+    let before = &source[..offset];
+    let line = before.bytes().filter(|&b| b == b'\n').count() + 1;
+    let col = before.rfind('\n').map(|p| offset - p).unwrap_or(offset + 1);
+    (line, col)
 }
 
-fn parse_err_to_string(e: ParseError) -> String {
-    format!("parse error near token #{}: {}", e.token_index, e.message)
+fn tokenize_err_to_string(source: &str, e: TokenizeError) -> String {
+    let (line, col) = byte_offset_to_line_col(source, e.span.start);
+    format!("tokenize error at {}:{}: {}", line, col, e.message)
+}
+
+fn parse_err_to_string(source: &str, e: ParseError) -> String {
+    let (line, col) = byte_offset_to_line_col(source, e.span.start);
+    format!("parse error at {}:{}: {}", line, col, e.message)
 }

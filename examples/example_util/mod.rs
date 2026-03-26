@@ -2,8 +2,9 @@
 
 use cat_engine::engine::{self, ecs::component::{ColorComponent, TextBackgroundComponent, TextShadowComponent}};
 
-/// Standard MMS demo scene rig: dark-blue background, navigable camera, and three
-/// coloured point lights (cyan, magenta, yellow) arranged around the scene.
+/// Standard MMS demo scene rig: dark-blue background and navigable camera.
+///
+/// Lights should be declared in MMS, not spawned here.
 ///
 /// Returns the camera `TransformComponent` id so callers can attach things to it.
 ///
@@ -14,7 +15,7 @@ pub fn spawn_mms_demo_rig(
 ) -> engine::ecs::ComponentId {
     use engine::ecs::component::{
         BackgroundColorComponent, Camera3DComponent, InputComponent,
-        InputTransformModeComponent, PointLightComponent, TransformComponent,
+        InputTransformModeComponent, TransformComponent,
     };
 
     // Dark blue clear colour.
@@ -43,25 +44,6 @@ pub fn spawn_mms_demo_rig(
     universe.add(input);
 
     spawn_desktop_camera_controls_hint(universe, cam_transform);
-
-    // Three coloured point lights.
-    let lights: &[([f32; 3], [f32; 3])] = &[
-        ([0.0, 1.0, 1.0],  [ 4.0, 5.0,  2.0]),  // cyan   — above right front
-        ([1.0, 0.0, 1.0],  [-4.0, 3.0,  4.0]),  // magenta — above left back
-        ([1.0, 1.0, 0.0],  [ 0.0, 2.0, -3.0]),  // yellow  — behind the scene
-    ];
-    for &(color, pos) in lights {
-        let light = universe.world.add_component(
-            PointLightComponent::new()
-                .with_distance(40.0)
-                .with_color(color[0], color[1], color[2]),
-        );
-        let light_tx = universe.world.add_component(
-            TransformComponent::new().with_position(pos[0], pos[1], pos[2]),
-        );
-        let _ = universe.attach(light_tx, light);
-        universe.add(light_tx);
-    }
 
     cam_transform
 }

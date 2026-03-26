@@ -298,6 +298,28 @@ emission without the runtime Option B check.
 - [ ] Static analysis pass (or just a type-checking evaluator mode)
 - [ ] Update `EmitLiftTransform` to use static return type info when available
 
+### ⚑ Static call validation against component method definitions
+
+The type system is also the right place to validate **call expressions against the method
+signatures they target**. Currently, argument count and type errors in component constructor
+calls and body method calls are caught at spawn time (main thread, `component_registry.rs`)
+and surfaced as `[SpawnComponentTree] error:` log lines. This is late and requires the engine
+to be running.
+
+Once the type system can resolve the component type of a CE (i.e. knows that `T.position(...)`
+refers to `TransformComponent`), a static analysis pass can consult a **method signature table**
+(mapping component type → method name → `(arity, [ArgType])`) and report arity/type mismatches
+as parse-time or pre-spawn errors. This gives the author immediate feedback without needing to
+run the scene.
+
+The method signature table should be the single source of truth shared by:
+- The static validator (MMS compile step)
+- The component registry (runtime fallback, for dynamic/unknown types)
+- IDE tooling / autocomplete (future)
+
+Until Phase 10 lands, argument count errors are caught at spawn time via `arg(args, i)?` in the
+registry returning `Err(String)` rather than panicking.
+
 ---
 
 ## Dependency graph

@@ -18,6 +18,43 @@
 - **Worker thread** (evaluator): parse + transform + produce `IntentValue` objects. No direct world mutation.
 - **Main thread** (engine): executes `SpawnComponentTree` intents via the normal signal drain path.
 
+## Environment capture at point of emission
+
+A `ComponentExpression` is an **AST value** — it stores `Expression` nodes (not
+evaluated `Value`s) in its constructor args and body items. This creates a fundamental
+problem for loop variables and function arguments:
+
+```mms
+for i in range(4) {
+    T.position(i, 0.0, 0.0) { R.cube() {} }
+}
+```
+
+Without capture, the CE would store `Expression::Identifier("i")` in its position
+args. The `SpawnComponentTree` intent carries that CE to the engine main thread, where
+`component_registry::spawn_tree()` evaluates the args — but at that point the evaluator
+env that held `i=2.0` is **gone**. The registry sees `Value::Identifier("i")`, can't
+convert it to `f32`, and the cube fails to spawn.
+
+**The fix:** `eval_expr` for `Expression::Component(ce)` runs `subst_ce(ce, env)` before
+wrapping the CE in `Value::ComponentExpr`. This walks the entire CE tree — constructor
+args, body items, nested child CEs — evaluating each sub-expression against the current
+env and converting the result back to a literal `Expression`. The env is **captured at
+the point of emission**, identical to how closures capture `captured_env`.
+
+Context-by-context:
+
+| Context | Behaviour |
+|---------|-----------|
+| Free-standing `T.position(1, 0, 0) {}` | Args already literals; substitution is a no-op |
+| CE inside a `for` loop | Each iteration's loop variable value baked into that iteration's CE |
+| CE inside a function body | Function args baked in when the CE is evaluated during the call |
+| `let x = T.position(i, 0, 0) {}` | Substitution happens at the `let` site; `i` captured at definition, not at re-emit |
+
+This is the **evaluator thread**'s responsibility. The component registry (main thread)
+receives CEs whose expressions are all literals — it has no access to MMS env and
+should not need it.
+
 ## Component registry
 
 `spawn_tree` in `component_registry.rs` dispatches on `component_type` string → concrete component constructor. Supported builtins do not require `RenderAssets` — all builtin mesh shapes (`cube`, `circle2d`, `sphere`, `triangle`, `square`, `tetrahedron`) use static `CpuMeshHandle` constants that are pre-indexed at engine init. `RenderAssets` would only be needed for dynamic/custom mesh registration, which would go through dedicated intents (e.g. `RegisterGLTF`) rather than `spawn_tree`.

@@ -8,35 +8,40 @@ Phase 9 sketch. Implementation deferred — see §0 for the current design direc
 
 > **Not implementing yet.** Capturing design intent while it's fresh.
 
-### What we're fairly sure about
+### v1 module design — decided
 
-- **`export` keyword exists.** `export let foo = 256` and `export fn make_grid(n) { }` make
-  named things retrievable from a file. Any value type — number, function, CE — can be exported.
-- **Root CEs are implicitly positionally exported.** Every top-level emit in a file gets a
-  numeric index (0, 1, 2, ...) automatically, with no `export` keyword needed.
-- **The selector/query system and the named-export retrieval system should be unified,
-  not two separate mechanisms.** Getting a named export and querying a CE subtree by
-  selector are the same operation — you're retrieving things from a file by some key.
+- **No `export` keyword.** All top-level `let` bindings and `fn` definitions are
+  automatically exported by name. There is no private/public distinction in v1 — if it's
+  at the root of a file, it's available to importers. This is analogous to Python modules:
+  everything at module scope is accessible.
 
-### What is open
-
-- **`import` keyword may not exist.** If the retrieval operation is unified with querying,
-  a separate `import` keyword that creates bindings is potentially redundant or at odds with
-  the query model. The verb for loading a file and retrieving things from it hasn't been decided.
-- **If `import` does exist**, it should BE the query mechanism — not a separate binding form
-  that you then query on top of. There shouldn't be two different mental models for
-  "get a named value from a file" and "search a file's CE tree by selector."
-- **Unification example sketch** (syntax not decided):
   ```mms
-  // named export — same mechanism as positional/selector:
-  load("parts.mms").pi             // export let pi = 3.14
-  load("parts.mms")[0]             // first root CE
-  load("parts.mms").query("T")     // all T-type CEs in the file
-  load("parts.mms")[0].query("[name=foo] T")  // selector within first root CE
+  // math.mms — no export keyword needed
+  let pi = 3.14159265358979
+  fn lerp(a, b, t) { return a + (b - a) * t }
   ```
-  The key property: one object, one access model. Named exports are just entries in
-  that object reachable by string key, same as positional entries are reachable by
-  integer key, same as selector queries return arrays of entries.
+
+- **Root CEs are implicitly positionally exported.** Every top-level emit gets a numeric
+  index (0, 1, 2, ...) automatically. Named lets that hold CEs are also in the named map.
+
+- **Import by name.** The importer pulls named bindings by name:
+
+  ```mms
+  import { pi, lerp } from "math.mms"
+  let mid = lerp(0.0, 1.0, 0.5)
+  ```
+
+- **The selector/query system and named retrieval are unified** — one object, one access
+  model. Named exports are string-keyed entries in the same module object whose positional
+  entries are integer-keyed and whose subtrees are selector-queryable.
+
+### What remains open for later versions
+
+- **Explicit `export` keyword** may be added later as an opt-in visibility gate
+  (e.g. `export let` = public, bare `let` = file-private). Not in v1.
+- **`import` keyword syntax** — whether `import { x } from "f.mms"` or `load("f.mms").x`
+  is the canonical form. Both may coexist. See §4.
+- **Re-export** (`export { foo } from "..."`) — deferred.
 
 The rest of this doc is the design exploration that led here. Treat it as background
 and options, not a finalized spec.
@@ -87,14 +92,24 @@ CE AST** — no live world required. The selector grammar is a superset.
 
 ### 3.1 Named exports
 
+> **v1:** No `export` keyword. All top-level `let` and `fn` are exported automatically.
+
 ```mms
-export let red_cube = R.cube() { C.rgba(1, 0, 0, 1) }
-export fn make_grid(n, color) { ... }
-export let pi = 3.14159
+// v1 — everything at root scope is exported implicitly:
+let red_cube = R.cube() { C.rgba(1, 0, 0, 1) }
+fn make_grid(n, color) { ... }
+let pi = 3.14159
 ```
 
-`export` is a prefix modifier on `let` and `fn`. The distinction between `let` and
-`export let` is purely visibility — evaluation is identical.
+A future `export` keyword (v2+) would allow file-private `let` bindings by making `export`
+opt-in — only `export let` / `export fn` would be visible to importers, bare `let` would be
+file-private. Not in v1.
+
+```mms
+// v2+ sketch (not decided):
+export let red_cube = R.cube() { C.rgba(1, 0, 0, 1) }  // public
+let scratch = 42                                          // file-private
+```
 
 ### 3.2 Implicit positional export
 

@@ -10,12 +10,13 @@
 /// Unknown type names or unrecognised methods produce an error string; the executor logs
 /// them and continues rather than panicking.
 use crate::engine::ecs::component::{
-    AmbientLightComponent, AvatarBodyYawComponent, AvatarControlComponent, BackgroundColorComponent, BackgroundComponent, Camera3DComponent,
-    CameraXRComponent, ColorComponent, ControllerHand, ControllerPoseKind,
-    ControllerXRComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent,
-    GLTFComponent, InputComponent, InputTransformModeComponent, InputXRComponent,
-    InspectorPanelComponent, OpenXRComponent, SelectableComponent, TextBackgroundComponent,
-    WorldPanelComponent,
+    ActionComponent, AmbientLightComponent, AnimationComponent, AnimationState,
+    AvatarBodyYawComponent, AvatarControlComponent, BackgroundColorComponent, BackgroundComponent,
+    Camera3DComponent, CameraXRComponent, ClockComponent, ColorComponent, ControllerHand,
+    ControllerPoseKind, ControllerXRComponent, DirectionalLightComponent, EditorComponent,
+    EmissiveComponent, GLTFComponent, InputComponent, InputTransformModeComponent, InputXRComponent,
+    InspectorPanelComponent, KeyframeComponent, OpenXRComponent, SelectableComponent,
+    TextBackgroundComponent, WorldPanelComponent,
     QuatTemporalFilterComponent, RayCastComponent, RayCastMode, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TextComponent, TextShadowComponent,
     TextureFilteringComponent, TransformComponent, TransformDropComponent,
@@ -167,6 +168,15 @@ impl Value {
 }
 
 // ---------------------------------------------------------------------------
+// Argument helpers
+// ---------------------------------------------------------------------------
+
+/// Safe indexed argument access — returns a descriptive error instead of panicking.
+fn arg(args: &[Value], i: usize) -> Result<&Value, String> {
+    args.get(i).ok_or_else(|| format!("expected at least {} arg(s), got {}", i + 1, args.len()))
+}
+
+// ---------------------------------------------------------------------------
 // Component creation
 // ---------------------------------------------------------------------------
 
@@ -192,7 +202,7 @@ fn create_component(
         }
         "Color" => match ctor {
             Some("rgba") => add!(ColorComponent::rgba(
-                args[0].as_f32()?, args[1].as_f32()?, args[2].as_f32()?, args[3].as_f32()?
+                arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?, arg(args, 3)?.as_f32()?
             )),
             _ => add!(ColorComponent::new()),
         },
@@ -208,13 +218,13 @@ fn create_component(
         "Background" => add!(BackgroundComponent::new()),
         "BackgroundColor" => match ctor {
             Some("rgba") => add!(BackgroundColorComponent::rgba(
-                args[0].as_f32()?, args[1].as_f32()?, args[2].as_f32()?, args[3].as_f32()?
+                arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?, arg(args, 3)?.as_f32()?
             )),
             _ => add!(BackgroundColorComponent::new()),
         },
         "AmbientLight" => match ctor {
             Some("rgb") => add!(AmbientLightComponent::rgb(
-                args[0].as_f32()?, args[1].as_f32()?, args[2].as_f32()?
+                arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?
             )),
             _ => add!(AmbientLightComponent::new()),
         },
@@ -227,7 +237,7 @@ fn create_component(
         "Input" => {
             let mut c = InputComponent::new();
             if let Some("speed") = ctor {
-                c = c.with_speed(args[0].as_f32()?);
+                c = c.with_speed(arg(args, 0)?.as_f32()?);
             }
             add!(c)
         }
@@ -254,13 +264,13 @@ fn create_component(
         },
         "ControllerXR" => match ctor {
             Some("new") => {
-                let _enabled = args[0].as_bool()?;
-                let hand = match args[1].as_str()? {
+                let _enabled = arg(args, 0)?.as_bool()?;
+                let hand = match arg(args, 1)?.as_str()? {
                     "Left" => ControllerHand::Left,
                     "Right" => ControllerHand::Right,
                     s => return Err(format!("unknown ControllerHand: {s}")),
                 };
-                let pose = match args[2].as_str()? {
+                let pose = match arg(args, 2)?.as_str()? {
                     "Aim" => ControllerPoseKind::Aim,
                     "Grip" => ControllerPoseKind::Grip,
                     s => return Err(format!("unknown ControllerPoseKind: {s}")),
@@ -280,19 +290,19 @@ fn create_component(
         "TransformSampleAncestor" => {
             let mut c = TransformSampleAncestorComponent::new();
             if let Some("skip") = ctor {
-                c = c.with_skip(args[0].as_f32()? as usize);
+                c = c.with_skip(arg(args, 0)?.as_f32()? as usize);
             }
             add!(c)
         }
         "QuatTemporalFilter" => {
             let mut c = QuatTemporalFilterComponent::new();
             if let Some("smoothing_factor") = ctor {
-                c = c.with_smoothing_factor(args[0].as_f32()?);
+                c = c.with_smoothing_factor(arg(args, 0)?.as_f32()?);
             }
             add!(c)
         }
         "GLTF" => match ctor {
-            Some("new") => add!(GLTFComponent::new(args[0].as_str()?)),
+            Some("new") => add!(GLTFComponent::new(arg(args, 0)?.as_str()?)),
             _ => Err("GLTF requires .new(\"uri\")".into()),
         },
         "RendererSettings" => {
@@ -323,6 +333,29 @@ fn create_component(
             Some("nearest_magnification") => add!(TextureFilteringComponent::nearest_magnification()),
             Some("nearest") => add!(TextureFilteringComponent::nearest()),
             _ => add!(TextureFilteringComponent::nearest()),
+        },
+        "Clock" => {
+            let mut c = ClockComponent::new();
+            if let Some("bpm") = ctor {
+                c = c.with_bpm(arg(args, 0)?.as_f32()? as f64);
+            }
+            add!(c)
+        }
+        "Animation" => {
+            let state = match ctor {
+                Some("playing") => AnimationState::Playing,
+                Some("paused")  => AnimationState::Paused,
+                _               => AnimationState::Looping,
+            };
+            add!(AnimationComponent::new().with_state(state))
+        }
+        "Keyframe" => match ctor {
+            Some("at") => add!(KeyframeComponent::new(arg(args, 0)?.as_f32()? as f64)),
+            _ => Err("Keyframe requires .at(beat)".into()),
+        },
+        "Action" => match ctor {
+            Some("print") => add!(ActionComponent::print(arg(args, 0)?.as_str()?)),
+            _ => add!(ActionComponent::default()),
         },
         other => Err(format!("unknown component type: '{other}'")),
     }
@@ -387,16 +420,17 @@ fn apply_call(
     // Transform builders
     if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(id) {
         match method {
-            "position" => *t = t.clone().with_position(args[0].as_f32()?, args[1].as_f32()?, args[2].as_f32()?),
-            "scale"    => *t = t.clone().with_scale(args[0].as_f32()?, args[1].as_f32()?, args[2].as_f32()?),
+            "position" => *t = t.clone().with_position(arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?),
+            "scale"    => *t = t.clone().with_scale(arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?),
+            "rotation" | "rotation_euler" => *t = t.clone().with_rotation_euler(arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?),
             _ => {}
         }
         return Ok(());
     }
     if let Some(dl) = world.get_component_by_id_as_mut::<DirectionalLightComponent>(id) {
         match method {
-            "intensity" => *dl = dl.clone().with_intensity(args[0].as_f32()?),
-            "color"     => *dl = dl.clone().with_color(args[0].as_f32()?, args[1].as_f32()?, args[2].as_f32()?),
+            "intensity" => *dl = dl.clone().with_intensity(arg(args, 0)?.as_f32()?),
+            "color"     => *dl = dl.clone().with_color(arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?),
             _ => {}
         }
         return Ok(());
@@ -411,24 +445,24 @@ fn apply_call(
     }
     if let Some(s) = world.get_component_by_id_as_mut::<RendererSettingsComponent>(id) {
         if method == "window_size" {
-            *s = s.clone().with_window_size(args[0].as_f32()? as u32, args[1].as_f32()? as u32);
+            *s = s.clone().with_window_size(arg(args, 0)?.as_f32()? as u32, arg(args, 1)?.as_f32()? as u32);
         }
         return Ok(());
     }
     if let Some(ts) = world.get_component_by_id_as_mut::<TextShadowComponent>(id) {
         match method {
             "offset_xy" => {
-                let arr = args[0].as_f32_array::<2>()?;
+                let arr = arg(args, 0)?.as_f32_array::<2>()?;
                 *ts = ts.clone().with_offset_xy(arr);
             }
-            "z_offset" => *ts = ts.clone().with_z_offset(args[0].as_f32()?),
+            "z_offset" => *ts = ts.clone().with_z_offset(arg(args, 0)?.as_f32()?),
             _ => {}
         }
         return Ok(());
     }
     if let Some(rs) = world.get_component_by_id_as_mut::<RendererStatsComponent>(id) {
         if method == "camera_target" {
-            let target = match args[0].as_str()? {
+            let target = match arg(args, 0)?.as_str()? {
                 "Xr" => CameraTarget::Xr,
                 _ => CameraTarget::Window,
             };
@@ -438,34 +472,49 @@ fn apply_call(
     }
     if let Some(qtf) = world.get_component_by_id_as_mut::<QuatTemporalFilterComponent>(id) {
         if method == "smoothing_factor" {
-            *qtf = qtf.clone().with_smoothing_factor(args[0].as_f32()?);
+            *qtf = qtf.clone().with_smoothing_factor(arg(args, 0)?.as_f32()?);
         }
         return Ok(());
     }
     if let Some(avc) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
         match method {
-            "head_bone"               => *avc = avc.clone().with_head_bone(args[0].as_str()?),
-            "left_hand_bone"          => *avc = avc.clone().with_left_hand_bone(args[0].as_str()?),
-            "right_hand_bone"         => *avc = avc.clone().with_right_hand_bone(args[0].as_str()?),
-            "initial_yaw"             => *avc = avc.clone().with_initial_yaw(args[0].as_f32()?),
+            "head_bone"               => *avc = avc.clone().with_head_bone(arg(args, 0)?.as_str()?),
+            "left_hand_bone"          => *avc = avc.clone().with_left_hand_bone(arg(args, 0)?.as_str()?),
+            "right_hand_bone"         => *avc = avc.clone().with_right_hand_bone(arg(args, 0)?.as_str()?),
+            "initial_yaw"             => *avc = avc.clone().with_initial_yaw(arg(args, 0)?.as_f32()?),
             "forward_plus_z"          => *avc = avc.clone().with_forward_plus_z(),
-            "body_yaw_threshold"      => *avc = avc.clone().with_body_yaw_threshold(args[0].as_f32()?),
-            "body_yaw_rate"           => *avc = avc.clone().with_body_yaw_rate(args[0].as_f32()?),
-            "hand_rotation_smoothing" => *avc = avc.clone().with_hand_rotation_smoothing(args[0].as_f32()?),
-            "camera_bone"             => *avc = avc.clone().with_camera_bone(args[0].as_str()?),
-            "avatar_height"           => *avc = avc.clone().with_avatar_height(args[0].as_f32()?),
+            "body_yaw_threshold"      => *avc = avc.clone().with_body_yaw_threshold(arg(args, 0)?.as_f32()?),
+            "body_yaw_rate"           => *avc = avc.clone().with_body_yaw_rate(arg(args, 0)?.as_f32()?),
+            "hand_rotation_smoothing" => *avc = avc.clone().with_hand_rotation_smoothing(arg(args, 0)?.as_f32()?),
+            "camera_bone"             => *avc = avc.clone().with_camera_bone(arg(args, 0)?.as_str()?),
+            "avatar_height"           => *avc = avc.clone().with_avatar_height(arg(args, 0)?.as_f32()?),
             _ => {}
         }
         return Ok(());
     }
     if let Some(tb) = world.get_component_by_id_as_mut::<TextBackgroundComponent>(id) {
         match method {
-            "padding"        => *tb = tb.clone().with_padding(args[0].as_f32()?),
-            "padding_top"    => *tb = tb.clone().with_padding_top(args[0].as_f32()?),
-            "padding_right"  => *tb = tb.clone().with_padding_right(args[0].as_f32()?),
-            "padding_bottom" => *tb = tb.clone().with_padding_bottom(args[0].as_f32()?),
-            "padding_left"   => *tb = tb.clone().with_padding_left(args[0].as_f32()?),
-            "z_offset"       => *tb = tb.clone().with_z_offset(args[0].as_f32()?),
+            "padding"        => *tb = tb.clone().with_padding(arg(args, 0)?.as_f32()?),
+            "padding_top"    => *tb = tb.clone().with_padding_top(arg(args, 0)?.as_f32()?),
+            "padding_right"  => *tb = tb.clone().with_padding_right(arg(args, 0)?.as_f32()?),
+            "padding_bottom" => *tb = tb.clone().with_padding_bottom(arg(args, 0)?.as_f32()?),
+            "padding_left"   => *tb = tb.clone().with_padding_left(arg(args, 0)?.as_f32()?),
+            "z_offset"       => *tb = tb.clone().with_z_offset(arg(args, 0)?.as_f32()?),
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(ck) = world.get_component_by_id_as_mut::<ClockComponent>(id) {
+        if method == "bpm" {
+            *ck = ck.clone().with_bpm(arg(args, 0)?.as_f32()? as f64);
+        }
+        return Ok(());
+    }
+    if let Some(anim) = world.get_component_by_id_as_mut::<AnimationComponent>(id) {
+        match method {
+            "playing" => *anim = anim.clone().with_state(AnimationState::Playing),
+            "looping" => *anim = anim.clone().with_state(AnimationState::Looping),
+            "paused"  => *anim = anim.clone().with_state(AnimationState::Paused),
             _ => {}
         }
         return Ok(());
@@ -497,9 +546,9 @@ fn apply_transform_builder(
     args: &[Value],
 ) -> Result<TransformComponent, String> {
     match method {
-        "position"       => Ok(c.with_position(args[0].as_f32()?, args[1].as_f32()?, args[2].as_f32()?)),
-        "scale"          => Ok(c.with_scale(args[0].as_f32()?, args[1].as_f32()?, args[2].as_f32()?)),
-        "rotation_euler" => Ok(c.with_rotation_euler(args[0].as_f32()?, args[1].as_f32()?, args[2].as_f32()?)),
+        "position"       => Ok(c.with_position(arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?)),
+        "scale"          => Ok(c.with_scale(arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?)),
+        "rotation" | "rotation_euler" => Ok(c.with_rotation_euler(arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?)),
         other => {
             println!("[registry] unknown Transform builder: '{other}'");
             Ok(c)

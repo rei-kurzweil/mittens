@@ -1,7 +1,7 @@
 use crate::meow_meow::ast::{
     AssignmentStatement, BinOpKind, BlockStatement, CallExpression, ComponentBodyItem,
     ComponentExpression, ConstructorCall, Expression, Ident, IfStatement, ReturnStatement,
-    Statement, UnaryOpKind,
+    Span, Statement, UnaryOpKind,
 };
 use crate::meow_meow::token::{Token, TokenKind};
 
@@ -9,6 +9,7 @@ use crate::meow_meow::token::{Token, TokenKind};
 pub struct ParseError {
     pub message: String,
     pub token_index: usize,
+    pub span: Span,
 }
 
 pub struct MeowMeowParser {
@@ -270,21 +271,30 @@ impl MeowMeowParser {
     fn parse_ident_leading_expression(&mut self) -> Result<Expression, ParseError> {
         let ident = self.expect_ident()?;
 
-        // `Type.method(args) ...` → component expression with head call
+        // `Type.method(args)[.method2(args2)...]` → component expression with head call.
+        // Additional chained calls become prepended body Call items.
         if self.try_consume(&TokenKind::Dot) {
             let method = self.expect_ident()?;
             self.consume(&TokenKind::LParen)?;
             let args = self.parse_call_args()?;
             let constructor = Some(ConstructorCall { method, args });
-            let body = if self.try_consume(&TokenKind::LBrace) {
+            let mut extra_calls = vec![];
+            while self.try_consume(&TokenKind::Dot) {
+                let chained = self.expect_ident()?;
+                self.consume(&TokenKind::LParen)?;
+                let chained_args = self.parse_call_args()?;
+                extra_calls.push(ComponentBodyItem::Call(CallExpression { callee: chained, args: chained_args }));
+            }
+            let mut body = if self.try_consume(&TokenKind::LBrace) {
                 self.parse_component_body()?
             } else {
                 vec![]
             };
+            extra_calls.append(&mut body);
             return Ok(Expression::Component(ComponentExpression {
                 component_type: ident,
                 constructor,
-                body,
+                body: extra_calls,
             }));
         }
 
@@ -332,21 +342,30 @@ impl MeowMeowParser {
                     let save = self.pos;
                     let leading = self.expect_ident()?;
 
-                    // `Type.method(args) ...` → child component with head call
+                    // `Type.method(args)[.method2(args2)...]` → child component with head call.
+                    // Additional chained calls become prepended body Call items.
                     if self.try_consume(&TokenKind::Dot) {
                         let method = self.expect_ident()?;
                         self.consume(&TokenKind::LParen)?;
                         let args = self.parse_call_args()?;
                         let constructor = Some(ConstructorCall { method, args });
-                        let child_body = if self.try_consume(&TokenKind::LBrace) {
+                        let mut extra_calls = vec![];
+                        while self.try_consume(&TokenKind::Dot) {
+                            let chained = self.expect_ident()?;
+                            self.consume(&TokenKind::LParen)?;
+                            let chained_args = self.parse_call_args()?;
+                            extra_calls.push(ComponentBodyItem::Call(CallExpression { callee: chained, args: chained_args }));
+                        }
+                        let mut child_body = if self.try_consume(&TokenKind::LBrace) {
                             self.parse_component_body()?
                         } else {
                             vec![]
                         };
+                        extra_calls.append(&mut child_body);
                         body.push(ComponentBodyItem::Child(ComponentExpression {
                             component_type: leading,
                             constructor,
-                            body: child_body,
+                            body: extra_calls,
                         }));
                         continue;
                     }
@@ -464,6 +483,9 @@ impl MeowMeowParser {
     }
 
     fn err(&self, message: &str) -> ParseError {
-        ParseError { message: message.to_string(), token_index: self.pos }
+        let span = self.tokens.get(self.pos)
+            .map(|t| t.span.clone())
+            .unwrap_or(Span::new(0, 0));
+        ParseError { message: message.to_string(), token_index: self.pos, span }
     }
 }
