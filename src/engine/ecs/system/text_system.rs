@@ -3,7 +3,7 @@ use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     ColorComponent, EmissiveComponent, OpacityComponent, RaycastableComponent, RenderableComponent,
     TextBackgroundComponent, TextComponent, TextShadowComponent, TextureComponent,
-    TextureFilteringComponent, TransformComponent, UVComponent,
+    TextureFilteringComponent, TransformComponent, TransparentCutoutComponent, UVComponent,
 };
 use crate::engine::ecs::{EventSignal, IntentValue};
 use crate::engine::graphics::TextureFiltering;
@@ -408,6 +408,11 @@ impl TextSystem {
                 let bg_op = world
                     .add_component(OpacityComponent::new().with_opacity(color[3]));
                 let _ = world.add_child(bg_r, bg_op);
+                // Explicitly opt out of cutout so the background is never routed
+                // to the alpha-to-coverage pass even when a parent TextComponent
+                // has TransparentCutoutComponent enabled.
+                let bg_tc = world.add_component(TransparentCutoutComponent { enabled: false });
+                let _ = world.add_child(bg_r, bg_tc);
             }
         }
 

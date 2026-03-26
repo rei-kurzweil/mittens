@@ -1041,15 +1041,19 @@ impl VisualWorld {
             &mut self.transparent_single_draw_batches,
         );
 
-        // Overlay pass: batch aggressively (order does not depend on view).
+        // Overlay pass: no-texture instances (e.g. text backgrounds) must draw before
+        // textured glyphs so that depth-write from glyph edge pixels does not block
+        // the background quad.  tex=0 for untextured, tex=handle+1 for textured, so
+        // placing tex BEFORE mesh ensures untextured always sorts first regardless of
+        // which MeshHandle was allocated earlier.
         self.overlay_order.sort_by_key(|&i| {
             let inst = self.instances[i as usize];
             let r = inst.renderable;
-            let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
+            let tex = inst.texture.map_or(0, |t| t.0.wrapping_add(1));
             (
                 r.material.0,
-                r.mesh.0,
                 tex,
+                r.mesh.0,
                 inst.texture_filtering as u8,
                 sanitize_quant_steps(inst.quant_steps).to_bits(),
             )

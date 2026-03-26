@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use cat_engine::engine::{self, ecs::component::{ColorComponent, TextBackgroundComponent, TextShadowComponent}};
+use cat_engine::engine::{self, ecs::component::{ColorComponent, TextBackgroundComponent, TextShadowComponent, TransparentCutoutComponent}};
 
 /// Standard MMS demo scene rig: dark-blue background and navigable camera.
 ///
@@ -255,6 +255,9 @@ pub fn spawn_desktop_camera_controls_hint(
     let filtering = universe
         .world
         .add_component(TextureFilteringComponent::nearest_magnification());
+
+    let cutout = universe.world.add_component(TransparentCutoutComponent::new());
+    let _ = universe.attach(text, cutout);
 
     let _ = universe.attach(editor_root, text);
     let _ = universe.attach(text, emissive);

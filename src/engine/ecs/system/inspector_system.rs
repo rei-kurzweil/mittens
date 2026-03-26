@@ -366,6 +366,13 @@ fn rebuild_inspector_panel(
         let bg = world
             .add_component_boxed_named("ip_bg", Box::new(panel_row_bg(i, total_rows)));
         let _ = world.add_child(row_text, bg);
+        
+        let cutout = world.add_component_boxed_named(
+            "ip_cutout",
+            Box::new(crate::engine::ecs::component::TransparentCutoutComponent::new()),
+        );
+        let _ = world.add_child(row_text, cutout);
+        
         let bg_col = world.add_component_boxed_named(
             "ip_bg_color",
             Box::new(ColorComponent::rgba(BG_COLOR[0], BG_COLOR[1], BG_COLOR[2], BG_COLOR[3])),
