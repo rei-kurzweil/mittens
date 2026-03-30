@@ -215,9 +215,9 @@ fn main() {
     universe.add(renderer_settings);
 
     // Sky base.
-    let background = universe
-        .world
-        .add_component(BackgroundColorComponent::rgba(0.62, 0.80, 1.00, 1.0));
+    let background = universe.world.add_component(BackgroundColorComponent::new());
+    let background_c = universe.world.add_component(ColorComponent::rgba(0.62, 0.80, 1.00, 1.0));
+    let _ = universe.world.add_child(background, background_c);
     universe.add(background);
 
     // Lighting for the model.

@@ -49,6 +49,10 @@ pub enum TokenKind {
     In,
     Break,
     Continue,
+    Export,
+    Import,
+    From,
+    As,
 
     Eof,
 }

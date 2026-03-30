@@ -48,6 +48,8 @@ fn lift_stmt(stmt: &mut Statement) {
         Statement::Return(_) => {}
         Statement::ForIn { body, .. } => lift_block(body),
         Statement::Break | Statement::Continue => {}
+        Statement::Import { .. } => {}
+        Statement::Reassign { .. } => {}
     }
 }
 

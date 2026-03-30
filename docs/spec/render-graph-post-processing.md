@@ -16,6 +16,8 @@ This document designs the opt-in post-processing system for cat-engine, covering
 **Related:**
 - `docs/spec/render-phases.md` — existing phase ordering
 - `docs/spec/renderer-stats-component.md` — renderer diagnostics
+- `docs/spec/render-graph-pipeline.svg` — diagram: base pipeline
+- `docs/spec/render-graph-pipeline-post-processing.svg` — diagram: post-processing render graph
 - `src/engine/graphics/vulkano_renderer.rs` — current render loop
 - `src/engine/graphics/vulkano_swapchain.rs` — swapchain/depth image setup
 - `assets/shaders/toon-mesh.frag` — current emissive branch
@@ -135,14 +137,54 @@ When `PostProcessingComponent` is present, the renderer:
 ```rust
 pub struct BloomComponent {
     pub intensity: f32,       // Additive blend strength (default 1.0)
-    pub blur_radius: u32,     // Gaussian kernel half-width in pixels (default 4)
+    pub radius_ndc: f32,      // Bloom spread in NDC units (default 0.05; see below)
     pub emissive_scale: f32,  // Scales emissive intensity in the bloom prepass (default 1.0)
     pub half_res: bool,       // Blur at half resolution for performance (default true)
+    pub source: BloomSource,  // Which geometry feeds the bloom prepass (default Emissive)
+}
+
+pub enum BloomSource {
+    Emissive,   // Only EMISSIVE_TOON_MESH batches (default, cheapest)
+    // Future: All, LuminanceThreshold(f32)
 }
 ```
 
+**`radius_ndc` to pixels conversion.** The renderer converts `radius_ndc` to a pixel
+half-width at render setup time using:
+
+```rust
+fn ndc_radius_to_pixels(radius_ndc: f32, viewport_width: u32) -> u32 {
+    ((radius_ndc * viewport_width as f32) / 2.0).round().max(1.0) as u32
+}
+```
+
+`radius_ndc = 0.2` on a 1920-wide viewport → `192 px` Gaussian half-width.
+`radius_ndc = 0.05` → `48 px` (a reasonable default for subtle bloom).
+
+This makes bloom spread resolution-independent — a scene authored at 1080p looks the same
+at 4K. The half-res path (`half_res = true`) halves the effective pixel count before
+blurring, then upsamples; `radius_ndc` stays unchanged.
+
+**MMS authoring form:**
+
+```
+PostProcessing {
+    Bloom.radius(0.2).intensity(0.8) {
+        quality = 0.5      // scales kernel sample count (0..1, default 1.0)
+        EmissiveSource     // positional tag: bloom source = emissive geometry (default)
+    }
+    Bokeh { ... }
+}
+```
+
+The chained `.radius(0.2).intensity(0.8)` desugars in the parser: `radius` becomes the
+constructor call, `intensity` becomes a body `Call`. Both map to builder methods on
+`BloomComponent`. `EmissiveSource` is a bare positional tag handled by `apply_positional`
+for `BloomComponent` — it selects `BloomSource::Emissive` (the default, so it's mostly a
+documentation hint today; future variants would be `AllSource`, `LuminanceSource(f32)`).
+
 Requires: emissive objects using `EMISSIVE_TOON_MESH` material.
-Does not require depth (occlusion of glow is an enhancement, see notes below).
+Does not require depth (occlusion of glow is an enhancement, see open questions below).
 
 ### BokehComponent
 

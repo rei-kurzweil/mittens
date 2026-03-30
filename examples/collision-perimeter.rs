@@ -9,13 +9,9 @@ fn main() {
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
 
-    let bg_color =
-        universe
-            .world
-            .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
-                0.1, 0.02, 0.05, 1.0,
-            ));
-
+    let bg_color = universe.world.add_component(engine::ecs::component::BackgroundColorComponent::new());
+    let bg_color_c = universe.world.add_component(engine::ecs::component::ColorComponent::rgba(0.1, 0.02, 0.05, 1.0));
+    let _ = universe.world.add_child(bg_color, bg_color_c);
     universe.add(bg_color);
 
     // Gravity field for the pushable cubes.

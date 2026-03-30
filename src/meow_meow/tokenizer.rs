@@ -160,6 +160,10 @@ impl<'a> MeowMeowTokenizer<'a> {
                         "in"       => TokenKind::In,
                         "break"    => TokenKind::Break,
                         "continue" => TokenKind::Continue,
+                        "export"   => TokenKind::Export,
+                        "import"   => TokenKind::Import,
+                        "from"     => TokenKind::From,
+                        "as"       => TokenKind::As,
                         _ => TokenKind::Ident(ident),
                     }
                 } else {

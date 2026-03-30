@@ -23,12 +23,9 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Light purple-red background so the occlusion reads.
-    let clear =
-        universe
-            .world
-            .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
-                0.62, 0.38, 0.56, 1.0,
-            ));
+    let clear = universe.world.add_component(engine::ecs::component::BackgroundColorComponent::new());
+    let clear_c = universe.world.add_component(engine::ecs::component::ColorComponent::rgba(0.62, 0.38, 0.56, 1.0));
+    let _ = universe.world.add_child(clear, clear_c);
     universe.add(clear);
 
     // A bit of ambient so the cluster volume reads.

@@ -38,9 +38,9 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Orange/yellow-ish clear color so cutout edges read.
-    let clear = universe
-        .world
-        .add_component(BackgroundColorComponent::rgba(0.98, 0.72, 0.22, 1.0));
+    let clear = universe.world.add_component(BackgroundColorComponent::new());
+    let clear_c = universe.world.add_component(ColorComponent::rgba(0.98, 0.72, 0.22, 1.0));
+    let _ = universe.world.add_child(clear, clear_c);
     universe.add(clear);
 
     // Warm-ish ambient so the gold cubes don’t go too dark.

@@ -6,7 +6,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 use crate::engine::ecs::IntentValue;
 use crate::meow_meow::ast::{
     BinOpKind, CallExpression, ComponentBodyItem, ComponentExpression, ConstructorCall,
-    Expression, Ident, IfStatement, Statement, UnaryOpKind,
+    Expression, Ident, IfStatement, ImportItem, Statement, UnaryOpKind,
 };
 use crate::meow_meow::object::Value;
 use crate::meow_meow::parser::{MeowMeowParser, ParseError};
@@ -22,7 +22,7 @@ use crate::meow_meow::transform::EmitLiftTransform;
 pub enum EvalRequest {
     /// Parse and evaluate a script. Emitted `SpawnComponentTree` intents come back
     /// as `EvalResponse::Intent` messages.
-    EvalScript { source: String },
+    EvalScript { source: String, source_path: Option<String> },
     /// Parse only — returns a debug AST string (used in tests / tooling).
     ParseScript { source: String },
     Shutdown,
@@ -80,8 +80,8 @@ impl MeowMeowEvaluator {
 fn evaluator_thread(mut requests: Consumer<EvalRequest>, mut responses: Producer<EvalResponse>) {
     loop {
         match requests.pop() {
-            Ok(EvalRequest::EvalScript { source }) => {
-                eval_script(&source, &mut responses);
+            Ok(EvalRequest::EvalScript { source, source_path }) => {
+                eval_script(&source, source_path.as_deref(), &mut responses);
             }
             Ok(EvalRequest::ParseScript { source }) => {
                 let resp = parse_only(&source)
@@ -106,9 +106,29 @@ fn evaluator_thread(mut requests: Consumer<EvalRequest>, mut responses: Producer
 
 type Env = HashMap<String, Value>;
 
+/// Shared mutable context threaded through statement evaluation.
+///
+/// Carries everything that statement-level eval functions need beyond the
+/// immutable `env` and the statement itself. Keeping these together means
+/// adding future context (module cache, call-depth limit, …) is a one-field
+/// change here rather than a signature change across every eval function.
+///
+/// Expression-level functions (`eval_expr`, `eval_call`, …) take only
+/// `emits: &mut Vec<IntentValue>` — they cannot contain import statements and
+/// do not need the full context.
+struct EvalContext<'a> {
+    /// Accumulates `SpawnComponentTree` intents produced by `emit(ce)` calls.
+    emits: &'a mut Vec<IntentValue>,
+    /// Filesystem path of the file being evaluated, used to resolve relative
+    /// `import "…"` paths. `None` inside function call bodies (closures do not
+    /// carry their definition-site path) and when source was provided as a
+    /// raw string without a path (e.g. via `MeowMeowRunner::eval`).
+    source_path: Option<&'a str>,
+}
+
 /// Evaluate a script: parse → EmitLiftTransform → walk statements.
 /// Each `emit(ce)` call produces an `EvalResponse::Intent(SpawnComponentTree)`.
-fn eval_script(source: &str, responses: &mut Producer<EvalResponse>) {
+fn eval_script(source: &str, source_path: Option<&str>, responses: &mut Producer<EvalResponse>) {
     let mut stmts = match parse_source(source) {
         Ok(s) => s,
         Err(msg) => {
@@ -119,10 +139,11 @@ fn eval_script(source: &str, responses: &mut Producer<EvalResponse>) {
 
     EmitLiftTransform::apply(&mut stmts);
 
-    let env: Env = HashMap::new();
+    let mut env: Env = HashMap::new();
     let mut emits: Vec<IntentValue> = Vec::new();
+    let mut ctx = EvalContext { emits: &mut emits, source_path };
 
-    match eval_block_stmts(&stmts, &env, &mut emits) {
+    match eval_block_stmts(&stmts, &mut env, &mut ctx) {
         Ok(_) => {}
         Err(msg) => {
             let _ = responses.push(EvalResponse::Error { message: msg });
@@ -144,24 +165,43 @@ fn eval_script(source: &str, responses: &mut Producer<EvalResponse>) {
 enum StmtEffect {
     None,
     Bind(String, Value),
+    /// Like `Bind`, but also registers in the module's named exports map.
+    Export(String, Value),
+    /// Multiple bindings from an `import` statement.
+    ImportBindings(Vec<(String, Value)>),
+    /// `x = expr` — update an existing binding in the current env.
+    Reassign(String, Value),
     Return(Value),
     Break,
     Continue,
 }
 
-/// Evaluate a block of statements in a local scope (cloned from parent env).
-/// Returns the first non-None/non-Bind effect (Return, Break, Continue), or None.
-/// Emits are pushed directly to `emits`.
+/// Evaluate a block of statements, applying all bindings and reassignments
+/// directly to `env` (no clone). Bind effects from `let` statements extend env
+/// in place; Reassign effects propagate to env (so reassignment inside if-blocks
+/// is visible to the enclosing scope). Returns the first control-flow effect
+/// (Return/Break/Continue) encountered, or None.
 fn eval_block_stmts(
     stmts: &[Statement],
-    env: &Env,
-    emits: &mut Vec<IntentValue>,
+    env: &mut Env,
+    ctx: &mut EvalContext<'_>,
 ) -> Result<StmtEffect, String> {
-    let mut local_env = env.clone();
     for stmt in stmts {
-        match eval_stmt(stmt, &local_env, emits)? {
-            StmtEffect::Bind(name, val) => {
-                local_env.insert(name, val);
+        match eval_stmt(stmt, env, ctx)? {
+            StmtEffect::Bind(name, val) | StmtEffect::Export(name, val) => {
+                env.insert(name, val);
+            }
+            StmtEffect::ImportBindings(bindings) => {
+                for (name, val) in bindings {
+                    env.insert(name, val);
+                }
+            }
+            StmtEffect::Reassign(name, val) => {
+                if env.contains_key(&name) {
+                    env.insert(name, val);
+                } else {
+                    return Err(format!("reassignment: '{}' is not defined", name));
+                }
             }
             StmtEffect::None => {}
             effect => return Ok(effect),
@@ -172,45 +212,104 @@ fn eval_block_stmts(
 
 fn eval_stmt(
     stmt: &Statement,
-    env: &Env,
-    emits: &mut Vec<IntentValue>,
+    env: &mut Env,
+    ctx: &mut EvalContext<'_>,
 ) -> Result<StmtEffect, String> {
     match stmt {
         Statement::Assignment(a) => {
-            let val = eval_expr(&a.value, env, emits)?;
-            Ok(StmtEffect::Bind(a.name.0.clone(), val))
+            let val = eval_expr(&a.value, env, ctx.emits)?;
+            if a.exported {
+                Ok(StmtEffect::Export(a.name.0.clone(), val))
+            } else {
+                Ok(StmtEffect::Bind(a.name.0.clone(), val))
+            }
+        }
+        Statement::Reassign { name, value } => {
+            let val = eval_expr(value, env, ctx.emits)?;
+            Ok(StmtEffect::Reassign(name.0.clone(), val))
         }
         Statement::Expression(expr) => {
-            eval_expr_stmt(expr, env, emits)?;
+            eval_expr_stmt(expr, env, ctx.emits)?;
             Ok(StmtEffect::None)
         }
         Statement::Return(r) => {
             let val = match &r.value {
-                Some(expr) => eval_expr(expr, env, emits)?,
+                Some(expr) => eval_expr(expr, env, ctx.emits)?,
                 None => Value::Null,
             };
             Ok(StmtEffect::Return(val))
         }
-        Statement::If(if_stmt) => eval_if(if_stmt, env, emits),
-        Statement::Block(block) => eval_block_stmts(&block.statements, env, emits),
+        Statement::If(if_stmt) => eval_if(if_stmt, env, ctx),
+        Statement::Block(block) => eval_block_stmts(&block.statements, env, ctx),
         Statement::Break => Ok(StmtEffect::Break),
         Statement::Continue => Ok(StmtEffect::Continue),
         Statement::ForIn { binding, iterable, body } => {
-            let items = match eval_expr(iterable, env, emits)? {
+            let items = match eval_expr(iterable, env, ctx.emits)? {
                 Value::Array(a) => a,
                 other => return Err(format!("for/in: expected array, got {:?}", other)),
             };
-            for item in items {
-                let mut iter_env = env.clone();
-                iter_env.insert(binding.0.clone(), item);
-                match eval_block_stmts(&body.statements, &iter_env, emits)? {
-                    StmtEffect::None | StmtEffect::Bind(_, _) => {}
-                    StmtEffect::Return(val) => return Ok(StmtEffect::Return(val)),
-                    StmtEffect::Break => return Ok(StmtEffect::None),
-                    StmtEffect::Continue => continue,
+            // `loop_env` persists across iterations so that reassignment (accumulator
+            // patterns like `sum = sum + i`) propagates between iterations.
+            let mut loop_env = env.clone();
+            'for_loop: for item in items {
+                loop_env.insert(binding.0.clone(), item);
+                for stmt in &body.statements {
+                    match eval_stmt(stmt, &mut loop_env, ctx)? {
+                        StmtEffect::None => {}
+                        StmtEffect::Bind(n, v) | StmtEffect::Export(n, v) => {
+                            loop_env.insert(n, v);
+                        }
+                        StmtEffect::Reassign(n, v) => {
+                            if loop_env.contains_key(&n) {
+                                loop_env.insert(n, v);
+                            } else {
+                                return Err(format!("reassignment: '{}' is not defined", n));
+                            }
+                        }
+                        StmtEffect::ImportBindings(bs) => {
+                            for (n, v) in bs { loop_env.insert(n, v); }
+                        }
+                        StmtEffect::Return(val) => return Ok(StmtEffect::Return(val)),
+                        StmtEffect::Break => return Ok(StmtEffect::None),
+                        StmtEffect::Continue => continue 'for_loop,
+                    }
                 }
             }
             Ok(StmtEffect::None)
+        }
+        Statement::Import { items, path } => {
+            let resolved = resolve_import_path(path, ctx.source_path);
+            let content = std::fs::read_to_string(&resolved)
+                .map_err(|e| format!("import error: cannot read '{}': {}", path, e))?;
+            let module_val = eval_as_module(&content, Some(&resolved))?;
+            let (named, sequence) = match module_val {
+                Value::Module { named, sequence } => (named, sequence),
+                _ => return Err("import: internal error".to_string()),
+            };
+            let mut bindings = Vec::new();
+            for item in items {
+                match item {
+                    ImportItem::Named(id) => {
+                        let val = named.get(&id.0).cloned().ok_or_else(|| {
+                            format!("import: '{}' is not exported from '{}'", id.0, path)
+                        })?;
+                        bindings.push((id.0.clone(), val));
+                    }
+                    ImportItem::NamedAlias { name, alias } => {
+                        let val = named.get(&name.0).cloned().ok_or_else(|| {
+                            format!("import: '{}' is not exported from '{}'", name.0, path)
+                        })?;
+                        bindings.push((alias.0.clone(), val));
+                    }
+                    ImportItem::PositionalAlias { index, alias } => {
+                        let ce = sequence.get(*index).ok_or_else(|| {
+                            format!("import: index {} out of range in '{}'", index, path)
+                        })?;
+                        bindings.push((alias.0.clone(), Value::ComponentExpr(Box::new(ce.clone()))));
+                    }
+                }
+            }
+            Ok(StmtEffect::ImportBindings(bindings))
         }
     }
 }
@@ -245,14 +344,14 @@ fn push_component_emit(val: Value, emits: &mut Vec<IntentValue>) {
 
 fn eval_if(
     if_stmt: &IfStatement,
-    env: &Env,
-    emits: &mut Vec<IntentValue>,
+    env: &mut Env,
+    ctx: &mut EvalContext<'_>,
 ) -> Result<StmtEffect, String> {
-    let cond = eval_expr(&if_stmt.condition, env, emits)?;
+    let cond = eval_expr(&if_stmt.condition, env, ctx.emits)?;
     if is_truthy(&cond) {
-        eval_block_stmts(&if_stmt.then_branch.statements, env, emits)
+        eval_block_stmts(&if_stmt.then_branch.statements, env, ctx)
     } else if let Some(else_branch) = &if_stmt.else_branch {
-        eval_block_stmts(&else_branch.statements, env, emits)
+        eval_block_stmts(&else_branch.statements, env, ctx)
     } else {
         Ok(StmtEffect::None)
     }
@@ -320,7 +419,15 @@ fn subst_body_item(item: &ComponentBodyItem, env: &Env, emits: &mut Vec<IntentVa
             ComponentBodyItem::Child(subst_ce(child_ce, env, emits))
         }
         ComponentBodyItem::Positional(expr) => {
-            ComponentBodyItem::Positional(eval_to_literal(expr, env, emits))
+            // If the expression evaluates to a ComponentExpr (e.g. a variable holding an
+            // imported CE), promote it to Child so it goes through the real child-spawn
+            // path in the registry. Leaving it as Positional would cause it to reach
+            // apply_positional which doesn't know how to spawn component subtrees.
+            match eval_expr(expr, env, emits) {
+                Ok(Value::ComponentExpr(ce)) => ComponentBodyItem::Child(*ce),
+                Ok(val) => ComponentBodyItem::Positional(value_to_expr(val)),
+                Err(_) => ComponentBodyItem::Positional(expr.clone()),
+            }
         }
     }
 }
@@ -403,13 +510,14 @@ fn eval_call(
                 call_env.insert(param.clone(), arg.clone());
             }
 
-            match eval_block_stmts(&body.statements, &call_env, emits)? {
+            let mut func_ctx = EvalContext { emits, source_path: None };
+            match eval_block_stmts(&body.statements, &mut call_env, &mut func_ctx)? {
                 StmtEffect::Return(val) => Ok(val),
                 StmtEffect::None => Ok(Value::Null),
                 StmtEffect::Break | StmtEffect::Continue => {
                     Err("break/continue cannot escape a function body".into())
                 }
-                StmtEffect::Bind(_, _) => Ok(Value::Null),
+                StmtEffect::Bind(_, _) | StmtEffect::Export(_, _) | StmtEffect::ImportBindings(_) | StmtEffect::Reassign(_, _) => Ok(Value::Null),
             }
         }
         other => Err(format!("cannot call {:?} as a function", other)),
@@ -527,6 +635,57 @@ fn num_cmp(l: Value, r: Value, f: impl Fn(f64, f64) -> bool) -> Result<Value, St
         (Value::Number(a), Value::Number(b)) => Ok(Value::Bool(f(a, b))),
         (l, r) => Err(format!("type error: cannot compare {:?} and {:?}", l, r)),
     }
+}
+
+/// Evaluate a source file as a module (sandboxed — emits go to `sequence`, not the engine).
+/// Returns `Value::Module { named, sequence }`.
+fn eval_as_module(source: &str, source_path: Option<&str>) -> Result<Value, String> {
+    let mut stmts = parse_source(source)?;
+    EmitLiftTransform::apply(&mut stmts);
+
+    let mut local_env: Env = HashMap::new();
+    let mut emits: Vec<IntentValue> = Vec::new();
+    let mut named: HashMap<String, Value> = HashMap::new();
+    let mut ctx = EvalContext { emits: &mut emits, source_path };
+
+    for stmt in &stmts {
+        match eval_stmt(stmt, &mut local_env, &mut ctx)? {
+            StmtEffect::Bind(name, val) => { local_env.insert(name, val); }
+            StmtEffect::Export(name, val) => {
+                local_env.insert(name.clone(), val.clone());
+                named.insert(name, val);
+            }
+            StmtEffect::ImportBindings(bindings) => {
+                for (name, val) in bindings { local_env.insert(name, val); }
+            }
+            StmtEffect::None => {}
+            StmtEffect::Reassign(name, val) => {
+                if local_env.contains_key(&name) {
+                    local_env.insert(name, val);
+                }
+            }
+            StmtEffect::Return(_) | StmtEffect::Break | StmtEffect::Continue => {}
+        }
+    }
+
+    let sequence: Vec<crate::meow_meow::ast::ComponentExpression> = emits
+        .into_iter()
+        .filter_map(|iv| match iv {
+            IntentValue::SpawnComponentTree { root, .. } => Some(*root),
+            _ => None,
+        })
+        .collect();
+
+    Ok(Value::Module { named, sequence })
+}
+
+fn resolve_import_path(path: &str, source_path: Option<&str>) -> String {
+    if let Some(src) = source_path {
+        if let Some(parent) = std::path::Path::new(src).parent() {
+            return parent.join(path).to_string_lossy().into_owned();
+        }
+    }
+    path.to_string()
 }
 
 fn parse_source(source: &str) -> Result<Vec<Statement>, String> {

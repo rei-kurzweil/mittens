@@ -783,12 +783,21 @@ impl RenderableSystem {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        let Some(bg) = world.get_component_by_id_as::<BackgroundColorComponent>(component) else {
+        if world.get_component_by_id_as::<BackgroundColorComponent>(component).is_none() {
             return;
-        };
+        }
+
+        const DEFAULT: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
+        let rgba = world
+            .children_of(component)
+            .iter()
+            .find_map(|&ch| {
+                world.get_component_by_id_as::<ColorComponent>(ch).map(|c| c.rgba)
+            })
+            .unwrap_or(DEFAULT);
 
         // Global state: last registered wins.
-        visuals.set_clear_color(bg.rgba);
+        visuals.set_clear_color(rgba);
     }
 
     pub fn register_renderer_settings(

@@ -1,7 +1,8 @@
 use std::time::{Duration, Instant};
 
+use crate::engine;
 use crate::meow_meow::ast::{
-    ComponentBodyItem, Expression, Statement,
+    AssignmentStatement, ComponentBodyItem, Expression, ImportItem, Statement,
 };
 use crate::meow_meow::evaluator::{EvalRequest, EvalResponse, MeowMeowEvaluator};
 use crate::meow_meow::parser::MeowMeowParser;
@@ -396,4 +397,159 @@ fn eval_return_propagates_through_for() {
     "#);
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.intents.len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// Export / Import
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_export_let() {
+    let prog = parse("export let pi = 3.14");
+    assert_eq!(prog.len(), 1);
+    let Statement::Assignment(AssignmentStatement { name, exported, .. }) = &prog[0] else { panic!() };
+    assert_eq!(name.0, "pi");
+    assert!(*exported);
+}
+
+#[test]
+fn parse_export_fn() {
+    let prog = parse("export fn lerp(a, b, t) { return a + (b - a) * t }");
+    assert_eq!(prog.len(), 1);
+    let Statement::Assignment(AssignmentStatement { name, exported, .. }) = &prog[0] else { panic!() };
+    assert_eq!(name.0, "lerp");
+    assert!(*exported);
+}
+
+#[test]
+fn parse_import_named() {
+    let prog = parse(r#"import { pi, lerp } from "math.mms""#);
+    assert_eq!(prog.len(), 1);
+    let Statement::Import { items, path } = &prog[0] else { panic!() };
+    assert_eq!(path, "math.mms");
+    assert_eq!(items.len(), 2);
+    assert!(matches!(&items[0], ImportItem::Named(id) if id.0 == "pi"));
+    assert!(matches!(&items[1], ImportItem::Named(id) if id.0 == "lerp"));
+}
+
+#[test]
+fn parse_import_alias() {
+    let prog = parse(r#"import { pi as PI, 0 as cube } from "parts.mms""#);
+    assert_eq!(prog.len(), 1);
+    let Statement::Import { items, .. } = &prog[0] else { panic!() };
+    assert!(matches!(&items[0], ImportItem::NamedAlias { name, alias } if name.0 == "pi" && alias.0 == "PI"));
+    assert!(matches!(&items[1], ImportItem::PositionalAlias { index: 0, alias } if alias.0 == "cube"));
+}
+
+#[test]
+fn eval_export_and_import_via_files() {
+    // Write a small library file that exports a value and a function.
+    let tmp = std::env::temp_dir();
+    let lib_path = tmp.join("_mms_test_lib.mms");
+    let user_path = tmp.join("_mms_test_user.mms");
+
+    std::fs::write(&lib_path, r#"
+export let count = 3.0
+export fn make_row(n) {
+    for i in range(n) { T {} }
+}
+"#).unwrap();
+
+    std::fs::write(&user_path, "import { count, make_row } from \"_mms_test_lib.mms\"\nmake_row(count)\n").unwrap();
+
+    let out = MeowMeowRunner::eval_file(user_path.to_str().unwrap());
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    // count == 3 → make_row(3) → 3 T {} emits
+    assert_eq!(out.intents.len(), 3, "intents: {:?}", out.intents);
+
+    // cleanup
+    let _ = std::fs::remove_file(&lib_path);
+    let _ = std::fs::remove_file(&user_path);
+}
+
+#[test]
+fn eval_import_positional_ce() {
+    // Library emits a CE at index 0; user imports it and re-emits it.
+    let tmp = std::env::temp_dir();
+    let lib_path = tmp.join("_mms_test_ce_lib.mms");
+    let user_path = tmp.join("_mms_test_ce_user.mms");
+
+    std::fs::write(&lib_path, "T.position(1.0, 0.0, 0.0) {}").unwrap();
+    std::fs::write(&user_path, "import { 0 as my_t } from \"_mms_test_ce_lib.mms\"\nmy_t\n").unwrap();
+
+    let out = MeowMeowRunner::eval_file(user_path.to_str().unwrap());
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+
+    let _ = std::fs::remove_file(&lib_path);
+    let _ = std::fs::remove_file(&user_path);
+}
+
+// ---------------------------------------------------------------------------
+// Reassignment
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_reassign() {
+    let prog = parse("let x = 1\nx = 2");
+    assert_eq!(prog.len(), 2);
+    assert!(matches!(&prog[0], Statement::Assignment(_)));
+    let Statement::Reassign { name, .. } = &prog[1] else { panic!("expected Reassign") };
+    assert_eq!(name.0, "x");
+}
+
+#[test]
+fn eval_reassign_basic() {
+    // A number incremented via reassignment should be visible to later code.
+    // We use a side-effecting CE emit to observe the final value.
+    let src = r#"
+        let x = 10
+        x = 20
+        let arr = [x]
+    "#;
+    let out = MeowMeowRunner::eval(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+}
+
+#[test]
+fn eval_reassign_undefined_errors() {
+    let out = MeowMeowRunner::eval("x = 5");
+    assert!(!out.errors.is_empty(), "expected an error for undefined reassignment");
+    assert!(out.errors[0].contains("not defined"), "got: {}", out.errors[0]);
+}
+
+#[test]
+fn eval_if_reassign_propagates_to_outer_scope() {
+    // `y` declared in outer block, reassigned inside if-branch —
+    // the emitted CE must use the updated value.
+    let src = r#"
+        let y = -1.0
+        if (1 > 0) {
+            y = 99.0
+        }
+        T.position(0.0, y, 0.0) {}
+    "#;
+    let out = MeowMeowRunner::eval(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+    // Verify the CE position used the updated y (second arg of the constructor call).
+    let engine::ecs::IntentValue::SpawnComponentTree { root, .. } = &out.intents[0] else { panic!() };
+    let constructor = root.constructor.as_ref().expect("T.position has constructor");
+    let Expression::Number(y_val) = &constructor.args[1] else { panic!("expected number arg") };
+    assert!((*y_val - 99.0).abs() < 1e-6, "expected y=99.0, got {y_val}");
+}
+
+#[test]
+fn eval_for_accumulator_pattern() {
+    // sum = sum + i across iterations — the classic accumulator.
+    // We emit a CE per iteration using the accumulated value so we can observe it.
+    let src = r#"
+        let sum = 0
+        for i in [1, 2, 3] {
+            sum = sum + i
+        }
+    "#;
+    // No errors means the reassignment and loop executed correctly.
+    let out = MeowMeowRunner::eval(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
 }

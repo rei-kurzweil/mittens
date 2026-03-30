@@ -10,38 +10,48 @@ Phase 9 sketch. Implementation deferred — see §0 for the current design direc
 
 ### v1 module design — decided
 
-- **No `export` keyword.** All top-level `let` bindings and `fn` definitions are
-  automatically exported by name. There is no private/public distinction in v1 — if it's
-  at the root of a file, it's available to importers. This is analogous to Python modules:
-  everything at module scope is accessible.
+**`pub` is the visibility modifier.** Bare `let`/`fn` at the root are file-private.
+`pub let` / `pub fn` are named exports visible to importers.
 
-  ```mms
-  // math.mms — no export keyword needed
-  let pi = 3.14159265358979
-  fn lerp(a, b, t) { return a + (b - a) * t }
-  ```
+```mms
+// math.mms
+pub let pi = 3.14159265358979       // importable by name
+pub fn lerp(a, b, t) { return a + (b - a) * t }
+let scratch = 42                    // file-private
+```
 
-- **Root CEs are implicitly positionally exported.** Every top-level emit gets a numeric
-  index (0, 1, 2, ...) automatically. Named lets that hold CEs are also in the named map.
+**Root-level CE emits are always positionally accessible** by index (they are the file's
+output), regardless of `pub`. `pub` on a CE `let` additionally makes it accessible by name:
 
-- **Import by name.** The importer pulls named bindings by name:
+```mms
+// scene.mms
+pub let red_cube = T.position(0,0,0) { R.cube() {} }  // index 0, also named "red_cube"
+T.position(1,0,0) { R.cube() {} }                     // index 1, positional only
+```
 
-  ```mms
-  import { pi, lerp } from "math.mms"
-  let mid = lerp(0.0, 1.0, 0.5)
-  ```
+**Import by name or by positional index.** Both work in the same destructure form:
 
-- **The selector/query system and named retrieval are unified** — one object, one access
-  model. Named exports are string-keyed entries in the same module object whose positional
-  entries are integer-keyed and whose subtrees are selector-queryable.
+```mms
+import { pi, lerp } from "math.mms"          // named
+import { 0 } from "scene.mms"                // positional — first root CE emit
+import { 0 as cube, red_cube } from "scene.mms"  // mixed, with alias
+```
+
+Numeric keys in the import list refer to the emission-order index of root-level CE emits.
+They work regardless of whether `pub` was used on that emit.
+
+**The selector/query system and named retrieval are unified** — one object, one access
+model. Named (`pub`) exports are string-keyed, positional emits are integer-keyed, and
+selector queries return arrays. All from the same module value.
 
 ### What remains open for later versions
 
-- **Explicit `export` keyword** may be added later as an opt-in visibility gate
-  (e.g. `export let` = public, bare `let` = file-private). Not in v1.
 - **`import` keyword syntax** — whether `import { x } from "f.mms"` or `load("f.mms").x`
   is the canonical form. Both may coexist. See §4.
-- **Re-export** (`export { foo } from "..."`) — deferred.
+- **Re-export** (`pub { foo } from "..."`) — deferred.
+- **`pub` on bare CE emits** (without a `let` name) — does `pub T { }` exist as syntax
+  to make a positional emit also named (auto-named by index)? Probably not needed if
+  `pub let x = T { }` covers the use case.
 
 The rest of this doc is the design exploration that led here. Treat it as background
 and options, not a finalized spec.
@@ -90,25 +100,35 @@ CE AST** — no live world required. The selector grammar is a superset.
 
 ## 3. Export syntax
 
-### 3.1 Named exports
+### 3.1 Named exports — `pub`
 
-> **v1:** No `export` keyword. All top-level `let` and `fn` are exported automatically.
+`pub` is a prefix visibility modifier on `let` and `fn`. Bare bindings are file-private.
 
 ```mms
-// v1 — everything at root scope is exported implicitly:
-let red_cube = R.cube() { C.rgba(1, 0, 0, 1) }
-fn make_grid(n, color) { ... }
-let pi = 3.14159
+pub let red_cube = R.cube() { C.rgba(1, 0, 0, 1) }  // named export
+pub fn make_grid(n, color) { ... }                    // named export
+pub let pi = 3.14159                                  // named export
+let scratch = 42                                       // file-private
 ```
 
-A future `export` keyword (v2+) would allow file-private `let` bindings by making `export`
-opt-in — only `export let` / `export fn` would be visible to importers, bare `let` would be
-file-private. Not in v1.
+`pub` has no effect on evaluation — it is purely a visibility annotation consumed by the
+module loader. The `Value::Module` object's `named` map contains only `pub` bindings.
+
+### 3.2 Positional exports (implicit)
+
+Every root-level CE emit is indexed in emission order (0, 1, 2, ...) automatically.
+No `pub` required — positional access is always available. `pub let` additionally
+registers the CE under its name in the `named` map.
 
 ```mms
-// v2+ sketch (not decided):
-export let red_cube = R.cube() { C.rgba(1, 0, 0, 1) }  // public
-let scratch = 42                                          // file-private
+// scene.mms
+pub let red  = T.position(0,0,0) { R.cube() {} }  // index 0 + named "red"
+T.position(1,0,0) { R.cube() {} }                 // index 1, positional only
+pub let blue = T.position(2,0,0) { R.cube() {} }  // index 2 + named "blue"
+```
+
+```mms
+import { 0, red, 2 as blue_cube } from "scene.mms"
 ```
 
 ### 3.2 Implicit positional export

@@ -10,12 +10,9 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Minimal scene with a camera so the window opens.
-    let clear =
-        universe
-            .world
-            .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
-                0.08, 0.08, 0.08, 1.0,
-            ));
+    let clear = universe.world.add_component(engine::ecs::component::BackgroundColorComponent::new());
+    let clear_c = universe.world.add_component(engine::ecs::component::ColorComponent::rgba(0.08, 0.08, 0.08, 1.0));
+    let _ = universe.world.add_child(clear, clear_c);
     universe.add(clear);
 
     // Input-driven camera rig.

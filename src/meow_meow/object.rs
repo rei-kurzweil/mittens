@@ -46,6 +46,12 @@ pub enum Value {
         body: crate::meow_meow::ast::BlockStatement,
         captured_env: HashMap<String, Value>,
     },
+
+    /// A loaded module: named exports + ordered sequence of root CE emits.
+    Module {
+        named: HashMap<String, Value>,
+        sequence: Vec<crate::meow_meow::ast::ComponentExpression>,
+    },
 }
 
 // ---------------------------------------------------------------------------

@@ -38,14 +38,14 @@ let light_rig = T {
 
     T.position(-5, 5, 0) {
         DL {
-            intensity(0.7)
+            intensity(1.0)
             C.rgba(0.1, 0.95, 1.0, 1.0)
         }
     }
 
     T.position(0, 5, 5) {
         DL {
-            intensity(0.8)
+            intensity(1.0)
             C.rgba(1.0, 0.1, 0.95, 1.0)
         }
     }
@@ -53,21 +53,35 @@ let light_rig = T {
 
 light_rig
 
+BGC {
+    C.rgba(0.9, 0.9, 0.9, 1.0)
+}
 AL {
-    C.rgba(0.1,0.2,0.2, 1.0)
+    C.rgba(0.2,0.2,0.2, 1.0)
 }
 
 
-for y in range(128) {
+for z in range(128) {
     for x in range(128) {
-        let r = x / 128.0
-        let g = y / 128.0
-        let b = 0.5
-
+        let r = 0.1 + (x % 32 / 32.0)
+        let g = 0.1 + (z % 32 / 32.0)
+        
         let x2 = x - 64.0
-        let y2 = y - 64.0
+        let z2 = z - 64.0
 
-        T.position(x2*1.1, -2.0, y2*1.1) {
+        let y = -2.0;
+
+        if (z > 64 || x > 64) {
+            y = 2.0 + ((x + z) % 16);
+        }
+
+        if (z > 96 || x > 96) {
+            y = 2.0 + ((x + z) % 32);
+        }
+
+        let b = 0.1 + ((x + z + y) % 16 / 16.0)
+
+        T.position(x2, y, z2) {
             R.cube() {
                 C.rgba(r, g, b, 1.0)
             }

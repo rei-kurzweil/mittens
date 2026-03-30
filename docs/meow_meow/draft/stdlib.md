@@ -89,9 +89,9 @@ The stdlib is evaluated before the user script. Two options:
 
   ```mms
   // std/math.mms
-  let pi = 3.14159265358979
-  fn lerp(a, b, t) { return a + (b - a) * t }
-  // ...all automatically importable by name
+  pub let pi = 3.14159265358979
+  pub fn lerp(a, b, t) { return a + (b - a) * t }
+  let _scratch = 0  // file-private helpers use bare let
   ```
 
   ```mms

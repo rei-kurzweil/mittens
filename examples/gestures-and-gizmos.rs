@@ -26,10 +26,10 @@ fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Scene {
         .render_assets
         .get_mesh(BuiltinMeshType::Tetrahedron);
 
-    // BackgroundColor { dark grey }
-    let bg_color = universe
-        .world
-        .add_component(BackgroundColorComponent::rgba(0.90, 0.90, 0.90, 1.0));
+    // BackgroundColor { C.rgba }
+    let bg_color = universe.world.add_component(BackgroundColorComponent::new());
+    let bg_color_c = universe.world.add_component(ColorComponent::rgba(0.90, 0.90, 0.90, 1.0));
+    let _ = universe.world.add_child(bg_color, bg_color_c);
     universe.add(bg_color);
 
     // ambient light

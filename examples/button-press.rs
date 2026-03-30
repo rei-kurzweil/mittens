@@ -449,9 +449,9 @@ fn main() {
         RayCastComponent, TransformComponent,
     };
 
-    let bg = universe
-        .world
-        .add_component(BackgroundColorComponent::rgba(0.92, 0.92, 0.96, 1.0));
+    let bg = universe.world.add_component(BackgroundColorComponent::new());
+    let bg_c = universe.world.add_component(engine::ecs::component::ColorComponent::rgba(0.92, 0.92, 0.96, 1.0));
+    let _ = universe.world.add_child(bg, bg_c);
     universe.add(bg);
 
     let ambient = universe

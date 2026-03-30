@@ -19,9 +19,9 @@ pub fn spawn_mms_demo_rig(
     };
 
     // Dark blue clear colour.
-    let bg_color = universe
-        .world
-        .add_component(BackgroundColorComponent::rgba(0.02, 0.03, 0.10, 1.0));
+    let bg_color = universe.world.add_component(BackgroundColorComponent::new());
+    let bg_color_c = universe.world.add_component(ColorComponent::rgba(0.02, 0.03, 0.10, 1.0));
+    let _ = universe.world.add_child(bg_color, bg_color_c);
     universe.add(bg_color);
 
     // Camera rig: Input → Transform → Camera3D.

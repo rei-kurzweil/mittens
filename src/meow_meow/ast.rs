@@ -108,6 +108,13 @@ pub struct BlockStatement {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Assignment(AssignmentStatement),
+    /// `x = expr` — mutate an existing binding. Distinct from `Assignment` (`let x = expr`).
+    ///
+    /// Scope note (v1): reassignment updates the binding in the current block's local env.
+    /// It does NOT propagate outward to enclosing scopes — that requires a scope chain
+    /// (deferred). Inside a `for` loop body the loop's accumulated env is used, so
+    /// accumulator patterns (`sum = sum + i`) work correctly within the loop.
+    Reassign { name: Ident, value: Expression },
     Return(ReturnStatement),
     If(IfStatement),
     Block(BlockStatement),
@@ -115,12 +122,26 @@ pub enum Statement {
     ForIn { binding: Ident, iterable: Expression, body: BlockStatement },
     Break,
     Continue,
+    Import { items: Vec<ImportItem>, path: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssignmentStatement {
     pub name: Ident,
     pub value: Expression,
+    /// `true` when declared with `export let` / `export fn`.
+    pub exported: bool,
+}
+
+/// One item in an `import { ... } from "..."` list.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImportItem {
+    /// `{ name }` — import a named export.
+    Named(Ident),
+    /// `{ name as alias }` — import a named export under a different local name.
+    NamedAlias { name: Ident, alias: Ident },
+    /// `{ 0 as alias }` — import the Nth root CE emit, bound to `alias`.
+    PositionalAlias { index: usize, alias: Ident },
 }
 
 #[derive(Debug, Clone, PartialEq)]

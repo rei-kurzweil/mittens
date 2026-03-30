@@ -24,9 +24,9 @@ pub fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Gestu
     let tetra_mesh = universe.render_assets.get_mesh(BuiltinMeshType::Tetrahedron);
 
     // Background color (dark grey).
-    let bg_color = universe
-        .world
-        .add_component(BackgroundColorComponent::rgba(0.10, 0.10, 0.10, 1.0));
+    let bg_color = universe.world.add_component(BackgroundColorComponent::new());
+    let bg_color_c = universe.world.add_component(ColorComponent::rgba(0.10, 0.10, 0.10, 1.0));
+    let _ = universe.world.add_child(bg_color, bg_color_c);
     universe
         .world
         .init_component_tree(bg_color, &mut universe.command_queue);

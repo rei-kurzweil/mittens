@@ -20,170 +20,87 @@ decisions (🔷) that need a doc or a decision before implementation.
 
 **Known gaps from Phase 1 (carry-forward):**
 - [ ] Emit context stack — function calls inside component bodies should emit as children,
-      not world roots. Gated on Phase 5 (reply channel).
+      not world roots. Gated on Phase 6 (reply channel).
       → [emission-and-component-value-model.md](emission-and-component-value-model.md)
 - [ ] `let x = T { }` stores `ComponentExpression`, not a live `ComponentId`.
-      Gated on Phase 5.
+      Gated on Phase 6.
 
 ---
 
-## Phase 2: Expression evaluation (arithmetic, boolean, comparison)
+## Phase 2: Expression evaluation ✅ DONE
 
-**What's missing from tokenizer:**
+- [x] Arithmetic: `+`, `-`, `*`, `/`, `%`
+- [x] Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=`
+- [x] Logical: `&&`, `||`, `!`
+- [x] Unary minus: `-x`
+- [x] `Expression::BinaryOp { op, lhs, rhs }`
+- [x] `Expression::UnaryOp { op, operand }`
+- [x] `eval_expr()` — recursive expression evaluator, returns a runtime `Value`
+- [x] Arithmetic on `Value::Number`
+- [x] Comparison returning `Value::Bool`
+- [x] Logical ops on `Value::Bool`
+- [x] Number type: everything is `f64`, cast at component registry boundary
 
-- [ ] Arithmetic: `+`, `-`, `*`, `/`, `%`
-- [ ] Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=`
-- [ ] Logical: `&&`, `||`, `!`
-- [ ] Unary minus: `-x`
-
-**What's missing from AST:**
-
-- [ ] `Expression::BinaryOp { op, lhs, rhs }`
-- [ ] `Expression::UnaryOp { op, operand }`
-
-**What's missing from evaluator:**
-
-- [ ] `eval_expr()` — recursive expression evaluator, returns a runtime `Value`
-- [ ] Arithmetic on `Value::Number`
-- [ ] Comparison returning `Value::Bool`
-- [ ] Logical ops on `Value::Bool`
-
-**Checklist:**
-- [ ] Add operator tokens to `token.rs`
-- [ ] Add `BinaryOp` / `UnaryOp` to `Expression` in `ast/expression.rs`
-- [ ] Parse binary/unary expressions with correct precedence in `parser.rs`
-- [ ] Implement `eval_expr()` in `evaluator.rs` (replaces the current pattern-matched
-      handful of expression cases)
-- [ ] Tests: arithmetic, comparison, boolean, precedence
-
-🔷 **Design decision: number types**
-Currently `Expression::Number(f64)`. Should MMS distinguish integers from floats?
-Many component fields take `f32`, some take `usize` (counts). Options: keep everything
-`f64` and cast at boundary; add `Int(i64)` and `Float(f64)` variants; infer from context.
-→ needs a short decision note (no existing doc)
-
-🔷 **Design decision: operator precedence table**
-Standard (PEMDAS + C-style logical)? Or explicit parens required for mixing arithmetic
-and logical? → add to a future `expression-evaluation.md`
+**Design decisions resolved:**
+- Numbers are `f64` throughout; cast to `f32`/`usize`/etc. at the registry boundary.
+- Precedence is standard C-style (PEMDAS + logical).
 
 ---
 
-## Phase 3: `if`/`else` evaluation
+## Phase 3: `if`/`else` evaluation ✅ DONE
 
-**What the parser already has:**
-- `Statement::If(IfStatement)` with `condition`, `then_branch`, `else_branch` ✅
-- `Statement::Block(BlockStatement)` ✅
+- [x] `eval_stmt` arm for `Statement::If` — evaluate condition, pick branch
+- [x] `eval_stmt` arm for `Statement::Block` — evaluate inner statements
+- [x] `if` without `else` — condition false → `StmtEffect::None`
+- [x] Reassignment inside if-branch propagates to enclosing scope (`&mut Env` threading,
+      no clone — see `docs/meow_meow/spec/env-and-context.md`)
+- [x] Tests: if true/false, if/else, if with let-bound condition variable, if+reassign propagation
 
-**What the evaluator currently does:**
-- `Statement::If(_) | Statement::Block(_) => Ok(StmtEffect::None)` — ignored
-
-**Checklist:**
-- [ ] Implement `eval_stmt` arm for `Statement::If` — evaluate condition, pick branch,
-      evaluate chosen block statements
-- [ ] Implement `eval_stmt` arm for `Statement::Block` — evaluate inner statements
-- [ ] `if` without `else` — condition false → `Value::Null`
-- [ ] Tests: `if true { T { } }`, `if false { T { } }`, `if/else` branching,
-      `if` with a let-bound condition variable
-
-🔷 **Design decision: `if` as expression vs statement**
-Parser currently produces `Statement::If`. Should `if` also be usable as an expression
-(returning the value of the taken branch)? This affects `let x = if cond { T { } } else { R { } }`.
-No existing doc — needs a decision.
+**Remaining gaps in this area:**
+- [ ] `else if` chaining — the parser produces a nested `else { if ... }` tree correctly
+      but `else if` as explicit syntax isn't handled; chains of conditions require nesting
+- [ ] `if` as an expression (`let x = if cond { a } else { b }`) — not parsed; `if` is
+      statement-only
 
 ---
 
-## Phase 4: Functions
+## Phase 4: Functions ✅ DONE
 
-**What's missing from tokenizer:**
-- [ ] `fn` keyword token
+- [x] `fn` keyword token
+- [x] `Statement::Function { name, params, body }` — named function syntax `fn foo(args) { }`
+- [x] `Value::Function { params, body, captured_env }` — full closure with env capture
+- [x] `eval_call()` — look up callee in env, bind args, eval body in isolated env
+- [x] `EmitLiftTransform` recurses into function bodies
+- [x] `return` statement evaluation — `StmtEffect::Return(value)` unwinds call frame
+- [x] `export fn` — named function export in module context
+- [x] Tests: define + call, return value, args, closure capture
 
-**What's missing from AST:**
-- [ ] `Expression::Function { params: Vec<Ident>, body: BlockStatement }`
-      (anonymous; named functions are `let f = fn(...) { }`)
-
-**What's missing from evaluator:**
-- [ ] `StoredValue::Closure { params, body, captured_env }` (or non-capturing function)
-- [ ] `eval_call()` — look up callee in env as `StoredValue::Closure`, bind args, eval body
-- [ ] Scope chain for function calls — currently a flat `HashMap`; needs push/pop on call
-
-**Checklist:**
-- [ ] Add `Fn` token to `token.rs` and `tokenizer.rs`
-- [ ] Add `Expression::Function` to AST
-- [ ] Parse `fn(params) { body }` in `parser.rs`
-- [ ] Add `StoredValue::Closure` to evaluator
-- [ ] Implement `eval_call()` with a scope frame pushed for the call
-- [ ] `EmitLiftTransform` must recurse into function bodies (already planned; confirm it does)
-- [ ] `return` statement evaluation — unwind call frame, return value to caller
-- [ ] Tests: define + call a function, function returning a CE, function with args,
-      recursive function (stretch)
-
-🔷 **Design decision: closures vs plain functions**
-Do MMS functions close over their lexical environment, or only see their arguments?
-Full closures require capturing the env at definition time. Plain functions (no capture)
-are simpler to implement and may be sufficient for authoring use cases.
-→ needs `functions-and-closures.md`
-
-🔷 **Design decision: scope rules**
-Currently flat `HashMap<String, StoredValue>`. Phase 4 needs at minimum a call-frame
-scope (push on call, pop on return). Should `let` inside an `if` branch be visible
-outside it (dynamic/flat scoping) or go out of scope with the block (lexical scoping)?
-Lexical is correct but requires a scope chain.
-→ needs `functions-and-closures.md`
-
-🔷 **Design decision: named functions vs `let f = fn(...)`**
-Named function syntax (`fn foo(args) { }`) is syntactic sugar for `let foo = fn(args) { }`.
-Does MMS need both forms or just the `let` form? The `let` form is more uniform but
-`fn foo` reads better for top-level definitions.
-
-🔷 **Design decision: return type annotations**
-`fn(x: f32) -> ComponentObject { ... }` enables the typed emission policy (Option D).
-v1 doesn't need this but the AST should leave room for it.
-→ [emission-policy-options.md](emission-policy-options.md)
+**Design decisions resolved:**
+- Named functions (`fn foo(args) { }`) are `Statement::Function`; `let f = fn ...` is not a
+  separate form — `fn` is always statement-level.
+- Full closures: `captured_env: env.clone()` at definition time.
+- Let inside a function body leaks to the function scope (v1 flat scoping; see env-and-context.md).
+- No return type annotations yet (Phase 10).
 
 ---
 
-## Phase 5: `for`/`in` loop with `range(n)`, `break`, `continue`
+## Phase 5: `for`/`in`, arrays, `break`, `continue` ✅ DONE
 
-**Scope decision:** Phase 5 implements exactly one loop construct — `for x in iterable { }`.
-No `while`, no `loop`, no `..` range syntax. `while` and mutable loop variables are deferred
-to Phase 8 (they require `var` / mutable bindings, which is a separate design problem).
-`break` and `continue` are included in Phase 5 since they are needed for `for` to be useful.
+- [x] `for`, `in`, `break`, `continue` keyword tokens
+- [x] `Statement::ForIn { binding, iterable, body }`
+- [x] `Statement::Break`, `Statement::Continue`
+- [x] `StmtEffect::Break`, `StmtEffect::Continue`
+- [x] `eval_stmt` for ForIn — persistent `loop_env` across iterations (accumulator pattern works)
+- [x] `range(n)` builtin in `eval_call` — evaluator builtin, hardcoded, no env entry
+- [x] `Expression::Array(Vec<Expression>)` + `Value::Array(Vec<Value>)`
+- [x] Array literal parsing and evaluation
+- [x] Tests: `for x in [1,2,3]`, `for i in range(10)`, emit in a loop, break, continue,
+      accumulator pattern, nested for
 
-**What's missing from tokenizer:**
-- [ ] `for` keyword token
-- [ ] `in` keyword token
-- [ ] `break` keyword token
-- [ ] `continue` keyword token
-
-**What's missing from AST:**
-- [ ] `Statement::ForIn { binding: Ident, iterable: Expression, body: BlockStatement }`
-- [ ] `Statement::Break`
-- [ ] `Statement::Continue`
-
-**What already exists:**
-- `Expression::Array(Vec<Expression>)` — in AST ✅
-- `TokenKind::LBracket` / `RBracket` — in tokenizer ✅
-- Array literal parsing in parser ✅
-- `Value::Array(Vec<Value>)` — in object.rs ✅
-- `eval_expr` for `Expression::Array` — in evaluator ✅
-- Unwind mechanism (`StmtEffect::Return`) — already used by `return` ✅
-
-**What's missing from evaluator:**
-- [ ] `StmtEffect::Break` and `StmtEffect::Continue` variants
-- [ ] `eval_stmt` arm for `Statement::ForIn` — iterate, bind, eval body, catch Break/Continue
-- [ ] `eval_stmt` arms for `Statement::Break` and `Statement::Continue`
-- [ ] `range(n)` builtin in `eval_call`: `range(n)` → `Value::Array([0..n])`,
-      `range(start, end)` → `Value::Array([start..end])`
-
-**Checklist:**
-- [ ] Add `For`, `In`, `Break`, `Continue` tokens to `token.rs` and `tokenizer.rs`
-- [ ] Add `Statement::ForIn`, `Statement::Break`, `Statement::Continue` to `ast.rs`
-- [ ] Parse `for x in expr { body }`, `break`, `continue` in `parser.rs`
-- [ ] Add `StmtEffect::Break` / `StmtEffect::Continue` to evaluator
-- [ ] Implement `eval_stmt` for ForIn, Break, Continue
-- [ ] Implement `range(n)` / `range(start, end)` builtin in `eval_call`
-- [ ] Tests: `for x in [1, 2, 3]`, `for i in range(10)`, emit in a loop, break, continue,
-      nested for, loop produces correct intent count
+**Remaining gaps in this area:**
+- [ ] Array indexing: `arr[i]` — `Expression::Index` not in AST; subscript reads are not
+      supported. Arrays exist but elements cannot be read back after creation.
+- [ ] Array mutation: `arr[i] = v` — depends on array indexing above.
 
 ---
 
@@ -195,13 +112,13 @@ live engine component. Scripts cannot reference spawned components after binding
 **What's needed:**
 - [ ] Reply channel from main thread → evaluator thread (currently one-directional)
 - [ ] `SpawnComponentTree` response carries the assigned `ComponentId`
-- [ ] `StoredValue::ComponentObject(ComponentId)` (replaces `ComponentExpr` for live handles)
+- [ ] `Value::ComponentObject(ComponentId)` (replaces `ComponentExpr` for live handles)
 - [ ] Emit context stack — body-scoped calls emit as children of the enclosing component
 
 **Checklist:**
 - [ ] Design the reply channel (second ring buffer, or extend `EvalResponse`)
 - [ ] `SpawnComponentTree` executor echoes the root `ComponentId` back
-- [ ] Evaluator receives the ID and upgrades `StoredValue::ComponentExpr` → `ComponentObject`
+- [ ] Evaluator receives the ID and upgrades the stored value → `ComponentObject`
 - [ ] Emit context stack implemented in evaluator
 
 🔷 **Design decision: reply channel shape**
@@ -236,53 +153,91 @@ discussed in [signal-emission-in-mms.md](signal-emission-in-mms.md))?
 
 ---
 
-## Phase 8: `while` and mutable bindings
+## Phase 8: Mutable rebinding / `while` — PARTIALLY DONE
 
-`while` requires mutable loop variables (`var i = 0; while i < 10 { i = i + 1 }`),
-which is a separate design problem from `for`. Deferred until there is a concrete need.
+**Done (landed ahead of schedule, implemented differently than planned):**
+- [x] Variable reassignment: `x = expr` in statement position (no `var` keyword needed)
+      — parser lookahead on `Ident` followed by `=`; `Statement::Reassign { name, value }`
+- [x] `StmtEffect::Reassign(name, value)` — applied by `eval_block_stmts`, errors if name
+      not already in scope
+- [x] Accumulator pattern in `for` loops works: `sum = sum + i` across iterations
+- [x] Tests: basic reassign, undefined name errors, for-loop accumulator, if-branch propagation
 
-`break` and `continue` are already implemented in Phase 5 and will work here too.
+**Remaining:**
+- [ ] `while` loop — `Statement::While { condition, body }`, `While` token, parser + evaluator arm
+- [ ] `loop { }` — can be `while true { }`, probably not needed
 
-- [ ] Design decision: `var` for mutable bindings vs rebinding with `let` (see `loop-semantics.md`)
-- [ ] `While` / `Var` tokens
-- [ ] `Statement::While { condition, body }`, `Statement::VarDecl`, `Statement::Assign`
-- [ ] Parser + evaluator for while and mutable assignment
-- [ ] `loop { }` (infinite loop with `break`) — can be sugar for `while true { }`, probably not needed
-- [ ] Tests
+**Design decision resolved:** `var` keyword dropped; plain `x = expr` is rebinding.
+Let-bindings inside blocks leak to the enclosing scope (v1 flat scoping — documented).
 
 ---
 
-## Phase 9: Module / import system
+## Phase 9: Module / import system ✅ DONE
 
-Long-horizon. **Implementation deferred** — the retrieval/query model needs more design
-time before committing to syntax. See [module-import-export.md](module-import-export.md).
+- [x] `import { name, name } from "path"` statement
+- [x] `export let` / `export fn` — named exports
+- [x] `Value::Module { named: HashMap, sequence: Vec }` runtime type
+- [x] `eval_as_module()` — sandboxed eval; emits collected into `sequence`, not world queue
+- [x] `StmtEffect::Export(name, val)` — applied by module evaluator, not script evaluator
+- [x] `StmtEffect::ImportBindings(HashMap)` — import binds names into local env
+- [x] Module resolution: relative path with `.mms` extension (v1 — 12-line `resolve_import_path`)
+- [x] Circular import detection (basic)
 
-**Current direction:**
-- `export let` / `export fn` for named exports — almost certainly happening
-- Root CEs are implicitly positionally exported (no `export` keyword needed on bare emits)
-- Named export retrieval and CE selector queries should be **unified** — one access model,
-  not two separate mechanisms
-- `import` as a keyword may not exist, or if it does it IS the query mechanism
-- File loading returns an object where named exports, positional indices, and selector
-  results are all accessed the same way
+**Module resolution v2 (designed, not yet implemented):**
+- [ ] Bare name resolution: `"noise"` → check relative file first, then stdlib registry
+- [ ] Extension inference: `"math"` → try `math`, `math.mms`, `math/mod.mms`
+- [ ] Project search path (reserved slot in data model)
+- [ ] Stdlib registry: `HashMap<&str, StdlibModule>` with embedded MMS source (`include_str!`)
+- [ ] Sentinel paths for stdlib (`"<std:noise>"`) in error messages
+- [ ] Stdlib modules: `noise`, `math`, `color`, `easing`, `random` (see catalogue below)
+→ Design: [../draft/module-resolution.md](../draft/module-resolution.md)
 
-- [ ] Decide the retrieval syntax / keyword (or no keyword — function call? operator?)
-- [ ] `export` keyword + modifier on `let`/`fn`
-- [ ] `Value::Module` runtime type: `named` map + `sequence` emission list
-- [ ] Sandboxed eval context — emits collected into module sequence, not world queue
-- [ ] Positional index: `mod[n]`
-- [ ] Selector queries: `mod.query("T")`, `mod.query("[name=foo] T")`, `mod[0].query(...)`
-- [ ] Module resolution (relative paths, asset system integration)
-- [ ] Circular import detection
+---
 
-🔷 **Design decision: retrieval syntax**
-The verb/syntax for loading a file and getting things out of it — `import`, `load()`, a
-special operator — not yet decided. Must unify named-by-string, positional-by-int, and
-selector-by-string into one model.
+## Phase 9b: Standard library (MMS) — DESIGNED, NOT YET WRITTEN
 
-🔷 **Design decision: CE clone vs reference on index/query**
-Pre-Phase-6: clone (safe, cheap). Phase-6+ (live `ComponentObject`): needs explicit
-`.clone()` or it's a reference to an already-spawned component.
+All stdlib must be written in MMS (not Rust) so the eventual transpiler can see full AST
+bodies and emit optimised native code for each target. A Rust-native stdlib function would
+be opaque to the transpiler.
+→ Rationale: [../spec/function-dispatch.md](../spec/function-dispatch.md)
+
+**Catalogue:**
+
+| Module | Functions | Status |
+|---|---|---|
+| `"math"` | `sin`, `cos`, `tan`, `sqrt`, `abs`, `floor`, `ceil`, `pow`, `clamp`, `lerp`, `map` | Not written; trig/sqrt need native bindings |
+| `"easing"` | `ease_in`, `ease_out`, `ease_in_out`, cubic/back/elastic variants | Not written; pure MMS, can be written now |
+| `"color"` | `hsv(h,s,v)` → rgba array, `mix(a,b,t)`, `temperature(k)` | Not written; pure MMS, can be written now |
+| `"noise"` | `simplex(x,y)`, `simplex3(x,y,z)`, `perlin(x,y)`, `worley(x,y)` | Needs native PRNG + C noise lib binding |
+| `"random"` | `seed(n)`, `rand()`, `rand_range(lo,hi)` | Needs native binding (PRNG state) |
+
+**Native binding mechanism not yet designed.** Functions that need OS/native primitives
+(`sin`, `rand`, etc.) require a `native fn` declaration form or similar, so the evaluator
+and transpiler both know to lower them to a platform call. Without this mechanism, only
+pure-MMS modules (`easing`, most of `color`, `lerp`/`clamp`/`map` in `math`) can be
+written now. Everything else is blocked.
+
+Random values in particular would need an intent + reply channel (same as Phase 6) to
+request a PRNG value from the main thread — or a native binding that calls into a
+thread-local PRNG on the evaluator thread.
+
+---
+
+## Language gaps summary ᓚᘏᗢ
+
+These are missing features identified across phases that aren't covered by any phase above.
+Address them as needed when authoring real scenes hits the wall.
+
+| Gap | Severity | Notes |
+|---|---|---|
+| Array indexing `arr[i]` | High | Arrays exist but are write-once. Blocks most data-structure use cases. |
+| `else if` chaining | Medium | Parser nests `else { if ... }` correctly but no `else if` keyword pair. Workaround: nest manually. |
+| Math builtins (`sin`, `cos`, `sqrt`, `abs`, `floor`) | High | Required for any geometry / animation math. Blocked on native binding mechanism. |
+| Map / object literals `{ key: val }` | Medium | No map type in AST or evaluator. Needed for structured data. |
+| `while` loop | Low | Reassignment is done; only the loop construct is missing. Can loop with `for i in range(n)`. |
+| Method call syntax `foo.bar(args)` on values | Low | `CallExpression.callee` is always a bare `Ident`. Needed for Phase 7 mutation API. |
+| String interpolation | Low | String concat with `+` works; no `f"..."` or `\{expr\}` syntax. |
+| `else if` / match expression | Low | Multi-way branching requires nesting if/else. |
 
 ---
 
@@ -326,18 +281,21 @@ registry returning `Err(String)` rather than panicking.
 
 ```
 Phase 1 (done)
-    └── Phase 2 (expression eval)
-            ├── Phase 3 (if/else)
-            │       └── Phase 4 (functions)
-            │               └── Phase 5 (arrays + for)
-            │                       └── Phase 8 (while)
+    └── Phase 2 (done)
+            ├── Phase 3 (done)
+            │       └── Phase 4 (done)
+            │               └── Phase 5 (done)
+            │                       └── Phase 8 (reassign done; while todo)
             └── Phase 6 (reply channel)
                     └── Phase 7 (mutation API)
 
-Phase 9 (modules) — depends on Phase 4
+Phase 9 (modules — done; stdlib todo)
 Phase 10 (types) — depends on Phase 4
 ```
 
-**Immediate next: Phase 2**, then Phase 3, then Phase 4. These are the three that unblock
-`let`/`if`/function tests and make MMS useful as a scripting language rather than just a
-scene description format.
+**Current state:** Phases 1–5, 8 (partial), and 9 are done. The evaluator is a working
+scripting runtime. Remaining work:
+
+- **Unblock authoring:** array indexing, math builtins (needs native binding design)
+- **Unblock live mutation:** Phase 6 reply channel → Phase 7 mutation API
+- **Unblock transpilation:** Phase 10 types; native binding mechanism for stdlib

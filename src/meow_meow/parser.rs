@@ -1,7 +1,7 @@
 use crate::meow_meow::ast::{
     AssignmentStatement, BinOpKind, BlockStatement, CallExpression, ComponentBodyItem,
-    ComponentExpression, ConstructorCall, Expression, Ident, IfStatement, ReturnStatement,
-    Span, Statement, UnaryOpKind,
+    ComponentExpression, ConstructorCall, Expression, Ident, IfStatement, ImportItem,
+    ReturnStatement, Span, Statement, UnaryOpKind,
 };
 use crate::meow_meow::token::{Token, TokenKind};
 
@@ -41,7 +41,7 @@ impl MeowMeowParser {
                 self.consume(&TokenKind::Eq)?;
                 let value = self.parse_expression()?;
                 self.try_consume(&TokenKind::Semicolon);
-                Ok(Statement::Assignment(AssignmentStatement { name, value }))
+                Ok(Statement::Assignment(AssignmentStatement { name, value, exported: false }))
             }
             TokenKind::Fn => {
                 self.bump(); // consume `fn`
@@ -50,13 +50,77 @@ impl MeowMeowParser {
                     let name = self.expect_ident()?;
                     let func = self.parse_fn_body()?;
                     self.try_consume(&TokenKind::Semicolon);
-                    Ok(Statement::Assignment(AssignmentStatement { name, value: func }))
+                    Ok(Statement::Assignment(AssignmentStatement { name, value: func, exported: false }))
                 } else {
                     // anonymous fn in statement position — unusual but valid
                     let func = self.parse_fn_body()?;
                     self.try_consume(&TokenKind::Semicolon);
                     Ok(Statement::Expression(func))
                 }
+            }
+            TokenKind::Export => {
+                self.bump(); // consume 'export'
+                let exported = true;
+                match self.peek_kind() {
+                    TokenKind::Let => {
+                        self.bump();
+                        let name = self.expect_ident()?;
+                        self.consume(&TokenKind::Eq)?;
+                        let value = self.parse_expression()?;
+                        self.try_consume(&TokenKind::Semicolon);
+                        Ok(Statement::Assignment(AssignmentStatement { name, value, exported }))
+                    }
+                    TokenKind::Fn => {
+                        self.bump();
+                        let name = self.expect_ident()?;
+                        let func = self.parse_fn_body()?;
+                        self.try_consume(&TokenKind::Semicolon);
+                        Ok(Statement::Assignment(AssignmentStatement { name, value: func, exported }))
+                    }
+                    _ => Err(self.err("Expected 'let' or 'fn' after 'export'")),
+                }
+            }
+            TokenKind::Import => {
+                self.bump(); // consume 'import'
+                self.consume(&TokenKind::LBrace)?;
+                let mut items = Vec::new();
+                if !self.try_consume(&TokenKind::RBrace) {
+                    loop {
+                        match self.peek_kind().clone() {
+                            TokenKind::Number(n) => {
+                                self.bump();
+                                let index = n as usize;
+                                self.consume(&TokenKind::As)?;
+                                let alias = self.expect_ident()?;
+                                items.push(ImportItem::PositionalAlias { index, alias });
+                            }
+                            TokenKind::Ident(_) => {
+                                let name = self.expect_ident()?;
+                                if self.try_consume(&TokenKind::As) {
+                                    let alias = self.expect_ident()?;
+                                    items.push(ImportItem::NamedAlias { name, alias });
+                                } else {
+                                    items.push(ImportItem::Named(name));
+                                }
+                            }
+                            _ => return Err(self.err("Expected identifier or number in import list")),
+                        }
+                        if !self.try_consume(&TokenKind::Comma) {
+                            break;
+                        }
+                        if matches!(self.peek_kind(), TokenKind::RBrace) {
+                            break; // trailing comma
+                        }
+                    }
+                    self.consume(&TokenKind::RBrace)?;
+                }
+                self.consume(&TokenKind::From)?;
+                let path = match self.peek_kind().clone() {
+                    TokenKind::String(s) => { self.bump(); s }
+                    _ => return Err(self.err("Expected string path after 'from'")),
+                };
+                self.try_consume(&TokenKind::Semicolon);
+                Ok(Statement::Import { items, path })
             }
             TokenKind::Return => {
                 self.consume(&TokenKind::Return)?;
@@ -100,6 +164,19 @@ impl MeowMeowParser {
             }
             TokenKind::LBrace => Ok(Statement::Block(self.parse_block_statement()?)),
             _ => {
+                // `ident = expr` reassignment — two-token lookahead to avoid
+                // consuming the start of a comparison expression like `x == y`.
+                if matches!(self.peek_kind(), TokenKind::Ident(_))
+                    && self.tokens.get(self.pos + 1)
+                        .map(|t| matches!(t.kind, TokenKind::Eq))
+                        .unwrap_or(false)
+                {
+                    let name = self.expect_ident()?;
+                    self.consume(&TokenKind::Eq)?;
+                    let value = self.parse_expression()?;
+                    self.try_consume(&TokenKind::Semicolon);
+                    return Ok(Statement::Reassign { name, value });
+                }
                 let expr = self.parse_expression()?;
                 self.try_consume(&TokenKind::Semicolon);
                 Ok(Statement::Expression(expr))

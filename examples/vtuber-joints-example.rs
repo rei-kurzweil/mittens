@@ -24,9 +24,9 @@ fn main() {
     universe.add(clock);
 
     // Light pink background.
-    let background = universe
-        .world
-        .add_component(BackgroundColorComponent::rgba(1.0, 0.82, 0.90, 1.0));
+    let background = universe.world.add_component(BackgroundColorComponent::new());
+    let background_c = universe.world.add_component(ColorComponent::rgba(1.0, 0.82, 0.90, 1.0));
+    let _ = universe.world.add_child(background, background_c);
     universe.add(background);
 
     // Small ambient so shadowed areas aren't pure black.

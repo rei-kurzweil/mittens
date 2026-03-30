@@ -9,13 +9,9 @@ fn main() {
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
 
-    let background =
-        universe
-            .world
-            .add_component(engine::ecs::component::BackgroundColorComponent::rgba(
-                0.3, 0.1, 1.0, 1.0,
-            ));
-
+    let background = universe.world.add_component(engine::ecs::component::BackgroundColorComponent::new());
+    let background_c = universe.world.add_component(engine::ecs::component::ColorComponent::rgba(0.3, 0.1, 1.0, 1.0));
+    let _ = universe.world.add_child(background, background_c);
     universe.add(background);
 
     // --- Camera rig (WASD/QE) ---

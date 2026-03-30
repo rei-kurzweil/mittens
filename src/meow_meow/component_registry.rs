@@ -216,12 +216,7 @@ fn create_component(
             _ => Err(format!("Renderable: unknown constructor '{}'", ctor.unwrap_or(""))),
         },
         "Background" => add!(BackgroundComponent::new()),
-        "BackgroundColor" => match ctor {
-            Some("rgba") => add!(BackgroundColorComponent::rgba(
-                arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?, arg(args, 3)?.as_f32()?
-            )),
-            _ => add!(BackgroundColorComponent::new()),
-        },
+        "BackgroundColor" => add!(BackgroundColorComponent::new()),
         "AmbientLight" => match ctor {
             Some("rgb") => add!(AmbientLightComponent::rgb(
                 arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?

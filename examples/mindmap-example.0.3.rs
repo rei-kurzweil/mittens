@@ -48,9 +48,9 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Dark blue background.
-    let background = universe
-        .world
-        .add_component(BackgroundColorComponent::rgba(0.02, 0.03, 0.08, 1.0));
+    let background = universe.world.add_component(BackgroundColorComponent::new());
+    let background_c = universe.world.add_component(ColorComponent::rgba(0.02, 0.03, 0.08, 1.0));
+    let _ = universe.world.add_child(background, background_c);
     universe.add(background);
 
     // Ambient so text/lines are readable without placing explicit lights.
