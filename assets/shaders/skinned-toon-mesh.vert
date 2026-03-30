@@ -18,7 +18,7 @@ layout(location = 2) in vec4 i_model_c1;
 layout(location = 3) in vec4 i_model_c2;
 layout(location = 4) in vec4 i_model_c3;
 layout(location = 6) in vec4 i_color;
-layout(location = 7) in uint i_emissive;
+layout(location = 7) in float i_emissive;
 layout(location = 9) in float i_opacity;
 layout(location = 10) in uint i_bones_base;
 layout(location = 11) in uint i_bones_count;
@@ -45,7 +45,7 @@ layout(location = 0) out vec3 v_world_pos;
 layout(location = 1) out vec3 v_normal;
 layout(location = 2) out vec2 v_uv;
 layout(location = 3) out vec4 v_color;
-layout(location = 4) flat out uint v_emissive;
+layout(location = 4) flat out float v_emissive;
 
 void main() {
     mat4 model = mat4(i_model_c0, i_model_c1, i_model_c2, i_model_c3);

@@ -241,6 +241,18 @@ impl Material {
         vertex_shader: "assets/shaders/skinned-toon-mesh.vert",
         fragment_shader: "assets/shaders/toon-mesh.frag",
     };
+
+    /// Emissive toon material.
+    pub const EMISSIVE_TOON_MESH: Material = Material {
+        vertex_shader: "assets/shaders/toon-mesh.vert",
+        fragment_shader: "assets/shaders/emissive-toon-mesh.frag",
+    };
+
+    /// Skinned emissive toon material.
+    pub const SKINNED_EMISSIVE_TOON_MESH: Material = Material {
+        vertex_shader: "assets/shaders/skinned-toon-mesh.vert",
+        fragment_shader: "assets/shaders/emissive-toon-mesh.frag",
+    };
 }
 
 impl MaterialHandle {
@@ -252,4 +264,10 @@ impl MaterialHandle {
 
     /// Skinned toon mesh material (see `Material::SKINNED_TOON_MESH`).
     pub const SKINNED_TOON_MESH: MaterialHandle = MaterialHandle(2);
+
+    /// Emissive toon mesh material (see `Material::EMISSIVE_TOON_MESH`).
+    pub const EMISSIVE_TOON_MESH: MaterialHandle = MaterialHandle(3);
+
+    /// Skinned emissive toon mesh material (see `Material::SKINNED_EMISSIVE_TOON_MESH`).
+    pub const SKINNED_EMISSIVE_TOON_MESH: MaterialHandle = MaterialHandle(4);
 }

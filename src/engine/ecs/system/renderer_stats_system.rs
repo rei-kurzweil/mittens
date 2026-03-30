@@ -190,13 +190,17 @@ fn ensure_stats_text_subtree(
         None => false,
     };
     if !has_emissive {
-        let cid = world.add_component(EmissiveComponent::new(config.emissive));
+        let cid = world.add_component(EmissiveComponent::new(if config.emissive {
+            1.0
+        } else {
+            0.0
+        }));
         let _ = world.add_child(text_id, cid);
         ids.text_emissive = Some(cid);
     }
     if let Some(cid) = ids.text_emissive {
         if let Some(e) = world.get_component_by_id_as_mut::<EmissiveComponent>(cid) {
-            e.enabled = config.emissive;
+            e.intensity = if config.emissive { 1.0 } else { 0.0 };
         }
     }
 

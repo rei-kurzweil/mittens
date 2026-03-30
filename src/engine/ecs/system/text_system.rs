@@ -178,7 +178,7 @@ impl TextSystem {
         }
 
         if let Some(enabled) = emissive {
-            let e_id = world.add_component(EmissiveComponent { enabled });
+            let e_id = world.add_component(EmissiveComponent::new(if enabled { 1.0 } else { 0.0 }));
             let _ = world.add_child(r_id, e_id);
         }
 
@@ -256,7 +256,7 @@ impl TextSystem {
         let inherited_emissive = world.children_of(component).iter().find_map(|&ch| {
             world
                 .get_component_by_id_as::<EmissiveComponent>(ch)
-                .map(|e| e.enabled)
+                .map(|e| e.intensity > 0.0)
         });
 
         // Raycasting is explicit opt-in. For text, allow toggling at the TextComponent root by

@@ -102,3 +102,5 @@ Absolute paths are also accepted (pass through unchanged). There is no stdlib pr
 | Module caching (eval once) | ❌ not yet (re-evaluated per import) |
 | `@std/` stdlib prefix | ❌ not yet |
 | Re-export (`export { x } from "..."`) | ❌ not yet |
+| `import "file.mms" as ns` namespace import | ❌ not yet — required for `ns.query(...)` |
+| `module.query(selector)` / `.query_all()` | ❌ not yet — see [mms-query.md](../draft/mms-query.md) |

@@ -15,9 +15,9 @@
 //   Phase 6  Transparent multi-layer   (Opacity not in registry)
 //   Phase 7  Overlay                   (OV not in registry)
 //
-// Future PostProcessing syntax (not yet in component registry):
+// Future RenderGraph syntax:
 //
-//   PostProcessing {
+//   RenderGraph {
 //       Bloom.radius(0.2).intensity(0.8) {
 //           quality = 0.5
 //           EmissiveSource
@@ -129,7 +129,7 @@ T.position(0.0, -0.32, 1.1) {
 }
 
 // ── Phase 3 (emissive) — future Bloom source ─────────────────────────────────
-// Emissive objects are in the Opaque phase today.  Once PostProcessingComponent
+// Emissive objects are in the Opaque phase today.  Once RenderGraphComponent
 // is implemented they feed the dedicated Emissive Prepass ([2] in the PP graph).
 
 T.position(-2.4, 1.5, 0.0).scale(0.32, 0.32, 0.32) {

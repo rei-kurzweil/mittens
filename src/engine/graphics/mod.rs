@@ -1,5 +1,6 @@
 pub mod mesh;
 pub mod pipeline_descriptor_set_layouts;
+pub mod post_processing;
 pub mod primitives;
 pub mod render_assets;
 pub mod render_info;
@@ -11,6 +12,10 @@ pub mod xr_renderer;
 pub mod xr_swapchain;
 
 pub use mesh::{CpuMesh, CpuVertex, MeshFactory};
+pub use post_processing::{
+    BloomConfig, BloomSource, BokehConfig, EmissivePassConfig, PostProcessingConfig,
+    PostProcessingRenderer,
+};
 #[allow(unused_imports)]
 pub use primitives::{
     GpuRenderable, Material, MaterialHandle, MeshHandle, Renderable, TextureHandle, Transform,

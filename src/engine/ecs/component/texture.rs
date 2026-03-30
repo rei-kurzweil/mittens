@@ -54,6 +54,7 @@ impl CatEngineTextureFormat {
 pub struct TextureComponent {
     pub source: TextureSource,
     pub format: CatEngineTextureFormat,
+    pub render_image: Option<String>,
 }
 
 impl TextureComponent {
@@ -63,11 +64,28 @@ impl TextureComponent {
         Self {
             source: TextureSource::Uri(uri),
             format,
+            render_image: None,
+        }
+    }
+
+    pub fn unresolved() -> Self {
+        Self {
+            source: TextureSource::Uri(String::new()),
+            format: CatEngineTextureFormat::Rgba8,
+            render_image: None,
         }
     }
 
     pub fn with_uri(uri: impl Into<String>) -> Self {
         Self::new(uri)
+    }
+
+    pub fn render_image(selector: impl Into<String>) -> Self {
+        Self {
+            source: TextureSource::Uri(String::new()),
+            format: CatEngineTextureFormat::Rgba8,
+            render_image: Some(selector.into()),
+        }
     }
 
     pub fn from_handle(handle: TextureHandle) -> Self {
@@ -76,6 +94,7 @@ impl TextureComponent {
             // Format is irrelevant for handle-based textures (already uploaded), but keep a
             // sensible default.
             format: CatEngineTextureFormat::Rgba8,
+            render_image: None,
         }
     }
 
@@ -104,8 +123,9 @@ impl TextureComponent {
 
     pub fn uri(&self) -> Option<&str> {
         match &self.source {
-            TextureSource::Uri(s) => Some(s.as_str()),
+            TextureSource::Uri(s) if !s.is_empty() => Some(s.as_str()),
             TextureSource::Handle(_) => None,
+            TextureSource::Uri(_) => None,
         }
     }
 }
@@ -139,6 +159,9 @@ impl Component for TextureComponent {
         if let Some(uri) = self.uri() {
             map.insert("uri".to_string(), serde_json::json!(uri));
         }
+        if let Some(render_image) = &self.render_image {
+            map.insert("render_image".to_string(), serde_json::json!(render_image));
+        }
         map
     }
 
@@ -150,6 +173,12 @@ impl Component for TextureComponent {
             let uri_str: String = serde_json::from_value(uri.clone())
                 .map_err(|e| format!("Failed to decode uri: {}", e))?;
             self.source = TextureSource::Uri(uri_str);
+        }
+        if let Some(render_image) = data.get("render_image") {
+            self.render_image = Some(
+                serde_json::from_value(render_image.clone())
+                    .map_err(|e| format!("Failed to decode render_image: {}", e))?,
+            );
         }
         self.refresh_format_from_uri();
         Ok(())

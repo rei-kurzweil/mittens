@@ -1,11 +1,13 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::Transform;
 use crate::engine::graphics::GpuRenderable;
+use crate::engine::graphics::post_processing::PostProcessingConfig;
 use crate::engine::graphics::primitives::InstanceHandle;
 use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::graphics::MsaaMode;
 use crate::engine::graphics::{Skin, SkinId};
 use slotmap::{Key, SlotMap};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TextureFiltering {
@@ -54,6 +56,7 @@ pub struct VisualWorld {
     clear_color: [f32; 4],
     renderer_msaa_mode: MsaaMode,
     preferred_window_size: Option<[u32; 2]>,
+    post_processing: PostProcessingConfig,
 
     // Frame timing stats captured from the main loop (window) and the XR render path.
     // These are best-effort diagnostics and are not used for simulation.
@@ -87,6 +90,7 @@ pub struct VisualWorld {
     active_xr_camera: Option<ComponentId>,
     // Most recent render target size in pixels (width, height).
     viewport: [f32; 2],
+    runtime_texture_handles: HashMap<String, crate::engine::graphics::TextureHandle>,
     // 2D camera view transform for translation/scale/rotation.
     // Stored as mat3 column vectors padded to vec4 columns (std140 friendly).
     camera_2d: [[f32; 4]; 3],
@@ -110,9 +114,17 @@ pub struct VisualWorld {
     draw_order: Vec<u32>, // indices into `instances`
     draw_batches: Vec<DrawBatch>,
 
+    // Emissive-only opaque draw data (rebuilt when dirty).
+    emissive_draw_order: Vec<u32>,
+    emissive_draw_batches: Vec<DrawBatch>,
+
     // Alpha-to-coverage cutout draw data (rebuilt when dirty).
     cutout_order: Vec<u32>,
     cutout_batches: Vec<DrawBatch>,
+
+    // Emissive-only alpha-to-coverage draw data (rebuilt when dirty).
+    emissive_cutout_order: Vec<u32>,
+    emissive_cutout_batches: Vec<DrawBatch>,
 
     // Overlay draw data (rebuilt when dirty).
     // Overlay is drawn on top of all other phases.
@@ -139,7 +151,7 @@ pub struct VisualInstance {
     pub background: bool,
     pub background_occluded_lit: bool,
     pub overlay: bool,
-    pub emissive: u32,
+    pub emissive: f32,
     pub texture: Option<crate::engine::graphics::TextureHandle>,
     pub texture_filtering: TextureFiltering,
     pub quant_steps: f32,
@@ -175,6 +187,7 @@ impl Default for VisualWorld {
             clear_color: [0.0, 0.0, 0.0, 1.0],
             renderer_msaa_mode: MsaaMode::default(),
             preferred_window_size: None,
+            post_processing: PostProcessingConfig::default(),
 
             window_frame_dt_sec: 0.0,
             xr_frame_dt_sec: None,
@@ -203,6 +216,7 @@ impl Default for VisualWorld {
 
             active_xr_camera: None,
             viewport: [1.0, 1.0],
+            runtime_texture_handles: HashMap::new(),
             camera_2d: [
                 [1.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],
@@ -222,9 +236,13 @@ impl Default for VisualWorld {
             background_occluded_lit_batches: Vec::new(),
             draw_order: Vec::new(),
             draw_batches: Vec::new(),
+            emissive_draw_order: Vec::new(),
+            emissive_draw_batches: Vec::new(),
 
             cutout_order: Vec::new(),
             cutout_batches: Vec::new(),
+            emissive_cutout_order: Vec::new(),
+            emissive_cutout_batches: Vec::new(),
 
             overlay_order: Vec::new(),
             overlay_batches: Vec::new(),
@@ -238,6 +256,19 @@ impl Default for VisualWorld {
 }
 
 impl VisualWorld {
+    fn is_emissive_material(material: crate::engine::graphics::MaterialHandle) -> bool {
+        matches!(
+            material,
+            crate::engine::graphics::MaterialHandle::EMISSIVE_TOON_MESH
+                | crate::engine::graphics::MaterialHandle::SKINNED_EMISSIVE_TOON_MESH
+        )
+    }
+
+    pub fn instance(&self, handle: InstanceHandle) -> Option<&VisualInstance> {
+        let idx = *self.handle_to_index.get(&handle)?;
+        self.instances.get(idx)
+    }
+
     pub fn skin(&self, id: SkinId) -> Option<&Skin> {
         self.skins.get(id)
     }
@@ -876,6 +907,15 @@ impl VisualWorld {
         &self.draw_batches
     }
 
+    /// Indices into `instances()` in the order they should be drawn (emissive opaque batching).
+    pub fn emissive_draw_order(&self) -> &[u32] {
+        &self.emissive_draw_order
+    }
+
+    pub fn emissive_draw_batches(&self) -> &[DrawBatch] {
+        &self.emissive_draw_batches
+    }
+
     /// Indices into `instances()` in the order they should be drawn (alpha-to-coverage cutout pass).
     pub fn cutout_order(&self) -> &[u32] {
         &self.cutout_order
@@ -883,6 +923,15 @@ impl VisualWorld {
 
     pub fn cutout_batches(&self) -> &[DrawBatch] {
         &self.cutout_batches
+    }
+
+    /// Indices into `instances()` in the order they should be drawn (emissive cutout batching).
+    pub fn emissive_cutout_order(&self) -> &[u32] {
+        &self.emissive_cutout_order
+    }
+
+    pub fn emissive_cutout_batches(&self) -> &[DrawBatch] {
+        &self.emissive_cutout_batches
     }
 
     /// Indices into `instances()` in the order they should be drawn (overlay pass).
@@ -923,7 +972,9 @@ impl VisualWorld {
         self.background_order.clear();
         self.background_occluded_lit_order.clear();
         self.draw_order.clear();
+        self.emissive_draw_order.clear();
         self.cutout_order.clear();
+        self.emissive_cutout_order.clear();
         self.transparent_single_draw_order.clear();
         self.overlay_order.clear();
         // Opaque pass: exclude anything that is transparent.
@@ -1005,6 +1056,19 @@ impl VisualWorld {
         let draw_order = &self.draw_order;
         Self::build_draw_batches_for_order(instances, draw_order, &mut self.draw_batches);
 
+        self.emissive_draw_order.extend(
+            self.draw_order
+                .iter()
+                .copied()
+                .filter(|&i| Self::is_emissive_material(self.instances[i as usize].renderable.material)),
+        );
+        let emissive_draw_order = &self.emissive_draw_order;
+        Self::build_draw_batches_for_order(
+            instances,
+            emissive_draw_order,
+            &mut self.emissive_draw_batches,
+        );
+
         // Cutout pass: batch aggressively (order does not depend on view).
         self.cutout_order.sort_by_key(|&i| {
             let inst = self.instances[i as usize];
@@ -1020,6 +1084,19 @@ impl VisualWorld {
         });
         let cutout_order = &self.cutout_order;
         Self::build_draw_batches_for_order(instances, cutout_order, &mut self.cutout_batches);
+
+        self.emissive_cutout_order.extend(
+            self.cutout_order
+                .iter()
+                .copied()
+                .filter(|&i| Self::is_emissive_material(self.instances[i as usize].renderable.material)),
+        );
+        let emissive_cutout_order = &self.emissive_cutout_order;
+        Self::build_draw_batches_for_order(
+            instances,
+            emissive_cutout_order,
+            &mut self.emissive_cutout_batches,
+        );
 
         // Single-layer transparent pass: batch aggressively (order does not depend on view).
         self.transparent_single_draw_order.sort_by_key(|&i| {
@@ -1130,7 +1207,7 @@ impl VisualWorld {
         background: bool,
         background_occluded_lit: bool,
         overlay: bool,
-        emissive: u32,
+        emissive: f32,
         texture: Option<crate::engine::graphics::TextureHandle>,
         quant_steps: f32,
     ) -> InstanceHandle {
@@ -1152,7 +1229,11 @@ impl VisualWorld {
             background,
             background_occluded_lit,
             overlay,
-            emissive,
+            emissive: if emissive.is_finite() {
+                emissive.max(0.0)
+            } else {
+                0.0
+            },
             texture,
             texture_filtering: TextureFiltering::default(),
             quant_steps: sanitize_quant_steps(quant_steps),
@@ -1306,14 +1387,62 @@ impl VisualWorld {
         }
     }
 
-    pub fn update_emissive(&mut self, handle: InstanceHandle, emissive: u32) -> bool {
+    pub fn update_emissive(&mut self, handle: InstanceHandle, emissive: f32) -> bool {
         if let Some(&idx) = self.handle_to_index.get(&handle) {
-            self.instances[idx].emissive = emissive;
+            self.instances[idx].emissive = if emissive.is_finite() {
+                emissive.max(0.0)
+            } else {
+                0.0
+            };
             self.dirty_instance_data = true;
             true
         } else {
             false
         }
+    }
+
+    pub fn update_material(
+        &mut self,
+        handle: InstanceHandle,
+        material: crate::engine::graphics::MaterialHandle,
+    ) -> bool {
+        if let Some(&idx) = self.handle_to_index.get(&handle) {
+            if self.instances[idx].renderable.material == material {
+                return true;
+            }
+            self.instances[idx].renderable.material = material;
+            self.dirty_draw_cache = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn post_processing(&self) -> &PostProcessingConfig {
+        &self.post_processing
+    }
+
+    pub fn post_processing_mut(&mut self) -> &mut PostProcessingConfig {
+        &mut self.post_processing
+    }
+
+    pub fn set_post_processing(&mut self, config: PostProcessingConfig) {
+        self.post_processing = config;
+    }
+
+    pub fn runtime_texture_handle(
+        &self,
+        key: &str,
+    ) -> Option<crate::engine::graphics::TextureHandle> {
+        self.runtime_texture_handles.get(key).copied()
+    }
+
+    pub fn set_runtime_texture_handle(
+        &mut self,
+        key: impl Into<String>,
+        handle: crate::engine::graphics::TextureHandle,
+    ) {
+        self.runtime_texture_handles.insert(key.into(), handle);
     }
 
     pub fn update_texture(

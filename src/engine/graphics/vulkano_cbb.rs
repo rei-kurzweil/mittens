@@ -1,7 +1,33 @@
 use super::*;
 
 impl VulkanoState {
-    fn record_instanced_draws_for_batches(
+    fn is_skinned_material(material: crate::engine::graphics::MaterialHandle) -> bool {
+        matches!(
+            material,
+            crate::engine::graphics::MaterialHandle::SKINNED_TOON_MESH
+                | crate::engine::graphics::MaterialHandle::SKINNED_EMISSIVE_TOON_MESH
+        )
+    }
+
+    fn pipeline_for_material(
+        &self,
+        material: crate::engine::graphics::MaterialHandle,
+        pipeline_toon: Arc<GraphicsPipeline>,
+        pipeline_emissive: Arc<GraphicsPipeline>,
+        pipeline_skinned: Arc<GraphicsPipeline>,
+        pipeline_skinned_emissive: Arc<GraphicsPipeline>,
+    ) -> Arc<GraphicsPipeline> {
+        match material {
+            crate::engine::graphics::MaterialHandle::EMISSIVE_TOON_MESH => pipeline_emissive,
+            crate::engine::graphics::MaterialHandle::SKINNED_EMISSIVE_TOON_MESH => {
+                pipeline_skinned_emissive
+            }
+            crate::engine::graphics::MaterialHandle::SKINNED_TOON_MESH => pipeline_skinned,
+            _ => pipeline_toon,
+        }
+    }
+
+    pub(super) fn record_instanced_draws_for_batches(
         &mut self,
         cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
         global_set: &Arc<DescriptorSet>,
@@ -10,7 +36,9 @@ impl VulkanoState {
         instance_count: usize,
         batches: &[crate::engine::graphics::visual_world::DrawBatch],
         pipeline_toon: Arc<GraphicsPipeline>,
+        pipeline_emissive: Arc<GraphicsPipeline>,
         pipeline_skinned: Arc<GraphicsPipeline>,
+        pipeline_skinned_emissive: Arc<GraphicsPipeline>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Bind pipeline/descriptor sets per (material, texture).
         let mut bound_material: Option<crate::engine::graphics::MaterialHandle> = None;
@@ -19,11 +47,13 @@ impl VulkanoState {
         let mut bound_quant: Option<u32> = None;
 
         for batch in batches {
-            let pipeline = if batch.material == crate::engine::graphics::MaterialHandle::SKINNED_TOON_MESH {
-                pipeline_skinned.clone()
-            } else {
-                pipeline_toon.clone()
-            };
+            let pipeline = self.pipeline_for_material(
+                batch.material,
+                pipeline_toon.clone(),
+                pipeline_emissive.clone(),
+                pipeline_skinned.clone(),
+                pipeline_skinned_emissive.clone(),
+            );
 
             let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
             let filtering = batch.texture_filtering;
@@ -61,7 +91,7 @@ impl VulkanoState {
             let Some(mesh) = self.meshes.get(&batch.mesh) else {
                 continue;
             };
-            if batch.material == crate::engine::graphics::MaterialHandle::SKINNED_TOON_MESH {
+            if Self::is_skinned_material(batch.material) {
                 let Some(skin) = mesh.skin_vertices.as_ref() else {
                     // Skinned pipeline expects a skinning vertex buffer.
                     continue;
@@ -113,7 +143,9 @@ impl VulkanoState {
             visual_world.background_batches(),
             // Plain background: no depth write.
             self.pipeline_toon_mesh_transparent.clone(),
+            self.pipeline_emissive_toon_mesh_transparent.clone(),
             self.pipeline_skinned_toon_mesh_transparent.clone(),
+            self.pipeline_skinned_emissive_toon_mesh_transparent.clone(),
         )
     }
 
@@ -139,7 +171,9 @@ impl VulkanoState {
             visual_world.background_occluded_lit_batches(),
             // Occluded+lit background: depth write ON for self-occlusion.
             self.pipeline_toon_mesh.clone(),
+            self.pipeline_emissive_toon_mesh.clone(),
             self.pipeline_skinned_toon_mesh.clone(),
+            self.pipeline_skinned_emissive_toon_mesh.clone(),
         )
     }
 
@@ -164,7 +198,9 @@ impl VulkanoState {
             instance_count,
             visual_world.draw_batches(),
             self.pipeline_toon_mesh.clone(),
+            self.pipeline_emissive_toon_mesh.clone(),
             self.pipeline_skinned_toon_mesh.clone(),
+            self.pipeline_skinned_emissive_toon_mesh.clone(),
         )
     }
 
@@ -189,7 +225,9 @@ impl VulkanoState {
             instance_count,
             visual_world.cutout_batches(),
             self.pipeline_toon_mesh_cutout.clone(),
+            self.pipeline_emissive_toon_mesh_cutout.clone(),
             self.pipeline_skinned_toon_mesh_cutout.clone(),
+            self.pipeline_skinned_emissive_toon_mesh_cutout.clone(),
         )
     }
 
@@ -216,7 +254,9 @@ impl VulkanoState {
             // Overlay depth-tests with itself (depth write enabled). Depth gets cleared right
             // before the overlay phase so it still draws on top of the scene.
             self.pipeline_toon_mesh.clone(),
+            self.pipeline_emissive_toon_mesh.clone(),
             self.pipeline_skinned_toon_mesh.clone(),
+            self.pipeline_skinned_emissive_toon_mesh.clone(),
         )
     }
 
@@ -266,13 +306,13 @@ impl VulkanoState {
                     continue;
                 };
 
-                let pipeline = if batch.material
-                    == crate::engine::graphics::MaterialHandle::SKINNED_TOON_MESH
-                {
-                    self.pipeline_skinned_toon_mesh_transparent.clone()
-                } else {
-                    self.pipeline_toon_mesh_transparent.clone()
-                };
+                let pipeline = self.pipeline_for_material(
+                    batch.material,
+                    self.pipeline_toon_mesh_transparent.clone(),
+                    self.pipeline_emissive_toon_mesh_transparent.clone(),
+                    self.pipeline_skinned_toon_mesh_transparent.clone(),
+                    self.pipeline_skinned_emissive_toon_mesh_transparent.clone(),
+                );
 
                 cbb.bind_pipeline_graphics(pipeline.clone())?;
                 cbb.bind_descriptor_sets(
@@ -291,13 +331,27 @@ impl VulkanoState {
             let Some(mesh) = self.meshes.get(&batch.mesh) else {
                 continue;
             };
-            cbb.bind_vertex_buffers(
-                0,
-                (
-                    mesh.vertices.clone(),
-                    transparent_single_instance_buffer.clone(),
-                ),
-            )?;
+            if Self::is_skinned_material(batch.material) {
+                let Some(skin) = mesh.skin_vertices.as_ref() else {
+                    continue;
+                };
+                cbb.bind_vertex_buffers(
+                    0,
+                    (
+                        mesh.vertices.clone(),
+                        skin.clone(),
+                        transparent_single_instance_buffer.clone(),
+                    ),
+                )?;
+            } else {
+                cbb.bind_vertex_buffers(
+                    0,
+                    (
+                        mesh.vertices.clone(),
+                        transparent_single_instance_buffer.clone(),
+                    ),
+                )?;
+            }
             cbb.bind_index_buffer(mesh.indices.clone())?;
 
             if batch.count > 0 {
@@ -365,13 +419,13 @@ impl VulkanoState {
                     continue;
                 };
 
-                let pipeline = if batch.material
-                    == crate::engine::graphics::MaterialHandle::SKINNED_TOON_MESH
-                {
-                    self.pipeline_skinned_toon_mesh_transparent.clone()
-                } else {
-                    self.pipeline_toon_mesh_transparent.clone()
-                };
+                let pipeline = self.pipeline_for_material(
+                    batch.material,
+                    self.pipeline_toon_mesh_transparent.clone(),
+                    self.pipeline_emissive_toon_mesh_transparent.clone(),
+                    self.pipeline_skinned_toon_mesh_transparent.clone(),
+                    self.pipeline_skinned_emissive_toon_mesh_transparent.clone(),
+                );
 
                 cbb.bind_pipeline_graphics(pipeline.clone())?;
                 cbb.bind_descriptor_sets(
@@ -390,13 +444,27 @@ impl VulkanoState {
             let Some(mesh) = self.meshes.get(&batch.mesh) else {
                 continue;
             };
-            cbb.bind_vertex_buffers(
-                0,
-                (
-                    mesh.vertices.clone(),
-                    transparent_multi_instance_buffer.clone(),
-                ),
-            )?;
+            if Self::is_skinned_material(batch.material) {
+                let Some(skin) = mesh.skin_vertices.as_ref() else {
+                    continue;
+                };
+                cbb.bind_vertex_buffers(
+                    0,
+                    (
+                        mesh.vertices.clone(),
+                        skin.clone(),
+                        transparent_multi_instance_buffer.clone(),
+                    ),
+                )?;
+            } else {
+                cbb.bind_vertex_buffers(
+                    0,
+                    (
+                        mesh.vertices.clone(),
+                        transparent_multi_instance_buffer.clone(),
+                    ),
+                )?;
+            }
             cbb.bind_index_buffer(mesh.indices.clone())?;
 
             // IMPORTANT: for correct alpha blending order, draw transparent instances

@@ -713,6 +713,105 @@ impl SystemWorld {
             .register_renderer_settings(world, visuals, component);
     }
 
+    /// Register a RenderGraphComponent and apply it to VisualWorld.
+    pub fn register_render_graph(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let Some(render_graph) = world
+            .get_component_by_id_as::<crate::engine::ecs::component::RenderGraphComponent>(
+                component,
+            )
+        else {
+            return;
+        };
+
+        let mut config = crate::engine::graphics::PostProcessingConfig {
+            enabled: render_graph.enabled,
+            ..Default::default()
+        };
+
+        for &child in world.children_of(component) {
+            if world
+                .get_component_by_id_as::<crate::engine::ecs::component::EmissivePassComponent>(
+                    child,
+                )
+                .is_some()
+            {
+                let mut emissive_pass = crate::engine::graphics::EmissivePassConfig::default();
+
+                for &grandchild in world.children_of(child) {
+                    let Some(texture) = world.get_component_by_id_as::<
+                        crate::engine::ecs::component::TextureComponent,
+                    >(grandchild)
+                    else {
+                        continue;
+                    };
+
+                    emissive_pass.output_texture = Some(
+                        texture
+                            .render_image
+                            .clone()
+                            .unwrap_or_else(|| "render_graph.emissive_pass.output".to_string()),
+                    );
+                    break;
+                }
+
+                config.emissive_pass = Some(emissive_pass);
+                continue;
+            }
+
+            let Some(bloom) =
+                world.get_component_by_id_as::<crate::engine::ecs::component::BloomComponent>(child)
+            else {
+                continue;
+            };
+
+            if bloom.enabled {
+                config.bloom = Some(crate::engine::graphics::BloomConfig {
+                    intensity: bloom.intensity,
+                    radius_ndc: bloom.radius_ndc,
+                    emissive_scale: bloom.emissive_scale,
+                    half_res: bloom.half_res,
+                    debug_emissive_texture: bloom.debug_emissive_texture.clone(),
+                    debug_bloom_texture: bloom.debug_bloom_texture.clone(),
+                    ..Default::default()
+                });
+            }
+
+            config.debug_show_emissive = bloom.debug_show_emissive;
+            config.debug_show_bloom = bloom.debug_show_bloom;
+
+            for &grandchild in world.children_of(child) {
+                let Some(texture) = world
+                    .get_component_by_id_as::<crate::engine::ecs::component::TextureComponent>(
+                        grandchild,
+                    )
+                else {
+                    continue;
+                };
+
+                match texture.render_image.as_deref() {
+                    Some("render_graph.bloom.emissive") => {
+                        if let Some(bloom_cfg) = config.bloom.as_mut() {
+                            bloom_cfg.debug_emissive_texture = texture.render_image.clone();
+                        }
+                    }
+                    Some("render_graph.bloom.blur") | Some("render_graph.bloom.blur_a") => {
+                        if let Some(bloom_cfg) = config.bloom.as_mut() {
+                            bloom_cfg.debug_bloom_texture = texture.render_image.clone();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        visuals.set_post_processing(config);
+    }
+
     /// Register an AmbientLightComponent and apply it to VisualWorld.
     pub fn register_ambient_light(
         &mut self,

@@ -193,6 +193,11 @@ impl RxMutationExecutor {
                     systems.register_renderer_settings(world, visuals, component);
                 }
             }
+            IntentValue::RegisterRenderGraph { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_render_graph(world, visuals, component);
+                }
+            }
             IntentValue::RegisterAmbientLight { component_ids } => {
                 for &component in component_ids.iter() {
                     systems.register_ambient_light(world, visuals, component);

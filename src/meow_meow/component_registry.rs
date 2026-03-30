@@ -10,13 +10,15 @@
 /// Unknown type names or unrecognised methods produce an error string; the executor logs
 /// them and continues rather than panicking.
 use crate::engine::ecs::component::{
-    ActionComponent, AmbientLightComponent, AnimationComponent, AnimationState,
+    ActionComponent, AmbientLightComponent, AnimationComponent, AnimationState, BloomComponent,
     AvatarBodyYawComponent, AvatarControlComponent, BackgroundColorComponent, BackgroundComponent,
     Camera3DComponent, CameraXRComponent, ClockComponent, ColorComponent, ControllerHand,
     ControllerPoseKind, ControllerXRComponent, DirectionalLightComponent, EditorComponent,
-    EmissiveComponent, GLTFComponent, InputComponent, InputTransformModeComponent, InputXRComponent,
+    EmissiveComponent, EmissivePassComponent, GLTFComponent, InputComponent,
+    InputTransformModeComponent, InputXRComponent,
     InspectorPanelComponent, KeyframeComponent, NormalVisualisationComponent, OpenXRComponent,
-    SelectableComponent, TextBackgroundComponent, WorldPanelComponent,
+    OverlayComponent, PointLightComponent, RenderGraphComponent, SelectableComponent,
+    TextBackgroundComponent, TextureComponent, UVComponent, WorldPanelComponent,
     QuatTemporalFilterComponent, RayCastComponent, RayCastMode, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TextComponent, TextShadowComponent,
     TextureFilteringComponent, TransformComponent, TransformDropComponent,
@@ -216,6 +218,7 @@ fn create_component(
             _ => Err(format!("Renderable: unknown constructor '{}'", ctor.unwrap_or(""))),
         },
         "Background" => add!(BackgroundComponent::new()),
+        "Overlay" => add!(OverlayComponent::new()),
         "BackgroundColor" => add!(BackgroundColorComponent::new()),
         "AmbientLight" => match ctor {
             Some("rgb") => add!(AmbientLightComponent::rgb(
@@ -223,7 +226,15 @@ fn create_component(
             )),
             _ => add!(AmbientLightComponent::new()),
         },
+        "RenderGraph" => match ctor {
+            Some("off") => add!(RenderGraphComponent::off()),
+            Some("on") => add!(RenderGraphComponent::on()),
+            _ => add!(RenderGraphComponent::new()),
+        },
+        "EmissivePass" => add!(EmissivePassComponent::new()),
+        "Bloom" => add!(BloomComponent::new()),
         "DirectionalLight" => add!(DirectionalLightComponent::new()),
+        "PointLight" => add!(PointLightComponent::new()),
         "Emissive" => match ctor {
             Some("on") => add!(EmissiveComponent::on()),
             Some("off") => add!(EmissiveComponent::off()),
@@ -325,10 +336,19 @@ fn create_component(
             _ => add!(RayCastComponent::new(RayCastMode::Continuous)),
         },
         "TextureFiltering" => match ctor {
+            Some("linear") => add!(TextureFilteringComponent::linear()),
             Some("nearest_magnification") => add!(TextureFilteringComponent::nearest_magnification()),
             Some("nearest") => add!(TextureFilteringComponent::nearest()),
-            _ => add!(TextureFilteringComponent::nearest()),
+            _ => add!(TextureFilteringComponent::linear()),
         },
+        "Texture" => match ctor {
+            Some("render_image") => add!(TextureComponent::render_image(arg(args, 0)?.as_str()?)),
+            Some("with_uri") | Some("uri") => add!(TextureComponent::with_uri(arg(args, 0)?.as_str()?)),
+            Some("from_png") => add!(TextureComponent::from_png(arg(args, 0)?.as_str()?)),
+            Some("from_dds") => add!(TextureComponent::from_dds(arg(args, 0)?.as_str()?)),
+            _ => add!(TextureComponent::unresolved()),
+        },
+        "UV" => add!(UVComponent::new()),
         "Clock" => {
             let mut c = ClockComponent::new();
             if let Some("bpm") = ctor {
@@ -437,6 +457,55 @@ fn apply_call(
         }
         return Ok(());
     }
+    if let Some(pl) = world.get_component_by_id_as_mut::<PointLightComponent>(id) {
+        match method {
+            "intensity" => *pl = pl.clone().with_intensity(arg(args, 0)?.as_f32()?),
+            "distance" => *pl = pl.clone().with_distance(arg(args, 0)?.as_f32()?),
+            "color" => *pl = pl.clone().with_color(
+                arg(args, 0)?.as_f32()?,
+                arg(args, 1)?.as_f32()?,
+                arg(args, 2)?.as_f32()?,
+            ),
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(render_graph) = world.get_component_by_id_as_mut::<RenderGraphComponent>(id) {
+        match method {
+            "on" => *render_graph = render_graph.clone().with_enabled(true),
+            "off" => *render_graph = render_graph.clone().with_enabled(false),
+            "enabled" => {
+                *render_graph = render_graph.clone().with_enabled(arg(args, 0)?.as_bool()?)
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(bloom) = world.get_component_by_id_as_mut::<BloomComponent>(id) {
+        match method {
+            "on" => *bloom = bloom.clone().with_enabled(true),
+            "off" => *bloom = bloom.clone().with_enabled(false),
+            "enabled" => *bloom = bloom.clone().with_enabled(arg(args, 0)?.as_bool()?),
+            "intensity" => *bloom = bloom.clone().with_intensity(arg(args, 0)?.as_f32()?),
+            "radius_ndc" => {
+                *bloom = bloom.clone().with_radius_ndc(arg(args, 0)?.as_f32()?)
+            }
+            "emissive_scale" => {
+                *bloom = bloom.clone().with_emissive_scale(arg(args, 0)?.as_f32()?)
+            }
+            "half_res" => *bloom = bloom.clone().with_half_res(arg(args, 0)?.as_bool()?),
+            "debug_show_emissive" => {
+                *bloom = bloom
+                    .clone()
+                    .with_debug_show_emissive(arg(args, 0)?.as_bool()?)
+            }
+            "debug_show_bloom" => {
+                *bloom = bloom.clone().with_debug_show_bloom(arg(args, 0)?.as_bool()?)
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
     if let Some(itm) = world.get_component_by_id_as_mut::<InputTransformModeComponent>(id) {
         match method {
             "fps_rotation" => *itm = itm.clone().with_fps_rotation(),
@@ -506,6 +575,22 @@ fn apply_call(
         }
         return Ok(());
     }
+    if let Some(tex) = world.get_component_by_id_as_mut::<TextureComponent>(id) {
+        match method {
+            "render_image" => *tex = TextureComponent::render_image(arg(args, 0)?.as_str()?),
+            "uri" | "with_uri" => *tex = TextureComponent::with_uri(arg(args, 0)?.as_str()?),
+            "from_png" => *tex = TextureComponent::from_png(arg(args, 0)?.as_str()?),
+            "from_dds" => *tex = TextureComponent::from_dds(arg(args, 0)?.as_str()?),
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(uv) = world.get_component_by_id_as_mut::<UVComponent>(id) {
+        if method == "uv" {
+            *uv = uv.clone().with_uv(arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?);
+        }
+        return Ok(());
+    }
     if let Some(ck) = world.get_component_by_id_as_mut::<ClockComponent>(id) {
         if method == "bpm" {
             *ck = ck.clone().with_bpm(arg(args, 0)?.as_f32()? as f64);
@@ -543,7 +628,7 @@ fn apply_positional(world: &mut World, id: ComponentId, expr: &Expression) -> Re
 // ---------------------------------------------------------------------------
 
 fn apply_transform_builder(
-    mut c: TransformComponent,
+    c: TransformComponent,
     method: &str,
     args: &[Value],
 ) -> Result<TransformComponent, String> {

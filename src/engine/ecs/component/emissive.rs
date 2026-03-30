@@ -1,22 +1,34 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct EmissiveComponent {
-    pub enabled: bool,
+    pub intensity: f32,
+}
+
+impl Default for EmissiveComponent {
+    fn default() -> Self {
+        Self::on()
+    }
 }
 
 impl EmissiveComponent {
-    pub fn new(enabled: bool) -> Self {
-        Self { enabled }
+    pub fn new(intensity: f32) -> Self {
+        Self {
+            intensity: if intensity.is_finite() {
+                intensity.max(0.0)
+            } else {
+                0.0
+            },
+        }
     }
 
     pub fn on() -> Self {
-        Self { enabled: true }
+        Self { intensity: 1.0 }
     }
 
     pub fn off() -> Self {
-        Self { enabled: false }
+        Self { intensity: 0.0 }
     }
 }
 
@@ -44,7 +56,7 @@ impl Component for EmissiveComponent {
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
         let mut map = std::collections::HashMap::new();
-        map.insert("enabled".to_string(), serde_json::Value::Bool(self.enabled));
+        map.insert("intensity".to_string(), serde_json::json!(self.intensity));
         map
     }
 
@@ -52,9 +64,12 @@ impl Component for EmissiveComponent {
         &mut self,
         data: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<(), String> {
-        if let Some(v) = data.get("enabled") {
-            self.enabled = v.as_bool().unwrap_or(false);
-        }
+        let Some(v) = data.get("intensity") else {
+            return Err("emissive.intensity missing".to_string());
+        };
+        self.intensity = serde_json::from_value::<f32>(v.clone())
+            .map_err(|e| format!("Failed to decode emissive.intensity: {e}"))?
+            .max(0.0);
         Ok(())
     }
 }

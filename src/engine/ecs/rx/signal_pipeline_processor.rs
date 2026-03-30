@@ -94,6 +94,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterTransparentCutout { component_ids }
             | IntentValue::RegisterBackgroundColor { component_ids }
             | IntentValue::RegisterRendererSettings { component_ids }
+            | IntentValue::RegisterRenderGraph { component_ids }
             | IntentValue::RegisterAmbientLight { component_ids }
             | IntentValue::RegisterEmissive { component_ids }
             | IntentValue::RegisterLightQuantization { component_ids }
@@ -177,6 +178,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterTransparentCutout { component_ids }
             | IntentValue::RegisterBackgroundColor { component_ids }
             | IntentValue::RegisterRendererSettings { component_ids }
+            | IntentValue::RegisterRenderGraph { component_ids }
             | IntentValue::RegisterAmbientLight { component_ids }
             | IntentValue::RegisterEmissive { component_ids }
             | IntentValue::RegisterLightQuantization { component_ids }

@@ -345,6 +345,9 @@ pub enum IntentValue {
     RegisterRendererSettings {
         component_ids: Vec<ComponentId>,
     },
+    RegisterRenderGraph {
+        component_ids: Vec<ComponentId>,
+    },
     RegisterAmbientLight {
         component_ids: Vec<ComponentId>,
     },
@@ -531,6 +534,7 @@ impl IntentValue {
             IntentValue::RegisterTransparentCutout { .. } => "register_transparent_cutout",
             IntentValue::RegisterBackgroundColor { .. } => "register_background_color",
             IntentValue::RegisterRendererSettings { .. } => "register_renderer_settings",
+            IntentValue::RegisterRenderGraph { .. } => "register_render_graph",
             IntentValue::RegisterAmbientLight { .. } => "register_ambient_light",
             IntentValue::RegisterEmissive { .. } => "register_emissive",
             IntentValue::RegisterLightQuantization { .. } => "register_light_quantization",

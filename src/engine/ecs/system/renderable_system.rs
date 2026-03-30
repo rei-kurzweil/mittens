@@ -63,7 +63,7 @@ pub struct RenderableSystem {
     /// Per-instance emissive/unlit override for a renderable.
     ///
     /// Keyed by the RenderableComponent's ComponentId.
-    pending_emissive: HashMap<ComponentId, u32>,
+    pending_emissive: HashMap<ComponentId, f32>,
 
     /// Per-renderable toon light quantization steps.
     ///
@@ -128,6 +128,20 @@ fn clone_mesh_with_uv_overrides(
 }
 
 impl RenderableSystem {
+    fn material_with_emissive(
+        material: MaterialHandle,
+        emissive_intensity: f32,
+    ) -> MaterialHandle {
+        let is_emissive = emissive_intensity > 0.0;
+        match (material, is_emissive) {
+            (MaterialHandle::TOON_MESH, true) => MaterialHandle::EMISSIVE_TOON_MESH,
+            (MaterialHandle::SKINNED_TOON_MESH, true) => MaterialHandle::SKINNED_EMISSIVE_TOON_MESH,
+            (MaterialHandle::EMISSIVE_TOON_MESH, false) => MaterialHandle::TOON_MESH,
+            (MaterialHandle::SKINNED_EMISSIVE_TOON_MESH, false) => MaterialHandle::SKINNED_TOON_MESH,
+            _ => material,
+        }
+    }
+
     fn inherited_background_for_renderable(
         world: &World,
         renderable_cid: ComponentId,
@@ -297,6 +311,11 @@ impl RenderableSystem {
             };
 
             let _ = visuals.update_emissive(handle, emissive);
+
+            if let Some(inst) = visuals.instance(handle) {
+                let material = Self::material_with_emissive(inst.renderable.material, emissive);
+                let _ = visuals.update_material(handle, material);
+            }
             let _ = self.pending_emissive.remove(&renderable_cid);
         }
     }
@@ -743,7 +762,7 @@ impl RenderableSystem {
         };
 
         self.pending_emissive
-            .insert(renderable_cid, if emissive_comp.enabled { 1 } else { 0 });
+            .insert(renderable_cid, emissive_comp.intensity.max(0.0));
     }
 
     pub fn register_uv(
@@ -1109,7 +1128,12 @@ impl RenderableSystem {
                 .pending_emissive
                 .get(&p.renderable_cid)
                 .copied()
-                .unwrap_or(0);
+                .unwrap_or(0.0);
+
+            let gpu_r = GpuRenderable::new(
+                gpu_r.mesh,
+                Self::material_with_emissive(gpu_r.material, emissive),
+            );
 
             let quant_steps = self
                 .pending_quant_steps
