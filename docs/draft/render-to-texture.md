@@ -239,6 +239,8 @@ Ordinary textured geometry sampling a runtime-produced image is exactly what we 
 
 ### `RenderImageHandle`
 
+Status: **future design, not the current implementation**.
+
 A stable renderer-managed handle for a sampleable image.
 
 ```rust
@@ -256,6 +258,8 @@ It represents things like:
 The key idea is: **materials should not care where the image came from**.
 
 ### `RenderImageRegistry`
+
+Status: **future design, not the current implementation**.
 
 A renderer/runtime-side registry of live render images.
 
@@ -290,6 +294,8 @@ and where future capture systems can publish:
 
 ### `RenderToTextureSystem`
 
+Status: **future design, not the current implementation**.
+
 Layer A still benefits from a dedicated runtime seam between producers and consumers.
 
 That seam can be called `RenderToTextureSystem` even before we support explicit cameras.
@@ -302,6 +308,19 @@ Its responsibilities would be:
 - resolve contextual selectors like "containing pass output"
 
 So even for Layer A, `RenderToTextureSystem` is useful.
+
+### Implemented bridge today
+
+The current codebase ships Layer A without introducing a first-class `RenderImageHandle`.
+
+Today the bridge is:
+
+- `TextureComponent.render_image: Option<String>`
+- selector strings such as `render_graph.emissive_pass.output`
+- `VisualWorld::runtime_texture_handle(key)` storing a stable `TextureHandle`
+- renderer-side publication that updates the image behind that stable handle across frames
+
+That means the draft `RenderImage*` types below are still useful as a **future cleanup direction**, but they are not the concrete API in `src/` today.
 
 ### Unified texture source
 
@@ -348,6 +367,8 @@ The no-URI case is what enables the clean reference/reuse syntax.
 The important behavior is that `RenderGraph` assigns the runtime image source to the referenced texture component, and later uses of the same texture handle see that bound image data.
 
 More explicitly: the preferred implementation is to keep the referenced texture handle stable and refresh the image data produced by the pass each frame. That is a per-frame image update/copy, not a per-frame material or renderable rebind.
+
+That behavior is now implemented, but via stable `TextureHandle`s keyed by selector string rather than a dedicated `RenderImageHandle` API.
 
 ---
 

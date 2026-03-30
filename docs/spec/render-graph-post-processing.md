@@ -5,16 +5,17 @@ This document designs the opt-in post-processing system for cat-engine, covering
 **Scope:**
 - Emissive as a float intensity + dedicated pipeline
 - BloomComponent and BokehComponent design
-- PostProcessingComponent as an opt-in marker
+- RenderGraphComponent as the scene-facing opt-in marker
 - Render graph changes (intermediate images, passes, ordering)
 - XR considerations
 
 **Not in scope:**
 - SSAO, SSR, TAA, tone mapping (noted as future work)
-- Actual implementation in `src/` (see tracked issue or branch for that)
+- Full render-to-texture capture systems (mirrors, portals, monitors)
 
 **Related:**
 - `docs/spec/render-phases.md` — existing phase ordering
+- `docs/spec/render-to-texture-layer-a.md` — implemented runtime-texture publication bridge
 - `docs/spec/renderer-stats-component.md` — renderer diagnostics
 - `docs/spec/render-graph-pipeline.svg` — diagram: base pipeline
 - `docs/spec/render-graph-pipeline-post-processing.svg` — diagram: post-processing render graph
@@ -107,12 +108,12 @@ Since `MaterialHandle` is part of draw batch sorting, emissive objects automatic
 
 ## 3. Component design
 
-### PostProcessingComponent
+### RenderGraphComponent
 
 A global scene marker that activates the post-processing path. One per scene (not per camera). When absent, the renderer takes the current fast path unchanged — no intermediate images, no extra passes, no overhead.
 
 ```rust
-pub struct PostProcessingComponent {
+pub struct RenderGraphComponent {
     pub enabled: bool,
 }
 ```
@@ -121,13 +122,14 @@ Authoring shape: add anywhere in the scene (typically a sibling of the camera ri
 ```
 SceneRoot
   ├── CameraRig { ... }
-  ├── PostProcessingComponent
-  │     ├── BloomComponent { ... }
-  │     └── BokehComponent { ... }   // optional
+    ├── RenderGraphComponent
+    │     ├── EmissivePassComponent { ... }  // optional
+    │     ├── BloomComponent { ... }
+    │     └── BokehComponent { ... }         // optional
   └── ...scene...
 ```
 
-When `PostProcessingComponent` is present, the renderer:
+When `RenderGraphComponent` is present, the renderer:
 1. Allocates an intermediate color image (not the swapchain directly)
 2. Activates the stored-depth path if any child component requires it
 3. Runs the child-specific passes after geometry
