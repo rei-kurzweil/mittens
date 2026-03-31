@@ -3,8 +3,6 @@
 //
 // Note: the bone-marker debug overlay (find_component loop) is not expressed here;
 // it lives in the .rs loader if needed.
-// RayCastComponent (camera raycaster) and PointerComponent are not registered in
-// the MMS component registry, so those are also omitted.
 
 // --- Renderer settings ---
 RendererSettings.msaa_off() {
@@ -37,6 +35,7 @@ T.position(0.15, -0.45, 1.0) {
 // --- Desktop camera rig ---
 T.position(0.0, 1.2, 3.0) {
     C3D {}
+    Pointer {}
     T {
         position(0.65, 1.45, 1.8)
         scale(0.055, 0.055, 1.0)

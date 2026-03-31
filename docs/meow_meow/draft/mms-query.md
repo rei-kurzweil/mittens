@@ -75,11 +75,11 @@ queue.
 
 ---
 
-## `->` syntax sugar
+## `|>` syntax sugar
 
 The callback form avoids the closing-paren problem but the opening is still heavy:
-`query("#hero", fn(t) {` on one side, `})` on the other. The `->` operator is sugar that
-moves the handler to a trailing position:
+`query("#hero", fn(t) {` on one side, `})` on the other. The `|>` operator moves the
+handler to a trailing position:
 
 ```mms
 query("#hero", fn(t) {          // explicit callback form
@@ -87,69 +87,97 @@ query("#hero", fn(t) {          // explicit callback form
     t.set_position(0, 1, 0)
 })
 
-"#hero" -> fn(t) {             // -> sugar: identical semantics
+"#hero" |> fn(t) {             // |> sugar: identical semantics
     if !t { return }
     t.set_position(0, 1, 0)
 }
 ```
 
-`->` is a statement-level operator (not an expression). The general forms:
+`|>` is also the general **forward pipe** operator: `expr |> f` means `f(expr)`. The
+query meaning is a special case detected at parse time by the presence of a **string
+literal** as an operand. A string literal cannot be called as a function, so it is
+unambiguously a query selector when it appears in a `|>` chain.
 
-```
-// world query — string is the selector
-"selector" -> fn(result) { ... }
-"selector" -> method_name(args)          // method shorthand — see below
+### Parse-time disambiguation rule
 
-// scoped query — first operand is the scope, second is the selector
-scope_expr -> "selector" -> fn(result) { ... }
-scope_expr -> "selector" -> method_name(args)
-```
-
-Desugaring rules:
+| Form | Interpretation |
+|---|---|
+| `"selector" \|> handler` | LHS is a string literal → `query("selector", handler)` |
+| `scope \|> "selector" \|> handler` | Middle term is a string literal → `scope.query("selector", handler)` |
+| `expr \|> f` | No string literal → standard forward pipe: `f(expr)` |
 
 ```mms
-"selector" -> handler
+"#hero" |> fn(t) { t.set_position(0, 1, 0) }   // query — string literal as LHS
+lerp(0.0, 1.0, t) |> floor |> set_opacity        // standard pipe — no string literal
+hero |> ".T" |> set_position(0, 1, 0)            // scoped query — string literal in middle
+```
+
+**Computed selectors** must use the explicit function form — a variable holding a string
+is not a string literal and will not trigger the query rule:
+
+```mms
+let sel = "#hero"
+sel |> fn(t) { }          // does NOT work — sel is an identifier, not a string literal
+query(sel, fn(t) { })     // correct for computed/dynamic selectors
+```
+
+### General forms
+
+```
+// world query
+"selector" |> fn(result) { ... }
+"selector" |> method_name(args)          // method shorthand — see below
+
+// scoped query
+scope_expr |> "selector" |> fn(result) { ... }
+scope_expr |> "selector" |> method_name(args)
+```
+
+Desugaring:
+
+```mms
+"selector" |> handler
   ↓
 query("selector", handler)
 
-scope -> "selector" -> handler
+scope |> "selector" |> handler
   ↓
 scope.query("selector", handler)
 ```
 
-For `query_all`, the `->` form calls the handler once per result — whether single or
+For `query_all`, the `|>` form calls the handler once per result — whether single or
 multiple is inferred from the selector (see "Single vs multiple" below).
 
 ### Method shorthand
 
-When the rhs of `->` is a bare method call (not a full `fn(...) { }`), the receiver is
+When the rhs of `|>` is a bare method call (not a full `fn(...) { }`), the receiver is
 the implicit query result:
 
 ```mms
-"#hero_transform" -> set_position(0, 1, 0)
+"#hero_transform" |> set_position(0, 1, 0)
 // desugars to:
 query("#hero_transform", fn(t) {
     if !t { return }
     t.set_position(0, 1, 0)
 })
 
-".Enemy T" -> set_position(0, 0, 0)
+".Enemy T" |> set_position(0, 0, 0)
 // desugars to:
 query_all(".Enemy T", fn(t) {
     t.set_position(0, 0, 0)
 })
 ```
 
-### Chaining scope with `->`
+### Chaining scope with `|>`
 
 ```mms
 // find all Ts in hero's subtree and set their position:
-hero -> ".T" -> set_position(5, 0, 0)
+hero |> ".T" |> set_position(5, 0, 0)
 // desugars to:
 hero.query_all(".T", fn(t) { t.set_position(5, 0, 0) })
 
 // or with a full callback:
-hero -> ".T" -> fn(t) {
+hero |> ".T" |> fn(t) {
     t.set_position(5, 0, 0)
 }
 // desugars to:
@@ -226,8 +254,8 @@ itself does not dictate which to use — the caller chooses.
 - `"#id"` selectors — use `query()` (unique by design; `query_all` works but is unusual)
 - Type/structural selectors — use `query_all()` (inherently multiple)
 
-The `->` sugar follows the same convention: `"#id" ->` desugars to `query()`;
-`".Type" ->` or `"A B" ->` desugars to `query_all()`. The heuristic: if the selector
+The `|>` sugar follows the same convention: `"#id" |>` desugars to `query()`;
+`".Type" |>` or `"A B" |>` desugars to `query_all()`. The heuristic: if the selector
 contains a `#` at the root level with no combinators after → single; otherwise → all.
 
 This heuristic can be overridden by using the explicit function form.
@@ -254,10 +282,10 @@ for e in all_enemies { e }
 Module query is a **static** operation — no engine state needed, no HostCall. The module
 was evaluated (its CE tree is in memory); query walks that tree.
 
-### `->` with a module scope
+### `|>` with a module scope
 
 ```mms
-scene -> ".Enemy R" -> fn(r) {
+scene |> ".Enemy R" |> fn(r) {
     // r is a ComponentExpr, not a ComponentObject
     // mutation methods are not available on pre-spawn CEs
     // but you can inspect/filter and re-emit selectively
@@ -317,41 +345,40 @@ comp.query("selector", fn(r) { })  // subtree + callback
 module.query("selector")            // module CE tree query, single (ComponentExpr?)
 module.query_all("selector")        // module CE tree query, all
 
-// -> sugar (statement only):
-"selector" -> handler               // → query("selector", handler)
-"selector" -> method(args)          // → query("selector", fn(r) { r.method(args) })
-scope -> "selector" -> handler      // → scope.query("selector", handler)
+// |> sugar (string literal LHS triggers query semantics):
+"selector" |> handler               // → query("selector", handler)
+"selector" |> method(args)          // → query("selector", fn(r) { r.method(args) })
+scope |> "selector" |> handler      // → scope.query("selector", handler)
+
+// standard forward pipe (no string literal — normal function application):
+expr |> f                           // → f(expr)
+a |> f |> g                         // → g(f(a))
 ```
 
 ---
 
 ## Open questions
 
-1. **`->` vs `|>`** — `->` conflicts with the return-type arrow in function signatures
-   (`fn(x: Num) -> Num`). The parser can tell them apart by position (type annotation
-   context vs statement context), but it's an ambiguity worth noting. `|>` (pipe) avoids
-   the conflict but is less common in game scripting. TBD.
-
-2. **Single/multi heuristic for `->` sugar** — is inferring `query` vs `query_all` from
+1. **Single/multi heuristic for `|>` sugar** — is inferring `query` vs `query_all` from
    the selector shape (`#id` → single, else → all) too magic? Alternative: always
    `query_all` (never null, always iterate), and the caller uses `[0]` for the single case.
 
-3. **Module namespace import** — `import "level.mms" as scene` is required for
+2. **Module namespace import** — `import "level.mms" as scene` is required for
    `scene.query(...)`. This import form is not in v1. When added, it produces a `Value::Module`
    that exposes `.query()` and `.query_all()`.
 
-4. **Pre-spawn mutation on module CEs** — if you query a module and want to modify a CE
+3. **Pre-spawn mutation on module CEs** — if you query a module and want to modify a CE
    before spawning it (e.g. change a color), what's the API? Probably CE-specific setters
    that mutate the AST node before it's emitted. Distinct from the live `.set_color()` on
    a `ComponentObject`. Design deferred.
 
-5. **Selector scope root** — `scope.query("T C")` — does `T` need to be a direct or
+4. **Selector scope root** — `scope.query("T C")` — does `T` need to be a direct or
    indirect descendant of `scope`? Current proposal: `T C` means C anywhere inside
    the T, and T itself can be anywhere inside scope. Consistent with CSS descendant rules.
 
-6. **Live query subscription / reactive** — `observe "selector" -> fn(r) { }` — register
+5. **Live query subscription / reactive** — `observe "selector" |> fn(r) { }` — register
    a handler that fires whenever the world's matching set changes (spawn/despawn). Deferred;
    document the reserved keyword.
 
-7. **Query result ordering** — `query_all(".T")` — in what order are results returned?
+6. **Query result ordering** — `query_all(".T")` — in what order are results returned?
    Depth-first tree order seems natural. Document the guarantee once implemented.

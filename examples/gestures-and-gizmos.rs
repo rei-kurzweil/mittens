@@ -14,7 +14,7 @@ fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Scene {
     use engine::ecs::component::{
         BackgroundColorComponent, BackgroundComponent, Camera3DComponent, ColorComponent,
         DirectionalLightComponent, InputComponent, InputTransformModeComponent, PointerComponent,
-        RayCastComponent, RaycastableComponent, RenderableComponent, TransformComponent,
+        RaycastableComponent, RenderableComponent, TransformComponent,
         TransformGizmoComponent,
     };
     use engine::graphics::BuiltinMeshType;
@@ -110,14 +110,9 @@ fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Scene {
         .add_component(Camera3DComponent::new().with_far(600.0).with_fov(70.0));
     let _ = universe.attach(rig_t, cam);
 
-    let raycaster = universe
-        .world
-        .add_component(RayCastComponent::event_driven().with_max_distance(100.0));
-    let _ = universe.attach(rig_t, raycaster);
-
-    // Opt-in: treat this camera raycaster as a pointer.
+    // Opt-in: treat this camera rig as a pointer source.
     let pointer = universe.world.add_component(PointerComponent::new());
-    let _ = universe.attach(raycaster, pointer);
+    let _ = universe.attach(rig_t, pointer);
 
     // Topology: I { T { C3D } } — add a small camera-attached controls hint.
     example_util::spawn_desktop_camera_controls_hint(universe, rig_t);

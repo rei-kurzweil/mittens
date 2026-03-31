@@ -111,6 +111,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RemoveInputXr { component_ids }
             | IntentValue::RemoveControllerXr { component_ids }
             | IntentValue::RegisterRaycast { component_ids }
+            | IntentValue::RegisterPointer { component_ids }
             | IntentValue::RemoveRaycast { component_ids }
             | IntentValue::RegisterAnimation { component_ids }
             | IntentValue::RegisterKeyframe { component_ids }
@@ -195,6 +196,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RemoveInputXr { component_ids }
             | IntentValue::RemoveControllerXr { component_ids }
             | IntentValue::RegisterRaycast { component_ids }
+            | IntentValue::RegisterPointer { component_ids }
             | IntentValue::RemoveRaycast { component_ids }
             | IntentValue::RegisterAnimation { component_ids }
             | IntentValue::RegisterKeyframe { component_ids }

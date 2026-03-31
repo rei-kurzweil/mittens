@@ -1,6 +1,7 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
+    ControllerXRComponent, InputComponent, InputXRComponent,
     RayCastComponent, RayCastMode, RaycastableShapeComponent, RaycastableShapeType,
     RenderableComponent,
 };
@@ -40,6 +41,15 @@ struct CursorRay {
 enum RaySourceKind {
     CursorThroughActiveCamera,
     ParentForward,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct PointerTopologyContext {
+    has_desktop_input_driver: bool,
+    has_xr_input_driver: bool,
+    has_controller_driver: bool,
+    has_desktop_camera_anchor: bool,
+    has_xr_camera_anchor: bool,
 }
 
 impl RayCastSystem {
@@ -526,25 +536,106 @@ impl RayCastSystem {
         None
     }
 
-    fn transform_has_camera_child(world: &World, transform_cid: ComponentId) -> bool {
-        world.children_of(transform_cid).iter().any(|&ch| {
-            world
-                .get_component_by_id_as::<crate::engine::ecs::component::Camera3DComponent>(ch)
-                .is_some()
-                || world
-                    .get_component_by_id_as::<crate::engine::ecs::component::Camera2DComponent>(ch)
-                    .is_some()
-        })
+    fn has_ancestor_component<T: 'static>(world: &World, start: ComponentId) -> bool {
+        let mut cur = start;
+        while let Some(parent) = world.parent_of(cur) {
+            if world.get_component_by_id_as::<T>(parent).is_some() {
+                return true;
+            }
+            cur = parent;
+        }
+        false
     }
 
-    /// Infer ray source behavior from topology:
-    /// - If the nearest ancestor TransformComponent also owns a camera component, use cursor->camera ray.
-    /// - Otherwise, cast forward (-Z) from that transform's world pose.
-    fn inferred_source_kind(world: &World, raycaster_cid: ComponentId) -> RaySourceKind {
+    fn classify_same_lineage_descendants(
+        world: &World,
+        transform_cid: ComponentId,
+    ) -> (bool, bool) {
+        let mut has_desktop_camera = false;
+        let mut has_xr_camera = false;
+        let mut stack: Vec<ComponentId> = world.children_of(transform_cid).to_vec();
+
+        while let Some(node) = stack.pop() {
+            if world
+                .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(node)
+                .is_some()
+            {
+                continue;
+            }
+
+            if world
+                .get_component_by_id_as::<crate::engine::ecs::component::Camera3DComponent>(node)
+                .is_some()
+                || world
+                    .get_component_by_id_as::<crate::engine::ecs::component::Camera2DComponent>(node)
+                    .is_some()
+            {
+                has_desktop_camera = true;
+            }
+
+            if world
+                .get_component_by_id_as::<crate::engine::ecs::component::CameraXRComponent>(node)
+                .is_some()
+            {
+                has_xr_camera = true;
+            }
+
+            if has_desktop_camera && has_xr_camera {
+                break;
+            }
+
+            stack.extend(world.children_of(node).iter().copied());
+        }
+
+        (has_desktop_camera, has_xr_camera)
+    }
+
+    fn pointer_topology_context(world: &World, raycaster_cid: ComponentId) -> PointerTopologyContext {
+        let has_desktop_input_driver = Self::has_ancestor_component::<InputComponent>(world, raycaster_cid);
+        let has_xr_input_driver = Self::has_ancestor_component::<InputXRComponent>(world, raycaster_cid);
+        let has_controller_driver = Self::has_ancestor_component::<ControllerXRComponent>(world, raycaster_cid);
+
         let Some(tcid) = Self::nearest_ancestor_transform(world, raycaster_cid) else {
-            return RaySourceKind::CursorThroughActiveCamera;
+            return PointerTopologyContext {
+                has_desktop_input_driver,
+                has_xr_input_driver,
+                has_controller_driver,
+                ..Default::default()
+            };
         };
-        if Self::transform_has_camera_child(world, tcid) {
+
+        let (has_desktop_camera_anchor, has_xr_camera_anchor) =
+            Self::classify_same_lineage_descendants(world, tcid);
+
+        PointerTopologyContext {
+            has_desktop_input_driver,
+            has_xr_input_driver,
+            has_controller_driver,
+            has_desktop_camera_anchor,
+            has_xr_camera_anchor,
+        }
+    }
+
+    /// Infer ray source behavior from topology.
+    ///
+    /// Current runtime policy remains conservative:
+    /// - desktop-style pointers use cursor-through-active-camera when their pose lineage contains
+    ///   a desktop camera anchor in the same transform lineage
+    /// - everything else still uses parent-forward
+    ///
+    /// We also classify outer driver ancestry here so gesture trigger policy can later prefer a
+    /// stronger enclosing driver without requiring the pointer to move in the authored topology.
+    fn inferred_source_kind(world: &World, raycaster_cid: ComponentId) -> RaySourceKind {
+        let topology = Self::pointer_topology_context(world, raycaster_cid);
+
+        let _future_trigger_policy_hint = (
+            topology.has_desktop_input_driver,
+            topology.has_xr_input_driver,
+            topology.has_controller_driver,
+            topology.has_xr_camera_anchor,
+        );
+
+        if topology.has_desktop_camera_anchor {
             RaySourceKind::CursorThroughActiveCamera
         } else {
             RaySourceKind::ParentForward

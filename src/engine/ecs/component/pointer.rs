@@ -1,14 +1,11 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
 
-/// Opt-in marker/config that says a raycaster participates in pointer-driven interaction.
+/// User-facing pointer component.
 ///
-/// Intended topology:
-/// - attach `PointerComponent` as a child of a `RayCastComponent` (or to the same parent),
-///   so systems can treat that raycaster as a user-facing pointer.
-///
-/// This is intentionally small for now; it gives us a stable "pointer_id" concept in the
-/// component tree without forcing every raycaster to behave like a pointer.
+/// Attach this under the pose-driving part of the topology (for example a desktop camera rig
+/// transform, an XR camera, or a controller-driven transform). At init time the engine spawns
+/// and owns a child `RayCastComponent`, so authoring only needs to describe the pointer itself.
 #[derive(Debug, Clone, Copy)]
 pub struct PointerComponent {
     pub enabled: bool,
@@ -58,6 +55,16 @@ impl Component for PointerComponent {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        self.component = Some(component);
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterPointer {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

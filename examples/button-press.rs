@@ -446,7 +446,7 @@ fn main() {
     use engine::ecs::component::{
         AmbientLightComponent, BackgroundColorComponent, Camera3DComponent,
         DirectionalLightComponent, InputComponent, InputTransformModeComponent, PointerComponent,
-        RayCastComponent, TransformComponent,
+        TransformComponent,
     };
 
     let bg = universe.world.add_component(BackgroundColorComponent::new());
@@ -488,13 +488,8 @@ fn main() {
         .add_component(Camera3DComponent::new().with_far(600.0).with_fov(70.0));
     let _ = universe.attach(rig_t, cam);
 
-    let raycaster = universe
-        .world
-        .add_component(RayCastComponent::event_driven().with_max_distance(100.0));
-    let _ = universe.attach(rig_t, raycaster);
-
     let pointer = universe.world.add_component(PointerComponent::new());
-    let _ = universe.attach(raycaster, pointer);
+    let _ = universe.attach(rig_t, pointer);
 
     example_util::spawn_desktop_camera_controls_hint(&mut universe, rig_t);
     universe.add(input);

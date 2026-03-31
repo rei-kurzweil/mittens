@@ -60,17 +60,11 @@ fn main() {
     let _ = universe.attach(input, rig_transform);
     let _ = universe.attach(rig_transform, camera3d);
 
-    // Click-to-pick: raycast from the active camera through the cursor.
-    let raycast = universe.world.add_component(
-        engine::ecs::component::RayCastComponent::event_driven().with_max_distance(100.0),
-    );
-    let _ = universe.attach(rig_transform, raycast);
-
-    // Opt-in: treat this camera raycaster as a pointer.
+    // Click-to-pick: treat this camera rig as a pointer source.
     let pointer = universe
         .world
         .add_component(engine::ecs::component::PointerComponent::new());
-    let _ = universe.attach(raycast, pointer);
+    let _ = universe.attach(rig_transform, pointer);
 
     // Topology: I { T { C3D } } — add a small camera-attached controls hint.
     example_util::spawn_desktop_camera_controls_hint(&mut universe, rig_transform);

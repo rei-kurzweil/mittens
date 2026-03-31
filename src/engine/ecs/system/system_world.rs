@@ -13,6 +13,7 @@ use crate::engine::ecs::system::LightSystem;
 use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::OpenXRSystem;
 use crate::engine::ecs::system::PipelineSystem;
+use crate::engine::ecs::system::PointerSystem;
 use crate::engine::ecs::system::RayCastSystem;
 use crate::engine::ecs::system::RenderableSystem;
 use crate::engine::ecs::system::RendererStatsSystem;
@@ -49,6 +50,7 @@ pub struct SystemWorld {
     pub renderable: RenderableSystem,
     pub renderer_stats: RendererStatsSystem,
 
+    pub pointer: PointerSystem,
     pub raycast: RayCastSystem,
 
     pub editor: EditorSystem,
@@ -83,7 +85,7 @@ impl SystemWorld {
     ) {
         use crate::engine::ecs::component::{
             CollisionComponent, ControllerXRComponent, InputXRComponent, KineticResponseComponent,
-            RayCastComponent, RenderableComponent, SignalRouteUpwardComponent, TransformComponent,
+            PointerComponent, RayCastComponent, RenderableComponent, SignalRouteUpwardComponent, TransformComponent,
         };
 
         // Best-effort: remove system state for known component types before deleting.
@@ -120,6 +122,12 @@ impl SystemWorld {
                 .is_some()
             {
                 self.remove_kinetic_response(world, visuals, n);
+            }
+            if world
+                .get_component_by_id_as::<PointerComponent>(n)
+                .is_some()
+            {
+                self.pointer.remove_pointer(n);
             }
             if world
                 .get_component_by_id_as::<RayCastComponent>(n)
@@ -996,6 +1004,17 @@ impl SystemWorld {
         component: ComponentId,
     ) {
         self.raycast.register_raycast(world, visuals, component);
+    }
+
+    /// Register a PointerComponent by ensuring it owns a child RayCastComponent.
+    pub fn register_pointer(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+    ) {
+        self.pointer.register_pointer(world, component, emit);
     }
 
     /// Remove a RayCastComponent instance from the RayCastSystem.

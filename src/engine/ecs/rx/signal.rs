@@ -401,6 +401,9 @@ pub enum IntentValue {
     RegisterRaycast {
         component_ids: Vec<ComponentId>,
     },
+    RegisterPointer {
+        component_ids: Vec<ComponentId>,
+    },
     RemoveRaycast {
         component_ids: Vec<ComponentId>,
     },
@@ -556,6 +559,7 @@ impl IntentValue {
             IntentValue::RemoveControllerXr { .. } => "remove_controller_xr",
 
             IntentValue::RegisterRaycast { .. } => "register_raycast",
+            IntentValue::RegisterPointer { .. } => "register_pointer",
             IntentValue::RemoveRaycast { .. } => "remove_raycast",
 
             IntentValue::RegisterAnimation { .. } => "register_animation",

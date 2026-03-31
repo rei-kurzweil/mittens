@@ -4,7 +4,7 @@ use cat_engine::engine::ecs::component::{
     ControllerXRComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent,
     EmissivePassComponent, GLTFComponent, InputComponent, InputTransformModeComponent,
     InputXRComponent, OpenXRComponent, PointerComponent, QuatTemporalFilterComponent,
-    RayCastComponent, RaycastableComponent, RenderGraphComponent, RenderableComponent,
+    RaycastableComponent, RenderGraphComponent, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TransformComponent,
     TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
     TransformMapTranslationComponent, TransformMergeTRSComponent, TransformPipelineComponent,
@@ -270,12 +270,8 @@ fn main() {
     let camera3d = universe.world.add_component(Camera3DComponent::new());
     let _ = universe.attach(desktop_rig, camera3d);
 
-    let raycaster = universe
-        .world
-        .add_component(RayCastComponent::event_driven().with_max_distance(100.0));
-    let _ = universe.attach(desktop_rig, raycaster);
     let pointer = universe.world.add_component(PointerComponent::new());
-    let _ = universe.attach(raycaster, pointer);
+    let _ = universe.attach(desktop_rig, pointer);
 
     example_util::spawn_desktop_camera_controls_hint(&mut universe, desktop_rig);
     universe.add(input);
@@ -347,6 +343,8 @@ fn main() {
     // CameraXR as a direct child of AVC — discovered and re-parented to J_Bip_C_Head at init.
     let camera_xr = universe.world.add_component(CameraXRComponent::on());
     let _ = universe.attach(avatar_control, camera_xr);
+    let head_pointer = universe.world.add_component(PointerComponent::new());
+    let _ = universe.attach(camera_xr, head_pointer);
 
     // Grip controllers for hand bone splicing — children of AvatarControlComponent so
     // AvatarControlSystem discovers them by topology. Each needs a TransformComponent
@@ -356,6 +354,8 @@ fn main() {
     ));
     let left_grip_t = universe.world.add_component(TransformComponent::new());
     let _ = universe.attach(left_grip, left_grip_t);
+    let left_pointer = universe.world.add_component(PointerComponent::new());
+    let _ = universe.attach(left_grip_t, left_pointer);
     let _ = universe.attach(avatar_control, left_grip);
 
     let right_grip = universe.world.add_component(ControllerXRComponent::new(
@@ -363,6 +363,8 @@ fn main() {
     ));
     let right_grip_t = universe.world.add_component(TransformComponent::new());
     let _ = universe.attach(right_grip, right_grip_t);
+    let right_pointer = universe.world.add_component(PointerComponent::new());
+    let _ = universe.attach(right_grip_t, right_pointer);
     let _ = universe.attach(avatar_control, right_grip);
 
     // model_root: no explicit Y offset — AvatarControlSystem calibrates it from J_Bip_C_Head.

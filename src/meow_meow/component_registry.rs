@@ -17,7 +17,7 @@ use crate::engine::ecs::component::{
     EmissiveComponent, EmissivePassComponent, GLTFComponent, InputComponent,
     InputTransformModeComponent, InputXRComponent,
     InspectorPanelComponent, KeyframeComponent, NormalVisualisationComponent, OpenXRComponent,
-    OverlayComponent, PointLightComponent, RenderGraphComponent, SelectableComponent,
+    OverlayComponent, PointLightComponent, PointerComponent, RenderGraphComponent, SelectableComponent,
     TextBackgroundComponent, TextureComponent, UVComponent, WorldPanelComponent,
     QuatTemporalFilterComponent, RayCastComponent, RayCastMode, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TextComponent, TextShadowComponent,
@@ -264,6 +264,7 @@ fn create_component(
             Some("on") => add!(CameraXRComponent::on()),
             _ => add!(CameraXRComponent::on()),
         },
+        "Pointer" => add!(PointerComponent::new()),
         "OpenXR" => match ctor {
             Some("on") => add!(OpenXRComponent::on()),
             _ => add!(OpenXRComponent::on()),

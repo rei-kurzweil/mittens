@@ -320,6 +320,11 @@ impl RxMutationExecutor {
                     systems.register_raycast(world, visuals, component);
                 }
             }
+            IntentValue::RegisterPointer { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_pointer(world, visuals, component, emit);
+                }
+            }
             IntentValue::RemoveRaycast { component_ids } => {
                 for &component in component_ids.iter() {
                     systems.remove_raycast(world, visuals, component);

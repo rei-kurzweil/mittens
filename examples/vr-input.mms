@@ -41,6 +41,7 @@ I.speed(1.5) {
     }
     T.position(0.0, 1.2, 3.5) {
         C3D {}
+        Pointer {}
     }
 }
 
@@ -126,9 +127,9 @@ ED {
                     GLTF.new("assets/models/pc-rei.hoodie.glb") { EM.on() }
                 }
 
-                CXR {}
-                CTLXR.new(true, Left, Grip) { T {} }
-                CTLXR.new(true, Right, Grip) { T {} }
+                CXR { Pointer {} }
+                CTLXR.new(true, Left, Grip) { T { Pointer {} } }
+                CTLXR.new(true, Right, Grip) { T { Pointer {} } }
             }
         }
     }

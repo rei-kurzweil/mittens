@@ -256,6 +256,21 @@ Once controller poses exist as transforms, the rest of the pipeline can stay lar
 This describes the current implementation.
 The proposed scene-facing authoring cleanup is to make `Pointer {}` the authored component and let it own/spawn the runtime raycaster; see [docs/draft/pointer.md](docs/draft/pointer.md).
 
+One important edge case is a fixed-camera scene with no separate pose-driver transform.
+In that case the spec direction is:
+
+- allow `Pointer` to be nested under `Camera3D` / `CameraXR`
+- treat that camera as the pointer's pose anchor
+- infer the trigger source from camera kind (`Camera3D` → mouse, `CameraXR` → dwell/confirm/runtime action)
+
+So the generalized rule is not just “find a pose driver”, but “resolve pose lineage, preferring a real driver and falling back to a camera anchor when needed”.
+
+There is one more refinement:
+
+- `Pointer` may remain nested under the camera even if the whole camera subtree later becomes parented under `Input`, `InputXR`, or another driver lineage
+- in that case the stronger outer driver ancestry should win for trigger inference
+- the local camera attachment still describes the ray anchor / camera relationship
+
 ### “When to cast” for controllers
 
 Right now `RayCastComponent::EventDriven` is effectively mouse-left-driven.

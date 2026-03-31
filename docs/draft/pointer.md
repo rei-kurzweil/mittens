@@ -2,15 +2,21 @@
 
 This document proposes a cleaner scene-facing model for `PointerComponent`.
 
-It does **not** describe the current implementation in `src/`.
+It does **not** fully describe the current implementation in `src/`.
 
-Today, `PointerComponent` is a small opt-in marker attached alongside or under an already-authored `RayCastComponent`.
-This draft proposes flipping that relationship for authoring:
+The current codebase now authors `Pointer {}` directly and lets the runtime spawn/own a child
+`RayCastComponent`, but the higher-level source/trigger policy described here is still only
+partially implemented.
+This draft proposes the intended long-term authored/runtime relationship:
 
 - authors place `Pointer {}` under a transform-like pose source
 - the engine spawns/owns the corresponding `RayCastComponent` as a child of the pointer
 - desktop and XR use the same authored shape
-- pointer behavior is resolved from the **pose-driver ancestry** and the **action-trigger source**, not merely from whatever camera happens to be nearby in topology
+- pointer behavior is resolved from the **pose lineage** and the **action-trigger source**, not merely from whatever camera happens to be nearby in topology
+
+In most scenes that lineage is a true **pose driver** (desktop rig transform, XR head transform,
+controller transform). Some scenes, such as a fixed-camera desktop editor view, do not have a
+separate driving transform at all. In that case the lineage needs a camera-anchored fallback.
 
 ## 1. Motivation
 
@@ -24,7 +30,7 @@ That leaks low-level raycast plumbing into scene authoring.
 What authors usually mean is simpler:
 
 - “this camera/head/controller should act like a pointer”
-- “this pose driver should supply the pointer ray, and this input source should drive click / drag / dwell”
+- “this pose source should supply the pointer ray, and this input source should drive click / drag / dwell”
 
 So the authored component should be `Pointer`, not `RayCast`.
 
@@ -40,6 +46,30 @@ I {
     }
 }
 ```
+
+### Fixed camera pointer
+
+```text
+T {
+    C3D {
+        Pointer {}
+    }
+}
+```
+
+This is the important fallback case for scenes like `vtuber-desktop`:
+
+- there may be no separate input-driven camera rig transform
+- the camera is effectively fixed in place
+- the pointer still needs a stable pose anchor and desktop mouse trigger pairing
+
+In that situation, nesting `Pointer` under the camera is the clearest authored signal that the
+camera itself is the pointer anchor.
+
+This camera-local shape is also intentionally stable.
+If the subtree is later wrapped by a higher-level driver such as `I { ... }` or `InputXR { ... }`,
+the `Pointer` does **not** need to move.
+The outer driver ancestry can win for trigger inference while the pointer remains camera-local.
 
 ### XR head pointer
 
@@ -71,7 +101,7 @@ The shared authored meaning is:
 
 The important distinction is:
 
-- **pose driver** decides where the pointer ray originates and points
+- **pose lineage** decides where the pointer ray originates and points
 - **action trigger** decides when that pointer should begin / continue / end interaction
 
 Those may be related, but they are not the same concept.
@@ -91,6 +121,32 @@ Action trigger source:
 
 The camera rig transform provides the pointer pose.
 Mouse input provides the interaction trigger.
+
+An important refinement is that this does not require `Pointer` to sit directly on the driver node.
+It is valid for `Pointer` to remain nested under the camera while an outer driver ancestry still
+wins when deciding which trigger source belongs to that pointer.
+
+### Fixed camera desktop pointer
+
+```text
+TransformComponent            ← static scene anchor
+└── Camera3DComponent
+    └── PointerComponent      ← authored pointer
+        └── RayCastComponent  ← runtime helper
+
+Action trigger source:
+- desktop mouse buttons / cursor motion
+```
+
+There is no distinct pose-driver component here.
+The camera itself is the anchor that defines the pointer ray.
+
+If this subtree is later wrapped by a desktop or XR driver, the pointer can remain attached to the
+camera.
+In that case:
+
+- the camera-local attachment still communicates the ray anchor
+- the outer driver ancestry becomes the stronger cue for trigger pairing
 
 ### XR head / gaze pointer
 
@@ -134,7 +190,13 @@ What matters is:
 1. which ancestor chain defines the pointer pose
 2. which input source is paired with that pointer for action lifecycle
 
-So the engine should resolve a pointer from its **driver lineage**, not from incidental nearby components.
+So the engine should resolve a pointer from its **pose lineage**, not from incidental nearby components.
+
+The refinement is:
+
+- first prefer a true pose-driver lineage
+- if none exists, allow a camera-anchored fallback when `Pointer` is nested under `Camera3D` or `CameraXR`
+- camera-local pointer placement does not block a stronger outer driver ancestry from winning later
 
 ## 4. Proposed runtime topology
 
@@ -159,12 +221,16 @@ The important authored/runtime split is:
 
 The pointer’s ray source should be inferred from the surrounding topology.
 
-More specifically: it should be inferred from the **pose-driver ancestry above the pointer**.
+More specifically: it should be inferred from the **pose lineage above the pointer**.
 
 That means the engine should primarily ask:
 
-- what transform lineage is driving this pointer?
-- is that lineage associated with a desktop camera rig, XR head rig, or controller/hand rig?
+- what transform lineage is driving or anchoring this pointer?
+- is that lineage associated with a desktop camera rig, XR head rig, controller/hand rig, or a fixed camera anchor?
+
+And importantly:
+
+- does a stronger outer driver ancestry exist above a camera-local pointer subtree?
 
 It should **not** primarily ask:
 
@@ -187,6 +253,40 @@ pose-driver transform
 └── ...
     └── Pointer
 ```
+
+### Camera-anchored fallback pointer
+
+If no pose-driver transform lineage exists, but the pointer is nested under a camera component,
+the camera acts as the pointer anchor.
+
+Examples:
+
+- `T { C3D { Pointer {} } }` → fixed desktop camera pointer
+- `AVC { CXR { Pointer {} } }` → head/camera-anchored pointer when the camera is the clearest authored anchor
+
+Possible generalized shape:
+
+```text
+transform
+└── camera component
+    └── ...
+        └── Pointer
+```
+
+This fallback should be lower priority than a true driver lineage.
+If both are present, the engine should prefer the explicit driving transform ancestry.
+
+That means a subtree like this is valid and stable:
+
+```text
+Input / InputXR / other driver
+└── Transform
+    └── Camera
+        └── Pointer
+```
+
+The `Pointer` may remain attached to the camera.
+The surrounding driver ancestry can still win when choosing trigger semantics.
 
 ### Controller-backed pointer
 
@@ -212,8 +312,24 @@ Separately from pose resolution, the engine needs to pair each pointer with an i
 Examples:
 
 - desktop camera pointer → mouse button state
+- fixed desktop camera pointer → mouse button state
 - XR head pointer → gaze dwell or confirm action
 - XR controller pointer → controller trigger/select state
+
+The trigger pairing is allowed to depend on camera ancestry even when pose fallback does.
+For example, a `Pointer` nested under `Camera3D` with no explicit driver still clearly implies:
+
+- cursor-bearing desktop pointer ray
+- mouse-driven gesture lifecycle
+
+But if that same camera-local pointer subtree is wrapped by a stronger driver ancestry, the
+trigger pairing should follow the stronger outer lineage rather than the local camera attachment.
+
+Examples:
+
+- `I { T { C3D { Pointer {} } } }` → desktop mouse trigger wins
+- `InputXR { T { CXR { Pointer {} } } }` → XR head/gaze trigger policy wins
+- `ControllerXR { T { C3D { Pointer {} } } }` → controller trigger policy wins, even if the camera remains the local pointer anchor
 
 This pairing is conceptually part of the pointer model even if the first implementation keeps gesture triggering elsewhere.
 
@@ -221,7 +337,12 @@ This pairing is conceptually part of the pointer model even if the first impleme
 
 Only indirectly.
 
-What matters more precisely is whether the pointer sits under a **camera/head pose-driver lineage**.
+What matters more precisely is whether the pointer sits under a **camera/head pose lineage**.
+
+That lineage may be either:
+
+- a real driving transform, or
+- a camera-anchored fallback when no such driver exists
 
 `Pointer` should stay generic.
 
@@ -235,9 +356,42 @@ What changes by attachment context is:
 So the draft position is:
 
 - `Pointer` itself remains generic and cross-platform
-- camera-vs-controller differences are inferred by the engine from pose-driver ancestry and trigger pairing
+- camera-vs-controller differences are inferred by the engine from pose lineage and trigger pairing
+- camera nesting matters specifically as a fallback authored cue when no better pose driver exists
 
-## 7. Relationship to gestures
+## 7. Resolution order proposal
+
+When resolving a pointer, the engine should use a stable priority order:
+
+1. **Controller / hand driver lineage**
+    - `Pointer` under a transform driven by `ControllerXRComponent` or equivalent hand driver
+    - ray source: parent forward / controller forward
+    - trigger: controller select / trigger / squeeze
+
+2. **Camera/head pose-driver lineage**
+    - `Pointer` under a transform lineage that also carries a camera/head role
+    - ray source: camera/head-aligned
+    - trigger: mouse buttons for desktop, dwell/confirm for head pointers
+
+3. **Camera-anchored fallback**
+    - no explicit driver lineage found, but `Pointer` is nested under `Camera3D` or `CameraXR`
+    - ray source: that camera's pose anchor
+    - trigger: inferred from camera kind (`Camera3D` → mouse, `CameraXR` → dwell/confirm/runtime action)
+
+4. **Generic transform fallback**
+    - `Pointer` is under a transform but under neither controller nor camera lineage
+    - ray source: transform forward
+    - trigger: explicitly configured later, or none by default
+
+This gives fixed-camera scenes a principled place in the model without making "nearest camera"
+the primary rule.
+
+The key authored consequence is:
+
+- `Pointer` does not need to be moved just because a new outer driver is introduced
+- outer pose-driver ancestry can override trigger inference without rewriting the camera-local subtree
+
+## 8. Relationship to gestures
 
 This draft intentionally lines up with the longer-term gesture direction already discussed elsewhere:
 
@@ -251,7 +405,7 @@ This means `Pointer` becomes the natural authored bridge between:
 - XR head pointers
 - XR controller/hand pointers
 
-## 8. Proposed authoring semantics
+## 9. Proposed authoring semantics
 
 ### `Pointer {}`
 
@@ -270,13 +424,13 @@ Possible future fields, not specified yet:
 This draft intentionally does **not** standardize those options yet.
 The key proposal is the topology and ownership direction.
 
-## 9. Current implementation vs this draft
+## 10. Current implementation vs this draft
 
 Current codebase:
 
 - `PointerComponent` exists
-- it is authored/attached manually next to a `RayCastComponent`
-- MMS does not yet expose the desired high-level pointer authoring flow
+- `Pointer {}` is authored directly
+- the runtime spawns/owns a child `RayCastComponent`
 
 This draft proposes:
 
@@ -285,19 +439,20 @@ This draft proposes:
 
 And specifically:
 
-- pointer source should be resolved from pose-driver ancestry
+- pointer source should be resolved from pose lineage, with a camera-anchored fallback
 - interaction lifecycle should ultimately be paired with the relevant trigger source for that pointer
 
-## 10. Recommended implementation direction
+## 11. Recommended implementation direction
 
 When implementation work begins, the first useful step is:
 
 1. register `PointerComponent` in MMS authoring as a first-class component
 2. on pointer registration, spawn/maintain a child `RayCastComponent`
-3. infer source mode from pose-driver ancestry:
+3. infer source mode from pose lineage:
     - desktop camera rig lineage
     - XR head / camera lineage
     - controller / hand lineage
+    - fixed camera anchor lineage when no driver exists
 4. keep current low-level `RayCastComponent` support internally for systems/runtime plumbing
 5. later, pair each pointer with the appropriate trigger source:
     - mouse buttons

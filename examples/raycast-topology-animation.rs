@@ -277,12 +277,6 @@ fn main() {
         engine::ecs::component::RayCastComponent::event_driven().with_max_distance(25.0),
     );
 
-    // Opt-in: treat this raycaster as a pointer (for the camera-rig portion of the demo).
-    let pointer = universe
-        .world
-        .add_component(engine::ecs::component::PointerComponent::new());
-    let _ = universe.attach(raycaster, pointer);
-
     // Global animation: move the raycaster between anchors.
     // Loop length is 8 beats (we include a noop keyframe at beat 7.0 to force loop_len=8).
     let anim_global = universe

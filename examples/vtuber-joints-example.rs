@@ -2,7 +2,7 @@ use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, CameraXRComponent,
     ClockComponent, ColorComponent, DirectionalLightComponent, EditorComponent,
     EmissiveComponent, GLTFComponent, InputComponent, InputTransformModeComponent,
-    InputXRComponent, MeshComponent, PointerComponent, RayCastComponent, RaycastableComponent,
+    InputXRComponent, MeshComponent, PointerComponent, RaycastableComponent,
     RenderableComponent, SkinnedMeshComponent, TransformComponent,
 };
 use cat_engine::{engine, utils};
@@ -55,14 +55,9 @@ fn main() {
     let camera3d = universe.world.add_component(Camera3DComponent::new());
     let _ = universe.attach(rig_transform, camera3d);
 
-    // Raycaster + pointer so gizmos can be interacted with.
-    let raycaster = universe
-        .world
-        .add_component(RayCastComponent::event_driven().with_max_distance(100.0));
-    let _ = universe.attach(rig_transform, raycaster);
-
+    // Pointer so gizmos can be interacted with.
     let pointer = universe.world.add_component(PointerComponent::new());
-    let _ = universe.attach(raycaster, pointer);
+    let _ = universe.attach(rig_transform, pointer);
 
     // Topology: I { T { C3D } } — add a small camera-attached controls hint.
     example_util::spawn_desktop_camera_controls_hint(&mut universe, rig_transform);
@@ -115,6 +110,8 @@ fn main() {
     let xr_camera = universe.world.add_component(CameraXRComponent::on());
     let _ = universe.attach(xr_input, xr_head);
     let _ = universe.attach(xr_head, xr_camera);
+    let xr_pointer = universe.world.add_component(PointerComponent::new());
+    let _ = universe.attach(xr_camera, xr_pointer);
     let _ = universe.attach(xr_head, editor_root);
 
     let _ = universe.attach(model_root, model);

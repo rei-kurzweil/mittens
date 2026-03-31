@@ -3,7 +3,7 @@ use cat_engine::{engine, utils};
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, BackgroundComponent, Camera3DComponent,
     CameraXRComponent, ColorComponent, InputComponent, InputTransformModeComponent,
-    InputXRComponent, PointerComponent, RayCastComponent, RaycastableComponent, TextComponent,
+    InputXRComponent, PointerComponent, RaycastableComponent, TextComponent,
     TextShadowComponent, TextureComponent, TextureFilteringComponent, TransformComponent,
     TransparentCutoutComponent,
 };
@@ -75,15 +75,9 @@ fn main() {
     let camera = universe.world.add_component(Camera3DComponent::new());
     let _ = universe.attach(rig_transform, camera);
 
-    // Click-to-pick: prints which renderable (glyph quad) is under the cursor.
-    let raycast = universe
-        .world
-        .add_component(RayCastComponent::event_driven().with_max_distance(50.0));
-    let _ = universe.attach(rig_transform, raycast);
-
-    // Opt-in: treat this camera raycaster as a pointer.
+    // Click-to-pick: treat this camera rig as a pointer source.
     let pointer = universe.world.add_component(PointerComponent::new());
-    let _ = universe.attach(raycast, pointer);
+    let _ = universe.attach(rig_transform, pointer);
 
     // Topology: I { T { C3D } } — add a small camera-attached controls hint.
     example_util::spawn_desktop_camera_controls_hint(&mut universe, rig_transform);
