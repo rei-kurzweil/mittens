@@ -253,6 +253,9 @@ Once controller poses exist as transforms, the rest of the pipeline can stay lar
 - Ray origin becomes the controller transform world position.
 - Ray direction becomes controller forward (-Z) in world space.
 
+This describes the current implementation.
+The proposed scene-facing authoring cleanup is to make `Pointer {}` the authored component and let it own/spawn the runtime raycaster; see [docs/draft/pointer.md](docs/draft/pointer.md).
+
 ### “When to cast” for controllers
 
 Right now `RayCastComponent::EventDriven` is effectively mouse-left-driven.

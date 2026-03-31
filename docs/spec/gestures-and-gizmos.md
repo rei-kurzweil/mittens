@@ -69,6 +69,8 @@ All interaction signals are variants of `SignalValue`.
 - `PointerComponent`
   - Opt-in marker/config for “this raycaster participates as a pointer”.
   - Current status: it exists and is attached in examples, but it is not yet used for routing or per-pointer policies.
+  - Current authored/runtime shape is still “author a `RayCastComponent`, then attach `PointerComponent`”.
+  - Proposed future authoring direction is tracked in [docs/draft/pointer.md](docs/draft/pointer.md): author `Pointer {}` directly and let it own/spawn the runtime raycaster.
 
 - `RaycastableComponent`
   - Opt-in eligibility: if enabled in the renderable ancestry, the renderable is eligible for BVH insertion / ray hits.
