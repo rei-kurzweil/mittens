@@ -1,8 +1,9 @@
 use crate::engine::ecs::component::{
-    ColorComponent, EditorComponent, EmissiveComponent, InspectorPanelComponent,
-    OverlayComponent, RaycastableComponent, SelectableComponent, TextBackgroundComponent,
-    TransformComponent, WorldPanelComponent,
+    ColorComponent, EmissiveComponent, InspectorPanelComponent, OverlayComponent,
+    RaycastableComponent, SelectableComponent, TextBackgroundComponent, TransformComponent,
+    WorldPanelComponent,
 };
+use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
 
@@ -71,18 +72,7 @@ impl InspectorSystem {
                     return;
                 };
 
-                if let Some(ed) =
-                    world.get_component_by_id_as_mut::<EditorComponent>(editor_root)
-                {
-                    ed.selected = Some(node_id);
-                }
-                emit.push_event(
-                    editor_root,
-                    EventSignal::SelectionChanged {
-                        editor_root,
-                        selected: Some(node_id),
-                    },
-                );
+                select_editor_target(world, emit, editor_root, node_id, false);
             },
         );
 
@@ -449,6 +439,10 @@ fn collect_visible_nodes(
         .collect();
 
     while let Some((node, depth)) = stack.pop() {
+        if should_skip_world_panel_node(world, node) {
+            continue;
+        }
+
         if world
             .get_component_by_id_as::<SelectableComponent>(node)
             .map(|s| !s.enabled)
@@ -468,6 +462,25 @@ fn collect_visible_nodes(
     }
 
     result
+}
+
+fn should_skip_world_panel_node(world: &World, node: ComponentId) -> bool {
+    if world.component_name(node) == Some("editor_gizmo_anchor") {
+        return true;
+    }
+
+    let mut cur = Some(node);
+    while let Some(cid) = cur {
+        if world
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformGizmoComponent>(cid)
+            .is_some()
+        {
+            return true;
+        }
+        cur = world.parent_of(cid);
+    }
+
+    false
 }
 
 fn node_label(world: &World, id: ComponentId) -> String {

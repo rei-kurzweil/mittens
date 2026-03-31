@@ -14,6 +14,17 @@ renderer
 sky
 ambient
 
+RenderGraph {
+    EmissivePass {}
+
+    Bloom {
+        intensity(0.95)
+        radius_ndc(0.06)
+        emissive_scale(1.2)
+        half_res(true)
+    }
+}
+
 // --- Directional light ---
 T.position(0.15, -0.45, 1.0) {
     DL {

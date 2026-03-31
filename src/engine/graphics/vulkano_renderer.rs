@@ -2605,7 +2605,7 @@ mod vulkano_backend {
                             [extent[0].saturating_sub(panel_width + panel_margin), panel_margin],
                             [panel_width, panel_height],
                             view,
-                            true,
+                            false,
                         )?;
                     }
                 }

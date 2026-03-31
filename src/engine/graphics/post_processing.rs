@@ -411,18 +411,18 @@ impl PostProcessingRenderer {
 
         let viewport = if flip_y {
             Viewport {
-                offset: [inner_offset[0] as f32, inner_offset[1] as f32],
-                extent: [inner_extent[0] as f32, inner_extent[1] as f32],
-                depth_range: 0.0..=1.0,
-                ..Default::default()
-            }
-        } else {
-            Viewport {
                 offset: [
                     inner_offset[0] as f32,
                     (inner_offset[1] + inner_extent[1]) as f32,
                 ],
                 extent: [inner_extent[0] as f32, -(inner_extent[1] as f32)],
+                depth_range: 0.0..=1.0,
+                ..Default::default()
+            }
+        } else {
+            Viewport {
+                offset: [inner_offset[0] as f32, inner_offset[1] as f32],
+                extent: [inner_extent[0] as f32, inner_extent[1] as f32],
                 depth_range: 0.0..=1.0,
                 ..Default::default()
             }
@@ -484,8 +484,8 @@ impl PostProcessingRenderer {
         push_constants: PostProcessPushConstants,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let viewport = Viewport {
-            offset: [0.0, extent[1] as f32],
-            extent: [extent[0] as f32, -(extent[1] as f32)],
+            offset: [0.0, 0.0],
+            extent: [extent[0] as f32, extent[1] as f32],
             depth_range: 0.0..=1.0,
             ..Default::default()
         };

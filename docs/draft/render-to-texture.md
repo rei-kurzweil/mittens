@@ -235,140 +235,17 @@ Ordinary textured geometry sampling a runtime-produced image is exactly what we 
 
 ---
 
-## 6. Core runtime concepts
+## 6. Draft/runtime boundary
 
-### `RenderImageHandle`
+The implemented Layer A bridge now has its own spec document:
 
-Status: **future design, not the current implementation**.
+- [docs/spec/render-to-texture.md](docs/spec/render-to-texture.md)
 
-A stable renderer-managed handle for a sampleable image.
+The future `RenderImage*` abstraction family now has its own draft document:
 
-```rust
-pub struct RenderImageHandle(u32);
-```
+- [docs/draft/render-image.md](docs/draft/render-image.md)
 
-This may be runtime-owned rather than authored directly.
-
-It represents things like:
-
-- imported texture assets
-- render-graph intermediate attachments
-- explicit capture outputs
-
-The key idea is: **materials should not care where the image came from**.
-
-### `RenderImageRegistry`
-
-Status: **future design, not the current implementation**.
-
-A renderer/runtime-side registry of live render images.
-
-Conceptually:
-
-```rust
-pub struct RenderImageRegistry {
-    named: HashMap<String, RenderImageHandle>,
-    metadata: HashMap<RenderImageHandle, RenderImageInfo>,
-}
-
-pub struct RenderImageInfo {
-    pub extent: [u32; 2],
-    pub format: RenderImageFormat,
-    pub sample_count: u32,
-    pub usage: RenderImageUsage,
-}
-```
-
-This is where the renderer / post-processing renderer can publish:
-
-- `render_graph.main_color`
-- `render_graph.emissive_pass.color`
-- `render_graph.bloom.source`
-- `render_graph.bloom.blur_a`
-- `render_graph.bloom.blur_b`
-
-and where future capture systems can publish:
-
-- `capture.mirror.17`
-- `capture.portal.42`
-
-### `RenderToTextureSystem`
-
-Status: **future design, not the current implementation**.
-
-Layer A still benefits from a dedicated runtime seam between producers and consumers.
-
-That seam can be called `RenderToTextureSystem` even before we support explicit cameras.
-
-Its responsibilities would be:
-
-- receive published images from `Renderer`, `PostProcessingRenderer`, and future graph passes
-- assign or look up `RenderImageHandle`s
-- expose them to texture binding / material setup
-- resolve contextual selectors like "containing pass output"
-
-So even for Layer A, `RenderToTextureSystem` is useful.
-
-### Implemented bridge today
-
-The current codebase ships Layer A without introducing a first-class `RenderImageHandle`.
-
-Today the bridge is:
-
-- `TextureComponent.render_image: Option<String>`
-- selector strings such as `render_graph.emissive_pass.output`
-- `VisualWorld::runtime_texture_handle(key)` storing a stable `TextureHandle`
-- renderer-side publication that updates the image behind that stable handle across frames
-
-That means the draft `RenderImage*` types below are still useful as a **future cleanup direction**, but they are not the concrete API in `src/` today.
-
-### Unified texture source
-
-We likely want one abstraction for both asset textures and runtime textures:
-
-```rust
-pub enum TextureSource {
-    Asset(TextureHandle),
-    RenderImage(RenderImageHandle),
-}
-```
-
-Then materials and renderables can sample either kind through the same path.
-
-That avoids building a separate debug-only texturing path.
-
-### Authored texture binding
-
-The authored `TextureComponent` likely needs to resolve to either an asset URI or a runtime image source.
-
-Conceptually:
-
-```rust
-pub enum TextureBinding {
-    Uri(String),
-    RenderImage(RenderImageSelector),
-}
-
-pub enum RenderImageSelector {
-    Named(String),
-    FromPassReference,
-}
-```
-
-Rules:
-
-- `Texture { uri("assets/textures/foo.dds") }` → asset texture
-- `let tex = Texture {}` with no URI starts unresolved
-- `tex` placed under `EmissivePass` / `BloomBlurA` / similar pass nodes → `FromPassReference`
-- `Texture.render_image("render_graph.bloom.blur_a")` → named runtime image
-
-The no-URI case is what enables the clean reference/reuse syntax.
-
-The important behavior is that `RenderGraph` assigns the runtime image source to the referenced texture component, and later uses of the same texture handle see that bound image data.
-
-More explicitly: the preferred implementation is to keep the referenced texture handle stable and refresh the image data produced by the pass each frame. That is a per-frame image update/copy, not a per-frame material or renderable rebind.
-
-That behavior is now implemented, but via stable `TextureHandle`s keyed by selector string rather than a dedicated `RenderImageHandle` API.
+This document stays focused on the broader render-to-texture and view-capture direction rather than mixing currently implemented wiring with hypothetical runtime APIs.
 
 ---
 
@@ -548,15 +425,18 @@ The first is ergonomic. The second is useful for tools and cross-pass references
 
 ## 12. Recommended next step
 
-The next implementation step should be Layer A, not full mirrors/portals.
+The implemented Layer A bridge now exists in [docs/spec/render-to-texture.md](docs/spec/render-to-texture.md).
+
+The next design step should be the broader capture-oriented work, not re-specifying Layer A.
 
 Specifically:
 
-1. rename the scene-facing concept to `RenderGraph`
-2. add a renderer-owned `RenderImageRegistry` / `RenderToTextureSystem`
-3. publish attachments from `Renderer` and `PostProcessingRenderer`
-4. allow MMS `Texture {}` component expressions to exist as shareable references
-5. when those references are attached under `RenderGraph` passes, bind the pass output image into them
-6. reuse those same texture references on quads in the `bloom` example
+1. formalize whether a first-class `RenderImageHandle` layer is still worth adding on top of the current selector-string bridge
+2. design explicit capture targets for mirrors / portals / monitors
+3. define camera synthesis / scheduling for those capture targets
+4. decide how far authored shared texture references should go before MMS gains stronger live-reference semantics
 
-That gives immediate leverage on the current bloom debugging issue and creates the runtime image seam needed for mirrors and portals later.
+That keeps the spec/docs split clean:
+
+- spec = what exists in `src/`
+- draft = what may come next

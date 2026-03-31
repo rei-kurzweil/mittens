@@ -107,7 +107,7 @@ fn main() {
     // emissive for pc-rei
     let emissive = universe
         .world
-        .add_component(EmissiveComponent { enabled: true });
+        .add_component(EmissiveComponent::on());
     let _ = universe.attach(model, emissive);
 
     let xr_input = universe.world.add_component(InputXRComponent::on());

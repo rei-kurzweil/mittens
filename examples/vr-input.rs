@@ -1,9 +1,10 @@
 use cat_engine::engine::ecs::component::{
-    AmbientLightComponent, AvatarControlComponent, BackgroundColorComponent, Camera3DComponent,
-    CameraXRComponent, ColorComponent, ControllerHand, ControllerPoseKind, ControllerXRComponent,
-    DirectionalLightComponent, EditorComponent, EmissiveComponent, GLTFComponent, InputComponent,
-    InputTransformModeComponent, InputXRComponent, OpenXRComponent, PointerComponent,
-    QuatTemporalFilterComponent, RayCastComponent, RaycastableComponent, RenderableComponent,
+    AmbientLightComponent, AvatarControlComponent, BackgroundColorComponent, BloomComponent,
+    Camera3DComponent, CameraXRComponent, ColorComponent, ControllerHand, ControllerPoseKind,
+    ControllerXRComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent,
+    EmissivePassComponent, GLTFComponent, InputComponent, InputTransformModeComponent,
+    InputXRComponent, OpenXRComponent, PointerComponent, QuatTemporalFilterComponent,
+    RayCastComponent, RaycastableComponent, RenderGraphComponent, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TransformComponent,
     TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
     TransformMapTranslationComponent, TransformMergeTRSComponent, TransformPipelineComponent,
@@ -213,6 +214,19 @@ fn main() {
         .world
         .add_component(RendererSettingsComponent::msaa_off().with_window_size(320, 240));
     universe.add(renderer_settings);
+
+    let render_graph = universe.world.add_component(RenderGraphComponent::new());
+    let emissive_pass = universe.world.add_component(EmissivePassComponent::new());
+    let bloom = universe.world.add_component(
+        BloomComponent::new()
+            .with_intensity(0.95)
+            .with_radius_ndc(0.06)
+            .with_emissive_scale(1.2)
+            .with_half_res(true),
+    );
+    let _ = universe.attach(render_graph, emissive_pass);
+    let _ = universe.attach(render_graph, bloom);
+    universe.add(render_graph);
 
     // Sky base.
     let background = universe.world.add_component(BackgroundColorComponent::new());

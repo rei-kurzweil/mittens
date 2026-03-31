@@ -13,7 +13,7 @@
 
   <!-- Title -->
   <text x="410" y="28" text-anchor="middle" font-size="14" font-weight="700" fill="#b0bec5">Cat Engine · Post-Processing Render Graph</text>
-  <text x="410" y="44" text-anchor="middle" font-size="10" fill="#546e7a">PostProcessingComponent present — passes below activate conditionally</text>
+     <text x="410" y="44" text-anchor="middle" font-size="10" fill="#546e7a">RenderGraphComponent present — passes below activate conditionally</text>
 
   <!-- ─────────────────────────────────────────────────────────────────
        ROW: Geometry scope  (compact)

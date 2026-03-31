@@ -54,48 +54,58 @@ impl EditorSystem {
                 return;
             };
 
-            // Resolve (or discover) the editor's TransformGizmo.
-            let gizmo = resolve_editor_transform_gizmo(world, editor_root)
-                .or_else(|| spawn_editor_transform_gizmo(world, emit, editor_root));
-            let Some(gizmo) = gizmo else { return; };
+            select_editor_target(world, emit, editor_root, target_transform, true);
+        });
+    }
+}
 
-            // Reparent the gizmo under the clicked transform.
+pub(crate) fn select_editor_target(
+    world: &mut World,
+    emit: &mut dyn crate::engine::ecs::SignalEmitter,
+    editor_root: ComponentId,
+    target_transform: ComponentId,
+    update_repl_cwd: bool,
+) {
+    let gizmo = resolve_editor_transform_gizmo(world, editor_root)
+        .or_else(|| spawn_editor_transform_gizmo(world, emit, editor_root));
+
+    if let Some(gizmo) = gizmo {
+        emit.push_intent_now(
+            editor_root,
+            IntentValue::Attach {
+                parents: vec![target_transform],
+                child: gizmo,
+            },
+        );
+    }
+
+    if let Some(ed) = world.get_component_by_id_as_mut::<EditorComponent>(editor_root) {
+        ed.selected = Some(target_transform);
+    }
+
+    emit.push_event(
+        editor_root,
+        EventSignal::SelectionChanged {
+            editor_root,
+            selected: Some(target_transform),
+        },
+    );
+
+    if update_repl_cwd {
+        if let Some(node) = world.get_component_node(target_transform) {
             emit.push_intent_now(
                 editor_root,
-                IntentValue::Attach {
-                    parents: vec![target_transform],
-                    child: gizmo,
+                IntentValue::ReplExec {
+                    command: format!("cd {}", node.guid),
                 },
             );
-
-            // Record selection on EditorComponent and emit SelectionChanged.
-            if let Some(ed) = world.get_component_by_id_as_mut::<EditorComponent>(editor_root) {
-                ed.selected = Some(target_transform);
-            }
-            emit.push_event(
+            emit.push_intent_now(
                 editor_root,
-                EventSignal::SelectionChanged {
-                    editor_root,
-                    selected: Some(target_transform),
+                IntentValue::ReplExec {
+                    command: "pwd".to_string(),
                 },
             );
-
-            // Jump the REPL cwd to the clicked target so we can inspect topology quickly.
-            if let Some(node) = world.get_component_node(target_transform) {
-                emit.push_intent_now(
-                    editor_root,
-                    IntentValue::ReplExec {
-                        command: format!("cd {}", node.guid),
-                    },
-                );
-                emit.push_intent_now(
-                    editor_root,
-                    IntentValue::ReplExec {
-                        command: "pwd".to_string(),
-                    },
-                );
-            }
-        });
+        }
     }
 }
 

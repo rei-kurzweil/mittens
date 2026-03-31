@@ -14,6 +14,6 @@ layout(push_constant) uniform Params {
 
 void main() {
     vec4 main_color = texture(src_main, v_uv);
-    vec4 bloom = texture(src_bloom, vec2(v_uv.x, 1.0 - v_uv.y));
+    vec4 bloom = texture(src_bloom, v_uv);
     f_color = vec4(main_color.rgb + bloom.rgb * max(params.bloom_intensity, 0.0), main_color.a);
 }

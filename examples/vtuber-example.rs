@@ -86,7 +86,7 @@ fn main() {
     // emissive for pc-rei
     let emissive = universe
         .world
-        .add_component(engine::ecs::component::EmissiveComponent { enabled: true });
+        .add_component(engine::ecs::component::EmissiveComponent::on());
 
     let _ = universe.attach(model, emissive);
 

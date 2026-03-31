@@ -15,7 +15,7 @@ This document designs the opt-in post-processing system for cat-engine, covering
 
 **Related:**
 - `docs/spec/render-phases.md` — existing phase ordering
-- `docs/spec/render-to-texture-layer-a.md` — implemented runtime-texture publication bridge
+- `docs/spec/render-to-texture.md` — implemented runtime-texture publication bridge
 - `docs/spec/renderer-stats-component.md` — renderer diagnostics
 - `docs/spec/render-graph-pipeline.svg` — diagram: base pipeline
 - `docs/spec/render-graph-pipeline-post-processing.svg` — diagram: post-processing render graph
@@ -170,7 +170,7 @@ blurring, then upsamples; `radius_ndc` stays unchanged.
 **MMS authoring form:**
 
 ```
-PostProcessing {
+RenderGraph {
     Bloom.radius(0.2).intensity(0.8) {
         quality = 0.5      // scales kernel sample count (0..1, default 1.0)
         EmissiveSource     // positional tag: bloom source = emissive geometry (default)
@@ -299,24 +299,24 @@ All allocations are conditional — if the triggering component isn't present, t
 
 | Image | Trigger | Format | Size | Notes |
 |---|---|---|---|---|
-| Main color intermediate | `PostProcessingComponent` | `R16G16B16A16_SFLOAT` | Full res | Geometry renders here instead of swapchain |
+| Main color intermediate | `RenderGraphComponent` | `R16G16B16A16_SFLOAT` | Full res | Geometry renders here instead of swapchain |
 | HDR emissive buffer | `BloomComponent` | `R16G16B16A16_SFLOAT` | Full or half res | Emissive prepass target |
 | Blurred emissive buffer | `BloomComponent` | Same as above | Same | Ping-pong for H+V blur |
 | Stored depth (resolved) | `BloomComponent` or `BokehComponent` | `R32_SFLOAT` | Full res | MSAA depth resolve target |
 | CoC image | `BokehComponent` | `R16_SFLOAT` | Full res | Per-pixel CoC radius |
 | DoF blurred image | `BokehComponent` | Same as intermediate | Full res | Blurred scene color |
 
-**Without `PostProcessingComponent`**: nothing is allocated, current code path runs unchanged.
+**Without `RenderGraphComponent`**: nothing is allocated, current code path runs unchanged.
 
 ---
 
 ## 7. Full render graph sequence
 
 ```
-No PostProcessingComponent:
+No RenderGraphComponent:
   [geometry phases] → swapchain
 
-With PostProcessingComponent:
+With RenderGraphComponent:
 
 [1] Main geometry passes (begin_rendering → end_rendering)
       Color → main color intermediate (R16G16B16A16_SFLOAT)
@@ -396,8 +396,8 @@ If the intermediate is kept as sRGB, the bloom additive blend produces slightly 
 
 | Scenario | Overhead |
 |---|---|
-| No `PostProcessingComponent` | Zero — current fast path unchanged |
-| `PostProcessingComponent` only | One extra blit to swapchain (minor) |
+| No `RenderGraphComponent` | Zero — current fast path unchanged |
+| `RenderGraphComponent` only | One extra blit to swapchain (minor) |
 | + `BloomComponent` (half-res) | Emissive prepass + 2 half-res blurs + composite |
 | + `BloomComponent` (full-res) | Emissive prepass + 2 full-res blurs + composite |
 | + `BokehComponent` | Depth store + CoC pass + blur + composite |
@@ -413,7 +413,7 @@ If the intermediate is kept as sRGB, the bloom additive blend produces slightly 
 
 ## 11. Future effects (same infrastructure)
 
-These effects could be layered in later under the same `PostProcessingComponent` tree:
+These effects could be layered in later under the same `RenderGraphComponent` tree:
 
 - **SSAO** (screen-space ambient occlusion): needs stored depth and normals; similar to bokeh CoC pass
 - **SSR** (screen-space reflections): needs stored color + depth
@@ -433,7 +433,7 @@ These effects could be layered in later under the same `PostProcessingComponent`
    - **Proposed**: after. The stored depth from the main passes is then available for read-only depth test in the emissive prepass.
 
 3. **BloomComponent scope**: one per scene vs one per camera?
-   - **Proposed**: one per scene (child of `PostProcessingComponent`). XR handles per-eye duplication internally without needing per-camera bloom configuration.
+    - **Proposed**: one per scene (child of `RenderGraphComponent`). XR handles per-eye duplication internally without needing per-camera bloom configuration.
 
 4. **Material handle for emissive objects not using `GLTFComponent`**: user-authored objects need to opt into `EMISSIVE_TOON_MESH` explicitly, or the engine assigns it automatically when `EmissiveComponent` is present.
    - **Proposed**: `RenderableSystem` assigns the emissive material handle automatically when it sees `EmissiveComponent` with `intensity > 0.0` in the same subtree. No user plumbing required.
