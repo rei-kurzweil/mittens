@@ -473,6 +473,26 @@ fn eval_call(
     env: &Env,
     emits: &mut Vec<IntentValue>,
 ) -> Result<Value, String> {
+    // Built-in: print(value)
+    if call.callee.0 == "print" {
+        let arg = call.args.first().map(|a| eval_expr(a, env, emits)).transpose()?
+            .unwrap_or(Value::Null);
+        println!("[mms] {}", value_display(&arg));
+        return Ok(Value::Null);
+    }
+
+    // Built-in: assert(cond, msg)
+    if call.callee.0 == "assert" {
+        let cond = call.args.first().map(|a| eval_expr(a, env, emits)).transpose()?
+            .unwrap_or(Value::Null);
+        if !is_truthy(&cond) {
+            let msg = call.args.get(1).map(|a| eval_expr(a, env, emits)).transpose()?
+                .unwrap_or(Value::String("assertion failed".into()));
+            return Err(format!("assert: {}", value_display(&msg)));
+        }
+        return Ok(Value::Null);
+    }
+
     // Built-in: range(n) or range(start, end)
     if call.callee.0 == "range" {
         let args: Vec<Value> = call
@@ -549,6 +569,27 @@ fn eval_binop(
             let r = eval_expr(rhs, env, emits)?;
             return Ok(Value::Bool(is_truthy(&r)));
         }
+        BinOpKind::Pipe => {
+            let lhs_val = eval_expr(lhs, env, emits)?;
+            if matches!(&lhs_val, Value::String(_)) {
+                return Err("pipe: query selector sugar not yet implemented".to_string());
+            }
+            let rhs_val = eval_expr(rhs, env, emits)?;
+            match rhs_val {
+                Value::Function { params, body, captured_env } => {
+                    let mut call_env = captured_env;
+                    if let Some(param) = params.first() {
+                        call_env.insert(param.clone(), lhs_val);
+                    }
+                    let mut func_ctx = EvalContext { emits, source_path: None };
+                    match eval_block_stmts(&body.statements, &mut call_env, &mut func_ctx)? {
+                        StmtEffect::Return(val) => return Ok(val),
+                        _ => return Ok(Value::Null),
+                    }
+                }
+                other => return Err(format!("pipe: RHS must be a function, got {:?}", other)),
+            }
+        }
         _ => {}
     }
 
@@ -559,6 +600,8 @@ fn eval_binop(
         BinOpKind::Add => match (l, r) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
             (Value::String(a), Value::String(b)) => Ok(Value::String(a + &b)),
+            (Value::String(a), r) => Ok(Value::String(a + &value_display(&r))),
+            (l, Value::String(b)) => Ok(Value::String(value_display(&l) + &b)),
             (l, r) => Err(format!("type error: cannot add {:?} and {:?}", l, r)),
         },
         BinOpKind::Sub => match (l, r) {
@@ -588,7 +631,7 @@ fn eval_binop(
         BinOpKind::Gt    => num_cmp(l, r, |a, b| a > b),
         BinOpKind::LtEq  => num_cmp(l, r, |a, b| a <= b),
         BinOpKind::GtEq  => num_cmp(l, r, |a, b| a >= b),
-        BinOpKind::And | BinOpKind::Or => unreachable!("handled above"),
+        BinOpKind::And | BinOpKind::Or | BinOpKind::Pipe => unreachable!("handled above"),
     }
 }
 
@@ -611,6 +654,28 @@ fn eval_unaryop(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+fn value_display(val: &Value) -> String {
+    match val {
+        Value::Null => "null".into(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => {
+            if n.fract() == 0.0 && n.abs() < 1e15 {
+                format!("{}", *n as i64)
+            } else {
+                n.to_string()
+            }
+        }
+        Value::String(s) => s.clone(),
+        Value::Array(arr) => format!("[{}]", arr.iter().map(value_display).collect::<Vec<_>>().join(", ")),
+        Value::Function { .. } => "<fn>".into(),
+        Value::ComponentObject(id) => format!("<component {:?}>", id),
+        Value::ComponentExpr(_) => "<ce>".into(),
+        Value::Object(_) => "<object>".into(),
+        Value::Identifier(s) => s.clone(),
+        Value::Module { .. } => "<module>".into(),
+    }
+}
 
 fn is_truthy(val: &Value) -> bool {
     match val {

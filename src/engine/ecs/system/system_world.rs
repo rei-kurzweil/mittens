@@ -613,6 +613,8 @@ impl SystemWorld {
         };
 
         self.editor
+            .materialize_editor_raycastables(world, emit, component);
+        self.editor
             .install_scoped_handlers_for_editor(&mut self.rx, component);
 
         if spawn_panels {

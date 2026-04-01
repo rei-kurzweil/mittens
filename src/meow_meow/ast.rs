@@ -41,6 +41,7 @@ pub enum BinOpKind {
     Add, Sub, Mul, Div, Rem,
     Eq, NotEq, Lt, Gt, LtEq, GtEq,
     And, Or,
+    Pipe,
 }
 
 #[derive(Debug, Clone, PartialEq)]

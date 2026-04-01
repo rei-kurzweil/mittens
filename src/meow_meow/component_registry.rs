@@ -19,7 +19,7 @@ use crate::engine::ecs::component::{
     InspectorPanelComponent, KeyframeComponent, NormalVisualisationComponent, OpenXRComponent,
     OverlayComponent, PointLightComponent, PointerComponent, RenderGraphComponent, SelectableComponent,
     TextBackgroundComponent, TextureComponent, UVComponent, WorldPanelComponent,
-    QuatTemporalFilterComponent, RayCastComponent, RayCastMode, RenderableComponent,
+    QuatTemporalFilterComponent, RaycastableComponent, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TextComponent, TextShadowComponent,
     TextureFilteringComponent, TransformComponent, TransformDropComponent,
     TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
@@ -333,8 +333,8 @@ fn create_component(
         "InspectorPanel" => add!(InspectorPanelComponent::new()),
         "WorldPanel" => add!(WorldPanelComponent::new()),
         "Raycastable" => match ctor {
-            Some("enabled") => add!(RayCastComponent::new(RayCastMode::Continuous)),
-            _ => add!(RayCastComponent::new(RayCastMode::Continuous)),
+            Some("enabled") => add!(RaycastableComponent::enabled()),
+            _ => add!(RaycastableComponent::enabled()),
         },
         "TextureFiltering" => match ctor {
             Some("linear") => add!(TextureFilteringComponent::linear()),

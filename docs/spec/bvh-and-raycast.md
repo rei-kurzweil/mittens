@@ -1,6 +1,8 @@
-# BVH + Raycast (mouse picking) — data flow
+# BVH + Raycast — data flow
 
-This document describes how cat-engine’s **renderable BVH** and **raycasting / mouse picking** work today: what data each system owns, how it stays in sync, and what the raycast query actually tests.
+This document describes how cat-engine’s **renderable BVH** and **raycasting** work today: what data each system owns, how it stays in sync, and what the raycast query actually tests.
+
+For the broader pointer/trigger/gesture pipeline, see `docs/spec/pointer-input-ray-gesture.md`.
 
 For how meshes/handles flow through rendering (and why `base_mesh` exists), see `docs/mesh.md`.
 
@@ -62,6 +64,7 @@ This keeps the system incremental: first make things selectable at all, then mak
   - A *request/behavior* component.
   - Has a `mode` (`Continuous` or `EventDriven`) and `max_distance`.
   - It does **not** define a ray origin/direction itself.
+  - In current behavior, non-desktop pointers should be treated as request-driven; desktop cursor pointers still auto-cast from desktop mouse input.
 
 ### Systems
 
@@ -78,7 +81,7 @@ This keeps the system incremental: first make things selectable at all, then mak
 
 - `RayCastSystem`
   - Owns `raycasters: HashSet<ComponentId>`.
-  - Each frame, produces a cursor ray from `VisualWorld` camera matrices + `InputState` cursor position.
+  - Resolves ray source per raycaster from topology.
   - Queries `BvhSystem` to find the best (closest) hit.
 
 ### Data sources
@@ -92,7 +95,7 @@ This keeps the system incremental: first make things selectable at all, then mak
 
 ## Coordinate/math details (cursor → ray)
 
-The ray is computed in `RayCastSystem::ray_from_cursor`:
+For cursor-through-camera pointers, the ray is computed in `RayCastSystem::ray_from_cursor`:
 
 1. Read viewport `(w, h)` from `VisualWorld`.
 2. Read cursor `(cx, cy)` from `InputState` (defaults to screen center if missing).

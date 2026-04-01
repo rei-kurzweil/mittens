@@ -1,5 +1,7 @@
 # Input → Intent → Data Flow (UserInput, Raycast, Gestures, OpenXR)
 
+For the consolidated pointer interaction pipeline, see `docs/spec/pointer-input-ray-gesture.md`.
+
 This doc is a **wiring diagram** for how input currently flows through the engine, where “intent” lives, and how we can extend the same pipeline to XR controllers.
 
 Scope:

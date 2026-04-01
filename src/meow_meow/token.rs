@@ -43,6 +43,7 @@ pub enum TokenKind {
     GtEq,
     AmpAmp,
     PipePipe,
+    PipeGt,
     Bang,
     Fn,
     For,

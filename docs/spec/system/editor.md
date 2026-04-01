@@ -20,3 +20,33 @@ The system is implemented entirely as an immediate-mode Rx handler installed in 
 - The editor gizmo is identified by searching the editor subtree for a `TransformGizmoComponent`. `EditorComponent` caches the resolved gizmo id in `EditorComponent.transform_gizmo` for subsequent selections.
 - Reparenting is performed via the signal graph (`Attach` → `ActionSystem`) rather than directly mutating topology inside `EditorSystem`.
 - Only the transform gizmo is handled right now; additional gizmo types should follow the same pattern (editor handler routes selection → emits `Attach` for the relevant gizmo).
+
+## Editor-default pickability
+
+At editor registration time, `EditorSystem::materialize_editor_raycastables(...)` makes ordinary editor-authored subtrees pickable by default.
+
+Current rule:
+
+- For each immediate child of the `EditorComponent` root, insert one runtime `editor_auto_raycastable` node containing `RaycastableComponent::enabled()` above that child.
+- Do not insert that wrapper when the immediate child root already has:
+	- an explicit `RaycastableComponent`, or
+	- `SelectableComponent::off()`.
+
+This gives editor subtrees a practical “selectable by default” behavior while still preserving explicit authored overrides.
+
+### GLTF exception
+
+Editor auto-raycast wrapping must also skip any immediate editor child branch whose subtree contains a `GLTFComponent`.
+
+Reason:
+
+- `GLTFSystem` already treats editor ancestry as meaningful.
+- A glTF under an editor subtree automatically enables `with_visualized_transforms`.
+- Transform-only glTF nodes then get explicit visualization proxies, and those proxies are themselves raycastable.
+
+So GLTF/editor interaction is already a special path with its own pick proxies. `EditorSystem` should not add a second generic raycastable ancestor above that same branch.
+
+Practical effect:
+
+- ordinary authored editor geometry gets the automatic wrapper
+- avatar / imported glTF branches rely on `GLTFSystem`’s editor-aware visualization path instead

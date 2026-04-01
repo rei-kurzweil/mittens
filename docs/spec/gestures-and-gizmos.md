@@ -2,6 +2,8 @@
 
 # Gestures and Transform Gizmos
 
+For the broader pointer → trigger → ray → gesture flow, see `docs/spec/pointer-input-ray-gesture.md`.
+
 This document is the up-to-date, code-matching description of the engine’s desktop interaction pipeline for **ray-hit driven drag gestures** and the **transform gizmo**.
 
 At a high level:

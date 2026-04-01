@@ -390,13 +390,21 @@ impl RayCastSystem {
         self.eligible_renderables.remove(&renderable_cid);
     }
 
-    fn should_cast(mode: RayCastMode, input: &InputState, cast_requested: bool) -> bool {
+    fn should_cast(
+        mode: RayCastMode,
+        input: &InputState,
+        cast_requested: bool,
+        source: RaySourceKind,
+    ) -> bool {
         match mode {
             RayCastMode::Continuous => true,
             RayCastMode::EventDriven => {
-                cast_requested
-                    || input.mouse_pressed.contains(&MouseButton::Left)
-                    || (input.mouse_down.contains(&MouseButton::Left) && input.mouse_dragging())
+                let desktop_mouse_auto_cast = source == RaySourceKind::CursorThroughActiveCamera
+                    && (input.mouse_pressed.contains(&MouseButton::Left)
+                        || (input.mouse_down.contains(&MouseButton::Left)
+                            && input.mouse_dragging()));
+
+                cast_requested || desktop_mouse_auto_cast
             }
         }
     }
@@ -916,7 +924,9 @@ impl System for RayCastSystem {
 
             let cast_requested = rc.cast_requests > 0;
 
-            if !Self::should_cast(rc.mode, input, cast_requested) {
+            let source = Self::inferred_source_kind(world, rcid);
+
+            if !Self::should_cast(rc.mode, input, cast_requested, source) {
                 continue;
             }
 
@@ -1058,7 +1068,7 @@ impl RayCastSystem {
                     }
                 };
 
-                if !Self::should_cast(mode, input, cast_requested) {
+                if !Self::should_cast(mode, input, cast_requested, source) {
                     continue;
                 }
 

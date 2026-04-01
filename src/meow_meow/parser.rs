@@ -230,6 +230,7 @@ impl MeowMeowParser {
     /// Left-associative: l_bp == r_bp - 1.
     fn peek_infix_op(&self) -> Option<(u8, u8, BinOpKind)> {
         match self.peek_kind() {
+            TokenKind::PipeGt   => Some((0, 1, BinOpKind::Pipe)),
             TokenKind::PipePipe => Some((1, 2, BinOpKind::Or)),
             TokenKind::AmpAmp   => Some((3, 4, BinOpKind::And)),
             TokenKind::EqEq     => Some((5, 6, BinOpKind::Eq)),

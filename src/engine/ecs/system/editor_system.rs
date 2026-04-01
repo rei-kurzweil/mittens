@@ -1,5 +1,6 @@
 use crate::engine::ecs::component::{
-    EditorComponent, SelectableComponent, TransformComponent, TransformGizmoComponent,
+    EditorComponent, GLTFComponent, RaycastableComponent, SelectableComponent, TransformComponent,
+    TransformGizmoComponent,
 };
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, RxWorld, SignalKind, World};
 use std::collections::HashSet;
@@ -57,6 +58,70 @@ impl EditorSystem {
             select_editor_target(world, emit, editor_root, target_transform, true);
         });
     }
+
+    /// Materialize editor-default pickability by wrapping each current immediate child of the
+    /// editor root in a single `RaycastableComponent::enabled()` ancestor, unless that subtree
+    /// root already explicitly opts in or out.
+    pub fn materialize_editor_raycastables(
+        &mut self,
+        world: &mut World,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        editor_root: ComponentId,
+    ) {
+        let children: Vec<ComponentId> = world.children_of(editor_root).to_vec();
+
+        for child in children {
+            if subtree_root_has_explicit_raycastable(world, child)
+                || subtree_root_has_selectable_off(world, child)
+                || subtree_contains_gltf(world, child)
+            {
+                continue;
+            }
+
+            let wrapper = world.add_component_boxed_named(
+                "editor_auto_raycastable",
+                Box::new(RaycastableComponent::enabled()),
+            );
+
+            if world.add_child(editor_root, wrapper).is_err() {
+                continue;
+            }
+            if world.add_child(wrapper, child).is_err() {
+                let _ = world.remove_component_subtree(wrapper);
+                continue;
+            }
+
+            world.init_component_tree(wrapper, emit);
+        }
+    }
+}
+
+fn subtree_root_has_explicit_raycastable(world: &World, node: ComponentId) -> bool {
+    world
+        .get_component_by_id_as::<RaycastableComponent>(node)
+        .is_some()
+}
+
+fn subtree_root_has_selectable_off(world: &World, node: ComponentId) -> bool {
+    world
+        .get_component_by_id_as::<SelectableComponent>(node)
+        .map(|s| !s.enabled)
+        .unwrap_or(false)
+}
+
+fn subtree_contains_gltf(world: &World, root: ComponentId) -> bool {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        if world.get_component_by_id_as::<GLTFComponent>(node).is_some() {
+            return true;
+        }
+
+        for &child in world.children_of(node).iter() {
+            stack.push(child);
+        }
+    }
+
+    false
 }
 
 pub(crate) fn select_editor_target(

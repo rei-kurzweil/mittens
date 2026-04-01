@@ -135,9 +135,12 @@ impl<'a> MeowMeowTokenizer<'a> {
                 if self.idx < self.bytes.len() && self.bytes[self.idx] == b'|' {
                     self.idx += 1;
                     TokenKind::PipePipe
+                } else if self.idx < self.bytes.len() && self.bytes[self.idx] == b'>' {
+                    self.idx += 1;
+                    TokenKind::PipeGt
                 } else {
                     return Err(TokenizeError {
-                        message: "Expected '||'".to_string(),
+                        message: "Expected '||' or '|>'".to_string(),
                         span: Span::new(start, self.idx),
                     });
                 }

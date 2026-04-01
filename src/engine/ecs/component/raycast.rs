@@ -11,8 +11,9 @@ pub enum RayCastMode {
 ///
 /// Semantics:
 /// - Attach this anywhere (commonly under a camera rig transform).
-/// - The RayCastSystem will cast from the active window camera through the cursor.
-/// - In `EventDriven`, casts only when left mouse is pressed this frame.
+/// - The RayCastSystem resolves the actual ray source from surrounding topology.
+/// - `EventDriven` means the raycaster casts only when explicitly requested, except for
+///   desktop cursor-through-camera pointers which currently auto-cast from desktop mouse input.
 #[derive(Debug, Clone, Copy)]
 pub struct RayCastComponent {
     pub mode: RayCastMode,
