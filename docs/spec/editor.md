@@ -258,7 +258,7 @@ To allow scripting multiple gizmos later without fighting the editor:
 `RayCastSystem` is currently a general facility:
 
 - It casts based on input (click/drag) in `EventDriven` mode.
-- It can also cast on demand via `Action::raycast(...)` (used for scripted/automatic casts).
+- It can also cast on demand via `IntentSignal::now(IntentValue::RequestRaycast { ... })` (used for scripted/automatic casts).
 - It supports ray sources beyond cursor picking (e.g. parent-forward rays).
 
 Selection should not necessarily react to all raycasts.

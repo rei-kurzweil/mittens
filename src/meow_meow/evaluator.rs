@@ -12,7 +12,7 @@ use crate::meow_meow::object::Value;
 use crate::meow_meow::parser::{MeowMeowParser, ParseError};
 use crate::meow_meow::token::TokenizeError;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;
-use crate::meow_meow::transform::EmitLiftTransform;
+use crate::meow_meow::transform::{EmitLiftTransform, QueryDesugarTransform};
 
 // ---------------------------------------------------------------------------
 // Thread protocol
@@ -126,7 +126,7 @@ struct EvalContext<'a> {
     source_path: Option<&'a str>,
 }
 
-/// Evaluate a script: parse → EmitLiftTransform → walk statements.
+/// Evaluate a script: parse → AstTransforms → walk statements.
 /// Each `emit(ce)` call produces an `EvalResponse::Intent(SpawnComponentTree)`.
 fn eval_script(source: &str, source_path: Option<&str>, responses: &mut Producer<EvalResponse>) {
     let mut stmts = match parse_source(source) {
@@ -138,6 +138,7 @@ fn eval_script(source: &str, source_path: Option<&str>, responses: &mut Producer
     };
 
     EmitLiftTransform::apply(&mut stmts);
+    QueryDesugarTransform::apply(&mut stmts);
 
     let mut env: Env = HashMap::new();
     let mut emits: Vec<IntentValue> = Vec::new();
@@ -707,6 +708,7 @@ fn num_cmp(l: Value, r: Value, f: impl Fn(f64, f64) -> bool) -> Result<Value, St
 fn eval_as_module(source: &str, source_path: Option<&str>) -> Result<Value, String> {
     let mut stmts = parse_source(source)?;
     EmitLiftTransform::apply(&mut stmts);
+    QueryDesugarTransform::apply(&mut stmts);
 
     let mut local_env: Env = HashMap::new();
     let mut emits: Vec<IntentValue> = Vec::new();

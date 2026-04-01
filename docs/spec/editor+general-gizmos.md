@@ -34,18 +34,18 @@ Translation and rotation gizmos may operate in either **World** or **Local** coo
 
 The engine input pipeline is signal-driven:
 
-1. `RayCastSystem` emits `SignalValue::RayIntersected` facts.
+1. `RayCastSystem` emits `EventSignal::RayIntersected` facts.
 2. `GestureSystem` consumes ray hits + input and emits drag facts:
-   - `SignalValue::DragStart`
-   - `SignalValue::DragMove`
-   - `SignalValue::DragEnd`
-3. `EditorSystem` consumes `DragStart` and emits an action:
-   - `SignalValue::Attach { parents, child }`
-4. `ActionSystem` handles `Attach` by mutating topology and emitting:
-   - `SignalValue::ParentChanged`
+  - `EventSignal::DragStart`
+  - `EventSignal::DragMove`
+  - `EventSignal::DragEnd`
+3. `EditorSystem` consumes `DragStart` and emits an intent:
+  - `IntentValue::Attach { parents, child }`
+4. Intent execution handles `Attach` by mutating topology and emitting:
+  - `EventSignal::ParentChanged`
 5. `TransformGizmoSystem` consumes drag facts and mutates the currently-attached target transform.
 
-Key detail: editor-driven reparenting goes through `Attach` so topology changes remain consistent with the rest of the engine (e.g. `ParentChanged` emission, init/refresh behavior).
+Key detail: editor-driven reparenting goes through `IntentValue::Attach` so topology changes remain consistent with the rest of the engine (e.g. `ParentChanged` emission, init/refresh behavior).
 
 ## Current behavior (selection)
 

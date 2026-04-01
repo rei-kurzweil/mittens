@@ -21,7 +21,7 @@ pub struct RayCastComponent {
     /// Max ray distance in world units.
     pub max_distance: f32,
 
-    /// Incremented by `Action::raycast(...)` to request a cast on this frame.
+    /// Incremented by `IntentValue::RequestRaycast` to request a cast on this frame.
     ///
     /// This is intentionally not serialized; it is a transient runtime signal.
     pub cast_requests: u32,

@@ -114,7 +114,7 @@ Suggested cleanup:
 
 ### src/engine/ecs/rx/signal.rs (private_interfaces)
 
-- `SignalValue::OscillatorScheduleSetNote::pitch` is `pub` but its type `NotePitch` is `pub(crate)`.
+- `IntentValue::OscillatorScheduleSetNote::pitch` is `pub` but its type `NotePitch` is `pub(crate)`.
 
 Suggested cleanup:
 - Either make `NotePitch` public (if it’s truly part of the public signal API), or

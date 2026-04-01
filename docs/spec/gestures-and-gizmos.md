@@ -8,7 +8,7 @@ This document is the up-to-date, code-matching description of the engine’s des
 
 At a high level:
 
-- **RayCastSystem** answers “what is under the pointer?” by emitting `SignalValue::RayIntersected`.
+- **RayCastSystem** answers “what is under the pointer?” by emitting `EventSignal::RayIntersected`.
 - **GestureSystem** turns ray hits + input edges into a `DragStart`/`DragMove`/`DragEnd` stream.
 - **EditorSystem** (optional) routes selection by reattaching the editor’s transform gizmo to the clicked target.
 - **TransformGizmoSystem** interprets drags as TRS edits on a target `TransformComponent`.
@@ -25,9 +25,9 @@ Picking is improved but still not perfect: broad-phase uses BVH AABB candidates,
 
 The relevant order in `SystemWorld::tick()` is:
 
-1. `RayCastSystem` runs and pushes `SignalValue::RayIntersected` facts.
+1. `RayCastSystem` runs and pushes `EventSignal::RayIntersected` facts.
 2. Signals are dispatched immediately (so immediate-mode handlers can run).
-3. `GestureSystem` runs and pushes `SignalValue::DragStart/DragMove/DragEnd`.
+3. `GestureSystem` runs and pushes `EventSignal::DragStart` / `EventSignal::DragMove` / `EventSignal::DragEnd`.
 4. Drag signals are dispatched immediately.
 5. `TransformGizmoSystem` consumes drag signals, mutates transforms, and may emit follow-up signals.
 6. Signals are dispatched immediately, then the command queue is flushed so transforms are visible this frame.
@@ -36,7 +36,7 @@ Immediate-mode Rx handlers are installed once at frame start; downstream systems
 
 ## Signals
 
-All interaction signals are variants of `SignalValue`.
+All interaction facts here are `EventSignal` variants, while reparenting requests are expressed as `IntentValue`.
 
 - `RayIntersected { raycaster, renderable, t, origin, dir }`
   - Fact emitted by `RayCastSystem`.
@@ -54,11 +54,11 @@ All interaction signals are variants of `SignalValue`.
   - Fact emitted by `GestureSystem` when left mouse is released.
 
 - `Attach { parents, child }`
-  - Action emitted by `EditorSystem` (and others) to request reparenting.
-  - Handled by `ActionSystem`.
+  - Intent emitted by `EditorSystem` (and others) to request reparenting.
+  - Handled by intent execution.
 
 - `ParentChanged { child, old_parent, new_parent }`
-  - Fact emitted by `ActionSystem` after topology changes.
+  - Fact emitted after topology changes during intent execution.
   - Consumed by `TransformGizmoSystem` to rebind its runtime target.
 
 ## Components (interaction-relevant)
@@ -112,6 +112,33 @@ Per-handle mapping:
   - `GestureCoordType::ScreenSpace1DSlider` (pixel delta → scalar)
   - Current status: rotate handles are spawned with `ScreenSpace1DSlider` so rotation is driven by screen-space deltas.
 
+### Rotation handle mapping
+
+Rotation rings use screen-distance slider behavior rather than continuous world-plane/ring intersection.
+
+Practical behavior:
+
+- click a rotation ring
+- drag anywhere on screen
+- rotation continues from screen-space motion even if the cursor leaves the thin ring geometry
+
+Current mapping rules:
+
+- `DragMove.screen_delta_px` is the primary input for rotational handles in slider mode
+- the slider produces an incremental angle each move
+- translation handles continue using world-plane / projected world-space drag deltas
+
+Why this is the default for rotation:
+
+- ring/plane intersection is sensitive to camera angle and hit-point continuity
+- rotation feels better when it behaves like a stable 1D screen-space dial
+- this avoids common “flip” / sign-instability problems when dragging away from the ring itself
+
+Fallback behavior:
+
+- if screen-space cursor data is not available, slider-mode rotation does not currently provide a non-screen fallback by itself
+- future non-screen pointers (XR/controller-driven rotation) will need their own explicit mapping/gesture path
+
 ## Systems (interaction-relevant)
 
 ### RayCastSystem
@@ -149,6 +176,7 @@ Per-handle mapping:
 ## Checklist / follow-ups
 
 - ✅ Multi-candidate raycast results + narrow-phase rejection (enables basic line-of-sight behaviors for supported shapes)
+- ✅ Rotation rings use `ScreenSpace1DSlider` rather than world-plane ring dragging
 - ⬜ Input routing / capture (prevent camera look + gizmo drag fighting)
 - ⬜ Local/world gizmo mode (and a concrete parenting/compensation strategy for world-mode)
 - ⬜ Pointer-driven lifecycle (remove mouse assumptions; support per-pointer state, multi-pointer drags)

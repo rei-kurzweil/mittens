@@ -43,7 +43,7 @@ impl CommandQueue {
         moved
     }
 
-    // Note: this type is intentionally minimal; emit `SignalValue` directly via the
+    // Note: this type is intentionally minimal; emit `Signal` values directly via the
     // `SignalEmitter` impl instead of using command-style convenience methods.
 
     /// Flush used to apply queued commands; now it executes pending signals.

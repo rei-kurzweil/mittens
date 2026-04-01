@@ -94,11 +94,22 @@ query("#hero", fn(t) {          // explicit callback form
 ```
 
 `|>` is also the general **forward pipe** operator: `expr |> f` means `f(expr)`. The
-query meaning is a special case detected at parse time by the presence of a **string
-literal** as an operand. A string literal cannot be called as a function, so it is
-unambiguously a query selector when it appears in a `|>` chain.
+query meaning is a special case — a string literal cannot be called as a function, so it
+is unambiguously a query selector when it appears as an operand of `|>`.
 
-### Parse-time disambiguation rule
+### Implementation: AstTransform, not parser or evaluator
+
+The parser produces `BinOp(Pipe, lhs, rhs)` unconditionally — it does not inspect whether
+`lhs` is a string literal. The rewrite from query sugar into `query()`/`query_all()` calls
+is performed by **`QueryDesugarTransform`**, an AST pass that runs between parsing and
+evaluation (see [script-runner.md](../spec/script-runner.md)).
+
+This means:
+- The parser stays context-free and single-responsibility.
+- The evaluator's `Pipe` arm only ever sees `expr |> fn_value` (pure function application).
+- All query-sugar `Pipe` nodes with a string-literal LHS have been rewritten before eval.
+
+### Disambiguation rule
 
 | Form | Interpretation |
 |---|---|

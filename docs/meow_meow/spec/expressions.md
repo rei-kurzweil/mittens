@@ -82,6 +82,12 @@ Status markers: ✅ implemented · 🔧 planned (phase noted) · ❓ open questi
 | `PipePipe` ✅ | `\|\|` | logical or (short-circuit) |
 | `Bang` ✅ | `!` | logical not (unary) |
 
+### 1.7 Pipe operator token
+
+| Token | Lexeme | Notes |
+|-------|--------|-------|
+| `PipeGt` ✅ | `\|>` | forward pipe / query sugar — lowest precedence infix operator |
+
 ---
 
 ## 2. Expression AST nodes
@@ -163,7 +169,7 @@ node needed. See [functions-and-closures.md](../analysis/functions-and-closures.
 ### 2.6 Binary operator expression
 
 ```rust
-// Phase 2
+// Phase 2 (Pipe added later)
 Expression::BinaryOp {
     op: BinaryOpKind,
     lhs: Box<Expression>,
@@ -177,8 +183,16 @@ pub enum BinaryOpKind {
     Eq, NotEq, Lt, Gt, LtEq, GtEq,
     // logical (short-circuit)
     And, Or,
+    // forward pipe — lowest precedence; query sugar removed by AstTransform before eval
+    Pipe, // ✅ — `expr |> f` evaluates as `f(expr)` after QueryDesugarTransform runs
 }
 ```
+
+`Pipe` nodes where the LHS is a string literal are **not** evaluated directly — they are
+rewritten by `QueryDesugarTransform` into `query()`/`query_all()` calls before the
+evaluator runs. Only `expr |> fn_value` reaches the evaluator, which applies the function
+to the LHS value. See [script-runner.md](script-runner.md) for the pipeline and
+[mms-query.md](../draft/mms-query.md) for the rewrite rules.
 
 ### 2.7 Unary operator expression
 
@@ -240,13 +254,14 @@ Highest to lowest. All binary operators are left-associative unless noted.
 
 | Level | Operators | Notes |
 |-------|-----------|-------|
-| 6 | `!`, unary `-` | right-associative (prefix unary) |
-| 5 | `*`, `/`, `%` | |
-| 4 | `+`, `-` | |
-| 3 | `<`, `>`, `<=`, `>=` | non-associative (chaining `a < b < c` is a parse error) |
-| 2 | `==`, `!=` | |
-| 1 | `&&` | |
-| 0 | `\|\|` | lowest |
+| 7 | `!`, unary `-` | right-associative (prefix unary) |
+| 6 | `*`, `/`, `%` | |
+| 5 | `+`, `-` | |
+| 4 | `<`, `>`, `<=`, `>=` | non-associative (chaining `a < b < c` is a parse error) |
+| 3 | `==`, `!=` | |
+| 2 | `&&` | |
+| 1 | `\|\|` | |
+| 0 | `\|>` | lowest; left-associative — `a \|> f \|> g` is `g(f(a))` |
 
 Parentheses `(expr)` always have highest precedence.
 

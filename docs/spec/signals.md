@@ -23,6 +23,20 @@ Timing (`SignalWhen`) lives on `IntentSignal` (not events).
 
 `SignalWhen::AtBeat(b)` means the signal is held until transport beat $\ge b$.
 
+### Intent/event model replaces the older action/event split
+
+The canonical model is now:
+
+- `IntentSignal` = side-effect request
+- `EventSignal` = observed fact
+
+Older docs may refer to an “action” layer or `ActionMethod` as if it were the public conceptual API. That is historical terminology only.
+
+Implementation note:
+
+- `ActionComponent` / `ActionSystem` may still appear in code as legacy plumbing reused by intent execution
+- but the architectural model to document and build on is **intent vs event**, not **action vs event**
+
 ### One stream, explicit drain points
 
 The core invariant is:
@@ -136,7 +150,7 @@ surface area.
 - **Ordering guarantees**: do we need a single total order across “intent vs events”, or is staged ordering sufficient? Should signals carry a `seq: u64`?
 - **Global handlers**: keep global handlers in `RxWorld`, or require explicit scope roots only?
 - **Handler API**: keep public handlers as `fn` pointers, or move to `HandlerId` + boxed closures for ergonomics?
-- **Where intent logic lives**: how far do we push `RxIntentExecutor` vs keeping an `ActionSystem`-style interpreter?
+- **Where intent logic lives**: how far do we push `RxIntentExecutor` vs keeping a legacy interpreter layer around system-owned mutations?
 
 ## Current status (2026-03-06)
 
@@ -146,5 +160,5 @@ surface area.
 - `RemoveSubtreeImmediate` is gone; `RemoveSubtree { target }` is the one subtree deletion action.
 - `SetTextImmediate` is gone; `SetText` executes at drain points and rebuilds the glyph subtree.
 - Intent execution is in transition:
-  - `RxIntentExecutor` exists and currently reuses `ActionSystem`’s interpretation logic for many high-level `IntentValue`s.
+  - `RxIntentExecutor` exists and currently reuses some legacy `ActionSystem` interpretation logic for many high-level `IntentValue`s.
     - The default intent executor (`execute_intent_signal`) applies canonical side effects.

@@ -26,10 +26,10 @@ Type annotations are **optional on bindings and parameters**. Where an annotatio
 absent the type is inferred where possible, and falls back to `Any` where not.
 
 ```mms
-let x = 1.0                     // inferred: Num
-let y: Num = 1.0                 // annotated: Num
+let x = 1.0                     // inferred: Double
+let y: Double = 1.0                 // annotated: Double
 fn lerp(a, b, t) { ... }         // unannotated — params are Any
-fn lerp(a: Num, b: Num, t: Num) -> Num { ... }  // annotated
+fn lerp(a: Double, b: Double, t: Double) -> Double { ... }  // annotated
 ```
 
 Type errors on annotated sites are **checked**. Errors on `Any` sites are silent until
@@ -47,23 +47,33 @@ These map 1:1 to `Value` variants in the evaluator.
 
 | MMS type | `Value` variant | Notes |
 |---|---|---|
-| `Num` | `Value::Number(f64)` | Single numeric type. Cast to `f32`/`usize` at component registry boundary. |
+| `Int` | `Value::Int(i64)` | 64-bit signed integer. Loop counters, indices. |
+| `Float` | `Value::Float(f32)` | 32-bit float. Component boundary type. |
+| `Double` | `Value::Double(f64)` | 64-bit float. Default for authored numeric values. |
 | `Bool` | `Value::Bool(bool)` | `true` / `false` |
 | `Str` | `Value::String(String)` | UTF-8, immutable in v1 |
 | `Null` | `Value::Null` | The unit type / absence of value |
 | `Any` | — | Escape hatch; no static checking |
 
+The current evaluator uses a single `Value::Number(f64)` for all numerics. Splitting into
+`Int`, `Float`, and `Double` is a planned change — the type checker treats them as distinct;
+the evaluator will enforce them once the runtime value type is updated. See
+[numeric-types.md](numeric-types.md) for widening rules and [coercion.md](coercion.md) for
+per-operator result types.
+
+Integer literals (`3`) infer as `Int`. Float literals (`3.0`, `1e6`) infer as `Double`.
+
 ### `Null` and optionality
 
 `Null` is both a type and a value. A binding of type `Null` can only hold `null`. To
-express "this might be a `Num` or might be absent":
+express "this might be a `Double` or might be absent":
 
 ```mms
-let maybe: Num? = null       // Num? = Num | Null
+let maybe: Double? = null       // Double? = Double | Null
 ```
 
 `T?` is sugar for `T | Null`. This is the **nullable type** pattern. Functions that may
-not return a value have return type `Num?` (or whatever `?` T).
+not return a value have return type `Double?` (or whatever `?` T).
 
 Whether `T?` and `T` are distinct at runtime depends on whether the type checker enforces
 null safety. In v1 (gradual), they're not distinguished at runtime — `null` can appear
@@ -76,9 +86,9 @@ anywhere. The annotation is a hint, not a guarantee.
 ### Arrays
 
 ```mms
-[Num]           // array of Num
+[Double]           // array of Double
 [Vec3]          // array of Vec3 structs
-[[Num]]         // array of arrays of Num
+[[Double]]         // array of arrays of Double
 [Any]           // heterogeneous array (dynamic)
 ```
 
@@ -91,7 +101,7 @@ annotated sites; unannotated arrays are `[Any]`.
 User-defined named record types. See [structs.md](structs.md) for full syntax design.
 
 ```mms
-struct Vec3 { x: Num, y: Num, z: Num }
+struct Vec3 { x: Double, y: Double, z: Double }
 ```
 
 In the type system, `Vec3` is a nominal type — two structs with the same fields but
@@ -100,8 +110,8 @@ where only field shape matters.
 
 **Nominal vs structural:**
 ```mms
-struct Vec3  { x: Num, y: Num, z: Num }
-struct Point { x: Num, y: Num, z: Num }  // same fields, different name
+struct Vec3  { x: Double, y: Double, z: Double }
+struct Point { x: Double, y: Double, z: Double }  // same fields, different name
 
 fn translate(pos: Vec3, delta: Vec3) -> Vec3 { ... }
 let p = Point { x: 1, y: 2, z: 3 }
@@ -118,28 +128,28 @@ the type system is meant to catch.
 ## Function types
 
 ```mms
-Fn(Num, Num) -> Num           // takes two Num, returns Num
+Fn(Double, Double) -> Double           // takes two Doubles, returns Double
 Fn(Vec3, Vec3) -> Vec3        // takes two Vec3, returns Vec3
 Fn() -> Null                  // no args, no return value
-Fn(Num) -> Fn(Num) -> Num     // curried: takes Num, returns a function
+Fn(Double) -> Fn(Double) -> Double     // curried: takes Double, returns a function
 ```
 
 Functions are first-class values. `Value::Function` holds the closure. Annotating a
 binding as a function type:
 
 ```mms
-let lerp: Fn(Num, Num, Num) -> Num = fn(a, b, t) { a + (b - a) * t }
+let lerp: Fn(Double, Double, Double) -> Double = fn(a, b, t) { a + (b - a) * t }
 ```
 
 In practice most functions are annotated via their `fn` declaration:
 
 ```mms
-fn lerp(a: Num, b: Num, t: Num) -> Num {
+fn lerp(a: Double, b: Double, t: Double) -> Double {
     return a + (b - a) * t
 }
 ```
 
-The annotation on the `fn` statement is sugar for the binding having type `Fn(Num, Num, Num) -> Num`.
+The annotation on the `fn` statement is sugar for the binding having type `Fn(Double, Double, Double) -> Double`.
 
 ---
 
@@ -155,7 +165,7 @@ ComponentObject<T>       // live engine component of type T (stretch — needs g
 
 In v1, component expressions don't need to be typed beyond "this is a CE". The type
 system becomes relevant here in Phase 10 (typed emission), where knowing that a function
-returns `ComponentObject` vs `Num` determines whether it should be auto-emitted.
+returns `ComponentObject` vs `Double` determines whether it should be auto-emitted.
 
 For now, component types are a reserved namespace. `T`, `R`, `C`, etc. are component type
 names — distinct from value type names. They live in a separate namespace from user struct
@@ -167,7 +177,7 @@ names to avoid collision.
 
 ```
 Type
-    = "Num"
+    = "Double"
     | "Bool"
     | "Str"
     | "Null"
@@ -190,9 +200,9 @@ Probably not — gradual typing with `Any` covers the use cases that unions woul
 ## Type annotations on bindings
 
 ```mms
-let x: Num = 1.0
+let x: Double = 1.0
 let name: Str = "hello"
-let nums: [Num] = [1, 2, 3]
+let nums: [Double] = [1, 2, 3]
 let pos: Vec3 = Vec3 { x: 0, y: 1, z: 0 }
 ```
 
@@ -200,8 +210,8 @@ Annotations are placed after `:` following the binding name — same as Rust and
 The `:` token is already used in struct field definitions, so it's consistent.
 
 For `let` without a type annotation, the type is inferred from the right-hand side:
-- `let x = 1.0` → `Num`
-- `let arr = [1, 2, 3]` → `[Num]`
+- `let x = 1.0` → `Double`; `let i = 3` → `Int`
+- `let arr = [1, 2, 3]` → `[Int]`; `let arr = [1.0, 2.0]` → `[Double]`
 - `let f = fn(a, b) { a + b }` → `Fn(Any, Any) -> Any` (unannotated params → Any)
 
 ---
@@ -209,11 +219,11 @@ For `let` without a type annotation, the type is inferred from the right-hand si
 ## Type annotations on functions
 
 ```mms
-fn lerp(a: Num, b: Num, t: Num) -> Num {
+fn lerp(a: Double, b: Double, t: Double) -> Double {
     return a + (b - a) * t
 }
 
-fn spawn_grid(rows: Num, cols: Num, color: Color) -> Null {
+fn spawn_grid(rows: Int, cols: Int, color: Color) -> Null {
     for i in range(rows) {
         for j in range(cols) {
             R { QUAD; C.rgba(color.r, color.g, color.b, color.a); T.position(i, j, 0) }
@@ -258,8 +268,8 @@ This is consistent with current runtime behaviour in `eval_call`.
 Full Hindley-Milner inference is out of scope for v1. The practical subset:
 
 **Inference is applied:**
-- Literal expressions: `1.0` → `Num`, `"foo"` → `Str`, `true` → `Bool`, `null` → `Null`
-- Array literals: `[1, 2, 3]` → `[Num]` (homogeneous case); `[1, "a"]` → `[Any]` (mixed)
+- Literal expressions: `3` → `Int`, `1.0` → `Double`, `"foo"` → `Str`, `true` → `Bool`, `null` → `Null`
+- Array literals: `[1, 2, 3]` → `[Double]` (homogeneous case); `[1, "a"]` → `[Any]` (mixed)
 - Struct literals: `Vec3 { x: 1, y: 2, z: 3 }` → `Vec3`
 - Function return: if the body has an explicit `return expr` and `expr` is typed → infer return
 
@@ -306,11 +316,11 @@ interpretation. The type checker runs in two modes:
 For readability, especially with array types:
 
 ```mms
-type Rgba = [Num]       // alias for a 4-element Num array
+type Rgba = [Double]       // alias for a 4-element Double array
 type Joints = [Vec3]    // alias for an array of Vec3
 ```
 
-Type aliases are just names for types — no new nominal identity. `Rgba` and `[Num]` are
+Type aliases are just names for types — no new nominal identity. `Rgba` and `[Double]` are
 interchangeable. In v1, type aliases can be deferred — they're convenience, not necessity.
 
 ---
@@ -334,14 +344,14 @@ need annotations, while letting annotated code get full checking. As the codebas
 
 ## Open questions
 
-1. **Generics** — should `[T]` be a concrete type (`[Num]`, `[Vec3]`) or can functions
+1. **Generics** — should `[T]` be a concrete type (`[Double]`, `[Vec3]`) or can functions
    be generic? `fn map(arr: [T], f: Fn(T) -> U) -> [U]` requires type parameters. This
    is standard library territory — needed for `map`, `filter`, `zip`. Defer until stdlib exists.
 
-2. **Union types** — beyond `T?`, are unions useful? `Num | Str` for heterogeneous returns.
+2. **Union types** — beyond `T?`, are unions useful? `Int | Str` for heterogeneous returns.
    Probably not in v1. `Any` covers the dynamic case.
 
-3. **Row polymorphism / structural subtyping for structs** — `fn translate(v: { x: Num, y: Num })`
+3. **Row polymorphism / structural subtyping for structs** — `fn translate(v: { x: Double, y: Double })`
    accepting any struct with those fields? Useful but complex. Nominal typing is simpler.
 
 4. **Type-level component checks** — can the type system know that `T` in `let x = T { }` means
@@ -349,11 +359,7 @@ need annotations, while letting annotated code get full checking. As the codebas
    against the component's method signatures (Phase 10 goal). Requires mapping component
    type names to their Rust-side method signatures.
 
-5. **`Num` subtypes** — should MMS distinguish `Int` from `Float`? The evaluator uses `f64`
-   everywhere and casts at boundaries. Adding `Int`/`Float` adds complexity without much
-   benefit for scene authoring. Keep everything `Num` for now.
-
-6. **Recursive struct types** — `struct Tree { value: Num, children: [Tree] }`. Requires
+6. **Recursive struct types** — `struct Tree { value: Double, children: [Tree] }`. Requires
    the type system to handle self-reference. A real use case for tree-structured scene data.
    Defer — requires heap allocation (box/pointer) for the field anyway.
 

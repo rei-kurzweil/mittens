@@ -28,12 +28,12 @@ Important: `InputState` is intentionally **window + cursor** oriented today. It 
 
 ### “Intent” (signals-first)
 
-- Signals doc: `docs/signals.md`
-  - **Actions** are intent (requests).
-  - **Events** are facts (observations).
+- Signals doc: `docs/spec/signals.md`
+  - **Intent signals** are requests.
+  - **Event signals** are facts.
 
-There is already an action for raycasts:
-- `Action::raycast(raycaster)`: `src/engine/ecs/component/action.rs`
+There is already an intent for raycasts:
+- `IntentSignal::now(IntentValue::RequestRaycast { component_ids: ... })`
 - This increments `RayCastComponent.cast_requests`, so raycasting can be driven by *non-mouse* sources too (animations, tools, future XR input).
 
 ### Picking / hit testing
@@ -282,10 +282,10 @@ For XR we want:
 - event-driven by controller trigger.
 
 The engine already has a non-mouse hook:
-- `Action::raycast(raycaster)` increments `cast_requests`.
+- `IntentValue::RequestRaycast { component_ids }` increments `cast_requests` during intent execution.
 
 So a clean XR design is:
-- `OpenXRSystem` (or a future XR input system) turns trigger presses into `Action::raycast(...)` for the controller’s raycaster.
+- `OpenXRSystem` (or a future XR input system) turns trigger presses into `IntentSignal::now(IntentValue::RequestRaycast { ... })` for the controller’s raycaster.
 - `RayCastSystem` stays device-agnostic.
 
 ### XR gestures

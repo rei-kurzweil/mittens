@@ -56,6 +56,49 @@ assert!(matches!(output.intents[0], IntentValue::SpawnComponentTree { .. }));
 
 ---
 
+## Compilation pipeline
+
+Every script goes through three stages before evaluation:
+
+```
+source: &str
+  │
+  ▼
+[Tokenizer]  →  Vec<Token>           (src/meow_meow/tokenizer.rs)
+  │
+  ▼
+[Parser]     →  Vec<Statement>       (src/meow_meow/parser.rs)
+  │            (raw AST — sugar intact)
+  ▼
+[AstTransforms]  →  Vec<Statement>   (src/meow_meow/transform.rs)
+  │
+  ├─ EmitLiftTransform
+  │    rewrites bare ComponentExpression statements → emit(ce) calls
+  │
+  └─ QueryDesugarTransform            🔧 planned
+       rewrites |> query sugar → query()/query_all() calls
+       (see mms-query.md for the rewrite rules)
+  │
+  ▼
+[Evaluator]  →  EvalOutput           (src/meow_meow/evaluator.rs)
+```
+
+The parser produces a **raw AST** — it encodes `|>` as `BinOp(Pipe, lhs, rhs)` without
+knowing whether the LHS is a query selector or a plain value. Transform passes rewrite
+the AST into a normal form the evaluator can handle directly.
+
+**Why transforms, not parser rules?**
+Keeping sugar detection out of the parser avoids context-dependent grammar rules. A string
+literal is syntactically valid as the LHS of `|>` — only the transform inspects whether it
+*should* be treated as a query selector. This keeps each stage single-responsibility.
+
+**Adding a new transform:**
+1. Add a struct implementing `fn apply(stmts: &mut Vec<Statement>)` in `transform.rs`.
+2. Call it in `runner.rs` between parse and eval, after all earlier transforms.
+3. Document the rewrite rule in the relevant spec.
+
+---
+
 ## What it does
 
 1. Spawns a `MeowMeowEvaluator` thread (one-shot; not reused across calls).

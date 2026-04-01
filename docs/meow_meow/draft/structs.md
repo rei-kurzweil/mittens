@@ -14,8 +14,8 @@ MMS needs a way to bundle related values together with named fields. The obvious
 fn make_joint(x, y, z, r, g, b, a) { ... }
 
 // with structs — grouped, self-documenting
-struct Vec3   { x: Num, y: Num, z: Num }
-struct Color  { r: Num, g: Num, b: Num, a: Num }
+struct Vec3   { x: Double, y: Double, z: Double }
+struct Color  { r: Float, g: Float, b: Float, a: Float }
 
 fn make_joint(pos: Vec3, color: Color) { ... }
 ```
@@ -31,8 +31,8 @@ a `Vec3` annotation catches "you passed `[r,g,b]` where `[x,y,z]` was expected".
 Rust-style named fields with type annotations:
 
 ```mms
-struct Vec2 { x: Num, y: Num }
-struct Color { r: Num, g: Num, b: Num, a: Num }
+struct Vec2 { x: Double, y: Double }
+struct Color { r: Float, g: Float, b: Float, a: Float }
 struct Bone  { name: Str, pos: Vec3, rot: Vec3 }
 ```
 
@@ -42,7 +42,7 @@ but this weakens the usefulness of the struct.
 
 ```mms
 // Gradual: field types optional (inferred / Any)
-struct Point { x, y }
+struct Point { x: Double, y: Double }
 ```
 
 Trailing comma allowed (same as everywhere else in MMS).
@@ -171,7 +171,7 @@ let v = #Vec3 { x: 1.0, y: 2.0, z: 0.0 }
 
 **Definition:**
 ```mms
-struct Vec3 { x: Num, y: Num, z: Num }
+struct Vec3 { x: Double, y: Double, z: Double }
 ```
 
 **Instantiation (primary — named fields):**
@@ -186,8 +186,8 @@ let pos = Vec3(0.0, 1.0, 0.0)
 
 **Field access:**
 ```mms
-pos.x        // Num
-pos.y        // Num
+pos.x        // Double
+pos.y        // Double
 ```
 
 **Passing to functions:**
@@ -278,10 +278,10 @@ than using it for range literals.
 Rust-style `impl` blocks are the natural extension:
 
 ```mms
-struct Vec3 { x: Num, y: Num, z: Num }
+struct Vec3 { x: Double, y: Double, z: Double }
 
 impl Vec3 {
-    fn length(self) -> Num {
+    fn length(self) -> Double {
         return sqrt(self.x * self.x + self.y * self.y + self.z * self.z)
     }
 
@@ -315,11 +315,102 @@ The two are complementary:
 A struct can be passed into a component expression body as an argument:
 
 ```mms
-struct SpawnParams { r: Num, g: Num, b: Num, radius: Num }
+struct SpawnParams { r: Float, g: Float, b: Float, radius: Double }
 
 fn make_orb(p: SpawnParams) {
     R { SPHERE; C.rgba(p.r, p.g, p.b, 1.0); T.scale(p.radius) }
 }
+```
+
+---
+
+## Field visibility
+
+MMS has `export` for module-level publicity — a top-level binding is either exported
+(reachable by importers) or not. Struct fields need a separate visibility axis:
+
+- **Is the struct type exported?** — `export struct Vec3 { ... }` makes the type itself
+  importable. Same as `export let` / `export fn`.
+- **Are individual fields accessible outside the defining module?** — a distinct question.
+  An exported struct could still have internal implementation fields.
+
+These are independent:
+
+```mms
+// exported type, all fields visible to importers
+export struct Vec3 { x: Double, y: Double, z: Double }
+
+// exported type, internal field hidden from importers
+export struct Counter { pub value: Int, private step: Int }
+
+// not exported at all — private to this module
+struct WorkingSet { items: [Double] }
+```
+
+### `pub` on fields
+
+The simplest approach: fields are **private by default**, `pub` makes them accessible
+outside the defining module. This matches Rust's field visibility model.
+
+```mms
+struct Particle {
+    position: Vec3       // public (default)
+    velocity: Vec3       // public (default)
+    private mass: Double       // module-internal
+    private tag:  Int       // module-internal
+}
+```
+
+Within the defining module, all fields are always accessible regardless of `pub`.
+
+**Implication for sessions and shared state:** if a session's top-level env holds a
+struct value, event handlers can read and write `pub` fields freely across handler
+invocations. The struct instance lives in the session env (persistent), and each
+handler invocation that mutates it is modifying shared session state:
+
+```mms
+// session init script
+export struct AppState {
+    score: Int
+    lives: Int
+    private high_score: Int   // internal tracking, not exposed to other modules
+}
+
+let state = AppState { score: 0, lives: 3, high_score: 0 }
+
+on("enemy_killed", fn(e) {
+    state.score = state.score + e.points    // mutates shared state
+})
+
+on("player_died", fn(e) {
+    state.lives = state.lives - 1
+})
+```
+
+Each handler invocation sees and modifies the same `state` binding in the session env.
+This is the primary mechanism for accumulating state across requests.
+
+### Fields are public by default
+
+Fields are accessible outside the defining module unless marked `private`. This is the
+Go/Python convention — most MMS structs are simple data records, and hiding fields is
+the exception not the rule.
+
+```mms
+struct Vec3 { x: Double, y: Double, z: Double }           // all fields accessible everywhere
+struct Counter { value: Int, private step: Int }     // step is module-internal only
+```
+
+`private` is the only visibility modifier on fields. There is no `pub` keyword on fields —
+public is the default, so it would be a no-op. Within the defining module, `private` fields
+are always accessible regardless.
+
+The struct type itself still follows the module export model — `export struct` makes the
+type importable:
+
+```mms
+export struct Counter { value: Int, private step: Int }
+// importers can use Counter and read/write .value, but cannot access .step
 ```
 
 ---
@@ -329,12 +420,19 @@ fn make_orb(p: SpawnParams) {
 1. **Field mutability** — can struct fields be reassigned after construction (`v.x = 2.0`)?
    With value semantics this is just: create a new struct, bind to same name. With mutable
    fields it implies updating in-place, which interacts with closures that captured `v`.
-   Recommendation: no field mutation in v1 — treat structs as immutable records.
+   In the session model, `state.score = state.score + 1` across handler invocations
+   is a key use case — so some form of mutation is practically necessary for shared state.
+   Either: (a) allow field mutation on session-level bindings specifically, (b) allow
+   mutation everywhere (simpler rule), or (c) require the whole binding to be rebound
+   (`state = AppState { ..state, score: state.score + 1 }`). Option (b) is probably right.
 
-2. **Unnamed / positional structs** — `struct Pair(Num, Num)` (tuple struct)? Probably not
+7. **`private` on methods** — when `impl` blocks are added, should `private fn` work on methods
+   the same way it works on fields? Probably yes — same visibility model throughout.
+
+2. **Unnamed / positional structs** — `struct Pair(Int, Int)` (tuple struct)? Probably not
    needed if the stdlib provides `Vec2`, `Vec3`, `Color`, etc.
 
-3. **Default field values** — `struct Foo { x: Num = 0.0, y: Num = 0.0 }`? Useful for
+3. **Default field values** — `struct Foo { x: Double = 0.0, y: Double = 0.0 }`? Useful for
    large structs. Defer to v2.
 
 4. **Struct as component body argument** — can a struct literal appear directly in a CE body?
