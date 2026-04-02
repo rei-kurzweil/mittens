@@ -121,6 +121,7 @@ pub enum Statement {
     Block(BlockStatement),
     Expression(Expression),
     ForIn { binding: Ident, iterable: Expression, body: BlockStatement },
+    While { condition: Expression, body: BlockStatement },
     Break,
     Continue,
     Import { items: Vec<ImportItem>, path: String },

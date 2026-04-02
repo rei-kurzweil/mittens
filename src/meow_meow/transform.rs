@@ -47,6 +47,7 @@ fn lift_stmt(stmt: &mut Statement) {
         Statement::If(if_stmt) => lift_if(if_stmt),
         Statement::Return(_) => {}
         Statement::ForIn { body, .. } => lift_block(body),
+        Statement::While { body, .. } => lift_block(body),
         Statement::Break | Statement::Continue => {}
         Statement::Import { .. } => {}
         Statement::Reassign { .. } => {}
@@ -131,6 +132,10 @@ fn qd_stmt(stmt: &mut Statement) {
         Statement::Block(block) => qd_block(block),
         Statement::ForIn { iterable, body, .. } => {
             qd_expr(iterable);
+            qd_block(body);
+        }
+        Statement::While { condition, body } => {
+            qd_expr(condition);
             qd_block(body);
         }
         Statement::Break | Statement::Continue | Statement::Import { .. } => {}

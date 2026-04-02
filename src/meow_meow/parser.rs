@@ -152,6 +152,12 @@ impl MeowMeowParser {
                 let body = self.parse_block_statement()?;
                 Ok(Statement::ForIn { binding, iterable, body })
             }
+            TokenKind::While => {
+                self.consume(&TokenKind::While)?;
+                let condition = self.parse_expression()?;
+                let body = self.parse_block_statement()?;
+                Ok(Statement::While { condition, body })
+            }
             TokenKind::Break => {
                 self.bump();
                 self.try_consume(&TokenKind::Semicolon);

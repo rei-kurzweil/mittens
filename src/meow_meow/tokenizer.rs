@@ -160,6 +160,7 @@ impl<'a> MeowMeowTokenizer<'a> {
                         "null" => TokenKind::Null,
                         "fn"       => TokenKind::Fn,
                         "for"      => TokenKind::For,
+                        "while"    => TokenKind::While,
                         "in"       => TokenKind::In,
                         "break"    => TokenKind::Break,
                         "continue" => TokenKind::Continue,

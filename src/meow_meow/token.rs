@@ -47,6 +47,7 @@ pub enum TokenKind {
     Bang,
     Fn,
     For,
+    While,
     In,
     Break,
     Continue,

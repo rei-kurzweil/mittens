@@ -278,6 +278,37 @@ fn eval_stmt(
             }
             Ok(StmtEffect::None)
         }
+        Statement::While { condition, body } => {
+            let mut loop_env = env.clone();
+            'while_loop: loop {
+                let cond = eval_expr(condition, &loop_env, ctx.emits)?;
+                if !is_truthy(&cond) {
+                    break;
+                }
+                for stmt in &body.statements {
+                    match eval_stmt(stmt, &mut loop_env, ctx)? {
+                        StmtEffect::None => {}
+                        StmtEffect::Bind(n, v) | StmtEffect::Export(n, v) => {
+                            loop_env.insert(n, v);
+                        }
+                        StmtEffect::Reassign(n, v) => {
+                            if loop_env.contains_key(&n) {
+                                loop_env.insert(n, v);
+                            } else {
+                                return Err(format!("reassignment: '{}' is not defined", n));
+                            }
+                        }
+                        StmtEffect::ImportBindings(bs) => {
+                            for (n, v) in bs { loop_env.insert(n, v); }
+                        }
+                        StmtEffect::Return(val) => return Ok(StmtEffect::Return(val)),
+                        StmtEffect::Break => break 'while_loop,
+                        StmtEffect::Continue => continue 'while_loop,
+                    }
+                }
+            }
+            Ok(StmtEffect::None)
+        }
         Statement::Import { items, path } => {
             let resolved = resolve_import_path(path, ctx.source_path);
             let content = std::fs::read_to_string(&resolved)

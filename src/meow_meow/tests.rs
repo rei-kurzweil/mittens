@@ -553,3 +553,68 @@ fn eval_for_accumulator_pattern() {
     let out = MeowMeowRunner::eval(src);
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
 }
+
+// ---------------------------------------------------------------------------
+// While loop
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_while_loop() {
+    let prog = parse("while true { T {} }");
+    assert_eq!(prog.len(), 1);
+    let Statement::While { condition, body } = &prog[0] else { panic!("expected While") };
+    assert!(matches!(condition, Expression::Bool(true)));
+    assert_eq!(body.statements.len(), 1);
+}
+
+#[test]
+fn eval_while_counts_up_to_limit() {
+    // Emit one T per iteration; stop when i reaches 4.
+    let out = eval(r#"
+        let i = 0
+        while i < 4 {
+            T {}
+            i = i + 1
+        }
+    "#);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 4);
+}
+
+#[test]
+fn eval_while_break_exits_early() {
+    let out = eval(r#"
+        let i = 0
+        while true {
+            if i == 3 { break }
+            T {}
+            i = i + 1
+        }
+    "#);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 3);
+}
+
+#[test]
+fn eval_while_continue_skips_body_tail() {
+    // Only emit T when i is even; continue skips the emit on odd iterations.
+    // i goes 0..5 → 0,2,4 emit → 3 intents
+    let out = eval(r#"
+        let i = 0
+        while i < 5 {
+            i = i + 1
+            if i == 2 { continue }
+            if i == 4 { continue }
+            T {}
+        }
+    "#);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 3);
+}
+
+#[test]
+fn eval_while_false_never_runs() {
+    let out = eval("while false { T {} }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 0);
+}

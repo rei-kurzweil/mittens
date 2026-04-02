@@ -21,7 +21,8 @@ Meow Meow Script ("MMS") is the scripting + authoring language for cat-engine.
 | `let x = T { }` → live `ComponentId` reply channel (Phase 6) | ⏳ planned |
 | Emit context stack (Phase 6) | ⏳ planned |
 | Scripted mutation — `x.set_color(...)` etc. (Phase 7) | ⏳ planned |
-| `while` + mutable bindings (Phase 8) | ⏳ deferred |
+| `while` loops (Phase 8 partial) | ✅ done |
+| Array indexing `arr[i]` (Phase 8) | ⏳ planned |
 
 ## Docs
 
@@ -29,6 +30,8 @@ Meow Meow Script ("MMS") is the scripting + authoring language for cat-engine.
 
 ### Spec
 
+- [Parsing](spec/parsing.md) — Pratt expression parser, statement dispatch, component body grammar, AST transforms (EmitLiftTransform, QueryDesugarTransform)
+- [Env and evaluation context](spec/env-and-context.md) — `Env` type, scope rules, closure capture, loop env, `EvalContext`, `StmtEffect`
 - [Expressions](spec/expressions.md) — all expression AST nodes, operator tokens + precedence, runtime `Value` types; current vs planned
 - [Component expression format](spec/component-expression-format.md) — constructor arguments, pre-body calls, grammar
 - [Tokens](spec/token.md)

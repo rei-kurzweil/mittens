@@ -82,7 +82,19 @@ for i in [1, 2, 3] {
 
 If-blocks inside the loop body propagate to `loop_env` correctly because `eval_stmt` receives `&mut loop_env` and `eval_if` → `eval_block_stmts` mutate it in place.
 
-**What doesn't propagate:** reassignments inside the loop do not escape back to the env that existed before the loop started. `loop_env` is a clone, not a reference into the outer env.
+**What doesn't propagate:** reassignments inside the loop do not escape back to the env that existed before the loop started. `loop_env` is a clone, not a reference into the outer env. This means:
+
+```mms
+let sum = 0
+for i in [1, 2, 3] {
+    sum = sum + i   // accumulates within loop_env — works across iterations
+}
+// sum in the outer env is still 0 here — loop_env was discarded
+```
+
+The `while` loop uses the same `loop_env` pattern with identical semantics.
+
+This is a known v1 limitation. The fix is a proper scope chain (v2) where reassignment walks the frame stack to update the correct binding in whichever frame originally declared the name.
 
 ### Function call env
 
@@ -216,7 +228,10 @@ eval_script / eval_as_module
        ├─ eval_stmt(if …) → eval_if(&mut env)
        │      └─ eval_block_stmts(&mut env)   ← same env, no clone
        ├─ eval_stmt(for … in …)               ← ForIn inlines block loop
-       │      loop_env = env.clone()           ← isolated copy
+       │      loop_env = env.clone()           ← isolated copy; changes don't escape
+       │      eval_stmt(…, &mut loop_env) per statement
+       ├─ eval_stmt(while …)                  ← same isolated copy pattern
+       │      loop_env = env.clone()
        │      eval_stmt(…, &mut loop_env) per statement
        └─ eval_stmt(fn call) → eval_call
               call_env = captured_env + args   ← isolated copy
