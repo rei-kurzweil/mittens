@@ -75,11 +75,11 @@ queue.
 
 ---
 
-## `|>` syntax sugar
+## `->` query operator
 
 The callback form avoids the closing-paren problem but the opening is still heavy:
-`query("#hero", fn(t) {` on one side, `})` on the other. The `|>` operator moves the
-handler to a trailing position:
+`query("#hero", fn(t) {` on one side, `})` on the other. The `->` operator moves the
+handler to a trailing position and makes query intent unambiguous:
 
 ```mms
 query("#hero", fn(t) {          // explicit callback form
@@ -87,108 +87,96 @@ query("#hero", fn(t) {          // explicit callback form
     t.set_position(0, 1, 0)
 })
 
-"#hero" |> fn(t) {             // |> sugar: identical semantics
+"#hero" -> fn(t) {             // -> query operator: identical semantics
     if !t { return }
     t.set_position(0, 1, 0)
 }
 ```
 
-`|>` is also the general **forward pipe** operator: `expr |> f` means `f(expr)`. The
-query meaning is a special case — a string literal cannot be called as a function, so it
-is unambiguously a query selector when it appears as an operand of `|>`.
+`->` is the dedicated **query/dispatch operator**. Its presence always signals query
+intent — no string-literal detection needed. The LHS can be a string selector or a
+`ComponentObject` (for subtree queries; see "Scoped queries" below).
+
+`|>` is the separate **forward pipe** operator: `expr |> f` means `f(expr)`. It has no
+query meaning.
 
 ### Implementation: AstTransform, not parser or evaluator
 
-The parser produces `BinOp(Pipe, lhs, rhs)` unconditionally — it does not inspect whether
-`lhs` is a string literal. The rewrite from query sugar into `query()`/`query_all()` calls
-is performed by **`QueryDesugarTransform`**, an AST pass that runs between parsing and
-evaluation (see [script-runner.md](../spec/script-runner.md)).
+The parser produces `BinOp(Query, lhs, rhs)` from `->` unconditionally. The rewrite from
+query operator into `query()`/`query_all()` calls is performed by **`QueryDesugarTransform`**,
+an AST pass that runs between parsing and evaluation (see
+[script-runner.md](../spec/script-runner.md)).
 
 This means:
 - The parser stays context-free and single-responsibility.
 - The evaluator's `Pipe` arm only ever sees `expr |> fn_value` (pure function application).
-- All query-sugar `Pipe` nodes with a string-literal LHS have been rewritten before eval.
-
-### Disambiguation rule
-
-| Form | Interpretation |
-|---|---|
-| `"selector" \|> handler` | LHS is a string literal → `query("selector", handler)` |
-| `scope \|> "selector" \|> handler` | Middle term is a string literal → `scope.query("selector", handler)` |
-| `expr \|> f` | No string literal → standard forward pipe: `f(expr)` |
-
-```mms
-"#hero" |> fn(t) { t.set_position(0, 1, 0) }   // query — string literal as LHS
-lerp(0.0, 1.0, t) |> floor |> set_opacity        // standard pipe — no string literal
-hero |> ".T" |> set_position(0, 1, 0)            // scoped query — string literal in middle
-```
-
-**Computed selectors** must use the explicit function form — a variable holding a string
-is not a string literal and will not trigger the query rule:
-
-```mms
-let sel = "#hero"
-sel |> fn(t) { }          // does NOT work — sel is an identifier, not a string literal
-query(sel, fn(t) { })     // correct for computed/dynamic selectors
-```
+- All `Query` nodes (from `->`) have been rewritten into explicit `query()`/`query_all()` calls before eval.
 
 ### General forms
 
 ```
 // world query
-"selector" |> fn(result) { ... }
-"selector" |> method_name(args)          // method shorthand — see below
+"selector" -> fn(result) { ... }
+"selector" -> method_name(args)          // method shorthand — see below
 
-// scoped query
-scope_expr |> "selector" |> fn(result) { ... }
-scope_expr |> "selector" |> method_name(args)
+// scoped query (ComponentObject LHS)
+component_obj -> "selector" -> fn(result) { ... }
+component_obj -> "selector" -> method_name(args)
 ```
+
+The LHS of `->` can be:
+- A **string literal** — world query (searches the entire live ECS)
+- A **`ComponentObject`** — subtree query (searches the component's descendants); desugars
+  to `component_obj.query("selector", handler)`
 
 Desugaring:
 
 ```mms
-"selector" |> handler
+"selector" -> handler
   ↓
 query("selector", handler)
 
-scope |> "selector" |> handler
+hero -> ".T" -> handler          // hero is a ComponentObject
   ↓
-scope.query("selector", handler)
+hero.query_all(".T", handler)
 ```
 
-For `query_all`, the `|>` form calls the handler once per result — whether single or
+For `query_all`, the `->` form calls the handler once per result — whether single or
 multiple is inferred from the selector (see "Single vs multiple" below).
 
 ### Method shorthand
 
-When the rhs of `|>` is a bare method call (not a full `fn(...) { }`), the receiver is
+When the rhs of `->` is a bare method call (not a full `fn(...) { }`), the receiver is
 the implicit query result:
 
 ```mms
-"#hero_transform" |> set_position(0, 1, 0)
+"#hero" -> set_position(0, 1, 0)
 // desugars to:
-query("#hero_transform", fn(t) {
+query("#hero", fn(t) {
     if !t { return }
     t.set_position(0, 1, 0)
 })
 
-".Enemy T" |> set_position(0, 0, 0)
+".Enemy T" -> set_position(0, 0, 0)
 // desugars to:
 query_all(".Enemy T", fn(t) {
     t.set_position(0, 0, 0)
 })
 ```
 
-### Chaining scope with `|>`
+### Scoped queries with `ComponentObject` LHS
+
+When the LHS of `->` is a `ComponentObject` (not a string), the query is scoped to that
+component's subtree:
 
 ```mms
 // find all Ts in hero's subtree and set their position:
-hero |> ".T" |> set_position(5, 0, 0)
+hero -> ".T" -> set_position(5, 0, 0)
 // desugars to:
 hero.query_all(".T", fn(t) { t.set_position(5, 0, 0) })
 
 // or with a full callback:
-hero |> ".T" |> fn(t) {
+hero -> ".T" -> fn(t) {
     t.set_position(5, 0, 0)
 }
 // desugars to:
@@ -196,6 +184,10 @@ hero.query_all(".T", fn(t) {
     t.set_position(5, 0, 0)
 })
 ```
+
+**Note:** `hero -> ".T"` where `hero` is a `ComponentObject` is a subtree query, not a
+world query. The `->` operator checks whether its LHS is a string (world query) or a
+`ComponentObject` (subtree query) at the `QueryDesugarTransform` stage.
 
 ---
 
@@ -265,8 +257,8 @@ itself does not dictate which to use — the caller chooses.
 - `"#id"` selectors — use `query()` (unique by design; `query_all` works but is unusual)
 - Type/structural selectors — use `query_all()` (inherently multiple)
 
-The `|>` sugar follows the same convention: `"#id" |>` desugars to `query()`;
-`".Type" |>` or `"A B" |>` desugars to `query_all()`. The heuristic: if the selector
+The `->` operator follows the same convention: `"#id" ->` desugars to `query()`;
+`".Type" ->` or `"A B" ->` desugars to `query_all()`. The heuristic: if the selector
 contains a `#` at the root level with no combinators after → single; otherwise → all.
 
 This heuristic can be overridden by using the explicit function form.
@@ -293,10 +285,10 @@ for e in all_enemies { e }
 Module query is a **static** operation — no engine state needed, no HostCall. The module
 was evaluated (its CE tree is in memory); query walks that tree.
 
-### `|>` with a module scope
+### `->` with a module scope
 
 ```mms
-scene |> ".Enemy R" |> fn(r) {
+scene -> ".Enemy R" -> fn(r) {
     // r is a ComponentExpr, not a ComponentObject
     // mutation methods are not available on pre-spawn CEs
     // but you can inspect/filter and re-emit selectively
@@ -356,12 +348,12 @@ comp.query("selector", fn(r) { })  // subtree + callback
 module.query("selector")            // module CE tree query, single (ComponentExpr?)
 module.query_all("selector")        // module CE tree query, all
 
-// |> sugar (string literal LHS triggers query semantics):
-"selector" |> handler               // → query("selector", handler)
-"selector" |> method(args)          // → query("selector", fn(r) { r.method(args) })
-scope |> "selector" |> handler      // → scope.query("selector", handler)
+// -> query operator (always a query/dispatch — no string-literal detection needed):
+"selector" -> handler               // → query("selector", handler)
+"selector" -> method(args)          // → query("selector", fn(r) { r.method(args) })
+comp_obj -> "selector" -> handler   // → comp_obj.query("selector", handler)  (ComponentObject LHS = subtree query)
 
-// standard forward pipe (no string literal — normal function application):
+// standard forward pipe (function application — unrelated to query):
 expr |> f                           // → f(expr)
 a |> f |> g                         // → g(f(a))
 ```
@@ -370,7 +362,7 @@ a |> f |> g                         // → g(f(a))
 
 ## Open questions
 
-1. **Single/multi heuristic for `|>` sugar** — is inferring `query` vs `query_all` from
+1. **Single/multi heuristic for `->` sugar** — is inferring `query` vs `query_all` from
    the selector shape (`#id` → single, else → all) too magic? Alternative: always
    `query_all` (never null, always iterate), and the caller uses `[0]` for the single case.
 
@@ -387,7 +379,7 @@ a |> f |> g                         // → g(f(a))
    indirect descendant of `scope`? Current proposal: `T C` means C anywhere inside
    the T, and T itself can be anywhere inside scope. Consistent with CSS descendant rules.
 
-5. **Live query subscription / reactive** — `observe "selector" |> fn(r) { }` — register
+5. **Live query subscription / reactive** — `observe "#selector" -> fn(r) { }` — register
    a handler that fires whenever the world's matching set changes (spawn/despawn). Deferred;
    document the reserved keyword.
 

@@ -6,9 +6,9 @@
 //   query("selector")                -- HostCall, single result (ComponentObject?)
 //   query_all("selector")            -- HostCall, all results ([ComponentObject])
 //   component.query("selector")      -- scoped subtree query
-//   "selector" |> handler            -- |> query sugar (string literal LHS)
-//   "selector" |> method(args)       -- |> query method shorthand
-//   scope |> "selector" |> handler   -- scoped query via |> chain
+//   "selector" -> handler            -- -> query operator
+//   "selector" -> method(args)       -- -> query method shorthand
+//   scope -> "selector" -> handler   -- scoped query via -> chain
 //   print(value)                     -- evaluator builtin
 //   assert(cond, msg)                -- evaluator builtin
 //
@@ -93,21 +93,21 @@ for c in enemy_colors {
 }
 print("all enemies turned green")
 
-// ── query 3: |> sugar — string literal pipes ──────────────────────────────────
+// ── query 3: -> query operator ────────────────────────────────────────────────
 //
-// A string literal as the LHS of |> is detected at parse time as a query selector.
-// Desugars: "selector" |> handler  →  query("selector", handler)
+// "selector" -> handler  is always a query dispatch — no ambiguity with |> pipe.
+// Desugars: "selector" -> handler  →  query("selector", handler)
 
 // method shorthand: the receiver is the implicit query result
-"#hero_r C" |> set_rgba(1.0, 0.0, 1.0, 1.0)   // hero → magenta
-print("hero turned magenta via |> method shorthand")
+"#hero_r C" -> set_rgba(1.0, 0.0, 1.0, 1.0)   // hero → magenta
+print("hero turned magenta via -> method shorthand")
 
 // full callback form
-"#enemy_r_0 C" |> fn(c) {
+"#enemy_r_0 C" -> fn(c) {
     if !c { return }
     c.set_rgba(1.0, 0.5, 0.0, 1.0)   // first enemy → orange
 }
-print("enemy_0 turned orange via |> callback")
+print("enemy_0 turned orange via -> callback")
 
 // ── query 4: scoped query on a ComponentObject ────────────────────────────────
 //
@@ -129,17 +129,17 @@ for r in panel_spheres {
 }
 print("panel children turned yellow")
 
-// ── query 5: scoped query via |> chain ────────────────────────────────────────
+// ── query 5: scoped query via -> chain ────────────────────────────────────────
 //
-// scope |> "selector" |> handler
-// The middle string literal is the query selector.
+// scope -> "selector" -> handler
+// The LHS ComponentObject scopes the search to its subtree.
 // Desugars: scope.query("selector", handler)
 
-panel |> "C" |> fn(c) {
+panel -> "C" -> fn(c) {
     // called for each C descendant of panel
     c.set_rgba(0.4, 0.2, 0.9, 1.0)   // override to purple
 }
-print("panel colour components set to purple via scoped |> chain")
+print("panel colour components set to purple via scoped -> chain")
 
 // ── query 6: query returning null — graceful handling ─────────────────────────
 
@@ -151,7 +151,7 @@ if missing {
 }
 
 // method shorthand on a non-matching selector — handler is not called
-"#also_missing C" |> set_rgba(1, 0, 0, 1)
+"#also_missing C" -> set_rgba(1, 0, 0, 1)
 print("no-match shorthand did not crash  (null guard applied implicitly)")
 
 print("query-demo: all assertions passed")

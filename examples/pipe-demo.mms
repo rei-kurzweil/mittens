@@ -83,13 +83,13 @@ for i in range(8) {
 
 print("inverted strip spawned")
 
-// ── section 3: pipe chain ending at a component HostCall ─────────────────────
+// ── section 3: pipe chain ending at a component query HostCall ───────────────
 //
 // Build a "target" cube, then drive its colour with a value computed via pipe.
-// The final step is a mutation method on a live ComponentObject — a HostCall.
+// The final step is a query dispatch via -> — a HostCall that crosses into the engine.
 //
-// query("selector", handler) is the HostCall.
-// The |> sugar with a string literal desugars to query("selector", fn(r) { ... }).
+// -> is the query/dispatch operator: "selector" -> method(args)
+// desugars to: query("selector", fn(r) { r.method(args) })
 
 T.position(0, 1.5, -3) {
     name = "target_t"
@@ -109,11 +109,11 @@ print("computed tint: r=" + tint_r + " g=" + tint_g + " b=" + tint_b)
 
 // now apply the computed colour to the spawned component
 // this is the HostCall sink — crosses the script/engine boundary
-"#target_r C" |> set_rgba(tint_r, tint_g, tint_b, 1.0)
+"#target_r C" -> set_rgba(tint_r, tint_g, tint_b, 1.0)
 
-print("target cube colour set via query pipe  [HostCall]")
+print("target cube colour set via -> query dispatch  [HostCall]")
 
-// equivalent explicit form (same semantics as the |> sugar above):
+// equivalent explicit form:
 // query("#target_r C", fn(c) {
 //     if !c { return }
 //     c.set_rgba(tint_r, tint_g, tint_b, 1.0)

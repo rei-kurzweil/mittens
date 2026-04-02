@@ -41,6 +41,7 @@ pub enum TokenKind {
     Gt,
     LtEq,
     GtEq,
+    Arrow,
     AmpAmp,
     PipePipe,
     PipeGt,

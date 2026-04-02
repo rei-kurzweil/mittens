@@ -171,15 +171,18 @@ fn qd_expr(expr: &mut Expression) {
     }
 
     // Now rewrite this node if it's a query-sugar pipe.
-    if let Expression::BinaryOp { op: BinOpKind::Pipe, lhs, rhs } = expr {
-        if let Expression::String(sel) = lhs.as_ref() {
-            let callee = if selector_is_single(sel) { "query" } else { "query_all" };
-            let sel_expr = Expression::String(sel.clone());
-            let handler = std::mem::replace(rhs.as_mut(), Expression::Null);
-            *expr = Expression::Call(CallExpression {
-                callee: Ident(callee.into()),
-                args: vec![sel_expr, handler],
-            });
-        }
+    // `"selector" -> handler` — always a query dispatch regardless of LHS type
+    if let Expression::BinaryOp { op: BinOpKind::Query, lhs, rhs } = expr {
+        let callee = if let Expression::String(sel) = lhs.as_ref() {
+            if selector_is_single(sel) { "query" } else { "query_all" }
+        } else {
+            "query_all" // computed selector — conservative fallback
+        };
+        let sel_expr = std::mem::replace(lhs.as_mut(), Expression::Null);
+        let handler = std::mem::replace(rhs.as_mut(), Expression::Null);
+        *expr = Expression::Call(CallExpression {
+            callee: Ident(callee.into()),
+            args: vec![sel_expr, handler],
+        });
     }
 }

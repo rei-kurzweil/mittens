@@ -236,20 +236,21 @@ impl MeowMeowParser {
     /// Left-associative: l_bp == r_bp - 1.
     fn peek_infix_op(&self) -> Option<(u8, u8, BinOpKind)> {
         match self.peek_kind() {
-            TokenKind::PipeGt   => Some((0, 1, BinOpKind::Pipe)),
-            TokenKind::PipePipe => Some((1, 2, BinOpKind::Or)),
-            TokenKind::AmpAmp   => Some((3, 4, BinOpKind::And)),
-            TokenKind::EqEq     => Some((5, 6, BinOpKind::Eq)),
-            TokenKind::BangEq   => Some((5, 6, BinOpKind::NotEq)),
-            TokenKind::Lt       => Some((7, 8, BinOpKind::Lt)),
-            TokenKind::Gt       => Some((7, 8, BinOpKind::Gt)),
-            TokenKind::LtEq     => Some((7, 8, BinOpKind::LtEq)),
-            TokenKind::GtEq     => Some((7, 8, BinOpKind::GtEq)),
-            TokenKind::Plus     => Some((9, 10, BinOpKind::Add)),
-            TokenKind::Minus    => Some((9, 10, BinOpKind::Sub)),
-            TokenKind::Star     => Some((11, 12, BinOpKind::Mul)),
-            TokenKind::Slash    => Some((11, 12, BinOpKind::Div)),
-            TokenKind::Percent  => Some((11, 12, BinOpKind::Rem)),
+            TokenKind::Arrow    => Some((0,  1,  BinOpKind::Query)),
+            TokenKind::PipeGt   => Some((2,  3,  BinOpKind::Pipe)),
+            TokenKind::PipePipe => Some((4,  5,  BinOpKind::Or)),
+            TokenKind::AmpAmp   => Some((6,  7,  BinOpKind::And)),
+            TokenKind::EqEq     => Some((8,  9,  BinOpKind::Eq)),
+            TokenKind::BangEq   => Some((8,  9,  BinOpKind::NotEq)),
+            TokenKind::Lt       => Some((10, 11, BinOpKind::Lt)),
+            TokenKind::Gt       => Some((10, 11, BinOpKind::Gt)),
+            TokenKind::LtEq     => Some((10, 11, BinOpKind::LtEq)),
+            TokenKind::GtEq     => Some((10, 11, BinOpKind::GtEq)),
+            TokenKind::Plus     => Some((12, 13, BinOpKind::Add)),
+            TokenKind::Minus    => Some((12, 13, BinOpKind::Sub)),
+            TokenKind::Star     => Some((14, 15, BinOpKind::Mul)),
+            TokenKind::Slash    => Some((14, 15, BinOpKind::Div)),
+            TokenKind::Percent  => Some((14, 15, BinOpKind::Rem)),
             _                   => None,
         }
     }
@@ -260,13 +261,13 @@ impl MeowMeowParser {
             // Unary minus
             TokenKind::Minus => {
                 self.bump();
-                let operand = self.parse_expr_bp(13)?;
+                let operand = self.parse_expr_bp(17)?;
                 Ok(Expression::UnaryOp { op: UnaryOpKind::Neg, operand: Box::new(operand) })
             }
             // Logical not
             TokenKind::Bang => {
                 self.bump();
-                let operand = self.parse_expr_bp(13)?;
+                let operand = self.parse_expr_bp(17)?;
                 Ok(Expression::UnaryOp { op: UnaryOpKind::Not, operand: Box::new(operand) })
             }
             // Grouped expression

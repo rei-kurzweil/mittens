@@ -82,11 +82,12 @@ Status markers: ✅ implemented · 🔧 planned (phase noted) · ❓ open questi
 | `PipePipe` ✅ | `\|\|` | logical or (short-circuit) |
 | `Bang` ✅ | `!` | logical not (unary) |
 
-### 1.7 Pipe operator token
+### 1.7 Pipe and query operator tokens
 
 | Token | Lexeme | Notes |
 |-------|--------|-------|
-| `PipeGt` ✅ | `\|>` | forward pipe / query sugar — lowest precedence infix operator |
+| `PipeGt` ✅ | `\|>` | forward pipe — evaluates as `f(expr)`; no query meaning |
+| `Arrow` ✅ | `->` | query/dispatch operator — lowest precedence infix operator |
 
 ---
 
@@ -183,16 +184,17 @@ pub enum BinaryOpKind {
     Eq, NotEq, Lt, Gt, LtEq, GtEq,
     // logical (short-circuit)
     And, Or,
-    // forward pipe — lowest precedence; query sugar removed by AstTransform before eval
-    Pipe, // ✅ — `expr |> f` evaluates as `f(expr)` after QueryDesugarTransform runs
+    // forward pipe — `expr |> f` evaluates as `f(expr)`; no query semantics
+    Pipe, // ✅
+    // query/dispatch operator — `"selector" -> handler` or `comp_obj -> "selector" -> handler`
+    Query, // ✅ — always rewritten by QueryDesugarTransform before eval
 }
 ```
 
-`Pipe` nodes where the LHS is a string literal are **not** evaluated directly — they are
-rewritten by `QueryDesugarTransform` into `query()`/`query_all()` calls before the
-evaluator runs. Only `expr |> fn_value` reaches the evaluator, which applies the function
-to the LHS value. See [script-runner.md](script-runner.md) for the pipeline and
-[mms-query.md](../draft/mms-query.md) for the rewrite rules.
+`Query` nodes (from `->`) are **always** rewritten by `QueryDesugarTransform` into
+`query()`/`query_all()` calls before the evaluator runs. `Pipe` nodes (from `|>`) are
+evaluated directly as function application — `f(expr)`. See [script-runner.md](script-runner.md)
+for the pipeline and [mms-query.md](../draft/mms-query.md) for the rewrite rules.
 
 ### 2.7 Unary operator expression
 
@@ -252,16 +254,19 @@ Expression::If {
 
 Highest to lowest. All binary operators are left-associative unless noted.
 
-| Level | Operators | Notes |
-|-------|-----------|-------|
-| 7 | `!`, unary `-` | right-associative (prefix unary) |
-| 6 | `*`, `/`, `%` | |
-| 5 | `+`, `-` | |
-| 4 | `<`, `>`, `<=`, `>=` | non-associative (chaining `a < b < c` is a parse error) |
-| 3 | `==`, `!=` | |
-| 2 | `&&` | |
-| 1 | `\|\|` | |
-| 0 | `\|>` | lowest; left-associative — `a \|> f \|> g` is `g(f(a))` |
+Binding powers from `parser.rs` (`l_bp`, `r_bp`):
+
+| Level | Operators | `(l_bp, r_bp)` | Notes |
+|-------|-----------|----------------|-------|
+| 9 | `!`, unary `-` | `(—, 17)` | right-associative (prefix unary) |
+| 8 | `*`, `/`, `%` | `(14, 15)` | |
+| 7 | `+`, `-` | `(12, 13)` | |
+| 6 | `<`, `>`, `<=`, `>=` | `(10, 11)` | non-associative (chaining `a < b < c` is a parse error) |
+| 5 | `==`, `!=` | `(8, 9)` | |
+| 4 | `&&` | `(6, 7)` | |
+| 3 | `\|\|` | `(4, 5)` | |
+| 2 | `\|>` | `(2, 3)` | left-associative — `a \|> f \|> g` is `g(f(a))` |
+| 1 | `->` | `(0, 1)` | lowest; query/dispatch operator |
 
 Parentheses `(expr)` always have highest precedence.
 

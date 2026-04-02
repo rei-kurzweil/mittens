@@ -601,11 +601,13 @@ fn eval_binop(
             let r = eval_expr(rhs, env, emits)?;
             return Ok(Value::Bool(is_truthy(&r)));
         }
+        BinOpKind::Query => {
+            // QueryDesugarTransform rewrites all `->` nodes into query()/query_all() calls
+            // before eval runs. This arm is only reached if the transform missed one.
+            return Err("query operator '->' not yet implemented (HostCall required)".to_string());
+        }
         BinOpKind::Pipe => {
             let lhs_val = eval_expr(lhs, env, emits)?;
-            if matches!(&lhs_val, Value::String(_)) {
-                return Err("pipe: query selector sugar not yet implemented".to_string());
-            }
             let rhs_val = eval_expr(rhs, env, emits)?;
             match rhs_val {
                 Value::Function { params, body, captured_env } => {
@@ -663,7 +665,7 @@ fn eval_binop(
         BinOpKind::Gt    => num_cmp(l, r, |a, b| a > b),
         BinOpKind::LtEq  => num_cmp(l, r, |a, b| a <= b),
         BinOpKind::GtEq  => num_cmp(l, r, |a, b| a >= b),
-        BinOpKind::And | BinOpKind::Or | BinOpKind::Pipe => unreachable!("handled above"),
+        BinOpKind::And | BinOpKind::Or | BinOpKind::Pipe | BinOpKind::Query => unreachable!("handled above"),
     }
 }
 

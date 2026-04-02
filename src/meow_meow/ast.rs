@@ -41,7 +41,8 @@ pub enum BinOpKind {
     Add, Sub, Mul, Div, Rem,
     Eq, NotEq, Lt, Gt, LtEq, GtEq,
     And, Or,
-    Pipe,
+    Pipe,  // |> forward pipe (function application)
+    Query, // -> component query / dispatch
 }
 
 #[derive(Debug, Clone, PartialEq)]

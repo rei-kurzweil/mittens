@@ -78,7 +78,15 @@ impl<'a> MeowMeowTokenizer<'a> {
                 TokenKind::Semicolon
             }
             b'+' => { self.idx += 1; TokenKind::Plus }
-            b'-' => { self.idx += 1; TokenKind::Minus }
+            b'-' => {
+                self.idx += 1;
+                if self.idx < self.bytes.len() && self.bytes[self.idx] == b'>' {
+                    self.idx += 1;
+                    TokenKind::Arrow
+                } else {
+                    TokenKind::Minus
+                }
+            }
             b'*' => { self.idx += 1; TokenKind::Star }
             b'/' => { self.idx += 1; TokenKind::Slash }
             b'%' => { self.idx += 1; TokenKind::Percent }

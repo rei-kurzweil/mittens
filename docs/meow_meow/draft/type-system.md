@@ -29,7 +29,7 @@ absent the type is inferred where possible, and falls back to `Any` where not.
 let x = 1.0                     // inferred: Double
 let y: Double = 1.0                 // annotated: Double
 fn lerp(a, b, t) { ... }         // unannotated — params are Any
-fn lerp(a: Double, b: Double, t: Double) -> Double { ... }  // annotated
+fn lerp(a: Double, b: Double, t: Double): Double { ... }  // annotated
 ```
 
 Type errors on annotated sites are **checked**. Errors on `Any` sites are silent until
@@ -113,7 +113,7 @@ where only field shape matters.
 struct Vec3  { x: Double, y: Double, z: Double }
 struct Point { x: Double, y: Double, z: Double }  // same fields, different name
 
-fn translate(pos: Vec3, delta: Vec3) -> Vec3 { ... }
+fn translate(pos: Vec3, delta: Vec3): Vec3 { ... }
 let p = Point { x: 1, y: 2, z: 3 }
 translate(p, ...)   // type error (structural) OR ok (nominal)?
 ```
@@ -128,28 +128,28 @@ the type system is meant to catch.
 ## Function types
 
 ```mms
-Fn(Double, Double) -> Double           // takes two Doubles, returns Double
-Fn(Vec3, Vec3) -> Vec3        // takes two Vec3, returns Vec3
-Fn() -> Null                  // no args, no return value
-Fn(Double) -> Fn(Double) -> Double     // curried: takes Double, returns a function
+Fn(Double, Double): Double           // takes two Doubles, returns Double
+Fn(Vec3, Vec3): Vec3        // takes two Vec3, returns Vec3
+Fn(): Null                  // no args, no return value
+Fn(Double): Fn(Double): Double     // curried: takes Double, returns a function
 ```
 
 Functions are first-class values. `Value::Function` holds the closure. Annotating a
 binding as a function type:
 
 ```mms
-let lerp: Fn(Double, Double, Double) -> Double = fn(a, b, t) { a + (b - a) * t }
+let lerp: Fn(Double, Double, Double): Double = fn(a, b, t) { a + (b - a) * t }
 ```
 
 In practice most functions are annotated via their `fn` declaration:
 
 ```mms
-fn lerp(a: Double, b: Double, t: Double) -> Double {
+fn lerp(a: Double, b: Double, t: Double): Double {
     return a + (b - a) * t
 }
 ```
 
-The annotation on the `fn` statement is sugar for the binding having type `Fn(Double, Double, Double) -> Double`.
+The annotation on the `fn` statement is sugar for the binding having type `Fn(Double, Double, Double): Double`.
 
 ---
 
@@ -184,7 +184,7 @@ Type
     | "Any"
     | "[" Type "]"                   // array
     | Type "?"                       // nullable (sugar for Type | Null)
-    | "Fn" "(" TypeList ")" "->" Type  // function
+    | "Fn" "(" TypeList ")" ":" Type  // function
     | Ident                          // named struct or type alias
     | Type "|" Type                  // union (stretch — needed for ? sugar, not full unions yet)
 
@@ -212,18 +212,18 @@ The `:` token is already used in struct field definitions, so it's consistent.
 For `let` without a type annotation, the type is inferred from the right-hand side:
 - `let x = 1.0` → `Double`; `let i = 3` → `Int`
 - `let arr = [1, 2, 3]` → `[Int]`; `let arr = [1.0, 2.0]` → `[Double]`
-- `let f = fn(a, b) { a + b }` → `Fn(Any, Any) -> Any` (unannotated params → Any)
+- `let f = fn(a, b) { a + b }` → `Fn(Any, Any): Any` (unannotated params → Any)
 
 ---
 
 ## Type annotations on functions
 
 ```mms
-fn lerp(a: Double, b: Double, t: Double) -> Double {
+fn lerp(a: Double, b: Double, t: Double): Double {
     return a + (b - a) * t
 }
 
-fn spawn_grid(rows: Int, cols: Int, color: Color) -> Null {
+fn spawn_grid(rows: Int, cols: Int, color: Color): Null {
     for i in range(rows) {
         for j in range(cols) {
             R { QUAD; C.rgba(color.r, color.g, color.b, color.a); T.position(i, j, 0) }
@@ -232,8 +232,8 @@ fn spawn_grid(rows: Int, cols: Int, color: Color) -> Null {
 }
 ```
 
-Return type after `->`. `-> Null` means no meaningful return (void equivalent). If `->` is
-omitted, return type is `Any`.
+Return type after `:` following the closing `)`. `: Null` means no meaningful return (void
+equivalent). If the return type annotation is omitted, return type is `Any`.
 
 ---
 
@@ -250,7 +250,7 @@ omitted, return type is `Any`.
 ### Call compatibility
 
 A call `f(a, b, c)` is well-typed if:
-- `f` has type `Fn(A, B, C) -> R`
+- `f` has type `Fn(A, B, C): R`
 - `typeof(a)` is assignable to `A`, same for b → B, c → C
 
 Arity is always checked (wrong number of args → error), even without type annotations.
@@ -331,7 +331,7 @@ interchangeable. In v1, type aliases can be deferred — they're convenience, no
 is assignable to `Any` and `Any` is assignable to everything.
 
 ```mms
-fn apply(f: Any, x: Any) -> Any {
+fn apply(f: Any, x: Any): Any {
     return f(x)   // no checking — f might not be callable
 }
 ```
@@ -345,7 +345,7 @@ need annotations, while letting annotated code get full checking. As the codebas
 ## Open questions
 
 1. **Generics** — should `[T]` be a concrete type (`[Double]`, `[Vec3]`) or can functions
-   be generic? `fn map(arr: [T], f: Fn(T) -> U) -> [U]` requires type parameters. This
+   be generic? `fn map(arr: [T], f: Fn(T): U): [U]` requires type parameters. This
    is standard library territory — needed for `map`, `filter`, `zip`. Defer until stdlib exists.
 
 2. **Union types** — beyond `T?`, are unions useful? `Int | Str` for heterogeneous returns.

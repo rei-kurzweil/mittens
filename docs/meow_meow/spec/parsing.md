@@ -66,10 +66,10 @@ parse_expr_bp(min_bp):
 The key insight: after consuming `lhs` and seeing an infix operator, we check if the operator's left binding power (`l_bp`) is at least as strong as what the *caller* required (`min_bp`). If not, we stop — the operator belongs to the expression above us in the call stack.
 
 For `a + b * c`:
-1. `parse_expr_bp(0)` gets `a`, sees `+` (l_bp=9 ≥ 0), consumes it
-2. Recurses `parse_expr_bp(10)` — must bind at least 10 on the left
-3. Gets `b`, sees `*` (l_bp=11 ≥ 10), consumes it
-4. Recurses `parse_expr_bp(12)`, gets `c`, sees nothing → returns `c`
+1. `parse_expr_bp(0)` gets `a`, sees `+` (l_bp=12 ≥ 0), consumes it
+2. Recurses `parse_expr_bp(13)` — must bind at least 13 on the left
+3. Gets `b`, sees `*` (l_bp=14 ≥ 13), consumes it
+4. Recurses `parse_expr_bp(15)`, gets `c`, sees nothing → returns `c`
 5. Returns `b * c`
 6. Returns `a + (b * c)` ✓
 
@@ -79,22 +79,24 @@ Left-associative operators have `l_bp = r_bp - 1`. This means a second use of th
 
 | Operator | `l_bp` | `r_bp` | Associativity |
 |---|---|---|---|
-| `\|>` | 0 | 1 | left |
-| `\|\|` | 1 | 2 | left |
-| `&&` | 3 | 4 | left |
-| `==` `!=` | 5 | 6 | left |
-| `<` `>` `<=` `>=` | 7 | 8 | left |
-| `+` `-` | 9 | 10 | left |
-| `*` `/` `%` | 11 | 12 | left |
-| unary `-` `!` | — | 13 | prefix |
+| `->` | 0 | 1 | left |
+| `\|>` | 2 | 3 | left |
+| `\|\|` | 4 | 5 | left |
+| `&&` | 6 | 7 | left |
+| `==` `!=` | 8 | 9 | left |
+| `<` `>` `<=` `>=` | 10 | 11 | left |
+| `+` `-` | 12 | 13 | left |
+| `*` `/` `%` | 14 | 15 | left |
+| unary `-` `!` | — | 17 | prefix |
 
-`|>` at (0, 1) is the lowest-precedence infix operator — everything to its left and right binds more tightly first.
+`->` at (0, 1) is the lowest-precedence infix operator — the query/dispatch operator binds
+less tightly than everything else, including `|>` (forward pipe at (2, 3)).
 
 ### Prefix expressions (atoms + prefix ops)
 
 `parse_prefix` handles everything that starts an expression without a left operand:
 
-- Unary `-` and `!` — consume operator, call `parse_expr_bp(13)` (highest bp, binds tight)
+- Unary `-` and `!` — consume operator, call `parse_expr_bp(17)` (highest bp, binds tight)
 - `(` — grouped expression: `parse_expr_bp(0)`, consume `)`
 - `fn` — parse function literal
 - Literals: `String`, `Number`, `true`, `false`, `null`
@@ -174,7 +176,7 @@ Transforms are applied in order; each one receives the output of the previous.
 
 ### Why transforms, not parser rules
 
-The parser is intentionally ignorant of semantics. `T {}` in statement position is `Statement::Expression(Expression::Component(...))` — the parser does not know or care that this will emit. `"#foo" |> handler` is `BinOp(Pipe, String("#foo"), handler)` — the parser does not know the string is a query selector. These semantic decisions belong to transforms, not grammar.
+The parser is intentionally ignorant of semantics. `T {}` in statement position is `Statement::Expression(Expression::Component(...))` — the parser does not know or care that this will emit. `"#foo" -> handler` is `BinOp(Query, String("#foo"), handler)` — the parser does not interpret the semantics of the query, only produces the node. These semantic decisions belong to transforms, not grammar.
 
 This keeps the grammar unambiguous and each stage single-responsibility.
 
@@ -198,16 +200,24 @@ After lifting, `emit(T {})` written explicitly and `T {}` as a bare statement ar
 
 ### `QueryDesugarTransform` — selector sugar
 
-`|>` in expression position is always `BinOp(Pipe, lhs, rhs)` after parsing. This transform detects the query-selector form and rewrites it before eval:
+`->` in expression position is always `BinOp(Query, lhs, rhs)` after parsing. This transform
+rewrites all `Query` nodes into explicit `query()`/`query_all()` calls before eval:
 
 ```
-"#foo" |> handler   →  query("#foo", handler)
-".cls" |> handler   →  query_all(".cls", handler)
+"#foo" -> handler   →  query("#foo", handler)
+".cls" -> handler   →  query_all(".cls", handler)
+comp   -> ".cls" -> handler   →  comp.query_all(".cls", handler)
 ```
 
-Heuristic: selector starts with `#` and contains no spaces or combinators → `query` (single element); otherwise → `query_all`.
+Heuristic for single vs all: selector starts with `#` and contains no spaces or combinators
+→ `query` (single element); otherwise → `query_all`.
 
-After this transform, the evaluator's `Pipe` arm only ever sees plain `value |> fn_value` — no string-on-the-left special-casing needed at runtime.
+The LHS of a `Query` node can be:
+- A **string literal** — world query (search the live ECS)
+- A **`ComponentObject`** — subtree query (desugars to `comp.query(...)`)
+
+After this transform, the evaluator never sees `BinOp(Query, ...)` nodes. The `Pipe` arm
+(`|>`) only ever sees plain `value |> fn_value` — forward pipe with no special-casing.
 
 ### Adding a new transform
 

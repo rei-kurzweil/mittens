@@ -62,6 +62,15 @@ The phases are ordered to balance correctness and performance:
 	 - Overlay is **not** combined with background/opaque/cutout/transparent; it has its own
 	 	 draw lists and batches.
 
+	 Post-processing note:
+	 - In the current non-post-process path, this means overlay is always-on-top and self-occludes
+	 	 against other overlay geometry only.
+	 - In the current post-process path, opaque and cutout scene depth occlude the emissive
+	 	 extraction pass, while overlay remains visible in the main color path so it can be affected
+	 	 by bloom.
+	 - In that post-process behavior, overlay is not part of the emissive-source extraction even if
+	 	 its final color later receives bloom during composite.
+
 ## How instances get classified
 
 At draw-cache build time, `VisualWorld` partitions instances using instance flags (e.g.

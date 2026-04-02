@@ -192,7 +192,7 @@ pos.y        // Double
 
 **Passing to functions:**
 ```mms
-fn translate(pos: Vec3, delta: Vec3) -> Vec3 {
+fn translate(pos: Vec3, delta: Vec3): Vec3 {
     return Vec3 {
         x: pos.x + delta.x,
         y: pos.y + delta.y,
@@ -281,11 +281,11 @@ Rust-style `impl` blocks are the natural extension:
 struct Vec3 { x: Double, y: Double, z: Double }
 
 impl Vec3 {
-    fn length(self) -> Double {
+    fn length(self): Double {
         return sqrt(self.x * self.x + self.y * self.y + self.z * self.z)
     }
 
-    fn add(self, other: Vec3) -> Vec3 {
+    fn add(self, other: Vec3): Vec3 {
         return Vec3 { x: self.x + other.x, y: self.y + other.y, z: self.z + other.z }
     }
 }

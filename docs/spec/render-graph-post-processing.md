@@ -25,6 +25,28 @@ This document designs the opt-in post-processing system for cat-engine, covering
 
 ---
 
+## Bloom / overlay behavior
+
+The current target semantics are:
+
+- **Opaque** geometry occludes the emissive extraction pass.
+- **Cutout** geometry occludes the emissive extraction pass.
+- Regular transparent geometry is still a separate question and is not part of this change.
+- **Overlay** should remain visible in the main color path and therefore be affected by bloom in
+    the final composite.
+- **Overlay should not contribute to the emissive-source extraction pass** for this change.
+
+This gives the desired artistic result:
+
+- bloom glow is clipped by solid scene geometry (`Opaque` / `Cutout`)
+- overlay visuals still receive the final bloom treatment because they are present in main color
+- overlay does not become a new bloom source just by existing in the overlay phase
+
+An important consequence is that the depth used by emissive extraction must reflect the
+scene-depth result from opaque/cutout rendering, not an overlay-only depth clear/rewrite.
+
+---
+
 ## 1. Current pipeline state
 
 Everything renders in a **single `begin_rendering()` → `end_rendering()` dynamic-rendering scope**:
@@ -206,13 +228,21 @@ Requires: stored depth buffer (triggers depth store + optional MSAA depth resolv
 
 ### 4.1 Emissive prepass
 
-Before (or after) the main geometry passes, render emissive objects into a dedicated HDR buffer:
+After the scene geometry needed for emissive occlusion is established, render emissive objects into
+a dedicated HDR buffer:
 
 - Format: `R16G16B16A16_SFLOAT` (HDR; allows values > 1.0)
 - Size: full or half-resolution (`BloomComponent::half_res`)
 - Clear: `(0, 0, 0, 0)`
 - Depth test: ON if stored depth is available (reuse main depth attachment, no write); otherwise OFF
 - Draw: only batches using `EMISSIVE_TOON_MESH` or `SKINNED_EMISSIVE_TOON_MESH`
+
+For the intended behavior above, the reused depth should contain the occluding result of:
+
+- opaque scene geometry
+- cutout scene geometry
+
+and should **not** be replaced by an overlay-only depth clear before emissive extraction.
 
 **Depth occlusion for glow**: If the emissive prepass reuses the stored depth (read-only), bright objects behind walls won't bleed glow through them. If depth is not stored (e.g., no `BokehComponent`), glow bleeds through walls — acceptable for an initial implementation, can be addressed later by always storing depth when bloom is active.
 
@@ -234,6 +264,9 @@ Full-screen additive blend:
 ```
 final_color = main_color + bloom_blurred * bloom_intensity
 ```
+
+Because overlay remains part of `main_color` in the intended behavior, overlay visuals naturally
+receive the bloom composite even when they do not contribute to the emissive extraction source.
 
 If main color is sRGB (which it currently is), the additive blend needs to happen in linear space. This is an argument for keeping the intermediate image as a linear float format.
 
