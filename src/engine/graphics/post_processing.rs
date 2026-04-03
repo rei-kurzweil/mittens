@@ -54,6 +54,23 @@ impl Default for EmissivePassConfig {
 }
 
 #[derive(Debug, Clone)]
+pub struct BlurPassConfig {
+    pub enabled: bool,
+    pub radius_ndc: f32,
+    pub half_res: bool,
+}
+
+impl Default for BlurPassConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            radius_ndc: 0.025,
+            half_res: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct BloomConfig {
     pub intensity: f32,
     pub radius_ndc: f32,
@@ -99,6 +116,7 @@ impl Default for BokehConfig {
 pub struct PostProcessingConfig {
     pub enabled: bool,
     pub emissive_pass: Option<EmissivePassConfig>,
+    pub blur_pass: Option<BlurPassConfig>,
     pub bloom: Option<BloomConfig>,
     pub bokeh: Option<BokehConfig>,
     pub debug_show_emissive: bool,
@@ -117,6 +135,26 @@ impl PostProcessingConfig {
     pub fn bloom_radius_pixels(&self, viewport_width: u32) -> Option<u32> {
         let bloom = self.bloom.as_ref()?;
         Some(Self::ndc_radius_to_pixels(bloom.radius_ndc, viewport_width))
+    }
+
+    /// Effective blur radius: uses `BlurPassConfig` when present, falls back to bloom.
+    pub fn effective_blur_radius_pixels(&self, viewport_width: u32) -> Option<u32> {
+        if let Some(blur) = &self.blur_pass {
+            if blur.enabled {
+                return Some(Self::ndc_radius_to_pixels(blur.radius_ndc, viewport_width));
+            }
+        }
+        self.bloom_radius_pixels(viewport_width)
+    }
+
+    /// Effective half-res flag: uses `BlurPassConfig` when present, falls back to bloom.
+    pub fn effective_blur_half_res(&self) -> bool {
+        if let Some(blur) = &self.blur_pass {
+            if blur.enabled {
+                return blur.half_res;
+            }
+        }
+        self.bloom.as_ref().map(|b| b.half_res).unwrap_or(false)
     }
 
     pub fn ndc_radius_to_pixels(radius_ndc: f32, viewport_width: u32) -> u32 {
@@ -536,7 +574,7 @@ impl PostProcessingRenderer {
         msaa_samples: SampleCount,
         config: &PostProcessingConfig,
     ) -> Result<PostProcessTargetSet, Box<dyn std::error::Error>> {
-        let bloom_extent = if config.bloom.as_ref().is_some_and(|b| b.half_res) {
+        let bloom_extent = if config.effective_blur_half_res() {
             [extent[0].max(2) / 2, extent[1].max(2) / 2]
         } else {
             extent

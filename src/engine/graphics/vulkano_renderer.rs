@@ -2504,7 +2504,7 @@ mod vulkano_backend {
 
                 let bloom_radius_pixels = post_process
                     .config
-                    .bloom_radius_pixels(post_process.targets.bloom_extent[0]);
+                    .effective_blur_radius_pixels(post_process.targets.bloom_extent[0]);
 
                 let mut blurred_bloom: Option<Arc<ImageView>> = None;
                 if let (

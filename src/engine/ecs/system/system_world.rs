@@ -753,20 +753,30 @@ impl SystemWorld {
                 let mut emissive_pass = crate::engine::graphics::EmissivePassConfig::default();
 
                 for &grandchild in world.children_of(child) {
-                    let Some(texture) = world.get_component_by_id_as::<
+                    if let Some(texture) = world.get_component_by_id_as::<
                         crate::engine::ecs::component::TextureComponent,
-                    >(grandchild)
-                    else {
-                        continue;
-                    };
+                    >(grandchild) {
+                        if emissive_pass.output_texture.is_none() {
+                            emissive_pass.output_texture = Some(
+                                texture
+                                    .render_image
+                                    .clone()
+                                    .unwrap_or_else(|| "render_graph.emissive_pass.output".to_string()),
+                            );
+                        }
+                    }
 
-                    emissive_pass.output_texture = Some(
-                        texture
-                            .render_image
-                            .clone()
-                            .unwrap_or_else(|| "render_graph.emissive_pass.output".to_string()),
-                    );
-                    break;
+                    if let Some(blur_pass) = world.get_component_by_id_as::<
+                        crate::engine::ecs::component::BlurPassComponent,
+                    >(grandchild) {
+                        if blur_pass.enabled {
+                            config.blur_pass = Some(crate::engine::graphics::BlurPassConfig {
+                                enabled: true,
+                                radius_ndc: blur_pass.radius_ndc,
+                                half_res: blur_pass.half_res,
+                            });
+                        }
+                    }
                 }
 
                 config.emissive_pass = Some(emissive_pass);

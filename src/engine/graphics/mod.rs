@@ -13,8 +13,8 @@ pub mod xr_swapchain;
 
 pub use mesh::{CpuMesh, CpuVertex, MeshFactory};
 pub use post_processing::{
-    BloomConfig, BloomSource, BokehConfig, EmissivePassConfig, PostProcessingConfig,
-    PostProcessingRenderer,
+    BloomConfig, BloomSource, BlurPassConfig, BokehConfig, EmissivePassConfig,
+    PostProcessingConfig, PostProcessingRenderer,
 };
 #[allow(unused_imports)]
 pub use primitives::{

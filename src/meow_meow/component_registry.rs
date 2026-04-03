@@ -11,10 +11,10 @@
 /// them and continues rather than panicking.
 use crate::engine::ecs::component::{
     ActionComponent, AmbientLightComponent, AnimationComponent, AnimationState, BloomComponent,
-    AvatarBodyYawComponent, AvatarControlComponent, BackgroundColorComponent, BackgroundComponent,
-    Camera3DComponent, CameraXRComponent, ClockComponent, ColorComponent, ControllerHand,
-    ControllerPoseKind, ControllerXRComponent, DirectionalLightComponent, EditorComponent,
-    EmissiveComponent, EmissivePassComponent, GLTFComponent, InputComponent,
+    BlurPassComponent, AvatarBodyYawComponent, AvatarControlComponent, BackgroundColorComponent,
+    BackgroundComponent, Camera3DComponent, CameraXRComponent, ClockComponent, ColorComponent,
+    ControllerHand, ControllerPoseKind, ControllerXRComponent, DirectionalLightComponent,
+    EditorComponent, EmissiveComponent, EmissivePassComponent, GLTFComponent, InputComponent,
     InputTransformModeComponent, InputXRComponent,
     InspectorPanelComponent, KeyframeComponent, NormalVisualisationComponent, OpenXRComponent,
     OverlayComponent, PointLightComponent, PointerComponent, RenderGraphComponent, SelectableComponent,
@@ -232,6 +232,7 @@ fn create_component(
             _ => add!(RenderGraphComponent::new()),
         },
         "EmissivePass" => add!(EmissivePassComponent::new()),
+        "BlurPass" => add!(BlurPassComponent::new()),
         "Bloom" => add!(BloomComponent::new()),
         "DirectionalLight" => add!(DirectionalLightComponent::new()),
         "PointLight" => add!(PointLightComponent::new()),
@@ -478,6 +479,17 @@ fn apply_call(
             "enabled" => {
                 *render_graph = render_graph.clone().with_enabled(arg(args, 0)?.as_bool()?)
             }
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(blur_pass) = world.get_component_by_id_as_mut::<BlurPassComponent>(id) {
+        match method {
+            "on" => *blur_pass = blur_pass.clone().with_enabled(true),
+            "off" => *blur_pass = blur_pass.clone().with_enabled(false),
+            "enabled" => *blur_pass = blur_pass.clone().with_enabled(arg(args, 0)?.as_bool()?),
+            "radius_ndc" => *blur_pass = blur_pass.clone().with_radius_ndc(arg(args, 0)?.as_f32()?),
+            "half_res" => *blur_pass = blur_pass.clone().with_half_res(arg(args, 0)?.as_bool()?),
             _ => {}
         }
         return Ok(());

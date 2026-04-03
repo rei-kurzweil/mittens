@@ -13,14 +13,16 @@ AL.rgb(0.2, 0.05, 0.15)
 
 RenderGraph {
     EmissivePass {
+        BlurPass {
+            radius_ndc(0.050)
+            half_res(true)
+        }
         Texture {}
     }
 
     Bloom {
         intensity(1.25)
-        radius_ndc(0.075)
         emissive_scale(1.35)
-        half_res(true)
         bloom_debug_texture
     }
 }

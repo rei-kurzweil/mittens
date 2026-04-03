@@ -1,10 +1,10 @@
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, AvatarControlComponent, BackgroundColorComponent, BloomComponent,
-    Camera3DComponent, CameraXRComponent, ColorComponent, ControllerHand, ControllerPoseKind,
-    ControllerXRComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent,
-    EmissivePassComponent, GLTFComponent, InputComponent, InputTransformModeComponent,
-    InputXRComponent, OpenXRComponent, PointerComponent, QuatTemporalFilterComponent,
-    RaycastableComponent, RenderGraphComponent, RenderableComponent,
+    BlurPassComponent, Camera3DComponent, CameraXRComponent, ColorComponent, ControllerHand,
+    ControllerPoseKind, ControllerXRComponent, DirectionalLightComponent, EditorComponent,
+    EmissiveComponent, EmissivePassComponent, GLTFComponent, InputComponent,
+    InputTransformModeComponent, InputXRComponent, OpenXRComponent, PointerComponent,
+    QuatTemporalFilterComponent, RaycastableComponent, RenderGraphComponent, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TransformComponent,
     TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
     TransformMapTranslationComponent, TransformMergeTRSComponent, TransformPipelineComponent,
@@ -217,13 +217,17 @@ fn main() {
 
     let render_graph = universe.world.add_component(RenderGraphComponent::new());
     let emissive_pass = universe.world.add_component(EmissivePassComponent::new());
+    let blur_pass = universe.world.add_component(
+        BlurPassComponent::new()
+            .with_radius_ndc(0.06)
+            .with_half_res(true),
+    );
     let bloom = universe.world.add_component(
         BloomComponent::new()
             .with_intensity(0.95)
-            .with_radius_ndc(0.06)
-            .with_emissive_scale(1.2)
-            .with_half_res(true),
+            .with_emissive_scale(1.2),
     );
+    let _ = universe.attach(emissive_pass, blur_pass);
     let _ = universe.attach(render_graph, emissive_pass);
     let _ = universe.attach(render_graph, bloom);
     universe.add(render_graph);

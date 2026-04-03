@@ -14,13 +14,16 @@ BGC.rgba(0.62, 0.80, 1.00, 1.0)
 AL.rgb(0.18, 0.18, 0.22)
 
 RenderGraph {
-    EmissivePass {}
+    EmissivePass {
+        BlurPass {
+            radius_ndc(0.06)
+            half_res(true)
+        }
+    }
 
     Bloom {
         intensity(0.95)
-        radius_ndc(0.06)
         emissive_scale(1.2)
-        half_res(true)
     }
 }
 
