@@ -64,7 +64,7 @@ impl Default for BlurPassConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            radius_ndc: 0.025,
+            radius_ndc: 0.05,
             half_res: true,
         }
     }
