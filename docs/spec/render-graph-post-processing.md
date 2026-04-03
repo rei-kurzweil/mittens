@@ -25,6 +25,27 @@ This document designs the opt-in post-processing system for cat-engine, covering
 
 ---
 
+## Runtime status snapshot
+
+This document still contains some forward-looking design material, but the current runtime shape is:
+
+- Bloom is implemented.
+- The post-process target set currently uses the runtime attachment names from
+    `PostProcessFrameTargets`:
+    - `main_color`
+    - `main_msaa_color`
+    - `depth`
+    - `bloom_source_msaa`
+    - `bloom_source`
+    - `bloom_a`
+    - `bloom_b`
+- Overlay is deferred when post-processing is active so scene depth from opaque/cutout can occlude
+    emissive extraction.
+- Overlay is then drawn back into the main scene color before the final fullscreen composite, so it
+    can still receive bloom.
+- `BokehConfig` exists in the data model, but the bokeh pass chain described later in this document
+    is not currently wired into the runtime render loop.
+
 ## Bloom / overlay behavior
 
 The current target semantics are:
@@ -328,6 +349,9 @@ Center pixels (CoC ≈ 0) are fully sharp; peripheral pixels are fully blurred.
 
 ## 6. Intermediate image allocations
 
+This section is still the design-oriented allocation model. For the exact current runtime
+attachment set and pass order, see section 7 below.
+
 All allocations are conditional — if the triggering component isn't present, the memory isn't used.
 
 | Image | Trigger | Format | Size | Notes |
@@ -343,54 +367,120 @@ All allocations are conditional — if the triggering component isn't present, t
 
 ---
 
-## 7. Full render graph sequence
+## 7. Current runtime render graph sequence
+
+The diagram in `docs/spec/render-graph-pipeline-post-processing.svg` should be read as the current
+implemented bloom path, not the older conceptual “bloom composite back into the intermediate” flow.
+
+### 7.0 Runtime post-process pipelines
+
+The current post-process path uses a separate `PostProcessingRenderer` with its own fullscreen
+graphics pipelines. These pipelines are distinct from the normal scene/material pipelines used for
+renderables, draw batches, and instanced geometry.
+
+Current runtime pipeline families:
+
+- **Blit / copy pipeline** — `post-process-fullscreen.vert` + `post-process-copy.frag`
+- **Bloom blur pipeline** — `post-process-fullscreen.vert` + `post-process-bloom-blur.frag`
+- **Bloom composite pipeline** — `post-process-fullscreen.vert` +
+    `post-process-bloom-composite.frag`
+
+Important properties of these pipelines:
+
+- They are owned and cached by `PostProcessingRenderer`, not by `Renderable`, `MaterialHandle`, or
+    `VisualWorld` batching.
+- They are keyed by output color format rather than mesh/material identity.
+- They bind sampled textures through a post-process descriptor-set layout, not the normal scene
+    material/texture binding path.
+- They render a fullscreen primitive (`draw(3, 1, 0, 0)`) rather than drawing scene meshes.
+- They run in their own rendering scopes after the main geometry scope.
+
+### 7.1 Runtime attachment set
+
+Per frame (or per eye in XR), the renderer currently allocates the following post-process targets:
+
+| Attachment | Present when | Notes |
+|---|---|---|
+| `main_color` | `RenderGraphComponent` active | Single-sample scene color used as the sampled main scene input |
+| `main_msaa_color` | MSAA enabled | MSAA render target that resolves into `main_color` |
+| `depth` | Post-processing active | Shared scene depth used during geometry and bloom extraction |
+| `bloom_source_msaa` | Bloom + MSAA enabled | MSAA emissive extraction target that resolves into `bloom_source` |
+| `bloom_source` | Bloom enabled | Full-resolution sampled emissive extraction result |
+| `bloom_a` | Bloom enabled | Ping-pong blur target, half-res when `half_res(true)` |
+| `bloom_b` | Bloom enabled | Second ping-pong blur target, same size as `bloom_a` |
+
+All color targets currently use the renderer `color_format` selected for the post-process path.
 
 ```
 No RenderGraphComponent:
-  [geometry phases] → swapchain
+  [geometry phases, including overlay] → swapchain
 
 With RenderGraphComponent:
 
-[1] Main geometry passes (begin_rendering → end_rendering)
-      Color → main color intermediate (R16G16B16A16_SFLOAT)
-      Depth → stored D32_SFLOAT (if BloomComponent or BokehComponent present)
-      Depth MSAA resolve → R32_SFLOAT (if MSAA enabled + depth needed)
+[1] Main geometry scope (begin_rendering → end_rendering)
+    Color: opaque/cutout/transparent scene draws into `main_msaa_color` if MSAA is on,
+         otherwise directly into `main_color`
+    Resolve: `main_msaa_color` → `main_color` when applicable
+    Depth: shared `depth`
+    Overlay: NOT drawn here when post-processing is active
 
-[2] Emissive prepass (skip if no BloomComponent or zero emissive instances)
-      Input: stored depth (optional, read-only, for occlusion)
-      Draw: EMISSIVE_TOON_MESH / SKINNED_EMISSIVE_TOON_MESH batches only
-      Output: HDR emissive buffer
+[2] Emissive extraction scope (skip if no BloomComponent or no emissive batches)
+    Color: `bloom_source_msaa` if MSAA is on, otherwise `bloom_source`
+    Resolve: `bloom_source_msaa` → `bloom_source` when applicable
+    Depth: load existing scene depth from [1]
+    Draw: emissive opaque/cutout batches only, using read-only `LessOrEqual` depth testing
 
-[3] Bloom blur H (skip if no BloomComponent)
-      Input: HDR emissive buffer
-      Output: temp blur buffer
+[3] Bloom prefilter / copy
+    Input: `bloom_source`
+    Output: `bloom_a`
+    Notes: fullscreen blit into the blur-resolution target; this is where full-res emissive is
+         sampled down to half-res when `half_res(true)` is enabled
 
-[4] Bloom blur V (skip if no BloomComponent)
-      Input: temp blur buffer
-      Output: blurred emissive buffer
+[4] Bloom blur H
+    Input: `bloom_a`
+    Output: `bloom_b`
 
-[5] Bloom composite (skip if no BloomComponent)
-      Input: main color intermediate + blurred emissive buffer
-      Output: main color intermediate (additive blend)
+[5] Bloom blur V
+    Input: `bloom_b`
+    Output: `bloom_a`
 
-[6] CoC computation (skip if no BokehComponent)
-      Input: stored depth
-      Output: CoC image
+[6] Overlay scope
+    Color: reload scene color (`main_msaa_color` + resolve to `main_color`, or `main_color`)
+    Depth: cleared only for overlay self-occlusion
+    Draw: overlay batches
+    Notes: this happens after emissive extraction, so overlay does not become a bloom source,
+         but before final composite, so overlay still receives bloom
 
-[7] Bokeh blur (skip if no BokehComponent)
-      Input: main color intermediate + CoC image
-      Output: DoF blurred image
+[7] Final fullscreen composite / blit
+    Input: `main_color` + optional blurred bloom from `bloom_a`
+    Output: final output view (swapchain or XR eye target)
 
-[8] DoF composite (skip if no BokehComponent)
-      Input: main color intermediate (sharp) + DoF blurred image + CoC image
-      Output: main color intermediate (overwritten)
-
-[9] Final blit to swapchain
-      Input: main color intermediate
-      Output: swapchain image (tone-map / gamma correct here if needed)
+[8] Optional debug panels
+    Input: final output + selected post-process textures
+    Output: final output view with overlay debug quads
 ```
 
-Passes [2]–[8] each run as a separate `begin_rendering()` / `end_rendering()` scope (or as compute dispatches). They are not part of the main geometry scope.
+Passes [2]–[8] are separate fullscreen or overlay scopes after the main geometry scope. The old
+bokeh/DoF chain described later in this document remains design material for now rather than the
+current runtime path.
+
+### 7.2 Bloom filtering
+
+Bloom sampling currently uses a single linear sampler in `PostProcessingRenderer`:
+
+- `mag_filter: Linear`
+- `min_filter: Linear`
+
+That means:
+
+- emissive extraction copied from `bloom_source` into `bloom_a` is linearly filtered
+- the half-resolution bloom path is downsampled through linear sampling
+- both blur passes sample linearly
+- the final composite samples the blurred bloom texture linearly when reading it back at full
+  output resolution
+
+So yes: when the blurred bloom result is sampled back up during final composite, it currently uses
+linear filtering.
 
 ---
 
