@@ -230,6 +230,16 @@ fn parse_error_unterminated_body() {
     assert!(err.message.contains("Unterminated"));
 }
 
+#[test]
+fn runner_parse_errors_include_source_line_and_caret() {
+    let out = MeowMeowRunner::eval("T {\n    for x in range(3) { T {} }\n}\n");
+    assert!(!out.errors.is_empty(), "expected parse error");
+    let msg = &out.errors[0];
+    assert!(msg.contains("parse error at 2:"), "got: {msg}");
+    assert!(msg.contains("for x in range(3) { T {} }"), "got: {msg}");
+    assert!(msg.contains("^"), "got: {msg}");
+}
+
 // ---------------------------------------------------------------------------
 // Evaluator thread smoke test
 // ---------------------------------------------------------------------------

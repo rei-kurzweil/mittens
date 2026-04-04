@@ -53,6 +53,16 @@ All interaction facts here are `EventSignal` variants, while reparenting request
 - `DragEnd { raycaster, renderable, hit_point }`
   - Fact emitted by `GestureSystem` when left mouse is released.
 
+- `Click { raycaster, renderable, hit_point, screen_pos_px }`
+  - Fact emitted by `GestureSystem` **additionally** at `DragEnd` time when the net pointer
+    displacement is below the click threshold (8 px screen-space; 0.02 world units for
+    non-screen pointers).
+  - All `DragMove` events are still emitted during the gesture even if it ends as a `Click`.
+  - Payload mirrors `DragStart` (the target and hit point are from press time, not release).
+  - Full taxonomy: `InputState` + `PointerComponent` → `RayCastSystem` → `RayIntersected`
+    → `GestureSystem` → `DragStart` / `DragMove` / `DragEnd` [+ `Click`]
+  - See `docs/spec/click-and-panel-scroll.md` for threshold details and panel usage.
+
 - `Attach { parents, child }`
   - Intent emitted by `EditorSystem` (and others) to request reparenting.
   - Handled by intent execution.

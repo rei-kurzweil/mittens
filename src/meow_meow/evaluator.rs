@@ -810,12 +810,33 @@ fn byte_offset_to_line_col(source: &str, offset: usize) -> (usize, usize) {
     (line, col)
 }
 
+fn format_source_context(source: &str, line: usize, col: usize) -> String {
+    let line_text = source
+        .lines()
+        .nth(line.saturating_sub(1))
+        .unwrap_or("");
+    let caret_pad = " ".repeat(col.saturating_sub(1));
+    format!("\n  {line_text}\n  {caret_pad}^")
+}
+
 fn tokenize_err_to_string(source: &str, e: TokenizeError) -> String {
     let (line, col) = byte_offset_to_line_col(source, e.span.start);
-    format!("tokenize error at {}:{}: {}", line, col, e.message)
+    format!(
+        "tokenize error at {}:{}: {}{}",
+        line,
+        col,
+        e.message,
+        format_source_context(source, line, col),
+    )
 }
 
 fn parse_err_to_string(source: &str, e: ParseError) -> String {
     let (line, col) = byte_offset_to_line_col(source, e.span.start);
-    format!("parse error at {}:{}: {}", line, col, e.message)
+    format!(
+        "parse error at {}:{}: {}{}",
+        line,
+        col,
+        e.message,
+        format_source_context(source, line, col),
+    )
 }

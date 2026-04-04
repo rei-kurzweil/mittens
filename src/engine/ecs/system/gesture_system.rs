@@ -21,6 +21,11 @@ pub enum DragUpdatePolicy {
     StartPlaneProjection,
 }
 
+/// Pixel displacement below which a DragEnd is also emitted as a Click.
+const CLICK_THRESHOLD_PX: f32 = 8.0;
+/// World-space displacement below which a DragEnd is also emitted as a Click (non-screen pointers).
+const CLICK_THRESHOLD_WORLD: f32 = 0.02;
+
 #[derive(Debug, Default, Clone)]
 pub struct GestureState {
     pub dragging: bool,
@@ -32,6 +37,10 @@ pub struct GestureState {
     pub last_cursor_pos: Option<(f32, f32)>,
     pub drag_plane_point_world: Option<[f32; 3]>,
     pub drag_plane_normal_world: Option<[f32; 3]>,
+
+    // Click detection: position at DragStart.
+    pub drag_start_screen_pos: Option<(f32, f32)>,
+    pub drag_start_hit_point: Option<[f32; 3]>,
 }
 
 #[derive(Debug)]
@@ -221,6 +230,8 @@ impl GestureSystem {
                 self.state.drag_renderable = Some(renderable);
                 self.state.last_hit_point = hit_point;
                 self.state.last_cursor_pos = input.cursor_pos;
+                self.state.drag_start_screen_pos = input.cursor_pos;
+                self.state.drag_start_hit_point = hit_point;
 
                 if self.drag_update_policy == DragUpdatePolicy::StartPlaneProjection {
                     if let Some((_rc, _r, _t, origin, dir)) = best {
@@ -376,6 +387,40 @@ impl GestureSystem {
                             hit_point: self.state.last_hit_point,
                         },
                     );
+
+                    // Emit Click if the pointer didn't travel far.
+                    let is_click = match (
+                        self.state.drag_start_screen_pos,
+                        input.cursor_pos,
+                    ) {
+                        (Some((sx, sy)), Some((ex, ey))) => {
+                            let dx = ex - sx;
+                            let dy = ey - sy;
+                            (dx * dx + dy * dy).sqrt() < CLICK_THRESHOLD_PX
+                        }
+                        _ => match (self.state.drag_start_hit_point, self.state.last_hit_point) {
+                            (Some(s), Some(e)) => {
+                                let d = [e[0] - s[0], e[1] - s[1], e[2] - s[2]];
+                                (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+                                    < CLICK_THRESHOLD_WORLD
+                            }
+                            _ => false,
+                        },
+                    };
+
+                    if is_click {
+                        if let Some(start_hit) = self.state.drag_start_hit_point {
+                            rx.push_event(
+                                active_renderable,
+                                EventSignal::Click {
+                                    raycaster: active_rc,
+                                    renderable: active_renderable,
+                                    hit_point: start_hit,
+                                    screen_pos_px: self.state.drag_start_screen_pos,
+                                },
+                            );
+                        }
+                    }
                 }
 
                 self.state.dragging = false;
@@ -385,6 +430,8 @@ impl GestureSystem {
                 self.state.last_cursor_pos = None;
                 self.state.drag_plane_point_world = None;
                 self.state.drag_plane_normal_world = None;
+                self.state.drag_start_screen_pos = None;
+                self.state.drag_start_hit_point = None;
             }
         }
     }

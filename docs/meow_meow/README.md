@@ -41,6 +41,11 @@ Meow Meow Script ("MMS") is the scripting + authoring language for cat-engine.
 
 - [Development roadmap](analysis/roadmap.md) — phase checklist with design decision flags
 
+### Drafts
+
+- [Control flow inside component bodies](draft/component-body-control-flow.md) — draft design for
+	`for` / `if` directly inside `T { ... }` / `R { ... }` style component bodies
+
 ### Analysis
 
 - [Emission semantics and component value model](analysis/emission-and-component-value-model.md) — what "emitting" means, AstTransform / EmitLiftTransform, ComponentObject, emit context

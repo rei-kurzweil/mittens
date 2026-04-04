@@ -46,6 +46,7 @@ pub mod music_note;
 pub mod opacity;
 pub mod overlay;
 pub mod render_graph;
+pub mod scrolling;
 pub mod selectable;
 pub mod signal_route_upward;
 pub mod skinned_mesh;
@@ -158,6 +159,7 @@ pub use transform_temporal_filter::{
     QuatExtractYawComponent, QuatTemporalFilterComponent, QuatYawFollowComponent,
     Vector3TemporalFilterComponent,
 };
+pub use scrolling::ScrollingComponent;
 pub use transparent_cutout::TransparentCutoutComponent;
 pub use uv::UVComponent;
 

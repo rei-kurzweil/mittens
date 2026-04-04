@@ -17,8 +17,8 @@ use crate::engine::ecs::component::{
     EditorComponent, EmissiveComponent, EmissivePassComponent, GLTFComponent, InputComponent,
     InputTransformModeComponent, InputXRComponent,
     InspectorPanelComponent, KeyframeComponent, NormalVisualisationComponent, OpenXRComponent,
-    OverlayComponent, PointLightComponent, PointerComponent, RenderGraphComponent, SelectableComponent,
-    TextBackgroundComponent, TextureComponent, UVComponent, WorldPanelComponent,
+    OverlayComponent, PointLightComponent, PointerComponent, RenderGraphComponent, ScrollingComponent,
+    SelectableComponent, TextBackgroundComponent, TextureComponent, UVComponent, WorldPanelComponent,
     QuatTemporalFilterComponent, RaycastableComponent, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TextComponent, TextShadowComponent,
     TextureFilteringComponent, TransformComponent, TransformDropComponent,
@@ -332,6 +332,13 @@ fn create_component(
             _ => add!(SelectableComponent::on()),
         },
         "InspectorPanel" => add!(InspectorPanelComponent::new()),
+        "Scrolling" => match ctor {
+            Some("new") => add!(ScrollingComponent::new(
+                arg(args, 0)?.as_f32()?,
+                arg(args, 1)?.as_f32()? as usize,
+            )),
+            _ => add!(ScrollingComponent::new(0.1, 10)),
+        },
         "WorldPanel" => add!(WorldPanelComponent::new()),
         "Raycastable" => match ctor {
             Some("enabled") => add!(RaycastableComponent::enabled()),

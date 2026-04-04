@@ -115,10 +115,36 @@ pub enum EventSignal {
         hit_point: Option<[f32; 3]>,
     },
 
+    /// A click: a drag gesture that ended close to where it started.
+    ///
+    /// Emitted by `GestureSystem` at `DragEnd` time when the net pointer displacement is below
+    /// the click threshold (8 px screen-space, or 0.02 world units for non-screen pointers).
+    ///
+    /// All intermediate `DragMove` events are still emitted; `Click` fires *in addition to*
+    /// `DragEnd`, on the same scope (the hit renderable at press time).
+    ///
+    /// Payload mirrors `DragStart` — the thing clicked is what was under the pointer at press.
+    Click {
+        raycaster: ComponentId,
+        renderable: ComponentId,
+        hit_point: [f32; 3],
+        screen_pos_px: Option<(f32, f32)>,
+    },
+
     /// The editor selection changed (emitted by EditorSystem on DragStart).
     SelectionChanged {
         editor_root: ComponentId,
         selected: Option<ComponentId>,
+    },
+
+    /// A `ScrollingComponent`'s visible window moved to a new row.
+    ///
+    /// Emitted when `window_start()` crosses an integer boundary during a `DragMove`.
+    /// Scope: the `ScrollingComponent` itself.
+    ScrollChanged {
+        scroll_component: ComponentId,
+        window_start: usize,
+        window_end: usize,
     },
 }
 
@@ -132,7 +158,9 @@ impl EventSignal {
             EventSignal::DragStart { .. } => SignalKind::DragStart,
             EventSignal::DragMove { .. } => SignalKind::DragMove,
             EventSignal::DragEnd { .. } => SignalKind::DragEnd,
+            EventSignal::Click { .. } => SignalKind::Click,
             EventSignal::SelectionChanged { .. } => SignalKind::SelectionChanged,
+            EventSignal::ScrollChanged { .. } => SignalKind::ScrollChanged,
         }
     }
 }
@@ -602,7 +630,9 @@ pub enum SignalKind {
     DragStart,
     DragMove,
     DragEnd,
+    Click,
     SelectionChanged,
+    ScrollChanged,
 }
 
 /// Optional timing metadata on the signal envelope.
