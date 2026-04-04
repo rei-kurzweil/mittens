@@ -7,8 +7,7 @@ pub struct BloomComponent {
     pub radius_ndc: f32,
     pub emissive_scale: f32,
     pub half_res: bool,
-    pub debug_emissive_texture: Option<String>,
-    pub debug_bloom_texture: Option<String>,
+    pub output_texture: Option<String>,
 }
 
 impl Default for BloomComponent {
@@ -26,8 +25,7 @@ impl BloomComponent {
             radius_ndc: cfg.radius_ndc,
             emissive_scale: cfg.emissive_scale,
             half_res: cfg.half_res,
-            debug_emissive_texture: None,
-            debug_bloom_texture: None,
+            output_texture: None,
         }
     }
 
@@ -62,16 +60,8 @@ impl BloomComponent {
         self
     }
 
-    pub fn with_debug_emissive_texture(
-        mut self,
-        debug_emissive_texture: impl Into<String>,
-    ) -> Self {
-        self.debug_emissive_texture = Some(debug_emissive_texture.into());
-        self
-    }
-
-    pub fn with_debug_bloom_texture(mut self, debug_bloom_texture: impl Into<String>) -> Self {
-        self.debug_bloom_texture = Some(debug_bloom_texture.into());
+    pub fn with_output_texture(mut self, output_texture: impl Into<String>) -> Self {
+        self.output_texture = Some(output_texture.into());
         self
     }
 }
@@ -99,16 +89,10 @@ impl Component for BloomComponent {
             serde_json::json!(self.emissive_scale),
         );
         map.insert("half_res".to_string(), serde_json::json!(self.half_res));
-        if let Some(debug_emissive_texture) = &self.debug_emissive_texture {
+        if let Some(output_texture) = &self.output_texture {
             map.insert(
-                "debug_emissive_texture".to_string(),
-                serde_json::json!(debug_emissive_texture),
-            );
-        }
-        if let Some(debug_bloom_texture) = &self.debug_bloom_texture {
-            map.insert(
-                "debug_bloom_texture".to_string(),
-                serde_json::json!(debug_bloom_texture),
+                "output_texture".to_string(),
+                serde_json::json!(output_texture),
             );
         }
         map
@@ -141,16 +125,10 @@ impl Component for BloomComponent {
             self.half_res = serde_json::from_value(half_res.clone())
                 .map_err(|e| format!("Failed to decode bloom.half_res: {e}"))?;
         }
-        if let Some(debug_emissive_texture) = data.get("debug_emissive_texture") {
-            self.debug_emissive_texture = Some(
-                serde_json::from_value(debug_emissive_texture.clone())
-                    .map_err(|e| format!("Failed to decode bloom.debug_emissive_texture: {e}"))?,
-            );
-        }
-        if let Some(debug_bloom_texture) = data.get("debug_bloom_texture") {
-            self.debug_bloom_texture = Some(
-                serde_json::from_value(debug_bloom_texture.clone())
-                    .map_err(|e| format!("Failed to decode bloom.debug_bloom_texture: {e}"))?,
+        if let Some(output_texture) = data.get("output_texture") {
+            self.output_texture = Some(
+                serde_json::from_value(output_texture.clone())
+                    .map_err(|e| format!("Failed to decode bloom.output_texture: {e}"))?,
             );
         }
         Ok(())

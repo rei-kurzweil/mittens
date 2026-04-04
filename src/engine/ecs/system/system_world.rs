@@ -795,8 +795,7 @@ impl SystemWorld {
                     radius_ndc: bloom.radius_ndc,
                     emissive_scale: bloom.emissive_scale,
                     half_res: bloom.half_res,
-                    debug_emissive_texture: bloom.debug_emissive_texture.clone(),
-                    debug_bloom_texture: bloom.debug_bloom_texture.clone(),
+                    output_texture: bloom.output_texture.clone(),
                     ..Default::default()
                 });
             }
@@ -810,18 +809,15 @@ impl SystemWorld {
                     continue;
                 };
 
-                match texture.render_image.as_deref() {
-                    Some("render_graph.bloom.emissive") => {
-                        if let Some(bloom_cfg) = config.bloom.as_mut() {
-                            bloom_cfg.debug_emissive_texture = texture.render_image.clone();
-                        }
+                if let Some(bloom_cfg) = config.bloom.as_mut() {
+                    if bloom_cfg.output_texture.is_none() {
+                        bloom_cfg.output_texture = Some(
+                            texture
+                                .render_image
+                                .clone()
+                                .unwrap_or_else(|| "render_graph.bloom.blur".to_string()),
+                        );
                     }
-                    Some("render_graph.bloom.blur") | Some("render_graph.bloom.blur_a") => {
-                        if let Some(bloom_cfg) = config.bloom.as_mut() {
-                            bloom_cfg.debug_bloom_texture = texture.render_image.clone();
-                        }
-                    }
-                    _ => {}
                 }
             }
         }

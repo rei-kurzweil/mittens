@@ -1644,16 +1644,7 @@ mod vulkano_backend {
 
             if let Some(bloom) = post_process.config.bloom.as_ref() {
                 if let (Some(key), Some(view)) = (
-                    bloom.debug_emissive_texture.as_deref(),
-                    post_process.targets.bloom_source.clone(),
-                ) {
-                    if let Some(handle) = visual_world.runtime_texture_handle(key) {
-                        publications.push((handle, view));
-                    }
-                }
-
-                if let (Some(key), Some(view)) = (
-                    bloom.debug_bloom_texture.as_deref(),
+                    bloom.output_texture.as_deref(),
                     post_process.targets.bloom_a.clone(),
                 ) {
                     if let Some(handle) = visual_world.runtime_texture_handle(key) {

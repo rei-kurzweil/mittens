@@ -2,6 +2,9 @@
 
 This document describes how `TextComponent` is expanded into glyph renderables, how styling is resolved, and what the current lifecycle is.
 
+For the general `TextureComponent` behavior used by glyph atlases and ordinary renderables, see
+[docs/spec/texture.md](docs/spec/texture.md).
+
 ## 1) Behavior
 
 ### Topology produced by `TextComponent`

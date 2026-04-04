@@ -77,8 +77,7 @@ pub struct BloomConfig {
     pub emissive_scale: f32,
     pub half_res: bool,
     pub source: BloomSource,
-    pub debug_emissive_texture: Option<String>,
-    pub debug_bloom_texture: Option<String>,
+    pub output_texture: Option<String>,
 }
 
 impl Default for BloomConfig {
@@ -89,8 +88,7 @@ impl Default for BloomConfig {
             emissive_scale: 1.0,
             half_res: true,
             source: BloomSource::Emissive,
-            debug_emissive_texture: None,
-            debug_bloom_texture: None,
+            output_texture: None,
         }
     }
 }

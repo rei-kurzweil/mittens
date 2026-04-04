@@ -1,10 +1,13 @@
 # Render to texture
 
-This document describes the **implemented** runtime-texture bridge used by bloom debug views and other render-graph-published scene textures.
+This document describes the **implemented** runtime-texture bridge used by render-graph-published scene textures.
 
 It covers what is currently true in `src/`.
 
 For future `RenderImage*` abstraction ideas, see [docs/draft/render-image.md](docs/draft/render-image.md).
+
+For the broader `TextureComponent` behavior across URI-backed, GLTF-imported, handle-backed, and
+render-image-backed usage, see [docs/spec/texture.md](docs/spec/texture.md).
 
 ## 1. Scope
 
@@ -54,7 +57,7 @@ let bloom_debug_texture = Texture.render_image("render_graph.bloom.blur")
 
 RenderGraph {
     EmissivePass {
-        Texture {}
+        emissive_debug_texture
     }
 
     Bloom {
@@ -73,13 +76,9 @@ Implemented keys today:
 
 - `render_graph.emissive_pass.output`
 - `render_graph.bloom.blur`
-- `render_graph.bloom.blur_a`
 
-Legacy/duplicate support still exists internally for:
-
-- `render_graph.bloom.emissive`
-
-but the preferred authored emissive path is `EmissivePass`.
+These are ordinary authored selector strings today; the runtime no longer has a separate
+renderer-side debug-overlay path for showing them.
 
 ## 4. ECS/runtime wiring
 
