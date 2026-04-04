@@ -188,8 +188,8 @@ That keeps the runtime implementation stable while improving authored ergonomics
 Once pass-owned texture references exist:
 
 - bloom/emissive demo surfaces should be ordinary renderables with reused texture refs
-- `record_debug_overlay_pass` becomes a purely optional debug HUD tool, not the way examples show
-  pass outputs
+- examples should continue showing pass outputs through ordinary textured scene content, not through
+    a dedicated renderer-side debug-overlay path
 
 This is important because it proves the regular scene path is good enough.
 

@@ -801,9 +801,6 @@ impl SystemWorld {
                 });
             }
 
-            config.debug_show_emissive = bloom.debug_show_emissive;
-            config.debug_show_bloom = bloom.debug_show_bloom;
-
             for &grandchild in world.children_of(child) {
                 let Some(texture) = world
                     .get_component_by_id_as::<crate::engine::ecs::component::TextureComponent>(

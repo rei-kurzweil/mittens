@@ -119,8 +119,6 @@ pub struct PostProcessingConfig {
     pub blur_pass: Option<BlurPassConfig>,
     pub bloom: Option<BloomConfig>,
     pub bokeh: Option<BokehConfig>,
-    pub debug_show_emissive: bool,
-    pub debug_show_bloom: bool,
 }
 
 impl PostProcessingConfig {
@@ -421,95 +419,6 @@ impl PostProcessingRenderer {
                 radius_pixels: 0.0,
             },
         )
-    }
-
-    pub fn record_debug_overlay_pass(
-        &mut self,
-        cbb: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-        color_format: Format,
-        output: Arc<ImageView>,
-        _output_extent: [u32; 2],
-        panel_offset: [u32; 2],
-        panel_extent: [u32; 2],
-        source: Arc<ImageView>,
-        flip_y: bool,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let pipeline = self.blit_pipeline(color_format)?;
-        let set = self.sampled_set(source.clone(), source)?;
-
-        let border = 6u32.min(panel_extent[0] / 4).min(panel_extent[1] / 4);
-        let inner_offset = [
-            panel_offset[0].saturating_add(border),
-            panel_offset[1].saturating_add(border),
-        ];
-        let inner_extent = [
-            panel_extent[0].saturating_sub(border.saturating_mul(2)).max(1),
-            panel_extent[1].saturating_sub(border.saturating_mul(2)).max(1),
-        ];
-
-        let viewport = if flip_y {
-            Viewport {
-                offset: [
-                    inner_offset[0] as f32,
-                    (inner_offset[1] + inner_extent[1]) as f32,
-                ],
-                extent: [inner_extent[0] as f32, -(inner_extent[1] as f32)],
-                depth_range: 0.0..=1.0,
-                ..Default::default()
-            }
-        } else {
-            Viewport {
-                offset: [inner_offset[0] as f32, inner_offset[1] as f32],
-                extent: [inner_extent[0] as f32, inner_extent[1] as f32],
-                depth_range: 0.0..=1.0,
-                ..Default::default()
-            }
-        };
-
-        cbb.begin_rendering(RenderingInfo {
-            render_area_offset: [panel_offset[0], panel_offset[1]],
-            render_area_extent: panel_extent,
-            layer_count: 1,
-            color_attachments: vec![Some(RenderingAttachmentInfo {
-                load_op: AttachmentLoadOp::Clear,
-                store_op: AttachmentStoreOp::Store,
-                clear_value: Some(ClearValue::from([1.0, 1.0, 1.0, 1.0])),
-                ..RenderingAttachmentInfo::image_view(output)
-            })],
-            ..Default::default()
-        })?;
-
-        cbb.set_viewport(0, vec![viewport].into())?;
-        cbb.set_scissor(
-            0,
-            vec![Scissor {
-                offset: [inner_offset[0], inner_offset[1]],
-                extent: inner_extent,
-                ..Default::default()
-            }]
-            .into(),
-        )?;
-        cbb.bind_pipeline_graphics(pipeline.clone())?;
-        cbb.bind_descriptor_sets(
-            PipelineBindPoint::Graphics,
-            pipeline.layout().clone(),
-            0,
-            set,
-        )?;
-        cbb.push_constants(
-            pipeline.layout().clone(),
-            0,
-            PostProcessPushConstants {
-                direction: [0.0, 0.0],
-                bloom_intensity: 0.0,
-                radius_pixels: 0.0,
-            },
-        )?;
-        unsafe {
-            cbb.draw(3, 1, 0, 0)?;
-        }
-        cbb.end_rendering()?;
-        Ok(())
     }
 
     fn record_fullscreen_pass(

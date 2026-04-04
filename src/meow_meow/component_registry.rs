@@ -507,14 +507,6 @@ fn apply_call(
                 *bloom = bloom.clone().with_emissive_scale(arg(args, 0)?.as_f32()?)
             }
             "half_res" => *bloom = bloom.clone().with_half_res(arg(args, 0)?.as_bool()?),
-            "debug_show_emissive" => {
-                *bloom = bloom
-                    .clone()
-                    .with_debug_show_emissive(arg(args, 0)?.as_bool()?)
-            }
-            "debug_show_bloom" => {
-                *bloom = bloom.clone().with_debug_show_bloom(arg(args, 0)?.as_bool()?)
-            }
             _ => {}
         }
         return Ok(());

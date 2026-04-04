@@ -36,7 +36,6 @@ impl RxIntentExecutor {
                 | IntentValue::Detach { .. }
                 | IntentValue::RemoveChild { .. }
                 | IntentValue::RemoveChildren { .. }
-                | IntentValue::RemoveSubtree { .. }
                 | IntentValue::AudioGraphRebuild { .. }
                 | IntentValue::RequestRaycast { .. }
                 | IntentValue::AudioLowPassSetCutoffHz { .. }
@@ -357,17 +356,6 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 }
 
                 emit_topology_transform_refresh(world, emit, parent);
-            }
-        }
-
-        IntentValue::RemoveSubtree { component_ids } => {
-            for &root in component_ids.iter() {
-                emit.push_intent_now(
-                    root,
-                    IntentValue::AudioGraphDirtyImmediate {
-                        component_ids: vec![root],
-                    },
-                );
             }
         }
 

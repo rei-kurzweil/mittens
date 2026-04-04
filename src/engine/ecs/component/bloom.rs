@@ -7,8 +7,6 @@ pub struct BloomComponent {
     pub radius_ndc: f32,
     pub emissive_scale: f32,
     pub half_res: bool,
-    pub debug_show_emissive: bool,
-    pub debug_show_bloom: bool,
     pub debug_emissive_texture: Option<String>,
     pub debug_bloom_texture: Option<String>,
 }
@@ -28,8 +26,6 @@ impl BloomComponent {
             radius_ndc: cfg.radius_ndc,
             emissive_scale: cfg.emissive_scale,
             half_res: cfg.half_res,
-            debug_show_emissive: false,
-            debug_show_bloom: false,
             debug_emissive_texture: None,
             debug_bloom_texture: None,
         }
@@ -63,16 +59,6 @@ impl BloomComponent {
 
     pub fn with_half_res(mut self, half_res: bool) -> Self {
         self.half_res = half_res;
-        self
-    }
-
-    pub fn with_debug_show_emissive(mut self, debug_show_emissive: bool) -> Self {
-        self.debug_show_emissive = debug_show_emissive;
-        self
-    }
-
-    pub fn with_debug_show_bloom(mut self, debug_show_bloom: bool) -> Self {
-        self.debug_show_bloom = debug_show_bloom;
         self
     }
 
@@ -113,14 +99,6 @@ impl Component for BloomComponent {
             serde_json::json!(self.emissive_scale),
         );
         map.insert("half_res".to_string(), serde_json::json!(self.half_res));
-        map.insert(
-            "debug_show_emissive".to_string(),
-            serde_json::json!(self.debug_show_emissive),
-        );
-        map.insert(
-            "debug_show_bloom".to_string(),
-            serde_json::json!(self.debug_show_bloom),
-        );
         if let Some(debug_emissive_texture) = &self.debug_emissive_texture {
             map.insert(
                 "debug_emissive_texture".to_string(),
@@ -162,14 +140,6 @@ impl Component for BloomComponent {
         if let Some(half_res) = data.get("half_res") {
             self.half_res = serde_json::from_value(half_res.clone())
                 .map_err(|e| format!("Failed to decode bloom.half_res: {e}"))?;
-        }
-        if let Some(debug_show_emissive) = data.get("debug_show_emissive") {
-            self.debug_show_emissive = serde_json::from_value(debug_show_emissive.clone())
-                .map_err(|e| format!("Failed to decode bloom.debug_show_emissive: {e}"))?;
-        }
-        if let Some(debug_show_bloom) = data.get("debug_show_bloom") {
-            self.debug_show_bloom = serde_json::from_value(debug_show_bloom.clone())
-                .map_err(|e| format!("Failed to decode bloom.debug_show_bloom: {e}"))?;
         }
         if let Some(debug_emissive_texture) = data.get("debug_emissive_texture") {
             self.debug_emissive_texture = Some(

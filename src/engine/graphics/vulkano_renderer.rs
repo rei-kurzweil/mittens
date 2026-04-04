@@ -2711,40 +2711,6 @@ mod vulkano_backend {
                     &post_process.config,
                 )?;
 
-                let panel_margin = 16;
-                let panel_width = (extent[0] / 4).max(96);
-                let panel_height = (extent[1] / 4).max(96);
-
-                if post_process.config.debug_show_emissive {
-                    if let Some(view) = post_process.targets.bloom_source.clone() {
-                        self.post_processing_renderer.record_debug_overlay_pass(
-                            &mut cbb,
-                            post_process.final_color_format,
-                            final_output_view.clone(),
-                            extent,
-                            [panel_margin, panel_margin],
-                            [panel_width, panel_height],
-                            view,
-                            false,
-                        )?;
-                    }
-                }
-
-                if post_process.config.debug_show_bloom {
-                    if let Some(view) = post_process.targets.bloom_a.clone() {
-                        self.post_processing_renderer.record_debug_overlay_pass(
-                            &mut cbb,
-                            post_process.final_color_format,
-                            final_output_view.clone(),
-                            extent,
-                            [extent[0].saturating_sub(panel_width + panel_margin), panel_margin],
-                            [panel_width, panel_height],
-                            view,
-                            false,
-                        )?;
-                    }
-                }
-
                 for (handle, src_view) in
                     self.collect_runtime_texture_publications(visual_world, &post_process)
                 {

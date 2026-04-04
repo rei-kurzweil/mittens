@@ -272,6 +272,12 @@ impl RxMutationExecutor {
                 roots.sort();
                 roots.dedup();
                 for root in roots {
+                    emit.push_intent_now(
+                        root,
+                        IntentValue::AudioGraphDirtyImmediate {
+                            component_ids: vec![root],
+                        },
+                    );
                     // Best-effort: if the root is still attached, detach it first and publish
                     // a topology fact before deletion.
                     if let Some(old_parent) = world.parent_of(root) {

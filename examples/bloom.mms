@@ -17,7 +17,7 @@ RenderGraph {
             radius_ndc(0.050)
             half_res(true)
         }
-        Texture {}
+        emissive_debug_texture
     }
 
     Bloom {
