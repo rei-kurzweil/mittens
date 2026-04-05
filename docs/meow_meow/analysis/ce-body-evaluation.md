@@ -168,39 +168,66 @@ A bare `scale(0.9, 0.9, 0.9)` call. In the block, it resolves as a normal functi
 call. Builder methods for the current component type are pre-injected into the block's
 env. Normal env lookup priority: user-defined `scale` shadows the builder's version.
 
-### `NamedAssignment { name, value }` — open question
+### `NamedAssignment { name, value }` — resolved via env pre-population
 
-`intensity = 0.9` in a CE body means "set the intensity property on this component."
-In a block statement, `x = expr` (no `let`) is `Statement::Reassign` — it requires `x`
-to already be bound in scope, otherwise it's an error.
+```
+ComponentBodyItem::NamedAssignment { name, value }
+  →  Statement::Reassign(name, value)
+```
 
-Three options:
+`intensity = 0.9` is a normal `Statement::Reassign`. It's always valid because the
+component's known property names are **pre-injected into the env with their defaults**
+before the block runs — the same injection that adds builder methods as `Value::Function`
+entries. Properties are added as their default values (`Value::Number(1.0)`, etc.).
 
-**Option A: Drop it.** Named assignments become method calls: `intensity(0.9)` instead
-of `intensity = 0.9`. The `=` form is v1 sugar that doesn't survive the transition to
-full block evaluation. Simple, no ambiguity.
+```
+entering DL { } block:
+  env ← intensity: 1.0 (default)
+        color: [1,1,1,1] (default)
+        C.rgba(...): Value::Function(...)   ← builder method injection
+        ...
 
-**Option B: Fallthrough.** If `name` is not in scope as a variable, `name = expr` is
-treated as a builder call `name(expr)`. Implicit, fragile — whether `x = 5` assigns a
-variable or sets a property depends on what's in scope at runtime.
+evaluate block:
+  intensity = 0.9   →  Statement::Reassign → env["intensity"] = 0.9
 
-**Option C: Explicit `self`.** The component being built is available in the body as
-`self`. Property assignment is `self.intensity = 0.9`. Explicit, unambiguous, consistent
-with how method calls work on live ComponentObjects. Changes the CE body syntax.
+after block:
+  CE builder reads env["intensity"] → 0.9
+```
 
-Current lean: **Option A** — named assignments aren't widely used and the method-call
-form is already supported. Deferring to the open questions section.
+After the block completes, the CE builder collects the final values of all its property
+keys from the env. Order of assignment doesn't matter — only the final value at
+block-end is used.
+
+`let intensity = compute()` inside the block also works: `let` overwrites the
+pre-injected binding (flat env), and the CE builder still reads `env["intensity"]`
+afterward and gets the correct value. No disambiguation needed — `name = expr` is
+always a valid reassign because the name is always pre-bound.
 
 ### `Positional(expr)` — expression capture rule
 
-`CUBE`, `"hello text"`, `[1, 0, 0, 1]` — bare expressions whose evaluated value is the
-argument, not a side effect. In a regular block, expression statements are evaluated and
-their values discarded. In a CE body block, these need to be captured.
+**Audit result: one real case.**
 
-Proposed rule: in a CE body block, an expression statement whose result is
-`Value::Identifier | Value::String | Value::Number | Value::Array` is captured as a
-positional arg by the CE builder. `Value::ComponentExpr` / `Value::ComponentObject`
-goes to children (as above). `Value::Null` and `Value::Function` are discarded.
+`apply_positional` in the registry handles exactly one positional today: a string
+expression inside `Text {}` sets the text content. Every other positional (identifier
+flags like `CUBE`, `QUAD_2D`) is logged as "unhandled" and ignored — those are already
+expressed better as constructor calls (`R.cube()`, `R.quad()`).
+
+So the positional capture rule only needs to handle **string-coercible expressions**:
+
+- `Value::String` → captured as positional content by the CE builder
+- `Value::ComponentExpr` / `Value::ComponentObject` → children bucket (as above)
+- Everything else → discarded (pure side effect; no capture)
+
+```mms
+Text {
+    "hello " + name     // evaluates to Value::String → positional content
+    C.rgba(0.6, 0.6, 0.6, 1.0)  // child CE → children bucket
+}
+```
+
+`Value::Number` and `Value::Array` are reserved for future numeric-content components
+but not captured in v1. Identifier flags (`CUBE`, `QUAD_2D`) are retired in favour of
+constructor calls — `R.cube()` not `R { CUBE }`.
 
 This rule is applied at the CE body's expression-statement handler, not in `eval_expr`
 itself. Regular blocks outside CE context are unaffected.
@@ -261,6 +288,7 @@ everywhere else, handled by the same `eval_if` / `ForIn` arms in `eval_stmt`.
 | Feature | Current | After this change |
 |---------|---------|---------|
 | `if`/`for` in CE body | ✓ (special-cased) | ✓ (free, via normal eval) |
+| `name = expr` property assignment | ✓ (NamedAssignment node) | ✓ (Statement::Reassign, pre-populated env) |
 | Variables in constructor args | ✗ | ✓ |
 | Variables in call/assignment args | ✗ | ✓ |
 | Arithmetic in CE body | ✗ | ✓ |
@@ -268,7 +296,7 @@ everywhere else, handled by the same `eval_if` / `ForIn` arms in `eval_stmt`.
 | Closures emitting children | ✗ | ✓ |
 | `while`, `break`, `continue` in body | ✗ | ✓ |
 | Full MMS in CE body | ✗ | ✓ |
-| `eval_literal` / `subst_body_items` | required | deleted |
+| `eval_literal` / `subst_body_items` / `ComponentBodyItem` | required | deleted |
 
 ---
 
@@ -276,8 +304,8 @@ everywhere else, handled by the same `eval_if` / `ForIn` arms in `eval_stmt`.
 
 | Question | Stakes |
 |----------|--------|
-| `NamedAssignment`: drop in favour of method calls, fallthrough, or explicit `self`? | Syntax compatibility; Option A (drop) is simplest |
-| `Positional` capture rule: capture Identifier/String/Number/Array from expr stmts, or require explicit syntax? | `CUBE`, `"text"` as positionals; implicit capture is convenient but magic |
+| `NamedAssignment`: resolved — pre-populate property names as env bindings, `=` is a normal reassign | ✓ |
+| `Positional` capture rule: only `Value::String` in v1; identifier flags retired to constructor calls | ✓ |
 | `ctx.emits` redirect: swap the pointer or add a `ce_builder` field to `EvalContext`? | API shape; builder field is more explicit and avoids type erasure |
 | Can a CE body `return`? | Probably not — no value to return to; treat as an error or no-op |
 | Builder method registry: static per component type, or dynamic? | Needs to be accessible at eval time (before spawn); static list is sufficient |
