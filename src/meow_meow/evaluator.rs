@@ -3,6 +3,7 @@ use std::thread::{self, JoinHandle};
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
+use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::IntentValue;
 use crate::meow_meow::ast::{
     BinOpKind, CallExpression, ComponentBodyItem, ComponentExpression, ConstructorCall,
@@ -25,6 +26,9 @@ pub enum EvalRequest {
     EvalScript { source: String, source_path: Option<String> },
     /// Parse only — returns a debug AST string (used in tests / tooling).
     ParseScript { source: String },
+    /// Reply to a pending `EvalResponse::HostCall`. The `id` must match the
+    /// correlation id from the HostCall that is being answered.
+    HostCallResult { id: u32, value: HostValue },
     Shutdown,
 }
 
@@ -36,6 +40,25 @@ pub enum EvalResponse {
     ParsedOk { debug_ast: String },
     Error { message: String },
     ShutdownAck,
+    /// The evaluator needs the host to perform a side-effecting operation and
+    /// return a result before evaluation can continue. The host must push a
+    /// matching `EvalRequest::HostCallResult { id, value }` to unblock the
+    /// evaluator thread.
+    HostCall { id: u32, kind: HostCallKind },
+}
+
+/// Operations the evaluator can request from the host.
+#[derive(Debug, Clone)]
+pub enum HostCallKind {
+    /// Spawn a component tree and return its root `ComponentId`.
+    Spawn(ComponentExpression),
+}
+
+/// Values the host can return in response to a `HostCall`.
+#[derive(Debug, Clone)]
+pub enum HostValue {
+    ComponentId(ComponentId),
+    Null,
 }
 
 // ---------------------------------------------------------------------------
@@ -77,21 +100,70 @@ impl MeowMeowEvaluator {
 // Worker thread
 // ---------------------------------------------------------------------------
 
-fn evaluator_thread(mut requests: Consumer<EvalRequest>, mut responses: Producer<EvalResponse>) {
+fn evaluator_thread(requests: Consumer<EvalRequest>, responses: Producer<EvalResponse>) {
+    let mut ch = EvalChannels::new(requests, responses);
     loop {
-        match requests.pop() {
+        match ch.requests.pop() {
             Ok(EvalRequest::EvalScript { source, source_path }) => {
-                eval_script(&source, source_path.as_deref(), &mut responses);
+                eval_script(&source, source_path.as_deref(), &mut ch);
             }
             Ok(EvalRequest::ParseScript { source }) => {
                 let resp = parse_only(&source)
                     .map(|dbg| EvalResponse::ParsedOk { debug_ast: dbg })
                     .unwrap_or_else(|msg| EvalResponse::Error { message: msg });
-                let _ = responses.push(resp);
+                let _ = ch.responses.push(resp);
+            }
+            Ok(EvalRequest::HostCallResult { .. }) => {
+                // HostCallResult arriving outside of a spin-wait means the host
+                // sent a stale reply. Discard silently.
             }
             Ok(EvalRequest::Shutdown) => {
-                let _ = responses.push(EvalResponse::ShutdownAck);
+                let _ = ch.responses.push(EvalResponse::ShutdownAck);
                 break;
+            }
+            Err(rtrb::PopError::Empty) => {
+                std::thread::yield_now();
+            }
+        }
+    }
+}
+
+/// Emit a `HostCall` and spin-wait for the matching `HostCallResult`.
+///
+/// Blocks the evaluator thread until the host pushes `HostCallResult { id, value }`.
+/// Any `HostCallResult` with a non-matching id is discarded (stale reply).
+/// Other request kinds (e.g. Shutdown) are processed normally while waiting.
+///
+/// Returns `None` if the host sent `HostValue::Null` or if a Shutdown arrived
+/// before the reply.
+fn host_call(
+    id: u32,
+    kind: HostCallKind,
+    requests: &mut Consumer<EvalRequest>,
+    responses: &mut Producer<EvalResponse>,
+) -> Option<HostValue> {
+    while responses.push(EvalResponse::HostCall { id, kind: kind.clone() }).is_err() {
+        std::thread::yield_now();
+    }
+    loop {
+        match requests.pop() {
+            Ok(EvalRequest::HostCallResult { id: reply_id, value }) if reply_id == id => {
+                return match value {
+                    HostValue::Null => None,
+                    v => Some(v),
+                };
+            }
+            Ok(EvalRequest::HostCallResult { .. }) => {
+                // Stale reply for a different id — discard.
+            }
+            Ok(EvalRequest::Shutdown) => {
+                // Host shut down while we were waiting — propagate shutdown.
+                return None;
+            }
+            Ok(other) => {
+                // Other requests (unlikely mid-eval) — re-queue by yielding;
+                // in practice only HostCallResult and Shutdown arrive here.
+                let _ = other; // consumed, cannot re-push to Consumer
             }
             Err(rtrb::PopError::Empty) => {
                 std::thread::yield_now();
@@ -124,15 +196,40 @@ struct EvalContext<'a> {
     /// carry their definition-site path) and when source was provided as a
     /// raw string without a path (e.g. via `MeowMeowRunner::eval`).
     source_path: Option<&'a str>,
+    /// Channel back to the host for HostCall round-trips (reply channel).
+    /// `None` when running in fire-and-forget mode (no world access available).
+    channels: Option<&'a mut EvalChannels>,
+}
+
+/// Live request/response channels plus a monotonic correlation-id counter.
+/// Owned by the evaluator thread; passed as `&mut` into eval functions.
+pub struct EvalChannels {
+    pub requests: Consumer<EvalRequest>,
+    pub responses: Producer<EvalResponse>,
+    next_id: u32,
+}
+
+impl EvalChannels {
+    pub fn new(requests: Consumer<EvalRequest>, responses: Producer<EvalResponse>) -> Self {
+        Self { requests, responses, next_id: 0 }
+    }
+
+    /// Emit a `HostCall` and spin-wait for the matching `HostCallResult`.
+    pub fn call(&mut self, kind: HostCallKind) -> Option<HostValue> {
+        let id = self.next_id;
+        self.next_id = self.next_id.wrapping_add(1);
+        host_call(id, kind, &mut self.requests, &mut self.responses)
+    }
 }
 
 /// Evaluate a script: parse → AstTransforms → walk statements.
-/// Each `emit(ce)` call produces an `EvalResponse::Intent(SpawnComponentTree)`.
-fn eval_script(source: &str, source_path: Option<&str>, responses: &mut Producer<EvalResponse>) {
+/// `ch` is the owned channel pair for the evaluator thread; the borrow is
+/// released before intents are flushed so `ch.responses` is free to use again.
+fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
     let mut stmts = match parse_source(source) {
         Ok(s) => s,
         Err(msg) => {
-            let _ = responses.push(EvalResponse::Error { message: msg });
+            let _ = ch.responses.push(EvalResponse::Error { message: msg });
             return;
         }
     };
@@ -142,17 +239,23 @@ fn eval_script(source: &str, source_path: Option<&str>, responses: &mut Producer
 
     let mut env: Env = HashMap::new();
     let mut emits: Vec<IntentValue> = Vec::new();
-    let mut ctx = EvalContext { emits: &mut emits, source_path };
 
-    match eval_block_stmts(&stmts, &mut env, &mut ctx) {
+    // Borrow `ch` into the context for the duration of eval, then release it.
+    let eval_result = {
+        let mut ctx = EvalContext { emits: &mut emits, source_path, channels: Some(ch) };
+        eval_block_stmts(&stmts, &mut env, &mut ctx)
+    }; // ctx (and its borrow of ch) dropped here
+
+    match eval_result {
         Ok(_) => {}
         Err(msg) => {
-            let _ = responses.push(EvalResponse::Error { message: msg });
+            let _ = ch.responses.push(EvalResponse::Error { message: msg });
+            return;
         }
     }
 
     for intent in emits {
-        while responses.push(EvalResponse::Intent(intent.clone())).is_err() {
+        while ch.responses.push(EvalResponse::Intent(intent.clone())).is_err() {
             std::thread::yield_now();
         }
     }
@@ -219,6 +322,20 @@ fn eval_stmt(
     match stmt {
         Statement::Assignment(a) => {
             let val = eval_expr(&a.value, env, ctx.emits)?;
+            // When a CE is assigned to a variable and we have a live reply channel,
+            // spawn it immediately and bind a ComponentObject instead of the dead AST snapshot.
+            let val = match (val, ctx.channels.as_mut()) {
+                (Value::ComponentExpr(ce), Some(ch)) => {
+                    match ch.call(HostCallKind::Spawn(*ce.clone())) {
+                        Some(HostValue::ComponentId(id)) => Value::ComponentObject(id),
+                        _ => {
+                            // Host returned null or channel closed — fall back to dead CE.
+                            Value::ComponentExpr(ce)
+                        }
+                    }
+                }
+                (val, _) => val,
+            };
             if a.exported {
                 Ok(StmtEffect::Export(a.name.0.clone(), val))
             } else {
@@ -591,7 +708,7 @@ fn eval_call(
                 call_env.insert(param.clone(), arg.clone());
             }
 
-            let mut func_ctx = EvalContext { emits, source_path: None };
+            let mut func_ctx = EvalContext { emits, source_path: None, channels: None };
             match eval_block_stmts(&body.statements, &mut call_env, &mut func_ctx)? {
                 StmtEffect::Return(val) => Ok(val),
                 StmtEffect::None => Ok(Value::Null),
@@ -644,7 +761,7 @@ fn eval_binop(
                     if let Some(param) = params.first() {
                         call_env.insert(param.clone(), lhs_val);
                     }
-                    let mut func_ctx = EvalContext { emits, source_path: None };
+                    let mut func_ctx = EvalContext { emits, source_path: None, channels: None };
                     match eval_block_stmts(&body.statements, &mut call_env, &mut func_ctx)? {
                         StmtEffect::Return(val) => return Ok(val),
                         _ => return Ok(Value::Null),
@@ -775,7 +892,7 @@ fn eval_as_module(source: &str, source_path: Option<&str>) -> Result<Value, Stri
     let mut local_env: Env = HashMap::new();
     let mut emits: Vec<IntentValue> = Vec::new();
     let mut named: HashMap<String, Value> = HashMap::new();
-    let mut ctx = EvalContext { emits: &mut emits, source_path };
+    let mut ctx = EvalContext { emits: &mut emits, source_path, channels: None };
 
     for stmt in &stmts {
         match eval_stmt(stmt, &mut local_env, &mut ctx)? {

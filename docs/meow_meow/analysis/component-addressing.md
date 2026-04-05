@@ -1,6 +1,6 @@
 # ₊˚ʚ Component Addressing in MMS
 
-Design analysis for runtime component navigation: subscript access (`component[n]`),
+Design analysis for runtime component navigation: selector access (`component."selector"`),
 method calls on live handles (`component.method(args)`), and how these interact with the
 component tree.
 
@@ -24,83 +24,67 @@ let box = T.position(0, 0, -1) {
 }
 
 fn handle_button_press() {
-    box[0].set_color(0, 1, 0, 1)   // reach into box's first child and mutate it
+    box."C".set_color(0, 1, 0, 1)   // navigate to C child, mutate it
 }
 ```
 
-`box[0]` navigates from `box` (the T) to its first direct child (the R).
-`.set_color(...)` calls a mutation method on that child.
+`box."C"` navigates from `box` (the T) to the first ColorComponent in its subtree.
+`.set_color(...)` calls a mutation method on that result.
 
 ---
 
-## `component[n]` — subscript child access
+## `component."selector"` — selector-based child access
 
-`component[n]` returns the Nth **direct child** of `component` as a new `ComponentObject`.
-
-Children are ordered by attachment time — the same order they appear in the source
-component body. So for:
+`.` followed by a string literal is a **selector query** scoped to the component's subtree.
+It returns the first match as a `ComponentObject`, or `null` if nothing matches.
 
 ```mms
-let root = T {
-    A {}    // root[0]
-    B {}    // root[1]
-    C {}    // root[2]
-}
+box."C"          // first ColorComponent in box's subtree
+box."R > C"      // first C that is a direct child of an R, within box
+box."#label"     // descendant named "label"
 ```
 
-`root[0]` = A, `root[1]` = B, `root[2]` = C.
+This is the preferred way to navigate to a specific component type. It is distinct from
+a regular method call (`.ident(args)`) — the parser disambiguates by whether the token
+after `.` is a string literal or an identifier.
 
-Chains work naturally:
+**This is a HostCall.** The world's live topology is needed to resolve children.
+The evaluator emits `HostCall::Query { root: id, selector }`, spin-waits for the reply,
+and binds the result as a `ComponentObject`.
 
-```mms
-root[1][0]   // first child of B
-```
-
-**What `CUBE` and other positional identifiers count for:**
-`CUBE` inside `R { CUBE; C.rgba(...) }` is a positional body item (mesh type selector),
-not a child component. It does not appear in the child list. Only child component
-expressions (`ChildComponentExpr`) are indexed:
-
-```mms
-let r = R {
-    CUBE             // positional body item — not indexed
-    C.rgba(1,1,1,1)  // child component — r[0]
-}
-```
-
-So `r[0]` = ColorComponent, not `CUBE`.
-
-The full address chain for the scene in the sketch:
-
-```
-T  (box)
-└── R  (box[0])
-    └── C  (box[0][0])
-```
-
-`box[0][0]` is the ColorComponent. `set_color` is a method on `ColorComponent` directly —
-not a convenience that searches R's children. Callers use the index chain to navigate to
-the right node, then call the method appropriate to that component's type.
-
-**Out-of-bounds:** returns `null` (or a runtime error, TBD). Scripts should not rely on
-index arithmetic without knowing the tree structure.
+**Multiple results:** use `component.all("selector")` (returns `Array` of `ComponentObject`).
+`component."selector"` is always single (first match or null).
 
 ---
 
-## AST and runtime requirements
+## `->` — dispatch arrow
 
-`component[n]` is `Expression::Index { object, index }` (already planned for Phase 5).
-The evaluator needs a new arm:
-
+`->` is the **dispatch arrow**. It is always and only:
 ```
-Value::ComponentObject(id) indexed by Value::Number(n)
-    → query world.children_of(id)[n as usize]
-    → return ComponentObject(child_id)
-    OR return Null if out of bounds
+selector_string -> handler_or_method
 ```
 
-This query (`children_of`) reads from the existing `ComponentNode.children` field — no
-new engine data structures needed.
+It runs the query against the **world** (not scoped to any ComponentObject), collects
+all matches, and dispatches the handler or method to each result — populating
+`component_ids` in a single batched intent:
+
+```mms
+"R > C" -> set_color(1, 0, 0)
+// → query_all("R > C") → [id1, id2, id3]
+// → SetColor { component_ids: [id1, id2, id3], rgba: [1,0,0,1] }
+```
+
+`->` does **not** do scope injection. To scope a dispatch to a subtree, use `.` for the
+navigation and `->` only for world-level dispatch:
+
+```mms
+// world dispatch:
+"R > C" -> set_color(1, 0, 0)
+
+// subtree navigation + method call:
+box."R > C".set_color(1, 0, 0)       // if single result expected
+box.all("R > C") -> set_color(1, 0, 0)  // if multiple results, dispatch arrow on array
+```
 
 ---
 
@@ -110,20 +94,35 @@ Phase 7 adds `Expression::MethodCall { receiver, method, args }` and a mutation 
 registry keyed on (component type, method name).
 
 ```mms
-box[0][0].set_color(0, 1, 0, 1)
+box."C".set_color(0, 1, 0, 1)
 ```
 
-Dispatch: evaluate `box[0][0]` → `ComponentObject(c_id)`. The runtime looks up the
+Dispatch: evaluate `box."C"` → `ComponentObject(c_id)`. The runtime looks up the
 component's type (ColorComponent). It looks up `set_color` in the mutation registry for
-ColorComponent. Execute — emits `UpdateColor { id: c_id, rgba: [0, 1, 0, 1] }`.
+ColorComponent. Execute — emits `SetColor { component_ids: [c_id], rgba: [0,1,0,1] }`.
 
 **Methods are called directly on the component that owns the data.** `set_color` is a
-method on `ColorComponent`, not on `RenderableComponent`. The caller is responsible for
-navigating to the right node via `[n]` indexing. There is no implicit child-search or
-"convenience" forwarding — the index chain is the addressing mechanism.
+method on `ColorComponent`. The caller is responsible for navigating to the right node
+via selector access. There is no implicit child-search or forwarding.
 
 This keeps the mutation registry simple: each component type defines only the methods
-that directly mutate its own fields. No cross-component dispatch needed.
+that directly mutate its own fields.
+
+---
+
+## Binding for reuse
+
+When the same component will be mutated multiple times, bind it first:
+
+```mms
+let c = box."C"
+c.set_color(1, 0, 0)
+c.set_opacity(0.5)
+```
+
+`c` holds a `ComponentObject(id)` — a real engine ComponentId. Each subsequent method
+call emits a direct intent with no further querying. The query happened once at the
+`let` binding.
 
 ---
 
@@ -137,7 +136,7 @@ let box = T.position(0, 0, -1) {     // (1) emits SpawnComponentTree
 }
 
 fn handle_button_press() {           // (2) closure captures box
-    box[0].set_color(0, 1, 0, 1)    //     box[0] requires box.id at call time
+    box."C".set_color(0, 1, 0, 1)   //     box."C" requires box.id at call time
 }
 
 let button = T.position(0, 0, -1) { // (3) evaluated after fn is bound
@@ -155,60 +154,20 @@ blocks until the main thread sends back the assigned `ComponentId`, then binds `
 a live `ComponentObject`. Only then does step (2) evaluate — and the closure captures a
 real ID, not an unresolved `ComponentExpression`.
 
-**Pre-Phase 6:** `box` is a `StoredValue::ComponentExpr` (AST snapshot). `box[0]` on an
-unresolved expression is a runtime error. The pattern does not work without Phase 6.
-
 **MMS evaluator ordering** is always sequential (statement by statement, top to bottom).
-Forward references are not allowed — `handle_button_press` cannot reference `box` if
-`box` hasn't been bound yet. This is the same constraint as `let` in Rust: no implicit
-hoisting.
+Forward references are not allowed. No implicit hoisting.
 
 ---
 
-## `GestureStart(fn)` — call-style handler registration
+## `component[n]` — numeric index (positional)
+
+`component[n]` returns the Nth direct child by attachment order. Kept for cases where
+position is meaningful, but selector access is preferred for type-based navigation:
 
 ```mms
-GestureStart(handle_button_press)
+root[0]      // first direct child (fragile — breaks if children reordered)
+root."T"     // first T in subtree (robust — selector-based)
 ```
-
-Inside a component body, `Ident(args)` is a `ComponentBodyItem::Call` — a builder call
-on the enclosing component. `GestureStart` is a builder method on `RenderableComponent`
-(or whichever component it appears inside) that registers the function as a gesture-start
-handler.
-
-This is **positional and call-style**, as opposed to **named property style**:
-
-```mms
-// Call-style (positional arg):
-GestureStart(handle_button_press)
-
-// Named property style:
-on_gesture_start = handle_button_press
-```
-
-Both register the same handler. The call style is more concise when the handler is already
-a named function. The property style reads more explicitly when using an inline `fn(e) {}`.
-
-**Function reference as an argument:** `handle_button_press` is an `Expression::Identifier`
-that resolves to a `Value::Function` in the env. The registry method receives a `Value`
-and extracts the closure. No new syntax required — function values are just values.
-
----
-
-## `Raycastable` — zero-arg child component
-
-```mms
-Raycastable
-```
-
-Inside a component body, an uppercase identifier with no `(` and no `{}` is parsed as a
-`ChildComponentExpr` with no constructor and no body — equivalent to `RaycastableComponent {}`.
-
-The component registry resolves `Raycastable` to `RaycastableComponent::new()`.
-
-This is a convenience that replaces `RC.enabled()` builder calls or the verbose
-`RaycastableComponent {}` child expression. The shortform `RC` and the full name
-`Raycastable` / `RaycastableComponent` should all resolve through the same registry entry.
 
 ---
 
@@ -221,24 +180,23 @@ let box = T.position(0, 0, -1) {
         C.rgba(1, 1, 1, 1)  // child: ColorComponent
     }
 }
-// box         = ComponentObject(T_id)
-// box[0]      = ComponentObject(R_id)      (first child of T)
-// box[0][0]   = ComponentObject(C_id)      (first child of R)
+// box       = ComponentObject(T_id)
+// box."R"   = ComponentObject(R_id)   (first R in subtree)
+// box."C"   = ComponentObject(C_id)   (first C in subtree)
 
 fn handle_button_press() {
-    box[0][0].set_color(0, 1, 0, 1)
+    box."C".set_color(0, 1, 0, 1)
     // evaluates:
-    //   box[0]      → ComponentObject(R_id)   (first child of T)
-    //   [0]         → ComponentObject(C_id)   (first child of R — the ColorComponent)
-    //   .set_color  → emits UpdateColor { id: C_id, rgba: [0,1,0,1] }
+    //   box."C"     → HostCall query → ComponentObject(C_id)
+    //   .set_color  → SetColor { component_ids: [C_id], rgba: [0,1,0,1] }
 }
 
 let button = T.position(0, 0, -1) {
     R {
         CUBE
         C.rgba(0, 1, 0, 1)
-        Raycastable                          // child: RaycastableComponent (zero-arg)
-        GestureStart(handle_button_press)    // builder call on R: registers handler
+        Raycastable
+        GestureStart(handle_button_press)
     }
 }
 ```
@@ -249,10 +207,8 @@ let button = T.position(0, 0, -1) {
 
 | Question | Stakes |
 |----------|--------|
-| Out-of-bounds index: `null` or runtime error? | Error recovery |
-| Are `Raycastable`, `GestureStart`, `CUBE` reserved shortforms or registry-defined? | Vocabulary management |
-| `set_color` on R: searches direct children for C, or always first child? | Method contract |
-| Can `component[n]` be assigned to a `let` binding and used as a persistent handle? | Yes — should work naturally once ComponentObject is a real Value |
-| `component[-1]` or `component[end]` for last child? | Ergonomics |
-| Is `box[0][0]` the right way to get C, or should there be a typed accessor like `box.find(Color)`? | Address vs query |
-| Method call syntax disambiguation: `foo.bar(args)` is currently ambiguous between a mutation call and a component constructor call (when `foo` is an identifier that could be a component type name) | Parser Phase 7 concern |
+| Out-of-bounds / no-match: `null` or runtime error? | Error recovery |
+| `component.all("selector")` name — `all`, `query_all`, `find_all`? | API vocabulary |
+| `component."selector"` vs `component.query("selector")` — are both supported? | Redundancy |
+| Method call syntax disambiguation: `foo.bar(args)` where `foo` could be component type | Phase 7 parser concern |
+| `component[-1]` or `component.last` for last child? | Ergonomics |

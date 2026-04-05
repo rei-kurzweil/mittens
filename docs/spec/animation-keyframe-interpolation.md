@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add a first-class way for animations to produce **continuous transitions** between values rather than only firing discrete intents at keyframe times.
+Add a first-class way for animations — and later other systems — to produce **continuous transitions** between values rather than only firing discrete intents at mutation times.
 
 Current behavior is intentionally simple:
 
@@ -10,6 +10,7 @@ Current behavior is intentionally simple:
 - `AnimationSystem` decides when a keyframe becomes due.
 - child `ActionComponent`s are fired once when that keyframe becomes active.
 - the stored payload is usually a discrete intent such as `UpdateTransform`, `SetColor`, or `SetText`.
+- those intents currently snap immediately, even when the target component would be better expressed as a transition.
 
 That model works for stepping between states, but it cannot express:
 
@@ -18,7 +19,7 @@ That model works for stepping between states, but it cannot express:
 - “fade color over 1 second”
 - “blend toward this pose until the next keyframe”
 
-This doc proposes a spec that fits the current engine architecture without forcing keyframes themselves to become heavy.
+This doc proposes a spec that fits the current engine architecture without forcing keyframes themselves to become heavy and without making transition policy live on timeline nodes.
 
 ## Current engine model
 
@@ -37,8 +38,9 @@ Important current properties:
    - They do not encode interpolation shape.
 
 2. **Actions are semantic payloads**
-   - An action is more than a raw mutation.
-   - It already represents “what should happen when this timeline point is hit”.
+  - An action is more than a raw mutation.
+  - It already represents “what should happen when this timeline point is hit”.
+  - It does not need to own interpolation policy to stay useful.
 
 3. **The signal pipeline already distinguishes intent layers**
    - Some intents are high-level/composed.
@@ -52,6 +54,7 @@ A good interpolation design should:
 
 - preserve `KeyframeComponent` as a simple timing marker
 - reuse `ActionComponent` as the semantic unit of animation work
+- make transition policy discoverable from the component whose value is changing
 - avoid exploding the general signal system with unnecessary per-frame fan-out when a local runtime loop would do
 - still use normal intents/mutations for actual property application so behavior stays consistent with non-animation paths
 - support looping/restart semantics cleanly
@@ -103,21 +106,33 @@ Why this is risky in the current architecture:
 
 Conclusion: good long-term track-based direction, but too implicit for the current ECS topology.
 
-### Option C: attach `TransitionComponent` under `ActionComponent`
+### Option C: attach `TransitionComponent` under the target property component
 
 Example topology:
+
+- entity
+  - `TransformComponent { ... }`
+    - `TransitionComponent { duration_beats: 0.5, easing: EaseInOutCubic }`
+
+or:
+
+- entity
+  - `ColorComponent { ... }`
+    - `TransitionComponent { duration_beats: 0.25, easing: EaseOutQuad }`
+
+while animation still looks like:
 
 - `AnimationComponent`
   - `KeyframeComponent { beat: 0.0 }`
     - `ActionComponent { signal: UpdateTransform { ...target value... } }`
-      - `TransitionComponent { duration_beats: 0.5, easing: EaseInOutCubic }`
 
 Why this fits the current engine well:
 
 - `KeyframeComponent` remains only about time
 - `ActionComponent` remains the semantic “thing to do”
-- interpolation metadata lives exactly on the action it modifies
-- different actions at the same keyframe can use different easing/durations
+- interpolation metadata lives on the component whose value is actually changing
+- the same transition policy works whether the mutation comes from animation, input, script, or gameplay
+- transform/color/uv/audio-parameter semantics stay with those domains instead of being duplicated per action
 - the animation system can still trigger one semantic unit at the keyframe boundary
 
 Conclusion: **recommended**.
@@ -126,33 +141,48 @@ Conclusion: **recommended**.
 
 ### Core idea
 
-A `TransitionComponent` attaches to an `ActionComponent` and changes the meaning of that action from:
+A `TransitionComponent` attaches to an interpolable property component (for example `TransformComponent`, `ColorComponent`, `UVComponent`, or later an audio-parameter component) and changes the meaning of matching mutation intents from:
 
 - **discrete fire-once mutation**
 
 to:
 
-- **start a time-bounded transition toward the action’s target value**
+- **start a time-bounded transition toward the mutation’s target value**
 
 The keyframe still only says **when** the action starts.
-The action still says **what target value / semantic effect** is desired.
-The transition says **how the action unfolds over time**.
+The action or caller still says **what target value / semantic effect** is desired.
+The transition says **how changes to that component unfold over time**.
 
 ## Proposed topology
 
 Recommended authoring shape:
 
+- entity
+  - `TransformComponent`
+    - `TransitionComponent`
+
+or:
+
+- entity
+  - `ColorComponent`
+    - `TransitionComponent`
+
+or in an animated tree:
+
 - `AnimationComponent`
   - `KeyframeComponent`
-    - `ActionComponent`
-      - `TransitionComponent`
+    - `ActionComponent { signal: UpdateTransform { ... } }`
+
+where the `UpdateTransform` target already has a child `TransitionComponent` under its `TransformComponent`.
 
 `TransitionComponent` is optional.
 
 Behavior:
 
-- no `TransitionComponent` → current behavior stays discrete
-- with `TransitionComponent` → the action starts a transition runtime instance
+- no `TransitionComponent` on the target component → current behavior stays discrete
+- with `TransitionComponent` on the target component → matching property mutations start or update a transition runtime instance
+
+This means transition policy is a property of the live component being driven, not a property of one particular action that happened to touch it.
 
 ## Proposed `TransitionComponent` fields
 
@@ -185,7 +215,7 @@ Notes:
 
 ### `capture_from_current`
 
-If `true`, when the keyframe fires the transition starts from the property’s **current live value**.
+If `true`, when a matching mutation arrives the transition starts from the property’s **current live value**.
 
 That is the right default for this engine because:
 
@@ -212,7 +242,7 @@ Add a `TransitionSystem` (or animation-owned transition runtime) that manages ac
 
 Responsibilities:
 
-- receive “start transition” requests when a keyframed action fires
+- receive transition start/replace requests when an interpolable mutation targets a component that has a `TransitionComponent`
 - snapshot the current source value
 - store end value + easing + duration + start beat/time
 - each tick, evaluate active transitions
@@ -227,9 +257,13 @@ The intended semantics are absolutely micro-step-like.
 
 Conceptually, this:
 
-- `KeyframeComponent`
-  - `ActionComponent { signal: UpdateTransform { ...target... } }`
+- entity
+  - `TransformComponent`
     - `TransitionComponent { easing: linear, duration_beats: 1.0 }`
+
+plus an incoming intent such as:
+
+- `ActionComponent { signal: UpdateTransform { ...target... } }`
 
 means:
 
@@ -243,8 +277,12 @@ So the conceptual expansion is:
 keyframe {
   action {
     intent = update_transform(target = translate(30, 0, 0))
-    transition { linear(), duration_beats = 1.0 }
   }
+}
+
+entity {
+  Transform { ... }
+    Transition { linear(), duration_beats = 1.0 }
 }
 
 => [
@@ -372,8 +410,8 @@ Recommended model:
 
 So the runtime behavior becomes:
 
-1. Keyframe fires.
-2. `AnimationSystem` emits `StartTransitionFromAction`.
+1. A mutation intent becomes due.
+2. A transition-aware stage sees that the target component/channel has a `TransitionComponent`.
 3. `TransitionSystem` snapshots:
    - start value
    - end value
@@ -465,20 +503,19 @@ That gives the ergonomic result of micro-intents without front-loading them.
 
 ## Intent shape
 
-Introduce a high-level intent such as:
+Introduce a high-level transition request such as:
 
-- `StartTransition { action_component, beat_context }`
+- `StartComponentTransition { target_component, channel, destination, beat_context, owner }`
 
-or more explicit:
-
-- `StartTransitionFromAction { action_component, animation_component, keyframe_component, beat_context }`
+or keep it as an internal runtime request rather than a public `IntentValue` variant.
 
 Recommended approach:
 
-- `AnimationSystem` emits `StartTransitionFromAction` when it sees an `ActionComponent` with a child `TransitionComponent`
-- otherwise it emits the stored action’s `IntentValue` directly, exactly as today
+- `AnimationSystem` still emits the stored action’s `IntentValue` directly, exactly as today
+- a transition-aware mutation stage upgrades eligible incoming mutations into `StartComponentTransition` requests when the target component has a child `TransitionComponent`
+- non-eligible mutations continue through the normal immediate mutation path
 
-The start-transition intent is high-level. It should be interpreted by the transition runtime, not by the low-level mutation executor.
+The start-transition request is high-level. It should be interpreted by the transition runtime, not by the low-level mutation executor.
 
 ## Runtime state shape
 
@@ -501,6 +538,7 @@ Examples of channels:
 - transform rotation
 - transform scale
 - color rgba
+- uv coordinates / uv region parameters
 - opacity
 - audio parameter value
 
@@ -536,19 +574,29 @@ Recommended v1 support:
 - `IntentValue::UpdateTransform`
 - `IntentValue::SetColor`
 - `IntentValue::SetOpacity`
+- UV component value changes (`SetUv`, `UpdateUv`, or equivalent `UVComponent` mutation intent)
 
 These are easy to define as interpolable numeric channels.
+
+For UVs, the exact low-level intent name can be decided separately from this spec; the important semantic point is that numeric UV changes are transitionable, while texture/mesh topology changes are not.
+
+### v2 planned support
+
+- audio parameter changes such as gain, cutoff, resonance, pan, wet/dry mix, and similar numeric controls
+
+These should use the same transition-runtime model as visual properties.
 
 Recommended v1 exclusions:
 
 - `SetText`
 - topology intents (`Attach`, `Detach`, `RemoveSubtree`, ...)
 - discrete state toggles
+- audio graph topology / routing updates
 - audio scheduling intents that already use beat-exact scheduling semantics
 
 Rule:
 
-- if an action’s stored intent is not interpolable, `TransitionComponent` is ignored with a warning/log, or treated as invalid authoring.
+- if an incoming mutation targets a component/channel that is not interpolable, `TransitionComponent` is ignored for that mutation with a warning/log, or treated as invalid authoring.
 
 I recommend **warning + discrete fallback disabled** only in dev logs, not panic.
 
@@ -569,15 +617,15 @@ If the transform currently has a non-unit quaternion, normalize before blending.
 Recommended playback flow:
 
 1. `AnimationSystem` computes due keyframes as today.
-2. For each child `ActionComponent`:
-   - if no `TransitionComponent` child exists: emit stored intent immediately
-   - if a `TransitionComponent` child exists: emit `StartTransitionFromAction`
-3. `TransitionSystem` resolves the action payload into an interpolable runtime record.
-4. Each frame, `TransitionSystem` evaluates progress $t \in [0,1]$.
-5. It applies easing $e = f(t)$.
-6. It computes the interpolated value.
-7. It emits or applies the standard low-level mutation (`UpdateTransform`, `SetColor`, etc.).
-8. At $t = 1$, it applies the exact destination value and removes the runtime record.
+2. For each child `ActionComponent`, emit the stored intent exactly as today.
+3. A transition-aware mutation stage checks whether the target component for that intent has a child `TransitionComponent` and whether the addressed channel is interpolable.
+4. If not, apply the mutation immediately.
+5. If yes, `TransitionSystem` resolves the payload into an interpolable runtime record.
+6. Each frame, `TransitionSystem` evaluates progress $t \in [0,1]$.
+7. It applies easing $e = f(t)$.
+8. It computes the interpolated value.
+9. It emits or applies the standard low-level mutation (`UpdateTransform`, `SetColor`, `SetOpacity`, UV update, etc.).
+10. At $t = 1$, it applies the exact destination value and removes the runtime record.
 
 ## Emit intents each frame vs direct mutation
 
@@ -642,7 +690,7 @@ When an animation restarts or changes state:
 
 Recommended ownership rule:
 
-- each active transition record stores its source `animation_id` and `action_id`
+- each active transition record stores its source owner (`animation_id`, script/system source, or equivalent) plus target component/channel
 - restarting an animation clears transitions owned by that animation
 
 ## Interaction with other systems
@@ -674,25 +722,37 @@ At beat 4.0, the transform snaps.
 
 ### Interpolated keyframe
 
+- entity
+  - `TransformComponent { ...current pose... }`
+    - `TransitionComponent { duration_beats: 0.5, easing: ease_in_out_cubic }`
 - `KeyframeComponent { beat: 4.0 }`
   - `ActionComponent { signal: UpdateTransform { ...target pose... } }`
-    - `TransitionComponent { duration_beats: 0.5, easing: ease_in_out_cubic }`
 
 At beat 4.0, the system captures the current transform and animates toward the target over 0.5 beats.
 
-## Why `TransitionComponent` belongs under `ActionComponent`
+### Interpolated color change
+
+- entity
+  - `ColorComponent { rgba: [1, 1, 1, 1] }`
+    - `TransitionComponent { duration_beats: 0.25, easing: ease_out_quad }`
+- some system or animation emits `SetColor { rgba: [1, 0, 0, 1] }`
+
+The color change transitions because the `ColorComponent` carries the transition policy.
+
+## Why `TransitionComponent` belongs under the target component
 
 This is the main design choice.
 
 Reasons:
 
 - an action already represents semantic intent, not just raw data
-- interpolation belongs to how that intent is executed
-- different actions under the same keyframe can transition differently
-- it avoids requiring keyframe-to-keyframe pairing logic
+- interpolation belongs to the component/channel whose value is being updated
+- the same component can be driven by animation, input, MMS, editor gizmos, or gameplay and should behave consistently across those callers
+- it avoids duplicating transition metadata onto every action that wants the same behavior
 - it keeps the timeline node simple and generic
+- it creates a clean path for non-animation transitions later, especially audio parameters
 
-So yes: the recommended design is that `TransitionComponent` attaches to `ActionComponent`, not to `KeyframeComponent`.
+So yes: the recommended design is that `TransitionComponent` attaches to the target component (such as `TransformComponent`, `ColorComponent`, `UVComponent`, or an audio-parameter component), not to `KeyframeComponent` and not to `ActionComponent`.
 
 ## v1 implementation plan
 
@@ -701,15 +761,18 @@ So yes: the recommended design is that `TransitionComponent` attaches to `Action
    - `duration_beats`
    - `easing`
    - `capture_from_current`
-2. Add a high-level start-transition intent.
-3. Teach `AnimationSystem` to emit that intent when an action has a transition child.
-4. Add `TransitionSystem` runtime storage for active transitions.
-5. Support interpolating:
+2. Define how `TransitionComponent` is attached to interpolable property components.
+3. Add a high-level start-transition request or equivalent internal runtime hook.
+4. Teach the mutation path to upgrade eligible incoming mutations when the target component has a transition child.
+5. Add `TransitionSystem` runtime storage for active transitions.
+6. Support interpolating:
    - `UpdateTransform`
    - `SetColor`
    - `SetOpacity`
-6. Apply results through the normal intent path each frame.
-7. Add dev logging for unsupported transitioned action types.
+  - UV updates
+7. Apply results through the normal intent path each frame.
+8. Add dev logging for unsupported transitioned action types.
+9. Add v2 support for numeric audio parameter transitions, excluding graph/topology updates.
 
 ## Non-goals for v1
 
@@ -717,6 +780,7 @@ So yes: the recommended design is that `TransitionComponent` attaches to `Action
 - arbitrary custom curves
 - topology interpolation
 - text interpolation semantics
+- audio graph topology interpolation
 - full animation-layer blending
 - backward-compatibility aliases or multiple schema shapes
 
@@ -726,6 +790,10 @@ So yes: the recommended design is that `TransitionComponent` attaches to `Action
   - I prefer a standalone runtime once interpolation exists outside animation too.
 - Should unsupported transitioned actions be ignored, logged, or hard-error?
   - I prefer logged and skipped.
+- Should `TransformComponent` transitions apply to all transform channels by default, or should we add an explicit channel mask in v1?
+  - I prefer "all transform channels" by default, with a future channel mask if needed.
+- Should UV transitions target full per-vertex UV arrays, region-style UV parameters, or both?
+  - Prefer starting with the narrowest UV mutation shape the engine already wants for authored content.
 - Should duration allow `0.0`?
   - Yes; treat as immediate completion.
 - Should we add explicit `from` values later?
@@ -736,9 +804,10 @@ So yes: the recommended design is that `TransitionComponent` attaches to `Action
 Recommended path:
 
 - keep `KeyframeComponent` simple
-- attach `TransitionComponent` to `ActionComponent`
-- start transitions at keyframe fire time
+- attach `TransitionComponent` to the target component whose property changes should be smoothed
+- let keyframes and other callers emit normal mutation intents
+- start transitions when those mutations hit transition-enabled target components
 - store compact runtime transition records
 - apply normal low-level intents per frame while active
 
-That matches the current engine shape better than making keyframes smart or trying to infer implicit tracks from neighboring actions.
+That matches the current engine shape better than making keyframes smart, duplicating transition metadata onto actions, or trying to infer implicit tracks from neighboring actions.

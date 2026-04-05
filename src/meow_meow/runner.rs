@@ -1,7 +1,9 @@
 use std::time::{Duration, Instant};
 
-use crate::engine::ecs::IntentValue;
-use crate::meow_meow::evaluator::{EvalRequest, EvalResponse, MeowMeowEvaluator};
+use crate::engine::ecs::{IntentValue, SignalEmitter, World};
+use crate::meow_meow::evaluator::{
+    EvalRequest, EvalResponse, HostCallKind, HostValue, MeowMeowEvaluator,
+};
 
 /// The result of evaluating an MMS script: collected intents and any errors.
 #[derive(Debug, Default)]
@@ -46,6 +48,69 @@ impl MeowMeowRunner {
         }
     }
 
+    /// Evaluate `source` with live world access.
+    ///
+    /// When the evaluator emits a `HostCall::Spawn`, this method immediately spawns
+    /// the component tree into `world` (using `emit` for intent dispatch) and sends
+    /// back the root `ComponentId`. This is the live-reply-channel path — `let x = T {}`
+    /// binds a `ComponentObject(id)` instead of a dead `ComponentExpr` snapshot.
+    pub fn eval_with_world(
+        source: &str,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+    ) -> EvalOutput {
+        let mut handle = MeowMeowEvaluator::spawn(64);
+        handle
+            .requests
+            .push(EvalRequest::EvalScript {
+                source: source.to_string(),
+                source_path: None,
+            })
+            .expect("MeowMeowRunner: push EvalScript");
+        handle
+            .requests
+            .push(EvalRequest::Shutdown)
+            .expect("MeowMeowRunner: push Shutdown");
+
+        let mut output = EvalOutput::default();
+        let deadline = Instant::now() + Duration::from_secs(5);
+
+        loop {
+            match handle.responses.pop() {
+                Ok(EvalResponse::Intent(iv)) => output.intents.push(iv),
+                Ok(EvalResponse::Error { message }) => output.errors.push(message),
+                Ok(EvalResponse::ParsedOk { .. }) => {}
+                Ok(EvalResponse::ShutdownAck) => break,
+                Ok(EvalResponse::HostCall { id, kind }) => {
+                    let reply = match kind {
+                        HostCallKind::Spawn(ce) => {
+                            match crate::meow_meow::component_registry::spawn_tree(
+                                &ce, None, world, emit,
+                            ) {
+                                Ok(component_id) => HostValue::ComponentId(component_id),
+                                Err(e) => {
+                                    output.errors.push(format!("HostCall::Spawn error: {e}"));
+                                    HostValue::Null
+                                }
+                            }
+                        }
+                    };
+                    let _ = handle.requests.push(EvalRequest::HostCallResult { id, value: reply });
+                }
+                Err(rtrb::PopError::Empty) => {
+                    if Instant::now() > deadline {
+                        output.errors.push("MeowMeowRunner: timed out waiting for evaluator".into());
+                        break;
+                    }
+                    std::thread::yield_now();
+                }
+            }
+        }
+
+        handle.shutdown_and_join();
+        output
+    }
+
     fn eval_impl(source: &str, source_path: Option<&str>, timeout: Duration) -> EvalOutput {
         let mut handle = MeowMeowEvaluator::spawn(64);
 
@@ -70,6 +135,14 @@ impl MeowMeowRunner {
                 Ok(EvalResponse::Error { message }) => output.errors.push(message),
                 Ok(EvalResponse::ParsedOk { .. }) => {}
                 Ok(EvalResponse::ShutdownAck) => break,
+                // Fire-and-forget runner has no world — reply null so the evaluator
+                // falls back to ComponentExpr and continues without blocking.
+                Ok(EvalResponse::HostCall { id, .. }) => {
+                    let _ = handle.requests.push(EvalRequest::HostCallResult {
+                        id,
+                        value: HostValue::Null,
+                    });
+                }
                 Err(rtrb::PopError::Empty) => {
                     if Instant::now() > deadline {
                         output.errors.push("MeowMeowRunner: timed out waiting for evaluator".into());

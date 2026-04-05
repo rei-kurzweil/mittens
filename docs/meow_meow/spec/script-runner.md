@@ -21,10 +21,16 @@ pub struct MeowMeowRunner;
 impl MeowMeowRunner {
     /// Evaluate `source`, collecting all emitted intents and errors.
     /// Times out after 2 seconds if the evaluator stalls.
+    /// No world access — `let x = CE` binds a ComponentExpr snapshot, not a live id.
     pub fn eval(source: &str) -> EvalOutput
 
     /// Same, with a caller-provided timeout.
     pub fn eval_with_timeout(source: &str, timeout: Duration) -> EvalOutput
+
+    /// Evaluate with live world access (reply channel open).
+    /// `let x = CE` performs a HostCall round-trip and binds a ComponentObject(id).
+    /// See docs/meow_meow/spec/eval-with-world.md for the full model.
+    pub fn eval_with_world(source: &str, world: &mut World, emit: &mut dyn SignalEmitter) -> EvalOutput
 }
 ```
 

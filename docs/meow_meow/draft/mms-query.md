@@ -75,27 +75,21 @@ queue.
 
 ---
 
-## `->` query operator
+## `->` — dispatch arrow
 
-The callback form avoids the closing-paren problem but the opening is still heavy:
-`query("#hero", fn(t) {` on one side, `})` on the other. The `->` operator moves the
-handler to a trailing position and makes query intent unambiguous:
+`->` is the **dispatch arrow**. Its LHS is always a string selector; its RHS is always
+a handler or method shorthand. It is a world query + dispatch in one expression.
 
 ```mms
-query("#hero", fn(t) {          // explicit callback form
-    if !t { return }
-    t.set_position(0, 1, 0)
-})
-
-"#hero" -> fn(t) {             // -> query operator: identical semantics
+"#hero" -> fn(t) {             // dispatch arrow: query world for #hero, call handler
     if !t { return }
     t.set_position(0, 1, 0)
 }
 ```
 
-`->` is the dedicated **query/dispatch operator**. Its presence always signals query
-intent — no string-literal detection needed. The LHS can be a string selector or a
-`ComponentObject` (for subtree queries; see "Scoped queries" below).
+`->` **never** does scope injection. It always searches the full live ECS. To scope a
+query to a subtree, use `component."selector"` (dot-selector access) for navigation,
+not the dispatch arrow.
 
 `|>` is the separate **forward pipe** operator: `expr |> f` means `f(expr)`. It has no
 query meaning.
@@ -103,7 +97,7 @@ query meaning.
 ### Implementation: AstTransform, not parser or evaluator
 
 The parser produces `BinOp(Query, lhs, rhs)` from `->` unconditionally. The rewrite from
-query operator into `query()`/`query_all()` calls is performed by **`QueryDesugarTransform`**,
+dispatch arrow into `query()`/`query_all()` calls is performed by **`QueryDesugarTransform`**,
 an AST pass that runs between parsing and evaluation (see
 [script-runner.md](../spec/script-runner.md)).
 
@@ -115,79 +109,51 @@ This means:
 ### General forms
 
 ```
-// world query
-"selector" -> fn(result) { ... }
-"selector" -> method_name(args)          // method shorthand — see below
-
-// scoped query (ComponentObject LHS)
-component_obj -> "selector" -> fn(result) { ... }
-component_obj -> "selector" -> method_name(args)
+"selector" -> fn(result) { ... }     // world dispatch with full handler
+"selector" -> method_name(args)      // world dispatch with method shorthand
 ```
 
-The LHS of `->` can be:
-- A **string literal** — world query (searches the entire live ECS)
-- A **`ComponentObject`** — subtree query (searches the component's descendants); desugars
-  to `component_obj.query("selector", handler)`
+The LHS of `->` is always a string selector. A `ComponentObject` on the LHS is a type
+error — use `component."selector"` for subtree navigation instead.
 
 Desugaring:
 
 ```mms
 "selector" -> handler
   ↓
-query("selector", handler)
-
-hero -> ".T" -> handler          // hero is a ComponentObject
-  ↓
-hero.query_all(".T", handler)
+query_all("selector", handler)
 ```
-
-For `query_all`, the `->` form calls the handler once per result — whether single or
-multiple is inferred from the selector (see "Single vs multiple" below).
 
 ### Method shorthand
 
-When the rhs of `->` is a bare method call (not a full `fn(...) { }`), the receiver is
-the implicit query result:
+When the RHS of `->` is a bare method call (not a full `fn(...) { }`), the receiver is
+the implicit query result. The query runs against the world and the intent is batched
+across all matches:
 
 ```mms
 "#hero" -> set_position(0, 1, 0)
 // desugars to:
-query("#hero", fn(t) {
-    if !t { return }
-    t.set_position(0, 1, 0)
-})
+query_all("#hero", fn(t) { t.set_position(0, 1, 0) })
+// emits: SetPosition { component_ids: [hero_id], position: [0,1,0] }
 
 ".Enemy T" -> set_position(0, 0, 0)
 // desugars to:
-query_all(".Enemy T", fn(t) {
-    t.set_position(0, 0, 0)
-})
+query_all(".Enemy T", fn(t) { t.set_position(0, 0, 0) })
+// emits: SetPosition { component_ids: [e1, e2, ...], position: [0,0,0] }
 ```
 
-### Scoped queries with `ComponentObject` LHS
+### Subtree dispatch (via dot-selector + dispatch arrow on array)
 
-When the LHS of `->` is a `ComponentObject` (not a string), the query is scoped to that
-component's subtree:
+To dispatch to matches within a subtree, navigate first with `component."selector"` or
+`component.all("selector")`, then use the dispatch arrow on the resulting array:
 
 ```mms
-// find all Ts in hero's subtree and set their position:
-hero -> ".T" -> set_position(5, 0, 0)
-// desugars to:
-hero.query_all(".T", fn(t) { t.set_position(5, 0, 0) })
+// single result — just call the method directly:
+box."C".set_color(1, 0, 0)
 
-// or with a full callback:
-hero -> ".T" -> fn(t) {
-    t.set_position(5, 0, 0)
-}
-// desugars to:
-hero.query_all(".T", fn(t) {
-    t.set_position(5, 0, 0)
-})
+// multiple results — dispatch arrow on the array:
+box.all("R > C") -> set_color(1, 0, 0)
 ```
-
-**Note:** `hero -> ".T"` where `hero` is a `ComponentObject` is a subtree query, not a
-world query. The `->` operator checks whether its LHS is a string (world query) or a
-`ComponentObject` (subtree query) at the `QueryDesugarTransform` stage.
 
 ---
 
