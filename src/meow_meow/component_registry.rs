@@ -414,6 +414,8 @@ fn apply_body_items(
             ComponentBodyItem::Positional(expr) => {
                 apply_positional(world, id, expr)?;
             }
+            // If/For are expanded by the evaluator before reaching the registry.
+            ComponentBodyItem::If { .. } | ComponentBodyItem::For { .. } => {}
         }
     }
     Ok(())
@@ -515,6 +517,12 @@ fn apply_call(
             }
             "half_res" => *bloom = bloom.clone().with_half_res(arg(args, 0)?.as_bool()?),
             _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(inp) = world.get_component_by_id_as_mut::<InputComponent>(id) {
+        if method == "speed" {
+            inp.speed = arg(args, 0)?.as_f32()?;
         }
         return Ok(());
     }

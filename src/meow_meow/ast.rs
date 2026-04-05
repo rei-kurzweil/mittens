@@ -80,6 +80,20 @@ pub enum ComponentBodyItem {
     Child(ComponentExpression),
     /// A bare literal, identifier, or array — positional argument.
     Positional(Expression),
+    /// `if cond { body } [else { body }]` inside a component body.
+    /// Expands to the then-items or else-items depending on the condition.
+    If {
+        condition: Expression,
+        then_body: Vec<ComponentBodyItem>,
+        else_body: Option<Vec<ComponentBodyItem>>,
+    },
+    /// `for binding in iterable { body }` inside a component body.
+    /// Expands to the body items once per element in the iterable.
+    For {
+        binding: Ident,
+        iterable: Expression,
+        body: Vec<ComponentBodyItem>,
+    },
 }
 
 /// A component expression: the declarative tree-building form.

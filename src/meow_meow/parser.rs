@@ -423,6 +423,30 @@ impl MeowMeowParser {
             }
 
             match self.peek_kind() {
+                TokenKind::If => {
+                    self.consume(&TokenKind::If)?;
+                    let condition = self.parse_expression()?;
+                    self.consume(&TokenKind::LBrace)?;
+                    let then_body = self.parse_component_body()?;
+                    let else_body = if self.try_consume(&TokenKind::Else) {
+                        self.consume(&TokenKind::LBrace)?;
+                        Some(self.parse_component_body()?)
+                    } else {
+                        None
+                    };
+                    body.push(ComponentBodyItem::If { condition, then_body, else_body });
+                    continue;
+                }
+                TokenKind::For => {
+                    self.consume(&TokenKind::For)?;
+                    let binding = self.expect_ident()?;
+                    self.consume(&TokenKind::In)?;
+                    let iterable = self.parse_expression()?;
+                    self.consume(&TokenKind::LBrace)?;
+                    let for_body = self.parse_component_body()?;
+                    body.push(ComponentBodyItem::For { binding, iterable, body: for_body });
+                    continue;
+                }
                 TokenKind::Ident(_) => {
                     let save = self.pos;
                     let leading = self.expect_ident()?;

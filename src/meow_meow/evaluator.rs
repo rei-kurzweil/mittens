@@ -433,33 +433,62 @@ fn subst_ce(ce: &ComponentExpression, env: &Env, emits: &mut Vec<IntentValue>) -
             method: c.method.clone(),
             args: c.args.iter().map(|a| eval_to_literal(a, env, emits)).collect(),
         }),
-        body: ce.body.iter().map(|item| subst_body_item(item, env, emits)).collect(),
+        body: ce.body.iter().flat_map(|item| subst_body_items(item, env, emits)).collect(),
     }
 }
 
-fn subst_body_item(item: &ComponentBodyItem, env: &Env, emits: &mut Vec<IntentValue>) -> ComponentBodyItem {
+/// Expand a single `ComponentBodyItem` into zero or more concrete items.
+/// `For` expands to N copies, `If` expands to 0 or N, everything else is 1:1.
+fn subst_body_items(item: &ComponentBodyItem, env: &Env, emits: &mut Vec<IntentValue>) -> Vec<ComponentBodyItem> {
     match item {
-        ComponentBodyItem::NamedAssignment { name, value } => ComponentBodyItem::NamedAssignment {
+        ComponentBodyItem::NamedAssignment { name, value } => vec![ComponentBodyItem::NamedAssignment {
             name: name.clone(),
             value: eval_to_literal(value, env, emits),
-        },
-        ComponentBodyItem::Call(call) => ComponentBodyItem::Call(CallExpression {
+        }],
+        ComponentBodyItem::Call(call) => vec![ComponentBodyItem::Call(CallExpression {
             callee: call.callee.clone(),
             args: call.args.iter().map(|a| eval_to_literal(a, env, emits)).collect(),
-        }),
+        })],
         ComponentBodyItem::Child(child_ce) => {
-            ComponentBodyItem::Child(subst_ce(child_ce, env, emits))
+            vec![ComponentBodyItem::Child(subst_ce(child_ce, env, emits))]
         }
         ComponentBodyItem::Positional(expr) => {
             // If the expression evaluates to a ComponentExpr (e.g. a variable holding an
             // imported CE), promote it to Child so it goes through the real child-spawn
             // path in the registry. Leaving it as Positional would cause it to reach
             // apply_positional which doesn't know how to spawn component subtrees.
-            match eval_expr(expr, env, emits) {
+            let item = match eval_expr(expr, env, emits) {
                 Ok(Value::ComponentExpr(ce)) => ComponentBodyItem::Child(*ce),
                 Ok(val) => ComponentBodyItem::Positional(value_to_expr(val)),
                 Err(_) => ComponentBodyItem::Positional(expr.clone()),
+            };
+            vec![item]
+        }
+        ComponentBodyItem::If { condition, then_body, else_body } => {
+            let branch = match eval_expr(condition, env, emits) {
+                Ok(v) if is_truthy(&v) => then_body,
+                Ok(_) => match else_body {
+                    Some(b) => b,
+                    None => return vec![],
+                },
+                Err(_) => return vec![],
+            };
+            branch.iter().flat_map(|i| subst_body_items(i, env, emits)).collect()
+        }
+        ComponentBodyItem::For { binding, iterable, body } => {
+            let items = match eval_expr(iterable, env, emits) {
+                Ok(Value::Array(a)) => a,
+                _ => return vec![],
+            };
+            let mut out = Vec::new();
+            for val in items {
+                let mut loop_env = env.clone();
+                loop_env.insert(binding.0.clone(), val);
+                for i in body {
+                    out.extend(subst_body_items(i, &loop_env, emits));
+                }
             }
+            out
         }
     }
 }

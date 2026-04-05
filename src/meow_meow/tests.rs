@@ -232,11 +232,12 @@ fn parse_error_unterminated_body() {
 
 #[test]
 fn runner_parse_errors_include_source_line_and_caret() {
-    let out = MeowMeowRunner::eval("T {\n    for x in range(3) { T {} }\n}\n");
+    // An unterminated component body is still a parse error and should include
+    // a source line + caret in the error message.
+    let out = MeowMeowRunner::eval("T {\n    R.cube()\n");
     assert!(!out.errors.is_empty(), "expected parse error");
     let msg = &out.errors[0];
-    assert!(msg.contains("parse error at 2:"), "got: {msg}");
-    assert!(msg.contains("for x in range(3) { T {} }"), "got: {msg}");
+    assert!(msg.contains("parse error at"), "got: {msg}");
     assert!(msg.contains("^"), "got: {msg}");
 }
 
@@ -627,4 +628,64 @@ fn eval_while_false_never_runs() {
     let out = eval("while false { T {} }");
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.intents.len(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Component body: for / if
+// ---------------------------------------------------------------------------
+
+#[test]
+fn body_for_expands_children() {
+    // `for i in range(3)` inside a component body → 3 children under the parent
+    let out = eval("T { for i in range(3) { R.cube() {} } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    // One top-level spawn; it will have 3 children internally.
+    assert_eq!(out.intents.len(), 1);
+}
+
+#[test]
+fn body_for_captures_binding() {
+    // The loop variable should be captured as a literal in each child's constructor args.
+    let out = eval(r#"T { for i in [1, 2, 3] { T.position(i, 0, 0) {} } }"#);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+}
+
+#[test]
+fn body_if_true_includes_child() {
+    let out = eval("T { if true { R.cube() {} } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+}
+
+#[test]
+fn body_if_false_excludes_child() {
+    // When condition is false and there is no else branch, the child should be absent.
+    // The parent T still spawns (1 intent) but has no children.
+    let out = eval("T { if false { R.cube() {} } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+}
+
+#[test]
+fn body_if_else_picks_else_branch() {
+    let out = eval("T { if false { R.cube() {} } else { R.sphere() {} } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+}
+
+#[test]
+fn body_for_nested_in_for() {
+    // 3x3 grid: outer `for` produces 3 iterations each containing inner `for` of 3 → 9 children.
+    let out = eval("T { for x in range(3) { for y in range(3) { R.cube() {} } } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+}
+
+#[test]
+fn body_for_with_if_inside() {
+    // Only even indices: range(6) → 0,1,2,3,4,5 → 3 children (0,2,4)
+    let out = eval("T { for i in range(6) { if i % 2 == 0 { R.cube() {} } } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
 }

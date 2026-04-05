@@ -20,52 +20,65 @@ BG {
 I {
     speed(1.0)
     InputTransformMode.forward_z() {
-        fps_rotation()
         roll_axis_y()
+        fps_rotation()
     }
     T.position(0.0, 1.2, 3.5) {
-        C3D {}
-        Pointer {}
+        C3D {
+            Pointer {}
+        }
     }
 }
 
-// scrollable view:
-// T.position(0, 0, -5.0) {
-//     Scrolling.new(1.0, 20) {
-//         for y in range(100) {
-//             T.position(0, y, 0.0).scale(0.9, 0.9, 0.9) {
-//                 Text {
-//                     "item "+y
-//                     C.rgba(0.6, 0.6, 0.6, 1.0)
-//                 }
-//             }
-//         }
-//     }
-// }
+T.position(0, 0, -5.0) {
+    Scrolling.new(1.0, 20) {
+        for y in range(100) {
+            T.position(0, y, 0.0).scale(0.9, 0.9, 0.9) {
+                Text {
+                    "item "+y
+                    C.rgba(0.6, 0.6, 0.6, 1.0)
+                }
+            }
+        }
+    }
+}
 
 // lighting
 AL {
-    C.rgba(0.04, 0.04, 0.06, 1.0)
+    C.rgba(0.14, 0.14, 0.14, 1.0)
 }
 T.position(-1, -1, 0) {
     DL {
-        intensity(1.1)
-        C.rgba(1.0, 0.92, 0.78, 1.0)
+        intensity(0.9)
+        C.rgba(1.0, 0.75, 0.75, 1.0)
+    }
+}
+T.position(1,1,0) {
+    DL {
+        intensity(0.9)
+        C.rgba(0.75, 0.75, 1.0, 1.0)
     }
 }
 
 // perimeter cubes
-T.position(0.0, 0.0, -5.0) {
+T.position(0.0, -5.0, -5.0) {
     for x in range(-5, 6) {
         for y in range(-5, 6) {
-            if x % 2 == 0 && y % 2 == 0 {
-                T.position(x, y, 0.0).scale(0.9, 0.9, 0.9) {
+
+            T.position(x, y, 0.0).scale(0.9, 0.9, 0.9) {
+                if x % 2 == 0 && y % 2 == 0 {
                     R.cube() {
-                        C.rgba(1.0, 0.6, 0.6, 1.0)
+                        C.rgba(1.0, x / 5.0, y / 5.0, 1.0)
                         Emissive.on()
+                    }
+                    
+                } else {
+                    R.cube() {
+                        C.rgba(x / 5.0, 1.0, y / 5.0, 1.0)
                     }
                 }
             }
+
         }
     }
 }
