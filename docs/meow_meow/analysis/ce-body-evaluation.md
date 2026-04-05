@@ -131,6 +131,82 @@ T {
 
 ---
 
+## Mapping: ComponentBodyItem → BlockStatement
+
+Every current `ComponentBodyItem` variant needs a block-statement equivalent. Four map
+cleanly; two are open questions.
+
+### `If` / `For` — direct mapping
+
+```
+ComponentBodyItem::If  { ... }  →  Statement::If(...)
+ComponentBodyItem::For { ... }  →  Statement::ForIn { ... }
+```
+
+These are identical. The block statement versions already exist in the AST and evaluator.
+No new mechanism needed.
+
+### `Child(CE)` — CE emission redirect
+
+```
+ComponentBodyItem::Child(ce)  →  Statement::Expression(Expression::Component(ce))
+```
+
+CE expression statements already evaluate and emit. The only change is what *emit*
+means inside a CE body: instead of `ctx.emits` (the top-level intent queue), emissions
+go to the current CE builder's children list. This is the `ctx.emits` redirect
+described above — one context change, not a new AST node.
+
+### `Call(method, args)` — builder methods in env
+
+```
+ComponentBodyItem::Call(CallExpression { callee, args })
+  →  Statement::Expression(Expression::Call(CallExpression { callee, args }))
+```
+
+A bare `scale(0.9, 0.9, 0.9)` call. In the block, it resolves as a normal function
+call. Builder methods for the current component type are pre-injected into the block's
+env. Normal env lookup priority: user-defined `scale` shadows the builder's version.
+
+### `NamedAssignment { name, value }` — open question
+
+`intensity = 0.9` in a CE body means "set the intensity property on this component."
+In a block statement, `x = expr` (no `let`) is `Statement::Reassign` — it requires `x`
+to already be bound in scope, otherwise it's an error.
+
+Three options:
+
+**Option A: Drop it.** Named assignments become method calls: `intensity(0.9)` instead
+of `intensity = 0.9`. The `=` form is v1 sugar that doesn't survive the transition to
+full block evaluation. Simple, no ambiguity.
+
+**Option B: Fallthrough.** If `name` is not in scope as a variable, `name = expr` is
+treated as a builder call `name(expr)`. Implicit, fragile — whether `x = 5` assigns a
+variable or sets a property depends on what's in scope at runtime.
+
+**Option C: Explicit `self`.** The component being built is available in the body as
+`self`. Property assignment is `self.intensity = 0.9`. Explicit, unambiguous, consistent
+with how method calls work on live ComponentObjects. Changes the CE body syntax.
+
+Current lean: **Option A** — named assignments aren't widely used and the method-call
+form is already supported. Deferring to the open questions section.
+
+### `Positional(expr)` — expression capture rule
+
+`CUBE`, `"hello text"`, `[1, 0, 0, 1]` — bare expressions whose evaluated value is the
+argument, not a side effect. In a regular block, expression statements are evaluated and
+their values discarded. In a CE body block, these need to be captured.
+
+Proposed rule: in a CE body block, an expression statement whose result is
+`Value::Identifier | Value::String | Value::Number | Value::Array` is captured as a
+positional arg by the CE builder. `Value::ComponentExpr` / `Value::ComponentObject`
+goes to children (as above). `Value::Null` and `Value::Function` are discarded.
+
+This rule is applied at the CE body's expression-statement handler, not in `eval_expr`
+itself. Regular blocks outside CE context are unaffected.
+
+---
+
 ## Ordering: lexical source order, unified
 
 In the `BlockStatement` model, builder calls, child emissions, and intermediate MMS
@@ -200,7 +276,9 @@ everywhere else, handled by the same `eval_if` / `ForIn` arms in `eval_stmt`.
 
 | Question | Stakes |
 |----------|--------|
-| `ctx.emits` redirect: swap the pointer or add a "current CE builder" field to `EvalContext`? | API shape; builder field is more explicit |
-| Can a CE body `return`? | Probably not — no value to return to; treat as an error or ignore |
-| Builder method registry: static per component type, or looked up at eval time? | Needs to be eval-time accessible (before spawn); static list is fine |
+| `NamedAssignment`: drop in favour of method calls, fallthrough, or explicit `self`? | Syntax compatibility; Option A (drop) is simplest |
+| `Positional` capture rule: capture Identifier/String/Number/Array from expr stmts, or require explicit syntax? | `CUBE`, `"text"` as positionals; implicit capture is convenient but magic |
+| `ctx.emits` redirect: swap the pointer or add a `ce_builder` field to `EvalContext`? | API shape; builder field is more explicit and avoids type erasure |
+| Can a CE body `return`? | Probably not — no value to return to; treat as an error or no-op |
+| Builder method registry: static per component type, or dynamic? | Needs to be accessible at eval time (before spawn); static list is sufficient |
 | Can `emit()` inside a CE body escape to the outer scope? | Escape hatch for "emit sibling" patterns — probably not in v1 |
