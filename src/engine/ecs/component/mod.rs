@@ -173,7 +173,15 @@ pub type LightComponent = point_light::PointLightComponent;
 
 pub struct ComponentNode {
     pub guid: uuid::Uuid,
+    /// Engine-side type identifier from `Component::name()` (e.g. `"transform"`, `"text"`).
+    /// Set at construction, never changes.
+    pub component_type: String,
+    /// User-assigned label for this node (e.g. `name = "catgirl"` in MMS).
+    /// Defaults to empty. Used for `#label` query selectors.
     pub name: String,
+    /// CSS-style class membership (e.g. `class = "avatar"` in MMS).
+    /// Used for `.class` query selectors.
+    pub classes: Vec<String>,
     pub component: Box<dyn Component>,
     pub parent: Option<crate::engine::ecs::ComponentId>,
     pub children: Vec<crate::engine::ecs::ComponentId>,
@@ -182,10 +190,12 @@ pub struct ComponentNode {
 
 impl ComponentNode {
     pub fn new(component: Box<dyn Component>) -> Self {
-        let name = component.name().to_string();
+        let component_type = component.name().to_string();
         Self {
             guid: uuid::Uuid::new_v4(),
-            name,
+            component_type,
+            name: String::new(),
+            classes: Vec::new(),
             component,
             parent: None,
             children: Vec::new(),
@@ -193,10 +203,15 @@ impl ComponentNode {
         }
     }
 
+    /// Create a node with a user-assigned label (`name`).
+    /// `component_type` is still derived from `component.name()`.
     pub fn new_named(name: impl Into<String>, component: Box<dyn Component>) -> Self {
+        let component_type = component.name().to_string();
         Self {
             guid: uuid::Uuid::new_v4(),
+            component_type,
             name: name.into(),
+            classes: Vec::new(),
             component,
             parent: None,
             children: Vec::new(),
@@ -209,9 +224,12 @@ impl ComponentNode {
         name: impl Into<String>,
         component: Box<dyn Component>,
     ) -> Self {
+        let component_type = component.name().to_string();
         Self {
             guid,
+            component_type,
             name: name.into(),
+            classes: Vec::new(),
             component,
             parent: None,
             children: Vec::new(),

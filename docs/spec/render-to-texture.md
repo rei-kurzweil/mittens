@@ -25,6 +25,10 @@ This spec does **not** cover:
 - monitors / CCTV
 - a first-class `RenderImageHandle` API
 
+However, this Layer A bridge is the intended sampling/publication foundation those future systems
+should build on. What is missing for mirrors/portals is capture/view orchestration, not the basic
+ability for scene geometry to sample a runtime-produced image.
+
 ## 2. Current implementation summary
 
 The current runtime path is:
@@ -155,6 +159,12 @@ The following remain draft-level concepts, not current engine APIs:
 - a dedicated `RenderToTextureSystem`
 - contextual reference-sharing where one authored `Texture {}` expression has live identity across multiple authored use sites
 - explicit capture cameras / mirrors / portals / monitors
+
+For those future capture-oriented features, the likely intended reuse is:
+
+- capture system produces an offscreen image
+- renderer publishes that image behind a stable runtime `TextureHandle`
+- scene-facing geometry samples it through `TextureComponent.render_image` / `Texture.render_image("...")`
 
 ## 8. Current design summary
 

@@ -325,7 +325,11 @@ But it still creates the reusable seam we will need later:
 
 - renderer-owned images become sampleable texture sources
 - ordinary renderables can consume them
-- the registry / handle system is already in place for explicit captures
+- the stable runtime-texture / selector bridge is already in place for future explicit captures
+
+In other words, mirrors and portals no longer need a brand-new “how do materials sample a runtime
+image?” design. The remaining future work is capture/view synthesis, scheduling, recursion rules,
+and authoring ergonomics on top of the existing publication bridge.
 
 ---
 
@@ -352,6 +356,10 @@ RenderTarget("mirror.left") {
 
 A material elsewhere can then sample that target via the same texture-source system.
 
+With the current implemented bridge, that likely means the capture target publishes a runtime image
+selector, and ordinary scene content samples it via `Texture.render_image("capture....")` or an
+equivalent higher-level binding built on the same mechanism.
+
 ### Implicit cameras
 
 Mirrors and portals usually want cameras that are not authored directly as ordinary scene cameras.
@@ -363,6 +371,9 @@ Examples:
 - monitor camera attached to an entity
 
 So a future `RenderToTextureSystem` will probably need to cooperate with a system that synthesizes temporary views each frame.
+
+Crucially, this is the **capture** side of the problem. The **sampling** side already exists in the
+implemented engine through stable runtime `TextureHandle`s keyed by `render_image` selectors.
 
 ### Update modes
 
@@ -393,6 +404,15 @@ For the Layer A bloom-debug case, we can keep it simple initially:
 - allow debug quads to sample them later in the frame if ordering permits, or from the previous completed frame if that is simpler
 
 For mirrors and portals, dependency handling becomes much more important.
+
+The good news is that the publication/sampling seam is already established:
+
+- capture pass produces an image
+- runtime-texture bridge publishes it under a stable selector/handle
+- later scene draws sample that stable runtime texture
+
+So the remaining scheduling problem is mostly about capture-before-sample ordering and whether
+sampling is same-frame or previous-frame.
 
 ---
 
@@ -435,6 +455,9 @@ Specifically:
 2. design explicit capture targets for mirrors / portals / monitors
 3. define camera synthesis / scheduling for those capture targets
 4. decide how far authored shared texture references should go before MMS gains stronger live-reference semantics
+
+That work should assume the existing `Texture.render_image(...)` / stable runtime-texture bridge as
+the baseline sampling path unless and until a stronger authored texture-reference model replaces it.
 
 That keeps the spec/docs split clean:
 

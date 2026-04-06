@@ -173,19 +173,23 @@ impl ComponentCodec {
         let base_name = node.name.clone();
         let data = component.encode();
 
-        // Encode children, tracking names to handle duplicates.
-        let mut name_counts: HashMap<String, usize> = HashMap::new();
+        // Encode children; track type_name usage for disambiguation (same-type siblings).
+        let mut type_counts: HashMap<String, usize> = HashMap::new();
         let mut child_nodes = Vec::new();
 
         for &child_id in &node.children {
             let mut child_node = Self::encode_subtree(world, child_id)?;
 
-            // Track name usage and append _N if duplicate.
-            let count = name_counts.entry(child_node.name.clone()).or_insert(0);
-            if *count > 0 {
-                child_node.name = format!("{}_{}", child_node.name, count);
+            // If the user label is empty, synthesise one from the type name + index.
+            if child_node.name.is_empty() {
+                let count = type_counts.entry(child_node.type_name.clone()).or_insert(0);
+                if *count > 0 {
+                    child_node.name = format!("{}_{}", child_node.type_name, count);
+                } else {
+                    child_node.name = child_node.type_name.clone();
+                }
+                *count += 1;
             }
-            *count += 1;
 
             child_nodes.push(child_node);
         }

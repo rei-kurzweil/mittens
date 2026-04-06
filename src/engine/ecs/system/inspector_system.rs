@@ -474,12 +474,11 @@ fn rebuild_inspector_panel(
 
     let lines: Vec<String> = if let Some(sel) = selected {
         if let Some(node) = world.get_component_node(sel) {
-            let type_name = node.component.name().to_string();
-            let display_name = &node.name;
-            let header = if display_name == &type_name {
-                type_name
+            let type_name = &node.component_type;
+            let header = if node.name.is_empty() {
+                type_name.clone()
             } else {
-                format!("{type_name}: {display_name}")
+                format!("{type_name}: {}", node.name)
             };
             vec![header]
         } else {
@@ -658,11 +657,9 @@ fn node_label(world: &World, id: ComponentId) -> String {
     let Some(node) = world.get_component_node(id) else {
         return format!("{id:?}");
     };
-    let type_name = node.component.name();
-    let display = &node.name;
-    if display == type_name {
-        type_name.to_string()
+    if node.name.is_empty() {
+        node.component_type.clone()
     } else {
-        format!("{type_name}: {display}")
+        format!("{}: {}", node.component_type, node.name)
     }
 }

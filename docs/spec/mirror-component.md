@@ -2,6 +2,11 @@
 
 This document explores how a planar mirror could fit into cat-engine **without changing `src/` yet**.
 
+The sampling side of this feature is no longer hypothetical: the current engine already has a
+runtime-texture bridge via `TextureComponent.render_image` / `Texture.render_image("...")`.
+So the unresolved work for mirrors is primarily **capture/publication**, not “how can a scene
+surface sample a runtime-produced image at all?”.
+
 The goal is to describe:
 - an authoring-facing `MirrorComponent`
 - the runtime concept of a derived `MirrorCamera`
@@ -341,22 +346,38 @@ This is one of the strongest arguments for a generic `RenderView` concept.
 
 Rendering the mirror view is only half of the feature. The mirror surface in the main pass must also sample the mirror texture.
 
-That likely requires a dedicated mirror material/pipeline path, e.g. conceptually:
+The current render-to-texture bridge already gives us the basic sampling mechanism:
 
-```rust
-MaterialHandle::MIRROR_SURFACE
+- runtime-owned images can be published behind stable `TextureHandle`s
+- scene content can sample them through `TextureComponent.render_image`
+- authored MMS can already write `Texture.render_image("render_graph....")`
+
+So a mirror does **not** need a brand-new texture consumption path. It needs a way to publish its
+offscreen color image into the same runtime-texture bridge used by render-graph outputs.
+
+Conceptually, that means a mirror implementation could publish a selector key like:
+
+```text
+capture.mirror.<mirror_id>.color
 ```
 
-or a shader branch/material mode that samples a per-instance mirror texture.
+and the visible mirror surface would sample that runtime image through an ordinary texture binding.
+
+Whether the user explicitly authors `Texture.render_image("capture.mirror....")` or whether
+`MirrorComponent` wires the associated surface texture automatically is a separate authoring choice.
+But the renderer-side texture publication path already exists.
 
 The key requirement is:
 - during the **main scene pass**, the mirror mesh must bind the mirror’s offscreen color image as a sampled texture.
 
-This is different from ordinary textured meshes because the texture is generated at runtime per frame, not loaded from assets.
+This is different from ordinary asset-backed textured meshes because the texture is generated at
+runtime per frame, not loaded from disk — but it should still flow through the same stable-handle
+runtime-texture bridge.
 
 So there are really **two renderer changes**:
 1. render an extra scene view into an offscreen image,
-2. feed that image into the mirror surface draw in the main pass.
+2. publish that image through the existing runtime-texture bridge so the mirror surface draw in the
+    main pass can sample it.
 
 ---
 
@@ -466,7 +487,18 @@ Open questions:
 - should mirror material be explicit, or should `MirrorComponent` imply it?
 
 For v1, the simplest rule is:
-- `MirrorComponent` implies that the associated renderable surface uses the mirror shader/material.
+- `MirrorComponent` implies that the associated renderable surface samples the mirror’s published
+  runtime texture.
+
+With the current engine shape, that likely means one of two authoring/runtime models:
+
+1. `MirrorComponent` runtime automatically binds the associated surface texture to the mirror’s
+    published selector/image
+2. the authored surface uses `Texture.render_image("capture.mirror....")`, while `MirrorComponent`
+    is responsible only for producing that capture
+
+Option 1 is nicer authoring. Option 2 is closer to the already-shipped `render_image` bridge.
+Either way, the mirror should reuse the existing runtime-texture publication/sampling path.
 
 ---
 
@@ -517,6 +549,10 @@ When implementation starts, a practical sequence would be:
 7. Disable recursion.
 8. Add quality clamping + cached image reuse.
 
+Because the stable runtime-texture bridge already exists, step 5 should preferably be implemented
+as “bind/publish a mirror runtime texture through the same `render_image` path” rather than as an
+entirely separate one-off sampled-image mechanism.
+
 This keeps the risk concentrated in renderer plumbing rather than broad ECS churn.
 
 ---
@@ -538,6 +574,9 @@ No changes are proposed in this document, but the likely implementation touch po
 The biggest structural insight is:
 
 > A mirror is less like “another active camera target” and more like “an extra derived render view with a sampled output image”.
+
+And that sampled output image should plug into the same runtime-texture bridge already used by
+`Texture.render_image(...)` and render-graph-published pass outputs.
 
 So the likely architecture is:
 - author a `MirrorComponent`,

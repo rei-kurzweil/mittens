@@ -203,7 +203,13 @@ impl World {
         self.components.get_mut(id)
     }
 
+    /// Returns the engine type identifier for this component (e.g. `"transform"`).
     pub fn component_name(&self, id: ComponentId) -> Option<&str> {
+        self.get_component_record(id).map(|node| node.component_type.as_str())
+    }
+
+    /// Returns the user-assigned label for this component (empty string if unset).
+    pub fn component_label(&self, id: ComponentId) -> Option<&str> {
         self.get_component_record(id).map(|node| node.name.as_str())
     }
 
