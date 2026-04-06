@@ -196,10 +196,10 @@ impl IntentSignal {
 pub enum IntentValue {
     Noop,
 
-    /// Spawn a component tree described by a MMS `ComponentExpression` and optionally attach
-    /// it to a parent. If `parent` is `None` the root becomes a world root (`universe.add`).
+    /// Spawn a component tree described by a fully-evaluated `MaterializedCE` and optionally
+    /// attach it to a parent. If `parent` is `None` the root becomes a world root.
     SpawnComponentTree {
-        root: Box<crate::meow_meow::ast::ComponentExpression>,
+        root: Box<crate::meow_meow::object::MaterializedCE>,
         parent: Option<ComponentId>,
     },
     Print {

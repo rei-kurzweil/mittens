@@ -71,16 +71,16 @@ fn lift_if(if_stmt: &mut IfStatement) {
 // QueryDesugarTransform
 // ---------------------------------------------------------------------------
 
-/// Rewrites `|>` query sugar into explicit `query()`/`query_all()` calls.
+/// Rewrites `->` query/dispatch sugar into explicit `query()`/`query_all()` calls.
 ///
-/// The parser produces `BinOp(Pipe, lhs, rhs)` for all `|>` expressions without
-/// inspecting operand types. This pass detects the query-sugar forms and rewrites them
+/// The parser produces `BinOp(Query, lhs, rhs)` for all `->` expressions without
+/// interpreting selector/query semantics. This pass rewrites query/dispatch forms
 /// before the evaluator runs, leaving only plain `expr |> fn_value` pipes for eval.
 ///
 /// ## Rewrite rules (implemented)
 ///
 /// ```text
-/// "selector" |> handler
+/// "selector" -> handler
 ///     →  query("selector", handler)        // if selector matches #id pattern
 ///     →  query_all("selector", handler)    // otherwise
 /// ```
@@ -88,10 +88,10 @@ fn lift_if(if_stmt: &mut IfStatement) {
 /// ## Deferred (requires Expression::MethodCall)
 ///
 /// ```text
-/// "selector" |> method(args)
+/// "selector" -> method(args)
 ///     →  query("selector", fn(r) { r.method(args) })
 ///
-/// scope |> "selector" |> handler
+/// scope -> "selector" -> handler
 ///     →  scope.query("selector", handler)
 /// ```
 ///
@@ -170,7 +170,7 @@ fn qd_expr(expr: &mut Expression) {
         _ => {}
     }
 
-    // Now rewrite this node if it's a query-sugar pipe.
+    // Now rewrite this node if it's a query/dispatch expression.
     // `"selector" -> handler` — always a query dispatch regardless of LHS type
     if let Expression::BinaryOp { op: BinOpKind::Query, lhs, rhs } = expr {
         let callee = if let Expression::String(sel) = lhs.as_ref() {

@@ -9,7 +9,7 @@ pub mod tokenizer;
 pub mod transform;
 
 pub use ast::{
-    AssignmentStatement, BinOpKind, BlockStatement, CallExpression, ComponentBodyItem,
+    AssignmentStatement, BinOpKind, BlockStatement, CallExpression,
     ComponentExpression, ConstructorCall, Expression, Ident, IfStatement, ReturnStatement,
     Span, Statement, UnaryOpKind,
 };

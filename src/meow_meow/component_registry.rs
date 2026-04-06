@@ -1,14 +1,11 @@
 /// Component registry: maps MMS type names to engine component constructors.
 ///
-/// This is the bridge between a parsed `ComponentExpression` and live engine components.
-/// Called from the `SpawnComponentTree` intent executor on the main thread.
+/// This is the bridge between a `MaterializedCE` (fully-evaluated on the MMS thread)
+/// and live engine components (created on the main thread).
 ///
-/// For each component type this module knows how to:
-///   1. Create the component from an optional `ConstructorCall` (args already as `Value`s).
-///   2. Apply `NamedAssignment` and `Call` body items as builder/setter calls.
-///
-/// Unknown type names or unrecognised methods produce an error string; the executor logs
-/// them and continues rather than panicking.
+/// `spawn_tree` is the only public entry point. It creates the component from the
+/// ctor info, applies builder calls, named assignments, and positionals, then
+/// recurses into children.
 use crate::engine::ecs::component::{
     ActionComponent, AmbientLightComponent, AnimationComponent, AnimationState, BloomComponent,
     BlurPassComponent, AvatarBodyYawComponent, AvatarControlComponent, BackgroundColorComponent,
@@ -30,7 +27,7 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::graphics::CameraTarget;
-use crate::meow_meow::ast::{ComponentBodyItem, ComponentExpression, Expression, UnaryOpKind};
+use crate::meow_meow::object::{MaterializedCE, Value};
 use crate::meow_meow::token::expand_component_shortform;
 
 // ---------------------------------------------------------------------------
@@ -40,28 +37,30 @@ use crate::meow_meow::token::expand_component_shortform;
 /// Recursively spawn the component tree described by `ce`, attach it to `parent` (if any),
 /// and initialise it. Returns the root `ComponentId`.
 pub fn spawn_tree(
-    ce: &ComponentExpression,
+    ce: &MaterializedCE,
     parent: Option<ComponentId>,
     world: &mut World,
     emit: &mut dyn SignalEmitter,
 ) -> Result<ComponentId, String> {
-    let type_name = resolve_type_name(&ce.component_type.0);
+    let type_name = resolve_type_name(&ce.component_type);
+    let id = create_component(world, type_name, ce.ctor_method.as_deref(), &ce.ctor_args)?;
 
-    // Evaluate constructor args (must be literals — no ObjectWorld on the main thread).
-    let ctor_args: Vec<Value> = if let Some(ctor) = &ce.constructor {
-        ctor.args.iter().map(eval_literal).collect::<Result<_, _>>()?
-    } else {
-        vec![]
-    };
-    let ctor_method = ce.constructor.as_ref().map(|c| c.method.0.as_str());
+    // Extra ctor calls + body builder calls (already evaluated).
+    for (method, args) in &ce.calls {
+        apply_call(world, id, method, args)?;
+    }
 
-    // Create the component.
-    let id = create_component(world, type_name, ctor_method, &ctor_args)?;
+    // Named property assignments.
+    for (name, val) in &ce.named {
+        apply_named_assignment(world, id, name, val)?;
+    }
 
-    // Apply non-child body items (named assignments, builder calls).
-    apply_body_items(world, id, &ce.body)?;
+    // Positional content (strings etc).
+    for val in &ce.positionals {
+        apply_positional(world, id, val)?;
+    }
 
-    // Attach to parent before recursing into children (so init sees the right topology).
+    // Attach to parent before recursing into children.
     if let Some(p) = parent {
         if let Err(e) = world.add_child(p, id) {
             return Err(format!("attach failed: {e}"));
@@ -69,10 +68,8 @@ pub fn spawn_tree(
     }
 
     // Recurse into children.
-    for item in &ce.body {
-        if let ComponentBodyItem::Child(child_ce) = item {
-            spawn_tree(child_ce, Some(id), world, emit)?;
-        }
+    for child in &ce.children {
+        spawn_tree(child, Some(id), world, emit)?;
     }
 
     // Initialise tree (if parent is already initialised, or this is a new root).
@@ -93,79 +90,44 @@ fn resolve_type_name(raw: &str) -> &str {
 }
 
 // ---------------------------------------------------------------------------
-// Literal expression evaluator (main-thread only — no ObjectWorld)
+// Value conversion helpers
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
-pub enum Value {
-    Null,
-    Bool(bool),
-    F32(f32),
-    String(String),
-    Identifier(String),
-    Array(Vec<Value>),
-}
-
-fn eval_literal(expr: &Expression) -> Result<Value, String> {
-    match expr {
-        Expression::Null => Ok(Value::Null),
-        Expression::Bool(b) => Ok(Value::Bool(*b)),
-        Expression::Number(n) => Ok(Value::F32(*n as f32)),
-        Expression::String(s) => Ok(Value::String(s.clone())),
-        Expression::Identifier(id) => Ok(Value::Identifier(id.0.clone())),
-        Expression::Array(items) => {
-            let vals: Result<Vec<_>, _> = items.iter().map(eval_literal).collect();
-            Ok(Value::Array(vals?))
-        }
-        // Unary minus on a number literal: handles `-0.45` which now tokenizes as Minus Number(0.45)
-        Expression::UnaryOp { op: UnaryOpKind::Neg, operand } => {
-            if let Expression::Number(n) = operand.as_ref() {
-                Ok(Value::F32(-*n as f32))
-            } else {
-                Err("component constructor args: unary minus only supported on number literals".into())
-            }
-        }
-        Expression::Component(_) | Expression::Call(_) | Expression::BinaryOp { .. }
-        | Expression::UnaryOp { .. } | Expression::Function { .. } => {
-            Err("complex expression in constructor args not supported in v1".into())
-        }
+fn val_as_f32(v: &Value) -> Result<f32, String> {
+    match v {
+        Value::Number(n) => Ok(*n as f32),
+        other => Err(format!("expected number, got {other:?}")),
     }
 }
 
-impl Value {
-    fn as_f32(&self) -> Result<f32, String> {
-        match self {
-            Value::F32(v) => Ok(*v),
-            other => Err(format!("expected f32, got {other:?}")),
-        }
+fn val_as_bool(v: &Value) -> Result<bool, String> {
+    match v {
+        Value::Bool(b) => Ok(*b),
+        other => Err(format!("expected bool, got {other:?}")),
     }
-    fn as_bool(&self) -> Result<bool, String> {
-        match self {
-            Value::Bool(v) => Ok(*v),
-            other => Err(format!("expected bool, got {other:?}")),
-        }
+}
+
+fn val_as_str(v: &Value) -> Result<&str, String> {
+    match v {
+        Value::String(s) => Ok(s.as_str()),
+        Value::Identifier(s) => Ok(s.as_str()),
+        other => Err(format!("expected string/ident, got {other:?}")),
     }
-    fn as_str(&self) -> Result<&str, String> {
-        match self {
-            Value::String(s) => Ok(s.as_str()),
-            Value::Identifier(s) => Ok(s.as_str()),
-            other => Err(format!("expected string/ident, got {other:?}")),
-        }
-    }
-    fn as_f32_array<const N: usize>(&self) -> Result<[f32; N], String> {
-        match self {
-            Value::Array(items) => {
-                if items.len() != N {
-                    return Err(format!("expected array of {N}, got {}", items.len()));
-                }
-                let mut out = [0.0f32; N];
-                for (i, v) in items.iter().enumerate() {
-                    out[i] = v.as_f32()?;
-                }
-                Ok(out)
+}
+
+fn val_as_f32_array<const N: usize>(v: &Value) -> Result<[f32; N], String> {
+    match v {
+        Value::Array(items) => {
+            if items.len() != N {
+                return Err(format!("expected array of {N}, got {}", items.len()));
             }
-            other => Err(format!("expected array, got {other:?}")),
+            let mut out = [0.0f32; N];
+            for (i, item) in items.iter().enumerate() {
+                out[i] = val_as_f32(item)?;
+            }
+            Ok(out)
         }
+        other => Err(format!("expected array, got {other:?}")),
     }
 }
 
@@ -173,10 +135,14 @@ impl Value {
 // Argument helpers
 // ---------------------------------------------------------------------------
 
-/// Safe indexed argument access — returns a descriptive error instead of panicking.
 fn arg(args: &[Value], i: usize) -> Result<&Value, String> {
     args.get(i).ok_or_else(|| format!("expected at least {} arg(s), got {}", i + 1, args.len()))
 }
+
+fn arg_f32(args: &[Value], i: usize) -> Result<f32, String> { val_as_f32(arg(args, i)?) }
+fn arg_bool(args: &[Value], i: usize) -> Result<bool, String> { val_as_bool(arg(args, i)?) }
+fn arg_str(args: &[Value], i: usize) -> Result<&str, String> { val_as_str(arg(args, i)?) }
+fn arg_f32_arr<const N: usize>(args: &[Value], i: usize) -> Result<[f32; N], String> { val_as_f32_array(arg(args, i)?) }
 
 // ---------------------------------------------------------------------------
 // Component creation
@@ -204,7 +170,7 @@ fn create_component(
         }
         "Color" => match ctor {
             Some("rgba") => add!(ColorComponent::rgba(
-                arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?, arg(args, 3)?.as_f32()?
+                arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?, arg_f32(args, 3)?
             )),
             _ => add!(ColorComponent::new()),
         },
@@ -222,7 +188,7 @@ fn create_component(
         "BackgroundColor" => add!(BackgroundColorComponent::new()),
         "AmbientLight" => match ctor {
             Some("rgb") => add!(AmbientLightComponent::rgb(
-                arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?
+                arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?
             )),
             _ => add!(AmbientLightComponent::new()),
         },
@@ -244,7 +210,7 @@ fn create_component(
         "Input" => {
             let mut c = InputComponent::new();
             if let Some("speed") = ctor {
-                c = c.with_speed(arg(args, 0)?.as_f32()?);
+                c = c.with_speed(arg_f32(args, 0)?);
             }
             add!(c)
         }
@@ -272,13 +238,13 @@ fn create_component(
         },
         "ControllerXR" => match ctor {
             Some("new") => {
-                let _enabled = arg(args, 0)?.as_bool()?;
-                let hand = match arg(args, 1)?.as_str()? {
+                let _enabled = arg_bool(args, 0)?;
+                let hand = match arg_str(args, 1)? {
                     "Left" => ControllerHand::Left,
                     "Right" => ControllerHand::Right,
                     s => return Err(format!("unknown ControllerHand: {s}")),
                 };
-                let pose = match arg(args, 2)?.as_str()? {
+                let pose = match arg_str(args, 2)? {
                     "Aim" => ControllerPoseKind::Aim,
                     "Grip" => ControllerPoseKind::Grip,
                     s => return Err(format!("unknown ControllerPoseKind: {s}")),
@@ -298,19 +264,19 @@ fn create_component(
         "TransformSampleAncestor" => {
             let mut c = TransformSampleAncestorComponent::new();
             if let Some("skip") = ctor {
-                c = c.with_skip(arg(args, 0)?.as_f32()? as usize);
+                c = c.with_skip(arg_f32(args, 0)? as usize);
             }
             add!(c)
         }
         "QuatTemporalFilter" => {
             let mut c = QuatTemporalFilterComponent::new();
             if let Some("smoothing_factor") = ctor {
-                c = c.with_smoothing_factor(arg(args, 0)?.as_f32()?);
+                c = c.with_smoothing_factor(arg_f32(args, 0)?);
             }
             add!(c)
         }
         "GLTF" => match ctor {
-            Some("new") => add!(GLTFComponent::new(arg(args, 0)?.as_str()?)),
+            Some("new") => add!(GLTFComponent::new(arg_str(args, 0)?)),
             _ => Err("GLTF requires .new(\"uri\")".into()),
         },
         "RendererSettings" => {
@@ -334,8 +300,8 @@ fn create_component(
         "InspectorPanel" => add!(InspectorPanelComponent::new()),
         "Scrolling" => match ctor {
             Some("new") => add!(ScrollingComponent::new(
-                arg(args, 0)?.as_f32()?,
-                arg(args, 1)?.as_f32()? as usize,
+                arg_f32(args, 0)?,
+                arg_f32(args, 1)? as usize,
             )),
             _ => add!(ScrollingComponent::new(0.1, 10)),
         },
@@ -351,17 +317,17 @@ fn create_component(
             _ => add!(TextureFilteringComponent::linear()),
         },
         "Texture" => match ctor {
-            Some("render_image") => add!(TextureComponent::render_image(arg(args, 0)?.as_str()?)),
-            Some("with_uri") | Some("uri") => add!(TextureComponent::with_uri(arg(args, 0)?.as_str()?)),
-            Some("from_png") => add!(TextureComponent::from_png(arg(args, 0)?.as_str()?)),
-            Some("from_dds") => add!(TextureComponent::from_dds(arg(args, 0)?.as_str()?)),
+            Some("render_image") => add!(TextureComponent::render_image(arg_str(args, 0)?)),
+            Some("with_uri") | Some("uri") => add!(TextureComponent::with_uri(arg_str(args, 0)?)),
+            Some("from_png") => add!(TextureComponent::from_png(arg_str(args, 0)?)),
+            Some("from_dds") => add!(TextureComponent::from_dds(arg_str(args, 0)?)),
             _ => add!(TextureComponent::unresolved()),
         },
         "UV" => add!(UVComponent::new()),
         "Clock" => {
             let mut c = ClockComponent::new();
             if let Some("bpm") = ctor {
-                c = c.with_bpm(arg(args, 0)?.as_f32()? as f64);
+                c = c.with_bpm(arg_f32(args, 0)? as f64);
             }
             add!(c)
         }
@@ -374,17 +340,17 @@ fn create_component(
             add!(AnimationComponent::new().with_state(state))
         }
         "Keyframe" => match ctor {
-            Some("at") => add!(KeyframeComponent::new(arg(args, 0)?.as_f32()? as f64)),
+            Some("at") => add!(KeyframeComponent::new(arg_f32(args, 0)? as f64)),
             _ => Err("Keyframe requires .at(beat)".into()),
         },
         "Action" => match ctor {
-            Some("print") => add!(ActionComponent::print(arg(args, 0)?.as_str()?)),
+            Some("print") => add!(ActionComponent::print(arg_str(args, 0)?)),
             _ => add!(ActionComponent::default()),
         },
         "NormalVis" => {
             let mut c = NormalVisualisationComponent::new();
             if let Some("thickness") = ctor {
-                c = c.with_thickness(arg(args, 0)?.as_f32()?);
+                c = c.with_thickness(arg_f32(args, 0)?);
             }
             add!(c)
         }
@@ -392,54 +358,19 @@ fn create_component(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Body item application
-// ---------------------------------------------------------------------------
-
-fn apply_body_items(
-    world: &mut World,
-    id: ComponentId,
-    items: &[ComponentBodyItem],
-) -> Result<(), String> {
-    for item in items {
-        match item {
-            ComponentBodyItem::Child(_) => {} // handled by caller
-            ComponentBodyItem::NamedAssignment { name, value } => {
-                apply_named_assignment(world, id, &name.0, value)?;
-            }
-            ComponentBodyItem::Call(call) => {
-                let args: Vec<Value> = call.args.iter().map(eval_literal).collect::<Result<_, _>>()?;
-                apply_call(world, id, &call.callee.0, &args)?;
-            }
-            ComponentBodyItem::Positional(expr) => {
-                apply_positional(world, id, expr)?;
-            }
-            // If/For are expanded by the evaluator before reaching the registry.
-            ComponentBodyItem::If { .. } | ComponentBodyItem::For { .. } => {}
-        }
-    }
-    Ok(())
-}
-
 fn apply_named_assignment(
     world: &mut World,
     id: ComponentId,
     name: &str,
-    value: &Expression,
+    val: &Value,
 ) -> Result<(), String> {
-    let val = eval_literal(value)?;
-    // Route by inspecting the component type — try Transform first, then others.
     if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(id) {
-        match name {
-            "rotation" => {
-                let arr = val.as_f32_array::<3>()?;
-                *t = t.clone().with_rotation_euler(arr[0], arr[1], arr[2]);
-            }
-            _ => {}
+        if name == "rotation" {
+            let arr = val_as_f32_array::<3>(val)?;
+            *t = t.clone().with_rotation_euler(arr[0], arr[1], arr[2]);
         }
         return Ok(());
     }
-    // Unknown named assignment — log and continue.
     println!("[registry] unhandled named assignment '{name}' on component {id:?}");
     Ok(())
 }
@@ -453,29 +384,29 @@ fn apply_call(
     // Transform builders
     if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(id) {
         match method {
-            "position" => *t = t.clone().with_position(arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?),
-            "scale"    => *t = t.clone().with_scale(arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?),
-            "rotation" | "rotation_euler" => *t = t.clone().with_rotation_euler(arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?),
+            "position" => *t = t.clone().with_position(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?),
+            "scale"    => *t = t.clone().with_scale(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?),
+            "rotation" | "rotation_euler" => *t = t.clone().with_rotation_euler(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?),
             _ => {}
         }
         return Ok(());
     }
     if let Some(dl) = world.get_component_by_id_as_mut::<DirectionalLightComponent>(id) {
         match method {
-            "intensity" => *dl = dl.clone().with_intensity(arg(args, 0)?.as_f32()?),
-            "color"     => *dl = dl.clone().with_color(arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?),
+            "intensity" => *dl = dl.clone().with_intensity(arg_f32(args, 0)?),
+            "color"     => *dl = dl.clone().with_color(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?),
             _ => {}
         }
         return Ok(());
     }
     if let Some(pl) = world.get_component_by_id_as_mut::<PointLightComponent>(id) {
         match method {
-            "intensity" => *pl = pl.clone().with_intensity(arg(args, 0)?.as_f32()?),
-            "distance" => *pl = pl.clone().with_distance(arg(args, 0)?.as_f32()?),
+            "intensity" => *pl = pl.clone().with_intensity(arg_f32(args, 0)?),
+            "distance" => *pl = pl.clone().with_distance(arg_f32(args, 0)?),
             "color" => *pl = pl.clone().with_color(
-                arg(args, 0)?.as_f32()?,
-                arg(args, 1)?.as_f32()?,
-                arg(args, 2)?.as_f32()?,
+                arg_f32(args, 0)?,
+                arg_f32(args, 1)?,
+                arg_f32(args, 2)?,
             ),
             _ => {}
         }
@@ -486,7 +417,7 @@ fn apply_call(
             "on" => *render_graph = render_graph.clone().with_enabled(true),
             "off" => *render_graph = render_graph.clone().with_enabled(false),
             "enabled" => {
-                *render_graph = render_graph.clone().with_enabled(arg(args, 0)?.as_bool()?)
+                *render_graph = render_graph.clone().with_enabled(arg_bool(args, 0)?)
             }
             _ => {}
         }
@@ -496,9 +427,9 @@ fn apply_call(
         match method {
             "on" => *blur_pass = blur_pass.clone().with_enabled(true),
             "off" => *blur_pass = blur_pass.clone().with_enabled(false),
-            "enabled" => *blur_pass = blur_pass.clone().with_enabled(arg(args, 0)?.as_bool()?),
-            "radius_ndc" => *blur_pass = blur_pass.clone().with_radius_ndc(arg(args, 0)?.as_f32()?),
-            "half_res" => *blur_pass = blur_pass.clone().with_half_res(arg(args, 0)?.as_bool()?),
+            "enabled" => *blur_pass = blur_pass.clone().with_enabled(arg_bool(args, 0)?),
+            "radius_ndc" => *blur_pass = blur_pass.clone().with_radius_ndc(arg_f32(args, 0)?),
+            "half_res" => *blur_pass = blur_pass.clone().with_half_res(arg_bool(args, 0)?),
             _ => {}
         }
         return Ok(());
@@ -507,22 +438,22 @@ fn apply_call(
         match method {
             "on" => *bloom = bloom.clone().with_enabled(true),
             "off" => *bloom = bloom.clone().with_enabled(false),
-            "enabled" => *bloom = bloom.clone().with_enabled(arg(args, 0)?.as_bool()?),
-            "intensity" => *bloom = bloom.clone().with_intensity(arg(args, 0)?.as_f32()?),
+            "enabled" => *bloom = bloom.clone().with_enabled(arg_bool(args, 0)?),
+            "intensity" => *bloom = bloom.clone().with_intensity(arg_f32(args, 0)?),
             "radius_ndc" => {
-                *bloom = bloom.clone().with_radius_ndc(arg(args, 0)?.as_f32()?)
+                *bloom = bloom.clone().with_radius_ndc(arg_f32(args, 0)?)
             }
             "emissive_scale" => {
-                *bloom = bloom.clone().with_emissive_scale(arg(args, 0)?.as_f32()?)
+                *bloom = bloom.clone().with_emissive_scale(arg_f32(args, 0)?)
             }
-            "half_res" => *bloom = bloom.clone().with_half_res(arg(args, 0)?.as_bool()?),
+            "half_res" => *bloom = bloom.clone().with_half_res(arg_bool(args, 0)?),
             _ => {}
         }
         return Ok(());
     }
     if let Some(inp) = world.get_component_by_id_as_mut::<InputComponent>(id) {
         if method == "speed" {
-            inp.speed = arg(args, 0)?.as_f32()?;
+            inp.speed = arg_f32(args, 0)?;
         }
         return Ok(());
     }
@@ -536,24 +467,24 @@ fn apply_call(
     }
     if let Some(s) = world.get_component_by_id_as_mut::<RendererSettingsComponent>(id) {
         if method == "window_size" {
-            *s = s.clone().with_window_size(arg(args, 0)?.as_f32()? as u32, arg(args, 1)?.as_f32()? as u32);
+            *s = s.clone().with_window_size(arg_f32(args, 0)? as u32, arg_f32(args, 1)? as u32);
         }
         return Ok(());
     }
     if let Some(ts) = world.get_component_by_id_as_mut::<TextShadowComponent>(id) {
         match method {
             "offset_xy" => {
-                let arr = arg(args, 0)?.as_f32_array::<2>()?;
+                let arr = arg_f32_arr::<2>(args, 0)?;
                 *ts = ts.clone().with_offset_xy(arr);
             }
-            "z_offset" => *ts = ts.clone().with_z_offset(arg(args, 0)?.as_f32()?),
+            "z_offset" => *ts = ts.clone().with_z_offset(arg_f32(args, 0)?),
             _ => {}
         }
         return Ok(());
     }
     if let Some(rs) = world.get_component_by_id_as_mut::<RendererStatsComponent>(id) {
         if method == "camera_target" {
-            let target = match arg(args, 0)?.as_str()? {
+            let target = match arg_str(args, 0)? {
                 "Xr" => CameraTarget::Xr,
                 _ => CameraTarget::Window,
             };
@@ -563,57 +494,57 @@ fn apply_call(
     }
     if let Some(qtf) = world.get_component_by_id_as_mut::<QuatTemporalFilterComponent>(id) {
         if method == "smoothing_factor" {
-            *qtf = qtf.clone().with_smoothing_factor(arg(args, 0)?.as_f32()?);
+            *qtf = qtf.clone().with_smoothing_factor(arg_f32(args, 0)?);
         }
         return Ok(());
     }
     if let Some(avc) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
         match method {
-            "head_bone"               => *avc = avc.clone().with_head_bone(arg(args, 0)?.as_str()?),
-            "left_hand_bone"          => *avc = avc.clone().with_left_hand_bone(arg(args, 0)?.as_str()?),
-            "right_hand_bone"         => *avc = avc.clone().with_right_hand_bone(arg(args, 0)?.as_str()?),
-            "initial_yaw"             => *avc = avc.clone().with_initial_yaw(arg(args, 0)?.as_f32()?),
+            "head_bone"               => *avc = avc.clone().with_head_bone(arg_str(args, 0)?),
+            "left_hand_bone"          => *avc = avc.clone().with_left_hand_bone(arg_str(args, 0)?),
+            "right_hand_bone"         => *avc = avc.clone().with_right_hand_bone(arg_str(args, 0)?),
+            "initial_yaw"             => *avc = avc.clone().with_initial_yaw(arg_f32(args, 0)?),
             "forward_plus_z"          => *avc = avc.clone().with_forward_plus_z(),
-            "body_yaw_threshold"      => *avc = avc.clone().with_body_yaw_threshold(arg(args, 0)?.as_f32()?),
-            "body_yaw_rate"           => *avc = avc.clone().with_body_yaw_rate(arg(args, 0)?.as_f32()?),
-            "hand_rotation_smoothing" => *avc = avc.clone().with_hand_rotation_smoothing(arg(args, 0)?.as_f32()?),
-            "camera_bone"             => *avc = avc.clone().with_camera_bone(arg(args, 0)?.as_str()?),
-            "avatar_height"           => *avc = avc.clone().with_avatar_height(arg(args, 0)?.as_f32()?),
+            "body_yaw_threshold"      => *avc = avc.clone().with_body_yaw_threshold(arg_f32(args, 0)?),
+            "body_yaw_rate"           => *avc = avc.clone().with_body_yaw_rate(arg_f32(args, 0)?),
+            "hand_rotation_smoothing" => *avc = avc.clone().with_hand_rotation_smoothing(arg_f32(args, 0)?),
+            "camera_bone"             => *avc = avc.clone().with_camera_bone(arg_str(args, 0)?),
+            "avatar_height"           => *avc = avc.clone().with_avatar_height(arg_f32(args, 0)?),
             _ => {}
         }
         return Ok(());
     }
     if let Some(tb) = world.get_component_by_id_as_mut::<TextBackgroundComponent>(id) {
         match method {
-            "padding"        => *tb = tb.clone().with_padding(arg(args, 0)?.as_f32()?),
-            "padding_top"    => *tb = tb.clone().with_padding_top(arg(args, 0)?.as_f32()?),
-            "padding_right"  => *tb = tb.clone().with_padding_right(arg(args, 0)?.as_f32()?),
-            "padding_bottom" => *tb = tb.clone().with_padding_bottom(arg(args, 0)?.as_f32()?),
-            "padding_left"   => *tb = tb.clone().with_padding_left(arg(args, 0)?.as_f32()?),
-            "z_offset"       => *tb = tb.clone().with_z_offset(arg(args, 0)?.as_f32()?),
+            "padding"        => *tb = tb.clone().with_padding(arg_f32(args, 0)?),
+            "padding_top"    => *tb = tb.clone().with_padding_top(arg_f32(args, 0)?),
+            "padding_right"  => *tb = tb.clone().with_padding_right(arg_f32(args, 0)?),
+            "padding_bottom" => *tb = tb.clone().with_padding_bottom(arg_f32(args, 0)?),
+            "padding_left"   => *tb = tb.clone().with_padding_left(arg_f32(args, 0)?),
+            "z_offset"       => *tb = tb.clone().with_z_offset(arg_f32(args, 0)?),
             _ => {}
         }
         return Ok(());
     }
     if let Some(tex) = world.get_component_by_id_as_mut::<TextureComponent>(id) {
         match method {
-            "render_image" => *tex = TextureComponent::render_image(arg(args, 0)?.as_str()?),
-            "uri" | "with_uri" => *tex = TextureComponent::with_uri(arg(args, 0)?.as_str()?),
-            "from_png" => *tex = TextureComponent::from_png(arg(args, 0)?.as_str()?),
-            "from_dds" => *tex = TextureComponent::from_dds(arg(args, 0)?.as_str()?),
+            "render_image" => *tex = TextureComponent::render_image(arg_str(args, 0)?),
+            "uri" | "with_uri" => *tex = TextureComponent::with_uri(arg_str(args, 0)?),
+            "from_png" => *tex = TextureComponent::from_png(arg_str(args, 0)?),
+            "from_dds" => *tex = TextureComponent::from_dds(arg_str(args, 0)?),
             _ => {}
         }
         return Ok(());
     }
     if let Some(uv) = world.get_component_by_id_as_mut::<UVComponent>(id) {
         if method == "uv" {
-            *uv = uv.clone().with_uv(arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?);
+            *uv = uv.clone().with_uv(arg_f32(args, 0)?, arg_f32(args, 1)?);
         }
         return Ok(());
     }
     if let Some(ck) = world.get_component_by_id_as_mut::<ClockComponent>(id) {
         if method == "bpm" {
-            *ck = ck.clone().with_bpm(arg(args, 0)?.as_f32()? as f64);
+            *ck = ck.clone().with_bpm(arg_f32(args, 0)? as f64);
         }
         return Ok(());
     }
@@ -630,15 +561,13 @@ fn apply_call(
     Ok(())
 }
 
-fn apply_positional(world: &mut World, id: ComponentId, expr: &Expression) -> Result<(), String> {
-    // Text component: bare string literal sets the text content.
-    if let Expression::String(s) = expr {
+fn apply_positional(world: &mut World, id: ComponentId, val: &Value) -> Result<(), String> {
+    if let Value::String(s) = val {
         if let Some(t) = world.get_component_by_id_as_mut::<TextComponent>(id) {
             *t = TextComponent::new(s.as_str());
             return Ok(());
         }
     }
-    // Everything else: log and ignore for now.
     println!("[registry] unhandled positional on component {id:?}");
     Ok(())
 }
@@ -653,9 +582,9 @@ fn apply_transform_builder(
     args: &[Value],
 ) -> Result<TransformComponent, String> {
     match method {
-        "position"       => Ok(c.with_position(arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?)),
-        "scale"          => Ok(c.with_scale(arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?)),
-        "rotation" | "rotation_euler" => Ok(c.with_rotation_euler(arg(args, 0)?.as_f32()?, arg(args, 1)?.as_f32()?, arg(args, 2)?.as_f32()?)),
+        "position"       => Ok(c.with_position(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?)),
+        "scale"          => Ok(c.with_scale(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?)),
+        "rotation" | "rotation_euler" => Ok(c.with_rotation_euler(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?)),
         other => {
             println!("[registry] unknown Transform builder: '{other}'");
             Ok(c)

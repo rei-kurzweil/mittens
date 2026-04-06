@@ -6,10 +6,10 @@ use rtrb::{Consumer, Producer, RingBuffer};
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::IntentValue;
 use crate::meow_meow::ast::{
-    BinOpKind, CallExpression, ComponentBodyItem, ComponentExpression, ConstructorCall,
+    BinOpKind, CallExpression, ComponentExpression,
     Expression, Ident, IfStatement, ImportItem, Statement, UnaryOpKind,
 };
-use crate::meow_meow::object::Value;
+use crate::meow_meow::object::{MaterializedCE, Value};
 use crate::meow_meow::parser::{MeowMeowParser, ParseError};
 use crate::meow_meow::token::TokenizeError;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;
@@ -51,7 +51,7 @@ pub enum EvalResponse {
 #[derive(Debug, Clone)]
 pub enum HostCallKind {
     /// Spawn a component tree and return its root `ComponentId`.
-    Spawn(ComponentExpression),
+    Spawn(MaterializedCE),
 }
 
 /// Values the host can return in response to a `HostCall`.
@@ -178,27 +178,37 @@ fn host_call(
 
 type Env = HashMap<String, Value>;
 
-/// Shared mutable context threaded through statement evaluation.
+/// Shared mutable context threaded through evaluation.
 ///
-/// Carries everything that statement-level eval functions need beyond the
-/// immutable `env` and the statement itself. Keeping these together means
-/// adding future context (module cache, call-depth limit, …) is a one-field
+/// Carries everything that eval functions need beyond the immutable `env`.
+/// Adding future context (module cache, call-depth limit, …) is a one-field
 /// change here rather than a signature change across every eval function.
-///
-/// Expression-level functions (`eval_expr`, `eval_call`, …) take only
-/// `emits: &mut Vec<IntentValue>` — they cannot contain import statements and
-/// do not need the full context.
 struct EvalContext<'a> {
-    /// Accumulates `SpawnComponentTree` intents produced by `emit(ce)` calls.
+    /// Accumulates `SpawnComponentTree` intents produced by top-level CE emissions.
     emits: &'a mut Vec<IntentValue>,
     /// Filesystem path of the file being evaluated, used to resolve relative
-    /// `import "…"` paths. `None` inside function call bodies (closures do not
-    /// carry their definition-site path) and when source was provided as a
-    /// raw string without a path (e.g. via `MeowMeowRunner::eval`).
+    /// `import "…"` paths. `None` inside function call bodies and when
+    /// source was provided as a raw string without a path.
     source_path: Option<&'a str>,
     /// Channel back to the host for HostCall round-trips (reply channel).
     /// `None` when running in fire-and-forget mode (no world access available).
     channels: Option<&'a mut EvalChannels>,
+    /// When evaluating inside a CE body block, captures children, builder calls,
+    /// positionals, and named assignments instead of emitting to the top level.
+    ce_builder: Option<&'a mut CeBuilder>,
+}
+
+/// Accumulator used while evaluating a component expression body block.
+/// Collects the results that will be materialized into a `MaterializedCE`.
+struct CeBuilder {
+    /// Remaining chained ctor calls + body builder calls (calls to names not in env).
+    calls: Vec<(String, Vec<Value>)>,
+    /// Named property assignments (`name = expr` in body where name was pre-injected).
+    named: Vec<(String, Value)>,
+    /// String-type positional content (e.g. `"hello " + name` in Text body).
+    positionals: Vec<Value>,
+    /// Child component trees emitted inside the body block, in source order.
+    children: Vec<MaterializedCE>,
 }
 
 /// Live request/response channels plus a monotonic correlation-id counter.
@@ -242,7 +252,7 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
 
     // Borrow `ch` into the context for the duration of eval, then release it.
     let eval_result = {
-        let mut ctx = EvalContext { emits: &mut emits, source_path, channels: Some(ch) };
+        let mut ctx = EvalContext { emits: &mut emits, source_path, channels: Some(ch), ce_builder: None };
         eval_block_stmts(&stmts, &mut env, &mut ctx)
     }; // ctx (and its borrow of ch) dropped here
 
@@ -321,17 +331,14 @@ fn eval_stmt(
 ) -> Result<StmtEffect, String> {
     match stmt {
         Statement::Assignment(a) => {
-            let val = eval_expr(&a.value, env, ctx.emits)?;
+            let val = eval_expr(&a.value, env, ctx)?;
             // When a CE is assigned to a variable and we have a live reply channel,
-            // spawn it immediately and bind a ComponentObject instead of the dead AST snapshot.
+            // spawn it immediately and bind a ComponentObject instead of the dead snapshot.
             let val = match (val, ctx.channels.as_mut()) {
                 (Value::ComponentExpr(ce), Some(ch)) => {
                     match ch.call(HostCallKind::Spawn(*ce.clone())) {
                         Some(HostValue::ComponentId(id)) => Value::ComponentObject(id),
-                        _ => {
-                            // Host returned null or channel closed — fall back to dead CE.
-                            Value::ComponentExpr(ce)
-                        }
+                        _ => Value::ComponentExpr(ce),
                     }
                 }
                 (val, _) => val,
@@ -343,16 +350,23 @@ fn eval_stmt(
             }
         }
         Statement::Reassign { name, value } => {
-            let val = eval_expr(value, env, ctx.emits)?;
+            let val = eval_expr(value, env, ctx)?;
+            // Inside a CE body: if name not in env, capture as named property.
+            if !env.contains_key(&name.0) {
+                if let Some(builder) = ctx.ce_builder.as_mut() {
+                    builder.named.push((name.0.clone(), val));
+                    return Ok(StmtEffect::None);
+                }
+            }
             Ok(StmtEffect::Reassign(name.0.clone(), val))
         }
         Statement::Expression(expr) => {
-            eval_expr_stmt(expr, env, ctx.emits)?;
+            eval_expr_stmt(expr, env, ctx)?;
             Ok(StmtEffect::None)
         }
         Statement::Return(r) => {
             let val = match &r.value {
-                Some(expr) => eval_expr(expr, env, ctx.emits)?,
+                Some(expr) => eval_expr(expr, env, ctx)?,
                 None => Value::Null,
             };
             Ok(StmtEffect::Return(val))
@@ -362,7 +376,7 @@ fn eval_stmt(
         Statement::Break => Ok(StmtEffect::Break),
         Statement::Continue => Ok(StmtEffect::Continue),
         Statement::ForIn { binding, iterable, body } => {
-            let items = match eval_expr(iterable, env, ctx.emits)? {
+            let items = match eval_expr(iterable, env, ctx)? {
                 Value::Array(a) => a,
                 other => return Err(format!("for/in: expected array, got {:?}", other)),
             };
@@ -398,7 +412,7 @@ fn eval_stmt(
         Statement::While { condition, body } => {
             let mut loop_env = env.clone();
             'while_loop: loop {
-                let cond = eval_expr(condition, &loop_env, ctx.emits)?;
+                let cond = eval_expr(condition, &loop_env, ctx)?;
                 if !is_truthy(&cond) {
                     break;
                 }
@@ -466,29 +480,57 @@ fn eval_stmt(
 fn eval_expr_stmt(
     expr: &Expression,
     env: &Env,
-    emits: &mut Vec<IntentValue>,
+    ctx: &mut EvalContext<'_>,
 ) -> Result<(), String> {
     // Special case: emit(expr) — produced by EmitLiftTransform or written explicitly.
     if let Expression::Call(call) = expr {
         if call.callee == Ident("emit".into()) {
             if let Some(arg) = call.args.first() {
-                let val = eval_expr(arg, env, emits)?;
-                push_component_emit(val, emits);
+                let val = eval_expr(arg, env, ctx)?;
+                push_component_emit(val, ctx);
             }
+            return Ok(());
+        }
+
+        // Builder call interception: inside a CE body, calls to names not in env
+        // and not built-ins are captured as builder calls rather than erroring.
+        if ctx.ce_builder.is_some()
+            && !env.contains_key(&call.callee.0)
+            && !is_builtin_fn(&call.callee.0)
+        {
+            let args: Vec<Value> = call.args.iter()
+                .map(|a| eval_expr(a, env, ctx))
+                .collect::<Result<_, _>>()?;
+            ctx.ce_builder.as_mut().unwrap().calls.push((call.callee.0.clone(), args));
             return Ok(());
         }
     }
 
-    // General case: evaluate and emit if the result is a ComponentExpr.
-    let val = eval_expr(expr, env, emits)?;
-    push_component_emit(val, emits);
+    // General case: evaluate and route result.
+    let val = eval_expr(expr, env, ctx)?;
+    if ctx.ce_builder.is_some() {
+        match val {
+            // String positionals captured in CE body.
+            Value::String(_) => ctx.ce_builder.as_mut().unwrap().positionals.push(val),
+            // CE children captured in CE body.
+            Value::ComponentExpr(ce) => ctx.ce_builder.as_mut().unwrap().children.push(*ce),
+            // Other values inside a CE body are discarded (no-op expression statements).
+            _ => {}
+        }
+    } else {
+        push_component_emit(val, ctx);
+    }
     Ok(())
 }
 
-fn push_component_emit(val: Value, emits: &mut Vec<IntentValue>) {
+fn push_component_emit(val: Value, ctx: &mut EvalContext<'_>) {
     if let Value::ComponentExpr(ce) = val {
-        emits.push(IntentValue::SpawnComponentTree { root: ce, parent: None });
+        ctx.emits.push(IntentValue::SpawnComponentTree { root: ce, parent: None });
     }
+}
+
+fn is_builtin_fn(name: &str) -> bool {
+    matches!(name, "print" | "assert" | "range" | "emit")
 }
 
 fn eval_if(
@@ -496,7 +538,7 @@ fn eval_if(
     env: &mut Env,
     ctx: &mut EvalContext<'_>,
 ) -> Result<StmtEffect, String> {
-    let cond = eval_expr(&if_stmt.condition, env, ctx.emits)?;
+    let cond = eval_expr(&if_stmt.condition, env, ctx)?;
     if is_truthy(&cond) {
         eval_block_stmts(&if_stmt.then_branch.statements, env, ctx)
     } else if let Some(else_branch) = &if_stmt.else_branch {
@@ -510,110 +552,68 @@ fn eval_if(
 // Expression evaluation
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// CE environment substitution
-// ---------------------------------------------------------------------------
-
-/// Convert an evaluated `Value` back to a literal `Expression` so it can be
-/// stored inside a `ComponentExpression` (which holds `Expression`, not `Value`).
-/// Non-literal values (functions, live component objects) become `Null`.
-fn value_to_expr(val: Value) -> Expression {
-    match val {
-        Value::Null => Expression::Null,
-        Value::Bool(b) => Expression::Bool(b),
-        Value::Number(n) => Expression::Number(n),
-        Value::String(s) => Expression::String(s),
-        Value::Identifier(s) => Expression::Identifier(Ident(s)),
-        Value::Array(items) => Expression::Array(items.into_iter().map(value_to_expr).collect()),
-        Value::ComponentExpr(ce) => Expression::Component(*ce),
-        _ => Expression::Null,
-    }
-}
-
-/// Evaluate an expression against the env and return a literal expression.
-/// If evaluation fails, fall back to the original expression unchanged.
-fn eval_to_literal(expr: &Expression, env: &Env, emits: &mut Vec<IntentValue>) -> Expression {
-    match eval_expr(expr, env, emits) {
-        Ok(val) => value_to_expr(val),
-        Err(_) => expr.clone(),
-    }
-}
-
-/// Recursively substitute all expressions in a ComponentExpression with their
-/// evaluated-and-literalized equivalents from the current environment. This
-/// ensures that loop variables, computed values, etc. are captured as concrete
-/// literals when the CE is emitted, rather than stored as unresolved identifiers.
-fn subst_ce(ce: &ComponentExpression, env: &Env, emits: &mut Vec<IntentValue>) -> ComponentExpression {
-    ComponentExpression {
-        component_type: ce.component_type.clone(),
-        constructor: ce.constructor.as_ref().map(|c| ConstructorCall {
-            method: c.method.clone(),
-            args: c.args.iter().map(|a| eval_to_literal(a, env, emits)).collect(),
-        }),
-        body: ce.body.iter().flat_map(|item| subst_body_items(item, env, emits)).collect(),
-    }
-}
-
-/// Expand a single `ComponentBodyItem` into zero or more concrete items.
-/// `For` expands to N copies, `If` expands to 0 or N, everything else is 1:1.
-fn subst_body_items(item: &ComponentBodyItem, env: &Env, emits: &mut Vec<IntentValue>) -> Vec<ComponentBodyItem> {
-    match item {
-        ComponentBodyItem::NamedAssignment { name, value } => vec![ComponentBodyItem::NamedAssignment {
-            name: name.clone(),
-            value: eval_to_literal(value, env, emits),
-        }],
-        ComponentBodyItem::Call(call) => vec![ComponentBodyItem::Call(CallExpression {
-            callee: call.callee.clone(),
-            args: call.args.iter().map(|a| eval_to_literal(a, env, emits)).collect(),
-        })],
-        ComponentBodyItem::Child(child_ce) => {
-            vec![ComponentBodyItem::Child(subst_ce(child_ce, env, emits))]
-        }
-        ComponentBodyItem::Positional(expr) => {
-            // If the expression evaluates to a ComponentExpr (e.g. a variable holding an
-            // imported CE), promote it to Child so it goes through the real child-spawn
-            // path in the registry. Leaving it as Positional would cause it to reach
-            // apply_positional which doesn't know how to spawn component subtrees.
-            let item = match eval_expr(expr, env, emits) {
-                Ok(Value::ComponentExpr(ce)) => ComponentBodyItem::Child(*ce),
-                Ok(val) => ComponentBodyItem::Positional(value_to_expr(val)),
-                Err(_) => ComponentBodyItem::Positional(expr.clone()),
-            };
-            vec![item]
-        }
-        ComponentBodyItem::If { condition, then_body, else_body } => {
-            let branch = match eval_expr(condition, env, emits) {
-                Ok(v) if is_truthy(&v) => then_body,
-                Ok(_) => match else_body {
-                    Some(b) => b,
-                    None => return vec![],
-                },
-                Err(_) => return vec![],
-            };
-            branch.iter().flat_map(|i| subst_body_items(i, env, emits)).collect()
-        }
-        ComponentBodyItem::For { binding, iterable, body } => {
-            let items = match eval_expr(iterable, env, emits) {
-                Ok(Value::Array(a)) => a,
-                _ => return vec![],
-            };
-            let mut out = Vec::new();
-            for val in items {
-                let mut loop_env = env.clone();
-                loop_env.insert(binding.0.clone(), val);
-                for i in body {
-                    out.extend(subst_body_items(i, &loop_env, emits));
-                }
-            }
-            out
+/// Evaluate a `ComponentExpression` AST node into a `MaterializedCE`.
+///
+/// All constructor args are evaluated against the current env. The body block
+/// is evaluated as a full MMS block statement in a CE builder context:
+/// - CE emissions → captured as children
+/// - Calls to names not in env → captured as builder calls
+/// - `Value::String` expression statements → captured as positionals
+/// - Named assignments (`name = expr`) → read from env after block if pre-injected
+fn eval_ce(ce: &ComponentExpression, env: &Env, ctx: &mut EvalContext<'_>) -> Result<Value, String> {
+    // Evaluate all constructor calls.
+    let mut ctor_method: Option<String> = None;
+    let mut ctor_args: Vec<Value> = vec![];
+    let mut extra_ctor_calls: Vec<(String, Vec<Value>)> = vec![];
+    for (i, ctor) in ce.constructors.iter().enumerate() {
+        let args: Vec<Value> = ctor.args.iter()
+            .map(|a| eval_expr(a, env, ctx))
+            .collect::<Result<_, _>>()?;
+        if i == 0 {
+            ctor_method = Some(ctor.method.0.clone());
+            ctor_args = args;
+        } else {
+            extra_ctor_calls.push((ctor.method.0.clone(), args));
         }
     }
+
+    // Evaluate the body block with a CE builder context.
+    let mut builder = CeBuilder {
+        calls: extra_ctor_calls,
+        named: vec![],
+        positionals: vec![],
+        children: vec![],
+    };
+
+    let mut body_env = env.clone();
+
+    // Evaluate the body block, routing CE emissions and builder calls to `builder`.
+    {
+        let mut body_ctx = EvalContext {
+            emits: ctx.emits,
+            source_path: ctx.source_path,
+            channels: ctx.channels.as_mut().map(|c| &mut **c),
+            ce_builder: Some(&mut builder),
+        };
+        eval_block_stmts(&ce.body.statements, &mut body_env, &mut body_ctx)?;
+    }
+
+    let mce = MaterializedCE {
+        component_type: ce.component_type.0.clone(),
+        ctor_method,
+        ctor_args,
+        calls: builder.calls,
+        named: builder.named,
+        positionals: builder.positionals,
+        children: builder.children,
+    };
+    Ok(Value::ComponentExpr(Box::new(mce)))
 }
 
 fn eval_expr(
     expr: &Expression,
     env: &Env,
-    emits: &mut Vec<IntentValue>,
+    ctx: &mut EvalContext<'_>,
 ) -> Result<Value, String> {
     match expr {
         Expression::Null => Ok(Value::Null),
@@ -623,7 +623,7 @@ fn eval_expr(
         Expression::Array(items) => {
             let vals = items
                 .iter()
-                .map(|e| eval_expr(e, env, emits))
+                .map(|e| eval_expr(e, env, ctx))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Value::Array(vals))
         }
@@ -634,26 +634,26 @@ fn eval_expr(
                 None => Ok(Value::Identifier(id.0.clone())),
             }
         }
-        Expression::Component(ce) => Ok(Value::ComponentExpr(Box::new(subst_ce(ce, env, emits)))),
+        Expression::Component(ce) => eval_ce(ce, env, ctx),
         Expression::Function { params, body } => Ok(Value::Function {
             params: params.iter().map(|p| p.0.clone()).collect(),
             body: body.clone(),
             captured_env: env.clone(),
         }),
-        Expression::Call(call) => eval_call(call, env, emits),
-        Expression::BinaryOp { op, lhs, rhs } => eval_binop(op, lhs, rhs, env, emits),
-        Expression::UnaryOp { op, operand } => eval_unaryop(op, operand, env, emits),
+        Expression::Call(call) => eval_call(call, env, ctx),
+        Expression::BinaryOp { op, lhs, rhs } => eval_binop(op, lhs, rhs, env, ctx),
+        Expression::UnaryOp { op, operand } => eval_unaryop(op, operand, env, ctx),
     }
 }
 
 fn eval_call(
     call: &CallExpression,
     env: &Env,
-    emits: &mut Vec<IntentValue>,
+    ctx: &mut EvalContext<'_>,
 ) -> Result<Value, String> {
     // Built-in: print(value)
     if call.callee.0 == "print" {
-        let arg = call.args.first().map(|a| eval_expr(a, env, emits)).transpose()?
+        let arg = call.args.first().map(|a| eval_expr(a, env, ctx)).transpose()?
             .unwrap_or(Value::Null);
         println!("[mms] {}", value_display(&arg));
         return Ok(Value::Null);
@@ -661,10 +661,10 @@ fn eval_call(
 
     // Built-in: assert(cond, msg)
     if call.callee.0 == "assert" {
-        let cond = call.args.first().map(|a| eval_expr(a, env, emits)).transpose()?
+        let cond = call.args.first().map(|a| eval_expr(a, env, ctx)).transpose()?
             .unwrap_or(Value::Null);
         if !is_truthy(&cond) {
-            let msg = call.args.get(1).map(|a| eval_expr(a, env, emits)).transpose()?
+            let msg = call.args.get(1).map(|a| eval_expr(a, env, ctx)).transpose()?
                 .unwrap_or(Value::String("assertion failed".into()));
             return Err(format!("assert: {}", value_display(&msg)));
         }
@@ -676,7 +676,7 @@ fn eval_call(
         let args: Vec<Value> = call
             .args
             .iter()
-            .map(|a| eval_expr(a, env, emits))
+            .map(|a| eval_expr(a, env, ctx))
             .collect::<Result<_, _>>()?;
         let (start, end) = match args.as_slice() {
             [Value::Number(n)] => (0.0_f64, *n),
@@ -700,7 +700,7 @@ fn eval_call(
             let args: Vec<Value> = call
                 .args
                 .iter()
-                .map(|a| eval_expr(a, env, emits))
+                .map(|a| eval_expr(a, env, ctx))
                 .collect::<Result<_, _>>()?;
 
             let mut call_env = captured_env;
@@ -708,14 +708,20 @@ fn eval_call(
                 call_env.insert(param.clone(), arg.clone());
             }
 
-            let mut func_ctx = EvalContext { emits, source_path: None, channels: None };
+            let mut func_ctx = EvalContext {
+                emits: ctx.emits,
+                source_path: None,
+                channels: None,
+                ce_builder: None,
+            };
             match eval_block_stmts(&body.statements, &mut call_env, &mut func_ctx)? {
                 StmtEffect::Return(val) => Ok(val),
                 StmtEffect::None => Ok(Value::Null),
                 StmtEffect::Break | StmtEffect::Continue => {
                     Err("break/continue cannot escape a function body".into())
                 }
-                StmtEffect::Bind(_, _) | StmtEffect::Export(_, _) | StmtEffect::ImportBindings(_) | StmtEffect::Reassign(_, _) => Ok(Value::Null),
+                StmtEffect::Bind(_, _) | StmtEffect::Export(_, _)
+                | StmtEffect::ImportBindings(_) | StmtEffect::Reassign(_, _) => Ok(Value::Null),
             }
         }
         other => Err(format!("cannot call {:?} as a function", other)),
@@ -727,24 +733,24 @@ fn eval_binop(
     lhs: &Expression,
     rhs: &Expression,
     env: &Env,
-    emits: &mut Vec<IntentValue>,
+    ctx: &mut EvalContext<'_>,
 ) -> Result<Value, String> {
     // Short-circuit logical ops.
     match op {
         BinOpKind::And => {
-            let l = eval_expr(lhs, env, emits)?;
+            let l = eval_expr(lhs, env, ctx)?;
             if !is_truthy(&l) {
                 return Ok(Value::Bool(false));
             }
-            let r = eval_expr(rhs, env, emits)?;
+            let r = eval_expr(rhs, env, ctx)?;
             return Ok(Value::Bool(is_truthy(&r)));
         }
         BinOpKind::Or => {
-            let l = eval_expr(lhs, env, emits)?;
+            let l = eval_expr(lhs, env, ctx)?;
             if is_truthy(&l) {
                 return Ok(Value::Bool(true));
             }
-            let r = eval_expr(rhs, env, emits)?;
+            let r = eval_expr(rhs, env, ctx)?;
             return Ok(Value::Bool(is_truthy(&r)));
         }
         BinOpKind::Query => {
@@ -753,15 +759,20 @@ fn eval_binop(
             return Err("query operator '->' not yet implemented (HostCall required)".to_string());
         }
         BinOpKind::Pipe => {
-            let lhs_val = eval_expr(lhs, env, emits)?;
-            let rhs_val = eval_expr(rhs, env, emits)?;
+            let lhs_val = eval_expr(lhs, env, ctx)?;
+            let rhs_val = eval_expr(rhs, env, ctx)?;
             match rhs_val {
                 Value::Function { params, body, captured_env } => {
                     let mut call_env = captured_env;
                     if let Some(param) = params.first() {
                         call_env.insert(param.clone(), lhs_val);
                     }
-                    let mut func_ctx = EvalContext { emits, source_path: None, channels: None };
+                    let mut func_ctx = EvalContext {
+                        emits: ctx.emits,
+                        source_path: None,
+                        channels: None,
+                        ce_builder: None,
+                    };
                     match eval_block_stmts(&body.statements, &mut call_env, &mut func_ctx)? {
                         StmtEffect::Return(val) => return Ok(val),
                         _ => return Ok(Value::Null),
@@ -773,8 +784,8 @@ fn eval_binop(
         _ => {}
     }
 
-    let l = eval_expr(lhs, env, emits)?;
-    let r = eval_expr(rhs, env, emits)?;
+    let l = eval_expr(lhs, env, ctx)?;
+    let r = eval_expr(rhs, env, ctx)?;
 
     match op {
         BinOpKind::Add => match (l, r) {
@@ -819,9 +830,9 @@ fn eval_unaryop(
     op: &UnaryOpKind,
     operand: &Expression,
     env: &Env,
-    emits: &mut Vec<IntentValue>,
+    ctx: &mut EvalContext<'_>,
 ) -> Result<Value, String> {
-    let val = eval_expr(operand, env, emits)?;
+    let val = eval_expr(operand, env, ctx)?;
     match op {
         UnaryOpKind::Neg => match val {
             Value::Number(n) => Ok(Value::Number(-n)),
@@ -892,7 +903,7 @@ fn eval_as_module(source: &str, source_path: Option<&str>) -> Result<Value, Stri
     let mut local_env: Env = HashMap::new();
     let mut emits: Vec<IntentValue> = Vec::new();
     let mut named: HashMap<String, Value> = HashMap::new();
-    let mut ctx = EvalContext { emits: &mut emits, source_path, channels: None };
+    let mut ctx = EvalContext { emits: &mut emits, source_path, channels: None, ce_builder: None };
 
     for stmt in &stmts {
         match eval_stmt(stmt, &mut local_env, &mut ctx)? {
@@ -914,7 +925,7 @@ fn eval_as_module(source: &str, source_path: Option<&str>) -> Result<Value, Stri
         }
     }
 
-    let sequence: Vec<crate::meow_meow::ast::ComponentExpression> = emits
+    let sequence: Vec<MaterializedCE> = emits
         .into_iter()
         .filter_map(|iv| match iv {
             IntentValue::SpawnComponentTree { root, .. } => Some(*root),

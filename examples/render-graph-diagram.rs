@@ -33,7 +33,7 @@ fn main() {
     println!("[mms] {} intent(s) emitted:", output.intents.len());
     for intent in &output.intents {
         if let engine::ecs::IntentValue::SpawnComponentTree { root, .. } = intent {
-            println!("  spawn {}", root.component_type.0);
+            println!("  spawn {}", root.component_type);
         }
     }
 

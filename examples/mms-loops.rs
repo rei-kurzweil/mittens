@@ -27,7 +27,7 @@ fn main() {
     println!("[mms] {} intent(s):", output.intents.len());
     for intent in &output.intents {
         if let IntentValue::SpawnComponentTree { root, .. } = intent {
-            println!("  spawn {}", root.component_type.0);
+            println!("  spawn {}", root.component_type);
         }
     }
 

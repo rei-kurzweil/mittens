@@ -58,58 +58,37 @@ pub struct CallExpression {
     pub args: Vec<Expression>,
 }
 
-/// The optional `.method(args)` immediately after the component type name.
+/// A constructor or chained builder call on a component expression header.
 ///
-/// Selects a named constructor or initial configuration for the component:
-/// `T.with_scale(1, 2, 3) { ... }` → `constructor = Some(ConstructorCall { method: "with_scale", args: [...] })`
-/// `Renderable.cube()` → `constructor = Some(ConstructorCall { method: "cube", args: [] })`
+/// `T.position(x, y, z).scale(a, b, c)` produces two `ConstructorCall`s:
+/// `[{ method: "position", args: [x,y,z] }, { method: "scale", args: [a,b,c] }]`
+///
+/// The first entry is the "primary" constructor (selects the component variant).
+/// Subsequent entries are chained builder calls applied after creation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstructorCall {
     pub method: Ident,
     pub args: Vec<Expression>,
 }
 
-/// A single item inside a component body, in source order.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ComponentBodyItem {
-    /// `name = expr` — sets a named property on the component being constructed.
-    NamedAssignment { name: Ident, value: Expression },
-    /// `ident(args)` — a builder/method call applied to the component.
-    Call(CallExpression),
-    /// A nested component expression — becomes a child in the tree.
-    Child(ComponentExpression),
-    /// A bare literal, identifier, or array — positional argument.
-    Positional(Expression),
-    /// `if cond { body } [else { body }]` inside a component body.
-    /// Expands to the then-items or else-items depending on the condition.
-    If {
-        condition: Expression,
-        then_body: Vec<ComponentBodyItem>,
-        else_body: Option<Vec<ComponentBodyItem>>,
-    },
-    /// `for binding in iterable { body }` inside a component body.
-    /// Expands to the body items once per element in the iterable.
-    For {
-        binding: Ident,
-        iterable: Expression,
-        body: Vec<ComponentBodyItem>,
-    },
-}
-
 /// A component expression: the declarative tree-building form.
 ///
-/// `ComponentType.head_method(args) { body_items... }`
+/// `ComponentType.method(args)[.method2(args2)...] { body }`
 ///
-/// The braces and head call are both optional:
-/// - `T { ... }` — no head call, has body
-/// - `Color.rgba(1, 0, 0, 1)` — head call, no braces
-/// - `T.with_scale(1, 2, 3) { C {} }` — head call + body
-/// - `TransformMapTranslation {}` — no head call, empty body
+/// - `T { ... }` — no constructor, has body
+/// - `R.cube()` — one constructor, no body
+/// - `T.position(x,y,z).scale(a,b,c) { C {} }` — two constructors + body
+///
+/// The body is a plain `BlockStatement`: all MMS language features are
+/// available inside it. CE emissions inside the body become children of this
+/// node; builder calls (identifiers not in env) configure this component.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComponentExpression {
     pub component_type: Ident,
-    pub constructor: Option<ConstructorCall>,
-    pub body: Vec<ComponentBodyItem>,
+    /// All chained constructor calls from the header (before `{`), in order.
+    /// Empty when there is no `.method(...)` on the type name.
+    pub constructors: Vec<ConstructorCall>,
+    pub body: BlockStatement,
 }
 
 // ---------------------------------------------------------------------------

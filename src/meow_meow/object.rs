@@ -3,14 +3,39 @@ use std::collections::HashMap;
 use crate::engine::ecs::ComponentId;
 
 // ---------------------------------------------------------------------------
+// Materialized component expression
+// ---------------------------------------------------------------------------
+
+/// A fully-evaluated component expression: all values are concrete `Value`s,
+/// all control flow has been expanded, all constructor args evaluated.
+///
+/// Produced by the evaluator when a `ComponentExpression` AST node is
+/// evaluated. Passed to `spawn_tree` in the registry — no MMS expression
+/// evaluation needed on the main thread.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MaterializedCE {
+    /// Component type name (short or full, e.g. `"T"` / `"Transform"`).
+    pub component_type: String,
+    /// First constructor call method, e.g. `"position"` from `T.position(...)`.
+    pub ctor_method: Option<String>,
+    /// First constructor call args, evaluated.
+    pub ctor_args: Vec<Value>,
+    /// Remaining chained constructor calls + body builder calls, in source order.
+    /// e.g. `.scale(...)` after `.position(...)`, plus `fps_rotation()` in the body.
+    pub calls: Vec<(String, Vec<Value>)>,
+    /// Named property assignments from the body, e.g. `intensity = 0.9`.
+    pub named: Vec<(String, Value)>,
+    /// String-type positional content (e.g. `Text { "hello " + name }`).
+    pub positionals: Vec<Value>,
+    /// Child component trees, in source order.
+    pub children: Vec<MaterializedCE>,
+}
+
+// ---------------------------------------------------------------------------
 // Runtime values
 // ---------------------------------------------------------------------------
 
 /// Runtime value representation for Meow Meow evaluation.
-///
-/// Primitive values live inline. Heap-allocated MMS objects are addressed by
-/// `ObjectId`. Engine-side components created but not yet emitted/attached are
-/// addressed by `ComponentId` (the engine's own stable key).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Null,
@@ -19,26 +44,20 @@ pub enum Value {
     String(String),
     Array(Vec<Value>),
 
-    /// A live engine component created but not yet attached to any parent.
-    ///
-    /// Holds the engine-side `ComponentId`. When this value appears in
-    /// statement position (bare identifier, free-standing expression), the
-    /// evaluator emits it to the engine (sends `SpawnComponentTree` /
-    /// `Attach` intent to the main thread).
+    /// A live engine component (already spawned). Holds the engine-side
+    /// `ComponentId`. Produced when `let x = CE` is evaluated with a live
+    /// reply channel (`eval_with_world`).
     ComponentObject(ComponentId),
 
     /// Heap-allocated MMS object (map / record / instance).
     Object(ObjectId),
 
-    /// Symbolic identifier value (e.g. positional flags like `QUAD_2D`).
-    ///
-    /// Kept distinct from `String` to preserve intent when passing
-    /// enum-variant-like bare identifiers to host-defined component constructors.
+    /// Symbolic identifier value (e.g. enum-like flags passed to constructors).
     Identifier(String),
 
-    /// Unresolved component expression (pre-Phase-6 placeholder).
-    /// Captured from a `let x = ComponentType { ... }` binding or expression.
-    ComponentExpr(Box<crate::meow_meow::ast::ComponentExpression>),
+    /// A fully-evaluated component expression ready to spawn.
+    /// Produced whenever a `ComponentExpression` AST node is evaluated.
+    ComponentExpr(Box<MaterializedCE>),
 
     /// A closure: params + body AST + captured environment snapshot.
     Function {
@@ -50,7 +69,7 @@ pub enum Value {
     /// A loaded module: named exports + ordered sequence of root CE emits.
     Module {
         named: HashMap<String, Value>,
-        sequence: Vec<crate::meow_meow::ast::ComponentExpression>,
+        sequence: Vec<MaterializedCE>,
     },
 }
 

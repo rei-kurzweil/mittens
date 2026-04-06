@@ -1,5 +1,5 @@
 use crate::meow_meow::ast::{
-    AssignmentStatement, BinOpKind, BlockStatement, CallExpression, ComponentBodyItem,
+    AssignmentStatement, BinOpKind, BlockStatement, CallExpression,
     ComponentExpression, ConstructorCall, Expression, Ident, IfStatement, ImportItem,
     ReturnStatement, Span, Statement, UnaryOpKind,
 };
@@ -356,30 +356,27 @@ impl MeowMeowParser {
     fn parse_ident_leading_expression(&mut self) -> Result<Expression, ParseError> {
         let ident = self.expect_ident()?;
 
-        // `Type.method(args)[.method2(args2)...]` → component expression with head call.
-        // Additional chained calls become prepended body Call items.
+        // `Type.method(args)[.method2(args2)...]` → component expression with constructor(s).
         if self.try_consume(&TokenKind::Dot) {
             let method = self.expect_ident()?;
             self.consume(&TokenKind::LParen)?;
             let args = self.parse_call_args()?;
-            let constructor = Some(ConstructorCall { method, args });
-            let mut extra_calls = vec![];
+            let mut constructors = vec![ConstructorCall { method, args }];
             while self.try_consume(&TokenKind::Dot) {
                 let chained = self.expect_ident()?;
                 self.consume(&TokenKind::LParen)?;
                 let chained_args = self.parse_call_args()?;
-                extra_calls.push(ComponentBodyItem::Call(CallExpression { callee: chained, args: chained_args }));
+                constructors.push(ConstructorCall { method: chained, args: chained_args });
             }
-            let mut body = if self.try_consume(&TokenKind::LBrace) {
-                self.parse_component_body()?
+            let body = if matches!(self.peek_kind(), TokenKind::LBrace) {
+                self.parse_block_statement()?
             } else {
-                vec![]
+                BlockStatement { statements: vec![] }
             };
-            extra_calls.append(&mut body);
             return Ok(Expression::Component(ComponentExpression {
                 component_type: ident,
-                constructor,
-                body: extra_calls,
+                constructors,
+                body,
             }));
         }
 
@@ -389,146 +386,21 @@ impl MeowMeowParser {
             return Ok(Expression::Call(CallExpression { callee: ident, args }));
         }
 
-        // `ident { body }` → component expression, no head call.
+        // `ident { body }` → component expression, no constructor.
         // Convention: component type names always start uppercase; lowercase = variable.
         // This prevents `if flag { ... }` from consuming `flag {` as a component expression.
         let is_component_type = ident.0.chars().next().map(|c| c.is_uppercase()).unwrap_or(false);
-        if is_component_type && self.try_consume(&TokenKind::LBrace) {
-            let body = self.parse_component_body()?;
+        if is_component_type && matches!(self.peek_kind(), TokenKind::LBrace) {
+            let body = self.parse_block_statement()?;
             return Ok(Expression::Component(ComponentExpression {
                 component_type: ident,
-                constructor: None,
+                constructors: vec![],
                 body,
             }));
         }
 
         // bare identifier
         Ok(Expression::Identifier(ident))
-    }
-
-    /// Parse the inside of a component body, up to and including the closing `}`.
-    /// Called after the `{` has already been consumed.
-    fn parse_component_body(&mut self) -> Result<Vec<ComponentBodyItem>, ParseError> {
-        let mut body = Vec::new();
-
-        loop {
-            if self.try_consume(&TokenKind::RBrace) {
-                break;
-            }
-            if self.is_eof() {
-                return Err(self.err("Unterminated component body"));
-            }
-            if self.try_consume(&TokenKind::Comma) || self.try_consume(&TokenKind::Semicolon) {
-                continue;
-            }
-
-            match self.peek_kind() {
-                TokenKind::If => {
-                    self.consume(&TokenKind::If)?;
-                    let condition = self.parse_expression()?;
-                    self.consume(&TokenKind::LBrace)?;
-                    let then_body = self.parse_component_body()?;
-                    let else_body = if self.try_consume(&TokenKind::Else) {
-                        self.consume(&TokenKind::LBrace)?;
-                        Some(self.parse_component_body()?)
-                    } else {
-                        None
-                    };
-                    body.push(ComponentBodyItem::If { condition, then_body, else_body });
-                    continue;
-                }
-                TokenKind::For => {
-                    self.consume(&TokenKind::For)?;
-                    let binding = self.expect_ident()?;
-                    self.consume(&TokenKind::In)?;
-                    let iterable = self.parse_expression()?;
-                    self.consume(&TokenKind::LBrace)?;
-                    let for_body = self.parse_component_body()?;
-                    body.push(ComponentBodyItem::For { binding, iterable, body: for_body });
-                    continue;
-                }
-                TokenKind::Ident(_) => {
-                    let save = self.pos;
-                    let leading = self.expect_ident()?;
-
-                    // `Type.method(args)[.method2(args2)...]` → child component with head call.
-                    // Additional chained calls become prepended body Call items.
-                    if self.try_consume(&TokenKind::Dot) {
-                        let method = self.expect_ident()?;
-                        self.consume(&TokenKind::LParen)?;
-                        let args = self.parse_call_args()?;
-                        let constructor = Some(ConstructorCall { method, args });
-                        let mut extra_calls = vec![];
-                        while self.try_consume(&TokenKind::Dot) {
-                            let chained = self.expect_ident()?;
-                            self.consume(&TokenKind::LParen)?;
-                            let chained_args = self.parse_call_args()?;
-                            extra_calls.push(ComponentBodyItem::Call(CallExpression { callee: chained, args: chained_args }));
-                        }
-                        let mut child_body = if self.try_consume(&TokenKind::LBrace) {
-                            self.parse_component_body()?
-                        } else {
-                            vec![]
-                        };
-                        extra_calls.append(&mut child_body);
-                        body.push(ComponentBodyItem::Child(ComponentExpression {
-                            component_type: leading,
-                            constructor,
-                            body: extra_calls,
-                        }));
-                        continue;
-                    }
-
-                    // `ident = expr` → named assignment
-                    if self.try_consume(&TokenKind::Eq) {
-                        let value = self.parse_expression()?;
-                        body.push(ComponentBodyItem::NamedAssignment { name: leading, value });
-                        continue;
-                    }
-
-                    // `ident(args)` → builder call
-                    if self.try_consume(&TokenKind::LParen) {
-                        let args = self.parse_call_args()?;
-                        body.push(ComponentBodyItem::Call(CallExpression {
-                            callee: leading,
-                            args,
-                        }));
-                        continue;
-                    }
-
-                    // `ident { body }` → child component, no head call
-                    if self.try_consume(&TokenKind::LBrace) {
-                        let child_body = self.parse_component_body()?;
-                        body.push(ComponentBodyItem::Child(ComponentExpression {
-                            component_type: leading,
-                            constructor: None,
-                            body: child_body,
-                        }));
-                        continue;
-                    }
-
-                    // bare identifier → positional; rewind and re-parse as expression
-                    self.pos = save;
-                    let expr = self.parse_expression()?;
-                    body.push(ComponentBodyItem::Positional(expr));
-                }
-                TokenKind::String(_)
-                | TokenKind::Number(_)
-                | TokenKind::True
-                | TokenKind::False
-                | TokenKind::Null
-                | TokenKind::LBracket
-                | TokenKind::Minus => {
-                    let expr = self.parse_expression()?;
-                    body.push(ComponentBodyItem::Positional(expr));
-                }
-                _ => {
-                    return Err(self.err("Unexpected token in component body"));
-                }
-            }
-        }
-
-        Ok(body)
     }
 
     fn parse_call_args(&mut self) -> Result<Vec<Expression>, ParseError> {

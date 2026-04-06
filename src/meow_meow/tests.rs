@@ -2,9 +2,10 @@ use std::time::{Duration, Instant};
 
 use crate::engine;
 use crate::meow_meow::ast::{
-    AssignmentStatement, ComponentBodyItem, Expression, ImportItem, Statement,
+    AssignmentStatement, Expression, ImportItem, Statement,
 };
 use crate::meow_meow::evaluator::{EvalRequest, EvalResponse, MeowMeowEvaluator};
+use crate::meow_meow::object::Value;
 use crate::meow_meow::parser::MeowMeowParser;
 use crate::meow_meow::runner::MeowMeowRunner;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;
@@ -12,6 +13,14 @@ use crate::meow_meow::tokenizer::MeowMeowTokenizer;
 fn parse(src: &str) -> Vec<Statement> {
     let tokens = MeowMeowTokenizer::new(src).tokenize().expect("tokenize ok");
     MeowMeowParser::new(tokens).parse_program().expect("parse ok")
+}
+
+/// Helper: extract a `ComponentExpression` from a `Statement::Expression(Expression::Component(_))`.
+macro_rules! as_component {
+    ($stmt:expr) => {{
+        let Statement::Expression(Expression::Component(c)) = $stmt else { panic!("expected component expression statement") };
+        c
+    }};
 }
 
 // ---------------------------------------------------------------------------
@@ -22,43 +31,43 @@ fn parse(src: &str) -> Vec<Statement> {
 fn parse_bare_component() {
     let prog = parse("T {}");
     assert_eq!(prog.len(), 1);
-    let Statement::Expression(Expression::Component(c)) = &prog[0] else { panic!() };
+    let c = as_component!(&prog[0]);
     assert_eq!(c.component_type.0, "T");
-    assert!(c.constructor.is_none());
-    assert!(c.body.is_empty());
+    assert!(c.constructors.is_empty());
+    assert!(c.body.statements.is_empty());
 }
 
 #[test]
 fn parse_constructor_no_body() {
     let prog = parse("Color.rgba(1.0, 0.0, 0.5, 1.0)");
     assert_eq!(prog.len(), 1);
-    let Statement::Expression(Expression::Component(c)) = &prog[0] else { panic!() };
+    let c = as_component!(&prog[0]);
     assert_eq!(c.component_type.0, "Color");
-    let hc = c.constructor.as_ref().expect("constructor");
+    let hc = c.constructors.first().expect("constructor");
     assert_eq!(hc.method.0, "rgba");
     assert_eq!(hc.args.len(), 4);
-    assert!(c.body.is_empty());
+    assert!(c.body.statements.is_empty());
 }
 
 #[test]
 fn parse_constructor_with_body() {
     let prog = parse("T.with_scale(0.06, 0.06, 0.12) { C {} }");
-    let Statement::Expression(Expression::Component(c)) = &prog[0] else { panic!() };
+    let c = as_component!(&prog[0]);
     assert_eq!(c.component_type.0, "T");
-    let hc = c.constructor.as_ref().expect("constructor");
+    let hc = c.constructors.first().expect("constructor");
     assert_eq!(hc.method.0, "with_scale");
     assert_eq!(hc.args.len(), 3);
-    assert_eq!(c.body.len(), 1);
-    let ComponentBodyItem::Child(child) = &c.body[0] else { panic!() };
+    assert_eq!(c.body.statements.len(), 1);
+    let child = as_component!(&c.body.statements[0]);
     assert_eq!(child.component_type.0, "C");
 }
 
 #[test]
 fn parse_named_assignment_in_body() {
     let prog = parse(r#"T { name = "root" }"#);
-    let Statement::Expression(Expression::Component(c)) = &prog[0] else { panic!() };
-    assert_eq!(c.body.len(), 1);
-    let ComponentBodyItem::NamedAssignment { name, value } = &c.body[0] else { panic!() };
+    let c = as_component!(&prog[0]);
+    assert_eq!(c.body.statements.len(), 1);
+    let Statement::Reassign { name, value } = &c.body.statements[0] else { panic!("expected Reassign") };
     assert_eq!(name.0, "name");
     assert!(matches!(value, Expression::String(s) if s == "root"));
 }
@@ -66,9 +75,9 @@ fn parse_named_assignment_in_body() {
 #[test]
 fn parse_call_in_body() {
     let prog = parse("BG { with_occlusion_and_lighting() }");
-    let Statement::Expression(Expression::Component(c)) = &prog[0] else { panic!() };
-    assert_eq!(c.body.len(), 1);
-    let ComponentBodyItem::Call(call) = &c.body[0] else { panic!() };
+    let c = as_component!(&prog[0]);
+    assert_eq!(c.body.statements.len(), 1);
+    let Statement::Expression(Expression::Call(call)) = &c.body.statements[0] else { panic!("expected Call") };
     assert_eq!(call.callee.0, "with_occlusion_and_lighting");
     assert!(call.args.is_empty());
 }
@@ -76,26 +85,26 @@ fn parse_call_in_body() {
 #[test]
 fn parse_positional_string() {
     let prog = parse(r#"TXT { "hello" }"#);
-    let Statement::Expression(Expression::Component(c)) = &prog[0] else { panic!() };
-    assert_eq!(c.body.len(), 1);
-    let ComponentBodyItem::Positional(Expression::String(s)) = &c.body[0] else { panic!() };
+    let c = as_component!(&prog[0]);
+    assert_eq!(c.body.statements.len(), 1);
+    let Statement::Expression(Expression::String(s)) = &c.body.statements[0] else { panic!("expected string expr") };
     assert_eq!(s, "hello");
 }
 
 #[test]
 fn parse_positional_ident_flag() {
     let prog = parse("R { QUAD_2D }");
-    let Statement::Expression(Expression::Component(c)) = &prog[0] else { panic!() };
-    assert_eq!(c.body.len(), 1);
-    let ComponentBodyItem::Positional(Expression::Identifier(id)) = &c.body[0] else { panic!() };
+    let c = as_component!(&prog[0]);
+    assert_eq!(c.body.statements.len(), 1);
+    let Statement::Expression(Expression::Identifier(id)) = &c.body.statements[0] else { panic!("expected ident expr") };
     assert_eq!(id.0, "QUAD_2D");
 }
 
 #[test]
 fn parse_named_assignment_array() {
     let prog = parse("T { rotation = [0.0, 0.0, 3.14] }");
-    let Statement::Expression(Expression::Component(c)) = &prog[0] else { panic!() };
-    let ComponentBodyItem::NamedAssignment { name, value } = &c.body[0] else { panic!() };
+    let c = as_component!(&prog[0]);
+    let Statement::Reassign { name, value } = &c.body.statements[0] else { panic!("expected Reassign") };
     assert_eq!(name.0, "rotation");
     let Expression::Array(items) = value else { panic!() };
     assert_eq!(items.len(), 3);
@@ -107,13 +116,13 @@ fn parse_named_assignment_array() {
 
 #[test]
 fn parse_body_ordering_preserved() {
-    // call, then child, then positional — order must be preserved
+    // call, then child, then identifier — order must be preserved as Statements
     let prog = parse("T { call() C {} IDENT }");
-    let Statement::Expression(Expression::Component(c)) = &prog[0] else { panic!() };
-    assert_eq!(c.body.len(), 3);
-    assert!(matches!(&c.body[0], ComponentBodyItem::Call(_)));
-    assert!(matches!(&c.body[1], ComponentBodyItem::Child(_)));
-    assert!(matches!(&c.body[2], ComponentBodyItem::Positional(_)));
+    let c = as_component!(&prog[0]);
+    assert_eq!(c.body.statements.len(), 3);
+    assert!(matches!(&c.body.statements[0], Statement::Expression(Expression::Call(_))));
+    assert!(matches!(&c.body.statements[1], Statement::Expression(Expression::Component(_))));
+    assert!(matches!(&c.body.statements[2], Statement::Expression(Expression::Identifier(_))));
 }
 
 // ---------------------------------------------------------------------------
@@ -148,49 +157,49 @@ CTLXR.new(true, Left, Aim) {
     let prog = parse(src);
     assert_eq!(prog.len(), 1);
 
-    let Statement::Expression(Expression::Component(root)) = &prog[0] else { panic!() };
+    let root = as_component!(&prog[0]);
     assert_eq!(root.component_type.0, "CTLXR");
-    let hc = root.constructor.as_ref().expect("constructor on CTLXR");
+    let hc = root.constructors.first().expect("constructor on CTLXR");
     assert_eq!(hc.method.0, "new");
     assert_eq!(hc.args.len(), 3);
     assert!(matches!(&hc.args[0], Expression::Bool(true)));
 
     // one child: T.with_scale
-    assert_eq!(root.body.len(), 1);
-    let ComponentBodyItem::Child(t_scale) = &root.body[0] else { panic!() };
+    assert_eq!(root.body.statements.len(), 1);
+    let t_scale = as_component!(&root.body.statements[0]);
     assert_eq!(t_scale.component_type.0, "T");
-    assert_eq!(t_scale.constructor.as_ref().unwrap().method.0, "with_scale");
+    assert_eq!(t_scale.constructors.first().unwrap().method.0, "with_scale");
 
     // T → TransformPipeline
-    assert_eq!(t_scale.body.len(), 1);
-    let ComponentBodyItem::Child(pipeline) = &t_scale.body[0] else { panic!() };
+    assert_eq!(t_scale.body.statements.len(), 1);
+    let pipeline = as_component!(&t_scale.body.statements[0]);
     assert_eq!(pipeline.component_type.0, "TransformPipeline");
 
     // pipeline → fork + output
-    assert_eq!(pipeline.body.len(), 2);
-    let ComponentBodyItem::Child(fork) = &pipeline.body[0] else { panic!() };
+    assert_eq!(pipeline.body.statements.len(), 2);
+    let fork = as_component!(&pipeline.body.statements[0]);
     assert_eq!(fork.component_type.0, "TransformForkTRS");
 
     // fork → translation, rotation, scale, merge
-    assert_eq!(fork.body.len(), 4);
-    let ComponentBodyItem::Child(map_rot) = &fork.body[1] else { panic!() };
+    assert_eq!(fork.body.statements.len(), 4);
+    let map_rot = as_component!(&fork.body.statements[1]);
     assert_eq!(map_rot.component_type.0, "TransformMapRotation");
 
     // rotation filter child
-    assert_eq!(map_rot.body.len(), 1);
-    let ComponentBodyItem::Child(filter) = &map_rot.body[0] else { panic!() };
+    assert_eq!(map_rot.body.statements.len(), 1);
+    let filter = as_component!(&map_rot.body.statements[0]);
     assert_eq!(filter.component_type.0, "QuatTemporalFilter");
-    assert_eq!(filter.constructor.as_ref().unwrap().method.0, "with_smoothing_factor");
+    assert_eq!(filter.constructors.first().unwrap().method.0, "with_smoothing_factor");
 
     // output → T → R.cube → C.rgba
-    let ComponentBodyItem::Child(output) = &pipeline.body[1] else { panic!() };
-    let ComponentBodyItem::Child(out_t) = &output.body[0] else { panic!() };
-    let ComponentBodyItem::Child(cube) = &out_t.body[0] else { panic!() };
+    let output = as_component!(&pipeline.body.statements[1]);
+    let out_t = as_component!(&output.body.statements[0]);
+    let cube = as_component!(&out_t.body.statements[0]);
     assert_eq!(cube.component_type.0, "R");
-    assert_eq!(cube.constructor.as_ref().unwrap().method.0, "cube");
-    let ComponentBodyItem::Child(color) = &cube.body[0] else { panic!() };
+    assert_eq!(cube.constructors.first().unwrap().method.0, "cube");
+    let color = as_component!(&cube.body.statements[0]);
     assert_eq!(color.component_type.0, "C");
-    assert_eq!(color.constructor.as_ref().unwrap().method.0, "rgba");
+    assert_eq!(color.constructors.first().unwrap().method.0, "rgba");
 }
 
 // ---------------------------------------------------------------------------
@@ -201,9 +210,9 @@ CTLXR.new(true, Left, Aim) {
 fn parse_multiple_roots() {
     let prog = parse("T {} R {} XR.on()");
     assert_eq!(prog.len(), 3);
-    let Statement::Expression(Expression::Component(c2)) = &prog[2] else { panic!() };
+    let c2 = as_component!(&prog[2]);
     assert_eq!(c2.component_type.0, "XR");
-    assert_eq!(c2.constructor.as_ref().unwrap().method.0, "on");
+    assert_eq!(c2.constructors.first().unwrap().method.0, "on");
 }
 
 // ---------------------------------------------------------------------------
@@ -388,7 +397,6 @@ fn eval_break_only_exits_inner_loop() {
 
 #[test]
 fn eval_for_binding_accessible_in_body() {
-    // loop variable used in condition — if it works, the loop runs 0 times after i==0 check fails
     // range(0) → empty → 0 intents
     let out = eval("for i in range(0) { T {} }");
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
@@ -513,7 +521,6 @@ fn parse_reassign() {
 #[test]
 fn eval_reassign_basic() {
     // A number incremented via reassignment should be visible to later code.
-    // We use a side-effecting CE emit to observe the final value.
     let src = r#"
         let x = 10
         x = 20
@@ -546,15 +553,14 @@ fn eval_if_reassign_propagates_to_outer_scope() {
     assert_eq!(out.intents.len(), 1);
     // Verify the CE position used the updated y (second arg of the constructor call).
     let engine::ecs::IntentValue::SpawnComponentTree { root, .. } = &out.intents[0] else { panic!() };
-    let constructor = root.constructor.as_ref().expect("T.position has constructor");
-    let Expression::Number(y_val) = &constructor.args[1] else { panic!("expected number arg") };
+    assert_eq!(root.ctor_method.as_deref(), Some("position"), "expected position ctor");
+    let Value::Number(y_val) = &root.ctor_args[1] else { panic!("expected number arg at index 1") };
     assert!((*y_val - 99.0).abs() < 1e-6, "expected y=99.0, got {y_val}");
 }
 
 #[test]
 fn eval_for_accumulator_pattern() {
     // sum = sum + i across iterations — the classic accumulator.
-    // We emit a CE per iteration using the accumulated value so we can observe it.
     let src = r#"
         let sum = 0
         for i in [1, 2, 3] {
@@ -632,7 +638,7 @@ fn eval_while_false_never_runs() {
 }
 
 // ---------------------------------------------------------------------------
-// Component body: for / if
+// Component body: for / if / block statements
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -646,7 +652,7 @@ fn body_for_expands_children() {
 
 #[test]
 fn body_for_captures_binding() {
-    // The loop variable should be captured as a literal in each child's constructor args.
+    // The loop variable should be captured as a value in each child's constructor args.
     let out = eval(r#"T { for i in [1, 2, 3] { T.position(i, 0, 0) {} } }"#);
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.intents.len(), 1);
