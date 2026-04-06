@@ -238,7 +238,9 @@ For v1, `ReplaceSameTarget` should be the only implemented runtime behavior, eve
 
 ### New execution phase: transition runtime
 
-Add a `TransitionSystem` (or animation-owned transition runtime) that manages active interpolations over time.
+Add a standalone `TransitionSystem` that manages active interpolations over time.
+
+`TransitionSystem` should work with `AnimationSystem`, but it should not be owned by animation-specific code. `AnimationSystem` is one producer of transitionable mutations; `TransitionSystem` is the reusable runtime that smooths them.
 
 Responsibilities:
 
@@ -563,6 +565,17 @@ Longer-term, non-animation uses might also want:
 
 But for this doc’s scope, beat-driven is enough.
 
+## Relationship to `AnimationSystem`
+
+`TransitionSystem` should cooperate with `AnimationSystem`, not be embedded inside it.
+
+Recommended split of responsibilities:
+
+- `AnimationSystem`: timeline playback, due-keyframe detection, emission of authored intents
+- `TransitionSystem`: interception/upgrading of eligible property mutations, active transition storage, per-frame interpolation, and exact final-value application
+
+This separation matters because transition-enabled components may eventually be driven by animation keyframes, input systems, editor gizmos, MMS/scripts, or gameplay logic. The architecture should not require every transition to originate from an `ActionComponent` or from a keyframe at all.
+
 ## Property support
 
 ### v1 supported payloads
@@ -739,6 +752,15 @@ At beat 4.0, the system captures the current transform and animates toward the t
 
 The color change transitions because the `ColorComponent` carries the transition policy.
 
+### Interpolated UV change
+
+- entity
+  - `UVComponent { ...current uv values... }`
+    - `TransitionComponent { duration_beats: 0.25, easing: linear }`
+- some system or animation emits a UV mutation intent
+
+The UV change transitions because the `UVComponent` carries the transition policy.
+
 ## Why `TransitionComponent` belongs under the target component
 
 This is the main design choice.
@@ -786,8 +808,6 @@ So yes: the recommended design is that `TransitionComponent` attaches to the tar
 
 ## Open questions
 
-- Should the runtime live as a standalone `TransitionSystem` or inside `AnimationSystem`?
-  - I prefer a standalone runtime once interpolation exists outside animation too.
 - Should unsupported transitioned actions be ignored, logged, or hard-error?
   - I prefer logged and skipped.
 - Should `TransformComponent` transitions apply to all transform channels by default, or should we add an explicit channel mask in v1?
@@ -804,6 +824,7 @@ So yes: the recommended design is that `TransitionComponent` attaches to the tar
 Recommended path:
 
 - keep `KeyframeComponent` simple
+- keep `TransitionSystem` standalone and reusable outside animation
 - attach `TransitionComponent` to the target component whose property changes should be smoothed
 - let keyframes and other callers emit normal mutation intents
 - start transitions when those mutations hit transition-enabled target components
