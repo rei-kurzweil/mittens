@@ -97,7 +97,7 @@ impl TransformGizmoSystem {
 
         let name = world
             .get_component_record(target_transform)
-            .map(|n| n.name.clone())
+            .map(|n| if n.name.is_empty() { n.component_type.clone() } else { format!("{}: {}", n.component_type, n.name) })
             .unwrap_or_else(|| "<missing>".to_string());
 
         println!(
@@ -154,7 +154,7 @@ impl TransformGizmoSystem {
 
         let name = world
             .get_component_record(target_transform)
-            .map(|n| n.name.clone())
+            .map(|n| if n.name.is_empty() { n.component_type.clone() } else { format!("{}: {}", n.component_type, n.name) })
             .unwrap_or_else(|| "<missing>".to_string());
 
         println!(
@@ -421,11 +421,11 @@ impl TransformGizmoSystem {
                 if orig != routed {
                     let orig_name = world
                         .get_component_record(orig)
-                        .map(|n| n.name.clone())
+                        .map(|n| if n.name.is_empty() { n.component_type.clone() } else { format!("{}: {}", n.component_type, n.name) })
                         .unwrap_or_else(|| "<missing>".to_string());
                     let routed_name = world
                         .get_component_record(routed)
-                        .map(|n| n.name.clone())
+                        .map(|n| if n.name.is_empty() { n.component_type.clone() } else { format!("{}: {}", n.component_type, n.name) })
                         .unwrap_or_else(|| "<missing>".to_string());
                     println!(
                         "[TransformGizmoSystem] routed target_transform {:?} '{}' -> {:?} '{}'",

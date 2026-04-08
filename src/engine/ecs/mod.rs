@@ -249,7 +249,7 @@ impl World {
 
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
-            if self.component_name(node) == Some(wanted_name) {
+            if self.component_label(node) == Some(wanted_name) {
                 return Some(node);
             }
 
@@ -272,7 +272,7 @@ impl World {
         let mut out = Vec::new();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
-            if self.component_name(node) == Some(wanted_name) {
+            if self.component_label(node) == Some(wanted_name) {
                 out.push(node);
             }
 

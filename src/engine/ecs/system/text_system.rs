@@ -146,7 +146,7 @@ impl TextSystem {
         texture_uri: &str,
         filtering: Option<TextureFiltering>,
         emissive: Option<bool>,
-        raycastable: Option<bool>,
+        raycastable: Option<RaycastableComponent>,
         color_override: Option<[f32; 4]>,
     ) -> (ComponentId, ComponentId, ComponentId) {
         // Optional color override: insert a ColorComponent above the renderable.
@@ -161,8 +161,8 @@ impl TextSystem {
         let r_id = world.add_component(RenderableComponent::square());
         let _ = world.add_child(renderable_parent, r_id);
 
-        if let Some(enable) = raycastable {
-            let rc_id = world.add_component(RaycastableComponent::new(enable));
+        if let Some(rc) = raycastable {
+            let rc_id = world.add_component(rc);
             let _ = world.add_child(r_id, rc_id);
         }
 
@@ -261,10 +261,12 @@ impl TextSystem {
 
         // Raycasting is explicit opt-in. For text, allow toggling at the TextComponent root by
         // attaching an immediate RaycastableComponent child; this is propagated to all glyphs.
+        // The full component is copied so that PointerEvents (click_only, drag_only, etc.) is preserved.
         let inherited_raycastable = world.children_of(component).iter().find_map(|&ch| {
             world
                 .get_component_by_id_as::<RaycastableComponent>(ch)
-                .map(|r| r.enable)
+                .copied()
+                .filter(|r| r.enable)
         });
 
         // Optional per-glyph shadow pass.

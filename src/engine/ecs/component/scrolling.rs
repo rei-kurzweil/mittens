@@ -60,24 +60,38 @@ impl ScrollingComponent {
         (self.total_items.saturating_sub(self.page_size)) as f32
     }
 
-    /// Update `scroll_offset` by a world-space Y drag delta and return `Some((start, end))` if
-    /// the window boundary was crossed (caller should emit `ScrollChanged`).
+    /// Update `scroll_offset` by a world-space Y drag delta.
+    ///
+    /// Returns `Some((start, end, window_changed))` if the offset actually moved, where
+    /// `window_changed` is true when a row boundary was crossed (caller should emit
+    /// `ScrollChanged` to trigger a full row rebuild). Returns `None` if the drag had no effect.
     ///
     /// Sign convention: dragging up (positive `delta_y`) reveals items lower in the list.
-    pub fn apply_drag(&mut self, delta_y: f32) -> Option<(usize, usize)> {
+    pub fn apply_drag(&mut self, delta_y: f32) -> Option<(usize, usize, bool)> {
         if self.item_height <= 0.0 {
             return None;
         }
+        let prev_offset = self.scroll_offset;
         let prev_start = self.window_start();
         self.scroll_offset -= delta_y / self.item_height;
         self.scroll_offset = self.scroll_offset.clamp(0.0, self.max_scroll());
-        let new_start = self.window_start();
-        if new_start != prev_start {
-            self.last_window_start = new_start;
-            Some((new_start, self.window_end()))
-        } else {
-            None
+        if (self.scroll_offset - prev_offset).abs() <= f32::EPSILON {
+            return None;
         }
+        let new_start = self.window_start();
+        let window_changed = new_start != prev_start;
+        if window_changed {
+            self.last_window_start = new_start;
+        }
+        Some((new_start, self.window_end(), window_changed))
+    }
+
+    /// Sub-row visual Y offset in world units.
+    ///
+    /// When non-zero the rows_anchor should be shifted up by this amount so that the
+    /// fractional part of `scroll_offset` is reflected as a smooth visual offset.
+    pub fn sub_row_y_offset(&self) -> f32 {
+        self.scroll_offset.fract() * self.item_height
     }
 
     /// Clamp scroll after `total_items` changes. Returns true if the position changed.

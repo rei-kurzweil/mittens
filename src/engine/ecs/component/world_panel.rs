@@ -23,6 +23,10 @@ pub struct WorldPanelComponent {
     /// Runtime: TransformComponent that row rows are attached to.
     pub(crate) rows_anchor: Option<ComponentId>,
 
+    /// World-space base position of `rows_anchor` (set at panel spawn time).
+    /// Used to apply sub-row Y offsets for smooth scrolling.
+    pub(crate) rows_anchor_base_pos: [f32; 3],
+
     /// Runtime: current row root TransformComponents (for cleanup on rebuild).
     pub(crate) row_roots: Vec<ComponentId>,
 

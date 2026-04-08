@@ -106,7 +106,7 @@ Why this is risky in the current architecture:
 
 Conclusion: good long-term track-based direction, but too implicit for the current ECS topology.
 
-### Option C: attach `TransitionComponent` under the target property component
+### Option C: attach `TransitionComponent` under the target property component, with optional action override
 
 Example topology:
 
@@ -133,6 +133,7 @@ Why this fits the current engine well:
 - interpolation metadata lives on the component whose value is actually changing
 - the same transition policy works whether the mutation comes from animation, input, script, or gameplay
 - transform/color/uv/audio-parameter semantics stay with those domains instead of being duplicated per action
+- animation actions can still supply per-action override metadata without redefining where the default policy lives
 - the animation system can still trigger one semantic unit at the keyframe boundary
 
 Conclusion: **recommended**.
@@ -151,7 +152,28 @@ to:
 
 The keyframe still only says **when** the action starts.
 The action or caller still says **what target value / semantic effect** is desired.
-The transition says **how changes to that component unfold over time**.
+The target component says the **default** transition policy.
+An action may optionally override that default for one specific transition.
+
+## Precedence model
+
+Recommended resolution order for a transitionable mutation:
+
+1. if the triggering `ActionComponent` carries an explicit transition override, use it
+2. else if the target component has a child `TransitionComponent`, use that default policy
+3. else apply the mutation discretely
+
+This gives us both:
+
+- component-level defaults that work for animation, input, scripts, gizmos, and gameplay
+- action-level exceptions for special keyframes or one-off authored beats
+
+The important distinction is:
+
+- target component `TransitionComponent` = default policy for that property/channel
+- action-level transition data = override for that one authored action
+
+So the default placement model remains target-component-owned, even though animation can supply a more specific override.
 
 ## Proposed topology
 
@@ -181,6 +203,8 @@ Behavior:
 
 - no `TransitionComponent` on the target component → current behavior stays discrete
 - with `TransitionComponent` on the target component → matching property mutations start or update a transition runtime instance
+
+If an action provides transition override metadata, that override wins over the target component default for that one action.
 
 This means transition policy is a property of the live component being driven, not a property of one particular action that happened to touch it.
 
@@ -576,6 +600,8 @@ Recommended split of responsibilities:
 
 This separation matters because transition-enabled components may eventually be driven by animation keyframes, input systems, editor gizmos, MMS/scripts, or gameplay logic. The architecture should not require every transition to originate from an `ActionComponent` or from a keyframe at all.
 
+Animation-specific transition overrides should therefore be treated as optional inputs to `TransitionSystem`, not as the place where transition ownership fundamentally lives.
+
 ## Property support
 
 ### v1 supported payloads
@@ -630,15 +656,16 @@ If the transform currently has a non-unit quaternion, normalize before blending.
 Recommended playback flow:
 
 1. `AnimationSystem` computes due keyframes as today.
-2. For each child `ActionComponent`, emit the stored intent exactly as today.
-3. A transition-aware mutation stage checks whether the target component for that intent has a child `TransitionComponent` and whether the addressed channel is interpolable.
-4. If not, apply the mutation immediately.
-5. If yes, `TransitionSystem` resolves the payload into an interpolable runtime record.
-6. Each frame, `TransitionSystem` evaluates progress $t \in [0,1]$.
-7. It applies easing $e = f(t)$.
-8. It computes the interpolated value.
-9. It emits or applies the standard low-level mutation (`UpdateTransform`, `SetColor`, `SetOpacity`, UV update, etc.).
-10. At $t = 1$, it applies the exact destination value and removes the runtime record.
+2. For each child `ActionComponent`, emit the stored intent exactly as today and include any action-local transition override metadata if present.
+3. A transition-aware mutation stage checks whether the addressed channel is interpolable.
+4. It resolves the effective transition policy using precedence: action override first, then target-component `TransitionComponent`, otherwise none.
+5. If no effective transition policy exists, apply the mutation immediately.
+6. If a transition policy exists, `TransitionSystem` resolves the payload into an interpolable runtime record.
+7. Each frame, `TransitionSystem` evaluates progress $t \in [0,1]$.
+8. It applies easing $e = f(t)$.
+9. It computes the interpolated value.
+10. It emits or applies the standard low-level mutation (`UpdateTransform`, `SetColor`, `SetOpacity`, UV update, etc.).
+11. At $t = 1$, it applies the exact destination value and removes the runtime record.
 
 ## Emit intents each frame vs direct mutation
 
@@ -743,6 +770,17 @@ At beat 4.0, the transform snaps.
 
 At beat 4.0, the system captures the current transform and animates toward the target over 0.5 beats.
 
+### Action override of component default
+
+- entity
+  - `TransformComponent { ...current pose... }`
+    - `TransitionComponent { duration_beats: 1.0, easing: linear }`
+- `KeyframeComponent { beat: 8.0 }`
+  - `ActionComponent { signal: UpdateTransform { ...target pose... } }`
+    - transition override `{ duration_beats: 0.125, easing: ease_out_quad }`
+
+The target transform still owns the default transition policy, but this specific action overrides it for one beat event.
+
 ### Interpolated color change
 
 - entity
@@ -774,6 +812,8 @@ Reasons:
 - it keeps the timeline node simple and generic
 - it creates a clean path for non-animation transitions later, especially audio parameters
 
+Action-level override metadata is still useful, but that is best treated as an exception layer on top of component-owned defaults rather than as the primary place transitions live.
+
 So yes: the recommended design is that `TransitionComponent` attaches to the target component (such as `TransformComponent`, `ColorComponent`, `UVComponent`, or an audio-parameter component), not to `KeyframeComponent` and not to `ActionComponent`.
 
 ## v1 implementation plan
@@ -784,17 +824,18 @@ So yes: the recommended design is that `TransitionComponent` attaches to the tar
    - `easing`
    - `capture_from_current`
 2. Define how `TransitionComponent` is attached to interpolable property components.
-3. Add a high-level start-transition request or equivalent internal runtime hook.
-4. Teach the mutation path to upgrade eligible incoming mutations when the target component has a transition child.
-5. Add `TransitionSystem` runtime storage for active transitions.
-6. Support interpolating:
+3. Define optional action-local transition override metadata and the precedence rule over component defaults.
+4. Add a high-level start-transition request or equivalent internal runtime hook.
+5. Teach the mutation path to upgrade eligible incoming mutations when the target component has a transition child or the action provides an override.
+6. Add `TransitionSystem` runtime storage for active transitions.
+7. Support interpolating:
    - `UpdateTransform`
    - `SetColor`
    - `SetOpacity`
   - UV updates
-7. Apply results through the normal intent path each frame.
-8. Add dev logging for unsupported transitioned action types.
-9. Add v2 support for numeric audio parameter transitions, excluding graph/topology updates.
+8. Apply results through the normal intent path each frame.
+9. Add dev logging for unsupported transitioned action types.
+10. Add v2 support for numeric audio parameter transitions, excluding graph/topology updates.
 
 ## Non-goals for v1
 
@@ -826,6 +867,7 @@ Recommended path:
 - keep `KeyframeComponent` simple
 - keep `TransitionSystem` standalone and reusable outside animation
 - attach `TransitionComponent` to the target component whose property changes should be smoothed
+- allow actions to override that component default when they need a one-off easing/duration policy
 - let keyframes and other callers emit normal mutation intents
 - start transitions when those mutations hit transition-enabled target components
 - store compact runtime transition records

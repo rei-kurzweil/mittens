@@ -34,6 +34,8 @@ pub mod gizmo;
 pub mod normal_visualisation;
 pub mod gltf;
 pub mod gravity;
+pub mod html_element;
+pub mod layout;
 pub mod ik_chain;
 pub mod input;
 pub mod input_xr;
@@ -50,6 +52,7 @@ pub mod scrolling;
 pub mod selectable;
 pub mod signal_route_upward;
 pub mod skinned_mesh;
+pub mod style;
 pub mod transparent_cutout;
 
 pub mod openxr;
@@ -66,6 +69,7 @@ pub mod text_background;
 pub mod text_shadow;
 pub mod texture;
 pub mod texture_filtering;
+pub mod transition;
 pub mod transform;
 pub mod transform_pipeline;
 pub mod world_panel;
@@ -116,6 +120,8 @@ pub use gizmo::{
     TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
 };
 pub use gravity::GravityComponent;
+pub use html_element::{ElementType, HtmlElementComponent};
+pub use layout::LayoutComponent;
 pub use ik_chain::{IKChainComponent, IKSolver};
 pub use input::InputComponent;
 pub use input_xr::InputXRComponent;
@@ -132,7 +138,7 @@ pub use selectable::SelectableComponent;
 pub use point_light::PointLightComponent;
 pub use pointer::PointerComponent;
 pub use raycast::{RayCastComponent, RayCastMode};
-pub use raycastable::RaycastableComponent;
+pub use raycastable::{PointerEvents, RaycastableComponent};
 pub use raycastable_shape::{RaycastableShapeComponent, RaycastableShapeType};
 pub use renderable::RenderableComponent;
 pub use render_graph::RenderGraphComponent;
@@ -140,11 +146,16 @@ pub use renderer_stats::RendererStatsComponent;
 pub use renderer_settings::RendererSettingsComponent;
 pub use signal_route_upward::SignalRouteUpwardComponent;
 pub use skinned_mesh::SkinnedMeshComponent;
+pub use style::{
+    AlignItems, Display, EdgeInsets, FlexDirection, FlexWrap, JustifyContent,
+    Overflow, Position, SizeDimension, StyleComponent, StylePatch,
+};
 pub use text::TextComponent;
 pub use text_background::TextBackgroundComponent;
 pub use text_shadow::TextShadowComponent;
 pub use texture::{CatEngineTextureFormat, TextureComponent};
 pub use texture_filtering::TextureFilteringComponent;
+pub use transition::{TransitionComponent, TransitionEasing, TransitionReplacePolicy};
 pub use transform::TransformComponent;
 pub use world_panel::WorldPanelComponent;
 pub use transform_pipeline::{

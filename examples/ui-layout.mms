@@ -3,7 +3,9 @@ BGC {
 }
 
 BG {
-    T.position(0.0, 0.0, -5.0).scale(10.0, 10.0, 1.0) {
+    T.position(0.0, 0.0, -5.0)
+    .scale(10.0, 10.0, 1.0)
+    .rotation(2,3,0) {
         R.cube() {
             C.rgba(1.0, 1.0, 1.0, 1.0)
         }
@@ -60,7 +62,21 @@ T.position(1,1,0) {
     }
 }
 
+// render graph
+RenderGraph {
+    EmissivePass {
+
+    }
+    Bloom {
+        intensity(0.95)
+        radius_ndc(0.06)
+        emissive_scale(1.2)
+        half_res(true)
+    }
+}
+
 // perimeter cubes
+ED {
 T.position(0.0, -5.0, -5.0) {
     let i = 0;
     for x in range(-5, 6) {
@@ -90,4 +106,5 @@ T.position(0.0, -5.0, -5.0) {
 
         }
     }
+}
 }

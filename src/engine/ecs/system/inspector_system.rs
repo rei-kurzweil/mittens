@@ -1,7 +1,8 @@
 use crate::engine::ecs::component::{
-    ColorComponent, EmissiveComponent, InspectorPanelComponent, OverlayComponent,
-    RaycastableComponent, ScrollingComponent, SelectableComponent, TextBackgroundComponent,
-    TransformComponent, WorldPanelComponent,
+    ColorComponent, EmissiveComponent, InspectorPanelComponent, OpacityComponent, OverlayComponent,
+    RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RenderableComponent,
+    ScrollingComponent, SelectableComponent, TextBackgroundComponent, TransformComponent,
+    WorldPanelComponent,
 };
 use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::system::LayoutSystem;
@@ -20,6 +21,14 @@ const PANEL_V_PADDING: f32 = 0.35;
 const ROW_GAP_FILL: f32 = ROW_HEIGHT / TEXT_SCALE - 1.0;
 /// Gap between world panel right edge and inspector panel left edge (overlay units).
 const PANEL_GAP: f32 = 0.12;
+/// Extra margin around the panel that the drag plane extends beyond content edges.
+const DRAG_MARGIN: f32 = 0.15;
+/// Z offset of the drag plane relative to panel content (negative = behind content, away from camera).
+/// Must be more negative than text background quads, which land at z_offset(-0.1) * TEXT_SCALE(0.08) = -0.008.
+const DRAG_PLANE_Z_OFFSET: f32 = -0.015;
+/// Drag plane debug color: translucent blue.
+const DRAG_PLANE_COLOR: [f32; 4] = [0.3, 0.5, 1.0, 1.0];
+const DRAG_PLANE_OPACITY: f32 = 0.25;
 
 /// Panel background color: light grey, semi-transparent.
 const BG_COLOR: [f32; 4] = [0.92, 0.92, 0.92, 0.80];
@@ -106,7 +115,7 @@ impl InspectorSystem {
             },
         );
 
-        // --- World panel: DragMove on scroll anchor → scroll ---
+        // --- World panel: DragMove on scroll anchor → smooth scroll ---
         rx.add_handler_closure(
             SignalKind::DragMove,
             wpa_id,
@@ -114,31 +123,57 @@ impl InspectorSystem {
                 let Some(EventSignal::DragMove { delta_world, .. }) = env.event.as_ref() else {
                     return;
                 };
-                let dy = delta_world[1];
-                let (new_start, new_end) = {
+                // Negate dy: dragging down (negative world-Y delta) should decrease
+                // scroll_offset (reveal earlier items), matching direct-manipulation feel.
+                let dy = -delta_world[1];
+                let (new_start, window_changed, sub_y) = {
                     let Some(sc) =
                         world.get_component_by_id_as_mut::<ScrollingComponent>(wsc_id)
                     else {
                         return;
                     };
-                    match sc.apply_drag(dy) {
-                        Some(range) => range,
-                        None => return,
-                    }
+                    let Some((s, _e, wc)) = sc.apply_drag(dy) else { return };
+                    (s, wc, sc.sub_row_y_offset())
                 };
-                // Update scroll_offset_rows on the WorldPanelComponent for compatibility.
-                if let Some(wpc) = world.get_component_by_id_as_mut::<WorldPanelComponent>(wpc_id)
-                {
-                    wpc.scroll_offset_rows = new_start as i32;
+                // Rebuild rows synchronously when the window changes so content and
+                // anchor offset are always consistent within the same frame.
+                if window_changed {
+                    if let Some(wpc) =
+                        world.get_component_by_id_as_mut::<WorldPanelComponent>(wpc_id)
+                    {
+                        wpc.scroll_offset_rows = new_start as i32;
+                    }
+                    let sel = world
+                        .get_component_by_id_as::<WorldPanelComponent>(wpc_id)
+                        .and_then(|w| {
+                            let er = w.editor_root?;
+                            world
+                                .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(er)
+                                .and_then(|ed| ed.selected)
+                        });
+                    rebuild_world_panel(world, emit, wpc_id, editor_root, sel, new_start);
                 }
-                emit.push_event(
-                    wsc_id,
-                    crate::engine::ecs::EventSignal::ScrollChanged {
-                        scroll_component: wsc_id,
-                        window_start: new_start,
-                        window_end: new_end,
-                    },
-                );
+                // rows_anchor.y = base + sub_y gives a continuous offset across window
+                // boundaries: when window_start increments, panel_i decrements by 1
+                // (-item_h), and sub_y resets by -item_h, so they cancel perfectly.
+                let (rows_anchor, base_pos) = {
+                    let Some(wpc) = world.get_component_by_id_as::<WorldPanelComponent>(wpc_id)
+                    else {
+                        return;
+                    };
+                    (wpc.rows_anchor, wpc.rows_anchor_base_pos)
+                };
+                if let Some(ra) = rows_anchor {
+                    emit.push_intent_now(
+                        ra,
+                        IntentValue::UpdateTransform {
+                            component_ids: vec![ra],
+                            translation: [base_pos[0], base_pos[1] + sub_y, base_pos[2]],
+                            rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                            scale: [1.0, 1.0, 1.0],
+                        },
+                    );
+                }
             },
         );
 
@@ -165,7 +200,7 @@ impl InspectorSystem {
             },
         );
 
-        // --- Inspector panel: DragMove → scroll ---
+        // --- Inspector panel: DragMove → smooth scroll ---
         rx.add_handler_closure(
             SignalKind::DragMove,
             ipa_id,
@@ -173,26 +208,41 @@ impl InspectorSystem {
                 let Some(EventSignal::DragMove { delta_world, .. }) = env.event.as_ref() else {
                     return;
                 };
-                let dy = delta_world[1];
-                let (new_start, new_end) = {
+                let dy = -delta_world[1];
+                let (new_start, window_changed, sub_y) = {
                     let Some(sc) =
                         world.get_component_by_id_as_mut::<ScrollingComponent>(isc_id)
                     else {
                         return;
                     };
-                    match sc.apply_drag(dy) {
-                        Some(range) => range,
-                        None => return,
-                    }
+                    let Some((s, _e, wc)) = sc.apply_drag(dy) else { return };
+                    (s, wc, sc.sub_row_y_offset())
                 };
-                emit.push_event(
-                    isc_id,
-                    crate::engine::ecs::EventSignal::ScrollChanged {
-                        scroll_component: isc_id,
-                        window_start: new_start,
-                        window_end: new_end,
-                    },
-                );
+                if window_changed {
+                    let sel = world
+                        .get_component_by_id_as::<InspectorPanelComponent>(ipc_id)
+                        .and_then(|i| i.inspected);
+                    rebuild_inspector_panel(world, emit, ipc_id, sel, new_start);
+                }
+                let (rows_anchor, base_pos) = {
+                    let Some(ipc) =
+                        world.get_component_by_id_as::<InspectorPanelComponent>(ipc_id)
+                    else {
+                        return;
+                    };
+                    (ipc.rows_anchor, ipc.rows_anchor_base_pos)
+                };
+                if let Some(ra) = rows_anchor {
+                    emit.push_intent_now(
+                        ra,
+                        IntentValue::UpdateTransform {
+                            component_ids: vec![ra],
+                            translation: [base_pos[0], base_pos[1] + sub_y, base_pos[2]],
+                            rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                            scale: [1.0, 1.0, 1.0],
+                        },
+                    );
+                }
             },
         );
 
@@ -260,6 +310,73 @@ impl InspectorSystem {
 // ---------------------------------------------------------------------------
 
 /// Returns `(panel_component_id, panel_anchor_id, scroll_component_id)`.
+/// Spawn an invisible drag-capture quad in front of a panel.
+///
+/// `panel_width` and `panel_height` are in world/overlay units. The quad is
+/// attached as a child of `parent` (the panel's OverlayComponent node) at
+/// `pos` + a small forward Z offset so it sits in front of the row content.
+///
+/// `RaycastableComponent::drag_only()` means drags land here while clicks
+/// pass through to the row items behind it.
+///
+/// Returns the drag plane TransformComponent id.
+fn spawn_drag_plane(
+    world: &mut World,
+    parent: ComponentId,
+    pos: (f32, f32, f32),
+    panel_width: f32,
+    panel_height: f32,
+) -> ComponentId {
+    let w = panel_width + 2.0 * DRAG_MARGIN;
+    let h = panel_height + 2.0 * DRAG_MARGIN;
+    let cx = pos.0 + panel_width * 0.5;
+    let cy = pos.1 - panel_height * 0.5;
+    let cz = pos.2 + DRAG_PLANE_Z_OFFSET;
+
+    let dp_t = world.add_component_boxed_named(
+        "drag_plane_t",
+        Box::new(
+            TransformComponent::new()
+                .with_position(cx, cy, cz)
+                .with_scale(w, h, 1.0),
+        ),
+    );
+    let dp_col = world.add_component_boxed_named(
+        "drag_plane_col",
+        Box::new(ColorComponent::rgba(
+            DRAG_PLANE_COLOR[0],
+            DRAG_PLANE_COLOR[1],
+            DRAG_PLANE_COLOR[2],
+            DRAG_PLANE_COLOR[3],
+        )),
+    );
+    let dp_r = world.add_component_boxed_named(
+        "drag_plane_r",
+        Box::new(RenderableComponent::square()),
+    );
+    let dp_opacity = world.add_component_boxed_named(
+        "drag_plane_opacity",
+        Box::new(OpacityComponent { opacity: DRAG_PLANE_OPACITY, multiple_layers: false }),
+    );
+    let dp_rc = world.add_component_boxed_named(
+        "drag_plane_rc",
+        Box::new(RaycastableComponent::drag_only()),
+    );
+    let dp_shape = world.add_component_boxed_named(
+        "drag_plane_shape",
+        Box::new(RaycastableShapeComponent::new(RaycastableShapeType::Quad2D)),
+    );
+
+    let _ = world.add_child(parent, dp_t);
+    let _ = world.add_child(dp_t, dp_col);
+    let _ = world.add_child(dp_col, dp_r);
+    let _ = world.add_child(dp_r, dp_opacity);
+    let _ = world.add_child(dp_r, dp_rc);
+    let _ = world.add_child(dp_r, dp_shape);
+
+    dp_t
+}
+
 fn spawn_world_panel(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
@@ -287,7 +404,15 @@ fn spawn_world_panel(
         Box::new(TransformComponent::new().with_position(pos.0, pos.1, pos.2)),
     );
 
+    let wp_width = LayoutSystem::estimate_panel_width(
+        crate::engine::ecs::component::TextComponent::DEFAULT_WRAP_AT,
+        TEXT_SCALE,
+        MAX_DEPTH as f32 * INDENT_UNIT,
+    );
+    let wp_height = PAGE_SIZE as f32 * ROW_HEIGHT;
+
     let _ = world.add_child(wpa, wpo);
+    spawn_drag_plane(world, wpo, pos, wp_width, wp_height);
     let _ = world.add_child(wpo, wpc);
     let _ = world.add_child(wpc, wsc);
     let _ = world.add_child(wsc, wpr);
@@ -295,6 +420,7 @@ fn spawn_world_panel(
     if let Some(c) = world.get_component_by_id_as_mut::<WorldPanelComponent>(wpc) {
         c.editor_root = Some(editor_root);
         c.rows_anchor = Some(wpr);
+        c.rows_anchor_base_pos = [pos.0, pos.1, pos.2];
     }
 
     world.init_component_tree(wpa, emit);
@@ -329,7 +455,15 @@ fn spawn_inspector_panel(
         Box::new(TransformComponent::new().with_position(pos.0, pos.1, pos.2)),
     );
 
+    let ip_width = LayoutSystem::estimate_panel_width(
+        crate::engine::ecs::component::TextComponent::DEFAULT_WRAP_AT,
+        TEXT_SCALE,
+        0.0,
+    );
+    let ip_height = PAGE_SIZE as f32 * ROW_HEIGHT;
+
     let _ = world.add_child(ipa, ipo);
+    spawn_drag_plane(world, ipo, pos, ip_width, ip_height);
     let _ = world.add_child(ipo, ipc);
     let _ = world.add_child(ipc, isc);
     let _ = world.add_child(isc, ipr);
@@ -337,6 +471,7 @@ fn spawn_inspector_panel(
     if let Some(c) = world.get_component_by_id_as_mut::<InspectorPanelComponent>(ipc) {
         c.editor_root = Some(editor_root);
         c.rows_anchor = Some(ipr);
+        c.rows_anchor_base_pos = [pos.0, pos.1, pos.2];
     }
 
     world.init_component_tree(ipa, emit);
@@ -422,7 +557,7 @@ fn rebuild_world_panel(
         let _ = world.add_child(row_text, emissive);
 
         let rc = world
-            .add_component_boxed_named("wp_rc", Box::new(RaycastableComponent::enabled()));
+            .add_component_boxed_named("wp_rc", Box::new(RaycastableComponent::click_only()));
         let _ = world.add_child(row_text, rc);
 
         let bg = world.add_component_boxed_named(
@@ -474,12 +609,7 @@ fn rebuild_inspector_panel(
 
     let lines: Vec<String> = if let Some(sel) = selected {
         if let Some(node) = world.get_component_node(sel) {
-            let type_name = &node.component_type;
-            let header = if node.name.is_empty() {
-                type_name.clone()
-            } else {
-                format!("{type_name}: {}", node.name)
-            };
+            let header = mms_node_label(node);
             vec![header]
         } else {
             vec!["(unknown)".to_string()]
@@ -654,12 +784,35 @@ fn should_skip_world_panel_node(world: &World, node: ComponentId) -> bool {
 }
 
 fn node_label(world: &World, id: ComponentId) -> String {
-    let Some(node) = world.get_component_node(id) else {
-        return format!("{id:?}");
-    };
-    if node.name.is_empty() {
-        node.component_type.clone()
+    world.get_component_node(id)
+        .map(mms_node_label)
+        .unwrap_or_else(|| format!("{id:?}"))
+}
+
+/// MMS-syntax display for a component node in the inspector tree.
+/// `Transform {}` when unlabeled, `Transform { name="catgirl" }` when labeled.
+fn mms_node_label(node: &crate::engine::ecs::component::ComponentNode) -> String {
+    // Capitalize first letter of component_type for MMS convention.
+    let type_name = capitalize_first(&node.component_type);
+    let mut attrs = String::new();
+    if !node.name.is_empty() {
+        attrs.push_str(&format!("name=\"{}\"", node.name));
+    }
+    if !node.classes.is_empty() {
+        if !attrs.is_empty() { attrs.push(' '); }
+        attrs.push_str(&format!("class=\"{}\"", node.classes.join(" ")));
+    }
+    if attrs.is_empty() {
+        format!("{type_name} {{}}")
     } else {
-        format!("{}: {}", node.component_type, node.name)
+        format!("{type_name} {{ {attrs} }}")
+    }
+}
+
+fn capitalize_first(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
     }
 }

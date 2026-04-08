@@ -797,14 +797,15 @@ impl RayCastSystem {
         }
     }
 
+    /// Brute-force all-hits: returns every eligible renderable hit, sorted front-to-back by t.
     fn cast_against_renderables(
         &self,
         world: &World,
         origin: [f32; 3],
         dir: [f32; 3],
         max_distance: f32,
-    ) -> Option<(ComponentId, f32)> {
-        let mut best: Option<(ComponentId, f32)> = None;
+    ) -> Vec<(ComponentId, f32)> {
+        let mut hits: Vec<(ComponentId, f32)> = Vec::new();
 
         for &cid in self.eligible_renderables.iter() {
             let Some(r) = world.get_component_by_id_as::<RenderableComponent>(cid) else {
@@ -828,7 +829,6 @@ impl RayCastSystem {
                 continue;
             }
 
-            // Narrow-phase may reject; if it accepts, compare using the narrow-phase t.
             let Some(t2) = Self::narrow_phase_accept(world, cid, origin, dir, t) else {
                 continue;
             };
@@ -836,16 +836,15 @@ impl RayCastSystem {
                 continue;
             }
 
-            match best {
-                None => best = Some((cid, t2)),
-                Some((_, bt)) if t2 < bt => best = Some((cid, t2)),
-                _ => {}
-            }
+            hits.push((cid, t2));
         }
 
-        best
+        hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        hits
     }
 
+    /// BVH-accelerated all-hits: returns every BVH candidate that passes narrow phase, sorted
+    /// front-to-back by t.
     fn cast_against_renderables_bvh(
         &self,
         world: &World,
@@ -853,26 +852,16 @@ impl RayCastSystem {
         origin: [f32; 3],
         dir: [f32; 3],
         max_distance: f32,
-    ) -> Option<(ComponentId, f32)> {
-        // Ask BVH for multiple candidates so narrow-phase can reject and fall through.
-        // Limit is a safety bound; gizmo scenes should have few nearby candidates.
+    ) -> Vec<(ComponentId, f32)> {
         let candidates = bvh.raycast_renderables_candidates(origin, dir, max_distance, 64);
 
-        let mut best: Option<(ComponentId, f32)> = None;
+        let mut hits: Vec<(ComponentId, f32)> = Vec::new();
         for (cid, t_aabb) in candidates {
             if world
                 .get_component_by_id_as::<RenderableComponent>(cid)
                 .is_none()
             {
                 continue;
-            }
-
-            // If we already have a best hit, and this candidate's AABB entry is beyond it,
-            // we can stop early (narrow-phase t should be >= AABB entry t).
-            if let Some((_, best_t)) = best {
-                if t_aabb > best_t {
-                    break;
-                }
             }
 
             let Some(t2) = Self::narrow_phase_accept(world, cid, origin, dir, t_aabb) else {
@@ -882,14 +871,11 @@ impl RayCastSystem {
                 continue;
             }
 
-            match best {
-                None => best = Some((cid, t2)),
-                Some((_, bt)) if t2 < bt => best = Some((cid, t2)),
-                _ => {}
-            }
+            hits.push((cid, t2));
         }
 
-        best
+        hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        hits
     }
 }
 
@@ -965,14 +951,15 @@ impl System for RayCastSystem {
                 );
             }
 
-            let hit = self.cast_against_renderables(world, ray.origin, ray.dir, rc.max_distance);
+            let hits = self.cast_against_renderables(world, ray.origin, ray.dir, rc.max_distance);
+            let best = hits.first().copied();
 
             match rc.mode {
                 RayCastMode::Continuous => {
                     let prev = self.last_hit.get(&rcid).copied().flatten();
-                    let next = hit.map(|(cid, _)| cid);
+                    let next = best.map(|(cid, _)| cid);
                     if prev != next {
-                        if let Some((hit_cid, t)) = hit {
+                        if let Some((hit_cid, t)) = best {
                             let parent = world.parent_of(hit_cid);
                             println!(
                                 "[RayCast] hit renderable={:?} parent={:?} t={:.3}",
@@ -985,7 +972,7 @@ impl System for RayCastSystem {
                     self.last_hit.insert(rcid, next);
                 }
                 RayCastMode::EventDriven => {
-                    if let Some((hit_cid, t)) = hit {
+                    if let Some((hit_cid, t)) = best {
                         let parent = world.parent_of(hit_cid);
                         println!(
                             "[RayCast] click hit renderable={:?} parent={:?} t={:.3}",
@@ -1128,13 +1115,15 @@ impl RayCastSystem {
                     }
                 }
 
-                let hit = self
-                    .cast_against_renderables_bvh(world, bvh, origin, dir, max_distance)
-                    .or_else(|| self.cast_against_renderables(world, origin, dir, max_distance));
+                let mut hits =
+                    self.cast_against_renderables_bvh(world, bvh, origin, dir, max_distance);
+                if hits.is_empty() {
+                    hits = self.cast_against_renderables(world, origin, dir, max_distance);
+                }
 
-                if let Some((hit_cid, t)) = hit {
-                    // Scope the interaction to the intersected renderable so listeners can
-                    // subscribe at any ancestor (e.g. a ring root transform).
+                // Emit one RayIntersected per hit (front-to-back). GestureSystem accumulates
+                // all of them within the frame and picks drag/click targets independently.
+                for &(hit_cid, t) in &hits {
                     rx.push_event(
                         hit_cid,
                         EventSignal::RayIntersected {
@@ -1147,12 +1136,13 @@ impl RayCastSystem {
                     );
                 }
 
+                let best = hits.first().copied();
                 match mode {
                     RayCastMode::Continuous => {
                         let prev = self.last_hit.get(&rcid).copied().flatten();
-                        let next = hit.map(|(cid, _)| cid);
+                        let next = best.map(|(cid, _)| cid);
                         if prev != next {
-                            if let Some((hit_cid, t)) = hit {
+                            if let Some((hit_cid, t)) = best {
                                 let parent = world.parent_of(hit_cid);
                                 println!(
                                     "[RayCast] hit renderable={:?} parent={:?} t={:.3}",
@@ -1165,7 +1155,7 @@ impl RayCastSystem {
                         self.last_hit.insert(rcid, next);
                     }
                     RayCastMode::EventDriven => {
-                        if let Some((hit_cid, t)) = hit {
+                        if let Some((hit_cid, t)) = best {
                             let parent = world.parent_of(hit_cid);
                             println!(
                                 "[RayCast] {} hit renderable={:?} parent={:?} t={:.3}",

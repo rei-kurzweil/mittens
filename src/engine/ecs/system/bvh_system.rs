@@ -72,29 +72,34 @@ impl BHShape for RenderableAabb {
 
 impl BvhSystem {
     pub(crate) fn renderable_is_raycastable(world: &World, renderable_cid: ComponentId) -> bool {
-        // Explicit opt-in only: a renderable is raycastable iff a RaycastableComponent is found
-        // either immediately under the renderable, or on some ancestor in the topology.
-        //
-        // Common topology is: renderable -> (raycastable, color, ...)
+        Self::find_raycastable_for_renderable(world, renderable_cid)
+            .is_some()
+    }
+
+    /// Return the `RaycastableComponent` governing a renderable (enabled only).
+    ///
+    /// Checks children of the renderable first (common panel topology), then walks ancestors.
+    pub(crate) fn find_raycastable_for_renderable(
+        world: &World,
+        renderable_cid: ComponentId,
+    ) -> Option<RaycastableComponent> {
         if let Some(rc) = world.children_of(renderable_cid).iter().find_map(|&ch| {
             world
                 .get_component_by_id_as::<RaycastableComponent>(ch)
                 .copied()
         }) {
-            return rc.enable;
+            return if rc.enable { Some(rc) } else { None };
         }
 
-        // If a RaycastableComponent exists in the ancestry chain (renderable parented under it),
-        // nearest wins.
         let mut cur = renderable_cid;
         while let Some(parent) = world.parent_of(cur) {
-            if let Some(rc) = world.get_component_by_id_as::<RaycastableComponent>(parent) {
-                return rc.enable;
+            if let Some(rc) = world.get_component_by_id_as::<RaycastableComponent>(parent).copied() {
+                return if rc.enable { Some(rc) } else { None };
             }
             cur = parent;
         }
 
-        false
+        None
     }
 
     pub fn queue_renderable_added(&mut self, component: ComponentId) {

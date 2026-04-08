@@ -16,6 +16,7 @@ use crate::engine::ecs::component::{
     InspectorPanelComponent, KeyframeComponent, NormalVisualisationComponent, OpenXRComponent,
     OverlayComponent, PointLightComponent, PointerComponent, RenderGraphComponent, ScrollingComponent,
     SelectableComponent, TextBackgroundComponent, TextureComponent, UVComponent, WorldPanelComponent,
+    TransitionComponent, TransitionEasing, TransitionReplacePolicy,
     QuatTemporalFilterComponent, RaycastableComponent, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TextComponent, TextShadowComponent,
     TextureFilteringComponent, TransformComponent, TransformDropComponent,
@@ -50,9 +51,31 @@ pub fn spawn_tree(
         apply_call(world, id, method, args)?;
     }
 
-    // Named property assignments.
-    for (name, val) in &ce.named {
-        apply_named_assignment(world, id, name, val)?;
+    // Named property assignments — intercept node-level fields first.
+    for (prop, val) in &ce.named {
+        match prop.as_str() {
+            "name" => {
+                if let Some(node) = world.get_component_record_mut(id) {
+                    node.name = val_as_str(val).unwrap_or("").to_string();
+                }
+            }
+            "class" => {
+                if let Some(node) = world.get_component_record_mut(id) {
+                    match val {
+                        Value::String(s) => {
+                            node.classes = s.split_whitespace().map(str::to_string).collect();
+                        }
+                        Value::Array(arr) => {
+                            node.classes = arr.iter()
+                                .filter_map(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+                                .collect();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => apply_named_assignment(world, id, prop, val)?,
+        }
     }
 
     // Positional content (strings etc).
@@ -323,6 +346,7 @@ fn create_component(
             Some("from_dds") => add!(TextureComponent::from_dds(arg_str(args, 0)?)),
             _ => add!(TextureComponent::unresolved()),
         },
+        "Transition" => add!(TransitionComponent::new()),
         "UV" => add!(UVComponent::new()),
         "Clock" => {
             let mut c = ClockComponent::new();
@@ -532,6 +556,50 @@ fn apply_call(
             "uri" | "with_uri" => *tex = TextureComponent::with_uri(arg_str(args, 0)?),
             "from_png" => *tex = TextureComponent::from_png(arg_str(args, 0)?),
             "from_dds" => *tex = TextureComponent::from_dds(arg_str(args, 0)?),
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(transition) = world.get_component_by_id_as_mut::<TransitionComponent>(id) {
+        match method {
+            "on" => *transition = transition.on(),
+            "off" => *transition = transition.off(),
+            "enabled" => *transition = transition.enabled(arg_bool(args, 0)?),
+            "duration_beats" => {
+                *transition = transition.with_duration_beats(arg_f32(args, 0)? as f64)
+            }
+            "capture_from_current" => {
+                *transition = transition.with_capture_from_current(arg_bool(args, 0)?)
+            }
+            "step" => *transition = transition.with_easing(TransitionEasing::Step),
+            "linear" => *transition = transition.with_easing(TransitionEasing::Linear),
+            "ease_in_quad" => {
+                *transition = transition.with_easing(TransitionEasing::EaseInQuad)
+            }
+            "ease_out_quad" => {
+                *transition = transition.with_easing(TransitionEasing::EaseOutQuad)
+            }
+            "ease_in_out_quad" => {
+                *transition = transition.with_easing(TransitionEasing::EaseInOutQuad)
+            }
+            "ease_in_cubic" => {
+                *transition = transition.with_easing(TransitionEasing::EaseInCubic)
+            }
+            "ease_out_cubic" => {
+                *transition = transition.with_easing(TransitionEasing::EaseOutCubic)
+            }
+            "ease_in_out_cubic" => {
+                *transition = transition.with_easing(TransitionEasing::EaseInOutCubic)
+            }
+            "ease_in_out_sine" => {
+                *transition = transition.with_easing(TransitionEasing::EaseInOutSine)
+            }
+            "replace_same_target" => {
+                *transition = transition.with_replace(TransitionReplacePolicy::ReplaceSameTarget)
+            }
+            "allow_parallel" => {
+                *transition = transition.with_replace(TransitionReplacePolicy::AllowParallel)
+            }
             _ => {}
         }
         return Ok(());
