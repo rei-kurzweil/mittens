@@ -1,5 +1,19 @@
 # ScrollingComponent — reusable virtual scroll container
 
+> **Status: interim / to be superseded**
+>
+> `ScrollingComponent` is the current scrolling implementation used by the
+> editor panels. It will be replaced by `StyleComponent { overflow: Scroll }`
+> once `LayoutSystem` is wired. See `docs/draft/rendering-pipeline.md` §Scroll
+> containers and `docs/draft/box-model-layout-system-flexbox-and-layout-root.md`
+> §12 for the target design.
+>
+> Known limitation: uses virtual windowing (destroy/rebuild rows at window
+> boundaries), which required a `base + sub_y` formula fix to avoid snapping.
+> The overflow:scroll approach eliminates virtual windowing entirely.
+
+---
+
 ## Problem
 
 The world panel currently hard-caps at `MAX_ROWS = 30` items. Scroll needs to be

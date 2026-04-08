@@ -405,7 +405,88 @@ from earlier drafts are **not** introduced — `StyleComponent` subsumes them.
 
 ---
 
-## 12. Open questions
+## 12. Scroll containers — `overflow: scroll`
+
+`overflow: scroll` (or `auto`) on a `StyleComponent` makes a node a **scroll
+container**. This replaces `ScrollingComponent` for all UI scrolling needs.
+
+### Layout behaviour
+
+**Measure pass**: children are measured with an unconstrained block axis
+(Y-axis for a vertical scroll container). The container's used height is
+`min(content_height, available_height)`. The excess
+(`content_height - available_height`) is the scrollable range.
+
+**Position pass**: when positioning children, the layout system subtracts
+`layout_state.scroll_offset` from each child's block-axis origin:
+
+```
+child_y = padding_top + flow_offset_y - scroll_offset
+```
+
+All children are always present as ECS nodes — no virtual windowing.
+Visibility is handled by a two-layer approach:
+
+- **CPU culling (layout position pass)**: children whose computed position
+  falls entirely outside `[-item_h, container_h + item_h]` are skipped —
+  no `UpdateTransform` emitted, renderable disabled. This avoids GPU draw
+  calls for items far off-screen.
+- **GPU scissor (renderer)**: the scroll container registers a scissor rect
+  with the renderer covering its content box. Items near the edge that
+  straddle the boundary are rendered but clipped, giving a crisp cutoff.
+
+The render zone is therefore `visible items + 1 item buffer on each side`.
+Items beyond the buffer are CPU-culled; items in the buffer are scissored.
+
+### Scroll state
+
+`scroll_offset` lives in the layout system's per-node computed state, NOT in
+`LayoutComponent` directly (LayoutComponent is a viewport root marker, not a
+per-node record). The layout system maintains a side table keyed by node ID.
+
+```rust
+// Internal layout state (not an ECS component)
+struct NodeLayoutState {
+    used_size: [f32; 2],
+    content_size: [f32; 2],
+    scroll_offset: f32,   // only set on overflow:scroll nodes
+}
+```
+
+### Gesture integration
+
+The layout system registers a `DragMove` handler on every `overflow:scroll`
+node (detected during layout). On drag:
+
+```rust
+state.scroll_offset -= delta_y;   // direct world-unit accumulation
+state.scroll_offset = state.scroll_offset.clamp(
+    0.0,
+    (state.content_size[1] - state.used_size[1]).max(0.0),
+);
+// Mark position pass dirty — measure is skipped (sizes unchanged)
+layout_root.dirty_position_only = true;
+```
+
+No `fract()`, no sawtooth, no window boundary logic. `scroll_offset` is a
+direct world-space offset applied to child positions.
+
+### Migration from ScrollingComponent
+
+`ScrollingComponent` stays for the editor panels until LayoutSystem is wired.
+Once `overflow:scroll` is working:
+
+- Remove `ScrollingComponent`, `wsc_id`, `isc_id` from panel setup
+- Remove `DragMove` scroll handlers from `InspectorSystem`
+- Remove `rows_anchor_base_pos`, virtual-window rebuild logic
+- Remove `ScrollChanged` event (or keep for external triggers)
+- All rows become persistent children; layout positions and clips them
+
+See `docs/draft/rendering-pipeline.md` for the full pipeline context.
+
+---
+
+## 13. Open questions
 
 - **Glyph unit vs world unit**: `LayoutComponent.available_width` is in
   glyph units. A future `scale` field could map to world units for
