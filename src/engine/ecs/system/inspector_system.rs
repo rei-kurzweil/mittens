@@ -35,6 +35,9 @@ const DRAG_PLANE_OPACITY: f32 = 0.25;
 const TITLE_BAR_HEIGHT: f32 = 2.0 * TEXT_SCALE;
 /// Title bar height in glyph units (= 2 rows). Used for LayoutComponent styling.
 const TITLE_BAR_HEIGHT_GU: f32 = 2.0;
+/// Gap between title bar bottom and content top, in glyph units.
+/// Applied as `margin.bottom` on `header_style`; LayoutSystem inserts this space.
+const TITLE_CONTENT_GAP_GU: f32 = 0.5;
 /// Title bar background: medium slate, more opaque than content bg.
 const TITLE_BG_COLOR: [f32; 4] = [0.45, 0.47, 0.55, 0.95];
 /// Title bar label text color: white.
@@ -363,7 +366,9 @@ fn spawn_panel_title_bar(
     // ── LayoutComponent — flex-column container ──────────────────────────
     // Two flex items: header_slot (fixed 2 gu) + content_slot (flex_grow=1).
     // unit_scale converts glyph heights to world offsets (TEXT_SCALE = 0.08).
-    let avail_height_gu = TITLE_BAR_HEIGHT_GU + content_height_world / TEXT_SCALE;
+    // header margin_box = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU (margin.bottom)
+    // content margin_box = content_height_world / TEXT_SCALE
+    let avail_height_gu = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + content_height_world / TEXT_SCALE;
     let avail_width_gu = panel_width_world / TEXT_SCALE;
     let layout_root = world.add_component_boxed_named(
         "panel_layout",
@@ -387,6 +392,7 @@ fn spawn_panel_title_bar(
             let mut s = StyleComponent::new();
             s.display = Some(Display::Block);
             s.height = SizeDimension::GlyphUnits(TITLE_BAR_HEIGHT_GU);
+            s.margin.bottom = TITLE_CONTENT_GAP_GU;
             s
         }),
     );

@@ -1,10 +1,7 @@
-pub mod aabb;
 pub mod measure;
 pub mod block;
 pub mod flex;
 pub mod inline;
-
-pub use aabb::{Aabb, mesh_aabb, subtree_aabb};
 
 use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
@@ -67,19 +64,6 @@ impl LayoutSystem {
         // TODO: read LayoutComponent or container StyleComponent.display to dispatch.
         // For now all roots use block formatting context.
         block::layout(world, emit, layout_id);
-    }
-
-    /// Delegate to `aabb::subtree_aabb`.
-    pub fn subtree_aabb(world: &World, root: ComponentId) -> Option<Aabb> {
-        aabb::subtree_aabb(world, root)
-    }
-
-    /// Delegate to `aabb::mesh_aabb`.
-    pub fn mesh_aabb(
-        mesh: crate::engine::graphics::primitives::CpuMeshHandle,
-        m: crate::engine::graphics::primitives::TransformMatrix,
-    ) -> Option<([f32; 3], [f32; 3])> {
-        aabb::mesh_aabb(mesh, m)
     }
 
     /// Estimate the overlay-space width of a text panel without world matrices.

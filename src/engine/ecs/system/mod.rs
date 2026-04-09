@@ -47,7 +47,7 @@ pub use avatar_body_yaw_system::AvatarBodyYawSystem;
 pub use avatar_control_system::AvatarControlSystem;
 pub use editor_system::EditorSystem;
 pub use inspector_system::InspectorSystem;
-pub use layout::{Aabb, LayoutSystem};
+pub use layout::LayoutSystem;
 pub use gesture_system::{GestureState, GestureSystem};
 pub use gizmo_system::TransformGizmoSystem;
 pub use gltf_system::GLTFSystem;
