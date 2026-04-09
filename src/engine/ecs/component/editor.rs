@@ -44,7 +44,9 @@ pub struct EditorComponent {
     /// World-space position of the world-tree panel. Default: (-0.7, 1.6, -1.2).
     pub world_panel_pos: (f32, f32, f32),
 
-    /// World-space position of the inspector panel. Default: (0.5, 1.6, -1.2).
+    /// World-space position of the inspector panel.
+    /// If set to the same x as `world_panel_pos` (the default), the inspector is
+    /// auto-placed to the right of the world panel using `estimate_panel_width`.
     pub inspector_panel_pos: (f32, f32, f32),
 
     component: Option<ComponentId>,
@@ -60,7 +62,10 @@ impl Default for EditorComponent {
             transform_gizmo_rotation_space: TransformGizmoCoordSpace::Local,
             spawn_panels: true,
             world_panel_pos: (-0.7, 1.6, -1.2),
-            inspector_panel_pos: (0.5, 1.6, -1.2),
+            // Same x as world_panel_pos intentionally — InspectorSystem::setup_panels_for_editor
+            // detects this and auto-places the inspector to the right of the world panel using
+            // LayoutSystem::estimate_panel_width + PANEL_GAP.
+            inspector_panel_pos: (-0.7, 1.6, -1.2),
             component: None,
         }
     }

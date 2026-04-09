@@ -21,10 +21,11 @@ use crate::engine::ecs::system::SkinnedMeshSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextureSystem;
+use crate::engine::ecs::system::TransitionSystem;
 use crate::engine::ecs::system::TransformPipelineSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
-use crate::engine::ecs::system::{AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, GestureSystem, IKSystem, InspectorSystem, TransformGizmoSystem};
+use crate::engine::ecs::system::{AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, GestureSystem, IKSystem, InspectorSystem, LayoutSystem, TransformGizmoSystem};
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 
@@ -40,6 +41,7 @@ pub struct SystemWorld {
     pub audio: AudioSystem,
     pub music: MusicSystem,
     pub animation: AnimationSystem,
+    pub transition: TransitionSystem,
 
     pub transform_pipeline: TransformPipelineSystem,
     pub transform: TransformSystem,
@@ -61,6 +63,8 @@ pub struct SystemWorld {
 
     pub gesture: GestureSystem,
     pub transform_gizmo: TransformGizmoSystem,
+
+    pub layout: LayoutSystem,
 
     pub gltf: GLTFSystem,
 
@@ -151,6 +155,7 @@ impl SystemWorld {
                 .get_component_by_id_as::<TransformComponent>(n)
                 .is_some()
             {
+                self.transition.cancel_transform_transitions(n);
                 self.remove_transform(world, visuals, n);
             }
         }
@@ -1151,15 +1156,13 @@ impl SystemWorld {
         self.bvh.queue_transform_subtree(world, component);
     }
 
-    /// Update a transform component's transform value and notify systems.
-    pub fn update_transform(
+    fn apply_transform_immediate(
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
         component: ComponentId,
         transform: crate::engine::graphics::primitives::Transform,
     ) {
-        // Update the transform in the component itself first
         if let Some(transform_comp) = world
             .get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(
                 component,
@@ -1170,6 +1173,51 @@ impl SystemWorld {
         self.transform_changed(world, visuals, component);
     }
 
+    fn tick_transition_runtime(&mut self, world: &mut World, visuals: &mut VisualWorld) {
+        let updates = self
+            .transition
+            .sample_transform_updates(self.clock.beat_now());
+        for update in updates {
+            self.apply_transform_immediate(world, visuals, update.component, update.transform);
+        }
+    }
+
+    /// Update a transform component's transform value and notify systems.
+    pub fn update_transform(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+        transform: crate::engine::graphics::primitives::Transform,
+    ) {
+        let transition = world.children_of(component).iter().find_map(|&child| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::TransitionComponent>(child)
+                .copied()
+        });
+
+        if let (Some(policy), Some(current)) = (
+            transition,
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(
+                    component,
+                )
+                .map(|transform_comp| transform_comp.transform),
+        ) {
+            if self.transition.start_transform_transition(
+                component,
+                current,
+                transform,
+                policy,
+                self.clock.beat_now(),
+            ) {
+                return;
+            }
+        }
+
+        self.apply_transform_immediate(world, visuals, component, transform);
+    }
+
     /// Remove/reset a transform component's transform value and notify systems.
     pub fn remove_transform(
         &mut self,
@@ -1177,6 +1225,7 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
+        self.transition.cancel_transform_transitions(component);
         if let Some(transform_comp) = world
             .get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(
                 component,
@@ -1349,6 +1398,7 @@ impl SystemWorld {
         // Execute/dispatch any signals emitted by AnimationSystem before downstream systems run.
         let _ = self.process_signals(world, visuals, queue, 100_000);
         queue.flush(world, self, visuals);
+        self.tick_transition_runtime(world, visuals);
 
         self.transform_pipeline.tick(world, visuals, input, dt_sec);
 
@@ -1377,6 +1427,7 @@ impl SystemWorld {
             &self.collision,
         );
         queue.flush(world, self, visuals);
+        self.tick_transition_runtime(world, visuals);
 
         // Physics may have moved renderables; refit BVH so raycasts see the resolved state.
         self.bvh.tick(world, visuals, input, dt_sec);
@@ -1388,6 +1439,7 @@ impl SystemWorld {
             .tick_with_queue(world, visuals, input, queue, dt_sec);
         // Controller pose updates should be visible to raycasting/gestures this frame.
         queue.flush(world, self, visuals);
+        self.tick_transition_runtime(world, visuals);
 
         self.raycast
             .tick_with_queue(world, visuals, input, &mut self.rx, &self.bvh, dt_sec);
@@ -1410,12 +1462,19 @@ impl SystemWorld {
 
         // Apply gizmo transform updates immediately so visuals reflect the drag this frame.
         queue.flush(world, self, visuals);
+        self.tick_transition_runtime(world, visuals);
 
         // Avatar body yaw: smoothly rotate body to follow head when yaw diverges.
         // Runs after OpenXR + raycasts + gestures so avatar_driven_t.matrix_world is current.
         self.avatar_body_yaw.tick(world, queue, dt_sec);
         self.avatar_control.tick(world, queue, dt_sec);
         self.ik.tick(world, queue, dt_sec);
+        queue.flush(world, self, visuals);
+        self.tick_transition_runtime(world, visuals);
+
+        // Flex-column position pass: emit UpdateTransform for dirty LayoutComponent subtrees.
+        // Runs after transforms are propagated so initial world matrices are valid.
+        self.layout.tick(world, queue);
         queue.flush(world, self, visuals);
 
         self.renderable.tick(world, visuals, input, dt_sec);

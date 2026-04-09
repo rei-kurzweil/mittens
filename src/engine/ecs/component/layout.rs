@@ -25,6 +25,17 @@ pub struct LayoutComponent {
     /// When `true`, the layout system will recompute this subtree on the next tick.
     pub dirty: bool,
 
+    /// Scale factor to convert glyph units → local coordinates of the nearest ancestor
+    /// `TransformComponent`.
+    ///
+    /// **When the parent `TransformComponent` already has `scale = TEXT_SCALE`** (i.e. the whole
+    /// subtree is in glyph-unit space), leave this at the default `1.0`.
+    ///
+    /// **When the parent `TransformComponent` has `scale = 1.0` (world units)** and the
+    /// `StyleComponent` heights are authored in glyph units, set `unit_scale = TEXT_SCALE`
+    /// (e.g. `0.08`) so the emitted `UpdateTransform` translations land in world space.
+    pub unit_scale: f32,
+
     component: Option<ComponentId>,
 }
 
@@ -34,12 +45,18 @@ impl LayoutComponent {
             available_width,
             available_height: None,
             dirty: true,
+            unit_scale: 1.0,
             component: None,
         }
     }
 
     pub fn with_height(mut self, h: f32) -> Self {
         self.available_height = Some(h);
+        self
+    }
+
+    pub fn with_unit_scale(mut self, scale: f32) -> Self {
+        self.unit_scale = scale;
         self
     }
 

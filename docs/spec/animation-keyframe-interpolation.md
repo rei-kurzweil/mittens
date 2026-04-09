@@ -818,6 +818,8 @@ So yes: the recommended design is that `TransitionComponent` attaches to the tar
 
 ## v1 implementation plan
 
+For the phased implementation checklist, see [docs/spec/transition-system-checklist.md](docs/spec/transition-system-checklist.md).
+
 1. Add `TransitionComponent` with:
    - `enabled`
    - `duration_beats`

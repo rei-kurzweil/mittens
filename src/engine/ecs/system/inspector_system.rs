@@ -1,8 +1,9 @@
 use crate::engine::ecs::component::{
-    ColorComponent, EmissiveComponent, InspectorPanelComponent, OpacityComponent, OverlayComponent,
-    RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RenderableComponent,
-    ScrollingComponent, SelectableComponent, TextBackgroundComponent, TransformComponent,
-    WorldPanelComponent,
+    ColorComponent, EmissiveComponent, InspectorPanelComponent, LayoutComponent, OpacityComponent,
+    OverlayComponent, RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType,
+    RenderableComponent, ScrollingComponent, SelectableComponent, StyleComponent,
+    TextBackgroundComponent, TransformComponent, TransformGizmoComponent, WorldPanelComponent,
+    style::{Display, SizeDimension},
 };
 use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::system::LayoutSystem;
@@ -29,6 +30,17 @@ const DRAG_PLANE_Z_OFFSET: f32 = -0.015;
 /// Drag plane debug color: translucent blue.
 const DRAG_PLANE_COLOR: [f32; 4] = [0.3, 0.5, 1.0, 1.0];
 const DRAG_PLANE_OPACITY: f32 = 0.25;
+
+/// Title bar height in world units. Two glyph rows tall.
+const TITLE_BAR_HEIGHT: f32 = 2.0 * TEXT_SCALE;
+/// Title bar height in glyph units (= 2 rows). Used for LayoutComponent styling.
+const TITLE_BAR_HEIGHT_GU: f32 = 2.0;
+/// Title bar background: medium slate, more opaque than content bg.
+const TITLE_BG_COLOR: [f32; 4] = [0.45, 0.47, 0.55, 0.95];
+/// Title bar label text color: white.
+const TITLE_TEXT_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+/// Gizmo visual scale for panel title-bar gizmos.
+const PANEL_GIZMO_SCALE: f32 = 0.25;
 
 /// Panel background color: light grey, semi-transparent.
 const BG_COLOR: [f32; 4] = [0.92, 0.92, 0.92, 0.80];
@@ -309,6 +321,150 @@ impl InspectorSystem {
 // Panel spawn helpers
 // ---------------------------------------------------------------------------
 
+/// Spawn the panel root transform + title bar (background rect, label, gizmo).
+///
+/// Returns the `panel_transform` ComponentId. All panel content should be
+/// attached as children of this node — the gizmo targets it, so dragging
+/// the gizmo handles moves the entire panel.
+///
+/// Hierarchy produced (as children of `parent`):
+/// ```text
+/// panel_transform  (TransformComponent at world pos)   ← gizmo target
+///   title_bar_t    (TransformComponent — sized to title bar)
+///     title_bar_col + title_bar_r                      ← flat rect visual
+///   title_label_t  (TransformComponent — text scale)
+///     title_label_col + title_label_text               ← label
+///   panel_gizmo    (TransformGizmoComponent)           ← finds panel_transform
+/// ```
+/// Spawn the panel root + a `LayoutComponent` + a `header_slot` TransformComponent (with
+/// title-bar visuals and gizmo).
+///
+/// Returns `(panel_t, layout_root_id)` so the caller can attach the content slot as a second
+/// flex item under the same `LayoutComponent`.
+///
+/// `panel_width_world` — panel content width in world units.
+/// `content_height_world` — height of the scrollable content area in world units.
+fn spawn_panel_title_bar(
+    world: &mut World,
+    parent: ComponentId,
+    pos: (f32, f32, f32),
+    panel_width_world: f32,
+    content_height_world: f32,
+    label: &str,
+) -> (ComponentId, ComponentId) {
+    // ── Panel root — gizmo target ────────────────────────────────────────
+    // Plain position anchor (scale=1.0 → world units).  The gizmo walks up
+    // ancestry to find the nearest TransformComponent and drags this node.
+    let panel_t = world.add_component_boxed_named(
+        "panel_transform",
+        Box::new(TransformComponent::new().with_position(pos.0, pos.1, pos.2)),
+    );
+
+    // ── LayoutComponent — flex-column container ──────────────────────────
+    // Two flex items: header_slot (fixed 2 gu) + content_slot (flex_grow=1).
+    // unit_scale converts glyph heights to world offsets (TEXT_SCALE = 0.08).
+    let avail_height_gu = TITLE_BAR_HEIGHT_GU + content_height_world / TEXT_SCALE;
+    let avail_width_gu = panel_width_world / TEXT_SCALE;
+    let layout_root = world.add_component_boxed_named(
+        "panel_layout",
+        Box::new(
+            LayoutComponent::new(avail_width_gu)
+                .with_height(avail_height_gu)
+                .with_unit_scale(TEXT_SCALE),
+        ),
+    );
+
+    // ── Header slot — flex item for title bar ────────────────────────────
+    // LayoutSystem will set its translation to [0, 0, 0] (top of panel).
+    // Pre-set to the correct position so the first frame has no flicker.
+    let header_slot = world.add_component_boxed_named(
+        "header_slot",
+        Box::new(TransformComponent::new()),
+    );
+    let header_style = world.add_component_boxed_named(
+        "header_style",
+        Box::new({
+            let mut s = StyleComponent::new();
+            s.display = Some(Display::Block);
+            s.height = SizeDimension::GlyphUnits(TITLE_BAR_HEIGHT_GU);
+            s
+        }),
+    );
+
+    // ── Title bar background rect ────────────────────────────────────────
+    // Spans full panel footprint including drag margins; slightly in front.
+    let bar_full_width = panel_width_world + 2.0 * DRAG_MARGIN;
+    let bar_t = world.add_component_boxed_named(
+        "panel_titlebar_t",
+        Box::new(
+            TransformComponent::new()
+                .with_position(panel_width_world * 0.5, -TITLE_BAR_HEIGHT * 0.5, 0.005)
+                .with_scale(bar_full_width, TITLE_BAR_HEIGHT, 1.0),
+        ),
+    );
+    let bar_col = world.add_component_boxed_named(
+        "panel_titlebar_col",
+        Box::new(ColorComponent::rgba(
+            TITLE_BG_COLOR[0], TITLE_BG_COLOR[1], TITLE_BG_COLOR[2], TITLE_BG_COLOR[3],
+        )),
+    );
+    let bar_r = world.add_component_boxed_named(
+        "panel_titlebar_r",
+        Box::new(RenderableComponent::square()),
+    );
+
+    // ── Title label ──────────────────────────────────────────────────────
+    let label_y = -(TITLE_BAR_HEIGHT - TEXT_SCALE) * 0.5;
+    let label_t = world.add_component_boxed_named(
+        "panel_titlebar_label_t",
+        Box::new(
+            TransformComponent::new()
+                .with_position(0.02, label_y, 0.01)
+                .with_scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE),
+        ),
+    );
+    let label_col = world.add_component_boxed_named(
+        "panel_titlebar_label_col",
+        Box::new(ColorComponent::rgba(
+            TITLE_TEXT_COLOR[0], TITLE_TEXT_COLOR[1],
+            TITLE_TEXT_COLOR[2], TITLE_TEXT_COLOR[3],
+        )),
+    );
+    let label_text = world.add_component_boxed_named(
+        "panel_titlebar_label",
+        Box::new(crate::engine::ecs::component::TextComponent::new(label)),
+    );
+
+    // ── Gizmo (targets panel_transform via ancestry walk) ────────────────
+    let gizmo = world.add_component_boxed_named(
+        "panel_gizmo",
+        Box::new(TransformGizmoComponent::new().with_scale(PANEL_GIZMO_SCALE)),
+    );
+
+    // ── Attach ───────────────────────────────────────────────────────────
+    let _ = world.add_child(parent, panel_t);
+    let _ = world.add_child(panel_t, layout_root);
+    let _ = world.add_child(layout_root, header_slot);
+
+    // Style goes first (LayoutSystem reads it from children).
+    let _ = world.add_child(header_slot, header_style);
+
+    // Title bar visuals.
+    let _ = world.add_child(header_slot, bar_t);
+    let _ = world.add_child(bar_t, bar_col);
+    let _ = world.add_child(bar_col, bar_r);
+
+    let _ = world.add_child(header_slot, label_t);
+    let _ = world.add_child(label_t, label_col);
+    let _ = world.add_child(label_col, label_text);
+
+    // Gizmo must be a direct child of panel_t so the ancestry walk finds
+    // panel_t (not header_slot) as the drag target.
+    let _ = world.add_child(panel_t, gizmo);
+
+    (panel_t, layout_root)
+}
+
 /// Returns `(panel_component_id, panel_anchor_id, scroll_component_id)`.
 /// Spawn an invisible drag-capture quad in front of a panel.
 ///
@@ -399,9 +555,12 @@ fn spawn_world_panel(
         "world_panel_scroll",
         Box::new(ScrollingComponent::new(ROW_HEIGHT, PAGE_SIZE)),
     );
+    // rows_anchor is at local [0, 0, 0] within the content slot.
+    // The LayoutSystem positions the content slot below the title bar,
+    // so rows_anchor_base_pos is the zero vector.
     let wpr = world.add_component_boxed_named(
         "world_panel_rows",
-        Box::new(TransformComponent::new().with_position(pos.0, pos.1, pos.2)),
+        Box::new(TransformComponent::new()),
     );
 
     let wp_width = LayoutSystem::estimate_panel_width(
@@ -412,15 +571,48 @@ fn spawn_world_panel(
     let wp_height = PAGE_SIZE as f32 * ROW_HEIGHT;
 
     let _ = world.add_child(wpa, wpo);
-    spawn_drag_plane(world, wpo, pos, wp_width, wp_height);
-    let _ = world.add_child(wpo, wpc);
+
+    // Panel root + LayoutComponent + header slot (with title bar visuals + gizmo).
+    let (wp_t, layout_root) =
+        spawn_panel_title_bar(world, wpo, pos, wp_width, wp_height, "World");
+
+    // ── Content slot — second flex item (flex_grow=1) ────────────────────
+    // LayoutSystem will position this at [0, -TITLE_BAR_HEIGHT, 0].
+    // Pre-set the initial position to avoid a one-frame flicker before
+    // LayoutSystem first runs.
+    let content_slot = world.add_component_boxed_named(
+        "content_slot",
+        Box::new(TransformComponent::new().with_position(0.0, -TITLE_BAR_HEIGHT, 0.0)),
+    );
+    let content_style = world.add_component_boxed_named(
+        "content_style",
+        Box::new({
+            let mut s = StyleComponent::new();
+            s.display = Some(Display::Block);
+            // height: Auto (default) in a fixed-height LayoutComponent column → fills remaining space.
+            s
+        }),
+    );
+
+    let _ = world.add_child(layout_root, content_slot);
+    let _ = world.add_child(content_slot, content_style);
+
+    // Drag plane covers the content area; parent is content_slot so its
+    // local [0, 0] aligns with the top of the content region.
+    spawn_drag_plane(world, content_slot, (0.0, 0.0, 0.0), wp_width, wp_height);
+
+    let _ = world.add_child(content_slot, wpc);
     let _ = world.add_child(wpc, wsc);
     let _ = world.add_child(wsc, wpr);
+
+    let _ = wp_t; // panel_t used only for gizmo ancestry
 
     if let Some(c) = world.get_component_by_id_as_mut::<WorldPanelComponent>(wpc) {
         c.editor_root = Some(editor_root);
         c.rows_anchor = Some(wpr);
-        c.rows_anchor_base_pos = [pos.0, pos.1, pos.2];
+        // rows_anchor is at [0,0,0] relative to content_slot.
+        // LayoutSystem handles the title-bar offset by positioning content_slot.
+        c.rows_anchor_base_pos = [0.0, 0.0, 0.0];
     }
 
     world.init_component_tree(wpa, emit);
@@ -452,7 +644,7 @@ fn spawn_inspector_panel(
     );
     let ipr = world.add_component_boxed_named(
         "inspector_panel_rows",
-        Box::new(TransformComponent::new().with_position(pos.0, pos.1, pos.2)),
+        Box::new(TransformComponent::new()),
     );
 
     let ip_width = LayoutSystem::estimate_panel_width(
@@ -463,15 +655,37 @@ fn spawn_inspector_panel(
     let ip_height = PAGE_SIZE as f32 * ROW_HEIGHT;
 
     let _ = world.add_child(ipa, ipo);
-    spawn_drag_plane(world, ipo, pos, ip_width, ip_height);
-    let _ = world.add_child(ipo, ipc);
+
+    let (ip_t, layout_root) =
+        spawn_panel_title_bar(world, ipo, pos, ip_width, ip_height, "Inspector");
+
+    let content_slot = world.add_component_boxed_named(
+        "content_slot",
+        Box::new(TransformComponent::new().with_position(0.0, -TITLE_BAR_HEIGHT, 0.0)),
+    );
+    let content_style = world.add_component_boxed_named(
+        "content_style",
+        Box::new({
+            let mut s = StyleComponent::new();
+            s.display = Some(Display::Block);
+            // height: Auto (default) in a fixed-height LayoutComponent column → fills remaining space.
+            s
+        }),
+    );
+
+    let _ = world.add_child(layout_root, content_slot);
+    let _ = world.add_child(content_slot, content_style);
+    spawn_drag_plane(world, content_slot, (0.0, 0.0, 0.0), ip_width, ip_height);
+    let _ = world.add_child(content_slot, ipc);
     let _ = world.add_child(ipc, isc);
     let _ = world.add_child(isc, ipr);
+
+    let _ = ip_t;
 
     if let Some(c) = world.get_component_by_id_as_mut::<InspectorPanelComponent>(ipc) {
         c.editor_root = Some(editor_root);
         c.rows_anchor = Some(ipr);
-        c.rows_anchor_base_pos = [pos.0, pos.1, pos.2];
+        c.rows_anchor_base_pos = [0.0, 0.0, 0.0];
     }
 
     world.init_component_tree(ipa, emit);
@@ -688,8 +902,12 @@ fn rebuild_inspector_panel(
 // ---------------------------------------------------------------------------
 
 fn panel_row_bg(i: usize, total: usize) -> TextBackgroundComponent {
+    // Row 0 no longer needs PANEL_V_PADDING at the top: the title bar provides
+    // the visual top boundary. Restoring the padding would push the background
+    // into the title bar area and cause visible overlap.
+    let _ = i;
     TextBackgroundComponent::new()
-        .with_padding_top(if i == 0 { PANEL_V_PADDING } else { 0.0 })
+        .with_padding_top(0.0)
         .with_padding_bottom(if i + 1 == total { PANEL_V_PADDING } else { ROW_GAP_FILL })
 }
 

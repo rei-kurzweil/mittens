@@ -11,11 +11,15 @@ use crate::engine::ecs::component::{
     BlurPassComponent, AvatarBodyYawComponent, AvatarControlComponent, BackgroundColorComponent,
     BackgroundComponent, Camera3DComponent, CameraXRComponent, ClockComponent, ColorComponent,
     ControllerHand, ControllerPoseKind, ControllerXRComponent, DirectionalLightComponent,
-    EditorComponent, EmissiveComponent, EmissivePassComponent, GLTFComponent, InputComponent,
-    InputTransformModeComponent, InputXRComponent,
-    InspectorPanelComponent, KeyframeComponent, NormalVisualisationComponent, OpenXRComponent,
-    OverlayComponent, PointLightComponent, PointerComponent, RenderGraphComponent, ScrollingComponent,
-    SelectableComponent, TextBackgroundComponent, TextureComponent, UVComponent, WorldPanelComponent,
+    EditorComponent, EmissiveComponent, EmissivePassComponent, GLTFComponent,
+    HtmlElementComponent, ElementType,
+    InputComponent, InputTransformModeComponent, InputXRComponent,
+    InspectorPanelComponent, KeyframeComponent, LayoutComponent, NormalVisualisationComponent,
+    OpenXRComponent, OverlayComponent, PointLightComponent, PointerComponent,
+    RenderGraphComponent, ScrollingComponent, SelectableComponent,
+    StyleComponent, AlignItems, Display, EdgeInsets, FlexDirection, FlexWrap,
+    JustifyContent, Overflow, Position, SizeDimension,
+    TextBackgroundComponent, TextureComponent, UVComponent, WorldPanelComponent,
     TransitionComponent, TransitionEasing, TransitionReplacePolicy,
     QuatTemporalFilterComponent, RaycastableComponent, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TextComponent, TextShadowComponent,
@@ -329,6 +333,34 @@ fn create_component(
             _ => add!(ScrollingComponent::new(0.1, 10)),
         },
         "WorldPanel" => add!(WorldPanelComponent::new()),
+        "HtmlElement" => {
+            let c = match ctor {
+                Some("div")     => HtmlElementComponent::div(),
+                Some("span")    => HtmlElementComponent::span(),
+                Some("body")    => HtmlElementComponent::body(),
+                Some("header")  => HtmlElementComponent::header(),
+                Some("p")       => HtmlElementComponent::p(),
+                Some("section") => HtmlElementComponent::new(ElementType::Section),
+                Some("article") => HtmlElementComponent::new(ElementType::Article),
+                Some("footer")  => HtmlElementComponent::new(ElementType::Footer),
+                Some("nav")     => HtmlElementComponent::new(ElementType::Nav),
+                Some("aside")   => HtmlElementComponent::new(ElementType::Aside),
+                Some("main")    => HtmlElementComponent::new(ElementType::Main),
+                Some("h1")      => HtmlElementComponent::new(ElementType::H1),
+                Some("h2")      => HtmlElementComponent::new(ElementType::H2),
+                Some("h3")      => HtmlElementComponent::new(ElementType::H3),
+                Some("h4")      => HtmlElementComponent::new(ElementType::H4),
+                Some("h5")      => HtmlElementComponent::new(ElementType::H5),
+                Some("h6")      => HtmlElementComponent::new(ElementType::H6),
+                _               => HtmlElementComponent::new(ElementType::Element),
+            };
+            add!(c)
+        }
+        "Style" => add!(StyleComponent::new()),
+        "Layout" => {
+            let w = if !args.is_empty() { arg_f32(args, 0)? } else { 80.0 };
+            add!(LayoutComponent::new(w))
+        }
         "Raycastable" => match ctor {
             Some("enabled") => add!(RaycastableComponent::enabled()),
             _ => add!(RaycastableComponent::enabled()),
@@ -369,6 +401,22 @@ fn create_component(
         },
         "Action" => match ctor {
             Some("print") => add!(ActionComponent::print(arg_str(args, 0)?)),
+            Some("update_transform") => {
+                let target = resolve_action_target(world, arg_str(args, 0)?)?;
+                let translation = arg_f32_arr::<3>(args, 1)?;
+                let rotation_euler = arg_f32_arr::<3>(args, 2)?;
+                let scale = arg_f32_arr::<3>(args, 3)?;
+                let transform = TransformComponent::new()
+                    .with_position(translation[0], translation[1], translation[2])
+                    .with_rotation_euler(rotation_euler[0], rotation_euler[1], rotation_euler[2])
+                    .with_scale(scale[0], scale[1], scale[2]);
+                add!(ActionComponent::new(crate::engine::ecs::IntentValue::UpdateTransform {
+                    component_ids: vec![target],
+                    translation: transform.transform.translation,
+                    rotation_quat_xyzw: transform.transform.rotation,
+                    scale: transform.transform.scale,
+                }))
+            }
             _ => add!(ActionComponent::default()),
         },
         "NormalVis" => {
@@ -625,6 +673,104 @@ fn apply_call(
         }
         return Ok(());
     }
+    if let Some(st) = world.get_component_by_id_as_mut::<StyleComponent>(id) {
+        match method {
+            "display" => {
+                st.display = match arg_str(args, 0)? {
+                    "block"                     => Some(Display::Block),
+                    "inline"                    => Some(Display::Inline),
+                    "inline_block"|"inline-block" => Some(Display::InlineBlock),
+                    "flex"                      => Some(Display::Flex),
+                    "none"                      => Some(Display::None),
+                    _                           => None,
+                };
+            }
+            "width"       => st.width  = SizeDimension::GlyphUnits(arg_f32(args, 0)?),
+            "height"      => st.height = SizeDimension::GlyphUnits(arg_f32(args, 0)?),
+            "width_pct"   => st.width  = SizeDimension::Percent(arg_f32(args, 0)?),
+            "height_pct"  => st.height = SizeDimension::Percent(arg_f32(args, 0)?),
+            "padding"     => st.padding = EdgeInsets::all(arg_f32(args, 0)?),
+            "padding_xy"  => st.padding = EdgeInsets::axes(arg_f32(args, 0)?, arg_f32(args, 1)?),
+            "margin"      => st.margin  = EdgeInsets::all(arg_f32(args, 0)?),
+            "margin_xy"   => st.margin  = EdgeInsets::axes(arg_f32(args, 0)?, arg_f32(args, 1)?),
+            "flex_direction" => {
+                st.flex_direction = match arg_str(args, 0)? {
+                    "row"|"Row"                       => FlexDirection::Row,
+                    "column"|"Column"                 => FlexDirection::Column,
+                    "row_reverse"|"RowReverse"        => FlexDirection::RowReverse,
+                    "column_reverse"|"ColumnReverse"  => FlexDirection::ColumnReverse,
+                    _                                 => return Ok(()),
+                };
+            }
+            "justify_content" => {
+                st.justify_content = match arg_str(args, 0)? {
+                    "flex_start"|"start"  => JustifyContent::FlexStart,
+                    "flex_end"|"end"      => JustifyContent::FlexEnd,
+                    "center"              => JustifyContent::Center,
+                    "space_between"       => JustifyContent::SpaceBetween,
+                    "space_around"        => JustifyContent::SpaceAround,
+                    "space_evenly"        => JustifyContent::SpaceEvenly,
+                    _                     => return Ok(()),
+                };
+            }
+            "align_items" => {
+                st.align_items = match arg_str(args, 0)? {
+                    "stretch"              => AlignItems::Stretch,
+                    "flex_start"|"start"  => AlignItems::FlexStart,
+                    "flex_end"|"end"      => AlignItems::FlexEnd,
+                    "center"              => AlignItems::Center,
+                    "baseline"            => AlignItems::Baseline,
+                    _                     => return Ok(()),
+                };
+            }
+            "flex_grow"   => st.flex_grow   = arg_f32(args, 0)?,
+            "flex_shrink" => st.flex_shrink = arg_f32(args, 0)?,
+            "gap"         => { st.row_gap = arg_f32(args, 0)?; st.column_gap = st.row_gap; }
+            "row_gap"     => st.row_gap    = arg_f32(args, 0)?,
+            "column_gap"  => st.column_gap = arg_f32(args, 0)?,
+            "position"    => {
+                st.position = match arg_str(args, 0)? {
+                    "static"   => Position::Static,
+                    "relative" => Position::Relative,
+                    "absolute" => Position::Absolute,
+                    "fixed"    => Position::Fixed,
+                    _          => return Ok(()),
+                };
+            }
+            "top"    => st.top    = Some(SizeDimension::GlyphUnits(arg_f32(args, 0)?)),
+            "right"  => st.right  = Some(SizeDimension::GlyphUnits(arg_f32(args, 0)?)),
+            "bottom" => st.bottom = Some(SizeDimension::GlyphUnits(arg_f32(args, 0)?)),
+            "left"   => st.left   = Some(SizeDimension::GlyphUnits(arg_f32(args, 0)?)),
+            "overflow" => {
+                st.overflow = match arg_str(args, 0)? {
+                    "visible" => Overflow::Visible,
+                    "hidden"  => Overflow::Hidden,
+                    "scroll"  => Overflow::Scroll,
+                    "auto"    => Overflow::Auto,
+                    _         => return Ok(()),
+                };
+            }
+            "z_index" => st.z_index = Some(arg_f32(args, 0)? as i32),
+            "flex_wrap" => {
+                st.flex_wrap = match arg_str(args, 0)? {
+                    "nowrap"|"no_wrap"     => FlexWrap::NoWrap,
+                    "wrap"                 => FlexWrap::Wrap,
+                    "wrap_reverse"         => FlexWrap::WrapReverse,
+                    _                      => return Ok(()),
+                };
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(lo) = world.get_component_by_id_as_mut::<LayoutComponent>(id) {
+        match method {
+            "available_width"  => lo.available_width = arg_f32(args, 0)?,
+            "available_height" => lo.available_height = Some(arg_f32(args, 0)?),
+            _ => {}
+        }
+        return Ok(());
+    }
     println!("[registry] unhandled call '{method}' on component {id:?}");
     Ok(())
 }
@@ -658,4 +804,30 @@ fn apply_transform_builder(
             Ok(c)
         }
     }
+}
+
+fn resolve_action_target(world: &World, selector: &str) -> Result<ComponentId, String> {
+    if let Some(name) = selector.strip_prefix('#') {
+        return world
+            .all_components()
+            .find(|&cid| world.component_label(cid) == Some(name))
+            .ok_or_else(|| format!("Action target not found for selector: {}", selector));
+    }
+
+    if selector.starts_with("[name=") && selector.ends_with(']') {
+        let roots: Vec<ComponentId> = world
+            .all_components()
+            .filter(|&cid| world.parent_of(cid).is_none())
+            .collect();
+        for root in roots {
+            if let Some(found) = world.find_component(root, selector) {
+                return Ok(found);
+            }
+        }
+    }
+
+    world
+        .all_components()
+        .find(|&cid| world.component_label(cid) == Some(selector))
+        .ok_or_else(|| format!("Action target not found for selector: {}", selector))
 }

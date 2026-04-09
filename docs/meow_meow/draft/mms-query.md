@@ -4,6 +4,40 @@
 > This is the canonical reference for MMS query syntax.
 > Both module query and world query use the same selector language and API.
 
+## Current implementation snapshot
+
+This doc is still the right place to centralize query semantics, but the full MMS query
+runtime described below is **not** built yet.
+
+What exists today:
+
+- `QueryDesugarTransform` exists and rewrites `->` query/dispatch sugar at the AST layer.
+- The evaluator / HostCall path for live `query()` / `query_all()` against the ECS world is
+   still not implemented.
+- The transition demo currently uses a **specialized authoring-time target resolver** via
+   `Action.update_transform("#name", ...)`.
+
+That last piece is important: `Action.update_transform("#hero", ...)` is **not** the MMS
+query system. It is a narrow helper in the component registry that:
+
+1. resolves the string selector while spawning the authored component tree,
+2. converts it immediately into a concrete `ComponentId`, and
+3. stores a normal `ActionComponent` with a regular `IntentValue::UpdateTransform`.
+
+So at runtime, animation/actions are not doing string-based query lookups every frame.
+They are just firing normal intents with already-resolved target ids.
+
+Current supported forms for this specialized action-target lookup are intentionally narrow:
+
+- `#name`
+- `[name="..."]`
+- bare exact label match
+
+This helper should be treated as **temporary authoring convenience**, not as the canonical
+query runtime. As the real MMS query / HostCall system lands, selector-based action targeting
+should either reuse that shared selector-resolution model or be explicitly documented as a
+separate load-time binding feature.
+
 ---
 
 ## One query system, two contexts
