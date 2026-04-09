@@ -1,7 +1,8 @@
 use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::{LayoutComponent, StyleComponent, TransformComponent};
+use crate::engine::ecs::component::{LayoutComponent, StyleComponent, TextComponent, TransformComponent};
 use crate::engine::ecs::component::style::{Display, SizeDimension};
+use crate::engine::ecs::system::text_system::TextSystem;
 
 /// Measured size of a single layout item after Pass 1.
 ///
@@ -81,10 +82,19 @@ pub(crate) fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -
     let padding_top_gu   = padding.top;
     let padding_bottom_gu = padding.bottom;
 
-    let is_auto_height = is_block && matches!(height, SizeDimension::Auto);
+    // is_auto_height = true means "take a share of remaining container space".
+    // Text nodes with height: Auto resolve intrinsically (not from container),
+    // so they are NOT auto from the container's perspective.
+    let has_text = find_text_in_subtree(world, tc_id).is_some();
+    let is_auto_height = is_block && matches!(height, SizeDimension::Auto) && !has_text;
     let content_height_gu = match height {
         SizeDimension::GlyphUnits(h) => h,
-        _ => 0.0, // resolved later in measure_items if container height is known
+        SizeDimension::Auto => {
+            // Intrinsic height: if the subtree contains a TextComponent, measure it.
+            // wrap_at is derived from the available content width in character columns.
+            text_intrinsic_height(world, tc_id, content_width_gu)
+        }
+        _ => 0.0,
     };
     let box_height_gu        = padding_top_gu + content_height_gu + padding_bottom_gu;
     let margin_box_height_gu = margin_top_gu + box_height_gu + margin_bottom_gu;
@@ -164,6 +174,46 @@ pub(crate) fn measure_items(
     }
 
     (items, avail_w, avail_h, unit_scale)
+}
+
+// ── Text intrinsic height ─────────────────────────────────────────────────────
+
+/// Approximate glyph character width in glyph units (matches TextSystem rendering).
+const CHAR_WIDTH_GU: f32 = 0.55;
+
+/// Walk the subtree of `root` and return the first `TextComponent` found.
+fn find_text_in_subtree(world: &World, root: ComponentId) -> Option<(String, usize, bool, Vec<String>)> {
+    if let Some(t) = world.get_component_by_id_as::<TextComponent>(root) {
+        return Some((t.text.clone(), t.wrap_at, t.word_wrap, t.word_wrap_tokens.clone()));
+    }
+    for &child in world.children_of(root) {
+        if let Some(found) = find_text_in_subtree(world, child) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// Measure the intrinsic block-axis height (in glyph units) of a TC subtree
+/// by finding its `TextComponent` and running `TextSystem::measure`.
+///
+/// Returns `0.0` if no `TextComponent` is found in the subtree.
+fn text_intrinsic_height(world: &World, tc_id: ComponentId, content_width_gu: f32) -> f32 {
+    let Some((text, existing_wrap_at, word_wrap, tokens)) = find_text_in_subtree(world, tc_id)
+    else {
+        return 0.0;
+    };
+
+    // Derive wrap_at from available width if the content area is known and wider
+    // than a single character; otherwise fall back to the TextComponent's own wrap_at.
+    let wrap_at = if content_width_gu > CHAR_WIDTH_GU {
+        (content_width_gu / CHAR_WIDTH_GU).floor() as usize
+    } else {
+        existing_wrap_at
+    };
+
+    let (_max_col, line_count) = TextSystem::measure(&text, wrap_at.max(1), word_wrap, &tokens);
+    line_count as f32 // 1.0 gu per line; caller multiplies by style.line_height if needed
 }
 
 // ── Default style values used when no StyleComponent is present ───────────────

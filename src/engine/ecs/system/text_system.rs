@@ -420,6 +420,44 @@ impl TextSystem {
 
         spawned
     }
+
+    /// Pure text measurement — runs wrap logic without spawning any glyphs.
+    ///
+    /// Returns `(max_col, line_count)`:
+    /// - `max_col`    — widest line in character columns (for background sizing)
+    /// - `line_count` — total number of lines after wrapping
+    ///
+    /// `wrap_at = 0` disables wrapping.
+    pub fn measure(
+        text: &str,
+        wrap_at: usize,
+        word_wrap: bool,
+        word_wrap_tokens: &[String],
+    ) -> (usize, usize) {
+        let chars: Vec<char> = text.chars().collect();
+        let wrap_allowed_after = compute_wrap_allowed_after(&chars, word_wrap_tokens);
+        let mut state = WordWrapState::new(wrap_at, word_wrap);
+
+        for (i, ch) in chars.iter().copied().enumerate() {
+            if ch == '\n' {
+                state.newline();
+                continue;
+            }
+            state.apply_wrap_if_needed();
+            if ch == ' ' {
+                state.advance_space(i, &wrap_allowed_after);
+                continue;
+            }
+            if ch == '\t' {
+                state.advance_tab(i, &wrap_allowed_after);
+                continue;
+            }
+            state.advance_glyph(i, &wrap_allowed_after);
+        }
+
+        state.max_col = state.max_col.max(state.col);
+        (state.max_col, state.row + 1)
+    }
 }
 
 fn compute_wrap_allowed_after(chars: &[char], tokens: &[String]) -> Vec<bool> {
