@@ -14,8 +14,6 @@ pub fn layout(
     _world: &World,
     _emit: &mut dyn SignalEmitter,
     _layout_id: ComponentId,
-    _avail_h: Option<f32>,
-    _unit_scale: f32,
 ) {
     // TODO: flex layout (row + column, flex-grow/shrink/basis, gap, justify-content, align-items)
     // See docs/draft/layout-system-impl-plan.md — deferred until workspace layout is needed.

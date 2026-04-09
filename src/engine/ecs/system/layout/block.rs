@@ -1,96 +1,51 @@
-/// Block formatting context layout.
+/// Block formatting context layout — Pass 2.
 ///
-/// Children stack top-to-bottom. Each block item with `height: Auto` fills
-/// its share of remaining space after fixed-height items are placed.
-/// No horizontal cursor — each block item starts at `x = margin_left + padding_left`
-/// and stretches to fill the available width.
+/// Children stack top-to-bottom with a vertical cursor.
+/// Each item contributes `margin_top + box_height + margin_bottom` to the cursor.
+/// The TC is positioned at the content-box origin:
+///   `x = (margin_left + padding_left) * unit_scale`
+///   `y = -(margin_top + padding_top) * unit_scale`  (relative to cursor before margin)
 ///
-/// This is the current working implementation. It will be replaced by a proper
-/// two-pass version (measure.rs Pass 1 + layout Pass 2) once `MeasuredItem` is wired.
+/// No horizontal cursor — block items start at their own left margin + padding
+/// and stretch to fill available width.
 use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::{StyleComponent, TransformComponent};
-use crate::engine::ecs::component::style::{Display, SizeDimension};
 use crate::engine::ecs::{IntentValue, SignalEmitter};
+use super::measure::measure_items;
 
-/// Run a block-column layout pass on the direct TC children of `layout_id`.
+/// Run a block formatting context layout pass for `layout_id`.
 ///
-/// Reads each child's `StyleComponent` for `height` and `display`; emits
-/// `UpdateTransform` intents to position each child along the Y axis.
+/// Calls `measure_items` (Pass 1) then walks the results with a vertical cursor
+/// and emits `UpdateTransform` for each TC child.
 pub fn layout(
     world: &World,
     emit: &mut dyn SignalEmitter,
     layout_id: ComponentId,
-    avail_h: Option<f32>,
-    unit_scale: f32,
 ) {
-    let children: Vec<ComponentId> = world.children_of(layout_id).to_vec();
-
-    // Collect TC children with their measured height and grow factor.
-    // (tc_id, content_height_gu, grow)
-    let mut items: Vec<(ComponentId, f32, f32)> = Vec::new();
-    for child in children {
-        if world.get_component_by_id_as::<TransformComponent>(child).is_none() {
-            continue;
-        }
-        let (h, grow) = item_style(world, child);
-        items.push((child, h, grow));
-    }
-
-    // Distribute remaining height among auto (grow > 0) items.
-    let total_fixed_gu: f32 = items
-        .iter()
-        .map(|&(_, h, grow)| if grow == 0.0 { h } else { 0.0 })
-        .sum();
-    let total_grow: f32 = items.iter().map(|&(_, _, g)| g).sum();
-    let remaining_gu = avail_h
-        .map(|h| (h - total_fixed_gu).max(0.0))
-        .unwrap_or(0.0);
+    let (items, _avail_w, _avail_h, unit_scale) = measure_items(world, layout_id);
 
     let mut cursor_gu = 0.0_f32;
-    for (tc_id, fixed_h_gu, grow) in items {
-        let slot_h_gu = if grow > 0.0 && total_grow > 0.0 {
-            remaining_gu * (grow / total_grow)
-        } else {
-            fixed_h_gu
-        };
 
-        // Engine +Y is up; layout flows downward → negate.
-        let y_local = -cursor_gu * unit_scale;
+    for item in &items {
+        cursor_gu += item.margin_top_gu;
+
+        let content_origin_y_gu = cursor_gu + item.padding_top_gu;
+        let content_origin_x_gu = item.margin_left_gu + item.padding_left_gu;
 
         emit.push_intent_now(
-            tc_id,
+            item.tc_id,
             IntentValue::UpdateTransform {
-                component_ids: vec![tc_id],
-                translation: [0.0, y_local, 0.0],
+                component_ids: vec![item.tc_id],
+                translation: [
+                      content_origin_x_gu * unit_scale,
+                    -(content_origin_y_gu * unit_scale),
+                    0.0,
+                ],
                 rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
                 scale: [1.0, 1.0, 1.0],
             },
         );
 
-        cursor_gu += slot_h_gu;
+        cursor_gu += item.box_height_gu + item.margin_bottom_gu;
     }
-}
-
-/// Read sizing info from the `StyleComponent` among `tc_id`'s children.
-///
-/// Returns `(content_height_gu, grow)`.
-/// `display: Block` + `height: Auto` → grow = 1.0 (fills remaining space).
-fn item_style(world: &World, tc_id: ComponentId) -> (f32, f32) {
-    for &child in world.children_of(tc_id) {
-        if let Some(style) = world.get_component_by_id_as::<StyleComponent>(child) {
-            let h = match style.height {
-                SizeDimension::GlyphUnits(v) => v,
-                _ => 0.0,
-            };
-            let is_block = matches!(style.display, None | Some(Display::Block));
-            let grow = if is_block && matches!(style.height, SizeDimension::Auto) {
-                1.0
-            } else {
-                style.flex_grow
-            };
-            return (h, grow);
-        }
-    }
-    (0.0, 0.0)
 }

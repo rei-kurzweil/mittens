@@ -18,9 +18,6 @@ pub fn layout(
     _world: &World,
     _emit: &mut dyn SignalEmitter,
     _layout_id: ComponentId,
-    _avail_w: f32,
-    _avail_h: Option<f32>,
-    _unit_scale: f32,
 ) {
     // TODO: inline formatting context
     // - horizontal cursor per line box

@@ -1,12 +1,15 @@
+use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::component::{LayoutComponent, StyleComponent, TransformComponent};
+use crate::engine::ecs::component::style::{Display, SizeDimension};
 
 /// Measured size of a single layout item after Pass 1.
 ///
-/// Computed by `measure_item` from the item's `StyleComponent`; consumed
-/// by the display-mode layout functions (block, flex, inline) in Pass 2.
+/// Computed by [`measure_item`] from the item's [`StyleComponent`]; consumed
+/// by the display-mode layout functions (`block`, `flex`, `inline`) in Pass 2.
 ///
 /// All values are in **glyph units**.
-pub struct MeasuredItem {
+pub(crate) struct MeasuredItem {
     pub tc_id: ComponentId,
 
     // ── Vertical ─────────────────────────────────────────────────────────
@@ -19,7 +22,7 @@ pub struct MeasuredItem {
     pub box_height_gu:        f32,
     /// margin_top + box_height + margin_bottom
     pub margin_box_height_gu: f32,
-    /// true → height: Auto; gets a share of remaining container space
+    /// true → height: Auto; gets a share of remaining container space in Pass 1
     pub is_auto_height:       bool,
 
     // ── Horizontal ───────────────────────────────────────────────────────
@@ -32,11 +35,156 @@ pub struct MeasuredItem {
     pub box_width_gu:         f32,
     /// margin_left + box_width + margin_right
     pub margin_box_width_gu:  f32,
-    /// true → width: Auto; stretches to fill container (block default)
+    /// true → width: Auto; item stretches to fill container inline axis
     pub is_auto_width:        bool,
 }
 
-// Pass 1 implementation — TODO:
-// `measure_item(world, tc_id, avail_w_gu) -> MeasuredItem`
-// `measure_items(world, layout_id) -> (Vec<MeasuredItem>, avail_w, avail_h)`
-// See docs/draft/layout-system-impl-plan.md Phase A.
+/// Pass 1 — measure a single TC layout item.
+///
+/// Reads the [`StyleComponent`] from among `tc_id`'s ECS children and computes
+/// the full box model (content, padding, margin) for both axes.
+///
+/// Auto heights are left with `content_height_gu = 0` and `is_auto_height = true`;
+/// callers must resolve them after summing fixed items (see [`measure_items`]).
+pub(crate) fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> MeasuredItem {
+    // Copy style fields out before the borrow ends.
+    let children: Vec<ComponentId> = world.children_of(tc_id).to_vec();
+    let style = children.iter().find_map(|&child| {
+        world.get_component_by_id_as::<StyleComponent>(child).map(|s| {
+            (s.padding, s.margin, s.height, s.width, s.display, s.flex_grow)
+        })
+    });
+
+    let (padding, margin, height, width, display, _flex_grow) = style.unwrap_or_default();
+
+    let is_block = matches!(display, None | Some(Display::Block));
+
+    // ── Horizontal ───────────────────────────────────────────────────────
+    let margin_left_gu   = margin.left;
+    let margin_right_gu  = margin.right;
+    let padding_left_gu  = padding.left;
+    let padding_right_gu = padding.right;
+
+    // Block elements with width: Auto fill the available width after margins and padding.
+    let is_auto_width = is_block && matches!(width, SizeDimension::Auto);
+    let content_width_gu = match width {
+        SizeDimension::GlyphUnits(w) => w,
+        _ => (avail_w_gu - margin_left_gu - margin_right_gu
+                         - padding_left_gu - padding_right_gu).max(0.0),
+    };
+    let box_width_gu        = padding_left_gu + content_width_gu + padding_right_gu;
+    let margin_box_width_gu = margin_left_gu + box_width_gu + margin_right_gu;
+
+    // ── Vertical ─────────────────────────────────────────────────────────
+    let margin_top_gu    = margin.top;
+    let margin_bottom_gu = margin.bottom;
+    let padding_top_gu   = padding.top;
+    let padding_bottom_gu = padding.bottom;
+
+    let is_auto_height = is_block && matches!(height, SizeDimension::Auto);
+    let content_height_gu = match height {
+        SizeDimension::GlyphUnits(h) => h,
+        _ => 0.0, // resolved later in measure_items if container height is known
+    };
+    let box_height_gu        = padding_top_gu + content_height_gu + padding_bottom_gu;
+    let margin_box_height_gu = margin_top_gu + box_height_gu + margin_bottom_gu;
+
+    MeasuredItem {
+        tc_id,
+        content_height_gu,
+        padding_top_gu,
+        padding_bottom_gu,
+        margin_top_gu,
+        margin_bottom_gu,
+        box_height_gu,
+        margin_box_height_gu,
+        is_auto_height,
+        content_width_gu,
+        padding_left_gu,
+        padding_right_gu,
+        margin_left_gu,
+        margin_right_gu,
+        box_width_gu,
+        margin_box_width_gu,
+        is_auto_width,
+    }
+}
+
+/// Pass 1 — measure all TC children of a [`LayoutComponent`] root.
+///
+/// Returns `(items, avail_w_gu, avail_h_gu, unit_scale)`.
+///
+/// Auto-height items are resolved against the container's `available_height`
+/// (if set) before returning — callers receive fully resolved `MeasuredItem`s
+/// and do not need to re-run the distribution logic.
+///
+/// If `available_height` is `None`, auto-height items retain `content_height_gu = 0`
+/// (intrinsic / content-driven sizing is not yet implemented).
+pub(crate) fn measure_items(
+    world: &World,
+    layout_id: ComponentId,
+) -> (Vec<MeasuredItem>, f32, Option<f32>, f32) {
+    let (avail_w, avail_h, unit_scale) = {
+        let lc = match world.get_component_by_id_as::<LayoutComponent>(layout_id) {
+            Some(l) => l,
+            None => return (Vec::new(), 0.0, None, 1.0),
+        };
+        (lc.available_width, lc.available_height, lc.unit_scale)
+    };
+
+    let children: Vec<ComponentId> = world.children_of(layout_id).to_vec();
+    let mut items: Vec<MeasuredItem> = children
+        .into_iter()
+        .filter(|&child| world.get_component_by_id_as::<TransformComponent>(child).is_some())
+        .map(|child| measure_item(world, child, avail_w))
+        .collect();
+
+    // Resolve auto heights when container height is known.
+    if let Some(h) = avail_h {
+        let total_fixed: f32 = items.iter()
+            .filter(|i| !i.is_auto_height)
+            .map(|i| i.margin_box_height_gu)
+            .sum();
+        let count_auto = items.iter().filter(|i| i.is_auto_height).count();
+
+        if count_auto > 0 {
+            let remaining      = (h - total_fixed).max(0.0);
+            let auto_margin_box = remaining / count_auto as f32;
+
+            for item in items.iter_mut().filter(|i| i.is_auto_height) {
+                item.margin_box_height_gu = auto_margin_box;
+                item.box_height_gu = (auto_margin_box
+                    - item.margin_top_gu
+                    - item.margin_bottom_gu).max(0.0);
+                item.content_height_gu = (item.box_height_gu
+                    - item.padding_top_gu
+                    - item.padding_bottom_gu).max(0.0);
+            }
+        }
+    }
+
+    (items, avail_w, avail_h, unit_scale)
+}
+
+// ── Default style values used when no StyleComponent is present ───────────────
+
+use crate::engine::ecs::component::style::EdgeInsets;
+
+type StyleTuple = (EdgeInsets, EdgeInsets, SizeDimension, SizeDimension, Option<Display>, f32);
+
+trait StyleDefault {
+    fn unwrap_or_default(self) -> StyleTuple;
+}
+
+impl StyleDefault for Option<StyleTuple> {
+    fn unwrap_or_default(self) -> StyleTuple {
+        self.unwrap_or((
+            EdgeInsets::ZERO,
+            EdgeInsets::ZERO,
+            SizeDimension::Auto,
+            SizeDimension::Auto,
+            None,
+            0.0,
+        ))
+    }
+}

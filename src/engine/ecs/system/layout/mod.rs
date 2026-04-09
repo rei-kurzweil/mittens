@@ -9,7 +9,7 @@ pub use aabb::{Aabb, mesh_aabb, subtree_aabb};
 use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::LayoutComponent;
-use crate::engine::ecs::{IntentValue, SignalEmitter};
+use crate::engine::ecs::SignalEmitter;
 
 /// Approximate average character width in glyph-local units (pre-transform).
 const CHAR_WIDTH_GLYPH: f32 = 0.55;
@@ -59,17 +59,14 @@ impl LayoutSystem {
     /// Currently always uses block layout. Future: read the container's
     /// `StyleComponent.display` (Flex, Block, etc.) to select the algorithm.
     fn run_layout(world: &World, emit: &mut dyn SignalEmitter, layout_id: ComponentId) {
-        let (avail_h, unit_scale) = {
-            let lc = match world.get_component_by_id_as::<LayoutComponent>(layout_id) {
-                Some(l) => l,
-                None => return,
-            };
-            (lc.available_height, lc.unit_scale)
-        };
+        // Guard: skip if the LayoutComponent is gone.
+        if world.get_component_by_id_as::<LayoutComponent>(layout_id).is_none() {
+            return;
+        }
 
         // TODO: read LayoutComponent or container StyleComponent.display to dispatch.
         // For now all roots use block formatting context.
-        block::layout(world, emit, layout_id, avail_h, unit_scale);
+        block::layout(world, emit, layout_id);
     }
 
     /// Delegate to `aabb::subtree_aabb`.
