@@ -352,7 +352,7 @@ sub-pixel overlap issues described in section 3B.
 
 ---
 
-## 8. Summary
+## 8. Summary (as of initial analysis)
 
 | Issue | Root Cause | Fix |
 |-------|------------|-----|
@@ -360,3 +360,243 @@ sub-pixel overlap issues described in section 3B.
 | Drag plane covers title bar | `DRAG_MARGIN` extends symmetrically upward into title bar | Asymmetric drag plane: no upward extension |
 | Gizmo moves only title bar | ✅ **Fixed** — gizmo moved to child of `panel_t` | — |
 | Row 0 background overlaps bar | ✅ **Fixed** — `padding_top=0.0` for all rows | — |
+
+---
+
+## 9. Current Architecture (post-LayoutSystem row refactor) ヽ(・ω・)ﾉ
+
+As of the block layout refactor, the hierarchy is now:
+
+```
+panel_t (TC, world pos)
+  layout_root (LayoutComponent, unit_scale=TEXT_SCALE, avail_h=title+content)
+    header_slot (TC)           ← positioned by LayoutSystem at y=0
+      HtmlElementComponent::header()
+      StyleComponent { height: GlyphUnits(2.0), margin.bottom: 0.5 }
+      bar_t / label_t / gizmo ...
+    content_slot (TC)          ← positioned by LayoutSystem at y=-(2.0+0.5)*TEXT_SCALE=-0.20wu
+      HtmlElementComponent::div()
+      StyleComponent { height: Auto }
+      drag_plane_t             ← ⚠ hardcoded pos, NOT a layout item
+      wpc → wsc → wpr (TC)
+        rows_layout (LayoutComponent, unit_scale=TEXT_SCALE, no height constraint)
+          row_t (TC, scale=TEXT_SCALE)  ← positioned by LayoutSystem
+            HtmlElementComponent::div()
+            StyleComponent { height: Auto, margin.left: depth * INDENT_UNIT_GU }
+            color_node → row_text (TextComponent)
+```
+
+Row positions are now driven by `rows_layout` LayoutComponent. `text_intrinsic_height`
+measures each row by walking the subtree to find its `TextComponent`, running
+`TextSystem::measure` (pure, stateless), and returning `line_count` glyph units.
+`block::layout` then places rows with a vertical cursor at `line_count * TEXT_SCALE` spacing.
+
+Wrapping measurement is now correct: `wrap_at = min(container_derived_cols, tc.wrap_at)`
+ensures the measurement never assumes more horizontal room than the TextSystem will use.
+
+---
+
+## 10. Target: One LayoutComponent per Panel (´･ω･`)
+
+### Current state — two LayoutComponents
+
+Each panel currently contains **two** `LayoutComponent` nodes:
+
+| Node | ID | Children it positions |
+|------|----|-----------------------|
+| `panel_layout` (layout_root) | child of `panel_t` | `header_slot`, `content_slot` |
+| `world_panel_rows_layout` (rows_layout) | child of `wpr` (inside `wsc` inside `wpc`) | row TCs |
+
+`rows_layout` was introduced as an interim to give LayoutSystem ownership of row positions
+without restructuring the scroll/virtualization machinery. It is a separate layout root
+that gets marked dirty on every `rebuild_world_panel` call and re-runs independently of
+`panel_layout`.
+
+### Why the split exists (the friction points)
+
+Two things prevent rows from being direct children of `panel_layout` right now:
+
+1. **Scroll translation** — `ScrollingComponent` moves `wpr` (rows_anchor TC) via
+   `UpdateTransform` on every drag tick. This translation is applied to the whole rows
+   subtree as a single world-space offset. If rows were direct children of `panel_layout`,
+   LayoutSystem would need to understand "this subtree is scrolled by Δy" as a layout
+   concept, not just a raw transform.
+
+2. **Row virtualization** — only `PAGE_SIZE` rows exist at any time. The full logical
+   list has `N` items; rows are rebuilt on each scroll window change. A single layout
+   tree that includes rows would need to be re-measured every time rows rebuild, which
+   is already the case for `rows_layout` — but if rows were children of `panel_layout`
+   the whole panel (including title bar) would be re-laid-out on every scroll, which is
+   wasteful.
+
+### Target architecture — one LayoutComponent
+
+The clean end state, once the layout system supports `overflow: scroll`:
+
+```
+panel_t (TC, world pos)
+  layout_root (LayoutComponent — THE single layout root for this panel)
+    header_slot (TC)
+      HtmlElementComponent::header()
+      StyleComponent { height: GlyphUnits(2.0), margin.bottom: 0.5 }
+      [title bar visuals]
+    content_slot (TC)
+      HtmlElementComponent::div()
+      StyleComponent { height: Auto, overflow: Scroll }   ← scroll container
+      drag_plane  (positioned within content_slot by layout, not by spawn_drag_plane)
+      [row TCs — children of content_slot, laid out by the same layout pass]
+        row_0 (TC)
+          HtmlElementComponent::div()
+          StyleComponent { height: Auto, margin.left: depth * INDENT_UNIT_GU }
+          ...
+        row_1 (TC) ...
+  gizmo (TransformGizmoComponent)
+```
+
+In this model:
+- `layout_root` is the **only** `LayoutComponent` in the tree.
+- `content_slot` with `overflow: Scroll` is a **scroll container** within the layout tree,
+  not a separate layout root. LayoutSystem handles it by clipping children to
+  `content_slot`'s box and applying a scroll offset when measuring/placing children.
+- The drag plane becomes a layout item inside `content_slot` (or is replaced by making
+  `content_slot` itself raycastable).
+- `ScrollingComponent` becomes a data/event component only — it stores scroll offset and
+  emits scroll events, but it does NOT emit `UpdateTransform` to move a rows_anchor.
+  Instead it updates a `scroll_offset_gu` value on `content_slot`'s StyleComponent (or
+  LayoutComponent), and LayoutSystem applies that offset when placing children.
+- Row virtualization remains valid: rows rebuild on scroll window change; the layout
+  re-runs from the scroll container downward (not the whole panel).
+
+### What needs to be built first
+
+| Prerequisite | Description |
+|---|---|
+| `StyleComponent.overflow: Scroll` | Flag that makes a block a scroll container |
+| Scroll-offset in layout pass | LayoutSystem reads `scroll_offset_gu` from the scroll container and shifts child placement accordingly |
+| Height-based scroll math (Bug B) | `ScrollingComponent` or its replacement must track per-row heights |
+| Drag plane as layout item | `spawn_drag_plane` replaced by a styled `div` that LayoutSystem positions; it fills `content_slot` width/height |
+
+Until these exist, the two-LayoutComponent setup is the right interim state. `rows_layout`
+is explicitly a workaround for the absence of `overflow: scroll` in the layout system.
+
+---
+
+## 11. Outstanding Bugs (ノ°▽°)ノ
+
+### Bug A — Drag plane does not participate in layout flow
+
+**Observed**: The blue drag quad sits partially over the title bar — not flush with the
+bottom of `content_slot` as intended, and not part of the block flow that places
+`header_slot` and `content_slot` vertically.
+
+**Root cause — structural**: `spawn_drag_plane` creates a `TransformComponent` as a
+**direct child of `content_slot`** (a plain TC, not a LayoutComponent). LayoutSystem
+only positions children of `LayoutComponent` nodes; it has no knowledge of the drag plane.
+The drag plane position is authored manually via a hardcoded `with_position(cx, cy, cz)`
+that uses `panel_height` and `DRAG_MARGIN`.
+
+The drag plane is NOT a layout item in `layout_root`. It is a visual overlay component
+attached to `content_slot` whose position is baked at spawn time and never updated by
+LayoutSystem. If LayoutSystem moves `content_slot` (e.g. due to margin changes), the drag
+plane moves with it (because it's a TC child of content_slot), but its own local position
+within content_slot is static — no layout system owns it.
+
+**Root cause — arithmetic (issue 1.1)**: The drag plane extends upward by `DRAG_MARGIN`
+from y=0 in `content_slot` local space:
+
+```
+h_extended = panel_height + 2 * DRAG_MARGIN = wp_height + 0.30
+cy = -(h_extended / 2)  →  top edge = cy + h_extended/2 = +DRAG_MARGIN = +0.15 wu
+```
+
+`content_slot` is positioned by LayoutSystem at:
+```
+y = -(TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU) * TEXT_SCALE
+  = -(2.0 + 0.5) * 0.08 = -0.20 wu  (in panel_t space)
+```
+
+So the drag plane top in panel_t space:
+```
+-0.20 + 0.15 = -0.05 wu
+```
+
+The title bar occupies `y = 0` to `y = -0.16` wu (2 gu × 0.08). The drag plane top at
+`-0.05` sits **0.11 wu inside the title bar** — covering most of the title but not all.
+Hence: "partially overlapping the title, not completely overlapping and not completely below."
+
+**Intended fix**: Make `spawn_drag_plane` use an asymmetric extent — zero upward extension,
+full extension downward and sideways:
+
+```rust
+// top edge at y=0 (flush with content_slot top), bottom = -(panel_height + DRAG_MARGIN)
+let top    = 0.0_f32;
+let bottom = -(panel_height + DRAG_MARGIN);
+let h      = bottom.abs();         // total height of the quad
+let cy     = top - h * 0.5;       // center
+let cx     = panel_width * 0.5;
+let cz     = pos.2 + DRAG_PLANE_Z_OFFSET;
+let w      = panel_width + 2.0 * DRAG_MARGIN;
+```
+
+This eliminates the upward intrusion while still giving comfortable drag affordance on
+the bottom and sides.
+
+---
+
+### Bug B — Scroll culling is index-based, not height-based
+
+**Observed**: When a row's text wraps onto 2+ visual lines (e.g. a long component name),
+scrolling the panel so that wrapped row crosses the top clip boundary causes incorrect
+culling. Only the top line of the wrapped row triggers the "row is out of view" condition;
+the second (wrapped) line and any lines below it are culled simultaneously with the first,
+leaving a gap equal to one extra line height at the top of the visible area, and pushing
+all subsequent rows up by one line.
+
+**Root cause**: `ScrollingComponent` tracks position in **row indices**, not pixel or
+glyph-unit heights. The scroll stride is fixed at `ROW_HEIGHT` world units per row index.
+`apply_drag` converts a world-unit delta into a fractional row offset and advances
+`window_start` (an integer row index) when a full `ROW_HEIGHT` is crossed.
+
+`rebuild_world_panel` then renders rows `[window_start .. window_start + PAGE_SIZE]`,
+each placed by LayoutSystem at measured heights. A single-line row is `1 gu * TEXT_SCALE`
+tall. A two-line row is `2 gu * TEXT_SCALE` tall. But `ScrollingComponent` treats both
+as `ROW_HEIGHT` when deciding when to advance the window.
+
+If a two-line row is the topmost visible row and the user scrolls it out of view:
+- `ScrollingComponent` counts it as `1 × ROW_HEIGHT` of drag to cross → advances
+  `window_start` by 1 after `ROW_HEIGHT = 0.090 wu` of drag
+- But the row actually occupies `2 × TEXT_SCALE = 0.16 wu` — nearly double
+- The sub-row y-offset (`sub_row_y_offset`) is applied to `wpr` as a smooth translation,
+  but it resets relative to the new `window_start` row. Since the scroll system thought
+  the row was 0.090 wu tall but it was actually 0.160 wu tall, `sub_y` snaps when
+  `window_start` increments, producing a visible jump.
+
+**Required fix** (non-trivial): Replace index-based scrolling with height-based scrolling.
+`ScrollingComponent` needs to know each row's measured height (in world units) to compute:
+1. Total scroll extent = sum of all row heights
+2. Current scroll position = sum of heights from 0 to `window_start` + sub-row offset
+3. When `window_start` advances: subtract the outgoing row's actual height, not `ROW_HEIGHT`
+
+This requires that `ScrollingComponent` (or its caller) has access to per-row heights —
+either stored after each `rebuild_world_panel` call (pull from `rows_layout` after
+LayoutSystem runs) or computed on-demand. The cleanest approach is to store
+`row_heights: Vec<f32>` in `WorldPanelComponent` / `InspectorPanelComponent` alongside
+`row_roots`, updated after each layout pass.
+
+**Short-term workaround**: If all text in the world panel uses `word_wrap = false` and
+`wrap_at = DEFAULT_WRAP_AT`, long labels hard-wrap at 40 chars and each row occupies a
+predictable number of lines. The scroll stride could be set to `PAGE_SIZE * TEXT_SCALE`
+(1 line per row × TEXT_SCALE) to match, though this still mismeasures multi-line rows.
+
+---
+
+## 12. Updated Summary ヽ(＾▽＾)ノ
+
+| Issue | Status | Root Cause | Fix |
+|-------|--------|------------|-----|
+| Gizmo moves only title bar | ✅ Fixed | Gizmo was child of header_slot | Moved to child of panel_t |
+| Row 0 overlaps title bar | ✅ Fixed | Missing gap constant | `TITLE_CONTENT_GAP_GU=0.5` as `header_style.margin.bottom` |
+| Row positions ignore text height | ✅ Fixed | Fixed ROW_HEIGHT stride | LayoutSystem + `text_intrinsic_height` via `rows_layout` |
+| Wrap measurement overestimates | ✅ Fixed | Computed wrap_at > tc.wrap_at | `min(container_cols, tc.wrap_at)` in `text_intrinsic_height` |
+| Drag plane overlaps title (Bug A) | ⚠ Open | Symmetric DRAG_MARGIN; drag plane not in layout flow | Asymmetric extent: zero upward margin |
+| Scroll culls multi-line rows wrong (Bug B) | ⚠ Open | Index-based scroll vs height-based rows | Per-row height storage; height-based scroll math |
