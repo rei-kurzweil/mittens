@@ -26,6 +26,10 @@ pub struct InspectorPanelComponent {
     /// Runtime: TransformComponent that row rows are attached to.
     pub(crate) rows_anchor: Option<ComponentId>,
 
+    /// Runtime: LayoutComponent (child of rows_anchor) that LayoutSystem uses to
+    /// measure and position row TCs.
+    pub(crate) rows_layout: Option<ComponentId>,
+
     /// World-space base position of `rows_anchor` (set at panel spawn time).
     pub(crate) rows_anchor_base_pos: [f32; 3],
 

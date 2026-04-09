@@ -11,6 +11,7 @@
 use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::{IntentValue, SignalEmitter};
+use crate::engine::ecs::component::TransformComponent;
 use super::measure::measure_items;
 
 /// Run a block formatting context layout pass for `layout_id`.
@@ -32,6 +33,12 @@ pub fn layout(
         let content_origin_y_gu = cursor_gu + item.padding_top_gu;
         let content_origin_x_gu = item.margin_left_gu + item.padding_left_gu;
 
+        // Preserve the TC's existing scale — LayoutSystem controls position only.
+        let tc_scale = world
+            .get_component_by_id_as::<TransformComponent>(item.tc_id)
+            .map(|tc| tc.transform.scale)
+            .unwrap_or([1.0, 1.0, 1.0]);
+
         emit.push_intent_now(
             item.tc_id,
             IntentValue::UpdateTransform {
@@ -42,7 +49,7 @@ pub fn layout(
                     0.0,
                 ],
                 rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
-                scale: [1.0, 1.0, 1.0],
+                scale: tc_scale,
             },
         );
 

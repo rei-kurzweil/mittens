@@ -1,6 +1,6 @@
 use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::{LayoutComponent, StyleComponent, TextComponent, TransformComponent};
+use crate::engine::ecs::component::{HtmlElementComponent, LayoutComponent, StyleComponent, TextComponent, TransformComponent};
 use crate::engine::ecs::component::style::{Display, SizeDimension};
 use crate::engine::ecs::system::text_system::TextSystem;
 
@@ -56,7 +56,14 @@ pub(crate) fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -
         })
     });
 
-    let (padding, margin, height, width, display, _flex_grow) = style.unwrap_or_default();
+    let (padding, margin, height, width, style_display, _flex_grow) = style.unwrap_or_default();
+
+    // Resolve display: StyleComponent.display overrides HtmlElementComponent UA default.
+    let ua_display = children.iter().find_map(|&child| {
+        world.get_component_by_id_as::<HtmlElementComponent>(child)
+            .and_then(|el| el.element_type.default_display())
+    });
+    let display = style_display.or(ua_display);
 
     let is_block = matches!(display, None | Some(Display::Block));
 
@@ -206,8 +213,12 @@ fn text_intrinsic_height(world: &World, tc_id: ComponentId, content_width_gu: f3
 
     // Derive wrap_at from available width if the content area is known and wider
     // than a single character; otherwise fall back to the TextComponent's own wrap_at.
+    // Use the container-derived wrap_at, but never exceed the TextComponent's own
+    // wrap_at — the TextSystem will use that limit, so measuring with a larger value
+    // would undercount lines for texts that hit the TC's hard-wrap point.
     let wrap_at = if content_width_gu > CHAR_WIDTH_GU {
-        (content_width_gu / CHAR_WIDTH_GU).floor() as usize
+        let container_cols = (content_width_gu / CHAR_WIDTH_GU).floor() as usize;
+        container_cols.min(existing_wrap_at)
     } else {
         existing_wrap_at
     };

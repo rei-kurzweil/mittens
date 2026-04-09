@@ -1,9 +1,10 @@
 use crate::engine::ecs::component::{
-    ColorComponent, EmissiveComponent, InspectorPanelComponent, LayoutComponent, OpacityComponent,
-    OverlayComponent, RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType,
-    RenderableComponent, ScrollingComponent, SelectableComponent, StyleComponent,
-    TextBackgroundComponent, TransformComponent, TransformGizmoComponent, WorldPanelComponent,
-    style::{Display, SizeDimension},
+    ColorComponent, EmissiveComponent, HtmlElementComponent, InspectorPanelComponent,
+    LayoutComponent, OpacityComponent, OverlayComponent, RaycastableComponent,
+    RaycastableShapeComponent, RaycastableShapeType, RenderableComponent, ScrollingComponent,
+    SelectableComponent, StyleComponent, TextBackgroundComponent, TransformComponent,
+    TransformGizmoComponent, WorldPanelComponent,
+    style::{EdgeInsets, SizeDimension},
 };
 use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::system::LayoutSystem;
@@ -15,6 +16,8 @@ use crate::engine::ecs::{
 const ROW_HEIGHT: f32 = 0.090;
 const TEXT_SCALE: f32 = 0.08;
 const INDENT_UNIT: f32 = 0.12;
+/// Indent per depth level in glyph units (= INDENT_UNIT / TEXT_SCALE).
+const INDENT_UNIT_GU: f32 = INDENT_UNIT / TEXT_SCALE;
 const PAGE_SIZE: usize = 30;
 const MAX_DEPTH: usize = 5;
 const PANEL_V_PADDING: f32 = 0.35;
@@ -386,11 +389,14 @@ fn spawn_panel_title_bar(
         "header_slot",
         Box::new(TransformComponent::new()),
     );
+    let header_el = world.add_component_boxed_named(
+        "header_el",
+        Box::new(HtmlElementComponent::header()),
+    );
     let header_style = world.add_component_boxed_named(
         "header_style",
         Box::new({
             let mut s = StyleComponent::new();
-            s.display = Some(Display::Block);
             s.height = SizeDimension::GlyphUnits(TITLE_BAR_HEIGHT_GU);
             s.margin.bottom = TITLE_CONTENT_GAP_GU;
             s
@@ -452,7 +458,8 @@ fn spawn_panel_title_bar(
     let _ = world.add_child(panel_t, layout_root);
     let _ = world.add_child(layout_root, header_slot);
 
-    // Style goes first (LayoutSystem reads it from children).
+    // HtmlElement + Style go first (LayoutSystem reads them from children).
+    let _ = world.add_child(header_slot, header_el);
     let _ = world.add_child(header_slot, header_style);
 
     // Title bar visuals.
@@ -590,17 +597,19 @@ fn spawn_world_panel(
         "content_slot",
         Box::new(TransformComponent::new().with_position(0.0, -TITLE_BAR_HEIGHT, 0.0)),
     );
+    let content_el = world.add_component_boxed_named(
+        "content_el",
+        Box::new(HtmlElementComponent::div()),
+    );
     let content_style = world.add_component_boxed_named(
         "content_style",
-        Box::new({
-            let mut s = StyleComponent::new();
-            s.display = Some(Display::Block);
-            // height: Auto (default) in a fixed-height LayoutComponent column → fills remaining space.
-            s
-        }),
+        Box::new(StyleComponent::new()),
+        // display: Block from HtmlElementComponent::div() UA default.
+        // height: Auto → fills remaining space in the LayoutComponent column.
     );
 
     let _ = world.add_child(layout_root, content_slot);
+    let _ = world.add_child(content_slot, content_el);
     let _ = world.add_child(content_slot, content_style);
 
     // Drag plane covers the content area; parent is content_slot so its
@@ -611,11 +620,24 @@ fn spawn_world_panel(
     let _ = world.add_child(wpc, wsc);
     let _ = world.add_child(wsc, wpr);
 
+    // ── Row layout root ──────────────────────────────────────────────────
+    // LayoutSystem positions row TCs within this layout context.
+    // available_height is None → rows stack without a height constraint.
+    let wpr_layout = world.add_component_boxed_named(
+        "world_panel_rows_layout",
+        Box::new(
+            LayoutComponent::new(wp_width / TEXT_SCALE)
+                .with_unit_scale(TEXT_SCALE),
+        ),
+    );
+    let _ = world.add_child(wpr, wpr_layout);
+
     let _ = wp_t; // panel_t used only for gizmo ancestry
 
     if let Some(c) = world.get_component_by_id_as_mut::<WorldPanelComponent>(wpc) {
         c.editor_root = Some(editor_root);
         c.rows_anchor = Some(wpr);
+        c.rows_layout = Some(wpr_layout);
         // rows_anchor is at [0,0,0] relative to content_slot.
         // LayoutSystem handles the title-bar offset by positioning content_slot.
         c.rows_anchor_base_pos = [0.0, 0.0, 0.0];
@@ -669,28 +691,40 @@ fn spawn_inspector_panel(
         "content_slot",
         Box::new(TransformComponent::new().with_position(0.0, -TITLE_BAR_HEIGHT, 0.0)),
     );
+    let content_el = world.add_component_boxed_named(
+        "content_el",
+        Box::new(HtmlElementComponent::div()),
+    );
     let content_style = world.add_component_boxed_named(
         "content_style",
-        Box::new({
-            let mut s = StyleComponent::new();
-            s.display = Some(Display::Block);
-            // height: Auto (default) in a fixed-height LayoutComponent column → fills remaining space.
-            s
-        }),
+        Box::new(StyleComponent::new()),
+        // display: Block from HtmlElementComponent::div() UA default.
+        // height: Auto → fills remaining space in the LayoutComponent column.
     );
 
     let _ = world.add_child(layout_root, content_slot);
+    let _ = world.add_child(content_slot, content_el);
     let _ = world.add_child(content_slot, content_style);
     spawn_drag_plane(world, content_slot, (0.0, 0.0, 0.0), ip_width, ip_height);
     let _ = world.add_child(content_slot, ipc);
     let _ = world.add_child(ipc, isc);
     let _ = world.add_child(isc, ipr);
 
+    let ipr_layout = world.add_component_boxed_named(
+        "inspector_panel_rows_layout",
+        Box::new(
+            LayoutComponent::new(ip_width / TEXT_SCALE)
+                .with_unit_scale(TEXT_SCALE),
+        ),
+    );
+    let _ = world.add_child(ipr, ipr_layout);
+
     let _ = ip_t;
 
     if let Some(c) = world.get_component_by_id_as_mut::<InspectorPanelComponent>(ipc) {
         c.editor_root = Some(editor_root);
         c.rows_anchor = Some(ipr);
+        c.rows_layout = Some(ipr_layout);
         c.rows_anchor_base_pos = [0.0, 0.0, 0.0];
     }
 
@@ -710,20 +744,21 @@ fn rebuild_world_panel(
     selected: Option<ComponentId>,
     window_start: usize,
 ) {
-    let rows_anchor = {
+    let (rows_anchor, rows_layout_id) = {
         let Some(wpc) = world.get_component_by_id_as::<WorldPanelComponent>(wpc_id) else {
             return;
         };
-        wpc.rows_anchor
+        (wpc.rows_anchor, wpc.rows_layout)
     };
     let Some(rows_anchor) = rows_anchor else { return };
+    let Some(rows_layout_id) = rows_layout_id else { return };
 
-    // Clear current row children.
-    let old_children: Vec<ComponentId> = world.children_of(rows_anchor).to_vec();
+    // Clear current row children from the layout root.
+    let old_children: Vec<ComponentId> = world.children_of(rows_layout_id).to_vec();
     for old in &old_children {
         world.detach_from_parent(*old);
         emit.push_intent_now(
-            rows_anchor,
+            rows_layout_id,
             IntentValue::RemoveSubtree { component_ids: vec![*old] },
         );
     }
@@ -744,19 +779,33 @@ fn rebuild_world_panel(
         let text = if is_highlighted { format!("> {label}") } else { label.clone() };
         let text_color = if is_highlighted { HIGHLIGHT_COLOR } else { TEXT_COLOR };
 
+        // LayoutSystem drives the y-position; only scale is set here.
         let row_t = world.add_component_boxed_named(
             format!("wp_row_{panel_i}"),
-            Box::new(
-                TransformComponent::new()
-                    .with_position(
-                        *depth as f32 * INDENT_UNIT,
-                        -(panel_i as f32) * ROW_HEIGHT,
-                        0.0,
-                    )
-                    .with_scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE),
-            ),
+            Box::new(TransformComponent::new().with_scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE)),
         );
-        let _ = world.add_child(rows_anchor, row_t);
+        let _ = world.add_child(rows_layout_id, row_t);
+
+        // Semantic element + style — LayoutSystem reads these to measure the row.
+        let row_el = world.add_component_boxed_named(
+            "wp_row_el",
+            Box::new(HtmlElementComponent::div()),
+        );
+        let _ = world.add_child(row_t, row_el);
+
+        let row_style = world.add_component_boxed_named(
+            "wp_row_style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.height = SizeDimension::Auto;
+                s.margin = EdgeInsets {
+                    left: *depth as f32 * INDENT_UNIT_GU,
+                    ..EdgeInsets::ZERO
+                };
+                s
+            }),
+        );
+        let _ = world.add_child(row_t, row_style);
 
         let color_node = world.add_component_boxed_named(
             "wp_color",
@@ -797,6 +846,11 @@ fn rebuild_world_panel(
 
     world.init_component_tree(rows_anchor, emit);
 
+    // Mark the row layout dirty so LayoutSystem repositions rows next tick.
+    if let Some(lc) = world.get_component_by_id_as_mut::<LayoutComponent>(rows_layout_id) {
+        lc.dirty = true;
+    }
+
     if let Some(wpc) = world.get_component_by_id_as_mut::<WorldPanelComponent>(wpc_id) {
         wpc.row_roots = new_rows;
         wpc.row_to_node = new_row_to_node;
@@ -810,19 +864,20 @@ fn rebuild_inspector_panel(
     selected: Option<ComponentId>,
     window_start: usize,
 ) {
-    let rows_anchor = {
+    let (rows_anchor, rows_layout_id) = {
         let Some(ipc) = world.get_component_by_id_as::<InspectorPanelComponent>(ipc_id) else {
             return;
         };
-        ipc.rows_anchor
+        (ipc.rows_anchor, ipc.rows_layout)
     };
     let Some(rows_anchor) = rows_anchor else { return };
+    let Some(rows_layout_id) = rows_layout_id else { return };
 
-    let old_children: Vec<ComponentId> = world.children_of(rows_anchor).to_vec();
+    let old_children: Vec<ComponentId> = world.children_of(rows_layout_id).to_vec();
     for old in &old_children {
         world.detach_from_parent(*old);
         emit.push_intent_now(
-            rows_anchor,
+            rows_layout_id,
             IntentValue::RemoveSubtree { component_ids: vec![*old] },
         );
     }
@@ -848,13 +903,25 @@ fn rebuild_inspector_panel(
     for (panel_i, line) in window.iter().enumerate() {
         let row_t = world.add_component_boxed_named(
             format!("ip_row_{panel_i}"),
-            Box::new(
-                TransformComponent::new()
-                    .with_position(0.0, -(panel_i as f32) * ROW_HEIGHT, 0.0)
-                    .with_scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE),
-            ),
+            Box::new(TransformComponent::new().with_scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE)),
         );
-        let _ = world.add_child(rows_anchor, row_t);
+        let _ = world.add_child(rows_layout_id, row_t);
+
+        let row_el = world.add_component_boxed_named(
+            "ip_row_el",
+            Box::new(HtmlElementComponent::div()),
+        );
+        let _ = world.add_child(row_t, row_el);
+
+        let row_style = world.add_component_boxed_named(
+            "ip_row_style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.height = SizeDimension::Auto;
+                s
+            }),
+        );
+        let _ = world.add_child(row_t, row_style);
 
         let color_node = world.add_component_boxed_named(
             "ip_color",
@@ -896,6 +963,10 @@ fn rebuild_inspector_panel(
     }
 
     world.init_component_tree(rows_anchor, emit);
+
+    if let Some(lc) = world.get_component_by_id_as_mut::<LayoutComponent>(rows_layout_id) {
+        lc.dirty = true;
+    }
 
     if let Some(ipc) = world.get_component_by_id_as_mut::<InspectorPanelComponent>(ipc_id) {
         ipc.row_roots = new_rows;
