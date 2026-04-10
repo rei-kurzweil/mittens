@@ -82,10 +82,6 @@ T.position(-5.2, 0.6, -3.5) {
         C.rgba(0.62, 0.66, 0.86, 1.0) {
             TXT {
                 "Ph.1  Background"
-                TextBackground {
-                    padding(0.35)
-                    C.rgba(0.05, 0.08, 0.20, 0.90)
-                }
                 TextureFiltering.nearest_magnification()
             }
         }
@@ -118,10 +114,6 @@ T.position(0.0, -0.32, 1.1) {
         C.rgba(0.51, 0.78, 0.52, 1.0) {
             TXT {
                 "Ph.3  Opaque"
-                TextBackground {
-                    padding(0.35)
-                    C.rgba(0.04, 0.12, 0.04, 0.90)
-                }
                 TextureFiltering.nearest_magnification()
             }
         }
@@ -151,10 +143,6 @@ T.position(0.0, 2.55, 1.1) {
         C.rgba(0.56, 0.79, 0.98, 1.0) {
             TXT {
                 "Ph.3  Emissive  (future Bloom source)"
-                TextBackground {
-                    padding(0.35)
-                    C.rgba(0.00, 0.08, 0.21, 0.90)
-                }
                 TextureFiltering.nearest_magnification()
             }
         }

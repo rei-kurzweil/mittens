@@ -59,11 +59,6 @@ I.speed(2.0) {
                 TXT {
                     "emissive"
                     C.rgba(0.02, 0.02, 0.02, 1.0)
-                    TextBackground {
-                        padding(0.36)
-                        padding_right(0.56)
-                        C.rgba(0.95, 0.95, 0.98, 0.98)
-                    }
                 }
             }
         }
@@ -89,11 +84,6 @@ I.speed(2.0) {
                 TXT {
                     "bloom"
                     C.rgba(0.02, 0.02, 0.02, 1.0)
-                    TextBackground {
-                        padding(0.36)
-                        padding_right(0.56)
-                        C.rgba(0.95, 0.95, 0.98, 0.98)
-                    }
                 }
             }
         }
@@ -178,11 +168,6 @@ ED {
             TXT {
                 "bloom example\nmove with wasd/rf/qe\nand right-mouse drag"
                 C.rgba(0.0, 0.0, 0.0, 1.0)
-                TextBackground {
-                    padding(0.5)
-                    padding_right(1.4)
-                    C.rgba(0.94, 0.94, 0.98, 0.95)
-                }
                 TextureFiltering.linear()
             }
         }

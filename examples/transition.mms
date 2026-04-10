@@ -45,11 +45,6 @@ I.speed(2.0) {
             TXT {
                 "transition demo\nthree cubes move on even beats\nand rotate on odd beats\ntransitions live on Transform"
                 C.rgba(0.02, 0.02, 0.03, 1.0)
-                TextBackground {
-                    padding(0.45)
-                    padding_right(1.1)
-                    C.rgba(0.96, 0.96, 0.99, 0.94)
-                }
                 TextureFiltering.linear()
             }
         }

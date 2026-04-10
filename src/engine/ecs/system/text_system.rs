@@ -2,7 +2,7 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     ColorComponent, EmissiveComponent, OpacityComponent, RaycastableComponent, RenderableComponent,
-    TextBackgroundComponent, TextComponent, TextShadowComponent, TextureComponent,
+    TextComponent, TextShadowComponent, TextureComponent,
     TextureFilteringComponent, TransformComponent, TransparentCutoutComponent, UVComponent,
 };
 use crate::engine::ecs::{EventSignal, IntentValue};
@@ -355,68 +355,6 @@ impl TextSystem {
 
         // Finalize max_col to include the last (non-wrapped) line.
         wrap_state.max_col = wrap_state.max_col.max(wrap_state.col);
-
-        // Spawn a background quad if a TextBackgroundComponent is present.
-        let background: Option<(ComponentId, TextBackgroundComponent)> =
-            world.children_of(component).iter().find_map(|&ch| {
-                world
-                    .get_component_by_id_as::<TextBackgroundComponent>(ch)
-                    .copied()
-                    .map(|bg| (ch, bg))
-            });
-
-        if let Some((bg_id, bg)) = background {
-            let cols = wrap_state.max_col as f32;
-            let rows = (wrap_state.row + 1) as f32;
-
-            if cols > 0.0 {
-                // Color comes from an optional ColorComponent child of the TextBackgroundComponent.
-                // Alpha drives the OpacityComponent that routes the quad into the transparent pass.
-                const DEFAULT_BG_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 0.75];
-                let color = world
-                    .children_of(bg_id)
-                    .iter()
-                    .find_map(|&ch| {
-                        world
-                            .get_component_by_id_as::<ColorComponent>(ch)
-                            .map(|c| c.rgba)
-                    })
-                    .unwrap_or(DEFAULT_BG_COLOR);
-
-                // Glyph grid X spans [-0.5, cols-0.5], Y spans [0.5, -(rows-0.5)].
-                // Background edges: left = -0.5 - pad_left, right = cols-0.5 + pad_right,
-                //                   top  =  0.5 + pad_top,  bottom = -(rows-0.5) - pad_bottom.
-                let w = cols + bg.padding_left + bg.padding_right;
-                let h = rows + bg.padding_top + bg.padding_bottom;
-                let cx = (cols - 1.0 + bg.padding_right - bg.padding_left) / 2.0;
-                let cy = -(rows - 1.0 + bg.padding_bottom - bg.padding_top) / 2.0;
-
-                let bg_t = world.add_component(
-                    TransformComponent::new()
-                        .with_position(cx, cy, bg.z_offset)
-                        .with_scale(w, h, 1.0),
-                );
-                let _ = world.add_child(component, bg_t);
-
-                let bg_col = world.add_component(ColorComponent {
-                    rgba: [color[0], color[1], color[2], 1.0],
-                });
-                let _ = world.add_child(bg_t, bg_col);
-
-                let bg_r = world.add_component(RenderableComponent::square());
-                let _ = world.add_child(bg_col, bg_r);
-
-                // Route the quad into the transparent pass.
-                let bg_op = world
-                    .add_component(OpacityComponent::new().with_opacity(color[3]));
-                let _ = world.add_child(bg_r, bg_op);
-                // Explicitly opt out of cutout so the background is never routed
-                // to the alpha-to-coverage pass even when a parent TextComponent
-                // has TransparentCutoutComponent enabled.
-                let bg_tc = world.add_component(TransparentCutoutComponent { enabled: false });
-                let _ = world.add_child(bg_r, bg_tc);
-            }
-        }
 
         spawned
     }

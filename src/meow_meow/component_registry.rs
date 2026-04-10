@@ -19,7 +19,7 @@ use crate::engine::ecs::component::{
     RenderGraphComponent, ScrollingComponent, SelectableComponent,
     StyleComponent, AlignItems, Display, EdgeInsets, FlexDirection, FlexWrap,
     JustifyContent, Overflow, Position, SizeDimension,
-    TextBackgroundComponent, TextureComponent, UVComponent, WorldPanelComponent,
+    TextureComponent, UVComponent, WorldPanelComponent,
     TransitionComponent, TransitionEasing, TransitionReplacePolicy,
     QuatTemporalFilterComponent, RaycastableComponent, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TextComponent, TextShadowComponent,
@@ -315,7 +315,6 @@ fn create_component(
         }
         "RendererStats" => add!(RendererStatsComponent::new()),
         "Text" => add!(TextComponent::new("")),
-        "TextBackground" => add!(TextBackgroundComponent::new()),
         "TextShadow" => add!(TextShadowComponent::new()),
         "AvatarBodyYaw" => add!(AvatarBodyYawComponent::new()),
         "AvatarControl" => add!(AvatarControlComponent::new()),
@@ -586,18 +585,7 @@ fn apply_call(
         }
         return Ok(());
     }
-    if let Some(tb) = world.get_component_by_id_as_mut::<TextBackgroundComponent>(id) {
-        match method {
-            "padding"        => *tb = tb.clone().with_padding(arg_f32(args, 0)?),
-            "padding_top"    => *tb = tb.clone().with_padding_top(arg_f32(args, 0)?),
-            "padding_right"  => *tb = tb.clone().with_padding_right(arg_f32(args, 0)?),
-            "padding_bottom" => *tb = tb.clone().with_padding_bottom(arg_f32(args, 0)?),
-            "padding_left"   => *tb = tb.clone().with_padding_left(arg_f32(args, 0)?),
-            "z_offset"       => *tb = tb.clone().with_z_offset(arg_f32(args, 0)?),
-            _ => {}
-        }
-        return Ok(());
-    }
+
     if let Some(tex) = world.get_component_by_id_as_mut::<TextureComponent>(id) {
         match method {
             "render_image" => *tex = TextureComponent::render_image(arg_str(args, 0)?),

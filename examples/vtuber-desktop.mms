@@ -46,11 +46,6 @@ T.position(0.0, 1.2, 3.0) {
             "use wasd/rf/qe\nand right-mouse\nclick and drag\nto move/look"
             Raycastable.enabled()
             C.rgba(0.0, 0.0, 0.0, 1.0)
-            TextBackground {
-                padding(0.5)
-                padding_right(1.5)
-                C.rgba(0.9, 0.9, 0.9, 1.0)
-            }
             EM.on()
             TextureFiltering.linear()
         }

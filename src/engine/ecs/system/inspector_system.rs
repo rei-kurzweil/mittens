@@ -2,7 +2,7 @@ use crate::engine::ecs::component::{
     ColorComponent, EmissiveComponent, HtmlElementComponent, InspectorPanelComponent,
     LayoutComponent, OpacityComponent, OverlayComponent, RaycastableComponent,
     RaycastableShapeComponent, RaycastableShapeType, RenderableComponent, ScrollingComponent,
-    SelectableComponent, StyleComponent, TextBackgroundComponent, TransformComponent,
+    SelectableComponent, StyleComponent, TransformComponent,
     TransformGizmoComponent, WorldPanelComponent,
     style::{EdgeInsets, SizeDimension},
 };
@@ -20,9 +20,6 @@ const INDENT_UNIT: f32 = 0.12;
 const INDENT_UNIT_GU: f32 = INDENT_UNIT / TEXT_SCALE;
 const PAGE_SIZE: usize = 30;
 const MAX_DEPTH: usize = 5;
-const PANEL_V_PADDING: f32 = 0.35;
-/// Extra glyph-space padding_bottom so adjacent row backgrounds touch exactly.
-const ROW_GAP_FILL: f32 = ROW_HEIGHT / TEXT_SCALE - 1.0;
 /// Gap between world panel right edge and inspector panel left edge (overlay units).
 const PANEL_GAP: f32 = 0.12;
 /// Extra margin around the panel that the drag plane extends beyond content edges.
@@ -755,7 +752,7 @@ fn rebuild_world_panel(
     let win_start = window_start.min(total.saturating_sub(1));
     let win_end = (win_start + PAGE_SIZE).min(total);
     let window = &nodes[win_start..win_end];
-    let visible_count = window.len();
+    let _ = window.len();
 
     let highlighted = find_highlighted(selected, &nodes, world);
     let mut new_rows = Vec::new();
@@ -808,17 +805,6 @@ fn rebuild_world_panel(
         let rc = world
             .add_component_boxed_named("wp_rc", Box::new(RaycastableComponent::click_only()));
         let _ = world.add_child(row_text, rc);
-
-        let bg = world.add_component_boxed_named(
-            "wp_bg",
-            Box::new(panel_row_bg(panel_i, visible_count)),
-        );
-        let _ = world.add_child(row_text, bg);
-        let bg_col = world.add_component_boxed_named(
-            "wp_bg_color",
-            Box::new(ColorComponent::rgba(BG_COLOR[0], BG_COLOR[1], BG_COLOR[2], BG_COLOR[3])),
-        );
-        let _ = world.add_child(bg, bg_col);
 
         new_rows.push(row_t);
         new_row_to_node.push(*node_id);
@@ -877,7 +863,7 @@ fn rebuild_inspector_panel(
     let win_start = window_start.min(total.saturating_sub(1).max(0));
     let win_end = (win_start + PAGE_SIZE).min(total);
     let window = &lines[win_start..win_end];
-    let visible_count = window.len();
+    let _ = window.len();
 
     let mut new_rows = Vec::new();
     for (panel_i, line) in window.iter().enumerate() {
@@ -915,24 +901,6 @@ fn rebuild_inspector_panel(
             world.add_component_boxed_named("ip_emit", Box::new(EmissiveComponent::on()));
         let _ = world.add_child(row_text, emissive);
 
-        let bg = world.add_component_boxed_named(
-            "ip_bg",
-            Box::new(panel_row_bg(panel_i, visible_count)),
-        );
-        let _ = world.add_child(row_text, bg);
-
-        let cutout = world.add_component_boxed_named(
-            "ip_cutout",
-            Box::new(crate::engine::ecs::component::TransparentCutoutComponent::new()),
-        );
-        let _ = world.add_child(row_text, cutout);
-
-        let bg_col = world.add_component_boxed_named(
-            "ip_bg_color",
-            Box::new(ColorComponent::rgba(BG_COLOR[0], BG_COLOR[1], BG_COLOR[2], BG_COLOR[3])),
-        );
-        let _ = world.add_child(bg, bg_col);
-
         new_rows.push(row_t);
     }
 
@@ -952,15 +920,6 @@ fn rebuild_inspector_panel(
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn panel_row_bg(i: usize, total: usize) -> TextBackgroundComponent {
-    // Row 0 no longer needs PANEL_V_PADDING at the top: the title bar provides
-    // the visual top boundary. Restoring the padding would push the background
-    // into the title bar area and cause visible overlap.
-    let _ = i;
-    TextBackgroundComponent::new()
-        .with_padding_top(0.0)
-        .with_padding_bottom(if i + 1 == total { PANEL_V_PADDING } else { ROW_GAP_FILL })
-}
 
 fn find_ancestor_in_list(
     world: &World,
