@@ -597,19 +597,13 @@ fn spawn_world_panel(
         "content_slot",
         Box::new(TransformComponent::new().with_position(0.0, -TITLE_BAR_HEIGHT, 0.0)),
     );
-    let content_el = world.add_component_boxed_named(
-        "content_el",
-        Box::new(HtmlElementComponent::div()),
-    );
+    // Style alone is sufficient — block is the layout default when no display is set.
     let content_style = world.add_component_boxed_named(
         "content_style",
-        Box::new(StyleComponent::new()),
-        // display: Block from HtmlElementComponent::div() UA default.
-        // height: Auto → fills remaining space in the LayoutComponent column.
+        Box::new(StyleComponent::new()), // height: Auto fills remaining container space
     );
 
     let _ = world.add_child(layout_root, content_slot);
-    let _ = world.add_child(content_slot, content_el);
     let _ = world.add_child(content_slot, content_style);
 
     // Drag plane covers the content area; parent is content_slot so its
@@ -691,19 +685,12 @@ fn spawn_inspector_panel(
         "content_slot",
         Box::new(TransformComponent::new().with_position(0.0, -TITLE_BAR_HEIGHT, 0.0)),
     );
-    let content_el = world.add_component_boxed_named(
-        "content_el",
-        Box::new(HtmlElementComponent::div()),
-    );
     let content_style = world.add_component_boxed_named(
         "content_style",
-        Box::new(StyleComponent::new()),
-        // display: Block from HtmlElementComponent::div() UA default.
-        // height: Auto → fills remaining space in the LayoutComponent column.
+        Box::new(StyleComponent::new()), // height: Auto fills remaining container space
     );
 
     let _ = world.add_child(layout_root, content_slot);
-    let _ = world.add_child(content_slot, content_el);
     let _ = world.add_child(content_slot, content_style);
     spawn_drag_plane(world, content_slot, (0.0, 0.0, 0.0), ip_width, ip_height);
     let _ = world.add_child(content_slot, ipc);
@@ -785,13 +772,6 @@ fn rebuild_world_panel(
             Box::new(TransformComponent::new().with_scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE)),
         );
         let _ = world.add_child(rows_layout_id, row_t);
-
-        // Semantic element + style — LayoutSystem reads these to measure the row.
-        let row_el = world.add_component_boxed_named(
-            "wp_row_el",
-            Box::new(HtmlElementComponent::div()),
-        );
-        let _ = world.add_child(row_t, row_el);
 
         let row_style = world.add_component_boxed_named(
             "wp_row_style",
@@ -906,12 +886,6 @@ fn rebuild_inspector_panel(
             Box::new(TransformComponent::new().with_scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE)),
         );
         let _ = world.add_child(rows_layout_id, row_t);
-
-        let row_el = world.add_component_boxed_named(
-            "ip_row_el",
-            Box::new(HtmlElementComponent::div()),
-        );
-        let _ = world.add_child(row_t, row_el);
 
         let row_style = world.add_component_boxed_named(
             "ip_row_style",
