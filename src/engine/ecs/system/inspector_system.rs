@@ -779,6 +779,7 @@ fn rebuild_world_panel(
                     left: *depth as f32 * INDENT_UNIT_GU,
                     ..EdgeInsets::ZERO
                 };
+                s.background_color = Some(BG_COLOR);
                 s
             }),
         );
@@ -878,6 +879,7 @@ fn rebuild_inspector_panel(
             Box::new({
                 let mut s = StyleComponent::new();
                 s.height = SizeDimension::Auto;
+                s.background_color = Some(BG_COLOR);
                 s
             }),
         );

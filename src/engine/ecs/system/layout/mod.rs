@@ -55,7 +55,7 @@ impl LayoutSystem {
     ///
     /// Currently always uses block layout. Future: read the container's
     /// `StyleComponent.display` (Flex, Block, etc.) to select the algorithm.
-    fn run_layout(world: &World, emit: &mut dyn SignalEmitter, layout_id: ComponentId) {
+    fn run_layout(world: &mut World, emit: &mut dyn SignalEmitter, layout_id: ComponentId) {
         // Guard: skip if the LayoutComponent is gone.
         if world.get_component_by_id_as::<LayoutComponent>(layout_id).is_none() {
             return;

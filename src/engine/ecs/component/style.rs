@@ -142,6 +142,8 @@ pub struct StylePatch {
     pub line_height:      Option<f32>,
     pub overflow:         Option<Overflow>,
     pub z_index:          Option<Option<i32>>,
+    pub background_color: Option<Option<[f32; 4]>>,
+    pub background_z:     Option<f32>,
 }
 
 /// All CSS layout properties for a node, in one struct.
@@ -205,6 +207,15 @@ pub struct StyleComponent {
     // ── Stacking ─────────────────────────────────────────────────────────
     pub z_index: Option<i32>,
 
+    // ── Background ───────────────────────────────────────────────────────
+    /// RGBA background color. When `Some`, LayoutSystem spawns and manages a
+    /// background quad (covering the padding box) as a child of this item's TC.
+    /// When `None`, no background quad is created (or an existing one is removed).
+    pub background_color: Option<[f32; 4]>,
+    /// Z offset of the background quad in the item TC's local space (glyph units).
+    /// Negative = behind content. Default: -0.1.
+    pub background_z: f32,
+
     component: Option<ComponentId>,
 }
 
@@ -237,6 +248,8 @@ impl Default for StyleComponent {
             line_height: 1.0,
             overflow: Overflow::Visible,
             z_index: None,
+            background_color: None,
+            background_z: -0.1,
             component: None,
         }
     }
@@ -273,6 +286,8 @@ impl StyleComponent {
         if let Some(v) = patch.line_height      { self.line_height = v; }
         if let Some(v) = patch.overflow         { self.overflow = v; }
         if let Some(v) = patch.z_index          { self.z_index = v; }
+        if let Some(v) = patch.background_color { self.background_color = v; }
+        if let Some(v) = patch.background_z     { self.background_z = v; }
     }
 }
 
@@ -298,8 +313,24 @@ impl Component for StyleComponent {
 
     fn decode(
         &mut self,
-        _data: &std::collections::HashMap<String, serde_json::Value>,
+        data: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<(), String> {
+        if let Some(v) = data.get("background_color") {
+            if v.is_null() {
+                self.background_color = None;
+            } else if let Some(arr) = v.as_array() {
+                if arr.len() == 4 {
+                    let r = arr[0].as_f64().unwrap_or(0.0) as f32;
+                    let g = arr[1].as_f64().unwrap_or(0.0) as f32;
+                    let b = arr[2].as_f64().unwrap_or(0.0) as f32;
+                    let a = arr[3].as_f64().unwrap_or(1.0) as f32;
+                    self.background_color = Some([r, g, b, a]);
+                }
+            }
+        }
+        if let Some(v) = data.get("background_z").and_then(|v| v.as_f64()) {
+            self.background_z = v as f32;
+        }
         Ok(())
     }
 }
