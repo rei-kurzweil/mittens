@@ -101,12 +101,24 @@ fn sync_bg_quad(
                 None => spawn_bg_quad(world, emit, tc_id, rgba),
             };
 
+            // The quad mesh is centered at its local origin (extends ±0.5 when scale=1).
+            // Glyph quads are also centered at their column positions, so the visual
+            // top-left of the text is at (−0.5, +0.5) in item TC local space, not at
+            // the content origin (0, 0). The background must be shifted by (−0.5, +0.5)
+            // to align its edges with the text's visual extent.
+            //
+            // Center of background in item TC local space (Y-up, glyph units):
+            //   cx = box_width/2 − padding_left − 0.5
+            //   cy = padding_top − box_height/2 + 0.5
             emit.push_intent_now(
                 bg_id,
                 IntentValue::UpdateTransform {
                     component_ids: vec![bg_id],
-                    // Offset back from content origin to top-left of padding box.
-                    translation: [-padding_left_gu, padding_top_gu, bg_z],
+                    translation: [
+                        box_width_gu / 2.0 - padding_left_gu - 0.5,
+                        padding_top_gu - box_height_gu / 2.0 + 0.5,
+                        bg_z,
+                    ],
                     rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
                     scale: [box_width_gu, box_height_gu, 1.0],
                 },
