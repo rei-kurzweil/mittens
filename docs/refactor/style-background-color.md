@@ -115,27 +115,24 @@ the row TC (or its Style-driven background) instead of directly on TextComponent
 
 Option A is cleaner long-term; Option B is zero-cost interim. Plan for A but ship B first.
 
-### 2.5 Where to store the background quad TC id
+### 2.5 Implementation note: no `bg_quads` map needed
 
-LayoutSystem needs to find/reuse the background quad TC across layout passes (so it can
-update its transform rather than spawning a new one each tick).
+The shipped implementation does **not** store background quad ids in `LayoutComponent`.
+Instead, `block::layout` looks for an existing child named `"__bg"` under each item TC
+and reuses it if present; otherwise it spawns one.
 
-Stored in `LayoutComponent.bg_quads: HashMap<ComponentId, ComponentId>`:
-- key: the layout item TC id
-- value: the background quad TC id
+That ended up being simpler than a `HashMap<ComponentId, ComponentId>` cache while still
+preserving the intended lifecycle:
+- `background_color = Some(...)` → create or update `__bg`
+- `background_color = None` → remove stale `__bg`
 
-On layout pass: if `tc_id` is in `bg_quads`, update the existing quad's transform via
-`UpdateTransform`. If not (or if the quad was removed), spawn a new one and record it.
-If `background_color` becomes `None`, remove from map and emit `RemoveSubtree`.
-
-This keeps runtime state in `LayoutComponent` (already the layout root's state holder)
-and out of `StyleComponent` (which is pure config/data).
+So the original `bg_quads` plan is now obsolete rather than still pending work.
 
 ---
 
 ## 3. Migration Topology
 
-### Before (current)
+### Before (old)
 
 ```
 Transform { name="wp_row_0", scale=(0.08, 0.08, 0.08) }     // row TC
@@ -187,16 +184,14 @@ MMS decode additions:
 
 ---
 
-## 5. What Needs to Change in LayoutComponent
+## 5. LayoutComponent status
 
-```rust
-pub struct LayoutComponent {
-    // ... existing fields ...
-    /// Maps layout item TC id → its managed background quad TC id.
-    /// LayoutSystem maintains this as background_color is set/unset.
-    pub(crate) bg_quads: HashMap<ComponentId, ComponentId>,
-}
-```
+No `LayoutComponent` changes were ultimately needed for this migration.
+
+The original plan was to store `bg_quads: HashMap<ComponentId, ComponentId>`, but the
+current implementation instead discovers/reuses the `"__bg"` child directly during
+layout. That keeps `LayoutComponent` as pure layout-root state and avoids extra runtime
+bookkeeping.
 
 ---
 
@@ -217,7 +212,7 @@ if let Some(rgba) = style.background_color {
         item.box_height_gu * unit_scale,
         1.0,
     ];
-    // create or update bg quad TC (looked up via layout_component.bg_quads)
+    // create or update bg quad TC (looked up as the "__bg" child)
     // emit UpdateTransform for it
     // emit color/opacity update if changed
 }
@@ -240,23 +235,22 @@ background quads.
 
 ## 8. Removal Checklist
 
-- [ ] Add `background_color: Option<[f32; 4]>`, `background_z: f32` to `StyleComponent`
-- [ ] Add `bg_quads: HashMap<ComponentId, ComponentId>` to `LayoutComponent`
-- [ ] Implement background quad create/update/remove in `block::layout`
-- [ ] Remove `TextBackgroundComponent` from `inspector_system.rs` (both `rebuild_*` fns and `panel_row_bg`)
-- [ ] Remove `TextBackgroundComponent` background-spawn block from `text_system.rs`
-- [ ] Delete `src/engine/ecs/component/text_background.rs`
-- [ ] Remove from `src/engine/ecs/component/mod.rs` (pub use + re-export)
-- [ ] Remove import from `inspector_system.rs`
-- [ ] Replace `panel_row_bg` helper with `Style { background_color }` in row StyleComponent
-- [ ] Move `PANEL_V_PADDING` from `TextBackgroundComponent.padding_bottom` to `Style { padding.bottom }` on the last row (so it enters the layout cursor and is painted by the background quad)
-- [ ] (Optional) add `pointer_events` to StyleComponent and wire `RaycastableComponent` to background quad
+- [x] Add `background_color: Option<[f32; 4]>`, `background_z: f32` to `StyleComponent`
+- [x] Replace the planned `LayoutComponent.bg_quads` cache with direct `"__bg"` child lookup in `block::layout`
+- [x] Implement background quad create/update/remove in `block::layout`
+- [x] Remove `TextBackgroundComponent` from `inspector_system.rs` (both `rebuild_*` fns and `panel_row_bg`)
+- [x] Remove `TextBackgroundComponent` background-spawn block from `text_system.rs`
+- [x] Delete `src/engine/ecs/component/text_background.rs`
+- [x] Remove from `src/engine/ecs/component/mod.rs` (pub use + re-export)
+- [x] Remove import from `inspector_system.rs`
+- [x] Replace `panel_row_bg` helper with `Style { background_color }` in row `StyleComponent`
+- [x] Remove the old `PANEL_V_PADDING` migration concern; that symbol/helper no longer exists in the current inspector implementation
+- [ ] (Optional) add `pointer_events` to `StyleComponent` and wire `RaycastableComponent` to the background quad
 
-## 9. Interim State (acceptable)
+## 9. Current State
 
-Steps 1–2 (add fields to Style/Layout) and step 8 (remove TextBackgroundComponent from
-inspector callsites) can happen first, giving a brief period with no row backgrounds.
-Steps 3–7 (implement the quad spawn in block.rs, remove from TextSystem) complete the migration.
+The `TextBackgroundComponent` → `Style.background_color` migration is effectively complete.
 
-The engine should compile and run without TextBackgroundComponent being used — its absence
-just means no visual background on rows temporarily, which is fine.
+What remains open is the optional follow-up from section 2.4: moving pointer-event
+ownership from the text node to the LayoutSystem-managed background quad via a future
+`Style.pointer_events` field.
