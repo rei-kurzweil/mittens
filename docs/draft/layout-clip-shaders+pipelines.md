@@ -19,9 +19,9 @@ placed at arbitrary positions and orientations (e.g. a VR panel tilted 30°). Th
 
 ---
 
-## Candidate Methods
+## Approach
 
-### A — Stencil Buffer (recommended, confirmed viable)
+### Stencil Buffer
 
 **Concept:**
 
@@ -50,218 +50,54 @@ container before drawing its children.
 Max nesting depth = GPU stencil bit depth (8 bits on all Vulkan hardware → 255 levels,
 more than enough).
 
-**What this needs confirmed:**
-- Does `VulkanoState`'s dynamic rendering setup for overlay already include a
-  stencil attachment, or does it need to be added to the renderpass?  
-  → Check `begin_rendering` call in `vulkano_renderer.rs` for overlay phase.
-- Stencil format: `D16_UNORM` has no stencil; need `D24_UNORM_S8_UINT` or
-  `D32_SFLOAT_S8_UINT`. Check current depth format used.
-
-**Pipeline changes needed (VulkanoState):**
-- `pipeline_stencil_write` — new pipeline:  
-  minimal vert + null frag, color writes off, stencil `REPLACE`.
-- `pipeline_overlay_clipped` (and emissive variant) — modified overlay pipeline:  
-  stencil test `EQUAL` to push-constant ref value.
-- All existing non-clipped pipelines remain unchanged (stencil test = always pass,
-  stencil op = keep).
-
 ---
 
-### B — Fragment Shader Local-Space Bounds Test (simpler, flat panels only)
+## Implementation Status ( ᐛ )و
 
-**Concept:**
+### ✅ Done
 
-Pass the `overflow: hidden` container's inverse world matrix + content-box AABB to
-the fragment shader. Each fragment transforms its world position into the container's
-local space and discards if outside the box.
+#### Depth/stencil format (`vulkano_swapchain.rs`, `post_processing.rs`)
 
-```glsl
-// push constant or per-instance data
-uniform mat4 clip_inv_model;   // inverse of container's matrix_world
-uniform vec4 clip_min;         // content box min in local space (xyz, w unused)
-uniform vec4 clip_max;         // content box max in local space
+- `VulkanoSwapchainState::DEPTH_FORMAT` changed from `D32_SFLOAT` →
+  `D32_SFLOAT_S8_UINT`.
+- All depth image allocations (window, XR offscreen, post-process) now use this format.
+- Image views are created with explicit `ImageAspects::DEPTH | ImageAspects::STENCIL`
+  via `ImageViewCreateInfo` rather than `new_default`.
 
-// in fragment shader
-vec3 local = (clip_inv_model * vec4(v_world_pos, 1.0)).xyz;
-if (any(lessThan(local, clip_min.xyz)) || any(greaterThan(local, clip_max.xyz)))
-    discard;
-```
+**Vulkan constraint discovered:** dynamic rendering requires the **same** image view
+object for both `depth_attachment` and `stencil_attachment` when using a combined
+format. Separate depth-only / stencil-only views are rejected by
+`VUID-VkRenderingInfo-pDepthAttachment-06085`. The combined view satisfies both
+`VUID-VkRenderingInfo-pStencilAttachment-06548` (must have stencil aspect) and the
+same-view constraint.
 
-**Pros:** No extra render passes. Works for flat/non-rotating panels.
+#### Stencil attachment (deferred — `vulkano_renderer.rs`)
 
-**Cons:**
-- Nesting requires passing all ancestor clip rects — shader needs array of clip volumes.
-- Per-draw uniform changes break current instanced batching (each clipped batch
-  would need its own draw call).
-- World position reconstruction in fragment shader is available (`v_world_pos` is
-  already output by `toon-mesh.vert`), so fragment side is cheap; the per-draw
-  overhead is the real cost.
-- For non-planar panels (rotated in 3D) the local-space bounds test is still correct
-  as long as the container's world transform is used — but the stencil approach
-  handles this automatically without any shader logic.
+- `stencil_attachment` is currently **`None`** in both render scopes.
+- The combined depth+stencil view is ready to wire in once the new pipelines exist.
+- **Reason for deferral:** all existing pipelines were created without
+  `stencil_attachment_format` in `PipelineRenderingCreateInfo`. Enabling stencil
+  attachment while old pipelines are active triggers
+  `VUID-vkCmdDrawIndexed-pStencilAttachment-06182`. The attachment goes live
+  alongside the new pipelines.
 
-**Verdict:** Useful as a quick fallback or for a "single flat panel" use case with
-no nesting, but doesn't scale cleanly to the general case.
+#### VisualWorld data model (`visual_world.rs`)
 
----
+- `VisualInstance` — new fields: `stencil_ref: u8`, `is_stencil_clip: bool`
+- `DrawBatch` — new field: `stencil_ref: u8`; batch boundary breaks on `stencil_ref`
+  change so clipped/unclipped instances never merge.
+- `stencil_clip_order: Vec<u32>` — indices into `instances` where
+  `is_stencil_clip=true`, sorted ascending by `stencil_ref`. Rebuilt with draw cache.
+- Overlay sort key updated: `stencil_ref` prepended as primary key so all instances
+  for the same clip region are consecutive.
+- New public API: `register_stencil_clip(handle, stencil_ref)`,
+  `unregister_stencil_clip(handle)`, `update_stencil_ref(handle, stencil_ref)`,
+  `stencil_clip_order() -> &[u32]`.
+- `register()` initialises both new fields to `0` / `false`.
 
-### C — Clip Distances (`gl_ClipDistance`)
+### 🔲 Remaining
 
-Vulkan vertex shaders can write up to 8 clip distances (`gl_ClipDistance[i]`).
-A negative value discards the vertex (hardware clips the primitive).
-
-**How it would work:** Each `overflow: hidden` container defines 4 clip planes
-(top, bottom, left, right of the content box in world space). Pass these as UBO.
-Vertex shader evaluates `dot(world_pos, plane) + d` for each plane and writes to
-`gl_ClipDistance`.
-
-**Problems:**
-- Requires `VkPhysicalDeviceFeatures::shaderClipDistance = true` — widely supported
-  but must be confirmed enabled in `VulkanoConfig`.
-- 8-plane limit caps nesting at 2 levels of `overflow: hidden` (4 planes each).
-- Clipping is per-primitive (at rasterization), not per-fragment, so the clip boundary
-  is a hard geometric edge — fine for axis-aligned panels, slightly wrong for panels
-  with anti-aliased borders.
-- Needs pipeline rebuild with `gl_ClipDistance` feature enabled per pipeline.
-
-**Verdict:** Worth considering for the non-nested case (single clip level), but the
-nesting limit rules it out as the primary mechanism.
-
----
-
-## Recommended Approach
-
-**Primary: Stencil buffer (Method A).**
-
-Stencil is the standard GPU mechanism for this exact problem (browsers use it internally
-for `overflow: hidden`). It handles arbitrary nesting, works for any 3D orientation, and
-the geometry used to write the stencil mask is the same content-box quad already in the
-scene graph.
-
-**Possible hybrid:** Use fragment-shader bounds test (Method B) for the most common case
-(a single non-nested panel clip) and fall back to stencil for nested cases. The shader
-variant can be selected per-draw based on whether the instance is inside a nested clip.
-This avoids the extra stencil pass for the common case. Whether this complexity is worth it
-is TBD.
-
----
-
-## ECS Changes Needed
-
-### `StencilClip` Component (new, first-class)
-
-A standalone ECS component that marks a `TransformComponent` node as a stencil clip region.
-**Not layout-specific** — anything can attach one.
-
-```rust
-/// Marks this TC as a stencil clip boundary.
-///
-/// The renderer renders a quad at this TC's world transform (scaled to `size`)
-/// into the stencil buffer before drawing the subtree, then restores stencil
-/// afterward. All descendant renderables are drawn with `stencil_ref` as their
-/// stencil test reference.
-///
-/// Attach alongside a `TransformComponent`. Size is in the TC's local units.
-///
-/// `LayoutSystem` auto-attaches this when it encounters `overflow: Hidden | Scroll`
-/// on a `StyleComponent`, using the item's computed content-box dimensions.
-/// Manual attachment is also valid for non-layout use cases (e.g. a custom
-/// clip mask on a 3D panel or HUD element).
-pub struct StencilClipComponent {
-    /// Width and height of the clip quad in the TC's local units.
-    pub size: [f32; 2],
-    /// Stencil reference value. Assigned automatically by the renderer based on
-    /// ancestor nesting depth; can also be set manually.
-    /// `0` = unclipped. `1` = outermost clip. Higher = deeper nesting.
-    pub stencil_ref: u8,
-}
-```
-
-**Lifecycle:**
-- `LayoutSystem` calls `world.add_component` to attach `StencilClipComponent` to the
-  layout item's TC when `overflow: Hidden | Scroll` is first encountered, sized to the
-  content box.
-- On subsequent layout passes (resize, reflow), `LayoutSystem` updates `size` in-place
-  if the content box changes.
-- `LayoutSystem` removes it (via `RemoveSubtree` intent or direct detach) when
-  `overflow` changes back to `Visible`.
-- Manual use: attach directly to any TC; `stencil_ref = 0` lets the renderer assign
-  the nesting depth automatically at sync time.
-
-**Why a component, not a flag on `StyleComponent`?**
-
-Keeps the clip region as a first-class ECS node — it has a `ComponentId` that
-`VisualWorld` and `VulkanoRenderer` can reference directly, without coupling them to
-`StyleComponent` internals. Non-layout subsystems (e.g. a custom HUD panel, a
-map/minimap frame, a portal effect) can clip their subtrees without any layout involvement.
-
-### `StyleComponent` / `LayoutSystem` wiring
-
-- `StyleComponent::overflow` already exists (`Overflow` enum: `Visible | Hidden | Scroll | Auto`).
-- During `block::layout`, when an item's `StyleComponent.overflow` is `Hidden | Scroll`:
-  1. Read the computed content-box dimensions (`box_width_gu`, `box_height_gu` from `MeasuredItem`).
-  2. Convert to TC local units: `size = [box_width_gu * unit_scale, box_height_gu * unit_scale]`.
-  3. If no `StencilClipComponent` child exists on the item TC → attach one.
-  4. If one exists → update `size` if changed.
-- When `overflow` is `Visible` and a `StencilClipComponent` child exists → detach/remove it.
-
----
-
-## VisualWorld Changes
-
-### `VisualInstance` additions
-
-```rust
-/// Stencil reference value for this instance.
-/// 0 = unclipped (stencil test disabled / always-pass).
-/// ≥1 = draw only where stencil == this value (set by an ancestor StencilClipComponent).
-pub stencil_ref: u8,
-```
-
-`stencil_ref` is resolved at sync time: when `RegisterRenderable` fires, VisualWorld
-walks the ECS ancestor chain looking for `StencilClipComponent` nodes. The deepest
-ancestor's `stencil_ref` is used. If no ancestor has one, `stencil_ref = 0`.
-
-Ancestor depth assignment: VisualWorld (or a pre-pass in the system tick) walks all
-`StencilClipComponent` nodes depth-first and assigns `stencil_ref = 1, 2, 3...`
-by nesting level. This assignment only needs to run when the ECS tree topology
-changes (handled via dirty flags or the existing `Attach`/`Detach` intent path).
-
-### New per-frame data
-
-```rust
-/// Ordered list of stencil clip quads to render this frame, outer → inner.
-/// Built during draw-cache rebuild from all live StencilClipComponent nodes.
-/// Each entry: (model_matrix, [width, height] in world units, stencil_ref).
-stencil_clip_quads: Vec<([[f32; 4]; 4], [f32; 2], u8)>,
-dirty_stencil_clips: bool,
-```
-
-Built by scanning `all_components()` for `StencilClipComponent` + sibling
-`TransformComponent::matrix_world`. Rebuilt when `dirty_draw_cache` is set.
-
-### Draw grouping
-
-Overlay instances are currently sorted by material+mesh for instanced batching.
-With stencil clipping, instances must additionally be grouped by `stencil_ref` so
-the stencil quad is written before the group and restored after.
-
-Proposed sort key: `(stencil_ref, material, mesh)` — instances with `stencil_ref=0`
-draw first (unclipped), then grouped by ascending stencil depth.
-
-Within each stencil group, existing batch-merging still applies.
-
----
-
-## VulkanoRenderer Changes
-
-### Depth/stencil attachment
-
-Current depth format needs to be checked:
-- If `D16_UNORM` → must change to `D24_UNORM_S8_UINT` or `D32_SFLOAT_S8_UINT`.
-- The `begin_rendering` call for the overlay phase must include a stencil attachment.
-
-### New pipelines
+#### New Vulkan pipelines (`VulkanoState`)
 
 | Pipeline | Color write | Depth | Stencil op | Stencil test |
 |---|---|---|---|---|
@@ -270,45 +106,155 @@ Current depth format needs to be checked:
 | `pipeline_overlay_clipped` | on | same as overlay | KEEP | EQUAL ref=N |
 | `pipeline_emissive_overlay_clipped` | on | same | KEEP | EQUAL ref=N |
 
-Existing overlay pipelines: add `stencil test = always, stencil op = KEEP` (no-op
-but makes state explicit and avoids undefined stencil behavior).
+All existing overlay pipelines need `stencil_attachment_format` added to
+`PipelineRenderingCreateInfo` and explicit `stencil test = always, op = KEEP`.
+This is also when `stencil_attachment: Some(...)` gets wired back in.
 
-The `stencil_ref` value is a push constant (already used for other per-draw data,
-or a new one). It changes per clip-region group.
+The `stencil_ref` value changes per clip-region group — delivered as a push constant.
 
-### Draw loop change (overlay phase)
+#### Draw loop (`record_overlay_draws()` in `vulkano_cbb.rs`)
 
 ```
-stencil_ref = 0
-for each (region, instances) in overlay draw groups:
-  if region == Unclipped:
-    draw with pipeline_overlay
+for each (stencil_ref, batches) group in overlay_batches:
+  if stencil_ref == 0:
+    draw batches with pipeline_overlay (unchanged)
   else:
-    write stencil for region quad  → pipeline_stencil_write, ref = region.depth
-    draw instances                  → pipeline_overlay_clipped, ref = region.depth
-    clear stencil for region quad  → pipeline_stencil_clear, ref = 0
+    look up clip quad from stencil_clip_order
+    draw clip quad  → pipeline_stencil_write, ref = stencil_ref
+    draw batches    → pipeline_overlay_clipped, ref = stencil_ref
+    restore stencil → pipeline_stencil_write, ref = parent stencil_ref (or 0)
 ```
 
-For nested regions the "clear stencil" step is replaced by "restore parent stencil"
-(re-draw the parent region quad with REPLACE ref = parent.depth).
+#### ECS (`StencilClipComponent`)
+
+See [ECS Changes Needed](#ecs-changes-needed) section below — design unchanged.
+
+#### Layout wiring (`sync_bg_quad`)
+
+When `overflow: Hidden | Scroll` is set, `sync_bg_quad` attaches
+`StencilClipComponent` to `__bg_tc`. When it returns to `Visible`, it detaches.
+When `background_color: None` but `overflow: Hidden | Scroll`, `__bg_tc` is still
+spawned with a transparent `ColorComponent` so the clip geometry exists.
+
+---
+
+## ECS Changes Needed
+
+### `StencilClip` Component (new, first-class)
+
+A standalone ECS component. **Not layout-specific** — anything can attach one.
+
+```rust
+/// Declares a renderable as a stencil clip boundary.
+///
+/// Attach alongside a `RenderableComponent` on any TC. On `init()`, emits
+/// `RegisterStencilClip` (analogous to `RegisterRenderable`) so VisualWorld
+/// records it immediately — no scanning required.
+///
+/// The renderer draws the referenced renderable into the stencil buffer
+/// (color write off, stencil REPLACE, ref = `stencil_ref`) before drawing
+/// the TC's descendants, then restores stencil afterward. The same renderable
+/// is also drawn normally in the color pass — it does double duty.
+///
+/// ## Node hierarchy (layout case)
+///
+/// ```text
+/// item_tc   (TransformComponent — layout positions this)
+///   StyleComponent { overflow: Hidden, background_color: Some(...) }
+///   __bg_tc  (TransformComponent — sized to content box by block::layout)
+///     StencilClipComponent     ← wraps the renderable below
+///     ColorComponent
+///     RenderableComponent      ← clip shape; also the normal background quad
+/// ```
+///
+/// ## Manual use
+///
+/// Attach to any TC + `RenderableComponent`. The mesh shape determines the clip
+/// region — a square for rectangular clips, a circle, or an arbitrary hull.
+pub struct StencilClipComponent {
+    /// Stencil reference value for this clip boundary.
+    /// `0` = VisualWorld assigns based on ancestor nesting depth at registration time.
+    /// Set explicitly only when managing depth manually.
+    pub stencil_ref: u8,
+}
+
+impl Component for StencilClipComponent {
+    fn init(&mut self, id: ComponentId, emit: &mut dyn SignalEmitter) {
+        // Mirrors RenderableComponent::init / RegisterRenderable.
+        emit.push_intent_now(id, IntentValue::RegisterStencilClip {
+            component_ids: vec![id],
+        });
+    }
+    fn cleanup(&mut self, id: ComponentId, emit: &mut dyn SignalEmitter) {
+        emit.push_intent_now(id, IntentValue::UnregisterStencilClip {
+            component_ids: vec![id],
+        });
+    }
+    // ...
+}
+```
+
+`RegisterStencilClip` is handled by `RxIntentExecutor` → VisualWorld, which:
+1. Walks the ECS ancestor chain from `id` to find the nearest enclosing
+   `StencilClipComponent` ancestor (for nesting depth).
+2. Assigns `stencil_ref = ancestor_depth + 1` (1-indexed, 0 = unclipped).
+3. Records the clip entry — the `VisualInstance` for the sibling `RenderableComponent`
+   on the same TC is already registered (or will be); VisualWorld marks that instance
+   as `is_stencil_clip = true`.
+
+**Lifecycle (layout):**
+- `sync_bg_quad` spawns `__bg_tc` with `ColorComponent` + `RenderableComponent` when
+  `background_color` is set. `init_component_tree` on `__bg_tc` fires `RegisterRenderable`.
+- When `overflow: Hidden | Scroll` is also present, `sync_bg_quad` additionally attaches
+  `StencilClipComponent` to `__bg_tc`. `init` fires `RegisterStencilClip` immediately.
+- When `overflow` returns to `Visible`, `StencilClipComponent` is detached; `cleanup`
+  fires `UnregisterStencilClip` to remove it from VisualWorld.
+- When `background_color: None` but `overflow: Hidden | Scroll`: `sync_bg_quad` still
+  spawns `__bg_tc` with a transparent `ColorComponent` so the geometry exists.
+  Both `RegisterRenderable` and `RegisterStencilClip` fire on init.
+
+**Lifecycle (manual):** attach `StencilClipComponent` to any TC with a `RenderableComponent`.
+`RegisterStencilClip` fires immediately via `init()`.
+
+**Why reuse `__bg` rather than a dedicated stencil-only node?**
+
+The background quad already covers exactly the right region (the padding box). A second
+renderable at the same position would be wasted geometry. `__bg` does double duty:
+color draw in the normal pass, stencil write before the clipped subtree draws.
+
+### New intent variants
+
+```rust
+IntentValue::RegisterStencilClip { component_ids: Vec<ComponentId> }
+IntentValue::UnregisterStencilClip { component_ids: Vec<ComponentId> }
+```
+
+Handled by `RxIntentExecutor` → `VisualWorld::register_stencil_clip(id)` /
+`VisualWorld::unregister_stencil_clip(id)`. Mirrors the existing `RegisterRenderable` /
+`RemoveSubtree` path.
+
+### `StyleComponent` / `LayoutSystem` wiring
+
+- `StyleComponent::overflow` already exists (`Overflow` enum: `Visible | Hidden | Scroll | Auto`).
+- `block::layout` calls `sync_bg_quad` for each item. `sync_bg_quad` is extended to also
+  read `overflow` from the item's `StyleComponent` children and manage `StencilClipComponent`
+  on `__bg_tc` accordingly.
+- No other layout code changes.
 
 ---
 
 ## Open Questions / To Confirm
 
-1. **Current depth format** — check `vulkano_renderer.rs` near depth image creation.
-   Stencil support requires `D24_UNORM_S8_UINT` or `D32_SFLOAT_S8_UINT`.
-2. **XR path** — `xr_renderer.rs` has its own render loop. Stencil changes must be
-   mirrored there.
-3. **MSAA + stencil** — with MSAA, the stencil buffer is also multisampled.
+1. **MSAA + stencil** — with MSAA, the stencil buffer is also multisampled.
    Stencil write quad must be drawn with MSAA off or the same sample count, TBD.
-4. **Ordering within stencil groups** — overlay instances are currently instanced and
-   batched by material+mesh. Clipped instances break batching unless all instances in
-   a batch share the same clip region. May need per-draw-call bucketing by clip region.
-5. **Stencil quad mesh** — use the existing `square` primitive (`RenderableComponent::square()`).
+2. **Ordering within stencil groups** — overlay instances are currently instanced and
+  batched by material/texture/mesh. Clipped instances break batching unless all
+  instances in a batch share the same clip region. May need per-draw-call bucketing
+  by clip region.
+3. **Stencil quad mesh** — use the existing `square` primitive (`RenderableComponent::square()`).
    The stencil write pipeline needs a pipeline that accepts the same vertex format.
-6. **`overflow: scroll` vs `overflow: hidden`** — same clip behavior; `scroll` additionally
+4. **`overflow: scroll` vs `overflow: hidden`** — same clip behavior; `scroll` additionally
    enables `ScrollingComponent` interaction (already implemented). Clip region logic is identical.
-7. **Non-overlay renderables** — `overflow: hidden` on non-overlay content (e.g. 3D mesh
+5. **Non-overlay renderables** — `overflow: hidden` on non-overlay content (e.g. 3D mesh
    children inside a clipping volume) needs the same treatment. Punting this for now;
    initial implementation targets the overlay/panel use case.

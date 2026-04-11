@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use vulkano::Validated;
 use vulkano::format::Format;
-use vulkano::image::view::ImageView;
-use vulkano::image::{Image, ImageCreateInfo, ImageType, ImageUsage, SampleCount};
+use vulkano::image::view::{ImageView, ImageViewCreateInfo};
+use vulkano::image::{Image, ImageAspects, ImageCreateInfo, ImageSubresourceRange, ImageType, ImageUsage, SampleCount};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter};
 use vulkano::swapchain::{Surface, Swapchain, SwapchainCreateInfo};
 use vulkano_util::context::VulkanoContext;
@@ -26,11 +26,14 @@ pub(crate) struct VulkanoSwapchainState {
     /// rendered to directly.
     pub msaa_color_views: Vec<Arc<ImageView>>,
 
+    /// Combined depth+stencil views. Used for both `depth_attachment` and
+    /// `stencil_attachment` in dynamic rendering (Vulkan requires the same image view
+    /// for both aspects when using a combined format like `D32_SFLOAT_S8_UINT`).
     pub depth_views: Vec<Arc<ImageView>>,
 }
 
 impl VulkanoSwapchainState {
-    pub(crate) const DEPTH_FORMAT: Format = Format::D32_SFLOAT;
+    pub(crate) const DEPTH_FORMAT: Format = Format::D32_SFLOAT_S8_UINT;
 
     pub(crate) fn new(
         context: &VulkanoContext,
@@ -96,7 +99,7 @@ impl VulkanoSwapchainState {
 
         let extent = swapchain.image_extent();
         let depth_views =
-            Self::create_depth_views(context, &swapchain_views, extent, msaa_samples)?;
+            Self::create_depth_stencil_views(context, &swapchain_views, extent, msaa_samples)?;
         let msaa_color_views = Self::create_msaa_color_views(
             context,
             &swapchain_views,
@@ -145,7 +148,7 @@ impl VulkanoSwapchainState {
 
         let extent = self.swapchain.image_extent();
         self.depth_views =
-            Self::create_depth_views(context, &self.swapchain_views, extent, self.msaa_samples)?;
+            Self::create_depth_stencil_views(context, &self.swapchain_views, extent, self.msaa_samples)?;
         self.msaa_color_views = Self::create_msaa_color_views(
             context,
             &self.swapchain_views,
@@ -157,38 +160,51 @@ impl VulkanoSwapchainState {
         Ok(())
     }
 
-    fn create_depth_views(
+    fn create_depth_stencil_views(
         context: &VulkanoContext,
         swapchain_views: &[Arc<ImageView>],
         extent: [u32; 2],
         samples: SampleCount,
     ) -> Result<Vec<Arc<ImageView>>, Box<dyn std::error::Error>> {
-        // Depth buffer: one image per swapchain image.
+        // Depth+stencil buffer: one image per swapchain image.
+        // A single view exposing both DEPTH and STENCIL aspects is used for both
+        // depth_attachment and stencil_attachment (Vulkan requires the same image view
+        // for both when a combined format is used).
         let memory_allocator = context.memory_allocator().clone();
 
-        let depth_views = swapchain_views
-            .iter()
-            .map(|_| {
-                let image = Image::new(
-                    memory_allocator.clone(),
-                    ImageCreateInfo {
-                        image_type: ImageType::Dim2d,
-                        format: Self::DEPTH_FORMAT,
-                        extent: [extent[0], extent[1], 1],
-                        samples,
-                        usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
-                        ..Default::default()
-                    },
-                )?;
+        let mut depth_views = Vec::with_capacity(swapchain_views.len());
 
-                ImageView::new_default(image)
-                    .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })
-            })
-            .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+        for _ in swapchain_views {
+            let image = Image::new(
+                memory_allocator.clone(),
+                ImageCreateInfo {
+                    image_type: ImageType::Dim2d,
+                    format: Self::DEPTH_FORMAT,
+                    extent: [extent[0], extent[1], 1],
+                    samples,
+                    usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                    ..Default::default()
+                },
+            )?;
+
+            let view = ImageView::new(
+                image.clone(),
+                ImageViewCreateInfo {
+                    subresource_range: ImageSubresourceRange {
+                        aspects: ImageAspects::DEPTH | ImageAspects::STENCIL,
+                        ..image.subresource_range()
+                    },
+                    ..ImageViewCreateInfo::from_image(&image)
+                },
+            )
+            .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
+
+            depth_views.push(view);
+        }
 
         Ok(depth_views)
     }

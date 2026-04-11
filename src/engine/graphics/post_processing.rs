@@ -15,8 +15,9 @@ use vulkano::descriptor_set::{DescriptorSet, WriteDescriptorSet};
 use vulkano::device::Device;
 use vulkano::format::{ClearValue, Format};
 use vulkano::image::sampler::{Filter, Sampler, SamplerAddressMode, SamplerCreateInfo};
-use vulkano::image::view::ImageView;
-use vulkano::image::{Image, ImageCreateInfo, ImageType, ImageUsage, SampleCount};
+use vulkano::image::view::{ImageView, ImageViewCreateInfo};
+use vulkano::image::{Image, ImageAspects, ImageCreateInfo, ImageSubresourceRange, ImageType, ImageUsage, SampleCount};
+use crate::engine::graphics::vulkano_swapchain::VulkanoSwapchainState;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
 use vulkano::pipeline::graphics::color_blend::{ColorBlendAttachmentState, ColorBlendState};
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
@@ -602,7 +603,7 @@ impl PostProcessingRenderer {
             memory_allocator,
             ImageCreateInfo {
                 image_type: ImageType::Dim2d,
-                format: Format::D32_SFLOAT,
+                format: VulkanoSwapchainState::DEPTH_FORMAT,
                 extent: [extent[0], extent[1], 1],
                 samples,
                 usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT,
@@ -613,7 +614,16 @@ impl PostProcessingRenderer {
                 ..Default::default()
             },
         )?;
-        Ok(ImageView::new_default(image)?)
+        Ok(ImageView::new(
+            image.clone(),
+            ImageViewCreateInfo {
+                subresource_range: ImageSubresourceRange {
+                    aspects: ImageAspects::DEPTH | ImageAspects::STENCIL,
+                    ..image.subresource_range()
+                },
+                ..ImageViewCreateInfo::from_image(&image)
+            },
+        )?)
     }
 
     fn sampled_set(

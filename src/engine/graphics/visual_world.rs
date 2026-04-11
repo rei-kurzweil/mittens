@@ -46,6 +46,8 @@ pub struct DrawBatch {
     pub texture: Option<crate::engine::graphics::TextureHandle>,
     pub texture_filtering: TextureFiltering,
     pub quant_steps: f32,
+    /// Stencil reference value for this batch. 0 = unclipped.
+    pub stencil_ref: u8,
     /// Range into `draw_order`
     pub start: usize,
     pub count: usize,
@@ -131,6 +133,10 @@ pub struct VisualWorld {
     overlay_order: Vec<u32>,
     overlay_batches: Vec<DrawBatch>,
 
+    // Stencil clip sources: indices into `instances` where `is_stencil_clip=true`,
+    // sorted ascending by stencil_ref (outer clips first). Rebuilt with draw cache.
+    stencil_clip_order: Vec<u32>,
+
     // Transparent draw data.
     // - Single-layer: cached (order does not depend on view), instanced.
     transparent_single_draw_order: Vec<u32>,
@@ -160,6 +166,12 @@ pub struct VisualInstance {
     pub bones_base: u32,
     /// Number of bone matrices for this instance.
     pub bones_count: u32,
+
+    /// Which clip region this instance is inside. 0 = unclipped.
+    pub stencil_ref: u8,
+    /// When true, this instance writes stencil before its descendant subtree draws.
+    /// It also draws normally in the color pass (double duty: clip source + background quad).
+    pub is_stencil_clip: bool,
 }
 
 fn sanitize_quant_steps(steps: f32) -> f32 {
@@ -246,6 +258,8 @@ impl Default for VisualWorld {
 
             overlay_order: Vec::new(),
             overlay_batches: Vec::new(),
+
+            stencil_clip_order: Vec::new(),
 
             transparent_single_draw_order: Vec::new(),
             transparent_single_draw_batches: Vec::new(),
@@ -566,6 +580,7 @@ impl VisualWorld {
             let texture = inst0.texture;
             let texture_filtering = inst0.texture_filtering;
             let quant_steps = sanitize_quant_steps(inst0.quant_steps);
+            let stencil_ref = inst0.stencil_ref;
 
             let start = cursor;
             cursor += 1;
@@ -579,6 +594,7 @@ impl VisualWorld {
                     && inst.texture == texture
                     && inst.texture_filtering == texture_filtering
                     && sanitize_quant_steps(inst.quant_steps).to_bits() == quant_steps.to_bits()
+                    && inst.stencil_ref == stencil_ref
                 {
                     cursor += 1;
                 } else {
@@ -592,6 +608,7 @@ impl VisualWorld {
                 texture,
                 texture_filtering,
                 quant_steps,
+                stencil_ref,
                 start,
                 count: cursor - start,
             });
@@ -943,6 +960,50 @@ impl VisualWorld {
         &self.overlay_batches
     }
 
+    /// Indices into `instances()` where `is_stencil_clip=true`, sorted by stencil_ref ascending.
+    /// Used by the renderer to inject stencil write/restore draws around clipped batch groups.
+    pub fn stencil_clip_order(&self) -> &[u32] {
+        &self.stencil_clip_order
+    }
+
+    /// Mark an instance as a stencil clip source with the given reference value.
+    /// Triggers draw cache rebuild.
+    pub fn register_stencil_clip(&mut self, handle: InstanceHandle, stencil_ref: u8) -> bool {
+        if let Some(&idx) = self.handle_to_index.get(&handle) {
+            self.instances[idx].is_stencil_clip = true;
+            self.instances[idx].stencil_ref = stencil_ref;
+            self.dirty_draw_cache = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Remove stencil clip status from an instance.
+    pub fn unregister_stencil_clip(&mut self, handle: InstanceHandle) -> bool {
+        if let Some(&idx) = self.handle_to_index.get(&handle) {
+            self.instances[idx].is_stencil_clip = false;
+            self.dirty_draw_cache = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Update the stencil reference value for a clipped instance (not the clip source itself).
+    pub fn update_stencil_ref(&mut self, handle: InstanceHandle, stencil_ref: u8) -> bool {
+        if let Some(&idx) = self.handle_to_index.get(&handle) {
+            if self.instances[idx].stencil_ref == stencil_ref {
+                return true;
+            }
+            self.instances[idx].stencil_ref = stencil_ref;
+            self.dirty_draw_cache = true;
+            true
+        } else {
+            false
+        }
+    }
+
     /// Indices into `instances()` in the order they should be drawn (single-layer transparent pass).
     pub fn transparent_single_draw_order(&self) -> &[u32] {
         &self.transparent_single_draw_order
@@ -977,9 +1038,13 @@ impl VisualWorld {
         self.emissive_cutout_order.clear();
         self.transparent_single_draw_order.clear();
         self.overlay_order.clear();
+        self.stencil_clip_order.clear();
         // Opaque pass: exclude anything that is transparent.
         for i in 0..self.instances.len() {
             let inst = &self.instances[i];
+            if inst.is_stencil_clip {
+                self.stencil_clip_order.push(i as u32);
+            }
             if inst.overlay {
                 self.overlay_order.push(i as u32);
             } else if inst.background {
@@ -996,6 +1061,7 @@ impl VisualWorld {
                 self.transparent_single_draw_order.push(i as u32);
             }
         }
+        self.stencil_clip_order.sort_by_key(|&i| self.instances[i as usize].stencil_ref);
 
         // Background pass: batch aggressively (order does not depend on view).
         // NOTE: Background instances are excluded from the normal opaque/transparent lists.
@@ -1128,6 +1194,7 @@ impl VisualWorld {
             let r = inst.renderable;
             let tex = inst.texture.map_or(0, |t| t.0.wrapping_add(1));
             (
+                inst.stencil_ref,
                 r.material.0,
                 tex,
                 r.mesh.0,
@@ -1240,6 +1307,9 @@ impl VisualWorld {
 
             bones_base: 0,
             bones_count: 0,
+
+            stencil_ref: 0,
+            is_stencil_clip: false,
         });
         self.handle_to_index.insert(handle, idx);
         self.component_to_handle.insert(cid, handle);
@@ -1496,6 +1566,8 @@ impl VisualWorld {
             let quant_steps = self.instances[idx].quant_steps;
             let bones_base = self.instances[idx].bones_base;
             let bones_count = self.instances[idx].bones_count;
+            let stencil_ref = self.instances[idx].stencil_ref;
+            let is_stencil_clip = self.instances[idx].is_stencil_clip;
             self.instances[idx] = VisualInstance {
                 renderable,
                 transform,
@@ -1512,6 +1584,8 @@ impl VisualWorld {
                 quant_steps,
                 bones_base,
                 bones_count,
+                stencil_ref,
+                is_stencil_clip,
             };
             self.dirty_draw_cache = true; // renderable changes likely affect sort/batch
             self.dirty_instance_data = true;

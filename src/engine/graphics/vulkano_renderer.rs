@@ -38,8 +38,8 @@ mod vulkano_backend {
     use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
     use vulkano::descriptor_set::{DescriptorSet, WriteDescriptorSet};
     use vulkano::format::ClearValue;
-    use vulkano::image::view::ImageView;
-    use vulkano::image::{Image, ImageCreateInfo, ImageType, ImageUsage, SampleCount, SampleCounts};
+    use vulkano::image::view::{ImageView, ImageViewCreateInfo};
+    use vulkano::image::{Image, ImageAspects, ImageCreateInfo, ImageSubresourceRange, ImageType, ImageUsage, SampleCount, SampleCounts};
     use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter};
     use vulkano::pipeline::graphics::color_blend::{
         AttachmentBlend, BlendFactor, BlendOp, ColorBlendAttachmentState, ColorBlendState,
@@ -328,6 +328,7 @@ mod vulkano_backend {
         color_images: Vec<Arc<vulkano::image::Image>>,
         msaa_color_views: Vec<Arc<ImageView>>,
         color_views: Vec<Arc<ImageView>>,
+        /// Combined depth+stencil views (same view used for both attachments).
         depth_views: Vec<Arc<ImageView>>,
     }
 
@@ -1358,8 +1359,17 @@ mod vulkano_backend {
                     },
                 )?;
 
-                let depth_view = ImageView::new_default(depth_image)
-                    .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
+                let depth_view = ImageView::new(
+                    depth_image.clone(),
+                    ImageViewCreateInfo {
+                        subresource_range: ImageSubresourceRange {
+                            aspects: ImageAspects::DEPTH | ImageAspects::STENCIL,
+                            ..depth_image.subresource_range()
+                        },
+                        ..ImageViewCreateInfo::from_image(&depth_image)
+                    },
+                )
+                .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
 
                 color_images.push(color_image);
                 color_views.push(color_view);
