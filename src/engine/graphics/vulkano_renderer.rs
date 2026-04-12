@@ -45,7 +45,10 @@ mod vulkano_backend {
         AttachmentBlend, BlendFactor, BlendOp, ColorBlendAttachmentState, ColorBlendState,
         ColorComponents,
     };
-    use vulkano::pipeline::graphics::depth_stencil::{CompareOp, DepthState, DepthStencilState};
+    use vulkano::pipeline::graphics::depth_stencil::{
+        CompareOp, DepthState, DepthStencilState,
+        StencilOp, StencilOps, StencilOpState, StencilState,
+    };
     use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
     use vulkano::pipeline::graphics::multisample::MultisampleState;
     use vulkano::pipeline::graphics::rasterization::RasterizationState;
@@ -278,6 +281,15 @@ mod vulkano_backend {
         pub pipeline_skinned_emissive_toon_mesh_cutout: Arc<GraphicsPipeline>,
         pub pipeline_skinned_emissive_prepass_toon_mesh: Arc<GraphicsPipeline>,
         pub pipeline_skinned_emissive_prepass_toon_mesh_cutout: Arc<GraphicsPipeline>,
+
+        /// Writes stencil INCR (enter clip region). Color write off, depth test off.
+        pub pipeline_stencil_incr: Arc<GraphicsPipeline>,
+        /// Writes stencil DECR (exit clip region). Color write off, depth test off.
+        pub pipeline_stencil_decr: Arc<GraphicsPipeline>,
+        /// Overlay draw gated by stencil EQUAL. For non-emissive materials.
+        pub pipeline_overlay_clipped: Arc<GraphicsPipeline>,
+        /// Overlay draw gated by stencil EQUAL. For emissive materials.
+        pub pipeline_emissive_overlay_clipped: Arc<GraphicsPipeline>,
 
         pub msaa_samples: SampleCount,
 
@@ -1151,6 +1163,88 @@ mod vulkano_backend {
                 pipeline_ci_skinned_emissive_prepass_cutout,
             )?;
 
+            // Stencil clip pipelines — color write off, no depth test.
+            // Shared helper: stencil ops for enter/exit clip.
+            let stencil_ops_incr = StencilOps {
+                compare_op: CompareOp::Equal,
+                pass_op: StencilOp::IncrementAndClamp,
+                fail_op: StencilOp::Keep,
+                depth_fail_op: StencilOp::Keep,
+            };
+            let stencil_ops_decr = StencilOps {
+                compare_op: CompareOp::Equal,
+                pass_op: StencilOp::DecrementAndClamp,
+                fail_op: StencilOp::Keep,
+                depth_fail_op: StencilOp::Keep,
+            };
+            let stencil_ops_test = StencilOps {
+                compare_op: CompareOp::Equal,
+                pass_op: StencilOp::Keep,
+                fail_op: StencilOp::Keep,
+                depth_fail_op: StencilOp::Keep,
+            };
+            let stencil_write_color_blend = ColorBlendState::with_attachment_states(
+                1,
+                ColorBlendAttachmentState {
+                    blend: None,
+                    color_write_enable: true,
+                    color_write_mask: ColorComponents::empty(),
+                },
+            );
+            let mut stencil_dynamic_state = pipeline_ci.dynamic_state.clone();
+            stencil_dynamic_state.insert(DynamicState::StencilReference);
+
+            let mut pipeline_ci_stencil_incr = pipeline_ci.clone();
+            pipeline_ci_stencil_incr.color_blend_state = Some(stencil_write_color_blend.clone());
+            pipeline_ci_stencil_incr.depth_stencil_state = Some(DepthStencilState {
+                depth: None,
+                stencil: Some(StencilState {
+                    front: StencilOpState { ops: stencil_ops_incr, ..Default::default() },
+                    back: StencilOpState { ops: stencil_ops_incr, ..Default::default() },
+                }),
+                ..Default::default()
+            });
+            pipeline_ci_stencil_incr.dynamic_state = stencil_dynamic_state.clone();
+            let pipeline_stencil_incr =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_stencil_incr)?;
+
+            let mut pipeline_ci_stencil_decr = pipeline_ci.clone();
+            pipeline_ci_stencil_decr.color_blend_state = Some(stencil_write_color_blend);
+            pipeline_ci_stencil_decr.depth_stencil_state = Some(DepthStencilState {
+                depth: None,
+                stencil: Some(StencilState {
+                    front: StencilOpState { ops: stencil_ops_decr, ..Default::default() },
+                    back: StencilOpState { ops: stencil_ops_decr, ..Default::default() },
+                }),
+                ..Default::default()
+            });
+            pipeline_ci_stencil_decr.dynamic_state = stencil_dynamic_state.clone();
+            let pipeline_stencil_decr =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_stencil_decr)?;
+
+            // Overlay variants that require stencil == reference to pass.
+            let clipped_depth_stencil = DepthStencilState {
+                depth: Some(DepthState::simple()),
+                stencil: Some(StencilState {
+                    front: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                    back: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                }),
+                ..Default::default()
+            };
+
+            let mut pipeline_ci_overlay_clipped = pipeline_ci.clone();
+            pipeline_ci_overlay_clipped.depth_stencil_state = Some(clipped_depth_stencil.clone());
+            pipeline_ci_overlay_clipped.dynamic_state = stencil_dynamic_state.clone();
+            let pipeline_overlay_clipped =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_overlay_clipped)?;
+
+            let mut pipeline_ci_emissive_overlay_clipped = pipeline_ci_emissive.clone();
+            pipeline_ci_emissive_overlay_clipped.depth_stencil_state =
+                Some(clipped_depth_stencil);
+            pipeline_ci_emissive_overlay_clipped.dynamic_state = stencil_dynamic_state;
+            let pipeline_emissive_overlay_clipped =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_emissive_overlay_clipped)?;
+
             let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
                 device.clone(),
                 Default::default(),
@@ -1230,6 +1324,11 @@ mod vulkano_backend {
                 pipeline_skinned_emissive_toon_mesh_cutout,
                 pipeline_skinned_emissive_prepass_toon_mesh,
                 pipeline_skinned_emissive_prepass_toon_mesh_cutout,
+
+                pipeline_stencil_incr,
+                pipeline_stencil_decr,
+                pipeline_overlay_clipped,
+                pipeline_emissive_overlay_clipped,
 
                 msaa_samples,
 

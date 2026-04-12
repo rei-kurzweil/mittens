@@ -185,7 +185,7 @@ which pipeline / reference to use, but ordering comes from the tree.
 
 Pseudocode for the draw loop (one render phase):
 
-```
+```python
 current_clip_stack: Vec<(stencil_ref: u8, clip_instance_index: usize)> = []
 
 for each instance in DFS order:
