@@ -46,11 +46,40 @@ pub struct DrawBatch {
     pub texture: Option<crate::engine::graphics::TextureHandle>,
     pub texture_filtering: TextureFiltering,
     pub quant_steps: f32,
-    /// Stencil reference value for this batch. 0 = unclipped.
+    /// Effective stencil reference value for this batch.
+    /// 0 = unclipped; >0 = draw only where stencil == this value.
+    /// For clip-source instances this is `parent_ref + 1` (their visual draw is inside their own region).
     pub stencil_ref: u8,
-    /// Range into `draw_order`
+    /// Start index into the phase's instance-index array (e.g. `overlay_stream_instances`).
     pub start: usize,
     pub count: usize,
+}
+
+/// One entry in a per-phase DFS render stream.
+///
+/// The overlay stream is a sequence of these ops that the renderer executes in order,
+/// binding different pipelines for stencil writes vs. clipped color draws.
+#[derive(Debug, Clone, Copy)]
+pub enum RenderOp {
+    /// Write stencil INCR for a clip region entry.
+    /// Render `instance_index`'s mesh with `pipeline_stencil_incr`, stencil reference = `parent_ref`.
+    /// After this op, pixels under the mesh have stencil value `new_ref`.
+    EnterClip {
+        instance_index: u32,
+        parent_ref: u8,
+        new_ref: u8,
+    },
+    /// Draw a batch of instances.
+    /// `batch.stencil_ref == 0` → use normal overlay pipeline.
+    /// `batch.stencil_ref > 0` → use clipped overlay pipeline with that reference.
+    /// Instance indices live in `[batch.start .. batch.start + batch.count)` of the stream's instance array.
+    DrawBatch(DrawBatch),
+    /// Write stencil DECR to close a clip region.
+    /// Render `instance_index`'s mesh with `pipeline_stencil_decr`, stencil reference = `ref_value`.
+    ExitClip {
+        instance_index: u32,
+        ref_value: u8,
+    },
 }
 
 pub struct VisualWorld {
@@ -136,6 +165,12 @@ pub struct VisualWorld {
     // Stencil clip sources: indices into `instances` where `is_stencil_clip=true`,
     // sorted ascending by stencil_ref (outer clips first). Rebuilt with draw cache.
     stencil_clip_order: Vec<u32>,
+
+    // DFS-ordered render stream for the overlay phase.
+    // overlay_stream_instances holds VisualInstance indices referenced by DrawBatch ops.
+    // Rebuilt with draw cache whenever stencil clip state or overlay membership changes.
+    overlay_stream: Vec<RenderOp>,
+    overlay_stream_instances: Vec<u32>,
 
     // Transparent draw data.
     // - Single-layer: cached (order does not depend on view), instanced.
@@ -260,6 +295,9 @@ impl Default for VisualWorld {
             overlay_batches: Vec::new(),
 
             stencil_clip_order: Vec::new(),
+
+            overlay_stream: Vec::new(),
+            overlay_stream_instances: Vec::new(),
 
             transparent_single_draw_order: Vec::new(),
             transparent_single_draw_batches: Vec::new(),
@@ -615,6 +653,194 @@ impl VisualWorld {
         }
     }
 
+    /// Build the per-phase DFS render stream for the overlay pass.
+    ///
+    /// `overlay_order` must already be sorted by `(stencil_ref, material, tex, mesh, ...)`.
+    ///
+    /// Algorithm (one level at a time):
+    /// - Non-clip instances at depth D → `DrawBatch` at stencil_ref D.
+    /// - Clip sources at depth D → `EnterClip`, then their visual draw at stencil_ref D+1,
+    ///   then all content at depth D+1 (recursed), then `ExitClip`.
+    fn build_overlay_render_stream(
+        instances: &[VisualInstance],
+        overlay_order: &[u32],
+        out_ops: &mut Vec<RenderOp>,
+        out_instances: &mut Vec<u32>,
+    ) {
+        out_ops.clear();
+        out_instances.clear();
+
+        if overlay_order.is_empty() {
+            return;
+        }
+
+        let max_depth = overlay_order
+            .iter()
+            .map(|&i| instances[i as usize].stencil_ref)
+            .max()
+            .unwrap_or(0);
+
+        // Split into per-depth groups preserving sort order within each group.
+        // Group[d] = (non_clip indices, clip_source indices) at stencil_ref == d.
+        let depth_count = max_depth as usize + 1;
+        let mut non_clip_by_depth: Vec<Vec<u32>> = vec![Vec::new(); depth_count];
+        let mut clip_sources_by_depth: Vec<Vec<u32>> = vec![Vec::new(); depth_count];
+
+        for &idx in overlay_order {
+            let inst = &instances[idx as usize];
+            let d = inst.stencil_ref as usize;
+            if inst.is_stencil_clip {
+                clip_sources_by_depth[d].push(idx);
+            } else {
+                non_clip_by_depth[d].push(idx);
+            }
+        }
+
+        Self::build_overlay_level(
+            0,
+            max_depth,
+            instances,
+            &non_clip_by_depth,
+            &clip_sources_by_depth,
+            out_ops,
+            out_instances,
+        );
+    }
+
+    fn build_overlay_level(
+        depth: usize,
+        max_depth: u8,
+        instances: &[VisualInstance],
+        non_clip_by_depth: &[Vec<u32>],
+        clip_sources_by_depth: &[Vec<u32>],
+        out_ops: &mut Vec<RenderOp>,
+        out_instances: &mut Vec<u32>,
+    ) {
+        if depth >= non_clip_by_depth.len() {
+            return;
+        }
+
+        // Draw non-clip instances at this depth.
+        let non_clip = &non_clip_by_depth[depth];
+        if !non_clip.is_empty() {
+            Self::append_stream_batches(instances, non_clip, depth as u8, out_ops, out_instances);
+        }
+
+        let clip_sources = &clip_sources_by_depth[depth];
+        if !clip_sources.is_empty() {
+            let parent_ref = depth as u8;
+            let new_ref = parent_ref.saturating_add(1);
+
+            // Emit EnterClip for every clip source at this depth.
+            for &src_idx in clip_sources {
+                out_ops.push(RenderOp::EnterClip {
+                    instance_index: src_idx,
+                    parent_ref,
+                    new_ref,
+                });
+            }
+
+            // Clip sources also draw as normal color instances, but at new_ref
+            // (they are inside their own clip region after the INCR).
+            Self::append_stream_batches(
+                instances,
+                clip_sources,
+                new_ref,
+                out_ops,
+                out_instances,
+            );
+
+            // Recurse: all content at the next depth is inside the clip region.
+            if depth + 1 <= max_depth as usize {
+                Self::build_overlay_level(
+                    depth + 1,
+                    max_depth,
+                    instances,
+                    non_clip_by_depth,
+                    clip_sources_by_depth,
+                    out_ops,
+                    out_instances,
+                );
+            }
+
+            // Emit ExitClip in reverse order (innermost-first, which here means
+            // the last clip source entered is the first exited).
+            for &src_idx in clip_sources.iter().rev() {
+                out_ops.push(RenderOp::ExitClip {
+                    instance_index: src_idx,
+                    ref_value: new_ref,
+                });
+            }
+        } else if depth + 1 <= max_depth as usize {
+            // No clips here but deeper levels exist; keep recursing.
+            Self::build_overlay_level(
+                depth + 1,
+                max_depth,
+                instances,
+                non_clip_by_depth,
+                clip_sources_by_depth,
+                out_ops,
+                out_instances,
+            );
+        }
+    }
+
+    /// Append `DrawBatch` ops for a pre-sorted slice of instance indices.
+    ///
+    /// `effective_ref` overrides the per-instance `stencil_ref` — necessary for clip
+    /// sources that are visually drawn inside their own region (`new_ref`).
+    fn append_stream_batches(
+        instances: &[VisualInstance],
+        indices: &[u32],
+        effective_ref: u8,
+        out_ops: &mut Vec<RenderOp>,
+        out_instances: &mut Vec<u32>,
+    ) {
+        let mut cursor = 0usize;
+        while cursor < indices.len() {
+            let idx0 = indices[cursor] as usize;
+            let inst0 = &instances[idx0];
+            let r0 = inst0.renderable;
+            let material = r0.material;
+            let mesh = r0.mesh;
+            let texture = inst0.texture;
+            let texture_filtering = inst0.texture_filtering;
+            let quant_steps = sanitize_quant_steps(inst0.quant_steps);
+
+            let start = out_instances.len();
+            out_instances.push(indices[cursor]);
+            cursor += 1;
+
+            while cursor < indices.len() {
+                let idx = indices[cursor] as usize;
+                let inst = &instances[idx];
+                let r = inst.renderable;
+                if r.material == material
+                    && r.mesh == mesh
+                    && inst.texture == texture
+                    && inst.texture_filtering == texture_filtering
+                    && sanitize_quant_steps(inst.quant_steps).to_bits() == quant_steps.to_bits()
+                {
+                    out_instances.push(indices[cursor]);
+                    cursor += 1;
+                } else {
+                    break;
+                }
+            }
+
+            out_ops.push(RenderOp::DrawBatch(DrawBatch {
+                material,
+                mesh,
+                texture,
+                texture_filtering,
+                quant_steps,
+                stencil_ref: effective_ref,
+                start,
+                count: out_instances.len() - start,
+            }));
+        }
+    }
+
     pub fn clear_color(&self) -> [f32; 4] {
         self.clear_color
     }
@@ -960,6 +1186,16 @@ impl VisualWorld {
         &self.overlay_batches
     }
 
+    /// DFS-ordered render stream for the overlay phase.
+    ///
+    /// Returns `(ops, instance_indices)`.
+    /// - `ops` is the sequence of `EnterClip`, `DrawBatch`, and `ExitClip` commands.
+    /// - `instance_indices[batch.start .. batch.start + batch.count]` gives the
+    ///   `VisualInstance` indices for each `DrawBatch` op.
+    pub fn overlay_stream(&self) -> (&[RenderOp], &[u32]) {
+        (&self.overlay_stream, &self.overlay_stream_instances)
+    }
+
     /// Indices into `instances()` where `is_stencil_clip=true`, sorted by stencil_ref ascending.
     /// Used by the renderer to inject stencil write/restore draws around clipped batch groups.
     pub fn stencil_clip_order(&self) -> &[u32] {
@@ -1204,6 +1440,14 @@ impl VisualWorld {
         });
         let overlay_order = &self.overlay_order;
         Self::build_draw_batches_for_order(instances, overlay_order, &mut self.overlay_batches);
+
+        // Build the DFS render stream for the overlay phase.
+        Self::build_overlay_render_stream(
+            instances,
+            &self.overlay_order,
+            &mut self.overlay_stream,
+            &mut self.overlay_stream_instances,
+        );
 
         self.dirty_draw_cache = false;
         true

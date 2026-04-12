@@ -175,6 +175,9 @@ the union of both panels' content renders clipped to panel_B's quad, which is wr
 flat group and process them together. The draw loop must follow ECS subtree order so
 that each clip quad is bracketed by its own enter/exit.
 
+See also [visualworld-phase-dfs-render-stream.md](visualworld-phase-dfs-render-stream.md),
+which describes the recommended `VisualWorld` representation for this ordering.
+
 ---
 
 ## 4. Required Draw Order
@@ -182,6 +185,11 @@ that each clip quad is bracketed by its own enter/exit.
 Within each render phase, instances must be emitted in **ECS DFS (depth-first) subtree
 order**, not sorted flat by `stencil_ref`. The `stencil_ref` value tells the renderer
 which pipeline / reference to use, but ordering comes from the tree.
+
+Importantly, this should be represented as a DFS-ordered **stream of references and
+events**, not as duplicated `VisualInstance` storage. A clip boundary may appear in the
+stream multiple times (enter / visible draw / exit) while still referring to one
+canonical `VisualInstance` in `VisualWorld`.
 
 Pseudocode for the draw loop (one render phase):
 
@@ -223,6 +231,11 @@ while let Some((ref, idx)) = current_clip_stack.pop():
 
 ## 5. Implications for `stencil_clip_order` in VisualWorld
 
+This section now overlaps with the design note in
+[visualworld-phase-dfs-render-stream.md](visualworld-phase-dfs-render-stream.md).
+That draft is the preferred place for data-structure details; the points below summarize
+the algorithmic constraints that structure must satisfy.
+
 The current spec sorts `stencil_clip_order` ascending by `stencil_ref`. This ordering
 is useful for quickly locating all clip quads at a given depth but is not the primary
 ordering for the draw loop — that must be DFS subtree order.
@@ -231,14 +244,18 @@ Possible approaches:
 
 **Option A — store DFS index alongside stencil_ref:**
 `stencil_clip_order` entries include a `dfs_index` field. The draw loop iterates
-instances in DFS order; the clip stack is managed per the pseudocode above.
+references to instances in DFS order; the clip stack is managed per the pseudocode above.
 
-**Option B — build the sorted instance list in DFS order already:**
-`overlay_order` (and equivalent per-phase order arrays) are already built from the
-ECS tree traversal. If DFS order is maintained there, `stencil_clip_order` just needs
-to be a lookup from instance index → is_stencil_clip, no separate sort needed.
+**Option B — precompute a phase-local DFS render stream:**
+Build per-phase ordered streams in `VisualWorld` that contain:
+- references to canonical `VisualInstance`s
+- explicit clip enter/exit events
+- draw batches for contiguous DFS-legal runs
 
-Option B aligns better with the existing `overlay_order` / `DrawBatch` model.
+This aligns better with the existing `DrawBatch` model and avoids pretending that clip
+events are extra `VisualInstance`s.
+
+Option B is now the recommended direction.
 
 ---
 

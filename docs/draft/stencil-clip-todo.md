@@ -110,7 +110,19 @@ Skinned variants can wait — add `pipeline_skinned_overlay_clipped` later if ne
 
 ---
 
-## After Draw Loop: Draw Loop (formerly "After Pipelines")
+## Done: VisualWorld Overlay Stream ✓
+
+- `RenderOp` enum: `EnterClip { instance_index, parent_ref, new_ref }`, `DrawBatch(DrawBatch)`, `ExitClip { instance_index, ref_value }`
+- `overlay_stream: Vec<RenderOp>` + `overlay_stream_instances: Vec<u32>` on `VisualWorld`
+- `build_overlay_render_stream` + `build_overlay_level` + `append_stream_batches` (static methods)
+- Rebuilt in `rebuild_draw_cache` after overlay_batches
+- Public `overlay_stream() -> (&[RenderOp], &[u32])`
+- Algorithm: splits overlay_order by depth, non-clip at depth D → DrawBatch(ref=D),
+  clip sources at depth D → EnterClip + visual draw at ref=D+1 + recurse + ExitClip
+
+---
+
+## Next: Draw Loop (renderer)
 
 File: `src/engine/graphics/vulkano_cbb.rs`, fn `record_overlay_draws`
 
