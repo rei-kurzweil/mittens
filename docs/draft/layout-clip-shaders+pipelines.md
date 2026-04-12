@@ -30,7 +30,7 @@ container before drawing its children.
 
 **Render order per frame:**
 
-1. **Stencil write sub-pass** (new, before overlay draw):  
+1. **Stencil write step** (new, before drawing a clipped subtree in its render phase):  
    For each `overflow: hidden` container, render its content-box quad with:
    - Color write mask = `0` (no color output)
    - Depth write = off, depth test = off (or pass-always)
@@ -38,7 +38,7 @@ container before drawing its children.
    
    This "stamps" the container's visible area into the stencil buffer.
 
-2. **Clipped content draw sub-pass** (modified overlay pipeline):  
+2. **Clipped content draw step** (modified pipeline for the subtree's normal phase):  
    Children inside `overflow: hidden` containers draw with stencil test:
    - `EQUAL` to the nesting depth of their innermost `overflow: hidden` ancestor.
 
@@ -49,6 +49,16 @@ container before drawing its children.
 **Nesting:** increment reference value per level of `overflow: hidden` nesting.
 Max nesting depth = GPU stencil bit depth (8 bits on all Vulkan hardware → 255 levels,
 more than enough).
+
+**Important framing:** clipping is **not** inherently an overlay feature. The clip test
+should apply in whatever render phase the clipped descendants already belong to:
+- opaque descendants stay in the opaque pass,
+- cutout descendants stay in the cutout pass,
+- transparent descendants stay in the transparent pass,
+- overlay descendants stay in the overlay pass.
+
+Stencil clipping is therefore phase-local state layered onto existing passes, not a new
+top-most render category like gizmos/HUD.
 
 ---
 
@@ -71,15 +81,19 @@ format. Separate depth-only / stencil-only views are rejected by
 `VUID-VkRenderingInfo-pStencilAttachment-06548` (must have stencil aspect) and the
 same-view constraint.
 
-#### Stencil attachment (deferred — `vulkano_renderer.rs`)
+#### Stencil attachment + pipeline format (`vulkano_renderer.rs`)
 
-- `stencil_attachment` is currently **`None`** in both render scopes.
-- The combined depth+stencil view is ready to wire in once the new pipelines exist.
-- **Reason for deferral:** all existing pipelines were created without
-  `stencil_attachment_format` in `PipelineRenderingCreateInfo`. Enabling stencil
-  attachment while old pipelines are active triggers
-  `VUID-vkCmdDrawIndexed-pStencilAttachment-06182`. The attachment goes live
-  alongside the new pipelines.
+- `stencil_attachment_format = Some(D32_SFLOAT_S8_UINT)` added to the one shared
+  `PipelineRenderingCreateInfo` (L988). All 15 pipeline variants inherit it via `.clone()`.
+- `stencil_attachment: Some(...)` wired in both `RenderingInfo` scopes (window L2105,
+  XR/deferred L2678) — load `Clear` (ref=0), store `DontCare`.
+- Existing pipelines keep `stencil: None` in `DepthStencilState` — stencil test disabled
+  means all fragments pass and no writes occur. Valid alongside an active stencil
+  attachment; no behavioral change to existing draws.
+
+**Why `stencil: None` is sufficient for existing pipelines:** `None` = test disabled =
+all pass, no writes. `stencil: Some(StencilState::default())` would be wrong —
+`StencilOps::default()` has `compare_op: Never`, which would discard all fragments.
 
 #### VisualWorld data model (`visual_world.rs`)
 
@@ -88,42 +102,65 @@ same-view constraint.
   change so clipped/unclipped instances never merge.
 - `stencil_clip_order: Vec<u32>` — indices into `instances` where
   `is_stencil_clip=true`, sorted ascending by `stencil_ref`. Rebuilt with draw cache.
-- Overlay sort key updated: `stencil_ref` prepended as primary key so all instances
-  for the same clip region are consecutive.
+- Overlay sort key updated first: `stencil_ref` prepended as primary key so overlay
+  instances for the same clip region are consecutive.
 - New public API: `register_stencil_clip(handle, stencil_ref)`,
   `unregister_stencil_clip(handle)`, `update_stencil_ref(handle, stencil_ref)`,
   `stencil_clip_order() -> &[u32]`.
 - `register()` initialises both new fields to `0` / `false`.
 
+This is useful beyond overlay. The same `stencil_ref` / `is_stencil_clip` model should
+ultimately feed batching in whichever pass an instance normally belongs to.
+
 ### 🔲 Remaining
 
 #### New Vulkan pipelines (`VulkanoState`)
 
-| Pipeline | Color write | Depth | Stencil op | Stencil test |
+These are **not** a new render phase. They are stencil-aware variants of the pipelines
+already used by the existing phases.
+
+So:
+- gizmos / panels / HUD content still render in the normal overlay pass,
+- scene geometry that should be depth-tested against opaque/cutout content should stay
+  in its normal non-overlay pass,
+- `StencilClipComponent` is **not** a new kind of `OverlayComponent`.
+
+The correct long-term framing is "clipped pipeline variants per phase", not "move clipped
+content into overlay".
+
+| Pipeline | Color write | Depth | Stencil test | Stencil op |
 |---|---|---|---|---|
-| `pipeline_stencil_write` | off | off/pass-always | REPLACE ref=N | always |
-| `pipeline_stencil_clear` | off | off | REPLACE ref=0 | always |
-| `pipeline_overlay_clipped` | on | same as overlay | KEEP | EQUAL ref=N |
-| `pipeline_emissive_overlay_clipped` | on | same | KEEP | EQUAL ref=N |
+| `pipeline_stencil_incr` | off | off | EQUAL ref=parent | INCR |
+| `pipeline_stencil_decr` | off | off | EQUAL ref=current | DECR |
+| `pipeline_opaque_clipped` | on | same as opaque | EQUAL ref=N | KEEP |
+| `pipeline_cutout_clipped` | on | same as cutout | EQUAL ref=N | KEEP |
+| `pipeline_transparent_clipped` | on | same as transparent | EQUAL ref=N | KEEP |
+| `pipeline_overlay_clipped` | on | same as overlay | EQUAL ref=N | KEEP |
+| `pipeline_emissive_*_clipped` | on | same as source phase | EQUAL ref=N | KEEP |
 
-All existing overlay pipelines need `stencil_attachment_format` added to
-`PipelineRenderingCreateInfo` and explicit `stencil test = always, op = KEEP`.
-This is also when `stencil_attachment: Some(...)` gets wired back in.
+All stencil pipelines use `DynamicState::StencilReference` —
+`cbb.set_stencil_reference(StencilFaces::FRONT_AND_BACK, ref)` per draw group.
+No pipeline variant per depth level.
 
-The `stencil_ref` value changes per clip-region group — delivered as a push constant.
+REPLACE + ALWAYS is wrong for nesting — inner clips can escape outer clip boundaries.
+See `stencil-clip-algorithm.md` for the full derivation and draw order pseudocode.
 
-#### Draw loop (`record_overlay_draws()` in `vulkano_cbb.rs`)
+#### Draw loop (phase-local)
 
 ```
-for each (stencil_ref, batches) group in overlay_batches:
-  if stencil_ref == 0:
-    draw batches with pipeline_overlay (unchanged)
-  else:
-    look up clip quad from stencil_clip_order
-    draw clip quad  → pipeline_stencil_write, ref = stencil_ref
-    draw batches    → pipeline_overlay_clipped, ref = stencil_ref
-    restore stencil → pipeline_stencil_write, ref = parent stencil_ref (or 0)
+for each render phase:
+  for each (stencil_ref, batches) group in phase_batches:
+    if stencil_ref == 0:
+      draw batches with the phase's normal pipeline (unchanged)
+    else:
+      look up clip quad from stencil_clip_order
+      draw clip quad  → pipeline_stencil_write, ref = stencil_ref
+      draw batches    → phase-specific clipped pipeline, ref = stencil_ref
+      restore stencil → pipeline_stencil_write, ref = parent stencil_ref (or 0)
 ```
+
+For an incremental rollout, overlay may still be the first hook point implemented in
+code, but that is a staging choice rather than the architectural model.
 
 #### ECS (`StencilClipComponent`)
 
@@ -247,14 +284,14 @@ Handled by `RxIntentExecutor` → `VisualWorld::register_stencil_clip(id)` /
 
 1. **MSAA + stencil** — with MSAA, the stencil buffer is also multisampled.
    Stencil write quad must be drawn with MSAA off or the same sample count, TBD.
-2. **Ordering within stencil groups** — overlay instances are currently instanced and
-  batched by material/texture/mesh. Clipped instances break batching unless all
-  instances in a batch share the same clip region. May need per-draw-call bucketing
-  by clip region.
+2. **Ordering within stencil groups** — each render phase currently batches by its own
+  material/mesh rules. Clipped instances break batching unless all instances in a batch
+  share the same clip region. Each affected phase will need phase-local bucketing by
+  `stencil_ref`.
 3. **Stencil quad mesh** — use the existing `square` primitive (`RenderableComponent::square()`).
    The stencil write pipeline needs a pipeline that accepts the same vertex format.
 4. **`overflow: scroll` vs `overflow: hidden`** — same clip behavior; `scroll` additionally
    enables `ScrollingComponent` interaction (already implemented). Clip region logic is identical.
-5. **Non-overlay renderables** — `overflow: hidden` on non-overlay content (e.g. 3D mesh
-   children inside a clipping volume) needs the same treatment. Punting this for now;
-   initial implementation targets the overlay/panel use case.
+5. **Rollout order** — overlay/panel content is the easiest first integration point, but
+  the target design is phase-agnostic. Decide whether to land overlay-first as an
+  implementation step or wire all affected phases up together.

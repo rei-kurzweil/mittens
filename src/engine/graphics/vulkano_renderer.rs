@@ -985,6 +985,7 @@ mod vulkano_backend {
             let mut pipeline_rendering = PipelineRenderingCreateInfo::default();
             pipeline_rendering.color_attachment_formats = vec![Some(color_format)];
             pipeline_rendering.depth_attachment_format = Some(VulkanoSwapchainState::DEPTH_FORMAT);
+            pipeline_rendering.stencil_attachment_format = Some(VulkanoSwapchainState::DEPTH_FORMAT);
 
             pipeline_ci.subpass = Some(PipelineSubpassType::BeginRendering(pipeline_rendering));
 
@@ -2102,7 +2103,12 @@ mod vulkano_backend {
                 layer_count: 1,
                 color_attachments: vec![Some(color_attachment_clear)],
                 depth_attachment: Some(depth_attachment_clear.clone()),
-                stencil_attachment: None,
+                stencil_attachment: Some(RenderingAttachmentInfo {
+                    load_op: AttachmentLoadOp::Clear,
+                    store_op: AttachmentStoreOp::DontCare,
+                    clear_value: Some(ClearValue::Stencil(0)),
+                    ..RenderingAttachmentInfo::image_view(depth_view.clone())
+                }),
                 ..Default::default()
             };
 
@@ -2675,7 +2681,12 @@ mod vulkano_backend {
                             clear_value: Some(ClearValue::Depth(1.0)),
                             ..RenderingAttachmentInfo::image_view(depth_view.clone())
                         }),
-                        stencil_attachment: None,
+                        stencil_attachment: Some(RenderingAttachmentInfo {
+                            load_op: AttachmentLoadOp::Clear,
+                            store_op: AttachmentStoreOp::DontCare,
+                            clear_value: Some(ClearValue::Stencil(0)),
+                            ..RenderingAttachmentInfo::image_view(depth_view.clone())
+                        }),
                         ..Default::default()
                     })?;
 
