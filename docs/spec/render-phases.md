@@ -56,11 +56,17 @@ The phases are ordered to balance correctness and performance:
 
 7. **Overlay** (instanced)
 	 - A separate pass drawn *after* all other phases.
-	 - Intended for gizmos, selection outlines, debug overlays, etc.
+	 - **Scope: gizmos and debug overlays only.** Transform gizmos, selection outlines, raycasting
+	   debug helpers — things that must always appear on top of the scene by design.
+	 - UI layout panels, inspector panels, text, buttons, and other application UI are **not**
+	   overlay. They belong in the opaque or transparent phases so that 3D scene geometry can
+	   occlude them naturally.
 	 - The renderer clears the depth attachment right before the overlay phase so overlay
 	 	 instances draw on top of the scene.
 	 - Overlay is **not** combined with background/opaque/cutout/transparent; it has its own
 	 	 draw lists and batches.
+	 - Stencil clipping (overflow: hidden) does **not** apply to the overlay phase. Gizmos
+	   are not clipped by UI scroll regions. Stencil clip applies to opaque and transparent.
 
 	 Post-processing note:
 	 - In the current non-post-process path, this means overlay is always-on-top and self-occludes
@@ -81,11 +87,23 @@ At a high level:
 
 - Background instances go into background draw lists (excluded from foreground lists).
 - Overlay instances go into the overlay draw list (excluded from all other lists).
+  **Only attach `OverlayComponent` to gizmos and debug visuals.**
 - Cutout instances go into the cutout list.
-- Foreground opaque instances go into the opaque list.
+- Foreground opaque instances go into the opaque list. **UI panels and layout elements belong here.**
 - Foreground transparent instances are split into:
 	- single-layer (instanced), or
-	- multi-layer (sorted per eye).
+	- multi-layer (sorted per eye). **Transparent UI (glass panels, fades) belongs here.**
+
+## `OverlayComponent` — correct and incorrect uses
+
+| Use case | Correct phase | Notes |
+|---|---|---|
+| Transform gizmo rings/axes | Overlay ✓ | Must stay on top of scene |
+| Selection outline | Overlay ✓ | Debug/editor helper |
+| Inspector panel | Opaque ✗→✓ | Should be occluded by 3D geometry |
+| World panel | Opaque ✗→✓ | Should be occluded by 3D geometry |
+| Layout quads / text / buttons | Opaque or transparent ✗→✓ | Same |
+| GLTF visualization node | Opaque ✗→✓ | Debug mesh, not always-on-top |
 
 ## Notes
 

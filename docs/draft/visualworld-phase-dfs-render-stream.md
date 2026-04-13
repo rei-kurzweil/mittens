@@ -305,14 +305,18 @@ For example:
 
 ```rust
 pub struct VisualWorld {
-    opaque_stream: PhaseRenderStream,
-    cutout_stream: PhaseRenderStream,
-    transparent_stream: PhaseRenderStream,
-    overlay_stream: PhaseRenderStream,
+    opaque_stream: PhaseRenderStream,       // UI panels, layout quads — stencil clip lives here
+    cutout_stream: PhaseRenderStream,       // alpha-tested, may also carry clipped UI
+    transparent_stream: PhaseRenderStream,  // transparent UI, fades
+    overlay_stream: PhaseRenderStream,      // gizmos only — no stencil clip needed
 }
 ```
 
 Each stream still references the same underlying `instances: Vec<VisualInstance>`.
+
+**Phase policy**: overlay is gizmos and debug only. UI layout elements belong in opaque or
+transparent so that scene geometry can occlude them. Stencil clip therefore applies primarily
+to opaque (and secondarily transparent), not overlay. See `docs/spec/render-phases.md`.
 
 ---
 
@@ -338,7 +342,9 @@ That breaks sibling clip correctness.
 ## Recommended First Implementation
 
 1. Keep `instances: Vec<VisualInstance>` as the canonical storage.
-2. Add per-phase DFS render streams in `VisualWorld`.
+2. Add per-phase DFS render streams in `VisualWorld`. **Start with `opaque_stream`** — that is
+   where stencil-clipped UI lives. `overlay_stream` can exist but degenerates to flat DrawBatch
+   ops for gizmos (no stencil clip in that phase).
 3. Represent streams initially as `Vec<RenderOp>`.
 4. Make `DrawBatch` ops reference ranges of instance indices rather than embedding copies.
 5. Use dirty flags to rebuild only when topology / clip / batch-affecting state changes.

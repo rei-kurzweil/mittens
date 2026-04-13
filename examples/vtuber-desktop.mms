@@ -167,8 +167,8 @@ ED {
         T {
             AVC {
                 head_bone("J_Bip_C_Neck")
-                forward_plus_z()
                 initial_yaw(0.0)
+                body_yaw_threshold(3.14 / 7.5)
 
                 T.position(0.0, -1.6, 0.0) {
                     GLTF.new("assets/models/pc-rei.hoodie.glb") { EM.on() }
