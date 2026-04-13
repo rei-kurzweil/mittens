@@ -103,6 +103,16 @@ impl RxMutationExecutor {
                     systems.remove_renderable(world, visuals, component);
                 }
             }
+            IntentValue::RegisterStencilClip { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_stencil_clip(world, visuals, component);
+                }
+            }
+            IntentValue::UnregisterStencilClip { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.unregister_stencil_clip(world, visuals, component);
+                }
+            }
 
             IntentValue::RegisterTransform { component_ids } => {
                 for &component in component_ids.iter() {

@@ -47,7 +47,13 @@ Vulkano gotchas already resolved:
 
 ---
 
-## Next 1 — Remove `OverlayComponent` from UI
+## ✅ Done (this session)
+
+- Next 1–5 implemented. See below for original spec.
+
+---
+
+## Next 1 — Remove `OverlayComponent` from UI ✅
 
 Files: `src/engine/ecs/system/inspector_system.rs`, `src/engine/ecs/system/gltf_system.rs`
 
@@ -66,7 +72,7 @@ and are occluded by 3D geometry.
 
 ---
 
-## Next 2 — `opaque_stream` on `VisualWorld`
+## Next 2 — `opaque_stream` on `VisualWorld` ✅
 
 File: `src/engine/graphics/visual_world.rs`
 
@@ -90,7 +96,7 @@ pub fn opaque_stream(&self) -> (&[RenderOp], &[u32])
 
 ---
 
-## Next 3 — `pipeline_opaque_clipped` / `pipeline_emissive_opaque_clipped`
+## Next 3 — `pipeline_opaque_clipped` / `pipeline_emissive_opaque_clipped` ✅
 
 File: `src/engine/graphics/vulkano_renderer.rs`
 
@@ -103,7 +109,7 @@ Add struct fields and initialize alongside the existing stencil pipelines.
 
 ---
 
-## Next 4 — Draw loop for opaque
+## Next 4 — Draw loop for opaque ✅
 
 File: `src/engine/graphics/vulkano_cbb.rs`, fn `record_opaque_draws`
 
@@ -122,7 +128,7 @@ use vulkano::command_buffer::StencilFaces;
 
 ---
 
-## Next 5 — ECS + Layout
+## Next 5 — ECS + Layout ✅
 
 - `StencilClipComponent` — new component
 - `RegisterStencilClip` / `UnregisterStencilClip` intents

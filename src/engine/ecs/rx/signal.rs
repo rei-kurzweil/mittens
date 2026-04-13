@@ -319,6 +319,12 @@ pub enum IntentValue {
     RemoveRenderable {
         component_ids: Vec<ComponentId>,
     },
+    RegisterStencilClip {
+        component_ids: Vec<ComponentId>,
+    },
+    UnregisterStencilClip {
+        component_ids: Vec<ComponentId>,
+    },
     RegisterTransform {
         component_ids: Vec<ComponentId>,
     },
@@ -547,6 +553,8 @@ impl IntentValue {
 
             IntentValue::RegisterRenderable { .. } => "register_renderable",
             IntentValue::RemoveRenderable { .. } => "remove_renderable",
+            IntentValue::RegisterStencilClip { .. } => "register_stencil_clip",
+            IntentValue::UnregisterStencilClip { .. } => "unregister_stencil_clip",
             IntentValue::RegisterTransform { .. } => "register_transform",
             IntentValue::UpdateTransformWorld { .. } => "update_transform_world",
             IntentValue::UpdateTransform { .. } => "update_transform",

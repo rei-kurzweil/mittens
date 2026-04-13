@@ -80,6 +80,8 @@ impl SignalPipelineProcessor {
             | IntentValue::MusicSetNote { component_ids, .. }
             | IntentValue::RegisterRenderable { component_ids }
             | IntentValue::RemoveRenderable { component_ids }
+            | IntentValue::RegisterStencilClip { component_ids }
+            | IntentValue::UnregisterStencilClip { component_ids }
             | IntentValue::RegisterTransform { component_ids }
             | IntentValue::UpdateTransform { component_ids, .. }
             | IntentValue::RemoveTransform { component_ids }
@@ -165,6 +167,8 @@ impl SignalPipelineProcessor {
             | IntentValue::MusicSetNote { component_ids, .. }
             | IntentValue::RegisterRenderable { component_ids }
             | IntentValue::RemoveRenderable { component_ids }
+            | IntentValue::RegisterStencilClip { component_ids }
+            | IntentValue::UnregisterStencilClip { component_ids }
             | IntentValue::RegisterTransform { component_ids }
             | IntentValue::UpdateTransform { component_ids, .. }
             | IntentValue::RemoveTransform { component_ids }

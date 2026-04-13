@@ -653,6 +653,81 @@ impl SystemWorld {
         self.raycast.notify_renderable_added(&*world, component);
     }
 
+    /// Register a StencilClipComponent: find the sibling RenderableComponent in the same
+    /// TC subtree, count ancestor clip depth, and mark the VisualInstance as a clip source.
+    pub fn register_stencil_clip(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        use crate::engine::ecs::component::{RenderableComponent, StencilClipComponent};
+
+        // Determine nesting depth by counting StencilClipComponent ancestors.
+        let mut depth: u8 = 0;
+        let mut cursor = world.parent_of(component);
+        while let Some(p) = cursor {
+            if world.get_component_by_id_as::<StencilClipComponent>(p).is_some() {
+                depth = depth.saturating_add(1);
+            }
+            cursor = world.parent_of(p);
+        }
+        let stencil_ref = depth + 1; // 1-indexed; 0 = unclipped
+
+        // Find the RenderableComponent in the parent TC's subtree.
+        let Some(parent_tc) = world.parent_of(component) else { return };
+        let handle = {
+            let mut found = None;
+            let mut stack: Vec<ComponentId> = world.children_of(parent_tc).to_vec();
+            while let Some(cid) = stack.pop() {
+                if let Some(r) = world.get_component_by_id_as::<RenderableComponent>(cid) {
+                    if let Some(h) = r.get_handle() {
+                        found = Some(h);
+                        break;
+                    }
+                }
+                for &ch in world.children_of(cid) {
+                    stack.push(ch);
+                }
+            }
+            found
+        };
+        if let Some(handle) = handle {
+            visuals.register_stencil_clip(handle, stencil_ref);
+        }
+    }
+
+    /// Unregister a StencilClipComponent: clear `is_stencil_clip` on the associated VisualInstance.
+    pub fn unregister_stencil_clip(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        use crate::engine::ecs::component::RenderableComponent;
+
+        let Some(parent_tc) = world.parent_of(component) else { return };
+        let handle = {
+            let mut found = None;
+            let mut stack: Vec<ComponentId> = world.children_of(parent_tc).to_vec();
+            while let Some(cid) = stack.pop() {
+                if let Some(r) = world.get_component_by_id_as::<RenderableComponent>(cid) {
+                    if let Some(h) = r.get_handle() {
+                        found = Some(h);
+                        break;
+                    }
+                }
+                for &ch in world.children_of(cid) {
+                    stack.push(ch);
+                }
+            }
+            found
+        };
+        if let Some(handle) = handle {
+            visuals.unregister_stencil_clip(handle);
+        }
+    }
+
     /// Remove a RenderableComponent instance from the RenderableSystem (and BVH).
     pub fn remove_renderable(
         &mut self,

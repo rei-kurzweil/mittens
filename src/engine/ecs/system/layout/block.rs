@@ -17,7 +17,8 @@ use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::{IntentValue, SignalEmitter};
 use crate::engine::ecs::component::{
-    ColorComponent, OpacityComponent, RenderableComponent, StyleComponent, TransformComponent,
+    ColorComponent, OpacityComponent, Overflow, RenderableComponent, StencilClipComponent,
+    StyleComponent, TransformComponent,
 };
 use super::measure::measure_items;
 
@@ -86,16 +87,20 @@ fn sync_bg_quad(
 
     let bg_style = children.iter().find_map(|&ch| {
         world.get_component_by_id_as::<StyleComponent>(ch)
-            .map(|s| (s.background_color, s.background_z))
+            .map(|s| (s.background_color, s.background_z, s.overflow))
     });
 
     let existing_bg = children.iter()
         .find(|&&ch| world.component_label(ch) == Some("__bg"))
         .copied();
 
+    let needs_clip = bg_style
+        .map(|(_, _, ov)| matches!(ov, Overflow::Hidden | Overflow::Scroll))
+        .unwrap_or(false);
+
     match (bg_style, existing_bg) {
         // background_color present — ensure __bg exists and position it.
-        (Some((Some(rgba), bg_z)), existing) => {
+        (Some((Some(rgba), bg_z, _)), existing) => {
             let bg_id = match existing {
                 Some(id) => id,
                 None => spawn_bg_quad(world, emit, tc_id, rgba),
@@ -123,10 +128,35 @@ fn sync_bg_quad(
                     scale: [box_width_gu, box_height_gu, 1.0],
                 },
             );
+
+            sync_stencil_clip(world, emit, bg_id, needs_clip);
         }
 
-        // background_color cleared — remove the stale __bg quad.
-        (Some((None, _)) | None, Some(bg_id)) => {
+        // overflow: Hidden/Scroll with no background_color — still need a clip quad.
+        (Some((None, bg_z, _)), existing) if needs_clip => {
+            let bg_id = match existing {
+                Some(id) => id,
+                // Spawn with transparent color so geometry exists for the stencil write.
+                None => spawn_bg_quad(world, emit, tc_id, [0.0, 0.0, 0.0, 0.0]),
+            };
+            emit.push_intent_now(
+                bg_id,
+                IntentValue::UpdateTransform {
+                    component_ids: vec![bg_id],
+                    translation: [
+                        box_width_gu / 2.0 - padding_left_gu - 0.5,
+                        padding_top_gu - box_height_gu / 2.0 + 0.5,
+                        bg_z,
+                    ],
+                    rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                    scale: [box_width_gu, box_height_gu, 1.0],
+                },
+            );
+            sync_stencil_clip(world, emit, bg_id, true);
+        }
+
+        // background_color cleared and no clip need — remove the stale __bg quad.
+        (Some((None, _, _)) | None, Some(bg_id)) => {
             emit.push_intent_now(
                 bg_id,
                 IntentValue::RemoveSubtree { component_ids: vec![bg_id] },
@@ -135,6 +165,36 @@ fn sync_bg_quad(
 
         // No background_color, no __bg — nothing to do.
         _ => {}
+    }
+}
+
+/// Attach or detach `StencilClipComponent` on `__bg_id` based on `needs_clip`.
+fn sync_stencil_clip(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    bg_id: ComponentId,
+    needs_clip: bool,
+) {
+    let clip_children: Vec<ComponentId> = world
+        .children_of(bg_id)
+        .iter()
+        .copied()
+        .filter(|&ch| world.get_component_by_id_as::<StencilClipComponent>(ch).is_some())
+        .collect();
+
+    let has_clip = !clip_children.is_empty();
+
+    if needs_clip && !has_clip {
+        let clip_id = world.add_component(StencilClipComponent::new());
+        let _ = world.add_child(bg_id, clip_id);
+        world.init_component_tree(clip_id, emit);
+    } else if !needs_clip && has_clip {
+        for clip_id in clip_children {
+            emit.push_intent_now(
+                clip_id,
+                IntentValue::RemoveSubtree { component_ids: vec![clip_id] },
+            );
+        }
     }
 }
 
