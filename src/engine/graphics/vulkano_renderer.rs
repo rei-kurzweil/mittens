@@ -290,6 +290,10 @@ mod vulkano_backend {
         pub pipeline_overlay_clipped: Arc<GraphicsPipeline>,
         /// Overlay draw gated by stencil EQUAL. For emissive materials.
         pub pipeline_emissive_overlay_clipped: Arc<GraphicsPipeline>,
+        /// Opaque draw gated by stencil EQUAL. Depth write ON. For non-emissive materials.
+        pub pipeline_opaque_clipped: Arc<GraphicsPipeline>,
+        /// Opaque draw gated by stencil EQUAL. Depth write ON. For emissive materials.
+        pub pipeline_emissive_opaque_clipped: Arc<GraphicsPipeline>,
 
         pub msaa_samples: SampleCount,
 
@@ -1240,10 +1244,24 @@ mod vulkano_backend {
 
             let mut pipeline_ci_emissive_overlay_clipped = pipeline_ci_emissive.clone();
             pipeline_ci_emissive_overlay_clipped.depth_stencil_state =
-                Some(clipped_depth_stencil);
-            pipeline_ci_emissive_overlay_clipped.dynamic_state = stencil_dynamic_state;
+                Some(clipped_depth_stencil.clone());
+            pipeline_ci_emissive_overlay_clipped.dynamic_state = stencil_dynamic_state.clone();
             let pipeline_emissive_overlay_clipped =
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci_emissive_overlay_clipped)?;
+
+            // Opaque clipped: identical depth_stencil (depth write ON + stencil EQUAL),
+            // based on the opaque pipeline_ci so blend state matches opaque phase.
+            let mut pipeline_ci_opaque_clipped = pipeline_ci.clone();
+            pipeline_ci_opaque_clipped.depth_stencil_state = Some(clipped_depth_stencil.clone());
+            pipeline_ci_opaque_clipped.dynamic_state = stencil_dynamic_state.clone();
+            let pipeline_opaque_clipped =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_opaque_clipped)?;
+
+            let mut pipeline_ci_emissive_opaque_clipped = pipeline_ci_emissive.clone();
+            pipeline_ci_emissive_opaque_clipped.depth_stencil_state = Some(clipped_depth_stencil);
+            pipeline_ci_emissive_opaque_clipped.dynamic_state = stencil_dynamic_state;
+            let pipeline_emissive_opaque_clipped =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_emissive_opaque_clipped)?;
 
             let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
                 device.clone(),
@@ -1329,6 +1347,8 @@ mod vulkano_backend {
                 pipeline_stencil_decr,
                 pipeline_overlay_clipped,
                 pipeline_emissive_overlay_clipped,
+                pipeline_opaque_clipped,
+                pipeline_emissive_opaque_clipped,
 
                 msaa_samples,
 
@@ -2045,8 +2065,8 @@ mod vulkano_backend {
             };
 
             // --- Opaque pass ---
-            // Build instance buffer in draw order so each DrawBatch maps to a contiguous range.
-            let instance_count = visual_world.draw_order().len();
+            // Buffer indexed by opaque_stream().1; use its length for cache invalidation.
+            let instance_count = visual_world.opaque_stream().1.len();
 
             // --- Background pass ---
             // Background instances are stored in their own draw order/batches.
@@ -2060,7 +2080,8 @@ mod vulkano_backend {
             let cutout_instance_count = visual_world.cutout_order().len();
 
             // --- Overlay pass ---
-            let overlay_instance_count = visual_world.overlay_order().len();
+            // Buffer indexed by overlay_stream().1; use its length for cache invalidation.
+            let overlay_instance_count = visual_world.overlay_stream().1.len();
 
             // --- Emissive-only post-process source passes ---
             let emissive_instance_count = visual_world.emissive_draw_order().len();
@@ -2071,7 +2092,8 @@ mod vulkano_backend {
                 || self.cached_instance_buffer.is_none()
                 || self.cached_instance_count != instance_count;
 
-            // `Buffer::from_iter` with an empty iterator can panic inside Vulkano.
+            // Opaque instance buffer indexed by opaque_stream().1 (not draw_order) so the
+            // stream's batch.start offsets address the correct slot in the buffer.
             let instance_buffer: Subbuffer<[InstanceData]> = if !need_instance_buffer {
                 self.cached_instance_buffer
                     .as_ref()
@@ -2080,7 +2102,7 @@ mod vulkano_backend {
             } else {
                 let buf = self.build_instance_buffer_for_order_or_dummy(
                     &*visual_world,
-                    visual_world.draw_order(),
+                    visual_world.opaque_stream().1,
                 )?;
 
                 self.cached_instance_count = instance_count;
@@ -2139,12 +2161,13 @@ mod vulkano_backend {
             let need_overlay_instance_buffer = instance_data_dirty
                 || draw_cache_rebuilt
                 || self.cached_overlay_instance_count != overlay_instance_count;
+            // Overlay buffer indexed by overlay_stream().1 so batch.start offsets are correct.
             let overlay_instance_buffer = if !need_overlay_instance_buffer {
                 self.cached_overlay_instance_buffer.clone()
             } else {
                 let buf = self.build_instance_buffer_for_order_opt(
                     &*visual_world,
-                    visual_world.overlay_order(),
+                    visual_world.overlay_stream().1,
                 )?;
                 self.cached_overlay_instance_count = overlay_instance_count;
                 self.cached_overlay_instance_buffer = buf.clone();

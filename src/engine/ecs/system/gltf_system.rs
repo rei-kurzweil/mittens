@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::{
     ColorComponent, EditorComponent, EmissiveComponent, GLTFComponent, MeshComponent,
-    OverlayComponent, RaycastableComponent, RenderableComponent, SignalRouteUpwardComponent,
+    RaycastableComponent, RenderableComponent, SignalRouteUpwardComponent,
     SkinnedMeshComponent, TextureComponent, TransformComponent,
 };
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
@@ -959,19 +959,13 @@ impl GLTFSystem {
         if with_visualized_transforms && !spawned_renderable {
             const VIZ_BOX_SCALE: f32 = 0.03;
 
-            let overlay = world.add_component_boxed_named(
-                format!("viz_overlay:{}", node_display_name),
-                Box::new(OverlayComponent::new()),
-            );
-            let _ = world.add_child(this_transform, overlay);
-
             let mut viz_tc = TransformComponent::new();
             viz_tc.transform.scale = [VIZ_BOX_SCALE, VIZ_BOX_SCALE, VIZ_BOX_SCALE];
             viz_tc.transform.recompute_model();
 
             let viz_transform = world
                 .add_component_boxed_named(format!("viz:{}", node_display_name), Box::new(viz_tc));
-            let _ = world.add_child(overlay, viz_transform);
+            let _ = world.add_child(this_transform, viz_transform);
 
             // Treat viz transforms as interaction proxies: route UpdateTransform intents to the
             // nearest ancestor Transform.

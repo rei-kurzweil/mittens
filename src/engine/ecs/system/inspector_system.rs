@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::{
     ColorComponent, EmissiveComponent, HtmlElementComponent, InspectorPanelComponent,
-    LayoutComponent, OpacityComponent, OverlayComponent, RaycastableComponent,
+    LayoutComponent, OpacityComponent, RaycastableComponent,
     RaycastableShapeComponent, RaycastableShapeType, RenderableComponent, ScrollingComponent,
     SelectableComponent, StyleComponent, TransformComponent,
     TransformGizmoComponent, WorldPanelComponent,
@@ -479,7 +479,7 @@ fn spawn_panel_title_bar(
 /// Spawn an invisible drag-capture quad in front of a panel.
 ///
 /// `panel_width` and `panel_height` are in world/overlay units. The quad is
-/// attached as a child of `parent` (the panel's OverlayComponent node) at
+/// attached as a child of `parent` at
 /// `pos` + a small forward Z offset so it sits in front of the row content.
 ///
 /// `RaycastableComponent::drag_only()` means drags land here while clicks
@@ -553,10 +553,6 @@ fn spawn_world_panel(
         "world_panel_anchor",
         Box::new(SelectableComponent::off()),
     );
-    let wpo = world.add_component_boxed_named(
-        "world_panel_overlay",
-        Box::new(OverlayComponent::new()),
-    );
     let wpc = world.add_component_boxed_named(
         "world_panel",
         Box::new(WorldPanelComponent::new()),
@@ -580,11 +576,9 @@ fn spawn_world_panel(
     );
     let wp_height = PAGE_SIZE as f32 * ROW_HEIGHT;
 
-    let _ = world.add_child(wpa, wpo);
-
     // Panel root + LayoutComponent + header slot (with title bar visuals + gizmo).
     let (wp_t, layout_root) =
-        spawn_panel_title_bar(world, wpo, pos, wp_width, wp_height, "World");
+        spawn_panel_title_bar(world, wpa, pos, wp_width, wp_height, "World");
 
     // ── Content slot — second flex item (flex_grow=1) ────────────────────
     // LayoutSystem will position this at [0, -TITLE_BAR_HEIGHT, 0].
@@ -649,10 +643,6 @@ fn spawn_inspector_panel(
         "inspector_panel_anchor",
         Box::new(SelectableComponent::off()),
     );
-    let ipo = world.add_component_boxed_named(
-        "inspector_panel_overlay",
-        Box::new(OverlayComponent::new()),
-    );
     let ipc = world.add_component_boxed_named(
         "inspector_panel",
         Box::new(InspectorPanelComponent::new()),
@@ -673,10 +663,8 @@ fn spawn_inspector_panel(
     );
     let ip_height = PAGE_SIZE as f32 * ROW_HEIGHT;
 
-    let _ = world.add_child(ipa, ipo);
-
     let (ip_t, layout_root) =
-        spawn_panel_title_bar(world, ipo, pos, ip_width, ip_height, "Inspector");
+        spawn_panel_title_bar(world, ipa, pos, ip_width, ip_height, "Inspector");
 
     let content_slot = world.add_component_boxed_named(
         "content_slot",

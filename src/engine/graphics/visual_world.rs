@@ -172,6 +172,10 @@ pub struct VisualWorld {
     overlay_stream: Vec<RenderOp>,
     overlay_stream_instances: Vec<u32>,
 
+    // DFS-ordered render stream for the opaque phase (mirrors overlay_stream).
+    opaque_stream: Vec<RenderOp>,
+    opaque_stream_instances: Vec<u32>,
+
     // Transparent draw data.
     // - Single-layer: cached (order does not depend on view), instanced.
     transparent_single_draw_order: Vec<u32>,
@@ -298,6 +302,9 @@ impl Default for VisualWorld {
 
             overlay_stream: Vec::new(),
             overlay_stream_instances: Vec::new(),
+
+            opaque_stream: Vec::new(),
+            opaque_stream_instances: Vec::new(),
 
             transparent_single_draw_order: Vec::new(),
             transparent_single_draw_batches: Vec::new(),
@@ -661,7 +668,7 @@ impl VisualWorld {
     /// - Non-clip instances at depth D → `DrawBatch` at stencil_ref D.
     /// - Clip sources at depth D → `EnterClip`, then their visual draw at stencil_ref D+1,
     ///   then all content at depth D+1 (recursed), then `ExitClip`.
-    fn build_overlay_render_stream(
+    fn build_phase_render_stream(
         instances: &[VisualInstance],
         overlay_order: &[u32],
         out_ops: &mut Vec<RenderOp>,
@@ -1196,6 +1203,13 @@ impl VisualWorld {
         (&self.overlay_stream, &self.overlay_stream_instances)
     }
 
+    /// DFS-ordered render stream for the opaque phase.
+    ///
+    /// Returns `(ops, instance_indices)`.
+    pub fn opaque_stream(&self) -> (&[RenderOp], &[u32]) {
+        (&self.opaque_stream, &self.opaque_stream_instances)
+    }
+
     /// Indices into `instances()` where `is_stencil_clip=true`, sorted by stencil_ref ascending.
     /// Used by the renderer to inject stencil write/restore draws around clipped batch groups.
     pub fn stencil_clip_order(&self) -> &[u32] {
@@ -1341,15 +1355,18 @@ impl VisualWorld {
             &mut self.background_occluded_lit_batches,
         );
 
-        // Sort by (material, mesh, texture, filtering). Stable sort keeps relative order for identical keys.
+        // Sort by (stencil_ref, material, tex, mesh, filtering) so stencil-clipped
+        // instances group with their clip region. tex before mesh matches overlay convention
+        // (untextured quads draw before textured glyphs at same depth).
         self.draw_order.sort_by_key(|&i| {
             let inst = self.instances[i as usize];
             let r = inst.renderable;
-            let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
+            let tex = inst.texture.map_or(0, |t| t.0.wrapping_add(1));
             (
+                inst.stencil_ref,
                 r.material.0,
-                r.mesh.0,
                 tex,
+                r.mesh.0,
                 inst.texture_filtering as u8,
                 sanitize_quant_steps(inst.quant_steps).to_bits(),
             )
@@ -1357,6 +1374,14 @@ impl VisualWorld {
 
         let draw_order = &self.draw_order;
         Self::build_draw_batches_for_order(instances, draw_order, &mut self.draw_batches);
+
+        // Build the DFS render stream for the opaque phase.
+        Self::build_phase_render_stream(
+            instances,
+            &self.draw_order,
+            &mut self.opaque_stream,
+            &mut self.opaque_stream_instances,
+        );
 
         self.emissive_draw_order.extend(
             self.draw_order
@@ -1442,7 +1467,7 @@ impl VisualWorld {
         Self::build_draw_batches_for_order(instances, overlay_order, &mut self.overlay_batches);
 
         // Build the DFS render stream for the overlay phase.
-        Self::build_overlay_render_stream(
+        Self::build_phase_render_stream(
             instances,
             &self.overlay_order,
             &mut self.overlay_stream,
