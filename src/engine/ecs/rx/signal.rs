@@ -137,15 +137,6 @@ pub enum EventSignal {
         selected: Option<ComponentId>,
     },
 
-    /// A `ScrollingComponent`'s visible window moved to a new row.
-    ///
-    /// Emitted when `window_start()` crosses an integer boundary during a `DragMove`.
-    /// Scope: the `ScrollingComponent` itself.
-    ScrollChanged {
-        scroll_component: ComponentId,
-        window_start: usize,
-        window_end: usize,
-    },
 }
 
 impl EventSignal {
@@ -160,7 +151,6 @@ impl EventSignal {
             EventSignal::DragEnd { .. } => SignalKind::DragEnd,
             EventSignal::Click { .. } => SignalKind::Click,
             EventSignal::SelectionChanged { .. } => SignalKind::SelectionChanged,
-            EventSignal::ScrollChanged { .. } => SignalKind::ScrollChanged,
         }
     }
 }
@@ -640,7 +630,6 @@ pub enum SignalKind {
     DragEnd,
     Click,
     SelectionChanged,
-    ScrollChanged,
 }
 
 /// Optional timing metadata on the signal envelope.

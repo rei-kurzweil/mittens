@@ -9,7 +9,7 @@ use crate::engine::ecs::component::Component;
 /// SelectableComponent::off()
 ///   OverlayComponent
 ///     InspectorPanelComponent    ← this component
-///       TransformComponent       ← rows_anchor: world-space position
+///       TransformComponent       ← rows_track: moved by ScrollSystem
 ///         [row TransformComponents added dynamically]
 /// ```
 #[derive(Debug, Default, Clone)]
@@ -20,18 +20,12 @@ pub struct InspectorPanelComponent {
     /// Currently inspected component (drives panel content).
     pub inspected: Option<ComponentId>,
 
-    /// First visible row index (for scrolling).
-    pub scroll_offset_rows: i32,
+    /// Runtime: TransformComponent that row content is attached to.
+    pub(crate) rows_track: Option<ComponentId>,
 
-    /// Runtime: TransformComponent that row rows are attached to.
-    pub(crate) rows_anchor: Option<ComponentId>,
-
-    /// Runtime: LayoutComponent (child of rows_anchor) that LayoutSystem uses to
+    /// Runtime: LayoutComponent (child of rows_track) that LayoutSystem uses to
     /// measure and position row TCs.
     pub(crate) rows_layout: Option<ComponentId>,
-
-    /// World-space base position of `rows_anchor` (set at panel spawn time).
-    pub(crate) rows_anchor_base_pos: [f32; 3],
 
     /// Runtime: current row root TransformComponents (for cleanup on rebuild).
     pub(crate) row_roots: Vec<ComponentId>,

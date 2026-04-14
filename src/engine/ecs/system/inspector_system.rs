@@ -4,10 +4,10 @@ use crate::engine::ecs::component::{
     RaycastableShapeComponent, RaycastableShapeType, RenderableComponent, ScrollingComponent,
     SelectableComponent, StyleComponent, TransformComponent,
     TransformGizmoComponent, WorldPanelComponent,
-    style::{EdgeInsets, SizeDimension},
+    style::{EdgeInsets, Overflow, SizeDimension},
 };
 use crate::engine::ecs::system::editor_system::select_editor_target;
-use crate::engine::ecs::system::LayoutSystem;
+use crate::engine::ecs::system::{LayoutSystem, ScrollSystem};
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World,
@@ -63,6 +63,7 @@ impl InspectorSystem {
     pub fn setup_panels_for_editor(
         &mut self,
         rx: &mut RxWorld,
+        scroll: &mut ScrollSystem,
         world: &mut World,
         emit: &mut dyn SignalEmitter,
         editor_root: ComponentId,
@@ -93,8 +94,11 @@ impl InspectorSystem {
         let (ipc_id, ipa_id, isc_id) =
             spawn_inspector_panel(world, emit, editor_root, inspector_pos);
 
-        rebuild_world_panel(world, emit, wpc_id, editor_root, None, 0);
-        rebuild_inspector_panel(world, emit, ipc_id, None, 0);
+        scroll.install_drag_scrolling(rx, wpa_id, wsc_id);
+        scroll.install_drag_scrolling(rx, ipa_id, isc_id);
+
+        rebuild_world_panel(world, emit, wpc_id, wsc_id, editor_root, None);
+        rebuild_inspector_panel(world, emit, ipc_id, isc_id, None);
 
         // --- World panel: Click on a row → select that node ---
         rx.add_handler_closure(
@@ -106,175 +110,21 @@ impl InspectorSystem {
                 };
                 let renderable = *renderable;
 
-                let (row_roots, row_to_node, window_start) = {
+                let (row_roots, row_to_node) = {
                     let Some(wpc) = world.get_component_by_id_as::<WorldPanelComponent>(wpc_id)
                     else {
                         return;
                     };
-                    (
-                        wpc.row_roots.clone(),
-                        wpc.row_to_node.clone(),
-                        wpc.scroll_offset_rows as usize,
-                    )
+                    (wpc.row_roots.clone(), wpc.row_to_node.clone())
                 };
 
                 let Some(panel_idx) = find_ancestor_in_list(world, renderable, &row_roots) else {
                     return;
                 };
-                let global_idx = window_start + panel_idx;
                 let Some(&node_id) = row_to_node.get(panel_idx) else {
                     return;
                 };
-                let _ = global_idx; // used for future reference
                 select_editor_target(world, emit, editor_root, node_id, false);
-            },
-        );
-
-        // --- World panel: DragMove on scroll anchor → smooth scroll ---
-        rx.add_handler_closure(
-            SignalKind::DragMove,
-            wpa_id,
-            move |world, emit, env| {
-                let Some(EventSignal::DragMove { delta_world, .. }) = env.event.as_ref() else {
-                    return;
-                };
-                // Negate dy: dragging down (negative world-Y delta) should decrease
-                // scroll_offset (reveal earlier items), matching direct-manipulation feel.
-                let dy = -delta_world[1];
-                let (new_start, window_changed, sub_y) = {
-                    let Some(sc) =
-                        world.get_component_by_id_as_mut::<ScrollingComponent>(wsc_id)
-                    else {
-                        return;
-                    };
-                    let Some((s, _e, wc)) = sc.apply_drag(dy) else { return };
-                    (s, wc, sc.sub_row_y_offset())
-                };
-                // Rebuild rows synchronously when the window changes so content and
-                // anchor offset are always consistent within the same frame.
-                if window_changed {
-                    if let Some(wpc) =
-                        world.get_component_by_id_as_mut::<WorldPanelComponent>(wpc_id)
-                    {
-                        wpc.scroll_offset_rows = new_start as i32;
-                    }
-                    let sel = world
-                        .get_component_by_id_as::<WorldPanelComponent>(wpc_id)
-                        .and_then(|w| {
-                            let er = w.editor_root?;
-                            world
-                                .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(er)
-                                .and_then(|ed| ed.selected)
-                        });
-                    rebuild_world_panel(world, emit, wpc_id, editor_root, sel, new_start);
-                }
-                // rows_anchor.y = base + sub_y gives a continuous offset across window
-                // boundaries: when window_start increments, panel_i decrements by 1
-                // (-item_h), and sub_y resets by -item_h, so they cancel perfectly.
-                let (rows_anchor, base_pos) = {
-                    let Some(wpc) = world.get_component_by_id_as::<WorldPanelComponent>(wpc_id)
-                    else {
-                        return;
-                    };
-                    (wpc.rows_anchor, wpc.rows_anchor_base_pos)
-                };
-                if let Some(ra) = rows_anchor {
-                    emit.push_intent_now(
-                        ra,
-                        IntentValue::UpdateTransform {
-                            component_ids: vec![ra],
-                            translation: [base_pos[0], base_pos[1] + sub_y, base_pos[2]],
-                            rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
-                            scale: [1.0, 1.0, 1.0],
-                        },
-                    );
-                }
-            },
-        );
-
-        // --- World panel: ScrollChanged → rebuild rows for new window ---
-        rx.add_handler_closure(
-            SignalKind::ScrollChanged,
-            wsc_id,
-            move |world, emit, env| {
-                let Some(EventSignal::ScrollChanged { window_start, .. }) = env.event.as_ref()
-                else {
-                    return;
-                };
-                let ws = *window_start;
-                let sel = world
-                    .get_component_by_id_as::<WorldPanelComponent>(wpc_id)
-                    .and_then(|w| {
-                        // Retrieve the editor selection via EditorComponent.
-                        let er = w.editor_root?;
-                        world
-                            .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(er)
-                            .and_then(|ed| ed.selected)
-                    });
-                rebuild_world_panel(world, emit, wpc_id, editor_root, sel, ws);
-            },
-        );
-
-        // --- Inspector panel: DragMove → smooth scroll ---
-        rx.add_handler_closure(
-            SignalKind::DragMove,
-            ipa_id,
-            move |world, emit, env| {
-                let Some(EventSignal::DragMove { delta_world, .. }) = env.event.as_ref() else {
-                    return;
-                };
-                let dy = -delta_world[1];
-                let (new_start, window_changed, sub_y) = {
-                    let Some(sc) =
-                        world.get_component_by_id_as_mut::<ScrollingComponent>(isc_id)
-                    else {
-                        return;
-                    };
-                    let Some((s, _e, wc)) = sc.apply_drag(dy) else { return };
-                    (s, wc, sc.sub_row_y_offset())
-                };
-                if window_changed {
-                    let sel = world
-                        .get_component_by_id_as::<InspectorPanelComponent>(ipc_id)
-                        .and_then(|i| i.inspected);
-                    rebuild_inspector_panel(world, emit, ipc_id, sel, new_start);
-                }
-                let (rows_anchor, base_pos) = {
-                    let Some(ipc) =
-                        world.get_component_by_id_as::<InspectorPanelComponent>(ipc_id)
-                    else {
-                        return;
-                    };
-                    (ipc.rows_anchor, ipc.rows_anchor_base_pos)
-                };
-                if let Some(ra) = rows_anchor {
-                    emit.push_intent_now(
-                        ra,
-                        IntentValue::UpdateTransform {
-                            component_ids: vec![ra],
-                            translation: [base_pos[0], base_pos[1] + sub_y, base_pos[2]],
-                            rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
-                            scale: [1.0, 1.0, 1.0],
-                        },
-                    );
-                }
-            },
-        );
-
-        // --- Inspector panel: ScrollChanged → rebuild ---
-        rx.add_handler_closure(
-            SignalKind::ScrollChanged,
-            isc_id,
-            move |world, emit, env| {
-                let Some(EventSignal::ScrollChanged { window_start, .. }) = env.event.as_ref()
-                else {
-                    return;
-                };
-                let ws = *window_start;
-                let sel = world
-                    .get_component_by_id_as::<InspectorPanelComponent>(ipc_id)
-                    .and_then(|i| i.inspected);
-                rebuild_inspector_panel(world, emit, ipc_id, sel, ws);
             },
         );
 
@@ -289,32 +139,15 @@ impl InspectorSystem {
                 };
                 let selected = *selected;
 
-                // Reset world panel scroll on selection change.
-                let wp_ws = if let Some(sc) =
-                    world.get_component_by_id_as_mut::<ScrollingComponent>(wsc_id)
-                {
+                if let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(wsc_id) {
                     sc.scroll_offset = 0.0;
-                    sc.last_window_start = 0;
-                    0
-                } else {
-                    0
                 };
-                if let Some(wpc) = world.get_component_by_id_as_mut::<WorldPanelComponent>(wpc_id)
-                {
-                    wpc.scroll_offset_rows = 0;
+                if let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(isc_id) {
+                    sc.scroll_offset = 0.0;
                 }
 
-                rebuild_world_panel(world, emit, wpc_id, editor_root, selected, wp_ws);
-                rebuild_inspector_panel(world, emit, ipc_id, selected, 0);
-
-                // Update ScrollingComponent.total_items for the world panel.
-                let nodes = collect_visible_nodes(world, editor_root, MAX_DEPTH);
-                if let Some(sc) =
-                    world.get_component_by_id_as_mut::<ScrollingComponent>(wsc_id)
-                {
-                    sc.total_items = nodes.len();
-                    sc.clamp_to_total();
-                }
+                rebuild_world_panel(world, emit, wpc_id, wsc_id, editor_root, selected);
+                rebuild_inspector_panel(world, emit, ipc_id, isc_id, selected);
             },
         );
     }
@@ -549,6 +382,13 @@ fn spawn_world_panel(
     editor_root: ComponentId,
     pos: (f32, f32, f32),
 ) -> (ComponentId, ComponentId, ComponentId) {
+    let wp_width = LayoutSystem::estimate_panel_width(
+        crate::engine::ecs::component::TextComponent::DEFAULT_WRAP_AT,
+        TEXT_SCALE,
+        MAX_DEPTH as f32 * INDENT_UNIT,
+    );
+    let wp_height = PAGE_SIZE as f32 * ROW_HEIGHT;
+
     let wpa = world.add_component_boxed_named(
         "world_panel_anchor",
         Box::new(SelectableComponent::off()),
@@ -559,22 +399,12 @@ fn spawn_world_panel(
     );
     let wsc = world.add_component_boxed_named(
         "world_panel_scroll",
-        Box::new(ScrollingComponent::new(ROW_HEIGHT, PAGE_SIZE)),
+        Box::new(ScrollingComponent::new(wp_height, wp_height)),
     );
-    // rows_anchor is at local [0, 0, 0] within the content slot.
-    // The LayoutSystem positions the content slot below the title bar,
-    // so rows_anchor_base_pos is the zero vector.
     let wpr = world.add_component_boxed_named(
-        "world_panel_rows",
+        "world_panel_rows_track",
         Box::new(TransformComponent::new()),
     );
-
-    let wp_width = LayoutSystem::estimate_panel_width(
-        crate::engine::ecs::component::TextComponent::DEFAULT_WRAP_AT,
-        TEXT_SCALE,
-        MAX_DEPTH as f32 * INDENT_UNIT,
-    );
-    let wp_height = PAGE_SIZE as f32 * ROW_HEIGHT;
 
     // Panel root + LayoutComponent + header slot (with title bar visuals + gizmo).
     let (wp_t, layout_root) =
@@ -591,7 +421,11 @@ fn spawn_world_panel(
     // Style alone is sufficient — block is the layout default when no display is set.
     let content_style = world.add_component_boxed_named(
         "content_style",
-        Box::new(StyleComponent::new()), // height: Auto fills remaining container space
+        Box::new({
+            let mut s = StyleComponent::new();
+            s.overflow = Overflow::Scroll;
+            s
+        }),
     );
 
     let _ = world.add_child(layout_root, content_slot);
@@ -621,14 +455,15 @@ fn spawn_world_panel(
 
     if let Some(c) = world.get_component_by_id_as_mut::<WorldPanelComponent>(wpc) {
         c.editor_root = Some(editor_root);
-        c.rows_anchor = Some(wpr);
+        c.rows_track = Some(wpr);
         c.rows_layout = Some(wpr_layout);
-        // rows_anchor is at [0,0,0] relative to content_slot.
-        // LayoutSystem handles the title-bar offset by positioning content_slot.
-        c.rows_anchor_base_pos = [0.0, 0.0, 0.0];
+    }
+    if let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(wsc) {
+        sc.set_track(wpr, [0.0, 0.0, 0.0]);
     }
 
     world.init_component_tree(wpa, emit);
+    ScrollSystem::sync_component(world, emit, wsc);
     (wpc, wpa, wsc)
 }
 
@@ -639,6 +474,13 @@ fn spawn_inspector_panel(
     editor_root: ComponentId,
     pos: (f32, f32, f32),
 ) -> (ComponentId, ComponentId, ComponentId) {
+    let ip_width = LayoutSystem::estimate_panel_width(
+        crate::engine::ecs::component::TextComponent::DEFAULT_WRAP_AT,
+        TEXT_SCALE,
+        0.0,
+    );
+    let ip_height = PAGE_SIZE as f32 * ROW_HEIGHT;
+
     let ipa = world.add_component_boxed_named(
         "inspector_panel_anchor",
         Box::new(SelectableComponent::off()),
@@ -649,19 +491,12 @@ fn spawn_inspector_panel(
     );
     let isc = world.add_component_boxed_named(
         "inspector_panel_scroll",
-        Box::new(ScrollingComponent::new(ROW_HEIGHT, PAGE_SIZE)),
+        Box::new(ScrollingComponent::new(ip_height, ip_height)),
     );
     let ipr = world.add_component_boxed_named(
-        "inspector_panel_rows",
+        "inspector_panel_rows_track",
         Box::new(TransformComponent::new()),
     );
-
-    let ip_width = LayoutSystem::estimate_panel_width(
-        crate::engine::ecs::component::TextComponent::DEFAULT_WRAP_AT,
-        TEXT_SCALE,
-        0.0,
-    );
-    let ip_height = PAGE_SIZE as f32 * ROW_HEIGHT;
 
     let (ip_t, layout_root) =
         spawn_panel_title_bar(world, ipa, pos, ip_width, ip_height, "Inspector");
@@ -672,7 +507,11 @@ fn spawn_inspector_panel(
     );
     let content_style = world.add_component_boxed_named(
         "content_style",
-        Box::new(StyleComponent::new()), // height: Auto fills remaining container space
+        Box::new({
+            let mut s = StyleComponent::new();
+            s.overflow = Overflow::Scroll;
+            s
+        }),
     );
 
     let _ = world.add_child(layout_root, content_slot);
@@ -695,12 +534,15 @@ fn spawn_inspector_panel(
 
     if let Some(c) = world.get_component_by_id_as_mut::<InspectorPanelComponent>(ipc) {
         c.editor_root = Some(editor_root);
-        c.rows_anchor = Some(ipr);
+        c.rows_track = Some(ipr);
         c.rows_layout = Some(ipr_layout);
-        c.rows_anchor_base_pos = [0.0, 0.0, 0.0];
+    }
+    if let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(isc) {
+        sc.set_track(ipr, [0.0, 0.0, 0.0]);
     }
 
     world.init_component_tree(ipa, emit);
+    ScrollSystem::sync_component(world, emit, isc);
     (ipc, ipa, isc)
 }
 
@@ -712,17 +554,17 @@ fn rebuild_world_panel(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     wpc_id: ComponentId,
+    wsc_id: ComponentId,
     editor_root: ComponentId,
     selected: Option<ComponentId>,
-    window_start: usize,
 ) {
-    let (rows_anchor, rows_layout_id) = {
+    let (rows_track, rows_layout_id) = {
         let Some(wpc) = world.get_component_by_id_as::<WorldPanelComponent>(wpc_id) else {
             return;
         };
-        (wpc.rows_anchor, wpc.rows_layout)
+        (wpc.rows_track, wpc.rows_layout)
     };
-    let Some(rows_anchor) = rows_anchor else { return };
+    let Some(rows_track) = rows_track else { return };
     let Some(rows_layout_id) = rows_layout_id else { return };
 
     // Clear current row children from the layout root.
@@ -736,17 +578,11 @@ fn rebuild_world_panel(
     }
 
     let nodes = collect_visible_nodes(world, editor_root, MAX_DEPTH);
-    let total = nodes.len();
-    let win_start = window_start.min(total.saturating_sub(1));
-    let win_end = (win_start + PAGE_SIZE).min(total);
-    let window = &nodes[win_start..win_end];
-    let _ = window.len();
-
     let highlighted = find_highlighted(selected, &nodes, world);
     let mut new_rows = Vec::new();
     let mut new_row_to_node = Vec::new();
 
-    for (panel_i, (node_id, depth, label)) in window.iter().enumerate() {
+    for (panel_i, (node_id, depth, label)) in nodes.iter().enumerate() {
         let is_highlighted = highlighted == Some(*node_id);
         let text = if is_highlighted { format!("> {label}") } else { label.clone() };
         let text_color = if is_highlighted { HIGHLIGHT_COLOR } else { TEXT_COLOR };
@@ -799,7 +635,7 @@ fn rebuild_world_panel(
         new_row_to_node.push(*node_id);
     }
 
-    world.init_component_tree(rows_anchor, emit);
+    world.init_component_tree(rows_track, emit);
 
     // Mark the row layout dirty so LayoutSystem repositions rows next tick.
     if let Some(lc) = world.get_component_by_id_as_mut::<LayoutComponent>(rows_layout_id) {
@@ -810,22 +646,24 @@ fn rebuild_world_panel(
         wpc.row_roots = new_rows;
         wpc.row_to_node = new_row_to_node;
     }
+
+    ScrollSystem::set_content_height(world, emit, wsc_id, nodes.len() as f32 * ROW_HEIGHT);
 }
 
 fn rebuild_inspector_panel(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     ipc_id: ComponentId,
+    isc_id: ComponentId,
     selected: Option<ComponentId>,
-    window_start: usize,
 ) {
-    let (rows_anchor, rows_layout_id) = {
+    let (rows_track, rows_layout_id) = {
         let Some(ipc) = world.get_component_by_id_as::<InspectorPanelComponent>(ipc_id) else {
             return;
         };
-        (ipc.rows_anchor, ipc.rows_layout)
+        (ipc.rows_track, ipc.rows_layout)
     };
-    let Some(rows_anchor) = rows_anchor else { return };
+    let Some(rows_track) = rows_track else { return };
     let Some(rows_layout_id) = rows_layout_id else { return };
 
     let old_children: Vec<ComponentId> = world.children_of(rows_layout_id).to_vec();
@@ -848,14 +686,8 @@ fn rebuild_inspector_panel(
         vec![]
     };
 
-    let total = lines.len();
-    let win_start = window_start.min(total.saturating_sub(1).max(0));
-    let win_end = (win_start + PAGE_SIZE).min(total);
-    let window = &lines[win_start..win_end];
-    let _ = window.len();
-
     let mut new_rows = Vec::new();
-    for (panel_i, line) in window.iter().enumerate() {
+    for (panel_i, line) in lines.iter().enumerate() {
         let row_t = world.add_component_boxed_named(
             format!("ip_row_{panel_i}"),
             Box::new(TransformComponent::new().with_scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE)),
@@ -894,7 +726,7 @@ fn rebuild_inspector_panel(
         new_rows.push(row_t);
     }
 
-    world.init_component_tree(rows_anchor, emit);
+    world.init_component_tree(rows_track, emit);
 
     if let Some(lc) = world.get_component_by_id_as_mut::<LayoutComponent>(rows_layout_id) {
         lc.dirty = true;
@@ -904,6 +736,8 @@ fn rebuild_inspector_panel(
         ipc.row_roots = new_rows;
         ipc.inspected = selected;
     }
+
+    ScrollSystem::set_content_height(world, emit, isc_id, lines.len() as f32 * ROW_HEIGHT);
 }
 
 // ---------------------------------------------------------------------------

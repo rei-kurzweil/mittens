@@ -325,11 +325,8 @@ fn create_component(
         },
         "InspectorPanel" => add!(InspectorPanelComponent::new()),
         "Scrolling" => match ctor {
-            Some("new") => add!(ScrollingComponent::new(
-                arg_f32(args, 0)?,
-                arg_f32(args, 1)? as usize,
-            )),
-            _ => add!(ScrollingComponent::new(0.1, 10)),
+            Some("new") => add!(ScrollingComponent::new(arg_f32(args, 0)?, arg_f32(args, 1)?)),
+            _ => add!(ScrollingComponent::new(0.1, 0.1)),
         },
         "WorldPanel" => add!(WorldPanelComponent::new()),
         "HtmlElement" => {

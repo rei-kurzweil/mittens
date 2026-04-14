@@ -17,6 +17,7 @@ use crate::engine::ecs::system::PointerSystem;
 use crate::engine::ecs::system::RayCastSystem;
 use crate::engine::ecs::system::RenderableSystem;
 use crate::engine::ecs::system::RendererStatsSystem;
+use crate::engine::ecs::system::ScrollSystem;
 use crate::engine::ecs::system::SkinnedMeshSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TextSystem;
@@ -51,6 +52,7 @@ pub struct SystemWorld {
     pub skinned_mesh: SkinnedMeshSystem,
     pub renderable: RenderableSystem,
     pub renderer_stats: RendererStatsSystem,
+    pub scroll: ScrollSystem,
 
     pub pointer: PointerSystem,
     pub raycast: RayCastSystem,
@@ -625,6 +627,7 @@ impl SystemWorld {
         if spawn_panels {
             self.inspector.setup_panels_for_editor(
                 &mut self.rx,
+                &mut self.scroll,
                 world,
                 emit,
                 component,

@@ -8,8 +8,8 @@ use crate::engine::ecs::component::Component;
 /// ```text
 /// SelectableComponent::off()     ← panel excluded from scene picking
 ///   OverlayComponent             ← always-on-top rendering
-///     WorldPanelComponent        ← this component (stores rows_anchor + row_roots)
-///       TransformComponent       ← rows_anchor: world-space position, parent of row rows
+///     WorldPanelComponent        ← this component (stores rows_track + row_roots)
+///       TransformComponent       ← rows_track: moved by ScrollSystem
 ///         [row TransformComponents added dynamically]
 /// ```
 #[derive(Debug, Default, Clone)]
@@ -17,19 +17,12 @@ pub struct WorldPanelComponent {
     /// The editor root this panel belongs to.
     pub editor_root: Option<ComponentId>,
 
-    /// First visible row index (for scrolling).
-    pub scroll_offset_rows: i32,
+    /// Runtime: TransformComponent that row content is attached to.
+    pub(crate) rows_track: Option<ComponentId>,
 
-    /// Runtime: TransformComponent that row rows are attached to.
-    pub(crate) rows_anchor: Option<ComponentId>,
-
-    /// Runtime: LayoutComponent (child of rows_anchor) that LayoutSystem uses to
+    /// Runtime: LayoutComponent (child of rows_track) that LayoutSystem uses to
     /// measure and position row TCs.
     pub(crate) rows_layout: Option<ComponentId>,
-
-    /// World-space base position of `rows_anchor` (set at panel spawn time).
-    /// Used to apply sub-row Y offsets for smooth scrolling.
-    pub(crate) rows_anchor_base_pos: [f32; 3],
 
     /// Runtime: current row root TransformComponents (for cleanup on rebuild).
     pub(crate) row_roots: Vec<ComponentId>,
