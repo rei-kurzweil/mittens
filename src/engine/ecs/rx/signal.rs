@@ -137,6 +137,20 @@ pub enum EventSignal {
         selected: Option<ComponentId>,
     },
 
+    /// A scrolling component consumed drag motion and updated its offset.
+    ///
+    /// Scoped to the `ScrollingComponent` so downstream systems can subscribe to scroll state
+    /// changes through the scroll owner rather than the ancestor drag-capture surface.
+    Scrolling {
+        scroll_component: ComponentId,
+        drag_scope: ComponentId,
+        delta_world: [f32; 3],
+        scroll_offset: f32,
+        max_scroll: f32,
+        viewport_height: f32,
+        content_height: f32,
+    },
+
 }
 
 impl EventSignal {
@@ -151,6 +165,7 @@ impl EventSignal {
             EventSignal::DragEnd { .. } => SignalKind::DragEnd,
             EventSignal::Click { .. } => SignalKind::Click,
             EventSignal::SelectionChanged { .. } => SignalKind::SelectionChanged,
+            EventSignal::Scrolling { .. } => SignalKind::Scrolling,
         }
     }
 }
@@ -313,6 +328,9 @@ pub enum IntentValue {
         component_ids: Vec<ComponentId>,
     },
     UnregisterStencilClip {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterScrolling {
         component_ids: Vec<ComponentId>,
     },
     RegisterTransform {
@@ -545,6 +563,7 @@ impl IntentValue {
             IntentValue::RemoveRenderable { .. } => "remove_renderable",
             IntentValue::RegisterStencilClip { .. } => "register_stencil_clip",
             IntentValue::UnregisterStencilClip { .. } => "unregister_stencil_clip",
+            IntentValue::RegisterScrolling { .. } => "register_scrolling",
             IntentValue::RegisterTransform { .. } => "register_transform",
             IntentValue::UpdateTransformWorld { .. } => "update_transform_world",
             IntentValue::UpdateTransform { .. } => "update_transform",
@@ -630,6 +649,7 @@ pub enum SignalKind {
     DragEnd,
     Click,
     SelectionChanged,
+    Scrolling,
 }
 
 /// Optional timing metadata on the signal envelope.

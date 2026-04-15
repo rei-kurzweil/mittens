@@ -53,6 +53,11 @@ impl RenderableComponent {
         Self::from_cpu_mesh_handle(CpuMeshHandle::QUAD_2D, MaterialHandle::TOON_MESH)
     }
 
+    /// Predefined renderable: 2D plane/quad (alias of `square`).
+    pub fn plane() -> Self {
+        Self::square()
+    }
+
     /// Predefined renderable: 2D square/quad (unique CPU mesh registered into `render_assets`).
     pub fn square_dynamic(render_assets: &mut RenderAssets) -> Self {
         let h = render_assets.register_mesh(MeshFactory::quad_2d());

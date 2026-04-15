@@ -1,10 +1,12 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::{IntentValue, SignalEmitter};
 
 /// Generic scroll state for moving a content track inside a clipped viewport.
 ///
 /// `ScrollingComponent` does not own clipping; it only tracks viewport/content sizes,
-/// current offset, and which transform should be moved by the scroll runtime.
+/// current offset, which transform should be moved by the scroll runtime, and the
+/// drag scope currently bridged into scroll events.
 ///
 /// Expected topology:
 /// ```text
@@ -27,6 +29,8 @@ pub struct ScrollingComponent {
     pub track: Option<ComponentId>,
     /// Base local-space position of `track` before any scrolling is applied.
     pub track_base_pos: [f32; 3],
+    /// Ancestor scope currently forwarding drag motion into this scrolling component.
+    pub drag_scope: Option<ComponentId>,
 
     component: Option<ComponentId>,
 }
@@ -39,6 +43,7 @@ impl ScrollingComponent {
             scroll_offset: 0.0,
             track: None,
             track_base_pos: [0.0, 0.0, 0.0],
+            drag_scope: None,
             component: None,
         }
     }
@@ -46,6 +51,10 @@ impl ScrollingComponent {
     pub fn set_track(&mut self, track: ComponentId, base_pos: [f32; 3]) {
         self.track = Some(track);
         self.track_base_pos = base_pos;
+    }
+
+    pub fn set_drag_scope(&mut self, drag_scope: ComponentId) {
+        self.drag_scope = Some(drag_scope);
     }
 
     pub fn set_content_height(&mut self, content_height: f32) -> bool {
@@ -104,6 +113,15 @@ impl Component for ScrollingComponent {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+
+    fn init(&mut self, emit: &mut dyn SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            IntentValue::RegisterScrolling {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

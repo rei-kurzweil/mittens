@@ -82,6 +82,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RemoveRenderable { component_ids }
             | IntentValue::RegisterStencilClip { component_ids }
             | IntentValue::UnregisterStencilClip { component_ids }
+            | IntentValue::RegisterScrolling { component_ids }
             | IntentValue::RegisterTransform { component_ids }
             | IntentValue::UpdateTransform { component_ids, .. }
             | IntentValue::RemoveTransform { component_ids }
@@ -169,6 +170,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RemoveRenderable { component_ids }
             | IntentValue::RegisterStencilClip { component_ids }
             | IntentValue::UnregisterStencilClip { component_ids }
+            | IntentValue::RegisterScrolling { component_ids }
             | IntentValue::RegisterTransform { component_ids }
             | IntentValue::UpdateTransform { component_ids, .. }
             | IntentValue::RemoveTransform { component_ids }

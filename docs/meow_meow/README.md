@@ -54,6 +54,7 @@ Meow Meow Script ("MMS") is the scripting + authoring language for cat-engine.
 - [Component body call vocabulary](analysis/component-body-call-vocabulary.md) — CamelCase (handler registration) vs snake_case (method dispatch) in component bodies; implicit vs explicit subject
 - [Component addressing](analysis/component-addressing.md) — `component[n]` child indexing, `.method()` mutation calls, capture ordering (Phase 6+)
 - [Event handlers](analysis/event-handlers.md) — handler registration forms, signal operators `->` / `<-`, reactive wiring design
+- [Event signal pipelines](draft/event-signal-pipelines.md) — draft MMS-facing model for upstream event subscription, projection, and local semantic re-emission
 - [Functions and closures](analysis/functions-and-closures.md) — syntax, closure capture, scope rules, return semantics
 - [Loop semantics](analysis/loop-semantics.md) — `for`/`in`, `range(n)`, `break`/`continue`; DFS tree traversal (future); `while` deferred
 - [Module / import-export system](analysis/module-import-export.md) — import/export syntax, `.mms` as a database (positional index + selector queries), import semantics decision (Phase 9)

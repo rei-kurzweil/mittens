@@ -627,7 +627,6 @@ impl SystemWorld {
         if spawn_panels {
             self.inspector.setup_panels_for_editor(
                 &mut self.rx,
-                &mut self.scroll,
                 world,
                 emit,
                 component,
@@ -635,6 +634,15 @@ impl SystemWorld {
                 inspector_panel_pos,
             );
         }
+    }
+
+    pub fn register_scrolling(
+        &mut self,
+        world: &mut World,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        component: ComponentId,
+    ) {
+        self.scroll.auto_register(&mut self.rx, world, emit, component);
     }
 
     /// Register a RenderableComponent instance with the RenderableSystem.
@@ -664,7 +672,7 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        use crate::engine::ecs::component::{RenderableComponent, StencilClipComponent};
+        use crate::engine::ecs::component::StencilClipComponent;
 
         // Determine nesting depth by counting StencilClipComponent ancestors.
         let mut depth: u8 = 0;
@@ -677,24 +685,7 @@ impl SystemWorld {
         }
         let stencil_ref = depth + 1; // 1-indexed; 0 = unclipped
 
-        // Find the RenderableComponent in the parent TC's subtree.
-        let Some(parent_tc) = world.parent_of(component) else { return };
-        let handle = {
-            let mut found = None;
-            let mut stack: Vec<ComponentId> = world.children_of(parent_tc).to_vec();
-            while let Some(cid) = stack.pop() {
-                if let Some(r) = world.get_component_by_id_as::<RenderableComponent>(cid) {
-                    if let Some(h) = r.get_handle() {
-                        found = Some(h);
-                        break;
-                    }
-                }
-                for &ch in world.children_of(cid) {
-                    stack.push(ch);
-                }
-            }
-            found
-        };
+        let handle = Self::find_stencil_clip_renderable_handle(world, component);
         if let Some(handle) = handle {
             visuals.register_stencil_clip(handle, stencil_ref);
         }
@@ -707,28 +698,43 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
+        let handle = Self::find_stencil_clip_renderable_handle(world, component);
+        if let Some(handle) = handle {
+            visuals.unregister_stencil_clip(handle);
+        }
+    }
+
+    fn find_stencil_clip_renderable_handle(
+        world: &World,
+        component: ComponentId,
+    ) -> Option<crate::engine::graphics::primitives::InstanceHandle> {
         use crate::engine::ecs::component::RenderableComponent;
 
-        let Some(parent_tc) = world.parent_of(component) else { return };
-        let handle = {
-            let mut found = None;
-            let mut stack: Vec<ComponentId> = world.children_of(parent_tc).to_vec();
+        if let Some(parent) = world.parent_of(component) {
+            let mut stack = vec![parent];
             while let Some(cid) = stack.pop() {
                 if let Some(r) = world.get_component_by_id_as::<RenderableComponent>(cid) {
-                    if let Some(h) = r.get_handle() {
-                        found = Some(h);
-                        break;
+                    if let Some(handle) = r.get_handle() {
+                        return Some(handle);
                     }
                 }
                 for &ch in world.children_of(cid) {
                     stack.push(ch);
                 }
             }
-            found
-        };
-        if let Some(handle) = handle {
-            visuals.unregister_stencil_clip(handle);
         }
+
+        let mut cursor = world.parent_of(component);
+        while let Some(cid) = cursor {
+            if let Some(r) = world.get_component_by_id_as::<RenderableComponent>(cid) {
+                if let Some(handle) = r.get_handle() {
+                    return Some(handle);
+                }
+            }
+            cursor = world.parent_of(cid);
+        }
+
+        None
     }
 
     /// Remove a RenderableComponent instance from the RenderableSystem (and BVH).

@@ -63,7 +63,6 @@ impl InspectorSystem {
     pub fn setup_panels_for_editor(
         &mut self,
         rx: &mut RxWorld,
-        scroll: &mut ScrollSystem,
         world: &mut World,
         emit: &mut dyn SignalEmitter,
         editor_root: ComponentId,
@@ -91,11 +90,8 @@ impl InspectorSystem {
 
         let (wpc_id, wpa_id, wsc_id) =
             spawn_world_panel(world, emit, editor_root, world_panel_pos);
-        let (ipc_id, ipa_id, isc_id) =
+        let (ipc_id, _ipa_id, isc_id) =
             spawn_inspector_panel(world, emit, editor_root, inspector_pos);
-
-        scroll.install_drag_scrolling(rx, wpa_id, wsc_id);
-        scroll.install_drag_scrolling(rx, ipa_id, isc_id);
 
         rebuild_world_panel(world, emit, wpc_id, wsc_id, editor_root, None);
         rebuild_inspector_panel(world, emit, ipc_id, isc_id, None);

@@ -32,13 +32,39 @@ I {
     }
 }
 
-T.position(0, 0, -5.0) {
-    Scrolling.new(1.0, 20) {
-        for y in range(100) {
-            T.position(0, y, 0.0).scale(0.9, 0.9, 0.9) {
-                Text {
-                    "item "+y
-                    C.rgba(0.6, 0.6, 0.6, 1.0)
+T.position(0, 0, -5.0).scale(1.8, 1.8, 1.0) {
+    // Sketch of the intended topology:
+    // - this scaled T defines the viewport pose + size
+    // - StencilClip owns the content branch
+    // - The clip shape renderable owns StencilClip
+    // - the plane keeps viewport scale and defines the stencil boundary
+    // - the pipeline drops scale before producing the scroll/content branch
+    R.plane() {
+        C.rgba(0.9, 0.9, 0.9, 1.0)
+    
+        StencilClip {
+            TransformPipeline {
+                TransformForkTRS {
+                    TransformMapTranslation {}
+                    TransformMapRotation {}
+                    TransformMapScale {
+                        TransformDrop {}
+                    }
+                    TransformMergeTRS {}
+                }
+                TransformPipelineOutput {
+                    T {
+                        Scrolling.new(1.0, 100.0) {
+                            for y in range(100) {
+                                T.position(0, y, 0.01).scale(0.12, 0.12, 0.12) {
+                                    Text {
+                                        "item "+y
+                                        C.rgba(0.6, 0.6, 0.6, 1.0)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

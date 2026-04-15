@@ -88,6 +88,26 @@ and invokes any handlers registered at any of those nodes.
 
 This gives you “subscribe to a subtree” semantics without global filtering.
 
+Important clarification:
+
+- this is **ancestor-bubbling only**
+- a parent can observe child-scoped events
+- a child cannot observe parent-scoped events just by registering a scoped handler
+
+So the current runtime does **not** provide a second propagation mode such as
+"child listens to parent events".
+
+If a component needs to react to an upstream event and expose a component-local semantic
+event (for example `ScrollingComponent` projecting ancestor `DragMove` into a local
+`Scrolling` event), the current model is:
+
+- register a handler at the upstream scope
+- map the upstream event in handler code
+- emit a new event scoped to the component that owns the behavior
+
+See [docs/draft/event-signal-pipelines.md](../draft/event-signal-pipelines.md) for the draft
+proposal to formalize that pattern as an event routing/projection layer.
+
 Example: listen for topology changes in a subtree:
 
 ```rust
