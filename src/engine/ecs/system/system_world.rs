@@ -17,7 +17,7 @@ use crate::engine::ecs::system::PointerSystem;
 use crate::engine::ecs::system::RayCastSystem;
 use crate::engine::ecs::system::RenderableSystem;
 use crate::engine::ecs::system::RendererStatsSystem;
-use crate::engine::ecs::system::ScrollSystem;
+use crate::engine::ecs::system::ScrollingSystem;
 use crate::engine::ecs::system::SkinnedMeshSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TextSystem;
@@ -52,7 +52,7 @@ pub struct SystemWorld {
     pub skinned_mesh: SkinnedMeshSystem,
     pub renderable: RenderableSystem,
     pub renderer_stats: RendererStatsSystem,
-    pub scroll: ScrollSystem,
+    pub scroll: ScrollingSystem,
 
     pub pointer: PointerSystem,
     pub raycast: RayCastSystem,
@@ -642,7 +642,7 @@ impl SystemWorld {
         emit: &mut dyn crate::engine::ecs::SignalEmitter,
         component: ComponentId,
     ) {
-        self.scroll.auto_register(&mut self.rx, world, emit, component);
+        self.scroll.deferred_register(&mut self.rx, world, emit, component);
     }
 
     /// Register a RenderableComponent instance with the RenderableSystem.

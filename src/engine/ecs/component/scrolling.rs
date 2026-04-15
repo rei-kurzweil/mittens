@@ -11,7 +11,7 @@ use crate::engine::ecs::{IntentValue, SignalEmitter};
 /// Expected topology:
 /// ```text
 /// viewport_root                  ← usually clipped by StyleComponent::overflow
-///   └── ScrollingComponent       ← owned by ScrollSystem
+///   └── ScrollingComponent       ← owned by ScrollingSystem
 ///         └── scroll_track       ← moved in +Y as scroll_offset increases
 ///               ├── child_0
 ///               ├── child_1

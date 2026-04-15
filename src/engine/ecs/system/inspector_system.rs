@@ -7,7 +7,7 @@ use crate::engine::ecs::component::{
     style::{EdgeInsets, Overflow, SizeDimension},
 };
 use crate::engine::ecs::system::editor_system::select_editor_target;
-use crate::engine::ecs::system::{LayoutSystem, ScrollSystem};
+use crate::engine::ecs::system::{LayoutSystem, ScrollingSystem};
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World,
@@ -459,7 +459,7 @@ fn spawn_world_panel(
     }
 
     world.init_component_tree(wpa, emit);
-    ScrollSystem::sync_component(world, emit, wsc);
+    ScrollingSystem::sync_component(world, emit, wsc);
     (wpc, wpa, wsc)
 }
 
@@ -538,7 +538,7 @@ fn spawn_inspector_panel(
     }
 
     world.init_component_tree(ipa, emit);
-    ScrollSystem::sync_component(world, emit, isc);
+    ScrollingSystem::sync_component(world, emit, isc);
     (ipc, ipa, isc)
 }
 
@@ -643,7 +643,7 @@ fn rebuild_world_panel(
         wpc.row_to_node = new_row_to_node;
     }
 
-    ScrollSystem::set_content_height(world, emit, wsc_id, nodes.len() as f32 * ROW_HEIGHT);
+    ScrollingSystem::set_content_height(world, emit, wsc_id, nodes.len() as f32 * ROW_HEIGHT);
 }
 
 fn rebuild_inspector_panel(
@@ -733,7 +733,7 @@ fn rebuild_inspector_panel(
         ipc.inspected = selected;
     }
 
-    ScrollSystem::set_content_height(world, emit, isc_id, lines.len() as f32 * ROW_HEIGHT);
+    ScrollingSystem::set_content_height(world, emit, isc_id, lines.len() as f32 * ROW_HEIGHT);
 }
 
 // ---------------------------------------------------------------------------

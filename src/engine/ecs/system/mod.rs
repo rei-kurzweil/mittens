@@ -63,7 +63,7 @@ pub use pointer_system::PointerSystem;
 pub use raycast_system::RayCastSystem;
 pub use renderable_system::RenderableSystem;
 pub use renderer_stats_system::RendererStatsSystem;
-pub use scroll_system::ScrollSystem;
+pub use scroll_system::ScrollingSystem;
 pub use skinned_mesh_system::SkinnedMeshSystem;
 pub use system_world::SystemWorld;
 pub use text_system::TextSystem;

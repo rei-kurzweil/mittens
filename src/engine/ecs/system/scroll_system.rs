@@ -4,9 +4,9 @@ use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
 
 #[derive(Debug, Default)]
-pub struct ScrollSystem;
+pub struct ScrollingSystem;
 
-impl ScrollSystem {
+impl ScrollingSystem {
     pub fn new() -> Self {
         Self
     }
@@ -56,7 +56,7 @@ impl ScrollSystem {
         );
     }
 
-    pub fn auto_register(
+    pub fn deferred_register(
         &mut self,
         rx: &mut RxWorld,
         world: &mut World,

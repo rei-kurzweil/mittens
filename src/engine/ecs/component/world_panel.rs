@@ -9,7 +9,7 @@ use crate::engine::ecs::component::Component;
 /// SelectableComponent::off()     ← panel excluded from scene picking
 ///   OverlayComponent             ← always-on-top rendering
 ///     WorldPanelComponent        ← this component (stores rows_track + row_roots)
-///       TransformComponent       ← rows_track: moved by ScrollSystem
+///       TransformComponent       ← rows_track: moved by ScrollingSystem
 ///         [row TransformComponents added dynamically]
 /// ```
 #[derive(Debug, Default, Clone)]

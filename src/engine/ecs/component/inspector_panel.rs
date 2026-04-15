@@ -9,7 +9,7 @@ use crate::engine::ecs::component::Component;
 /// SelectableComponent::off()
 ///   OverlayComponent
 ///     InspectorPanelComponent    ← this component
-///       TransformComponent       ← rows_track: moved by ScrollSystem
+///       TransformComponent       ← rows_track: moved by ScrollingSystem
 ///         [row TransformComponents added dynamically]
 /// ```
 #[derive(Debug, Default, Clone)]
