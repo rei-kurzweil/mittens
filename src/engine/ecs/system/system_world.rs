@@ -15,6 +15,7 @@ use crate::engine::ecs::system::OpenXRSystem;
 use crate::engine::ecs::system::PipelineSystem;
 use crate::engine::ecs::system::PointerSystem;
 use crate::engine::ecs::system::RayCastSystem;
+use crate::engine::ecs::system::RenderToTextureSystem;
 use crate::engine::ecs::system::RenderableSystem;
 use crate::engine::ecs::system::RendererStatsSystem;
 use crate::engine::ecs::system::ScrollingSystem;
@@ -79,6 +80,7 @@ pub struct SystemWorld {
     pub light: LightSystem,
 
     pub text: TextSystem,
+    pub render_to_texture: RenderToTextureSystem,
     pub texture: TextureSystem,
 }
 
@@ -1024,6 +1026,7 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
+        self.render_to_texture.register_texture(world, component);
         self.texture.register_texture(world, visuals, component);
     }
 
@@ -1301,6 +1304,8 @@ impl SystemWorld {
 
         self.renderable
             .flush_pending(world, visuals, render_assets, uploader, queue);
+
+        self.render_to_texture.flush_pending(visuals, uploader);
 
         // Must run after renderables are flushed so instance handles exist.
         self.texture.flush_pending(world, visuals, uploader);

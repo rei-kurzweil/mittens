@@ -5,6 +5,11 @@
 small game engine `[obstensively]` for making cats,
 using vulkan instanced rendering and several layers to describe game objects:
 
+## Running examples
+
+- Run examples in release mode by default: `cargo run --release --example <name>`.
+- Avoid debug example runs unless you specifically need debug-only diagnostics or faster compile iteration.
+
 ## Windowing
 + uses winit to make a window and passes the RawDisplayHandle to renderer to render into the window
 + provides user input events and frame loop

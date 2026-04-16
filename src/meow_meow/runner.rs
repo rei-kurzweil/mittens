@@ -38,8 +38,13 @@ impl MeowMeowRunner {
 
     /// Read `path` from disk and evaluate it (enables relative imports).
     pub fn eval_file(path: &str) -> EvalOutput {
+        Self::eval_file_with_timeout(path, Duration::from_secs(2))
+    }
+
+    /// Read `path` from disk and evaluate it (enables relative imports) with a caller-provided timeout.
+    pub fn eval_file_with_timeout(path: &str, timeout: Duration) -> EvalOutput {
         match std::fs::read_to_string(path) {
-            Ok(source) => Self::eval_impl(&source, Some(path), Duration::from_secs(2)),
+            Ok(source) => Self::eval_impl(&source, Some(path), timeout),
             Err(e) => {
                 let mut output = EvalOutput::default();
                 output.errors.push(format!("cannot read file '{}': {}", path, e));

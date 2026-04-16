@@ -40,7 +40,7 @@ mod vulkano_backend {
     use vulkano::format::ClearValue;
     use vulkano::image::view::{ImageView, ImageViewCreateInfo};
     use vulkano::image::{Image, ImageAspects, ImageCreateInfo, ImageSubresourceRange, ImageType, ImageUsage, SampleCount, SampleCounts};
-    use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter};
+    use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
     use vulkano::pipeline::graphics::color_blend::{
         AttachmentBlend, BlendFactor, BlendOp, ColorBlendAttachmentState, ColorBlendState,
         ColorComponents,
@@ -326,6 +326,7 @@ mod vulkano_backend {
             Arc<DescriptorSet>,
         >,
         pending_runtime_texture_updates: HashMap<TextureHandle, VulkanoGpuTexture>,
+        window_runtime_debug_targets: Option<WindowRuntimeDebugTargets>,
 
         // Cached bones palette SSBOs (set=2 binding=1).
         //
@@ -352,6 +353,12 @@ mod vulkano_backend {
         depth_views: Vec<Arc<ImageView>>,
     }
 
+    struct WindowRuntimeDebugTargets {
+        extent: [u32; 2],
+        color_format: Format,
+        color_views: Vec<Arc<ImageView>>,
+    }
+
     #[derive(Clone)]
     struct PostProcessInvocation {
         final_output_view: Arc<ImageView>,
@@ -359,6 +366,8 @@ mod vulkano_backend {
         config: PostProcessingConfig,
         targets: PostProcessFrameTargets,
     }
+
+    pub(crate) const STENCIL_CLIP_DEBUG_TEXTURE_KEY: &str = "render_graph.stencil_clip.debug";
 
     const MAX_LIGHTS: usize = 64;
 
@@ -1438,6 +1447,7 @@ mod vulkano_backend {
                 cached_overlay_instance_count: 0,
                 cached_material_sets: HashMap::new(),
                 pending_runtime_texture_updates: HashMap::new(),
+                window_runtime_debug_targets: None,
 
                 cached_bones_buffers: Vec::new(),
                 cached_bones_slot_valid: Vec::new(),
@@ -1812,6 +1822,164 @@ mod vulkano_backend {
             Ok(view)
         }
 
+        fn create_color_target_view(
+            memory_allocator: Arc<StandardMemoryAllocator>,
+            format: Format,
+            extent: [u32; 2],
+            samples: SampleCount,
+            usage: ImageUsage,
+        ) -> Result<Arc<ImageView>, Box<dyn std::error::Error>> {
+            let image = Image::new(
+                memory_allocator,
+                ImageCreateInfo {
+                    image_type: ImageType::Dim2d,
+                    format,
+                    extent: [extent[0], extent[1], 1],
+                    samples,
+                    usage,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                    ..Default::default()
+                },
+            )?;
+
+            Ok(ImageView::new_default(image)?)
+        }
+
+        fn ensure_window_runtime_debug_targets(
+            &mut self,
+            frame_count: usize,
+            extent: [u32; 2],
+            color_format: Format,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let needs_recreate = self.window_runtime_debug_targets.as_ref().is_none_or(|targets| {
+                targets.extent != extent
+                    || targets.color_format != color_format
+                    || targets.color_views.len() != frame_count
+            });
+
+            if !needs_recreate {
+                return Ok(());
+            }
+
+            let mut color_views = Vec::with_capacity(frame_count);
+            for _ in 0..frame_count {
+                color_views.push(Self::create_color_target_view(
+                    self.context.memory_allocator().clone(),
+                    color_format,
+                    extent,
+                    SampleCount::Sample1,
+                    ImageUsage::COLOR_ATTACHMENT | ImageUsage::SAMPLED | ImageUsage::TRANSFER_SRC,
+                )?);
+            }
+
+            self.window_runtime_debug_targets = Some(WindowRuntimeDebugTargets {
+                extent,
+                color_format,
+                color_views,
+            });
+
+            Ok(())
+        }
+
+        fn build_stencil_clip_debug_batches(
+            visual_world: &VisualWorld,
+        ) -> Vec<crate::engine::graphics::visual_world::DrawBatch> {
+            visual_world
+                .stencil_clip_order()
+                .iter()
+                .enumerate()
+                .filter_map(|(slot, &instance_index)| {
+                    let instance = visual_world.instances().get(instance_index as usize)?;
+                    Some(crate::engine::graphics::visual_world::DrawBatch {
+                        material: crate::engine::graphics::MaterialHandle::UNLIT_MESH,
+                        mesh: instance.renderable.mesh,
+                        texture: None,
+                        texture_filtering: TextureFiltering::Nearest,
+                        quant_steps: 1.0,
+                        stencil_ref: 0,
+                        start: slot,
+                        count: 1,
+                    })
+                })
+                .collect()
+        }
+
+        fn hsv_debug_color_for_stencil_ref(stencil_ref: u8) -> [f32; 4] {
+            if stencil_ref == 0 {
+                return [0.08, 0.08, 0.08, 1.0];
+            }
+
+            let hue_deg = (((stencil_ref - 1) as f32) * 100.0) % 360.0;
+            let saturation = 0.9;
+            let value = 1.0;
+            let chroma = value * saturation;
+            let hue_sector = hue_deg / 60.0;
+            let x = chroma * (1.0 - ((hue_sector % 2.0) - 1.0).abs());
+
+            let (r1, g1, b1) = if hue_sector < 1.0 {
+                (chroma, x, 0.0)
+            } else if hue_sector < 2.0 {
+                (x, chroma, 0.0)
+            } else if hue_sector < 3.0 {
+                (0.0, chroma, x)
+            } else if hue_sector < 4.0 {
+                (0.0, x, chroma)
+            } else if hue_sector < 5.0 {
+                (x, 0.0, chroma)
+            } else {
+                (chroma, 0.0, x)
+            };
+
+            let match_value = value - chroma;
+            [r1 + match_value, g1 + match_value, b1 + match_value, 1.0]
+        }
+
+        fn build_stencil_clip_debug_instance_buffer(
+            &self,
+            visual_world: &VisualWorld,
+            order: &[u32],
+        ) -> Result<Option<Subbuffer<[InstanceData]>>, Box<dyn std::error::Error>> {
+            if order.is_empty() {
+                return Ok(None);
+            }
+
+            let instances_ref = visual_world.instances();
+            let instance_data_iter = order.iter().map(|&idx| {
+                let inst = instances_ref[idx as usize];
+                let m = inst.transform.model;
+                InstanceData {
+                    i_model_c0: m[0],
+                    i_model_c1: m[1],
+                    i_model_c2: m[2],
+                    i_model_c3: m[3],
+                    i_color: Self::hsv_debug_color_for_stencil_ref(inst.stencil_ref.saturating_add(1)),
+                    i_emissive: 1.0,
+                    i_opacity: 1.0,
+                    i_bones_base: 0,
+                    i_bones_count: 0,
+                }
+            });
+
+            let buf: Subbuffer<[InstanceData]> = Buffer::from_iter(
+                self.context.memory_allocator().clone(),
+                BufferCreateInfo {
+                    usage: BufferUsage::VERTEX_BUFFER,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    ..Default::default()
+                },
+                instance_data_iter,
+            )?;
+
+            Ok(Some(buf))
+        }
+
         fn apply_pending_runtime_texture_updates(&mut self) {
             if self.pending_runtime_texture_updates.is_empty() {
                 return;
@@ -2153,6 +2321,21 @@ mod vulkano_backend {
             // Buffer indexed by overlay_stream().1; use its length for cache invalidation.
             let overlay_instance_count = visual_world.overlay_stream().1.len();
 
+            let stencil_clip_debug_handle = if camera_target
+                == crate::engine::graphics::CameraTarget::Window
+                && eye == 0
+            {
+                visual_world.runtime_texture_handle(STENCIL_CLIP_DEBUG_TEXTURE_KEY)
+            } else {
+                None
+            };
+            let stencil_clip_debug_batches = if stencil_clip_debug_handle.is_some() {
+                Self::build_stencil_clip_debug_batches(visual_world)
+            } else {
+                Vec::new()
+            };
+            let stencil_clip_debug_instance_count = stencil_clip_debug_batches.len();
+
             // --- Emissive-only post-process source passes ---
             let emissive_instance_count = visual_world.emissive_draw_order().len();
             let emissive_cutout_instance_count = visual_world.emissive_cutout_order().len();
@@ -2242,6 +2425,15 @@ mod vulkano_backend {
                 self.cached_overlay_instance_count = overlay_instance_count;
                 self.cached_overlay_instance_buffer = buf.clone();
                 buf
+            };
+
+            let stencil_clip_debug_instance_buffer = if stencil_clip_debug_handle.is_some() {
+                self.build_stencil_clip_debug_instance_buffer(
+                    &*visual_world,
+                    visual_world.stencil_clip_order(),
+                )?
+            } else {
+                None
             };
 
             let emissive_instance_buffer = self.build_instance_buffer_for_order_opt(
@@ -2924,6 +3116,81 @@ mod vulkano_backend {
                         dst_view.image().clone(),
                     ))?;
                 }
+            }
+
+            if let (Some(handle), Some(debug_instance_buffer)) = (
+                stencil_clip_debug_handle,
+                stencil_clip_debug_instance_buffer.as_ref(),
+            ) {
+                self.ensure_window_runtime_debug_targets(
+                    self.swapchain_state.swapchain_views.len(),
+                    extent,
+                    color_attachment_view.image().format(),
+                )?;
+
+                let debug_view = self
+                    .window_runtime_debug_targets
+                    .as_ref()
+                    .and_then(|targets| targets.color_views.get(bones_slot))
+                    .cloned()
+                    .ok_or("missing window runtime debug target")?;
+
+                cbb.begin_rendering(RenderingInfo {
+                    render_area_offset: [0, 0],
+                    render_area_extent: [extent[0], extent[1]],
+                    layer_count: 1,
+                    color_attachments: vec![Some(RenderingAttachmentInfo {
+                        load_op: AttachmentLoadOp::Clear,
+                        store_op: AttachmentStoreOp::Store,
+                        clear_value: Some(ClearValue::from([1.0, 0.0, 1.0, 1.0])),
+                        ..RenderingAttachmentInfo::image_view(debug_view.clone())
+                    })],
+                    depth_attachment: Some(RenderingAttachmentInfo {
+                        load_op: AttachmentLoadOp::Clear,
+                        store_op: AttachmentStoreOp::DontCare,
+                        clear_value: Some(ClearValue::Depth(1.0)),
+                        ..RenderingAttachmentInfo::image_view(depth_view.clone())
+                    }),
+                    stencil_attachment: Some(RenderingAttachmentInfo {
+                        load_op: AttachmentLoadOp::Clear,
+                        store_op: AttachmentStoreOp::DontCare,
+                        clear_value: Some(ClearValue::Stencil(0)),
+                        ..RenderingAttachmentInfo::image_view(depth_view.clone())
+                    }),
+                    ..Default::default()
+                })?;
+
+                cbb.set_viewport(0, vec![viewport.clone()].into())?;
+                cbb.set_scissor(
+                    0,
+                    vec![Scissor {
+                        offset: [0, 0],
+                        extent: [extent[0], extent[1]],
+                        ..Default::default()
+                    }]
+                    .into(),
+                )?;
+
+                self.record_instanced_draws_for_batches(
+                    &mut cbb,
+                    &global_set_fg,
+                    &rig_set,
+                    debug_instance_buffer,
+                    stencil_clip_debug_instance_count,
+                    &stencil_clip_debug_batches,
+                    self.pipeline_toon_mesh.clone(),
+                    self.pipeline_emissive_toon_mesh.clone(),
+                    self.pipeline_skinned_toon_mesh.clone(),
+                    self.pipeline_skinned_emissive_toon_mesh.clone(),
+                )?;
+
+                cbb.end_rendering()?;
+
+                let dst_view = self.ensure_runtime_texture_target(handle, &debug_view)?;
+                cbb.copy_image(CopyImageInfo::images(
+                    debug_view.image().clone(),
+                    dst_view.image().clone(),
+                ))?;
             }
 
             let cb = cbb.build()?;

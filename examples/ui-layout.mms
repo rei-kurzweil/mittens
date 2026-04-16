@@ -2,6 +2,9 @@ BGC {
     C.rgba(0.9, 0.9, 0.9, 1.0)
 }
 
+let stencil_clip_debug_texture = Texture.render_image("render_graph.stencil_clip.debug")
+let bloom_debug_texture = Texture.render_image("render_graph.bloom.blur")
+
 BG {
     T.position(0.0, 0.0, -5.0)
     .scale(10.0, 10.0, 1.0)
@@ -28,6 +31,29 @@ I {
     T.position(0.0, 1.2, 3.5) {
         C3D {
             Pointer {}
+        }
+
+        T.position(0.0, -1.0, -3.0).scale(1.4, 1.0, 1.0) {
+            OV {
+                R.square() {
+                    C.rgba(0.98, 0.98, 0.98, 1.0)
+                }
+
+                T.position(0.0, 0.0, 0.01).scale(0.86, 0.66, 1.0) {
+                    R.square() {
+                        C.rgba(1.0, 1.0, 1.0, 1.0)
+                        bloom_debug_texture
+                        TextureFiltering.linear()
+                    }
+                }
+
+                T.position(0.0, -0.44, 0.02).scale(0.05, 0.05, 1.0) {
+                    TXT {
+                        "bloom debug"
+                        C.rgba(0.08, 0.08, 0.10, 1.0)
+                    }
+                }
+            }
         }
     }
 }
@@ -98,6 +124,7 @@ RenderGraph {
         radius_ndc(0.06)
         emissive_scale(1.2)
         half_res(true)
+        bloom_debug_texture
     }
 }
 

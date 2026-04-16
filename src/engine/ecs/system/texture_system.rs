@@ -178,18 +178,6 @@ impl TextureSystem {
                 if let Some(render_image) = record.render_image.as_deref() {
                     if let Some(existing) = visuals.runtime_texture_handle(render_image) {
                         record.gpu = Some(existing);
-                    } else {
-                        match uploader.upload_texture_rgba8(&[0, 0, 0, 255], 1, 1) {
-                            Ok(handle) => {
-                                visuals.set_runtime_texture_handle(render_image.to_string(), handle);
-                                record.gpu = Some(handle);
-                            }
-                            Err(err) => {
-                                println!(
-                                    "[TextureSystem] failed to allocate runtime texture '{render_image}': {err}"
-                                );
-                            }
-                        }
                     }
                 }
 

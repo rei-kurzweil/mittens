@@ -24,8 +24,8 @@ cargo build
 cargo build --release
 
 # Run an example
-cargo run --example simple-demo
-cargo run --example vtuber-joints-example
+cargo run --release --example simple-demo
+cargo run --release --example vtuber-joints-example
 
 # Profiling (requires cargo install cargo-flamegraph + system perf)
 CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS="-C debuginfo=1 -C force-frame-pointers=yes" \
@@ -33,6 +33,8 @@ CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS="-C debuginfo=1 -C force-frame-pointe
 ```
 
 No cargo features are defined. All examples in `examples/` run directly with `--example <name-without-.rs>`. The exception is `examples/mindmap-example.0.3.rs`, which is named `mindmap_example_0_3` in `Cargo.toml`.
+
+When running examples for verification, prefer `cargo run --release --example ...` by default.
 
 Tests in `src/engine/ecs/world_graph_tests.rs` can be run with `cargo test`.
 

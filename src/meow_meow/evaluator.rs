@@ -103,6 +103,13 @@ impl MeowMeowEvaluator {
 fn evaluator_thread(requests: Consumer<EvalRequest>, responses: Producer<EvalResponse>) {
     let mut ch = EvalChannels::new(requests, responses);
     loop {
+        if ch.shutdown_requested {
+            while ch.responses.push(EvalResponse::ShutdownAck).is_err() {
+                std::thread::yield_now();
+            }
+            break;
+        }
+
         match ch.requests.pop() {
             Ok(EvalRequest::EvalScript { source, source_path }) => {
                 eval_script(&source, source_path.as_deref(), &mut ch);
@@ -141,6 +148,7 @@ fn host_call(
     kind: HostCallKind,
     requests: &mut Consumer<EvalRequest>,
     responses: &mut Producer<EvalResponse>,
+    shutdown_requested: &mut bool,
 ) -> Option<HostValue> {
     while responses.push(EvalResponse::HostCall { id, kind: kind.clone() }).is_err() {
         std::thread::yield_now();
@@ -157,8 +165,7 @@ fn host_call(
                 // Stale reply for a different id — discard.
             }
             Ok(EvalRequest::Shutdown) => {
-                // Host shut down while we were waiting — propagate shutdown.
-                return None;
+                *shutdown_requested = true;
             }
             Ok(other) => {
                 // Other requests (unlikely mid-eval) — re-queue by yielding;
@@ -217,18 +224,30 @@ pub struct EvalChannels {
     pub requests: Consumer<EvalRequest>,
     pub responses: Producer<EvalResponse>,
     next_id: u32,
+    shutdown_requested: bool,
 }
 
 impl EvalChannels {
     pub fn new(requests: Consumer<EvalRequest>, responses: Producer<EvalResponse>) -> Self {
-        Self { requests, responses, next_id: 0 }
+        Self {
+            requests,
+            responses,
+            next_id: 0,
+            shutdown_requested: false,
+        }
     }
 
     /// Emit a `HostCall` and spin-wait for the matching `HostCallResult`.
     pub fn call(&mut self, kind: HostCallKind) -> Option<HostValue> {
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
-        host_call(id, kind, &mut self.requests, &mut self.responses)
+        host_call(
+            id,
+            kind,
+            &mut self.requests,
+            &mut self.responses,
+            &mut self.shutdown_requested,
+        )
     }
 }
 
