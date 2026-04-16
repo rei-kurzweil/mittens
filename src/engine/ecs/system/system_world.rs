@@ -52,7 +52,7 @@ pub struct SystemWorld {
     pub skinned_mesh: SkinnedMeshSystem,
     pub renderable: RenderableSystem,
     pub renderer_stats: RendererStatsSystem,
-    pub scroll: ScrollingSystem,
+    pub scrolling: ScrollingSystem,
 
     pub pointer: PointerSystem,
     pub raycast: RayCastSystem,
@@ -642,7 +642,7 @@ impl SystemWorld {
         emit: &mut dyn crate::engine::ecs::SignalEmitter,
         component: ComponentId,
     ) {
-        self.scroll.deferred_register(&mut self.rx, world, emit, component);
+        self.scrolling.deferred_register(&mut self.rx, world, emit, component);
     }
 
     /// Register a RenderableComponent instance with the RenderableSystem.
@@ -662,6 +662,8 @@ impl SystemWorld {
 
         // Keep RayCastSystem's eligibility index in sync for brute-force fallback.
         self.raycast.notify_renderable_added(&*world, component);
+
+        Self::sync_renderable_stencil_ref(world, visuals, component);
     }
 
     /// Register a StencilClipComponent: find the sibling RenderableComponent in the same
@@ -689,6 +691,10 @@ impl SystemWorld {
         if let Some(handle) = handle {
             visuals.register_stencil_clip(handle, stencil_ref);
         }
+
+        if let Some(scope_root) = Self::stencil_clip_scope_root(world, component) {
+            Self::sync_stencil_refs_in_subtree(world, visuals, scope_root);
+        }
     }
 
     /// Unregister a StencilClipComponent: clear `is_stencil_clip` on the associated VisualInstance.
@@ -702,6 +708,93 @@ impl SystemWorld {
         if let Some(handle) = handle {
             visuals.unregister_stencil_clip(handle);
         }
+
+        if let Some(scope_root) = Self::stencil_clip_scope_root(world, component) {
+            Self::sync_stencil_refs_in_subtree(world, visuals, scope_root);
+        }
+    }
+
+    fn sync_renderable_stencil_ref(
+        world: &World,
+        visuals: &mut VisualWorld,
+        renderable_component: ComponentId,
+    ) {
+        use crate::engine::ecs::component::RenderableComponent;
+
+        let Some(renderable) = world.get_component_by_id_as::<RenderableComponent>(renderable_component)
+        else {
+            return;
+        };
+        let Some(handle) = renderable.get_handle() else {
+            return;
+        };
+
+        let stencil_ref = Self::stencil_ref_for_renderable(world, renderable_component);
+        let _ = visuals.update_stencil_ref(handle, stencil_ref);
+    }
+
+    fn sync_stencil_refs_in_subtree(
+        world: &World,
+        visuals: &mut VisualWorld,
+        root: ComponentId,
+    ) {
+        use crate::engine::ecs::component::RenderableComponent;
+
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            if world.get_component_by_id_as::<RenderableComponent>(node).is_some() {
+                Self::sync_renderable_stencil_ref(world, visuals, node);
+            }
+            for &child in world.children_of(node) {
+                stack.push(child);
+            }
+        }
+    }
+
+    fn stencil_ref_for_renderable(world: &World, renderable_component: ComponentId) -> u8 {
+        use crate::engine::ecs::component::StencilClipComponent;
+
+        let mut depth: u8 = 0;
+        let mut cursor = Some(renderable_component);
+        while let Some(node) = cursor {
+            if world.get_component_by_id_as::<StencilClipComponent>(node).is_some()
+                || Self::is_layout_clip_scope_root(world, node)
+            {
+                depth = depth.saturating_add(1);
+            }
+            cursor = world.parent_of(node);
+        }
+        depth
+    }
+
+    fn is_layout_clip_scope_root(world: &World, node: ComponentId) -> bool {
+        world.children_of(node).iter().copied().any(|child| {
+            world.component_label(child) == Some("__bg")
+                && Self::subtree_contains_stencil_clip(world, child)
+        })
+    }
+
+    fn subtree_contains_stencil_clip(world: &World, root: ComponentId) -> bool {
+        use crate::engine::ecs::component::StencilClipComponent;
+
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            if world.get_component_by_id_as::<StencilClipComponent>(node).is_some() {
+                return true;
+            }
+            for &child in world.children_of(node) {
+                stack.push(child);
+            }
+        }
+        false
+    }
+
+    fn stencil_clip_scope_root(world: &World, component: ComponentId) -> Option<ComponentId> {
+        let parent = world.parent_of(component)?;
+        if world.component_label(parent) == Some("__bg") {
+            return world.parent_of(parent);
+        }
+        Some(parent)
     }
 
     fn find_stencil_clip_renderable_handle(

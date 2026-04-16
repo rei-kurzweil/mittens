@@ -1312,3 +1312,32 @@ impl System for RenderableSystem {
         // once we decide how to represent those components and what events/dirty flags we have.
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::RenderableSystem;
+    use crate::engine::ecs::World;
+    use crate::engine::ecs::component::{RenderableComponent, TextComponent, TransformComponent, TransparentCutoutComponent};
+
+    #[test]
+    fn text_like_renderable_inherits_cutout_from_ancestor_but_not_implicitly() {
+        let mut world = World::default();
+
+        let text = world.add_component(TextComponent::new("item"));
+        let glyph_t = world.add_component(TransformComponent::new());
+        let glyph_r = world.add_component(RenderableComponent::square());
+
+        let _ = world.add_child(text, glyph_t);
+        let _ = world.add_child(glyph_t, glyph_r);
+
+        assert_eq!(RenderableSystem::inherited_cutout_for_renderable(&world, glyph_r), None);
+
+        let cutout = world.add_component(TransparentCutoutComponent::new());
+        let _ = world.add_child(text, cutout);
+
+        assert_eq!(
+            RenderableSystem::inherited_cutout_for_renderable(&world, glyph_r),
+            Some(true)
+        );
+    }
+}

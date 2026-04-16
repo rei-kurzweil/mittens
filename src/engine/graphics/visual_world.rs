@@ -573,6 +573,228 @@ impl VisualWorld {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{RenderOp, VisualWorld};
+    use crate::engine::ecs::ComponentId;
+    use crate::engine::graphics::primitives::{GpuRenderable, MaterialHandle, MeshHandle, Transform};
+    use slotmap::KeyData;
+
+    fn cid(n: u64) -> ComponentId {
+        KeyData::from_ffi(n).into()
+    }
+
+    fn dummy_renderable() -> GpuRenderable {
+        GpuRenderable::new(MeshHandle::SQUARE, MaterialHandle::TOON_MESH)
+    }
+
+    #[test]
+    fn opaque_stream_enters_and_exits_single_root_clip() {
+        let mut visuals = VisualWorld::default();
+
+        let clip_handle = visuals.register(
+            cid(1),
+            dummy_renderable(),
+            Transform::default(),
+            [1.0, 1.0, 1.0, 1.0],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+        let content_handle = visuals.register(
+            cid(2),
+            dummy_renderable(),
+            Transform::default(),
+            [0.8, 0.8, 0.8, 1.0],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+
+        let _ = visuals.register_stencil_clip(clip_handle, 0);
+        let _ = visuals.update_stencil_ref(content_handle, 1);
+        visuals.prepare_draw_cache();
+
+        let (ops, instance_indices) = visuals.opaque_stream();
+        assert_eq!(ops.len(), 4);
+        assert_eq!(instance_indices.len(), 2);
+
+        match ops[0] {
+            RenderOp::EnterClip { parent_ref, new_ref, .. } => {
+                assert_eq!(parent_ref, 0);
+                assert_eq!(new_ref, 1);
+            }
+            other => panic!("expected EnterClip, got {other:?}"),
+        }
+
+        match ops[1] {
+            RenderOp::DrawBatch(batch) => {
+                assert_eq!(batch.stencil_ref, 1);
+                assert_eq!(batch.count, 1);
+                assert_eq!(instance_indices[batch.start], 0);
+            }
+            other => panic!("expected clip-source DrawBatch, got {other:?}"),
+        }
+
+        match ops[2] {
+            RenderOp::DrawBatch(batch) => {
+                assert_eq!(batch.stencil_ref, 1);
+                assert_eq!(batch.count, 1);
+                assert_eq!(instance_indices[batch.start], 1);
+            }
+            other => panic!("expected content DrawBatch, got {other:?}"),
+        }
+
+        match ops[3] {
+            RenderOp::ExitClip { ref_value, .. } => assert_eq!(ref_value, 1),
+            other => panic!("expected ExitClip, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn overlay_stream_nests_clip_regions_in_dfs_order() {
+        let mut visuals = VisualWorld::default();
+
+        let outer_clip = visuals.register(
+            cid(10),
+            dummy_renderable(),
+            Transform::default(),
+            [1.0, 1.0, 1.0, 1.0],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            true,
+            0.0,
+            None,
+            3.0,
+        );
+        let outer_content = visuals.register(
+            cid(11),
+            dummy_renderable(),
+            Transform::default(),
+            [0.8, 0.8, 0.8, 1.0],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            true,
+            0.0,
+            None,
+            3.0,
+        );
+        let inner_clip = visuals.register(
+            cid(12),
+            dummy_renderable(),
+            Transform::default(),
+            [1.0, 1.0, 1.0, 1.0],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            true,
+            0.0,
+            None,
+            3.0,
+        );
+        let inner_content = visuals.register(
+            cid(13),
+            dummy_renderable(),
+            Transform::default(),
+            [0.6, 0.6, 0.6, 1.0],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            true,
+            0.0,
+            None,
+            3.0,
+        );
+
+        let _ = visuals.register_stencil_clip(outer_clip, 0);
+        let _ = visuals.update_stencil_ref(outer_content, 1);
+        let _ = visuals.register_stencil_clip(inner_clip, 1);
+        let _ = visuals.update_stencil_ref(inner_content, 2);
+        visuals.prepare_draw_cache();
+
+        let (ops, instance_indices) = visuals.overlay_stream();
+        assert_eq!(ops.len(), 8);
+        assert_eq!(instance_indices.len(), 4);
+
+        match ops[0] {
+            RenderOp::EnterClip { parent_ref, new_ref, .. } => {
+                assert_eq!(parent_ref, 0);
+                assert_eq!(new_ref, 1);
+            }
+            other => panic!("expected outer EnterClip, got {other:?}"),
+        }
+        match ops[1] {
+            RenderOp::DrawBatch(batch) => {
+                assert_eq!(batch.stencil_ref, 1);
+                assert_eq!(batch.count, 1);
+                assert_eq!(instance_indices[batch.start], 0);
+            }
+            other => panic!("expected outer clip-source DrawBatch, got {other:?}"),
+        }
+        match ops[2] {
+            RenderOp::DrawBatch(batch) => {
+                assert_eq!(batch.stencil_ref, 1);
+                assert_eq!(batch.count, 1);
+                assert_eq!(instance_indices[batch.start], 1);
+            }
+            other => panic!("expected outer content DrawBatch, got {other:?}"),
+        }
+        match ops[3] {
+            RenderOp::EnterClip { parent_ref, new_ref, .. } => {
+                assert_eq!(parent_ref, 1);
+                assert_eq!(new_ref, 2);
+            }
+            other => panic!("expected inner EnterClip, got {other:?}"),
+        }
+        match ops[4] {
+            RenderOp::DrawBatch(batch) => {
+                assert_eq!(batch.stencil_ref, 2);
+                assert_eq!(batch.count, 1);
+                assert_eq!(instance_indices[batch.start], 2);
+            }
+            other => panic!("expected inner clip-source DrawBatch, got {other:?}"),
+        }
+        match ops[5] {
+            RenderOp::DrawBatch(batch) => {
+                assert_eq!(batch.stencil_ref, 2);
+                assert_eq!(batch.count, 1);
+                assert_eq!(instance_indices[batch.start], 3);
+            }
+            other => panic!("expected inner content DrawBatch, got {other:?}"),
+        }
+        match ops[6] {
+            RenderOp::ExitClip { ref_value, .. } => assert_eq!(ref_value, 2),
+            other => panic!("expected inner ExitClip, got {other:?}"),
+        }
+        match ops[7] {
+            RenderOp::ExitClip { ref_value, .. } => assert_eq!(ref_value, 1),
+            other => panic!("expected outer ExitClip, got {other:?}"),
+        }
+    }
+}
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VisualPointLight {
     /// Light type discriminator for GPU shading.
