@@ -157,6 +157,10 @@ pub struct VisualWorld {
     emissive_cutout_order: Vec<u32>,
     emissive_cutout_batches: Vec<DrawBatch>,
 
+    // DFS-ordered render stream for the cutout phase.
+    cutout_stream: Vec<RenderOp>,
+    cutout_stream_instances: Vec<u32>,
+
     // Overlay draw data (rebuilt when dirty).
     // Overlay is drawn on top of all other phases.
     overlay_order: Vec<u32>,
@@ -180,6 +184,8 @@ pub struct VisualWorld {
     // - Single-layer: cached (order does not depend on view), instanced.
     transparent_single_draw_order: Vec<u32>,
     transparent_single_draw_batches: Vec<DrawBatch>,
+    transparent_single_stream: Vec<RenderOp>,
+    transparent_single_stream_instances: Vec<u32>,
     // - Multi-layer: rebuilt per-eye (ordering depends on view), sorted + drawn one-by-one.
     transparent_multi_draw_order: Vec<u32>,
     transparent_multi_draw_batches: Vec<DrawBatch>,
@@ -294,6 +300,8 @@ impl Default for VisualWorld {
             cutout_batches: Vec::new(),
             emissive_cutout_order: Vec::new(),
             emissive_cutout_batches: Vec::new(),
+            cutout_stream: Vec::new(),
+            cutout_stream_instances: Vec::new(),
 
             overlay_order: Vec::new(),
             overlay_batches: Vec::new(),
@@ -308,6 +316,8 @@ impl Default for VisualWorld {
 
             transparent_single_draw_order: Vec::new(),
             transparent_single_draw_batches: Vec::new(),
+            transparent_single_stream: Vec::new(),
+            transparent_single_stream_instances: Vec::new(),
             transparent_multi_draw_order: Vec::new(),
             transparent_multi_draw_batches: Vec::new(),
         }
@@ -794,6 +804,150 @@ mod tests {
             other => panic!("expected outer ExitClip, got {other:?}"),
         }
     }
+
+    #[test]
+    fn cutout_stream_enters_and_exits_single_root_clip() {
+        let mut visuals = VisualWorld::default();
+
+        let clip_handle = visuals.register(
+            cid(20),
+            dummy_renderable(),
+            Transform::default(),
+            [1.0, 1.0, 1.0, 1.0],
+            1.0,
+            false,
+            true,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+        let content_handle = visuals.register(
+            cid(21),
+            dummy_renderable(),
+            Transform::default(),
+            [0.8, 0.8, 0.8, 1.0],
+            1.0,
+            false,
+            true,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+
+        let _ = visuals.register_stencil_clip(clip_handle, 0);
+        let _ = visuals.update_stencil_ref(content_handle, 1);
+        visuals.prepare_draw_cache();
+
+        let (ops, instance_indices) = visuals.cutout_stream();
+        assert_eq!(ops.len(), 4);
+        assert_eq!(instance_indices.len(), 2);
+
+        match ops[0] {
+            RenderOp::EnterClip { parent_ref, new_ref, .. } => {
+                assert_eq!(parent_ref, 0);
+                assert_eq!(new_ref, 1);
+            }
+            other => panic!("expected EnterClip, got {other:?}"),
+        }
+        match ops[1] {
+            RenderOp::DrawBatch(batch) => {
+                assert_eq!(batch.stencil_ref, 1);
+                assert_eq!(batch.count, 1);
+                assert_eq!(instance_indices[batch.start], 0);
+            }
+            other => panic!("expected clip-source DrawBatch, got {other:?}"),
+        }
+        match ops[2] {
+            RenderOp::DrawBatch(batch) => {
+                assert_eq!(batch.stencil_ref, 1);
+                assert_eq!(batch.count, 1);
+                assert_eq!(instance_indices[batch.start], 1);
+            }
+            other => panic!("expected content DrawBatch, got {other:?}"),
+        }
+        match ops[3] {
+            RenderOp::ExitClip { ref_value, .. } => assert_eq!(ref_value, 1),
+            other => panic!("expected ExitClip, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn transparent_single_stream_enters_and_exits_single_root_clip() {
+        let mut visuals = VisualWorld::default();
+
+        let clip_handle = visuals.register(
+            cid(30),
+            dummy_renderable(),
+            Transform::default(),
+            [1.0, 1.0, 1.0, 0.5],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+        let content_handle = visuals.register(
+            cid(31),
+            dummy_renderable(),
+            Transform::default(),
+            [0.8, 0.8, 0.8, 0.5],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+
+        let _ = visuals.register_stencil_clip(clip_handle, 0);
+        let _ = visuals.update_stencil_ref(content_handle, 1);
+        visuals.prepare_draw_cache();
+
+        let (ops, instance_indices) = visuals.transparent_single_stream();
+        assert_eq!(ops.len(), 4);
+        assert_eq!(instance_indices.len(), 2);
+
+        match ops[0] {
+            RenderOp::EnterClip { parent_ref, new_ref, .. } => {
+                assert_eq!(parent_ref, 0);
+                assert_eq!(new_ref, 1);
+            }
+            other => panic!("expected EnterClip, got {other:?}"),
+        }
+        match ops[1] {
+            RenderOp::DrawBatch(batch) => {
+                assert_eq!(batch.stencil_ref, 1);
+                assert_eq!(batch.count, 1);
+                assert_eq!(instance_indices[batch.start], 0);
+            }
+            other => panic!("expected clip-source DrawBatch, got {other:?}"),
+        }
+        match ops[2] {
+            RenderOp::DrawBatch(batch) => {
+                assert_eq!(batch.stencil_ref, 1);
+                assert_eq!(batch.count, 1);
+                assert_eq!(instance_indices[batch.start], 1);
+            }
+            other => panic!("expected content DrawBatch, got {other:?}"),
+        }
+        match ops[3] {
+            RenderOp::ExitClip { ref_value, .. } => assert_eq!(ref_value, 1),
+            other => panic!("expected ExitClip, got {other:?}"),
+        }
+    }
 }
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VisualPointLight {
@@ -1160,9 +1314,13 @@ impl VisualWorld {
         self.draw_batches.clear();
         self.cutout_order.clear();
         self.cutout_batches.clear();
+        self.cutout_stream.clear();
+        self.cutout_stream_instances.clear();
 
         self.transparent_single_draw_order.clear();
         self.transparent_single_draw_batches.clear();
+        self.transparent_single_stream.clear();
+        self.transparent_single_stream_instances.clear();
         self.transparent_multi_draw_order.clear();
         self.transparent_multi_draw_batches.clear();
 
@@ -1397,6 +1555,11 @@ impl VisualWorld {
         &self.cutout_batches
     }
 
+    /// DFS-ordered render stream for the alpha-to-coverage cutout phase.
+    pub fn cutout_stream(&self) -> (&[RenderOp], &[u32]) {
+        (&self.cutout_stream, &self.cutout_stream_instances)
+    }
+
     /// Indices into `instances()` in the order they should be drawn (emissive cutout batching).
     pub fn emissive_cutout_order(&self) -> &[u32] {
         &self.emissive_cutout_order
@@ -1413,6 +1576,14 @@ impl VisualWorld {
 
     pub fn overlay_batches(&self) -> &[DrawBatch] {
         &self.overlay_batches
+    }
+
+    /// DFS-ordered render stream for the single-layer transparent phase.
+    pub fn transparent_single_stream(&self) -> (&[RenderOp], &[u32]) {
+        (
+            &self.transparent_single_stream,
+            &self.transparent_single_stream_instances,
+        )
     }
 
     /// DFS-ordered render stream for the overlay phase.
@@ -1624,6 +1795,7 @@ impl VisualWorld {
             let r = inst.renderable;
             let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
             (
+                inst.stencil_ref,
                 r.material.0,
                 r.mesh.0,
                 tex,
@@ -1633,6 +1805,13 @@ impl VisualWorld {
         });
         let cutout_order = &self.cutout_order;
         Self::build_draw_batches_for_order(instances, cutout_order, &mut self.cutout_batches);
+
+        Self::build_phase_render_stream(
+            instances,
+            &self.cutout_order,
+            &mut self.cutout_stream,
+            &mut self.cutout_stream_instances,
+        );
 
         self.emissive_cutout_order.extend(
             self.cutout_order
@@ -1653,6 +1832,7 @@ impl VisualWorld {
             let r = inst.renderable;
             let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
             (
+                inst.stencil_ref,
                 r.material.0,
                 r.mesh.0,
                 tex,
@@ -1665,6 +1845,13 @@ impl VisualWorld {
             instances,
             transparent_single_draw_order,
             &mut self.transparent_single_draw_batches,
+        );
+
+        Self::build_phase_render_stream(
+            instances,
+            &self.transparent_single_draw_order,
+            &mut self.transparent_single_stream,
+            &mut self.transparent_single_stream_instances,
         );
 
         // Overlay pass: no-texture instances (e.g. text backgrounds) must draw before

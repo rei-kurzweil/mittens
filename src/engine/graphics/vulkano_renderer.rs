@@ -265,10 +265,14 @@ mod vulkano_backend {
         pub pipeline_toon_mesh: Arc<GraphicsPipeline>,
         pub pipeline_toon_mesh_transparent: Arc<GraphicsPipeline>,
         pub pipeline_toon_mesh_cutout: Arc<GraphicsPipeline>,
+        pub pipeline_toon_mesh_transparent_clipped: Arc<GraphicsPipeline>,
+        pub pipeline_toon_mesh_cutout_clipped: Arc<GraphicsPipeline>,
 
         pub pipeline_emissive_toon_mesh: Arc<GraphicsPipeline>,
         pub pipeline_emissive_toon_mesh_transparent: Arc<GraphicsPipeline>,
         pub pipeline_emissive_toon_mesh_cutout: Arc<GraphicsPipeline>,
+        pub pipeline_emissive_toon_mesh_transparent_clipped: Arc<GraphicsPipeline>,
+        pub pipeline_emissive_toon_mesh_cutout_clipped: Arc<GraphicsPipeline>,
         pub pipeline_emissive_prepass_toon_mesh: Arc<GraphicsPipeline>,
         pub pipeline_emissive_prepass_toon_mesh_cutout: Arc<GraphicsPipeline>,
 
@@ -1045,7 +1049,7 @@ mod vulkano_backend {
             let pipeline_emissive_toon_mesh_transparent = GraphicsPipeline::new(
                 device.clone(),
                 None,
-                pipeline_ci_emissive_transparent,
+                pipeline_ci_emissive_transparent.clone(),
             )?;
 
             // Transparent cutout variant:
@@ -1259,9 +1263,71 @@ mod vulkano_backend {
 
             let mut pipeline_ci_emissive_opaque_clipped = pipeline_ci_emissive.clone();
             pipeline_ci_emissive_opaque_clipped.depth_stencil_state = Some(clipped_depth_stencil);
-            pipeline_ci_emissive_opaque_clipped.dynamic_state = stencil_dynamic_state;
+            pipeline_ci_emissive_opaque_clipped.dynamic_state = stencil_dynamic_state.clone();
             let pipeline_emissive_opaque_clipped =
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci_emissive_opaque_clipped)?;
+
+            let transparent_clipped_depth_stencil = DepthStencilState {
+                depth: Some(DepthState {
+                    write_enable: false,
+                    ..DepthState::simple()
+                }),
+                stencil: Some(StencilState {
+                    front: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                    back: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                }),
+                ..Default::default()
+            };
+
+            let mut pipeline_ci_transparent_clipped = pipeline_ci_transparent.clone();
+            pipeline_ci_transparent_clipped.depth_stencil_state =
+                Some(transparent_clipped_depth_stencil.clone());
+            pipeline_ci_transparent_clipped.dynamic_state = stencil_dynamic_state.clone();
+            let pipeline_toon_mesh_transparent_clipped = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                pipeline_ci_transparent_clipped,
+            )?;
+
+            let mut pipeline_ci_emissive_transparent_clipped =
+                pipeline_ci_emissive_transparent.clone();
+            pipeline_ci_emissive_transparent_clipped.depth_stencil_state =
+                Some(transparent_clipped_depth_stencil);
+            pipeline_ci_emissive_transparent_clipped.dynamic_state = stencil_dynamic_state.clone();
+            let pipeline_emissive_toon_mesh_transparent_clipped = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                pipeline_ci_emissive_transparent_clipped,
+            )?;
+
+            let mut pipeline_ci_cutout_clipped = pipeline_ci_cutout.clone();
+            pipeline_ci_cutout_clipped.depth_stencil_state = Some(DepthStencilState {
+                depth: Some(DepthState::simple()),
+                stencil: Some(StencilState {
+                    front: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                    back: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                }),
+                ..Default::default()
+            });
+            pipeline_ci_cutout_clipped.dynamic_state = stencil_dynamic_state.clone();
+            let pipeline_toon_mesh_cutout_clipped =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_cutout_clipped)?;
+
+            let mut pipeline_ci_emissive_cutout_clipped = pipeline_ci_emissive_cutout.clone();
+            pipeline_ci_emissive_cutout_clipped.depth_stencil_state = Some(DepthStencilState {
+                depth: Some(DepthState::simple()),
+                stencil: Some(StencilState {
+                    front: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                    back: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                }),
+                ..Default::default()
+            });
+            pipeline_ci_emissive_cutout_clipped.dynamic_state = stencil_dynamic_state;
+            let pipeline_emissive_toon_mesh_cutout_clipped = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                pipeline_ci_emissive_cutout_clipped,
+            )?;
 
             let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
                 device.clone(),
@@ -1326,10 +1392,14 @@ mod vulkano_backend {
                 pipeline_toon_mesh,
                 pipeline_toon_mesh_transparent,
                 pipeline_toon_mesh_cutout,
+                pipeline_toon_mesh_transparent_clipped,
+                pipeline_toon_mesh_cutout_clipped,
 
                 pipeline_emissive_toon_mesh,
                 pipeline_emissive_toon_mesh_transparent,
                 pipeline_emissive_toon_mesh_cutout,
+                pipeline_emissive_toon_mesh_transparent_clipped,
+                pipeline_emissive_toon_mesh_cutout_clipped,
                 pipeline_emissive_prepass_toon_mesh,
                 pipeline_emissive_prepass_toon_mesh_cutout,
 
@@ -2077,7 +2147,7 @@ mod vulkano_backend {
                 background_instance_count > 0 || background_occluded_lit_instance_count > 0;
 
             // --- Cutout pass ---
-            let cutout_instance_count = visual_world.cutout_order().len();
+            let cutout_instance_count = visual_world.cutout_stream().1.len();
 
             // --- Overlay pass ---
             // Buffer indexed by overlay_stream().1; use its length for cache invalidation.
@@ -2151,7 +2221,7 @@ mod vulkano_backend {
             } else {
                 let buf = self.build_instance_buffer_for_order_opt(
                     &*visual_world,
-                    visual_world.cutout_order(),
+                    visual_world.cutout_stream().1,
                 )?;
                 self.cached_cutout_instance_count = cutout_instance_count;
                 self.cached_cutout_instance_buffer = buf.clone();

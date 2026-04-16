@@ -421,17 +421,21 @@ impl VulkanoState {
             return Ok(());
         }
 
-        self.record_instanced_draws_for_batches(
+        let (ops, stream_instances) = visual_world.cutout_stream();
+        self.record_phase_stream_draws(
             cbb,
+            visual_world,
             global_set,
             rig_set,
             instance_buffer,
-            instance_count,
-            visual_world.cutout_batches(),
+            ops,
+            stream_instances,
             self.pipeline_toon_mesh_cutout.clone(),
             self.pipeline_emissive_toon_mesh_cutout.clone(),
             self.pipeline_skinned_toon_mesh_cutout.clone(),
             self.pipeline_skinned_emissive_toon_mesh_cutout.clone(),
+            self.pipeline_toon_mesh_cutout_clipped.clone(),
+            self.pipeline_emissive_toon_mesh_cutout_clipped.clone(),
         )
     }
 
@@ -476,106 +480,34 @@ impl VulkanoState {
         rig_set: &Arc<DescriptorSet>,
         _eye: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let transparent_single_instance_count = visual_world.transparent_single_draw_order().len();
+        let (ops, stream_instances) = visual_world.transparent_single_stream();
+        let transparent_single_instance_count = stream_instances.len();
 
         if transparent_single_instance_count == 0 {
             return Ok(());
         }
 
-        // Build instance buffer in transparent-single draw order.
+        // Build instance buffer in transparent-single stream order.
         let transparent_single_instance_buffer = self.build_instance_buffer_for_order_or_dummy(
             visual_world,
-            visual_world.transparent_single_draw_order(),
+            stream_instances,
         )?;
 
-        // Bind pipeline/descriptor sets per (material, texture).
-        let mut bound_material: Option<crate::engine::graphics::MaterialHandle> = None;
-        let mut bound_texture: Option<TextureHandle> = None;
-        let mut bound_filtering: Option<TextureFiltering> = None;
-        let mut bound_quant: Option<u32> = None;
-
-        for batch in visual_world.transparent_single_draw_batches() {
-            let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
-            let filtering = batch.texture_filtering;
-            let quant_bits = batch.quant_steps.to_bits();
-
-            if bound_material != Some(batch.material)
-                || bound_texture != Some(texture_handle)
-                || bound_filtering != Some(filtering)
-                || bound_quant != Some(quant_bits)
-            {
-                let Some(material_set) = self.get_or_create_material_set(
-                    batch.material,
-                    texture_handle,
-                    filtering,
-                    batch.quant_steps,
-                )?
-                else {
-                    continue;
-                };
-
-                let pipeline = self.pipeline_for_material(
-                    batch.material,
-                    self.pipeline_toon_mesh_transparent.clone(),
-                    self.pipeline_emissive_toon_mesh_transparent.clone(),
-                    self.pipeline_skinned_toon_mesh_transparent.clone(),
-                    self.pipeline_skinned_emissive_toon_mesh_transparent.clone(),
-                );
-
-                cbb.bind_pipeline_graphics(pipeline.clone())?;
-                cbb.bind_descriptor_sets(
-                    PipelineBindPoint::Graphics,
-                    pipeline.layout().clone(),
-                    0,
-                    (global_set.clone(), material_set, rig_set.clone()),
-                )?;
-
-                bound_material = Some(batch.material);
-                bound_texture = Some(texture_handle);
-                bound_filtering = Some(filtering);
-                bound_quant = Some(quant_bits);
-            }
-
-            let Some(mesh) = self.meshes.get(&batch.mesh) else {
-                continue;
-            };
-            if Self::is_skinned_material(batch.material) {
-                let Some(skin) = mesh.skin_vertices.as_ref() else {
-                    continue;
-                };
-                cbb.bind_vertex_buffers(
-                    0,
-                    (
-                        mesh.vertices.clone(),
-                        skin.clone(),
-                        transparent_single_instance_buffer.clone(),
-                    ),
-                )?;
-            } else {
-                cbb.bind_vertex_buffers(
-                    0,
-                    (
-                        mesh.vertices.clone(),
-                        transparent_single_instance_buffer.clone(),
-                    ),
-                )?;
-            }
-            cbb.bind_index_buffer(mesh.indices.clone())?;
-
-            if batch.count > 0 {
-                unsafe {
-                    cbb.draw_indexed(
-                        mesh.index_count,
-                        batch.count as u32,
-                        0,
-                        0,
-                        batch.start as u32,
-                    )?;
-                }
-            }
-        }
-
-        Ok(())
+        self.record_phase_stream_draws(
+            cbb,
+            visual_world,
+            global_set,
+            rig_set,
+            &transparent_single_instance_buffer,
+            ops,
+            stream_instances,
+            self.pipeline_toon_mesh_transparent.clone(),
+            self.pipeline_emissive_toon_mesh_transparent.clone(),
+            self.pipeline_skinned_toon_mesh_transparent.clone(),
+            self.pipeline_skinned_emissive_toon_mesh_transparent.clone(),
+            self.pipeline_toon_mesh_transparent_clipped.clone(),
+            self.pipeline_emissive_toon_mesh_transparent_clipped.clone(),
+        )
     }
 
     pub(super) fn record_transparent_multi_draws(
