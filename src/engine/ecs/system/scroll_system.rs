@@ -108,7 +108,7 @@ impl ScrollingSystem {
         let mut cursor = world.parent_of(start);
         while let Some(node) = cursor {
             if world.get_component_by_id_as::<StencilClipComponent>(node).is_some() {
-                return Some(node);
+                return Some(Self::stencil_drag_scope_root(world, node).unwrap_or(node));
             }
             if world.get_component_by_id_as::<RenderableComponent>(node).is_some() {
                 return Some(node);
@@ -117,6 +117,14 @@ impl ScrollingSystem {
         }
 
         Self::nearest_ancestor_transform(world, start)
+    }
+
+    fn stencil_drag_scope_root(world: &World, stencil_clip: ComponentId) -> Option<ComponentId> {
+        let parent = world.parent_of(stencil_clip)?;
+        if world.component_label(parent) == Some("__bg") {
+            return world.parent_of(parent);
+        }
+        Some(parent)
     }
 
     pub fn set_content_height(

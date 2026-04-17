@@ -948,6 +948,134 @@ mod tests {
             other => panic!("expected ExitClip, got {other:?}"),
         }
     }
+
+    #[test]
+    fn opaque_stream_uses_transparent_clip_source_for_stencil_ops() {
+        let mut visuals = VisualWorld::default();
+
+        let clip_handle = visuals.register(
+            cid(40),
+            dummy_renderable(),
+            Transform::default(),
+            [1.0, 1.0, 1.0, 0.0],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+        let content_handle = visuals.register(
+            cid(41),
+            dummy_renderable(),
+            Transform::default(),
+            [0.8, 0.8, 0.8, 1.0],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+
+        let _ = visuals.register_stencil_clip(clip_handle, 0);
+        let _ = visuals.update_stencil_ref(content_handle, 1);
+        visuals.prepare_draw_cache();
+
+        let (ops, instance_indices) = visuals.opaque_stream();
+        assert_eq!(ops.len(), 3);
+        assert_eq!(instance_indices, &[0, 1]);
+
+        match ops[0] {
+            RenderOp::EnterClip { parent_ref, new_ref, .. } => {
+                assert_eq!(parent_ref, 0);
+                assert_eq!(new_ref, 1);
+            }
+            other => panic!("expected EnterClip, got {other:?}"),
+        }
+        match ops[1] {
+            RenderOp::DrawBatch(batch) => {
+                assert_eq!(batch.stencil_ref, 1);
+                assert_eq!(batch.count, 1);
+                assert_eq!(instance_indices[batch.start], 1);
+            }
+            other => panic!("expected content DrawBatch, got {other:?}"),
+        }
+        match ops[2] {
+            RenderOp::ExitClip { ref_value, .. } => assert_eq!(ref_value, 1),
+            other => panic!("expected ExitClip, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cutout_stream_uses_opaque_clip_source_for_stencil_ops() {
+        let mut visuals = VisualWorld::default();
+
+        let clip_handle = visuals.register(
+            cid(50),
+            dummy_renderable(),
+            Transform::default(),
+            [1.0, 1.0, 1.0, 1.0],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+        let content_handle = visuals.register(
+            cid(51),
+            dummy_renderable(),
+            Transform::default(),
+            [0.8, 0.8, 0.8, 1.0],
+            1.0,
+            false,
+            true,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+
+        let _ = visuals.register_stencil_clip(clip_handle, 0);
+        let _ = visuals.update_stencil_ref(content_handle, 1);
+        visuals.prepare_draw_cache();
+
+        let (ops, instance_indices) = visuals.cutout_stream();
+        assert_eq!(ops.len(), 3);
+        assert_eq!(instance_indices, &[0, 1]);
+
+        match ops[0] {
+            RenderOp::EnterClip { parent_ref, new_ref, .. } => {
+                assert_eq!(parent_ref, 0);
+                assert_eq!(new_ref, 1);
+            }
+            other => panic!("expected EnterClip, got {other:?}"),
+        }
+        match ops[1] {
+            RenderOp::DrawBatch(batch) => {
+                assert_eq!(batch.stencil_ref, 1);
+                assert_eq!(batch.count, 1);
+                assert_eq!(instance_indices[batch.start], 1);
+            }
+            other => panic!("expected content DrawBatch, got {other:?}"),
+        }
+        match ops[2] {
+            RenderOp::ExitClip { ref_value, .. } => assert_eq!(ref_value, 1),
+            other => panic!("expected ExitClip, got {other:?}"),
+        }
+    }
 }
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VisualPointLight {
@@ -1046,20 +1174,26 @@ impl VisualWorld {
     ///   then all content at depth D+1 (recursed), then `ExitClip`.
     fn build_phase_render_stream(
         instances: &[VisualInstance],
-        overlay_order: &[u32],
+        phase_order: &[u32],
         out_ops: &mut Vec<RenderOp>,
         out_instances: &mut Vec<u32>,
     ) {
         out_ops.clear();
         out_instances.clear();
 
-        if overlay_order.is_empty() {
+        if phase_order.is_empty() {
             return;
         }
 
-        let max_depth = overlay_order
+        let max_depth = phase_order
             .iter()
             .map(|&i| instances[i as usize].stencil_ref)
+            .chain(
+                instances
+                    .iter()
+                    .filter(|inst| inst.is_stencil_clip)
+                    .map(|inst| inst.stencil_ref),
+            )
             .max()
             .unwrap_or(0);
 
@@ -1067,13 +1201,20 @@ impl VisualWorld {
         // Group[d] = (non_clip indices, clip_source indices) at stencil_ref == d.
         let depth_count = max_depth as usize + 1;
         let mut non_clip_by_depth: Vec<Vec<u32>> = vec![Vec::new(); depth_count];
-        let mut clip_sources_by_depth: Vec<Vec<u32>> = vec![Vec::new(); depth_count];
+        let mut phase_clip_sources_by_depth: Vec<Vec<u32>> = vec![Vec::new(); depth_count];
+        let mut all_clip_sources_by_depth: Vec<Vec<u32>> = vec![Vec::new(); depth_count];
 
-        for &idx in overlay_order {
+        for (index, inst) in instances.iter().enumerate() {
+            if inst.is_stencil_clip {
+                all_clip_sources_by_depth[inst.stencil_ref as usize].push(index as u32);
+            }
+        }
+
+        for &idx in phase_order {
             let inst = &instances[idx as usize];
             let d = inst.stencil_ref as usize;
             if inst.is_stencil_clip {
-                clip_sources_by_depth[d].push(idx);
+                phase_clip_sources_by_depth[d].push(idx);
             } else {
                 non_clip_by_depth[d].push(idx);
             }
@@ -1084,7 +1225,8 @@ impl VisualWorld {
             max_depth,
             instances,
             &non_clip_by_depth,
-            &clip_sources_by_depth,
+            &all_clip_sources_by_depth,
+            &phase_clip_sources_by_depth,
             out_ops,
             out_instances,
         );
@@ -1095,7 +1237,8 @@ impl VisualWorld {
         max_depth: u8,
         instances: &[VisualInstance],
         non_clip_by_depth: &[Vec<u32>],
-        clip_sources_by_depth: &[Vec<u32>],
+        all_clip_sources_by_depth: &[Vec<u32>],
+        phase_clip_sources_by_depth: &[Vec<u32>],
         out_ops: &mut Vec<RenderOp>,
         out_instances: &mut Vec<u32>,
     ) {
@@ -1109,13 +1252,17 @@ impl VisualWorld {
             Self::append_stream_batches(instances, non_clip, depth as u8, out_ops, out_instances);
         }
 
-        let clip_sources = &clip_sources_by_depth[depth];
-        if !clip_sources.is_empty() {
+        let all_clip_sources = &all_clip_sources_by_depth[depth];
+        if !all_clip_sources.is_empty() {
             let parent_ref = depth as u8;
             let new_ref = parent_ref.saturating_add(1);
+            let phase_clip_sources = &phase_clip_sources_by_depth[depth];
 
             // Emit EnterClip for every clip source at this depth.
-            for &src_idx in clip_sources {
+            for &src_idx in all_clip_sources {
+                if !phase_clip_sources.contains(&src_idx) {
+                    Self::append_clip_stream_instance(out_instances, src_idx);
+                }
                 out_ops.push(RenderOp::EnterClip {
                     instance_index: src_idx,
                     parent_ref,
@@ -1125,13 +1272,15 @@ impl VisualWorld {
 
             // Clip sources also draw as normal color instances, but at new_ref
             // (they are inside their own clip region after the INCR).
-            Self::append_stream_batches(
-                instances,
-                clip_sources,
-                new_ref,
-                out_ops,
-                out_instances,
-            );
+            if !phase_clip_sources.is_empty() {
+                Self::append_stream_batches(
+                    instances,
+                    phase_clip_sources,
+                    new_ref,
+                    out_ops,
+                    out_instances,
+                );
+            }
 
             // Recurse: all content at the next depth is inside the clip region.
             if depth + 1 <= max_depth as usize {
@@ -1140,7 +1289,8 @@ impl VisualWorld {
                     max_depth,
                     instances,
                     non_clip_by_depth,
-                    clip_sources_by_depth,
+                    all_clip_sources_by_depth,
+                    phase_clip_sources_by_depth,
                     out_ops,
                     out_instances,
                 );
@@ -1148,7 +1298,7 @@ impl VisualWorld {
 
             // Emit ExitClip in reverse order (innermost-first, which here means
             // the last clip source entered is the first exited).
-            for &src_idx in clip_sources.iter().rev() {
+            for &src_idx in all_clip_sources.iter().rev() {
                 out_ops.push(RenderOp::ExitClip {
                     instance_index: src_idx,
                     ref_value: new_ref,
@@ -1161,10 +1311,17 @@ impl VisualWorld {
                 max_depth,
                 instances,
                 non_clip_by_depth,
-                clip_sources_by_depth,
+                all_clip_sources_by_depth,
+                phase_clip_sources_by_depth,
                 out_ops,
                 out_instances,
             );
+        }
+    }
+
+    fn append_clip_stream_instance(out_instances: &mut Vec<u32>, instance_index: u32) {
+        if !out_instances.contains(&instance_index) {
+            out_instances.push(instance_index);
         }
     }
 

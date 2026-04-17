@@ -67,6 +67,7 @@ T.position(0, 0, -5.0).scale(1.8, 1.8, 1.0) {
     // - the pipeline drops scale before producing the scroll/content branch
     R.plane() {
         C.rgba(0.9, 0.9, 0.9, 1.0)
+        Raycastable {}
     
         StencilClip {
             TransformPipeline {

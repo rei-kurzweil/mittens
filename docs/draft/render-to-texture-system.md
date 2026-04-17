@@ -155,3 +155,16 @@ After the skeleton lands, verify:
 - `Texture.render_image(...)` still binds a texture to consuming renderables
 - bloom/emissive internal publications still appear
 - stencil debug publication still has a stable selector-backed handle path
+
+## TODO
+
+- Teach renderer-side publication code to consume `RenderToTextureSystem` producer requests instead of hardcoded selector-specific logic in `VulkanoRenderer`.
+- Extract internal publication/copy bookkeeping out of `VulkanoRenderer` into a focused render-to-texture publication helper/module.
+- Add non-internal producer request population for future authored capture paths:
+	- `SceneCapture`
+	- `CubeCapture`
+	- `Mirror`
+	- `Portal`
+- Decide whether `VisualWorld` should remain the long-term owner of selector → `TextureHandle` or whether that registry should move behind a dedicated render-to-texture runtime model.
+- Define update cadence / invalidation semantics for future render-to-texture producers (every frame, on demand, fixed rate, visibility-driven).
+- Revisit debug/internal image publication once the general producer path exists so debug outputs stop being special-cased.
