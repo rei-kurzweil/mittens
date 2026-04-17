@@ -278,8 +278,9 @@ The goal is to make this authored shape work directly:
 
 ```text
 TransformPipelineOutput
-└── Scrolling
-    └── content...
+└── T
+    └── Scrolling
+        └── content...
 ```
 
 without requiring the current manual helper shape:
@@ -291,6 +292,12 @@ TransformPipelineOutput
         └── Scrolling
             └── content...
 ```
+
+In other words:
+
+- `TransformPipelineOutput` still needs an output-anchor `T`
+- that outer `T` remains the important pipeline-controlled edge
+- the refactor removes the extra inner `T` that currently exists only so `Scrolling` has a safe track to move
 
 ### Phase 1 — lock the runtime contract
 
@@ -334,7 +341,7 @@ Key design decisions for this phase:
 - helper nodes must not be mistaken for user-authored content by layout, clipping, or editor tooling
 - the helper shape must work the same in MMS, hand-built trees, and panel/editor subtrees
 
-This is the phase that removes the need for the extra user-authored `T` around `Scrolling`.
+This is the phase that removes the need for the extra user-authored inner `T` around `Scrolling`.
 
 ### Phase 3 — migrate registration and sync logic
 
@@ -403,7 +410,8 @@ After helper ownership works, convert the known call sites to the simpler model:
 
 The conversion target is:
 
-- no extra user-authored `T` only for scrolling ownership
+- keep the single output-anchor `T` under `TransformPipelineOutput`
+- no extra user-authored inner `T` only for scrolling ownership
 - no ancestor transform being implicitly commandeered by scrolling
 - pipeline output transforms remain pure output anchors
 
@@ -423,7 +431,7 @@ This phase should also update docs/comments so the public mental model becomes:
 
 Before calling the refactor done, we should add/keep coverage for:
 
-- `Scrolling` directly under `TransformPipelineOutput`
+- `Scrolling` directly under the single output-anchor `T` below `TransformPipelineOutput`
 - `Scrolling` under ordinary authored transforms
 - editor panel scrolling
 - late-added children appearing under the scroll track automatically
@@ -477,7 +485,7 @@ It only records that it is currently not helping much in the common authored sha
 
 This refactor is successful when:
 
-- `Scrolling { ... }` no longer needs a manually authored parent track transform just to be safe
+- `Scrolling { ... }` no longer needs a manually authored extra inner track transform just to be safe
 - `Scrolling` never needs to drive a transform above itself in the hierarchy
 - `TransformForkTRS` with omitted stream nodes behaves as intuitive pass-through
 - simple pipeline authoring can omit no-op translation/rotation maps
