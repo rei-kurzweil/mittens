@@ -270,35 +270,166 @@ This suggests a staged migration rather than a single rewrite.
 
 ---
 
-## 7. Suggested refactor phases
+## 7. Implementation plan before changing `src/`
 
-### Phase 1 — document and enforce topology rules
+This is the concrete rollout plan for moving scroll-track ownership inside `Scrolling`.
 
-- document that `TransformMergeTRS` is not a content container
-- document that omitted TRS map streams mean `Pass`
-- audit existing authored trees for content nested under `TransformMergeTRS`
-- add validation / warnings for invalid nesting if practical
+The goal is to make this authored shape work directly:
 
-### Phase 2 — simplify pipeline authoring defaults
+```text
+TransformPipelineOutput
+└── Scrolling
+    └── content...
+```
 
-- make `TransformForkTRS` treat missing translation/rotation/scale stream nodes as pass-through
-- allow authored trees to omit no-op translation/rotation maps
-- verify current examples still parse and evaluate identically
+without requiring the current manual helper shape:
 
-### Phase 3 — refactor `Scrolling` ownership model
+```text
+TransformPipelineOutput
+└── T
+    └── T
+        └── Scrolling
+            └── content...
+```
 
-- move `Scrolling` away from controlling ancestor transforms
-- make `Scrolling` own an internal scroll track topology
-- keep drag-scope semantics and scrolling events stable
-- migrate editor panel creation and authored MMS shapes to the new model
+### Phase 1 — lock the runtime contract
 
-### Phase 4 — simplify common MMS/reference examples
+Before rewriting the runtime shape, we should explicitly define the new `Scrolling` contract:
 
-Once phases 2 and 3 exist, convert the canonical examples to the simpler shape:
+- `ScrollingComponent` becomes the semantic owner of the moved content track
+- the moved track must always live *inside* the `Scrolling` subtree
+- `ScrollingSystem` should stop discovering an ancestor transform as its implicit track
+- authored children of `Scrolling` should be treated as content to be wrapped/moved
+- explicit `track` support, if kept at all, should become an escape hatch rather than the default model
 
-- no explicit pass-through translation/rotation maps unless they do real work
-- no user content under `TransformMergeTRS`
-- no extra manual `T` only for scrolling track ownership
+Deliverables for this phase:
+
+- doc updates only
+- agreed invariants for helper naming/ownership
+- explicit statement of what existing topology remains temporarily supported during migration
+
+### Phase 2 — introduce runtime-owned helper topology
+
+Add a runtime-managed internal shape for `Scrolling`, conceptually:
+
+```text
+Scrolling
+└── __scroll_track
+    └── authored children...
+```
+
+or, if a separate anchor is useful:
+
+```text
+Scrolling
+└── __scroll_root
+    └── __scroll_track
+        └── authored children...
+```
+
+Key design decisions for this phase:
+
+- `__scroll_track` should be a normal `TransformComponent`
+- any helper nodes must be clearly runtime-owned / reserved (`__scroll_*`)
+- helper nodes must not be mistaken for user-authored content by layout, clipping, or editor tooling
+- the helper shape must work the same in MMS, hand-built trees, and panel/editor subtrees
+
+This is the phase that removes the need for the extra user-authored `T` around `Scrolling`.
+
+### Phase 3 — migrate registration and sync logic
+
+Once the helper topology exists, move `ScrollingSystem` from “discover ancestor track” to “ensure owned track”.
+
+Concretely:
+
+- registration should ensure the helper track exists
+- registration should record that helper track in `ScrollingComponent.track`
+- `track_base_pos` should be captured from the helper track itself
+- `sync_component(...)` should only ever move the helper track
+- drag-scope behavior should stay unchanged unless a separate drag-scope cleanup is needed
+
+Important compatibility rule:
+
+- old authored trees that already supply a safe explicit track should continue to work during migration
+- but implicit nearest-ancestor-track discovery should be treated as legacy behavior to phase out
+
+### Phase 4 — reparent authored children under the helper track
+
+This is the most topology-sensitive part and should be implemented deliberately.
+
+The runtime needs a clear rule for which children of `Scrolling` are:
+
+- user/authored content that should move with scrolling
+- runtime helper nodes that should stay outside the moved content branch
+- style/behavior nodes that belong on the `Scrolling` root itself
+
+The simplest target rule is:
+
+- authored/rendered/layout content under `Scrolling` is wrapped under `__scroll_track`
+- `ScrollingComponent` itself stays on the `Scrolling` root
+- future scroll-related helper nodes also stay on the `Scrolling` root unless they are part of the moved branch
+
+Implementation detail to decide before coding:
+
+- whether reparenting happens eagerly during registration/init
+- or whether a dedicated topology-sync step maintains the helper shape over time
+
+The second option is probably safer if children can be attached after init.
+
+### Phase 5 — preserve topology mutations after init
+
+The new model must keep working when content is added later.
+
+That means we should plan for:
+
+- late-added children under `Scrolling`
+- editor/runtime mutation paths that insert nodes after initialization
+- MMS-evaluated subtrees that attach more content after the scroll helper already exists
+
+So the runtime likely needs one of:
+
+- a parent-change / child-attached maintenance hook for `Scrolling`
+- or an idempotent sync pass that re-homes new content under `__scroll_track`
+
+Without this phase, the feature will work on initial trees but drift out of shape during editing/runtime mutation.
+
+### Phase 6 — migrate canonical call sites
+
+After helper ownership works, convert the known call sites to the simpler model:
+
+1. [examples/ui-layout.mms](../../examples/ui-layout.mms)
+2. editor panels / inspector-owned scrolling subtrees
+3. any hand-built ECS trees that still create a manual scroll track transform
+
+The conversion target is:
+
+- no extra user-authored `T` only for scrolling ownership
+- no ancestor transform being implicitly commandeered by scrolling
+- pipeline output transforms remain pure output anchors
+
+### Phase 7 — simplify the remaining API surface
+
+After migration, decide what to do with legacy knobs:
+
+- keep `track: Option<ComponentId>` only as an advanced/manual override
+- or remove implicit external-track control entirely
+- document whether `track_base_pos` remains public state or becomes runtime-owned internals
+
+This phase should also update docs/comments so the public mental model becomes:
+
+> `Scrolling { ... }` owns the moved content branch inside itself.
+
+### Phase 8 — validation and regression coverage
+
+Before calling the refactor done, we should add/keep coverage for:
+
+- `Scrolling` directly under `TransformPipelineOutput`
+- `Scrolling` under ordinary authored transforms
+- editor panel scrolling
+- late-added children appearing under the scroll track automatically
+- drag-scope behavior staying stable in clipped/manual viewport trees
+
+This is the phase that proves the new ownership model is actually safer, not just simpler on paper.
 
 ---
 
@@ -319,7 +450,19 @@ The essential rule is still:
 - scrolling-owned motion should happen inside the `Scrolling` subtree
 - not by mutating a parent transform outside the component
 
-### 8.2 Should `TransformMergeTRS` remain visible in MMS at all?
+### 8.2 Should late-added children be auto-rehomed?
+
+Probably yes, if `Scrolling` is going to be a true topology owner.
+
+The key decision is not whether to support that behavior, but where to implement it:
+
+- in `ScrollingSystem` via parent-change hooks
+- in a more general topology-sync layer
+- or in a small helper owned by `SystemWorld`
+
+We should answer that before implementation so we do not end up with init-time-only behavior.
+
+### 8.3 Should `TransformMergeTRS` remain visible in MMS at all?
 
 Maybe, maybe not.
 

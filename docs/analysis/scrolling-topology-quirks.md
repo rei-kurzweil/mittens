@@ -4,6 +4,9 @@ Date: 2026-04-17
 
 Notes from debugging the authored scrolling list in [examples/ui-layout.mms](../../examples/ui-layout.mms).
 
+The forward-looking refactor plan that should remove this quirk is tracked in
+[docs/refactor/scrolling-and-tx-pipeline-simplify.md](../refactor/scrolling-and-tx-pipeline-simplify.md).
+
 This is not quite a bug report. The runtime behaved consistently with its current ownership rules, but those rules were easy to violate when combining `Scrolling`, `TransformPipeline`, and manually authored clip/view hierarchies.
 
 ---
