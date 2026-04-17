@@ -3,7 +3,7 @@ BGC {
 }
 
 let stencil_clip_debug_texture = Texture.render_image("render_graph.stencil_clip.debug")
-let bloom_debug_texture = Texture.render_image("render_graph.bloom.blur")
+
 
 BG {
     T.position(0.0, 0.0, -5.0)
@@ -42,14 +42,14 @@ I {
                 T.position(0.0, 0.0, 0.01).scale(0.86, 0.66, 1.0) {
                     R.square() {
                         C.rgba(1.0, 1.0, 1.0, 1.0)
-                        bloom_debug_texture
+                        stencil_clip_debug_texture
                         TextureFiltering.linear()
                     }
                 }
 
-                T.position(0.0, -0.44, 0.02).scale(0.05, 0.05, 1.0) {
+                T.position(-0.4, -0.42, 0.02).scale(0.05, 0.05, 1.0) {
                     TXT {
-                        "bloom debug"
+                        "s-buffer debug"
                         C.rgba(0.08, 0.08, 0.10, 1.0)
                     }
                 }
@@ -58,7 +58,7 @@ I {
     }
 }
 
-T.position(0, 0, -5.0).scale(1.8, 1.8, 1.0) {
+T.position(0, 0, 3.0).scale(1.8, 4.8, 1.0) {
     // Sketch of the intended topology:
     // - this scaled T defines the viewport pose + size
     // - StencilClip owns the content branch
@@ -81,12 +81,14 @@ T.position(0, 0, -5.0).scale(1.8, 1.8, 1.0) {
                 }
                 TransformPipelineOutput {
                     T {
-                        Scrolling.new(1.0, 100.0) {
-                            for y in range(100) {
-                                T.position(0, y, 0.01).scale(0.12, 0.12, 0.12) {
-                                    Text {
-                                        "item "+y
-                                        C.rgba(0.6, 0.6, 0.6, 1.0)
+                        T {
+                            Scrolling.new(1.0, 100.0) {
+                                for y in range(100) {
+                                    T.position(0, y / 4.0, 0.01).scale(0.12, 0.12, 0.12) {
+                                        Text {
+                                            "item "+y
+                                            C.rgba(0.6, 0.6, 0.6, 1.0)
+                                        }
                                     }
                                 }
                             }
@@ -125,7 +127,6 @@ RenderGraph {
         radius_ndc(0.06)
         emissive_scale(1.2)
         half_res(true)
-        bloom_debug_texture
     }
 }
 
@@ -137,18 +138,15 @@ T.position(0.0, -5.0, -5.0) {
         for y in range(-5, 6) {
             i = i + 1;
             T.position(x, y, 0.0).scale(0.9, 0.9, 0.9) {
-                if i % 2 == 0 {
-                    T.position(0.0, 0.0, 2.0).scale(0.25, 0.25, 0.25) {
+                if x % 2 == 0 && y % 2 == 0 {
+                    let red = (x + y) / 5.0;
+
+                    if (red > 0.2) {
                         R.cube() {
-                            C.rgba(i / 10.0, i / 10.0, i / 10.0, 0.9)
+
+                            C.rgba(red, x / 5.0, y / 5.0, 1.0)
                             Emissive.on()
                         }
-                    }
-                }
-                if x % 2 == 0 && y % 2 == 0 {
-                    R.cube() {
-                        C.rgba(1.0, x / 5.0, y / 5.0, 1.0)
-                        Emissive.on()
                     }
 
                 } else {

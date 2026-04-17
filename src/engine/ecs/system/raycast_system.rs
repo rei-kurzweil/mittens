@@ -978,8 +978,6 @@ impl System for RayCastSystem {
                             "[RayCast] click hit renderable={:?} parent={:?} t={:.3}",
                             hit_cid, parent, t
                         );
-                    } else {
-                        println!("[RayCast] click no hit");
                     }
                 }
             }
@@ -1003,23 +1001,6 @@ impl RayCastSystem {
         bvh: &BvhSystem,
         _dt_sec: f32,
     ) {
-        // Equivalent to `tick()` but uses BVH for hit testing.
-        // Keep the debug prints so it's easy to see input edges.
-        let left_down = input.mouse_down.contains(&MouseButton::Left);
-
-        if input.mouse_pressed.contains(&MouseButton::Left) {
-            println!(
-                "[RayCast] debug: left pressed cursor={:?} down={:?}",
-                input.cursor_pos, left_down
-            );
-        }
-        if input.mouse_released.contains(&MouseButton::Left) {
-            println!(
-                "[RayCast] debug: left released cursor={:?} down={:?}",
-                input.cursor_pos, left_down
-            );
-        }
-
         // Cursor ray (if needed by any raycaster this frame).
         let cursor_ray = Self::ray_from_cursor(visuals, input);
 
@@ -1163,11 +1144,6 @@ impl RayCastSystem {
                                 hit_cid,
                                 parent,
                                 t
-                            );
-                        } else {
-                            println!(
-                                "[RayCast] {} no hit",
-                                if action_cast { "action" } else { "click" }
                             );
                         }
                     }

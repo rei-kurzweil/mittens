@@ -28,7 +28,22 @@ impl ScrollingSystem {
                     let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(scroll_component) else {
                         return;
                     };
-                    if !sc.apply_drag(-delta_world[1]) {
+                    let prev_offset = sc.scroll_offset;
+                    let changed = sc.apply_drag(-delta_world[1]);
+                    println!(
+                        "[Scrolling] DragMove scroll={:?} track={:?} scope={:?} delta_world=({:.3},{:.3},{:.3}) offset={:.3}->{:.3} changed={} max={:.3}",
+                        scroll_component,
+                        sc.track,
+                        sc.drag_scope,
+                        delta_world[0],
+                        delta_world[1],
+                        delta_world[2],
+                        prev_offset,
+                        sc.scroll_offset,
+                        changed,
+                        sc.max_scroll(),
+                    );
+                    if !changed {
                         return;
                     }
                     (
@@ -68,6 +83,14 @@ impl ScrollingSystem {
             .and_then(|sc| sc.track);
         let track = existing_track.or_else(|| Self::nearest_ancestor_transform(world, scroll_component));
         let drag_scope = Self::nearest_drag_scope(world, scroll_component);
+
+        println!(
+            "[Scrolling] register scroll={:?} label={:?} track={:?} drag_scope={:?}",
+            scroll_component,
+            world.component_label(scroll_component),
+            track,
+            drag_scope,
+        );
 
         if let Some(track_id) = track {
             if let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(scroll_component) {
