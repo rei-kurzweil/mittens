@@ -17,6 +17,10 @@ use crate::engine::ecs::{IntentValue, SignalEmitter};
 ///               ├── child_1
 ///               └── ...
 /// ```
+///
+/// If no explicit `track` is assigned, `ScrollingSystem` now creates and owns an internal
+/// `__scroll_track` transform under the `ScrollingComponent` and reparents the initial content
+/// children under it.
 #[derive(Debug, Clone)]
 pub struct ScrollingComponent {
     /// Height of the clipped viewport in world units.
@@ -26,6 +30,8 @@ pub struct ScrollingComponent {
     /// Current scroll offset in world units. 0.0 = top.
     pub scroll_offset: f32,
     /// Transform moved by the scroll runtime.
+    ///
+    /// If unset at init time, the runtime will create an owned internal track by default.
     pub track: Option<ComponentId>,
     /// Base local-space position of `track` before any scrolling is applied.
     pub track_base_pos: [f32; 3],
