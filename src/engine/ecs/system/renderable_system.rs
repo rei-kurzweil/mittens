@@ -200,6 +200,14 @@ impl RenderableSystem {
         })
     }
 
+    fn immediate_emissive_child(world: &World, node: ComponentId) -> Option<f32> {
+        world.children_of(node).iter().find_map(|&ch| {
+            world
+                .get_component_by_id_as::<EmissiveComponent>(ch)
+                .map(|e| e.intensity.max(0.0))
+        })
+    }
+
     fn inherited_color_for_renderable(
         world: &World,
         renderable_cid: ComponentId,
@@ -744,25 +752,44 @@ impl RenderableSystem {
             return;
         };
 
-        // Find the ancestor RenderableComponent that this EmissiveComponent should apply to.
-        let mut cur = component;
-        let mut renderable_cid: Option<ComponentId> = None;
-        while let Some(parent) = world.parent_of(cur) {
+        let emissive = emissive_comp.intensity.max(0.0);
+
+        // Normal case: EmissiveComponent is attached directly under a RenderableComponent.
+        if let Some(parent) = world.parent_of(component) {
             if world
                 .get_component_by_id_as::<RenderableComponent>(parent)
                 .is_some()
             {
-                renderable_cid = Some(parent);
-                break;
+                self.pending_emissive.insert(parent, emissive);
+                return;
             }
-            cur = parent;
         }
-        let Some(renderable_cid) = renderable_cid else {
-            return;
-        };
 
-        self.pending_emissive
-            .insert(renderable_cid, emissive_comp.intensity.max(0.0));
+        // Inheritance case: EmissiveComponent is attached as a style node under a container
+        // (e.g. TextComponent). Apply it to descendant renderables that do NOT have an explicit
+        // per-renderable EmissiveComponent.
+        let start = world.parent_of(component).unwrap_or(component);
+        let mut q = VecDeque::new();
+        q.push_back(start);
+
+        while let Some(node) = q.pop_front() {
+            for &ch in world.children_of(node).iter() {
+                q.push_back(ch);
+            }
+
+            if world
+                .get_component_by_id_as::<RenderableComponent>(node)
+                .is_none()
+            {
+                continue;
+            }
+
+            if Self::immediate_emissive_child(world, node).is_some() {
+                continue;
+            }
+
+            self.pending_emissive.insert(node, emissive);
+        }
     }
 
     pub fn register_uv(
@@ -1317,7 +1344,8 @@ impl System for RenderableSystem {
 mod tests {
     use super::RenderableSystem;
     use crate::engine::ecs::World;
-    use crate::engine::ecs::component::{RenderableComponent, TextComponent, TransformComponent, TransparentCutoutComponent};
+    use crate::engine::ecs::component::{EmissiveComponent, RenderableComponent, TextComponent, TransformComponent, TransparentCutoutComponent};
+    use crate::engine::graphics::VisualWorld;
 
     #[test]
     fn text_like_renderable_inherits_cutout_from_ancestor_but_not_implicitly() {
@@ -1339,5 +1367,28 @@ mod tests {
             RenderableSystem::inherited_cutout_for_renderable(&world, glyph_r),
             Some(true)
         );
+    }
+
+    #[test]
+    fn text_style_emissive_targets_descendants_not_ancestor_renderable() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::default();
+        let mut renderable = RenderableSystem::default();
+
+        let plane = world.add_component(RenderableComponent::square());
+        let text = world.add_component(TextComponent::new("item"));
+        let glyph_t = world.add_component(TransformComponent::new());
+        let glyph_r = world.add_component(RenderableComponent::square());
+        let emissive = world.add_component(EmissiveComponent::on());
+
+        let _ = world.add_child(plane, text);
+        let _ = world.add_child(text, glyph_t);
+        let _ = world.add_child(glyph_t, glyph_r);
+        let _ = world.add_child(text, emissive);
+
+        renderable.register_emissive(&mut world, &mut visuals, emissive);
+
+        assert_eq!(renderable.pending_emissive.get(&plane), None);
+        assert_eq!(renderable.pending_emissive.get(&glyph_r), Some(&1.0));
     }
 }

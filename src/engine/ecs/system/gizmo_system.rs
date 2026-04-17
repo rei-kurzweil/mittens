@@ -3,7 +3,7 @@ use crate::engine::ecs::component::{
     TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis,
     TransformGizmoComponent, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
     TransformGizmoTranslateComponent, TransformMapRotationComponent,
-    TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
+    TransformMapScaleComponent, TransformMapTranslationComponent,
     TransformPipelineComponent, TransformPipelineOutputComponent,
 };
 use crate::engine::ecs::{
@@ -989,7 +989,6 @@ impl TransformGizmoSystem {
             drop_translation: bool,
             drop_rotation: bool,
             drop_scale: bool,
-            explicit_merge: bool,
         ) -> ComponentId {
             let pipeline = world.add_component_boxed_named(
                 pipeline_name,
@@ -1048,14 +1047,6 @@ impl TransformGizmoSystem {
                 }
             }
 
-            if explicit_merge {
-                let merge = world.add_component_boxed_named(
-                    format!("{pipeline_name}:merge"),
-                    Box::new(TransformMergeTRSComponent::new()),
-                );
-                let _ = world.add_child(fork, merge);
-            }
-
             let output = world.add_component_boxed_named(
                 output_name,
                 Box::new(TransformPipelineOutputComponent::new()),
@@ -1083,7 +1074,6 @@ impl TransformGizmoSystem {
             true,
             false,
             false,
-            true,
             true,
         );
 
@@ -1136,7 +1126,6 @@ impl TransformGizmoSystem {
             false,
             true,
             false,
-            true,
         );
         let gizmo_space_local = add_pipeline_group(
             world,
@@ -1149,7 +1138,6 @@ impl TransformGizmoSystem {
             false,
             false,
             false,
-            true,
         );
 
         let translate_parent = match translation_space {

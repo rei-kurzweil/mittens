@@ -141,7 +141,6 @@ CTLXR.new(true, Left, Aim) {
                     QuatTemporalFilter.with_smoothing_factor(220.0)
                 }
                 TransformMapScale {}
-                TransformMergeTRS {}
             }
             TransformPipelineOutput {
                 T {
@@ -180,8 +179,8 @@ CTLXR.new(true, Left, Aim) {
     let fork = as_component!(&pipeline.body.statements[0]);
     assert_eq!(fork.component_type.0, "TransformForkTRS");
 
-    // fork → translation, rotation, scale, merge
-    assert_eq!(fork.body.statements.len(), 4);
+    // fork → translation, rotation, scale
+    assert_eq!(fork.body.statements.len(), 3);
     let map_rot = as_component!(&fork.body.statements[1]);
     assert_eq!(map_rot.component_type.0, "TransformMapRotation");
 

@@ -2,7 +2,7 @@ use crate::engine::ecs::component::{
     AvatarControlComponent, Camera3DComponent, CameraXRComponent, ControllerHand,
     ControllerXRComponent, IKChainComponent, IKSolver, QuatTemporalFilterComponent,
     QuatYawFollowComponent, TransformComponent, TransformForkTRSComponent,
-    TransformMapRotationComponent, TransformMergeTRSComponent, TransformPipelineComponent,
+    TransformMapRotationComponent, TransformPipelineComponent,
     TransformPipelineOutputComponent,
 };
 use crate::engine::ecs::system::bone_mapping_system::BoneMappingSystem;
@@ -254,7 +254,6 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     //           TransformForkTRSComponent
     //             TransformMapRotationComponent
     //               QuatYawFollowComponent { threshold, rate, initial_yaw, forward_plus_z }
-    //             TransformMergeTRSComponent
     //           TransformPipelineOutputComponent
     //             model_root  ← re-parented here
     // -----------------------------------------------------------------------
@@ -267,14 +266,12 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
                 .with_initial_yaw(initial_body_yaw)
                 .with_forward_plus_z_if(forward_plus_z),
         );
-        let merge_id          = world.add_component(TransformMergeTRSComponent::new());
         let pipeline_output_id = world.add_component(TransformPipelineOutputComponent::new());
 
         // Wire internal pipeline structure (all new, uninitialized).
         let _ = world.set_parent(fork_id,           Some(body_pipeline_id));
         let _ = world.set_parent(map_rot_id,         Some(fork_id));
         let _ = world.set_parent(yaw_follow_id,      Some(map_rot_id));
-        let _ = world.set_parent(merge_id,           Some(fork_id));
         let _ = world.set_parent(pipeline_output_id, Some(body_pipeline_id));
 
         if let Some(c) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
@@ -352,14 +349,12 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
                 let hfilt_id   = world.add_component(
                     QuatTemporalFilterComponent::new().with_smoothing_factor(smoothing_factor),
                 );
-                let hmerge_id  = world.add_component(TransformMergeTRSComponent::new());
                 let hout_id    = world.add_component(TransformPipelineOutputComponent::new());
                 let smoothed_t = world.add_component(TransformComponent::new());
 
                 let _ = world.set_parent(hfork_id,   Some(hp_id));
                 let _ = world.set_parent(hmrot_id,   Some(hfork_id));
                 let _ = world.set_parent(hfilt_id,   Some(hmrot_id));
-                let _ = world.set_parent(hmerge_id,  Some(hfork_id));
                 let _ = world.set_parent(hout_id,    Some(hp_id));
                 let _ = world.set_parent(smoothed_t, Some(hout_id));
 

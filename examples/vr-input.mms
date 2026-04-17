@@ -149,7 +149,6 @@ InputXR.on() {
                             QuatTemporalFilter.smoothing_factor(220.0)
                         }
                         TransformMapScale {}
-                        TransformMergeTRS {}
                     }
                     TransformPipelineOutput {
                         T {
@@ -171,7 +170,6 @@ InputXR.on() {
                             QuatTemporalFilter.smoothing_factor(220.0)
                         }
                         TransformMapScale {}
-                        TransformMergeTRS {}
                     }
                     TransformPipelineOutput {
                         T {

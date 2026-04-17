@@ -25,12 +25,6 @@ pub enum TransformPipelineOutput {
     OutputRoots(Vec<ComponentId>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransformPipelineMergeMode {
-    ImplicitPassthrough,
-    Explicit,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TransformPipelineVec3Op {
     Pass,
@@ -66,7 +60,6 @@ pub struct TransformForkTrsStage {
     pub translation_ops: Vec<TransformPipelineVec3Op>,
     pub rotation_ops: Vec<TransformPipelineQuatOp>,
     pub scale_ops: Vec<TransformPipelineVec3Op>,
-    pub merge_mode: TransformPipelineMergeMode,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -169,7 +162,6 @@ impl TransformPipelineSystem {
                 translation_ops: vec![TransformPipelineVec3Op::Pass],
                 rotation_ops: vec![TransformPipelineQuatOp::TemporalFilter { smoothing_factor }],
                 scale_ops: vec![TransformPipelineVec3Op::Pass],
-                merge_mode: TransformPipelineMergeMode::ImplicitPassthrough,
             })],
             output: TransformPipelineOutput::ImplicitTransform,
         }
@@ -240,7 +232,6 @@ impl TransformPipelineSystem {
         let mut translation_ops = vec![TransformPipelineVec3Op::Pass];
         let mut rotation_ops = vec![TransformPipelineQuatOp::Pass];
         let mut scale_ops = vec![TransformPipelineVec3Op::Pass];
-        let mut merge_mode = TransformPipelineMergeMode::ImplicitPassthrough;
 
         for &child in world.children_of(node) {
             if world
@@ -271,7 +262,11 @@ impl TransformPipelineSystem {
                 .get_component_by_id_as::<TransformMergeTRSComponent>(child)
                 .is_some()
             {
-                merge_mode = TransformPipelineMergeMode::Explicit;
+                debug_assert!(
+                    world.children_of(child).is_empty(),
+                    "TransformMergeTRS should not contain child stages; attach pipeline content under TransformPipelineOutput instead"
+                );
+                continue;
             }
         }
 
@@ -279,7 +274,6 @@ impl TransformPipelineSystem {
             translation_ops,
             rotation_ops,
             scale_ops,
-            merge_mode,
         }
     }
 
@@ -413,14 +407,10 @@ impl TransformPipelineSystem {
             dt_sec,
         );
 
-        match fork.merge_mode {
-            TransformPipelineMergeMode::ImplicitPassthrough | TransformPipelineMergeMode::Explicit => {
-                TransformPipelineChannels {
-                    translation,
-                    rotation_quat_xyzw,
-                    scale,
-                }
-            }
+        TransformPipelineChannels {
+            translation,
+            rotation_quat_xyzw,
+            scale,
         }
     }
 
@@ -851,7 +841,7 @@ mod tests {
     use crate::engine::ecs::component::{
         QuatTemporalFilterComponent, TransformForkTRSComponent, TransformMapRotationComponent,
         TransformMapScaleComponent, TransformMapTranslationComponent,
-        TransformMergeTRSComponent, TransformPipelineComponent, TransformPipelineOutputComponent,
+        TransformPipelineComponent, TransformPipelineOutputComponent,
         Vector3TemporalFilterComponent,
     };
     use crate::engine::ecs::World;
@@ -882,8 +872,6 @@ mod tests {
         let map_rotation = world.add_component(TransformMapRotationComponent::new());
         let quat_filter =
             world.add_component(QuatTemporalFilterComponent::new().with_smoothing_factor(18.0));
-        let map_scale = world.add_component(TransformMapScaleComponent::new());
-        let merge = world.add_component(TransformMergeTRSComponent::new());
         let output = world.add_component(TransformPipelineOutputComponent::new());
 
         world.set_parent(fork, Some(pipeline)).unwrap();
@@ -891,8 +879,6 @@ mod tests {
         world.set_parent(vec_filter, Some(map_translation)).unwrap();
         world.set_parent(map_rotation, Some(fork)).unwrap();
         world.set_parent(quat_filter, Some(map_rotation)).unwrap();
-        world.set_parent(map_scale, Some(fork)).unwrap();
-        world.set_parent(merge, Some(fork)).unwrap();
         world.set_parent(output, Some(pipeline)).unwrap();
 
         let parser = TransformPipelineSystem::new();
@@ -916,6 +902,28 @@ mod tests {
             }]
         );
         assert_eq!(stage.scale_ops, vec![TransformPipelineVec3Op::Pass]);
-        assert_eq!(stage.merge_mode, TransformPipelineMergeMode::Explicit);
+    }
+
+    #[test]
+    fn fork_trs_defaults_missing_streams_to_pass() {
+        let mut world = World::default();
+        let pipeline = world.add_component(TransformPipelineComponent::new());
+        let fork = world.add_component(TransformForkTRSComponent::new());
+        let map_scale = world.add_component(TransformMapScaleComponent::new());
+        let output = world.add_component(TransformPipelineOutputComponent::new());
+
+        world.set_parent(fork, Some(pipeline)).unwrap();
+        world.set_parent(map_scale, Some(fork)).unwrap();
+        world.set_parent(output, Some(pipeline)).unwrap();
+
+        let parser = TransformPipelineSystem::new();
+        let block = parser.parse_component_tree(&world, pipeline).expect("pipeline block");
+        let TransformPipelineStage::ForkTrs(stage) = &block.stages[0] else {
+            panic!("expected fork stage");
+        };
+
+        assert_eq!(stage.translation_ops, vec![TransformPipelineVec3Op::Pass]);
+        assert_eq!(stage.rotation_ops, vec![TransformPipelineQuatOp::Pass]);
+        assert_eq!(stage.scale_ops, vec![TransformPipelineVec3Op::Pass]);
     }
 }

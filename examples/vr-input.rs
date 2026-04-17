@@ -7,7 +7,7 @@ use cat_engine::engine::ecs::component::{
     QuatTemporalFilterComponent, RaycastableComponent, RenderGraphComponent, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TransformComponent,
     TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
-    TransformMapTranslationComponent, TransformMergeTRSComponent, TransformPipelineComponent,
+    TransformMapTranslationComponent, TransformPipelineComponent,
     TransformPipelineOutputComponent,
 };
 use cat_engine::engine::graphics::CameraTarget;
@@ -164,9 +164,6 @@ fn spawn_controller_cube(
 
     let map_scale = universe.world.add_component(TransformMapScaleComponent::new());
     let _ = universe.attach(fork, map_scale);
-
-    let merge = universe.world.add_component(TransformMergeTRSComponent::new());
-    let _ = universe.attach(fork, merge);
 
     let output = universe
         .world

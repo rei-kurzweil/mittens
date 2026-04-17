@@ -9,6 +9,12 @@ It is adjacent to, but not the same as, the older scrolling/layout ownership not
 That document is about who should own scrolling and clipping at the system/topology level.
 This document is about making the authored topology and transform-pipeline semantics simpler, less error-prone, and easier to read in both MMS and hand-rolled runtime trees.
 
+First implementation slice completed:
+
+- `TransformForkTRS` now behaves as the effective merge point by itself.
+- omitted `TransformMapTranslation` / `TransformMapRotation` / `TransformMapScale` branches still mean pass-through
+- in-tree authored and runtime-built pipelines no longer need `TransformMergeTRS {}` to "activate" the fork stage
+
 ---
 
 ## 1. Problem statement

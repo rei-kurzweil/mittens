@@ -72,22 +72,20 @@ T.position(0, 0, 3.0).scale(1.8, 4.8, 1.0) {
         StencilClip {
             TransformPipeline {
                 TransformForkTRS {
-                    TransformMapTranslation {}
-                    TransformMapRotation {}
                     TransformMapScale {
                         TransformDrop {}
                     }
-                    TransformMergeTRS {}
                 }
                 TransformPipelineOutput {
-                    T {
-                        T {
+                    T { T {
+                        
                             Scrolling.new(1.0, 100.0) {
                                 for y in range(100) {
                                     T.position(0, y / 4.0, 0.01).scale(0.12, 0.12, 0.12) {
                                         Text {
                                             "item "+y
-                                            C.rgba(0.6, 0.6, 0.6, 1.0)
+                                            C.rgba(1.0, 0.9, 0.9, 1.0)
+                                            Emissive.on()
                                         }
                                     }
                                 }
