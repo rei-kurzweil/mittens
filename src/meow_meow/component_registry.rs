@@ -16,6 +16,7 @@ use crate::engine::ecs::component::{
     InputComponent, InputTransformModeComponent, InputXRComponent,
     InspectorPanelComponent, KeyframeComponent, LayoutComponent, NormalVisualisationComponent,
     OpenXRComponent, OverlayComponent, PointLightComponent, PointerComponent,
+    RouterComponent,
     RenderGraphComponent, ScrollingComponent, SelectableComponent,
     StyleComponent, AlignItems, Display, EdgeInsets, FlexDirection, FlexWrap,
     JustifyContent, Overflow, Position, SizeDimension,
@@ -321,6 +322,7 @@ fn create_component(
         "AvatarBodyYaw" => add!(AvatarBodyYawComponent::new()),
         "AvatarControl" => add!(AvatarControlComponent::new()),
         "Editor" => add!(EditorComponent::new()),
+        "Router" => add!(RouterComponent::new()),
         "Selectable" => match ctor {
             Some("off") => add!(SelectableComponent::off()),
             _ => add!(SelectableComponent::on()),
@@ -355,7 +357,7 @@ fn create_component(
             add!(c)
         }
         "Style" => add!(StyleComponent::new()),
-        "Layout" => {
+        "LayoutRoot" => {
             let w = if !args.is_empty() { arg_f32(args, 0)? } else { 80.0 };
             add!(LayoutComponent::new(w))
         }
@@ -434,6 +436,42 @@ fn apply_named_assignment(
     name: &str,
     val: &Value,
 ) -> Result<(), String> {
+    if let Some(style) = world.get_component_by_id_as_mut::<StyleComponent>(id) {
+        match name {
+            "background_color" => {
+                style.background_color = Some(val_as_f32_array::<4>(val)?);
+                return Ok(());
+            }
+            "background_z" => {
+                style.background_z = val_as_f32(val)?;
+                return Ok(());
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(router) = world.get_component_by_id_as_mut::<RouterComponent>(id) {
+        match name {
+            "target" => {
+                router.target_name = Some(val_as_str(val)?.to_string());
+            }
+            "ignore" => {
+                let Value::Array(items) = val else {
+                    return Err(format!("expected array for Router.ignore, got {val:?}"));
+                };
+                router.ignore_names = items
+                    .iter()
+                    .map(val_as_str)
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect();
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+
     if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(id) {
         if name == "rotation" {
             let arr = val_as_f32_array::<3>(val)?;
@@ -680,6 +718,8 @@ fn apply_call(
             "padding_xy"  => st.padding = EdgeInsets::axes(arg_f32(args, 0)?, arg_f32(args, 1)?),
             "margin"      => st.margin  = EdgeInsets::all(arg_f32(args, 0)?),
             "margin_xy"   => st.margin  = EdgeInsets::axes(arg_f32(args, 0)?, arg_f32(args, 1)?),
+            "background_color" => st.background_color = Some(arg_f32_arr::<4>(args, 0)?),
+            "background_z" => st.background_z = arg_f32(args, 0)?,
             "flex_direction" => {
                 st.flex_direction = match arg_str(args, 0)? {
                     "row"|"Row"                       => FlexDirection::Row,

@@ -20,7 +20,7 @@ use crate::engine::ecs::component::{
     ColorComponent, OpacityComponent, Overflow, RenderableComponent, StencilClipComponent,
     StyleComponent, TransformComponent,
 };
-use super::measure::measure_items;
+use super::measure::{measure_container_items, measure_items, MeasuredItem};
 
 /// Run a block formatting context layout pass for `layout_id`.
 ///
@@ -34,9 +34,19 @@ pub fn layout(
 ) {
     let (items, _avail_w, _avail_h, unit_scale) = measure_items(world, layout_id);
 
+    layout_items(world, emit, &items, unit_scale);
+}
+
+fn layout_items(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    items: &[MeasuredItem],
+    unit_scale: f32,
+) {
+
     let mut cursor_gu = 0.0_f32;
 
-    for item in &items {
+    for item in items {
         cursor_gu += item.margin_top_gu;
 
         let content_origin_y_gu = cursor_gu + item.padding_top_gu;
@@ -64,6 +74,16 @@ pub fn layout(
 
         // ── Background quad ───────────────────────────────────────────────
         sync_bg_quad(world, emit, item.tc_id, item.padding_left_gu, item.padding_top_gu, item.box_width_gu, item.box_height_gu);
+
+        let nested_items = measure_container_items(
+            world,
+            item.tc_id,
+            item.content_width_gu,
+            Some(item.content_height_gu),
+        );
+        if !nested_items.is_empty() {
+            layout_items(world, emit, &nested_items, unit_scale);
+        }
 
         cursor_gu += item.box_height_gu + item.margin_bottom_gu;
     }
@@ -222,4 +242,64 @@ fn spawn_bg_quad(
 
     world.init_component_tree(bg_id, emit);
     bg_id
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::engine::ecs::component::{ColorComponent, LayoutComponent, StyleComponent, TextComponent, TransformComponent};
+    use crate::engine::ecs::component::style::EdgeInsets;
+    use crate::engine::ecs::{CommandQueue, SystemWorld, World};
+    use crate::engine::graphics::VisualWorld;
+    use crate::engine::ecs::system::layout::LayoutSystem;
+
+    #[test]
+    fn block_layout_recurses_into_styled_container_children() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut layout_system = LayoutSystem::new();
+
+        let root = world.add_component(LayoutComponent::new(20.0).with_height(12.0));
+
+        let container = world.add_component_boxed_named("container", Box::new(TransformComponent::new()));
+        let container_style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.height = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(6.0);
+            style.margin = EdgeInsets::all(1.0);
+            style.padding = EdgeInsets::all(2.0);
+            style
+        });
+
+        let item = world.add_component_boxed_named("item", Box::new(TransformComponent::new()));
+        let item_style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.margin = EdgeInsets::all(0.5);
+            style.padding = EdgeInsets::all(0.25);
+            style.background_color = Some([1.0, 0.0, 0.0, 1.0]);
+            style
+        });
+        let text = world.add_component(TextComponent::new("hello"));
+        let color = world.add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+
+        let _ = world.add_child(root, container);
+        let _ = world.add_child(container, container_style);
+        let _ = world.add_child(container, item);
+        let _ = world.add_child(item, item_style);
+        let _ = world.add_child(item, text);
+        let _ = world.add_child(text, color);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let item_tc = world
+            .get_component_by_id_as::<TransformComponent>(item)
+            .expect("item transform");
+
+        assert_eq!(item_tc.transform.translation, [0.75, -0.75, 0.0]);
+        assert!(world.children_of(item).iter().any(|&child| world.component_label(child) == Some("__bg")));
+    }
 }

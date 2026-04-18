@@ -282,6 +282,7 @@ impl ComponentCodec {
             "renderer_settings" => Ok(Box::new(RendererSettingsComponent::new())),
             "ambient_light" => Ok(Box::new(AmbientLightComponent::new())),
             "render_graph" => Ok(Box::new(RenderGraphComponent::new())),
+            "router" => Ok(Box::new(RouterComponent::new())),
             "emissive_pass" => Ok(Box::new(EmissivePassComponent::new())),
             "bloom" => Ok(Box::new(BloomComponent::new())),
             "color" => Ok(Box::new(ColorComponent::new())),

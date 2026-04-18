@@ -27,7 +27,7 @@ I {
 // ── Layout root ─────────────────────────────────────────────────────────────
 // 60 gu wide × 50 gu tall viewport. Scale 0.08 → 4.8 × 4.0 world units.
 T.position(-2.4, 2.0, 0.0).scale(0.08, 0.08, 0.08) {
-    Layout {
+    LayoutRoot {
         available_width(60.0)
         available_height(50.0)
 

@@ -18,9 +18,9 @@ use crate::engine::ecs::{IntentValue, SignalEmitter};
 ///               └── ...
 /// ```
 ///
-/// If no explicit `track` is assigned, `ScrollingSystem` now creates and owns an internal
-/// `__scroll_track` transform under the `ScrollingComponent` and reparents the initial content
-/// children under it.
+/// If no explicit `track` is assigned, `ScrollingSystem` now creates an internal `Router` plus an
+/// owned `__scroll_track` transform under the `ScrollingComponent`, and routed children are sent
+/// there both at init time and on later direct attaches.
 #[derive(Debug, Clone)]
 pub struct ScrollingComponent {
     /// Height of the clipped viewport in world units.

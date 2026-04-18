@@ -1,4 +1,4 @@
-use crate::engine::ecs::component::{ScrollingComponent, TransformComponent};
+use crate::engine::ecs::component::{RouterComponent, ScrollingComponent, TransformComponent};
 use crate::engine::ecs::component::{RenderableComponent, StencilClipComponent};
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
@@ -7,6 +7,7 @@ use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, S
 pub struct ScrollingSystem;
 
 impl ScrollingSystem {
+    const OWNED_ROUTER_LABEL: &'static str = "__scroll_router";
     const OWNED_TRACK_LABEL: &'static str = "__scroll_track";
 
     pub fn new() -> Self {
@@ -20,33 +21,39 @@ impl ScrollingSystem {
         })
     }
 
-    fn ensure_owned_track(
+    fn immediate_owned_router(world: &World, scroll_component: ComponentId) -> Option<ComponentId> {
+        world.children_of(scroll_component).iter().copied().find(|&child| {
+            world.component_label(child) == Some(Self::OWNED_ROUTER_LABEL)
+                && world.get_component_by_id_as::<RouterComponent>(child).is_some()
+        })
+    }
+
+    fn ensure_owned_router_and_track(
         world: &mut World,
         emit: &mut dyn SignalEmitter,
         scroll_component: ComponentId,
     ) -> Option<ComponentId> {
-        if let Some(track) = Self::immediate_owned_track(world, scroll_component) {
-            return Some(track);
+        let track = if let Some(track) = Self::immediate_owned_track(world, scroll_component) {
+            track
+        } else {
+            let track = world.add_component_boxed_named(
+                Self::OWNED_TRACK_LABEL,
+                Box::new(TransformComponent::new()),
+            );
+            let _ = world.add_child(scroll_component, track);
+            world.init_component_tree(track, emit);
+            track
+        };
+
+        if Self::immediate_owned_router(world, scroll_component).is_none() {
+            let router = world.add_component_boxed_named(
+                Self::OWNED_ROUTER_LABEL,
+                Box::new(RouterComponent::new().with_target_name(Self::OWNED_TRACK_LABEL)),
+            );
+            let _ = world.add_child(scroll_component, router);
+            world.init_component_tree(router, emit);
         }
 
-        let track = world.add_component_boxed_named(
-            Self::OWNED_TRACK_LABEL,
-            Box::new(TransformComponent::new()),
-        );
-        let _ = world.add_child(scroll_component, track);
-
-        let children_to_move: Vec<ComponentId> = world
-            .children_of(scroll_component)
-            .iter()
-            .copied()
-            .filter(|&child| child != track)
-            .collect();
-
-        for child in children_to_move {
-            let _ = world.add_child(track, child);
-        }
-
-        world.init_component_tree(track, emit);
         Some(track)
     }
 
@@ -121,7 +128,7 @@ impl ScrollingSystem {
             .get_component_by_id_as::<ScrollingComponent>(scroll_component)
             .and_then(|sc| sc.track);
         let track = existing_track
-            .or_else(|| Self::ensure_owned_track(world, emit, scroll_component))
+            .or_else(|| Self::ensure_owned_router_and_track(world, emit, scroll_component))
             .or_else(|| Self::nearest_ancestor_transform(world, scroll_component));
         let drag_scope = Self::nearest_drag_scope(world, scroll_component);
 
@@ -251,22 +258,26 @@ impl ScrollingSystem {
 mod tests {
     use super::ScrollingSystem;
     use crate::engine::ecs::CommandQueue;
+    use crate::engine::ecs::IntentValue;
+    use crate::engine::ecs::SignalEmitter;
+    use crate::engine::ecs::SystemWorld;
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::{ScrollingComponent, TransformComponent};
-    use crate::engine::ecs::rx::RxWorld;
+    use crate::engine::graphics::VisualWorld;
 
     #[test]
     fn scrolling_without_explicit_track_gets_owned_scroll_track() {
         let mut world = World::default();
-        let mut rx = RxWorld::default();
-        let mut emit = CommandQueue::new();
-        let mut system = ScrollingSystem::new();
+        let mut visuals = VisualWorld::new();
+        let mut queue = CommandQueue::new();
+        let mut systems = SystemWorld::default();
 
         let scrolling = world.add_component(ScrollingComponent::new(1.0, 10.0));
         let item = world.add_component(TransformComponent::new().with_position(0.0, 2.0, 0.0));
         let _ = world.add_child(scrolling, item);
 
-        system.deferred_register(&mut rx, &mut world, &mut emit, scrolling);
+        world.init_component_tree(scrolling, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
 
         let track = world
             .get_component_by_id_as::<ScrollingComponent>(scrolling)
@@ -281,9 +292,9 @@ mod tests {
     #[test]
     fn explicit_scroll_track_is_preserved() {
         let mut world = World::default();
-        let mut rx = RxWorld::default();
-        let mut emit = CommandQueue::new();
-        let mut system = ScrollingSystem::new();
+        let mut visuals = VisualWorld::new();
+        let mut queue = CommandQueue::new();
+        let mut systems = SystemWorld::default();
 
         let scrolling = world.add_component(ScrollingComponent::new(1.0, 10.0));
         let explicit_track = world.add_component(TransformComponent::new().with_position(3.0, 4.0, 5.0));
@@ -295,7 +306,8 @@ mod tests {
             sc.set_track(explicit_track, [3.0, 4.0, 5.0]);
         }
 
-        system.deferred_register(&mut rx, &mut world, &mut emit, scrolling);
+        world.init_component_tree(scrolling, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
 
         let sc = world
             .get_component_by_id_as::<ScrollingComponent>(scrolling)
@@ -303,5 +315,34 @@ mod tests {
         assert_eq!(sc.track, Some(explicit_track));
         assert!(ScrollingSystem::immediate_owned_track(&world, scrolling).is_none());
         assert_eq!(world.parent_of(child), Some(explicit_track));
+    }
+
+    #[test]
+    fn scrolling_late_attached_children_route_into_owned_track() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut queue = CommandQueue::new();
+        let mut systems = SystemWorld::default();
+
+        let scrolling = world.add_component(ScrollingComponent::new(1.0, 10.0));
+        world.init_component_tree(scrolling, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let track = world
+            .get_component_by_id_as::<ScrollingComponent>(scrolling)
+            .and_then(|sc| sc.track)
+            .expect("owned track");
+
+        let late = world.add_component(TransformComponent::new().with_position(0.0, 3.0, 0.0));
+        queue.push_intent_now(
+            late,
+            IntentValue::Attach {
+                parents: vec![scrolling],
+                child: late,
+            },
+        );
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        assert_eq!(world.parent_of(late), Some(track));
     }
 }

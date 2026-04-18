@@ -127,6 +127,49 @@ pub(crate) fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -
     }
 }
 
+pub(crate) fn measure_container_items(
+    world: &World,
+    container_id: ComponentId,
+    avail_w_gu: f32,
+    avail_h_gu: Option<f32>,
+) -> Vec<MeasuredItem> {
+    let children: Vec<ComponentId> = world.children_of(container_id).to_vec();
+    let mut items: Vec<MeasuredItem> = children
+        .into_iter()
+        .filter(|&child| {
+            world.get_component_by_id_as::<TransformComponent>(child).is_some()
+                && world.component_label(child) != Some("__bg")
+        })
+        .map(|child| measure_item(world, child, avail_w_gu))
+        .collect();
+
+    if let Some(h) = avail_h_gu {
+        let total_fixed: f32 = items
+            .iter()
+            .filter(|i| !i.is_auto_height)
+            .map(|i| i.margin_box_height_gu)
+            .sum();
+        let count_auto = items.iter().filter(|i| i.is_auto_height).count();
+
+        if count_auto > 0 {
+            let remaining = (h - total_fixed).max(0.0);
+            let auto_margin_box = remaining / count_auto as f32;
+
+            for item in items.iter_mut().filter(|i| i.is_auto_height) {
+                item.margin_box_height_gu = auto_margin_box;
+                item.box_height_gu = (auto_margin_box
+                    - item.margin_top_gu
+                    - item.margin_bottom_gu).max(0.0);
+                item.content_height_gu = (item.box_height_gu
+                    - item.padding_top_gu
+                    - item.padding_bottom_gu).max(0.0);
+            }
+        }
+    }
+
+    items
+}
+
 /// Pass 1 — measure all TC children of a [`LayoutComponent`] root.
 ///
 /// Returns `(items, avail_w_gu, avail_h_gu, unit_scale)`.
@@ -149,36 +192,7 @@ pub(crate) fn measure_items(
         (lc.available_width, lc.available_height, lc.unit_scale)
     };
 
-    let children: Vec<ComponentId> = world.children_of(layout_id).to_vec();
-    let mut items: Vec<MeasuredItem> = children
-        .into_iter()
-        .filter(|&child| world.get_component_by_id_as::<TransformComponent>(child).is_some())
-        .map(|child| measure_item(world, child, avail_w))
-        .collect();
-
-    // Resolve auto heights when container height is known.
-    if let Some(h) = avail_h {
-        let total_fixed: f32 = items.iter()
-            .filter(|i| !i.is_auto_height)
-            .map(|i| i.margin_box_height_gu)
-            .sum();
-        let count_auto = items.iter().filter(|i| i.is_auto_height).count();
-
-        if count_auto > 0 {
-            let remaining      = (h - total_fixed).max(0.0);
-            let auto_margin_box = remaining / count_auto as f32;
-
-            for item in items.iter_mut().filter(|i| i.is_auto_height) {
-                item.margin_box_height_gu = auto_margin_box;
-                item.box_height_gu = (auto_margin_box
-                    - item.margin_top_gu
-                    - item.margin_bottom_gu).max(0.0);
-                item.content_height_gu = (item.box_height_gu
-                    - item.padding_top_gu
-                    - item.padding_bottom_gu).max(0.0);
-            }
-        }
-    }
+    let items = measure_container_items(world, layout_id, avail_w, avail_h);
 
     (items, avail_w, avail_h, unit_scale)
 }

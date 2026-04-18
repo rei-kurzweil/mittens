@@ -113,6 +113,11 @@ impl RxMutationExecutor {
                     systems.unregister_stencil_clip(world, visuals, component);
                 }
             }
+            IntentValue::RegisterRouter { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_router(world, emit, component);
+                }
+            }
             IntentValue::RegisterScrolling { component_ids } => {
                 for &component in component_ids.iter() {
                     systems.register_scrolling(world, emit, component);
