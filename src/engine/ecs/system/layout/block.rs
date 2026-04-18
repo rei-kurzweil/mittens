@@ -302,4 +302,56 @@ mod tests {
         assert_eq!(item_tc.transform.translation, [0.75, -0.75, 0.0]);
         assert!(world.children_of(item).iter().any(|&child| world.component_label(child) == Some("__bg")));
     }
+
+    #[test]
+    fn block_layout_does_not_reflow_unstyled_decorative_children() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut layout_system = LayoutSystem::new();
+
+        let root = world.add_component(LayoutComponent::new(20.0).with_height(8.0));
+
+        let header_slot = world.add_component_boxed_named("header_slot", Box::new(TransformComponent::new()));
+        let header_style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.height = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(2.0);
+            style
+        });
+
+        let title_bar = world.add_component_boxed_named(
+            "panel_titlebar_t",
+            Box::new(TransformComponent::new().with_position(10.0, -1.0, 0.005).with_scale(20.0, 2.0, 1.0)),
+        );
+        let title_label = world.add_component_boxed_named(
+            "panel_titlebar_label_t",
+            Box::new(TransformComponent::new().with_position(0.02, -0.04, 0.01).with_scale(0.08, 0.08, 0.08)),
+        );
+        let title_text = world.add_component(TextComponent::new("World"));
+        let title_color = world.add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+
+        let _ = world.add_child(root, header_slot);
+        let _ = world.add_child(header_slot, header_style);
+        let _ = world.add_child(header_slot, title_bar);
+        let _ = world.add_child(header_slot, title_label);
+        let _ = world.add_child(title_label, title_color);
+        let _ = world.add_child(title_color, title_text);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let title_bar_tc = world
+            .get_component_by_id_as::<TransformComponent>(title_bar)
+            .expect("title bar transform");
+        let title_label_tc = world
+            .get_component_by_id_as::<TransformComponent>(title_label)
+            .expect("title label transform");
+
+        assert_eq!(title_bar_tc.transform.translation, [10.0, -1.0, 0.005]);
+        assert_eq!(title_label_tc.transform.translation, [0.02, -0.04, 0.01]);
+    }
 }
