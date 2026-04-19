@@ -1006,7 +1006,7 @@ impl RenderableSystem {
         render_assets: &mut RenderAssets,
         uploader: &mut dyn MeshUploader,
         queue: &mut crate::engine::ecs::CommandQueue,
-    ) {
+    ) -> bool {
         let parse_bool_env = |name: &str| {
             std::env::var(name)
                 .ok()
@@ -1020,6 +1020,7 @@ impl RenderableSystem {
         let debug_mesh_stats = parse_bool_env("CAT_DEBUG_RENDERABLE_MESH_STATS");
         let debug_mesh_stats_all = parse_bool_env("CAT_DEBUG_RENDERABLE_MESH_STATS_ALL");
         static MESH_STATS_LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
+        let mut inserted_any = false;
 
         // println!(
         //     "[RenderableSystem] flush_pending: pending_len={} visuals.instances={} ",
@@ -1218,6 +1219,7 @@ impl RenderableSystem {
 
             // (If you log ComponentId in a format string, use {:?}.)
             self.pending.remove(&key);
+            inserted_any = true;
         }
 
         self.apply_pending_uv_updates_to_registered_renderables(
@@ -1233,6 +1235,8 @@ impl RenderableSystem {
         self.apply_pending_quant_updates_to_registered_renderables(world, visuals);
 
         self.spawn_pending_normal_vis(world, render_assets, queue);
+
+        inserted_any
     }
 
     fn spawn_pending_normal_vis(

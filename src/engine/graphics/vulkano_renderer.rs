@@ -356,6 +356,7 @@ mod vulkano_backend {
     struct WindowRuntimeDebugTargets {
         extent: [u32; 2],
         color_format: Format,
+        msaa_color_views: Vec<Arc<ImageView>>,
         color_views: Vec<Arc<ImageView>>,
     }
 
@@ -1858,14 +1859,28 @@ mod vulkano_backend {
                 targets.extent != extent
                     || targets.color_format != color_format
                     || targets.color_views.len() != frame_count
+                    || (self.msaa_samples == SampleCount::Sample1) != targets.msaa_color_views.is_empty()
+                    || (self.msaa_samples != SampleCount::Sample1
+                        && targets.msaa_color_views.len() != frame_count)
             });
 
             if !needs_recreate {
                 return Ok(());
             }
 
+            let mut msaa_color_views = Vec::with_capacity(frame_count);
             let mut color_views = Vec::with_capacity(frame_count);
             for _ in 0..frame_count {
+                if self.msaa_samples != SampleCount::Sample1 {
+                    msaa_color_views.push(Self::create_color_target_view(
+                        self.context.memory_allocator().clone(),
+                        color_format,
+                        extent,
+                        self.msaa_samples,
+                        ImageUsage::COLOR_ATTACHMENT | ImageUsage::TRANSIENT_ATTACHMENT,
+                    )?);
+                }
+
                 color_views.push(Self::create_color_target_view(
                     self.context.memory_allocator().clone(),
                     color_format,
@@ -1878,6 +1893,7 @@ mod vulkano_backend {
             self.window_runtime_debug_targets = Some(WindowRuntimeDebugTargets {
                 extent,
                 color_format,
+                msaa_color_views,
                 color_views,
             });
 
@@ -3135,16 +3151,32 @@ mod vulkano_backend {
                     .cloned()
                     .ok_or("missing window runtime debug target")?;
 
+                let debug_msaa_view = self
+                    .window_runtime_debug_targets
+                    .as_ref()
+                    .and_then(|targets| targets.msaa_color_views.get(bones_slot))
+                    .cloned();
+
+                let mut debug_color_attachment = RenderingAttachmentInfo {
+                    load_op: AttachmentLoadOp::Clear,
+                    store_op: AttachmentStoreOp::Store,
+                    clear_value: Some(ClearValue::from([1.0, 0.0, 1.0, 1.0])),
+                    ..RenderingAttachmentInfo::image_view(
+                        debug_msaa_view.clone().unwrap_or_else(|| debug_view.clone()),
+                    )
+                };
+                if debug_msaa_view.is_some() {
+                    debug_color_attachment.resolve_info = Some(
+                        RenderingAttachmentResolveInfo::image_view(debug_view.clone()),
+                    );
+                    debug_color_attachment.store_op = AttachmentStoreOp::DontCare;
+                }
+
                 cbb.begin_rendering(RenderingInfo {
                     render_area_offset: [0, 0],
                     render_area_extent: [extent[0], extent[1]],
                     layer_count: 1,
-                    color_attachments: vec![Some(RenderingAttachmentInfo {
-                        load_op: AttachmentLoadOp::Clear,
-                        store_op: AttachmentStoreOp::Store,
-                        clear_value: Some(ClearValue::from([1.0, 0.0, 1.0, 1.0])),
-                        ..RenderingAttachmentInfo::image_view(debug_view.clone())
-                    })],
+                    color_attachments: vec![Some(debug_color_attachment)],
                     depth_attachment: Some(RenderingAttachmentInfo {
                         load_op: AttachmentLoadOp::Clear,
                         store_op: AttachmentStoreOp::DontCare,

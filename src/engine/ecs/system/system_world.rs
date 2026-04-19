@@ -86,6 +86,126 @@ pub struct SystemWorld {
     pub texture: TextureSystem,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::SystemWorld;
+    use crate::engine::ecs::CommandQueue;
+    use crate::engine::ecs::World;
+    use crate::engine::ecs::component::{
+        ColorComponent, RenderableComponent, StencilClipComponent, TransformComponent,
+    };
+    use crate::engine::graphics::primitives::{MeshHandle, TextureHandle};
+    use crate::engine::graphics::{CpuMesh, MeshUploader, RenderAssets, TextureUploader, VisualWorld};
+
+    #[derive(Default)]
+    struct TestUploader {
+        next_mesh: u32,
+        next_texture: u32,
+    }
+
+    impl MeshUploader for TestUploader {
+        fn upload_mesh(&mut self, _mesh: &CpuMesh) -> Result<MeshHandle, Box<dyn std::error::Error>> {
+            let handle = MeshHandle(self.next_mesh);
+            self.next_mesh += 1;
+            Ok(handle)
+        }
+    }
+
+    impl TextureUploader for TestUploader {
+        fn upload_texture_rgba8(
+            &mut self,
+            _rgba: &[u8],
+            _width: u32,
+            _height: u32,
+        ) -> Result<TextureHandle, Box<dyn std::error::Error>> {
+            let handle = TextureHandle(self.next_texture);
+            self.next_texture += 1;
+            Ok(handle)
+        }
+
+        fn upload_texture_bc7(
+            &mut self,
+            _bc7_blocks: &[u8],
+            _width: u32,
+            _height: u32,
+            _srgb: bool,
+        ) -> Result<TextureHandle, Box<dyn std::error::Error>> {
+            let handle = TextureHandle(self.next_texture);
+            self.next_texture += 1;
+            Ok(handle)
+        }
+    }
+
+    #[test]
+    fn prepare_render_resyncs_stencil_state_after_renderable_flush() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut render_assets = RenderAssets::new();
+        let mut uploader = TestUploader::default();
+
+        let root = world.add_component(TransformComponent::new());
+
+        let clip_scope = world.add_component_boxed_named("clip_scope", Box::new(TransformComponent::new()));
+        let clip_bg = world.add_component_boxed_named("__bg", Box::new(TransformComponent::new()));
+        let clip_bg_color = world.add_component(ColorComponent::rgba(0.0, 0.0, 0.0, 0.0));
+        let clip_bg_renderable = world.add_component(RenderableComponent::square());
+        let clip = world.add_component(StencilClipComponent::new());
+
+        let content_t = world.add_component_boxed_named("content", Box::new(TransformComponent::new()));
+        let content_color = world.add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+        let content_renderable = world.add_component(RenderableComponent::square());
+
+        let _ = world.add_child(root, clip_scope);
+        let _ = world.add_child(clip_scope, clip_bg);
+        let _ = world.add_child(clip_bg, clip_bg_color);
+        let _ = world.add_child(clip_bg, clip);
+        let _ = world.add_child(clip_bg_color, clip_bg_renderable);
+
+        let _ = world.add_child(clip_scope, content_t);
+        let _ = world.add_child(content_t, content_color);
+        let _ = world.add_child(content_color, content_renderable);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        assert!(world
+            .get_component_by_id_as::<RenderableComponent>(clip_bg_renderable)
+            .and_then(|r| r.get_handle())
+            .is_none());
+        assert!(world
+            .get_component_by_id_as::<RenderableComponent>(content_renderable)
+            .and_then(|r| r.get_handle())
+            .is_none());
+
+        systems.prepare_render(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut uploader,
+            &mut queue,
+        );
+
+        let clip_handle = world
+            .get_component_by_id_as::<RenderableComponent>(clip_bg_renderable)
+            .and_then(|r| r.get_handle())
+            .expect("clip renderable handle");
+        let content_handle = world
+            .get_component_by_id_as::<RenderableComponent>(content_renderable)
+            .and_then(|r| r.get_handle())
+            .expect("content renderable handle");
+
+        let clip_instance = visuals.instance(clip_handle).expect("clip visual instance");
+        let content_instance = visuals.instance(content_handle).expect("content visual instance");
+
+        assert!(clip_instance.is_stencil_clip);
+        assert_eq!(clip_instance.stencil_ref, 1);
+        assert!(!content_instance.is_stencil_clip);
+        assert_eq!(content_instance.stencil_ref, 1);
+    }
+}
+
 impl SystemWorld {
     pub(crate) fn remove_subtree_immediate(
         &mut self,
@@ -765,6 +885,55 @@ impl SystemWorld {
         }
     }
 
+    fn resync_stencil_state(world: &World, visuals: &mut VisualWorld) {
+        use crate::engine::ecs::component::{RenderableComponent, StencilClipComponent};
+
+        let renderables: Vec<ComponentId> = world
+            .all_components()
+            .filter(|&cid| world.get_component_by_id_as::<RenderableComponent>(cid).is_some())
+            .collect();
+
+        for renderable_component in &renderables {
+            let Some(handle) = world
+                .get_component_by_id_as::<RenderableComponent>(*renderable_component)
+                .and_then(|renderable| renderable.get_handle())
+            else {
+                continue;
+            };
+
+            let _ = visuals.unregister_stencil_clip(handle);
+            let _ = visuals.update_stencil_ref(handle, 0);
+        }
+
+        let stencil_clips: Vec<ComponentId> = world
+            .all_components()
+            .filter(|&cid| world.get_component_by_id_as::<StencilClipComponent>(cid).is_some())
+            .collect();
+
+        for stencil_clip in stencil_clips {
+            let mut depth: u8 = 0;
+            let mut cursor = world.parent_of(stencil_clip);
+            while let Some(parent) = cursor {
+                if world
+                    .get_component_by_id_as::<StencilClipComponent>(parent)
+                    .is_some()
+                {
+                    depth = depth.saturating_add(1);
+                }
+                cursor = world.parent_of(parent);
+            }
+
+            let stencil_ref = depth + 1;
+            if let Some(handle) = Self::find_stencil_clip_renderable_handle(world, stencil_clip) {
+                let _ = visuals.register_stencil_clip(handle, stencil_ref);
+            }
+        }
+
+        for renderable_component in renderables {
+            Self::sync_renderable_stencil_ref(world, visuals, renderable_component);
+        }
+    }
+
     fn stencil_ref_for_renderable(world: &World, renderable_component: ComponentId) -> u8 {
         use crate::engine::ecs::component::StencilClipComponent;
 
@@ -1314,8 +1483,11 @@ impl SystemWorld {
         self.gltf
             .flush_imports(render_assets, &mut self.texture, uploader);
 
-        self.renderable
+        let flushed_renderables = self.renderable
             .flush_pending(world, visuals, render_assets, uploader, queue);
+        if flushed_renderables {
+            Self::resync_stencil_state(world, visuals);
+        }
 
         self.render_to_texture.flush_pending(visuals, uploader);
 
