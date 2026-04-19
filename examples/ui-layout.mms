@@ -129,30 +129,38 @@ RenderGraph {
 // perimeter cubes
 ED {
 T.position(0.0, -5.0, -5.0) {
-    let i = 0;
-    for x in range(-5, 6) {
-        for y in range(-5, 6) {
-            i = i + 1;
-            T.position(x, y, 0.0).scale(0.9, 0.9, 0.9) {
-                if x % 2 == 0 && y % 2 == 0 {
-                    let red = (x + y) / 5.0;
+    T.position(0, 0, -2) {
+        R.cube() {
+            C.rgba(0.8, 0.8, 0.8, 1.0)
+            Emissive.on()
+        }
+    
+        let i = 0;
+        for x in range(-5, 6) {
+            for y in range(-5, 6) {
+                i = i + 1;
+                T.position(x, y, 0.0).scale(0.9, 0.9, 0.9) {
+                    if x % 2 == 0 && y % 2 == 0 {
+                        let red = (x + y) / 5.0;
 
-                    if (red > 0.2) {
+                        if (red > 0.2) {
+                            R.cube() {
+
+                                C.rgba(red, x / 5.0, y / 5.0, 1.0)
+                                Emissive.on()
+                            }
+                        }
+
+                    } else {
                         R.cube() {
-
-                            C.rgba(red, x / 5.0, y / 5.0, 1.0)
-                            Emissive.on()
+                            C.rgba(x / 5.0, 1.0, y / 5.0, 1.0)
                         }
                     }
-
-                } else {
-                    R.cube() {
-                        C.rgba(x / 5.0, 1.0, y / 5.0, 1.0)
-                    }
                 }
-            }
 
+            }
         }
+
     }
 }
 }

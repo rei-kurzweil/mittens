@@ -389,10 +389,6 @@ fn spawn_world_panel(
         "world_panel_anchor",
         Box::new(SelectableComponent::off()),
     );
-    let wpo = world.add_component_boxed_named(
-        "world_panel_overlay",
-        Box::new(OverlayComponent::new()),
-    );
     let wpc = world.add_component_boxed_named(
         "world_panel",
         Box::new(WorldPanelComponent::new()),
@@ -407,9 +403,8 @@ fn spawn_world_panel(
     );
 
     // Panel root + LayoutComponent + header slot (with title bar visuals + gizmo).
-    let _ = world.add_child(wpa, wpo);
     let (wp_t, layout_root) =
-        spawn_panel_title_bar(world, wpo, pos, wp_width, wp_height, "World");
+        spawn_panel_title_bar(world, wpa, pos, wp_width, wp_height, "World");
 
     // ── Content slot — second flex item (flex_grow=1) ────────────────────
     // LayoutSystem will position this at [0, -TITLE_BAR_HEIGHT, 0].
@@ -628,10 +623,6 @@ fn rebuild_world_panel(
             Box::new(crate::engine::ecs::component::TextComponent::new(&text)),
         );
         let _ = world.add_child(color_node, row_text);
-
-        let emissive =
-            world.add_component_boxed_named("wp_emit", Box::new(EmissiveComponent::on()));
-        let _ = world.add_child(row_text, emissive);
 
         let rc = world
             .add_component_boxed_named("wp_rc", Box::new(RaycastableComponent::click_only()));
