@@ -18,9 +18,13 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::{IntentValue, SignalEmitter};
 use crate::engine::ecs::component::{
     ColorComponent, OpacityComponent, Overflow, RenderableComponent, StencilClipComponent,
+    RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType,
     StyleComponent, TransformComponent,
 };
 use super::measure::{measure_container_items, measure_items, MeasuredItem};
+
+const OWNED_SCROLL_DRAG_RAYCASTABLE_LABEL: &str = "__scroll_drag_raycastable";
+const OWNED_SCROLL_DRAG_SHAPE_LABEL: &str = "__scroll_drag_shape";
 
 /// Run a block formatting context layout pass for `layout_id`.
 ///
@@ -117,6 +121,9 @@ fn sync_bg_quad(
     let needs_clip = bg_style
         .map(|(_, _, ov)| matches!(ov, Overflow::Hidden | Overflow::Scroll))
         .unwrap_or(false);
+    let needs_scroll_drag_surface = bg_style
+        .map(|(_, _, ov)| matches!(ov, Overflow::Scroll))
+        .unwrap_or(false);
 
     match (bg_style, existing_bg) {
         // background_color present — ensure __bg exists and position it.
@@ -150,6 +157,7 @@ fn sync_bg_quad(
             );
 
             sync_stencil_clip(world, emit, bg_id, needs_clip);
+            sync_scroll_drag_surface(world, emit, bg_id, needs_scroll_drag_surface);
         }
 
         // overflow: Hidden/Scroll with no background_color — still need a clip quad.
@@ -173,6 +181,7 @@ fn sync_bg_quad(
                 },
             );
             sync_stencil_clip(world, emit, bg_id, true);
+            sync_scroll_drag_surface(world, emit, bg_id, true);
         }
 
         // background_color cleared and no clip need — remove the stale __bg quad.
@@ -188,31 +197,125 @@ fn sync_bg_quad(
     }
 }
 
-/// Attach or detach `StencilClipComponent` on `__bg_id` based on `needs_clip`.
+/// Attach or detach `StencilClipComponent` under the `__bg` renderable based on `needs_clip`.
 fn sync_stencil_clip(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     bg_id: ComponentId,
     needs_clip: bool,
 ) {
-    let clip_children: Vec<ComponentId> = world
-        .children_of(bg_id)
-        .iter()
-        .copied()
-        .filter(|&ch| world.get_component_by_id_as::<StencilClipComponent>(ch).is_some())
-        .collect();
+    let renderable_id = subtree_first_renderable(world, bg_id);
 
-    let has_clip = !clip_children.is_empty();
+    let mut clip_nodes = Vec::new();
+    let mut stack = vec![bg_id];
+    while let Some(node) = stack.pop() {
+        if world.get_component_by_id_as::<StencilClipComponent>(node).is_some() {
+            clip_nodes.push(node);
+        }
+        for &child in world.children_of(node) {
+            stack.push(child);
+        }
+    }
 
-    if needs_clip && !has_clip {
-        let clip_id = world.add_component(StencilClipComponent::new());
-        let _ = world.add_child(bg_id, clip_id);
-        world.init_component_tree(clip_id, emit);
-    } else if !needs_clip && has_clip {
-        for clip_id in clip_children {
+    let has_correct_clip = renderable_id.is_some_and(|rend_id| {
+        clip_nodes
+            .iter()
+            .copied()
+            .any(|clip_id| world.parent_of(clip_id) == Some(rend_id))
+    });
+
+    if needs_clip {
+        for clip_id in clip_nodes.iter().copied() {
+            if Some(clip_id) != renderable_id.and_then(|rend_id| {
+                world.children_of(rend_id).iter().copied().find(|&child| child == clip_id)
+            }) {
+                emit.push_intent_now(
+                    clip_id,
+                    IntentValue::RemoveSubtree { component_ids: vec![clip_id] },
+                );
+            }
+        }
+
+        if !has_correct_clip {
+            let Some(rend_id) = renderable_id else {
+                return;
+            };
+            let clip_id = world.add_component(StencilClipComponent::new());
+            let _ = world.add_child(rend_id, clip_id);
+            world.init_component_tree(clip_id, emit);
+        }
+    } else {
+        for clip_id in clip_nodes {
             emit.push_intent_now(
                 clip_id,
                 IntentValue::RemoveSubtree { component_ids: vec![clip_id] },
+            );
+        }
+    }
+}
+
+fn subtree_first_renderable(world: &World, root: ComponentId) -> Option<ComponentId> {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        if world.get_component_by_id_as::<RenderableComponent>(node).is_some() {
+            return Some(node);
+        }
+        for &child in world.children_of(node).iter().rev() {
+            stack.push(child);
+        }
+    }
+    None
+}
+
+fn sync_scroll_drag_surface(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    bg_id: ComponentId,
+    needs_scroll_drag_surface: bool,
+) {
+    let Some(renderable_id) = subtree_first_renderable(world, bg_id) else {
+        return;
+    };
+
+    let existing_raycastable = world.children_of(renderable_id).iter().copied().find(|&child| {
+        world.component_label(child) == Some(OWNED_SCROLL_DRAG_RAYCASTABLE_LABEL)
+            && world.get_component_by_id_as::<RaycastableComponent>(child).is_some()
+    });
+    let existing_shape = world.children_of(renderable_id).iter().copied().find(|&child| {
+        world.component_label(child) == Some(OWNED_SCROLL_DRAG_SHAPE_LABEL)
+            && world.get_component_by_id_as::<RaycastableShapeComponent>(child).is_some()
+    });
+
+    if needs_scroll_drag_surface {
+        if existing_raycastable.is_none() {
+            let rc_id = world.add_component_boxed_named(
+                OWNED_SCROLL_DRAG_RAYCASTABLE_LABEL,
+                Box::new(RaycastableComponent::drag_only()),
+            );
+            let _ = world.add_child(renderable_id, rc_id);
+            world.init_component_tree(rc_id, emit);
+        }
+
+        if existing_shape.is_none() {
+            let shape_id = world.add_component_boxed_named(
+                OWNED_SCROLL_DRAG_SHAPE_LABEL,
+                Box::new(RaycastableShapeComponent::new(RaycastableShapeType::Quad2D)),
+            );
+            let _ = world.add_child(renderable_id, shape_id);
+            world.init_component_tree(shape_id, emit);
+        }
+    } else {
+        if let Some(rc_id) = existing_raycastable {
+            emit.push_intent_now(
+                rc_id,
+                IntentValue::RemoveSubtree { component_ids: vec![rc_id] },
+            );
+        }
+
+        if let Some(shape_id) = existing_shape {
+            emit.push_intent_now(
+                shape_id,
+                IntentValue::RemoveSubtree { component_ids: vec![shape_id] },
             );
         }
     }

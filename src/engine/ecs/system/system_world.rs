@@ -31,6 +31,16 @@ use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
 use crate::engine::ecs::system::{AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, GestureSystem, IKSystem, InspectorSystem, LayoutSystem, TransformGizmoSystem};
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+struct PanelClipDebugInfo {
+    label: String,
+    scope_root: ComponentId,
+    bg_id: ComponentId,
+    stencil_clip_id: ComponentId,
+    renderable_id: ComponentId,
+    renderable_guid: uuid::Uuid,
+}
 
 /// System world that holds and runs all registered systems.
 #[derive(Debug, Default)]
@@ -160,8 +170,8 @@ mod tests {
         let _ = world.add_child(root, clip_scope);
         let _ = world.add_child(clip_scope, clip_bg);
         let _ = world.add_child(clip_bg, clip_bg_color);
-        let _ = world.add_child(clip_bg, clip);
         let _ = world.add_child(clip_bg_color, clip_bg_renderable);
+        let _ = world.add_child(clip_bg_renderable, clip);
 
         let _ = world.add_child(clip_scope, content_t);
         let _ = world.add_child(content_t, content_color);
@@ -207,6 +217,43 @@ mod tests {
 }
 
 impl SystemWorld {
+    fn env_flag(name: &str) -> bool {
+        std::env::var(name)
+            .ok()
+            .map(|s| {
+                let s = s.trim().to_ascii_lowercase();
+                s == "1" || s == "true" || s == "on" || s == "yes"
+            })
+            .unwrap_or(false)
+    }
+
+    fn format_component_id_short(id: ComponentId) -> String {
+        let s = format!("{:?}", id);
+        if let (Some(l), Some(r)) = (s.find('('), s.rfind(')')) {
+            if r > l + 1 {
+                return s[l + 1..r].to_string();
+            }
+        }
+        s
+    }
+
+    fn repl_path_for_component(world: &World, component: ComponentId) -> String {
+        let mut parts = Vec::new();
+        let mut cursor = Some(component);
+
+        while let Some(cid) = cursor {
+            let name = world
+                .get_component_node(cid)
+                .map(|node| node.name.clone())
+                .unwrap_or_else(|| "<deleted>".to_string());
+            parts.push(format!("{}:{}", Self::format_component_id_short(cid), name));
+            cursor = world.parent_of(cid);
+        }
+
+        parts.reverse();
+        format!("/{}", parts.join("/"))
+    }
+
     pub(crate) fn remove_subtree_immediate(
         &mut self,
         world: &mut World,
@@ -829,6 +876,8 @@ impl SystemWorld {
         if let Some(scope_root) = Self::stencil_clip_scope_root(world, component) {
             Self::sync_stencil_refs_in_subtree(world, visuals, scope_root);
         }
+
+        self.maybe_emit_panel_clip_debug(world);
     }
 
     /// Unregister a StencilClipComponent: clear `is_stencil_clip` on the associated VisualInstance.
@@ -885,7 +934,7 @@ impl SystemWorld {
         }
     }
 
-    fn resync_stencil_state(world: &World, visuals: &mut VisualWorld) {
+    fn resync_stencil_state(&mut self, world: &World, visuals: &mut VisualWorld) {
         use crate::engine::ecs::component::{RenderableComponent, StencilClipComponent};
 
         let renderables: Vec<ComponentId> = world
@@ -932,6 +981,8 @@ impl SystemWorld {
         for renderable_component in renderables {
             Self::sync_renderable_stencil_ref(world, visuals, renderable_component);
         }
+
+        self.maybe_emit_panel_clip_debug(world);
     }
 
     fn stencil_ref_for_renderable(world: &World, renderable_component: ComponentId) -> u8 {
@@ -980,37 +1031,143 @@ impl SystemWorld {
         Some(parent)
     }
 
+    fn maybe_emit_panel_clip_debug(&mut self, world: &World) {
+        static DID_EMIT_PANEL_CLIP_DEBUG: AtomicBool = AtomicBool::new(false);
+
+        let want_paths = Self::env_flag("CAT_DEBUG_PANEL_CLIP_PATHS");
+        let want_repl = Self::env_flag("CAT_DEBUG_PANEL_CLIP_REPL");
+
+        if !want_paths && !want_repl {
+            return;
+        }
+
+        if DID_EMIT_PANEL_CLIP_DEBUG.load(Ordering::Relaxed) {
+            return;
+        }
+
+        let Some(world_info) = Self::panel_clip_debug_info::<
+            crate::engine::ecs::component::WorldPanelComponent,
+        >(world, "world_panel") else {
+            return;
+        };
+        let Some(inspector_info) = Self::panel_clip_debug_info::<
+            crate::engine::ecs::component::InspectorPanelComponent,
+        >(world, "inspector_panel") else {
+            return;
+        };
+
+        if want_paths {
+            Self::print_panel_clip_debug_info(world, &world_info);
+            Self::print_panel_clip_debug_info(world, &inspector_info);
+        }
+
+        if want_repl {
+            self.queue_repl_command(format!("cd {}", world_info.renderable_guid));
+            self.queue_repl_command("pwd".to_string());
+            self.queue_repl_command(format!("cd {}", inspector_info.renderable_guid));
+            self.queue_repl_command("pwd".to_string());
+        }
+
+        DID_EMIT_PANEL_CLIP_DEBUG.store(true, Ordering::Relaxed);
+    }
+
+    fn panel_clip_debug_info<T: crate::engine::ecs::component::Component + 'static>(
+        world: &World,
+        label: &str,
+    ) -> Option<PanelClipDebugInfo> {
+        let Some(panel_component) = world
+            .all_components()
+            .find(|&cid| world.get_component_by_id_as::<T>(cid).is_some())
+        else {
+            return None;
+        };
+
+        let Some((scope_root, bg_id, stencil_clip_id, renderable_id)) =
+            Self::panel_clip_debug_nodes(world, panel_component)
+        else {
+            return None;
+        };
+
+        let renderable_guid = world.get_component_node(renderable_id)?.guid;
+
+        Some(PanelClipDebugInfo {
+            label: label.to_string(),
+            scope_root,
+            bg_id,
+            stencil_clip_id,
+            renderable_id,
+            renderable_guid,
+        })
+    }
+
+    fn print_panel_clip_debug_info(world: &World, info: &PanelClipDebugInfo) {
+        println!(
+            "[StencilClipDebug] {}: scope=\"{}\" bg=\"{}\" clip=\"{}\" renderable=\"{}\" guid={}",
+            info.label,
+            Self::repl_path_for_component(world, info.scope_root),
+            Self::repl_path_for_component(world, info.bg_id),
+            Self::repl_path_for_component(world, info.stencil_clip_id),
+            Self::repl_path_for_component(world, info.renderable_id),
+            info.renderable_guid,
+        );
+    }
+
+    fn panel_clip_debug_nodes(
+        world: &World,
+        panel_component: ComponentId,
+    ) -> Option<(ComponentId, ComponentId, ComponentId, ComponentId)> {
+        use crate::engine::ecs::component::StencilClipComponent;
+
+        let scope_root = world.parent_of(panel_component)?;
+        let bg_id = world.children_of(scope_root).iter().copied().find(|&child| {
+            world.component_label(child) == Some("__bg")
+                && Self::subtree_contains_stencil_clip(world, child)
+        })?;
+
+        let mut stack = vec![bg_id];
+        let mut stencil_clip_id = None;
+        while let Some(node) = stack.pop() {
+            if world.get_component_by_id_as::<StencilClipComponent>(node).is_some() {
+                stencil_clip_id = Some(node);
+                break;
+            }
+            for &child in world.children_of(node) {
+                stack.push(child);
+            }
+        }
+
+        let stencil_clip_id = stencil_clip_id?;
+        let renderable_id = Self::find_stencil_clip_renderable_component(world, stencil_clip_id)?;
+        Some((scope_root, bg_id, stencil_clip_id, renderable_id))
+    }
+
+    fn find_stencil_clip_renderable_component(
+        world: &World,
+        component: ComponentId,
+    ) -> Option<ComponentId> {
+        use crate::engine::ecs::component::RenderableComponent;
+
+        let mut cursor = world.parent_of(component);
+        while let Some(cid) = cursor {
+            if world.get_component_by_id_as::<RenderableComponent>(cid).is_some() {
+                return Some(cid);
+            }
+            cursor = world.parent_of(cid);
+        }
+
+        None
+    }
+
     fn find_stencil_clip_renderable_handle(
         world: &World,
         component: ComponentId,
     ) -> Option<crate::engine::graphics::primitives::InstanceHandle> {
         use crate::engine::ecs::component::RenderableComponent;
 
-        if let Some(parent) = world.parent_of(component) {
-            let mut stack = vec![parent];
-            while let Some(cid) = stack.pop() {
-                if let Some(r) = world.get_component_by_id_as::<RenderableComponent>(cid) {
-                    if let Some(handle) = r.get_handle() {
-                        return Some(handle);
-                    }
-                }
-                for &ch in world.children_of(cid) {
-                    stack.push(ch);
-                }
-            }
-        }
-
-        let mut cursor = world.parent_of(component);
-        while let Some(cid) = cursor {
-            if let Some(r) = world.get_component_by_id_as::<RenderableComponent>(cid) {
-                if let Some(handle) = r.get_handle() {
-                    return Some(handle);
-                }
-            }
-            cursor = world.parent_of(cid);
-        }
-
-        None
+        let renderable_component = Self::find_stencil_clip_renderable_component(world, component)?;
+        world
+            .get_component_by_id_as::<RenderableComponent>(renderable_component)
+            .and_then(|r| r.get_handle())
     }
 
     /// Remove a RenderableComponent instance from the RenderableSystem (and BVH).
@@ -1486,7 +1643,7 @@ impl SystemWorld {
         let flushed_renderables = self.renderable
             .flush_pending(world, visuals, render_assets, uploader, queue);
         if flushed_renderables {
-            Self::resync_stencil_state(world, visuals);
+            self.resync_stencil_state(world, visuals);
         }
 
         self.render_to_texture.flush_pending(visuals, uploader);

@@ -226,6 +226,11 @@ This refactor fixes the ownership split:
 
 That is a much cleaner boundary.
 
+Related draft:
+- `docs/draft/layout-owned-stencil-clip-source.md` describes how a layout-generated
+  `StencilClip` may resolve its clip shape from the computed adjacent `__bg`
+  renderable while keeping authored content on a separate branch.
+
 ---
 
 ## 7. CPU-side clipping note

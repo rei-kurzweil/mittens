@@ -1,10 +1,10 @@
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter};
 use crate::engine::ecs::component::Component;
 
-/// Declares a renderable as a stencil clip boundary.
+/// Declares an ancestor renderable as a stencil clip boundary.
 ///
-/// Attach alongside a `RenderableComponent` (via a shared parent TC). On `init()`, emits
-/// `RegisterStencilClip` so VisualWorld records the clip source immediately.
+/// Attach under a `RenderableComponent` (directly or a few levels below it). On `init()`, emits
+/// `RegisterStencilClip` so VisualWorld records the nearest ancestor renderable as the clip source.
 ///
 /// The renderer draws the referenced renderable into the stencil buffer
 /// (color write off, stencil INCR, ref = nesting depth) before drawing the TC's
@@ -13,13 +13,13 @@ use crate::engine::ecs::component::Component;
 ///
 /// ## Layout use
 ///
-/// `sync_bg_quad` attaches this to `__bg_tc` whenever `overflow: Hidden | Scroll` is
-/// set on a style component. The background quad mesh is the clip shape.
+/// `sync_bg_quad` attaches this under the generated `__bg` renderable whenever
+/// `overflow: Hidden | Scroll` is set on a style component. The background quad mesh is the clip shape.
 ///
 /// ## Manual use
 ///
-/// Attach to any TC that also has a `RenderableComponent` in its subtree. The mesh
-/// shape determines the clip region.
+/// Attach somewhere under the renderable whose mesh should define the clip region.
+/// The nearest ancestor `RenderableComponent` determines the clip shape.
 pub struct StencilClipComponent {
     /// Stencil reference depth. `0` = auto-assign based on ancestor nesting depth.
     pub stencil_ref: u8,

@@ -200,7 +200,8 @@ T.position(-2.4, 2.0, 0.0).scale(0.08, 0.08, 0.08) {
 
             // ── 8. Overflow: scroll ────────────────────────────────────────
             // Scroll container — fixed height, content overflows.
-            // CPU cull + GPU scissor will be applied per the rendering spec.
+            // Stencil clipping defines correctness; conservative CPU reject can
+            // be added later once clip/content bounding volumes exist.
             HtmlElement.section {
                 Style {
                     padding(1.0)

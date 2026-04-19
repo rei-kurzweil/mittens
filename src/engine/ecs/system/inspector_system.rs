@@ -1,7 +1,6 @@
 use crate::engine::ecs::component::{
     ColorComponent, EmissiveComponent, HtmlElementComponent, InspectorPanelComponent,
-    LayoutComponent, OpacityComponent, OverlayComponent, RaycastableComponent,
-    RaycastableShapeComponent, RaycastableShapeType, RenderableComponent, ScrollingComponent,
+    LayoutComponent, OverlayComponent, RaycastableComponent, RenderableComponent, ScrollingComponent,
     SelectableComponent, StyleComponent, TransformComponent,
     TransformGizmoComponent, WorldPanelComponent,
     style::{EdgeInsets, Overflow, SizeDimension},
@@ -22,14 +21,8 @@ const PAGE_SIZE: usize = 30;
 const MAX_DEPTH: usize = 5;
 /// Gap between world panel right edge and inspector panel left edge (overlay units).
 const PANEL_GAP: f32 = 0.12;
-/// Extra margin around the panel that the drag plane extends beyond content edges.
+/// Extra margin around the panel title bar footprint.
 const DRAG_MARGIN: f32 = 0.15;
-/// Z offset of the drag plane relative to panel content (negative = behind content, away from camera).
-/// Must be more negative than text background quads, which land at z_offset(-0.1) * TEXT_SCALE(0.08) = -0.008.
-const DRAG_PLANE_Z_OFFSET: f32 = -0.015;
-/// Drag plane debug color: translucent blue.
-const DRAG_PLANE_COLOR: [f32; 4] = [0.3, 0.5, 1.0, 1.0];
-const DRAG_PLANE_OPACITY: f32 = 0.25;
 
 /// Title bar height in world units. Two glyph rows tall.
 const TITLE_BAR_HEIGHT: f32 = 2.0 * TEXT_SCALE;
@@ -304,74 +297,6 @@ fn spawn_panel_title_bar(
     (panel_t, layout_root)
 }
 
-/// Returns `(panel_component_id, panel_anchor_id, scroll_component_id)`.
-/// Spawn an invisible drag-capture quad in front of a panel.
-///
-/// `panel_width` and `panel_height` are in world/overlay units. The quad is
-/// attached as a child of `parent` at
-/// `pos` + a small forward Z offset so it sits in front of the row content.
-///
-/// `RaycastableComponent::drag_only()` means drags land here while clicks
-/// pass through to the row items behind it.
-///
-/// Returns the drag plane TransformComponent id.
-fn spawn_drag_plane(
-    world: &mut World,
-    parent: ComponentId,
-    pos: (f32, f32, f32),
-    panel_width: f32,
-    panel_height: f32,
-) -> ComponentId {
-    let w = panel_width + 2.0 * DRAG_MARGIN;
-    let h = panel_height + 2.0 * DRAG_MARGIN;
-    let cx = pos.0 + panel_width * 0.5;
-    let cy = pos.1 - panel_height * 0.5;
-    let cz = pos.2 + DRAG_PLANE_Z_OFFSET;
-
-    let dp_t = world.add_component_boxed_named(
-        "drag_plane_t",
-        Box::new(
-            TransformComponent::new()
-                .with_position(cx, cy, cz)
-                .with_scale(w, h, 1.0),
-        ),
-    );
-    let dp_col = world.add_component_boxed_named(
-        "drag_plane_col",
-        Box::new(ColorComponent::rgba(
-            DRAG_PLANE_COLOR[0],
-            DRAG_PLANE_COLOR[1],
-            DRAG_PLANE_COLOR[2],
-            DRAG_PLANE_COLOR[3],
-        )),
-    );
-    let dp_r = world.add_component_boxed_named(
-        "drag_plane_r",
-        Box::new(RenderableComponent::square()),
-    );
-    let dp_opacity = world.add_component_boxed_named(
-        "drag_plane_opacity",
-        Box::new(OpacityComponent { opacity: DRAG_PLANE_OPACITY, multiple_layers: false }),
-    );
-    let dp_rc = world.add_component_boxed_named(
-        "drag_plane_rc",
-        Box::new(RaycastableComponent::drag_only()),
-    );
-    let dp_shape = world.add_component_boxed_named(
-        "drag_plane_shape",
-        Box::new(RaycastableShapeComponent::new(RaycastableShapeType::Quad2D)),
-    );
-
-    let _ = world.add_child(parent, dp_t);
-    let _ = world.add_child(dp_t, dp_col);
-    let _ = world.add_child(dp_col, dp_r);
-    let _ = world.add_child(dp_r, dp_opacity);
-    let _ = world.add_child(dp_r, dp_rc);
-    let _ = world.add_child(dp_r, dp_shape);
-
-    dp_t
-}
-
 fn spawn_world_panel(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
@@ -426,10 +351,6 @@ fn spawn_world_panel(
 
     let _ = world.add_child(layout_root, content_slot);
     let _ = world.add_child(content_slot, content_style);
-
-    // Drag plane covers the content area; parent is content_slot so its
-    // local [0, 0] aligns with the top of the content region.
-    spawn_drag_plane(world, content_slot, (0.0, 0.0, 0.0), wp_width, wp_height);
 
     let _ = world.add_child(content_slot, wpc);
     let _ = world.add_child(wpc, wsc);
@@ -517,7 +438,6 @@ fn spawn_inspector_panel(
 
     let _ = world.add_child(layout_root, content_slot);
     let _ = world.add_child(content_slot, content_style);
-    spawn_drag_plane(world, content_slot, (0.0, 0.0, 0.0), ip_width, ip_height);
     let _ = world.add_child(content_slot, ipc);
     let _ = world.add_child(ipc, isc);
     let _ = world.add_child(isc, ipr);

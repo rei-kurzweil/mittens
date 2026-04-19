@@ -92,7 +92,7 @@ pub(crate) fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -
     // is_auto_height = true means "take a share of remaining container space".
     // Text nodes with height: Auto resolve intrinsically (not from container),
     // so they are NOT auto from the container's perspective.
-    let has_text = find_text_in_subtree(world, tc_id).is_some();
+    let has_text = find_text_in_local_content_subtree(world, tc_id).is_some();
     let is_auto_height = is_block && matches!(height, SizeDimension::Auto) && !has_text;
     let content_height_gu = match height {
         SizeDimension::GlyphUnits(h) => h,
@@ -211,16 +211,38 @@ pub(crate) fn measure_items(
 const CHAR_WIDTH_GU: f32 = 0.55;
 
 /// Walk the subtree of `root` and return the first `TextComponent` found.
-fn find_text_in_subtree(world: &World, root: ComponentId) -> Option<(String, usize, bool, Vec<String>)> {
-    if let Some(t) = world.get_component_by_id_as::<TextComponent>(root) {
-        return Some((t.text.clone(), t.wrap_at, t.word_wrap, t.word_wrap_tokens.clone()));
-    }
-    for &child in world.children_of(root) {
-        if let Some(found) = find_text_in_subtree(world, child) {
-            return Some(found);
+fn find_text_in_local_content_subtree(
+    world: &World,
+    root: ComponentId,
+) -> Option<(String, usize, bool, Vec<String>)> {
+    fn visit(
+        world: &World,
+        node: ComponentId,
+        root: ComponentId,
+    ) -> Option<(String, usize, bool, Vec<String>)> {
+        if let Some(t) = world.get_component_by_id_as::<TextComponent>(node) {
+            return Some((
+                t.text.clone(),
+                t.wrap_at,
+                t.word_wrap,
+                t.word_wrap_tokens.clone(),
+            ));
         }
+
+        if node != root && world.get_component_by_id_as::<TransformComponent>(node).is_some() {
+            return None;
+        }
+
+        for &child in world.children_of(node) {
+            if let Some(found) = visit(world, child, root) {
+                return Some(found);
+            }
+        }
+
+        None
     }
-    None
+
+    visit(world, root, root)
 }
 
 /// Measure the intrinsic block-axis height (in glyph units) of a TC subtree
@@ -228,7 +250,8 @@ fn find_text_in_subtree(world: &World, root: ComponentId) -> Option<(String, usi
 ///
 /// Returns `0.0` if no `TextComponent` is found in the subtree.
 fn text_intrinsic_height(world: &World, tc_id: ComponentId, content_width_gu: f32) -> f32 {
-    let Some((text, existing_wrap_at, word_wrap, tokens)) = find_text_in_subtree(world, tc_id)
+    let Some((text, existing_wrap_at, word_wrap, tokens)) =
+        find_text_in_local_content_subtree(world, tc_id)
     else {
         return 0.0;
     };
@@ -269,5 +292,62 @@ impl StyleDefault for Option<StyleTuple> {
             None,
             0.0,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::measure_item;
+    use crate::engine::ecs::component::{ColorComponent, LayoutComponent, StyleComponent, TextComponent, TransformComponent};
+    use crate::engine::ecs::component::style::SizeDimension;
+    use crate::engine::ecs::World;
+
+    #[test]
+    fn auto_height_container_ignores_text_behind_nested_transforms() {
+        let mut world = World::default();
+
+        let container = world.add_component_boxed_named("content_slot", Box::new(TransformComponent::new()));
+        let style = world.add_component_boxed_named("content_style", Box::new(StyleComponent::new()));
+        let panel = world.add_component_boxed_named("world_panel", Box::new(LayoutComponent::new(10.0)));
+        let rows_track = world.add_component_boxed_named("rows_track", Box::new(TransformComponent::new()));
+        let row = world.add_component_boxed_named("row", Box::new(TransformComponent::new()));
+        let color = world.add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+        let text = world.add_component_boxed_named("row_text", Box::new(TextComponent::new("hello")));
+
+        let _ = world.add_child(container, style);
+        let _ = world.add_child(container, panel);
+        let _ = world.add_child(panel, rows_track);
+        let _ = world.add_child(rows_track, row);
+        let _ = world.add_child(row, color);
+        let _ = world.add_child(color, text);
+
+        let measured = measure_item(&world, container, 29.5);
+        assert!(measured.is_auto_height, "container should remain auto-height/flex-sized");
+        assert_eq!(measured.content_height_gu, 0.0);
+    }
+
+    #[test]
+    fn row_text_wrapper_still_measures_intrinsic_height() {
+        let mut world = World::default();
+
+        let row = world.add_component_boxed_named("row", Box::new(TransformComponent::new()));
+        let row_style = world.add_component_boxed_named(
+            "row_style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.height = SizeDimension::Auto;
+                s
+            }),
+        );
+        let color = world.add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+        let text = world.add_component_boxed_named("row_text", Box::new(TextComponent::new("hello")));
+
+        let _ = world.add_child(row, row_style);
+        let _ = world.add_child(row, color);
+        let _ = world.add_child(color, text);
+
+        let measured = measure_item(&world, row, 12.0);
+        assert!(!measured.is_auto_height, "row text wrapper should use intrinsic text height");
+        assert_eq!(measured.content_height_gu, 1.0);
     }
 }
