@@ -31,6 +31,7 @@ use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
 use crate::engine::ecs::system::{AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, GestureSystem, IKSystem, InspectorSystem, LayoutSystem, TransformGizmoSystem};
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 const OWNED_LAYOUT_STENCIL_CLIP_LABEL: &str = "__layout_stencil_clip";
@@ -48,6 +49,8 @@ struct PanelClipDebugInfo {
 #[derive(Debug, Default)]
 pub struct SystemWorld {
     pub rx: RxWorld,
+
+    active_stencil_clips: HashSet<ComponentId>,
 
     /// REPL command queue (executed by Universe on the main thread).
     repl_command_queue: Vec<String>,
@@ -267,7 +270,8 @@ impl SystemWorld {
     ) {
         use crate::engine::ecs::component::{
             CollisionComponent, ControllerXRComponent, InputXRComponent, KineticResponseComponent,
-            PointerComponent, RayCastComponent, RenderableComponent, SignalRouteUpwardComponent, TransformComponent,
+            PointerComponent, RayCastComponent, RenderableComponent, SignalRouteUpwardComponent,
+            StencilClipComponent, TransformComponent,
         };
 
         // Best-effort: remove system state for known component types before deleting.
@@ -286,6 +290,12 @@ impl SystemWorld {
                 .is_some()
             {
                 self.rx.remove_pipelines_from_operator(n);
+            }
+            if world.get_component_by_id_as::<StencilClipComponent>(n).is_some() {
+                self.active_stencil_clips.remove(&n);
+                if let Some(handle) = Self::find_stencil_clip_renderable_handle(world, n) {
+                    visuals.unregister_stencil_clip(handle);
+                }
             }
             if world
                 .get_component_by_id_as::<RenderableComponent>(n)
@@ -849,7 +859,7 @@ impl SystemWorld {
         // Keep RayCastSystem's eligibility index in sync for brute-force fallback.
         self.raycast.notify_renderable_added(&*world, component);
 
-        Self::sync_renderable_stencil_ref(world, visuals, component);
+        self.sync_renderable_stencil_ref(world, visuals, component);
     }
 
     /// Register a StencilClipComponent: find the sibling RenderableComponent in the same
@@ -860,6 +870,8 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
+        self.active_stencil_clips.insert(component);
+
         let stencil_ref = Self::stencil_ref_for_clip(world, component);
 
         let handle = Self::find_stencil_clip_renderable_handle(world, component);
@@ -868,7 +880,7 @@ impl SystemWorld {
         }
 
         if let Some(scope_root) = Self::stencil_clip_scope_root(world, component) {
-            Self::sync_stencil_refs_in_subtree(world, visuals, scope_root);
+            self.sync_stencil_refs_in_subtree(world, visuals, scope_root);
         }
 
         self.maybe_emit_panel_clip_debug(world);
@@ -881,17 +893,20 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
+        self.active_stencil_clips.remove(&component);
+
         let handle = Self::find_stencil_clip_renderable_handle(world, component);
         if let Some(handle) = handle {
             visuals.unregister_stencil_clip(handle);
         }
 
         if let Some(scope_root) = Self::stencil_clip_scope_root(world, component) {
-            Self::sync_stencil_refs_in_subtree(world, visuals, scope_root);
+            self.sync_stencil_refs_in_subtree(world, visuals, scope_root);
         }
     }
 
     fn sync_renderable_stencil_ref(
+        &self,
         world: &World,
         visuals: &mut VisualWorld,
         renderable_component: ComponentId,
@@ -906,28 +921,27 @@ impl SystemWorld {
             return;
         };
 
-        let stencil_ref = Self::stencil_clip_for_renderable_component(world, renderable_component)
+        let stencil_ref = self
+            .stencil_clip_for_renderable_component(world, renderable_component)
             .map(|clip_component| Self::stencil_ref_for_clip(world, clip_component))
             .unwrap_or_else(|| Self::stencil_ref_for_renderable(world, renderable_component));
         let _ = visuals.update_stencil_ref(handle, stencil_ref);
     }
 
     fn stencil_clip_for_renderable_component(
+        &self,
         world: &World,
         renderable_component: ComponentId,
     ) -> Option<ComponentId> {
-        use crate::engine::ecs::component::StencilClipComponent;
-
-        world
-            .all_components()
-            .filter(|&cid| world.get_component_by_id_as::<StencilClipComponent>(cid).is_some())
-            .find(|&clip_component| {
-                Self::find_stencil_clip_renderable_component(world, clip_component)
+        self.active_stencil_clips.iter().copied().find(|&clip_component| {
+            world.get_component_record(clip_component).is_some()
+                && Self::find_stencil_clip_renderable_component(world, clip_component)
                     == Some(renderable_component)
-            })
+        })
     }
 
     fn sync_stencil_refs_in_subtree(
+        &self,
         world: &World,
         visuals: &mut VisualWorld,
         root: ComponentId,
@@ -937,7 +951,7 @@ impl SystemWorld {
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
             if world.get_component_by_id_as::<RenderableComponent>(node).is_some() {
-                Self::sync_renderable_stencil_ref(world, visuals, node);
+                self.sync_renderable_stencil_ref(world, visuals, node);
             }
             for &child in world.children_of(node) {
                 stack.push(child);
@@ -945,13 +959,14 @@ impl SystemWorld {
         }
     }
 
-    fn resync_stencil_state(&mut self, world: &World, visuals: &mut VisualWorld) {
-        use crate::engine::ecs::component::StencilClipComponent;
+    fn active_stencil_clips<'a>(&'a mut self, world: &World) -> impl Iterator<Item = ComponentId> + 'a {
+        self.active_stencil_clips
+            .retain(|&component| world.get_component_record(component).is_some());
+        self.active_stencil_clips.iter().copied()
+    }
 
-        let stencil_clips: Vec<ComponentId> = world
-            .all_components()
-            .filter(|&cid| world.get_component_by_id_as::<StencilClipComponent>(cid).is_some())
-            .collect();
+    fn resync_stencil_state(&mut self, world: &World, visuals: &mut VisualWorld) {
+        let stencil_clips: Vec<ComponentId> = self.active_stencil_clips(world).collect();
 
         for stencil_clip in stencil_clips {
             let stencil_ref = Self::stencil_ref_for_clip(world, stencil_clip);
@@ -959,7 +974,7 @@ impl SystemWorld {
                 let _ = visuals.register_stencil_clip(handle, stencil_ref);
             }
             if let Some(scope_root) = Self::stencil_clip_scope_root(world, stencil_clip) {
-                Self::sync_stencil_refs_in_subtree(world, visuals, scope_root);
+                self.sync_stencil_refs_in_subtree(world, visuals, scope_root);
             }
         }
 

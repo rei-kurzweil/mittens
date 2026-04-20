@@ -22,6 +22,7 @@ Recent correctness fixes:
 - renderable stencil sync preserves clip-source refs instead of overwriting them with normal content refs
 - `resync_stencil_state()` no longer clears every renderable in the world after renderable flush
 - post-flush resync is now scoped to active clip subtrees instead of a full renderable sweep
+- Phase 1 landed: `SystemWorld` now keeps an active `StencilClipComponent` index for resync and clip-owner lookup paths
 
 Relevant code:
 
@@ -30,25 +31,17 @@ Relevant code:
 
 ## Remaining hotspots
 
-### 1. Global scan for all stencil clips
-
-Current code still gathers all clip components via `world.all_components()` and a type filter:
-
-- [src/engine/ecs/system/system_world.rs](../../src/engine/ecs/system/system_world.rs#L948-L960)
-
-That is much smaller than sweeping all renderables, but it is still a whole-world scan.
-
-### 2. Clip lookup per renderable sync
+### 1. Clip lookup per renderable sync
 
 `sync_renderable_stencil_ref()` currently uses `stencil_clip_for_renderable_component()` to determine whether a renderable is itself a clip source.
 
-That helper currently scans all `StencilClipComponent`s and compares their resolved renderable target:
+That helper now scans only the active clip index, but it still resolves each candidate clip's renderable target on demand:
 
-- [src/engine/ecs/system/system_world.rs](../../src/engine/ecs/system/system_world.rs#L894-L926)
+- [src/engine/ecs/system/system_world.rs](../../src/engine/ecs/system/system_world.rs)
 
-This is correct but not cheap, especially when syncing many renderables in a subtree.
+This is correct and smaller than the old whole-world scan, but it is still not cheap when syncing many renderables in a subtree.
 
-### 3. Repeated ancestor walks for depth resolution
+### 2. Repeated ancestor walks for depth resolution
 
 Both of these do parent-chain walks:
 
@@ -57,11 +50,11 @@ Both of these do parent-chain walks:
 
 See:
 
-- [src/engine/ecs/system/system_world.rs](../../src/engine/ecs/system/system_world.rs#L970-L1008)
+- [src/engine/ecs/system/system_world.rs](../../src/engine/ecs/system/system_world.rs)
 
 These walks are probably acceptable at current scale, but they are still repeated work.
 
-### 4. Repeated renderable discovery for clip helpers
+### 3. Repeated renderable discovery for clip helpers
 
 Clip helpers resolve through:
 
@@ -70,7 +63,7 @@ Clip helpers resolve through:
 
 See:
 
-- [src/engine/ecs/system/system_world.rs](../../src/engine/ecs/system/system_world.rs#L1152-L1184)
+- [src/engine/ecs/system/system_world.rs](../../src/engine/ecs/system/system_world.rs)
 
 This is simple and robust, but it recomputes relationships instead of using cached ownership/index data.
 
@@ -89,6 +82,8 @@ The remaining scans are smaller and more localized, so the system is in a better
 ## Likely future passes
 
 ### Pass 1 — index clip components
+
+Status: done.
 
 Add a lightweight `SystemWorld` index for active `StencilClipComponent`s so resync does not start from `world.all_components()`.
 
