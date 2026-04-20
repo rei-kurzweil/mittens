@@ -23,6 +23,7 @@ use crate::engine::ecs::component::{
 };
 use super::measure::{measure_container_items, measure_items, MeasuredItem};
 
+const OWNED_LAYOUT_STENCIL_CLIP_LABEL: &str = "__layout_stencil_clip";
 const OWNED_SCROLL_DRAG_RAYCASTABLE_LABEL: &str = "__scroll_drag_raycastable";
 const OWNED_SCROLL_DRAG_SHAPE_LABEL: &str = "__scroll_drag_shape";
 
@@ -118,30 +119,23 @@ fn sync_bg_quad(
         .find(|&&ch| world.component_label(ch) == Some("__bg"))
         .copied();
 
-    let needs_clip = bg_style
-        .map(|(_, _, ov)| matches!(ov, Overflow::Hidden | Overflow::Scroll))
-        .unwrap_or(false);
-    let needs_scroll_drag_surface = bg_style
-        .map(|(_, _, ov)| matches!(ov, Overflow::Scroll))
-        .unwrap_or(false);
+    let (needs_clip, needs_scroll_drag_surface, bg_spec) = match bg_style {
+        Some((rgba, bg_z, overflow)) => (
+            matches!(overflow, Overflow::Hidden | Overflow::Scroll),
+            matches!(overflow, Overflow::Scroll),
+            Some((rgba, bg_z)),
+        ),
+        None => (false, false, None),
+    };
 
-    match (bg_style, existing_bg) {
-        // background_color present — ensure __bg exists and position it.
-        (Some((Some(rgba), bg_z, _)), existing) => {
-            let bg_id = match existing {
+    if let Some((rgba, bg_z)) = bg_spec {
+        let needs_bg = rgba.is_some() || needs_clip;
+        if needs_bg {
+            let bg_id = match existing_bg {
                 Some(id) => id,
-                None => spawn_bg_quad(world, emit, tc_id, rgba),
+                None => spawn_bg_quad(world, emit, tc_id, rgba.unwrap_or([0.0, 0.0, 0.0, 0.0])),
             };
 
-            // The quad mesh is centered at its local origin (extends ±0.5 when scale=1).
-            // Glyph quads are also centered at their column positions, so the visual
-            // top-left of the text is at (−0.5, +0.5) in item TC local space, not at
-            // the content origin (0, 0). The background must be shifted by (−0.5, +0.5)
-            // to align its edges with the text's visual extent.
-            //
-            // Center of background in item TC local space (Y-up, glyph units):
-            //   cx = box_width/2 − padding_left − 0.5
-            //   cy = padding_top − box_height/2 + 0.5
             emit.push_intent_now(
                 bg_id,
                 IntentValue::UpdateTransform {
@@ -156,101 +150,50 @@ fn sync_bg_quad(
                 },
             );
 
-            sync_stencil_clip(world, emit, bg_id, needs_clip);
+            sync_stencil_clip(world, emit, tc_id, needs_clip);
             sync_scroll_drag_surface(world, emit, bg_id, needs_scroll_drag_surface);
+            return;
         }
+    }
 
-        // overflow: Hidden/Scroll with no background_color — still need a clip quad.
-        (Some((None, bg_z, _)), existing) if needs_clip => {
-            let bg_id = match existing {
-                Some(id) => id,
-                // Spawn with transparent color so geometry exists for the stencil write.
-                None => spawn_bg_quad(world, emit, tc_id, [0.0, 0.0, 0.0, 0.0]),
-            };
-            emit.push_intent_now(
-                bg_id,
-                IntentValue::UpdateTransform {
-                    component_ids: vec![bg_id],
-                    translation: [
-                        box_width_gu / 2.0 - padding_left_gu - 0.5,
-                        padding_top_gu - box_height_gu / 2.0 + 0.5,
-                        bg_z,
-                    ],
-                    rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
-                    scale: [box_width_gu, box_height_gu, 1.0],
-                },
-            );
-            sync_stencil_clip(world, emit, bg_id, true);
-            sync_scroll_drag_surface(world, emit, bg_id, true);
-        }
-
-        // background_color cleared and no clip need — remove the stale __bg quad.
-        (Some((None, _, _)) | None, Some(bg_id)) => {
-            emit.push_intent_now(
-                bg_id,
-                IntentValue::RemoveSubtree { component_ids: vec![bg_id] },
-            );
-        }
-
-        // No background_color, no __bg — nothing to do.
-        _ => {}
+    sync_stencil_clip(world, emit, tc_id, false);
+    if let Some(bg_id) = existing_bg {
+        sync_scroll_drag_surface(world, emit, bg_id, false);
+        emit.push_intent_now(
+            bg_id,
+            IntentValue::RemoveSubtree { component_ids: vec![bg_id] },
+        );
     }
 }
 
-/// Attach or detach `StencilClipComponent` under the `__bg` renderable based on `needs_clip`.
+fn immediate_owned_layout_stencil_clip(world: &World, scope_root: ComponentId) -> Option<ComponentId> {
+    world.children_of(scope_root).iter().copied().find(|&child| {
+        world.component_label(child) == Some(OWNED_LAYOUT_STENCIL_CLIP_LABEL)
+            && world.get_component_by_id_as::<StencilClipComponent>(child).is_some()
+    })
+}
+
+/// Attach or detach the layout-owned `StencilClipComponent` as a sibling of `__bg`.
 fn sync_stencil_clip(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
-    bg_id: ComponentId,
+    scope_root: ComponentId,
     needs_clip: bool,
 ) {
-    let renderable_id = subtree_first_renderable(world, bg_id);
-
-    let mut clip_nodes = Vec::new();
-    let mut stack = vec![bg_id];
-    while let Some(node) = stack.pop() {
-        if world.get_component_by_id_as::<StencilClipComponent>(node).is_some() {
-            clip_nodes.push(node);
-        }
-        for &child in world.children_of(node) {
-            stack.push(child);
-        }
-    }
-
-    let has_correct_clip = renderable_id.is_some_and(|rend_id| {
-        clip_nodes
-            .iter()
-            .copied()
-            .any(|clip_id| world.parent_of(clip_id) == Some(rend_id))
-    });
-
     if needs_clip {
-        for clip_id in clip_nodes.iter().copied() {
-            if Some(clip_id) != renderable_id.and_then(|rend_id| {
-                world.children_of(rend_id).iter().copied().find(|&child| child == clip_id)
-            }) {
-                emit.push_intent_now(
-                    clip_id,
-                    IntentValue::RemoveSubtree { component_ids: vec![clip_id] },
-                );
-            }
-        }
-
-        if !has_correct_clip {
-            let Some(rend_id) = renderable_id else {
-                return;
-            };
-            let clip_id = world.add_component(StencilClipComponent::new());
-            let _ = world.add_child(rend_id, clip_id);
+        if immediate_owned_layout_stencil_clip(world, scope_root).is_none() {
+            let clip_id = world.add_component_boxed_named(
+                OWNED_LAYOUT_STENCIL_CLIP_LABEL,
+                Box::new(StencilClipComponent::new()),
+            );
+            let _ = world.add_child(scope_root, clip_id);
             world.init_component_tree(clip_id, emit);
         }
-    } else {
-        for clip_id in clip_nodes {
-            emit.push_intent_now(
-                clip_id,
-                IntentValue::RemoveSubtree { component_ids: vec![clip_id] },
-            );
-        }
+    } else if let Some(clip_id) = immediate_owned_layout_stencil_clip(world, scope_root) {
+        emit.push_intent_now(
+            clip_id,
+            IntentValue::RemoveSubtree { component_ids: vec![clip_id] },
+        );
     }
 }
 
@@ -349,7 +292,7 @@ fn spawn_bg_quad(
 
 #[cfg(test)]
 mod tests {
-    use crate::engine::ecs::component::{ColorComponent, LayoutComponent, StyleComponent, TextComponent, TransformComponent};
+    use crate::engine::ecs::component::{ColorComponent, LayoutComponent, StencilClipComponent, StyleComponent, TextComponent, TransformComponent};
     use crate::engine::ecs::component::style::EdgeInsets;
     use crate::engine::ecs::{CommandQueue, SystemWorld, World};
     use crate::engine::graphics::VisualWorld;
@@ -456,5 +399,43 @@ mod tests {
 
         assert_eq!(title_bar_tc.transform.translation, [10.0, -1.0, 0.005]);
         assert_eq!(title_label_tc.transform.translation, [0.02, -0.04, 0.01]);
+    }
+
+    #[test]
+    fn overflow_scroll_uses_sibling_layout_owned_stencil_clip() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut layout_system = LayoutSystem::new();
+
+        let root = world.add_component(LayoutComponent::new(20.0).with_height(8.0));
+        let item = world.add_component_boxed_named("scroll_item", Box::new(TransformComponent::new()));
+        let style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.height = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(4.0);
+            style.background_color = Some([0.2, 0.2, 0.2, 1.0]);
+            style.overflow = crate::engine::ecs::component::Overflow::Scroll;
+            style
+        });
+
+        let _ = world.add_child(root, item);
+        let _ = world.add_child(item, style);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let bg = world.children_of(item).iter().copied().find(|&child| world.component_label(child) == Some("__bg"));
+        let clip = world.children_of(item).iter().copied().find(|&child| {
+            world.component_label(child) == Some(super::OWNED_LAYOUT_STENCIL_CLIP_LABEL)
+                && world.get_component_by_id_as::<StencilClipComponent>(child).is_some()
+        });
+
+        assert!(bg.is_some(), "expected layout-owned __bg child");
+        assert!(clip.is_some(), "expected sibling layout-owned stencil clip");
+        assert_eq!(world.parent_of(clip.expect("clip")), Some(item));
     }
 }

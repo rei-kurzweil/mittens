@@ -1,10 +1,10 @@
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter};
 use crate::engine::ecs::component::Component;
 
-/// Declares an ancestor renderable as a stencil clip boundary.
+/// Declares a renderable-backed stencil clip boundary.
 ///
-/// Attach under a `RenderableComponent` (directly or a few levels below it). On `init()`, emits
-/// `RegisterStencilClip` so VisualWorld records the nearest ancestor renderable as the clip source.
+/// On `init()`, emits `RegisterStencilClip` so VisualWorld records the renderable that should be
+/// used as the clip source.
 ///
 /// The renderer draws the referenced renderable into the stencil buffer
 /// (color write off, stencil INCR, ref = nesting depth) before drawing the TC's
@@ -13,8 +13,9 @@ use crate::engine::ecs::component::Component;
 ///
 /// ## Layout use
 ///
-/// `sync_bg_quad` attaches this under the generated `__bg` renderable whenever
-/// `overflow: Hidden | Scroll` is set on a style component. The background quad mesh is the clip shape.
+/// `sync_bg_quad` attaches a layout-owned `StencilClipComponent` as a sibling of the generated
+/// `__bg` helper whenever `overflow: Hidden | Scroll` is set on a style component. In that layout-
+/// owned case, the computed `__bg` renderable remains the clip shape.
 ///
 /// ## Manual use
 ///

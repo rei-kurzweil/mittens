@@ -33,6 +33,8 @@ use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+const OWNED_LAYOUT_STENCIL_CLIP_LABEL: &str = "__layout_stencil_clip";
+
 struct PanelClipDebugInfo {
     label: String,
     scope_root: ComponentId,
@@ -161,7 +163,10 @@ mod tests {
         let clip_bg = world.add_component_boxed_named("__bg", Box::new(TransformComponent::new()));
         let clip_bg_color = world.add_component(ColorComponent::rgba(0.0, 0.0, 0.0, 0.0));
         let clip_bg_renderable = world.add_component(RenderableComponent::square());
-        let clip = world.add_component(StencilClipComponent::new());
+        let clip = world.add_component_boxed_named(
+            super::OWNED_LAYOUT_STENCIL_CLIP_LABEL,
+            Box::new(StencilClipComponent::new()),
+        );
 
         let content_t = world.add_component_boxed_named("content", Box::new(TransformComponent::new()));
         let content_color = world.add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
@@ -171,7 +176,7 @@ mod tests {
         let _ = world.add_child(clip_scope, clip_bg);
         let _ = world.add_child(clip_bg, clip_bg_color);
         let _ = world.add_child(clip_bg_color, clip_bg_renderable);
-        let _ = world.add_child(clip_bg_renderable, clip);
+        let _ = world.add_child(clip_scope, clip);
 
         let _ = world.add_child(clip_scope, content_t);
         let _ = world.add_child(content_t, content_color);
@@ -210,7 +215,7 @@ mod tests {
         let content_instance = visuals.instance(content_handle).expect("content visual instance");
 
         assert!(clip_instance.is_stencil_clip);
-        assert_eq!(clip_instance.stencil_ref, 1);
+        assert_eq!(clip_instance.stencil_ref, 0);
         assert!(!content_instance.is_stencil_clip);
         assert_eq!(content_instance.stencil_ref, 1);
     }
@@ -855,18 +860,7 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        use crate::engine::ecs::component::StencilClipComponent;
-
-        // Determine nesting depth by counting StencilClipComponent ancestors.
-        let mut depth: u8 = 0;
-        let mut cursor = world.parent_of(component);
-        while let Some(p) = cursor {
-            if world.get_component_by_id_as::<StencilClipComponent>(p).is_some() {
-                depth = depth.saturating_add(1);
-            }
-            cursor = world.parent_of(p);
-        }
-        let stencil_ref = depth + 1; // 1-indexed; 0 = unclipped
+        let stencil_ref = Self::stencil_ref_for_clip(world, component);
 
         let handle = Self::find_stencil_clip_renderable_handle(world, component);
         if let Some(handle) = handle {
@@ -912,8 +906,25 @@ impl SystemWorld {
             return;
         };
 
-        let stencil_ref = Self::stencil_ref_for_renderable(world, renderable_component);
+        let stencil_ref = Self::stencil_clip_for_renderable_component(world, renderable_component)
+            .map(|clip_component| Self::stencil_ref_for_clip(world, clip_component))
+            .unwrap_or_else(|| Self::stencil_ref_for_renderable(world, renderable_component));
         let _ = visuals.update_stencil_ref(handle, stencil_ref);
+    }
+
+    fn stencil_clip_for_renderable_component(
+        world: &World,
+        renderable_component: ComponentId,
+    ) -> Option<ComponentId> {
+        use crate::engine::ecs::component::StencilClipComponent;
+
+        world
+            .all_components()
+            .filter(|&cid| world.get_component_by_id_as::<StencilClipComponent>(cid).is_some())
+            .find(|&clip_component| {
+                Self::find_stencil_clip_renderable_component(world, clip_component)
+                    == Some(renderable_component)
+            })
     }
 
     fn sync_stencil_refs_in_subtree(
@@ -935,24 +946,7 @@ impl SystemWorld {
     }
 
     fn resync_stencil_state(&mut self, world: &World, visuals: &mut VisualWorld) {
-        use crate::engine::ecs::component::{RenderableComponent, StencilClipComponent};
-
-        let renderables: Vec<ComponentId> = world
-            .all_components()
-            .filter(|&cid| world.get_component_by_id_as::<RenderableComponent>(cid).is_some())
-            .collect();
-
-        for renderable_component in &renderables {
-            let Some(handle) = world
-                .get_component_by_id_as::<RenderableComponent>(*renderable_component)
-                .and_then(|renderable| renderable.get_handle())
-            else {
-                continue;
-            };
-
-            let _ = visuals.unregister_stencil_clip(handle);
-            let _ = visuals.update_stencil_ref(handle, 0);
-        }
+        use crate::engine::ecs::component::StencilClipComponent;
 
         let stencil_clips: Vec<ComponentId> = world
             .all_components()
@@ -960,26 +954,13 @@ impl SystemWorld {
             .collect();
 
         for stencil_clip in stencil_clips {
-            let mut depth: u8 = 0;
-            let mut cursor = world.parent_of(stencil_clip);
-            while let Some(parent) = cursor {
-                if world
-                    .get_component_by_id_as::<StencilClipComponent>(parent)
-                    .is_some()
-                {
-                    depth = depth.saturating_add(1);
-                }
-                cursor = world.parent_of(parent);
-            }
-
-            let stencil_ref = depth + 1;
+            let stencil_ref = Self::stencil_ref_for_clip(world, stencil_clip);
             if let Some(handle) = Self::find_stencil_clip_renderable_handle(world, stencil_clip) {
                 let _ = visuals.register_stencil_clip(handle, stencil_ref);
             }
-        }
-
-        for renderable_component in renderables {
-            Self::sync_renderable_stencil_ref(world, visuals, renderable_component);
+            if let Some(scope_root) = Self::stencil_clip_scope_root(world, stencil_clip) {
+                Self::sync_stencil_refs_in_subtree(world, visuals, scope_root);
+            }
         }
 
         self.maybe_emit_panel_clip_debug(world);
@@ -1001,29 +982,73 @@ impl SystemWorld {
         depth
     }
 
-    fn is_layout_clip_scope_root(world: &World, node: ComponentId) -> bool {
-        world.children_of(node).iter().copied().any(|child| {
-            world.component_label(child) == Some("__bg")
-                && Self::subtree_contains_stencil_clip(world, child)
+    fn stencil_ref_for_clip(world: &World, component: ComponentId) -> u8 {
+        use crate::engine::ecs::component::StencilClipComponent;
+
+        let mut depth: u8 = 0;
+        let mut cursor = if Self::is_layout_owned_stencil_clip(world, component) {
+            world
+                .parent_of(component)
+                .and_then(|scope_root| world.parent_of(scope_root))
+        } else {
+            world.parent_of(component)
+        };
+
+        while let Some(node) = cursor {
+            if world.get_component_by_id_as::<StencilClipComponent>(node).is_some()
+                || Self::is_layout_clip_scope_root(world, node)
+            {
+                depth = depth.saturating_add(1);
+            }
+            cursor = world.parent_of(node);
+        }
+
+        depth
+    }
+
+    fn is_layout_owned_stencil_clip(world: &World, component: ComponentId) -> bool {
+        world.component_label(component) == Some(OWNED_LAYOUT_STENCIL_CLIP_LABEL)
+            && world
+                .get_component_by_id_as::<crate::engine::ecs::component::StencilClipComponent>(component)
+                .is_some()
+    }
+
+    fn immediate_owned_layout_stencil_clip(world: &World, scope_root: ComponentId) -> Option<ComponentId> {
+        world.children_of(scope_root).iter().copied().find(|&child| {
+            Self::is_layout_owned_stencil_clip(world, child)
         })
     }
 
-    fn subtree_contains_stencil_clip(world: &World, root: ComponentId) -> bool {
-        use crate::engine::ecs::component::StencilClipComponent;
+    fn layout_bg_node(world: &World, scope_root: ComponentId) -> Option<ComponentId> {
+        world.children_of(scope_root)
+            .iter()
+            .copied()
+            .find(|&child| world.component_label(child) == Some("__bg"))
+    }
+
+    fn subtree_first_renderable(world: &World, root: ComponentId) -> Option<ComponentId> {
+        use crate::engine::ecs::component::RenderableComponent;
 
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
-            if world.get_component_by_id_as::<StencilClipComponent>(node).is_some() {
-                return true;
+            if world.get_component_by_id_as::<RenderableComponent>(node).is_some() {
+                return Some(node);
             }
-            for &child in world.children_of(node) {
+            for &child in world.children_of(node).iter().rev() {
                 stack.push(child);
             }
         }
-        false
+        None
+    }
+
+    fn is_layout_clip_scope_root(world: &World, node: ComponentId) -> bool {
+        Self::immediate_owned_layout_stencil_clip(world, node).is_some()
     }
 
     fn stencil_clip_scope_root(world: &World, component: ComponentId) -> Option<ComponentId> {
+        if Self::is_layout_owned_stencil_clip(world, component) {
+            return world.parent_of(component);
+        }
         let parent = world.parent_of(component)?;
         if world.component_label(parent) == Some("__bg") {
             return world.parent_of(parent);
@@ -1116,27 +1141,9 @@ impl SystemWorld {
         world: &World,
         panel_component: ComponentId,
     ) -> Option<(ComponentId, ComponentId, ComponentId, ComponentId)> {
-        use crate::engine::ecs::component::StencilClipComponent;
-
         let scope_root = world.parent_of(panel_component)?;
-        let bg_id = world.children_of(scope_root).iter().copied().find(|&child| {
-            world.component_label(child) == Some("__bg")
-                && Self::subtree_contains_stencil_clip(world, child)
-        })?;
-
-        let mut stack = vec![bg_id];
-        let mut stencil_clip_id = None;
-        while let Some(node) = stack.pop() {
-            if world.get_component_by_id_as::<StencilClipComponent>(node).is_some() {
-                stencil_clip_id = Some(node);
-                break;
-            }
-            for &child in world.children_of(node) {
-                stack.push(child);
-            }
-        }
-
-        let stencil_clip_id = stencil_clip_id?;
+        let bg_id = Self::layout_bg_node(world, scope_root)?;
+        let stencil_clip_id = Self::immediate_owned_layout_stencil_clip(world, scope_root)?;
         let renderable_id = Self::find_stencil_clip_renderable_component(world, stencil_clip_id)?;
         Some((scope_root, bg_id, stencil_clip_id, renderable_id))
     }
@@ -1153,6 +1160,12 @@ impl SystemWorld {
                 return Some(cid);
             }
             cursor = world.parent_of(cid);
+        }
+
+        if Self::is_layout_owned_stencil_clip(world, component) {
+            let scope_root = world.parent_of(component)?;
+            let bg_id = Self::layout_bg_node(world, scope_root)?;
+            return Self::subtree_first_renderable(world, bg_id);
         }
 
         None

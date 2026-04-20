@@ -2597,7 +2597,11 @@ mod vulkano_backend {
                 depth_attachment: Some(depth_attachment_clear.clone()),
                 stencil_attachment: Some(RenderingAttachmentInfo {
                     load_op: AttachmentLoadOp::Clear,
-                    store_op: AttachmentStoreOp::DontCare,
+                    store_op: if defer_overlay_until_before_final_composite {
+                        AttachmentStoreOp::Store
+                    } else {
+                        AttachmentStoreOp::DontCare
+                    },
                     clear_value: Some(ClearValue::Stencil(0)),
                     ..RenderingAttachmentInfo::image_view(depth_view.clone())
                 }),
@@ -3193,9 +3197,8 @@ mod vulkano_backend {
                             ..RenderingAttachmentInfo::image_view(depth_view.clone())
                         }),
                         stencil_attachment: Some(RenderingAttachmentInfo {
-                            load_op: AttachmentLoadOp::Clear,
+                            load_op: AttachmentLoadOp::Load,
                             store_op: AttachmentStoreOp::DontCare,
-                            clear_value: Some(ClearValue::Stencil(0)),
                             ..RenderingAttachmentInfo::image_view(depth_view.clone())
                         }),
                         ..Default::default()

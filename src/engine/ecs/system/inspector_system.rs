@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::{
     ColorComponent, EmissiveComponent, HtmlElementComponent, InspectorPanelComponent,
-    LayoutComponent, OverlayComponent, RaycastableComponent, RenderableComponent, ScrollingComponent,
+    LayoutComponent, OverlayComponent, RaycastableComponent, ScrollingComponent,
     SelectableComponent, StyleComponent, TransformComponent,
     TransformGizmoComponent, WorldPanelComponent,
     style::{EdgeInsets, Overflow, SizeDimension},
@@ -21,8 +21,6 @@ const PAGE_SIZE: usize = 30;
 const MAX_DEPTH: usize = 5;
 /// Gap between world panel right edge and inspector panel left edge (overlay units).
 const PANEL_GAP: f32 = 0.12;
-/// Extra margin around the panel title bar footprint.
-const DRAG_MARGIN: f32 = 0.15;
 
 /// Title bar height in world units. Two glyph rows tall.
 const TITLE_BAR_HEIGHT: f32 = 2.0 * TEXT_SCALE;
@@ -31,15 +29,17 @@ const TITLE_BAR_HEIGHT_GU: f32 = 2.0;
 /// Gap between title bar bottom and content top, in glyph units.
 /// Applied as `margin.bottom` on `header_style`; LayoutSystem inserts this space.
 const TITLE_CONTENT_GAP_GU: f32 = 0.5;
-/// Title bar background: medium slate, more opaque than content bg.
-const TITLE_BG_COLOR: [f32; 4] = [0.45, 0.47, 0.55, 0.95];
+/// Debug title bar background: green.
+const TITLE_BG_COLOR: [f32; 4] = [0.18, 0.78, 0.22, 0.95];
 /// Title bar label text color: white.
 const TITLE_TEXT_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 /// Gizmo visual scale for panel title-bar gizmos.
 const PANEL_GIZMO_SCALE: f32 = 0.25;
 
-/// Panel background color: light grey, semi-transparent.
-const BG_COLOR: [f32; 4] = [0.92, 0.92, 0.92, 0.80];
+/// Debug scroll viewport background: yellow.
+const SCROLL_BG_COLOR: [f32; 4] = [0.96, 0.92, 0.18, 0.80];
+/// Row background color: light grey, semi-transparent.
+const ROW_BG_COLOR: [f32; 4] = [0.92, 0.92, 0.92, 0.80];
 /// Normal text color: black.
 const TEXT_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 /// Highlighted row text color: dark green.
@@ -146,7 +146,7 @@ impl InspectorSystem {
 // Panel spawn helpers
 // ---------------------------------------------------------------------------
 
-/// Spawn the panel root transform + title bar (background rect, label, gizmo).
+/// Spawn the panel root transform + styled title bar + gizmo.
 ///
 /// Returns the `panel_transform` ComponentId. All panel content should be
 /// attached as children of this node — the gizmo targets it, so dragging
@@ -155,14 +155,12 @@ impl InspectorSystem {
 /// Hierarchy produced (as children of `parent`):
 /// ```text
 /// panel_transform  (TransformComponent at world pos)   ← gizmo target
-///   title_bar_t    (TransformComponent — sized to title bar)
-///     title_bar_col + title_bar_r                      ← flat rect visual
+///   header_slot    (TransformComponent + StyleComponent background)
 ///   title_label_t  (TransformComponent — text scale)
 ///     title_label_col + title_label_text               ← label
 ///   panel_gizmo    (TransformGizmoComponent)           ← finds panel_transform
 /// ```
-/// Spawn the panel root + a `LayoutComponent` + a `header_slot` TransformComponent (with
-/// title-bar visuals and gizmo).
+/// Spawn the panel root + a `LayoutComponent` + a styled `header_slot`.
 ///
 /// Returns `(panel_t, layout_root_id)` so the caller can attach the content slot as a second
 /// flex item under the same `LayoutComponent`.
@@ -218,30 +216,9 @@ fn spawn_panel_title_bar(
             let mut s = StyleComponent::new();
             s.height = SizeDimension::GlyphUnits(TITLE_BAR_HEIGHT_GU);
             s.margin.bottom = TITLE_CONTENT_GAP_GU;
+            s.background_color = Some(TITLE_BG_COLOR);
             s
         }),
-    );
-
-    // ── Title bar background rect ────────────────────────────────────────
-    // Spans full panel footprint including drag margins; slightly in front.
-    let bar_full_width = panel_width_world + 2.0 * DRAG_MARGIN;
-    let bar_t = world.add_component_boxed_named(
-        "panel_titlebar_t",
-        Box::new(
-            TransformComponent::new()
-                .with_position(panel_width_world * 0.5, -TITLE_BAR_HEIGHT * 0.5, 0.005)
-                .with_scale(bar_full_width, TITLE_BAR_HEIGHT, 1.0),
-        ),
-    );
-    let bar_col = world.add_component_boxed_named(
-        "panel_titlebar_col",
-        Box::new(ColorComponent::rgba(
-            TITLE_BG_COLOR[0], TITLE_BG_COLOR[1], TITLE_BG_COLOR[2], TITLE_BG_COLOR[3],
-        )),
-    );
-    let bar_r = world.add_component_boxed_named(
-        "panel_titlebar_r",
-        Box::new(RenderableComponent::square()),
     );
 
     // ── Title label ──────────────────────────────────────────────────────
@@ -280,11 +257,6 @@ fn spawn_panel_title_bar(
     // HtmlElement + Style go first (LayoutSystem reads them from children).
     let _ = world.add_child(header_slot, header_el);
     let _ = world.add_child(header_slot, header_style);
-
-    // Title bar visuals.
-    let _ = world.add_child(header_slot, bar_t);
-    let _ = world.add_child(bar_t, bar_col);
-    let _ = world.add_child(bar_col, bar_r);
 
     let _ = world.add_child(header_slot, label_t);
     let _ = world.add_child(label_t, label_col);
@@ -345,6 +317,7 @@ fn spawn_world_panel(
         Box::new({
             let mut s = StyleComponent::new();
             s.overflow = Overflow::Scroll;
+            s.background_color = Some(SCROLL_BG_COLOR);
             s
         }),
     );
@@ -432,6 +405,7 @@ fn spawn_inspector_panel(
         Box::new({
             let mut s = StyleComponent::new();
             s.overflow = Overflow::Scroll;
+            s.background_color = Some(SCROLL_BG_COLOR);
             s
         }),
     );
@@ -524,7 +498,7 @@ fn rebuild_world_panel(
                     left: *depth as f32 * INDENT_UNIT_GU,
                     ..EdgeInsets::ZERO
                 };
-                s.background_color = Some(BG_COLOR);
+                s.background_color = Some(ROW_BG_COLOR);
                 s
             }),
         );
@@ -616,7 +590,7 @@ fn rebuild_inspector_panel(
             Box::new({
                 let mut s = StyleComponent::new();
                 s.height = SizeDimension::Auto;
-                s.background_color = Some(BG_COLOR);
+                s.background_color = Some(ROW_BG_COLOR);
                 s
             }),
         );
