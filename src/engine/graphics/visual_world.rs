@@ -122,6 +122,7 @@ pub struct VisualWorld {
     // Most recent render target size in pixels (width, height).
     viewport: [f32; 2],
     runtime_texture_handles: HashMap<String, crate::engine::graphics::TextureHandle>,
+    stencil_clip_debug_requested: bool,
     // 2D camera view transform for translation/scale/rotation.
     // Stored as mat3 column vectors padded to vec4 columns (std140 friendly).
     camera_2d: [[f32; 4]; 3],
@@ -274,6 +275,7 @@ impl Default for VisualWorld {
             active_xr_camera: None,
             viewport: [1.0, 1.0],
             runtime_texture_handles: HashMap::new(),
+            stencil_clip_debug_requested: false,
             camera_2d: [
                 [1.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],
@@ -2340,6 +2342,14 @@ impl VisualWorld {
         key: &str,
     ) -> Option<crate::engine::graphics::TextureHandle> {
         self.runtime_texture_handles.get(key).copied()
+    }
+
+    pub fn stencil_clip_debug_requested(&self) -> bool {
+        self.stencil_clip_debug_requested
+    }
+
+    pub fn set_stencil_clip_debug_requested(&mut self, requested: bool) {
+        self.stencil_clip_debug_requested = requested;
     }
 
     pub fn set_runtime_texture_handle(

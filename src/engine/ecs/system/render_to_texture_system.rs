@@ -3,6 +3,8 @@ use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::{TextureUploader, VisualWorld};
 use std::collections::{HashMap, HashSet};
 
+pub const INTERNAL_RENDERER_STENCIL_CLIP_DEBUG_SELECTOR: &str = "render_graph.stencil_clip.debug";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderTextureConsumerKind {
     TextureRenderImage,
@@ -80,6 +82,11 @@ impl RenderToTextureSystem {
         visuals: &mut VisualWorld,
         uploader: &mut dyn TextureUploader,
     ) {
+        visuals.set_stencil_clip_debug_requested(
+            self.producer_requests_by_selector
+                .contains_key(INTERNAL_RENDERER_STENCIL_CLIP_DEBUG_SELECTOR),
+        );
+
         let selectors: HashSet<String> = self
             .producer_requests_by_selector
             .values()

@@ -14,6 +14,7 @@ mod vulkano_backend {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+    use crate::engine::ecs::system::render_to_texture_system::INTERNAL_RENDERER_STENCIL_CLIP_DEBUG_SELECTOR;
     use crate::engine::graphics::mesh::{CpuMesh, CpuVertex};
     use crate::engine::graphics::pipeline_descriptor_set_layouts::PipelineDescriptorSetLayouts;
     use crate::engine::graphics::post_processing::{
@@ -367,8 +368,6 @@ mod vulkano_backend {
         config: PostProcessingConfig,
         targets: PostProcessFrameTargets,
     }
-
-    pub(crate) const STENCIL_CLIP_DEBUG_TEXTURE_KEY: &str = "render_graph.stencil_clip.debug";
 
     const MAX_LIGHTS: usize = 64;
 
@@ -2337,15 +2336,18 @@ mod vulkano_backend {
             // Buffer indexed by overlay_stream().1; use its length for cache invalidation.
             let overlay_instance_count = visual_world.overlay_stream().1.len();
 
-            let stencil_clip_debug_handle = if camera_target
+            let stencil_clip_debug_requested = camera_target
                 == crate::engine::graphics::CameraTarget::Window
                 && eye == 0
-            {
-                visual_world.runtime_texture_handle(STENCIL_CLIP_DEBUG_TEXTURE_KEY)
+                && visual_world.stencil_clip_debug_requested();
+            let stencil_clip_debug_handle = if stencil_clip_debug_requested {
+                visual_world.runtime_texture_handle(INTERNAL_RENDERER_STENCIL_CLIP_DEBUG_SELECTOR)
             } else {
                 None
             };
-            let stencil_clip_debug_batches = if stencil_clip_debug_handle.is_some() {
+            let stencil_clip_debug_enabled =
+                stencil_clip_debug_requested && stencil_clip_debug_handle.is_some();
+            let stencil_clip_debug_batches = if stencil_clip_debug_enabled {
                 Self::build_stencil_clip_debug_batches(visual_world)
             } else {
                 Vec::new()
@@ -2443,7 +2445,7 @@ mod vulkano_backend {
                 buf
             };
 
-            let stencil_clip_debug_instance_buffer = if stencil_clip_debug_handle.is_some() {
+            let stencil_clip_debug_instance_buffer = if stencil_clip_debug_enabled {
                 self.build_stencil_clip_debug_instance_buffer(
                     &*visual_world,
                     visual_world.stencil_clip_order(),
