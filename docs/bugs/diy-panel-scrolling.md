@@ -8,6 +8,8 @@ Open bug / follow-up investigation.
 
 In the focused repro scene, stencil clipping now works correctly, but scroll interaction does not move the container content.
 
+The affected viewport is the yellow `container` content area in the DIY panel repro.
+
 Current state:
 
 - content in the `container` is clipped correctly when `overflow("scroll")` is enabled
@@ -22,6 +24,7 @@ Current state:
 Scene notes:
 
 - `diy_panel_demo` contains a `container` node with `overflow("scroll")`
+- that `container` is the yellow content area in the panel body
 - routed rows and attached-at-runtime rows appear in the container
 - clipping works
 - scrolling does not

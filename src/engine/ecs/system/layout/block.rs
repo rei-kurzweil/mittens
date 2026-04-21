@@ -57,11 +57,11 @@ fn layout_items(
         let content_origin_y_gu = cursor_gu + item.padding_top_gu;
         let content_origin_x_gu = item.margin_left_gu + item.padding_left_gu;
 
-        // Preserve the TC's existing scale — LayoutSystem controls position only.
-        let tc_scale = world
+        // Preserve the TC's existing local Z and scale — LayoutSystem controls X/Y only.
+        let (tc_scale, tc_z) = world
             .get_component_by_id_as::<TransformComponent>(item.tc_id)
-            .map(|tc| tc.transform.scale)
-            .unwrap_or([1.0, 1.0, 1.0]);
+            .map(|tc| (tc.transform.scale, tc.transform.translation[2]))
+            .unwrap_or(([1.0, 1.0, 1.0], 0.0));
 
         emit.push_intent_now(
             item.tc_id,
@@ -70,7 +70,7 @@ fn layout_items(
                 translation: [
                       content_origin_x_gu * unit_scale,
                     -(content_origin_y_gu * unit_scale),
-                    0.0,
+                                        tc_z,
                 ],
                 rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
                 scale: tc_scale,
