@@ -819,8 +819,7 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.clipping
-            .register_stencil_clip(world, visuals, component, &mut self.repl_command_queue);
+        self.clipping.register_stencil_clip(world, visuals, component);
     }
 
     /// Unregister a StencilClipComponent: clear `is_stencil_clip` on the associated VisualInstance.
@@ -1307,11 +1306,7 @@ impl SystemWorld {
         let flushed_renderables = self.renderable
             .flush_pending(world, visuals, render_assets, uploader, queue);
         if flushed_renderables {
-            self.clipping.resync_after_renderable_flush(
-                world,
-                visuals,
-                &mut self.repl_command_queue,
-            );
+            self.clipping.resync_after_renderable_flush(world, visuals);
         }
 
         self.render_to_texture.flush_pending(visuals, uploader);

@@ -1923,37 +1923,6 @@ mod vulkano_backend {
                 .collect()
         }
 
-        fn build_stencil_clip_highlight_batches(
-            visual_world: &VisualWorld,
-        ) -> Vec<crate::engine::graphics::visual_world::DrawBatch> {
-            visual_world
-                .stencil_clip_order()
-                .iter()
-                .enumerate()
-                .filter_map(|(slot, &instance_index)| {
-                    let instance = visual_world.instances().get(instance_index as usize)?;
-                    let material = match instance.renderable.material {
-                        crate::engine::graphics::MaterialHandle::SKINNED_TOON_MESH
-                        | crate::engine::graphics::MaterialHandle::SKINNED_EMISSIVE_TOON_MESH => {
-                            crate::engine::graphics::MaterialHandle::SKINNED_EMISSIVE_TOON_MESH
-                        }
-                        _ => crate::engine::graphics::MaterialHandle::EMISSIVE_TOON_MESH,
-                    };
-
-                    Some(crate::engine::graphics::visual_world::DrawBatch {
-                        material,
-                        mesh: instance.renderable.mesh,
-                        texture: None,
-                        texture_filtering: TextureFiltering::Nearest,
-                        quant_steps: 1.0,
-                        stencil_ref: 0,
-                        start: slot,
-                        count: 1,
-                    })
-                })
-                .collect()
-        }
-
         fn hsv_debug_color_for_stencil_ref(stencil_ref: u8) -> [f32; 4] {
             if stencil_ref == 0 {
                 return [0.08, 0.08, 0.08, 1.0];
@@ -2003,49 +1972,6 @@ mod vulkano_backend {
                     i_model_c2: m[2],
                     i_model_c3: m[3],
                     i_color: Self::hsv_debug_color_for_stencil_ref(inst.stencil_ref.saturating_add(1)),
-                    i_emissive: 1.0,
-                    i_opacity: 1.0,
-                    i_bones_base: inst.bones_base,
-                    i_bones_count: inst.bones_count,
-                }
-            });
-
-            let buf: Subbuffer<[InstanceData]> = Buffer::from_iter(
-                self.context.memory_allocator().clone(),
-                BufferCreateInfo {
-                    usage: BufferUsage::VERTEX_BUFFER,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                    ..Default::default()
-                },
-                instance_data_iter,
-            )?;
-
-            Ok(Some(buf))
-        }
-
-        fn build_stencil_clip_highlight_instance_buffer(
-            &self,
-            visual_world: &VisualWorld,
-            order: &[u32],
-        ) -> Result<Option<Subbuffer<[InstanceData]>>, Box<dyn std::error::Error>> {
-            if order.is_empty() {
-                return Ok(None);
-            }
-
-            let instances_ref = visual_world.instances();
-            let instance_data_iter = order.iter().map(|&idx| {
-                let inst = instances_ref[idx as usize];
-                let m = inst.transform.model;
-                InstanceData {
-                    i_model_c0: m[0],
-                    i_model_c1: m[1],
-                    i_model_c2: m[2],
-                    i_model_c3: m[3],
-                    i_color: [1.0, 0.0, 1.0, 1.0],
                     i_emissive: 1.0,
                     i_opacity: 1.0,
                     i_bones_base: inst.bones_base,
@@ -2419,22 +2345,12 @@ mod vulkano_backend {
             } else {
                 None
             };
-            let stencil_clip_highlight_enabled = camera_target
-                == crate::engine::graphics::CameraTarget::Window
-                && eye == 0
-                && env_flag("CAT_DEBUG_STENCIL_CLIP_MAGENTA");
             let stencil_clip_debug_batches = if stencil_clip_debug_handle.is_some() {
                 Self::build_stencil_clip_debug_batches(visual_world)
             } else {
                 Vec::new()
             };
             let stencil_clip_debug_instance_count = stencil_clip_debug_batches.len();
-            let stencil_clip_highlight_batches = if stencil_clip_highlight_enabled {
-                Self::build_stencil_clip_highlight_batches(visual_world)
-            } else {
-                Vec::new()
-            };
-            let stencil_clip_highlight_instance_count = stencil_clip_highlight_batches.len();
 
             // --- Emissive-only post-process source passes ---
             let emissive_instance_count = visual_world.emissive_draw_order().len();
@@ -2535,15 +2451,6 @@ mod vulkano_backend {
             } else {
                 None
             };
-            let stencil_clip_highlight_instance_buffer = if stencil_clip_highlight_enabled {
-                self.build_stencil_clip_highlight_instance_buffer(
-                    &*visual_world,
-                    visual_world.stencil_clip_order(),
-                )?
-            } else {
-                None
-            };
-
             let emissive_instance_buffer = self.build_instance_buffer_for_order_opt(
                 &*visual_world,
                 visual_world.emissive_draw_order(),
@@ -2977,8 +2884,7 @@ mod vulkano_backend {
             // Overlay phase: when post-process is disabled, clear depth here so overlay draws on
             // top of the scene immediately. When post-process is enabled, defer overlay until
             // after emissive extraction so opaque/cutout depth can occlude the emissive pass.
-            if (overlay_instance_count > 0 || stencil_clip_highlight_instance_count > 0)
-                && !defer_overlay_until_before_final_composite
+            if overlay_instance_count > 0 && !defer_overlay_until_before_final_composite
             {
                 // NOTE: `clear_attachments` requires a bound graphics pipeline.
                 cbb.bind_pipeline_graphics(self.pipeline_toon_mesh.clone())?;
@@ -2999,23 +2905,6 @@ mod vulkano_backend {
                         &rig_set,
                         overlay_instance_buffer,
                         overlay_instance_count,
-                    )?;
-                }
-
-                if let Some(stencil_clip_highlight_instance_buffer) =
-                    stencil_clip_highlight_instance_buffer.as_ref()
-                {
-                    self.record_instanced_draws_for_batches(
-                        &mut cbb,
-                        &global_set_fg,
-                        &rig_set,
-                        stencil_clip_highlight_instance_buffer,
-                        stencil_clip_highlight_instance_count,
-                        &stencil_clip_highlight_batches,
-                        self.pipeline_toon_mesh.clone(),
-                        self.pipeline_emissive_toon_mesh.clone(),
-                        self.pipeline_skinned_toon_mesh.clone(),
-                        self.pipeline_skinned_emissive_toon_mesh.clone(),
                     )?;
                 }
             }
@@ -3171,7 +3060,7 @@ mod vulkano_backend {
 
                 let final_output_view = post_process.final_output_view.clone();
 
-                if overlay_instance_count > 0 || stencil_clip_highlight_instance_count > 0 {
+                if overlay_instance_count > 0 {
                     cbb.begin_rendering(RenderingInfo {
                         render_area_offset: [0, 0],
                         render_area_extent: [extent[0], extent[1]],
@@ -3225,24 +3114,6 @@ mod vulkano_backend {
                             overlay_instance_count,
                         )?;
                     }
-
-                    if let Some(stencil_clip_highlight_instance_buffer) =
-                        stencil_clip_highlight_instance_buffer.as_ref()
-                    {
-                        self.record_instanced_draws_for_batches(
-                            &mut cbb,
-                            &global_set_fg,
-                            &rig_set,
-                            stencil_clip_highlight_instance_buffer,
-                            stencil_clip_highlight_instance_count,
-                            &stencil_clip_highlight_batches,
-                            self.pipeline_toon_mesh.clone(),
-                            self.pipeline_emissive_toon_mesh.clone(),
-                            self.pipeline_skinned_toon_mesh.clone(),
-                            self.pipeline_skinned_emissive_toon_mesh.clone(),
-                        )?;
-                    }
-
                     cbb.end_rendering()?;
                 }
 

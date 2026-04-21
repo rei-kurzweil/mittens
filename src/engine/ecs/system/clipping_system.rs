@@ -3,19 +3,8 @@ use crate::engine::ecs::World;
 use crate::engine::ecs::component::RenderableComponent;
 use crate::engine::graphics::VisualWorld;
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 pub(crate) const OWNED_LAYOUT_STENCIL_CLIP_LABEL: &str = "__layout_stencil_clip";
-
-#[derive(Debug)]
-struct PanelClipDebugInfo {
-    label: String,
-    scope_root: ComponentId,
-    bg_id: ComponentId,
-    stencil_clip_id: ComponentId,
-    renderable_id: ComponentId,
-    renderable_guid: uuid::Uuid,
-}
 
 #[derive(Debug, Default)]
 pub struct ClippingSystem {
@@ -37,7 +26,6 @@ impl ClippingSystem {
         world: &World,
         visuals: &mut VisualWorld,
         component: ComponentId,
-        repl_command_queue: &mut Vec<String>,
     ) {
         self.active_stencil_clips.insert(component);
 
@@ -49,8 +37,6 @@ impl ClippingSystem {
         if let Some(scope_root) = Self::stencil_clip_scope_root(world, component) {
             self.sync_stencil_refs_in_subtree(world, visuals, scope_root);
         }
-
-        self.maybe_emit_panel_clip_debug(world, repl_command_queue);
     }
 
     pub fn unregister_stencil_clip(
@@ -86,7 +72,6 @@ impl ClippingSystem {
         &mut self,
         world: &World,
         visuals: &mut VisualWorld,
-        repl_command_queue: &mut Vec<String>,
     ) {
         let stencil_clips: Vec<ComponentId> = self.active_stencil_clips(world).collect();
 
@@ -99,8 +84,6 @@ impl ClippingSystem {
                 self.sync_stencil_refs_in_subtree(world, visuals, scope_root);
             }
         }
-
-        self.maybe_emit_panel_clip_debug(world, repl_command_queue);
     }
 
     fn sync_renderable_stencil_ref(
@@ -247,98 +230,6 @@ impl ClippingSystem {
         Some(parent)
     }
 
-    fn maybe_emit_panel_clip_debug(&mut self, world: &World, repl_command_queue: &mut Vec<String>) {
-        static DID_EMIT_PANEL_CLIP_DEBUG: AtomicBool = AtomicBool::new(false);
-
-        let want_paths = Self::env_flag("CAT_DEBUG_PANEL_CLIP_PATHS");
-        let want_repl = Self::env_flag("CAT_DEBUG_PANEL_CLIP_REPL");
-
-        if !want_paths && !want_repl {
-            return;
-        }
-
-        if DID_EMIT_PANEL_CLIP_DEBUG.load(Ordering::Relaxed) {
-            return;
-        }
-
-        let Some(world_info) = Self::panel_clip_debug_info::<
-            crate::engine::ecs::component::WorldPanelComponent,
-        >(world, "world_panel") else {
-            return;
-        };
-        let Some(inspector_info) = Self::panel_clip_debug_info::<
-            crate::engine::ecs::component::InspectorPanelComponent,
-        >(world, "inspector_panel") else {
-            return;
-        };
-
-        if want_paths {
-            Self::print_panel_clip_debug_info(world, &world_info);
-            Self::print_panel_clip_debug_info(world, &inspector_info);
-        }
-
-        if want_repl {
-            repl_command_queue.push(format!("cd {}", world_info.renderable_guid));
-            repl_command_queue.push("pwd".to_string());
-            repl_command_queue.push(format!("cd {}", inspector_info.renderable_guid));
-            repl_command_queue.push("pwd".to_string());
-        }
-
-        DID_EMIT_PANEL_CLIP_DEBUG.store(true, Ordering::Relaxed);
-    }
-
-    fn panel_clip_debug_info<T: crate::engine::ecs::component::Component + 'static>(
-        world: &World,
-        label: &str,
-    ) -> Option<PanelClipDebugInfo> {
-        let Some(panel_component) = world
-            .all_components()
-            .find(|&cid| world.get_component_by_id_as::<T>(cid).is_some())
-        else {
-            return None;
-        };
-
-        let Some((scope_root, bg_id, stencil_clip_id, renderable_id)) =
-            Self::panel_clip_debug_nodes(world, panel_component)
-        else {
-            return None;
-        };
-
-        let renderable_guid = world.get_component_node(renderable_id)?.guid;
-
-        Some(PanelClipDebugInfo {
-            label: label.to_string(),
-            scope_root,
-            bg_id,
-            stencil_clip_id,
-            renderable_id,
-            renderable_guid,
-        })
-    }
-
-    fn print_panel_clip_debug_info(world: &World, info: &PanelClipDebugInfo) {
-        println!(
-            "[StencilClipDebug] {}: scope=\"{}\" bg=\"{}\" clip=\"{}\" renderable=\"{}\" guid={}",
-            info.label,
-            Self::repl_path_for_component(world, info.scope_root),
-            Self::repl_path_for_component(world, info.bg_id),
-            Self::repl_path_for_component(world, info.stencil_clip_id),
-            Self::repl_path_for_component(world, info.renderable_id),
-            info.renderable_guid,
-        );
-    }
-
-    fn panel_clip_debug_nodes(
-        world: &World,
-        panel_component: ComponentId,
-    ) -> Option<(ComponentId, ComponentId, ComponentId, ComponentId)> {
-        let scope_root = world.parent_of(panel_component)?;
-        let bg_id = Self::layout_bg_node(world, scope_root)?;
-        let stencil_clip_id = Self::immediate_owned_layout_stencil_clip(world, scope_root)?;
-        let renderable_id = Self::find_stencil_clip_renderable_component(world, stencil_clip_id)?;
-        Some((scope_root, bg_id, stencil_clip_id, renderable_id))
-    }
-
     fn find_stencil_clip_renderable_component(
         world: &World,
         component: ComponentId,
@@ -368,42 +259,5 @@ impl ClippingSystem {
         world
             .get_component_by_id_as::<RenderableComponent>(renderable_component)
             .and_then(|r| r.get_handle())
-    }
-
-    fn env_flag(name: &str) -> bool {
-        std::env::var(name)
-            .ok()
-            .map(|s| {
-                let s = s.trim().to_ascii_lowercase();
-                s == "1" || s == "true" || s == "on" || s == "yes"
-            })
-            .unwrap_or(false)
-    }
-
-    fn format_component_id_short(id: ComponentId) -> String {
-        let s = format!("{:?}", id);
-        if let (Some(l), Some(r)) = (s.find('('), s.rfind(')')) {
-            if r > l + 1 {
-                return s[l + 1..r].to_string();
-            }
-        }
-        s
-    }
-
-    fn repl_path_for_component(world: &World, component: ComponentId) -> String {
-        let mut parts = Vec::new();
-        let mut cursor = Some(component);
-
-        while let Some(cid) = cursor {
-            let name = world
-                .get_component_node(cid)
-                .map(|node| node.name.clone())
-                .unwrap_or_else(|| "<deleted>".to_string());
-            parts.push(format!("{}:{}", Self::format_component_id_short(cid), name));
-            cursor = world.parent_of(cid);
-        }
-
-        parts.reverse();
-        format!("/{}", parts.join("/"))
     }
 }

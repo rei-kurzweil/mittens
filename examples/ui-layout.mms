@@ -58,7 +58,7 @@ I {
     }
 }
 
-T.position(0, 0, 3.0).scale(1.8, 4.8, 1.0) {
+T.position(0, 0, 1.0).scale(1.8, 4.8, 1.0) {
     // Sketch of the intended topology:
     // - this scaled T defines the viewport pose + size
     // - StencilClip owns the content branch
