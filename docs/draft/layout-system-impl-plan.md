@@ -9,9 +9,14 @@ Tracks what's done, what's next, and what's deferred.
 
 `LayoutSystem::layout_flex_column` is a **position-only pass** with no box model:
 - reads `style.height` (GlyphUnits only)
-- reads `style.flex_grow` / `display: Block + height: Auto` → fill remaining
+- incorrectly treats `display: Block + height: Auto` as fill-remaining behavior in some paths
 - emits `UpdateTransform` with `y = -(cursor_gu * unit_scale)`
 - cursor advances by raw `content_height` only
+
+Desired contract:
+
+- for `display: Block`, unspecified height / `height: Auto` resolves to intrinsic content height
+- remaining-space distribution belongs to flex semantics, not block sizing
 
 No padding. No margin. No horizontal axis. No measurement struct.
 
@@ -55,7 +60,7 @@ A horizontal cursor only appears in **flex-row** or **inline** contexts.
       margin_bottom_gu:  f32,
       box_height_gu:     f32,         // padding_top + content_height + padding_bottom
       margin_box_height_gu: f32,      // margin_top + box_height + margin_bottom
-      is_auto_height:    bool,        // true → gets a share of remaining space
+      is_auto_height:    bool,        // true → unresolved intrinsic/future layout handling, not equal-share fill
       // horizontal
       padding_left_gu:   f32,
       padding_right_gu:  f32,
@@ -69,7 +74,7 @@ A horizontal cursor only appears in **flex-row** or **inline** contexts.
   - read `padding`, `margin`, `height`, `display`
   - compute `content_width_gu = avail_w_gu - margin.left - margin.right - padding.left - padding.right`
   - for `height: GlyphUnits(n)`: `content_height = n`, `is_auto = false`
-  - for `height: Auto` + `display: Block`: `content_height = 0`, `is_auto = true`
+  - for `height: Auto` + `display: Block`: resolve `content_height` from intrinsic content measurement
   - fill all `MeasuredItem` fields
 
 - [ ] Write `fn measure_items(world, layout_id) -> (Vec<MeasuredItem>, f32, f32)`:
@@ -79,12 +84,12 @@ A horizontal cursor only appears in **flex-row** or **inline** contexts.
 
 ### Phase B — Space distribution ( Pass 1 → 2 bridge )
 
-- [ ] After measuring, resolve auto heights:
+- [ ] Reserve remaining-space distribution for non-block layout modes (for example flex):
   ```
   remaining_gu = avail_h - total_fixed_margin_box_gu
   auto_each_margin_box = remaining_gu / count_auto_items
   ```
-  For each auto item, set:
+  This should not run for ordinary `display: Block` auto-height items. If used for a future flex mode, then for each participating item set:
   ```
   margin_box_height_gu = auto_each_margin_box
   box_height_gu        = margin_box_height_gu - margin_top - margin_bottom

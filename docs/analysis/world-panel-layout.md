@@ -13,7 +13,7 @@ Layout { width=50gu, unit_scale=0.08 }   // layout root; positions TC children
     Style { height=2gu, margin-bottom=0.5gu }
     // ... content
   Transform { name="content_slot" }       // next layout item
-    Style { height=auto }                 // auto → intrinsic or fills remaining space
+    Style { height=auto }                 // auto → intrinsic content height for display:block
     // ... content
 ```
 
@@ -21,6 +21,8 @@ Layout { width=50gu, unit_scale=0.08 }   // layout root; positions TC children
 `Style.display` is unset. `HtmlElement` is only needed for non-default display modes
 (`inline`, `flex`, etc.) or for semantic annotation in document-style rendering.
 For ECS UI panels, `Transform + Style` is sufficient.
+
+For `display:block`, unspecified height / `height:auto` should resolve to the smallest box that fits the content. It should not implicitly divide remaining parent height.
 
 ---
 
