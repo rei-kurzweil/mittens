@@ -2,7 +2,7 @@
 
 ## Status
 
-Open behavior/compatibility bug.
+Implemented in block measurement; keep this doc as the behavior note / regression target.
 
 ## Symptom
 
@@ -63,8 +63,31 @@ Concretely:
 - flex containers should own the “share remaining space” behavior
 - any docs that currently describe block auto-height as fill behavior should be updated after the code change
 
+## Implemented solution
+
+The block measurement path now treats unspecified height / `height: Auto` as intrinsic sizing for `display:block` items.
+
+Concretely:
+
+- block items no longer divide leftover container height
+- intrinsic block height is measured from the item's own content subtree
+- direct text content contributes intrinsic height through `TextSystem::measure`
+- wrapped text height is derived from the available content width (or explicit text wrap limit, whichever is tighter)
+- containers with nested layout items derive intrinsic height by summing their measured child margin-box heights
+- containers that only expose layout content through non-transform wrappers can fall back to descendant `LayoutComponent` measurement
+
+This preserves the intended rule:
+
+- for `display:block`, unspecified height means “smallest height that fits content”
+- fill/share-remaining behavior is reserved for a future flex-like layout mode, not block layout
+
 ## Follow-up questions
 
 - should there be a distinct fill/stretch size mode for non-flex cases?
 - should current panel layouts be migrated to `display: Flex` once that behavior exists there?
 - do we need regression tests for block intrinsic-height vs flex distributed-height behavior?
+
+## Code references
+
+- [src/engine/ecs/system/layout/measure.rs](../../src/engine/ecs/system/layout/measure.rs)
+- [docs/spec/layout-block-sizing.md](../spec/layout-block-sizing.md)
