@@ -6,9 +6,9 @@ This note reframes layout-owned scrolling as a **general splicing problem**, not
 layout or event-handler trick.
 
 The immediate motivation is `overflow: scroll` on layout items such as the `diy-panel` yellow
-container. The layout system should be able to insert a `ScrollingComponent` wrapper automatically,
-but the displaced authored children must attach to a **specific internal node** of that inserted
-subtree (`__scroll_track`), not to the inserted root itself.
+container. The layout system should be able to insert a `ScrollingComponent` wrapper automatically
+and add an outer router that routes authored content into that wrapper, while the scrolling wrapper
+itself still routes its incoming content to a **specific internal node** (`__scroll_track`).
 
 ---
 
@@ -43,7 +43,9 @@ generalization.
 For a layout item with `Style { overflow: Scroll }`, the desired ownership is:
 
 - `LayoutSystem` owns helper topology
+- `LayoutSystem` owns the outer content-selection router
 - `ScrollingComponent` owns scroll state and initialization
+- `ScrollingComponent` owns an internal router targeting `__scroll_track`
 - `ScrollSystem` owns drag/scroll event handling
 - authored content should move under `__scroll_track`
 
@@ -52,6 +54,7 @@ So this:
 ```text
 item_tc
   Style
+  Router(target = "__scroll")
   child_a
   child_b
   child_c
@@ -62,6 +65,7 @@ needs to become something more like:
 ```text
 item_tc
   Style
+  Router(target = "__scroll")
   __bg
     Color
     Renderable
@@ -69,6 +73,7 @@ item_tc
     RaycastableShape(quad2d)
   __scroll
     ScrollingComponent
+    __scroll_router
     __scroll_track
       child_a
       child_b
@@ -77,8 +82,9 @@ item_tc
 
 The important structural fact is:
 
-> the authored children do **not** attach to `__scroll`.
-> they attach to a specific internal node inside the inserted scroll subtree: `__scroll_track`.
+> from layout's point of view, authored children are routed to `__scroll`.
+> from scrolling's point of view, incoming external children are routed onward to
+> `__scroll_track`.
 
 That is the same core shape as the armature splice docs:
 
@@ -97,6 +103,7 @@ The desired split is:
 
 - `LayoutSystem` detects `overflow: Scroll`
 - `LayoutSystem` ensures the structural wrapper exists
+- `LayoutSystem` ensures the outer router exists and targets the wrapper root
 - `ScrollingComponent` initializes itself normally
 - `ScrollSystem` registers drag forwarding and track movement
 
@@ -105,12 +112,13 @@ So layout should not install scroll event handlers directly.
 Layout's responsibility is purely structural:
 
 - create / maintain the scroll wrapper subtree
-- splice the authored content under the wrapper's output target
+- route authored content into the wrapper root
 - keep clipping helpers (`__bg`, stencil clip) in sync alongside it
 
 Behavior remains component-owned:
 
 - `ScrollingComponent::init()` triggers normal scrolling registration
+- `ScrollingComponent` always owns a router to its own internal track
 - `ScrollSystem` handles drag forwarding, scroll offset, and track translation
 
 This keeps scrolling consistent with the rest of ECS ownership rather than making layout a hidden
@@ -143,11 +151,19 @@ wrap_children_with_subtree(
 )
 ```
 
+In the current simpler model, that broad operation is realized as two routing steps:
+
+```text
+route_children(parent = item_tc, target = __scroll)
+route_children(parent = __scroll, target = __scroll_track)
+```
+
 Key properties:
 
 - the original parent (`item_tc`) stays the same
 - the inserted subtree root (`__scroll`) becomes a new child of that parent
-- a subset of the parent's existing children are displaced under `__scroll_track`
+- a subset of the parent's existing children are first displaced under `__scroll`
+- those incoming children are then displaced again under `__scroll_track`
 - helper children that should remain at the outer level (`Style`, `__bg`, stencil helpers, maybe
   router/helper nodes) are excluded from the displacement set
 
@@ -223,6 +239,9 @@ For layout-owned scrolling:
 - `output_query` = `[name='__scroll_track']`
 - `child_filter` = authored content children, excluding style/helper/internal nodes
 
+In v1, layout can implement this concept via an outer router targeting `__scroll`, while
+`ScrollingComponent` internally owns the second hop to `[name='__scroll_track']`.
+
 ### 6.2 MMS / query-facing model
 
 At the MMS level, this should eventually align with the query/splice work already discussed in:
@@ -248,9 +267,10 @@ For `Style { overflow: Scroll }`, the layout system should do the following:
 
 1. ensure clip helper topology exists (`__bg`, stencil clip, drag surface)
 2. ensure a scroll wrapper subtree exists under the item transform
-3. resolve the wrapper's internal output target (`__scroll_track`)
-4. splice/wrap authored content children under that output target
-5. leave `ScrollingComponent` initialization and drag behavior to normal component/system flow
+3. ensure an outer router exists on the item transform, targeting the wrapper root
+4. let the outer router route authored content into the wrapper root
+5. let `ScrollingComponent` internally route that content to `__scroll_track`
+6. leave `ScrollingComponent` initialization and drag behavior to normal component/system flow
 
 That means layout owns topology, not runtime behavior.
 
@@ -258,6 +278,7 @@ This also cleanly explains why `diy-panel` currently does not scroll:
 
 - clip/drag-surface helpers can exist from `overflow: Scroll`
 - but there is no auto-owned `ScrollingComponent` wrapper yet
+- and there is no layout-owned router feeding content into such a wrapper
 - and there is no splice step rehoming content under a scroll track
 
 ---

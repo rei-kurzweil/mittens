@@ -374,6 +374,8 @@ The simplest target rule is:
 
 - authored/rendered/layout content under `Scrolling` is wrapped under `__scroll_track`
 - `ScrollingComponent` itself stays on the `Scrolling` root
+- when `Scrolling` is introduced by `LayoutSystem`, an outer router on the styled item may feed
+    authored siblings into the `Scrolling` root first
 - future scroll-related helper nodes also stay on the `Scrolling` root unless they are part of the moved branch
 
 Implementation detail to decide before coding:
@@ -382,6 +384,9 @@ Implementation detail to decide before coding:
 - or whether a dedicated topology-sync step maintains the helper shape over time
 
 The second option is probably safer if children can be attached after init.
+
+That same rule is what makes standalone `Scrolling{}` usable outside layout: any direct content
+added to `Scrolling` later should still be normalized into `__scroll_track` automatically.
 
 ### Phase 5 — preserve topology mutations after init
 
@@ -407,6 +412,12 @@ After helper ownership works, convert the known call sites to the simpler model:
 1. [examples/ui-layout.mms](../../examples/ui-layout.mms)
 2. editor panels / inspector-owned scrolling subtrees
 3. any hand-built ECS trees that still create a manual scroll track transform
+
+For layout-owned scroll items, this migration also means:
+
+- `LayoutSystem` inserts `ScrollingComponent`
+- `LayoutSystem` inserts an outer router targeting the inserted `Scrolling` root
+- `ScrollingComponent` itself keeps owning the inner router to `__scroll_track`
 
 The conversion target is:
 

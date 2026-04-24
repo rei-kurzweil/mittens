@@ -19,8 +19,9 @@ The mistake in the current panel code is that scrolling is still manually owned 
 The target architecture is:
 - `StyleComponent::overflow` tells `LayoutSystem` whether the item is a clip viewport.
 - `LayoutSystem` automatically maintains the helper topology needed for that viewport.
+- `LayoutSystem` adds both `ScrollingComponent` and an outer `RouterComponent` when `overflow: Scroll` requires scroll wrapping.
 - `ScrollingComponent` remains a standalone scrolling primitive, with behavior owned by a dedicated `ScrollSystem`.
-- `LayoutSystem` only wraps content with `ScrollingComponent` when `overflow: Scroll` requires it.
+- `ScrollingComponent` always owns an internal router targeting `__scroll_track`, even when authored outside layout.
 - `InspectorSystem` stops manually creating / driving scroll state.
 
 ---
@@ -80,8 +81,9 @@ That means the migration order matters:
 2. then change `ScrollingComponent`'s implementation / runtime ownership model
 
 The key architecture point is now split cleanly:
-- `LayoutSystem` owns attachment / wrapping topology
+- `LayoutSystem` owns attachment / wrapping topology and the outer content-selection router
 - `ScrollSystem` owns scrolling behavior
+- `ScrollingComponent` owns its internal content normalization into `__scroll_track`
 - `InspectorSystem` should own neither
 
 ---
@@ -99,28 +101,33 @@ Conceptually:
 ```text
 item_tc
   StyleComponent { overflow: Scroll, ... }
+  RouterComponent { target_name: "__scroll", ... }
   __bg / clip root            ← auto-managed clip geometry / clip owner
     ColorComponent
     RenderableComponent
     StencilClipComponent
-    __scroll                  ← auto-managed `ScrollingComponent` holder / scope root
-      __scroll_track          ← auto-managed transform wrapping scrollable children
-        child_0_tc
-        child_1_tc
-        ...
+  __scroll                    ← auto-managed `ScrollingComponent` holder / scope root
+    ScrollingComponent
+    __scroll_router           ← auto-managed by `ScrollingComponent`
+    __scroll_track            ← auto-managed transform wrapping scrollable children
+      child_0_tc
+      child_1_tc
+      ...
 ```
 
 Important properties:
 - the clip root (`__bg`) is the outer viewport boundary
-- scrolling lives **inside** that clip boundary
 - `__scroll` holds `ScrollingComponent`
+- the outer router on `item_tc` chooses which authored siblings become scroll content
+- `ScrollingComponent` then routes its incoming external children into `__scroll_track`
 - `ScrollSystem` handles scroll state / gesture registration / limits for that component
 - `__scroll_track` is what actually moves
-- authored child transforms live under the scroll track, not directly under `item_tc`
+- authored child transforms end up under the scroll track, not directly under `item_tc`
 
 So the nesting is:
 - `StencilClip` / clip root outside
-- scrolling helper inside that
+- styled item router at the scroll boundary
+- scrolling helper inside that boundary
 - authored content inside the scroll track
 
 This is analogous to the way `LayoutSystem` already auto-manages `__bg` today.
@@ -152,8 +159,9 @@ Expected temporary state:
 Once manual panel ownership is gone, add layout-owned scroll wrapping:
 
 - when `overflow: Scroll` is detected, `LayoutSystem` ensures a scroll helper exists
-- `LayoutSystem` also ensures a scroll-track transform exists
-- authored children are wrapped / reparented under that scroll track
+- `LayoutSystem` also ensures an outer router exists targeting that helper
+- `ScrollingComponent` ensures its internal router + `__scroll_track` exist
+- authored children are routed into the scroll helper, then into the internal track
 - `ScrollSystem` applies scroll state by moving the scroll track, not by rebuilding row windows
 
 This should be implemented analogously to `sync_bg_quad(...)` / `sync_stencil_clip(...)`:
@@ -165,10 +173,14 @@ This should be implemented analogously to `sync_bg_quad(...)` / `sync_stencil_cl
 What `LayoutSystem` should **not** do:
 - own scroll state itself
 - apply drag logic itself
+- know about `__scroll_track` as a public attachment target
 - become the runtime system responsible for scrolling behavior
 
 That runtime responsibility belongs in `ScrollSystem`, so `ScrollingComponent` can also
 work on its own outside layout-specific clipping / paging logic.
+
+And that standalone use matters: when `ScrollingComponent` is authored outside layout, it should
+still route its direct content children into `__scroll_track` automatically.
 
 ### Phase 2.5 — v1 scope boundary
 

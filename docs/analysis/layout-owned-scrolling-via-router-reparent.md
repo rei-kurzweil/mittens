@@ -5,8 +5,9 @@ Date: 2026-04-23
 This note describes a simpler near-term path for automatic scrolling in layout:
 
 - `LayoutSystem` auto-inserts a `ScrollingComponent`
-- `ScrollingSystem` continues to own `__scroll_router` and `__scroll_track`
-- `LayoutSystem` reparents authored content children under the inserted scrolling node
+- `LayoutSystem` also auto-inserts a `RouterComponent` on the styled layout item
+- that outer router selects authored siblings and routes them into the inserted scrolling node
+- `ScrollingSystem` always owns `__scroll_router` and `__scroll_track`
 - the scrolling node's owned router then redirects those direct children into `__scroll_track`
 
 This avoids needing the full general query/splice system immediately, while still matching the
@@ -29,16 +30,24 @@ Related docs:
 The current generalized splice framing is still good long-term, but it may be more machinery than
 we need just to get layout-owned scrolling working.
 
-The important current engine fact is:
+The important current engine facts are:
 
+- `RouterSystem` already supports routing external direct children into a named target anywhere in
+  the router owner's subtree
 - `ScrollingSystem` already auto-creates:
   - `__scroll_track`
   - `__scroll_router`
 - that router already targets `__scroll_track` by name
 - that router already reroutes newly attached external direct children of the scrolling owner
 
-So if layout can simply move the authored content children under the auto-owned scrolling node,
-the router can do the last hop into the track for us.
+So layout does not need to wait on `__scroll_track` directly, and it does not need to know the
+track as a public attachment point.
+
+Instead, layout can:
+
+1. ensure the outer styled item has a router
+2. point that router at the scrolling wrapper root
+3. let `Scrolling{}` itself route its external children into `__scroll_track`
 
 That means we may not need a new general “output query” splice helper for v1 scrolling.
 
@@ -60,9 +69,10 @@ From the existing runtime:
 This matters because the missing topology step for layout-owned scrolling may be expressible as:
 
 1. create scrolling wrapper
-2. initialize it normally
-3. reparent the relevant children under that wrapper root
-4. let router forward them to `__scroll_track`
+2. create an outer router on the styled item
+3. initialize scrolling normally
+4. let the outer router send authored content into the scrolling wrapper
+5. let the scrolling wrapper's owned router forward them to `__scroll_track`
 
 ---
 
@@ -83,6 +93,7 @@ layout would move toward:
 ```text
 item_tc
   Style
+  Router(target = "__scroll")  ← layout-owned content selection policy
   __bg
     Color
     Renderable
@@ -97,24 +108,27 @@ item_tc
       child_c
 ```
 
-But the layout-side operation does not need to attach children directly to `__scroll_track`.
+Layout does not attach authored children directly to `__scroll_track`.
 
-It can do:
+It instead creates a two-stage route:
 
 ```text
 item_tc
   Style
+  Router(target = "__scroll")
   __bg
+  child_a
+  child_b
+  child_c
   __scroll
-    child_a
-    child_b
-    child_c
     __scroll_router
     __scroll_track
 ```
 
-and then allow router registration / `ParentChanged` handling to rehome `child_a..c` into the
-track automatically.
+At runtime:
+
+- the outer router moves `child_a..c` into `__scroll`
+- `__scroll_router` then moves them into `__scroll_track`
 
 ---
 
@@ -139,6 +153,8 @@ __scroll
   ScrollingComponent
 ```
 
+It also ensures `item_tc` has a router component configured to target `__scroll`.
+
 The scrolling component is initialized normally.
 
 That means `ScrollingSystem` does its existing setup:
@@ -147,12 +163,15 @@ That means `ScrollingSystem` does its existing setup:
 - ensure `__scroll_router`
 - register drag forwarding based on the nearest drag scope
 
+This inner router exists regardless of whether `ScrollingComponent` was added by layout or authored
+directly elsewhere.
+
 ### Step 3 — choose which siblings to move
 
 `LayoutSystem` then finds the current direct children of `item_tc` and selects the ones that
 represent authored content.
 
-Those should be reparented under `__scroll`.
+Those should be selected by the outer router and routed into `__scroll`.
 
 Importantly, layout should **not** move:
 
@@ -165,10 +184,10 @@ Importantly, layout should **not** move:
 The main payload to move is the authored content subtree that currently sits directly under the
 scrolling item root.
 
-### Step 4 — let the router finish the wrap
+### Step 4 — let the two routers finish the wrap
 
-Once those authored children are attached under `__scroll`, the scrolling wrapper's owned router
-should reroute them into `__scroll_track`.
+Once the outer router routes authored children into `__scroll`, the scrolling wrapper's owned
+router should reroute them into `__scroll_track`.
 
 That gives the desired final shape without layout needing to know about the track node directly.
 
@@ -195,12 +214,13 @@ This path avoids needing all of the following just to land v1 automatic layout s
 
 Why it works without those:
 
-- the output target convention for scrolling is already fixed: `__scroll_track`
+- the layout-facing attachment point is the scrolling wrapper root
+- the internal scrolling output target convention is already fixed: `__scroll_track`
 - `ScrollingSystem` already knows how to create and target that node
 - `RouterComponent` already provides a targeted rehome mechanism by name
 
-So the layout system can rely on an existing special-purpose convention rather than waiting for the
-fully generalized query-targeted splice architecture.
+So the layout system can rely on an existing special-purpose two-stage routing convention rather
+than waiting for the fully generalized query-targeted splice architecture.
 
 ---
 
@@ -231,13 +251,20 @@ That means helper exclusion rules need to stay consistent:
 - `Style` still belongs at the outer scroll item root
 - `__scroll_track` contents remain the actual layout-owned authored children
 
-### 6.3 Ordering / first-frame behavior
+### 6.3 Outer-router selection rules still matter
 
-Depending on command ordering, there may be a transient frame where children are under `__scroll`
-before router rehomes them into `__scroll_track`.
+The outer router now becomes the place where layout expresses content-selection policy.
 
-That is probably acceptable if the reroute happens during the same init/command flush cycle, but it
-should be called out as an initialization sequencing detail.
+That means its ignore list / routing criteria must clearly exclude:
+
+- `StyleComponent`
+- the outer router itself
+- `__bg`
+- `__scroll`
+- other internal helper nodes beginning with `__`
+
+This is cleaner than targeting `__scroll_track` from outside, but it still requires a stable rule
+for what counts as authored content.
 
 ### 6.4 This is still a scrolling-specific convention
 
@@ -258,13 +285,15 @@ Future wrapper/pipeline cases may still need the more general query/splice mecha
 For automatic layout scrolling, the simplest practical approach is:
 
 1. `LayoutSystem` auto-creates a scrolling wrapper for `overflow: Scroll`
-2. `ScrollingSystem` continues to auto-own `__scroll_track` and `__scroll_router`
-3. `LayoutSystem` reparents authored content siblings under the scrolling wrapper
-4. router rehomes those children into the track
-5. layout synchronizes viewport/content sizes into the scrolling component
+2. `LayoutSystem` also auto-creates a router on the styled item targeting that wrapper
+3. `ScrollingSystem` continues to auto-own `__scroll_track` and `__scroll_router`
+4. the outer router routes authored content into the scrolling wrapper
+5. the inner scrolling router rehomes those children into the track
+6. layout synchronizes viewport/content sizes into the scrolling component
 
 This gets automatic scrolling working without first blocking on a general query parser/evaluator or
-general output-target splice helper.
+general output-target splice helper, while still keeping `Scrolling{}` self-contained when used
+outside layout.
 
 ---
 
