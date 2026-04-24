@@ -20,6 +20,10 @@ Relevant existing docs:
 - [docs/analysis/vr-input-controllerxr-armature-splice.md](vr-input-controllerxr-armature-splice.md)
 - [docs/meow_meow/analysis/tree-splicing.md](../meow_meow/analysis/tree-splicing.md)
 - [docs/refactor/scrolling-component-layout-system.md](../refactor/scrolling-component-layout-system.md)
+- [docs/analysis/layout-owned-scrolling-via-router-reparent.md](layout-owned-scrolling-via-router-reparent.md)
+
+The new router-reparent note captures a simpler near-term path for scrolling specifically. This
+document remains the broader analysis for a future general splice/query-based solution.
 
 Current status:
 
