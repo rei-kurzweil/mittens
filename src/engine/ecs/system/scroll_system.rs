@@ -7,6 +7,7 @@ use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, S
 pub struct ScrollingSystem;
 
 impl ScrollingSystem {
+    const LAYOUT_BG_LABEL: &'static str = "__bg";
     const OWNED_ROUTER_LABEL: &'static str = "__scroll_router";
     const OWNED_TRACK_LABEL: &'static str = "__scroll_track";
 
@@ -179,19 +180,57 @@ impl ScrollingSystem {
         None
     }
 
-    fn nearest_drag_scope(world: &World, start: ComponentId) -> Option<ComponentId> {
+    fn subtree_first_renderable(world: &World, root: ComponentId) -> Option<ComponentId> {
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            if world.get_component_by_id_as::<RenderableComponent>(node).is_some() {
+                return Some(node);
+            }
+            for &child in world.children_of(node).iter().rev() {
+                stack.push(child);
+            }
+        }
+        None
+    }
+
+    fn sibling_layout_bg_renderable(world: &World, start: ComponentId) -> Option<ComponentId> {
+        let parent = world.parent_of(start)?;
+        let bg = world.children_of(parent).iter().copied().find(|&child| {
+            world.component_label(child) == Some(Self::LAYOUT_BG_LABEL)
+                && world.get_component_by_id_as::<TransformComponent>(child).is_some()
+        })?;
+        Self::subtree_first_renderable(world, bg)
+    }
+
+    fn nearest_ancestor_clip_scope(world: &World, start: ComponentId) -> Option<ComponentId> {
         let mut cursor = world.parent_of(start);
         while let Some(node) = cursor {
             if world.get_component_by_id_as::<StencilClipComponent>(node).is_some() {
                 return Some(Self::stencil_drag_scope_root(world, node).unwrap_or(node));
             }
+            cursor = world.parent_of(node);
+        }
+
+        None
+    }
+
+    fn nearest_ancestor_renderable(world: &World, start: ComponentId) -> Option<ComponentId> {
+        let mut cursor = world.parent_of(start);
+        while let Some(node) = cursor {
             if world.get_component_by_id_as::<RenderableComponent>(node).is_some() {
                 return Some(node);
             }
             cursor = world.parent_of(node);
         }
 
-        Self::nearest_ancestor_transform(world, start)
+        None
+    }
+
+    fn nearest_drag_scope(world: &World, start: ComponentId) -> Option<ComponentId> {
+        Self::sibling_layout_bg_renderable(world, start)
+            .or_else(|| Self::nearest_ancestor_clip_scope(world, start))
+            .or_else(|| Self::nearest_ancestor_renderable(world, start))
+            .or_else(|| Self::nearest_ancestor_transform(world, start))
     }
 
     fn stencil_drag_scope_root(world: &World, stencil_clip: ComponentId) -> Option<ComponentId> {
@@ -262,7 +301,7 @@ mod tests {
     use crate::engine::ecs::SignalEmitter;
     use crate::engine::ecs::SystemWorld;
     use crate::engine::ecs::World;
-    use crate::engine::ecs::component::{ScrollingComponent, TransformComponent};
+    use crate::engine::ecs::component::{RenderableComponent, ScrollingComponent, TransformComponent};
     use crate::engine::graphics::VisualWorld;
 
     #[test]
@@ -344,5 +383,33 @@ mod tests {
         systems.process_commands(&mut world, &mut visuals, &mut queue);
 
         assert_eq!(world.parent_of(late), Some(track));
+    }
+
+    #[test]
+    fn scrolling_prefers_sibling_layout_bg_renderable_for_drag_scope() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut queue = CommandQueue::new();
+        let mut systems = SystemWorld::default();
+
+        let root = world.add_component_boxed_named("root", Box::new(TransformComponent::new()));
+        let bg = world.add_component_boxed_named("__bg", Box::new(TransformComponent::new()));
+        let bg_renderable = world.add_component(RenderableComponent::square());
+        let scrolling = world.add_component_boxed_named(
+            "layout_scroll",
+            Box::new(ScrollingComponent::new(1.0, 10.0)),
+        );
+
+        let _ = world.add_child(root, bg);
+        let _ = world.add_child(bg, bg_renderable);
+        let _ = world.add_child(root, scrolling);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let sc = world
+            .get_component_by_id_as::<ScrollingComponent>(scrolling)
+            .expect("scrolling state");
+        assert_eq!(sc.drag_scope, Some(bg_renderable));
     }
 }
