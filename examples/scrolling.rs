@@ -7,6 +7,26 @@ fn find_named(world: &engine::ecs::World, label: &str) -> engine::ecs::Component
         .unwrap_or_else(|| panic!("missing component {label:?}"))
 }
 
+fn first_renderable_in_subtree(
+    world: &engine::ecs::World,
+    root: engine::ecs::ComponentId,
+) -> engine::ecs::ComponentId {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        if world
+            .get_component_by_id_as::<engine::ecs::component::RenderableComponent>(node)
+            .is_some()
+        {
+            return node;
+        }
+        for &child in world.children_of(node).iter().rev() {
+            stack.push(child);
+        }
+    }
+
+    panic!("missing renderable under subtree {:?}", root);
+}
+
 fn spawn_scroll_item(
     universe: &mut engine::Universe,
     scrolling: engine::ecs::ComponentId,
@@ -114,18 +134,7 @@ fn main() {
     let layout_scroll = find_named(&universe.world, "layout_scroll");
     let layout_bg = find_named(&universe.world, "__bg");
 
-    let layout_bg_renderable = universe
-        .world
-        .children_of(layout_bg)
-        .iter()
-        .copied()
-        .find(|&child| {
-            universe
-                .world
-                .get_component_by_id_as::<engine::ecs::component::RenderableComponent>(child)
-                .is_some()
-        })
-        .expect("layout bg renderable");
+    let layout_bg_renderable = first_renderable_in_subtree(&universe.world, layout_bg);
 
     let manual_drag_scope = universe
         .world

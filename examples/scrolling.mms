@@ -54,17 +54,19 @@ T.position(1.8, 2.3, 0.2).scale(0.09, 0.09, 0.09) {
         }
     }
 
-    StencilClip {}
-
-    T {
-        name="__bg"
-        R.square() {
-            C.rgba(0.54, 0.34, 0.16, 0.95)
-            Raycastable.enabled()
-        }
-    }
-
     T.position(-2.6, 3.4, 0.02) {
+        name="layout_mock_viewport"
+
+        StencilClip {}
+
+        T.position(2.5,-10, 0).scale(5, 20, 5) {
+            name="__bg"
+            R.square() {
+                C.rgba(0.54, 0.34, 0.16, 0.95)
+                Raycastable.enabled()
+            }
+        }
+
         Scrolling.new(8.0, 28.0) {
             name="layout_scroll"
         }
