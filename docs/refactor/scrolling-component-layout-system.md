@@ -46,6 +46,25 @@ This mirrors CSS:
 - `overflow` determines whether content is clipped
 - scrolling is the movement of the inner content box inside that clipped area
 
+### Input-source resolution
+
+For layout-owned scrolling, the preferred drag/input source is the layout-generated `__bg`
+viewport helper, not the scrolling wrapper itself.
+
+So `ScrollingComponent` should resolve input sources in this order:
+
+1. preferred layout path: a sibling `__bg` subtree, using its first renderable as the input surface
+2. otherwise nearest ancestor clip scope
+3. otherwise nearest ancestor renderable
+4. otherwise nearest ancestor transform as a last-resort scope
+
+This keeps the topology clean:
+
+- `__bg` remains the visible/hit-tested viewport surface
+- `__scroll` remains the content/runtime wrapper
+- `ScrollingComponent` does not need to be nested under `__bg`
+- standalone `Scrolling{}` still works outside layout
+
 ---
 
 ## 3. Current state
@@ -120,6 +139,7 @@ Important properties:
 - `__scroll` holds `ScrollingComponent`
 - the outer router on `item_tc` chooses which authored siblings become scroll content
 - `ScrollingComponent` then routes its incoming external children into `__scroll_track`
+- `ScrollingComponent` prefers sibling `__bg` as its input surface when layout created one
 - `ScrollSystem` handles scroll state / gesture registration / limits for that component
 - `__scroll_track` is what actually moves
 - authored child transforms end up under the scroll track, not directly under `item_tc`
@@ -175,6 +195,10 @@ What `LayoutSystem` should **not** do:
 - apply drag logic itself
 - know about `__scroll_track` as a public attachment target
 - become the runtime system responsible for scrolling behavior
+
+What `ScrollingComponent` / `ScrollSystem` should do:
+- resolve the preferred input surface from sibling `__bg` when present
+- fall back to the existing ancestor-based scope discovery for standalone/manual trees
 
 That runtime responsibility belongs in `ScrollSystem`, so `ScrollingComponent` can also
 work on its own outside layout-specific clipping / paging logic.

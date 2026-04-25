@@ -99,6 +99,28 @@ outside layout.
 If someone attaches content directly to `Scrolling{}` later, it should still normalize that content
 into `__scroll_track` automatically.
 
+### Input-source rule
+
+For drag/input discovery, `ScrollingComponent` should use this precedence:
+
+1. if the scrolling wrapper has a sibling branch named `__bg`, use the first renderable in that
+  `__bg` subtree as the preferred layout-owned input surface
+2. otherwise, if a usable ancestor clip scope exists, use that
+3. otherwise, fall back to the nearest ancestor renderable
+4. otherwise, fall back to the nearest ancestor transform as a last-resort drag scope
+
+Why this is the preferred rule:
+
+- layout-owned scrolling already creates a `__bg` viewport helper with a drag-only hit surface
+- `__bg` is the correct visible/input surface for the scroll viewport
+- `Scrolling{}` should not need to live under `__bg` just to receive drag input
+- standalone `Scrolling{}` must still work when no layout-owned `__bg` exists
+
+So routing and input-source discovery stay separate:
+
+- routing: outer styled transform routes authored content into `Scrolling{}`
+- input: `Scrolling{}` prefers sibling `__bg` as its input surface when present
+
 ---
 
 ## 4. Immediate checklist
@@ -119,6 +141,8 @@ What this means concretely:
 - verify registration always creates the internal router and track
 - verify later attachments under `Scrolling{}` get rerouted into `__scroll_track`
 - make this behavior true whether `Scrolling{}` was created by layout or authored directly
+- update drag/input-source discovery so layout-owned scrolling prefers sibling `__bg` before the
+  ancestor fallback path
 
 ### B. Make scrolling work in `diy-panel`
 
