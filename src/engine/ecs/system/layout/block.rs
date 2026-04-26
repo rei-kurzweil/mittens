@@ -17,13 +17,18 @@ use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::{IntentValue, SignalEmitter};
 use crate::engine::ecs::component::{
-    ColorComponent, OpacityComponent, Overflow, RenderableComponent, StencilClipComponent,
+    ColorComponent, OpacityComponent, Overflow, RenderableComponent, RouterComponent,
+    ScrollingComponent, StencilClipComponent,
     RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType,
     StyleComponent, TransformComponent,
 };
+use crate::engine::ecs::system::ScrollingSystem;
 use super::measure::{measure_container_items, measure_items, MeasuredItem};
 
+const OWNED_CLIPPED_CONTENT_LABEL: &str = "__clip_content";
 const OWNED_LAYOUT_STENCIL_CLIP_LABEL: &str = "__layout_stencil_clip";
+const OWNED_LAYOUT_OVERFLOW_ROUTER_LABEL: &str = "__layout_overflow_router";
+const OWNED_SCROLL_WRAPPER_LABEL: &str = "__scroll";
 const OWNED_SCROLL_DRAG_RAYCASTABLE_LABEL: &str = "__scroll_drag_raycastable";
 const OWNED_SCROLL_DRAG_SHAPE_LABEL: &str = "__scroll_drag_shape";
 
@@ -77,20 +82,183 @@ fn layout_items(
             },
         );
 
-        // ── Background quad ───────────────────────────────────────────────
+        // ── Background quad / overflow helper topology ───────────────────
         sync_bg_quad(world, emit, item.tc_id, item.padding_left_gu, item.padding_top_gu, item.box_width_gu, item.box_height_gu);
+        let content_root = sync_overflow_topology(world, emit, item.tc_id, item.content_height_gu);
 
         let nested_items = measure_container_items(
             world,
-            item.tc_id,
+            content_root,
             item.content_width_gu,
             Some(item.content_height_gu),
         );
+        if let Some(scroll_id) = immediate_owned_scroll_wrapper(world, item.tc_id) {
+            sync_scrolling_metrics(world, emit, scroll_id, item.content_height_gu, &nested_items);
+        }
         if !nested_items.is_empty() {
             layout_items(world, emit, &nested_items, unit_scale);
         }
 
         cursor_gu += item.box_height_gu + item.margin_bottom_gu;
+    }
+}
+
+fn style_overflow(world: &World, tc_id: ComponentId) -> Overflow {
+    world.children_of(tc_id).iter().find_map(|&child| {
+        world
+            .get_component_by_id_as::<StyleComponent>(child)
+            .map(|style| style.overflow)
+    }).unwrap_or(Overflow::Visible)
+}
+
+fn immediate_owned_layout_router(world: &World, owner: ComponentId) -> Option<ComponentId> {
+    world.children_of(owner).iter().copied().find(|&child| {
+        world.component_label(child) == Some(OWNED_LAYOUT_OVERFLOW_ROUTER_LABEL)
+            && world.get_component_by_id_as::<RouterComponent>(child).is_some()
+    })
+}
+
+fn immediate_owned_clipped_content(world: &World, owner: ComponentId) -> Option<ComponentId> {
+    world.children_of(owner).iter().copied().find(|&child| {
+        world.component_label(child) == Some(OWNED_CLIPPED_CONTENT_LABEL)
+            && world.get_component_by_id_as::<TransformComponent>(child).is_some()
+    })
+}
+
+fn immediate_owned_scroll_wrapper(world: &World, owner: ComponentId) -> Option<ComponentId> {
+    world.children_of(owner).iter().copied().find(|&child| {
+        world.component_label(child) == Some(OWNED_SCROLL_WRAPPER_LABEL)
+            && world.get_component_by_id_as::<ScrollingComponent>(child).is_some()
+    })
+}
+
+fn ensure_overflow_router(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    owner: ComponentId,
+    target_name: &str,
+) -> ComponentId {
+    if let Some(router_id) = immediate_owned_layout_router(world, owner) {
+        if let Some(router) = world.get_component_by_id_as_mut::<RouterComponent>(router_id) {
+            router.target_name = Some(target_name.to_string());
+        }
+        return router_id;
+    }
+
+    let router_id = world.add_component_boxed_named(
+        OWNED_LAYOUT_OVERFLOW_ROUTER_LABEL,
+        Box::new(RouterComponent::new().with_target_name(target_name)),
+    );
+    let _ = world.add_child(owner, router_id);
+    world.init_component_tree(router_id, emit);
+    router_id
+}
+
+fn ensure_clipped_content_root(world: &mut World, owner: ComponentId) -> ComponentId {
+    if let Some(content_id) = immediate_owned_clipped_content(world, owner) {
+        return content_id;
+    }
+
+    let content_id = world.add_component_boxed_named(
+        OWNED_CLIPPED_CONTENT_LABEL,
+        Box::new(TransformComponent::new()),
+    );
+    let _ = world.add_child(owner, content_id);
+    content_id
+}
+
+fn ensure_scroll_wrapper(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    owner: ComponentId,
+    viewport_height: f32,
+) -> ComponentId {
+    if let Some(scroll_id) = immediate_owned_scroll_wrapper(world, owner) {
+        if let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(scroll_id) {
+            sc.viewport_height = viewport_height.max(0.0);
+            sc.content_height = sc.content_height.max(viewport_height.max(0.0));
+            let _ = sc.clamp_to_content();
+        }
+        return scroll_id;
+    }
+
+    let scroll_id = world.add_component_boxed_named(
+        OWNED_SCROLL_WRAPPER_LABEL,
+        Box::new(ScrollingComponent::new(viewport_height.max(0.0), viewport_height.max(0.0))),
+    );
+    let _ = world.add_child(owner, scroll_id);
+    world.init_component_tree(scroll_id, emit);
+    scroll_id
+}
+
+fn authored_overflow_children(world: &World, owner: ComponentId) -> Vec<ComponentId> {
+    world
+        .children_of(owner)
+        .iter()
+        .copied()
+        .filter(|&child| {
+            world.get_component_by_id_as::<TransformComponent>(child).is_some()
+                && !world
+                    .component_label(child)
+                    .map(|label| label.starts_with("__"))
+                    .unwrap_or(false)
+        })
+        .collect()
+}
+
+fn relocate_authored_children(world: &mut World, owner: ComponentId, target: ComponentId) {
+    for child in authored_overflow_children(world, owner) {
+        let _ = world.add_child(target, child);
+    }
+}
+
+fn scroll_content_root(world: &World, scroll_id: ComponentId) -> ComponentId {
+    world
+        .get_component_by_id_as::<ScrollingComponent>(scroll_id)
+        .and_then(|sc| sc.track)
+        .unwrap_or(scroll_id)
+}
+
+fn sync_scrolling_metrics(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    scroll_id: ComponentId,
+    viewport_height: f32,
+    nested_items: &[MeasuredItem],
+) {
+    let content_height = nested_items
+        .iter()
+        .map(|item| item.margin_box_height_gu)
+        .sum::<f32>();
+
+    if let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(scroll_id) {
+        sc.viewport_height = viewport_height.max(0.0);
+        let _ = sc.clamp_to_content();
+    }
+    ScrollingSystem::set_content_height(world, emit, scroll_id, content_height);
+    ScrollingSystem::sync_component(world, emit, scroll_id);
+}
+
+fn sync_overflow_topology(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    tc_id: ComponentId,
+    viewport_height: f32,
+) -> ComponentId {
+    match style_overflow(world, tc_id) {
+        Overflow::Hidden => {
+            let content_root = ensure_clipped_content_root(world, tc_id);
+            ensure_overflow_router(world, emit, tc_id, OWNED_CLIPPED_CONTENT_LABEL);
+            relocate_authored_children(world, tc_id, content_root);
+            content_root
+        }
+        Overflow::Scroll => {
+            let scroll_id = ensure_scroll_wrapper(world, emit, tc_id, viewport_height);
+            ensure_overflow_router(world, emit, tc_id, OWNED_SCROLL_WRAPPER_LABEL);
+            relocate_authored_children(world, tc_id, scroll_id);
+            scroll_content_root(world, scroll_id)
+        }
+        _ => tc_id,
     }
 }
 

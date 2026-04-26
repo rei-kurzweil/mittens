@@ -1,4 +1,4 @@
-use crate::engine::ecs::component::RouterComponent;
+use crate::engine::ecs::component::{RouterComponent, TransformComponent};
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
 use std::collections::HashSet;
@@ -142,6 +142,9 @@ impl RouterSystem {
         if router.ignored_components.contains(&child) {
             return false;
         }
+        if world.get_component_by_id_as::<TransformComponent>(child).is_none() {
+            return false;
+        }
         if world
             .component_label(child)
             .map(|label| label.starts_with("__"))
@@ -202,7 +205,7 @@ impl RouterSystem {
 
 #[cfg(test)]
 mod tests {
-    use crate::engine::ecs::component::{RouterComponent, TransformComponent};
+    use crate::engine::ecs::component::{RouterComponent, StyleComponent, TransformComponent};
     use crate::engine::ecs::{CommandQueue, IntentValue, SignalEmitter, SystemWorld, World};
     use crate::engine::graphics::VisualWorld;
 
@@ -270,5 +273,33 @@ mod tests {
         systems.process_commands(&mut world, &mut visuals, &mut queue);
 
         assert_eq!(world.parent_of(late), Some(container));
+    }
+
+    #[test]
+    fn router_does_not_reroute_non_transform_children() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+
+        let owner = world.add_component_boxed_named("owner", Box::new(TransformComponent::new()));
+        let router = world.add_component_boxed_named(
+            "router",
+            Box::new(RouterComponent::new().with_target_name("container")),
+        );
+        let container = world.add_component_boxed_named("container", Box::new(TransformComponent::new()));
+        let style = world.add_component(StyleComponent::new());
+        let authored = world.add_component_boxed_named("authored", Box::new(TransformComponent::new()));
+
+        let _ = world.add_child(owner, router);
+        let _ = world.add_child(owner, container);
+        let _ = world.add_child(owner, style);
+        let _ = world.add_child(owner, authored);
+
+        world.init_component_tree(owner, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        assert_eq!(world.parent_of(authored), Some(container));
+        assert_eq!(world.parent_of(style), Some(owner));
     }
 }

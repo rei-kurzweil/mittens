@@ -7,21 +7,29 @@ fn spawn_runtime_text(
     owner: engine::ecs::ComponentId,
     label: &str,
 ) {
-    use engine::ecs::component::{ColorComponent, EdgeInsets, SizeDimension, StyleComponent, TextComponent, TransformComponent};
+    use engine::ecs::component::{
+        ColorComponent, EdgeInsets, SizeDimension, StyleComponent, TextComponent,
+        TransformComponent,
+    };
 
     let root = universe
         .world
-        .add_component_boxed_named(label, Box::new(TransformComponent::new()));
+        .add_component_boxed_named(label, Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.2)));
     let style = universe.world.add_component_boxed_named(
         format!("{label}_style"),
         Box::new({
             let mut style = StyleComponent::new();
             style.margin = EdgeInsets::axes(0.25, 0.25);
-            style.padding = EdgeInsets::axes(0.5, 2.25);
+            style.padding = EdgeInsets::axes(0.5, 0.5);
+            style.height = SizeDimension::GlyphUnits(2.5);
             style.width = SizeDimension::Auto;
             style.background_color = Some([1.0, 0.80, 0.80, 1.0]);
             style
         }),
+    );
+    let text_root = universe.world.add_component_boxed_named(
+        format!("{label}_text_root"),
+        Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.2)),
     );
     let text = universe
         .world
@@ -31,7 +39,8 @@ fn spawn_runtime_text(
         .add_component(ColorComponent::rgba(0.40, 0.05, 0.05, 1.0));
 
     let _ = universe.world.add_child(root, style);
-    let _ = universe.world.add_child(root, text);
+    let _ = universe.world.add_child(root, text_root);
+    let _ = universe.world.add_child(text_root, text);
     let _ = universe.world.add_child(text, color);
 
     universe.attach(owner, root).expect("attach routed child");
@@ -49,7 +58,10 @@ fn collect_container_items(
         .copied()
         .filter(|&child| {
             world.get_component_by_id_as::<TransformComponent>(child).is_some()
-                && world.component_label(child) != Some("__bg")
+                && !world
+                    .component_label(child)
+                    .map(|label| label.starts_with("__"))
+                    .unwrap_or(false)
         })
         .collect()
 }
@@ -217,7 +229,32 @@ fn main() {
         &mut universe.command_queue,
     );
 
-    println!("[diy-panel] init-time and attach-time routing verified");
+    let scroll = universe
+        .world
+        .children_of(container)
+        .iter()
+        .copied()
+        .find(|&child| {
+            universe
+                .world
+                .component_label(child)
+                == Some("__scroll")
+                && universe
+                    .world
+                    .get_component_by_id_as::<engine::ecs::component::ScrollingComponent>(child)
+                    .is_some()
+        })
+        .expect("layout-owned scroll wrapper");
+    let track = universe
+        .world
+        .get_component_by_id_as::<engine::ecs::component::ScrollingComponent>(scroll)
+        .and_then(|sc| sc.track)
+        .expect("layout-owned scroll track");
+
+    assert_eq!(universe.parent_of(authored_child), Some(track));
+    assert_eq!(universe.parent_of(late_child), Some(track));
+
+    println!("[diy-panel] init-time routing verified, then layout-owned scrolling moved content into __scroll_track");
 
     engine::Windowing::run_app(universe).expect("Windowing failed");
 }

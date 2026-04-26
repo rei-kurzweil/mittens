@@ -130,6 +130,98 @@ Why:
 - `Scrolling{}` should not need to live under `__bg`
 - standalone scrolling must still work without layout helpers
 
+### World-drag to scroll-local conversion
+
+There is a separate problem from input-source discovery:
+
+- `GestureSystem` currently produces drag deltas in world space
+- `ScrollingComponent` currently applies that world-space Y delta directly to scroll offset
+- layout-owned scrolling often lives under scaled UI transforms
+
+That means the current drag response can feel too slow or too fast depending on inherited scale.
+
+#### Cheapest likely fix
+
+Keep scrolling state in its current local/layout units and convert the drag delta before applying
+it.
+
+Recommended shape:
+
+1. keep `scroll_offset`, `viewport_height`, and `content_height` in scroll-local/layout units
+2. at drag time, convert world-space drag motion into the scroll space's local Y units
+3. apply that converted local Y delta to `ScrollingComponent::apply_drag(...)`
+
+#### Why this is cheaper than world-unit-native scrolling
+
+Making scrolling fully world-unit-native would ripple through:
+
+- layout measurement outputs
+- viewport/content height bookkeeping
+- tests and examples that currently reason in layout/local units
+- potential interactions with transform-pipeline scale filtering
+
+By contrast, converting drag into scroll-local units is a smaller change because it is isolated to
+the scrolling runtime.
+
+#### Two plausible conversion strategies
+
+##### Option A — use effective world Y scale
+
+At drag time:
+
+- inspect the scroll space's effective world Y scale
+- divide world-space drag delta by that scale to get local/layout-space Y movement
+
+Pros:
+
+- cheap
+- likely enough for current axis-aligned UI cases
+- fits the existing scrolling model well
+
+Cons:
+
+- assumes scale-only correction is sufficient
+- less general if rotation/shear-like cases ever matter
+
+##### Option B — convert through matrices / local space
+
+At drag time:
+
+- use the relevant transform's world matrix
+- convert the drag vector from world space into the scroll space's local basis
+- then use the resulting local Y component
+
+Pros:
+
+- more geometrically correct
+- naturally handles more than plain scale
+
+Cons:
+
+- slightly more implementation work
+- requires choosing the exact scroll space whose basis should define local scroll motion
+
+#### Current recommendation
+
+The cheapest next step is:
+
+- do **not** make `ScrollingComponent` world-unit-native yet
+- do **not** add a persistent absolute-scale field first
+- instead, convert `delta_world` into scroll-local Y at drag time
+
+If a simple effective-scale conversion is not good enough, then move to matrix/local-basis
+conversion.
+
+#### Follow-up question to resolve in code
+
+The implementation should make explicit which space defines “scroll-local Y”:
+
+- the scroll wrapper root (`__scroll`)
+- the scroll track parent space
+- or another layout-defined content space
+
+That choice should be documented when the drag conversion lands.
+
 ---
 
 ## 5. Hierarchies we want

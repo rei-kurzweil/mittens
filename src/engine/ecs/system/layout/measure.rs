@@ -124,7 +124,10 @@ pub(crate) fn measure_container_items(
         .into_iter()
         .filter(|&child| {
             world.get_component_by_id_as::<TransformComponent>(child).is_some()
-                && world.component_label(child) != Some("__bg")
+                && !world
+                    .component_label(child)
+                    .map(|label| label.starts_with("__"))
+                    .unwrap_or(false)
                 && is_layout_item(world, child)
         })
         .map(|child| measure_item(world, child, avail_w_gu))
