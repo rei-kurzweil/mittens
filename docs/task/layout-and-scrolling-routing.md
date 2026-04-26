@@ -78,14 +78,21 @@ It is meant to be readable by a fresh agent with no prior context.
 - [x] demo covers two cases:
   - standalone/manual scrolling using ancestor/parent renderable drag scope
   - layout-mock scrolling using sibling `__bg`
+- [x] `LayoutSystem` now creates routed overflow helper topology
+  - `overflow: Hidden` creates `__clip_content`
+  - `overflow: Scroll` creates `__scroll` + `ScrollingComponent`
+- [x] `LayoutSystem` now ensures an outer router for overflow containers
+- [x] `LayoutSystem` now immediately relocates already-authored children into the effective
+  overflow content branch during layout
+- [x] `LayoutSystem` now measures nested content through the effective overflow content branch
+- [x] `LayoutSystem` now syncs measured viewport/content sizing into `ScrollingComponent`
+- [x] `examples/diy-panel.mms` now scrolls through layout-owned scrolling
 
 ### Still pending
 
-- [ ] `LayoutSystem` auto-creates `ScrollingComponent` for `Style { overflow: Scroll }`
-- [ ] `LayoutSystem` auto-creates an outer `RouterComponent` for overflow-scroll layout items
-- [ ] `LayoutSystem` routes authored children into the layout-created scrolling wrapper
-- [ ] `LayoutSystem` syncs measured viewport/content sizing into scrolling state
-- [ ] `examples/diy-panel.mms` actually scrolls through layout-owned scrolling
+- [ ] decide and land the final world-drag → scroll-local conversion in `ScrollingSystem`
+- [ ] automatically mark affected layout roots dirty when layout-relevant children are attached
+  after initial layout
 - [ ] runtime add-item buttons in `router` and `diy-panel` examples
 
 ---
@@ -409,23 +416,26 @@ Effect:
 
 ### Layout-owned scrolling
 
-- [ ] create routed clipped-content branch for `overflow: Hidden`
-- [ ] route hidden-overflow authored children into that clipped-content branch
-- [ ] create `__scroll` wrapper for `overflow: Scroll`
-- [ ] attach `ScrollingComponent` under `__scroll`
-- [ ] add outer `RouterComponent` targeting `__scroll`
-- [ ] exclude helper/internal nodes from outer routing
-- [ ] route authored children into `__scroll`
-- [ ] let scrolling reroute them into `__scroll_track`
-- [ ] compute/sync viewport height into `ScrollingComponent`
-- [ ] compute/sync content height into `ScrollingComponent`
-- [ ] verify `examples/diy-panel.mms` scrolls without authored `Scrolling{}`
+- [x] create routed clipped-content branch for `overflow: Hidden`
+- [x] route hidden-overflow authored children into that clipped-content branch
+- [x] create `__scroll` wrapper for `overflow: Scroll`
+- [x] attach `ScrollingComponent` under `__scroll`
+- [x] add outer `RouterComponent` targeting `__scroll`
+- [x] exclude helper/internal nodes from outer routing via transform-only router filtering and
+  reserved-label helper exclusion
+- [x] route already-authored children into the effective overflow content root during layout
+- [x] let scrolling reroute scroll-content children into `__scroll_track`
+- [x] compute/sync viewport height into `ScrollingComponent`
+- [x] compute/sync content height into `ScrollingComponent`
+- [x] verify `examples/diy-panel.mms` scrolls without authored `Scrolling{}`
+- [ ] verify later post-layout attaches reroute correctly *and* trigger relayout automatically
 
 ### Runtime mutation / demo coverage
 
 - [ ] add Rust-side add-item button to `examples/router.rs`
 - [ ] add Rust-side add-item button to `examples/diy-panel.rs`
-- [ ] verify newly attached items route through outer router and inner scrolling router
+- [ ] verify newly attached items route through outer router and inner scrolling router after
+  initial layout has already settled
 - [ ] verify scroll still works after runtime additions
 
 ---
@@ -433,10 +443,12 @@ Effect:
 ## 7. Suggested implementation order
 
 1. keep `ScrollingComponent` self-contained and stable
-2. make `LayoutSystem` create `__scroll` + outer router for `overflow: Scroll`
+2. make `LayoutSystem` create overflow helper topology and outer routers
 3. make `diy-panel` scroll through layout-owned scrolling
-4. add runtime insertion buttons to `router` and `diy-panel`
-5. verify late attachment + scrolling together
+4. land the geometrically correct world-drag → scroll-local conversion
+5. add automatic relayout for post-layout attaches
+6. add runtime insertion buttons to `router` and `diy-panel`
+7. verify late attachment + scrolling together
 
 ---
 
@@ -446,6 +458,11 @@ Effect:
 - The near-term shape uses existing named routing conventions:
   - outer router targets `__scroll`
   - inner scrolling router targets `__scroll_track`
+- Current implementation detail:
+  - layout already ensures the outer router exists
+  - layout also directly relocates currently attached authored children during its own pass
+  - the router is therefore most important for later direct attaches after the helper topology
+    already exists
 - `__bg` is intentionally separate from `__scroll`
   - `__bg` is the viewport/input/clip helper
   - `__scroll` is the content/runtime helper
