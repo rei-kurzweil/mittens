@@ -23,11 +23,11 @@ use crate::engine::ecs::{IntentValue, SignalEmitter};
 /// there both at init time and on later direct attaches.
 #[derive(Debug, Clone)]
 pub struct ScrollingComponent {
-    /// Height of the clipped viewport in world units.
+    /// Height of the clipped viewport in scroll-local/layout units.
     pub viewport_height: f32,
-    /// Height of the scrollable content in world units.
+    /// Height of the scrollable content in scroll-local/layout units.
     pub content_height: f32,
-    /// Current scroll offset in world units. 0.0 = top.
+    /// Current scroll offset in scroll-local/layout units. 0.0 = top.
     pub scroll_offset: f32,
     /// Transform moved by the scroll runtime.
     ///
@@ -68,12 +68,12 @@ impl ScrollingComponent {
         self.clamp_to_content()
     }
 
-    /// Maximum scroll distance in world units.
+    /// Maximum scroll distance in scroll-local/layout units.
     pub fn max_scroll(&self) -> f32 {
         (self.content_height - self.viewport_height).max(0.0)
     }
 
-    /// Update `scroll_offset` by a world-space Y drag delta.
+    /// Update `scroll_offset` by a scroll-local Y drag delta.
     ///
     /// Sign convention: dragging up (positive `delta_y`) reveals content lower in the list.
     pub fn apply_drag(&mut self, delta_y: f32) -> bool {

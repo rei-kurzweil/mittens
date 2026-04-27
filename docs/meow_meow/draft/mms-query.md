@@ -4,6 +4,12 @@
 > This is the canonical reference for MMS query syntax.
 > Both module query and world query use the same selector language and API.
 
+> **Direction update (2026-04-26):** the original CSS-like shared-selector direction is
+> still valid long-term, but the immediate MVP should be **MMQ first**:
+> simple component-type and type+name matching such as `T` and `T#hero`.
+> The CSS-flavored system should be treated as a later generalization, not the first
+> required integration step.
+
 ## Current implementation snapshot
 
 This doc is still the right place to centralize query semantics, but the full MMS query
@@ -32,6 +38,12 @@ Current supported forms for this specialized action-target lookup are intentiona
 - `#name`
 - `[name="..."]`
 - bare exact label match
+
+The shared `src/query` backend is also still incomplete:
+
+- CSS parsing exists
+- MMQ parsing does not
+- evaluator combinator semantics are not integrated into the live world query path
 
 This helper should be treated as **temporary authoring convenience**, not as the canonical
 query runtime. As the real MMS query / HostCall system lands, selector-based action targeting
@@ -192,6 +204,18 @@ box.all("R > C") -> set_color(1, 0, 0)
 ---
 
 ## Selector syntax
+
+### MVP note
+
+For the first integrated world/subtree query path, prefer MMQ:
+
+- `T`
+- `T#hero`
+- `Renderable`
+- `Renderable#left_hand`
+
+This is enough to support live subtree lookup for `ComponentObject` handles without
+blocking on the full CSS-style selector feature set below.
 
 CSS-inspired. Component nodes have a **type** (the component class — `T`, `R`, `C`, etc.)
 and an optional **name** (a string attribute set at construction time).

@@ -1,11 +1,16 @@
 # Query usage inventory
 
-Date: 2026-04-23
+Date: 2026-04-26
 
-This file inventories current query-like behavior across Cat Engine and Meow Meow so we have a concrete migration list for a future shared query system:
+This file inventories current query-like behavior across Cat Engine and Meow Meow so we
+have a concrete migration list for a future shared query system.
 
-- `Universe::query(component_root, query_expression: &str)`
-- `World::query(component_root, query_expression: &str)`
+Important correction: there is currently **no** integrated `Universe::query(...)` /
+`World::query(...)` end-to-end shared backend. The repo contains:
+
+- ad hoc live-world helpers in `World`
+- a WIP `src/query` module
+- draft MMS query docs
 
 See also [docs/draft/mms-css-query-parsers-and-eval.md](../draft/mms-css-query-parsers-and-eval.md).
 
@@ -19,6 +24,8 @@ See also [docs/draft/mms-css-query-parsers-and-eval.md](../draft/mms-css-query-p
   - `find_component(root, selector)`
   - `find_all_components(root, selector)`
   - current behavior is a narrow `[name='...']` parser via `parse_name_selector(...)`
+  - no type selector support yet
+  - no shared `src/query` integration yet
 
 ### `Universe`
 
@@ -58,11 +65,24 @@ These should be preserved as migration coverage when the shared query parser/eva
 ### Evaluator / parser surface
 
 - [src/meow_meow/evaluator.rs](../../src/meow_meow/evaluator.rs)
-  - query host-call surface is planned / partially staged
+  - query host-call surface is still not implemented
 - [src/meow_meow/parser.rs](../../src/meow_meow/parser.rs)
   - `->` is parsed as `BinOpKind::Query`
 - [src/meow_meow/ast.rs](../../src/meow_meow/ast.rs)
   - carries the query operator in the AST
+
+### `src/query` backend
+
+- [src/query/css/parser.rs](../../src/query/css/parser.rs)
+  - parses a CSS-like subset into `QueryAst`
+- [src/query/mmq/parser.rs](../../src/query/mmq/parser.rs)
+  - currently stubbed out
+- [src/query/evaluator.rs](../../src/query/evaluator.rs)
+  - matches compound selectors on a node
+  - does **not** yet implement actual `Child` / `Descendant` combinator traversal semantics
+
+So the repo currently has a parser-first WIP query module, not a fully integrated shared
+query runtime.
 
 ### Draft Meow Meow query docs
 
@@ -142,7 +162,7 @@ These docs rely on the concept of selector-based targeting for splice outputs, b
 
 The desired replacement shape is:
 
-- syntax-specific parsers (CSS, MMQ, maybe others)
+- syntax-specific parsers (MMQ first, CSS later, maybe others)
 - shared `QueryAst`
 - shared evaluator
 - unified `world.query(...)` / `universe.query(...)`

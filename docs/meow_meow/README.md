@@ -18,7 +18,7 @@ Meow Meow Script ("MMS") is the scripting + authoring language for cat-engine.
 | Functions, closures, `return` (Phase 4) | ✅ done |
 | `mms-functions.mms` example + test harness | ✅ done |
 | `for`/`in` + `range(n)` + `break`/`continue` (Phase 5) | ✅ done |
-| `let x = T { }` → live `ComponentId` reply channel (Phase 6) | ⏳ planned |
+| `let x = T { }` → live reply channel via `eval_with_world` | ⚠️ partial |
 | Emit context stack (Phase 6) | ⏳ planned |
 | Scripted mutation — `x.set_color(...)` etc. (Phase 7) | ⏳ planned |
 | `while` loops (Phase 8 partial) | ✅ done |
@@ -40,6 +40,7 @@ Meow Meow Script ("MMS") is the scripting + authoring language for cat-engine.
 ### Roadmap
 
 - [Development roadmap](analysis/roadmap.md) — phase checklist with design decision flags
+- [Task: reply channel, ObjectWorld, and MMQ status](../task/mms-reply-channel-objectworld-and-mmq-status.md) — current implementation status and recommended next shape
 
 ### Drafts
 

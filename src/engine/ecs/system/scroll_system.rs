@@ -2,6 +2,8 @@ use crate::engine::ecs::component::{RouterComponent, ScrollingComponent, Transfo
 use crate::engine::ecs::component::{RenderableComponent, StencilClipComponent};
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
+use crate::engine::graphics::primitives::TransformMatrix;
+use crate::utils::math;
 
 #[derive(Debug, Default)]
 pub struct ScrollingSystem;
@@ -13,6 +15,24 @@ impl ScrollingSystem {
 
     pub fn new() -> Self {
         Self
+    }
+
+    fn mat4_identity() -> TransformMatrix {
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    }
+
+    fn mat4_mul_vec4(m: TransformMatrix, v: [f32; 4]) -> [f32; 4] {
+        [
+            m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2] + m[3][0] * v[3],
+            m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2] + m[3][1] * v[3],
+            m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2] + m[3][2] * v[3],
+            m[0][3] * v[0] + m[1][3] * v[1] + m[2][3] * v[2] + m[3][3] * v[3],
+        ]
     }
 
     fn immediate_owned_track(world: &World, scroll_component: ComponentId) -> Option<ComponentId> {
@@ -71,37 +91,15 @@ impl ScrollingSystem {
                     return;
                 };
 
-                let scroll_state = {
-                    let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(scroll_component) else {
-                        return;
-                    };
-                    let prev_offset = sc.scroll_offset;
-                    let changed = sc.apply_drag(-delta_world[1]);
-                    println!(
-                        "[Scrolling] DragMove scroll={:?} track={:?} scope={:?} delta_world=({:.3},{:.3},{:.3}) offset={:.3}->{:.3} changed={} max={:.3}",
-                        scroll_component,
-                        sc.track,
-                        sc.drag_scope,
-                        delta_world[0],
-                        delta_world[1],
-                        delta_world[2],
-                        prev_offset,
-                        sc.scroll_offset,
-                        changed,
-                        sc.max_scroll(),
-                    );
-                    if !changed {
-                        return;
-                    }
-                    (
-                        sc.scroll_offset,
-                        sc.max_scroll(),
-                        sc.viewport_height,
-                        sc.content_height,
-                    )
+                let Some(scroll_state) = Self::apply_world_drag(
+                    world,
+                    emit,
+                    scroll_component,
+                    *delta_world,
+                ) else {
+                    return;
                 };
 
-                Self::sync_component(world, emit, scroll_component);
                 emit.push_event(
                     scroll_component,
                     EventSignal::Scrolling {
@@ -116,6 +114,90 @@ impl ScrollingSystem {
                 );
             },
         );
+    }
+
+    fn parent_transform_world_matrix(
+        world: &World,
+        transform_cid: ComponentId,
+    ) -> Option<TransformMatrix> {
+        let mut cur = transform_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(t) = world.get_component_by_id_as::<TransformComponent>(parent) {
+                return Some(t.transform.matrix_world);
+            }
+            cur = parent;
+        }
+        None
+    }
+
+    fn world_delta_to_track_local(
+        world: &World,
+        track_id: ComponentId,
+        delta_world: [f32; 3],
+    ) -> [f32; 3] {
+        let parent_world = Self::parent_transform_world_matrix(world, track_id)
+            .unwrap_or_else(Self::mat4_identity);
+        let inv_parent_world = math::mat4_inverse(parent_world).unwrap_or_else(Self::mat4_identity);
+        let v = Self::mat4_mul_vec4(
+            inv_parent_world,
+            [delta_world[0], delta_world[1], delta_world[2], 0.0],
+        );
+        [v[0], v[1], v[2]]
+    }
+
+    fn scroll_local_drag_delta_y(
+        world: &World,
+        scroll_component: ComponentId,
+        delta_world: [f32; 3],
+    ) -> f32 {
+        let track_id = world
+            .get_component_by_id_as::<ScrollingComponent>(scroll_component)
+            .and_then(|sc| sc.track)
+            .unwrap_or(scroll_component);
+        Self::world_delta_to_track_local(world, track_id, delta_world)[1]
+    }
+
+    fn apply_world_drag(
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        scroll_component: ComponentId,
+        delta_world: [f32; 3],
+    ) -> Option<(f32, f32, f32, f32)> {
+        let delta_local_y = Self::scroll_local_drag_delta_y(world, scroll_component, delta_world);
+
+        let scroll_state = {
+            let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(scroll_component) else {
+                return None;
+            };
+            let prev_offset = sc.scroll_offset;
+            let changed = sc.apply_drag(-delta_local_y);
+            println!(
+                "[Scrolling] DragMove scroll={:?} track={:?} scope={:?} delta_world=({:.3},{:.3},{:.3}) delta_local_y={:.3} offset={:.3}->{:.3} changed={} max={:.3}",
+                scroll_component,
+                sc.track,
+                sc.drag_scope,
+                delta_world[0],
+                delta_world[1],
+                delta_world[2],
+                delta_local_y,
+                prev_offset,
+                sc.scroll_offset,
+                changed,
+                sc.max_scroll(),
+            );
+            if !changed {
+                return None;
+            }
+            (
+                sc.scroll_offset,
+                sc.max_scroll(),
+                sc.viewport_height,
+                sc.content_height,
+            )
+        };
+
+        Self::sync_component(world, emit, scroll_component);
+        Some(scroll_state)
     }
 
     pub fn deferred_register(
@@ -411,5 +493,49 @@ mod tests {
             .get_component_by_id_as::<ScrollingComponent>(scrolling)
             .expect("scrolling state");
         assert_eq!(sc.drag_scope, Some(bg_renderable));
+    }
+
+    #[test]
+    fn world_drag_is_converted_into_scroll_local_y() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut queue = CommandQueue::new();
+        let mut systems = SystemWorld::default();
+
+        let parent = world.add_component(
+            TransformComponent::new()
+                .with_position(0.0, 0.0, 0.0)
+                .with_scale(1.0, 2.0, 1.0),
+        );
+        let scrolling = world.add_component(ScrollingComponent::new(1.0, 10.0));
+
+        let _ = world.add_child(parent, scrolling);
+
+        world.init_component_tree(parent, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let delta_local_y = ScrollingSystem::scroll_local_drag_delta_y(&world, scrolling, [0.0, 2.0, 0.0]);
+        assert!((delta_local_y - 1.0).abs() < 1e-5, "expected world delta to divide by parent Y scale");
+
+        let scroll_state = ScrollingSystem::apply_world_drag(
+            &mut world,
+            &mut queue,
+            scrolling,
+            [0.0, 2.0, 0.0],
+        )
+        .expect("scroll should move");
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let sc = world
+            .get_component_by_id_as::<ScrollingComponent>(scrolling)
+            .expect("scrolling state");
+        assert!((sc.scroll_offset - 1.0).abs() < 1e-5);
+        assert!((scroll_state.0 - 1.0).abs() < 1e-5);
+
+        let track = sc.track.expect("owned track");
+        let track_transform = world
+            .get_component_by_id_as::<TransformComponent>(track)
+            .expect("track transform");
+        assert!((track_transform.transform.translation[1] - 1.0).abs() < 1e-5);
     }
 }

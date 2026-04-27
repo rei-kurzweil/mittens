@@ -7,7 +7,8 @@
 1. Parse source into `Vec<Statement>` — `MeowMeowParser`
 2. Apply `EmitLiftTransform` — rewrites bare `ComponentExpression` statements into `emit(ce)` calls
 3. Walk statements on the evaluator thread — `eval_script()` in `evaluator.rs`
-   - `let x = T { }` → `StoredValue::ComponentExpr` in the env
+   - `let x = T { }` → `Value::ComponentExpr` in plain `eval(...)`
+   - `let x = T { }` → `Value::ComponentObject(ComponentId)` in `eval_with_world(...)`
    - `emit(ce)` / bare ident holding a CE → `EvalResponse::Intent(SpawnComponentTree { root, parent })`
 4. Main thread drains `EvalResponse::Intent` from the ring buffer and calls `command_queue.push_intent_now()`
 5. `RxIntentExecutor::execute()` handles `SpawnComponentTree` → calls `component_registry::spawn_tree()`
@@ -86,4 +87,5 @@ the reply channel is implemented, this is gated on the reply channel work.
 - **Mixed body item evaluation order**: what happens with interleaved `Call`, `Child`, and `NamedAssignment`? Currently all calls are applied before children are recursively spawned. This may need revisiting for order-sensitive components.
 - **Asset references in MMS**: `"assets/foo.gltf"` as a typed value — how does it resolve to a `ComponentId` for `GLTFComponent`? Currently passed as a raw string path.
 - **`name`/`guid` as built-ins**: should all components support `name = "..."` and `guid = "..."` as universal body items handled by the registry? Not yet standardized.
-- **Reply channel for live `ComponentId`**: `let x = T { }` currently stores a `ComponentExpression` (inert), not a live handle. The `ComponentId` assigned on the main thread is not returned to the evaluator. Needed for scripted mutation (`x.set_color(...)`).
+- **Reply payload shape**: the live path currently returns `ComponentId` only, not GUID. A
+  richer handle is the next step for mutation/query/debug work.

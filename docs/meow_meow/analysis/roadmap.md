@@ -22,8 +22,10 @@ decisions (🔷) that need a doc or a decision before implementation.
 - [ ] Emit context stack — function calls inside component bodies should emit as children,
       not world roots. Gated on Phase 6 (reply channel).
       → [emission-and-component-value-model.md](emission-and-component-value-model.md)
-- [ ] `let x = T { }` stores `ComponentExpression`, not a live `ComponentId`.
-      Gated on Phase 6.
+- [x] Narrow live reply channel exists via `eval_with_world`: `let x = T { }` can bind a
+      live `ComponentObject` in that path.
+- [ ] Default `eval` path still stores `ComponentExpression`, not a live handle.
+- [ ] Returned / re-emitted `ComponentObject` values are not fully wired yet.
 
 ---
 
@@ -106,28 +108,43 @@ decisions (🔷) that need a doc or a decision before implementation.
 
 ## Phase 6: Live `ComponentId` reply channel
 
-**The gap:** `let x = T { }` stores a `ComponentExpression` (an AST snapshot), not a
-live engine component. Scripts cannot reference spawned components after binding them.
+**Current status:** partially implemented.
+
+What exists now:
+
+- [x] Bidirectional evaluator/host round-trip using `EvalResponse::HostCall` and
+      `EvalRequest::HostCallResult`
+- [x] `HostCallKind::Spawn(MaterializedCE)`
+- [x] `HostValue::ComponentId(ComponentId)`
+- [x] `MeowMeowRunner::eval_with_world(...)` host servicing path
+- [x] `let x = T { }` upgrades to `Value::ComponentObject(ComponentId)` in that live path
+
+Remaining gap:
+
+- only spawn is supported
+- the handle only carries `ComponentId`, not GUID
+- emit context stack is still missing
+- `ObjectWorld` is not yet the actual evaluator environment
+- query/method HostCalls are still missing
 
 **What's needed:**
-- [ ] Reply channel from main thread → evaluator thread (currently one-directional)
-- [ ] `SpawnComponentTree` response carries the assigned `ComponentId`
-- [ ] `Value::ComponentObject(ComponentId)` (replaces `ComponentExpr` for live handles)
+- [x] Reply channel from main thread → evaluator thread
+- [x] `SpawnComponentTree` response carries the assigned `ComponentId`
+- [x] `Value::ComponentObject(ComponentId)` for the live path
+- [ ] Upgrade the live handle to carry both `ComponentId` and GUID
 - [ ] Emit context stack — body-scoped calls emit as children of the enclosing component
 
 **Checklist:**
-- [ ] Design the reply channel (second ring buffer, or extend `EvalResponse`)
-- [ ] `SpawnComponentTree` executor echoes the root `ComponentId` back
-- [ ] Evaluator receives the ID and upgrades the stored value → `ComponentObject`
+- [x] Design the reply channel (implemented via `HostCall` / `HostCallResult`)
+- [x] Host servicing path echoes the root `ComponentId` back
+- [x] Evaluator receives the ID and upgrades the stored value → `ComponentObject`
+- [ ] Change the reply payload to a handle carrying both `ComponentId` and GUID
 - [ ] Emit context stack implemented in evaluator
 
-🔷 **Design decision: reply channel shape**
-`SpawnComponentTree` currently fires-and-forgets. To get the `ComponentId` back:
-- Option A: add `EvalResponse::Spawned { id: ComponentId }` — evaluator polls for it
-- Option B: a second dedicated reply ring buffer alongside the response channel
-- Option C: synchronous — evaluator blocks until the main thread processes the intent
-  (breaks the async model but simplest)
-→ [object-world.md](object-world.md) has partial discussion; needs a dedicated decision doc
+🔷 **Design decision: handle payload shape**
+The reply channel exists, but the payload should grow from `ComponentId` to a live handle
+carrying both `ComponentId` and GUID.
+→ [../../task/mms-reply-channel-objectworld-and-mmq-status.md](../../task/mms-reply-channel-objectworld-and-mmq-status.md)
 
 ---
 

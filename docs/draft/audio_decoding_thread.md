@@ -30,8 +30,9 @@ Audio Rendering Thread (fundsp / AudioAssets)
 - **Long Samples (BGM):** Caches the first ~5 seconds. Subsequent chunks are pulled from an `rtrb::Consumer<f32>` fed by the Decoding Thread.
 
 ### 1.2 Audio Decoding Thread
-- **Job:** Format detection, decompression, and **normalization**.
-- **Normalization:** All samples are resampled and mixed to match the engine's output (e.g., 48kHz Stereo) before being sent to the RT thread.
+- **Job:** Format detection, decompression, and output-format conversion.
+- **Output-format conversion:** All decoded samples are resampled and remixed to match the engine's playback format (e.g., 48kHz stereo) before being sent to the RT thread.
+- **Not responsible for volume normalization:** The decoding thread should not change asset loudness. Gain staging, per-voice gain, and any normalization policy belong on the audio rendering thread / DSP side, where they can be applied consistently alongside synthesized sources.
 
 ---
 

@@ -1,6 +1,15 @@
 # Component query selectors
 
-This document proposes a synchronous, main-thread query API on `Universe` for finding components inside a subtree using **CSS-like selectors**.
+This document proposes a synchronous, main-thread query API on `Universe` for finding
+components inside a subtree using **CSS-like selectors**.
+
+Status note, 2026-04-26:
+
+- the repo has a WIP CSS parser in `src/query/css/parser.rs`
+- that parser is not yet integrated into `World` / `Universe`
+- the actual live query behavior in use today is still much narrower (`[name='...']`)
+- the immediate implementation target should be an **MMQ-first MVP** (`T`, `T#name`)
+  before full CSS-style selector integration
 
 The motivating use cases are things like:
 

@@ -16,7 +16,7 @@ I {
             Pointer {}
         }
 
-        T.position(0.0, -1.0, -3.0).scale(1.4, 1.0, 1.0) {
+        T.position(1.5, -1.0, -3.0).scale(1.4, 1.0, 1.0) {
             OV {
                 R.square() {
                     C.rgba(0.98, 0.98, 0.98, 1.0)
@@ -61,7 +61,7 @@ T.position(-2.0, 4.0, 0.4).scale(0.1, 0.1, 0.1) {
                 background_color = [0.18, 0.78, 0.22, 0.95]
             }
             Text {
-                "DIY panel header (4w x 8h world units)"
+                "clipping items in the list\n(like a blizzard)"
                 C.rgba(0.0, 0.0, 0.0, 1.0)
             }
         }
@@ -86,7 +86,7 @@ T.position(-2.0, 4.0, 0.4).scale(0.1, 0.1, 0.1) {
                 background_color = [0.85, 0.85, 0.85, 1.0]
             }
             Text {
-                "rows are routed into the yellow scroll container"
+                "using stencil buffer cause we can't use glScissor"
                 C.rgba(0, 0, 0, 1.0)
             }
         }
