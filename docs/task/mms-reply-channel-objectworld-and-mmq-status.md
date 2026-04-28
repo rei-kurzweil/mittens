@@ -80,6 +80,7 @@ Recommended shape:
 pub struct ComponentHandle {
     pub id: crate::engine::ecs::ComponentId,
     pub guid: uuid::Uuid,
+    pub component_type: String,
 }
 
 pub enum Value {
@@ -103,6 +104,8 @@ Why this shape:
 - `id` stays the fast runtime lookup key for direct world operations
 - `guid` is immediately available for logging, debugging, persistence bridges, and
   future re-resolution when a stale `id` must be validated or repaired
+- `component_type` gives MMS enough runtime type information to dispatch methods on the
+  handle without first asking the host "what kind of node is this?"
 - it avoids bolting “also fetch guid” onto every future query call separately
 
 What should not happen:
@@ -113,6 +116,16 @@ What should not happen:
 
 That would throw away the main benefit of the reply channel, which is to get the actual
 runtime handle once and reuse it cheaply.
+
+`component_type` does not need to be a Rust type id. For the current MMS needs, the
+canonical MMS/registry component name is enough (`"T"`, `"Transform"`, `"R"`, etc., as
+long as one canonical spelling is chosen for dispatch).
+
+This is a runtime typing requirement even if the static type system stays conservative:
+
+- static type in MMS can remain `ComponentObject` for now
+- future static refinement can become `ComponentObject<T>`
+- runtime method dispatch should still have access to the concrete root node type now
 
 ---
 
@@ -174,7 +187,42 @@ with the actual live value model.
 This release step is not implemented today because the `ComponentObject` emit path is not
 implemented yet.
 
-### 5.3 Query
+### 5.3 Evaluate first, attach second
+
+The missing rule that should be made explicit is:
+
+> evaluating a component expression in the live path always produces a root
+> `ComponentHandle`; emission only decides whether that already-created root is attached
+> into the world topology now, later, or never.
+
+Concretely:
+
+1. `let hero = T { R { C {} } }`
+   - spawn/evaluate returns one live root handle for `T`
+   - `hero` stores that root handle
+   - `R` and `C` are live engine nodes too, but they are not separately bound into the
+     MMS env
+2. bare `T { ... }` in statement position
+   - spawn/evaluate still returns a root handle
+   - the evaluator immediately emits/attaches that handle
+   - if no variable captures the value, the handle is transient and can be discarded once
+     attach succeeds
+3. `return T { ... }`, `[T { ... }]`, `f(T { ... })`
+   - same root-handle creation rule
+   - no auto-attach unless the resulting `ComponentObject` later reaches emit position
+
+This avoids an awkward split where "captured component expressions become objects" but
+"emitted component expressions are topology only." There should be one runtime value model:
+
+- evaluation creates a live root handle
+- emission attaches that handle
+- subtree access to evaluated children happens through query/navigation from the root
+
+The host therefore does not need to return a whole handle tree for `T { R { C {} } }`.
+Returning the root handle is enough because the child handles are recoverable through
+subtree query once query HostCalls exist.
+
+### 5.4 Query
 
 For world or subtree queries, the host-call shape should return full handles, not just ids:
 
@@ -199,7 +247,7 @@ Recommended v1 behavior:
 - single result: `HostValue::ComponentHandle(...)` or `Null`
 - multi result: `HostValue::ComponentHandles(...)`
 
-### 5.4 Why not expose `ObjectWorld` to the host
+### 5.5 Why not expose `ObjectWorld` to the host
 
 `ObjectWorld` should remain the evaluator-side runtime container only.
 
@@ -316,14 +364,20 @@ This is enough to unblock:
 
 ## 9. Recommended implementation order
 
-1. Introduce `ComponentHandle { id, guid }` and change the reply path to return it.
-2. Update `Value::ComponentObject` and `ObjectWorld.pending` to use `ComponentHandle`.
-3. Implement MMQ parser for `T` / `T#name`.
-4. Add a `World` adapter for `QueryTreeAdapter`.
-5. Route `World::find_component` / `find_all_components` through MMQ first.
-6. Add query HostCalls for MMS world/subtree lookup.
-7. Add `ComponentObject` emit/release behavior.
-8. Revisit CSS parser/evaluator integration after MMQ v1 is working end to end.
+1. Freeze the lifecycle rule in docs: evaluation returns a root `ComponentHandle`; emit
+   attaches/releases it.
+2. Introduce `ComponentHandle { id, guid, component_type }` and change the reply path to
+   return it.
+3. Update `Value::ComponentObject` and `ObjectWorld.pending` to use `ComponentHandle`.
+4. Add `ComponentObject` emit/release behavior for already-spawned handles.
+5. Implement MMQ parser for `T` / `T#name`.
+6. Add a `World` adapter for `QueryTreeAdapter`.
+7. Route `World::find_component` / `find_all_components` through MMQ first.
+8. Add query HostCalls for MMS world/subtree lookup.
+9. Add method-call dispatch keyed by `handle.component_type`.
+10. Revisit static typing later (`ComponentObject<T>`), after runtime handle typing and
+   MMQ v1 are working end to end.
+11. Revisit CSS parser/evaluator integration after MMQ v1 is working end to end.
 
 This gives an MVP that is coherent, testable, and aligned with immediate MMS needs,
 without pretending the CSS parser alone is already the query system.

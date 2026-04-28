@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use cat_engine::engine::{self, ecs::component::{ColorComponent, TextBackgroundComponent, TextShadowComponent, TransparentCutoutComponent}};
+use cat_engine::engine::{self, ecs::component::{ColorComponent, TransparentCutoutComponent}};
 
 /// Standard MMS demo scene rig: dark-blue background and navigable camera.
 ///
@@ -238,17 +238,6 @@ pub fn spawn_desktop_camera_controls_hint(
         .world
         .add_component(ColorComponent::rgba(0.0, 0.0, 0.0, 1.0));
     let _ = universe.attach(text, color);
-
-    let text_background = universe.world.add_component(
-        TextBackgroundComponent::new()
-            .with_padding_top(0.75)
-            .with_padding_right(3.75),
-    );
-    let bg_color = universe
-        .world
-        .add_component(ColorComponent::rgba(0.9, 0.9, 0.9, 0.8));
-    let _ = universe.attach(text, text_background);
-    let _ = universe.attach(text_background, bg_color);
 
     // TextSystem looks for these as immediate children of the TextComponent root.
     let emissive = universe.world.add_component(EmissiveComponent::on());

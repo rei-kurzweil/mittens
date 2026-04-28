@@ -5,6 +5,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::IntentValue;
+use crate::engine::ecs::SignalKind;
 use crate::meow_meow::ast::{
     BinOpKind, CallExpression, ComponentExpression,
     Expression, Ident, IfStatement, ImportItem, Statement, UnaryOpKind,
@@ -52,6 +53,13 @@ pub enum EvalResponse {
 pub enum HostCallKind {
     /// Spawn a component tree and return its root `ComponentId`.
     Spawn(MaterializedCE),
+    /// Register an MMS function as a scoped signal handler.
+    /// The host installs the closure and replies with `HostValue::Null`.
+    RegisterHandler {
+        scope: ComponentId,
+        signal_kind: SignalKind,
+        handler: Value,
+    },
 }
 
 /// Values the host can return in response to a `HostCall`.
@@ -549,7 +557,7 @@ fn push_component_emit(val: Value, ctx: &mut EvalContext<'_>) {
 }
 
 fn is_builtin_fn(name: &str) -> bool {
-    matches!(name, "print" | "assert" | "range" | "emit")
+    matches!(name, "print" | "assert" | "range" | "emit" | "on")
 }
 
 fn eval_if(
@@ -707,6 +715,29 @@ fn eval_call(
             .map(|i| Value::Number(start + i as f64))
             .collect();
         return Ok(Value::Array(arr));
+    }
+
+    // Built-in: on(component_object, "SignalKind", fn(event) { ... })
+    if call.callee.0 == "on" {
+        let args: Vec<Value> = call.args.iter()
+            .map(|a| eval_expr(a, env, ctx))
+            .collect::<Result<_, _>>()?;
+        let scope = match args.get(0) {
+            Some(Value::ComponentObject(id)) => *id,
+            other => return Err(format!("on(): arg 0 must be a ComponentObject, got {:?}", other)),
+        };
+        let signal_kind = match args.get(1) {
+            Some(Value::String(s)) => parse_signal_kind(s)?,
+            other => return Err(format!("on(): arg 1 must be a signal kind string, got {:?}", other)),
+        };
+        let handler = match args.get(2) {
+            Some(f @ Value::Function { .. }) => f.clone(),
+            other => return Err(format!("on(): arg 2 must be a function, got {:?}", other)),
+        };
+        if let Some(ch) = ctx.channels.as_mut() {
+            ch.call(HostCallKind::RegisterHandler { scope, signal_kind, handler });
+        }
+        return Ok(Value::Null);
     }
 
     let callee_val = match env.get(&call.callee.0) {
@@ -910,6 +941,49 @@ fn num_cmp(l: Value, r: Value, f: impl Fn(f64, f64) -> bool) -> Result<Value, St
         (Value::Number(a), Value::Number(b)) => Ok(Value::Bool(f(a, b))),
         (l, r) => Err(format!("type error: cannot compare {:?} and {:?}", l, r)),
     }
+}
+
+fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
+    match s {
+        "Click"            => Ok(SignalKind::Click),
+        "DragStart"        => Ok(SignalKind::DragStart),
+        "DragMove"         => Ok(SignalKind::DragMove),
+        "DragEnd"          => Ok(SignalKind::DragEnd),
+        "RayIntersected"   => Ok(SignalKind::RayIntersected),
+        "ParentChanged"    => Ok(SignalKind::ParentChanged),
+        "CollisionStarted" => Ok(SignalKind::CollisionStarted),
+        "CollisionEnded"   => Ok(SignalKind::CollisionEnded),
+        "Scrolling"        => Ok(SignalKind::Scrolling),
+        other => Err(format!("unknown signal kind: '{}'", other)),
+    }
+}
+
+/// Evaluate an MMS `Value::Function` with the given positional args.
+///
+/// Runs inline on the calling thread (no evaluator channel round-trips).
+/// `channels` is `None`, so Spawn / RegisterHandler HostCalls inside the
+/// body are silently skipped. Suitable for signal handler invocation.
+pub(crate) fn eval_mms_fn(fn_val: &Value, args: Vec<Value>) -> Result<Value, String> {
+    let Value::Function { params, body, captured_env } = fn_val else {
+        return Err(format!("eval_mms_fn: expected Function, got {:?}", fn_val));
+    };
+    let mut call_env = captured_env.clone();
+    for (param, arg) in params.iter().zip(args) {
+        call_env.insert(param.clone(), arg);
+    }
+    let mut emits: Vec<IntentValue> = Vec::new();
+    let mut ctx = EvalContext {
+        emits: &mut emits,
+        source_path: None,
+        channels: None,
+        ce_builder: None,
+    };
+    match eval_block_stmts(&body.statements, &mut call_env, &mut ctx)? {
+        StmtEffect::Return(val) => Ok(val),
+        _ => Ok(Value::Null),
+    }
+    // emits collected above are dropped; method dispatch via emit will be wired
+    // once HostCallKind::MethodCall exists (task doc §9)
 }
 
 /// Evaluate a source file as a module (sandboxed — emits go to `sequence`, not the engine).

@@ -1,9 +1,10 @@
 use std::time::{Duration, Instant};
 
-use crate::engine::ecs::{IntentValue, SignalEmitter, World};
+use crate::engine::ecs::{IntentValue, RxWorld, SignalEmitter, World};
 use crate::meow_meow::evaluator::{
-    EvalRequest, EvalResponse, HostCallKind, HostValue, MeowMeowEvaluator,
+    eval_mms_fn, EvalRequest, EvalResponse, HostCallKind, HostValue, MeowMeowEvaluator,
 };
+use crate::meow_meow::object::Value;
 
 /// The result of evaluating an MMS script: collected intents and any errors.
 #[derive(Debug, Default)]
@@ -55,13 +56,15 @@ impl MeowMeowRunner {
 
     /// Evaluate `source` with live world access.
     ///
-    /// When the evaluator emits a `HostCall::Spawn`, this method immediately spawns
-    /// the component tree into `world` (using `emit` for intent dispatch) and sends
-    /// back the root `ComponentId`. This is the live-reply-channel path — `let x = T {}`
-    /// binds a `ComponentObject(id)` instead of a dead `ComponentExpr` snapshot.
+    /// Handles two HostCall kinds during evaluation:
+    /// - `Spawn`: spawns the component tree into `world` and returns the root `ComponentId`.
+    ///   `let x = T {}` binds a `ComponentObject(id)` instead of a dead `ComponentExpr`.
+    /// - `RegisterHandler`: installs an MMS function as a scoped signal handler in `rx`.
+    ///   `on(obj, "Click", fn(e) { ... })` registers without blocking the evaluator.
     pub fn eval_with_world(
         source: &str,
         world: &mut World,
+        rx: &mut RxWorld,
         emit: &mut dyn SignalEmitter,
     ) -> EvalOutput {
         let mut handle = MeowMeowEvaluator::spawn(64);
@@ -98,6 +101,18 @@ impl MeowMeowRunner {
                                     HostValue::Null
                                 }
                             }
+                        }
+                        HostCallKind::RegisterHandler { scope, signal_kind, handler } => {
+                            rx.add_handler_closure(
+                                signal_kind,
+                                scope,
+                                move |_world, _emit, _signal| {
+                                    if let Err(e) = eval_mms_fn(&handler, vec![Value::Null]) {
+                                        eprintln!("[mms] handler error: {e}");
+                                    }
+                                },
+                            );
+                            HostValue::Null
                         }
                     };
                     let _ = handle.requests.push(EvalRequest::HostCallResult { id, value: reply });

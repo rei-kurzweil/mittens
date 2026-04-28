@@ -292,7 +292,7 @@ fn spawn_label(
     text: &str,
 ) {
     use engine::ecs::component::{
-        ColorComponent, EmissiveComponent, TextBackgroundComponent,
+        ColorComponent, EmissiveComponent,
         TextComponent, TextureFilteringComponent, TransformComponent, TransparentCutoutComponent,
     };
 
@@ -310,14 +310,6 @@ fn spawn_label(
         .world
         .add_component(TextureFilteringComponent::nearest_magnification());
     let cutout = universe.world.add_component(TransparentCutoutComponent::new());
-    let bg = universe.world.add_component(
-        TextBackgroundComponent::new()
-            .with_padding_top(0.5)
-            .with_padding_right(1.0),
-    );
-    let bg_color = universe
-        .world
-        .add_component(ColorComponent::rgba(0.92, 0.92, 0.96, 0.88));
 
     let _ = universe.attach(parent, root);
     let _ = universe.attach(root, txt);
@@ -325,8 +317,6 @@ fn spawn_label(
     let _ = universe.attach(txt, emissive);
     let _ = universe.attach(txt, filtering);
     let _ = universe.attach(txt, cutout);
-    let _ = universe.attach(txt, bg);
-    let _ = universe.attach(bg, bg_color);
 }
 
 // ---------------------------------------------------------------------------
