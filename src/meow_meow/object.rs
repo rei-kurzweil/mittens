@@ -45,9 +45,10 @@ pub enum Value {
     Array(Vec<Value>),
 
     /// A live engine component (already spawned). Holds the engine-side
-    /// `ComponentId`. Produced when `let x = CE` is evaluated with a live
-    /// reply channel (`eval_with_world`).
-    ComponentObject(ComponentId),
+    /// `ComponentId` and the MMS component type name (e.g. `"Anim"`, `"T"`).
+    /// Produced when `let x = CE` is evaluated with a live reply channel
+    /// (`eval_with_world`). The `component_type` drives method dispatch.
+    ComponentObject { id: ComponentId, component_type: String },
 
     /// Heap-allocated MMS object (map / record / instance).
     Object(ObjectId),

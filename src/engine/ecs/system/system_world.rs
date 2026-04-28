@@ -1227,6 +1227,14 @@ impl SystemWorld {
         self.animation.register_animation(world, component);
     }
 
+    pub fn set_animation_state(
+        &mut self,
+        component: ComponentId,
+        state: crate::engine::ecs::component::AnimationState,
+    ) {
+        self.animation.set_animation_state(component, state);
+    }
+
     pub fn register_keyframe(
         &mut self,
         world: &mut World,

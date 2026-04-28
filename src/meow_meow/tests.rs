@@ -78,7 +78,8 @@ fn parse_call_in_body() {
     let c = as_component!(&prog[0]);
     assert_eq!(c.body.statements.len(), 1);
     let Statement::Expression(Expression::Call(call)) = &c.body.statements[0] else { panic!("expected Call") };
-    assert_eq!(call.callee.0, "with_occlusion_and_lighting");
+    let Expression::Identifier(callee_id) = call.callee.as_ref() else { panic!("expected Identifier callee") };
+    assert_eq!(callee_id.0, "with_occlusion_and_lighting");
     assert!(call.args.is_empty());
 }
 
@@ -310,7 +311,8 @@ fn parse_for_in_range_call() {
     let Statement::ForIn { binding, iterable, .. } = &prog[0] else { panic!() };
     assert_eq!(binding.0, "i");
     let Expression::Call(call) = iterable else { panic!() };
-    assert_eq!(call.callee.0, "range");
+    let Expression::Identifier(callee_id) = call.callee.as_ref() else { panic!("expected Identifier callee") };
+    assert_eq!(callee_id.0, "range");
     assert_eq!(call.args.len(), 1);
 }
 

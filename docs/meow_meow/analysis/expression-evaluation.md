@@ -83,6 +83,8 @@ operator).
 
 ## New AST nodes needed
 
+The core operator AST shape is already in place:
+
 ```rust
 Expression::BinaryOp {
     op: BinaryOpKind,
@@ -99,9 +101,26 @@ pub enum BinaryOpKind {
     Add, Sub, Mul, Div, Mod,
     Eq, NotEq, Lt, Gt, LtEq, GtEq,
     And, Or,
+    Pipe,
+    Query,
+    Dot,
 }
 
 pub enum UnaryOpKind { Neg, Not }
+```
+
+In particular, method-style calls do not require a dedicated `Expression::MethodCall`
+node anymore. `obj.method(args)` is represented as:
+
+```rust
+Expression::Call(CallExpression {
+    callee: Box::new(Expression::BinaryOp {
+        op: BinOpKind::Dot,
+        lhs: Box::new(Expression::Identifier(Ident("obj".into()))),
+        rhs: Box::new(Expression::Identifier(Ident("method".into()))),
+    }),
+    args,
+})
 ```
 
 ---

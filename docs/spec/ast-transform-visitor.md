@@ -93,7 +93,7 @@ impl AstVisitor for EmitLiftTransform {
                 Expression::Null,
             );
             *stmt = Statement::Expression(Expression::Call(CallExpression {
-                callee: Ident("emit".into()),
+                callee: Box::new(Expression::Identifier(Ident("emit".into()))),
                 args: vec![inner],
             }));
         }
@@ -111,7 +111,7 @@ impl AstVisitor for QueryDesugarTransform {
             let sel  = std::mem::replace(lhs.as_mut(), Expression::Null);
             let handler = std::mem::replace(rhs.as_mut(), Expression::Null);
             *expr = Expression::Call(CallExpression {
-                callee: Ident(callee.into()),
+                callee: Box::new(Expression::Identifier(Ident(callee.into()))),
                 args: vec![sel, handler],
             });
         }

@@ -58,7 +58,10 @@ this into an explicit call to the `emit` built-in:
 
 ```
 Statement::Expression(Expression::Component(ce))
-    →  Statement::Expression(Expression::Call { callee: Ident("emit"), args: [Component(ce)] })
+    →  Statement::Expression(Expression::Call(CallExpression {
+           callee: Box::new(Expression::Identifier(Ident("emit".into()))),
+           args: vec![Expression::Component(ce)],
+       }))
 ```
 
 This is `EmitLiftTransform`. The result is a normal call expression — no new `Statement`

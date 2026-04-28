@@ -118,6 +118,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterPointer { component_ids }
             | IntentValue::RemoveRaycast { component_ids }
             | IntentValue::RegisterAnimation { component_ids }
+            | IntentValue::SetAnimationState { component_ids, .. }
             | IntentValue::RegisterKeyframe { component_ids }
             | IntentValue::RegisterAudioOutput { component_ids }
             | IntentValue::AudioGraphDirtyImmediate { component_ids }
@@ -207,6 +208,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterPointer { component_ids }
             | IntentValue::RemoveRaycast { component_ids }
             | IntentValue::RegisterAnimation { component_ids }
+            | IntentValue::SetAnimationState { component_ids, .. }
             | IntentValue::RegisterKeyframe { component_ids }
             | IntentValue::RegisterAudioOutput { component_ids }
             | IntentValue::AudioGraphDirtyImmediate { component_ids }

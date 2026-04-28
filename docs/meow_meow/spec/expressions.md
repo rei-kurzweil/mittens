@@ -115,30 +115,55 @@ Status markers: ✅ implemented · 🔧 planned (phase noted) · ❓ open questi
 |------|------|--------------|
 | `Expression::Call(CallExpression)` ✅ | `foo(a, b)` | return value of the called function |
 
-`CallExpression` fields: `callee: Ident`, `args: Vec<Expression>`.
+`CallExpression` fields:
+
+```rust
+pub struct CallExpression {
+    pub callee: Box<Expression>,
+    pub args: Vec<Expression>,
+}
+```
+
+For a plain function call, `callee` is typically:
+
+```rust
+Expression::Identifier(Ident("foo".into()))
+```
+
+For a method-style call on a value, `callee` is a normal expression rooted in the dot
+operator:
+
+```rust
+Expression::BinaryOp {
+    op: BinOpKind::Dot,
+    lhs: Box::new(Expression::Identifier(Ident("obj".into()))),
+    rhs: Box::new(Expression::Identifier(Ident("method".into()))),
+}
+```
+
+So `obj.method(a, b)` is represented as a regular `CallExpression`, not as a separate
+`Expression::MethodCall` AST node.
 
 `emit(ce)` is a special-cased builtin. All other callees are looked up in the env as
 `Value::Function` and called with the Pratt-evaluated args. Built-in functions (`range`)
 are also dispatched here.
 
-**Method call on a value** 🔧 P7 — `x.method(args)` where `x` is a `Value::ComponentObject`.
-This is distinct from `ComponentBodyItem::Call` (which is constructor-time) and from
-`ConstructorCall` (which is the `.method(args)` immediately after a component type name).
-Needs a new AST node:
+**Method-style call on a value** 🔧 P7 — `x.method(args)` where `x` is a
+`Value::ComponentObject`.
 
-```rust
-// Phase 7
-Expression::MethodCall {
-    receiver: Box<Expression>,
-    method: Ident,
-    args: Vec<Expression>,
-}
-```
+This is distinct from:
 
-> **Note:** `foo.bar(args)` currently parses as a component expression `foo` with
-> constructor `bar` — the parser can't yet disambiguate value method calls from component
-> constructor calls. Phase 7 needs to resolve this, likely by checking whether `foo` is
-> known to be a component type name or a variable name.
+- constructor chaining on a component type name (`T.position(...)`)
+- body-time builder calls inside a component expression
+
+But it does **not** need a separate AST node anymore. The parser already distinguishes:
+
+- uppercase-leading `Type.method(args)[.method2(...)]` → `Expression::Component(...)`
+- lowercase/value-leading `obj.method(args)` → `Expression::Call(...)` whose callee is a
+  dot-expression
+
+What is still deferred is the evaluator/runtime dispatch for dot-callee calls on live
+values, not the surface syntax representation.
 
 ### 2.4 Component expression
 
@@ -188,6 +213,8 @@ pub enum BinaryOpKind {
     Pipe, // ✅
     // query/dispatch operator — `"selector" -> handler` or `comp_obj -> "selector" -> handler`
     Query, // ✅ — always rewritten by QueryDesugarTransform before eval
+    // dot operator — `obj.method` as the callee part of a CallExpression
+    Dot, // ✅
 }
 ```
 
@@ -195,6 +222,9 @@ pub enum BinaryOpKind {
 `query()`/`query_all()` calls before the evaluator runs. `Pipe` nodes (from `|>`) are
 evaluated directly as function application — `f(expr)`. See [script-runner.md](script-runner.md)
 for the pipeline and [mms-query.md](../draft/mms-query.md) for the rewrite rules.
+
+`Dot` nodes are regular expression structure. When followed by `(...)`, they appear as the
+callee of a normal `Expression::Call`. They are not rewritten into a special method-call AST.
 
 ### 2.7 Unary operator expression
 

@@ -158,9 +158,10 @@ Depends on Phase 6 (live `ComponentId`).
 - [ ] A registry of per-component-type mutation methods (parallel to the constructor registry)
 
 **Checklist:**
-- [ ] Parse `expr.method(args)` as `Expression::MethodCall` (new AST node, distinct from
-      `ComponentBodyItem::Call` which is constructor-time)
-- [ ] Evaluate `MethodCall` on `Value::ComponentObject` → emit the appropriate intent
+- [x] Parse `expr.method(args)` as a normal `Expression::Call`, where
+      `CallExpression.callee` is a dot-expression (`BinaryOpKind::Dot`)
+- [ ] Evaluate dot-callee call dispatch on `Value::ComponentObject` → emit the
+      appropriate intent
 - [ ] Tests: spawn, mutate, verify intent emitted
 
 🔷 **Design decision: mutation method registry vs intent literals**
@@ -252,7 +253,7 @@ Address them as needed when authoring real scenes hits the wall.
 | Math builtins (`sin`, `cos`, `sqrt`, `abs`, `floor`) | High | Required for any geometry / animation math. Blocked on native binding mechanism. |
 | Map / object literals `{ key: val }` | Medium | No map type in AST or evaluator. Needed for structured data. |
 | `while` loop | Low | Reassignment is done; only the loop construct is missing. Can loop with `for i in range(n)`. |
-| Method call syntax `foo.bar(args)` on values | Low | `CallExpression.callee` is always a bare `Ident`. Needed for Phase 7 mutation API. |
+| Method call dispatch `foo.bar(args)` on values | Low | Parsing shape exists now via `CallExpression { callee: Box<Expression> }`; evaluator-side dispatch on dot-callee calls is still needed for Phase 7 mutation/query API. |
 | String interpolation | Low | String concat with `+` works; no `f"..."` or `\{expr\}` syntax. |
 | `else if` / match expression | Low | Multi-way branching requires nesting if/else. |
 

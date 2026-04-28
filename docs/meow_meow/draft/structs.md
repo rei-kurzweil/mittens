@@ -114,7 +114,8 @@ let c = Color { r: 1.0, g: 0.0, b: 0.5, a: 1.0 }
 let v = Vec3(1.0, 2.0, 0.0)
 ```
 
-**Parser:** `Ident (` is already parsed as `CallExpression { callee: Ident, args }`. The
+**Parser:** `Ident (` is already parsed as `CallExpression { callee: Box<Expression>, args }`,
+typically with `callee = Expression::Identifier(...)`. The
 evaluator looks up `Vec3` in env; if it resolves to `Value::StructDef`, constructs a value.
 
 **Pros:**

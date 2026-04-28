@@ -349,41 +349,57 @@ impl MeowMeowParser {
     /// Parse an expression that starts with an identifier.
     ///
     /// Disambiguates:
-    /// - `Ident '.' Ident '(' args ')' ('{' body)?` → component expression with head call
-    /// - `Ident '(' args ')'`                        → free call expression
-    /// - `Ident '{' body`                            → component expression, no head call
-    /// - `Ident`                                     → bare identifier
+    /// - Uppercase `Type.method(args)[.method2(args2)...] [{body}]` → ComponentExpression
+    /// - Lowercase `obj.method(args)`                               → Call with Dot callee
+    /// - `ident(args)`                                              → free CallExpression
+    /// - `UpperType { body }`                                       → ComponentExpression, no ctor
+    /// - `ident`                                                    → bare Identifier
     fn parse_ident_leading_expression(&mut self) -> Result<Expression, ParseError> {
         let ident = self.expect_ident()?;
+        let is_component_type = ident.0.chars().next().map(|c| c.is_uppercase()).unwrap_or(false);
 
-        // `Type.method(args)[.method2(args2)...]` → component expression with constructor(s).
         if self.try_consume(&TokenKind::Dot) {
             let method = self.expect_ident()?;
             self.consume(&TokenKind::LParen)?;
             let args = self.parse_call_args()?;
-            let mut constructors = vec![ConstructorCall { method, args }];
-            while self.try_consume(&TokenKind::Dot) {
-                let chained = self.expect_ident()?;
-                self.consume(&TokenKind::LParen)?;
-                let chained_args = self.parse_call_args()?;
-                constructors.push(ConstructorCall { method: chained, args: chained_args });
-            }
-            let body = if matches!(self.peek_kind(), TokenKind::LBrace) {
-                self.parse_block_statement()?
+
+            if is_component_type {
+                // `Type.method(args)[.chain(args)...] [{body}]` → ComponentExpression
+                let mut constructors = vec![ConstructorCall { method, args }];
+                while self.try_consume(&TokenKind::Dot) {
+                    let chained = self.expect_ident()?;
+                    self.consume(&TokenKind::LParen)?;
+                    let chained_args = self.parse_call_args()?;
+                    constructors.push(ConstructorCall { method: chained, args: chained_args });
+                }
+                let body = if matches!(self.peek_kind(), TokenKind::LBrace) {
+                    self.parse_block_statement()?
+                } else {
+                    BlockStatement { statements: vec![] }
+                };
+                return Ok(Expression::Component(ComponentExpression {
+                    component_type: ident,
+                    constructors,
+                    body,
+                }));
             } else {
-                BlockStatement { statements: vec![] }
-            };
-            return Ok(Expression::Component(ComponentExpression {
-                component_type: ident,
-                constructors,
-                body,
-            }));
+                // `obj.method(args)` → Call { callee: BinaryOp(Dot, obj, method) }
+                let callee = Box::new(Expression::BinaryOp {
+                    op: BinOpKind::Dot,
+                    lhs: Box::new(Expression::Identifier(ident)),
+                    rhs: Box::new(Expression::Identifier(method)),
+                });
+                return Ok(Expression::Call(CallExpression { callee, args }));
+            }
         }
 
         // `ident(args)` → free call expression
         if self.try_consume(&TokenKind::LParen) {
             let args = self.parse_call_args()?;
-            return Ok(Expression::Call(CallExpression { callee: ident, args }));
+            return Ok(Expression::Call(CallExpression {
+                callee: Box::new(Expression::Identifier(ident)),
+                args,
+            }));
         }
 
         // `ident { body }` → component expression, no constructor.

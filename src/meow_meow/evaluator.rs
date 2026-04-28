@@ -3,12 +3,14 @@ use std::thread::{self, JoinHandle};
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
+use crate::engine::ecs::component::AnimationState;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::IntentValue;
+use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::SignalKind;
 use crate::meow_meow::ast::{
     BinOpKind, CallExpression, ComponentExpression,
-    Expression, Ident, IfStatement, ImportItem, Statement, UnaryOpKind,
+    Expression, IfStatement, ImportItem, Statement, UnaryOpKind,
 };
 use crate::meow_meow::object::{MaterializedCE, Value};
 use crate::meow_meow::parser::{MeowMeowParser, ParseError};
@@ -363,8 +365,9 @@ fn eval_stmt(
             // spawn it immediately and bind a ComponentObject instead of the dead snapshot.
             let val = match (val, ctx.channels.as_mut()) {
                 (Value::ComponentExpr(ce), Some(ch)) => {
+                    let component_type = ce.component_type.clone();
                     match ch.call(HostCallKind::Spawn(*ce.clone())) {
-                        Some(HostValue::ComponentId(id)) => Value::ComponentObject(id),
+                        Some(HostValue::ComponentId(id)) => Value::ComponentObject { id, component_type },
                         _ => Value::ComponentExpr(ce),
                     }
                 }
@@ -511,7 +514,7 @@ fn eval_expr_stmt(
 ) -> Result<(), String> {
     // Special case: emit(expr) — produced by EmitLiftTransform or written explicitly.
     if let Expression::Call(call) = expr {
-        if call.callee == Ident("emit".into()) {
+        if matches!(call.callee.as_ref(), Expression::Identifier(id) if id.0 == "emit") {
             if let Some(arg) = call.args.first() {
                 let val = eval_expr(arg, env, ctx)?;
                 push_component_emit(val, ctx);
@@ -519,17 +522,19 @@ fn eval_expr_stmt(
             return Ok(());
         }
 
-        // Builder call interception: inside a CE body, calls to names not in env
+        // Builder call interception: inside a CE body, plain calls to names not in env
         // and not built-ins are captured as builder calls rather than erroring.
-        if ctx.ce_builder.is_some()
-            && !env.contains_key(&call.callee.0)
-            && !is_builtin_fn(&call.callee.0)
-        {
-            let args: Vec<Value> = call.args.iter()
-                .map(|a| eval_expr(a, env, ctx))
-                .collect::<Result<_, _>>()?;
-            ctx.ce_builder.as_mut().unwrap().calls.push((call.callee.0.clone(), args));
-            return Ok(());
+        if let Expression::Identifier(callee_id) = call.callee.as_ref() {
+            if ctx.ce_builder.is_some()
+                && !env.contains_key(&callee_id.0)
+                && !is_builtin_fn(&callee_id.0)
+            {
+                let args: Vec<Value> = call.args.iter()
+                    .map(|a| eval_expr(a, env, ctx))
+                    .collect::<Result<_, _>>()?;
+                ctx.ce_builder.as_mut().unwrap().calls.push((callee_id.0.clone(), args));
+                return Ok(());
+            }
         }
     }
 
@@ -678,8 +683,26 @@ fn eval_call(
     env: &Env,
     ctx: &mut EvalContext<'_>,
 ) -> Result<Value, String> {
+    // Method call: `obj.method(args)` — callee is BinaryOp(Dot, lhs, rhs).
+    if let Expression::BinaryOp { op: BinOpKind::Dot, lhs, rhs } = call.callee.as_ref() {
+        let receiver = eval_expr(lhs, env, ctx)?;
+        let method_name = match rhs.as_ref() {
+            Expression::Identifier(id) => id.0.clone(),
+            other => return Err(format!("method call: RHS of '.' must be an identifier, got {:?}", other)),
+        };
+        let args: Vec<Value> = call.args.iter()
+            .map(|a| eval_expr(a, env, ctx))
+            .collect::<Result<_, _>>()?;
+        return eval_method_call(receiver, &method_name, args, ctx);
+    }
+
+    let callee_name = match call.callee.as_ref() {
+        Expression::Identifier(id) => &id.0,
+        other => return Err(format!("cannot call {:?} as a function", other)),
+    };
+
     // Built-in: print(value)
-    if call.callee.0 == "print" {
+    if callee_name == "print" {
         let arg = call.args.first().map(|a| eval_expr(a, env, ctx)).transpose()?
             .unwrap_or(Value::Null);
         println!("[mms] {}", value_display(&arg));
@@ -687,7 +710,7 @@ fn eval_call(
     }
 
     // Built-in: assert(cond, msg)
-    if call.callee.0 == "assert" {
+    if callee_name == "assert" {
         let cond = call.args.first().map(|a| eval_expr(a, env, ctx)).transpose()?
             .unwrap_or(Value::Null);
         if !is_truthy(&cond) {
@@ -699,7 +722,7 @@ fn eval_call(
     }
 
     // Built-in: range(n) or range(start, end)
-    if call.callee.0 == "range" {
+    if callee_name == "range" {
         let args: Vec<Value> = call
             .args
             .iter()
@@ -718,12 +741,12 @@ fn eval_call(
     }
 
     // Built-in: on(component_object, "SignalKind", fn(event) { ... })
-    if call.callee.0 == "on" {
+    if callee_name == "on" {
         let args: Vec<Value> = call.args.iter()
             .map(|a| eval_expr(a, env, ctx))
             .collect::<Result<_, _>>()?;
         let scope = match args.get(0) {
-            Some(Value::ComponentObject(id)) => *id,
+            Some(Value::ComponentObject { id, .. }) => *id,
             other => return Err(format!("on(): arg 0 must be a ComponentObject, got {:?}", other)),
         };
         let signal_kind = match args.get(1) {
@@ -740,9 +763,9 @@ fn eval_call(
         return Ok(Value::Null);
     }
 
-    let callee_val = match env.get(&call.callee.0) {
+    let callee_val = match env.get(callee_name) {
         Some(v) => v.clone(),
-        None => return Err(format!("undefined: '{}'", call.callee.0)),
+        None => return Err(format!("undefined: '{}'", callee_name)),
     };
 
     match callee_val {
@@ -775,6 +798,34 @@ fn eval_call(
             }
         }
         other => Err(format!("cannot call {:?} as a function", other)),
+    }
+}
+
+/// Dispatch a method call on a `Value::ComponentObject`.
+///
+/// Produces intents (emitted via `ctx.emits`) or returns a value.
+/// Currently supports animation methods: `play`, `pause`, `loop_anim`.
+fn eval_method_call(
+    receiver: Value,
+    method: &str,
+    _args: Vec<Value>,
+    ctx: &mut EvalContext<'_>,
+) -> Result<Value, String> {
+    match receiver {
+        Value::ComponentObject { id, ref component_type } => {
+            let state = match (component_type.as_str(), method) {
+                ("Anim" | "Animation" | "AnimationComponent", "play") => AnimationState::Playing,
+                ("Anim" | "Animation" | "AnimationComponent", "loop_anim") => AnimationState::Looping,
+                ("Anim" | "Animation" | "AnimationComponent", "pause") => AnimationState::Paused,
+                (ct, m) => return Err(format!("no method '{}' on component type '{}'", m, ct)),
+            };
+            ctx.emits.push(IntentValue::SetAnimationState {
+                component_ids: vec![id],
+                state,
+            });
+            Ok(Value::Null)
+        }
+        other => Err(format!("method call '{}': receiver is not a ComponentObject, got {:?}", method, other)),
     }
 }
 
@@ -873,6 +924,7 @@ fn eval_binop(
         BinOpKind::LtEq  => num_cmp(l, r, |a, b| a <= b),
         BinOpKind::GtEq  => num_cmp(l, r, |a, b| a >= b),
         BinOpKind::And | BinOpKind::Or | BinOpKind::Pipe | BinOpKind::Query => unreachable!("handled above"),
+        BinOpKind::Dot => Err("'.' must be used as part of a method call: obj.method(args)".into()),
     }
 }
 
@@ -910,7 +962,7 @@ fn value_display(val: &Value) -> String {
         Value::String(s) => s.clone(),
         Value::Array(arr) => format!("[{}]", arr.iter().map(value_display).collect::<Vec<_>>().join(", ")),
         Value::Function { .. } => "<fn>".into(),
-        Value::ComponentObject(id) => format!("<component {:?}>", id),
+        Value::ComponentObject { id, component_type } => format!("<{}:{:?}>", component_type, id),
         Value::ComponentExpr(_) => "<ce>".into(),
         Value::Object(_) => "<object>".into(),
         Value::Identifier(s) => s.clone(),
@@ -962,8 +1014,13 @@ fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
 ///
 /// Runs inline on the calling thread (no evaluator channel round-trips).
 /// `channels` is `None`, so Spawn / RegisterHandler HostCalls inside the
-/// body are silently skipped. Suitable for signal handler invocation.
-pub(crate) fn eval_mms_fn(fn_val: &Value, args: Vec<Value>) -> Result<Value, String> {
+/// body are silently skipped. Intents emitted by the body (e.g. from
+/// method dispatch like `anim.play()`) are forwarded to `emit` when provided.
+pub(crate) fn eval_mms_fn(
+    fn_val: &Value,
+    args: Vec<Value>,
+    emit: Option<&mut dyn SignalEmitter>,
+) -> Result<Value, String> {
     let Value::Function { params, body, captured_env } = fn_val else {
         return Err(format!("eval_mms_fn: expected Function, got {:?}", fn_val));
     };
@@ -978,12 +1035,16 @@ pub(crate) fn eval_mms_fn(fn_val: &Value, args: Vec<Value>) -> Result<Value, Str
         channels: None,
         ce_builder: None,
     };
-    match eval_block_stmts(&body.statements, &mut call_env, &mut ctx)? {
-        StmtEffect::Return(val) => Ok(val),
-        _ => Ok(Value::Null),
+    let result = match eval_block_stmts(&body.statements, &mut call_env, &mut ctx)? {
+        StmtEffect::Return(val) => val,
+        _ => Value::Null,
+    };
+    if let Some(em) = emit {
+        for iv in emits {
+            em.push_intent_now(ComponentId::default(), iv);
+        }
     }
-    // emits collected above are dropped; method dispatch via emit will be wired
-    // once HostCallKind::MethodCall exists (task doc §9)
+    Ok(result)
 }
 
 /// Evaluate a source file as a module (sandboxed — emits go to `sequence`, not the engine).

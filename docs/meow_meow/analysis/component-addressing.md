@@ -90,11 +90,24 @@ box.all("R > C") -> set_color(1, 0, 0)  // if multiple results, dispatch arrow o
 
 ## `.method(args)` — mutation methods on ComponentObject
 
-Phase 7 adds `Expression::MethodCall { receiver, method, args }` and a mutation method
-registry keyed on (component type, method name).
+Phase 7 adds evaluator/runtime dispatch for dot-callee calls on `ComponentObject`, plus a
+mutation method registry keyed on `(component type, method name)`.
 
 ```mms
 box."C".set_color(0, 1, 0, 1)
+```
+
+AST shape:
+
+```rust
+Expression::Call(CallExpression {
+    callee: Box::new(Expression::BinaryOp {
+        op: BinOpKind::Dot,
+        lhs: Box::new(receiver_expr),
+        rhs: Box::new(Expression::Identifier(Ident("set_color".into()))),
+    }),
+    args,
+})
 ```
 
 Dispatch: evaluate `box."C"` → `ComponentObject(c_id)`. The runtime looks up the

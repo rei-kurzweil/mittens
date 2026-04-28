@@ -31,7 +31,7 @@ fn lift_stmt(stmt: &mut Statement) {
                 // Move the expression out, wrap in emit() call.
                 let inner = std::mem::replace(expr, Expression::Null);
                 *expr = Expression::Call(CallExpression {
-                    callee: Ident("emit".into()),
+                    callee: Box::new(Expression::Identifier(Ident("emit".into()))),
                     args: vec![inner],
                 });
             } else if let Expression::Function { body, .. } = expr {
@@ -181,7 +181,7 @@ fn qd_expr(expr: &mut Expression) {
         let sel_expr = std::mem::replace(lhs.as_mut(), Expression::Null);
         let handler = std::mem::replace(rhs.as_mut(), Expression::Null);
         *expr = Expression::Call(CallExpression {
-            callee: Ident(callee.into()),
+            callee: Box::new(Expression::Identifier(Ident(callee.into()))),
             args: vec![sel_expr, handler],
         });
     }

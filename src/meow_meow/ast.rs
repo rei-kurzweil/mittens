@@ -43,6 +43,7 @@ pub enum BinOpKind {
     And, Or,
     Pipe,  // |> forward pipe (function application)
     Query, // -> component query / dispatch
+    Dot,   // obj.method(args) — method receiver
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -51,10 +52,13 @@ pub enum UnaryOpKind {
     Not,
 }
 
-/// A free-standing function call: `foo(a, b)`.
+/// A free-standing function call: `foo(a, b)` or a method call `obj.method(a, b)`.
+///
+/// For plain calls the callee is `Expression::Identifier`.
+/// For method calls the callee is `Expression::BinaryOp { op: BinOpKind::Dot, .. }`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CallExpression {
-    pub callee: Ident,
+    pub callee: Box<Expression>,
     pub args: Vec<Expression>,
 }
 

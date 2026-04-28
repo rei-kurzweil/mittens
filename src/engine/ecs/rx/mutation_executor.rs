@@ -1,4 +1,4 @@
-use crate::engine::ecs::component::{RenderableComponent, TextComponent, TransformComponent};
+use crate::engine::ecs::component::{AnimationState, RenderableComponent, TextComponent, TransformComponent};
 use crate::engine::ecs::system::SystemWorld;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, Signal, SignalEmitter, World};
 use crate::engine::graphics::VisualWorld;
@@ -360,6 +360,12 @@ impl RxMutationExecutor {
             IntentValue::RegisterAnimation { component_ids } => {
                 for &component in component_ids.iter() {
                     systems.register_animation(world, visuals, component);
+                }
+            }
+            IntentValue::SetAnimationState { component_ids, state } => {
+                let state: AnimationState = state.clone();
+                for &component in component_ids.iter() {
+                    systems.set_animation_state(component, state.clone());
                 }
             }
             IntentValue::RegisterKeyframe { component_ids } => {

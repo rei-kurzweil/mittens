@@ -1,3 +1,4 @@
+use crate::engine::ecs::component::AnimationState;
 use crate::engine::ecs::{ComponentId, World};
 use std::sync::mpsc::Sender;
 
@@ -456,6 +457,10 @@ pub enum IntentValue {
     RegisterAnimation {
         component_ids: Vec<ComponentId>,
     },
+    SetAnimationState {
+        component_ids: Vec<ComponentId>,
+        state: AnimationState,
+    },
     RegisterKeyframe {
         component_ids: Vec<ComponentId>,
     },
@@ -612,6 +617,7 @@ impl IntentValue {
             IntentValue::RemoveRaycast { .. } => "remove_raycast",
 
             IntentValue::RegisterAnimation { .. } => "register_animation",
+            IntentValue::SetAnimationState { .. } => "set_animation_state",
             IntentValue::RegisterKeyframe { .. } => "register_keyframe",
 
             IntentValue::RegisterAudioOutput { .. } => "register_audio_output",

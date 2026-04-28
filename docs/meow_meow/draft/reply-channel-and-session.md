@@ -392,34 +392,38 @@ and a `next_cron_tick` helper that computes time-until-next-tick from a cron exp
 
 ---
 
-## Phase 7: `expr.method(args)` — AST and eval
+## Phase 7: `expr.method(args)` — call-callee shape and eval
 
-### New AST nodes
+### AST shape
+
+No special `Expression::MethodCall` node is required.
+
+`expr.method(args)` is represented as a normal call expression:
 
 ```rust
-Expression::MethodCall {
-    receiver: Box<Expression>,
-    method: Ident,
-    args: Vec<Expression>,
-}
-
-Expression::FieldAccess {
-    receiver: Box<Expression>,
-    field: Ident,
-}
+Expression::Call(CallExpression {
+    callee: Box::new(Expression::BinaryOp {
+        op: BinOpKind::Dot,
+        lhs: Box::new(expr),
+        rhs: Box::new(Expression::Identifier(Ident("method".into()))),
+    }),
+    args,
+})
 ```
 
 ### Parser disambiguation
 
-After `.ident`: if `(` follows → `MethodCall`; otherwise → `FieldAccess`. Component
-expression constructor calls (`T.cube()`) are already handled by the CE parser path —
-they only trigger when the leading identifier is a component type name at statement or
-value-binding position.
+Component expression constructor calls (`T.cube()`) are handled by the CE parser path
+when the leading identifier is a component type name. Value method-style calls
+(`obj.method()`) parse as `Expression::Call` whose callee is a dot-expression.
+
+Whether non-call field access should exist as a separate runtime feature is a different
+question; it is not needed for `expr.method(args)`.
 
 ### Evaluator dispatch
 
 ```
-eval MethodCall { receiver, method, args }
+eval CallExpression { callee = Dot(receiver, method), args }
   │
   ├─ Value::ComponentObject(id) ──► ComponentObject method table
   │       fire-and-forget (set_rgba, set_position) ──► emit Intent, return Null
@@ -444,8 +448,9 @@ eval MethodCall { receiver, method, args }
         │  emit(ce) → HostCall::Spawn → host processes SpawnComponentTree → HostCallResult
         │  Evaluator resumes with Value::ComponentObject(id).
         │
-      Step 3: Expression::MethodCall parser + eval  [Phase 7 syntax]
-        │  New AST nodes. Parser update. Evaluator dispatches on receiver type.
+      Step 3: Dot-callee call dispatch  [Phase 7 syntax]
+        │  Parser shape already exists via `CallExpression { callee: Box<Expression> }`.
+        │  Evaluator dispatches on dot-callee receiver type.
         │
       Step 4: Fire-and-forget mutation methods  [Phase 7 semantics]
         │  set_rgba, set_position, etc. → emit Intent, return Null. No HostCall needed.
