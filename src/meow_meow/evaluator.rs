@@ -814,9 +814,9 @@ fn eval_method_call(
     match receiver {
         Value::ComponentObject { id, ref component_type } => {
             let state = match (component_type.as_str(), method) {
-                ("Anim" | "Animation" | "AnimationComponent", "play") => AnimationState::Playing,
-                ("Anim" | "Animation" | "AnimationComponent", "loop_anim") => AnimationState::Looping,
-                ("Anim" | "Animation" | "AnimationComponent", "pause") => AnimationState::Paused,
+                ("A" | "Animation" | "AnimationComponent", "play") => AnimationState::Playing,
+                ("A" | "Animation" | "AnimationComponent", "loop_anim") => AnimationState::Looping,
+                ("A" | "Animation" | "AnimationComponent", "pause") => AnimationState::Paused,
                 (ct, m) => return Err(format!("no method '{}' on component type '{}'", m, ct)),
             };
             ctx.emits.push(IntentValue::SetAnimationState {
