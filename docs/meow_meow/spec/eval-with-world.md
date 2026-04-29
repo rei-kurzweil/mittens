@@ -7,6 +7,10 @@ dead `ComponentExpr` AST snapshots.
 
 Implementation: `src/meow_meow/runner.rs`, `src/meow_meow/evaluator.rs`
 
+The HostCall message types and per-variant servicer behaviour are documented separately
+in [host-call-api.md](host-call-api.md). This doc covers the live-eval *lifecycle* —
+when the channel opens, what threads are involved, how blocking works.
+
 ---
 
 ## Why it exists

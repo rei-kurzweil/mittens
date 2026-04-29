@@ -4,6 +4,11 @@
 > No source changes yet. This doc works through the design of Phase 6 (ComponentId
 > reply channel), Phase 7 (method calls on ComponentObjects), the async session model,
 > and independently timed background processes in MMS.
+>
+> The HostCall protocol described here has since been partially implemented; see
+> [../spec/host-call-api.md](../spec/host-call-api.md) for the canonical current API
+> and the planned Register/Attach split. This draft remains for the broader session +
+> background-process design, which is still aspirational.
 
 ---
 

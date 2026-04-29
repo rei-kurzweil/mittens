@@ -112,13 +112,15 @@ at the end. It carries no state that outlives a single expression evaluation.
 `ObjectWorld.pending` is the set of `ComponentId`s that have been created in the engine
 (via `HostCallKind::Spawn`) but not yet attached to a parent or emitted as a world root.
 
-When `let x = CE` evaluates in live mode:
-1. `HostCallKind::Spawn` fires → main thread calls `spawn_tree` → returns `ComponentId`
+When `let x = CE` evaluates in live mode (planned, see
+[host-call-api.md](host-call-api.md) for the Register/Attach split):
+1. `HostCallKind::Register` fires → host calls `spawn_tree_uninitialized` → returns `ComponentId`
 2. evaluator stores `Value::ComponentObject { id, .. }` in env under `"x"`
 3. evaluator calls `object_world.pending.push(id)`
 
 When `x` is placed (emitted at top level, or used as a child in a CE body):
-1. appropriate intent fires (world root or Attach)
+1. `HostCallKind::Attach { parent, child }` fires (or the parent CE's `spawn_tree`
+   splices the pre-spawned subtree as part of its child recursion)
 2. `object_world.pending.remove(id)`
 
 Components still in `pending` at script end are unattached world nodes. The host decides
