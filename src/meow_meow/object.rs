@@ -27,8 +27,21 @@ pub struct MaterializedCE {
     pub named: Vec<(String, Value)>,
     /// String-type positional content (e.g. `Text { "hello " + name }`).
     pub positionals: Vec<Value>,
-    /// Child component trees, in source order.
-    pub children: Vec<MaterializedCE>,
+    /// Child component trees, in source order. Each entry is either a CE to
+    /// spawn fresh, or a pre-Registered `ComponentId` to splice in.
+    pub children: Vec<CeChild>,
+}
+
+/// A child slot inside a `MaterializedCE`.
+///
+/// `Spawn` is the normal case (the body produced a fresh CE). `Attach` is used
+/// when the body referenced a `Value::ComponentObject` — a previously
+/// `Register`ed component — that should be attached as a child rather than
+/// re-created.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CeChild {
+    Spawn(MaterializedCE),
+    Attach(ComponentId),
 }
 
 // ---------------------------------------------------------------------------

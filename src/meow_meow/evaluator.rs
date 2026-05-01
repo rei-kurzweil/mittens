@@ -12,7 +12,7 @@ use crate::meow_meow::ast::{
     BinOpKind, CallExpression, ComponentExpression,
     Expression, IfStatement, ImportItem, Statement, UnaryOpKind,
 };
-use crate::meow_meow::object::{MaterializedCE, Value};
+use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
 use crate::meow_meow::parser::{MeowMeowParser, ParseError};
 use crate::meow_meow::token::TokenizeError;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;
@@ -54,7 +54,21 @@ pub enum EvalResponse {
 #[derive(Debug, Clone)]
 pub enum HostCallKind {
     /// Spawn a component tree and return its root `ComponentId`.
+    /// Used for fire-and-forget root emissions (currently unused by the
+    /// evaluator — top-level CEs are still pushed as `IntentValue` for now).
     Spawn(MaterializedCE),
+    /// Create the component tree in the world but do **not** attach it to a
+    /// parent and do **not** run init. Returns the root `ComponentId`. The
+    /// caller (typically `let x = CE`) holds the id as a `ComponentObject`
+    /// and decides where/when to splice the subtree in.
+    Register(MaterializedCE),
+    /// Attach a previously `Register`ed (or `Spawn`ed) detached subtree to a
+    /// parent and run the deferred init walk. With `parent: None` the subtree
+    /// is initialised in place as a world root.
+    Attach {
+        parent: Option<ComponentId>,
+        child: ComponentId,
+    },
     /// Register an MMS function as a scoped signal handler.
     /// The host installs the closure and replies with `HostValue::Null`.
     RegisterHandler {
@@ -213,6 +227,11 @@ struct EvalContext<'a> {
     /// When evaluating inside a CE body block, captures children, builder calls,
     /// positionals, and named assignments instead of emitting to the top level.
     ce_builder: Option<&'a mut CeBuilder>,
+    /// Component ids returned by `HostCallKind::Register` that have not yet
+    /// been attached. Maintained so the evaluator can tell whether a given
+    /// `Value::ComponentObject` reference is still detached (and therefore
+    /// needs splicing) or already in the world graph.
+    pending: &'a mut Vec<ComponentId>,
 }
 
 /// Accumulator used while evaluating a component expression body block.
@@ -224,8 +243,9 @@ struct CeBuilder {
     named: Vec<(String, Value)>,
     /// String-type positional content (e.g. `"hello " + name` in Text body).
     positionals: Vec<Value>,
-    /// Child component trees emitted inside the body block, in source order.
-    children: Vec<MaterializedCE>,
+    /// Child entries in source order — either fresh CEs to spawn or
+    /// pre-Registered ComponentIds to splice in.
+    children: Vec<CeChild>,
 }
 
 /// Live request/response channels plus a monotonic correlation-id counter.
@@ -278,10 +298,17 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
 
     let mut env: Env = HashMap::new();
     let mut emits: Vec<IntentValue> = Vec::new();
+    let mut pending: Vec<ComponentId> = Vec::new();
 
     // Borrow `ch` into the context for the duration of eval, then release it.
     let eval_result = {
-        let mut ctx = EvalContext { emits: &mut emits, source_path, channels: Some(ch), ce_builder: None };
+        let mut ctx = EvalContext {
+            emits: &mut emits,
+            source_path,
+            channels: Some(ch),
+            ce_builder: None,
+            pending: &mut pending,
+        };
         eval_block_stmts(&stmts, &mut env, &mut ctx)
     }; // ctx (and its borrow of ch) dropped here
 
@@ -363,11 +390,18 @@ fn eval_stmt(
             let val = eval_expr(&a.value, env, ctx)?;
             // When a CE is assigned to a variable and we have a live reply channel,
             // spawn it immediately and bind a ComponentObject instead of the dead snapshot.
+            // `let x = CE` in live mode: Register (spawn detached + uninitialised)
+            // so the binding produces a live ComponentId without committing
+            // the tree to the world graph yet. Attach happens later when `x`
+            // is referenced inside a CE body or emitted standalone.
             let val = match (val, ctx.channels.as_mut()) {
                 (Value::ComponentExpr(ce), Some(ch)) => {
                     let component_type = ce.component_type.clone();
-                    match ch.call(HostCallKind::Spawn(*ce.clone())) {
-                        Some(HostValue::ComponentId(id)) => Value::ComponentObject { id, component_type },
+                    match ch.call(HostCallKind::Register(*ce.clone())) {
+                        Some(HostValue::ComponentId(id)) => {
+                            ctx.pending.push(id);
+                            Value::ComponentObject { id, component_type }
+                        }
                         _ => Value::ComponentExpr(ce),
                     }
                 }
@@ -544,8 +578,17 @@ fn eval_expr_stmt(
         match val {
             // String positionals captured in CE body.
             Value::String(_) => ctx.ce_builder.as_mut().unwrap().positionals.push(val),
-            // CE children captured in CE body.
-            Value::ComponentExpr(ce) => ctx.ce_builder.as_mut().unwrap().children.push(*ce),
+            // Fresh CE children captured in CE body.
+            Value::ComponentExpr(ce) => ctx.ce_builder.as_mut().unwrap()
+                .children.push(CeChild::Spawn(*ce)),
+            // Reference to a previously Registered live component — splice
+            // the detached subtree as a child of the parent CE rather than
+            // discarding the value or re-spawning it.
+            Value::ComponentObject { id, .. } => {
+                ctx.pending.retain(|p| *p != id);
+                ctx.ce_builder.as_mut().unwrap()
+                    .children.push(CeChild::Attach(id));
+            }
             // Other values inside a CE body are discarded (no-op expression statements).
             _ => {}
         }
@@ -556,8 +599,19 @@ fn eval_expr_stmt(
 }
 
 fn push_component_emit(val: Value, ctx: &mut EvalContext<'_>) {
-    if let Value::ComponentExpr(ce) = val {
-        ctx.emits.push(IntentValue::SpawnComponentTree { root: ce, parent: None });
+    match val {
+        Value::ComponentExpr(ce) => {
+            ctx.emits.push(IntentValue::SpawnComponentTree { root: ce, parent: None });
+        }
+        // Bare top-level reference to a previously Registered ComponentObject —
+        // attach as a world root and run the deferred init walk.
+        Value::ComponentObject { id, .. } => {
+            ctx.pending.retain(|p| *p != id);
+            if let Some(ch) = ctx.channels.as_mut() {
+                ch.call(HostCallKind::Attach { parent: None, child: id });
+            }
+        }
+        _ => {}
     }
 }
 
@@ -626,6 +680,7 @@ fn eval_ce(ce: &ComponentExpression, env: &Env, ctx: &mut EvalContext<'_>) -> Re
             source_path: ctx.source_path,
             channels: ctx.channels.as_mut().map(|c| &mut **c),
             ce_builder: Some(&mut builder),
+            pending: ctx.pending,
         };
         eval_block_stmts(&ce.body.statements, &mut body_env, &mut body_ctx)?;
     }
@@ -786,6 +841,7 @@ fn eval_call(
                 source_path: None,
                 channels: None,
                 ce_builder: None,
+                pending: ctx.pending,
             };
             match eval_block_stmts(&body.statements, &mut call_env, &mut func_ctx)? {
                 StmtEffect::Return(val) => Ok(val),
@@ -808,22 +864,45 @@ fn eval_call(
 fn eval_method_call(
     receiver: Value,
     method: &str,
-    _args: Vec<Value>,
+    args: Vec<Value>,
     ctx: &mut EvalContext<'_>,
 ) -> Result<Value, String> {
     match receiver {
         Value::ComponentObject { id, ref component_type } => {
-            let state = match (component_type.as_str(), method) {
-                ("A" | "Animation" | "AnimationComponent", "play") => AnimationState::Playing,
-                ("A" | "Animation" | "AnimationComponent", "loop_anim") => AnimationState::Looping,
-                ("A" | "Animation" | "AnimationComponent", "pause") => AnimationState::Paused,
-                (ct, m) => return Err(format!("no method '{}' on component type '{}'", m, ct)),
+            // Animation playback.
+            let anim_state = match (component_type.as_str(), method) {
+                ("A" | "Animation" | "AnimationComponent", "play") => Some(AnimationState::Playing),
+                ("A" | "Animation" | "AnimationComponent", "loop_anim") => Some(AnimationState::Looping),
+                ("A" | "Animation" | "AnimationComponent", "pause") => Some(AnimationState::Paused),
+                _ => None,
             };
-            ctx.emits.push(IntentValue::SetAnimationState {
-                component_ids: vec![id],
-                state,
-            });
-            Ok(Value::Null)
+            if let Some(state) = anim_state {
+                ctx.emits.push(IntentValue::SetAnimationState {
+                    component_ids: vec![id],
+                    state,
+                });
+                return Ok(Value::Null);
+            }
+
+            // Text mutation: text.set_text("...").
+            if matches!(component_type.as_str(), "Text" | "TXT" | "TextComponent")
+                && method == "set_text"
+            {
+                let text = match args.first() {
+                    Some(Value::String(s)) => s.clone(),
+                    Some(other) => return Err(format!(
+                        "set_text: expected string argument, got {:?}", other
+                    )),
+                    None => return Err("set_text: missing string argument".into()),
+                };
+                ctx.emits.push(IntentValue::SetText {
+                    component_ids: vec![id],
+                    text,
+                });
+                return Ok(Value::Null);
+            }
+
+            Err(format!("no method '{}' on component type '{}'", method, component_type))
         }
         other => Err(format!("method call '{}': receiver is not a ComponentObject, got {:?}", method, other)),
     }
@@ -873,6 +952,7 @@ fn eval_binop(
                         source_path: None,
                         channels: None,
                         ce_builder: None,
+                        pending: ctx.pending,
                     };
                     match eval_block_stmts(&body.statements, &mut call_env, &mut func_ctx)? {
                         StmtEffect::Return(val) => return Ok(val),
@@ -1029,11 +1109,13 @@ pub(crate) fn eval_mms_fn(
         call_env.insert(param.clone(), arg);
     }
     let mut emits: Vec<IntentValue> = Vec::new();
+    let mut pending: Vec<ComponentId> = Vec::new();
     let mut ctx = EvalContext {
         emits: &mut emits,
         source_path: None,
         channels: None,
         ce_builder: None,
+        pending: &mut pending,
     };
     let result = match eval_block_stmts(&body.statements, &mut call_env, &mut ctx)? {
         StmtEffect::Return(val) => val,
@@ -1057,7 +1139,14 @@ fn eval_as_module(source: &str, source_path: Option<&str>) -> Result<Value, Stri
     let mut local_env: Env = HashMap::new();
     let mut emits: Vec<IntentValue> = Vec::new();
     let mut named: HashMap<String, Value> = HashMap::new();
-    let mut ctx = EvalContext { emits: &mut emits, source_path, channels: None, ce_builder: None };
+    let mut pending: Vec<ComponentId> = Vec::new();
+    let mut ctx = EvalContext {
+        emits: &mut emits,
+        source_path,
+        channels: None,
+        ce_builder: None,
+        pending: &mut pending,
+    };
 
     for stmt in &stmts {
         match eval_stmt(stmt, &mut local_env, &mut ctx)? {

@@ -102,6 +102,27 @@ impl MeowMeowRunner {
                                 }
                             }
                         }
+                        HostCallKind::Register(ce) => {
+                            match crate::meow_meow::component_registry::spawn_tree_uninitialized(
+                                &ce, world, emit,
+                            ) {
+                                Ok(component_id) => HostValue::ComponentId(component_id),
+                                Err(e) => {
+                                    output.errors.push(format!("HostCall::Register error: {e}"));
+                                    HostValue::Null
+                                }
+                            }
+                        }
+                        HostCallKind::Attach { parent, child } => {
+                            if let Some(p) = parent {
+                                if let Err(e) = world.add_child(p, child) {
+                                    output.errors.push(format!("HostCall::Attach error: {e}"));
+                                }
+                            }
+                            // Run the deferred init walk on the (now-attached, or root) subtree.
+                            world.init_component_tree(child, emit);
+                            HostValue::Null
+                        }
                         HostCallKind::RegisterHandler { scope, signal_kind, handler } => {
                             rx.add_handler_closure(
                                 signal_kind,

@@ -58,6 +58,8 @@ let cube_t = T.position(0.0, 0.0, 0.0).scale(0.5, 0.5, 0.5) {
     }
 }
 
+cube_t
+
 // Clock drives the beat (60 BPM → one beat per second).
 Clock.bpm(60) {}
 
@@ -78,11 +80,25 @@ let anim = A {
     }
 }
 
+anim
+
 // BLUE cube — click to pause the animation.
 let pause_btn = T.position(-1.2, -1.2, 0.0).scale(0.35, 0.35, 0.35) {
     R.cube() {
         C.rgba(0.25, 0.55, 1.0, 1.0)
         Raycastable.enabled()
+    }
+    T.position(0,0,0.6) {
+        T.position(-0.25, 0, 0).scale(0.3, 0.8, 0.05) {
+            R.cube() {
+                C.rgba(1.0, 1.0, 1.0, 1.0)
+            }
+        }
+        T.position( 0.25, 0, 0).scale(0.3, 0.8, 0.05) {
+            R.cube() {
+                C.rgba(1.0, 1.0, 1.0, 1.0)
+            }
+        }
     }
 }
 
@@ -92,7 +108,15 @@ let play_btn = T.position(1.2, -1.2, 0.0).scale(0.35, 0.35, 0.35) {
         C.rgba(0.30, 0.85, 0.45, 1.0)
         Raycastable.enabled()
     }
+    T.position(0,0,0.6).rotation(0,0,-3.1415 / 2).scale(0.8, 0.8, 0.8) {
+        R.triangle() {
+            C.rgba(1.0, 1.0, 1.0, 1.0)
+        }
+    }
 }
+
+pause_btn
+play_btn
 
 // playback status
 let playback_status = Text {
@@ -100,20 +124,20 @@ let playback_status = Text {
     "Playing"
 }
 
-T.position(-0.3, -1.2, 0).scale(0.2, 0.2, 0.2) {
-    Text {
-        "test"
-    }
+T.position(-0.6, -1.2, 0).scale(0.2, 0.2, 0.2) {
+    playback_status
 }
 
 on(pause_btn, "Click", fn(event) {
     anim.pause()
-    //playback_status.set_text("Paused")
+    playback_status.set_text("Paused")
     print("anim.pause()")
 })
 
 on(play_btn, "Click", fn(event) {
     anim.play()
-    //playback_status.set_text("Playing")
+    playback_status.set_text("Playing")
     print("anim.play()")
 })
+
+

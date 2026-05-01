@@ -33,7 +33,7 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::graphics::CameraTarget;
-use crate::meow_meow::object::{MaterializedCE, Value};
+use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
 use crate::meow_meow::token::expand_component_shortform;
 
 // ---------------------------------------------------------------------------
@@ -95,15 +95,99 @@ pub fn spawn_tree(
         }
     }
 
-    // Recurse into children.
+    // Recurse into children. Spawn-children create fresh subtrees; Attach-children
+    // splice an already-Registered (detached, uninitialised) subtree into place.
     for child in &ce.children {
-        spawn_tree(child, Some(id), world, emit)?;
+        match child {
+            CeChild::Spawn(child_ce) => {
+                spawn_tree(child_ce, Some(id), world, emit)?;
+            }
+            CeChild::Attach(existing_id) => {
+                if let Err(e) = world.add_child(id, *existing_id) {
+                    return Err(format!("attach existing child {:?} failed: {e}", existing_id));
+                }
+                // No init here: the init walk below covers the whole subtree.
+            }
+        }
     }
 
     // Initialise tree (if parent is already initialised, or this is a new root).
     let parent_initialised = parent.map(|p| world.is_initialized(p)).unwrap_or(false);
     if parent.is_none() || parent_initialised {
         world.init_component_tree(id, emit);
+    }
+
+    Ok(id)
+}
+
+/// Like `spawn_tree`, but does **not** attach to a parent and does **not**
+/// run `init_component_tree`. The resulting subtree exists in the `World`'s
+/// component slotmap as a detached, uninitialised tree, addressable by the
+/// returned `ComponentId`.
+///
+/// Used by `HostCallKind::Register` so that `let x = CE` can produce a live
+/// `ComponentId` without committing the tree to the live world graph yet.
+/// A later `Attach` HostCall (or splice as a `CeChild::Attach` inside another
+/// CE body) places it and runs init.
+pub fn spawn_tree_uninitialized(
+    ce: &MaterializedCE,
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+) -> Result<ComponentId, String> {
+    let type_name = resolve_type_name(&ce.component_type);
+    let id = create_component(world, type_name, ce.ctor_method.as_deref(), &ce.ctor_args)?;
+
+    for (method, args) in &ce.calls {
+        apply_call(world, id, method, args)?;
+    }
+
+    for (prop, val) in &ce.named {
+        match prop.as_str() {
+            "name" => {
+                if let Some(node) = world.get_component_record_mut(id) {
+                    node.name = val_as_str(val).unwrap_or("").to_string();
+                }
+            }
+            "class" => {
+                if let Some(node) = world.get_component_record_mut(id) {
+                    match val {
+                        Value::String(s) => {
+                            node.classes = s.split_whitespace().map(str::to_string).collect();
+                        }
+                        Value::Array(arr) => {
+                            node.classes = arr.iter()
+                                .filter_map(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+                                .collect();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => apply_named_assignment(world, id, prop, val)?,
+        }
+    }
+
+    for val in &ce.positionals {
+        apply_positional(world, id, val)?;
+    }
+
+    // Children: spawn-children become children of this uninitialised parent
+    // (still uninitialised); attach-children splice in an already-Registered
+    // subtree without init.
+    for child in &ce.children {
+        match child {
+            CeChild::Spawn(child_ce) => {
+                let child_id = spawn_tree_uninitialized(child_ce, world, emit)?;
+                if let Err(e) = world.add_child(id, child_id) {
+                    return Err(format!("attach uninit child failed: {e}"));
+                }
+            }
+            CeChild::Attach(existing_id) => {
+                if let Err(e) = world.add_child(id, *existing_id) {
+                    return Err(format!("attach existing child {:?} failed: {e}", existing_id));
+                }
+            }
+        }
     }
 
     Ok(id)
