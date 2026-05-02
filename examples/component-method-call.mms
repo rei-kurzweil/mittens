@@ -70,13 +70,13 @@ let anim = A {
         Action.update_transform("cube", [0.0, 0.0, 0.0], [0.0,   0.0, 0.0], [0.5, 0.5, 0.5])
     }
     Keyframe.at(1) {
-        Action.update_transform("cube", [0.0, 0.0, 0.0], [0.0,  90.0, 0.0], [0.5, 0.5, 0.5])
+        Action.update_transform("cube", [0.0, 0.0, 0.0], [0.0,  3.14159 / 2, 0.0], [0.5, 0.5, 0.5])
     }
     Keyframe.at(2) {
-        Action.update_transform("cube", [0.0, 0.0, 0.0], [0.0, 180.0, 0.0], [0.5, 0.5, 0.5])
+        Action.update_transform("cube", [0.0, 0.0, 0.0], [0.0, 3.14159 , 0.0], [0.5, 0.5, 0.5])
     }
     Keyframe.at(3) {
-        Action.update_transform("cube", [0.0, 0.0, 0.0], [0.0, 270.0, 0.0], [0.5, 0.5, 0.5])
+        Action.update_transform("cube", [0.0, 0.0, 0.0], [0.0, 3.14159 * 1.5, 0.0], [0.5, 0.5, 0.5])
     }
 }
 
