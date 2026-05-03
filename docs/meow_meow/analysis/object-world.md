@@ -36,11 +36,15 @@ block scoping.
 Heap-allocated MMS objects — primarily `Object::Map` (string-keyed records). These are
 addressed by `ObjectId`. Distinct from `ComponentObject`s, which are engine-side.
 
-### 3. ComponentObject handles
+### 3. ComponentObject handles (live in env, not separately tracked)
 
-`Value::ComponentObject(ComponentId)` values that have been created in the engine (via
-`SpawnComponentTree` intent) but not yet attached as world roots. The engine-side `ComponentId`
-is the stable identity. The MMS side does not duplicate engine state — it only holds the key.
+`Value::ComponentObject { id, component_type }` values are stored *in env* like any
+other value — there is no separate "pending" set. The engine-side `ComponentId` is the
+stable identity. The MMS side does not duplicate engine state — it only holds the key.
+
+Whether a `ComponentObject` has been attached yet is a question for the engine `World`
+(`world.parent_of(id)`), not for `ObjectWorld`. See
+[component-emit-lifecycle-and-cloning.md](component-emit-lifecycle-and-cloning.md).
 
 ---
 
@@ -109,31 +113,41 @@ storage/bookkeeping that the evaluator queries.
 
 ```rust
 pub struct ObjectWorld {
-    // Variable environment (flat scope in v1)
+    // Variable environment (flat scope in v1; scope chain in v2+)
     env: HashMap<String, Value>,
-    // MMS-side heap (maps, records, etc.)
+    // MMS-side heap (maps, records, future component scopes)
     heap: Heap,
-    // ComponentObjects created but not yet emitted
-    // key: ComponentId from the engine (echoed back via response channel)
-    pending: Vec<ComponentId>,
 }
 
 impl ObjectWorld {
-    // Bind a name to a value in the current scope
+    pub fn new() -> Self { ... }
     pub fn bind(&mut self, name: impl Into<String>, value: Value) { ... }
-    // Look up a name
     pub fn lookup(&self, name: &str) -> Option<&Value> { ... }
-    // Record a newly created ComponentObject
-    pub fn track_component(&mut self, id: ComponentId) { ... }
-    // Remove a ComponentObject from the pending list (it has been emitted/attached)
-    pub fn release_component(&mut self, id: ComponentId) { ... }
-    // Query whether a ComponentObject is currently pending (created but unattached)
-    pub fn is_pending(&self, id: ComponentId) -> bool { ... }
+    pub fn heap(&self) -> &Heap { ... }
+    pub fn heap_mut(&mut self) -> &mut Heap { ... }
 }
 ```
 
-In v1, all methods can be stubbed with `todo!()` or `unimplemented!()` except the ones
-needed to pass tests. The shape is what matters.
+### What's *not* on ObjectWorld (and why)
+
+- **No pending / track / release**: an earlier draft had a `pending: Vec<ComponentId>`
+  for "Registered but not yet Attached" subtrees. Dropped — no consumer ever read it.
+  Attachment state lives in the engine `World` (`parent_of(id)`); the evaluator does
+  not need a parallel ledger.
+- **No spawned-component fanout / clone tracking**: multi-emit semantics (one-shot vs
+  implicit clone) is parked in
+  [component-emit-lifecycle-and-cloning.md](component-emit-lifecycle-and-cloning.md).
+  If we adopt v2 implicit-clone, fanout bookkeeping might land *somewhere*, but it is
+  not load-bearing today.
+
+### Current wiring
+
+`ObjectWorld` is reachable through `EvalContext.object_world: &mut ObjectWorld`. Stage 1
+of [../../task/mms-objectworld-evaluator-wiring.md](../../task/mms-objectworld-evaluator-wiring.md)
+is landed: the field exists, Register/Attach is plumbed. Stage 2 — migrating the bare
+`env: &mut Env` parameter on each eval function into `object_world.env` — is deferred
+until the env-clone strategy (loop bodies, function-call snapshots, scope-chain frames)
+is decided. Today `bind`/`lookup` are wired but unused.
 
 ---
 

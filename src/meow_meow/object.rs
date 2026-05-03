@@ -147,22 +147,17 @@ impl Heap {
 
 /// The scripting-side runtime container. Lives on the MMS worker thread.
 ///
-/// Holds the variable environment (scope), the MMS-side heap, and the set of
-/// `ComponentObject`s that have been created in the engine but not yet emitted
-/// (attached to the world or to a parent).
+/// Holds the variable environment and the MMS-side heap. Communication with
+/// the engine goes through intent channels owned by the evaluator —
+/// `ObjectWorld` itself never sends intents directly.
 ///
-/// Communication with the engine goes through intent channels owned by the
-/// evaluator — `ObjectWorld` itself never sends intents directly.
-///
-/// See `docs/meow_meow/analysis/object-world.md` for the full design.
+/// See `docs/meow_meow/spec/env-heap-object-world.md` for the full design.
 #[derive(Debug, Default)]
 pub struct ObjectWorld {
     /// Flat variable environment (v1: no scope chain yet).
     env: HashMap<String, Value>,
     /// MMS-side heap for map/record objects.
     heap: Heap,
-    /// ComponentIds of components created but not yet attached/emitted.
-    pending: Vec<ComponentId>,
 }
 
 impl ObjectWorld {
@@ -180,30 +175,6 @@ impl ObjectWorld {
     /// Look up a name in the current scope.
     pub fn lookup(&self, name: &str) -> Option<&Value> {
         self.env.get(name)
-    }
-
-    // --- ComponentObject tracking ---
-
-    /// Record a `ComponentId` as pending (created, not yet emitted/attached).
-    pub fn track_component(&mut self, id: ComponentId) {
-        if !self.pending.contains(&id) {
-            self.pending.push(id);
-        }
-    }
-
-    /// Remove a `ComponentId` from the pending list (it has been emitted or attached).
-    pub fn release_component(&mut self, id: ComponentId) {
-        self.pending.retain(|&p| p != id);
-    }
-
-    /// Returns `true` if the given component has been created but not yet emitted.
-    pub fn is_pending(&self, id: ComponentId) -> bool {
-        self.pending.contains(&id)
-    }
-
-    /// All currently pending (created, unattached) component IDs.
-    pub fn pending_components(&self) -> &[ComponentId] {
-        &self.pending
     }
 
     // --- Heap access ---

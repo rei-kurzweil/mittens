@@ -84,8 +84,6 @@ pub struct ObjectWorld {
     env: ScopeChain,
     /// Heap-allocated reference objects (maps, component scopes, ...).
     heap: Heap,
-    /// ComponentIds that have been spawned but not yet attached or emitted.
-    pending: Vec<ComponentId>,
 }
 ```
 
@@ -107,24 +105,26 @@ at the end. It carries no state that outlives a single expression evaluation.
 
 ---
 
-## pending — unattached component tracking
+## Unattached component lifecycle
 
-`ObjectWorld.pending` is the set of `ComponentId`s that have been created in the engine
-(via `HostCallKind::Spawn`) but not yet attached to a parent or emitted as a world root.
+A `Value::ComponentObject` produced by `let x = CE` references an engine subtree that
+exists but has no parent yet. ObjectWorld does not track these — the engine `World` is
+the source of truth for attachment state (`world.parent_of(id)`).
 
-When `let x = CE` evaluates in live mode (planned, see
-[host-call-api.md](host-call-api.md) for the Register/Attach split):
-1. `HostCallKind::Register` fires → host calls `spawn_tree_uninitialized` → returns `ComponentId`
-2. evaluator stores `Value::ComponentObject { id, .. }` in env under `"x"`
-3. evaluator calls `object_world.pending.push(id)`
+Lifecycle:
+1. `let x = CE` — evaluator issues `HostCallKind::Register`; host calls
+   `spawn_tree_uninitialized` and replies with a `ComponentId`. Stored as
+   `Value::ComponentObject { id, .. }` in env.
+2. Placement — when `x` appears in a CE body, the body emits `CeChild::Attach(id)`
+   and `spawn_tree` re-parents it during the parent's spawn. When `x` appears as a
+   bare statement, evaluator issues `HostCallKind::Attach { parent: None, child: id }`
+   and the host runs `init_component_tree` on the now-rooted subtree.
+3. Re-emission of an already-attached `ComponentObject` is currently undefined; see
+   [../analysis/component-emit-lifecycle-and-cloning.md](../analysis/component-emit-lifecycle-and-cloning.md)
+   for the v1 one-shot rule and the v2 implicit-clone direction.
 
-When `x` is placed (emitted at top level, or used as a child in a CE body):
-1. `HostCallKind::Attach { parent, child }` fires (or the parent CE's `spawn_tree`
-   splices the pre-spawned subtree as part of its child recursion)
-2. `object_world.pending.remove(id)`
-
-Components still in `pending` at script end are unattached world nodes. The host decides
-whether to clean them up or treat them as valid detached subtrees.
+A `ComponentObject` that is registered but never placed remains a detached subtree in
+the engine `World` at script end. Cleanup policy is up to the host.
 
 ---
 
@@ -174,13 +174,12 @@ a future extension.
 
 ## Current state (v1)
 
-- env is a single flat `HashMap<String, Value>` owned by the evaluator, not by `ObjectWorld`
-- `ObjectWorld` exists in `object.rs` but is not instantiated or used by the evaluator
-- `pending` exists on `ObjectWorld` but is never populated
-- heap exists but component body scopes are not preserved
-- `let x = CE` in live mode spawns immediately as a root (bug: see
-  `docs/bugs/componentobject-let-binding-spawns-root-and-cannot-be-later-attached.md`)
+- `ObjectWorld { env: HashMap<String, Value>, heap: Heap }` is wired into `EvalContext`
+  as `object_world: &mut ObjectWorld`.
+- env is still a flat `HashMap` (no scope chain yet); migration to a frame stack is v2.
+- heap exists but is unused at runtime; component body scopes are not preserved (v3).
+- `let x = CE` uses `HostCallKind::Register` (spawn-without-init); placement uses
+  `HostCallKind::Attach`. The let-binding-spawns-root bug is fixed.
 
-Migration path: wire `ObjectWorld` into `EvalContext` (replacing the bare `&mut Env`
-parameter), use `object_world.env` for all name lookups, populate `pending` at spawn time,
-and add the `Scope` heap type when v3 component scopes are implemented.
+Migration path: scope-chain frames (v2), `Object::Scope` + `ComponentObject.scope` (v3),
+implicit-clone semantics for multi-emit (see analysis doc above).

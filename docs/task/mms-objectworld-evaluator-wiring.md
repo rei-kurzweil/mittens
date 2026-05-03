@@ -156,15 +156,24 @@ the integration check.
 
 ## Implementation order
 
-1. Add any missing `ObjectWorld` accessors (`has`, anything else needed).
-2. Add `world: &mut ObjectWorld` to `EvalContext`. Keep `env: &mut Env` parameter on
-   eval functions for now — both coexist.
-3. Migrate one eval function at a time from `env` parameter to `ctx.world.env`.
-   Smallest first (`eval_unop`, `eval_if`).
-4. Migrate construction sites (`eval_script`, `eval_mms_fn`, `eval_as_module`).
-5. Migrate `pending` field from `EvalContext` to `ObjectWorld`.
-6. Drop the `env: &mut Env` parameter from all eval functions.
-7. Run tests + example after each milestone.
+### Stage 1 — add ObjectWorld to EvalContext, migrate pending (this PR)
+
+1. Add `world: &mut ObjectWorld` to `EvalContext`.
+2. Replace `EvalContext.pending` with usage of `ObjectWorld.pending` via
+   `track_component` / `release_component`.
+3. Construction sites (`eval_script`, `eval_mms_fn`, `eval_as_module`) build a fresh
+   `ObjectWorld`.
+4. Run tests + example.
+
+### Stage 2 — env migration (deferred)
+
+Holds until the env cloning / memory-management strategy is decided. The `env: &mut Env`
+parameter stays on eval functions for now. Once the cloning model is settled (loops
+re-clone? function calls snapshot? scope-chain frames?), migrate `env` into `ObjectWorld`
+in one pass.
+
+This staging keeps the wiring change small and avoids baking in a clone strategy that
+will change.
 
 ---
 

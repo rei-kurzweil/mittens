@@ -12,7 +12,7 @@ use crate::meow_meow::ast::{
     BinOpKind, CallExpression, ComponentExpression,
     Expression, IfStatement, ImportItem, Statement, UnaryOpKind,
 };
-use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
+use crate::meow_meow::object::{CeChild, MaterializedCE, ObjectWorld, Value};
 use crate::meow_meow::parser::{MeowMeowParser, ParseError};
 use crate::meow_meow::token::TokenizeError;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;
@@ -227,11 +227,14 @@ struct EvalContext<'a> {
     /// When evaluating inside a CE body block, captures children, builder calls,
     /// positionals, and named assignments instead of emitting to the top level.
     ce_builder: Option<&'a mut CeBuilder>,
-    /// Component ids returned by `HostCallKind::Register` that have not yet
-    /// been attached. Maintained so the evaluator can tell whether a given
-    /// `Value::ComponentObject` reference is still detached (and therefore
-    /// needs splicing) or already in the world graph.
-    pending: &'a mut Vec<ComponentId>,
+    /// Scripting-side runtime storage: variable env (heap, pending list).
+    /// `pending` tracks component ids returned by `HostCallKind::Register`
+    /// that have not yet been attached.
+    ///
+    /// Note: `env` is *not* yet routed through `ObjectWorld` — it is still
+    /// passed as a separate `&mut Env` parameter on each eval function. See
+    /// `docs/task/mms-objectworld-evaluator-wiring.md` for the staged plan.
+    object_world: &'a mut ObjectWorld,
 }
 
 /// Accumulator used while evaluating a component expression body block.
@@ -298,7 +301,7 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
 
     let mut env: Env = HashMap::new();
     let mut emits: Vec<IntentValue> = Vec::new();
-    let mut pending: Vec<ComponentId> = Vec::new();
+    let mut world = ObjectWorld::new();
 
     // Borrow `ch` into the context for the duration of eval, then release it.
     let eval_result = {
@@ -307,7 +310,7 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
             source_path,
             channels: Some(ch),
             ce_builder: None,
-            pending: &mut pending,
+            object_world: &mut world,
         };
         eval_block_stmts(&stmts, &mut env, &mut ctx)
     }; // ctx (and its borrow of ch) dropped here
@@ -399,7 +402,6 @@ fn eval_stmt(
                     let component_type = ce.component_type.clone();
                     match ch.call(HostCallKind::Register(*ce.clone())) {
                         Some(HostValue::ComponentId(id)) => {
-                            ctx.pending.push(id);
                             Value::ComponentObject { id, component_type }
                         }
                         _ => Value::ComponentExpr(ce),
@@ -585,7 +587,6 @@ fn eval_expr_stmt(
             // the detached subtree as a child of the parent CE rather than
             // discarding the value or re-spawning it.
             Value::ComponentObject { id, .. } => {
-                ctx.pending.retain(|p| *p != id);
                 ctx.ce_builder.as_mut().unwrap()
                     .children.push(CeChild::Attach(id));
             }
@@ -606,7 +607,6 @@ fn push_component_emit(val: Value, ctx: &mut EvalContext<'_>) {
         // Bare top-level reference to a previously Registered ComponentObject —
         // attach as a world root and run the deferred init walk.
         Value::ComponentObject { id, .. } => {
-            ctx.pending.retain(|p| *p != id);
             if let Some(ch) = ctx.channels.as_mut() {
                 ch.call(HostCallKind::Attach { parent: None, child: id });
             }
@@ -680,7 +680,7 @@ fn eval_ce(ce: &ComponentExpression, env: &Env, ctx: &mut EvalContext<'_>) -> Re
             source_path: ctx.source_path,
             channels: ctx.channels.as_mut().map(|c| &mut **c),
             ce_builder: Some(&mut builder),
-            pending: ctx.pending,
+            object_world: ctx.object_world,
         };
         eval_block_stmts(&ce.body.statements, &mut body_env, &mut body_ctx)?;
     }
@@ -841,7 +841,7 @@ fn eval_call(
                 source_path: None,
                 channels: None,
                 ce_builder: None,
-                pending: ctx.pending,
+                object_world: ctx.object_world,
             };
             match eval_block_stmts(&body.statements, &mut call_env, &mut func_ctx)? {
                 StmtEffect::Return(val) => Ok(val),
@@ -952,7 +952,7 @@ fn eval_binop(
                         source_path: None,
                         channels: None,
                         ce_builder: None,
-                        pending: ctx.pending,
+                        object_world: ctx.object_world,
                     };
                     match eval_block_stmts(&body.statements, &mut call_env, &mut func_ctx)? {
                         StmtEffect::Return(val) => return Ok(val),
@@ -1109,13 +1109,13 @@ pub(crate) fn eval_mms_fn(
         call_env.insert(param.clone(), arg);
     }
     let mut emits: Vec<IntentValue> = Vec::new();
-    let mut pending: Vec<ComponentId> = Vec::new();
+    let mut world = ObjectWorld::new();
     let mut ctx = EvalContext {
         emits: &mut emits,
         source_path: None,
         channels: None,
         ce_builder: None,
-        pending: &mut pending,
+        object_world: &mut world,
     };
     let result = match eval_block_stmts(&body.statements, &mut call_env, &mut ctx)? {
         StmtEffect::Return(val) => val,
@@ -1139,13 +1139,13 @@ fn eval_as_module(source: &str, source_path: Option<&str>) -> Result<Value, Stri
     let mut local_env: Env = HashMap::new();
     let mut emits: Vec<IntentValue> = Vec::new();
     let mut named: HashMap<String, Value> = HashMap::new();
-    let mut pending: Vec<ComponentId> = Vec::new();
+    let mut world = ObjectWorld::new();
     let mut ctx = EvalContext {
         emits: &mut emits,
         source_path,
         channels: None,
         ce_builder: None,
-        pending: &mut pending,
+        object_world: &mut world,
     };
 
     for stmt in &stmts {
