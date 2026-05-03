@@ -39,8 +39,7 @@ Companion analysis: [../meow_meow/analysis/object-world.md](../meow_meow/analysi
 
 ```rust
 enum FrameKind {
-    Block,     // loops, if-bodies, plain blocks: transparent read & write
-    CeBody,    // read walks up; reassign STOPS here (write barrier only)
+    Block,     // loops, if-bodies, plain blocks, CE bodies: transparent read & write
     Function,  // read AND reassign stop here; seeded with captured_env
 }
 
@@ -57,18 +56,16 @@ pub struct ObjectWorld {
 
 ### Operation semantics
 
-| Operation | Block | CeBody | Function |
-|---|---|---|---|
-| `lookup(name)` walks past | yes | yes | **no — stop** |
-| `reassign(name)` walks past | yes (to declaring frame) | **no — stop here** | **no — stop here** |
-| `bind(name)` (let) | always writes top frame | always writes top frame | always writes top frame |
+| Operation | Block | Function |
+|---|---|---|
+| `lookup(name)` walks past | yes | **no — stop** |
+| `reassign(name)` walks past | yes (to declaring frame) | **no — stop here** |
+| `bind(name)` (let) | always writes top frame | always writes top frame |
 
-- **Block frames** are fully transparent — standard lexical scoping.
-- **CeBody frames** are read-transparent (children can read parent CE locals and call
-  parent methods) but write-opaque (a child CE cannot reassign a parent CE's binding).
-  Rationale: CE bodies are *declarative* contributions to a tree; allowing a child to
-  mutate parent state inverts the data flow. Children can still `let local = ...` to
-  shadow.
+- **Block frames** are fully transparent — standard lexical scoping. Loops, if-bodies,
+  plain blocks, and **CE bodies** all use this kind. CE-body children can read parent
+  CE locals *and* reassign them; we deliberately do not impose a write barrier at the
+  CE boundary. Authors who want isolation can `let local = outer` to shadow.
 - **Function frames** are hard barriers in both directions. Lookups don't see the
   caller's locals; only the closure's `captured_env` (loaded into the function frame
   at push time) and inner frames pushed during the call.
@@ -83,7 +80,7 @@ pub struct ObjectWorld {
 | `Statement::While` body | Block | empty |
 | `Statement::Block` | Block | empty |
 | `Statement::If` body | Block | empty |
-| `eval_ce` body | CeBody | empty |
+| `eval_ce` body | Block | empty |
 | `eval_call` Function arm + `eval_mms_fn` | Function | `captured_env` contents |
 
 ---
@@ -113,10 +110,8 @@ impl ObjectWorld {
 
 `reassign` returns `Err` when:
 - name is not declared in any reachable frame (existing error: `"reassignment: 'X' is not defined"`)
-- name is declared but only beyond a write barrier (new error:
-  `"cannot reassign 'X' declared in outer component scope"` for CeBody, or
-  `"cannot reassign 'X' from inside function (only its captured snapshot is visible)"`
-  for Function).
+- name is declared but only beyond the function barrier (new error:
+  `"cannot reassign 'X' from inside function (only its captured snapshot is visible)"`).
 
 ---
 
@@ -136,24 +131,20 @@ Today this leaves `sum == 0` because the loop ran in a clone. New behavior match
 standard scoping. **Action**: grep tests for accumulator-after-loop patterns; flag any
 that assert the old isolated behavior.
 
-### CE body cannot mutate parent CE locals
+### CE body is a transparent Block frame
 
-```mms
-T {
-    let parent_var = 5
-    R.cube() {
-        parent_var = 99    // ERROR — write barrier at child CE frame
-    }
-}
-```
-
-Reading still works:
+CE bodies do not impose a write barrier. A child CE can read *and* reassign a parent
+CE's locals — same rules as a plain block. This is intentional: a write barrier at
+the CE boundary was considered (children should declaratively contribute to the tree,
+not mutate parent state) but rejected as too restrictive at this stage. Authors who
+want isolation can `let local = outer` to shadow.
 
 ```mms
 T {
     let speed = 2.5
     R.cube() {
-        let local_speed = speed * 2    // OK — read walks past CeBody barrier
+        let local_speed = speed * 2    // OK — read walks up through Block frames
+        // speed = 3.0  // would also be permitted — no barrier
     }
 }
 ```
@@ -191,7 +182,7 @@ as today's `call_env = captured_env`.
 4. **Replace clone sites with frame push/pop** (RAII-style: scope guard or explicit
    pair around the eval call):
    - [ ] Loop entry → `push_frame(Block)` once at entry, `pop_frame` at exit
-   - [ ] CE body (`eval_ce`) → `push_frame(CeBody)` / `pop_frame`
+   - [ ] CE body (`eval_ce`) → `push_frame(Block)` / `pop_frame`
    - [ ] Function call (`eval_call` Function arm, `eval_mms_fn`) →
          `push_function_frame(captured_env)` / `pop_frame`
    - [ ] Closure creation (`Expression::Function`) → `captured_env =
@@ -224,8 +215,6 @@ as today's `call_env = captured_env`.
 - [ ] `ObjectWorld` holds frames + heap; no parallel `HashMap<String, Value>` lives in
       the evaluator.
 - [ ] Standard scoping: loop reassignment of outer-declared vars is visible after the loop.
-- [ ] CE body write barrier: child CE cannot reassign parent CE locals (gives a
-      readable error).
 - [ ] Function read barrier: function body cannot read caller-local vars (only
       captured snapshot).
 - [ ] `cargo test --lib meow_meow` passes (currently 51 tests; some may need updating

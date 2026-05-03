@@ -147,15 +147,14 @@ impl Heap {
 
 /// What a scope frame can do at its boundary.
 ///
-/// - `Block` — fully transparent: read & reassign walk past it.
-/// - `CeBody` — read walks past, reassign STOPS here (write barrier). Children of a
-///   component expression body can read parent CE locals but cannot mutate them.
+/// - `Block` — fully transparent: read & reassign walk past it. Used for plain
+///   blocks, loops, if-bodies, and CE bodies (CE bodies are not write-barriered;
+///   children can mutate parent CE locals if they choose to).
 /// - `Function` — hard barrier: read & reassign both stop. Seeded with a closure's
 ///   `captured_env`; the function body cannot see the caller's locals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameKind {
     Block,
-    CeBody,
     Function,
 }
 
@@ -174,9 +173,6 @@ impl Frame {
     }
     fn is_function_barrier(&self) -> bool {
         matches!(self.kind_or_root, Some(FrameKind::Function))
-    }
-    fn is_write_barrier(&self) -> bool {
-        matches!(self.kind_or_root, Some(FrameKind::Function | FrameKind::CeBody))
     }
 }
 
@@ -263,31 +259,22 @@ impl ObjectWorld {
     }
 
     /// Reassign an existing binding. Walks frames inward-to-outward looking for
-    /// the declaring frame; stops at any write barrier (`CeBody` or `Function`).
+    /// the declaring frame; stops at a `Function` barrier.
     ///
     /// Errors:
     /// - name not declared anywhere reachable
-    /// - name declared only beyond a write barrier (different message per kind)
+    /// - name declared only beyond the function barrier (caller's locals)
     pub fn reassign(&mut self, name: &str, value: Value) -> Result<(), String> {
         for frame in self.frames.iter_mut().rev() {
             if frame.bindings.contains_key(name) {
                 frame.bindings.insert(name.to_string(), value);
                 return Ok(());
             }
-            match frame.kind_or_root {
-                Some(FrameKind::CeBody) => {
-                    return Err(format!(
-                        "cannot reassign '{}' declared in outer component scope",
-                        name
-                    ));
-                }
-                Some(FrameKind::Function) => {
-                    return Err(format!(
-                        "cannot reassign '{}' from inside function (only its captured snapshot is visible)",
-                        name
-                    ));
-                }
-                _ => {}
+            if matches!(frame.kind_or_root, Some(FrameKind::Function)) {
+                return Err(format!(
+                    "cannot reassign '{}' from inside function (only its captured snapshot is visible)",
+                    name
+                ));
             }
         }
         Err(format!("reassignment: '{}' is not defined", name))
@@ -363,34 +350,6 @@ mod tests {
         assert_eq!(ow.lookup("local"), Some(&n(42.0)));
         ow.pop_frame();
         assert_eq!(ow.lookup("local"), None);
-    }
-
-    #[test]
-    fn ce_body_read_is_transparent() {
-        let mut ow = ObjectWorld::new();
-        ow.bind("speed", n(2.5));
-        ow.push_frame(FrameKind::CeBody);
-        assert_eq!(ow.lookup("speed"), Some(&n(2.5)));
-    }
-
-    #[test]
-    fn ce_body_write_is_blocked() {
-        let mut ow = ObjectWorld::new();
-        ow.bind("parent_var", n(5.0));
-        ow.push_frame(FrameKind::CeBody);
-        let err = ow.reassign("parent_var", n(99.0)).unwrap_err();
-        assert!(err.contains("outer component scope"), "got: {}", err);
-        ow.pop_frame();
-        assert_eq!(ow.lookup("parent_var"), Some(&n(5.0)));
-    }
-
-    #[test]
-    fn ce_body_local_reassign_works() {
-        let mut ow = ObjectWorld::new();
-        ow.push_frame(FrameKind::CeBody);
-        ow.bind("local", n(1.0));
-        ow.reassign("local", n(2.0)).unwrap();
-        assert_eq!(ow.lookup("local"), Some(&n(2.0)));
     }
 
     #[test]

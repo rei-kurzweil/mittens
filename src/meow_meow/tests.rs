@@ -573,6 +573,29 @@ fn eval_for_accumulator_pattern() {
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
 }
 
+#[test]
+fn eval_for_accumulator_propagates_after_loop_exit() {
+    // After the frame-stack refactor, reassignment to an outer-declared variable
+    // inside a loop body should walk up to the declaring frame — so `sum` is 6
+    // *after* the loop, not 0. Observable here via a conditional emit.
+    //
+    // Pre-refactor: `loop_env = env.clone()` sandboxes the loop; sum stays 0;
+    // the `if sum == 6` branch never fires; intents.len() == 0.
+    let out = eval(r#"
+        let sum = 0
+        for i in [1, 2, 3] {
+            sum = sum + i
+        }
+        if sum == 6 { T {} }
+    "#);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(
+        out.intents.len(),
+        1,
+        "expected sum to propagate out of the loop and equal 6"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // While loop
 // ---------------------------------------------------------------------------
