@@ -169,38 +169,46 @@ as today's `call_env = captured_env`.
 2. **Add helper methods on EvalContext** for ergonomics: `ctx.bind`, `ctx.lookup`,
    `ctx.reassign`, `ctx.push_frame`, `ctx.pop_frame` (forward to `object_world`).
    Optional but reduces noise at call sites.
-3. **Migrate eval-fn signatures** (drop `env: &Env` / `env: &mut Env` parameter):
-   - [ ] `eval_block_stmts` (`evaluator.rs:355`)
-   - [ ] `eval_stmt` (`evaluator.rs:384`)
-   - [ ] `eval_expr_stmt` (`evaluator.rs:545`)
-   - [ ] `eval_if` (`evaluator.rs:623`)
-   - [ ] `eval_ce` (`evaluator.rs:649`)
-   - [ ] `eval_expr` (`evaluator.rs:701`)
-   - [ ] `eval_call` (`evaluator.rs:737`)
-   - [ ] `eval_binop` (`evaluator.rs:914`)
-   - [ ] `eval_unop` (`evaluator.rs:1013`-area)
-4. **Replace clone sites with frame push/pop** (RAII-style: scope guard or explicit
-   pair around the eval call):
-   - [ ] Loop entry → `push_frame(Block)` once at entry, `pop_frame` at exit
-   - [ ] CE body (`eval_ce`) → `push_frame(Block)` / `pop_frame`
-   - [ ] Function call (`eval_call` Function arm, `eval_mms_fn`) →
+1. **API + unit tests** (`src/meow_meow/object.rs`) ✅
+   - 11 unit tests cover bind/lookup/has/reassign, frame walks, function read &
+     write barriers, snapshot_visible flattening + function-stop, pop-root protection.
+2. ~~**Helper methods on EvalContext**~~ — skipped. Direct `ctx.object_world.bind(...)` /
+   `lookup(...)` / `reassign(...)` reads cleanly enough; no extra forwarding layer.
+3. **Migrate eval-fn signatures** ✅ (drop `env: &Env` / `env: &mut Env` parameter):
+   - [x] `eval_block_stmts`
+   - [x] `eval_stmt`
+   - [x] `eval_expr_stmt`
+   - [x] `eval_if`
+   - [x] `eval_ce`
+   - [x] `eval_expr`
+   - [x] `eval_call`
+   - [x] `eval_binop`
+   - [x] `eval_unaryop`
+4. **Replace clone sites with frame push/pop** ✅
+   - [x] Loop entry (`ForIn` / `While`) → `push_frame(Block)` once at entry, `pop_frame` at exit
+   - [x] CE body (`eval_ce`) → `push_frame(Block)` / `pop_frame`
+   - [x] If-body / else-body → `push_frame(Block)` / `pop_frame`
+   - [x] Plain `Statement::Block` → `push_frame(Block)` / `pop_frame`
+   - [x] Function call (`eval_call` Function arm, `eval_mms_fn`, `eval_binop` Pipe arm) →
          `push_function_frame(captured_env)` / `pop_frame`
-   - [ ] Closure creation (`Expression::Function`) → `captured_env =
-         object_world.snapshot_visible()`
-5. **Replace direct env access** with the new API:
-   - [ ] `Reassign` walk → `object_world.reassign(name, val)?`
-   - [ ] `Identifier` lookup → `object_world.lookup(name)`
-   - [ ] CE-body builder-call interception (`!env.contains_key(...)`) →
-         `!ctx.object_world.has(...)`
-   - [ ] Reassign-as-named check in `eval_stmt` → `!ctx.object_world.has(...)`
-   - [ ] Module export bookkeeping in `eval_as_module`
-6. **Construction sites** drop the parallel `Env`:
-   - [ ] `eval_script` — `ObjectWorld::new()` only
-   - [ ] `eval_mms_fn` — `ObjectWorld::new()` then `push_function_frame(captured_env)`
-   - [ ] `eval_as_module` — `ObjectWorld::new()` only
-7. **Test pass after each step** — `cargo test --lib meow_meow`.
-8. **Run example** — `cargo run --release --example component-method-call`.
-9. **Doc updates**:
+   - [x] Closure creation (`Expression::Function`) → `captured_env = object_world.snapshot_visible()`
+5. **Replace direct env access** with the new API ✅
+   - [x] `Reassign` walk → `object_world.reassign(name, val)?`
+   - [x] `Identifier` lookup → `object_world.lookup(name)`
+   - [x] CE-body builder-call interception → `!ctx.object_world.has(...)`
+   - [x] Reassign-as-named check in `eval_stmt` → `!ctx.object_world.has(...)`
+   - [x] Module export bookkeeping in `eval_as_module` (now reads back via `lookup` after `Exported(name)`)
+6. **Construction sites** drop the parallel `Env` ✅
+   - [x] `eval_script` — `ObjectWorld::new()` only
+   - [x] `eval_mms_fn` — `ObjectWorld::new()` + `push_function_frame(captured_env)` + bind params
+   - [x] `eval_as_module` — `ObjectWorld::new()` only
+   - [x] `type Env = HashMap<String, Value>` alias removed
+7. **Test pass** ✅ — `cargo test --lib meow_meow` reports 63/63 passing (51 evaluator
+      + 11 ObjectWorld unit tests + 1 new TDD test that flipped from red → green:
+      `eval_for_accumulator_propagates_after_loop_exit`).
+8. **Build example** ✅ — `cargo build --release --example component-method-call`
+      compiles clean. (Interactive run pending — opens a window.)
+9. **Doc updates** (next):
    - [ ] `docs/meow_meow/spec/env-heap-object-world.md` — replace flat-HashMap "Current
          state" with frame-stack description; update scope-chain (v2+) section to
          reflect that v2 has landed.
@@ -211,15 +219,15 @@ as today's `call_env = captured_env`.
 
 ## Acceptance criteria
 
-- [ ] No eval function takes `env: &Env` / `env: &mut Env`.
-- [ ] `ObjectWorld` holds frames + heap; no parallel `HashMap<String, Value>` lives in
-      the evaluator.
-- [ ] Standard scoping: loop reassignment of outer-declared vars is visible after the loop.
-- [ ] Function read barrier: function body cannot read caller-local vars (only
-      captured snapshot).
-- [ ] `cargo test --lib meow_meow` passes (currently 51 tests; some may need updating
-      for the loop-reassign behavior change).
-- [ ] `examples/component-method-call` runs end-to-end.
+- [x] No eval function takes `env: &Env` / `env: &mut Env`.
+- [x] `ObjectWorld` holds frames + heap; no parallel `HashMap<String, Value>` lives in
+      the evaluator (the `Env` type alias was removed).
+- [x] Standard scoping: loop reassignment of outer-declared vars is visible after the
+      loop (verified by `eval_for_accumulator_propagates_after_loop_exit`).
+- [x] Function read barrier: function body cannot read caller-local vars (only the
+      captured snapshot is visible inside the function frame).
+- [x] `cargo test --lib meow_meow` passes (63 tests).
+- [ ] `examples/component-method-call` runs end-to-end (interactive — pending manual run).
 
 ---
 

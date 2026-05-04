@@ -112,19 +112,28 @@ instead, the evaluator owns the outgoing intent channel, and `ObjectWorld` provi
 storage/bookkeeping that the evaluator queries.
 
 ```rust
+pub enum FrameKind { Block, Function }
+
 pub struct ObjectWorld {
-    // Variable environment (flat scope in v1; scope chain in v2+)
-    env: HashMap<String, Value>,
+    // Scope chain — root frame at the bottom, innermost frame at the top.
+    // Block frames are transparent; Function frames are read+write barriers.
+    frames: Vec<Frame>,
     // MMS-side heap (maps, records, future component scopes)
     heap: Heap,
 }
 
 impl ObjectWorld {
-    pub fn new() -> Self { ... }
-    pub fn bind(&mut self, name: impl Into<String>, value: Value) { ... }
-    pub fn lookup(&self, name: &str) -> Option<&Value> { ... }
-    pub fn heap(&self) -> &Heap { ... }
-    pub fn heap_mut(&mut self) -> &mut Heap { ... }
+    pub fn new() -> Self;                                    // pushes one root frame
+    pub fn push_frame(&mut self, kind: FrameKind);
+    pub fn push_function_frame(&mut self, captured: HashMap<String, Value>);
+    pub fn pop_frame(&mut self);                             // refuses to pop the root
+    pub fn bind(&mut self, name: impl Into<String>, value: Value);
+    pub fn lookup(&self, name: &str) -> Option<&Value>;
+    pub fn has(&self, name: &str) -> bool;
+    pub fn reassign(&mut self, name: &str, value: Value) -> Result<(), String>;
+    pub fn snapshot_visible(&self) -> HashMap<String, Value>; // for closure capture
+    pub fn heap(&self) -> &Heap;
+    pub fn heap_mut(&mut self) -> &mut Heap;
 }
 ```
 

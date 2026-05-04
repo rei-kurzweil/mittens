@@ -142,15 +142,15 @@ the integration check.
 
 ## Acceptance criteria
 
-- [ ] `EvalContext` has no separate `pending` field; storage lives on `ObjectWorld`.
-- [ ] No eval function takes `env: &Env` / `env: &mut Env` directly.
-- [ ] `cargo test --lib meow_meow` passes (currently 51 tests).
+- [x] `EvalContext` has no separate `pending` field; storage lives on `ObjectWorld`
+      (and `pending` itself was dropped — attachment state is engine-side).
+- [x] No eval function takes `env: &Env` / `env: &mut Env` directly.
+- [x] `cargo test --lib meow_meow` passes (63 tests).
 - [ ] `examples/component-method-call` runs: `let playback_status = Text {}` registers,
       gets attached via `T { playback_status }`, `playback_status.set_text("Paused")`
-      from the click handler still works.
-- [ ] Spec doc [env-heap-object-world.md](../meow_meow/spec/env-heap-object-world.md)
-      "Current state (v1)" section updated to reflect the wiring (env not flat anymore
-      *as a bare HashMap*; lives on ObjectWorld).
+      from the click handler still works (release build clean; interactive run pending).
+- [x] Spec doc [env-heap-object-world.md](../meow_meow/spec/env-heap-object-world.md)
+      updated to describe the frame-stack scope chain.
 
 ---
 
@@ -165,15 +165,22 @@ the integration check.
    `ObjectWorld`.
 4. Run tests + example.
 
-### Stage 2 — env migration (deferred)
+### Stage 2 — env migration ✅ landed
 
-Holds until the env cloning / memory-management strategy is decided. The `env: &mut Env`
-parameter stays on eval functions for now. Once the cloning model is settled (loops
-re-clone? function calls snapshot? scope-chain frames?), migrate `env` into `ObjectWorld`
-in one pass.
+Done as a frame-stack scope chain, see
+[frame-stack-object-world.md](frame-stack-object-world.md). Summary:
 
-This staging keeps the wiring change small and avoids baking in a clone strategy that
-will change.
+- `ObjectWorld` now holds `frames: Vec<Frame>` + `Heap`; the `Env` type alias is gone.
+- `FrameKind { Block, Function }`: Block is fully transparent (read+write walk past),
+  Function is a hard barrier seeded with the closure's `captured_env`.
+- All 9 eval functions dropped their `env: &Env` / `&mut Env` parameter; access goes
+  through `ctx.object_world.{bind,lookup,has,reassign,snapshot_visible}`.
+- Loop / CE-body / if-body / plain block boundaries push a `Block` frame; function
+  call boundaries push a `Function` frame. No more per-boundary `env.clone()`.
+- Standard scoping: loop reassignment of outer-declared vars now propagates after the
+  loop ends (verified by `eval_for_accumulator_propagates_after_loop_exit`).
+- 63/63 `meow_meow` lib tests pass; release build of `examples/component-method-call`
+  is clean (interactive run pending).
 
 ---
 

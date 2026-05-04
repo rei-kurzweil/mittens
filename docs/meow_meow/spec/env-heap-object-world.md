@@ -36,16 +36,35 @@ Larger or reference-typed values live on the heap; env holds an `ObjectId` point
 `Value::ComponentObject { id, component_type, scope }` also lives inline in env — the
 `ComponentId` is stable and cheap to copy. See component scopes below for `scope`.
 
-### Scope chain (v2+)
+### Scope chain (frame stack)
 
-In v1 the env is a single flat `HashMap`. In v2 it becomes a proper frame stack:
+`env` is a stack of frames. Each frame carries a `kind` and its own
+`HashMap<String, Value>`. Frame kinds:
 
-- function calls push a new frame (populated from `captured_env` + args)
-- block statements push a frame for block-local variables
-- frames are popped on exit; inner bindings do not leak outward
+- **`Block`** — fully transparent: `lookup` and `reassign` walk past. Used for plain
+  blocks, if-bodies, loop bodies, and CE bodies. Reassignment of a name declared in
+  an outer frame walks up to the declaring frame and writes there.
+- **`Function`** — hard barrier in both directions. Lookups don't see the caller's
+  locals; reassign cannot write to anything declared past it. The frame is seeded at
+  push time with the closure's `captured_env` flattened map.
 
-The `Reassign` operation walks the frame stack to find and update the frame that originally
-declared the name, enabling closures to mutate captured variables across calls.
+Push/pop sites:
+
+| Eval site | Frame kind | Seeded with |
+|---|---|---|
+| `eval_script`, `eval_as_module` | (root frame) | empty |
+| `Statement::Block`, `If`, `ForIn`, `While`, CE body | `Block` | empty |
+| Function call (`eval_call` Function arm, pipe arm, `eval_mms_fn`) | `Function` | `captured_env` |
+
+Closure creation (`Expression::Function`) snapshots the *visible* env into a flat
+`HashMap` via `ObjectWorld::snapshot_visible()`, which walks frames inward-to-outward
+and **stops at the first `Function` barrier** — closures see what they could see at
+the moment of definition, including the enclosing function's locals if any.
+
+`Reassign` returns errors:
+- `"reassignment: 'X' is not defined"` — name not in any reachable frame.
+- `"cannot reassign 'X' from inside function (only its captured snapshot is visible)"` —
+  name only declared past a `Function` barrier (caller's local).
 
 ---
 
@@ -79,13 +98,24 @@ the other way around.
 thread. It is the scripting-side counterpart to the engine's `World`.
 
 ```rust
+pub enum FrameKind { Block, Function }
+
+struct Frame {
+    kind_or_root: Option<FrameKind>,   // None = root frame (script-level)
+    bindings: HashMap<String, Value>,
+}
+
 pub struct ObjectWorld {
-    /// Lexical variable environment (scope chain in v2+; flat map in v1).
-    env: ScopeChain,
-    /// Heap-allocated reference objects (maps, component scopes, ...).
-    heap: Heap,
+    frames: Vec<Frame>,                // scope chain; root frame is always present
+    heap: Heap,                        // reference-typed objects (maps, future scopes)
 }
 ```
+
+Public methods on `ObjectWorld`: `push_frame(kind)`, `push_function_frame(captured)`,
+`pop_frame` (refuses to pop the root), `bind(name, value)` (writes to top frame),
+`lookup(name)` (walks inward, stops at Function), `has(name)`, `reassign(name, value)`
+(walks inward to declaring frame, stops at Function), `snapshot_visible()` (flatten
+into one map for closure capture, stops at Function).
 
 ### Separation of concerns
 
@@ -172,14 +202,22 @@ a future extension.
 
 ---
 
-## Current state (v1)
+## Current state
 
-- `ObjectWorld { env: HashMap<String, Value>, heap: Heap }` is wired into `EvalContext`
-  as `object_world: &mut ObjectWorld`.
-- env is still a flat `HashMap` (no scope chain yet); migration to a frame stack is v2.
+- `ObjectWorld { frames: Vec<Frame>, heap: Heap }` is the single storage container,
+  threaded through every eval function as `EvalContext.object_world: &mut ObjectWorld`.
+  No `env: &Env` parameter exists anymore; the `Env` type alias was removed.
+- Frame stack is implemented with `FrameKind { Block, Function }`; loops, if-bodies,
+  blocks, and CE bodies all push transparent `Block` frames. Function calls push a
+  `Function` frame seeded with the closure's `captured_env`.
+- Standard scoping: a `let` inside a block doesn't leak; a `reassign` of an
+  outer-declared variable walks up to the declaring frame and writes there.
+- Loop body reassignment of outer vars **propagates** after the loop ends (changed
+  from the old `loop_env = env.clone()` sandbox).
 - heap exists but is unused at runtime; component body scopes are not preserved (v3).
 - `let x = CE` uses `HostCallKind::Register` (spawn-without-init); placement uses
   `HostCallKind::Attach`. The let-binding-spawns-root bug is fixed.
 
-Migration path: scope-chain frames (v2), `Object::Scope` + `ComponentObject.scope` (v3),
-implicit-clone semantics for multi-emit (see analysis doc above).
+Roadmap: `Object::Scope` + `ComponentObject.scope` (v3 — preserves CE-body locals as
+heap-backed scopes for outside dot-access); implicit-clone semantics for multi-emit
+(see [`../analysis/component-emit-lifecycle-and-cloning.md`](../analysis/component-emit-lifecycle-and-cloning.md)).
