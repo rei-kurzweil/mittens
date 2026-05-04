@@ -12,7 +12,7 @@ use crate::meow_meow::ast::{
     BinOpKind, CallExpression, ComponentExpression,
     Expression, IfStatement, ImportItem, Statement, UnaryOpKind,
 };
-use crate::meow_meow::object::{CeChild, MaterializedCE, ObjectWorld, Value};
+use crate::meow_meow::object::{CeChild, FrameKind, MaterializedCE, ObjectWorld, Value};
 use crate::meow_meow::parser::{MeowMeowParser, ParseError};
 use crate::meow_meow::token::TokenizeError;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;
@@ -207,7 +207,6 @@ fn host_call(
 // Script evaluation
 // ---------------------------------------------------------------------------
 
-type Env = HashMap<String, Value>;
 
 /// Shared mutable context threaded through evaluation.
 ///
@@ -227,13 +226,8 @@ struct EvalContext<'a> {
     /// When evaluating inside a CE body block, captures children, builder calls,
     /// positionals, and named assignments instead of emitting to the top level.
     ce_builder: Option<&'a mut CeBuilder>,
-    /// Scripting-side runtime storage: variable env (heap, pending list).
-    /// `pending` tracks component ids returned by `HostCallKind::Register`
-    /// that have not yet been attached.
-    ///
-    /// Note: `env` is *not* yet routed through `ObjectWorld` — it is still
-    /// passed as a separate `&mut Env` parameter on each eval function. See
-    /// `docs/task/mms-objectworld-evaluator-wiring.md` for the staged plan.
+    /// Scripting-side runtime storage: variable scope chain (frames) + heap.
+    /// All variable bindings, lookups, and reassignments go through this.
     object_world: &'a mut ObjectWorld,
 }
 
@@ -299,7 +293,6 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
     EmitLiftTransform::apply(&mut stmts);
     QueryDesugarTransform::apply(&mut stmts);
 
-    let mut env: Env = HashMap::new();
     let mut emits: Vec<IntentValue> = Vec::new();
     let mut world = ObjectWorld::new();
 
@@ -312,7 +305,7 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
             ce_builder: None,
             object_world: &mut world,
         };
-        eval_block_stmts(&stmts, &mut env, &mut ctx)
+        eval_block_stmts(&stmts, &mut ctx)
     }; // ctx (and its borrow of ch) dropped here
 
     match eval_result {
@@ -335,48 +328,37 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
 // ---------------------------------------------------------------------------
 
 /// Effect produced by evaluating a statement (excluding emits, which go to the emits vec).
+///
+/// Bindings, reassignments, and import-bindings are applied directly to
+/// `ctx.object_world` inside `eval_stmt` — they do not flow through this enum.
+/// Only control-flow effects and the `Exported` marker bubble out.
 enum StmtEffect {
     None,
-    Bind(String, Value),
-    /// Like `Bind`, but also registers in the module's named exports map.
-    Export(String, Value),
-    /// Multiple bindings from an `import` statement.
-    ImportBindings(Vec<(String, Value)>),
-    /// `x = expr` — update an existing binding in the current env.
-    Reassign(String, Value),
+    /// `export let X = ...` — the binding has already been written to
+    /// `object_world`; this signals that the module body should also register
+    /// the name in its named-exports map.
+    Exported(String),
     Return(Value),
     Break,
     Continue,
 }
 
-/// Evaluate a block of statements, applying all bindings and reassignments
-/// directly to `env` (no clone). Bind effects from `let` statements extend env
-/// in place; Reassign effects propagate to env (so reassignment inside if-blocks
-/// is visible to the enclosing scope). Returns the first control-flow effect
-/// (Return/Break/Continue) encountered, or None.
+/// Evaluate a block of statements against the current top frame of
+/// `ctx.object_world`. Returns the first control-flow effect encountered
+/// (Return/Break/Continue), `Exported(name)` (only consumed by module body),
+/// or `None`.
+///
+/// Frame management is the *caller*'s responsibility: this function does not
+/// push or pop. Function calls, loops, if-bodies, etc. wrap the call.
 fn eval_block_stmts(
     stmts: &[Statement],
-    env: &mut Env,
     ctx: &mut EvalContext<'_>,
 ) -> Result<StmtEffect, String> {
     for stmt in stmts {
-        match eval_stmt(stmt, env, ctx)? {
-            StmtEffect::Bind(name, val) | StmtEffect::Export(name, val) => {
-                env.insert(name, val);
-            }
-            StmtEffect::ImportBindings(bindings) => {
-                for (name, val) in bindings {
-                    env.insert(name, val);
-                }
-            }
-            StmtEffect::Reassign(name, val) => {
-                if env.contains_key(&name) {
-                    env.insert(name, val);
-                } else {
-                    return Err(format!("reassignment: '{}' is not defined", name));
-                }
-            }
+        match eval_stmt(stmt, ctx)? {
             StmtEffect::None => {}
+            // Exported is only meaningful at module-body level; ignored elsewhere.
+            StmtEffect::Exported(_) => {}
             effect => return Ok(effect),
         }
     }
@@ -385,12 +367,11 @@ fn eval_block_stmts(
 
 fn eval_stmt(
     stmt: &Statement,
-    env: &mut Env,
     ctx: &mut EvalContext<'_>,
 ) -> Result<StmtEffect, String> {
     match stmt {
         Statement::Assignment(a) => {
-            let val = eval_expr(&a.value, env, ctx)?;
+            let val = eval_expr(&a.value, ctx)?;
             // When a CE is assigned to a variable and we have a live reply channel,
             // spawn it immediately and bind a ComponentObject instead of the dead snapshot.
             // `let x = CE` in live mode: Register (spawn detached + uninitialised)
@@ -409,102 +390,89 @@ fn eval_stmt(
                 }
                 (val, _) => val,
             };
+            ctx.object_world.bind(a.name.0.clone(), val);
             if a.exported {
-                Ok(StmtEffect::Export(a.name.0.clone(), val))
+                Ok(StmtEffect::Exported(a.name.0.clone()))
             } else {
-                Ok(StmtEffect::Bind(a.name.0.clone(), val))
+                Ok(StmtEffect::None)
             }
         }
         Statement::Reassign { name, value } => {
-            let val = eval_expr(value, env, ctx)?;
-            // Inside a CE body: if name not in env, capture as named property.
-            if !env.contains_key(&name.0) {
+            let val = eval_expr(value, ctx)?;
+            // Inside a CE body: if name not in scope, capture as named property.
+            if !ctx.object_world.has(&name.0) {
                 if let Some(builder) = ctx.ce_builder.as_mut() {
                     builder.named.push((name.0.clone(), val));
                     return Ok(StmtEffect::None);
                 }
             }
-            Ok(StmtEffect::Reassign(name.0.clone(), val))
+            ctx.object_world.reassign(&name.0, val)?;
+            Ok(StmtEffect::None)
         }
         Statement::Expression(expr) => {
-            eval_expr_stmt(expr, env, ctx)?;
+            eval_expr_stmt(expr, ctx)?;
             Ok(StmtEffect::None)
         }
         Statement::Return(r) => {
             let val = match &r.value {
-                Some(expr) => eval_expr(expr, env, ctx)?,
+                Some(expr) => eval_expr(expr, ctx)?,
                 None => Value::Null,
             };
             Ok(StmtEffect::Return(val))
         }
-        Statement::If(if_stmt) => eval_if(if_stmt, env, ctx),
-        Statement::Block(block) => eval_block_stmts(&block.statements, env, ctx),
+        Statement::If(if_stmt) => eval_if(if_stmt, ctx),
+        Statement::Block(block) => {
+            ctx.object_world.push_frame(FrameKind::Block);
+            let result = eval_block_stmts(&block.statements, ctx);
+            ctx.object_world.pop_frame();
+            result
+        }
         Statement::Break => Ok(StmtEffect::Break),
         Statement::Continue => Ok(StmtEffect::Continue),
         Statement::ForIn { binding, iterable, body } => {
-            let items = match eval_expr(iterable, env, ctx)? {
+            let items = match eval_expr(iterable, ctx)? {
                 Value::Array(a) => a,
                 other => return Err(format!("for/in: expected array, got {:?}", other)),
             };
-            // `loop_env` persists across iterations so that reassignment (accumulator
-            // patterns like `sum = sum + i`) propagates between iterations.
-            let mut loop_env = env.clone();
-            'for_loop: for item in items {
-                loop_env.insert(binding.0.clone(), item);
-                for stmt in &body.statements {
-                    match eval_stmt(stmt, &mut loop_env, ctx)? {
-                        StmtEffect::None => {}
-                        StmtEffect::Bind(n, v) | StmtEffect::Export(n, v) => {
-                            loop_env.insert(n, v);
+            ctx.object_world.push_frame(FrameKind::Block);
+            let result: Result<StmtEffect, String> = (|| {
+                'for_loop: for item in items {
+                    ctx.object_world.bind(binding.0.clone(), item);
+                    for stmt in &body.statements {
+                        match eval_stmt(stmt, ctx)? {
+                            StmtEffect::None | StmtEffect::Exported(_) => {}
+                            StmtEffect::Return(val) => return Ok(StmtEffect::Return(val)),
+                            StmtEffect::Break => return Ok(StmtEffect::None),
+                            StmtEffect::Continue => continue 'for_loop,
                         }
-                        StmtEffect::Reassign(n, v) => {
-                            if loop_env.contains_key(&n) {
-                                loop_env.insert(n, v);
-                            } else {
-                                return Err(format!("reassignment: '{}' is not defined", n));
-                            }
-                        }
-                        StmtEffect::ImportBindings(bs) => {
-                            for (n, v) in bs { loop_env.insert(n, v); }
-                        }
-                        StmtEffect::Return(val) => return Ok(StmtEffect::Return(val)),
-                        StmtEffect::Break => return Ok(StmtEffect::None),
-                        StmtEffect::Continue => continue 'for_loop,
                     }
                 }
-            }
-            Ok(StmtEffect::None)
+                Ok(StmtEffect::None)
+            })();
+            ctx.object_world.pop_frame();
+            result
         }
         Statement::While { condition, body } => {
-            let mut loop_env = env.clone();
-            'while_loop: loop {
-                let cond = eval_expr(condition, &loop_env, ctx)?;
-                if !is_truthy(&cond) {
-                    break;
-                }
-                for stmt in &body.statements {
-                    match eval_stmt(stmt, &mut loop_env, ctx)? {
-                        StmtEffect::None => {}
-                        StmtEffect::Bind(n, v) | StmtEffect::Export(n, v) => {
-                            loop_env.insert(n, v);
+            ctx.object_world.push_frame(FrameKind::Block);
+            let result: Result<StmtEffect, String> = (|| {
+                'while_loop: loop {
+                    let cond = eval_expr(condition, ctx)?;
+                    if !is_truthy(&cond) {
+                        break;
+                    }
+                    for stmt in &body.statements {
+                        match eval_stmt(stmt, ctx)? {
+                            StmtEffect::None | StmtEffect::Exported(_) => {}
+                            StmtEffect::Return(val) => return Ok(StmtEffect::Return(val)),
+                            StmtEffect::Break => break 'while_loop,
+                            StmtEffect::Continue => continue 'while_loop,
                         }
-                        StmtEffect::Reassign(n, v) => {
-                            if loop_env.contains_key(&n) {
-                                loop_env.insert(n, v);
-                            } else {
-                                return Err(format!("reassignment: '{}' is not defined", n));
-                            }
-                        }
-                        StmtEffect::ImportBindings(bs) => {
-                            for (n, v) in bs { loop_env.insert(n, v); }
-                        }
-                        StmtEffect::Return(val) => return Ok(StmtEffect::Return(val)),
-                        StmtEffect::Break => break 'while_loop,
-                        StmtEffect::Continue => continue 'while_loop,
                     }
                 }
-            }
-            Ok(StmtEffect::None)
+                Ok(StmtEffect::None)
+            })();
+            ctx.object_world.pop_frame();
+            result
         }
         Statement::Import { items, path } => {
             let resolved = resolve_import_path(path, ctx.source_path);
@@ -515,44 +483,45 @@ fn eval_stmt(
                 Value::Module { named, sequence } => (named, sequence),
                 _ => return Err("import: internal error".to_string()),
             };
-            let mut bindings = Vec::new();
             for item in items {
                 match item {
                     ImportItem::Named(id) => {
                         let val = named.get(&id.0).cloned().ok_or_else(|| {
                             format!("import: '{}' is not exported from '{}'", id.0, path)
                         })?;
-                        bindings.push((id.0.clone(), val));
+                        ctx.object_world.bind(id.0.clone(), val);
                     }
                     ImportItem::NamedAlias { name, alias } => {
                         let val = named.get(&name.0).cloned().ok_or_else(|| {
                             format!("import: '{}' is not exported from '{}'", name.0, path)
                         })?;
-                        bindings.push((alias.0.clone(), val));
+                        ctx.object_world.bind(alias.0.clone(), val);
                     }
                     ImportItem::PositionalAlias { index, alias } => {
                         let ce = sequence.get(*index).ok_or_else(|| {
                             format!("import: index {} out of range in '{}'", index, path)
                         })?;
-                        bindings.push((alias.0.clone(), Value::ComponentExpr(Box::new(ce.clone()))));
+                        ctx.object_world.bind(
+                            alias.0.clone(),
+                            Value::ComponentExpr(Box::new(ce.clone())),
+                        );
                     }
                 }
             }
-            Ok(StmtEffect::ImportBindings(bindings))
+            Ok(StmtEffect::None)
         }
     }
 }
 
 fn eval_expr_stmt(
     expr: &Expression,
-    env: &Env,
     ctx: &mut EvalContext<'_>,
 ) -> Result<(), String> {
     // Special case: emit(expr) — produced by EmitLiftTransform or written explicitly.
     if let Expression::Call(call) = expr {
         if matches!(call.callee.as_ref(), Expression::Identifier(id) if id.0 == "emit") {
             if let Some(arg) = call.args.first() {
-                let val = eval_expr(arg, env, ctx)?;
+                let val = eval_expr(arg, ctx)?;
                 push_component_emit(val, ctx);
             }
             return Ok(());
@@ -562,11 +531,11 @@ fn eval_expr_stmt(
         // and not built-ins are captured as builder calls rather than erroring.
         if let Expression::Identifier(callee_id) = call.callee.as_ref() {
             if ctx.ce_builder.is_some()
-                && !env.contains_key(&callee_id.0)
+                && !ctx.object_world.has(&callee_id.0)
                 && !is_builtin_fn(&callee_id.0)
             {
                 let args: Vec<Value> = call.args.iter()
-                    .map(|a| eval_expr(a, env, ctx))
+                    .map(|a| eval_expr(a, ctx))
                     .collect::<Result<_, _>>()?;
                 ctx.ce_builder.as_mut().unwrap().calls.push((callee_id.0.clone(), args));
                 return Ok(());
@@ -575,7 +544,7 @@ fn eval_expr_stmt(
     }
 
     // General case: evaluate and route result.
-    let val = eval_expr(expr, env, ctx)?;
+    let val = eval_expr(expr, ctx)?;
     if ctx.ce_builder.is_some() {
         match val {
             // String positionals captured in CE body.
@@ -621,16 +590,22 @@ fn is_builtin_fn(name: &str) -> bool {
 
 fn eval_if(
     if_stmt: &IfStatement,
-    env: &mut Env,
     ctx: &mut EvalContext<'_>,
 ) -> Result<StmtEffect, String> {
-    let cond = eval_expr(&if_stmt.condition, env, ctx)?;
-    if is_truthy(&cond) {
-        eval_block_stmts(&if_stmt.then_branch.statements, env, ctx)
-    } else if let Some(else_branch) = &if_stmt.else_branch {
-        eval_block_stmts(&else_branch.statements, env, ctx)
+    let cond = eval_expr(&if_stmt.condition, ctx)?;
+    let stmts = if is_truthy(&cond) {
+        Some(&if_stmt.then_branch.statements)
     } else {
-        Ok(StmtEffect::None)
+        if_stmt.else_branch.as_ref().map(|b| &b.statements)
+    };
+    match stmts {
+        Some(s) => {
+            ctx.object_world.push_frame(FrameKind::Block);
+            let result = eval_block_stmts(s, ctx);
+            ctx.object_world.pop_frame();
+            result
+        }
+        None => Ok(StmtEffect::None),
     }
 }
 
@@ -646,14 +621,14 @@ fn eval_if(
 /// - Calls to names not in env → captured as builder calls
 /// - `Value::String` expression statements → captured as positionals
 /// - Named assignments (`name = expr`) → read from env after block if pre-injected
-fn eval_ce(ce: &ComponentExpression, env: &Env, ctx: &mut EvalContext<'_>) -> Result<Value, String> {
+fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value, String> {
     // Evaluate all constructor calls.
     let mut ctor_method: Option<String> = None;
     let mut ctor_args: Vec<Value> = vec![];
     let mut extra_ctor_calls: Vec<(String, Vec<Value>)> = vec![];
     for (i, ctor) in ce.constructors.iter().enumerate() {
         let args: Vec<Value> = ctor.args.iter()
-            .map(|a| eval_expr(a, env, ctx))
+            .map(|a| eval_expr(a, ctx))
             .collect::<Result<_, _>>()?;
         if i == 0 {
             ctor_method = Some(ctor.method.0.clone());
@@ -671,10 +646,10 @@ fn eval_ce(ce: &ComponentExpression, env: &Env, ctx: &mut EvalContext<'_>) -> Re
         children: vec![],
     };
 
-    let mut body_env = env.clone();
-
     // Evaluate the body block, routing CE emissions and builder calls to `builder`.
-    {
+    // CE bodies are plain Block frames — fully transparent for read & write.
+    ctx.object_world.push_frame(FrameKind::Block);
+    let body_result = {
         let mut body_ctx = EvalContext {
             emits: ctx.emits,
             source_path: ctx.source_path,
@@ -682,8 +657,10 @@ fn eval_ce(ce: &ComponentExpression, env: &Env, ctx: &mut EvalContext<'_>) -> Re
             ce_builder: Some(&mut builder),
             object_world: ctx.object_world,
         };
-        eval_block_stmts(&ce.body.statements, &mut body_env, &mut body_ctx)?;
-    }
+        eval_block_stmts(&ce.body.statements, &mut body_ctx)
+    };
+    ctx.object_world.pop_frame();
+    body_result?;
 
     let mce = MaterializedCE {
         component_type: ce.component_type.0.clone(),
@@ -699,7 +676,6 @@ fn eval_ce(ce: &ComponentExpression, env: &Env, ctx: &mut EvalContext<'_>) -> Re
 
 fn eval_expr(
     expr: &Expression,
-    env: &Env,
     ctx: &mut EvalContext<'_>,
 ) -> Result<Value, String> {
     match expr {
@@ -710,43 +686,42 @@ fn eval_expr(
         Expression::Array(items) => {
             let vals = items
                 .iter()
-                .map(|e| eval_expr(e, env, ctx))
+                .map(|e| eval_expr(e, ctx))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Value::Array(vals))
         }
         Expression::Identifier(id) => {
-            // Look up in env; fall back to bare identifier value (for enum-like flags).
-            match env.get(&id.0) {
+            // Look up in scope chain; fall back to bare identifier value (for enum-like flags).
+            match ctx.object_world.lookup(&id.0) {
                 Some(val) => Ok(val.clone()),
                 None => Ok(Value::Identifier(id.0.clone())),
             }
         }
-        Expression::Component(ce) => eval_ce(ce, env, ctx),
+        Expression::Component(ce) => eval_ce(ce, ctx),
         Expression::Function { params, body } => Ok(Value::Function {
             params: params.iter().map(|p| p.0.clone()).collect(),
             body: body.clone(),
-            captured_env: env.clone(),
+            captured_env: ctx.object_world.snapshot_visible(),
         }),
-        Expression::Call(call) => eval_call(call, env, ctx),
-        Expression::BinaryOp { op, lhs, rhs } => eval_binop(op, lhs, rhs, env, ctx),
-        Expression::UnaryOp { op, operand } => eval_unaryop(op, operand, env, ctx),
+        Expression::Call(call) => eval_call(call, ctx),
+        Expression::BinaryOp { op, lhs, rhs } => eval_binop(op, lhs, rhs, ctx),
+        Expression::UnaryOp { op, operand } => eval_unaryop(op, operand, ctx),
     }
 }
 
 fn eval_call(
     call: &CallExpression,
-    env: &Env,
     ctx: &mut EvalContext<'_>,
 ) -> Result<Value, String> {
     // Method call: `obj.method(args)` — callee is BinaryOp(Dot, lhs, rhs).
     if let Expression::BinaryOp { op: BinOpKind::Dot, lhs, rhs } = call.callee.as_ref() {
-        let receiver = eval_expr(lhs, env, ctx)?;
+        let receiver = eval_expr(lhs, ctx)?;
         let method_name = match rhs.as_ref() {
             Expression::Identifier(id) => id.0.clone(),
             other => return Err(format!("method call: RHS of '.' must be an identifier, got {:?}", other)),
         };
         let args: Vec<Value> = call.args.iter()
-            .map(|a| eval_expr(a, env, ctx))
+            .map(|a| eval_expr(a, ctx))
             .collect::<Result<_, _>>()?;
         return eval_method_call(receiver, &method_name, args, ctx);
     }
@@ -758,7 +733,7 @@ fn eval_call(
 
     // Built-in: print(value)
     if callee_name == "print" {
-        let arg = call.args.first().map(|a| eval_expr(a, env, ctx)).transpose()?
+        let arg = call.args.first().map(|a| eval_expr(a, ctx)).transpose()?
             .unwrap_or(Value::Null);
         println!("[mms] {}", value_display(&arg));
         return Ok(Value::Null);
@@ -766,10 +741,10 @@ fn eval_call(
 
     // Built-in: assert(cond, msg)
     if callee_name == "assert" {
-        let cond = call.args.first().map(|a| eval_expr(a, env, ctx)).transpose()?
+        let cond = call.args.first().map(|a| eval_expr(a, ctx)).transpose()?
             .unwrap_or(Value::Null);
         if !is_truthy(&cond) {
-            let msg = call.args.get(1).map(|a| eval_expr(a, env, ctx)).transpose()?
+            let msg = call.args.get(1).map(|a| eval_expr(a, ctx)).transpose()?
                 .unwrap_or(Value::String("assertion failed".into()));
             return Err(format!("assert: {}", value_display(&msg)));
         }
@@ -781,7 +756,7 @@ fn eval_call(
         let args: Vec<Value> = call
             .args
             .iter()
-            .map(|a| eval_expr(a, env, ctx))
+            .map(|a| eval_expr(a, ctx))
             .collect::<Result<_, _>>()?;
         let (start, end) = match args.as_slice() {
             [Value::Number(n)] => (0.0_f64, *n),
@@ -798,7 +773,7 @@ fn eval_call(
     // Built-in: on(component_object, "SignalKind", fn(event) { ... })
     if callee_name == "on" {
         let args: Vec<Value> = call.args.iter()
-            .map(|a| eval_expr(a, env, ctx))
+            .map(|a| eval_expr(a, ctx))
             .collect::<Result<_, _>>()?;
         let scope = match args.get(0) {
             Some(Value::ComponentObject { id, .. }) => *id,
@@ -818,7 +793,7 @@ fn eval_call(
         return Ok(Value::Null);
     }
 
-    let callee_val = match env.get(callee_name) {
+    let callee_val = match ctx.object_world.lookup(callee_name) {
         Some(v) => v.clone(),
         None => return Err(format!("undefined: '{}'", callee_name)),
     };
@@ -828,29 +803,33 @@ fn eval_call(
             let args: Vec<Value> = call
                 .args
                 .iter()
-                .map(|a| eval_expr(a, env, ctx))
+                .map(|a| eval_expr(a, ctx))
                 .collect::<Result<_, _>>()?;
 
-            let mut call_env = captured_env;
-            for (param, arg) in params.iter().zip(args.iter()) {
-                call_env.insert(param.clone(), arg.clone());
+            // Push a Function frame seeded with the closure's captured env;
+            // bind arg values into the same frame so they shadow captured names.
+            ctx.object_world.push_function_frame(captured_env);
+            for (param, arg) in params.iter().zip(args.into_iter()) {
+                ctx.object_world.bind(param.clone(), arg);
             }
-
-            let mut func_ctx = EvalContext {
-                emits: ctx.emits,
-                source_path: None,
-                channels: None,
-                ce_builder: None,
-                object_world: ctx.object_world,
+            let result = {
+                let mut func_ctx = EvalContext {
+                    emits: ctx.emits,
+                    source_path: None,
+                    channels: None,
+                    ce_builder: None,
+                    object_world: ctx.object_world,
+                };
+                eval_block_stmts(&body.statements, &mut func_ctx)
             };
-            match eval_block_stmts(&body.statements, &mut call_env, &mut func_ctx)? {
+            ctx.object_world.pop_frame();
+            match result? {
                 StmtEffect::Return(val) => Ok(val),
                 StmtEffect::None => Ok(Value::Null),
                 StmtEffect::Break | StmtEffect::Continue => {
                     Err("break/continue cannot escape a function body".into())
                 }
-                StmtEffect::Bind(_, _) | StmtEffect::Export(_, _)
-                | StmtEffect::ImportBindings(_) | StmtEffect::Reassign(_, _) => Ok(Value::Null),
+                StmtEffect::Exported(_) => Ok(Value::Null),
             }
         }
         other => Err(format!("cannot call {:?} as a function", other)),
@@ -912,25 +891,24 @@ fn eval_binop(
     op: &BinOpKind,
     lhs: &Expression,
     rhs: &Expression,
-    env: &Env,
     ctx: &mut EvalContext<'_>,
 ) -> Result<Value, String> {
     // Short-circuit logical ops.
     match op {
         BinOpKind::And => {
-            let l = eval_expr(lhs, env, ctx)?;
+            let l = eval_expr(lhs, ctx)?;
             if !is_truthy(&l) {
                 return Ok(Value::Bool(false));
             }
-            let r = eval_expr(rhs, env, ctx)?;
+            let r = eval_expr(rhs, ctx)?;
             return Ok(Value::Bool(is_truthy(&r)));
         }
         BinOpKind::Or => {
-            let l = eval_expr(lhs, env, ctx)?;
+            let l = eval_expr(lhs, ctx)?;
             if is_truthy(&l) {
                 return Ok(Value::Bool(true));
             }
-            let r = eval_expr(rhs, env, ctx)?;
+            let r = eval_expr(rhs, ctx)?;
             return Ok(Value::Bool(is_truthy(&r)));
         }
         BinOpKind::Query => {
@@ -939,22 +917,26 @@ fn eval_binop(
             return Err("query operator '->' not yet implemented (HostCall required)".to_string());
         }
         BinOpKind::Pipe => {
-            let lhs_val = eval_expr(lhs, env, ctx)?;
-            let rhs_val = eval_expr(rhs, env, ctx)?;
+            let lhs_val = eval_expr(lhs, ctx)?;
+            let rhs_val = eval_expr(rhs, ctx)?;
             match rhs_val {
                 Value::Function { params, body, captured_env } => {
-                    let mut call_env = captured_env;
+                    ctx.object_world.push_function_frame(captured_env);
                     if let Some(param) = params.first() {
-                        call_env.insert(param.clone(), lhs_val);
+                        ctx.object_world.bind(param.clone(), lhs_val);
                     }
-                    let mut func_ctx = EvalContext {
-                        emits: ctx.emits,
-                        source_path: None,
-                        channels: None,
-                        ce_builder: None,
-                        object_world: ctx.object_world,
+                    let result = {
+                        let mut func_ctx = EvalContext {
+                            emits: ctx.emits,
+                            source_path: None,
+                            channels: None,
+                            ce_builder: None,
+                            object_world: ctx.object_world,
+                        };
+                        eval_block_stmts(&body.statements, &mut func_ctx)
                     };
-                    match eval_block_stmts(&body.statements, &mut call_env, &mut func_ctx)? {
+                    ctx.object_world.pop_frame();
+                    match result? {
                         StmtEffect::Return(val) => return Ok(val),
                         _ => return Ok(Value::Null),
                     }
@@ -965,8 +947,8 @@ fn eval_binop(
         _ => {}
     }
 
-    let l = eval_expr(lhs, env, ctx)?;
-    let r = eval_expr(rhs, env, ctx)?;
+    let l = eval_expr(lhs, ctx)?;
+    let r = eval_expr(rhs, ctx)?;
 
     match op {
         BinOpKind::Add => match (l, r) {
@@ -1011,10 +993,9 @@ fn eval_binop(
 fn eval_unaryop(
     op: &UnaryOpKind,
     operand: &Expression,
-    env: &Env,
     ctx: &mut EvalContext<'_>,
 ) -> Result<Value, String> {
-    let val = eval_expr(operand, env, ctx)?;
+    let val = eval_expr(operand, ctx)?;
     match op {
         UnaryOpKind::Neg => match val {
             Value::Number(n) => Ok(Value::Number(-n)),
@@ -1104,12 +1085,12 @@ pub(crate) fn eval_mms_fn(
     let Value::Function { params, body, captured_env } = fn_val else {
         return Err(format!("eval_mms_fn: expected Function, got {:?}", fn_val));
     };
-    let mut call_env = captured_env.clone();
-    for (param, arg) in params.iter().zip(args) {
-        call_env.insert(param.clone(), arg);
-    }
     let mut emits: Vec<IntentValue> = Vec::new();
     let mut world = ObjectWorld::new();
+    world.push_function_frame(captured_env.clone());
+    for (param, arg) in params.iter().zip(args) {
+        world.bind(param.clone(), arg);
+    }
     let mut ctx = EvalContext {
         emits: &mut emits,
         source_path: None,
@@ -1117,7 +1098,7 @@ pub(crate) fn eval_mms_fn(
         ce_builder: None,
         object_world: &mut world,
     };
-    let result = match eval_block_stmts(&body.statements, &mut call_env, &mut ctx)? {
+    let result = match eval_block_stmts(&body.statements, &mut ctx)? {
         StmtEffect::Return(val) => val,
         _ => Value::Null,
     };
@@ -1136,7 +1117,6 @@ fn eval_as_module(source: &str, source_path: Option<&str>) -> Result<Value, Stri
     EmitLiftTransform::apply(&mut stmts);
     QueryDesugarTransform::apply(&mut stmts);
 
-    let mut local_env: Env = HashMap::new();
     let mut emits: Vec<IntentValue> = Vec::new();
     let mut named: HashMap<String, Value> = HashMap::new();
     let mut world = ObjectWorld::new();
@@ -1149,21 +1129,15 @@ fn eval_as_module(source: &str, source_path: Option<&str>) -> Result<Value, Stri
     };
 
     for stmt in &stmts {
-        match eval_stmt(stmt, &mut local_env, &mut ctx)? {
-            StmtEffect::Bind(name, val) => { local_env.insert(name, val); }
-            StmtEffect::Export(name, val) => {
-                local_env.insert(name.clone(), val.clone());
-                named.insert(name, val);
-            }
-            StmtEffect::ImportBindings(bindings) => {
-                for (name, val) in bindings { local_env.insert(name, val); }
-            }
-            StmtEffect::None => {}
-            StmtEffect::Reassign(name, val) => {
-                if local_env.contains_key(&name) {
-                    local_env.insert(name, val);
+        match eval_stmt(stmt, &mut ctx)? {
+            StmtEffect::Exported(name) => {
+                // The binding is already in object_world; copy it into the
+                // module's named-exports map.
+                if let Some(val) = ctx.object_world.lookup(&name).cloned() {
+                    named.insert(name, val);
                 }
             }
+            StmtEffect::None => {}
             StmtEffect::Return(_) | StmtEffect::Break | StmtEffect::Continue => {}
         }
     }
