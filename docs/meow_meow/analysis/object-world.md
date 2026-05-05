@@ -152,7 +152,7 @@ impl ObjectWorld {
 ### Current wiring
 
 `ObjectWorld` is reachable through `EvalContext.object_world: &mut ObjectWorld`. Stage 1
-of [../../task/mms-objectworld-evaluator-wiring.md](../../task/mms-objectworld-evaluator-wiring.md)
+of [../task/mms-objectworld-evaluator-wiring.md](../task/mms-objectworld-evaluator-wiring.md)
 is landed: the field exists, Register/Attach is plumbed. Stage 2 — migrating the bare
 `env: &mut Env` parameter on each eval function into `object_world.env` — is deferred
 until the env-clone strategy (loop bodies, function-call snapshots, scope-chain frames)

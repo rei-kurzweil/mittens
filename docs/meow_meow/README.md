@@ -1,66 +1,147 @@
-# Meow Meow Script (MMS)
+# Meow Meow Script (MMS) ᓚᘏᗢ
 
-Meow Meow Script ("MMS") is the scripting + authoring language for cat-engine.
+MMS is the scripting + scene-authoring language for cat-engine. A script
+describes a component tree and wires up reactive behaviour; the evaluator
+runs on a worker thread and emits intents to the engine.
 
-## Status
+For status, roadmap, and active task docs see [`task/status.md`](task/status.md).
+For language goals see [`objectives.md`](objectives.md).
 
-| Area | Status |
-|------|--------|
-| Tokenizer + parser | ✅ done |
-| `ConstructorCall` (`.method(args)` head) | ✅ done |
-| `EmitLiftTransform` (bare CE → `emit(ce)`) | ✅ done |
-| Evaluator thread + ring buffer protocol | ✅ done |
-| `SpawnComponentTree` intent + component registry (30+ types) | ✅ done |
-| `vr-input-mms.rs` end-to-end scene spawn | ✅ done |
-| `MeowMeowRunner` synchronous helper | ✅ done |
-| Arithmetic, comparison, logical expressions (Phase 2) | ✅ done |
-| `if`/`else` evaluation (Phase 3) | ✅ done |
-| Functions, closures, `return` (Phase 4) | ✅ done |
-| `mms-functions.mms` example + test harness | ✅ done |
-| `for`/`in` + `range(n)` + `break`/`continue` (Phase 5) | ✅ done |
-| `let x = T { }` → live reply channel via `eval_with_world` | ⚠️ partial |
-| Emit context stack (Phase 6) | ⏳ planned |
-| Scripted mutation — `x.set_color(...)` etc. (Phase 7) | ⏳ planned |
-| `while` loops (Phase 8 partial) | ✅ done |
-| Array indexing `arr[i]` (Phase 8) | ⏳ planned |
+---
 
-## Docs
+## Component expressions
 
-- [Objectives](objectives.md) — what MMS is trying to be and why (start here)
+A component expression (CE) is the core construct: a constructor head and an
+optional body of children. Children are themselves CEs. A bare CE in
+statement position emits — i.e. spawns and attaches.
 
-### Spec
+```mms
+T.position(0, 1, 0) {
+    R.cube() {
+        C.rgba(1, 0, 0, 1)
+    }
+}
+```
 
-- [Parsing](spec/parsing.md) — Pratt expression parser, statement dispatch, component body grammar, AST transforms (EmitLiftTransform, QueryDesugarTransform)
-- [Env and evaluation context](spec/env-and-context.md) — `Env` type, scope rules, closure capture, loop env, `EvalContext`, `StmtEffect`
-- [Expressions](spec/expressions.md) — all expression AST nodes, operator tokens + precedence, runtime `Value` types; current vs planned
-- [Component expression format](spec/component-expression-format.md) — constructor arguments, pre-body calls, grammar
-- [Tokens](spec/token.md)
-- [Script runner](spec/script-runner.md) — `MeowMeowRunner` / synchronous intent collection API
+`T` is a transform, `R.cube()` a renderable, `C.rgba(...)` a color. The body
+contains both child CEs and pre-body builder calls (`name = "..."`,
+constructor-style methods).
 
-### Roadmap
+Bind a CE to a name with `let` to attach later, or to query/mutate it:
 
-- [Development roadmap](analysis/roadmap.md) — phase checklist with design decision flags
-- [Task: reply channel, ObjectWorld, and MMQ status](../task/mms-reply-channel-objectworld-and-mmq-status.md) — current implementation status and recommended next shape
+```mms
+let panel = T.position(0, 0, -2) {
+    R.cube() {}
+}
+panel    // bare reference in statement position → emits
+```
 
-### Drafts
+See [`spec/component-expression-format.md`](spec/component-expression-format.md)
+and [`assets/components/`](../../assets/components) for component definitions.
 
-- [Control flow inside component bodies](draft/component-body-control-flow.md) — draft design for
-	`for` / `if` directly inside `T { ... }` / `R { ... }` style component bodies
+---
 
-### Analysis
+## Variables
 
-- [Emission semantics and component value model](analysis/emission-and-component-value-model.md) — what "emitting" means, AstTransform / EmitLiftTransform, ComponentObject, emit context
-- [Emission policy options](analysis/emission-policy-options.md) — when ComponentObjects auto-emit vs require explicit emit(); v1 decision and future directions
-- [Signal emission in MMS](analysis/signal-emission-in-mms.md) — should `emit()` unify component spawning with intent/event dispatch? Options A/B/C, recommendation
-- [Component body call vocabulary](analysis/component-body-call-vocabulary.md) — CamelCase (handler registration) vs snake_case (method dispatch) in component bodies; implicit vs explicit subject
-- [Component addressing](analysis/component-addressing.md) — `component[n]` child indexing, `.method()` mutation calls, capture ordering (Phase 6+)
-- [Event handlers](analysis/event-handlers.md) — handler registration forms, signal operators `->` / `<-`, reactive wiring design
-- [Event signal pipelines](draft/event-signal-pipelines.md) — draft MMS-facing model for upstream event subscription, projection, and local semantic re-emission
-- [Functions and closures](analysis/functions-and-closures.md) — syntax, closure capture, scope rules, return semantics
-- [Loop semantics](analysis/loop-semantics.md) — `for`/`in`, `range(n)`, `break`/`continue`; DFS tree traversal (future); `while` deferred
-- [Module / import-export system](analysis/module-import-export.md) — import/export syntax, `.mms` as a database (positional index + selector queries), import semantics decision (Phase 9)
-- [Transform mutation API](analysis/transform-mutation-api.md) — `set_translation`/`set_rotation`/`set_scale` design, naming, T vs transform-as-data
-- [ObjectWorld](analysis/object-world.md) — MMS evaluated object layer; env, heap, ComponentObject handles
-- [AST vs runtime object model](analysis/ast-vs-runtime-object-model.md) — AST vs runtime Value split, AstTransform layering, un-parser direction
-- [Expression evaluation](analysis/expression-evaluation.md) — number types, operator precedence, coercion policy (Phase 2 design, resolved)
-- [v1 execution model](analysis/v1-component-expression-execution-model.md) — implemented pipeline; threading model; known gaps
+`let` binds in the current frame. `=` reassigns an existing binding (walks
+out through transparent block frames; stops at function boundaries).
+
+```mms
+let x = 5
+let y = x + 1
+x = x + y
+```
+
+Scope is a frame stack: blocks, loop bodies, if-bodies, and CE bodies push
+transparent frames; function calls push a hard barrier. Closures capture the
+visible env at definition time. See
+[`spec/env-heap-object-world.md`](spec/env-heap-object-world.md).
+
+---
+
+## Conditionals
+
+```mms
+if hp <= 0 {
+    R.cube() { C.rgba(1, 0, 0, 1) }
+} else {
+    R.cube() { C.rgba(0, 1, 0, 1) }
+}
+```
+
+---
+
+## Loops
+
+`for ... in` over arrays or `range(n)`; `while` for predicate loops;
+`break` / `continue` inside either. Loop bodies are transparent — accumulator
+reassignments propagate after the loop.
+
+```mms
+let sum = 0
+for i in range(10) {
+    if i == 5 { continue }
+    sum = sum + i
+}
+```
+
+Examples: [`mms-loops.mms`](../../examples/mms-loops.mms),
+[`mms-functions.mms`](../../examples/mms-functions.mms).
+
+---
+
+## Querying
+
+Name a component with `name = "..."` inside its body, then look it up.
+`query` returns one result, `query_all` returns all. The `->` operator
+chains a selector to a handler or method.
+
+```mms
+T { name = "hero"; R.cube() {} }
+
+let hero = query("#hero")
+hero.set_color(0, 0, 1, 1)
+
+query_all("enemy") -> set_color(0, 1, 0, 1)
+```
+
+Example: [`query-demo.mms`](../../examples/query-demo.mms).
+
+---
+
+## Signals
+
+Components emit events; MMS registers handlers with the `on(target, event, fn)`
+builtin. The fn is called with an `event` value when the target fires.
+
+```mms
+let cube = T.position(0, 0, 0) {
+    R.cube() {
+        C.rgba(0.25, 0.55, 1.0, 1.0)
+        Raycastable.enabled()
+    }
+}
+
+on(cube, "Click", fn(event) {
+    print("clicked")
+})
+```
+
+> TODO: in-body handler sugar (`on(Click) { ... }` inside a CE body) and the
+> `selector -> handler` form are designed but not yet implemented. See
+> [`analysis/event-handlers.md`](analysis/event-handlers.md).
+
+Examples: [`signal-handler.mms`](../../examples/signal-handler.mms),
+[`pipe-demo.mms`](../../examples/pipe-demo.mms).
+
+---
+
+## More examples
+
+`examples/` contains end-to-end scripts: scene setup
+([`vr-input.mms`](../../examples/vr-input.mms)), UI
+([`ui-layout.mms`](../../examples/ui-layout.mms),
+[`html-layout.mms`](../../examples/html-layout.mms)), composition
+([`component-method-call.mms`](../../examples/component-method-call.mms),
+[`mms-module-example.mms`](../../examples/mms-module-example.mms)),
+and more.

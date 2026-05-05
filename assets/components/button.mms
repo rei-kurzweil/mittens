@@ -107,7 +107,7 @@ T {
 //   - name = "..." property for animation action targeting
 //   - File loading via eval_file("assets/components/button.mms")
 //
-// BLOCKED (per docs/task/mms-reply-channel-objectworld-and-mmq-status.md):
+// BLOCKED (per docs/meow_meow/task/mms-reply-channel-objectworld-and-mmq-status.md):
 //   - Signal handler registration from MMS script
 //     → needs HostCallKind::RegisterHandler + on(...) syntax
 //   - Method dispatch on spawned handles (anim.play(), anim.reverse())

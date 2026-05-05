@@ -183,7 +183,7 @@ impl Frame {
 /// evaluator — `ObjectWorld` itself never sends intents directly.
 ///
 /// See `docs/meow_meow/spec/env-heap-object-world.md` for the full design and
-/// `docs/task/frame-stack-object-world.md` for the migration plan.
+/// `docs/meow_meow/task/frame-stack-object-world.md` for the migration plan.
 #[derive(Debug)]
 pub struct ObjectWorld {
     frames: Vec<Frame>,

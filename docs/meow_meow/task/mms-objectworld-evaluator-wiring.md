@@ -5,11 +5,11 @@ Date: 2026-05-01
 Refactor task: replace the evaluator's bare `Env = HashMap<String, Value>` and the
 ad-hoc `pending: Vec<ComponentId>` with a single `ObjectWorld` storage container,
 matching the design in
-[docs/meow_meow/spec/env-heap-object-world.md](../meow_meow/spec/env-heap-object-world.md).
+[../spec/env-heap-object-world.md](../spec/env-heap-object-world.md).
 
 This is purely a wiring/structure change. No new MMS features, no new HostCalls — those
 already exist as of the Register/Attach work
-([host-call-api.md](../meow_meow/spec/host-call-api.md)).
+([host-call-api.md](../spec/host-call-api.md)).
 
 ---
 
@@ -149,7 +149,7 @@ the integration check.
 - [ ] `examples/component-method-call` runs: `let playback_status = Text {}` registers,
       gets attached via `T { playback_status }`, `playback_status.set_text("Paused")`
       from the click handler still works (release build clean; interactive run pending).
-- [x] Spec doc [env-heap-object-world.md](../meow_meow/spec/env-heap-object-world.md)
+- [x] Spec doc [env-heap-object-world.md](../spec/env-heap-object-world.md)
       updated to describe the frame-stack scope chain.
 
 ---

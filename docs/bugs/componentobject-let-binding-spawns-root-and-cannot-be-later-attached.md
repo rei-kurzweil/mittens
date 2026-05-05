@@ -187,6 +187,6 @@ That means the missing implementation pieces are roughly:
 
 ## Related docs
 
-- [docs/task/mms-reply-channel-objectworld-and-mmq-status.md](../task/mms-reply-channel-objectworld-and-mmq-status.md)
+- [docs/meow_meow/task/mms-reply-channel-objectworld-and-mmq-status.md](../meow_meow/task/mms-reply-channel-objectworld-and-mmq-status.md)
 - [docs/meow_meow/analysis/object-world.md](../meow_meow/analysis/object-world.md)
 - [docs/meow_meow/analysis/emission-and-component-value-model.md](../meow_meow/analysis/emission-and-component-value-model.md)

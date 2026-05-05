@@ -144,7 +144,7 @@ Remaining gap:
 🔷 **Design decision: handle payload shape**
 The reply channel exists, but the payload should grow from `ComponentId` to a live handle
 carrying both `ComponentId` and GUID.
-→ [../../task/mms-reply-channel-objectworld-and-mmq-status.md](../../task/mms-reply-channel-objectworld-and-mmq-status.md)
+→ [../task/mms-reply-channel-objectworld-and-mmq-status.md](../task/mms-reply-channel-objectworld-and-mmq-status.md)
 
 ---
 

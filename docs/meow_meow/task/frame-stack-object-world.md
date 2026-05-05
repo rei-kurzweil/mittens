@@ -6,8 +6,8 @@ Stage 2 of the [ObjectWorld + evaluator wiring refactor](mms-objectworld-evaluat
 migrate the bare `env: &mut Env` parameter into a frame-stack scope chain on
 `ObjectWorld`, replacing the per-boundary `env.clone()` model.
 
-Companion analysis: [../meow_meow/analysis/object-world.md](../meow_meow/analysis/object-world.md),
-[../meow_meow/spec/env-heap-object-world.md](../meow_meow/spec/env-heap-object-world.md).
+Companion analysis: [../analysis/object-world.md](../analysis/object-world.md),
+[../spec/env-heap-object-world.md](../spec/env-heap-object-world.md).
 
 ---
 
@@ -213,7 +213,7 @@ as today's `call_env = captured_env`.
          state" with frame-stack description; update scope-chain (v2+) section to
          reflect that v2 has landed.
    - [ ] `docs/meow_meow/analysis/object-world.md` — update API skeleton.
-   - [ ] `docs/task/mms-objectworld-evaluator-wiring.md` — mark Stage 2 done.
+   - [x] `docs/meow_meow/task/mms-objectworld-evaluator-wiring.md` — Stage 2 marked done.
 
 ---
 
