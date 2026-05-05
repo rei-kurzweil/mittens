@@ -85,7 +85,7 @@ fn lift_if(if_stmt: &mut IfStatement) {
 ///     →  query_all("selector", handler)    // otherwise
 /// ```
 ///
-/// ## Deferred (requires Expression::MethodCall)
+/// ## Deferred (pending Query HostCall + small extra rewrite rules)
 ///
 /// ```text
 /// "selector" -> method(args)
@@ -94,6 +94,12 @@ fn lift_if(if_stmt: &mut IfStatement) {
 /// scope -> "selector" -> handler
 ///     →  scope.query("selector", handler)
 /// ```
+///
+/// These do **not** need a dedicated `Expression::MethodCall` AST node — methods
+/// are already represented as `CallExpression` with `callee = BinOp(Dot, ..)`.
+/// They need: (1) a Query HostCall on the host, (2) detection of `Call`-shaped
+/// rhs in the existing `BinOp(Query, ..)` rewrite. See
+/// `docs/meow_meow/task/query-engine-and-mms-query-host-calls.md`.
 ///
 /// Selector heuristic: starts with `#` and contains no spaces or combinators → single
 /// (`query`); otherwise → multiple (`query_all`). Callers can override with the explicit
