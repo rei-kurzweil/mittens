@@ -3,42 +3,45 @@ BGC {
 }
 
 let stencil_clip_debug_texture = Texture.render_image("render_graph.stencil_clip.debug")
+Editor {
 
-I {
-    speed(1.0)
-    InputTransformMode.forward_z() {
-        roll_axis_y()
-        fps_rotation()
-    }
-
-    T.position(0.0, 1.1, 3.8) {
-        C3D {
-            Pointer {}
+    I {
+        speed(1.0)
+        InputTransformMode.forward_z() {
+            roll_axis_y()
+            fps_rotation()
         }
-
-        T.position(1.5, -1.0, -3.0).scale(1.4, 1.0, 1.0) {
-            OV {
-                R.square() {
-                    C.rgba(0.98, 0.98, 0.98, 1.0)
-                }
-
-                T.position(0.0, 0.0, 0.01).scale(0.86, 0.66, 1.0) {
+    
+        T.position(0.0, 1.1, 3.8) {
+            C3D {
+                Pointer {}
+            }
+        
+            T.position(1.5, -1.0, -3.0).scale(1.4, 1.0, 1.0) {
+                OV {
                     R.square() {
-                        C.rgba(1.0, 1.0, 1.0, 1.0)
-                        stencil_clip_debug_texture
-                        TextureFiltering.linear()
+                        C.rgba(0.98, 0.98, 0.98, 1.0)
                     }
-                }
-
-                T.position(-0.4, -0.42, 0.02).scale(0.05, 0.05, 1.0) {
-                    TXT {
-                        "s-buffer debug"
-                        C.rgba(0.08, 0.08, 0.10, 1.0)
+                
+                    T.position(0.0, 0.0, 0.01).scale(0.86, 0.66, 1.0) {
+                        R.square() {
+                            C.rgba(1.0, 1.0, 1.0, 1.0)
+                            stencil_clip_debug_texture
+                            TextureFiltering.linear()
+                        }
+                    }
+                
+                    T.position(-0.4, -0.42, 0.02).scale(0.05, 0.05, 1.0) {
+                        TXT {
+                            "s-buffer debug"
+                            C.rgba(0.08, 0.08, 0.10, 1.0)
+                        }
                     }
                 }
             }
         }
     }
+
 }
 
 T.position(-2.0, 4.0, 0.4).scale(0.1, 0.1, 0.1) {
