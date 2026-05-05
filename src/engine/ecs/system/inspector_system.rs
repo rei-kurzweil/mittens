@@ -17,7 +17,7 @@ const TEXT_SCALE: f32 = 0.08;
 const INDENT_UNIT: f32 = 0.12;
 /// Indent per depth level in glyph units (= INDENT_UNIT / TEXT_SCALE).
 const INDENT_UNIT_GU: f32 = INDENT_UNIT / TEXT_SCALE;
-const PAGE_SIZE: usize = 30;
+const PAGE_SIZE: usize = 48;
 const MAX_DEPTH: usize = 5;
 /// Gap between world panel right edge and inspector panel left edge (overlay units).
 const PANEL_GAP: f32 = 0.12;
@@ -316,6 +316,7 @@ fn spawn_world_panel(
         "content_style",
         Box::new({
             let mut s = StyleComponent::new();
+            s.height = SizeDimension::GlyphUnits(wp_height / TEXT_SCALE);
             s.overflow = Overflow::Scroll;
             s.background_color = Some(SCROLL_BG_COLOR);
             s
@@ -404,6 +405,7 @@ fn spawn_inspector_panel(
         "content_style",
         Box::new({
             let mut s = StyleComponent::new();
+            s.height = SizeDimension::GlyphUnits(ip_height / TEXT_SCALE);
             s.overflow = Overflow::Scroll;
             s.background_color = Some(SCROLL_BG_COLOR);
             s
