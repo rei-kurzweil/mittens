@@ -10,9 +10,11 @@
 /// and stretch to fill available width.
 ///
 /// Background quads (`Style { background_color }`) are spawned as `__bg` children of
-/// each item TC and sized to cover the full padding box. The item TC must have
-/// `scale ≈ TEXT_SCALE` so that glyph-unit positions in its local space equal
-/// approximately one character cell in world space.
+/// each item TC and sized to cover the full padding box. The item TC is left at
+/// scale 1.0; `__bg`'s translation and scale are multiplied by `unit_scale` so that
+/// glyph-unit measurements convert to world units correctly regardless of whether
+/// the layout root is being scaled by an outer transform (`unit_scale = 1.0`) or
+/// by `unit_scale` itself (e.g. inspector panels with `unit_scale = TEXT_SCALE`).
 use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::{IntentValue, SignalEmitter};
@@ -83,7 +85,7 @@ fn layout_items(
         );
 
         // ── Background quad / overflow helper topology ───────────────────
-        sync_bg_quad(world, emit, item.tc_id, item.padding_left_gu, item.padding_top_gu, item.box_width_gu, item.box_height_gu);
+        sync_bg_quad(world, emit, item.tc_id, item.padding_left_gu, item.padding_top_gu, item.box_width_gu, item.box_height_gu, unit_scale);
         let content_root = sync_overflow_topology(world, emit, item.tc_id, item.content_height_gu);
 
         let nested_items = measure_container_items(
@@ -265,7 +267,8 @@ fn sync_overflow_topology(
 /// Create, update, or remove the `__bg` child TC for a layout item.
 ///
 /// The background quad covers the full padding box (content + padding on all sides).
-/// Positions are in the item TC's local space (glyph units, since item TC scale ≈ TEXT_SCALE).
+/// Glyph-unit measurements are converted to world units via `unit_scale`, since the
+/// item TC is at scale 1.0 in the parent layout's local space.
 fn sync_bg_quad(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
@@ -274,6 +277,7 @@ fn sync_bg_quad(
     padding_top_gu: f32,
     box_width_gu: f32,
     box_height_gu: f32,
+    unit_scale: f32,
 ) {
     // Collect children to avoid holding a borrow on world during mutation.
     let children: Vec<ComponentId> = world.children_of(tc_id).to_vec();
@@ -309,12 +313,12 @@ fn sync_bg_quad(
                 IntentValue::UpdateTransform {
                     component_ids: vec![bg_id],
                     translation: [
-                        box_width_gu / 2.0 - padding_left_gu - 0.5,
-                        padding_top_gu - box_height_gu / 2.0 + 0.5,
+                        (box_width_gu / 2.0 - padding_left_gu - 0.5) * unit_scale,
+                        (padding_top_gu - box_height_gu / 2.0 + 0.5) * unit_scale,
                         bg_z,
                     ],
                     rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
-                    scale: [box_width_gu, box_height_gu, 1.0],
+                    scale: [box_width_gu * unit_scale, box_height_gu * unit_scale, 1.0],
                 },
             );
 
