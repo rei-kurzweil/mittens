@@ -20,7 +20,7 @@ impl BoneMappingSystem {
     /// Resolve a 2-bone arm chain from (optional) explicit names + topology fallback.
     ///
     /// Resolution order for each joint:
-    ///   1. Explicit name, if provided — look up by `[name='...']` selector under `model_root`.
+    ///   1. Explicit name, if provided — look up by `#name` MMQ selector under `model_root`.
     ///   2. Topology derivation — walk TC parent chain from the joint below, using
     ///      `tc_ancestor_at_distance` with the given `min_bone_length` threshold.
     ///
@@ -37,19 +37,16 @@ impl BoneMappingSystem {
         upper_arm_name: Option<&str>,
         min_bone_length: Option<f32>,
     ) -> Option<ResolvedArmChain> {
-        let hand_sel = format!("[name='{}']", hand_name);
-        let hand = world.find_component(model_root, &hand_sel)?;
+        let hand = world.find_component(model_root, &format!("#{}", hand_name))?;
 
         let lower_arm = if let Some(name) = lower_arm_name {
-            let sel = format!("[name='{}']", name);
-            world.find_component(model_root, &sel)?
+            world.find_component(model_root, &format!("#{}", name))?
         } else {
             Self::tc_ancestor_at_distance(world, hand, min_bone_length)?
         };
 
         let upper_arm = if let Some(name) = upper_arm_name {
-            let sel = format!("[name='{}']", name);
-            world.find_component(model_root, &sel)?
+            world.find_component(model_root, &format!("#{}", name))?
         } else {
             Self::tc_ancestor_at_distance(world, lower_arm, min_bone_length)?
         };

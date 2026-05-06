@@ -3,6 +3,7 @@ pub mod component;
 pub mod component_codec;
 pub mod rx;
 pub mod system;
+pub mod world_query_adapter;
 
 #[cfg(test)]
 mod world_graph_tests;
@@ -23,6 +24,7 @@ pub use crate::engine::graphics::primitives::{Renderable, Transform, TransformMa
 
 pub use command_queue::CommandQueue;
 pub use component_codec::ComponentCodec;
+pub use world_query_adapter::WorldQueryAdapter;
 pub use rx::{
     EventSignal, IntentSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalHandler,
     SignalKind, SignalWhen,
@@ -64,25 +66,6 @@ pub struct World {
 }
 
 impl World {
-    fn parse_name_selector(selector: &str) -> Option<&str> {
-        let selector = selector.trim();
-        if !selector.starts_with("[name=") || !selector.ends_with(']') {
-            return None;
-        }
-
-        let inner = &selector[6..selector.len() - 1];
-        if inner.len() < 2 {
-            return None;
-        }
-
-        let quote = inner.as_bytes()[0] as char;
-        if (quote != '\'' && quote != '"') || !inner.ends_with(quote) {
-            return None;
-        }
-
-        Some(&inner[1..inner.len() - 1])
-    }
-
     /// Fast GUID -> ComponentId lookup.
     pub fn component_id_by_guid(&self, guid: uuid::Uuid) -> Option<ComponentId> {
         self.guid_index.get(&guid).copied()
@@ -241,47 +224,34 @@ impl World {
         node.component.as_any_mut().downcast_mut::<T>()
     }
 
+    /// Find the first component under `root` matching `selector`.
+    ///
+    /// `selector` is parsed as MMQ — `#name`, `Type`, `Type#name`, `[name='...']`, etc.
+    /// See `src/query/mmq/parser.rs`.
     pub fn find_component(&self, root: ComponentId, selector: &str) -> Option<ComponentId> {
-        let wanted_name = Self::parse_name_selector(selector)?;
-        if self.get_component_record(root).is_none() {
-            return None;
-        }
-
-        let mut stack = vec![root];
-        while let Some(node) = stack.pop() {
-            if self.component_label(node) == Some(wanted_name) {
-                return Some(node);
-            }
-
-            for &child in self.children_of(node).iter().rev() {
-                stack.push(child);
-            }
-        }
-
-        None
+        let matches = self.run_query(root, selector);
+        matches.into_iter().next()
     }
 
+    /// Find all components under `root` matching `selector` (DFS pre-order).
     pub fn find_all_components(&self, root: ComponentId, selector: &str) -> Vec<ComponentId> {
-        let Some(wanted_name) = Self::parse_name_selector(selector) else {
-            return Vec::new();
-        };
+        self.run_query(root, selector)
+    }
+
+    fn run_query(&self, root: ComponentId, selector: &str) -> Vec<ComponentId> {
+        use crate::engine::ecs::world_query_adapter::WorldQueryAdapter;
+        use crate::query::QueryEvaluator;
+        use crate::query::QuerySyntax;
+        use crate::query::mmq::MmqQuerySyntax;
+
         if self.get_component_record(root).is_none() {
             return Vec::new();
         }
-
-        let mut out = Vec::new();
-        let mut stack = vec![root];
-        while let Some(node) = stack.pop() {
-            if self.component_label(node) == Some(wanted_name) {
-                out.push(node);
-            }
-
-            for &child in self.children_of(node).iter().rev() {
-                stack.push(child);
-            }
-        }
-
-        out
+        let Ok(ast) = MmqQuerySyntax::parse(selector) else {
+            return Vec::new();
+        };
+        let adapter = WorldQueryAdapter::new(self);
+        QueryEvaluator::evaluate(&adapter, root, &ast)
     }
 
     pub fn get_parent_as<T: 'static>(&self, c: ComponentId) -> Option<(ComponentId, &T)> {

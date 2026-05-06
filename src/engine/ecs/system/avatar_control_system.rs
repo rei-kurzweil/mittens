@@ -120,7 +120,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     let Some(driven_t_id) = world.parent_of(id) else { return };
 
     // Head bone is required — retry next tick if GLTF hasn't spawned yet.
-    let head_selector = format!("[name='{}']", head_bone_name);
+    let head_selector = format!("#{}", head_bone_name);
     let Some(head_bone_id) = world.find_component(model_root_id, &head_selector) else {
         return;
     };
@@ -174,7 +174,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // Any Camera3D or CameraXR direct children of AVC are re-parented under the
     // camera bone so they inherit its world transform each tick.
     let camera_bone_id: Option<ComponentId> = camera_bone_name.as_deref().and_then(|name| {
-        let sel = format!("[name='{}']", name);
+        let sel = format!("#{}", name);
         let found = world.find_component(model_root_id, &sel);
         if found.is_none() {
             println!("[AVC] camera_bone '{}' not found under model_root {:?}", name, model_root_id);
@@ -391,7 +391,7 @@ fn resolve_hand_splice(
     controller: Option<ComponentId>,
 ) -> Option<(ComponentId, ComponentId, ComponentId)> {
     let bone_name = bone_name?;
-    let sel = format!("[name='{}']", bone_name);
+    let sel = format!("#{}", bone_name);
     let bone = world.find_component(model_root, &sel)?;
     let bone_parent = world.parent_of(bone)?;
 

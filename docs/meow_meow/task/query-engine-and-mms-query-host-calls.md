@@ -17,10 +17,10 @@ Companion docs:
 | Piece | State |
 |---|---|
 | Shared `QueryAst` + `QueryEvaluator` (`src/query/`) | done |
-| Combinator filtering in `QueryEvaluator::matches_sequence` | **TODO** — accepts but doesn't enforce `Child`/`Descendant` |
+| Combinator filtering in `QueryEvaluator` | done — `Child`/`Descendant` enforced via ancestor-path walk |
 | CSS parser (`src/query/css/parser.rs`) | done |
-| MMQ parser (`src/query/mmq/parser.rs`) | **stub** — returns "not implemented" |
-| Engine-side ECS lookups (bone mapping, avatar control, etc.) | **bespoke** — duplicate name-walk logic, not routed through `QueryEvaluator` |
+| MMQ parser (`src/query/mmq/parser.rs`) | done — MVP: `#name`, `Type`, `Type#name`, `[name='...']`, combinators, comma groups |
+| Engine-side ECS lookups (bone mapping, avatar control, etc.) | done — `World::find_component`/`find_all_components` route through MMQ + `WorldQueryAdapter` |
 | MMS `QueryDesugarTransform` for `"sel" -> handler` | done |
 | `query()` / `query_all()` builtins on the MMS evaluator side | done (call shape) |
 | Query HostCall on the host | **TODO** — no `HostCallKind::Query` exists yet |
@@ -35,26 +35,26 @@ Companion docs:
 component "by name" or "by type" should go through `QueryEvaluator` instead.
 This makes the query engine the single source of truth for tree lookups.
 
-### 1.1 Audit + convert bespoke lookups
+### 1.1 Audit + convert bespoke lookups — **done (2026-05-05)**
 
-- [ ] Audit current bespoke walks. Confirmed candidates:
-  - `src/engine/ecs/system/bone_mapping_system.rs` — name-based bone matching
-  - `src/engine/ecs/system/avatar_control_system.rs` — likely similar
-  - `src/engine/ecs/component/avatar_control.rs` — likely similar
-- [ ] Each candidate: replace its hand-rolled walk with
-  `QueryEvaluator::evaluate(&adapter, root, &ast)` where `adapter` is a
-  `QueryTreeAdapter` impl backed by `&World`. A `WorldQueryAdapter` already
-  belongs somewhere in `src/engine/ecs/`; create it if it doesn't exist.
-- [ ] For pure name lookups, the call site builds an AST literal (no parser
-  invocation) — e.g. `QueryAst::for_name("LeftHand")` — to avoid string-parse
-  overhead in hot paths.
+- [x] `WorldQueryAdapter` (`src/engine/ecs/world_query_adapter.rs`) — impls
+  `QueryTreeAdapter` over `&World` (name → `component_label`, type →
+  `component_name`, attribute fallback to name).
+- [x] `World::find_component` / `find_all_components` rerouted through
+  `MmqQuerySyntax::parse → QueryEvaluator::evaluate(&WorldQueryAdapter, …)`.
+  Old bespoke `parse_name_selector` removed.
+- [x] Engine callers migrated from `[name='X']` strings to `#X` MMQ:
+  `bone_mapping_system::resolve_arm_chain`,
+  `avatar_control_system::{try_init_splices, resolve_hand_splice}` (head/camera/hand bones).
+- [ ] (deferred) AST-literal fast path for hot lookups — current paths only
+  format/parse during one-shot init, not per-tick, so the parser overhead is
+  fine for now. Revisit if profiling shows it.
 
-### 1.2 Fix combinator semantics in `QueryEvaluator`
+### 1.2 Fix combinator semantics in `QueryEvaluator` — **done (2026-05-05)**
 
-- [ ] `evaluator.rs::matches_sequence` currently accepts `Child` /
-  `Descendant` / `None` without enforcing the relationship. Implement proper
-  combinator filtering so `parent > child` and `a b` actually constrain
-  results. Add unit tests for each combinator.
+- [x] Evaluator now walks the ancestor path during DFS and enforces
+  `Child` / `Descendant` segment-by-segment. Tests in
+  `src/query/evaluator.rs` cover both combinators against a toy tree.
 
 ---
 
