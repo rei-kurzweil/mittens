@@ -2,31 +2,25 @@
 //
 // Pushable button component. ʕ•ᴥ•ʔ
 //
-// Usage (once MMS import is wired to assets/):
-//   import { button } from "components/button.mms"
-//   emit(button)
+// Loaded via:
+//   MeowMeowRunner::eval_file("assets/components/button.mms")
 //
 // Structure:
 //   T (root, LayoutRoot + Style — outer shell)
 //   └── T (button_face, Style + Raycastable — the pushable surface)
-//       ├── T.position(0, 0, 0.1)   — label floats at +z above face
+//       ├── T.position(0, 0, 0.05)        — label floats above face
 //       │   └── Text { "Button" }
-//       └── Animation (press animation, nested child of root T)
+//       └── Animation (press animation, sibling under root)
 //
-// The button internally handles DragStart/DragEnd to animate the face.
-// External callers can additionally listen for Click on the returned root handle.
+// Internal handlers animate the face on DragStart/DragEnd. External callers
+// can additionally listen for Click on the returned root handle.
 // Layout controls x/y sizing; z is authored independently (layout ignores z).
 
 // ─────────────────────────────────────────────────
-// ( ˘ω˘ ) Component tree
+// ( ˘ω˘ ) Component tree + internal handlers
 // ─────────────────────────────────────────────────
 
-// TODO [MMS missing: export eval block]
-// Ideal form once MMS supports script-level export values:
-//   export let button = { ... ; root }
-// For now this file emits the tree at top level.
-
-T {
+let root = T {
     name = "button_root"
     LayoutRoot {}
     Style.display("inline_block")
@@ -47,10 +41,9 @@ T {
         }
     }
 
-    // Press animation — translates button_face along -z (into the surface)
-    // Targets "button_face" by name using the #name selector.
+    // Press animation — translates button_face along -z (into the surface).
     //
-    // TODO [naming scope]: Action.update_transform uses world-wide name lookup today.
+    // TODO [naming scope]: Action.update_transform uses world-wide name lookup.
     // Multiple button instances will clash on "#button_face".
     // Fix needed: instance-unique name generation or subtree-scoped name resolution.
     Animation.paused() {
@@ -63,69 +56,47 @@ T {
             Action.update_transform("#button_face", [0.0, 0.0, -0.02], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
         }
     }
-
-    // ─────────────────────────────────────────────────
-    // (｡•́︿•̀｡) Signal handlers — NOT YET SUPPORTED in MMS
-    // ─────────────────────────────────────────────────
-    //
-    // What needs to exist in MMS before this works:
-    //   1. HostCallKind::RegisterHandler { scope, signal_kind, handler_fn }
-    //   2. Evaluator syntax: on(component_handle, "SignalKind", fn(event) { ... })
-    //   3. Method dispatch on ComponentObject: anim.play(), anim.pause(), anim.reverse()
-    //   4. Query HostCall to resolve child handle by name: root->"button_press_anim"
-    //      (MMQ: query child T#button_press_anim or Animation#button_press_anim)
-    //
-    // Intended implementation once those exist:
-    //
-    //   let face = root->"button_face"         // MMQ subtree query
-    //   let anim = root->"button_press_anim"   // MMQ subtree query
-    //
-    //   on(face, "DragStart", fn(event) {
-    //       anim.play()       // animate forward: face pushes in
-    //   })
-    //
-    //   on(face, "DragEnd", fn(event) {
-    //       anim.reverse()    // animate back: face springs out
-    //   })
-    //
-    //   // Click event is emitted by GestureSystem on DragEnd within the 8px/0.02wu threshold.
-    //   // External callers register a second Click handler on the root handle:
-    //   //   on(button_instance, "Click", fn(e) { ... })
-    //   // Both handlers fire independently — internal animation + external response.
 }
 
+// Resolve child handles via subtree query.
+let face = root.query("#button_face")
+let anim = root.query("#button_press_anim")
+
+// Internal press animation: play forward on DragStart, pause on DragEnd.
+// (DragEnd within 8px / 0.02wu also fires Click — external handlers see that.)
+//
+// TODO [anim.reverse]: only play/pause/loop_anim are dispatched today; no reverse
+// intent. For now we just pause on DragEnd — the face stays pressed in.
+on(face, "DragStart", fn(event) {
+    anim.play()
+})
+
+on(face, "DragEnd", fn(event) {
+    anim.pause()
+})
+
 // ─────────────────────────────────────────────────
-// ʕ •ᴥ•ʔ What works today vs what's blocked
+// ʕ •ᴥ•ʔ What still doesn't work
 // ─────────────────────────────────────────────────
 //
-// WORKS NOW:
-//   - T / LayoutRoot / Style component tree syntax
-//   - Raycastable.enabled() on button face
-//   - Text { "..." } label
-//   - T.position(0, 0, 0.1) for z-offset label above face
-//   - Animation.paused() with Keyframe.at(beat) / Action.update_transform
-//   - name = "..." property for animation action targeting
+// WORKS NOW (was blocked at write-time, now resolved):
+//   - HostCallKind::RegisterHandler + on() syntax
+//   - Method dispatch on ComponentObject (anim.play, anim.pause, t.set_text)
+//   - Subtree Query HostCall: root.query("#button_face")
 //   - File loading via eval_file("assets/components/button.mms")
 //
-// BLOCKED (per docs/meow_meow/task/mms-reply-channel-objectworld-and-mmq-status.md):
-//   - Signal handler registration from MMS script
-//     → needs HostCallKind::RegisterHandler + on(...) syntax
-//   - Method dispatch on spawned handles (anim.play(), anim.reverse())
-//     → needs ComponentHandle shape + method dispatch HostCall
-//   - Subtree query to resolve child handles by name/type
-//     → needs HostCallKind::Query + MMQ parser (section 7–8 of task doc)
-//   - export let from script level
-//     → needs evaluator to expose the final emitted handle to the caller
-//   - Multiple instances (naming scope conflict on "#button_face")
-//     → needs instance-unique names or scoped name resolution
+// STILL BLOCKED:
+//   - anim.reverse() — only play/pause/loop_anim are wired in eval_method_call
+//   - import / export — script returns intents, not a named handle to the caller;
+//     can't yet do `import { button } from "components/button.mms"`
+//   - Multi-instance: Action.update_transform("#button_face") is world-scoped,
+//     so two buttons would fight over the same selector. Needs either
+//     instance-unique names or subtree-scoped action targets.
 //
 // POINTER EVENT REFRESHER (relevant to external callers):
 //   EventSignal::Click { raycaster, renderable, hit_point, screen_pos_px }
 //     → emitted by GestureSystem when DragEnd is within 8px screen / 0.02wu of DragStart
-//     → NOT emitted as PointerDown/PointerUp — the engine uses drag primitives only
+//     → NOT emitted as PointerDown/PointerUp — engine uses drag primitives only
 //     → no PointerEnter / PointerExit exist today
 //   EventSignal::DragStart / DragMove / DragEnd
 //     → finer-grained if the caller needs press-and-hold vs click distinction
-//   External Rust registration (works today):
-//     rx.add_scoped_handler_closure(scope_id, button_root_id, SignalKind::Click,
-//         |world, emit, env| { ... });

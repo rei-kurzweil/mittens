@@ -76,12 +76,27 @@ pub enum HostCallKind {
         signal_kind: SignalKind,
         handler: Value,
     },
+    /// Query the live ECS world. `scope = None` means search from the world's
+    /// canonical roots; `scope = Some(id)` restricts the search to the
+    /// subtree rooted at `id`. `multiple` selects between `query_all`
+    /// (`true`, returns `ComponentList`) and `query` (`false`, returns the
+    /// first match as `Component` or `Null` if none).
+    Query {
+        selector: String,
+        scope: Option<ComponentId>,
+        multiple: bool,
+    },
 }
 
 /// Values the host can return in response to a `HostCall`.
 #[derive(Debug, Clone)]
 pub enum HostValue {
     ComponentId(ComponentId),
+    Component {
+        id: ComponentId,
+        component_type: String,
+    },
+    ComponentList(Vec<(ComponentId, String)>),
     Null,
 }
 
@@ -585,7 +600,10 @@ fn push_component_emit(val: Value, ctx: &mut EvalContext<'_>) {
 }
 
 fn is_builtin_fn(name: &str) -> bool {
-    matches!(name, "print" | "assert" | "range" | "emit" | "on")
+    matches!(
+        name,
+        "print" | "assert" | "range" | "emit" | "on" | "query" | "query_all"
+    )
 }
 
 fn eval_if(
@@ -770,6 +788,30 @@ fn eval_call(
         return Ok(Value::Array(arr));
     }
 
+    // Built-in: query(selector) / query(selector, handler)
+    //           query_all(selector) / query_all(selector, handler)
+    if callee_name == "query" || callee_name == "query_all" {
+        let multiple = callee_name == "query_all";
+        let args: Vec<Value> = call.args.iter()
+            .map(|a| eval_expr(a, ctx))
+            .collect::<Result<_, _>>()?;
+        let selector = match args.first() {
+            Some(Value::String(s)) => s.clone(),
+            other => return Err(format!(
+                "{}(): arg 0 must be a string selector, got {:?}", callee_name, other
+            )),
+        };
+        let handler = match args.get(1) {
+            Some(f @ Value::Function { .. }) => Some(f.clone()),
+            None => None,
+            other => return Err(format!(
+                "{}(): arg 1 (optional) must be a function, got {:?}", callee_name, other
+            )),
+        };
+        let result = run_world_query(selector, None, multiple, ctx)?;
+        return dispatch_query_result(result, handler, multiple, ctx);
+    }
+
     // Built-in: on(component_object, "SignalKind", fn(event) { ... })
     if callee_name == "on" {
         let args: Vec<Value> = call.args.iter()
@@ -836,6 +878,100 @@ fn eval_call(
     }
 }
 
+/// Issue a Query HostCall and decode the reply into a list of
+/// `Value::ComponentObject`s. For `multiple = false` the list contains 0 or 1.
+/// Returns Err if the host had no channels available (fire-and-forget mode).
+fn run_world_query(
+    selector: String,
+    scope: Option<ComponentId>,
+    multiple: bool,
+    ctx: &mut EvalContext<'_>,
+) -> Result<Vec<Value>, String> {
+    let Some(ch) = ctx.channels.as_mut() else {
+        // No host (fire-and-forget runner) — return empty.
+        return Ok(Vec::new());
+    };
+    let reply = ch.call(HostCallKind::Query { selector, scope, multiple });
+    let out = match reply {
+        None => Vec::new(),
+        Some(HostValue::Component { id, component_type }) => {
+            vec![Value::ComponentObject { id, component_type }]
+        }
+        Some(HostValue::ComponentList(list)) => list
+            .into_iter()
+            .map(|(id, component_type)| Value::ComponentObject { id, component_type })
+            .collect(),
+        Some(other) => {
+            return Err(format!(
+                "query: unexpected HostValue reply: {:?}", other
+            ));
+        }
+    };
+    Ok(out)
+}
+
+/// Shape the query reply: scalar/null for `query`, Array for `query_all`,
+/// or invoke the handler when one was supplied.
+///
+/// - no callback, multiple=false → first match (`Value::ComponentObject`) or `Null`
+/// - no callback, multiple=true  → `Value::Array` of matches (possibly empty)
+/// - callback,    multiple=false → handler called once with first match (or `Null`); returns `Null`
+/// - callback,    multiple=true  → handler called once per match; returns `Null`
+fn dispatch_query_result(
+    mut matches: Vec<Value>,
+    handler: Option<Value>,
+    multiple: bool,
+    ctx: &mut EvalContext<'_>,
+) -> Result<Value, String> {
+    if let Some(handler) = handler {
+        if multiple {
+            for m in matches {
+                eval_user_fn(&handler, vec![m], ctx)?;
+            }
+        } else {
+            let arg = matches.into_iter().next().unwrap_or(Value::Null);
+            eval_user_fn(&handler, vec![arg], ctx)?;
+        }
+        return Ok(Value::Null);
+    }
+    if multiple {
+        Ok(Value::Array(matches))
+    } else {
+        Ok(matches.drain(..).next().unwrap_or(Value::Null))
+    }
+}
+
+/// Call an MMS `Value::Function` with the given args using the current eval
+/// context. Returns whatever the function returns (or `Null`).
+fn eval_user_fn(
+    handler: &Value,
+    args: Vec<Value>,
+    ctx: &mut EvalContext<'_>,
+) -> Result<Value, String> {
+    let Value::Function { params, body, captured_env } = handler else {
+        return Err(format!("expected function, got {:?}", handler));
+    };
+    ctx.object_world.push_function_frame(captured_env.clone());
+    for (param, arg) in params.iter().zip(args.into_iter()) {
+        ctx.object_world.bind(param.clone(), arg);
+    }
+    let result = {
+        let mut func_ctx = EvalContext {
+            emits: ctx.emits,
+            source_path: None,
+            channels: ctx.channels.as_mut().map(|c| &mut **c),
+            ce_builder: None,
+            object_world: ctx.object_world,
+        };
+        eval_block_stmts(&body.statements, &mut func_ctx)
+    };
+    ctx.object_world.pop_frame();
+    match result? {
+        StmtEffect::Return(val) => Ok(val),
+        _ => Ok(Value::Null),
+    }
+}
+
 /// Dispatch a method call on a `Value::ComponentObject`.
 ///
 /// Produces intents (emitted via `ctx.emits`) or returns a value.
@@ -848,6 +984,27 @@ fn eval_method_call(
 ) -> Result<Value, String> {
     match receiver {
         Value::ComponentObject { id, ref component_type } => {
+            // Subtree query — `comp.query("sel")` / `comp.query_all("sel")`.
+            // Also accepts an optional handler arg (same shape as the free builtins).
+            if method == "query" || method == "query_all" {
+                let multiple = method == "query_all";
+                let selector = match args.first() {
+                    Some(Value::String(s)) => s.clone(),
+                    other => return Err(format!(
+                        "{}(): arg 0 must be a string selector, got {:?}", method, other
+                    )),
+                };
+                let handler = match args.get(1) {
+                    Some(f @ Value::Function { .. }) => Some(f.clone()),
+                    None => None,
+                    other => return Err(format!(
+                        "{}(): arg 1 (optional) must be a function, got {:?}", method, other
+                    )),
+                };
+                let result = run_world_query(selector, Some(id), multiple, ctx)?;
+                return dispatch_query_result(result, handler, multiple, ctx);
+            }
+
             // Animation playback.
             let anim_state = match (component_type.as_str(), method) {
                 ("A" | "Animation" | "AnimationComponent", "play") => Some(AnimationState::Playing),
@@ -914,7 +1071,7 @@ fn eval_binop(
         BinOpKind::Query => {
             // QueryDesugarTransform rewrites all `->` nodes into query()/query_all() calls
             // before eval runs. This arm is only reached if the transform missed one.
-            return Err("query operator '->' not yet implemented (HostCall required)".to_string());
+            return Err("query operator '->' was not desugared by QueryDesugarTransform".to_string());
         }
         BinOpKind::Pipe => {
             let lhs_val = eval_expr(lhs, ctx)?;

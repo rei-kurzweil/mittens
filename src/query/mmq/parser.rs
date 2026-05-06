@@ -18,17 +18,39 @@
 //!
 //! Example: `T#hero`, `#left_hand`, `Renderable#bg`, `T > R`, `#root T`.
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use crate::query::ast::{
     AttributeSelector, Combinator, CompoundSelector, QueryAst, SelectorSegment, SelectorSequence,
     SimpleSelector,
 };
 use crate::query::{QueryParseError, QuerySyntax};
 
-pub struct MmqQuerySyntax;
+/// MMQ parser with per-instance AST cache.
+///
+/// Repeated `parse(s)` calls with the same `s` are amortized to one
+/// `Arc::clone` after the first. ASTs are pure functions of the input —
+/// the cache never goes stale; it grows monotonically.
+#[derive(Default)]
+pub struct MmqQuerySyntax {
+    cache: HashMap<String, Arc<QueryAst>>,
+}
+
+impl MmqQuerySyntax {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
 
 impl QuerySyntax for MmqQuerySyntax {
-    fn parse(input: &str) -> Result<QueryAst, QueryParseError> {
-        Parser::new(input).parse_query()
+    fn parse(&mut self, input: &str) -> Result<Arc<QueryAst>, QueryParseError> {
+        if let Some(ast) = self.cache.get(input) {
+            return Ok(ast.clone());
+        }
+        let ast = Arc::new(Parser::new(input).parse_query()?);
+        self.cache.insert(input.to_string(), ast.clone());
+        Ok(ast)
     }
 }
 
@@ -268,10 +290,12 @@ mod tests {
     use super::MmqQuerySyntax;
     use crate::query::QuerySyntax;
     use crate::query::ast::{Combinator, SimpleSelector};
+    use std::sync::Arc;
 
     #[test]
     fn parses_name_selector() {
-        let ast = MmqQuerySyntax::parse("#hero").expect("parse");
+        let mut p = MmqQuerySyntax::new();
+        let ast = p.parse("#hero").expect("parse");
         let seg = &ast.selector_groups[0].segments[0];
         assert_eq!(seg.combinator, None);
         match &seg.compound.simple_selectors[0] {
@@ -282,7 +306,8 @@ mod tests {
 
     #[test]
     fn parses_type_selector() {
-        let ast = MmqQuerySyntax::parse("Transform").expect("parse");
+        let mut p = MmqQuerySyntax::new();
+        let ast = p.parse("Transform").expect("parse");
         match &ast.selector_groups[0].segments[0].compound.simple_selectors[0] {
             SimpleSelector::Type(t) => assert_eq!(t, "Transform"),
             other => panic!("expected type, got {:?}", other),
@@ -291,7 +316,8 @@ mod tests {
 
     #[test]
     fn parses_type_hash_name_compound() {
-        let ast = MmqQuerySyntax::parse("T#hero").expect("parse");
+        let mut p = MmqQuerySyntax::new();
+        let ast = p.parse("T#hero").expect("parse");
         let simples = &ast.selector_groups[0].segments[0].compound.simple_selectors;
         assert_eq!(simples.len(), 2);
         assert!(matches!(&simples[0], SimpleSelector::Type(t) if t == "T"));
@@ -300,7 +326,8 @@ mod tests {
 
     #[test]
     fn parses_attribute_name_selector_back_compat() {
-        let ast = MmqQuerySyntax::parse("[name='LeftHand']").expect("parse");
+        let mut p = MmqQuerySyntax::new();
+        let ast = p.parse("[name='LeftHand']").expect("parse");
         match &ast.selector_groups[0].segments[0].compound.simple_selectors[0] {
             SimpleSelector::Attribute(a) => {
                 assert_eq!(a.name, "name");
@@ -312,7 +339,8 @@ mod tests {
 
     #[test]
     fn parses_descendant_and_child_combinators() {
-        let ast = MmqQuerySyntax::parse("#root > T C").expect("parse");
+        let mut p = MmqQuerySyntax::new();
+        let ast = p.parse("#root > T C").expect("parse");
         let segs = &ast.selector_groups[0].segments;
         assert_eq!(segs.len(), 3);
         assert_eq!(segs[0].combinator, None);
@@ -322,7 +350,16 @@ mod tests {
 
     #[test]
     fn parses_multi_selector_groups() {
-        let ast = MmqQuerySyntax::parse("T, R").expect("parse");
+        let mut p = MmqQuerySyntax::new();
+        let ast = p.parse("T, R").expect("parse");
         assert_eq!(ast.selector_groups.len(), 2);
+    }
+
+    #[test]
+    fn cache_returns_same_arc_for_same_input() {
+        let mut p = MmqQuerySyntax::new();
+        let a = p.parse("#hero").expect("parse");
+        let b = p.parse("#hero").expect("parse");
+        assert!(Arc::ptr_eq(&a, &b));
     }
 }

@@ -10,6 +10,7 @@ mod world_graph_tests;
 
 use crate::engine::graphics::{RenderAssets, VisualWorld};
 use slotmap::{SlotMap, new_key_type};
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 new_key_type! {
@@ -63,6 +64,11 @@ impl<'a> WorldContext<'a> {
 pub struct World {
     components: SlotMap<ComponentId, crate::engine::ecs::component::ComponentNode>,
     guid_index: HashMap<uuid::Uuid, ComponentId>,
+    /// MMQ parser instance with per-instance AST cache. Behind a RefCell so
+    /// `find_component(&self, ...)` can mutate the cache without forcing
+    /// every caller to thread `&mut World`. Single-threaded — World lives
+    /// on the main thread.
+    mmq_parser: RefCell<crate::query::mmq::MmqQuerySyntax>,
 }
 
 impl World {
@@ -242,12 +248,11 @@ impl World {
         use crate::engine::ecs::world_query_adapter::WorldQueryAdapter;
         use crate::query::QueryEvaluator;
         use crate::query::QuerySyntax;
-        use crate::query::mmq::MmqQuerySyntax;
 
         if self.get_component_record(root).is_none() {
             return Vec::new();
         }
-        let Ok(ast) = MmqQuerySyntax::parse(selector) else {
+        let Ok(ast) = self.mmq_parser.borrow_mut().parse(selector) else {
             return Vec::new();
         };
         let adapter = WorldQueryAdapter::new(self);

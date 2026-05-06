@@ -1,14 +1,31 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use crate::query::ast::{
     AttributeSelector, Combinator, CompoundSelector, QueryAst, SelectorSegment, SelectorSequence,
     SimpleSelector,
 };
 use crate::query::{QueryParseError, QuerySyntax};
 
-pub struct CssQuerySyntax;
+#[derive(Default)]
+pub struct CssQuerySyntax {
+    cache: HashMap<String, Arc<QueryAst>>,
+}
+
+impl CssQuerySyntax {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
 
 impl QuerySyntax for CssQuerySyntax {
-    fn parse(input: &str) -> Result<QueryAst, QueryParseError> {
-        Parser::new(input).parse_query()
+    fn parse(&mut self, input: &str) -> Result<Arc<QueryAst>, QueryParseError> {
+        if let Some(ast) = self.cache.get(input) {
+            return Ok(ast.clone());
+        }
+        let ast = Arc::new(Parser::new(input).parse_query()?);
+        self.cache.insert(input.to_string(), ast.clone());
+        Ok(ast)
     }
 }
 
@@ -251,7 +268,8 @@ mod tests {
 
     #[test]
     fn parses_name_attribute_selector() {
-        let ast = CssQuerySyntax::parse("[name='container']").expect("parse");
+        let mut p = CssQuerySyntax::new();
+        let ast = p.parse("[name='container']").expect("parse");
         assert_eq!(ast.selector_groups.len(), 1);
         assert_eq!(ast.selector_groups[0].segments.len(), 1);
         match &ast.selector_groups[0].segments[0].compound.simple_selectors[0] {
@@ -265,7 +283,8 @@ mod tests {
 
     #[test]
     fn parses_child_and_descendant_combinators() {
-        let ast = CssQuerySyntax::parse("#root > [name='container'] .row").expect("parse");
+        let mut p = CssQuerySyntax::new();
+        let ast = p.parse("#root > [name='container'] .row").expect("parse");
         let segments = &ast.selector_groups[0].segments;
         assert_eq!(segments.len(), 3);
         assert_eq!(segments[1].combinator, Some(Combinator::Child));

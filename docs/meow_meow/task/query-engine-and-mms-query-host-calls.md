@@ -64,27 +64,76 @@ This makes the query engine the single source of truth for tree lookups.
 syntax. The mechanism (evaluator) is already shared — we only need a way to
 route a string through the right `QuerySyntax::parse` impl.
 
-### 2.1 MMQ parser (`src/query/mmq/parser.rs`)
+### 2.1 MMQ parser (`src/query/mmq/parser.rs`) — **done (2026-05-05)**
 
-- [ ] Replace the stub with a real parser. Scope and grammar TBD; cross-ref
-  [`../draft/mms-query.md`](../draft/mms-query.md).
+- [x] MVP grammar: `*`, `Type`, `#name` (→ `SimpleSelector::Name`, not `Id`,
+  to match engine label semantics), `Type#name`, `[name='...']`, descendant /
+  `>` combinators, comma multi-selector. See `src/query/mmq/parser.rs`.
 
-### 2.2 Syntax selection config
+### 2.2 Parser-owned AST cache
 
-- [ ] Decide how the syntax choice is configured:
+**Decision.** The parser instance owns its own AST cache. The trait moves
+from `fn parse(input: &str)` (associated fn) to `fn parse(&mut self, input: &str)`
+returning `Arc<QueryAst>`. Each implementor decides its own cache strategy.
+
+Rationale for parser-owned over a separate `QueryCache<S>`:
+- The cache is only meaningful paired with one grammar — keys produced by
+  MMQ are not interchangeable with keys produced by CSS, even when the
+  string happens to be identical.
+- Eliminates a parallel abstraction. One object (`MmqQuerySyntax`) holds
+  grammar + cache; consumers hold one parser per syntax they care about.
+- If two syntaxes are exposed simultaneously (MMQ for engine, CSS for
+  authoring), they're two distinct parser instances by type — no shared
+  key namespace, no composite cache key, no runtime tag.
+
+Sketch:
+
+```rust
+pub trait QuerySyntax {
+    fn parse(&mut self, input: &str) -> Result<Arc<QueryAst>, QueryParseError>;
+}
+
+#[derive(Default)]
+pub struct MmqQuerySyntax {
+    cache: HashMap<String, Arc<QueryAst>>,
+}
+
+impl QuerySyntax for MmqQuerySyntax {
+    fn parse(&mut self, input: &str) -> Result<Arc<QueryAst>, QueryParseError> {
+        if let Some(ast) = self.cache.get(input) {
+            return Ok(ast.clone());
+        }
+        let ast = Arc::new(parse_uncached(input)?);
+        self.cache.insert(input.to_string(), ast.clone());
+        Ok(ast)
+    }
+}
+```
+
+ASTs are pure functions of `(syntax, selector)` — never go stale; cache is
+monotonic. Bounded LRU only needed if a script generates unbounded distinct
+selectors (e.g. `"#enemy_" + i` in a loop with high cardinality); not needed
+for MVP.
+
+This subsumes the previously proposed AST-literal fast path: callers just
+hand the parser the same string and amortized cost is one `Arc::clone`.
+
+### 2.3 Syntax selection config
+
+- [ ] Decide how the syntax choice is configured for MMS scripts. Engine-side
+  callers will always be MMQ (no choice exposed). Options for MMS:
   - host Rust API: a builder argument on the runner, e.g.
-    `MeowMeowRunner::new().with_query_syntax(QuerySyntaxKind::Mmq)`
+    `MeowMeowRunner::new().with_query_syntax::<MmqQuerySyntax>()`
   - per-script: an MMS pragma or runtime call (e.g. `query_syntax("mmq")`)
   - per-call: explicit `query_css("...")` / `query_mmq("...")` builtins
-- [ ] Pick one (or a layered combination) and document. **Out of scope to
-  decide here — the architecture supports any choice; record the decision in
-  this doc when made.**
+- [ ] Pick one (or a layered combination) and document. **Default for MVP: MMQ
+  via host Rust API.** CSS exposed later for authors familiar with it.
 
-### 2.3 Threading the choice through the evaluator
+### 2.4 Threading the choice through the evaluator
 
-- [ ] When MMS calls `query("...")`, the runner needs to know which syntax to
-  parse with before dispatching the resulting AST. Add a syntax field to the
-  runner / host context and pick the parser accordingly.
+- [ ] When MMS calls `query("...")`, the runner uses its owned parser instance
+  (typed by chosen syntax) to produce the AST. Same parser instance services
+  every HostCall in the runner's lifetime → cache hits across script frames.
 
 ---
 

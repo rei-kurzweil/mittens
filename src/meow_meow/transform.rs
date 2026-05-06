@@ -1,5 +1,7 @@
 /// AstTransform passes applied between parsing and evaluation.
-use crate::meow_meow::ast::{BinOpKind, BlockStatement, CallExpression, Expression, Ident, IfStatement, Statement};
+use crate::meow_meow::ast::{
+    BinOpKind, BlockStatement, CallExpression, Expression, Ident, IfStatement, Statement,
+};
 
 // ---------------------------------------------------------------------------
 // EmitLiftTransform
@@ -177,7 +179,6 @@ fn qd_expr(expr: &mut Expression) {
     }
 
     // Now rewrite this node if it's a query/dispatch expression.
-    // `"selector" -> handler` — always a query dispatch regardless of LHS type
     if let Expression::BinaryOp { op: BinOpKind::Query, lhs, rhs } = expr {
         let callee = if let Expression::String(sel) = lhs.as_ref() {
             if selector_is_single(sel) { "query" } else { "query_all" }
@@ -185,10 +186,48 @@ fn qd_expr(expr: &mut Expression) {
             "query_all" // computed selector — conservative fallback
         };
         let sel_expr = std::mem::replace(lhs.as_mut(), Expression::Null);
-        let handler = std::mem::replace(rhs.as_mut(), Expression::Null);
+        let handler_or_call = std::mem::replace(rhs.as_mut(), Expression::Null);
+        // If the rhs is a method-shorthand call (e.g. `set_color(0,1,0,1)`),
+        // wrap it as `fn(__qr) { __qr.method(args) }` so the receiver is the
+        // implicit query result. We only do this when the call's callee is a
+        // bare identifier — anything more complex is treated as a regular
+        // expression handler.
+        let handler = match handler_or_call {
+            Expression::Call(CallExpression { callee, args })
+                if matches!(callee.as_ref(), Expression::Identifier(_)) =>
+            {
+                let method = match *callee {
+                    Expression::Identifier(id) => id,
+                    _ => unreachable!(),
+                };
+                wrap_method_shorthand(method, args)
+            }
+            other => other,
+        };
         *expr = Expression::Call(CallExpression {
             callee: Box::new(Expression::Identifier(Ident(callee.into()))),
             args: vec![sel_expr, handler],
         });
+    }
+}
+
+/// Build `fn(__qr) { __qr.method(args) }` for `"sel" -> method(args)` sugar.
+fn wrap_method_shorthand(method: Ident, args: Vec<Expression>) -> Expression {
+    let receiver = Ident("__qr".into());
+    let receiver_ref = Expression::Identifier(receiver.clone());
+    let dot = Expression::BinaryOp {
+        op: BinOpKind::Dot,
+        lhs: Box::new(receiver_ref),
+        rhs: Box::new(Expression::Identifier(method)),
+    };
+    let call = Expression::Call(CallExpression {
+        callee: Box::new(dot),
+        args,
+    });
+    Expression::Function {
+        params: vec![receiver],
+        body: BlockStatement {
+            statements: vec![Statement::Expression(call)],
+        },
     }
 }

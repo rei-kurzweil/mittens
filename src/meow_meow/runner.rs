@@ -123,6 +123,44 @@ impl MeowMeowRunner {
                             world.init_component_tree(child, emit);
                             HostValue::Null
                         }
+                        HostCallKind::Query { selector, scope, multiple } => {
+                            let roots: Vec<crate::engine::ecs::ComponentId> = match scope {
+                                Some(id) => vec![id],
+                                None => world
+                                    .all_components()
+                                    .filter(|&id| world.parent_of(id).is_none())
+                                    .collect(),
+                            };
+                            let mut all_ids: Vec<crate::engine::ecs::ComponentId> = Vec::new();
+                            for r in roots {
+                                if multiple {
+                                    all_ids.extend(world.find_all_components(r, &selector));
+                                } else if let Some(found) = world.find_component(r, &selector) {
+                                    all_ids.push(found);
+                                    break;
+                                }
+                            }
+                            if multiple {
+                                let list = all_ids
+                                    .into_iter()
+                                    .filter_map(|id| {
+                                        world.component_name(id).map(|t| (id, t.to_string()))
+                                    })
+                                    .collect();
+                                HostValue::ComponentList(list)
+                            } else {
+                                match all_ids.into_iter().next() {
+                                    Some(id) => match world.component_name(id) {
+                                        Some(t) => HostValue::Component {
+                                            id,
+                                            component_type: t.to_string(),
+                                        },
+                                        None => HostValue::Null,
+                                    },
+                                    None => HostValue::Null,
+                                }
+                            }
+                        }
                         HostCallKind::RegisterHandler { scope, signal_kind, handler } => {
                             rx.add_handler_closure(
                                 signal_kind,
