@@ -338,6 +338,30 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
     }
 }
 
+fn flush_live_statement_emits(ctx: &mut EvalContext<'_>) {
+    if ctx.channels.is_none() || ctx.ce_builder.is_some() || ctx.emits.is_empty() {
+        return;
+    }
+
+    let mut deferred: Vec<IntentValue> = Vec::new();
+    for intent in std::mem::take(ctx.emits) {
+        match intent {
+            IntentValue::SpawnComponentTree { root, parent: None } => {
+                if let Some(ch) = ctx.channels.as_mut() {
+                    let spawn_result = ch.call(HostCallKind::Spawn((*root).clone()));
+                    if !matches!(spawn_result, Some(HostValue::ComponentId(_))) {
+                        deferred.push(IntentValue::SpawnComponentTree { root, parent: None });
+                    }
+                } else {
+                    deferred.push(IntentValue::SpawnComponentTree { root, parent: None });
+                }
+            }
+            other => deferred.push(other),
+        }
+    }
+    *ctx.emits = deferred;
+}
+
 // ---------------------------------------------------------------------------
 // Statement evaluation
 // ---------------------------------------------------------------------------
@@ -370,7 +394,9 @@ fn eval_block_stmts(
     ctx: &mut EvalContext<'_>,
 ) -> Result<StmtEffect, String> {
     for stmt in stmts {
-        match eval_stmt(stmt, ctx)? {
+        let effect = eval_stmt(stmt, ctx)?;
+        flush_live_statement_emits(ctx);
+        match effect {
             StmtEffect::None => {}
             // Exported is only meaningful at module-body level; ignored elsewhere.
             StmtEffect::Exported(_) => {}
@@ -387,24 +413,7 @@ fn eval_stmt(
     match stmt {
         Statement::Assignment(a) => {
             let val = eval_expr(&a.value, ctx)?;
-            // When a CE is assigned to a variable and we have a live reply channel,
-            // spawn it immediately and bind a ComponentObject instead of the dead snapshot.
-            // `let x = CE` in live mode: Register (spawn detached + uninitialised)
-            // so the binding produces a live ComponentId without committing
-            // the tree to the world graph yet. Attach happens later when `x`
-            // is referenced inside a CE body or emitted standalone.
-            let val = match (val, ctx.channels.as_mut()) {
-                (Value::ComponentExpr(ce), Some(ch)) => {
-                    let component_type = ce.component_type.clone();
-                    match ch.call(HostCallKind::Register(*ce.clone())) {
-                        Some(HostValue::ComponentId(id)) => {
-                            Value::ComponentObject { id, component_type }
-                        }
-                        _ => Value::ComponentExpr(ce),
-                    }
-                }
-                (val, _) => val,
-            };
+            let val = maybe_register_live_component_value(val, ctx);
             ctx.object_world.bind(a.name.0.clone(), val);
             if a.exported {
                 Ok(StmtEffect::Exported(a.name.0.clone()))
@@ -421,6 +430,7 @@ fn eval_stmt(
                     return Ok(StmtEffect::None);
                 }
             }
+            let val = maybe_register_live_component_value(val, ctx);
             ctx.object_world.reassign(&name.0, val)?;
             Ok(StmtEffect::None)
         }
@@ -525,6 +535,24 @@ fn eval_stmt(
             }
             Ok(StmtEffect::None)
         }
+    }
+}
+
+fn maybe_register_live_component_value(
+    val: Value,
+    ctx: &mut EvalContext<'_>,
+) -> Value {
+    // In live mode, binding or reassigning a CE should produce a live handle
+    // rather than leave a dead ComponentExpr in scope.
+    match (val, ctx.channels.as_mut()) {
+        (Value::ComponentExpr(ce), Some(ch)) => {
+            let component_type = ce.component_type.clone();
+            match ch.call(HostCallKind::Register(*ce.clone())) {
+                Some(HostValue::ComponentId(id)) => Value::ComponentObject { id, component_type },
+                _ => Value::ComponentExpr(ce),
+            }
+        }
+        (val, _) => val,
     }
 }
 

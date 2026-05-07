@@ -9,6 +9,7 @@ use crate::meow_meow::object::Value;
 use crate::meow_meow::parser::MeowMeowParser;
 use crate::meow_meow::runner::MeowMeowRunner;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;
+use crate::engine::ecs::{CommandQueue, RxWorld, World};
 
 fn parse(src: &str) -> Vec<Statement> {
     let tokens = MeowMeowTokenizer::new(src).tokenize().expect("tokenize ok");
@@ -328,6 +329,62 @@ fn parse_break_and_continue() {
 
 fn eval(src: &str) -> crate::meow_meow::runner::EvalOutput {
     MeowMeowRunner::eval(src)
+}
+
+#[test]
+fn live_eval_emitted_tree_is_queryable_by_next_statement() {
+    let src = r##"
+        T {
+            name = "panel"
+            T {
+                name = "btn_a"
+                Raycastable.enabled()
+                Text { "hello" }
+            }
+        }
+
+        let btn_a = query("#btn_a")
+        assert(btn_a, "expected btn_a to exist after prior emit")
+        on(btn_a, "Click", fn(event) {
+            print("clicked")
+        })
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert!(world.find_component(world.all_components().find(|&id| world.parent_of(id).is_none()).unwrap(), "#btn_a").is_some());
+}
+
+#[test]
+fn live_eval_reassigned_component_expr_supports_query_method_after_emit() {
+    let src = r##"
+        let layout_root = null
+
+        T {
+            layout_root = LayoutRoot {
+                T {
+                    name = "btn_a"
+                    Text { "hello" }
+                }
+            }
+
+            layout_root
+        }
+
+        let btn_a = layout_root.query("#btn_a")
+        assert(btn_a, "expected layout_root.query('#btn_a') to work after prior emit")
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
 }
 
 #[test]

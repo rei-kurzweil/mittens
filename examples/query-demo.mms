@@ -29,21 +29,33 @@ I.speed(3.0) {
         roll_axis_y()
     }
 
-    T.position(0.0, 0.5, 6.0) {
+    T.position(0.0, -0.5, 3.0) {
         C3D {}
         Pointer {}
+    }
+}
+
+BG {
+    T.position(0, -10, 0).scale(10000, 1, 10000) {
+        R.cube() { C.rgba(0.6, 0.6, 0.6, 1.0) }
     }
 }
 
 // ── Layout root ──────────────────────────────────────────────────────────────
 // 80 gu wide × 60 gu tall, scale 0.06 → ~4.8 × 3.6 world units.
 // Default body display is block → demo rows stack vertically.
-let layout_root = null; 
 
-T.position(-2.4, 1.8, 0.0).scale(0.06, 0.06, 0.06) {
+
+let layout_root = null; 
+let red = 1.0
+let green = 0.2
+let blue = 0.2
+
+
+T.position(-1.2, 0, 0.0).scale(0.06, 0.06, 0.06) {
     layout_root = LayoutRoot {
-        available_width(80.0)
-        available_height(60.0)
+        available_width(35.0)
+        available_height(80.0)
 
         // ── Demo A: query("#target_a") ────────────────────────────────────────
         T.position(0, 0, 0.05) {
@@ -52,23 +64,27 @@ T.position(-2.4, 1.8, 0.0).scale(0.06, 0.06, 0.06) {
                     .flex_direction("row")
                     .gap(1.0)
                     .padding(1.0)
-                    .background_color([0.10, 0.30, 0.80, 1.0]) {}
+                    .background_color([red, green, blue, 1.0]) {}
 
             T.position(0, 0, 0.05) {
                 name = "btn_a"
                 Raycastable.enabled()
-                Style.padding_xy(2.0, 1.0)
-                        .background_color([0.50, 0.60, 0.90, 1.0]) {}
+                Style.padding_xy(2.0, 4.0)
+                        .background_color([red * 0.75, green * 0.75, blue * 0.75, 1.0]) {}
                 Text { "query('#target_a')" }
             }
 
             T.position(0, 0, 0.05) {
-                Style.padding_xy(4.0, 2.0)
-                        .background_color([0.60, 0.70, 0.95, 1.0]) {}
+                Style.padding_xy(4.0, 4.0)
+                        .background_color([red * 0.5, green * 0.5, blue * 0.5, 1.0]) {}
                 Text { "(unclicked)" name = "target_a" }
             }
         }
         
+        green = 0.9
+        red   = 1.0
+        blue  = 0.2
+
         // ── Demo B: '#target_b' -> set_text(..) ──────────────────────────────
         T.position(0, 0, 0.05) {
             name = "row_b"
@@ -76,22 +92,26 @@ T.position(-2.4, 1.8, 0.0).scale(0.06, 0.06, 0.06) {
                     .flex_direction("row")
                     .gap(1.0)
                     .padding(1.0)
-                    .background_color([0.10, 0.70, 0.30, 1.0]) {}
+                    .background_color([red, green, blue, 1.0]) {}
 
             T.position(0, 0, 0.05) {
                 name = "btn_b"
                 Raycastable.enabled()
                 Style.padding_xy(2.0, 1.0)
-                        .background_color([0.50, 0.85, 0.60, 1.0]) {}
+                        .background_color([red * 0.75, green * 0.75, blue * 0.75, 1.0]) {}
                 Text { "'#target_b' -> set_text(..)" }
             }
 
             T.position(0, 0, 0.05) {
                 Style.padding_xy(4.0, 2.0)
-                        .background_color([0.65, 0.90, 0.75, 1.0]) {}
+                        .background_color([red * 0.5, green * 0.5, blue * 0.5, 1.0]) {}
                 Text { "(unclicked)" name = "target_b" }
             }
         }
+
+        green = 1.0
+        blue  = 0.1
+        red   = 0.2
 
         // ── Demo C: '#target_c' -> fn(t) {..} ────────────────────────────────
         T.position(0, 0, 0.05) {
@@ -100,22 +120,26 @@ T.position(-2.4, 1.8, 0.0).scale(0.06, 0.06, 0.06) {
                     .flex_direction("row")
                     .gap(1.0)
                     .padding(1.0)
-                    .background_color([0.90, 0.45, 0.10, 1.0]) {}
+                    .background_color([red, green, blue, 1.0]) {}
 
             T.position(0, 0, 0.05) {
                 name = "btn_c"
                 Raycastable.enabled()
                 Style.padding_xy(2.0, 1.0)
-                        .background_color([0.95, 0.70, 0.50, 1.0]) {}
+                        .background_color([red * 0.75, green * 0.75, blue * 0.75, 1.0]) {}
                 Text { "'#target_c' -> fn(t) {..}" }
             }
 
             T.position(0, 0, 0.05) {
                 Style.padding_xy(4.0, 2.0)
-                        .background_color([1.00, 0.85, 0.75, 1.0]) {}
+                        .background_color([red * 0.5, green * 0.5, blue * 0.5, 1.0]) {}
                 Text { "(unclicked)" name = "target_c" }
             }
         }
+
+        red   = 0.2
+        green = 0.2
+        blue  = 1.0
 
         // ── Demo D: row_d.query_all("text")  (hits label + target) ───────────
         T.position(0, 0, 0.05) {
@@ -124,19 +148,19 @@ T.position(-2.4, 1.8, 0.0).scale(0.06, 0.06, 0.06) {
                     .flex_direction("row")
                     .gap(1.0)
                     .padding(1.0)
-                    .background_color([0.80, 0.20, 0.70, 1.0]) {}
+                    .background_color([red, green, blue, 1.0]) {}
 
             T.position(0, 0, 0.05) {
                 name = "btn_d"
                 Raycastable.enabled()
                 Style.padding_xy(2.0, 1.0)
-                        .background_color([0.90, 0.60, 0.85, 1.0]) {}
+                        .background_color([red * 0.75, green * 0.75, blue * 0.75, 1.0]) {}
                 Text { "row_d.query_all('text')" }
             }
 
             T.position(0, 0, 0.05) {
                 Style.padding_xy(4.0, 2.0)
-                        .background_color([0.95, 0.75, 0.90, 1.0]) {}
+                        .background_color([red * 0.5, green * 0.5, blue * 0.5, 1.0]) {}
                 Text { "(unclicked)" name = "target_d" }
             }
         }
@@ -145,43 +169,43 @@ T.position(-2.4, 1.8, 0.0).scale(0.06, 0.06, 0.06) {
     layout_root
 }
 
+
 // ── click handlers — one per query form ───────────────────────────────────────
-if (layout_root) {
-// let btn_a = layout_root.query("#btn_a")
-// let btn_b = layout_root.query("#btn_b")
-// let btn_c = layout_root.query("#btn_c")
-// let btn_d = layout_root.query("#btn_d")
+let btn_a = layout_root.query("#btn_a")
+let btn_b = layout_root.query("#btn_b")
+let btn_c = layout_root.query("#btn_c")
+let btn_d = layout_root.query("#btn_d")
+    
 print("layout_root exists")
 
+on(btn_a, "Click", fn(event) {
+    print("btn_a clicked")
+    let t = layout_root.query("#target_a")
 
-if btn_a {
-    print("btn_a")
-    print(btn_a)
-}
-}
+    if t {
+        t.set_text("query() hit me!")
+    }
+})
 
-// on(btn_a, "Click", fn(event) {
-//      let t = layout_root.query("#target_a")
+
+
+
+on(btn_b, "Click", fn(event) {
+    print("btn_b clicked")
+    "#target_b" -> set_text("-> shorthand!")
+})
+
+on(btn_c, "Click", fn(event) {
+    print("btn_c clicked")
+    "#target_c" -> fn(t) {
+        if t { t.set_text("-> callback!") }
+    }
+})
 // 
-//      if t {
-//          t.set_text("query() hit me!")
-//      }
-// })
-
-
-// on(btn_b, "Click", fn(event) {
-//     "#target_b" -> set_text("-> shorthand!")
-// })
-
-// on(btn_c, "Click", fn(event) {
-//     "#target_c" -> fn(t) {
-//         if t { t.set_text("-> callback!") }
-//     }
-// })
-
-// on(btn_d, "Click", fn(event) {
-//     // Descendant combinator — every `text` under `#row_d` (label + target).
-//     for t in query_all("#row_d text") {
-//         t.set_text("query_all hit")
-//     }
-// })
+on(btn_d, "Click", fn(event) {
+    print("btn_d clicked")
+    // Descendant combinator — every `text` under `#row_d` (label + target).
+    for t in query_all("#row_d text") {
+        t.set_text("query_all hit")
+    }
+})
