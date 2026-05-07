@@ -9,7 +9,7 @@ use crate::meow_meow::object::Value;
 use crate::meow_meow::parser::MeowMeowParser;
 use crate::meow_meow::runner::MeowMeowRunner;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;
-use crate::engine::ecs::{CommandQueue, RxWorld, World};
+use crate::engine::ecs::{CommandQueue, ComponentId, EventSignal, RxWorld, Signal, World};
 
 fn parse(src: &str) -> Vec<Statement> {
     let tokens = MeowMeowTokenizer::new(src).tokenize().expect("tokenize ok");
@@ -385,6 +385,59 @@ fn live_eval_reassigned_component_expr_supports_query_method_after_emit() {
 
     let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+}
+
+#[test]
+fn live_handler_query_can_see_world() {
+    let src = r##"
+        T { name = "btn" }
+        T {
+            Text { "(unclicked)" name = "target" }
+        }
+
+        let btn = query("#btn")
+        on(btn, "Click", fn(event) {
+            let t = query("#target")
+            if t {
+                t.set_text("clicked")
+            }
+        })
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    let btn_id = world
+        .all_components()
+        .filter(|&id| world.parent_of(id).is_none())
+        .find_map(|root| world.find_component(root, "#btn"))
+        .expect("expected #btn");
+
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            btn_id,
+            EventSignal::Click {
+                raycaster: ComponentId::default(),
+                renderable: btn_id,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        ),
+    );
+
+    let intents = rx.drain_ready_intents();
+    assert!(
+        intents.iter().any(|signal| matches!(
+            signal.intent.as_ref().map(|intent| &intent.value),
+            Some(crate::engine::ecs::IntentValue::SetText { text, .. }) if text == "clicked"
+        )),
+        "expected handler query to resolve target and emit SetText"
+    );
 }
 
 #[test]

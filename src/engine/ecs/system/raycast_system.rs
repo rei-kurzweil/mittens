@@ -1043,59 +1043,6 @@ impl RayCastSystem {
                 let click_cast = input.mouse_pressed.contains(&MouseButton::Left);
                 let action_cast = cast_requested && !click_cast;
 
-                // Extra debug on click.
-                if mode == RayCastMode::EventDriven
-                    && input.mouse_pressed.contains(&MouseButton::Left)
-                {
-                    let view = visuals.camera_view();
-                    let cam_pos = math::mat4_inverse(view)
-                        .map(|inv_view| {
-                            let t = inv_view[3];
-                            [t[0], t[1], t[2]]
-                        })
-                        .unwrap_or([f32::NAN, f32::NAN, f32::NAN]);
-
-                    match debug_cursor {
-                        Some(ray) => {
-                            println!(
-                                "[RayCast] ray debug (cursor): cursor={:?} ndc=({:.3},{:.3}) cam_pos=({:.3},{:.3},{:.3}) origin=({:.3},{:.3},{:.3}) dir=({:.3},{:.3},{:.3}) near=({:.3},{:.3},{:.3}) far=({:.3},{:.3},{:.3})",
-                                input.cursor_pos,
-                                ray.x_ndc,
-                                ray.y_ndc,
-                                cam_pos[0],
-                                cam_pos[1],
-                                cam_pos[2],
-                                origin[0],
-                                origin[1],
-                                origin[2],
-                                dir[0],
-                                dir[1],
-                                dir[2],
-                                ray.near[0],
-                                ray.near[1],
-                                ray.near[2],
-                                ray.far[0],
-                                ray.far[1],
-                                ray.far[2]
-                            );
-                        }
-                        None => {
-                            println!(
-                                "[RayCast] ray debug (parent_forward): origin=({:.3},{:.3},{:.3}) dir=({:.3},{:.3},{:.3}) cam_pos=({:.3},{:.3},{:.3})",
-                                origin[0],
-                                origin[1],
-                                origin[2],
-                                dir[0],
-                                dir[1],
-                                dir[2],
-                                cam_pos[0],
-                                cam_pos[1],
-                                cam_pos[2],
-                            );
-                        }
-                    }
-                }
-
                 let mut hits =
                     self.cast_against_renderables_bvh(world, bvh, origin, dir, max_distance);
                 if hits.is_empty() {

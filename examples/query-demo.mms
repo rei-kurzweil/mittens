@@ -10,7 +10,7 @@
 //   4. comp.query_all("text")       -- scoped subtree query, multiple results
 
 RendererSettings {
-    window_size(1280, 720)
+    window_size(900, 720)
 }
 
 BGC {
@@ -68,10 +68,12 @@ T.position(-1.2, 0, 0.0).scale(0.06, 0.06, 0.06) {
 
             T.position(0, 0, 0.05) {
                 name = "btn_a"
-                Raycastable.enabled()
                 Style.padding_xy(2.0, 4.0)
                         .background_color([red * 0.75, green * 0.75, blue * 0.75, 1.0]) {}
-                Text { "query('#target_a')" }
+                Text {
+                    Raycastable.enabled()
+                    "query('#target_a')"
+                }
             }
 
             T.position(0, 0, 0.05) {
@@ -96,10 +98,12 @@ T.position(-1.2, 0, 0.0).scale(0.06, 0.06, 0.06) {
 
             T.position(0, 0, 0.05) {
                 name = "btn_b"
-                Raycastable.enabled()
                 Style.padding_xy(2.0, 1.0)
                         .background_color([red * 0.75, green * 0.75, blue * 0.75, 1.0]) {}
-                Text { "'#target_b' -> set_text(..)" }
+                Text {
+                    Raycastable.enabled()
+                    "'#target_b' -> set_text(..)"
+                }
             }
 
             T.position(0, 0, 0.05) {
@@ -124,10 +128,12 @@ T.position(-1.2, 0, 0.0).scale(0.06, 0.06, 0.06) {
 
             T.position(0, 0, 0.05) {
                 name = "btn_c"
-                Raycastable.enabled()
                 Style.padding_xy(2.0, 1.0)
                         .background_color([red * 0.75, green * 0.75, blue * 0.75, 1.0]) {}
-                Text { "'#target_c' -> fn(t) {..}" }
+                Text {
+                    Raycastable.enabled()
+                    "'#target_c' -> fn(t) {..}"
+                }
             }
 
             T.position(0, 0, 0.05) {
@@ -152,10 +158,12 @@ T.position(-1.2, 0, 0.0).scale(0.06, 0.06, 0.06) {
 
             T.position(0, 0, 0.05) {
                 name = "btn_d"
-                Raycastable.enabled()
                 Style.padding_xy(2.0, 1.0)
                         .background_color([red * 0.75, green * 0.75, blue * 0.75, 1.0]) {}
-                Text { "row_d.query_all('text')" }
+                Text {
+                    Raycastable.enabled()
+                    "row_d.query_all('text')"
+                }
             }
 
             T.position(0, 0, 0.05) {

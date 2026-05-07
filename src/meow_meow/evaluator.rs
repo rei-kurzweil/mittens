@@ -8,6 +8,7 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::IntentValue;
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::SignalKind;
+use crate::engine::ecs::World;
 use crate::meow_meow::ast::{
     BinOpKind, CallExpression, ComponentExpression,
     Expression, IfStatement, ImportItem, Statement, UnaryOpKind,
@@ -244,6 +245,9 @@ struct EvalContext<'a> {
     /// Scripting-side runtime storage: variable scope chain (frames) + heap.
     /// All variable bindings, lookups, and reassignments go through this.
     object_world: &'a mut ObjectWorld,
+    /// Inline live-world host access used when MMS runs directly inside a
+    /// registered engine handler rather than through evaluator channels.
+    host_world: Option<*mut World>,
 }
 
 /// Accumulator used while evaluating a component expression body block.
@@ -319,6 +323,7 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
             channels: Some(ch),
             ce_builder: None,
             object_world: &mut world,
+            host_world: None,
         };
         eval_block_stmts(&stmts, &mut ctx)
     }; // ctx (and its borrow of ch) dropped here
@@ -702,6 +707,7 @@ fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value,
             channels: ctx.channels.as_mut().map(|c| &mut **c),
             ce_builder: Some(&mut builder),
             object_world: ctx.object_world,
+            host_world: ctx.host_world,
         };
         eval_block_stmts(&ce.body.statements, &mut body_ctx)
     };
@@ -889,6 +895,7 @@ fn eval_call(
                     channels: None,
                     ce_builder: None,
                     object_world: ctx.object_world,
+                    host_world: None,
                 };
                 eval_block_stmts(&body.statements, &mut func_ctx)
             };
@@ -915,24 +922,70 @@ fn run_world_query(
     multiple: bool,
     ctx: &mut EvalContext<'_>,
 ) -> Result<Vec<Value>, String> {
-    let Some(ch) = ctx.channels.as_mut() else {
+    if let Some(ch) = ctx.channels.as_mut() {
+        let reply = ch.call(HostCallKind::Query { selector, scope, multiple });
+        let out = match reply {
+            None => Vec::new(),
+            Some(HostValue::Component { id, component_type }) => {
+                vec![Value::ComponentObject { id, component_type }]
+            }
+            Some(HostValue::ComponentList(list)) => list
+                .into_iter()
+                .map(|(id, component_type)| Value::ComponentObject { id, component_type })
+                .collect(),
+            Some(other) => {
+                return Err(format!(
+                    "query: unexpected HostValue reply: {:?}", other
+                ));
+            }
+        };
+        return Ok(out);
+    }
+
+    let Some(world) = ctx.host_world else {
         // No host (fire-and-forget runner) — return empty.
         return Ok(Vec::new());
     };
-    let reply = ch.call(HostCallKind::Query { selector, scope, multiple });
-    let out = match reply {
-        None => Vec::new(),
-        Some(HostValue::Component { id, component_type }) => {
-            vec![Value::ComponentObject { id, component_type }]
-        }
-        Some(HostValue::ComponentList(list)) => list
-            .into_iter()
-            .map(|(id, component_type)| Value::ComponentObject { id, component_type })
+    let world = unsafe { &mut *world };
+
+    let roots: Vec<ComponentId> = match scope {
+        Some(id) => vec![id],
+        None => world
+            .all_components()
+            .filter(|&id| world.parent_of(id).is_none())
             .collect(),
-        Some(other) => {
-            return Err(format!(
-                "query: unexpected HostValue reply: {:?}", other
-            ));
+    };
+
+    let mut all_ids: Vec<ComponentId> = Vec::new();
+    for root in roots {
+        if multiple {
+            all_ids.extend(world.find_all_components(root, &selector));
+        } else if let Some(found) = world.find_component(root, &selector) {
+            all_ids.push(found);
+            break;
+        }
+    }
+
+    let out = if multiple {
+        all_ids
+            .into_iter()
+            .filter_map(|id| {
+                world.component_name(id).map(|component_type| Value::ComponentObject {
+                    id,
+                    component_type: component_type.to_string(),
+                })
+            })
+            .collect()
+    } else {
+        match all_ids.into_iter().next() {
+            Some(id) => match world.component_name(id) {
+                Some(component_type) => vec![Value::ComponentObject {
+                    id,
+                    component_type: component_type.to_string(),
+                }],
+                None => Vec::new(),
+            },
+            None => Vec::new(),
         }
     };
     Ok(out)
@@ -990,6 +1043,7 @@ fn eval_user_fn(
             channels: ctx.channels.as_mut().map(|c| &mut **c),
             ce_builder: None,
             object_world: ctx.object_world,
+            host_world: ctx.host_world,
         };
         eval_block_stmts(&body.statements, &mut func_ctx)
     };
@@ -1034,10 +1088,22 @@ fn eval_method_call(
             }
 
             // Animation playback.
-            let anim_state = match (component_type.as_str(), method) {
-                ("A" | "Animation" | "AnimationComponent", "play") => Some(AnimationState::Playing),
-                ("A" | "Animation" | "AnimationComponent", "loop_anim") => Some(AnimationState::Looping),
-                ("A" | "Animation" | "AnimationComponent", "pause") => Some(AnimationState::Paused),
+            let anim_state = match method {
+                "play"
+                    if matches!(
+                        component_type.as_str(),
+                        "A" | "Animation" | "AnimationComponent" | "animation"
+                    ) => Some(AnimationState::Playing),
+                "loop_anim"
+                    if matches!(
+                        component_type.as_str(),
+                        "A" | "Animation" | "AnimationComponent" | "animation"
+                    ) => Some(AnimationState::Looping),
+                "pause"
+                    if matches!(
+                        component_type.as_str(),
+                        "A" | "Animation" | "AnimationComponent" | "animation"
+                    ) => Some(AnimationState::Paused),
                 _ => None,
             };
             if let Some(state) = anim_state {
@@ -1049,7 +1115,10 @@ fn eval_method_call(
             }
 
             // Text mutation: text.set_text("...").
-            if matches!(component_type.as_str(), "Text" | "TXT" | "TextComponent")
+            if matches!(
+                component_type.as_str(),
+                "Text" | "TXT" | "TextComponent" | "text"
+            )
                 && method == "set_text"
             {
                 let text = match args.first() {
@@ -1117,6 +1186,7 @@ fn eval_binop(
                             channels: None,
                             ce_builder: None,
                             object_world: ctx.object_world,
+                            host_world: None,
                         };
                         eval_block_stmts(&body.statements, &mut func_ctx)
                     };
@@ -1259,12 +1329,14 @@ fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
 /// Evaluate an MMS `Value::Function` with the given positional args.
 ///
 /// Runs inline on the calling thread (no evaluator channel round-trips).
-/// `channels` is `None`, so Spawn / RegisterHandler HostCalls inside the
-/// body are silently skipped. Intents emitted by the body (e.g. from
-/// method dispatch like `anim.play()`) are forwarded to `emit` when provided.
+/// `channels` is `None`; when `world_host` is present, live world queries run
+/// directly against that world. Intents emitted by the body (e.g. from method
+/// dispatch like `anim.play()` or `text.set_text(...)`) are forwarded to `emit`
+/// when provided.
 pub(crate) fn eval_mms_fn(
     fn_val: &Value,
     args: Vec<Value>,
+    world_host: Option<&mut World>,
     emit: Option<&mut dyn SignalEmitter>,
 ) -> Result<Value, String> {
     let Value::Function { params, body, captured_env } = fn_val else {
@@ -1282,6 +1354,7 @@ pub(crate) fn eval_mms_fn(
         channels: None,
         ce_builder: None,
         object_world: &mut world,
+        host_world: world_host.map(|world| world as *mut World),
     };
     let result = match eval_block_stmts(&body.statements, &mut ctx)? {
         StmtEffect::Return(val) => val,
@@ -1311,6 +1384,7 @@ fn eval_as_module(source: &str, source_path: Option<&str>) -> Result<Value, Stri
         channels: None,
         ce_builder: None,
         object_world: &mut world,
+        host_world: None,
     };
 
     for stmt in &stmts {

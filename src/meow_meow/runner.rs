@@ -165,8 +165,8 @@ impl MeowMeowRunner {
                             rx.add_handler_closure(
                                 signal_kind,
                                 scope,
-                                move |_world, emit, _signal| {
-                                    if let Err(e) = eval_mms_fn(&handler, vec![Value::Null], Some(emit)) {
+                                move |world, emit, _signal| {
+                                    if let Err(e) = eval_mms_fn(&handler, vec![Value::Null], Some(world), Some(emit)) {
                                         eprintln!("[mms] handler error: {e}");
                                     }
                                 },
