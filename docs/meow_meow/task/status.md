@@ -41,6 +41,7 @@ Meow Meow Script ("MMS") is the scripting + authoring language for cat-engine.
 
 - [Development roadmap](../analysis/roadmap.md) — phase checklist with design decision flags
 - [Task: reply channel, ObjectWorld, and MMQ status](mms-reply-channel-objectworld-and-mmq-status.md) — current implementation status and recommended next shape
+- [Task: heap-backed arrays and single-heap ObjectWorld](heap-backed-arrays-and-single-objectworld-heap.md) — plan for moving arrays into the heap and preserving one heap across closures/function calls
 
 ### Drafts
 
