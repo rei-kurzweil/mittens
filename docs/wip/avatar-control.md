@@ -222,27 +222,15 @@ it. No change needed to that division.
 - Solves for joint local rotations; emits `UpdateTransform` intents for each joint
 - Stateless solvers currently; no temporal state in IK
 
-### What's duplicated
+### Math helpers are now consolidated
 
-Both systems define their own private math helpers:
-
-| Math operation | TransformPipelineSystem | IKSystem |
-|---|---|---|
-| Quat normalize | `quat_normalize` | `normalise_quat` |
-| Quat multiply | implicit in basis ops | `quat_mul` |
-| Quat from matrix | `quat_from_basis_columns` (columns) | `mat_to_quat` (trace method) |
-| Rotation Y | `quat_rotation_y` | `quat_rotation_y` |
-| Vec3 lerp | `vec3_lerp` | `vec3_lerp` |
-
-Both read `transform.matrix_world` directly. Neither calls the other. The duplication
-is real but small — these are 5-10 line functions and the two systems use them in
-different ways (pipeline: mostly quat blending; IK: mostly cross products, arc solves).
-
-**Could these live in `crate::utils::math`?**
-
-There's already a `crate::utils::math` module (`src/utils/math.rs`) used by
-`OpenXRSystem` (`math::quat_mul`, `math::quat_conjugate`). The shared helpers could
-move there. No architectural change required — just de-duplication. Low priority.
+Earlier drafts of this doc flagged duplicated quat / vec helpers between
+`TransformPipelineSystem` and `IKSystem`. That has since been resolved:
+`quat_mul`, `quat_conjugate`, `quat_normalize`, `quat_rotation_y`,
+`quat_from_basis_columns`, `mat_to_quat`, `quat_rotate_vec3`, `quat_nlerp`, and
+`vec3_lerp` / `vec3_sub` all live in `src/utils/math.rs`, and `IKSystem` imports
+them from there (`ik_system.rs:4-6`). Both systems read `transform.matrix_world`
+directly. No remaining duplication worth tracking.
 
 ### What can't be shared
 
