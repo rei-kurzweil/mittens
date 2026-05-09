@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::{
     ColorComponent, EditorComponent, EmissiveComponent, GLTFComponent, MeshComponent,
-    RaycastableComponent, RenderableComponent, SignalRouteUpwardComponent,
+    OverlayComponent, RaycastableComponent, RenderableComponent, SignalRouteUpwardComponent,
     SkinnedMeshComponent, TextureComponent, TransformComponent,
 };
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
@@ -978,11 +978,21 @@ impl GLTFSystem {
             );
             let _ = world.add_child(viz_transform, route_up);
 
+            // Route joint markers into the overlay pass so they're drawn on top of the
+            // skinned mesh (otherwise they'd be occluded by the body they belong to).
+            // OverlayComponent must be an ancestor of the renderable; renderable_system
+            // walks parents looking for the nearest OverlayComponent.
+            let overlay = world.add_component_boxed_named(
+                format!("viz_overlay:{}", node_display_name),
+                Box::new(OverlayComponent::new()),
+            );
+            let _ = world.add_child(viz_transform, overlay);
+
             let viz_renderable = world.add_component_boxed_named(
                 format!("viz_box:{}", node_display_name),
                 Box::new(RenderableComponent::cube()),
             );
-            let _ = world.add_child(viz_transform, viz_renderable);
+            let _ = world.add_child(overlay, viz_renderable);
 
             let raycastable = world.add_component(RaycastableComponent::enabled());
             let _ = world.add_child(viz_renderable, raycastable);
