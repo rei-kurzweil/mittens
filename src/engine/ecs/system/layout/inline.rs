@@ -72,6 +72,20 @@ pub(crate) fn layout_items(
             },
         );
 
+        // Background quad — share the block-flow implementation so
+        // `Style { background_color }` works consistently for both
+        // formatting contexts.
+        super::block::sync_bg_quad(
+            world,
+            emit,
+            item.tc_id,
+            item.padding_left_gu,
+            item.padding_top_gu,
+            item.box_width_gu,
+            item.box_height_gu,
+            unit_scale,
+        );
+
         // Recurse into the item's own children using whichever formatting
         // context their `display` modes call for. Inline-block items can
         // host either inline children (more text/icons) or block children

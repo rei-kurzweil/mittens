@@ -299,7 +299,7 @@ fn sync_overflow_topology(
 /// The background quad covers the full padding box (content + padding on all sides).
 /// Glyph-unit measurements are converted to world units via `unit_scale`, since the
 /// item TC is at scale 1.0 in the parent layout's local space.
-fn sync_bg_quad(
+pub(crate) fn sync_bg_quad(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     tc_id: ComponentId,
