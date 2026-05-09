@@ -6,7 +6,9 @@ pub mod inline;
 use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::LayoutComponent;
+use crate::engine::ecs::component::style::Display;
 use crate::engine::ecs::SignalEmitter;
+use measure::measure_container_items;
 
 /// Approximate average character width in glyph-local units (pre-transform).
 const CHAR_WIDTH_GLYPH: f32 = 0.55;
@@ -61,9 +63,25 @@ impl LayoutSystem {
             return;
         }
 
-        // TODO: read LayoutComponent or container StyleComponent.display to dispatch.
-        // For now all roots use block formatting context.
-        block::layout(world, emit, layout_id);
+        // Peek at the immediate item children to choose a formatting context.
+        // If every item is inline-block, run inline layout (horizontal cursor + wrap).
+        // Otherwise default to block layout. Mixed containers stay on block — true
+        // CSS-style inline-context-with-mixed-children is deferred until needed.
+        let avail_w = world
+            .get_component_by_id_as::<LayoutComponent>(layout_id)
+            .map(|l| l.available_width)
+            .unwrap_or(0.0);
+        let items = measure_container_items(world, layout_id, avail_w, None);
+        let all_inline_block = !items.is_empty()
+            && items
+                .iter()
+                .all(|it| matches!(it.display, Some(Display::InlineBlock)));
+
+        if all_inline_block {
+            inline::layout(world, emit, layout_id);
+        } else {
+            block::layout(world, emit, layout_id);
+        }
     }
 
     /// Estimate the overlay-space width of a text panel without world matrices.

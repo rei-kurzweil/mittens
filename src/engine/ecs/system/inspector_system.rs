@@ -46,11 +46,89 @@ const TEXT_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 const HIGHLIGHT_COLOR: [f32; 4] = [0.0, 0.45, 0.0, 1.0];
 
 #[derive(Debug, Default)]
-pub struct InspectorSystem;
+pub struct InspectorSystem {
+    /// Cached id of the singleton `LayoutComponent` that hosts every editor's panels.
+    /// All editors share one layout root so panels float beside each other instead of
+    /// overlapping when multiple `EditorComponent`s exist.
+    editor_layout_root: Option<ComponentId>,
+}
 
 impl InspectorSystem {
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    /// Return the world-singleton `LayoutComponent` id used to lay out every editor's
+    /// panels side-by-side. Spawns it on first call (and again if it was removed
+    /// from the world since last call).
+    ///
+    /// Hierarchy spawned (no parent — top-level node):
+    /// ```text
+    /// editor_layout_anchor (TransformComponent at default panel position, Selectable::off)
+    ///   └── editor_layout_overlay (OverlayComponent)        ← all panels render in overlay phase
+    ///       └── editor_layout_root (LayoutComponent)        ← panels attach here
+    /// ```
+    ///
+    /// The returned id is the `LayoutComponent` node — panels (each authored with
+    /// `display: inline-block`) become its children.
+    pub fn ensure_editor_layout_root(
+        &mut self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+    ) -> ComponentId {
+        // Validate cached id: the layout component must still exist in the world.
+        if let Some(id) = self.editor_layout_root {
+            if world.get_component_by_id_as::<LayoutComponent>(id).is_some() {
+                return id;
+            }
+            self.editor_layout_root = None;
+        }
+
+        // Default anchor position matches `EditorComponent::world_panel_pos` so the
+        // shared layout sits where panels used to spawn pre-merge.
+        const ANCHOR_POS: (f32, f32, f32) = (-0.7, 1.6, -1.2);
+        // Width budget for all panels combined, in glyph units.  Enough for ~3 panels at
+        // `TextComponent::DEFAULT_WRAP_AT`. Panels overflowing wrap to the next row via
+        // inline-block flow.
+        const LAYOUT_WIDTH_GU: f32 = 3.0
+            * (crate::engine::ecs::component::TextComponent::DEFAULT_WRAP_AT as f32)
+            + 6.0;
+
+        // SelectableComponent::off sits at the top of the chain so every descendant
+        // (panels, their content, etc.) is non-selectable as a region. Per-panel
+        // gizmos still work because they walk to the nearest TransformComponent
+        // independently of selection routing.
+        let selectable_off = world.add_component_boxed_named(
+            "editor_layout_selectable_off",
+            Box::new(SelectableComponent::off()),
+        );
+        let anchor = world.add_component_boxed_named(
+            "editor_layout_anchor",
+            Box::new(
+                TransformComponent::new()
+                    .with_position(ANCHOR_POS.0, ANCHOR_POS.1, ANCHOR_POS.2),
+            ),
+        );
+        let _ = world.add_child(selectable_off, anchor);
+
+        let overlay = world.add_component_boxed_named(
+            "editor_layout_overlay",
+            Box::new(OverlayComponent::new()),
+        );
+        let _ = world.add_child(anchor, overlay);
+
+        let layout_root = world.add_component_boxed_named(
+            "editor_layout_root",
+            Box::new(
+                LayoutComponent::new(LAYOUT_WIDTH_GU).with_unit_scale(TEXT_SCALE),
+            ),
+        );
+        let _ = world.add_child(overlay, layout_root);
+
+        world.init_component_tree(selectable_off, emit);
+
+        self.editor_layout_root = Some(layout_root);
+        layout_root
     }
 
     pub fn setup_panels_for_editor(
@@ -59,32 +137,15 @@ impl InspectorSystem {
         world: &mut World,
         emit: &mut dyn SignalEmitter,
         editor_root: ComponentId,
-        world_panel_pos: (f32, f32, f32),
-        inspector_panel_pos: (f32, f32, f32),
+        _world_panel_pos: (f32, f32, f32),
+        _inspector_panel_pos: (f32, f32, f32),
     ) {
-        // Compute estimated world panel width so we can auto-place inspector to the right.
-        // (World matrices aren't ready yet during setup, so we use an analytic estimate.)
-        let estimated_wp_width = LayoutSystem::estimate_panel_width(
-            crate::engine::ecs::component::TextComponent::DEFAULT_WRAP_AT,
-            TEXT_SCALE,
-            MAX_DEPTH as f32 * INDENT_UNIT,
-        );
+        // Per-editor panel positions are no longer honored — every editor's panels
+        // attach to the world-singleton layout root and flow side-by-side.
+        let layout_root = self.ensure_editor_layout_root(world, emit);
 
-        // If caller used the default inspector position (same x as world panel), push it right.
-        let inspector_pos = if (inspector_panel_pos.0 - world_panel_pos.0).abs() < 0.01 {
-            (
-                world_panel_pos.0 + estimated_wp_width + PANEL_GAP,
-                inspector_panel_pos.1,
-                inspector_panel_pos.2,
-            )
-        } else {
-            inspector_panel_pos
-        };
-
-        let (wpc_id, wpa_id, wsc_id) =
-            spawn_world_panel(world, emit, editor_root, world_panel_pos);
-        let (ipc_id, _ipa_id, isc_id) =
-            spawn_inspector_panel(world, emit, editor_root, inspector_pos);
+        let (wpc_id, wpa_id, wsc_id) = spawn_world_panel(world, emit, editor_root, layout_root);
+        let (ipc_id, _ipa_id, isc_id) = spawn_inspector_panel(world, emit, editor_root, layout_root);
 
         rebuild_world_panel(world, emit, wpc_id, wsc_id, editor_root, None);
         rebuild_inspector_panel(world, emit, ipc_id, isc_id, None);
@@ -170,18 +231,43 @@ impl InspectorSystem {
 fn spawn_panel_title_bar(
     world: &mut World,
     parent: ComponentId,
-    pos: (f32, f32, f32),
     panel_width_world: f32,
     content_height_world: f32,
     label: &str,
 ) -> (ComponentId, ComponentId) {
-    // ── Panel root — gizmo target ────────────────────────────────────────
-    // Plain position anchor (scale=1.0 → world units).  The gizmo walks up
-    // ancestry to find the nearest TransformComponent and drags this node.
+    // ── Panel root — gizmo target + inline-block flow item ────────────────
+    // Position is layout-driven by the singleton editor layout root.  The
+    // gizmo walks up ancestry to find the nearest TransformComponent and
+    // drags this node — that override will eventually need to compose with
+    // the layout-driven position via signal routing, but for now flow wins.
     let panel_t = world.add_component_boxed_named(
         "panel_transform",
-        Box::new(TransformComponent::new().with_position(pos.0, pos.1, pos.2)),
+        Box::new(TransformComponent::new()),
     );
+
+    // ── Style: inline-block + explicit width/height ──────────────────────
+    // Required so the singleton layout root flows panels horizontally with
+    // wrap. Width/height are in glyph units (the parent layout has
+    // unit_scale = TEXT_SCALE).
+    let total_height_gu = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + content_height_world / TEXT_SCALE;
+    let panel_width_gu = panel_width_world / TEXT_SCALE;
+    let panel_outer_style = world.add_component_boxed_named(
+        "panel_outer_style",
+        Box::new({
+            let mut s = StyleComponent::new();
+            s.display = Some(crate::engine::ecs::component::style::Display::InlineBlock);
+            s.width = SizeDimension::GlyphUnits(panel_width_gu);
+            s.height = SizeDimension::GlyphUnits(total_height_gu);
+            s.margin = EdgeInsets {
+                top: 0.5,
+                right: 1.0,
+                bottom: 0.5,
+                left: 0.0,
+            };
+            s
+        }),
+    );
+    let _ = world.add_child(panel_t, panel_outer_style);
 
     // ── LayoutComponent — flex-column container ──────────────────────────
     // Two flex items: header_slot (fixed 2 gu) + content_slot (flex_grow=1).
@@ -273,7 +359,7 @@ fn spawn_world_panel(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     editor_root: ComponentId,
-    pos: (f32, f32, f32),
+    editor_layout_root: ComponentId,
 ) -> (ComponentId, ComponentId, ComponentId) {
     let wp_width = LayoutSystem::estimate_panel_width(
         crate::engine::ecs::component::TextComponent::DEFAULT_WRAP_AT,
@@ -282,10 +368,6 @@ fn spawn_world_panel(
     );
     let wp_height = PAGE_SIZE as f32 * ROW_HEIGHT;
 
-    let wpa = world.add_component_boxed_named(
-        "world_panel_anchor",
-        Box::new(SelectableComponent::off()),
-    );
     let wpc = world.add_component_boxed_named(
         "world_panel",
         Box::new(WorldPanelComponent::new()),
@@ -300,8 +382,10 @@ fn spawn_world_panel(
     );
 
     // Panel root + LayoutComponent + header slot (with title bar visuals + gizmo).
+    // Parent is the singleton editor layout root; the inline-block style on
+    // panel_t makes the layout system flow it beside sibling panels.
     let (wp_t, layout_root) =
-        spawn_panel_title_bar(world, wpa, pos, wp_width, wp_height, "World");
+        spawn_panel_title_bar(world, editor_layout_root, wp_width, wp_height, "World");
 
     // ── Content slot — second flex item (flex_grow=1) ────────────────────
     // LayoutSystem will position this at [0, -TITLE_BAR_HEIGHT, 0].
@@ -353,9 +437,9 @@ fn spawn_world_panel(
         sc.set_track(wpr, [0.0, 0.0, 0.0]);
     }
 
-    world.init_component_tree(wpa, emit);
+    world.init_component_tree(wp_t, emit);
     ScrollingSystem::sync_component(world, emit, wsc);
-    (wpc, wpa, wsc)
+    (wpc, wp_t, wsc)
 }
 
 /// Returns `(panel_component_id, panel_anchor_id, scroll_component_id)`.
@@ -363,7 +447,7 @@ fn spawn_inspector_panel(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     editor_root: ComponentId,
-    pos: (f32, f32, f32),
+    editor_layout_root: ComponentId,
 ) -> (ComponentId, ComponentId, ComponentId) {
     let ip_width = LayoutSystem::estimate_panel_width(
         crate::engine::ecs::component::TextComponent::DEFAULT_WRAP_AT,
@@ -372,14 +456,6 @@ fn spawn_inspector_panel(
     );
     let ip_height = PAGE_SIZE as f32 * ROW_HEIGHT;
 
-    let ipa = world.add_component_boxed_named(
-        "inspector_panel_anchor",
-        Box::new(SelectableComponent::off()),
-    );
-    let ipo = world.add_component_boxed_named(
-        "inspector_panel_overlay",
-        Box::new(OverlayComponent::new()),
-    );
     let ipc = world.add_component_boxed_named(
         "inspector_panel",
         Box::new(InspectorPanelComponent::new()),
@@ -393,9 +469,8 @@ fn spawn_inspector_panel(
         Box::new(TransformComponent::new()),
     );
 
-    let _ = world.add_child(ipa, ipo);
     let (ip_t, layout_root) =
-        spawn_panel_title_bar(world, ipo, pos, ip_width, ip_height, "Inspector");
+        spawn_panel_title_bar(world, editor_layout_root, ip_width, ip_height, "Inspector");
 
     let content_slot = world.add_component_boxed_named(
         "content_slot",
@@ -427,8 +502,6 @@ fn spawn_inspector_panel(
     );
     let _ = world.add_child(ipr, ipr_layout);
 
-    let _ = ip_t;
-
     if let Some(c) = world.get_component_by_id_as_mut::<InspectorPanelComponent>(ipc) {
         c.editor_root = Some(editor_root);
         c.rows_track = Some(ipr);
@@ -438,9 +511,9 @@ fn spawn_inspector_panel(
         sc.set_track(ipr, [0.0, 0.0, 0.0]);
     }
 
-    world.init_component_tree(ipa, emit);
+    world.init_component_tree(ip_t, emit);
     ScrollingSystem::sync_component(world, emit, isc);
-    (ipc, ipa, isc)
+    (ipc, ip_t, isc)
 }
 
 // ---------------------------------------------------------------------------

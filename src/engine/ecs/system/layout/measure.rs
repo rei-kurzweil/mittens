@@ -36,6 +36,9 @@ pub(crate) struct MeasuredItem {
     pub margin_box_width_gu:  f32,
     /// true → width: Auto; item stretches to fill container inline axis
     pub is_auto_width:        bool,
+    /// Resolved `display` (style override → HtmlElement UA default → `None`).
+    /// `None` is treated as `Block` by the block formatting context.
+    pub display: Option<Display>,
 }
 
 /// Pass 1 — measure a single TC layout item.
@@ -110,6 +113,7 @@ pub(crate) fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -
         box_width_gu,
         margin_box_width_gu,
         is_auto_width,
+        display,
     }
 }
 
