@@ -199,10 +199,16 @@ as today's `call_env = captured_env`.
    - [x] Reassign-as-named check in `eval_stmt` → `!ctx.object_world.has(...)`
    - [x] Module export bookkeeping in `eval_as_module` (now reads back via `lookup` after `Exported(name)`)
 6. **Construction sites** drop the parallel `Env` ✅
-   - [x] `eval_script` — `ObjectWorld::new()` only
-   - [x] `eval_mms_fn` — `ObjectWorld::new()` + `push_function_frame(captured_env)` + bind params
-   - [x] `eval_as_module` — `ObjectWorld::new()` only
-   - [x] `type Env = HashMap<String, Value>` alias removed
+  - [x] `eval_script` — `ObjectWorld::new()` only
+  - [x] `eval_mms_fn` — current implementation uses `ObjectWorld::new()` + `push_function_frame(captured_env)` + bind params
+  - [x] `eval_as_module` — `ObjectWorld::new()` only
+  - [x] `type Env = HashMap<String, Value>` alias removed
+
+  Note: the `eval_mms_fn` construction path above is an implementation snapshot, not the
+  intended long-term heap model. Once arrays become heap-backed mutable containers, function
+  execution should stop creating a fresh `ObjectWorld` and instead reuse the session's single
+  heap while pushing a `Function` frame for lexical isolation. See
+  [heap-backed-arrays-and-single-objectworld-heap.md](heap-backed-arrays-and-single-objectworld-heap.md).
 7. **Test pass** ✅ — `cargo test --lib meow_meow` reports 63/63 passing (51 evaluator
       + 11 ObjectWorld unit tests + 1 new TDD test that flipped from red → green:
       `eval_for_accumulator_propagates_after_loop_exit`).

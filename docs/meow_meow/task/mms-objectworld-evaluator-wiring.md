@@ -96,15 +96,25 @@ entirely.
 - [ ] Loop bodies in `eval_stmt` (`ForIn`, `While`) — they currently `env.clone()` so the
       loop can preserve accumulator reassignment across iterations
 
-The loop / function-call cases are the interesting ones: today they `env.clone()` to
-isolate inner-frame mutation. With v1 still flat, the simplest mapping is:
+The loop / function-call cases are the interesting ones: at the time this task was written,
+the simplest migration path was a 1:1 translation from cloned envs into a fresh per-call
+`ObjectWorld`. That is no longer the intended end state.
 
-- function calls: build a fresh `ObjectWorld` per call (cheap — `pending` and `heap`
-  empty, `env` is the captured map). Discard on return. Preserves current semantics.
-- loop bodies: keep cloning (same as today, just on `ObjectWorld.env` instead of `env`).
+Current status:
 
-This is intentionally a 1:1 translation. Scope-chain semantics (v2) is the right place
-to revisit cloning — not now.
+- the frame-stack `ObjectWorld` landed
+- the current implementation still constructs a fresh `ObjectWorld` for `eval_mms_fn(...)`
+- that is acceptable only while arrays remain inline value-semantic `Value::Array(Vec<Value>)`
+
+Updated direction:
+
+- closures may still capture specialized env snapshots/views
+- the heap must remain shared for a running MMS session
+- function execution should eventually push a `Function` frame on the same `ObjectWorld`
+  rather than constructing a new `ObjectWorld`
+
+See [heap-backed-arrays-and-single-objectworld-heap.md](heap-backed-arrays-and-single-objectworld-heap.md)
+for the follow-on task that supersedes the older “fresh per-call ObjectWorld” assumption.
 
 ### Direct env access sites
 

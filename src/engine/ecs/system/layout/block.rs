@@ -26,6 +26,7 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::system::ScrollingSystem;
 use super::measure::{measure_container_items, measure_items, MeasuredItem};
+use crate::engine::ecs::component::style::Display;
 
 const OWNED_CLIPPED_CONTENT_LABEL: &str = "__clip_content";
 const OWNED_LAYOUT_STENCIL_CLIP_LABEL: &str = "__layout_stencil_clip";
@@ -47,6 +48,17 @@ pub fn layout(
     let (items, _avail_w, _avail_h, unit_scale) = measure_items(world, layout_id);
 
     layout_items(world, emit, &items, unit_scale);
+}
+
+/// Public-to-the-layout-module entry so `inline::layout_items` can recurse
+/// back into block flow when an inline-block item's children are block-level.
+pub(crate) fn layout_items_for(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    items: &[MeasuredItem],
+    unit_scale: f32,
+) {
+    layout_items(world, emit, items, unit_scale);
 }
 
 fn layout_items(
@@ -98,7 +110,25 @@ fn layout_items(
             sync_scrolling_metrics(world, emit, scroll_id, item.content_height_gu, &nested_items);
         }
         if !nested_items.is_empty() {
-            layout_items(world, emit, &nested_items, unit_scale);
+            // Switch formatting context per subtree: when every nested item
+            // is inline-block, run them through the inline cursor + wrap
+            // path; otherwise stay in block flow. Mirrors the dispatch in
+            // `LayoutSystem::run_layout` but applied at every level so
+            // mixed trees under a single LayoutRoot work.
+            let all_inline_block = nested_items
+                .iter()
+                .all(|it| matches!(it.display, Some(Display::InlineBlock | Display::Inline)));
+            if all_inline_block {
+                super::inline::layout_items(
+                    world,
+                    emit,
+                    &nested_items,
+                    item.content_width_gu,
+                    unit_scale,
+                );
+            } else {
+                layout_items(world, emit, &nested_items, unit_scale);
+            }
         }
 
         cursor_gu += item.box_height_gu + item.margin_bottom_gu;

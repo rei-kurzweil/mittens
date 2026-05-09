@@ -12,7 +12,8 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::{IntentValue, SignalEmitter, World};
 
-use super::measure::measure_items;
+use super::measure::{measure_container_items, measure_items, MeasuredItem};
+use crate::engine::ecs::component::style::Display;
 
 /// Run an inline formatting context layout pass for `layout_id`.
 ///
@@ -21,12 +22,27 @@ use super::measure::measure_items;
 /// would exceed `available_width`.
 pub fn layout(world: &mut World, emit: &mut dyn SignalEmitter, layout_id: ComponentId) {
     let (items, avail_w_gu, _avail_h_gu, unit_scale) = measure_items(world, layout_id);
+    layout_items(world, emit, &items, avail_w_gu, unit_scale);
+}
 
+/// Inline-formatting-context layout over a pre-measured item list.
+///
+/// `avail_w_gu` is the inline-axis budget (in glyph units) the parent
+/// passes down — for the LayoutRoot case that's `LayoutComponent.available_width`;
+/// for a nested block item that switches to inline flow, it's
+/// `item.content_width_gu` of the enclosing block.
+pub(crate) fn layout_items(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    items: &[MeasuredItem],
+    avail_w_gu: f32,
+    unit_scale: f32,
+) {
     let mut cursor_x_gu: f32 = 0.0;
     let mut cursor_y_gu: f32 = 0.0;
     let mut line_height_gu: f32 = 0.0;
 
-    for item in &items {
+    for item in items {
         // Wrap to a new line if this item won't fit and we're not at the line start.
         if cursor_x_gu > 0.0 && cursor_x_gu + item.margin_box_width_gu > avail_w_gu {
             cursor_y_gu += line_height_gu;
@@ -55,6 +71,27 @@ pub fn layout(world: &mut World, emit: &mut dyn SignalEmitter, layout_id: Compon
                 scale: tc_scale,
             },
         );
+
+        // Recurse into the item's own children using whichever formatting
+        // context their `display` modes call for. Inline-block items can
+        // host either inline children (more text/icons) or block children
+        // (a stacked sub-tree); both must be honored.
+        let nested_items = measure_container_items(
+            world,
+            item.tc_id,
+            item.content_width_gu,
+            None,
+        );
+        if !nested_items.is_empty() {
+            let all_inline_block = nested_items
+                .iter()
+                .all(|it| matches!(it.display, Some(Display::InlineBlock | Display::Inline)));
+            if all_inline_block {
+                layout_items(world, emit, &nested_items, item.content_width_gu, unit_scale);
+            } else {
+                super::block::layout_items_for(world, emit, &nested_items, unit_scale);
+            }
+        }
 
         cursor_x_gu += item.margin_box_width_gu;
         if item.margin_box_height_gu > line_height_gu {

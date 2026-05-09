@@ -319,7 +319,7 @@ stored in the `ObjectWorld` env and passed between expressions.
 | `Value::Bool(bool)` | ✅ | `true` / `false` |
 | `Value::Number(f64)` | ✅ | single numeric type; cast to `f32`/`usize` at component boundary |
 | `Value::String(String)` | ✅ | `"..."` |
-| `Value::Array(Vec<Value>)` | ✅ | value semantics (clone) |
+| `Value::Array(Vec<Value>)` | ✅ current implementation | Inline array storage with value semantics today. This is now considered transitional: see [../task/heap-backed-arrays-and-single-objectworld-heap.md](../task/heap-backed-arrays-and-single-objectworld-heap.md). The intended direction is heap-backed arrays with stable identity across closures/function calls. |
 | `Value::Identifier(String)` | ✅ | bare symbolic flag (e.g. `Left`, `Aim`) — kept distinct from `String` so enum-like identifiers survive to the component registry |
 | `Value::ComponentExpr(Box<ComponentExpression>)` | ✅ pre-P6 | unresolved component expression; placeholder until Phase 6 live reply channel |
 | `Value::ComponentObject(ComponentId)` | 🔧 P6 | live engine component (unattached); replaces `ComponentExpr` once reply channel exists |
@@ -329,6 +329,11 @@ stored in the `ObjectWorld` env and passed between expressions.
 > **Note on `Value::Object`:** no MMS syntax creates an `Object` yet. The `{` token is
 > overloaded for component bodies — object literal syntax would need disambiguation
 > (e.g. `#{ key: value }` vs component body `{ key = value }`). ❓ open question.
+>
+> **Array storage note:** the runtime still uses inline `Value::Array(Vec<Value>)`, but that
+> should no longer be read as the target memory model. The planned direction is to move arrays
+> into the `ObjectWorld` heap and keep one heap per running MMS session so indexed mutation and
+> closure-visible shared array identity work correctly.
 
 ---
 

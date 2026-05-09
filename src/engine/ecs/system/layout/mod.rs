@@ -72,10 +72,13 @@ impl LayoutSystem {
             .map(|l| l.available_width)
             .unwrap_or(0.0);
         let items = measure_container_items(world, layout_id, avail_w, None);
+        // `Display::Inline` falls through to inline-block treatment until
+        // true inline flow (line boxes, baseline alignment, mid-run wrap)
+        // lands — see `docs/draft/inline-layout.md`.
         let all_inline_block = !items.is_empty()
             && items
                 .iter()
-                .all(|it| matches!(it.display, Some(Display::InlineBlock)));
+                .all(|it| matches!(it.display, Some(Display::InlineBlock | Display::Inline)));
 
         if all_inline_block {
             inline::layout(world, emit, layout_id);
