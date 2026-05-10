@@ -10,6 +10,7 @@ use crate::engine::ecs::system::text_system::TextSystem;
 /// by the display-mode layout functions (`block`, `flex`, `inline`) in Pass 2.
 ///
 /// All values are in **glyph units**.
+#[derive(Clone)]
 pub(crate) struct MeasuredItem {
     pub tc_id: ComponentId,
 
@@ -45,7 +46,7 @@ pub(crate) struct MeasuredItem {
 ///
 /// Reads the [`StyleComponent`] from among `tc_id`'s ECS children and computes
 /// the full box model (content, padding, margin) for both axes.
-pub(crate) fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> MeasuredItem {
+pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> MeasuredItem {
     // Copy style fields out before the borrow ends.
     let children: Vec<ComponentId> = world.children_of(tc_id).to_vec();
     let style = children.iter().find_map(|&child| {
@@ -71,8 +72,11 @@ pub(crate) fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -
     let padding_left_gu  = padding.left;
     let padding_right_gu = padding.right;
 
-    // Block elements with width: Auto fill the available width after margins and padding.
-    let is_auto_width = is_block && matches!(width, SizeDimension::Auto);
+    // Block (and inline-block) items with width: Auto fill the available width
+    // after margins and padding. The inline cursor uses the flag to re-measure
+    // an auto-width inline-block against the *remaining* line width at layout time.
+    let is_auto_width = matches!(width, SizeDimension::Auto)
+        && matches!(display, None | Some(Display::Block | Display::InlineBlock | Display::Inline));
     let content_width_gu = match width {
         SizeDimension::GlyphUnits(w) => w,
         _ => (avail_w_gu - margin_left_gu - margin_right_gu
@@ -87,9 +91,12 @@ pub(crate) fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -
     let padding_top_gu   = padding.top;
     let padding_bottom_gu = padding.bottom;
 
+    let is_inline_block = matches!(display, Some(Display::InlineBlock | Display::Inline));
     let content_height_gu = match height {
         SizeDimension::GlyphUnits(h) => h,
-        SizeDimension::Auto if is_block => intrinsic_block_height(world, tc_id, content_width_gu),
+        SizeDimension::Auto if is_block || is_inline_block => {
+            intrinsic_block_height(world, tc_id, content_width_gu)
+        }
         SizeDimension::Auto => 0.0,
         _ => 0.0,
     };
@@ -305,6 +312,28 @@ fn intrinsic_block_height(world: &World, tc_id: ComponentId, content_width_gu: f
 
     let child_items = measure_container_items(world, tc_id, content_width_gu, None);
     if !child_items.is_empty() {
+        let all_inline = child_items
+            .iter()
+            .all(|it| matches!(it.display, Some(Display::InlineBlock | Display::Inline)));
+        if all_inline {
+            // Inline-flow: simulate horizontal cursor + line wrap, sum line heights.
+            let mut cursor_x = 0.0_f32;
+            let mut line_h = 0.0_f32;
+            let mut total_h = 0.0_f32;
+            for item in &child_items {
+                if cursor_x > 0.0 && cursor_x + item.margin_box_width_gu > content_width_gu {
+                    total_h += line_h;
+                    cursor_x = 0.0;
+                    line_h = 0.0;
+                }
+                cursor_x += item.margin_box_width_gu;
+                if item.margin_box_height_gu > line_h {
+                    line_h = item.margin_box_height_gu;
+                }
+            }
+            total_h += line_h;
+            return total_h;
+        }
         return child_items.iter().map(|item| item.margin_box_height_gu).sum();
     }
 

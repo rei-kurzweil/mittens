@@ -42,7 +42,19 @@ pub(crate) fn layout_items(
     let mut cursor_y_gu: f32 = 0.0;
     let mut line_height_gu: f32 = 0.0;
 
-    for item in items {
+    for original in items {
+        // Auto-width inline-block items consume the remaining inline-axis budget
+        // on this line — re-measure with that as their available width so the
+        // wrap test below sees the actual width, and intrinsic height
+        // (text wrap, child layout) is computed at the final width.
+        let item: MeasuredItem = if original.is_auto_width {
+            let remaining = (avail_w_gu - cursor_x_gu).max(0.0);
+            super::measure::measure_item(world, original.tc_id, remaining)
+        } else {
+            original.clone()
+        };
+        let item = &item;
+
         // Wrap to a new line if this item won't fit and we're not at the line start.
         if cursor_x_gu > 0.0 && cursor_x_gu + item.margin_box_width_gu > avail_w_gu {
             cursor_y_gu += line_height_gu;

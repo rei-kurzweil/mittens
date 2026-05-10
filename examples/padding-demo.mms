@@ -53,7 +53,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
             T.position(0, 0, 0.2) {
                 name = "col_a_row1"
                 Style {
-                    height(2.5)
                     padding(0.4)
                     margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
@@ -71,7 +70,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(11.0)
                         height(2.0)
                         padding(0.4)
                         margin(0.3)
@@ -87,7 +85,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
             T.position(0, 0, 0.2) {
                 name = "col_a_row2"
                 Style {
-                    height(2.5)
                     padding(0.4)
                     margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
@@ -105,7 +102,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(11.0)
                         height(2.0)
                         padding(0.4)
                         margin(0.3)
@@ -121,7 +117,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
             T.position(0, 0, 0.2) {
                 name = "col_a_row3"
                 Style {
-                    height(2.5)
                     padding(0.4)
                     margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
@@ -139,7 +134,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(11.0)
                         height(2.0)
                         padding(0.4)
                         margin(0.3)
@@ -167,7 +161,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
             T.position(0, 0, 0.2) {
                 name = "col_b_row1"
                 Style {
-                    height(2.5)
                     padding(0.8)
                     margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
@@ -185,7 +178,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(11.0)
                         height(2.0)
                         padding(0.8)
                         margin(0.3)
@@ -201,7 +193,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
             T.position(0, 0, 0.2) {
                 name = "col_b_row2"
                 Style {
-                    height(2.5)
                     padding(0.8)
                     margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
@@ -219,7 +210,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(11.0)
                         height(2.0)
                         padding(0.8)
                         margin(0.3)
@@ -235,7 +225,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
             T.position(0, 0, 0.2) {
                 name = "col_b_row3"
                 Style {
-                    height(2.5)
                     padding(0.8)
                     margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
@@ -253,7 +242,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(11.0)
                         height(2.0)
                         padding(0.8)
                         margin(0.3)
@@ -281,7 +269,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
             T.position(0, 0, 0.2) {
                 name = "col_c_row1"
                 Style {
-                    height(2.5)
                     padding(1.2)
                     margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
@@ -299,7 +286,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(11.0)
                         height(2.0)
                         padding(1.2)
                         margin(0.3)
@@ -315,7 +301,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
             T.position(0, 0, 0.2) {
                 name = "col_c_row2"
                 Style {
-                    height(2.5)
                     padding(1.2)
                     margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
@@ -333,7 +318,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(11.0)
                         height(2.0)
                         padding(1.2)
                         margin(0.3)
@@ -349,7 +333,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
             T.position(0, 0, 0.2) {
                 name = "col_c_row3"
                 Style {
-                    height(2.5)
                     padding(1.2)
                     margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
@@ -367,7 +350,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(11.0)
                         height(2.0)
                         padding(1.2)
                         margin(0.3)
