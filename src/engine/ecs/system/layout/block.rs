@@ -25,7 +25,7 @@ use crate::engine::ecs::component::{
     StyleComponent, TransformComponent,
 };
 use crate::engine::ecs::system::ScrollingSystem;
-use super::measure::{measure_container_items, measure_items, MeasuredItem};
+use super::measure::{apply_text_wrap_for_item, measure_container_items, measure_items, MeasuredItem};
 use crate::engine::ecs::component::style::Display;
 
 const OWNED_CLIPPED_CONTENT_LABEL: &str = "__clip_content";
@@ -95,6 +95,10 @@ fn layout_items(
                 scale: tc_scale,
             },
         );
+
+        // Push the container-derived wrap_at into any descendant TextComponent
+        // and rebuild glyphs so the rendered text matches the measured width.
+        apply_text_wrap_for_item(world, emit, item.tc_id, item.content_width_gu);
 
         // ── Background quad / overflow helper topology ───────────────────
         sync_bg_quad(world, emit, item.tc_id, item.padding_left_gu, item.padding_top_gu, item.box_width_gu, item.box_height_gu, unit_scale);

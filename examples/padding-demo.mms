@@ -1,23 +1,25 @@
 // padding-demo.mms — visualize padding across nested block + inline-block
 // boxes (=^･ω･^=)
 //
-// One LayoutRoot. Three side-by-side columns (inline-block) each holding
-// the same three-row "cooking by the book" doc (block stacking with
-// inline-block icon + text per row). Column padding increases left → right
-// so you can see the padding box and content box at every nesting level.
+// Three side-by-side columns (inline-block at the LayoutRoot level), each
+// with the same three-row "cooking by the book" doc inside (block-flow rows
+// of inline-block icon + text). Uniform padding & margin on every styled
+// box; padding is amplified column-by-column so the box model is obvious:
 //
-// Background colors — high contrast per nesting level:
+//   col_a : padding 0.4 gu (everywhere)   margin 0.3
+//   col_b : padding 0.8 gu (everywhere)   margin 0.3
+//   col_c : padding 1.2 gu (everywhere)   margin 0.3
+//
+// Margin is the same on all three so column tops align; columns get taller
+// downward as their padding grows.
+//
+// Background colors per nesting level:
 //   column outer : saturated blue
 //   row          : hot magenta
 //   text cell    : bright lime
-//
-// Z-stacking strategy: each nested T is bumped forward in local-z by a
-// small Δz. The default `background_z = -0.1` then puts each level's bg
-// quad just behind its TC's children but in front of the parent's bg.
-// Authored z bumps:
-//   column   z = 0.0  (LayoutRoot's children)
-//   row      z = 0.2  (inside column TC)
-//   icon/txt z = 0.2  (inside row TC)
+// Each nested T uses `T.position(0,0,0.2)` to bump local-z forward so the
+// default `background_z = -0.1` keeps each level's bg behind its own
+// children but in front of its parent's bg.
 
 I {
     speed(1.0)
@@ -37,14 +39,14 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
         available_width(80.0)
         available_height(40.0)
 
-        // ── Column 1 — small padding (0.5 gu) ────────────────────────
+        // ── Column 1 — padding 0.4 ───────────────────────────────────
         T {
             name = "col_a"
             Style {
                 display("inline-block")
                 width(20.0)
-                padding(0.5)
-                margin_right(1.0)
+                padding(0.4)
+                margin(0.3)
                 background_color = [0.10, 0.20, 0.95, 1.0]
             }
 
@@ -53,7 +55,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 Style {
                     height(2.5)
                     padding(0.4)
-                    margin_bottom(0.4)
+                    margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
                 }
                 T.position(0, 0, 0.2) {
@@ -61,15 +63,18 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         width(2.0)
                         height(2.0)
-                        margin_right(0.5)
+                        padding(0.4)
+                        margin(0.3)
                     }
                     R.circle2d() { C.rgba(1.0, 0.78, 0.10, 1.0) }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(15.0)
+                        width(11.0)
                         height(2.0)
+                        padding(0.4)
+                        margin(0.3)
                         background_color = [0.55, 0.95, 0.35, 1.0]
                     }
                     Text {
@@ -84,7 +89,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 Style {
                     height(2.5)
                     padding(0.4)
-                    margin_bottom(0.4)
+                    margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
                 }
                 T.position(0, 0, 0.2) {
@@ -92,15 +97,18 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         width(2.0)
                         height(2.0)
-                        margin_right(0.5)
+                        padding(0.4)
+                        margin(0.3)
                     }
                     R.triangle() { C.rgba(1.0, 0.78, 0.10, 1.0) }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(15.0)
+                        width(11.0)
                         height(2.0)
+                        padding(0.4)
+                        margin(0.3)
                         background_color = [0.55, 0.95, 0.35, 1.0]
                     }
                     Text {
@@ -115,6 +123,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 Style {
                     height(2.5)
                     padding(0.4)
+                    margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
                 }
                 T.position(0, 0, 0.2) {
@@ -122,15 +131,18 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         width(2.0)
                         height(2.0)
-                        margin_right(0.5)
+                        padding(0.4)
+                        margin(0.3)
                     }
                     R.square() { C.rgba(1.0, 0.78, 0.10, 1.0) }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(15.0)
+                        width(11.0)
                         height(2.0)
+                        padding(0.4)
+                        margin(0.3)
                         background_color = [0.55, 0.95, 0.35, 1.0]
                     }
                     Text {
@@ -141,14 +153,14 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
             }
         }
 
-        // ── Column 2 — medium padding (1.5 gu) ───────────────────────
+        // ── Column 2 — padding 0.8 ───────────────────────────────────
         T {
             name = "col_b"
             Style {
                 display("inline-block")
                 width(22.0)
-                padding(1.5)
-                margin_right(1.0)
+                padding(0.8)
+                margin(0.3)
                 background_color = [0.10, 0.20, 0.95, 1.0]
             }
 
@@ -156,8 +168,8 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 name = "col_b_row1"
                 Style {
                     height(2.5)
-                    padding(1.0)
-                    margin_bottom(0.6)
+                    padding(0.8)
+                    margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
                 }
                 T.position(0, 0, 0.2) {
@@ -165,15 +177,18 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         width(2.0)
                         height(2.0)
-                        margin_right(0.5)
+                        padding(0.8)
+                        margin(0.3)
                     }
                     R.circle2d() { C.rgba(1.0, 0.78, 0.10, 1.0) }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(15.0)
+                        width(11.0)
                         height(2.0)
+                        padding(0.8)
+                        margin(0.3)
                         background_color = [0.55, 0.95, 0.35, 1.0]
                     }
                     Text {
@@ -187,8 +202,8 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 name = "col_b_row2"
                 Style {
                     height(2.5)
-                    padding(1.0)
-                    margin_bottom(0.6)
+                    padding(0.8)
+                    margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
                 }
                 T.position(0, 0, 0.2) {
@@ -196,15 +211,18 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         width(2.0)
                         height(2.0)
-                        margin_right(0.5)
+                        padding(0.8)
+                        margin(0.3)
                     }
                     R.triangle() { C.rgba(1.0, 0.78, 0.10, 1.0) }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(15.0)
+                        width(11.0)
                         height(2.0)
+                        padding(0.8)
+                        margin(0.3)
                         background_color = [0.55, 0.95, 0.35, 1.0]
                     }
                     Text {
@@ -218,7 +236,8 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 name = "col_b_row3"
                 Style {
                     height(2.5)
-                    padding(1.0)
+                    padding(0.8)
+                    margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
                 }
                 T.position(0, 0, 0.2) {
@@ -226,15 +245,18 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         width(2.0)
                         height(2.0)
-                        margin_right(0.5)
+                        padding(0.8)
+                        margin(0.3)
                     }
                     R.square() { C.rgba(1.0, 0.78, 0.10, 1.0) }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(15.0)
+                        width(11.0)
                         height(2.0)
+                        padding(0.8)
+                        margin(0.3)
                         background_color = [0.55, 0.95, 0.35, 1.0]
                     }
                     Text {
@@ -245,13 +267,14 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
             }
         }
 
-        // ── Column 3 — generous padding (2.5 gu) ─────────────────────
+        // ── Column 3 — padding 1.2 ───────────────────────────────────
         T {
             name = "col_c"
             Style {
                 display("inline-block")
                 width(24.0)
-                padding(2.5)
+                padding(1.2)
+                margin(0.3)
                 background_color = [0.10, 0.20, 0.95, 1.0]
             }
 
@@ -259,8 +282,8 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 name = "col_c_row1"
                 Style {
                     height(2.5)
-                    padding(1.6)
-                    margin_bottom(0.8)
+                    padding(1.2)
+                    margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
                 }
                 T.position(0, 0, 0.2) {
@@ -268,15 +291,18 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         width(2.0)
                         height(2.0)
-                        margin_right(0.5)
+                        padding(1.2)
+                        margin(0.3)
                     }
                     R.circle2d() { C.rgba(1.0, 0.78, 0.10, 1.0) }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(15.0)
+                        width(11.0)
                         height(2.0)
+                        padding(1.2)
+                        margin(0.3)
                         background_color = [0.55, 0.95, 0.35, 1.0]
                     }
                     Text {
@@ -290,8 +316,8 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 name = "col_c_row2"
                 Style {
                     height(2.5)
-                    padding(1.6)
-                    margin_bottom(0.8)
+                    padding(1.2)
+                    margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
                 }
                 T.position(0, 0, 0.2) {
@@ -299,15 +325,18 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         width(2.0)
                         height(2.0)
-                        margin_right(0.5)
+                        padding(1.2)
+                        margin(0.3)
                     }
                     R.triangle() { C.rgba(1.0, 0.78, 0.10, 1.0) }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(15.0)
+                        width(11.0)
                         height(2.0)
+                        padding(1.2)
+                        margin(0.3)
                         background_color = [0.55, 0.95, 0.35, 1.0]
                     }
                     Text {
@@ -321,7 +350,8 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 name = "col_c_row3"
                 Style {
                     height(2.5)
-                    padding(1.6)
+                    padding(1.2)
+                    margin(0.3)
                     background_color = [0.92, 0.18, 0.55, 1.0]
                 }
                 T.position(0, 0, 0.2) {
@@ -329,15 +359,18 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         width(2.0)
                         height(2.0)
-                        margin_right(0.5)
+                        padding(1.2)
+                        margin(0.3)
                     }
                     R.square() { C.rgba(1.0, 0.78, 0.10, 1.0) }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(15.0)
+                        width(11.0)
                         height(2.0)
+                        padding(1.2)
+                        margin(0.3)
                         background_color = [0.55, 0.95, 0.35, 1.0]
                     }
                     Text {

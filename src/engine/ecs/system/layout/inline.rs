@@ -12,7 +12,7 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::{IntentValue, SignalEmitter, World};
 
-use super::measure::{measure_container_items, measure_items, MeasuredItem};
+use super::measure::{apply_text_wrap_for_item, measure_container_items, measure_items, MeasuredItem};
 use crate::engine::ecs::component::style::Display;
 
 /// Run an inline formatting context layout pass for `layout_id`.
@@ -71,6 +71,8 @@ pub(crate) fn layout_items(
                 scale: tc_scale,
             },
         );
+
+        apply_text_wrap_for_item(world, emit, item.tc_id, item.content_width_gu);
 
         // Background quad — share the block-flow implementation so
         // `Style { background_color }` works consistently for both

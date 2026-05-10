@@ -168,8 +168,32 @@ pub(crate) fn measure_items(
 
 // ── Text intrinsic height ─────────────────────────────────────────────────────
 
-/// Approximate glyph character width in glyph units (matches TextSystem rendering).
-const CHAR_WIDTH_GU: f32 = 0.55;
+/// Glyph character advance in glyph units. Must match the renderer's
+/// per-char x advance in `TextSystem::register_text` (1.0 col per glyph).
+const CHAR_WIDTH_GU: f32 = 1.0;
+
+/// Walk the subtree of `root` and return the `ComponentId` of the first
+/// `TextComponent` found within local content (not crossing nested TCs).
+pub(crate) fn find_text_id_in_local_content_subtree(
+    world: &World,
+    root: ComponentId,
+) -> Option<ComponentId> {
+    fn visit(world: &World, node: ComponentId, root: ComponentId) -> Option<ComponentId> {
+        if world.get_component_by_id_as::<TextComponent>(node).is_some() {
+            return Some(node);
+        }
+        if node != root && world.get_component_by_id_as::<TransformComponent>(node).is_some() {
+            return None;
+        }
+        for &child in world.children_of(node) {
+            if let Some(found) = visit(world, child, root) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    visit(world, root, root)
+}
 
 /// Walk the subtree of `root` and return the first `TextComponent` found.
 fn find_text_in_local_content_subtree(
@@ -231,6 +255,47 @@ fn text_intrinsic_height(world: &World, tc_id: ComponentId, content_width_gu: f3
 
     let (_max_col, line_count) = TextSystem::measure(&text, wrap_at.max(1), word_wrap, &tokens);
     line_count as f32 // 1.0 gu per line; caller multiplies by style.line_height if needed
+}
+
+/// If `tc_id` has a descendant `TextComponent` in its local content subtree,
+/// narrow its `wrap_at` to fit `content_width_gu` and trigger a glyph rebuild.
+///
+/// Layout pass-only. Glyphs are built at TextComponent registration with the
+/// authored default wrap_at (40), but layout knows the real container width;
+/// without this, text overflows narrow boxes.
+pub(crate) fn apply_text_wrap_for_item(
+    world: &mut World,
+    emit: &mut dyn crate::engine::ecs::SignalEmitter,
+    tc_id: ComponentId,
+    content_width_gu: f32,
+) {
+    let Some(text_id) = find_text_id_in_local_content_subtree(world, tc_id) else {
+        return;
+    };
+    if content_width_gu <= CHAR_WIDTH_GU {
+        return;
+    }
+    let container_cols = (content_width_gu / CHAR_WIDTH_GU).floor() as usize;
+    let container_cols = container_cols.max(1);
+
+    let (current_wrap_at, current_text) = match world.get_component_by_id_as::<TextComponent>(text_id) {
+        Some(tc) => (tc.wrap_at, tc.text.clone()),
+        None => return,
+    };
+    let new_wrap_at = container_cols.min(current_wrap_at);
+    if new_wrap_at == current_wrap_at {
+        return;
+    }
+    if let Some(tc) = world.get_component_by_id_as_mut::<TextComponent>(text_id) {
+        tc.wrap_at = new_wrap_at;
+    }
+    emit.push_intent_now(
+        text_id,
+        crate::engine::ecs::IntentValue::SetText {
+            component_ids: vec![text_id],
+            text: current_text,
+        },
+    );
 }
 
 fn intrinsic_block_height(world: &World, tc_id: ComponentId, content_width_gu: f32) -> f32 {
