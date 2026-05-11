@@ -1,3 +1,4 @@
+pub mod bounds;
 pub mod mesh;
 pub mod pipeline_descriptor_set_layouts;
 pub mod post_processing;

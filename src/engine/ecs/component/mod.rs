@@ -16,6 +16,7 @@ pub mod audio_oscillator;
 pub mod audio_output;
 pub mod background;
 pub mod background_color;
+pub mod bounds;
 pub mod camera_2d;
 pub mod camera_3d;
 pub mod camera_xr;
@@ -100,6 +101,7 @@ pub use audio_oscillator::{AudioOscillator, AudioOscillatorComponent, Oscillator
 pub use audio_output::AudioOutputComponent;
 pub use background::BackgroundComponent;
 pub use background_color::BackgroundColorComponent;
+pub use bounds::BoundsComponent;
 pub use camera_2d::Camera2DComponent;
 pub use camera_3d::Camera3DComponent;
 pub use camera_xr::CameraXRComponent;

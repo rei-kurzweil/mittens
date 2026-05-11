@@ -800,6 +800,11 @@ impl SystemWorld {
         self.renderable
             .register_renderable(world, visuals, component);
 
+        // Cache the renderable's local-space AABB as a child BoundsComponent
+        // so layout (and future CPU culling) can read mesh extents without
+        // touching the BVH or recomputing from mesh handles each time.
+        attach_bounds_for_renderable(world, component);
+
         // Keep BVH in sync (defer actual build/refit to CommandQueue flush).
         if BvhSystem::renderable_is_raycastable(world, component) {
             self.bvh.queue_renderable_added(component);
@@ -1701,4 +1706,29 @@ impl SystemWorld {
         // Batch audio graph rebuild work once after all mutations for this frame.
         self.audio.rebuild_dirty_audio_graphs(world);
     }
+}
+
+/// Attach a `BoundsComponent` child to a renderable, caching its mesh's local
+/// AABB. Skips when the mesh has no tabulated AABB (e.g. GLTF-loaded) or when
+/// a `BoundsComponent` child already exists.
+fn attach_bounds_for_renderable(world: &mut World, renderable_id: ComponentId) {
+    use crate::engine::ecs::component::{BoundsComponent, RenderableComponent};
+    use crate::engine::graphics::bounds::mesh_local_aabb;
+
+    let mesh = match world.get_component_by_id_as::<RenderableComponent>(renderable_id) {
+        Some(r) => r.renderable.base_mesh,
+        None => return,
+    };
+    let Some(local) = mesh_local_aabb(mesh) else { return };
+
+    let already = world
+        .children_of(renderable_id)
+        .iter()
+        .any(|&c| world.get_component_by_id_as::<BoundsComponent>(c).is_some());
+    if already {
+        return;
+    }
+
+    let bounds_id = world.add_component(BoundsComponent::new(local));
+    let _ = world.add_child(renderable_id, bounds_id);
 }

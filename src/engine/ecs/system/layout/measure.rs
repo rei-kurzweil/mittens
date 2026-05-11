@@ -1,8 +1,9 @@
 use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::{HtmlElementComponent, LayoutComponent, StyleComponent, TextComponent, TransformComponent};
+use crate::engine::ecs::component::{BoundsComponent, HtmlElementComponent, LayoutComponent, RenderableComponent, StyleComponent, TextComponent, TransformComponent};
 use crate::engine::ecs::component::style::{Display, SizeDimension};
 use crate::engine::ecs::system::text_system::TextSystem;
+use crate::engine::graphics::bounds::Aabb;
 
 /// Measured size of a single layout item after Pass 1.
 ///
@@ -75,12 +76,23 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
     // Block (and inline-block) items with width: Auto fill the available width
     // after margins and padding. The inline cursor uses the flag to re-measure
     // an auto-width inline-block against the *remaining* line width at layout time.
+    let renderable_intrinsic_width = matches!(width, SizeDimension::Auto)
+        .then(|| intrinsic_block_width(world, tc_id))
+        .flatten();
+
+    // Auto-width is "fill remaining inline budget" only when no renderable
+    // intrinsic is available; with bounds, the TC shrink-to-fits and is no
+    // longer a candidate for inline re-measure on the second pass.
     let is_auto_width = matches!(width, SizeDimension::Auto)
+        && renderable_intrinsic_width.is_none()
         && matches!(display, None | Some(Display::Block | Display::InlineBlock | Display::Inline));
     let content_width_gu = match width {
         SizeDimension::GlyphUnits(w) => w,
-        _ => (avail_w_gu - margin_left_gu - margin_right_gu
-                         - padding_left_gu - padding_right_gu).max(0.0),
+        _ => match renderable_intrinsic_width {
+            Some(w) => w,
+            None => (avail_w_gu - margin_left_gu - margin_right_gu
+                                - padding_left_gu - padding_right_gu).max(0.0),
+        },
     };
     let box_width_gu        = padding_left_gu + content_width_gu + padding_right_gu;
     let margin_box_width_gu = margin_left_gu + box_width_gu + margin_right_gu;
@@ -305,9 +317,56 @@ pub(crate) fn apply_text_wrap_for_item(
     );
 }
 
+/// Walk the local-content subtree of `root` and union the `BoundsComponent.local`
+/// of every direct `RenderableComponent` found. Stops at nested TransformComponents
+/// (same rule as `find_text_in_local_content_subtree`) so a TC only sees its own
+/// renderable children, not those belonging to descendant TCs.
+pub(crate) fn find_renderable_local_bounds(world: &World, root: ComponentId) -> Option<Aabb> {
+    fn visit(world: &World, node: ComponentId, root: ComponentId, acc: &mut Option<Aabb>) {
+        if world.get_component_by_id_as::<RenderableComponent>(node).is_some() {
+            // Look for an attached BoundsComponent among this renderable's children.
+            for &c in world.children_of(node) {
+                if let Some(b) = world.get_component_by_id_as::<BoundsComponent>(c) {
+                    *acc = Some(match acc {
+                        Some(prev) => prev.union(&b.local),
+                        None => b.local,
+                    });
+                    break;
+                }
+            }
+        }
+        if node != root && world.get_component_by_id_as::<TransformComponent>(node).is_some() {
+            return;
+        }
+        for &child in world.children_of(node) {
+            visit(world, child, root, acc);
+        }
+    }
+    let mut acc = None;
+    visit(world, root, root, &mut acc);
+    acc
+}
+
+/// Intrinsic inline-axis width for a TC whose width style is `Auto`.
+///
+/// Returns `Some(width)` when the TC has a direct renderable child whose
+/// bounds can size the container (shrink-to-fit). Returns `None` for text
+/// cells or layout containers — those should keep filling the available
+/// inline budget so text wraps inside them.
+pub(crate) fn intrinsic_block_width(world: &World, tc_id: ComponentId) -> Option<f32> {
+    if find_text_in_local_content_subtree(world, tc_id).is_some() {
+        return None;
+    }
+    find_renderable_local_bounds(world, tc_id).map(|a| a.width())
+}
+
 fn intrinsic_block_height(world: &World, tc_id: ComponentId, content_width_gu: f32) -> f32 {
     if find_text_in_local_content_subtree(world, tc_id).is_some() {
         return text_intrinsic_height(world, tc_id, content_width_gu);
+    }
+
+    if let Some(aabb) = find_renderable_local_bounds(world, tc_id) {
+        return aabb.height();
     }
 
     let child_items = measure_container_items(world, tc_id, content_width_gu, None);

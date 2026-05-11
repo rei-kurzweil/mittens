@@ -469,95 +469,13 @@ impl crate::engine::ecs::system::System for BvhSystem {
     }
 }
 
-fn mat4_mul_vec4(m: TransformMatrix, v: [f32; 4]) -> [f32; 4] {
-    // Column-major mat4 * vec4.
-    [
-        m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2] + m[3][0] * v[3],
-        m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2] + m[3][1] * v[3],
-        m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2] + m[3][2] * v[3],
-        m[0][3] * v[0] + m[1][3] * v[1] + m[2][3] * v[2] + m[3][3] * v[3],
-    ]
-}
-
 fn aabb_from_world_matrix_for_mesh(
     mesh: CpuMeshHandle,
     m: TransformMatrix,
 ) -> Option<([f32; 3], [f32; 3])> {
-    let (local_pts, thickness) = match mesh {
-        CpuMeshHandle::CUBE => (
-            vec![
-                [-0.5, -0.5, -0.5],
-                [0.5, -0.5, -0.5],
-                [-0.5, 0.5, -0.5],
-                [0.5, 0.5, -0.5],
-                [-0.5, -0.5, 0.5],
-                [0.5, -0.5, 0.5],
-                [-0.5, 0.5, 0.5],
-                [0.5, 0.5, 0.5],
-            ],
-            0.0,
-        ),
-        CpuMeshHandle::TETRAHEDRON => (
-            vec![
-                [0.0, 0.0, 0.6123724],
-                [-0.5, -0.2886751, -0.2041241],
-                [0.5, -0.2886751, -0.2041241],
-                [0.0, 0.5773503, -0.2041241],
-            ],
-            0.0,
-        ),
-        CpuMeshHandle::CONE => (
-            vec![
-                [-0.5, 0.0, -0.5],
-                [0.5, 0.0, -0.5],
-                [0.0, -0.5, -0.5],
-                [0.0, 0.5, -0.5],
-                [0.0, 0.0, 0.5],
-            ],
-            0.0,
-        ),
-        CpuMeshHandle::QUAD_2D | CpuMeshHandle::TRIANGLE_2D | CpuMeshHandle::CIRCLE_2D => (
-            vec![
-                [-0.5, -0.5, 0.0],
-                [0.5, -0.5, 0.0],
-                [-0.5, 0.5, 0.0],
-                [0.5, 0.5, 0.0],
-            ],
-            0.01,
-        ),
-        CpuMeshHandle::SPHERE => (
-            vec![
-                [-0.5, 0.0, 0.0],
-                [0.5, 0.0, 0.0],
-                [0.0, -0.5, 0.0],
-                [0.0, 0.5, 0.0],
-                [0.0, 0.0, -0.5],
-                [0.0, 0.0, 0.5],
-            ],
-            0.0,
-        ),
-        _ => return None,
-    };
-
-    let mut min = [f32::INFINITY; 3];
-    let mut max = [f32::NEG_INFINITY; 3];
-
-    for p in local_pts {
-        let v = [p[0], p[1], p[2], 1.0];
-        let w = mat4_mul_vec4(m, v);
-        let wp = [w[0], w[1], w[2]];
-        for i in 0..3 {
-            min[i] = min[i].min(wp[i]);
-            max[i] = max[i].max(wp[i]);
-        }
-    }
-
-    if thickness > 0.0 {
-        min[2] -= thickness;
-        max[2] += thickness;
-    }
-
-    Some((min, max))
+    let local = crate::engine::graphics::bounds::mesh_local_aabb(mesh)?;
+    let world = local.transformed(m);
+    Some((world.min, world.max))
 }
 
 fn ray_aabb(

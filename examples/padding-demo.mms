@@ -38,6 +38,8 @@ let item_bg_color = [1.0, 0.7, 0.8, 1.0]
 let container_bg_color = [1.0, 1.0, 1.0,1.0]
 
 let icon_color = C.rgba(1.0, 0.1, 0.4, 1.0)
+let icon_color_2 = C.rgba(1.0, 0.7, 0.2, 1.0)
+let icon_background_color = [1, 0.2, 0.3, 1]
 
 
 T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
@@ -67,8 +69,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(2.0)
-                        height(2.0)
                         padding(0.4)
                         margin(0.3)
                     }
@@ -98,8 +98,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(2.0)
-                        height(2.0)
                         padding(0.4)
                         margin(0.3)
                     }
@@ -129,8 +127,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(2.0)
-                        height(2.0)
                         padding(0.4)
                         margin(0.3)
                     }
@@ -172,8 +168,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(2.0)
-                        height(2.0)
                         padding(0.8)
                         margin(0.3)
                     }
@@ -203,8 +197,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(2.0)
-                        height(2.0)
                         padding(0.8)
                         margin(0.3)
                     }
@@ -234,8 +226,6 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(2.0)
-                        height(2.0)
                         padding(0.8)
                         margin(0.3)
                     }
@@ -277,12 +267,11 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(2.0)
-                        height(2.0)
                         padding(1.2)
                         margin(0.3)
+                        background_color = icon_background_color
                     }
-                    R.circle2d() { icon_color }
+                    R.circle2d() { icon_color_2 }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -308,12 +297,11 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(2.0)
-                        height(2.0)
                         padding(1.2)
                         margin(0.3)
+                        background_color = icon_background_color
                     }
-                    R.triangle() { icon_color }
+                    R.triangle() { icon_color_2 }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -339,11 +327,9 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(2.0)
-                        height(2.0)
                         padding(1.2)
                         margin(0.3)
-                        background_color = [1, 0.2, 0.3, 1]
+                        background_color = icon_background_color
                     }
                     R.square() { icon_color }
                 }
