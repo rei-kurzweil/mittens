@@ -475,9 +475,11 @@ fn uvs_for_glyph(ch: char) -> Vec<[f32; 2]> {
     let u0 = col / COLS;
     let u1 = (col + 1.0) / COLS;
 
-    // Atlas convention for `assets/textures/font.dds`:
+    // Atlas convention for `assets/textures/font_system.dds` (and `font.dds`):
     // - Row 0 is the TOP row of the image.
     // - Our texture sampling treats v=0 as TOP and v=1 as BOTTOM.
+    // - Each glyph is centered within its 1/16 × 1/16 cell (no baseline offset);
+    //   layout therefore treats the quad as 1×1 with the letter centered at the quad's center.
     let v0 = row / ROWS;
     let v1 = (row + 1.0) / ROWS;
 

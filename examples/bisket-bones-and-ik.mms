@@ -94,7 +94,7 @@ ED {
                 body_yaw_threshold(3.14 / 7.5)
 
                 T.position(0.0, -1.6, 0.0) {
-                    GLTF.new("assets/models/bisket.5.5.glb") { EM.on() }
+                    GLTF.new("assets/models/bisket.8.0.glb") { EM.on() }
                 }
             }
         }

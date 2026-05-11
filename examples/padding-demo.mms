@@ -33,6 +33,13 @@ I {
     }
 }
 
+let text_bg_color = [0.7, 0.7, 0.7, 1.0]
+let item_bg_color = [1.0, 0.7, 0.8, 1.0]
+let container_bg_color = [1.0, 1.0, 1.0,1.0]
+
+let icon_color = C.rgba(1.0, 0.1, 0.4, 1.0)
+
+
 T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
     LayoutRoot {
         name = "padding_demo_root"
@@ -47,7 +54,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 width(20.0)
                 padding(0.4)
                 margin(0.3)
-                background_color = [0.10, 0.20, 0.95, 1.0]
+                background_color = container_bg_color
             }
 
             T.position(0, 0, 0.2) {
@@ -55,7 +62,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 Style {
                     padding(0.4)
                     margin(0.3)
-                    background_color = [0.92, 0.18, 0.55, 1.0]
+                    background_color = item_bg_color
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -65,15 +72,14 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         padding(0.4)
                         margin(0.3)
                     }
-                    R.circle2d() { C.rgba(1.0, 0.78, 0.10, 1.0) }
+                    R.circle2d() { icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        height(2.0)
                         padding(0.4)
                         margin(0.3)
-                        background_color = [0.55, 0.95, 0.35, 1.0]
+                        background_color = text_bg_color
                     }
                     Text {
                         "it's a piece of cake"
@@ -87,7 +93,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 Style {
                     padding(0.4)
                     margin(0.3)
-                    background_color = [0.92, 0.18, 0.55, 1.0]
+                    background_color = item_bg_color
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -97,15 +103,14 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         padding(0.4)
                         margin(0.3)
                     }
-                    R.triangle() { C.rgba(1.0, 0.78, 0.10, 1.0) }
+                    R.triangle() { icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        height(2.0)
                         padding(0.4)
                         margin(0.3)
-                        background_color = [0.55, 0.95, 0.35, 1.0]
+                        background_color = text_bg_color
                     }
                     Text {
                         "to bake"
@@ -119,7 +124,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 Style {
                     padding(0.4)
                     margin(0.3)
-                    background_color = [0.92, 0.18, 0.55, 1.0]
+                    background_color = item_bg_color
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -129,15 +134,14 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         padding(0.4)
                         margin(0.3)
                     }
-                    R.square() { C.rgba(1.0, 0.78, 0.10, 1.0) }
+                    R.square() { icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        height(2.0)
                         padding(0.4)
                         margin(0.3)
-                        background_color = [0.55, 0.95, 0.35, 1.0]
+                        background_color = text_bg_color
                     }
                     Text {
                         "a pretty cake"
@@ -155,7 +159,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 width(22.0)
                 padding(0.8)
                 margin(0.3)
-                background_color = [0.10, 0.20, 0.95, 1.0]
+                background_color = container_bg_color
             }
 
             T.position(0, 0, 0.2) {
@@ -163,7 +167,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 Style {
                     padding(0.8)
                     margin(0.3)
-                    background_color = [0.92, 0.18, 0.55, 1.0]
+                    background_color = item_bg_color
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -173,15 +177,14 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         padding(0.8)
                         margin(0.3)
                     }
-                    R.circle2d() { C.rgba(1.0, 0.78, 0.10, 1.0) }
+                    R.circle2d() { icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        height(2.0)
                         padding(0.8)
                         margin(0.3)
-                        background_color = [0.55, 0.95, 0.35, 1.0]
+                        background_color = text_bg_color
                     }
                     Text {
                         "it's a piece of cake"
@@ -195,7 +198,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 Style {
                     padding(0.8)
                     margin(0.3)
-                    background_color = [0.92, 0.18, 0.55, 1.0]
+                    background_color = item_bg_color
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -205,15 +208,14 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         padding(0.8)
                         margin(0.3)
                     }
-                    R.triangle() { C.rgba(1.0, 0.78, 0.10, 1.0) }
+                    R.triangle() { icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        height(2.0)
                         padding(0.8)
                         margin(0.3)
-                        background_color = [0.55, 0.95, 0.35, 1.0]
+                        background_color = text_bg_color
                     }
                     Text {
                         "to bake"
@@ -227,7 +229,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 Style {
                     padding(0.8)
                     margin(0.3)
-                    background_color = [0.92, 0.18, 0.55, 1.0]
+                    background_color = item_bg_color
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -237,15 +239,14 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         padding(0.8)
                         margin(0.3)
                     }
-                    R.square() { C.rgba(1.0, 0.78, 0.10, 1.0) }
+                    R.square() { icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        height(2.0)
                         padding(0.8)
                         margin(0.3)
-                        background_color = [0.55, 0.95, 0.35, 1.0]
+                        background_color = text_bg_color
                     }
                     Text {
                         "a pretty cake"
@@ -263,7 +264,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 width(24.0)
                 padding(1.2)
                 margin(0.3)
-                background_color = [0.10, 0.20, 0.95, 1.0]
+                background_color = container_bg_color
             }
 
             T.position(0, 0, 0.2) {
@@ -271,7 +272,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 Style {
                     padding(1.2)
                     margin(0.3)
-                    background_color = [0.92, 0.18, 0.55, 1.0]
+                    background_color = item_bg_color
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -281,15 +282,14 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         padding(1.2)
                         margin(0.3)
                     }
-                    R.circle2d() { C.rgba(1.0, 0.78, 0.10, 1.0) }
+                    R.circle2d() { icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        height(2.0)
                         padding(1.2)
                         margin(0.3)
-                        background_color = [0.55, 0.95, 0.35, 1.0]
+                        background_color = text_bg_color
                     }
                     Text {
                         "it's a piece of cake"
@@ -303,7 +303,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 Style {
                     padding(1.2)
                     margin(0.3)
-                    background_color = [0.92, 0.18, 0.55, 1.0]
+                    background_color = item_bg_color
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -313,15 +313,14 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         padding(1.2)
                         margin(0.3)
                     }
-                    R.triangle() { C.rgba(1.0, 0.78, 0.10, 1.0) }
+                    R.triangle() { icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        height(2.0)
                         padding(1.2)
                         margin(0.3)
-                        background_color = [0.55, 0.95, 0.35, 1.0]
+                        background_color = text_bg_color
                     }
                     Text {
                         "to bake"
@@ -335,7 +334,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 Style {
                     padding(1.2)
                     margin(0.3)
-                    background_color = [0.92, 0.18, 0.55, 1.0]
+                    background_color = item_bg_color
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -344,16 +343,16 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         height(2.0)
                         padding(1.2)
                         margin(0.3)
+                        background_color = [1, 0.2, 0.3, 1]
                     }
-                    R.square() { C.rgba(1.0, 0.78, 0.10, 1.0) }
+                    R.square() { icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        height(2.0)
                         padding(1.2)
                         margin(0.3)
-                        background_color = [0.55, 0.95, 0.35, 1.0]
+                        background_color = text_bg_color
                     }
                     Text {
                         "a pretty cake"
@@ -374,4 +373,8 @@ T.position(2.0, 3.0, 2.0) {
         intensity(0.85)
         C.rgba(1.0, 0.96, 0.92, 1.0)
     }
+}
+
+BGC {
+    C.rgba(0.9, 0.9, 0.9, 1.0)
 }
