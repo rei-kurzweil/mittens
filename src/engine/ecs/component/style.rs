@@ -63,6 +63,20 @@ pub enum FlexWrap {
     WrapReverse,
 }
 
+/// CSS `overflow-wrap` (legacy: `word-wrap`) values.
+///
+/// Cascade note: in CSS this property inherits. Today we read it only on the
+/// immediate styled TC that contains a `TextComponent` — full cascade is a v2
+/// task (would slot in as a layout pre-pass that resolves inherited props
+/// onto each `StyleComponent`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WordWrapMode {
+    /// Hard wrap at the current `wrap_at` column. Matches `TextComponent::word_wrap = false`.
+    Normal,
+    /// Prefer wrapping at whitespace/token boundaries. Matches `TextComponent::with_word_wrap`.
+    BreakWord,
+}
+
 /// CSS `overflow` values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Overflow {
@@ -144,6 +158,8 @@ pub struct StylePatch {
     pub z_index:          Option<Option<i32>>,
     pub background_color: Option<Option<[f32; 4]>>,
     pub background_z:     Option<f32>,
+    pub word_wrap:        Option<Option<WordWrapMode>>,
+    pub word_wrap_tokens: Option<Option<Vec<String>>>,
 }
 
 /// All CSS layout properties for a node, in one struct.
@@ -216,6 +232,15 @@ pub struct StyleComponent {
     /// Negative = behind content. Default: -0.1.
     pub background_z: f32,
 
+    // ── Text wrap ────────────────────────────────────────────────────────
+    /// `None` = don't override the descendant `TextComponent`'s authored mode.
+    /// `Some(_)` = write through to the descendant TextComponent during layout.
+    /// Does not yet cascade through nested TC boundaries (v2).
+    pub word_wrap: Option<WordWrapMode>,
+    /// Token strings the wrap algorithm may break after when `word_wrap == BreakWord`.
+    /// `None` = inherit the descendant `TextComponent`'s authored tokens.
+    pub word_wrap_tokens: Option<Vec<String>>,
+
     component: Option<ComponentId>,
 }
 
@@ -250,6 +275,8 @@ impl Default for StyleComponent {
             z_index: None,
             background_color: None,
             background_z: -0.1,
+            word_wrap: None,
+            word_wrap_tokens: None,
             component: None,
         }
     }
@@ -288,6 +315,8 @@ impl StyleComponent {
         if let Some(v) = patch.z_index          { self.z_index = v; }
         if let Some(v) = patch.background_color { self.background_color = v; }
         if let Some(v) = patch.background_z     { self.background_z = v; }
+        if let Some(v) = patch.word_wrap        { self.word_wrap = v; }
+        if let Some(v) = patch.word_wrap_tokens { self.word_wrap_tokens = v; }
     }
 }
 

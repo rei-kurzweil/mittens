@@ -153,7 +153,7 @@ pub use signal_route_upward::SignalRouteUpwardComponent;
 pub use skinned_mesh::SkinnedMeshComponent;
 pub use style::{
     AlignItems, Display, EdgeInsets, FlexDirection, FlexWrap, JustifyContent,
-    Overflow, Position, SizeDimension, StyleComponent, StylePatch,
+    Overflow, Position, SizeDimension, StyleComponent, StylePatch, WordWrapMode,
 };
 pub use text::TextComponent;
 pub use text_shadow::TextShadowComponent;

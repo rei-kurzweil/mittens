@@ -1,7 +1,7 @@
 use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::{BoundsComponent, HtmlElementComponent, LayoutComponent, RenderableComponent, StyleComponent, TextComponent, TransformComponent};
-use crate::engine::ecs::component::style::{Display, SizeDimension};
+use crate::engine::ecs::component::style::{Display, SizeDimension, WordWrapMode};
 use crate::engine::ecs::system::text_system::TextSystem;
 use crate::engine::graphics::bounds::Aabb;
 
@@ -297,24 +297,58 @@ pub(crate) fn apply_text_wrap_for_item(
     let container_cols = (content_width_gu / CHAR_WIDTH_GU).floor() as usize;
     let container_cols = container_cols.max(1);
 
-    let (current_wrap_at, current_text) = match world.get_component_by_id_as::<TextComponent>(text_id) {
-        Some(tc) => (tc.wrap_at, tc.text.clone()),
-        None => return,
+    // Style overrides on the styled TC propagate onto the descendant TextComponent.
+    // No cascade today — only this TC's own StyleComponent is consulted.
+    let (style_word_wrap, style_tokens) = read_text_wrap_style(world, tc_id);
+
+    let (cur_wrap_at, cur_word_wrap, cur_tokens, cur_text) =
+        match world.get_component_by_id_as::<TextComponent>(text_id) {
+            Some(tc) => (tc.wrap_at, tc.word_wrap, tc.word_wrap_tokens.clone(), tc.text.clone()),
+            None => return,
+        };
+
+    let new_wrap_at = container_cols.min(cur_wrap_at);
+    let new_word_wrap = match style_word_wrap {
+        Some(WordWrapMode::Normal)    => false,
+        Some(WordWrapMode::BreakWord) => true,
+        None                          => cur_word_wrap,
     };
-    let new_wrap_at = container_cols.min(current_wrap_at);
-    if new_wrap_at == current_wrap_at {
+    let new_tokens = style_tokens.unwrap_or_else(|| cur_tokens.clone());
+
+    if new_wrap_at == cur_wrap_at
+        && new_word_wrap == cur_word_wrap
+        && new_tokens == cur_tokens
+    {
         return;
     }
+
     if let Some(tc) = world.get_component_by_id_as_mut::<TextComponent>(text_id) {
         tc.wrap_at = new_wrap_at;
+        tc.word_wrap = new_word_wrap;
+        tc.word_wrap_tokens = new_tokens;
     }
     emit.push_intent_now(
         text_id,
         crate::engine::ecs::IntentValue::SetText {
             component_ids: vec![text_id],
-            text: current_text,
+            text: cur_text,
         },
     );
+}
+
+/// Pull text-wrap overrides off the `StyleComponent` sitting under `tc_id`,
+/// if any. Returns `(word_wrap_mode, tokens)` — both `None` when nothing is
+/// styled (so the TextComponent's authored values stand).
+fn read_text_wrap_style(
+    world: &World,
+    tc_id: ComponentId,
+) -> (Option<WordWrapMode>, Option<Vec<String>>) {
+    for &child in world.children_of(tc_id) {
+        if let Some(st) = world.get_component_by_id_as::<StyleComponent>(child) {
+            return (st.word_wrap, st.word_wrap_tokens.clone());
+        }
+    }
+    (None, None)
 }
 
 /// Walk the local-content subtree of `root` and union the `BoundsComponent.local`

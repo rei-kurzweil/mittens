@@ -19,7 +19,7 @@ use crate::engine::ecs::component::{
     RouterComponent,
     RenderGraphComponent, ScrollingComponent, SelectableComponent,
     StyleComponent, AlignItems, Display, EdgeInsets, FlexDirection, FlexWrap,
-    JustifyContent, Overflow, Position, SizeDimension,
+    JustifyContent, Overflow, Position, SizeDimension, WordWrapMode,
     TextureComponent, UVComponent, WorldPanelComponent,
     TransitionComponent, TransitionEasing, TransitionReplacePolicy,
     QuatTemporalFilterComponent, RaycastableComponent, RenderableComponent,
@@ -227,6 +227,17 @@ fn val_as_str(v: &Value) -> Result<&str, String> {
     }
 }
 
+fn val_as_str_vec(v: &Value) -> Result<Vec<String>, String> {
+    match v {
+        Value::Array(items) => items
+            .iter()
+            .map(|it| val_as_str(it).map(|s| s.to_string()))
+            .collect(),
+        Value::String(s) | Value::Identifier(s) => Ok(vec![s.clone()]),
+        other => Err(format!("expected string/array, got {other:?}")),
+    }
+}
+
 fn val_as_f32_array<const N: usize>(v: &Value) -> Result<[f32; N], String> {
     match v {
         Value::Array(items) => {
@@ -255,6 +266,7 @@ fn arg_f32(args: &[Value], i: usize) -> Result<f32, String> { val_as_f32(arg(arg
 fn arg_bool(args: &[Value], i: usize) -> Result<bool, String> { val_as_bool(arg(args, i)?) }
 fn arg_str(args: &[Value], i: usize) -> Result<&str, String> { val_as_str(arg(args, i)?) }
 fn arg_f32_arr<const N: usize>(args: &[Value], i: usize) -> Result<[f32; N], String> { val_as_f32_array(arg(args, i)?) }
+fn arg_str_vec(args: &[Value], i: usize) -> Result<Vec<String>, String> { val_as_str_vec(arg(args, i)?) }
 
 // ---------------------------------------------------------------------------
 // Component creation
@@ -869,6 +881,16 @@ fn apply_call(
                     "wrap_reverse"         => FlexWrap::WrapReverse,
                     _                      => return Ok(()),
                 };
+            }
+            "word_wrap" => {
+                st.word_wrap = match arg_str(args, 0)? {
+                    "normal"                       => Some(WordWrapMode::Normal),
+                    "break_word" | "break-word"    => Some(WordWrapMode::BreakWord),
+                    _                              => None,
+                };
+            }
+            "word_wrap_tokens" => {
+                st.word_wrap_tokens = Some(arg_str_vec(args, 0)?);
             }
             _ => {}
         }
