@@ -265,9 +265,12 @@ fn text_intrinsic_height(world: &World, tc_id: ComponentId, content_width_gu: f3
     // Use the container-derived wrap_at, but never exceed the TextComponent's own
     // wrap_at — the TextSystem will use that limit, so measuring with a larger value
     // would undercount lines for texts that hit the TC's hard-wrap point.
+    // Glyph quads are centered at column positions, so the rightmost glyph
+    // spans [col-0.5, col+0.5]. Reserve half a glyph on the right edge so the
+    // last glyph's right half fits inside the content box (and inside padding).
     let wrap_at = if content_width_gu > CHAR_WIDTH_GU {
-        let container_cols = (content_width_gu / CHAR_WIDTH_GU).floor() as usize;
-        container_cols.min(existing_wrap_at)
+        let container_cols = ((content_width_gu - 0.5 * CHAR_WIDTH_GU) / CHAR_WIDTH_GU).floor() as usize;
+        container_cols.max(1).min(existing_wrap_at)
     } else {
         existing_wrap_at
     };
@@ -294,7 +297,9 @@ pub(crate) fn apply_text_wrap_for_item(
     if content_width_gu <= CHAR_WIDTH_GU {
         return;
     }
-    let container_cols = (content_width_gu / CHAR_WIDTH_GU).floor() as usize;
+    // Reserve half a glyph on the right edge (glyphs are column-centered).
+    let container_cols =
+        ((content_width_gu - 0.5 * CHAR_WIDTH_GU) / CHAR_WIDTH_GU).floor() as usize;
     let container_cols = container_cols.max(1);
 
     // Style overrides on the styled TC propagate onto the descendant TextComponent.

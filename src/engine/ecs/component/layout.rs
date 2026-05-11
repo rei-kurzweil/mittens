@@ -64,6 +64,12 @@ impl LayoutComponent {
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
     }
+
+    /// Update `available_width` and flag this root for recompute on the next tick.
+    pub fn set_available_width(&mut self, w: f32) {
+        self.available_width = w;
+        self.dirty = true;
+    }
 }
 
 impl Component for LayoutComponent {

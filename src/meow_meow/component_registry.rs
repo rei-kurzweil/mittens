@@ -898,8 +898,14 @@ fn apply_call(
     }
     if let Some(lo) = world.get_component_by_id_as_mut::<LayoutComponent>(id) {
         match method {
-            "available_width"  => lo.available_width = arg_f32(args, 0)?,
-            "available_height" => lo.available_height = Some(arg_f32(args, 0)?),
+            "available_width"  => {
+                lo.available_width = arg_f32(args, 0)?;
+                lo.dirty = true;
+            }
+            "available_height" => {
+                lo.available_height = Some(arg_f32(args, 0)?);
+                lo.dirty = true;
+            }
             _ => {}
         }
         return Ok(());

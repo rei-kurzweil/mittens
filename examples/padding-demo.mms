@@ -143,7 +143,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         background_color = text_bg_color
                     }
                     Text {
-                        "a pretty cake"
+                        "a pretty cake (WHAT?)"
                         C.rgba(0.05, 0.05, 0.05, 1.0)
                     }
                 }
@@ -185,7 +185,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         background_color = text_bg_color
                     }
                     Text {
-                        "it's a piece of cake"
+                        "if the way is hazy"
                         C.rgba(0.05, 0.05, 0.05, 1.0)
                     }
                 }
@@ -215,7 +215,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         background_color = text_bg_color
                     }
                     Text {
-                        "to bake"
+                        "you gotta do your cooking by the book"
                         C.rgba(0.05, 0.05, 0.05, 1.0)
                     }
                 }
@@ -245,7 +245,7 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         background_color = text_bg_color
                     }
                     Text {
-                        "a pretty cake"
+                        "you know you can't be lazy"
                         C.rgba(0.05, 0.05, 0.05, 1.0)
                     }
                 }
