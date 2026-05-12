@@ -892,10 +892,10 @@ fn eval_call(
                 let mut func_ctx = EvalContext {
                     emits: ctx.emits,
                     source_path: None,
-                    channels: None,
+                    channels: ctx.channels.as_mut().map(|c| &mut **c),
                     ce_builder: None,
                     object_world: ctx.object_world,
-                    host_world: None,
+                    host_world: ctx.host_world,
                 };
                 eval_block_stmts(&body.statements, &mut func_ctx)
             };

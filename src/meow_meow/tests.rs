@@ -441,6 +441,67 @@ fn live_handler_query_can_see_world() {
 }
 
 #[test]
+fn handler_registered_inside_function_body_fires() {
+    // Regression for: function-call EvalContext used to hard-code
+    // `channels: None` / `host_world: None`, so `on(...)` inside a
+    // factory function silently no-op'd. After forwarding the caller's
+    // channels + host_world through, the handler must actually register.
+    let src = r##"
+        T { name = "btn" }
+        T {
+            Text { "(unclicked)" name = "target" }
+        }
+
+        fn wire_click(target_handle) {
+            on(target_handle, "Click", fn(event) {
+                let t = query("#target")
+                if t {
+                    t.set_text("clicked-from-fn")
+                }
+            })
+        }
+
+        let btn = query("#btn")
+        wire_click(btn)
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    let btn_id = world
+        .all_components()
+        .filter(|&id| world.parent_of(id).is_none())
+        .find_map(|root| world.find_component(root, "#btn"))
+        .expect("expected #btn");
+
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            btn_id,
+            EventSignal::Click {
+                raycaster: ComponentId::default(),
+                renderable: btn_id,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        ),
+    );
+
+    let intents = rx.drain_ready_intents();
+    assert!(
+        intents.iter().any(|signal| matches!(
+            signal.intent.as_ref().map(|intent| &intent.value),
+            Some(crate::engine::ecs::IntentValue::SetText { text, .. }) if text == "clicked-from-fn"
+        )),
+        "expected on(...) registered inside fn body to fire and emit SetText"
+    );
+}
+
+#[test]
 fn eval_for_in_array_emits_correct_count() {
     // 3 elements → 3 SpawnComponentTree intents
     let out = eval("for x in [1, 2, 3] { T {} }");
