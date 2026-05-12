@@ -10,8 +10,6 @@
 // the returned root. Internal press animation is deferred — needs
 // action-target subtree scoping (see
 // docs/task/action-target-scoping-and-factory-handlers.md).
-//
-// Visual: a square face with a text label floating in front.
 
 export fn button(label) {
     let root = T {

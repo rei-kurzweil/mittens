@@ -1114,6 +1114,22 @@ fn eval_method_call(
                 return Ok(Value::Null);
             }
 
+            // Layout getter: layout.available_width() → current width as Number.
+            if matches!(component_type.as_str(), "layout" | "LayoutRoot" | "LayoutComponent")
+                && method == "available_width"
+            {
+                use crate::engine::ecs::component::LayoutComponent;
+                let Some(world) = ctx.host_world else {
+                    return Err("available_width(): no host world".into());
+                };
+                let world = unsafe { &mut *world };
+                let w = world
+                    .get_component_by_id_as::<LayoutComponent>(id)
+                    .map(|lo| lo.available_width as f64)
+                    .ok_or_else(|| "available_width(): not a LayoutComponent".to_string())?;
+                return Ok(Value::Number(w));
+            }
+
             // Layout mutation: layout.set_available_width(N).
             if matches!(component_type.as_str(), "layout" | "LayoutRoot" | "LayoutComponent")
                 && method == "set_available_width"
