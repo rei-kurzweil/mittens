@@ -1114,6 +1114,24 @@ fn eval_method_call(
                 return Ok(Value::Null);
             }
 
+            // Layout mutation: layout.set_available_width(N).
+            if matches!(component_type.as_str(), "layout" | "LayoutRoot" | "LayoutComponent")
+                && method == "set_available_width"
+            {
+                let width = match args.first() {
+                    Some(Value::Number(n)) => *n as f32,
+                    Some(other) => return Err(format!(
+                        "set_available_width: expected number argument, got {:?}", other
+                    )),
+                    None => return Err("set_available_width: missing number argument".into()),
+                };
+                ctx.emits.push(IntentValue::SetLayoutAvailableWidth {
+                    component_ids: vec![id],
+                    width,
+                });
+                return Ok(Value::Null);
+            }
+
             // Text mutation: text.set_text("...").
             if matches!(
                 component_type.as_str(),

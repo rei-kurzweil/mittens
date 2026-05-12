@@ -3,7 +3,17 @@ use cat_engine::{engine, engine::ecs::SignalEmitter, meow_meow, utils};
 fn main() {
     utils::logger::init();
 
-    let output = meow_meow::MeowMeowRunner::eval(include_str!("padding-demo.mms"));
+    let world = engine::ecs::World::default();
+    let mut universe = engine::Universe::new(world);
+
+    let source = include_str!("padding-demo.mms");
+    let output = meow_meow::MeowMeowRunner::eval_with_world_at_path(
+        source,
+        Some("examples/padding-demo.mms"),
+        &mut universe.world,
+        &mut universe.systems.rx,
+        &mut universe.command_queue,
+    );
 
     for error in &output.errors {
         eprintln!("[mms] {error}");
@@ -13,12 +23,10 @@ fn main() {
         output.intents.len()
     );
 
-    let world = engine::ecs::World::default();
-    let mut universe = engine::Universe::new(world);
-
-    let scope = engine::ecs::ComponentId::default();
     for intent in output.intents {
-        universe.command_queue.push_intent_now(scope, intent);
+        universe
+            .command_queue
+            .push_intent_now(engine::ecs::ComponentId::default(), intent);
     }
 
     universe.systems.process_commands(

@@ -67,12 +67,24 @@ impl MeowMeowRunner {
         rx: &mut RxWorld,
         emit: &mut dyn SignalEmitter,
     ) -> EvalOutput {
+        Self::eval_with_world_at_path(source, None, world, rx, emit)
+    }
+
+    /// Like `eval_with_world`, but also records the source file path so
+    /// `import` statements resolve relative to it.
+    pub fn eval_with_world_at_path(
+        source: &str,
+        source_path: Option<&str>,
+        world: &mut World,
+        rx: &mut RxWorld,
+        emit: &mut dyn SignalEmitter,
+    ) -> EvalOutput {
         let mut handle = MeowMeowEvaluator::spawn(64);
         handle
             .requests
             .push(EvalRequest::EvalScript {
                 source: source.to_string(),
-                source_path: None,
+                source_path: source_path.map(|s| s.to_string()),
             })
             .expect("MeowMeowRunner: push EvalScript");
         handle

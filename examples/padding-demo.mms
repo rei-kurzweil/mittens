@@ -42,7 +42,9 @@ let icon_color_2 = C.rgba(1.0, 0.7, 0.2, 1.0)
 let icon_background_color = [1, 0.2, 0.3, 1]
 
 
-T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
+import { button } from "../assets/components/button.mms"
+
+let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
     LayoutRoot {
         name = "padding_demo_root"
         available_width(80.0)
@@ -358,6 +360,25 @@ T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
         }
     }
 }
+
+panel
+let layout = panel.query("#padding_demo_root")
+
+// ── Width controls ──────────────────────────────────────────────────
+// Two buttons that snap the LayoutRoot's available_width between
+// "narrow" (forces aggressive wrap) and "wide" (one-line-ish per row).
+let shrink_btn = button("-")
+let grow_btn   = button("+")
+
+T.position(-4.0, 0.0, 0.0) { shrink_btn }
+T.position( 4.0, 0.0, 0.0) { grow_btn }
+
+on(shrink_btn, "Click", fn(e) {
+    layout.set_available_width(60.0)
+})
+on(grow_btn, "Click", fn(e) {
+    layout.set_available_width(100.0)
+})
 
 // ── Lighting ────────────────────────────────────────────────────────
 AL {

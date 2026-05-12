@@ -266,6 +266,17 @@ impl RxMutationExecutor {
                 }
             }
 
+            IntentValue::SetLayoutAvailableWidth { component_ids, width } => {
+                use crate::engine::ecs::component::LayoutComponent;
+                let width = *width;
+                for &cid in component_ids.iter() {
+                    if let Some(lo) = world.get_component_by_id_as_mut::<LayoutComponent>(cid) {
+                        lo.available_width = width;
+                        lo.dirty = true;
+                    }
+                }
+            }
+
             IntentValue::RegisterCollision { component_ids } => {
                 for &component in component_ids.iter() {
                     systems.register_collision(world, visuals, component);

@@ -66,6 +66,7 @@ impl SignalPipelineProcessor {
             IntentValue::SetColor { component_ids, .. }
             | IntentValue::SetText { component_ids, .. }
             | IntentValue::SetPosition { component_ids, .. }
+            | IntentValue::SetLayoutAvailableWidth { component_ids, .. }
             | IntentValue::Detach { component_ids }
             | IntentValue::RemoveSubtree { component_ids }
             | IntentValue::AudioGraphRebuild { component_ids }
@@ -156,6 +157,7 @@ impl SignalPipelineProcessor {
             IntentValue::SetColor { component_ids, .. }
             | IntentValue::SetText { component_ids, .. }
             | IntentValue::SetPosition { component_ids, .. }
+            | IntentValue::SetLayoutAvailableWidth { component_ids, .. }
             | IntentValue::Detach { component_ids }
             | IntentValue::RemoveSubtree { component_ids }
             | IntentValue::AudioGraphRebuild { component_ids }
