@@ -90,16 +90,10 @@ struct ActionTarget {
 enum ActionScope {
     /// Default. The parent of the nearest ancestor Animation.
     EnclosingAnimationParent,
-    /// Resolve a named ancestor by walking up from the ActionComponent
-    /// until a node with this label is found, then scope to it.
-    NamedAncestor(String),
     /// Resolve from a specific component handle captured at authoring
-    /// time. Useful for MMS like `Action.update_transform("#x", …, scope: my_root)`
-    /// where `my_root` is a `ComponentObject` from the caller's scope.
+    /// time from an MMS variable bound to a ComponentObject (a `query`
+    /// result) or a CE binding (`let x = T { … }`).
     Explicit(ComponentId),
-    /// Whole world. Matches today's global behavior — keep as an
-    /// opt-in escape hatch, not a default.
-    World,
 }
 ```
 
@@ -109,27 +103,43 @@ enum ActionScope {
 // Default — scope = parent of enclosing Animation:
 Action.update_transform("#button_face", [0,0,-0.02], [0,0,0], [1,1,1])
 
-// Explicit scope override — keyword-ish trailing arg:
+// Explicit scope override — value MUST be a component-id-bearing handle:
+let panel_root = T { name = "panel" R.square() {} }   // CE binding → ComponentObject
 Action.update_transform("#button_face", t, r, s, scope: panel_root)
-Action.update_transform("#button_face", t, r, s, scope: "named_ancestor_label")
-Action.update_transform("#button_face", t, r, s, scope: "world")
+
+let found = root.query("[name='inner']")              // ComponentObject from query()
+Action.update_transform("#sub", t, r, s, scope: found)
 ```
 
-The MMS surface is **one optional named parameter `scope:`** accepting one of:
-- a `ComponentObject` handle from the surrounding script scope → `Explicit(id)`
-- a string ancestor label → `NamedAncestor(label)`
-- the literal `"world"` → `World`
-- omitted → `None` (default `EnclosingAnimationParent`)
+The MMS surface is **one optional named parameter `scope:`** accepting
+**only** a component-id-bearing value:
 
-Reasoning for explicit override:
-- *factory composition*: a factory might be nested inside a larger
-  component where the natural scope is not its immediate Animation
-  parent but some grandparent (e.g. a panel that contains many
-  animation roots sharing one named child).
+- a `ComponentObject` returned from `query(…)` / `root.query(…)`
+- a CE handle bound at a top-level `let x = T { … }` site (which the
+  evaluator materialises into a live `ComponentObject` via
+  `maybe_register_live_component_value`)
+
+Anything else — a string label like `"panel"`, the literal `"world"`,
+a number, an array — is a **parse/type error**, not a silent fallback.
+
+Rationale for the narrow surface:
+- A selector string passed as `scope:` reads ambiguously next to the
+  first positional selector arg (`"#x"`) — two strings, two different
+  meanings, easy to confuse.
+- A `"world"` opt-out exists today as a *bug*, not a feature; we don't
+  want to bless it as a permanent escape hatch. Authors who genuinely
+  need to reach across the whole tree can `query(…)` something concrete
+  and pass that handle.
+- Demanding a real binding forces the author to acknowledge which
+  instance they're targeting, which is exactly the property we lost
+  with the old global resolver.
+
+When `scope:` *is* needed (over the default):
+- *factory composition*: a factory nested inside a larger component
+  whose natural scope is some grandparent, not its immediate
+  Animation parent.
 - *cross-instance coordination*: an action that should drive a sibling
-  instance, not itself, can `scope: shared_root` to target it.
-- *escape hatch*: legacy MMS that genuinely wants today's global
-  behavior can write `scope: "world"` instead of being silently broken.
+  instance — author passes the sibling's handle as `scope:`.
 
 **Resolution change** in `AnimationSystem` (or wherever `ActionComponent`
 fires): when promoting the stored intent into an emitted `IntentValue`,
@@ -137,10 +147,7 @@ fires): when promoting the stored intent into an emitted `IntentValue`,
 1. Resolve the `root_scope`:
    - `EnclosingAnimationParent` → walk up from the `ActionComponent`
      to its enclosing `Animation`, then take that Animation's parent.
-   - `NamedAncestor(label)` → walk up from the `ActionComponent` until
-     a node with `component_label() == label` is hit.
    - `Explicit(id)` → use `id` directly.
-   - `World` → use the world (no scope).
 2. Run the stored selector against that subtree using the shared query
    adapter.
 3. Emit the intent against the resolved `ComponentId`.
@@ -151,10 +158,11 @@ animation by falling back to a global lookup.
 
 **Migration**: cut over — `Action.update_transform` is narrow enough
 today that the audit lists only `button.mms` as the consumer-in-anger.
-Existing call sites without `scope:` get the new default; existing
-call sites that depended on global resolution add `scope: "world"`
-explicitly. Document the change in the v0 → v1 notes alongside the
-deprecation of `resolve_action_target`.
+Existing call sites without `scope:` get the new default. Any caller
+that genuinely depended on global resolution must be rewritten to
+either rely on the new default (usually correct) or pass an explicit
+`scope:` handle. Document the change in the v0 → v1 notes alongside
+the deprecation of `resolve_action_target`.
 
 ### 2. Forward `channels` + `host_world` through function calls
 
