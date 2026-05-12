@@ -84,14 +84,28 @@ on(face, "DragEnd", fn(event) {
 //   - Method dispatch on ComponentObject (anim.play, anim.pause, t.set_text)
 //   - Subtree Query HostCall: root.query("#button_face")
 //   - File loading via eval_file("assets/components/button.mms")
+//   - import / export — `import { x } from "f.mms"` is wired
+//     (src/meow_meow/evaluator.rs:507). This file does not yet export
+//     a handle; turning the body into `export fn button(label) { … }`
+//     is the next step (see task doc below).
 //
-// STILL BLOCKED:
-//   - anim.reverse() — only play/pause/loop_anim are wired in eval_method_call
-//   - import / export — script returns intents, not a named handle to the caller;
-//     can't yet do `import { button } from "components/button.mms"`
+// STILL BLOCKED — both tracked in
+//   docs/task/action-target-scoping-and-factory-handlers.md:
+//
 //   - Multi-instance: Action.update_transform("#button_face") is world-scoped,
-//     so two buttons would fight over the same selector. Needs either
-//     instance-unique names or subtree-scoped action targets.
+//     so two buttons would fight over the same selector. The fix is to
+//     store the selector unresolved on the ActionComponent and resolve it
+//     at fire-time against the enclosing Animation's parent subtree,
+//     using the shared `src/query/` adapter.
+//
+//   - Factory-function handler registration: `on(...)` inside a
+//     `fn button(...) { ... }` body silently no-ops because the
+//     evaluator hard-codes channels = None / host_world = None when
+//     entering a function call (src/meow_meow/evaluator.rs:891-899).
+//     Fix is to forward those from the caller's ctx.
+//
+//   - anim.reverse() — only play/pause/loop_anim are wired in
+//     eval_method_call (separate task).
 //
 // POINTER EVENT REFRESHER (relevant to external callers):
 //   EventSignal::Click { raycaster, renderable, hit_point, screen_pos_px }

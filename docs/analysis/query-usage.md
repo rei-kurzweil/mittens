@@ -105,6 +105,7 @@ These docs already assume a shared query concept, but the engine implementation 
     - `[name='...']`
     - bare label fallback
   - this is a parallel selector implementation and should eventually delegate to the shared query module
+  - **migration tracked by** [`docs/task/action-target-scoping-and-factory-handlers.md`](../task/action-target-scoping-and-factory-handlers.md) — also replaces the global, eval-time semantics with lazy resolution scoped to the enclosing Animation's parent so multi-instance component factories work
 
 ### Router target resolution
 

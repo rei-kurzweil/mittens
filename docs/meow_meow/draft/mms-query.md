@@ -50,6 +50,12 @@ query runtime. As the real MMS query / HostCall system lands, selector-based act
 should either reuse that shared selector-resolution model or be explicitly documented as a
 separate load-time binding feature.
 
+> **Planned replacement:** see
+> [`docs/task/action-target-scoping-and-factory-handlers.md`](../../task/action-target-scoping-and-factory-handlers.md).
+> The current global, eval-time resolution will be replaced by lazy, **subtree-scoped**
+> resolution rooted at the enclosing Animation's parent — so reusable component factories
+> can spawn multiple instances without action selectors clashing across them.
+
 ---
 
 ## One query system, two contexts

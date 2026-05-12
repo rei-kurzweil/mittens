@@ -63,6 +63,19 @@ A good interpolation design should:
   - scale: lerp
   - rotation: slerp / normalized quaternion blend
 
+## Target scoping (planned)
+
+`Action.update_transform("#name", …)` currently resolves its target string globally
+at MMS-eval time and bakes a single `ComponentId` into the stored intent. That breaks
+the moment a component factory is invoked twice — both Animations end up pointing at
+the first instance.
+
+Planned change: store the unresolved selector on the `ActionComponent` and resolve
+lazily at fire-time using the **parent of the enclosing Animation** as the scope
+root. Resolution goes through the shared `src/query/` adapter rather than the ad-hoc
+`resolve_action_target` walk. Tracked in
+[`docs/task/action-target-scoping-and-factory-handlers.md`](../task/action-target-scoping-and-factory-handlers.md).
+
 ## Options considered
 
 ### Option A: put easing/interpolation fields on `KeyframeComponent`
