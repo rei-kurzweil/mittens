@@ -19,7 +19,7 @@ use crate::engine::ecs::component::{
     RouterComponent,
     RenderGraphComponent, ScrollingComponent, SelectableComponent,
     StyleComponent, AlignItems, Display, EdgeInsets, FlexDirection, FlexWrap,
-    JustifyContent, Overflow, Position, SizeDimension, WordWrapMode,
+    JustifyContent, Overflow, Position, SizeDimension, TextAlign, WordWrapMode,
     TextureComponent, UVComponent, WorldPanelComponent,
     TransitionComponent, TransitionEasing, TransitionReplacePolicy,
     QuatTemporalFilterComponent, RaycastableComponent, RenderableComponent,
@@ -844,6 +844,15 @@ fn apply_call(
                     "center"              => AlignItems::Center,
                     "baseline"            => AlignItems::Baseline,
                     _                     => return Ok(()),
+                };
+            }
+            "text_align" => {
+                st.text_align = match arg_str(args, 0)? {
+                    "left"           => TextAlign::Left,
+                    "center"         => TextAlign::Center,
+                    "right"          => TextAlign::Right,
+                    "auto" | "none"  => TextAlign::Auto,
+                    _                => return Ok(()),
                 };
             }
             "flex_grow"   => st.flex_grow   = arg_f32(args, 0)?,

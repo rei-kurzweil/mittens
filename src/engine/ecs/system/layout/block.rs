@@ -22,11 +22,12 @@ use crate::engine::ecs::component::{
     ColorComponent, OpacityComponent, Overflow, RenderableComponent, RouterComponent,
     ScrollingComponent, StencilClipComponent,
     RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType,
-    StyleComponent, TransformComponent,
+    StyleComponent, TextComponent, TransformComponent,
 };
 use crate::engine::ecs::system::ScrollingSystem;
 use super::measure::{apply_text_wrap_for_item, measure_container_items, measure_items, MeasuredItem};
-use crate::engine::ecs::component::style::Display;
+use crate::engine::ecs::component::style::{Display, TextAlign};
+use crate::engine::ecs::system::text_system::TextSystem;
 
 const OWNED_CLIPPED_CONTENT_LABEL: &str = "__clip_content";
 const OWNED_LAYOUT_STENCIL_CLIP_LABEL: &str = "__layout_stencil_clip";
@@ -104,6 +105,7 @@ fn layout_items(
 
         // ── Background quad / overflow helper topology ───────────────────
         sync_bg_quad(world, emit, item.tc_id, item.padding_left_gu, item.padding_top_gu, item.box_width_gu, item.box_height_gu, unit_scale);
+        apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu);
         let content_root = sync_overflow_topology(world, emit, item.tc_id, item.content_height_gu);
 
         let nested_items = measure_container_items(
@@ -415,6 +417,120 @@ fn subtree_first_renderable(world: &World, root: ComponentId) -> Option<Componen
             return Some(node);
         }
         for &child in world.children_of(node).iter().rev() {
+            stack.push(child);
+        }
+    }
+    None
+}
+
+/// Position the inner text-bearing T inside a styled box per `Style.text_align`.
+///
+/// Layout positions the *styled* T at the content box's top-left corner; without
+/// extra help, any Text inside renders from that origin and sits at the top-left
+/// of the content area. When the author sets `text_align`, locate the first
+/// direct-child T whose subtree contains a `TextComponent`, measure the text,
+/// and emit `UpdateTransform` so the glyph block sits aligned horizontally per
+/// the alignment value and **always vertically centered** within the content
+/// box. `TextAlign::Auto` (default) preserves the author's translation.
+fn apply_text_align(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    tc_id: ComponentId,
+    content_w_gu: f32,
+    content_h_gu: f32,
+) {
+    let style = world.children_of(tc_id).iter().find_map(|&ch| {
+        world.get_component_by_id_as::<StyleComponent>(ch).map(|s| (s.text_align, s.word_wrap, s.word_wrap_tokens.clone()))
+    });
+    let Some((align, _style_wrap, _style_tokens)) = style else { return; };
+    if align == TextAlign::Auto {
+        return;
+    }
+
+    let Some(inner_tc) = find_text_bearing_direct_child(world, tc_id) else {
+        return;
+    };
+
+    // Measure text directly off the inner T's TextComponent so we get the
+    // post-wrap shape (callers of layout run `apply_text_wrap_for_item` later,
+    // but glyphs build with the authored wrap_at and we want the natural-
+    // wrap width here — i.e. no wrap — to drive alignment math).
+    let (text, word_wrap, tokens) = match find_text_descriptor(world, inner_tc) {
+        Some(t) => t,
+        None => return,
+    };
+    let (max_col, line_count) = TextSystem::measure(&text, 0, word_wrap, &tokens);
+    let text_w = max_col as f32;
+    let text_h = line_count as f32;
+
+    // Glyphs are 1×1 quads centered at column / row positions. The leftmost
+    // glyph's center sits at x = inner_tc.x and spans [-0.5, +0.5] around it,
+    // so adding 0.5 to the alignment offset puts the left edge of the first
+    // glyph at content_x = 0. Same logic on y (row 0 center at y = inner_tc.y,
+    // glyph spans [-0.5, +0.5]; top edge at y = 0 needs y_offset of -0.5).
+    let x_offset = match align {
+        TextAlign::Left  => 0.5,
+        TextAlign::Right => (content_w_gu - text_w + 0.5).max(0.5),
+        TextAlign::Center => (content_w_gu - text_w + 1.0) / 2.0,
+        TextAlign::Auto => 0.0,
+    };
+    let y_offset = -((content_h_gu - text_h + 1.0) / 2.0);
+
+    let (scale, z) = world
+        .get_component_by_id_as::<TransformComponent>(inner_tc)
+        .map(|tc| (tc.transform.scale, tc.transform.translation[2]))
+        .unwrap_or(([1.0, 1.0, 1.0], 0.0));
+
+    emit.push_intent_now(
+        inner_tc,
+        IntentValue::UpdateTransform {
+            component_ids: vec![inner_tc],
+            translation: [x_offset, y_offset, z],
+            rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+            scale,
+        },
+    );
+}
+
+fn find_text_bearing_direct_child(world: &World, tc_id: ComponentId) -> Option<ComponentId> {
+    for &child in world.children_of(tc_id) {
+        if world.component_label(child).map(|l| l.starts_with("__")).unwrap_or(false) {
+            continue;
+        }
+        if world.get_component_by_id_as::<TransformComponent>(child).is_none() {
+            continue;
+        }
+        if subtree_has_text(world, child) {
+            return Some(child);
+        }
+    }
+    None
+}
+
+fn subtree_has_text(world: &World, root: ComponentId) -> bool {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        if world.get_component_by_id_as::<TextComponent>(node).is_some() {
+            return true;
+        }
+        for &child in world.children_of(node) {
+            // Don't descend into another styled layout item.
+            if world.get_component_by_id_as::<StyleComponent>(child).is_some() && child != root {
+                continue;
+            }
+            stack.push(child);
+        }
+    }
+    false
+}
+
+fn find_text_descriptor(world: &World, root: ComponentId) -> Option<(String, bool, Vec<String>)> {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        if let Some(t) = world.get_component_by_id_as::<TextComponent>(node) {
+            return Some((t.text.clone(), t.word_wrap, t.word_wrap_tokens.clone()));
+        }
+        for &child in world.children_of(node) {
             stack.push(child);
         }
     }

@@ -374,11 +374,10 @@ let width_label = T {
     name = "width_label_wrap"
     Style {
         display("inline-block")
-        width(5.0)
-        height(4.0)
-        padding_xy(0.5, 0.5)
+        padding_xy(0.6, 0.6)
+        text_align("center")
     }
-    T.position(0.0, 0.0, 0.05).scale(0.5, 0.5, 0.5) {
+    T.position(0.0, 0.0, 0.05) {
         Text {
             name = "width_value"
             "80"
@@ -403,6 +402,7 @@ control_panel
 on(shrink_btn, "Click", fn(e) {
     let w = layout.available_width()
     let new_w = w - 4.0
+
     if new_w < 40.0 {
         new_w = 40.0
     }
@@ -412,6 +412,7 @@ on(shrink_btn, "Click", fn(e) {
 on(grow_btn, "Click", fn(e) {
     let w = layout.available_width()
     let new_w = w + 4.0
+    
     if new_w > 120.0 {
         new_w = 120.0
     }

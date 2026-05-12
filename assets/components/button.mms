@@ -22,12 +22,11 @@ export fn button(label) {
         Raycastable.enabled()
         Style {
             display("inline-block")
-            width(4.0)
-            height(4.0)
-            padding_xy(0.5, 0.5)
+            padding_xy(0.6, 0.6)
+            text_align("center")
             background_color = [0.30, 0.45, 0.90, 1.0]
         }
-        T.position(0.0, 0.0, 0.05).scale(0.6, 0.6, 0.6) {
+        T.position(0.0, 0.0, 0.05) {
             Text { label }
         }
     }

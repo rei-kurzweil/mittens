@@ -77,6 +77,22 @@ pub enum WordWrapMode {
     BreakWord,
 }
 
+/// CSS `text-align` values.
+///
+/// When non-`Auto`, the layout system positions the text-bearing inner
+/// `TransformComponent` inside the content box per this alignment, and
+/// (if `width`/`height` are `Auto`) shrinks the box to fit the measured
+/// text bounds plus padding. `Auto` leaves the inner T's authored
+/// translation alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TextAlign {
+    #[default]
+    Auto,
+    Left,
+    Center,
+    Right,
+}
+
 /// CSS `overflow` values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Overflow {
@@ -216,6 +232,8 @@ pub struct StyleComponent {
     // ── Text / typography ────────────────────────────────────────────────
     /// Line height in glyph units. Default: 1.0.
     pub line_height: f32,
+    /// Text alignment within the content box. Default: `Auto` (no positioning).
+    pub text_align: TextAlign,
 
     // ── Overflow ─────────────────────────────────────────────────────────
     pub overflow: Overflow,
@@ -271,6 +289,7 @@ impl Default for StyleComponent {
             bottom: None,
             left: None,
             line_height: 1.0,
+            text_align: TextAlign::Auto,
             overflow: Overflow::Visible,
             z_index: None,
             background_color: None,

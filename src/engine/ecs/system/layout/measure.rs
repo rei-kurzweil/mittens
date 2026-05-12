@@ -1,7 +1,7 @@
 use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::{BoundsComponent, HtmlElementComponent, LayoutComponent, RenderableComponent, StyleComponent, TextComponent, TransformComponent};
-use crate::engine::ecs::component::style::{Display, SizeDimension, WordWrapMode};
+use crate::engine::ecs::component::style::{Display, SizeDimension, TextAlign, WordWrapMode};
 use crate::engine::ecs::system::text_system::TextSystem;
 use crate::engine::graphics::bounds::Aabb;
 
@@ -215,6 +215,11 @@ pub(crate) fn find_text_id_in_local_content_subtree(
 }
 
 /// Walk the subtree of `root` and return the first `TextComponent` found.
+///
+/// Descends through plain `TransformComponent` wrappers (common pattern:
+/// `T.position(…){ Text { … } }`) so a box can measure text wrapped in a
+/// positioning inner T. Halts at nested *styled* layout items — those are
+/// their own boxes and shouldn't bleed text up here.
 fn find_text_in_local_content_subtree(
     world: &World,
     root: ComponentId,
@@ -233,8 +238,17 @@ fn find_text_in_local_content_subtree(
             ));
         }
 
-        if node != root && world.get_component_by_id_as::<TransformComponent>(node).is_some() {
-            return None;
+        if node != root {
+            if world.get_component_by_id_as::<LayoutComponent>(node).is_some() {
+                return None;
+            }
+            let is_boundary = world.children_of(node).iter().any(|&ch| {
+                world.get_component_by_id_as::<StyleComponent>(ch).is_some()
+                    || world.get_component_by_id_as::<HtmlElementComponent>(ch).is_some()
+            });
+            if is_boundary {
+                return None;
+            }
         }
 
         for &child in world.children_of(node) {
@@ -394,9 +408,34 @@ pub(crate) fn find_renderable_local_bounds(world: &World, root: ComponentId) -> 
 /// inline budget so text wraps inside them.
 pub(crate) fn intrinsic_block_width(world: &World, tc_id: ComponentId) -> Option<f32> {
     if find_text_in_local_content_subtree(world, tc_id).is_some() {
+        // Text-only content normally fills the inline budget so wrapping works.
+        // When the author has opted into `text_align`, shrink-to-fit instead:
+        // the box hugs the text and the layout pass centers/aligns it inside.
+        if style_text_align(world, tc_id) != TextAlign::Auto {
+            return Some(text_intrinsic_width(world, tc_id));
+        }
         return None;
     }
     find_renderable_local_bounds(world, tc_id).map(|a| a.width())
+}
+
+/// Width (in glyph units) of the widest line of the descendant
+/// `TextComponent`, measured with no wrap. Pairs with `text_intrinsic_height`.
+fn text_intrinsic_width(world: &World, tc_id: ComponentId) -> f32 {
+    let Some((text, _wrap_at, word_wrap, tokens)) =
+        find_text_in_local_content_subtree(world, tc_id)
+    else {
+        return 0.0;
+    };
+    // wrap_at = 0 disables wrapping (per TextSystem::measure docs).
+    let (max_col, _line_count) = TextSystem::measure(&text, 0, word_wrap, &tokens);
+    max_col as f32 * CHAR_WIDTH_GU
+}
+
+fn style_text_align(world: &World, tc_id: ComponentId) -> TextAlign {
+    world.children_of(tc_id).iter().find_map(|&ch| {
+        world.get_component_by_id_as::<StyleComponent>(ch).map(|s| s.text_align)
+    }).unwrap_or(TextAlign::Auto)
 }
 
 fn intrinsic_block_height(world: &World, tc_id: ComponentId, content_width_gu: f32) -> f32 {

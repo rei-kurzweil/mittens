@@ -30,3 +30,7 @@ That behavior belongs to a flex-like layout contract, not block layout.
 - This rule is about block-axis sizing only
 - width may still default to the normal block-layout width behavior for the containing block
 - this spec describes intended behavior even where current implementation still differs
+
+## Related
+
+- [`layout-intrinsic-text-measurement.md`](./layout-intrinsic-text-measurement.md) — how the layout system locates the `TextComponent` to measure when resolving intrinsic content size (the boundary rule for descending through unstyled TC wrappers).
