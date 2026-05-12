@@ -1,7 +1,7 @@
 use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::{BoundsComponent, HtmlElementComponent, LayoutComponent, RenderableComponent, StyleComponent, TextComponent, TransformComponent};
-use crate::engine::ecs::component::style::{Display, SizeDimension, TextAlign, WordWrapMode};
+use crate::engine::ecs::component::style::{Display, SizeDimension, WordWrapMode};
 use crate::engine::ecs::system::text_system::TextSystem;
 use crate::engine::graphics::bounds::Aabb;
 
@@ -77,7 +77,7 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
     // after margins and padding. The inline cursor uses the flag to re-measure
     // an auto-width inline-block against the *remaining* line width at layout time.
     let renderable_intrinsic_width = matches!(width, SizeDimension::Auto)
-        .then(|| intrinsic_block_width(world, tc_id))
+        .then(|| intrinsic_block_width(world, tc_id, display))
         .flatten();
 
     // Auto-width is "fill remaining inline budget" only when no renderable
@@ -406,12 +406,16 @@ pub(crate) fn find_renderable_local_bounds(world: &World, root: ComponentId) -> 
 /// bounds can size the container (shrink-to-fit). Returns `None` for text
 /// cells or layout containers — those should keep filling the available
 /// inline budget so text wraps inside them.
-pub(crate) fn intrinsic_block_width(world: &World, tc_id: ComponentId) -> Option<f32> {
+pub(crate) fn intrinsic_block_width(
+    world: &World,
+    tc_id: ComponentId,
+    display: Option<Display>,
+) -> Option<f32> {
+    let is_inline_block = matches!(display, Some(Display::InlineBlock | Display::Inline));
     if find_text_in_local_content_subtree(world, tc_id).is_some() {
-        // Text-only content normally fills the inline budget so wrapping works.
-        // When the author has opted into `text_align`, shrink-to-fit instead:
-        // the box hugs the text and the layout pass centers/aligns it inside.
-        if style_text_align(world, tc_id) != TextAlign::Auto {
+        // CSS-aligned: inline-block shrinks to fit its content; block fills
+        // the available inline budget so text wraps inside it.
+        if is_inline_block {
             return Some(text_intrinsic_width(world, tc_id));
         }
         return None;
@@ -430,12 +434,6 @@ fn text_intrinsic_width(world: &World, tc_id: ComponentId) -> f32 {
     // wrap_at = 0 disables wrapping (per TextSystem::measure docs).
     let (max_col, _line_count) = TextSystem::measure(&text, 0, word_wrap, &tokens);
     max_col as f32 * CHAR_WIDTH_GU
-}
-
-fn style_text_align(world: &World, tc_id: ComponentId) -> TextAlign {
-    world.children_of(tc_id).iter().find_map(|&ch| {
-        world.get_component_by_id_as::<StyleComponent>(ch).map(|s| s.text_align)
-    }).unwrap_or(TextAlign::Auto)
 }
 
 fn intrinsic_block_height(world: &World, tc_id: ComponentId, content_width_gu: f32) -> f32 {
@@ -528,7 +526,7 @@ impl StyleDefault for Option<StyleTuple> {
 mod tests {
     use super::{measure_item, measure_items};
     use crate::engine::ecs::component::{ColorComponent, LayoutComponent, StyleComponent, TextComponent, TransformComponent};
-    use crate::engine::ecs::component::style::SizeDimension;
+    use crate::engine::ecs::component::style::{Display, SizeDimension};
     use crate::engine::ecs::World;
 
     #[test]
@@ -648,5 +646,72 @@ mod tests {
 
         let measured = measure_item(&world, container, 4.0);
         assert!(measured.content_height_gu > 1.0, "wrapped descendant layout text should increase intrinsic height");
+    }
+
+    #[test]
+    fn inline_block_with_text_shrinks_to_fit_when_width_auto() {
+        let mut world = World::default();
+
+        let tc = world.add_component_boxed_named("box", Box::new(TransformComponent::new()));
+        let style = world.add_component_boxed_named(
+            "box_style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.display = Some(Display::InlineBlock);
+                s
+            }),
+        );
+        let text = world.add_component_boxed_named("box_text", Box::new(TextComponent::new("abc")));
+
+        let _ = world.add_child(tc, style);
+        let _ = world.add_child(tc, text);
+
+        let measured = measure_item(&world, tc, 40.0);
+        assert_eq!(measured.content_width_gu, 3.0);
+    }
+
+    #[test]
+    fn block_with_text_still_fills_available_width() {
+        let mut world = World::default();
+
+        let tc = world.add_component_boxed_named("box", Box::new(TransformComponent::new()));
+        let style = world.add_component_boxed_named(
+            "box_style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.display = Some(Display::Block);
+                s
+            }),
+        );
+        let text = world.add_component_boxed_named("box_text", Box::new(TextComponent::new("abc")));
+
+        let _ = world.add_child(tc, style);
+        let _ = world.add_child(tc, text);
+
+        let measured = measure_item(&world, tc, 40.0);
+        assert_eq!(measured.content_width_gu, 40.0);
+    }
+
+    #[test]
+    fn inline_block_with_explicit_width_keeps_that_width() {
+        let mut world = World::default();
+
+        let tc = world.add_component_boxed_named("box", Box::new(TransformComponent::new()));
+        let style = world.add_component_boxed_named(
+            "box_style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.display = Some(Display::InlineBlock);
+                s.width = SizeDimension::GlyphUnits(12.0);
+                s
+            }),
+        );
+        let text = world.add_component_boxed_named("box_text", Box::new(TextComponent::new("ab")));
+
+        let _ = world.add_child(tc, style);
+        let _ = world.add_child(tc, text);
+
+        let measured = measure_item(&world, tc, 40.0);
+        assert_eq!(measured.content_width_gu, 12.0);
     }
 }

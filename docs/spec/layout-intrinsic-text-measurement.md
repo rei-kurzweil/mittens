@@ -41,11 +41,11 @@ its own Style/Html/Layout siblings don't stop the search.
 
 - `text_intrinsic_height` — used by block auto-height to size a row to its
   wrapped line count.
-- `text_intrinsic_width` — used by `intrinsic_block_width` when
-  `Style.text_align != Auto`, to shrink-to-fit a styled box around its text.
-  This gating keeps text-bearing rows that *should* fill the available width
-  (the default) unchanged; only boxes that explicitly opt into a text
-  alignment become shrink-to-fit.
+- `text_intrinsic_width` — used by `intrinsic_block_width` when the box is
+  `display: inline-block` (CSS-aligned shrink-to-fit). `display: block`
+  text-bearing boxes return `None` here and fill the available width so
+  text wraps inside them. `Style.text_align` no longer affects sizing —
+  it controls only glyph placement within the resolved box.
 
 ## Test anchors
 

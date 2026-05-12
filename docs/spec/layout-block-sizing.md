@@ -1,6 +1,8 @@
-# Block Layout Sizing
+# Block & Inline-Block Layout Sizing
 
-## Rule
+## Block (`display: block`)
+
+If a node does not specify `Style.height`, its height is the smallest height that fits its content. If a node does not specify `Style.width`, its width fills the available inline budget after margins and padding (CSS-aligned).
 
 For `display: block`, if a node does not specify `Style.height`, its height is the smallest height that fits its content.
 
@@ -30,6 +32,19 @@ That behavior belongs to a flex-like layout contract, not block layout.
 - This rule is about block-axis sizing only
 - width may still default to the normal block-layout width behavior for the containing block
 - this spec describes intended behavior even where current implementation still differs
+
+## Inline-block (`display: inline-block`)
+
+CSS-aligned **shrink-to-fit by default**: with `width: Auto`, an inline-block
+box hugs its content (text width via `text_intrinsic_width`, or renderable
+bounds). An explicit `width(...)` overrides shrink-to-fit. This contrasts
+with `display: block`, which fills the available inline budget when
+`width: Auto`.
+
+Implementation: `intrinsic_block_width` in
+`src/engine/ecs/system/layout/measure.rs` — returns `Some(text_width)` for
+inline-block text-bearing boxes; `None` for block text-bearing boxes (which
+then fills available width so wrapping works).
 
 ## Related
 
