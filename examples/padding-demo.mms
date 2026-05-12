@@ -366,27 +366,38 @@ let layout = panel.query("#padding_demo_root")
 
 // ── Width controls ──────────────────────────────────────────────────
 // A small inline-block control bar (separate LayoutRoot) sitting above
-// and roughly left-aligned with the demo panel. Contains:
-//   [shrink_btn]  [width readout]  [grow_btn]
+// the demo panel. Contains: [shrink_btn]  [width readout]  [grow_btn].
 let shrink_btn = button("-")
 let grow_btn   = button("+")
 
-let width_label = T.scale(0.5, 0.5, 0.5) {
-    Text {
-        name = "width_value"
-        "80"
+let width_label = T {
+    name = "width_label_wrap"
+    Style {
+        display("inline-block")
+        width(5.0)
+        height(4.0)
+        padding_xy(0.5, 0.5)
+    }
+    T.position(0.0, 0.0, 0.05).scale(0.5, 0.5, 0.5) {
+        Text {
+            name = "width_value"
+            "80"
+        }
     }
 }
 let label_text = width_label.query("#width_value")
 
-// Control bar — three items in a row above the panel.
-// Layout-managed inline-block was attempted but Raycastable on
-// layout-positioned T's doesn't receive Click hits in this build;
-// see docs/bugs/inline-block-layout-raycastable.md. The control row
-// is positioned manually for v1.
-T.position(-5.0, 6.0, 0.0) { shrink_btn }
-T.position(-3.6, 6.0, 0.0) { width_label }
-T.position(-1.0, 6.0, 0.0) { grow_btn }
+let control_panel = T.position(-3.0, 6.0, 0.0).scale(0.10, 0.10, 0.10) {
+    LayoutRoot {
+        name = "control_root"
+        available_width(40.0)
+        available_height(8.0)
+        shrink_btn
+        width_label
+        grow_btn
+    }
+}
+control_panel
 
 // ±4 gu per click, clamped to [40, 120].
 on(shrink_btn, "Click", fn(e) {

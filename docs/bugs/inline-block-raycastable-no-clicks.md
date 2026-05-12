@@ -2,7 +2,15 @@
 
 ## Status
 
-Open bug. Confirmed in padding-demo while building an MMS-side control bar.
+**Resolved.** Layout now grafts the author's `Raycastable` onto the
+`__bg` renderable (`sync_bg_author_raycastable` in
+`src/engine/ecs/system/layout/block.rs`). The natural form
+`T { Raycastable.enabled() Style { background_color = ... } … }` fires
+`Click` as expected. A future `Style.pointer_events` property will let
+authors override per-box without touching the `Raycastable` itself —
+tracked at `docs/task/style-pointer-events.md`.
+
+Historical notes follow.
 
 ## Symptom
 

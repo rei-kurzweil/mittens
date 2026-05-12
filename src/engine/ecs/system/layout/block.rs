@@ -34,6 +34,8 @@ const OWNED_LAYOUT_OVERFLOW_ROUTER_LABEL: &str = "__layout_overflow_router";
 const OWNED_SCROLL_WRAPPER_LABEL: &str = "__scroll";
 const OWNED_SCROLL_DRAG_RAYCASTABLE_LABEL: &str = "__scroll_drag_raycastable";
 const OWNED_SCROLL_DRAG_SHAPE_LABEL: &str = "__scroll_drag_shape";
+const OWNED_BG_RAYCASTABLE_LABEL: &str = "__bg_raycastable";
+const OWNED_BG_RAYCASTABLE_SHAPE_LABEL: &str = "__bg_raycastable_shape";
 
 /// Run a block formatting context layout pass for `layout_id`.
 ///
@@ -358,6 +360,8 @@ pub(crate) fn sync_bg_quad(
 
             sync_stencil_clip(world, emit, tc_id, needs_clip);
             sync_scroll_drag_surface(world, emit, bg_id, needs_scroll_drag_surface);
+            let author_rc = find_author_raycastable(world, tc_id);
+            sync_bg_author_raycastable(world, emit, bg_id, author_rc);
             return;
         }
     }
@@ -365,6 +369,7 @@ pub(crate) fn sync_bg_quad(
     sync_stencil_clip(world, emit, tc_id, false);
     if let Some(bg_id) = existing_bg {
         sync_scroll_drag_surface(world, emit, bg_id, false);
+        sync_bg_author_raycastable(world, emit, bg_id, None);
         emit.push_intent_now(
             bg_id,
             IntentValue::RemoveSubtree { component_ids: vec![bg_id] },
@@ -414,6 +419,83 @@ fn subtree_first_renderable(world: &World, root: ComponentId) -> Option<Componen
         }
     }
     None
+}
+
+/// Find an author-written `RaycastableComponent` that is an immediate child of `tc_id`,
+/// ignoring layout-owned `__*` subtrees. This is the explicit author signal that the
+/// styled box should be hittable; the layout system grafts a copy onto the `__bg`
+/// renderable so raycast pairing finds it.
+fn find_author_raycastable(world: &World, tc_id: ComponentId) -> Option<RaycastableComponent> {
+    world.children_of(tc_id).iter().copied().find_map(|child| {
+        if world.component_label(child).map(|l| l.starts_with("__")).unwrap_or(false) {
+            return None;
+        }
+        world.get_component_by_id_as::<RaycastableComponent>(child).copied()
+    })
+}
+
+/// Graft (or remove) a layout-owned `RaycastableComponent` + `Quad2D` shape onto the
+/// `__bg` renderable, mirroring the author's `Raycastable` settings. The bg quad's
+/// scale already covers the padding box, so a unit `Quad2D` shape attached as a child
+/// of the renderable hits the same world bounds as the visible surface.
+fn sync_bg_author_raycastable(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    bg_id: ComponentId,
+    author: Option<RaycastableComponent>,
+) {
+    let Some(renderable_id) = subtree_first_renderable(world, bg_id) else {
+        return;
+    };
+
+    let existing_raycastable = world.children_of(renderable_id).iter().copied().find(|&child| {
+        world.component_label(child) == Some(OWNED_BG_RAYCASTABLE_LABEL)
+            && world.get_component_by_id_as::<RaycastableComponent>(child).is_some()
+    });
+    let existing_shape = world.children_of(renderable_id).iter().copied().find(|&child| {
+        world.component_label(child) == Some(OWNED_BG_RAYCASTABLE_SHAPE_LABEL)
+            && world.get_component_by_id_as::<RaycastableShapeComponent>(child).is_some()
+    });
+
+    match author {
+        Some(rc) if rc.enable => {
+            if let Some(rc_id) = existing_raycastable {
+                if let Some(c) = world.get_component_by_id_as_mut::<RaycastableComponent>(rc_id) {
+                    *c = rc;
+                }
+            } else {
+                let rc_id = world.add_component_boxed_named(
+                    OWNED_BG_RAYCASTABLE_LABEL,
+                    Box::new(rc),
+                );
+                let _ = world.add_child(renderable_id, rc_id);
+                world.init_component_tree(rc_id, emit);
+            }
+
+            if existing_shape.is_none() {
+                let shape_id = world.add_component_boxed_named(
+                    OWNED_BG_RAYCASTABLE_SHAPE_LABEL,
+                    Box::new(RaycastableShapeComponent::new(RaycastableShapeType::Quad2D)),
+                );
+                let _ = world.add_child(renderable_id, shape_id);
+                world.init_component_tree(shape_id, emit);
+            }
+        }
+        _ => {
+            if let Some(rc_id) = existing_raycastable {
+                emit.push_intent_now(
+                    rc_id,
+                    IntentValue::RemoveSubtree { component_ids: vec![rc_id] },
+                );
+            }
+            if let Some(shape_id) = existing_shape {
+                emit.push_intent_now(
+                    shape_id,
+                    IntentValue::RemoveSubtree { component_ids: vec![shape_id] },
+                );
+            }
+        }
+    }
 }
 
 fn sync_scroll_drag_surface(
