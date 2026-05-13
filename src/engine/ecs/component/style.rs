@@ -93,6 +93,22 @@ pub enum TextAlign {
     Right,
 }
 
+/// CSS `box-sizing` values.
+///
+/// Controls whether `width` / `height` describe the content area
+/// (`ContentBox`, the W3C default) or the outer padding+border box
+/// (`BorderBox`, the modern best-practice default and cat-engine's default).
+///
+/// Under `BorderBox`, padding eats into the content area, so
+/// `width(25%) + width(75%)` siblings fit a parent's content width exactly
+/// even when each has its own padding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BoxSizing {
+    ContentBox,
+    #[default]
+    BorderBox,
+}
+
 /// CSS `overflow` values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Overflow {
@@ -207,6 +223,7 @@ pub struct StylePatch {
     pub max_height:       Option<Option<f32>>,
     pub margin:           Option<EdgeInsets>,
     pub padding:          Option<EdgeInsets>,
+    pub box_sizing:       Option<BoxSizing>,
     pub flex_direction:   Option<FlexDirection>,
     pub justify_content:  Option<JustifyContent>,
     pub align_items:      Option<AlignItems>,
@@ -260,6 +277,8 @@ pub struct StyleComponent {
     // ── Box model ────────────────────────────────────────────────────────
     pub margin:  EdgeInsets,
     pub padding: EdgeInsets,
+    /// `box-sizing`. Default: [`BoxSizing::BorderBox`] (cat-engine default).
+    pub box_sizing: BoxSizing,
 
     // ── Flex container ───────────────────────────────────────────────────
     pub flex_direction:  FlexDirection,
@@ -326,6 +345,7 @@ impl Default for StyleComponent {
             max_height: None,
             margin: EdgeInsets::ZERO,
             padding: EdgeInsets::ZERO,
+            box_sizing: BoxSizing::BorderBox,
             flex_direction: FlexDirection::Row,
             justify_content: JustifyContent::FlexStart,
             align_items: AlignItems::Stretch,
@@ -367,6 +387,7 @@ impl StyleComponent {
         if let Some(v) = patch.max_height       { self.max_height = v; }
         if let Some(v) = patch.margin           { self.margin = v; }
         if let Some(v) = patch.padding          { self.padding = v; }
+        if let Some(v) = patch.box_sizing       { self.box_sizing = v; }
         if let Some(v) = patch.flex_direction   { self.flex_direction = v; }
         if let Some(v) = patch.justify_content  { self.justify_content = v; }
         if let Some(v) = patch.align_items      { self.align_items = v; }

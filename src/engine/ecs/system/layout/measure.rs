@@ -52,11 +52,11 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
     let children: Vec<ComponentId> = world.children_of(tc_id).to_vec();
     let style = children.iter().find_map(|&child| {
         world.get_component_by_id_as::<StyleComponent>(child).map(|s| {
-            (s.padding, s.margin, s.height, s.width, s.display, s.flex_grow)
+            (s.padding, s.margin, s.height, s.width, s.display, s.flex_grow, s.box_sizing)
         })
     });
 
-    let (padding, margin, height, width, style_display, _flex_grow) = style.unwrap_or_default();
+    let (padding, margin, height, width, style_display, _flex_grow, box_sizing) = style.unwrap_or_default();
 
     // Resolve display: StyleComponent.display overrides HtmlElementComponent UA default.
     let ua_display = children.iter().find_map(|&child| {
@@ -77,9 +77,17 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
     let padding_left_gu  = padding.left;
     let padding_right_gu = padding.right;
 
-    // Block (and inline-block) items with width: Auto fill the available width
-    // after margins and padding. The inline cursor uses the flag to re-measure
-    // an auto-width inline-block against the *remaining* line width at layout time.
+    // Box-sizing: border-box (cat-engine default).
+    // `width(...)` describes the OUTER (padding+border+content) box. Padding
+    // eats into the content area. This differs from CSS's default
+    // `content-box` but matches the modern best-practice / Bootstrap default
+    // and makes percent math compose cleanly: two siblings with
+    // `width(25%) + width(75%)` fit a parent's content width exactly even
+    // when each has its own padding.
+    //
+    // Percent resolves against the *containing block's content width*
+    // (`avail_w_gu` — passed in by the caller, already net of the parent's
+    // own padding). Not against this item's own avail-minus-padding.
     let avail_content_w_gu = (avail_w_gu - margin_left_gu - margin_right_gu
                                           - padding_left_gu - padding_right_gu).max(0.0);
     let renderable_intrinsic_width = matches!(width, SizeDimension::Auto)
@@ -88,15 +96,35 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
 
     let is_auto_width = matches!(width, SizeDimension::Auto)
         && matches!(display, None | Some(Display::Block | Display::InlineBlock | Display::Inline));
-    let content_width_gu = match width {
-        SizeDimension::GlyphUnits(w) => w,
-        SizeDimension::Percent(p) => avail_content_w_gu * p / 100.0,
-        SizeDimension::Auto => match renderable_intrinsic_width {
-            Some(w) => w,
-            None => avail_content_w_gu,
-        },
+    let padding_h = padding_left_gu + padding_right_gu;
+    let (content_width_gu, box_width_gu) = match (width, box_sizing) {
+        // Explicit length, border-box: width is the outer box; content shrinks for padding.
+        (SizeDimension::GlyphUnits(w), BoxSizing::BorderBox) => {
+            ((w - padding_h).max(0.0), w)
+        }
+        // Explicit length, content-box (CSS default): width is the content; padding adds outside.
+        (SizeDimension::GlyphUnits(w), BoxSizing::ContentBox) => {
+            (w, w + padding_h)
+        }
+        // Percent, border-box: % resolves to the outer box width.
+        (SizeDimension::Percent(p), BoxSizing::BorderBox) => {
+            let box_w = avail_w_gu * p / 100.0;
+            ((box_w - padding_h).max(0.0), box_w)
+        }
+        // Percent, content-box: % resolves to the content width.
+        (SizeDimension::Percent(p), BoxSizing::ContentBox) => {
+            let c = avail_w_gu * p / 100.0;
+            (c, c + padding_h)
+        }
+        // Auto width: independent of box-sizing — content from intrinsic/fill, box adds padding.
+        (SizeDimension::Auto, _) => {
+            let content = match renderable_intrinsic_width {
+                Some(w) => w,
+                None => avail_content_w_gu,
+            };
+            (content, padding_h + content)
+        }
     };
-    let box_width_gu        = padding_left_gu + content_width_gu + padding_right_gu;
     let margin_box_width_gu = margin_left_gu + box_width_gu + margin_right_gu;
 
     // ── Vertical ─────────────────────────────────────────────────────────
@@ -106,17 +134,23 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
     let padding_bottom_gu = padding.bottom;
 
     let is_inline_block = matches!(display, Some(Display::InlineBlock | Display::Inline));
-    let content_height_gu = match height {
-        SizeDimension::GlyphUnits(h) => h,
+    let padding_v = padding_top_gu + padding_bottom_gu;
+    let (content_height_gu, box_height_gu) = match (height, box_sizing) {
+        (SizeDimension::GlyphUnits(h), BoxSizing::BorderBox) => {
+            ((h - padding_v).max(0.0), h)
+        }
+        (SizeDimension::GlyphUnits(h), BoxSizing::ContentBox) => {
+            (h, h + padding_v)
+        }
         // Percent height with unknown container height falls back to 0.0 (matches
         // CSS conservative behavior for percent heights with auto parents).
-        SizeDimension::Percent(_) => 0.0,
-        SizeDimension::Auto if is_block || is_inline_block => {
-            intrinsic_block_height(world, tc_id, content_width_gu)
+        (SizeDimension::Percent(_), _) => (0.0, padding_v),
+        (SizeDimension::Auto, _) if is_block || is_inline_block => {
+            let c = intrinsic_block_height(world, tc_id, content_width_gu);
+            (c, padding_v + c)
         }
-        SizeDimension::Auto => 0.0,
+        (SizeDimension::Auto, _) => (0.0, padding_v),
     };
-    let box_height_gu        = padding_top_gu + content_height_gu + padding_bottom_gu;
     let margin_box_height_gu = margin_top_gu + box_height_gu + margin_bottom_gu;
 
     MeasuredItem {
@@ -515,9 +549,9 @@ fn descendant_layout_intrinsic_height(world: &World, root: ComponentId) -> Optio
 
 // ── Default style values used when no StyleComponent is present ───────────────
 
-use crate::engine::ecs::component::style::EdgeInsets;
+use crate::engine::ecs::component::style::{BoxSizing, EdgeInsets};
 
-type StyleTuple = (EdgeInsets, EdgeInsets, SizeDimension, SizeDimension, Option<Display>, f32);
+type StyleTuple = (EdgeInsets, EdgeInsets, SizeDimension, SizeDimension, Option<Display>, f32, BoxSizing);
 
 trait StyleDefault {
     fn unwrap_or_default(self) -> StyleTuple;
@@ -532,6 +566,7 @@ impl StyleDefault for Option<StyleTuple> {
             SizeDimension::Auto,
             None,
             0.0,
+            BoxSizing::BorderBox,
         ))
     }
 }
@@ -727,6 +762,85 @@ mod tests {
 
         let measured = measure_item(&world, tc, 40.0);
         assert_eq!(measured.content_width_gu, 12.0);
+    }
+
+    #[test]
+    fn content_box_explicit_width_with_padding_grows_outer_box() {
+        use crate::engine::ecs::component::style::{BoxSizing, EdgeInsets};
+        let mut world = World::default();
+        let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));
+        let style = world.add_component_boxed_named("style", Box::new({
+            let mut s = StyleComponent::new();
+            s.display = Some(Display::Block);
+            s.box_sizing = BoxSizing::ContentBox;
+            s.width = SizeDimension::GlyphUnits(20.0);
+            s.padding = EdgeInsets::all(2.0);
+            s
+        }));
+        let _ = world.add_child(tc, style);
+
+        let measured = measure_item(&world, tc, 40.0);
+        assert_eq!(measured.content_width_gu, 20.0, "content stays at width(20) under content-box");
+        assert_eq!(measured.box_width_gu, 24.0, "outer box = content + 2*padding");
+    }
+
+    #[test]
+    fn border_box_explicit_width_with_padding_keeps_outer_box_width() {
+        use crate::engine::ecs::component::style::EdgeInsets;
+        let mut world = World::default();
+        let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));
+        let style = world.add_component_boxed_named("style", Box::new({
+            let mut s = StyleComponent::new();
+            s.display = Some(Display::Block);
+            s.width = SizeDimension::GlyphUnits(20.0);
+            s.padding = EdgeInsets::all(2.0);
+            s
+        }));
+        let _ = world.add_child(tc, style);
+
+        let measured = measure_item(&world, tc, 40.0);
+        assert_eq!(measured.box_width_gu, 20.0, "outer box stays at width(20)");
+        assert_eq!(measured.content_width_gu, 16.0, "content shrinks for padding");
+    }
+
+    #[test]
+    fn border_box_percent_siblings_sum_to_parent_width_with_padding() {
+        use crate::engine::ecs::component::style::EdgeInsets;
+        let mut world = World::default();
+
+        let root = world.add_component(LayoutComponent::new(80.0));
+
+        let mk = |world: &mut World, name: &'static str, pct: f32| {
+            let tc = world.add_component_boxed_named(name, Box::new(TransformComponent::new()));
+            let style = world.add_component_boxed_named(
+                "style",
+                Box::new({
+                    let mut s = StyleComponent::new();
+                    s.display = Some(Display::InlineBlock);
+                    s.width = SizeDimension::Percent(pct);
+                    s.padding = EdgeInsets::all_dim(SizeDimension::Percent(2.0));
+                    s
+                }),
+            );
+            let _ = world.add_child(tc, style);
+            tc
+        };
+        let a = mk(&mut world, "a", 25.0);
+        let b = mk(&mut world, "b", 75.0);
+        let _ = world.add_child(root, a);
+        let _ = world.add_child(root, b);
+
+        let (items, _, _, _) = measure_items(&world, root);
+        assert_eq!(items.len(), 2);
+        // box widths must sum to exactly 80gu so the inline cursor lays them
+        // side-by-side without wrapping.
+        assert!((items[0].margin_box_width_gu + items[1].margin_box_width_gu - 80.0).abs() < 1e-4,
+            "got {} + {} = {}, expected 80",
+            items[0].margin_box_width_gu,
+            items[1].margin_box_width_gu,
+            items[0].margin_box_width_gu + items[1].margin_box_width_gu);
+        assert!((items[0].margin_box_width_gu - 20.0).abs() < 1e-4);
+        assert!((items[1].margin_box_width_gu - 60.0).abs() < 1e-4);
     }
 
     #[test]

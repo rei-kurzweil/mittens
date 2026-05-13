@@ -39,8 +39,18 @@ Style {
 
 ### CSS-aligned semantics
 
-- **Width**: percent resolves against the container's content width
-  (after the container's own padding/margin is subtracted).
+- **Box sizing**: cat-engine defaults to **`border-box`** — `width(...)`
+  describes the **outer (padding+content) box**, and padding eats into
+  the content area. This differs from CSS's default `content-box` but
+  matches the modern best-practice / Bootstrap default and makes percent
+  math compose cleanly: two siblings with `width(25%) + width(75%)` fit
+  a parent's content width exactly even when each has its own padding.
+  Both modes are supported — set per-element with
+  `box_sizing("content_box")` or `box_sizing("border_box")` in a `Style`
+  block.
+- **Width**: percent resolves against the *containing block's* content
+  width (the parent's content area, after the parent's own padding is
+  subtracted).
 - **Height**: percent only resolves when the container's height is
   determined; with an auto-height parent, percent height falls back to 0
   (matches CSS's conservative rule).

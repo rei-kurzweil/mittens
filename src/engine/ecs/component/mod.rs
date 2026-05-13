@@ -152,7 +152,7 @@ pub use renderer_settings::RendererSettingsComponent;
 pub use signal_route_upward::SignalRouteUpwardComponent;
 pub use skinned_mesh::SkinnedMeshComponent;
 pub use style::{
-    AlignItems, Display, EdgeInsets, FlexDirection, FlexWrap, JustifyContent,
+    AlignItems, BoxSizing, Display, EdgeInsets, FlexDirection, FlexWrap, JustifyContent,
     Overflow, Position, SizeDimension, StyleComponent, StylePatch, TextAlign, WordWrapMode,
 };
 pub use text::TextComponent;

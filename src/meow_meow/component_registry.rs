@@ -18,7 +18,7 @@ use crate::engine::ecs::component::{
     OpenXRComponent, OverlayComponent, PointLightComponent, PointerComponent,
     RouterComponent,
     RenderGraphComponent, ScrollingComponent, SelectableComponent,
-    StyleComponent, AlignItems, Display, EdgeInsets, FlexDirection, FlexWrap,
+    StyleComponent, AlignItems, BoxSizing, Display, EdgeInsets, FlexDirection, FlexWrap,
     JustifyContent, Overflow, Position, SizeDimension, TextAlign, WordWrapMode,
     TextureComponent, UVComponent, WorldPanelComponent,
     TransitionComponent, TransitionEasing, TransitionReplacePolicy,
@@ -825,6 +825,13 @@ fn apply_call(
             }
             "width"       => st.width  = arg_size_dimension(args, 0)?,
             "height"      => st.height = arg_size_dimension(args, 0)?,
+            "box_sizing" => {
+                st.box_sizing = match arg_str(args, 0)? {
+                    "border_box"|"border-box" => BoxSizing::BorderBox,
+                    "content_box"|"content-box" => BoxSizing::ContentBox,
+                    _ => return Ok(()),
+                };
+            }
             "padding"     => st.padding = EdgeInsets::all_dim(arg_size_dimension(args, 0)?),
             "padding_xy"  => st.padding = EdgeInsets::axes_dim(arg_size_dimension(args, 0)?, arg_size_dimension(args, 1)?),
             "margin"      => st.margin  = EdgeInsets::all_dim(arg_size_dimension(args, 0)?),
