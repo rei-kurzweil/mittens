@@ -76,15 +76,20 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
     // Block (and inline-block) items with width: Auto fill the available width
     // after margins and padding. The inline cursor uses the flag to re-measure
     // an auto-width inline-block against the *remaining* line width at layout time.
+    let avail_content_w_gu = (avail_w_gu - margin_left_gu - margin_right_gu
+                                          - padding_left_gu - padding_right_gu).max(0.0);
     let renderable_intrinsic_width = matches!(width, SizeDimension::Auto)
-        .then(|| intrinsic_block_width(world, tc_id, display))
+        .then(|| intrinsic_block_width(world, tc_id, display, avail_content_w_gu))
         .flatten();
 
-    // Auto-width is "fill remaining inline budget" only when no renderable
-    // intrinsic is available; with bounds, the TC shrink-to-fits and is no
-    // longer a candidate for inline re-measure on the second pass.
+    // Auto-width items get remeasured by the inline cursor against the
+    // remaining line budget after a wrap decision. For block/auto-width
+    // fill items this resizes the content box; for inline-block text
+    // shrink-to-fit it re-caps `text_intrinsic_width` to the new available
+    // width so the resulting box fits on the wrapped line. Items with a
+    // renderable intrinsic (e.g. icons with bounds) remeasure harmlessly —
+    // their width doesn't depend on available width.
     let is_auto_width = matches!(width, SizeDimension::Auto)
-        && renderable_intrinsic_width.is_none()
         && matches!(display, None | Some(Display::Block | Display::InlineBlock | Display::Inline));
     let content_width_gu = match width {
         SizeDimension::GlyphUnits(w) => w,
@@ -410,13 +415,14 @@ pub(crate) fn intrinsic_block_width(
     world: &World,
     tc_id: ComponentId,
     display: Option<Display>,
+    avail_content_w_gu: f32,
 ) -> Option<f32> {
     let is_inline_block = matches!(display, Some(Display::InlineBlock | Display::Inline));
     if find_text_in_local_content_subtree(world, tc_id).is_some() {
         // CSS-aligned: inline-block shrinks to fit its content; block fills
         // the available inline budget so text wraps inside it.
         if is_inline_block {
-            return Some(text_intrinsic_width(world, tc_id));
+            return Some(text_intrinsic_width(world, tc_id, avail_content_w_gu));
         }
         return None;
     }
@@ -424,15 +430,24 @@ pub(crate) fn intrinsic_block_width(
 }
 
 /// Width (in glyph units) of the widest line of the descendant
-/// `TextComponent`, measured with no wrap. Pairs with `text_intrinsic_height`.
-fn text_intrinsic_width(world: &World, tc_id: ComponentId) -> f32 {
-    let Some((text, _wrap_at, word_wrap, tokens)) =
+/// `TextComponent`, measured wrapped at `avail_content_w_gu` columns. CSS
+/// inline-block shrink-to-fit: cap to the containing block's available
+/// width, then take the widest resulting line. Pairs with
+/// `text_intrinsic_height`.
+fn text_intrinsic_width(world: &World, tc_id: ComponentId, avail_content_w_gu: f32) -> f32 {
+    let Some((text, tc_wrap_at, word_wrap, tokens)) =
         find_text_in_local_content_subtree(world, tc_id)
     else {
         return 0.0;
     };
-    // wrap_at = 0 disables wrapping (per TextSystem::measure docs).
-    let (max_col, _line_count) = TextSystem::measure(&text, 0, word_wrap, &tokens);
+    let avail_cols = (avail_content_w_gu / CHAR_WIDTH_GU).floor().max(0.0) as usize;
+    // Honor the TextComponent's own wrap_at as a hard cap (0 = unlimited).
+    let wrap_at = match (avail_cols, tc_wrap_at) {
+        (0, w) => w,
+        (a, 0) => a,
+        (a, w) => a.min(w),
+    };
+    let (max_col, _line_count) = TextSystem::measure(&text, wrap_at, word_wrap, &tokens);
     max_col as f32 * CHAR_WIDTH_GU
 }
 

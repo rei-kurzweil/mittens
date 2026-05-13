@@ -71,7 +71,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(1.0)
                         padding(0.4)
                         margin(0.3)
                     }
@@ -80,7 +79,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(13.0)
                         padding(0.4)
                         margin(0.3)
                         word_wrap("break-word")
@@ -103,7 +101,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(1.0)
                         padding(0.4)
                         margin(0.3)
                     }
@@ -112,7 +109,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(13.0)
                         padding(0.4)
                         margin(0.3)
                         word_wrap("break-word")
@@ -135,7 +131,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(1.0)
                         padding(0.4)
                         margin(0.3)
                     }
@@ -144,7 +139,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(13.0)
                         padding(0.4)
                         margin(0.3)
                         word_wrap("break-word")
@@ -179,7 +173,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(1.0)
                         padding(0.8)
                         margin(0.3)
                     }
@@ -188,7 +181,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(12.0)
                         padding(0.8)
                         margin(0.3)
                         word_wrap("break-word")
@@ -211,7 +203,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(1.0)
                         padding(0.8)
                         margin(0.3)
                     }
@@ -220,7 +211,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(12.0)
                         padding(0.8)
                         margin(0.3)
                         word_wrap("break-word")
@@ -243,7 +233,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(1.0)
                         padding(0.8)
                         margin(0.3)
                     }
@@ -252,7 +241,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(12.0)
                         padding(0.8)
                         margin(0.3)
                         word_wrap("break-word")
@@ -287,7 +275,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(1.0)
                         padding(1.2)
                         margin(0.3)
                         background_color = icon_background_color
@@ -297,7 +284,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(11.0)
                         padding(1.2)
                         margin(0.3)
                         word_wrap("break-word")
@@ -320,7 +306,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(1.0)
                         padding(1.2)
                         margin(0.3)
                         background_color = icon_background_color
@@ -330,7 +315,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(11.0)
                         padding(1.2)
                         margin(0.3)
                         word_wrap("break-word")
@@ -353,7 +337,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(1.0)
                         padding(1.2)
                         margin(0.3)
                         background_color = icon_background_color
@@ -363,7 +346,6 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        width(11.0)
                         padding(1.2)
                         margin(0.3)
                         word_wrap("break-word")
