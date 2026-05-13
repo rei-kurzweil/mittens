@@ -23,8 +23,7 @@ let panel_bg   = [0.96, 0.96, 0.98, 1.0]
 let sidebar_bg = [0.30, 0.40, 0.70, 1.0]
 let content_bg = [1.00, 1.00, 1.00, 1.0]
 let card_bg    = [0.95, 0.88, 0.92, 1.0]
-let text_color = C.rgba(0.05, 0.05, 0.08, 1.0)
-let light_text = C.rgba(0.95, 0.95, 1.00, 1.0)
+let text_color = C.rgba(0.05, 0.05, 0.05, 1.0)
 
 let panel = T.position(-4.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
     LayoutRoot {
@@ -45,7 +44,7 @@ let panel = T.position(-4.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 Style {
                     word_wrap("break-word")
                 }
-                Text { "sidebar nav" light_text }
+                Text { "sidebar nav" text_color  }
             }
         }
 
@@ -174,4 +173,4 @@ T.position(2.0, 3.0, 2.0) {
     }
 }
 
-BGC { C.rgba(0.85, 0.85, 0.88, 1.0) }
+BGC { C.rgba(0.15, 0.15, 0.15, 1.0) }

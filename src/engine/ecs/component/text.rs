@@ -8,8 +8,22 @@ use crate::engine::ecs::component::Component;
 pub struct TextComponent {
     pub text: String,
 
-    /// Wrap after this many characters.
+    /// Wrap after this many characters. This is the **effective** value used by
+    /// `TextSystem` for glyph layout. The layout pass may narrow it to fit the
+    /// containing block, but it never exceeds [`Self::authored_wrap_at`].
     pub wrap_at: usize,
+
+    /// Author-provided wrap cap. Captured at construction (and on `decode`)
+    /// and never modified by the layout pass. Layout uses this as the upper
+    /// bound when re-deriving `wrap_at` from the current container width —
+    /// so when the container grows again, `wrap_at` can be widened back up
+    /// to (but not past) `authored_wrap_at`.
+    ///
+    /// **Invariant**: any future "set the wrap cap" mutation path (an MMS
+    /// `wrap_at(N)` setter, a Rust `set_wrap` helper, etc.) MUST update
+    /// both `wrap_at` and `authored_wrap_at`. Updating only `wrap_at` will
+    /// be silently undone by the next layout pass.
+    pub authored_wrap_at: usize,
 
     /// If true, wrap only at whitespace boundaries (avoid breaking words).
     /// When false, wraps strictly by character count.
@@ -32,6 +46,7 @@ impl TextComponent {
         Self {
             text: text.into(),
             wrap_at: Self::DEFAULT_WRAP_AT,
+            authored_wrap_at: Self::DEFAULT_WRAP_AT,
             word_wrap: false,
             word_wrap_tokens: Self::DEFAULT_WORD_WRAP_TOKENS
                 .iter()
@@ -46,6 +61,7 @@ impl TextComponent {
         Self {
             text: text.into(),
             wrap_at,
+            authored_wrap_at: wrap_at,
             word_wrap: false,
             word_wrap_tokens: Self::DEFAULT_WORD_WRAP_TOKENS
                 .iter()
@@ -64,6 +80,7 @@ impl TextComponent {
         Self {
             text: text.into(),
             wrap_at,
+            authored_wrap_at: wrap_at,
             word_wrap: true,
             word_wrap_tokens: Self::DEFAULT_WORD_WRAP_TOKENS
                 .iter()
@@ -96,6 +113,7 @@ impl TextComponent {
         Self {
             text: text.into(),
             wrap_at,
+            authored_wrap_at: wrap_at,
             word_wrap: true,
             word_wrap_tokens: all_tokens,
             built: false,
@@ -146,9 +164,13 @@ impl Component for TextComponent {
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
         let mut map = std::collections::HashMap::new();
         map.insert("text".to_string(), serde_json::json!(self.text));
+        // Encode the *authored* cap (the user's hard limit) — `wrap_at`
+        // itself may be a layout-narrowed value and is recomputed every
+        // layout pass, so persisting it would lose the authored cap on
+        // round-trip and lock the wrap at a narrow column count.
         map.insert(
             "wrap_at".to_string(),
-            serde_json::json!(self.wrap_at as u64),
+            serde_json::json!(self.authored_wrap_at as u64),
         );
         map.insert("word_wrap".to_string(), serde_json::json!(self.word_wrap));
         map.insert(
@@ -167,8 +189,12 @@ impl Component for TextComponent {
                 .map_err(|e| format!("Failed to decode text: {}", e))?;
         }
         if let Some(wrap_at) = data.get("wrap_at") {
+            // `encode` persists the authored cap under the "wrap_at" key.
+            // Restore it as both fields — layout will recompute the effective
+            // `wrap_at` from the current container width on the next pass.
             let wrap_u64: u64 = serde_json::from_value(wrap_at.clone())
                 .map_err(|e| format!("Failed to decode wrap_at: {}", e))?;
+            self.authored_wrap_at = wrap_u64 as usize;
             self.wrap_at = wrap_u64 as usize;
         }
         if let Some(word_wrap) = data.get("word_wrap") {

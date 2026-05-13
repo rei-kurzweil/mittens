@@ -268,9 +268,13 @@ fn find_text_in_local_content_subtree(
         root: ComponentId,
     ) -> Option<(String, usize, bool, Vec<String>)> {
         if let Some(t) = world.get_component_by_id_as::<TextComponent>(node) {
+            // Return the *authored* wrap_at — callers use this as a hard cap
+            // against the current container width. `t.wrap_at` reflects a prior
+            // pass's already-narrowed value and would prevent re-widening when
+            // the container grows.
             return Some((
                 t.text.clone(),
-                t.wrap_at,
+                t.authored_wrap_at,
                 t.word_wrap,
                 t.word_wrap_tokens.clone(),
             ));
@@ -358,13 +362,17 @@ pub(crate) fn apply_text_wrap_for_item(
     // No cascade today — only this TC's own StyleComponent is consulted.
     let (style_word_wrap, style_tokens) = read_text_wrap_style(world, tc_id);
 
-    let (cur_wrap_at, cur_word_wrap, cur_tokens, cur_text) =
+    let (cur_wrap_at, authored_wrap_at, cur_word_wrap, cur_tokens, cur_text) =
         match world.get_component_by_id_as::<TextComponent>(text_id) {
-            Some(tc) => (tc.wrap_at, tc.word_wrap, tc.word_wrap_tokens.clone(), tc.text.clone()),
+            Some(tc) => (tc.wrap_at, tc.authored_wrap_at, tc.word_wrap, tc.word_wrap_tokens.clone(), tc.text.clone()),
             None => return,
         };
 
-    let new_wrap_at = container_cols.min(cur_wrap_at);
+    // Cap against the *authored* wrap_at, not the current value. The current
+    // value may have been narrowed by a prior layout pass at a smaller
+    // container width — if we capped against it, growing the container back
+    // up would never widen wrap_at.
+    let new_wrap_at = container_cols.min(authored_wrap_at);
     let new_word_wrap = match style_word_wrap {
         Some(WordWrapMode::Normal)    => false,
         Some(WordWrapMode::BreakWord) => true,
@@ -762,6 +770,41 @@ mod tests {
 
         let measured = measure_item(&world, tc, 40.0);
         assert_eq!(measured.content_width_gu, 12.0);
+    }
+
+    #[test]
+    fn text_wrap_relaxes_when_container_grows_back() {
+        use crate::engine::ecs::SignalEmitter;
+        use crate::engine::ecs::ComponentId;
+        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
+        use super::apply_text_wrap_for_item;
+
+        struct NullEmit;
+        impl SignalEmitter for NullEmit {
+            fn push_event(&mut self, _: ComponentId, _: EventSignal) {}
+            fn push_intent(&mut self, _: ComponentId, _: IntentSignal) {}
+        }
+
+        let mut world = World::default();
+        let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));
+        let text = world.add_component_boxed_named(
+            "txt",
+            Box::new(TextComponent::with_word_wrap("the quick brown fox jumps over the lazy dog", 60)),
+        );
+        let _ = world.add_child(tc, text);
+
+        let mut emit = NullEmit;
+
+        // 1st pass: narrow container forces wrap_at down.
+        apply_text_wrap_for_item(&mut world, &mut emit, tc, 10.0);
+        let narrow = world.get_component_by_id_as::<TextComponent>(text).unwrap().wrap_at;
+        assert!(narrow < 60, "narrow container should reduce wrap_at, got {}", narrow);
+
+        // 2nd pass: container grows back; wrap_at must widen toward the authored cap.
+        apply_text_wrap_for_item(&mut world, &mut emit, tc, 80.0);
+        let wide = world.get_component_by_id_as::<TextComponent>(text).unwrap().wrap_at;
+        assert!(wide > narrow, "wide container should re-widen wrap_at, got {} (was {})", wide, narrow);
+        assert!(wide <= 60, "wrap_at must never exceed authored cap (60), got {}", wide);
     }
 
     #[test]
