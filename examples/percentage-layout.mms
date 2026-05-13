@@ -42,7 +42,6 @@ let panel = T.position(-4.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
             }
             T.position(0, 0, 0.2) {
                 Style {
-                    word_wrap("break-word")
                 }
                 Text { "sidebar nav" text_color  }
             }
@@ -69,7 +68,6 @@ let panel = T.position(-4.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        word_wrap("break-word")
                     }
                     Text { "first card — percent padding scales with the container" text_color }
                 }
@@ -86,7 +84,6 @@ let panel = T.position(-4.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        word_wrap("break-word")
                     }
                     Text { "second card — try shrinking the panel width" text_color }
                 }
@@ -103,7 +100,6 @@ let panel = T.position(-4.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 T.position(0, 0, 0.2) {
                     Style {
                         display("inline-block")
-                        word_wrap("break-word")
                     }
                     Text { "third card — vertical padding resolves against width too" text_color }
                 }

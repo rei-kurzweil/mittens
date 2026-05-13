@@ -51,7 +51,11 @@ impl TextComponent {
             text: text.into(),
             wrap_at: Self::DEFAULT_WRAP_AT,
             authored_wrap_at: Self::DEFAULT_WRAP_AT,
-            word_wrap: false,
+            // Default to CSS `overflow-wrap: normal` semantics — only break at
+            // whitespace/token boundaries. `with_wrap` (which takes an explicit
+            // column cap) keeps the legacy hard-wrap behavior because callers
+            // using it generally want strict column control.
+            word_wrap: true,
             word_wrap_tokens: Self::DEFAULT_WORD_WRAP_TOKENS
                 .iter()
                 .map(|s| s.to_string())

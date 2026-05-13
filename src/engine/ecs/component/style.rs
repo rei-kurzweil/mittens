@@ -71,9 +71,13 @@ pub enum FlexWrap {
 /// onto each `StyleComponent`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WordWrapMode {
-    /// Hard wrap at the current `wrap_at` column. Matches `TextComponent::word_wrap = false`.
+    /// CSS `overflow-wrap: normal` — only break at whitespace/token
+    /// boundaries; long unbreakable words may overflow the container rather
+    /// than being split mid-word. Maps to `TextComponent::word_wrap = true`.
     Normal,
-    /// Prefer wrapping at whitespace/token boundaries. Matches `TextComponent::with_word_wrap`.
+    /// CSS `overflow-wrap: break-word` — break words at arbitrary points if
+    /// needed to keep the line inside `wrap_at`. Maps to
+    /// `TextComponent::word_wrap = false` (hard column wrap).
     BreakWord,
 }
 

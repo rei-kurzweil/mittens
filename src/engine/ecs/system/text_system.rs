@@ -89,6 +89,49 @@ impl WordWrapState {
         self.line_count += 1;
         self.last_wrap_allowed = wrap_allowed_after.get(i).copied().unwrap_or(false);
     }
+
+    /// Word-wrap look-ahead. Called before each non-space glyph at index `i`
+    /// with the length of the unbreakable run starting at `i` (number of
+    /// chars until the next wrap-allowed position or end-of-text).
+    ///
+    /// If the upcoming word wouldn't fit on the current line and we just
+    /// passed a wrap opportunity, wrap *now* — `apply_wrap_if_needed` only
+    /// catches the overflow after it has already happened, which leaves the
+    /// trailing word sticking past the container.
+    fn apply_word_wrap_lookahead(&mut self, next_word_len: usize) {
+        if !self.word_wrap || self.wrap_at == 0 || self.col == 0 {
+            return;
+        }
+        if !self.last_wrap_allowed {
+            return;
+        }
+        if self.col + next_word_len > self.wrap_at {
+            self.max_col = self.max_col.max(self.col);
+            self.row += 1;
+            self.col = 0;
+            self.line_count = 0;
+            self.last_wrap_allowed = false;
+        }
+    }
+}
+
+/// For each index `i`, the number of chars from `i` until (and not
+/// including) the next wrap-allowed position, or `chars.len() - i` if no
+/// further break exists. This is the "word length" the look-ahead checks
+/// against `wrap_at` to decide whether to break at the preceding space.
+fn compute_word_run_len(wrap_allowed_after: &[bool]) -> Vec<usize> {
+    let n = wrap_allowed_after.len();
+    let mut out = vec![0; n];
+    let mut run = 0usize;
+    for i in (0..n).rev() {
+        if wrap_allowed_after[i] {
+            run = 0;
+        } else {
+            run += 1;
+        }
+        out[i] = run;
+    }
+    out
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -287,6 +330,7 @@ impl TextSystem {
 
         let chars: Vec<char> = text.chars().collect();
         let wrap_allowed_after: Vec<bool> = compute_wrap_allowed_after(&chars, &word_wrap_tokens);
+        let word_run_len = compute_word_run_len(&wrap_allowed_after);
 
         let mut wrap_state = WordWrapState::new(wrap_at, word_wrap);
 
@@ -294,6 +338,7 @@ impl TextSystem {
             if !Self::handle_word_wrap_for(ch, i, &wrap_allowed_after, &mut wrap_state) {
                 continue;
             }
+            wrap_state.apply_word_wrap_lookahead(word_run_len.get(i).copied().unwrap_or(1));
 
             let (x, y) = wrap_state.cursor_pos();
             let t = TransformComponent::new().with_position(x, y, 0.0);
@@ -374,6 +419,7 @@ impl TextSystem {
     ) -> (usize, usize) {
         let chars: Vec<char> = text.chars().collect();
         let wrap_allowed_after = compute_wrap_allowed_after(&chars, word_wrap_tokens);
+        let word_run_len = compute_word_run_len(&wrap_allowed_after);
         let mut state = WordWrapState::new(wrap_at, word_wrap);
 
         for (i, ch) in chars.iter().copied().enumerate() {
@@ -390,6 +436,7 @@ impl TextSystem {
                 state.advance_tab(i, &wrap_allowed_after);
                 continue;
             }
+            state.apply_word_wrap_lookahead(word_run_len.get(i).copied().unwrap_or(1));
             state.advance_glyph(i, &wrap_allowed_after);
         }
 

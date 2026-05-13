@@ -392,9 +392,15 @@ pub(crate) fn apply_text_wrap_for_item(
     } else {
         container_cols.min(authored_wrap_at)
     };
+    // CSS `overflow-wrap` semantics:
+    //   `normal`     — only break at whitespace/token boundaries; long words
+    //                  overflow rather than being split (TextComponent
+    //                  `word_wrap = true`).
+    //   `break-word` — break anywhere if needed to prevent overflow (hard
+    //                  wrap at `wrap_at`; TextComponent `word_wrap = false`).
     let new_word_wrap = match style_word_wrap {
-        Some(WordWrapMode::Normal)    => false,
-        Some(WordWrapMode::BreakWord) => true,
+        Some(WordWrapMode::Normal)    => true,
+        Some(WordWrapMode::BreakWord) => false,
         None                          => cur_word_wrap,
     };
     let new_tokens = style_tokens.unwrap_or_else(|| cur_tokens.clone());
@@ -513,7 +519,13 @@ fn text_intrinsic_width(world: &World, tc_id: ComponentId, avail_content_w_gu: f
         (a, w) => a.min(w),
     };
     let (max_col, _line_count) = TextSystem::measure(&text, wrap_at, word_wrap, &tokens);
-    max_col as f32 * CHAR_WIDTH_GU
+    // CSS shrink-to-fit caps an inline-block's width at the available content
+    // width even if the text inside overflows (word-wrap: normal with a long
+    // unbreakable token). Without this cap, the box claims a width wider than
+    // its containing block and downstream measurements (wrap_at on glyph
+    // rebuild, sibling line-break decisions) inherit the inflated value.
+    let measured = max_col as f32 * CHAR_WIDTH_GU;
+    if avail_content_w_gu > 0.0 { measured.min(avail_content_w_gu) } else { measured }
 }
 
 fn intrinsic_block_height(world: &World, tc_id: ComponentId, content_width_gu: f32) -> f32 {
