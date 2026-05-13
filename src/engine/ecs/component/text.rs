@@ -39,7 +39,11 @@ pub struct TextComponent {
 }
 
 impl TextComponent {
-    pub const DEFAULT_WRAP_AT: usize = 40;
+    /// Default authored wrap cap: `0` = no author cap. Layout still wraps to
+    /// fit the containing block; this default just means the author didn't
+    /// impose an additional column limit. To set an explicit cap, use
+    /// [`with_wrap`](Self::with_wrap) / [`with_word_wrap`](Self::with_word_wrap).
+    pub const DEFAULT_WRAP_AT: usize = 0;
     pub const DEFAULT_WORD_WRAP_TOKENS: [&'static str; 2] = [" ", "\t"];
 
     pub fn new(text: impl Into<String>) -> Self {

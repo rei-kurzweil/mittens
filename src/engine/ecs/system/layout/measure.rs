@@ -229,6 +229,21 @@ pub(crate) fn measure_items(
 /// per-char x advance in `TextSystem::register_text` (1.0 col per glyph).
 const CHAR_WIDTH_GU: f32 = 1.0;
 
+/// Convert a content-area width (in glyph units) into the maximum number of
+/// columns that fit. Single source of truth — `apply_text_wrap_for_item`,
+/// `text_intrinsic_height`, and `text_intrinsic_width` must agree, or the
+/// inline cursor's measured box width will disagree with the wrap_at the
+/// renderer later applies (text overflows or under-wraps).
+///
+/// Glyphs are column-centered: column `n` spans `[n - 0.5, n + 0.5]`. With
+/// the text origin at the content-box left edge, the leftmost glyph (col 0)
+/// extends to `-0.5` from the origin and the rightmost (col `N-1`) extends
+/// to `N - 0.5`. So `N` glyphs occupy a horizontal span of `N` units; we
+/// simply floor the content width.
+fn container_cols_for_width(content_width_gu: f32) -> usize {
+    (content_width_gu / CHAR_WIDTH_GU).floor().max(1.0) as usize
+}
+
 /// Walk the subtree of `root` and return the `ComponentId` of the first
 /// `TextComponent` found within local content (not crossing nested TCs).
 pub(crate) fn find_text_id_in_local_content_subtree(
@@ -325,8 +340,11 @@ fn text_intrinsic_height(world: &World, tc_id: ComponentId, content_width_gu: f3
     // spans [col-0.5, col+0.5]. Reserve half a glyph on the right edge so the
     // last glyph's right half fits inside the content box (and inside padding).
     let wrap_at = if content_width_gu > CHAR_WIDTH_GU {
-        let container_cols = ((content_width_gu - 0.5 * CHAR_WIDTH_GU) / CHAR_WIDTH_GU).floor() as usize;
-        container_cols.max(1).min(existing_wrap_at)
+        let container_cols = container_cols_for_width(content_width_gu);
+        if existing_wrap_at == 0 { container_cols } else { container_cols.min(existing_wrap_at) }
+    } else if existing_wrap_at == 0 {
+        // No container width and no author cap — measure unwrapped.
+        usize::MAX
     } else {
         existing_wrap_at
     };
@@ -353,10 +371,7 @@ pub(crate) fn apply_text_wrap_for_item(
     if content_width_gu <= CHAR_WIDTH_GU {
         return;
     }
-    // Reserve half a glyph on the right edge (glyphs are column-centered).
-    let container_cols =
-        ((content_width_gu - 0.5 * CHAR_WIDTH_GU) / CHAR_WIDTH_GU).floor() as usize;
-    let container_cols = container_cols.max(1);
+    let container_cols = container_cols_for_width(content_width_gu);
 
     // Style overrides on the styled TC propagate onto the descendant TextComponent.
     // No cascade today — only this TC's own StyleComponent is consulted.
@@ -368,11 +383,15 @@ pub(crate) fn apply_text_wrap_for_item(
             None => return,
         };
 
-    // Cap against the *authored* wrap_at, not the current value. The current
+    // Cap against the *authored* wrap_at, not the current value (the current
     // value may have been narrowed by a prior layout pass at a smaller
-    // container width — if we capped against it, growing the container back
-    // up would never widen wrap_at.
-    let new_wrap_at = container_cols.min(authored_wrap_at);
+    // container width — capping there would prevent re-widening).
+    // An authored cap of `0` means "no author limit" — fill the container.
+    let new_wrap_at = if authored_wrap_at == 0 {
+        container_cols
+    } else {
+        container_cols.min(authored_wrap_at)
+    };
     let new_word_wrap = match style_word_wrap {
         Some(WordWrapMode::Normal)    => false,
         Some(WordWrapMode::BreakWord) => true,
@@ -481,9 +500,14 @@ fn text_intrinsic_width(world: &World, tc_id: ComponentId, avail_content_w_gu: f
     else {
         return 0.0;
     };
-    let avail_cols = (avail_content_w_gu / CHAR_WIDTH_GU).floor().max(0.0) as usize;
-    // Honor the TextComponent's own wrap_at as a hard cap (0 = unlimited).
+    let avail_cols = if avail_content_w_gu > CHAR_WIDTH_GU {
+        container_cols_for_width(avail_content_w_gu)
+    } else {
+        0
+    };
+    // Honor the TextComponent's authored wrap_at as a hard cap (0 = unlimited).
     let wrap_at = match (avail_cols, tc_wrap_at) {
+        (0, 0) => usize::MAX,
         (0, w) => w,
         (a, 0) => a,
         (a, w) => a.min(w),
