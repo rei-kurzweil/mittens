@@ -297,6 +297,13 @@ impl MeowMeowParser {
                     unreachable!()
                 }
             }
+            TokenKind::Dimension(_, _) => {
+                if let TokenKind::Dimension(n, unit) = self.bump().kind {
+                    Ok(Expression::Dimension(n, unit))
+                } else {
+                    unreachable!()
+                }
+            }
             TokenKind::True  => { self.bump(); Ok(Expression::Bool(true)) }
             TokenKind::False => { self.bump(); Ok(Expression::Bool(false)) }
             TokenKind::Null  => { self.bump(); Ok(Expression::Null) }

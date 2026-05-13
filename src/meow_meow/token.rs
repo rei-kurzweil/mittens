@@ -4,11 +4,30 @@ use crate::meow_meow::ast::Span;
 // Lexical tokens
 // -----------------------------------------------------------------------------
 
+/// Unit suffix on a numeric literal in MMS source (e.g. `50%`, `20gu`,
+/// `30deg`). Bare numbers without a suffix tokenize as `Number(f64)` and
+/// do not carry a unit. When a unit suffix is present, the lexer emits
+/// `Dimension(f64, Unit)` instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Unit {
+    /// `%` — percentage (relative to the consumer's reference, e.g.
+    /// container inline-axis width for layout consumers).
+    Percent,
+    /// `gu` — glyph units (cat-engine's intrinsic layout unit).
+    GlyphUnits,
+    /// `deg` — degrees (forward-compatible; no current consumer).
+    Degrees,
+    /// `rad` — radians (forward-compatible; no current consumer).
+    Radians,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Ident(String),
     String(String),
     Number(f64),
+    /// Numeric literal with a unit suffix: `50%`, `20gu`, `30deg`, `0.5rad`.
+    Dimension(f64, Unit),
 
     Let,
     If,

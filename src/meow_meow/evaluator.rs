@@ -734,6 +734,7 @@ fn eval_expr(
         Expression::Null => Ok(Value::Null),
         Expression::Bool(b) => Ok(Value::Bool(*b)),
         Expression::Number(n) => Ok(Value::Number(*n)),
+        Expression::Dimension(n, unit) => Ok(Value::Dimension { value: *n, unit: *unit }),
         Expression::String(s) => Ok(Value::String(s.clone())),
         Expression::Array(items) => {
             let vals = items
@@ -1317,6 +1318,15 @@ fn value_display(val: &Value) -> String {
         Value::Object(_) => "<object>".into(),
         Value::Identifier(s) => s.clone(),
         Value::Module { .. } => "<module>".into(),
+        Value::Dimension { value, unit } => {
+            let suffix = match unit {
+                crate::meow_meow::token::Unit::Percent => "%",
+                crate::meow_meow::token::Unit::GlyphUnits => "gu",
+                crate::meow_meow::token::Unit::Degrees => "deg",
+                crate::meow_meow::token::Unit::Radians => "rad",
+            };
+            format!("{}{}", value, suffix)
+        }
     }
 }
 

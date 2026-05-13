@@ -25,6 +25,10 @@ pub struct Ident(pub String);
 pub enum Expression {
     String(String),
     Number(f64),
+    /// Numeric literal with a unit suffix in source (e.g. `50%`, `20gu`,
+    /// `30deg`). Evaluator materializes as `Value::Dimension`; consumers
+    /// like the Style setters convert to `SizeDimension`.
+    Dimension(f64, crate::meow_meow::token::Unit),
     Bool(bool),
     Null,
     Identifier(Ident),

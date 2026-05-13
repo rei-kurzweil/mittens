@@ -1,5 +1,5 @@
 use crate::meow_meow::ast::Span;
-use crate::meow_meow::token::{Token, TokenKind, TokenizeError};
+use crate::meow_meow::token::{Token, TokenKind, TokenizeError, Unit};
 
 pub struct MeowMeowTokenizer<'a> {
     input: &'a str,
@@ -154,7 +154,13 @@ impl<'a> MeowMeowTokenizer<'a> {
                 }
             }
             b'"' => TokenKind::String(self.read_string()?),
-            b'0'..=b'9' => TokenKind::Number(self.read_number()?),
+            b'0'..=b'9' => {
+                let n = self.read_number()?;
+                match self.try_read_unit_suffix() {
+                    Some(unit) => TokenKind::Dimension(n, unit),
+                    None => TokenKind::Number(n),
+                }
+            }
             _ => {
                 if is_ident_start(b) {
                     let ident = self.read_ident();
@@ -321,6 +327,37 @@ impl<'a> MeowMeowTokenizer<'a> {
             message: format!("Invalid number literal: {s}"),
             span: Span::new(start, self.idx),
         })
+    }
+
+    /// Try to consume a unit suffix attached (no whitespace) to a numeric
+    /// literal. Recognized: `%`, `gu`, `deg`, `rad`. Returns `None` if the
+    /// next character isn't part of a recognized suffix — caller falls back
+    /// to a bare `Number` token.
+    fn try_read_unit_suffix(&mut self) -> Option<Unit> {
+        if self.idx >= self.bytes.len() {
+            return None;
+        }
+        if self.bytes[self.idx] == b'%' {
+            self.idx += 1;
+            return Some(Unit::Percent);
+        }
+        // Letter-prefixed suffixes: peek without consuming, only commit on match.
+        let start = self.idx;
+        let mut end = start;
+        while end < self.bytes.len() && is_ident_continue(self.bytes[end]) {
+            end += 1;
+        }
+        if end == start {
+            return None;
+        }
+        let unit = match &self.input[start..end] {
+            "gu"  => Unit::GlyphUnits,
+            "deg" => Unit::Degrees,
+            "rad" => Unit::Radians,
+            _ => return None,
+        };
+        self.idx = end;
+        Some(unit)
     }
 
     fn peek2(&self) -> Option<(u8, u8)> {

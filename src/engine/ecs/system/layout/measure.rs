@@ -67,6 +67,10 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
 
     let is_block = matches!(display, None | Some(Display::Block));
 
+    // Resolve padding/margin against the inline-axis container width (CSS semantic).
+    let margin = margin.resolve(avail_w_gu);
+    let padding = padding.resolve(avail_w_gu);
+
     // ── Horizontal ───────────────────────────────────────────────────────
     let margin_left_gu   = margin.left;
     let margin_right_gu  = margin.right;
@@ -82,21 +86,14 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
         .then(|| intrinsic_block_width(world, tc_id, display, avail_content_w_gu))
         .flatten();
 
-    // Auto-width items get remeasured by the inline cursor against the
-    // remaining line budget after a wrap decision. For block/auto-width
-    // fill items this resizes the content box; for inline-block text
-    // shrink-to-fit it re-caps `text_intrinsic_width` to the new available
-    // width so the resulting box fits on the wrapped line. Items with a
-    // renderable intrinsic (e.g. icons with bounds) remeasure harmlessly —
-    // their width doesn't depend on available width.
     let is_auto_width = matches!(width, SizeDimension::Auto)
         && matches!(display, None | Some(Display::Block | Display::InlineBlock | Display::Inline));
     let content_width_gu = match width {
         SizeDimension::GlyphUnits(w) => w,
-        _ => match renderable_intrinsic_width {
+        SizeDimension::Percent(p) => avail_content_w_gu * p / 100.0,
+        SizeDimension::Auto => match renderable_intrinsic_width {
             Some(w) => w,
-            None => (avail_w_gu - margin_left_gu - margin_right_gu
-                                - padding_left_gu - padding_right_gu).max(0.0),
+            None => avail_content_w_gu,
         },
     };
     let box_width_gu        = padding_left_gu + content_width_gu + padding_right_gu;
@@ -111,11 +108,13 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
     let is_inline_block = matches!(display, Some(Display::InlineBlock | Display::Inline));
     let content_height_gu = match height {
         SizeDimension::GlyphUnits(h) => h,
+        // Percent height with unknown container height falls back to 0.0 (matches
+        // CSS conservative behavior for percent heights with auto parents).
+        SizeDimension::Percent(_) => 0.0,
         SizeDimension::Auto if is_block || is_inline_block => {
             intrinsic_block_height(world, tc_id, content_width_gu)
         }
         SizeDimension::Auto => 0.0,
-        _ => 0.0,
     };
     let box_height_gu        = padding_top_gu + content_height_gu + padding_bottom_gu;
     let margin_box_height_gu = margin_top_gu + box_height_gu + margin_bottom_gu;
@@ -728,5 +727,60 @@ mod tests {
 
         let measured = measure_item(&world, tc, 40.0);
         assert_eq!(measured.content_width_gu, 12.0);
+    }
+
+    #[test]
+    fn width_percent_resolves_against_available_content_width() {
+        let mut world = World::default();
+        let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));
+        let style = world.add_component_boxed_named("style", Box::new({
+            let mut s = StyleComponent::new();
+            s.display = Some(Display::Block);
+            s.width = SizeDimension::Percent(50.0);
+            s
+        }));
+        let _ = world.add_child(tc, style);
+
+        let measured = measure_item(&world, tc, 40.0);
+        assert_eq!(measured.content_width_gu, 20.0);
+    }
+
+    #[test]
+    fn padding_percent_resolves_against_inline_axis_width() {
+        use crate::engine::ecs::component::style::EdgeInsets;
+        let mut world = World::default();
+        let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));
+        let style = world.add_component_boxed_named("style", Box::new({
+            let mut s = StyleComponent::new();
+            s.display = Some(Display::Block);
+            s.width = SizeDimension::GlyphUnits(20.0);
+            s.padding = EdgeInsets::all_dim(SizeDimension::Percent(10.0));
+            s
+        }));
+        let _ = world.add_child(tc, style);
+
+        let measured = measure_item(&world, tc, 40.0);
+        assert_eq!(measured.padding_left_gu, 4.0);
+        assert_eq!(measured.padding_right_gu, 4.0);
+        assert_eq!(measured.padding_top_gu, 4.0);
+        assert_eq!(measured.padding_bottom_gu, 4.0);
+    }
+
+    #[test]
+    fn bare_number_width_setter_defaults_to_glyph_units_via_mms() {
+        // Smoke check at the type level: SizeDimension::GlyphUnits is the
+        // default produced by `arg_size_dimension` for bare Value::Number.
+        // The Style setter writes that into `width` unchanged.
+        let mut world = World::default();
+        let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));
+        let style = world.add_component_boxed_named("style", Box::new({
+            let mut s = StyleComponent::new();
+            s.display = Some(Display::Block);
+            s.width = SizeDimension::GlyphUnits(20.0);
+            s
+        }));
+        let _ = world.add_child(tc, style);
+        let measured = measure_item(&world, tc, 40.0);
+        assert_eq!(measured.content_width_gu, 20.0);
     }
 }

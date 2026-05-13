@@ -116,28 +116,80 @@ pub enum SizeDimension {
     Percent(f32),
 }
 
-/// Four-sided spacing in glyph units (margin or padding).
+/// Four-sided spacing. Each side can be a fixed glyph-unit value or a
+/// percentage of the containing block's inline-axis width (CSS semantic:
+/// percentage padding/margin always resolve against the container's width,
+/// even on the vertical sides).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct EdgeInsets {
+    pub top: SizeDimension,
+    pub right: SizeDimension,
+    pub bottom: SizeDimension,
+    pub left: SizeDimension,
+}
+
+impl EdgeInsets {
+    pub const ZERO: Self = Self {
+        top: SizeDimension::GlyphUnits(0.0),
+        right: SizeDimension::GlyphUnits(0.0),
+        bottom: SizeDimension::GlyphUnits(0.0),
+        left: SizeDimension::GlyphUnits(0.0),
+    };
+
+    pub fn all(v: f32) -> Self {
+        let sd = SizeDimension::GlyphUnits(v);
+        Self { top: sd, right: sd, bottom: sd, left: sd }
+    }
+
+    pub fn all_dim(sd: SizeDimension) -> Self {
+        Self { top: sd, right: sd, bottom: sd, left: sd }
+    }
+
+    pub fn axes(vertical: f32, horizontal: f32) -> Self {
+        let v = SizeDimension::GlyphUnits(vertical);
+        let h = SizeDimension::GlyphUnits(horizontal);
+        Self { top: v, right: h, bottom: v, left: h }
+    }
+
+    pub fn axes_dim(vertical: SizeDimension, horizontal: SizeDimension) -> Self {
+        Self { top: vertical, right: horizontal, bottom: vertical, left: horizontal }
+    }
+
+    /// Resolve all sides to glyph units against the inline-axis container width.
+    /// `container_w_gu` is the width of the containing block in glyph units.
+    pub fn resolve(&self, container_w_gu: f32) -> ResolvedInsets {
+        ResolvedInsets {
+            top: resolve_size_inline(self.top, container_w_gu),
+            right: resolve_size_inline(self.right, container_w_gu),
+            bottom: resolve_size_inline(self.bottom, container_w_gu),
+            left: resolve_size_inline(self.left, container_w_gu),
+        }
+    }
+}
+
+/// Edge insets resolved to absolute glyph units.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct ResolvedInsets {
     pub top: f32,
     pub right: f32,
     pub bottom: f32,
     pub left: f32,
 }
 
-impl EdgeInsets {
+impl ResolvedInsets {
     pub const ZERO: Self = Self { top: 0.0, right: 0.0, bottom: 0.0, left: 0.0 };
-
-    pub fn all(v: f32) -> Self {
-        Self { top: v, right: v, bottom: v, left: v }
-    }
-
-    pub fn axes(vertical: f32, horizontal: f32) -> Self {
-        Self { top: vertical, right: horizontal, bottom: vertical, left: horizontal }
-    }
-
     pub fn horizontal(&self) -> f32 { self.left + self.right }
     pub fn vertical(&self) -> f32 { self.top + self.bottom }
+}
+
+/// Resolve a `SizeDimension` against a known container length (inline-axis).
+/// `Auto` → 0.0 (caller handles `Auto` specially for width/height).
+pub fn resolve_size_inline(sd: SizeDimension, container_w_gu: f32) -> f32 {
+    match sd {
+        SizeDimension::GlyphUnits(v) => v,
+        SizeDimension::Percent(p) => container_w_gu * p / 100.0,
+        SizeDimension::Auto => 0.0,
+    }
 }
 
 /// A partial CSS style update — `None` fields are left unchanged.

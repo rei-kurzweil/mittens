@@ -268,6 +268,23 @@ fn arg_str(args: &[Value], i: usize) -> Result<&str, String> { val_as_str(arg(ar
 fn arg_f32_arr<const N: usize>(args: &[Value], i: usize) -> Result<[f32; N], String> { val_as_f32_array(arg(args, i)?) }
 fn arg_str_vec(args: &[Value], i: usize) -> Result<Vec<String>, String> { val_as_str_vec(arg(args, i)?) }
 
+/// Accept either a unit-literal (`50%`, `20gu`) or a bare number (interpreted
+/// as glyph units) and produce a `SizeDimension`. Used by Style sizing setters.
+fn arg_size_dimension(args: &[Value], i: usize) -> Result<SizeDimension, String> {
+    use crate::meow_meow::token::Unit;
+    match arg(args, i)? {
+        Value::Number(n) => Ok(SizeDimension::GlyphUnits(*n as f32)),
+        Value::Dimension { value, unit } => match unit {
+            Unit::Percent => Ok(SizeDimension::Percent(*value as f32)),
+            Unit::GlyphUnits => Ok(SizeDimension::GlyphUnits(*value as f32)),
+            Unit::Degrees | Unit::Radians => {
+                Err(format!("expected length unit (gu, %) for size, got {:?}", unit))
+            }
+        },
+        v => Err(format!("expected number or dimension for size, got {:?}", v)),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Component creation
 // ---------------------------------------------------------------------------
@@ -806,14 +823,12 @@ fn apply_call(
                     _                           => None,
                 };
             }
-            "width"       => st.width  = SizeDimension::GlyphUnits(arg_f32(args, 0)?),
-            "height"      => st.height = SizeDimension::GlyphUnits(arg_f32(args, 0)?),
-            "width_pct"   => st.width  = SizeDimension::Percent(arg_f32(args, 0)?),
-            "height_pct"  => st.height = SizeDimension::Percent(arg_f32(args, 0)?),
-            "padding"     => st.padding = EdgeInsets::all(arg_f32(args, 0)?),
-            "padding_xy"  => st.padding = EdgeInsets::axes(arg_f32(args, 0)?, arg_f32(args, 1)?),
-            "margin"      => st.margin  = EdgeInsets::all(arg_f32(args, 0)?),
-            "margin_xy"   => st.margin  = EdgeInsets::axes(arg_f32(args, 0)?, arg_f32(args, 1)?),
+            "width"       => st.width  = arg_size_dimension(args, 0)?,
+            "height"      => st.height = arg_size_dimension(args, 0)?,
+            "padding"     => st.padding = EdgeInsets::all_dim(arg_size_dimension(args, 0)?),
+            "padding_xy"  => st.padding = EdgeInsets::axes_dim(arg_size_dimension(args, 0)?, arg_size_dimension(args, 1)?),
+            "margin"      => st.margin  = EdgeInsets::all_dim(arg_size_dimension(args, 0)?),
+            "margin_xy"   => st.margin  = EdgeInsets::axes_dim(arg_size_dimension(args, 0)?, arg_size_dimension(args, 1)?),
             "background_color" => st.background_color = Some(arg_f32_arr::<4>(args, 0)?),
             "background_z" => st.background_z = arg_f32(args, 0)?,
             "flex_direction" => {
@@ -869,10 +884,10 @@ fn apply_call(
                     _          => return Ok(()),
                 };
             }
-            "top"    => st.top    = Some(SizeDimension::GlyphUnits(arg_f32(args, 0)?)),
-            "right"  => st.right  = Some(SizeDimension::GlyphUnits(arg_f32(args, 0)?)),
-            "bottom" => st.bottom = Some(SizeDimension::GlyphUnits(arg_f32(args, 0)?)),
-            "left"   => st.left   = Some(SizeDimension::GlyphUnits(arg_f32(args, 0)?)),
+            "top"    => st.top    = Some(arg_size_dimension(args, 0)?),
+            "right"  => st.right  = Some(arg_size_dimension(args, 0)?),
+            "bottom" => st.bottom = Some(arg_size_dimension(args, 0)?),
+            "left"   => st.left   = Some(arg_size_dimension(args, 0)?),
             "overflow" => {
                 st.overflow = match arg_str(args, 0)? {
                     "visible" => Overflow::Visible,

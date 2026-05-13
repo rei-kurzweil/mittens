@@ -259,10 +259,10 @@ fn spawn_panel_title_bar(
             s.width = SizeDimension::GlyphUnits(panel_width_gu);
             s.height = SizeDimension::GlyphUnits(total_height_gu);
             s.margin = EdgeInsets {
-                top: 0.5,
-                right: 1.0,
-                bottom: 0.5,
-                left: 0.0,
+                top: SizeDimension::GlyphUnits(0.5),
+                right: SizeDimension::GlyphUnits(1.0),
+                bottom: SizeDimension::GlyphUnits(0.5),
+                left: SizeDimension::GlyphUnits(0.0),
             };
             s
         }),
@@ -301,7 +301,7 @@ fn spawn_panel_title_bar(
         Box::new({
             let mut s = StyleComponent::new();
             s.height = SizeDimension::GlyphUnits(TITLE_BAR_HEIGHT_GU);
-            s.margin.bottom = TITLE_CONTENT_GAP_GU;
+            s.margin.bottom = SizeDimension::GlyphUnits(TITLE_CONTENT_GAP_GU);
             s.background_color = Some(TITLE_BG_COLOR);
             s
         }),
@@ -570,7 +570,7 @@ fn rebuild_world_panel(
                 let mut s = StyleComponent::new();
                 s.height = SizeDimension::Auto;
                 s.margin = EdgeInsets {
-                    left: *depth as f32 * INDENT_UNIT_GU,
+                    left: SizeDimension::GlyphUnits(*depth as f32 * INDENT_UNIT_GU),
                     ..EdgeInsets::ZERO
                 };
                 s.background_color = Some(ROW_BG_COLOR);

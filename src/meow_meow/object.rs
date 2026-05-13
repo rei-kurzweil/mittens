@@ -54,6 +54,11 @@ pub enum Value {
     Null,
     Bool(bool),
     Number(f64),
+    /// Numeric value tagged with a source-level unit suffix (e.g. `50%`,
+    /// `20gu`, `30deg`). Produced by `Expression::Dimension`. Consumers
+    /// such as the Style setters use this to disambiguate `Percent` vs
+    /// `GlyphUnits` at the boundary between MMS values and engine types.
+    Dimension { value: f64, unit: crate::meow_meow::token::Unit },
     String(String),
     Array(Vec<Value>),
 
