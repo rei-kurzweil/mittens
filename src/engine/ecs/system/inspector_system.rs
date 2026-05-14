@@ -91,8 +91,8 @@ impl InspectorSystem {
         // Width budget for all panels combined, in glyph units.  Enough for ~3 panels at
         // `TextComponent::DEFAULT_WRAP_AT`. Panels overflowing wrap to the next row via
         // inline-block flow.
-        const LAYOUT_WIDTH_GU: f32 = 3.0
-            * (crate::engine::ecs::component::TextComponent::DEFAULT_WRAP_AT as f32)
+        let layout_width_gu = 3.0
+            * (LayoutSystem::default_panel_width_chars() as f32)
             + 6.0;
 
         // SelectableComponent::off sits at the top of the chain so every descendant
@@ -121,7 +121,7 @@ impl InspectorSystem {
         let layout_root = world.add_component_boxed_named(
             "editor_layout_root",
             Box::new(
-                LayoutComponent::new(LAYOUT_WIDTH_GU).with_unit_scale(TEXT_SCALE),
+                LayoutComponent::new(layout_width_gu).with_unit_scale(TEXT_SCALE),
             ),
         );
         let _ = world.add_child(overlay, layout_root);
@@ -309,6 +309,8 @@ fn spawn_panel_title_bar(
     label: &str,
     show_buttons: bool,
 ) -> (ComponentId, ComponentId, Option<TitleBarButtons>) {
+    let panel_width_gu = panel_width_world / TEXT_SCALE;
+
     // ── Panel root — gizmo target + inline-block flow item ────────────────
     // Position is layout-driven by the singleton editor layout root.  The
     // gizmo walks up ancestry to find the nearest TransformComponent and
@@ -324,7 +326,6 @@ fn spawn_panel_title_bar(
     // wrap. Width/height are in glyph units (the parent layout has
     // unit_scale = TEXT_SCALE).
     let total_height_gu = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + content_height_world / TEXT_SCALE;
-    let panel_width_gu = panel_width_world / TEXT_SCALE;
     let panel_outer_style = world.add_component_boxed_named(
         "panel_outer_style",
         Box::new({
@@ -381,13 +382,45 @@ fn spawn_panel_title_bar(
         }),
     );
 
-    // ── Title label ──────────────────────────────────────────────────────
-    let label_y = -(TITLE_BAR_HEIGHT - TEXT_SCALE) * 0.5;
+    // ── Title row ────────────────────────────────────────────────────────
+    // Keep the header as a full-width block item, then let its children flow
+    // left-to-right as inline-block items. This keeps the title bar visuals
+    // inside layout instead of pinning them with world-space transform math.
+    let title_row = world.add_component_boxed_named(
+        "panel_titlebar_row",
+        Box::new(TransformComponent::new()),
+    );
+    let title_row_style = world.add_component_boxed_named(
+        "panel_titlebar_row_style",
+        Box::new({
+            let mut s = StyleComponent::new();
+            s.width = SizeDimension::Percent(100.0);
+            s.height = SizeDimension::GlyphUnits(TITLE_BAR_HEIGHT_GU);
+            s
+        }),
+    );
+
+    let label_item_padding_x_gu = 0.25;
+    let label_item = world.add_component_boxed_named(
+        "panel_titlebar_label_item",
+        Box::new(TransformComponent::new()),
+    );
+    let label_item_style = world.add_component_boxed_named(
+        "panel_titlebar_label_item_style",
+        Box::new({
+            let mut s = StyleComponent::new();
+            s.display = Some(crate::engine::ecs::component::style::Display::InlineBlock);
+            s.height = SizeDimension::GlyphUnits(TITLE_BAR_HEIGHT_GU);
+            s.padding = EdgeInsets::axes(0.0, label_item_padding_x_gu);
+            s
+        }),
+    );
+    let label_width_world = label.chars().count() as f32 * TEXT_SCALE * 0.55;
     let label_t = world.add_component_boxed_named(
         "panel_titlebar_label_t",
         Box::new(
             TransformComponent::new()
-                .with_position(0.02, label_y, 0.01)
+                .with_position(0.0, -(TITLE_BAR_HEIGHT - TEXT_SCALE) * 0.5, 0.01)
                 .with_scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE),
         ),
     );
@@ -418,7 +451,11 @@ fn spawn_panel_title_bar(
     let _ = world.add_child(header_slot, header_el);
     let _ = world.add_child(header_slot, header_style);
 
-    let _ = world.add_child(header_slot, label_t);
+    let _ = world.add_child(header_slot, title_row);
+    let _ = world.add_child(title_row, title_row_style);
+    let _ = world.add_child(title_row, label_item);
+    let _ = world.add_child(label_item, label_item_style);
+    let _ = world.add_child(label_item, label_t);
     let _ = world.add_child(label_t, label_col);
     let _ = world.add_child(label_col, label_text);
 
@@ -427,23 +464,41 @@ fn spawn_panel_title_bar(
     let _ = world.add_child(panel_t, gizmo);
 
     let buttons = if show_buttons {
-        // Save / Load buttons — pinned to the right of the title bar.
-        // Pure-rust mirror of `assets/components/button.mms` styling
-        // (rgb 0.30/0.45/0.90 background, white centered label). Switching
-        // to importing button.mms directly needs a host API to call MMS
-        // factory functions from rust — see
-        // docs/task/mms-asset-component-panels.md.
+        let button_gap_gu = 0.625;
+        let button_width_gu = TITLEBAR_BUTTON_WIDTH / TEXT_SCALE;
+        let buttons_total_gu = button_width_gu * 2.0 + button_gap_gu * 2.0;
+        let label_total_gu = (label_width_world / TEXT_SCALE) + label_item_padding_x_gu * 2.0;
+        let spacer_gu = (panel_width_gu - label_total_gu - buttons_total_gu).max(0.0);
+
+        let spacer = world.add_component_boxed_named(
+            "panel_titlebar_spacer",
+            Box::new(TransformComponent::new()),
+        );
+        let spacer_style = world.add_component_boxed_named(
+            "panel_titlebar_spacer_style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.display = Some(crate::engine::ecs::component::style::Display::InlineBlock);
+                s.width = SizeDimension::GlyphUnits(spacer_gu);
+                s.height = SizeDimension::GlyphUnits(TITLE_BAR_HEIGHT_GU);
+                s
+            }),
+        );
+        let _ = world.add_child(title_row, spacer);
+        let _ = world.add_child(spacer, spacer_style);
+
+        // Save / Load buttons — layout-owned inline-block items under the title row.
+        // This preserves the current visuals/click surfaces while letting the
+        // title bar width come from the panel shell instead of right-edge math.
         let load = spawn_titlebar_button(
             world,
-            header_slot,
+            title_row,
             "Load",
-            /* right_edge_x */ panel_width_world - 0.05,
         );
         let save = spawn_titlebar_button(
             world,
-            header_slot,
+            title_row,
             "Save",
-            /* right_edge_x */ panel_width_world - 0.05 - TITLEBAR_BUTTON_WIDTH - 0.05,
         );
 
         // "saved: <filename>" label above the panel. Default text empty;
@@ -621,30 +676,47 @@ fn load_scene_from_mms(
     Ok(spawned)
 }
 
-/// Spawn a single right-aligned button under `parent` (the panel header_slot).
+/// Spawn a single layout-owned title bar button under `parent`.
 /// Returns the renderable id — the click surface that fires `EventSignal::Click`.
 fn spawn_titlebar_button(
     world: &mut World,
     parent: ComponentId,
     label: &str,
-    right_edge_x: f32,
 ) -> ComponentId {
     let btn_h = TITLE_BAR_HEIGHT * 0.78;
     let btn_w = TITLEBAR_BUTTON_WIDTH;
-    let btn_center_x = right_edge_x - btn_w * 0.5;
-    let btn_center_y = -TITLE_BAR_HEIGHT * 0.5;
+    let btn_padding_x_gu = 0.25;
+    let btn_gap_gu = 0.625;
 
-    // Button root transform (positions the button group inside the title bar).
+    // Button root transform participates in title-row inline layout.
     let btn_t = world.add_component_boxed_named(
         "titlebar_btn_t",
-        Box::new(TransformComponent::new().with_position(btn_center_x, btn_center_y, 0.02)),
+        Box::new(TransformComponent::new()),
+    );
+    let btn_style = world.add_component_boxed_named(
+        "titlebar_btn_style",
+        Box::new({
+            let mut s = StyleComponent::new();
+            s.display = Some(crate::engine::ecs::component::style::Display::InlineBlock);
+            s.width = SizeDimension::GlyphUnits(btn_w / TEXT_SCALE);
+            s.height = SizeDimension::GlyphUnits(btn_h / TEXT_SCALE);
+            s.margin = EdgeInsets {
+                left: SizeDimension::GlyphUnits(btn_gap_gu),
+                ..EdgeInsets::ZERO
+            };
+            s
+        }),
     );
 
     // Background quad — scaled to button size; carries the renderable that
     // the raycast layer hits.
     let bg_t = world.add_component_boxed_named(
         "titlebar_btn_bg_t",
-        Box::new(TransformComponent::new().with_scale(btn_w, btn_h, 1.0)),
+        Box::new(
+            TransformComponent::new()
+                .with_position(btn_w * 0.5, -btn_h * 0.5, 0.0)
+                .with_scale(btn_w, btn_h, 1.0),
+        ),
     );
     let bg_renderable = world.add_component_boxed_named(
         "titlebar_btn_bg",
@@ -665,7 +737,14 @@ fn spawn_titlebar_button(
         "titlebar_btn_text_t",
         Box::new(
             TransformComponent::new()
-                .with_position(-label_width_world * 0.5, -TEXT_SCALE * 0.5, 0.01)
+                .with_position(
+                    btn_padding_x_gu * TEXT_SCALE
+                        + ((btn_w - btn_padding_x_gu * TEXT_SCALE * 2.0 - label_width_world)
+                            * 0.5)
+                        .max(0.0),
+                    -((btn_h + TEXT_SCALE) * 0.5),
+                    0.01,
+                )
                 .with_scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE),
         ),
     );
@@ -679,6 +758,7 @@ fn spawn_titlebar_button(
     );
 
     let _ = world.add_child(parent, btn_t);
+    let _ = world.add_child(btn_t, btn_style);
     let _ = world.add_child(btn_t, bg_t);
     let _ = world.add_child(bg_t, bg_renderable);
     let _ = world.add_child(bg_renderable, bg_color);

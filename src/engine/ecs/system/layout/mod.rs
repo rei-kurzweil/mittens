@@ -12,6 +12,8 @@ use measure::measure_container_items;
 
 /// Approximate average character width in glyph-local units (pre-transform).
 const CHAR_WIDTH_GLYPH: f32 = 0.55;
+/// Fallback panel column budget when `wrap_at = 0` means "no authored cap".
+const DEFAULT_PANEL_WIDTH_CHARS: usize = 40;
 
 /// Drives CSS-like layout for all dirty [`LayoutComponent`] subtrees.
 ///
@@ -90,6 +92,15 @@ impl LayoutSystem {
     /// Estimate the overlay-space width of a text panel without world matrices.
     /// Used during panel setup before transforms are propagated.
     pub fn estimate_panel_width(max_chars: usize, text_scale: f32, indent_width: f32) -> f32 {
-        indent_width + max_chars as f32 * CHAR_WIDTH_GLYPH * text_scale
+        let panel_chars = if max_chars == 0 {
+            DEFAULT_PANEL_WIDTH_CHARS
+        } else {
+            max_chars
+        };
+        indent_width + panel_chars as f32 * CHAR_WIDTH_GLYPH * text_scale
+    }
+
+    pub fn default_panel_width_chars() -> usize {
+        DEFAULT_PANEL_WIDTH_CHARS
     }
 }
