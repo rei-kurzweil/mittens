@@ -12,7 +12,7 @@
 // Run: cargo run --release --example component-method-call
 
 RendererSettings {
-    window_size(1280, 720)
+    window_size(1280, 960)
 }
 
 BGC.rgba(0.10, 0.10, 0.14, 1.0)

@@ -991,6 +991,60 @@ mod tests {
     }
 
     #[test]
+    fn explicit_inline_panel_children_keep_width_when_layoutroot_shrinks() {
+        let mut world = World::default();
+
+        let root = world.add_component(LayoutComponent::new(29.5));
+
+        let make_inline_box = |world: &mut World, name: &'static str, width_gu: f32| {
+            let tc = world.add_component_boxed_named(name, Box::new(TransformComponent::new()));
+            let style = world.add_component_boxed_named(
+                "style",
+                Box::new({
+                    let mut s = StyleComponent::new();
+                    s.display = Some(Display::InlineBlock);
+                    s.width = SizeDimension::GlyphUnits(width_gu);
+                    s
+                }),
+            );
+            let _ = world.add_child(tc, style);
+            tc
+        };
+
+        let title = make_inline_box(&mut world, "title", 14.5);
+        let save = make_inline_box(&mut world, "save", 6.875);
+        let load = make_inline_box(&mut world, "load", 6.875);
+        let _ = world.add_child(root, title);
+        let _ = world.add_child(root, save);
+        let _ = world.add_child(root, load);
+
+        let (wide_items, wide_avail, _, _) = measure_items(&world, root);
+        assert_eq!(wide_items.len(), 3);
+        assert_eq!(wide_avail, 29.5);
+        assert!((wide_items[0].margin_box_width_gu - 14.5).abs() < 1e-4);
+        assert!((wide_items[1].margin_box_width_gu - 6.875).abs() < 1e-4);
+        assert!((wide_items[2].margin_box_width_gu - 6.875).abs() < 1e-4);
+
+        world
+            .get_component_by_id_as_mut::<LayoutComponent>(root)
+            .unwrap()
+            .set_available_width(9.5);
+
+        let (narrow_items, narrow_avail, _, _) = measure_items(&world, root);
+        let total_narrow_width: f32 = narrow_items.iter().map(|item| item.margin_box_width_gu).sum();
+
+        assert_eq!(narrow_items.len(), 3);
+        assert_eq!(narrow_avail, 9.5);
+        assert!((narrow_items[0].margin_box_width_gu - wide_items[0].margin_box_width_gu).abs() < 1e-4);
+        assert!((narrow_items[1].margin_box_width_gu - wide_items[1].margin_box_width_gu).abs() < 1e-4);
+        assert!((narrow_items[2].margin_box_width_gu - wide_items[2].margin_box_width_gu).abs() < 1e-4);
+        assert!(
+            total_narrow_width > narrow_avail,
+            "explicit inline child widths still sum to {total_narrow_width}, exceeding narrow root width {narrow_avail}"
+        );
+    }
+
+    #[test]
     fn width_percent_resolves_against_available_content_width() {
         let mut world = World::default();
         let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));

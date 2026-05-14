@@ -6,7 +6,7 @@
 
 // --- Renderer settings ---
 RendererSettings.msaa_off() {
-    window_size(1280, 720)
+    window_size(1280, 960)
 }
 
 // --- Sky color and ambient light ---

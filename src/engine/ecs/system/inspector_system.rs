@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::{
     ColorComponent, EmissiveComponent, HtmlElementComponent, InspectorPanelComponent,
-    LayoutComponent, OverlayComponent, RaycastableComponent, RenderableComponent,
+    LayoutComponent, OverlayComponent, RaycastableComponent,
     ScrollingComponent,
     SelectableComponent, StyleComponent, TransformComponent,
     TransformGizmoComponent, WorldPanelComponent,
@@ -25,10 +25,12 @@ const PANEL_GAP: f32 = 0.12;
 const WORLD_PANEL_WIDTH_GU: f32 = 29.5;
 const INSPECTOR_PANEL_WIDTH_GU: f32 = 22.0;
 
-/// Title bar height in world units. Two glyph rows tall.
-const TITLE_BAR_HEIGHT: f32 = 2.0 * TEXT_SCALE;
-/// Title bar height in glyph units (= 2 rows). Used for LayoutComponent styling.
-const TITLE_BAR_HEIGHT_GU: f32 = 2.0;
+/// Title bar height in world units.
+const TITLE_BAR_HEIGHT: f32 = 3.0 * TEXT_SCALE;
+/// Title bar height in glyph units. Used for LayoutComponent styling.
+const TITLE_BAR_HEIGHT_GU: f32 = 3.0;
+const TITLEBAR_BUTTON_HEIGHT_RATIO: f32 = 0.8;
+const TITLEBAR_BUTTON_MARGIN_Y_RATIO: f32 = 0.1;
 /// Gap between title bar bottom and content top, in glyph units.
 /// Applied as `margin.bottom` on `header_style`; LayoutSystem inserts this space.
 const TITLE_CONTENT_GAP_GU: f32 = 0.5;
@@ -188,7 +190,8 @@ impl InspectorSystem {
                 };
 
                 // --- Save button hit: dump scene → MMS file → update status ---
-                if Some(renderable) == save_btn {
+                if let Some(save_btn) = save_btn {
+                    if find_ancestor_in_list(world, renderable, &[save_btn]).is_some() {
                     let mms = dump_scene_to_mms(world, Some(editor_ui_root));
                     let msg = match ensure_parent_dir(&file_path)
                         .and_then(|_| std::fs::write(&file_path, &mms).map_err(|e| e.to_string()))
@@ -207,10 +210,12 @@ impl InspectorSystem {
                         );
                     }
                     return;
+                    }
                 }
 
                 // --- Load button hit: clear non-editor roots, parse file, respawn ---
-                if Some(renderable) == load_btn {
+                if let Some(load_btn) = load_btn {
+                    if find_ancestor_in_list(world, renderable, &[load_btn]).is_some() {
                     let msg = match load_scene_from_mms(world, emit, editor_ui_root, &file_path) {
                         Ok(n) => format!("loaded {n} roots from {file_path}"),
                         Err(e) => format!("load failed: {e}"),
@@ -226,6 +231,7 @@ impl InspectorSystem {
                         );
                     }
                     return;
+                    }
                 }
 
                 // --- Otherwise: row click → select that node ---
@@ -293,10 +299,10 @@ impl InspectorSystem {
 /// World panel gets these; inspector panel doesn't.
 #[derive(Debug, Default, Clone, Copy)]
 struct TitleBarButtons {
-    /// Renderable id of the Save button background quad. Click events report this.
-    save_renderable: ComponentId,
-    /// Renderable id of the Load button background quad.
-    load_renderable: ComponentId,
+    /// Root transform id of the Save button.
+    save_root: ComponentId,
+    /// Root transform id of the Load button.
+    load_root: ComponentId,
     /// TextComponent id of the "saved <filename>" label above the panel.
     save_status_text: ComponentId,
 }
@@ -507,11 +513,7 @@ fn spawn_panel_title_bar(
         let _ = world.add_child(status_t, status_col);
         let _ = world.add_child(status_col, status_text);
 
-        Some(TitleBarButtons {
-            save_renderable: save,
-            load_renderable: load,
-            save_status_text: status_text,
-        })
+        Some(TitleBarButtons { save_root: save, load_root: load, save_status_text: status_text })
     } else {
         None
     };
@@ -661,18 +663,19 @@ fn load_scene_from_mms(
 }
 
 /// Spawn a single layout-owned title bar button under `parent`.
-/// Returns the renderable id — the click surface that fires `EventSignal::Click`.
+/// Returns the button root transform id.
 fn spawn_titlebar_button(
     world: &mut World,
     parent: ComponentId,
     label: &str,
 ) -> ComponentId {
-    let btn_h = TITLE_BAR_HEIGHT * 0.78;
-    let btn_w = TITLEBAR_BUTTON_WIDTH;
-    let btn_padding_x_gu = 0.25;
+    let btn_h_gu = TITLE_BAR_HEIGHT_GU * TITLEBAR_BUTTON_HEIGHT_RATIO;
+    let btn_w_gu = TITLEBAR_BUTTON_WIDTH / TEXT_SCALE;
     let btn_gap_gu = 0.625;
+    let btn_margin_y_gu = TITLE_BAR_HEIGHT_GU * TITLEBAR_BUTTON_MARGIN_Y_RATIO;
 
-    // Button root transform participates in title-row inline layout.
+    // Match the authored MMS button shape: styled root + background_color +
+    // text_align center + descendant text + author raycastable.
     let btn_t = world.add_component_boxed_named(
         "titlebar_btn_t",
         Box::new(TransformComponent::new()),
@@ -682,59 +685,37 @@ fn spawn_titlebar_button(
         Box::new({
             let mut s = StyleComponent::new();
             s.display = Some(crate::engine::ecs::component::style::Display::InlineBlock);
-            s.width = SizeDimension::GlyphUnits(btn_w / TEXT_SCALE);
-            s.height = SizeDimension::GlyphUnits(btn_h / TEXT_SCALE);
+            s.width = SizeDimension::GlyphUnits(btn_w_gu);
+            s.height = SizeDimension::GlyphUnits(btn_h_gu);
             s.margin = EdgeInsets {
+                top: SizeDimension::GlyphUnits(btn_margin_y_gu),
                 left: SizeDimension::GlyphUnits(btn_gap_gu),
+                bottom: SizeDimension::GlyphUnits(btn_margin_y_gu),
                 ..EdgeInsets::ZERO
             };
+            s.padding = EdgeInsets::axes(0.0, 0.45);
+            s.background_color = Some([0.10, 0.55, 0.18, 1.0]);
+            s.background_z = 0.02;
+            s.color = Some([0.75, 1.0, 0.45, 1.0]);
+            s.text_align = crate::engine::ecs::component::style::TextAlign::Center;
             s
         }),
     );
-
-    // Background quad — scaled to button size; carries the renderable that
-    // the raycast layer hits.
-    let bg_t = world.add_component_boxed_named(
-        "titlebar_btn_bg_t",
-        Box::new(
-            TransformComponent::new()
-                .with_position(btn_w * 0.5, -btn_h * 0.5, 0.0)
-                .with_scale(btn_w, btn_h, 1.0),
-        ),
-    );
-    let bg_renderable = world.add_component_boxed_named(
-        "titlebar_btn_bg",
-        Box::new(RenderableComponent::square()),
-    );
-    let bg_color = world.add_component_boxed_named(
-        "titlebar_btn_bg_col",
-        Box::new(ColorComponent::rgba(0.30, 0.45, 0.90, 1.0)),
-    );
-    let bg_raycast = world.add_component_boxed_named(
+    let btn_raycast = world.add_component_boxed_named(
         "titlebar_btn_rc",
         Box::new(RaycastableComponent::click_only()),
     );
-
-    // Centered label.
-    let label_width_world = label.chars().count() as f32 * TEXT_SCALE * 0.55;
-    let text_t = world.add_component_boxed_named(
+    let text_wrap_t = world.add_component_boxed_named(
         "titlebar_btn_text_t",
-        Box::new(
-            TransformComponent::new()
-                .with_position(
-                    btn_padding_x_gu * TEXT_SCALE
-                        + ((btn_w - btn_padding_x_gu * TEXT_SCALE * 2.0 - label_width_world)
-                            * 0.5)
-                        .max(0.0),
-                    -((btn_h + TEXT_SCALE) * 0.5),
-                    0.01,
-                )
-                .with_scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE),
-        ),
+        Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.05)),
+    );
+    let text_scale_t = world.add_component_boxed_named(
+        "titlebar_btn_text_scale_t",
+        Box::new(TransformComponent::new().with_scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE)),
     );
     let text_col = world.add_component_boxed_named(
         "titlebar_btn_text_col",
-        Box::new(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0)),
+        Box::new(ColorComponent::rgba(0.75, 1.0, 0.45, 1.0)),
     );
     let text = world.add_component_boxed_named(
         "titlebar_btn_text",
@@ -743,15 +724,13 @@ fn spawn_titlebar_button(
 
     let _ = world.add_child(parent, btn_t);
     let _ = world.add_child(btn_t, btn_style);
-    let _ = world.add_child(btn_t, bg_t);
-    let _ = world.add_child(bg_t, bg_renderable);
-    let _ = world.add_child(bg_renderable, bg_color);
-    let _ = world.add_child(bg_renderable, bg_raycast);
-    let _ = world.add_child(btn_t, text_t);
-    let _ = world.add_child(text_t, text_col);
+    let _ = world.add_child(btn_t, btn_raycast);
+    let _ = world.add_child(btn_t, text_wrap_t);
+    let _ = world.add_child(text_wrap_t, text_scale_t);
+    let _ = world.add_child(text_scale_t, text_col);
     let _ = world.add_child(text_col, text);
 
-    bg_renderable
+    btn_t
 }
 
 fn spawn_world_panel(
@@ -834,8 +813,8 @@ fn spawn_world_panel(
         c.rows_track = Some(wpr);
         c.rows_layout = Some(wpr_layout);
         if let Some(b) = buttons {
-            c.save_button_renderable = Some(b.save_renderable);
-            c.load_button_renderable = Some(b.load_renderable);
+            c.save_button_renderable = Some(b.save_root);
+            c.load_button_renderable = Some(b.load_root);
             c.save_status_text = Some(b.save_status_text);
         }
         c.save_filename = default_save_filename();

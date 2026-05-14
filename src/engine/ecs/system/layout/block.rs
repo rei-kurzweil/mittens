@@ -433,7 +433,7 @@ fn subtree_first_renderable(world: &World, root: ComponentId) -> Option<Componen
 /// and emit `UpdateTransform` so the glyph block sits aligned horizontally per
 /// the alignment value and **always vertically centered** within the content
 /// box. `TextAlign::Auto` (default) preserves the author's translation.
-fn apply_text_align(
+pub(crate) fn apply_text_align(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     tc_id: ComponentId,
@@ -842,5 +842,85 @@ mod tests {
         assert!(bg.is_some(), "expected layout-owned __bg child");
         assert!(clip.is_some(), "expected sibling layout-owned stencil clip");
         assert_eq!(world.parent_of(clip.expect("clip")), Some(item));
+    }
+
+    #[test]
+    fn nested_inline_child_background_can_exceed_layoutroot_width_after_layout() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut layout_system = LayoutSystem::new();
+
+        let root = world.add_component(LayoutComponent::new(9.5).with_height(12.0));
+
+        let title_bar = world.add_component_boxed_named("title_bar", Box::new(TransformComponent::new()));
+        let title_bar_style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.height = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(3.0);
+            style.background_color = Some([0.2, 0.2, 0.2, 1.0]);
+            style
+        });
+
+        let make_inline_box = |world: &mut World, name: &'static str, width_gu: f32, color: [f32; 4]| {
+            let tc = world.add_component_boxed_named(name, Box::new(TransformComponent::new()));
+            let style = world.add_component({
+                let mut s = StyleComponent::new();
+                s.display = Some(crate::engine::ecs::component::style::Display::InlineBlock);
+                s.width = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(width_gu);
+                s.height = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(3.0);
+                s.background_color = Some(color);
+                s
+            });
+            let _ = world.add_child(tc, style);
+            tc
+        };
+
+        let title = make_inline_box(&mut world, "title", 14.5, [0.9, 0.2, 0.2, 1.0]);
+        let save = make_inline_box(&mut world, "save", 6.875, [0.2, 0.9, 0.2, 1.0]);
+        let load = make_inline_box(&mut world, "load", 6.875, [0.2, 0.2, 0.9, 1.0]);
+
+        let _ = world.add_child(root, title_bar);
+        let _ = world.add_child(title_bar, title_bar_style);
+        let _ = world.add_child(title_bar, title);
+        let _ = world.add_child(title_bar, save);
+        let _ = world.add_child(title_bar, load);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let child_bg = |world: &World, owner| {
+            world.children_of(owner).iter().copied().find(|&child| {
+                world.component_label(child) == Some("__bg")
+            })
+        };
+
+        let title_bg = child_bg(&world, title).expect("title bg");
+        let title_bg_tc = world
+            .get_component_by_id_as::<TransformComponent>(title_bg)
+            .expect("title bg transform");
+        let title_tc = world
+            .get_component_by_id_as::<TransformComponent>(title)
+            .expect("title transform");
+        let save_tc = world
+            .get_component_by_id_as::<TransformComponent>(save)
+            .expect("save transform");
+        let load_tc = world
+            .get_component_by_id_as::<TransformComponent>(load)
+            .expect("load transform");
+
+        assert!(
+            title_bg_tc.transform.scale[0] > 9.5,
+            "title background width {} should exceed the 9.5gu root width",
+            title_bg_tc.transform.scale[0]
+        );
+        assert_eq!(title_tc.transform.translation[0], 0.0);
+        assert_eq!(save_tc.transform.translation[0], 0.0);
+        assert_eq!(load_tc.transform.translation[0], 0.0);
+        assert!(save_tc.transform.translation[1] < title_tc.transform.translation[1]);
+        assert!(load_tc.transform.translation[1] < save_tc.transform.translation[1]);
     }
 }

@@ -2,7 +2,7 @@
 // Corresponds to examples/transition.rs
 
 RendererSettings {
-    window_size(1280, 720)
+    window_size(1280, 960)
 }
 
 BGC.rgba(0.07, 0.08, 0.11, 1.0)

@@ -12,6 +12,7 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::{IntentValue, SignalEmitter, World};
 
+use super::block::apply_text_align;
 use super::measure::{apply_text_color_for_item, apply_text_wrap_for_item, measure_container_items, measure_items, MeasuredItem};
 use crate::engine::ecs::component::style::Display;
 
@@ -100,6 +101,7 @@ pub(crate) fn layout_items(
             item.box_height_gu,
             unit_scale,
         );
+        apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu);
 
         // Recurse into the item's own children using whichever formatting
         // context their `display` modes call for. Inline-block items can

@@ -9,8 +9,8 @@
 // need to come from the .glb skeleton.
 
 // ── Renderer settings ─────────────────────────────────────────────────────────
-RendererSettings.msaa_off() {
-    window_size(1280, 720)
+RendererSettings {
+    window_size(1280, 960)
 }
 
 BGC.rgba(0.62, 0.80, 1.00, 1.0)

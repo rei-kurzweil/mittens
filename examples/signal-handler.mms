@@ -3,7 +3,7 @@
 // Demonstrates on() signal handler registration from MMS script.
 
 RendererSettings {
-    window_size(1280, 720)
+    window_size(1280, 960)
 }
 
 BGC.rgba(0.10, 0.10, 0.14, 1.0)
