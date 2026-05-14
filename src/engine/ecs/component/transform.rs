@@ -187,23 +187,21 @@ impl Component for TransformComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("model".to_string(), serde_json::json!(self.transform.model));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(model) = data.get("model") {
-            self.transform.model = serde_json::from_value(model.clone())
-                .map_err(|e| format!("Failed to decode model matrix: {}", e))?;
-            // Keep derived state in a sane starting point; TransformSystem will recompute.
-            self.transform.matrix_world = self.transform.model;
-        }
-        Ok(())
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let t = &self.transform;
+        // Emit position, rotation_quat (lossless), scale — matches the
+        // builder vocabulary in `component_registry::apply_transform_builder`.
+        ce_call(
+            "Transform",
+            "position",
+            nums(t.translation.iter().map(|&v| v as f64)),
+        )
+        .with_call(
+            "rotation_quat",
+            nums(t.rotation.iter().map(|&v| v as f64)),
+        )
+        .with_call("scale", nums(t.scale.iter().map(|&v| v as f64)))
     }
 }
 

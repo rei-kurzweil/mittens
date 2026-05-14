@@ -30,6 +30,16 @@ pub struct WorldPanelComponent {
     /// Runtime: parallel to `row_roots` — the scene node each row represents.
     pub(crate) row_to_node: Vec<ComponentId>,
 
+    /// Renderable id of the Save button (used to match clicks to the save action).
+    pub(crate) save_button_renderable: Option<ComponentId>,
+    /// Renderable id of the Load button.
+    pub(crate) load_button_renderable: Option<ComponentId>,
+    /// TextComponent id of the "saved <filename>" indicator above the panel.
+    pub(crate) save_status_text: Option<ComponentId>,
+    /// Default filename used by the Save button — derived from the running
+    /// binary's file stem at editor setup.
+    pub(crate) save_filename: String,
+
     component: Option<ComponentId>,
 }
 

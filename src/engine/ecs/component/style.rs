@@ -436,51 +436,11 @@ impl Component for StyleComponent {
     fn as_any(&self) -> &dyn std::any::Any { self }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        // Encode a representative subset for REPL/debug; full round-trip not required.
-        if let Some(d) = &self.display {
-            map.insert("display".to_string(), serde_json::json!(format!("{:?}", d).to_lowercase()));
-        }
-        map.insert("position".to_string(), serde_json::json!(format!("{:?}", self.position).to_lowercase()));
-        map.insert("flex_grow".to_string(), serde_json::json!(self.flex_grow));
-        map.insert("flex_shrink".to_string(), serde_json::json!(self.flex_shrink));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("background_color") {
-            if v.is_null() {
-                self.background_color = None;
-            } else if let Some(arr) = v.as_array() {
-                if arr.len() == 4 {
-                    let r = arr[0].as_f64().unwrap_or(0.0) as f32;
-                    let g = arr[1].as_f64().unwrap_or(0.0) as f32;
-                    let b = arr[2].as_f64().unwrap_or(0.0) as f32;
-                    let a = arr[3].as_f64().unwrap_or(1.0) as f32;
-                    self.background_color = Some([r, g, b, a]);
-                }
-            }
-        }
-        if let Some(v) = data.get("background_z").and_then(|v| v.as_f64()) {
-            self.background_z = v as f32;
-        }
-        if let Some(v) = data.get("color") {
-            if v.is_null() {
-                self.color = None;
-            } else if let Some(arr) = v.as_array() {
-                if arr.len() == 4 {
-                    let r = arr[0].as_f64().unwrap_or(0.0) as f32;
-                    let g = arr[1].as_f64().unwrap_or(0.0) as f32;
-                    let b = arr[2].as_f64().unwrap_or(0.0) as f32;
-                    let a = arr[3].as_f64().unwrap_or(1.0) as f32;
-                    self.color = Some([r, g, b, a]);
-                }
-            }
-        }
-        Ok(())
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        // Style is highly complex (50+ fields); for now we emit an empty
+        // `Style {}` so attach_clone/save produce something parseable.
+        // Full-fidelity emission of style fields is a follow-up.
+        ce("Style")
     }
 }

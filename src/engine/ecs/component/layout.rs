@@ -80,26 +80,15 @@ impl Component for LayoutComponent {
     fn as_any(&self) -> &dyn std::any::Any { self }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("available_width".to_string(), serde_json::json!(self.available_width));
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let mut ce = ce_call("LayoutRoot", "width", nums([self.available_width as f64]));
         if let Some(h) = self.available_height {
-            map.insert("available_height".to_string(), serde_json::json!(h));
+            ce = ce.with_call("height", nums([h as f64]));
         }
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("available_width").and_then(|v| v.as_f64()) {
-            self.available_width = v as f32;
-            self.dirty = true;
+        if (self.unit_scale - 1.0).abs() > f32::EPSILON {
+            ce = ce.with_call("unit_scale", nums([self.unit_scale as f64]));
         }
-        if let Some(v) = data.get("available_height").and_then(|v| v.as_f64()) {
-            self.available_height = Some(v as f32);
-        }
-        Ok(())
+        ce
     }
 }

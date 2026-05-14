@@ -63,7 +63,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
     };
     use crate::engine::ecs::system::MusicSystem;
     use crate::engine::ecs::system::audio_system::AudioOp;
-    use crate::engine::ecs::{ComponentCodec, ComponentId, EventSignal, IntentValue};
+    use crate::engine::ecs::{ComponentId, EventSignal, IntentValue};
 
     let beat_now = 0.0;
 
@@ -187,35 +187,49 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             parents,
             prefab_root,
         } => {
-            let node = match ComponentCodec::encode_subtree_node(&*world, *prefab_root) {
-                Ok(n) => n,
+            // Encode prefab subtree → MMS ComponentExpression AST → MaterializedCE.
+            // Cloning then drops into the same `spawn_tree` path that MMS source uses.
+            let ce_ast = match crate::meow_meow::component_registry::subtree_to_ce_ast(
+                &*world,
+                *prefab_root,
+            ) {
+                Ok(ce) => ce,
                 Err(e) => {
-                    println!("[IntentExecutor] attach_clone failed: {e}");
+                    println!("[IntentExecutor] attach_clone encode failed: {e}");
+                    return;
+                }
+            };
+            let materialized = match crate::meow_meow::component_registry::ce_ast_to_materialized(
+                &ce_ast,
+            ) {
+                Ok(m) => m,
+                Err(e) => {
+                    println!("[IntentExecutor] attach_clone materialize failed: {e}");
                     return;
                 }
             };
 
             for &parent in parents.iter() {
-                let new_root = match ComponentCodec::decode_subtree_node_with_new_guids(
-                    world,
+                let new_root = match crate::meow_meow::component_registry::spawn_tree(
+                    &materialized,
                     Some(parent),
-                    &node,
+                    world,
+                    emit,
                 ) {
                     Ok(id) => id,
                     Err(e) => {
-                        println!("[IntentExecutor] attach_clone failed: {e}");
+                        println!("[IntentExecutor] attach_clone spawn failed: {e}");
                         continue;
                     }
                 };
 
                 if world.get_component_record(new_root).is_none() {
-                    println!("[IntentExecutor] attach_clone: new root missing after decode");
+                    println!("[IntentExecutor] attach_clone: new root missing after spawn");
                     continue;
                 }
 
-                if world.is_initialized(parent) {
-                    world.init_component_tree(new_root, emit);
-                }
+                // spawn_tree already attached + initialized the subtree if
+                // the parent was initialized. Just emit the topology signals.
 
                 emit.push_event(
                     new_root,

@@ -169,70 +169,17 @@ impl Component for TextComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("text".to_string(), serde_json::json!(self.text));
-        // Encode the *authored* cap (the user's hard limit) — `wrap_at`
-        // itself may be a layout-narrowed value and is recomputed every
-        // layout pass, so persisting it would lose the authored cap on
-        // round-trip and lock the wrap at a narrow column count.
-        map.insert(
-            "wrap_at".to_string(),
-            serde_json::json!(self.authored_wrap_at as u64),
-        );
-        map.insert("word_wrap".to_string(), serde_json::json!(self.word_wrap));
-        map.insert(
-            "word_wrap_tokens".to_string(),
-            serde_json::json!(self.word_wrap_tokens),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(text) = data.get("text") {
-            self.text = serde_json::from_value(text.clone())
-                .map_err(|e| format!("Failed to decode text: {}", e))?;
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        use crate::meow_meow::ast::{Expression, Statement};
+        let mut node = ce("Text");
+        if !self.text.is_empty() {
+            // `Text` consumes a positional string literal in its body
+            // (see `apply_positional` in component_registry).
+            node.body
+                .statements
+                .push(Statement::Expression(Expression::String(self.text.clone())));
         }
-        if let Some(wrap_at) = data.get("wrap_at") {
-            // `encode` persists the authored cap under the "wrap_at" key.
-            // Restore it as both fields — layout will recompute the effective
-            // `wrap_at` from the current container width on the next pass.
-            let wrap_u64: u64 = serde_json::from_value(wrap_at.clone())
-                .map_err(|e| format!("Failed to decode wrap_at: {}", e))?;
-            self.authored_wrap_at = wrap_u64 as usize;
-            self.wrap_at = wrap_u64 as usize;
-        }
-        if let Some(word_wrap) = data.get("word_wrap") {
-            self.word_wrap = serde_json::from_value(word_wrap.clone())
-                .map_err(|e| format!("Failed to decode word_wrap: {}", e))?;
-        } else {
-            // Back-compat with old serialized data.
-            self.word_wrap = false;
-        }
-
-        if let Some(tokens) = data.get("word_wrap_tokens") {
-            self.word_wrap_tokens = serde_json::from_value(tokens.clone())
-                .map_err(|e| format!("Failed to decode word_wrap_tokens: {}", e))?;
-        } else {
-            // Back-compat with old serialized data.
-            self.word_wrap_tokens = Self::DEFAULT_WORD_WRAP_TOKENS
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
-        }
-
-        // Always ensure whitespace tokens are present.
-        for tok in Self::DEFAULT_WORD_WRAP_TOKENS {
-            if !self.word_wrap_tokens.iter().any(|t| t == tok) {
-                self.word_wrap_tokens.push(tok.to_string());
-            }
-        }
-
-        // Always rebuild runtime glyph nodes.
-        self.built = false;
-        Ok(())
+        node
     }
 }

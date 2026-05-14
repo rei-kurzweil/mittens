@@ -296,4 +296,97 @@ pub trait Component: std::any::Any {
     ) -> Result<(), String> {
         Ok(())
     }
+
+    /// Encode this component as an MMS Component Expression AST node.
+    ///
+    /// The returned `ComponentExpression` should round-trip through the
+    /// MMS pipeline: `unparse → parse → eval_ce → spawn_tree` reconstructs
+    /// an equivalent component. Default impl emits a bare CE with no
+    /// constructors/body, using `name()` (snake_case) as the type — this
+    /// works for "tag" components with no state but most overrides will
+    /// want to emit proper builder calls for their fields.
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        crate::meow_meow::ast::ComponentExpression {
+            component_type: crate::meow_meow::ast::Ident(self.name().to_string()),
+            constructors: Vec::new(),
+            body: crate::meow_meow::ast::BlockStatement { statements: Vec::new() },
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers for component `to_mms_ast` implementations.
+// Imported by each component file: `use super::ce_helpers::*;` (or fully qualified).
+// ---------------------------------------------------------------------------
+
+pub mod ce_helpers {
+    use crate::meow_meow::ast::{
+        BlockStatement, ComponentExpression, ConstructorCall, Expression, Ident, UnaryOpKind,
+    };
+
+    /// Empty CE: `Name {}` (no constructors, empty body).
+    pub fn ce(type_name: &str) -> ComponentExpression {
+        ComponentExpression {
+            component_type: Ident(type_name.to_string()),
+            constructors: Vec::new(),
+            body: BlockStatement { statements: Vec::new() },
+        }
+    }
+
+    /// CE with a single primary constructor: `Name.method(args)`.
+    pub fn ce_call(type_name: &str, method: &str, args: Vec<Expression>) -> ComponentExpression {
+        ComponentExpression {
+            component_type: Ident(type_name.to_string()),
+            constructors: vec![ConstructorCall {
+                method: Ident(method.to_string()),
+                args,
+            }],
+            body: BlockStatement { statements: Vec::new() },
+        }
+    }
+
+    pub trait CeBuilder {
+        fn with_call(self, method: &str, args: Vec<Expression>) -> Self;
+    }
+
+    impl CeBuilder for ComponentExpression {
+        fn with_call(mut self, method: &str, args: Vec<Expression>) -> Self {
+            self.constructors.push(ConstructorCall {
+                method: Ident(method.to_string()),
+                args,
+            });
+            self
+        }
+    }
+
+    pub fn num(n: f64) -> Expression {
+        if n < 0.0 {
+            Expression::UnaryOp {
+                op: UnaryOpKind::Neg,
+                operand: Box::new(Expression::Number(-n)),
+            }
+        } else {
+            Expression::Number(n)
+        }
+    }
+
+    pub fn nums<I: IntoIterator<Item = f64>>(values: I) -> Vec<Expression> {
+        values.into_iter().map(num).collect()
+    }
+
+    pub fn s(text: &str) -> Expression {
+        Expression::String(text.to_string())
+    }
+
+    pub fn b(value: bool) -> Expression {
+        Expression::Bool(value)
+    }
+
+    pub fn ident(name: &str) -> Expression {
+        Expression::Identifier(Ident(name.to_string()))
+    }
+
+    pub fn array(items: Vec<Expression>) -> Expression {
+        Expression::Array(items)
+    }
 }

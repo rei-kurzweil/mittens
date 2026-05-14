@@ -154,46 +154,25 @@ impl Component for RenderableComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert(
-            "mesh".to_string(),
-            serde_json::json!(self.renderable.mesh.0),
-        );
-        map.insert(
-            "base_mesh".to_string(),
-            serde_json::json!(self.renderable.base_mesh.0),
-        );
-        map.insert(
-            "material".to_string(),
-            serde_json::json!(self.renderable.material.0),
-        );
-        map
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        // Map known shared primitive handles back to the constructor that
+        // produces them. Custom dynamic meshes (registered with
+        // `RenderAssets`) don't have a round-tripable identifier and are
+        // emitted as bare `Renderable` — clones will get the default mesh.
+        let ctor = match self.renderable.base_mesh {
+            CpuMeshHandle::CUBE => Some("cube"),
+            CpuMeshHandle::SPHERE => Some("sphere"),
+            CpuMeshHandle::TRIANGLE_2D => Some("triangle"),
+            CpuMeshHandle::QUAD_2D => Some("square"),
+            CpuMeshHandle::TETRAHEDRON => Some("tetrahedron"),
+            CpuMeshHandle::CIRCLE_2D => Some("circle2d"),
+            _ => None,
+        };
+        match ctor {
+            Some(name) => ce_call("Renderable", name, vec![]),
+            None => ce("Renderable"),
+        }
     }
 
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(mesh) = data.get("mesh") {
-            let mesh_id: u32 = serde_json::from_value(mesh.clone())
-                .map_err(|e| format!("Failed to decode mesh: {}", e))?;
-            self.renderable.mesh = crate::engine::graphics::primitives::CpuMeshHandle(mesh_id);
-        }
-        if let Some(base_mesh) = data.get("base_mesh") {
-            let base_mesh_id: u32 = serde_json::from_value(base_mesh.clone())
-                .map_err(|e| format!("Failed to decode base_mesh: {}", e))?;
-            self.renderable.base_mesh =
-                crate::engine::graphics::primitives::CpuMeshHandle(base_mesh_id);
-        } else {
-            // Back-compat: older scenes/components only stored `mesh`.
-            self.renderable.base_mesh = self.renderable.mesh;
-        }
-        if let Some(material) = data.get("material") {
-            let material_id: u32 = serde_json::from_value(material.clone())
-                .map_err(|e| format!("Failed to decode material: {}", e))?;
-            self.renderable.material = MaterialHandle(material_id);
-        }
-        Ok(())
-    }
 }

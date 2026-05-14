@@ -292,44 +292,40 @@ fn main() {
         }
     }
 
-    // Handle load command before building scene
+    // Handle load command before building scene.
+    // Scene files are MMS source — evaluated through the standard runner.
     if let engine::cli::CliCommand::Load { ref filename } = cli.command {
-        println!("[CLI] Loading scene from '{}'...", filename);
-        match engine::ecs::ComponentCodec::decode_scene(&mut universe.world, filename) {
-            Ok(root_ids) => {
-                println!(
-                    "[CLI] Scene loaded successfully. {} root(s) loaded.",
-                    root_ids.len()
-                );
-                // Initialize all loaded component trees
-                for root_id in root_ids {
-                    universe
-                        .world
-                        .init_component_tree(root_id, &mut universe.command_queue);
-                }
-                // Process any init commands
-                universe.systems.process_commands(
-                    &mut universe.world,
-                    &mut universe.visuals,
-                    &mut universe.command_queue,
-                );
+        println!("[CLI] Loading scene from '{}' (MMS)...", filename);
+        let out = cat_engine::meow_meow::runner::MeowMeowRunner::eval_with_world_at_path(
+            &std::fs::read_to_string(filename).unwrap_or_default(),
+            Some(filename),
+            &mut universe.world,
+            &mut universe.systems.rx,
+            &mut universe.command_queue,
+        );
+        if !out.errors.is_empty() {
+            for e in &out.errors {
+                eprintln!("[CLI] {e}");
             }
-            Err(e) => {
-                eprintln!("[CLI] Failed to load scene: {}", e);
-                eprintln!("[CLI] Building demo scene instead...");
-                build_demo_scene_7_shapes(&mut universe);
-            }
+            eprintln!("[CLI] Building demo scene instead...");
+            build_demo_scene_7_shapes(&mut universe);
+        } else {
+            println!("[CLI] Scene loaded ({} intents queued).", out.intents.len());
+            universe.systems.process_commands(
+                &mut universe.world,
+                &mut universe.visuals,
+                &mut universe.command_queue,
+            );
         }
     } else {
         // Build demo scene if not loading
         build_demo_scene_7_shapes(&mut universe);
     }
 
-    // Handle save command after scene is built
+    // Handle save command after scene is built.
+    // Writes MMS source — each root becomes a top-level component expression.
     if let engine::cli::CliCommand::Save { ref filename } = cli.command {
-        println!("[CLI] Saving scene to '{}'...", filename);
-
-        // Find all root components (components with no parent)
+        println!("[CLI] Saving scene to '{}' (MMS)...", filename);
         let root_components: Vec<engine::ecs::ComponentId> = universe
             .world
             .all_components()
@@ -339,23 +335,29 @@ fn main() {
         if root_components.is_empty() {
             eprintln!("[CLI] No root components found to save.");
         } else {
-            println!("[CLI] Found {} root component(s)", root_components.len());
-
-            match engine::ecs::ComponentCodec::encode_scene(
-                &universe.world,
-                &root_components,
-                filename,
-            ) {
+            let mut out = String::new();
+            for cid in &root_components {
+                match cat_engine::meow_meow::component_registry::subtree_to_ce_ast(
+                    &universe.world,
+                    *cid,
+                ) {
+                    Ok(ce) => {
+                        out.push_str(&cat_engine::meow_meow::unparser::unparse_component(&ce));
+                        out.push_str("\n\n");
+                    }
+                    Err(e) => eprintln!("[CLI] subtree encode failed: {e}"),
+                }
+            }
+            match std::fs::write(filename, &out) {
                 Ok(()) => println!(
                     "[CLI] Saved {} roots to '{}'",
                     root_components.len(),
                     filename
                 ),
-                Err(e) => eprintln!("[CLI] Failed to save scene: {}", e),
+                Err(e) => eprintln!("[CLI] Failed to write scene: {e}"),
             }
         }
 
-        // Exit after saving (don't run the window)
         println!("[CLI] Save complete. Exiting.");
         return;
     }

@@ -1,6 +1,7 @@
 use crate::engine::ecs::component::{
     ColorComponent, EmissiveComponent, HtmlElementComponent, InspectorPanelComponent,
-    LayoutComponent, OverlayComponent, RaycastableComponent, ScrollingComponent,
+    LayoutComponent, OverlayComponent, RaycastableComponent, RenderableComponent,
+    ScrollingComponent,
     SelectableComponent, StyleComponent, TransformComponent,
     TransformGizmoComponent, WorldPanelComponent,
     style::{EdgeInsets, Overflow, SizeDimension},
@@ -151,6 +152,17 @@ impl InspectorSystem {
         rebuild_inspector_panel(world, emit, ipc_id, isc_id, None);
 
         // --- World panel: Click on a row → select that node ---
+        // Capture the top-level UI root of this editor so the Save handler
+        // can exclude it from the dumped scene. `layout_root` is a descendant
+        // of `editor_layout_anchor` (the topmost ancestor with no parent).
+        let editor_ui_root = {
+            let mut top = layout_root;
+            while let Some(p) = world.parent_of(top) {
+                top = p;
+            }
+            top
+        };
+
         rx.add_handler_closure(
             SignalKind::Click,
             wpa_id,
@@ -160,14 +172,60 @@ impl InspectorSystem {
                 };
                 let renderable = *renderable;
 
-                let (row_roots, row_to_node) = {
+                let (row_roots, row_to_node, save_btn, load_btn, status_text, filename) = {
                     let Some(wpc) = world.get_component_by_id_as::<WorldPanelComponent>(wpc_id)
                     else {
                         return;
                     };
-                    (wpc.row_roots.clone(), wpc.row_to_node.clone())
+                    (
+                        wpc.row_roots.clone(),
+                        wpc.row_to_node.clone(),
+                        wpc.save_button_renderable,
+                        wpc.load_button_renderable,
+                        wpc.save_status_text,
+                        wpc.save_filename.clone(),
+                    )
                 };
 
+                // --- Save button hit: dump scene → MMS file → update status ---
+                if Some(renderable) == save_btn {
+                    let mms = dump_scene_to_mms(world, Some(editor_ui_root));
+                    let msg = match std::fs::write(&filename, &mms) {
+                        Ok(()) => format!("saved: {filename}"),
+                        Err(e) => format!("save failed: {e}"),
+                    };
+                    println!("[WorldPanel] {msg}");
+                    if let Some(text_id) = status_text {
+                        emit.push_intent_now(
+                            text_id,
+                            IntentValue::SetText {
+                                component_ids: vec![text_id],
+                                text: msg,
+                            },
+                        );
+                    }
+                    return;
+                }
+
+                // --- Load button hit: stub for now ---
+                // Runtime reload requires clearing scene roots first; see
+                // docs/task/mms-asset-component-panels.md.
+                if Some(renderable) == load_btn {
+                    let msg = format!("load not yet wired ({filename})");
+                    println!("[WorldPanel] {msg}");
+                    if let Some(text_id) = status_text {
+                        emit.push_intent_now(
+                            text_id,
+                            IntentValue::SetText {
+                                component_ids: vec![text_id],
+                                text: msg,
+                            },
+                        );
+                    }
+                    return;
+                }
+
+                // --- Otherwise: row click → select that node ---
                 let Some(panel_idx) = find_ancestor_in_list(world, renderable, &row_roots) else {
                     return;
                 };
@@ -228,13 +286,26 @@ impl InspectorSystem {
 ///
 /// `panel_width_world` — panel content width in world units.
 /// `content_height_world` — height of the scrollable content area in world units.
+/// Optional extras spawned by `spawn_panel_title_bar` when `show_buttons` is true.
+/// World panel gets these; inspector panel doesn't.
+#[derive(Debug, Default, Clone, Copy)]
+struct TitleBarButtons {
+    /// Renderable id of the Save button background quad. Click events report this.
+    save_renderable: ComponentId,
+    /// Renderable id of the Load button background quad.
+    load_renderable: ComponentId,
+    /// TextComponent id of the "saved <filename>" label above the panel.
+    save_status_text: ComponentId,
+}
+
 fn spawn_panel_title_bar(
     world: &mut World,
     parent: ComponentId,
     panel_width_world: f32,
     content_height_world: f32,
     label: &str,
-) -> (ComponentId, ComponentId) {
+    show_buttons: bool,
+) -> (ComponentId, ComponentId, Option<TitleBarButtons>) {
     // ── Panel root — gizmo target + inline-block flow item ────────────────
     // Position is layout-driven by the singleton editor layout root.  The
     // gizmo walks up ancestry to find the nearest TransformComponent and
@@ -352,7 +423,185 @@ fn spawn_panel_title_bar(
     // panel_t (not header_slot) as the drag target.
     let _ = world.add_child(panel_t, gizmo);
 
-    (panel_t, layout_root)
+    let buttons = if show_buttons {
+        // Save / Load buttons — pinned to the right of the title bar.
+        // Pure-rust mirror of `assets/components/button.mms` styling
+        // (rgb 0.30/0.45/0.90 background, white centered label). Switching
+        // to importing button.mms directly needs a host API to call MMS
+        // factory functions from rust — see
+        // docs/task/mms-asset-component-panels.md.
+        let load = spawn_titlebar_button(
+            world,
+            header_slot,
+            "Load",
+            /* right_edge_x */ panel_width_world - 0.05,
+        );
+        let save = spawn_titlebar_button(
+            world,
+            header_slot,
+            "Save",
+            /* right_edge_x */ panel_width_world - 0.05 - TITLEBAR_BUTTON_WIDTH - 0.05,
+        );
+
+        // "saved: <filename>" label above the panel. Default text empty;
+        // the click handler swaps it in via SetText.
+        let status_t = world.add_component_boxed_named(
+            "save_status_t",
+            Box::new(
+                TransformComponent::new()
+                    .with_position(0.02, TEXT_SCALE * 0.6, 0.01)
+                    .with_scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE),
+            ),
+        );
+        let status_col = world.add_component_boxed_named(
+            "save_status_col",
+            Box::new(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0)),
+        );
+        let status_text = world.add_component_boxed_named(
+            "save_status_text",
+            Box::new(crate::engine::ecs::component::TextComponent::new("")),
+        );
+        let _ = world.add_child(panel_t, status_t);
+        let _ = world.add_child(status_t, status_col);
+        let _ = world.add_child(status_col, status_text);
+
+        Some(TitleBarButtons {
+            save_renderable: save,
+            load_renderable: load,
+            save_status_text: status_text,
+        })
+    } else {
+        None
+    };
+
+    (panel_t, layout_root, buttons)
+}
+
+const TITLEBAR_BUTTON_WIDTH: f32 = 0.55;
+
+/// Default filename used by the World panel's Save button — derived from
+/// the running binary's file stem so each example saves to its own `.mms`
+/// next to the working directory. Falls back to `scene.mms`.
+fn default_save_filename() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+        .map(|stem| format!("{stem}.mms"))
+        .unwrap_or_else(|| "scene.mms".to_string())
+}
+
+/// Walk every scene root (anything outside the editor's own UI subtree)
+/// and emit one MMS component expression per root, separated by blank lines.
+///
+/// Skips:
+/// - The editor's own panels (anything reachable from `editor_layout_*`).
+/// - The editor root itself.
+fn dump_scene_to_mms(world: &World, editor_layout_root: Option<ComponentId>) -> String {
+    let editor_subtree: std::collections::HashSet<ComponentId> = match editor_layout_root {
+        Some(root) => collect_subtree(world, root),
+        None => std::collections::HashSet::new(),
+    };
+    let mut out = String::new();
+    for cid in world
+        .all_components()
+        .filter(|&cid| world.parent_of(cid).is_none())
+        .filter(|cid| !editor_subtree.contains(cid))
+    {
+        match crate::meow_meow::component_registry::subtree_to_ce_ast(world, cid) {
+            Ok(ce) => {
+                out.push_str(&crate::meow_meow::unparser::unparse_component(&ce));
+                out.push_str("\n\n");
+            }
+            Err(e) => eprintln!("[save] subtree_to_ce_ast failed for {cid:?}: {e}"),
+        }
+    }
+    out
+}
+
+fn collect_subtree(
+    world: &World,
+    root: ComponentId,
+) -> std::collections::HashSet<ComponentId> {
+    let mut out = std::collections::HashSet::new();
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        if !out.insert(id) {
+            continue;
+        }
+        for c in world.children_of(id) {
+            stack.push(*c);
+        }
+    }
+    out
+}
+
+/// Spawn a single right-aligned button under `parent` (the panel header_slot).
+/// Returns the renderable id — the click surface that fires `EventSignal::Click`.
+fn spawn_titlebar_button(
+    world: &mut World,
+    parent: ComponentId,
+    label: &str,
+    right_edge_x: f32,
+) -> ComponentId {
+    let btn_h = TITLE_BAR_HEIGHT * 0.78;
+    let btn_w = TITLEBAR_BUTTON_WIDTH;
+    let btn_center_x = right_edge_x - btn_w * 0.5;
+    let btn_center_y = -TITLE_BAR_HEIGHT * 0.5;
+
+    // Button root transform (positions the button group inside the title bar).
+    let btn_t = world.add_component_boxed_named(
+        "titlebar_btn_t",
+        Box::new(TransformComponent::new().with_position(btn_center_x, btn_center_y, 0.02)),
+    );
+
+    // Background quad — scaled to button size; carries the renderable that
+    // the raycast layer hits.
+    let bg_t = world.add_component_boxed_named(
+        "titlebar_btn_bg_t",
+        Box::new(TransformComponent::new().with_scale(btn_w, btn_h, 1.0)),
+    );
+    let bg_renderable = world.add_component_boxed_named(
+        "titlebar_btn_bg",
+        Box::new(RenderableComponent::square()),
+    );
+    let bg_color = world.add_component_boxed_named(
+        "titlebar_btn_bg_col",
+        Box::new(ColorComponent::rgba(0.30, 0.45, 0.90, 1.0)),
+    );
+    let bg_raycast = world.add_component_boxed_named(
+        "titlebar_btn_rc",
+        Box::new(RaycastableComponent::click_only()),
+    );
+
+    // Centered label.
+    let label_width_world = label.chars().count() as f32 * TEXT_SCALE * 0.55;
+    let text_t = world.add_component_boxed_named(
+        "titlebar_btn_text_t",
+        Box::new(
+            TransformComponent::new()
+                .with_position(-label_width_world * 0.5, -TEXT_SCALE * 0.5, 0.01)
+                .with_scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE),
+        ),
+    );
+    let text_col = world.add_component_boxed_named(
+        "titlebar_btn_text_col",
+        Box::new(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0)),
+    );
+    let text = world.add_component_boxed_named(
+        "titlebar_btn_text",
+        Box::new(crate::engine::ecs::component::TextComponent::new(label)),
+    );
+
+    let _ = world.add_child(parent, btn_t);
+    let _ = world.add_child(btn_t, bg_t);
+    let _ = world.add_child(bg_t, bg_renderable);
+    let _ = world.add_child(bg_renderable, bg_color);
+    let _ = world.add_child(bg_renderable, bg_raycast);
+    let _ = world.add_child(btn_t, text_t);
+    let _ = world.add_child(text_t, text_col);
+    let _ = world.add_child(text_col, text);
+
+    bg_renderable
 }
 
 fn spawn_world_panel(
@@ -384,8 +633,14 @@ fn spawn_world_panel(
     // Panel root + LayoutComponent + header slot (with title bar visuals + gizmo).
     // Parent is the singleton editor layout root; the inline-block style on
     // panel_t makes the layout system flow it beside sibling panels.
-    let (wp_t, layout_root) =
-        spawn_panel_title_bar(world, editor_layout_root, wp_width, wp_height, "World");
+    let (wp_t, layout_root, buttons) = spawn_panel_title_bar(
+        world,
+        editor_layout_root,
+        wp_width,
+        wp_height,
+        "World",
+        /* show_buttons */ true,
+    );
 
     // ── Content slot — second flex item (flex_grow=1) ────────────────────
     // LayoutSystem will position this at [0, -TITLE_BAR_HEIGHT, 0].
@@ -432,6 +687,12 @@ fn spawn_world_panel(
         c.editor_root = Some(editor_root);
         c.rows_track = Some(wpr);
         c.rows_layout = Some(wpr_layout);
+        if let Some(b) = buttons {
+            c.save_button_renderable = Some(b.save_renderable);
+            c.load_button_renderable = Some(b.load_renderable);
+            c.save_status_text = Some(b.save_status_text);
+        }
+        c.save_filename = default_save_filename();
     }
     if let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(wsc) {
         sc.set_track(wpr, [0.0, 0.0, 0.0]);
@@ -469,8 +730,14 @@ fn spawn_inspector_panel(
         Box::new(TransformComponent::new()),
     );
 
-    let (ip_t, layout_root) =
-        spawn_panel_title_bar(world, editor_layout_root, ip_width, ip_height, "Inspector");
+    let (ip_t, layout_root, _) = spawn_panel_title_bar(
+        world,
+        editor_layout_root,
+        ip_width,
+        ip_height,
+        "Inspector",
+        /* show_buttons */ false,
+    );
 
     let content_slot = world.add_component_boxed_named(
         "content_slot",

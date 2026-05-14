@@ -356,40 +356,26 @@ impl ReplBackend {
                     },
                 };
 
+                use crate::meow_meow::component_registry::subtree_to_ce_ast;
+                use crate::meow_meow::unparser::unparse_component;
                 match target {
-                    Some(root) => {
-                        match ecs::ComponentCodec::encode_subtree_node(world, root).and_then(
-                            |node| {
-                                serde_json::to_string_pretty(&node)
-                                    .map_err(|e| format!("failed to serialize JSON: {}", e))
-                            },
-                        ) {
-                            Ok(json) => println!("{}", json),
-                            Err(e) => println!("🐈 cat: {}", e),
-                        }
-                    }
+                    Some(root) => match subtree_to_ce_ast(world, root) {
+                        Ok(ce) => println!("{}", unparse_component(&ce)),
+                        Err(e) => println!("🐈 cat: {}", e),
+                    },
                     None => {
-                        // Dump the entire scene (all roots).
                         let root_ids: Vec<ecs::ComponentId> = world
                             .all_components()
                             .filter(|&cid| world.parent_of(cid).is_none())
                             .collect();
-
-                        let mut components = Vec::new();
-                        for cid in root_ids {
-                            match ecs::ComponentCodec::encode_subtree_node(world, cid) {
-                                Ok(node) => components.push(node),
-                                Err(e) => {
-                                    println!("🐈 cat: {}", e);
-                                    return;
-                                }
+                        for (i, cid) in root_ids.iter().enumerate() {
+                            if i > 0 {
+                                println!();
                             }
-                        }
-
-                        let scene = ecs::component_codec::Scene { components };
-                        match serde_json::to_string_pretty(&scene) {
-                            Ok(json) => println!("{}", json),
-                            Err(e) => println!("🐈 cat: failed to serialize JSON: {}", e),
+                            match subtree_to_ce_ast(world, *cid) {
+                                Ok(ce) => println!("{}", unparse_component(&ce)),
+                                Err(e) => println!("🐈 cat: {}", e),
+                            }
                         }
                     }
                 }

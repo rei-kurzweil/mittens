@@ -33,6 +33,9 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::graphics::CameraTarget;
+use crate::meow_meow::ast::{
+    BlockStatement, ComponentExpression, Expression, Ident, Statement, UnaryOpKind,
+};
 use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
 use crate::meow_meow::token::expand_component_shortform;
 
@@ -49,7 +52,7 @@ pub fn spawn_tree(
     emit: &mut dyn SignalEmitter,
 ) -> Result<ComponentId, String> {
     let type_name = resolve_type_name(&ce.component_type);
-    let id = create_component(world, type_name, ce.ctor_method.as_deref(), &ce.ctor_args)?;
+    let id = create_component(world, &type_name, ce.ctor_method.as_deref(), &ce.ctor_args)?;
 
     // Extra ctor calls + body builder calls (already evaluated).
     for (method, args) in &ce.calls {
@@ -135,7 +138,7 @@ pub fn spawn_tree_uninitialized(
     emit: &mut dyn SignalEmitter,
 ) -> Result<ComponentId, String> {
     let type_name = resolve_type_name(&ce.component_type);
-    let id = create_component(world, type_name, ce.ctor_method.as_deref(), &ce.ctor_args)?;
+    let id = create_component(world, &type_name, ce.ctor_method.as_deref(), &ce.ctor_args)?;
 
     for (method, args) in &ce.calls {
         apply_call(world, id, method, args)?;
@@ -197,8 +200,179 @@ pub fn spawn_tree_uninitialized(
 // Type name resolution
 // ---------------------------------------------------------------------------
 
-fn resolve_type_name(raw: &str) -> &str {
-    expand_component_shortform(raw).unwrap_or(raw)
+/// Resolve a raw type identifier to the canonical PascalCase name used by
+/// `create_component`.
+///
+/// Accepts these forms:
+/// - Shortform: `"T"` -> `"Transform"` (from `COMPONENT_SHORTFORMS`).
+/// - PascalCase: `"Transform"` -> `"Transform"` (already canonical).
+/// - snake_case: `"transform"` -> `"Transform"` (from `Component::name()`).
+/// - Loose case-insensitive match against canonical names: handles acronyms
+///   that don't survive a mechanical snake_to_pascal (`"camera3d"` ->
+///   `"Camera3D"`, `"gltf"` -> `"GLTF"`).
+fn resolve_type_name(raw: &str) -> String {
+    if let Some(full) = expand_component_shortform(raw) {
+        return full.to_string();
+    }
+    if raw.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+        return raw.to_string();
+    }
+    let stripped: String = raw.chars().filter(|c| *c != '_').collect();
+    let lowered = stripped.to_lowercase();
+    for entry in crate::meow_meow::token::COMPONENT_SHORTFORMS {
+        if entry.full.to_lowercase() == lowered {
+            return entry.full.to_string();
+        }
+    }
+    snake_to_pascal(raw)
+}
+
+// ---------------------------------------------------------------------------
+// Subtree → AST encoding (the reverse direction of `spawn_tree`)
+// ---------------------------------------------------------------------------
+
+/// Walk a live component subtree and emit a `ComponentExpression` AST node
+/// (root + nested children in the body). Each component contributes its own
+/// `to_mms_ast()` for its header; children are appended as
+/// `Statement::Expression(Expression::Component(...))` in the body.
+///
+/// Used by:
+/// - `attach_clone` intent: subtree → CE → MaterializedCE → spawn_tree (clone).
+/// - REPL `dump` and scene save: subtree → CE → unparser → text.
+pub fn subtree_to_ce_ast(world: &World, root: ComponentId) -> Result<ComponentExpression, String> {
+    let node = world
+        .get_component_record(root)
+        .ok_or_else(|| format!("subtree_to_ce_ast: missing component {root:?}"))?;
+    let mut ce = node.component.to_mms_ast();
+    let children: Vec<ComponentId> = node.children.clone();
+    for child_id in children {
+        let child_ce = subtree_to_ce_ast(world, child_id)?;
+        ce.body
+            .statements
+            .push(Statement::Expression(Expression::Component(child_ce)));
+    }
+    Ok(ce)
+}
+
+/// Convert a *ground* `ComponentExpression` (literals only — no binops,
+/// no function calls in args other than nested component expressions) into
+/// a `MaterializedCE` that `spawn_tree` consumes. This is the synchronous
+/// bridge between `to_mms_ast` output and the live spawn path; it does not
+/// involve the MMS evaluator thread.
+pub fn ce_ast_to_materialized(ce: &ComponentExpression) -> Result<MaterializedCE, String> {
+    let mut ctor_method: Option<String> = None;
+    let mut ctor_args: Vec<Value> = Vec::new();
+    let mut calls: Vec<(String, Vec<Value>)> = Vec::new();
+
+    let mut ctor_iter = ce.constructors.iter();
+    if let Some(first) = ctor_iter.next() {
+        ctor_method = Some(first.method.0.clone());
+        ctor_args = first
+            .args
+            .iter()
+            .map(expression_to_value)
+            .collect::<Result<_, _>>()?;
+    }
+    for ctor in ctor_iter {
+        let args: Vec<Value> = ctor
+            .args
+            .iter()
+            .map(expression_to_value)
+            .collect::<Result<_, _>>()?;
+        calls.push((ctor.method.0.clone(), args));
+    }
+
+    let mut children: Vec<CeChild> = Vec::new();
+    for stmt in &ce.body.statements {
+        match stmt {
+            Statement::Expression(Expression::Component(child_ce)) => {
+                children.push(CeChild::Spawn(ce_ast_to_materialized(child_ce)?));
+            }
+            Statement::Expression(Expression::Call(c)) => {
+                // Body builder call, e.g. `scale(0.5, 0.5, 0.5)`.
+                if let Expression::Identifier(Ident(name)) = &*c.callee {
+                    let args: Vec<Value> = c
+                        .args
+                        .iter()
+                        .map(expression_to_value)
+                        .collect::<Result<_, _>>()?;
+                    calls.push((name.clone(), args));
+                }
+            }
+            _ => {
+                // Skip non-CE, non-call statements (assignments, control flow) —
+                // `to_mms_ast` impls should not emit these. If one slips through,
+                // we drop it rather than fail the clone.
+            }
+        }
+    }
+
+    Ok(MaterializedCE {
+        component_type: ce.component_type.0.clone(),
+        ctor_method,
+        ctor_args,
+        calls,
+        named: Vec::new(),
+        positionals: Vec::new(),
+        children,
+    })
+}
+
+fn expression_to_value(e: &Expression) -> Result<Value, String> {
+    match e {
+        Expression::Number(n) => Ok(Value::Number(*n)),
+        Expression::String(s) => Ok(Value::String(s.clone())),
+        Expression::Bool(b) => Ok(Value::Bool(*b)),
+        Expression::Null => Ok(Value::Null),
+        Expression::Dimension(n, u) => Ok(Value::Dimension { value: *n, unit: *u }),
+        Expression::Identifier(Ident(s)) => Ok(Value::Identifier(s.clone())),
+        Expression::Array(items) => {
+            let vals: Vec<Value> = items
+                .iter()
+                .map(expression_to_value)
+                .collect::<Result<_, _>>()?;
+            Ok(Value::Array(vals))
+        }
+        Expression::UnaryOp { op: UnaryOpKind::Neg, operand } => {
+            match expression_to_value(operand)? {
+                Value::Number(n) => Ok(Value::Number(-n)),
+                Value::Dimension { value, unit } => {
+                    Ok(Value::Dimension { value: -value, unit })
+                }
+                v => Err(format!("cannot negate value: {v:?}")),
+            }
+        }
+        Expression::Component(child_ce) => {
+            let m = ce_ast_to_materialized(child_ce)?;
+            Ok(Value::ComponentExpr(Box::new(m)))
+        }
+        other => Err(format!("expression_to_value: unsupported expression {other:?}")),
+    }
+}
+
+// Silence unused-import warnings if a builder cycle removes the only consumer.
+#[allow(dead_code)]
+fn _ce_ast_helpers_used(_: BlockStatement) {}
+
+/// Convert `snake_case` (the form returned by `Component::name()`) to the
+/// `PascalCase` form recognized by `create_component`.
+///
+/// `"transform"` -> `"Transform"`, `"audio_output"` -> `"AudioOutput"`,
+/// `"camera_3d"` -> `"Camera3d"` (note: GLTF uses caps, see fallback below).
+fn snake_to_pascal(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut capitalize_next = true;
+    for ch in s.chars() {
+        if ch == '_' {
+            capitalize_next = true;
+        } else if capitalize_next {
+            out.extend(ch.to_uppercase());
+            capitalize_next = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -612,6 +786,18 @@ fn apply_call(
             "position" => *t = t.clone().with_position(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?),
             "scale"    => *t = t.clone().with_scale(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?),
             "rotation" | "rotation_euler" => *t = t.clone().with_rotation_euler(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?),
+            "rotation_quat" => *t = t.clone().with_rotation_quat([
+                arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?, arg_f32(args, 3)?,
+            ]),
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(l) = world.get_component_by_id_as_mut::<LayoutComponent>(id) {
+        match method {
+            "width" => l.available_width = arg_f32(args, 0)?,
+            "height" => l.available_height = Some(arg_f32(args, 0)?),
+            "unit_scale" => l.unit_scale = arg_f32(args, 0)?,
             _ => {}
         }
         return Ok(());
@@ -974,6 +1160,11 @@ fn apply_transform_builder(
         "position"       => Ok(c.with_position(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?)),
         "scale"          => Ok(c.with_scale(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?)),
         "rotation" | "rotation_euler" => Ok(c.with_rotation_euler(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?)),
+        // Lossless quaternion form — used by `to_mms_ast` so saved/cloned
+        // transforms reproduce exactly, including arbitrary axis rotations.
+        "rotation_quat" => Ok(c.with_rotation_quat([
+            arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?, arg_f32(args, 3)?,
+        ])),
         other => {
             println!("[registry] unknown Transform builder: '{other}'");
             Ok(c)

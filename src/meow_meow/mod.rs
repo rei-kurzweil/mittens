@@ -7,6 +7,7 @@ pub mod runner;
 pub mod token;
 pub mod tokenizer;
 pub mod transform;
+pub mod unparser;
 
 pub use ast::{
     AssignmentStatement, BinOpKind, BlockStatement, CallExpression,

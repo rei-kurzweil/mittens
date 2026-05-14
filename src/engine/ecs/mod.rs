@@ -1,6 +1,5 @@
 pub mod command_queue;
 pub mod component;
-pub mod component_codec;
 pub mod rx;
 pub mod system;
 pub mod world_query_adapter;
@@ -24,7 +23,6 @@ new_key_type! {
 pub use crate::engine::graphics::primitives::{Renderable, Transform, TransformMatrix};
 
 pub use command_queue::CommandQueue;
-pub use component_codec::ComponentCodec;
 pub use world_query_adapter::WorldQueryAdapter;
 pub use rx::{
     EventSignal, IntentSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalHandler,
