@@ -172,7 +172,7 @@ impl InspectorSystem {
                 };
                 let renderable = *renderable;
 
-                let (row_roots, row_to_node, save_btn, load_btn, status_text, filename) = {
+                let (row_roots, row_to_node, save_btn, load_btn, status_text, file_path) = {
                     let Some(wpc) = world.get_component_by_id_as::<WorldPanelComponent>(wpc_id)
                     else {
                         return;
@@ -183,15 +183,17 @@ impl InspectorSystem {
                         wpc.save_button_renderable,
                         wpc.load_button_renderable,
                         wpc.save_status_text,
-                        wpc.save_filename.clone(),
+                        resolved_io_path(&wpc.io_working_dir, &wpc.save_filename),
                     )
                 };
 
                 // --- Save button hit: dump scene → MMS file → update status ---
                 if Some(renderable) == save_btn {
                     let mms = dump_scene_to_mms(world, Some(editor_ui_root));
-                    let msg = match std::fs::write(&filename, &mms) {
-                        Ok(()) => format!("saved: {filename}"),
+                    let msg = match ensure_parent_dir(&file_path)
+                        .and_then(|_| std::fs::write(&file_path, &mms).map_err(|e| e.to_string()))
+                    {
+                        Ok(()) => format!("saved: {file_path}"),
                         Err(e) => format!("save failed: {e}"),
                     };
                     println!("[WorldPanel] {msg}");
@@ -207,11 +209,12 @@ impl InspectorSystem {
                     return;
                 }
 
-                // --- Load button hit: stub for now ---
-                // Runtime reload requires clearing scene roots first; see
-                // docs/task/mms-asset-component-panels.md.
+                // --- Load button hit: clear non-editor roots, parse file, respawn ---
                 if Some(renderable) == load_btn {
-                    let msg = format!("load not yet wired ({filename})");
+                    let msg = match load_scene_from_mms(world, emit, editor_ui_root, &file_path) {
+                        Ok(n) => format!("loaded {n} roots from {file_path}"),
+                        Err(e) => format!("load failed: {e}"),
+                    };
                     println!("[WorldPanel] {msg}");
                     if let Some(text_id) = status_text {
                         emit.push_intent_now(
@@ -533,6 +536,89 @@ fn collect_subtree(
         }
     }
     out
+}
+
+/// Join `io_working_dir` + `filename` with a single separator. Both halves
+/// may or may not carry a trailing/leading slash; result has exactly one.
+fn resolved_io_path(dir: &str, filename: &str) -> String {
+    let dir = dir.trim_end_matches('/');
+    let file = filename.trim_start_matches('/');
+    format!("{dir}/{file}")
+}
+
+/// Create the parent directory of `path` (if any) so a subsequent
+/// `fs::write` succeeds. Returns Ok if the path has no parent (writing to
+/// cwd directly).
+fn ensure_parent_dir(path: &str) -> Result<(), String> {
+    let p = std::path::Path::new(path);
+    match p.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => std::fs::create_dir_all(parent)
+            .map_err(|e| format!("create_dir_all({}): {e}", parent.display())),
+        _ => Ok(()),
+    }
+}
+
+/// Read an MMS scene from disk and spawn its top-level component
+/// expressions into the world. Before spawning, removes every existing
+/// scene root that is *not* part of the editor UI subtree so the result
+/// is a clean swap.
+///
+/// Uses the synchronous parse → `ce_ast_to_materialized` → `spawn_tree`
+/// path (no MMS evaluator thread), which is the right choice for saved
+/// scenes — they're ground component trees with no `import`s, `on(...)`
+/// handlers, function definitions, or other dynamic constructs that
+/// would need the full evaluator.
+fn load_scene_from_mms(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    editor_ui_root: ComponentId,
+    path: &str,
+) -> Result<usize, String> {
+    use crate::meow_meow::ast::{Expression, Statement};
+    use crate::meow_meow::component_registry::{ce_ast_to_materialized, spawn_tree};
+    use crate::meow_meow::parser::MeowMeowParser;
+    use crate::meow_meow::tokenizer::MeowMeowTokenizer;
+
+    let source = std::fs::read_to_string(path).map_err(|e| format!("read {path}: {e}"))?;
+    let tokens = MeowMeowTokenizer::new(&source)
+        .tokenize()
+        .map_err(|e| format!("tokenize: {e:?}"))?;
+    let stmts = MeowMeowParser::new(tokens)
+        .parse_program()
+        .map_err(|e| format!("parse: {e:?}"))?;
+
+    // Clear existing non-editor roots first so the load is a swap, not a merge.
+    let editor_subtree = collect_subtree(world, editor_ui_root);
+    let old_roots: Vec<ComponentId> = world
+        .all_components()
+        .filter(|cid| world.parent_of(*cid).is_none())
+        .filter(|cid| !editor_subtree.contains(cid))
+        .collect();
+    for old in &old_roots {
+        emit.push_intent_now(
+            *old,
+            IntentValue::RemoveSubtree {
+                component_ids: vec![*old],
+            },
+        );
+    }
+
+    // Spawn each top-level Component expression. Non-CE statements at the
+    // top of a save file aren't expected (the unparser only emits roots as
+    // bare Component exprs) — skip them defensively.
+    let mut spawned = 0usize;
+    for stmt in &stmts {
+        let Statement::Expression(Expression::Component(ce_ast)) = stmt else {
+            continue;
+        };
+        let materialized = ce_ast_to_materialized(ce_ast)
+            .map_err(|e| format!("materialize: {e}"))?;
+        spawn_tree(&materialized, None, world, emit)
+            .map_err(|e| format!("spawn_tree: {e}"))?;
+        spawned += 1;
+    }
+
+    Ok(spawned)
 }
 
 /// Spawn a single right-aligned button under `parent` (the panel header_slot).

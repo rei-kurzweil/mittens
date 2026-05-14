@@ -3,3 +3,8 @@
 
 # Profiling artifacts
 docs/analysis/perf.data*
+
+# World panel save output. The directory itself is tracked via data/.gitkeep
+# so the default `io_working_dir` resolves without manual setup.
+/data/*
+!/data/.gitkeep

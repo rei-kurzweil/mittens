@@ -40,12 +40,21 @@ pub struct WorldPanelComponent {
     /// binary's file stem at editor setup.
     pub(crate) save_filename: String,
 
+    /// Directory the Save / Load buttons read and write to. Resolved
+    /// relative to the process's current working directory (which is the
+    /// workspace root when running `cargo run --example ...`). Defaults to
+    /// `./data/`. Trailing slash optional — the handler normalizes it.
+    pub(crate) io_working_dir: String,
+
     component: Option<ComponentId>,
 }
 
 impl WorldPanelComponent {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            io_working_dir: "./data/".to_string(),
+            ..Self::default()
+        }
     }
 }
 

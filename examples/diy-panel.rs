@@ -90,7 +90,10 @@ fn spawn_container_item_debug_clones(
     universe: &mut engine::Universe,
     container: engine::ecs::ComponentId,
 ) {
-    use engine::ecs::{ComponentCodec, IntentValue};
+    use cat_engine::meow_meow::component_registry::{
+        ce_ast_to_materialized, spawn_tree, subtree_to_ce_ast,
+    };
+    use engine::ecs::IntentValue;
     use engine::ecs::system::TransformSystem;
 
     let items = collect_container_items(&universe.world, container);
@@ -112,16 +115,24 @@ fn spawn_container_item_debug_clones(
             matrix_world,
         );
 
-        let Ok(encoded) = ComponentCodec::encode_subtree_node(&universe.world, item) else {
+        // Subtree → MMS AST → MaterializedCE → fresh spawn.
+        // Same path attach_clone uses; gives the clone fresh GUIDs and
+        // routes everything through the standard component registry.
+        let Ok(ce_ast) = subtree_to_ce_ast(&universe.world, item) else {
             println!("[diy-panel-debug] skip {:?}: failed to encode subtree", item);
             continue;
         };
-        let Ok(clone_root) = ComponentCodec::decode_subtree_node_with_new_guids(
-            &mut universe.world,
+        let Ok(materialized) = ce_ast_to_materialized(&ce_ast) else {
+            println!("[diy-panel-debug] skip {:?}: failed to materialize CE", item);
+            continue;
+        };
+        let Ok(clone_root) = spawn_tree(
+            &materialized,
             None,
-            &encoded,
+            &mut universe.world,
+            &mut universe.command_queue,
         ) else {
-            println!("[diy-panel-debug] skip {:?}: failed to decode subtree clone", item);
+            println!("[diy-panel-debug] skip {:?}: failed to spawn clone", item);
             continue;
         };
 

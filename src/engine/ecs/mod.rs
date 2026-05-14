@@ -175,7 +175,7 @@ impl World {
         self.components.get(id)
     }
 
-    /// Alias for `get_component_record` (used by ComponentCodec).
+    /// Alias for `get_component_record`.
     pub fn get_component_node(
         &self,
         id: ComponentId,
