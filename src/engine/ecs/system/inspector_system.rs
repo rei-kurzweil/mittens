@@ -7,7 +7,7 @@ use crate::engine::ecs::component::{
     style::{EdgeInsets, Overflow, SizeDimension},
 };
 use crate::engine::ecs::system::editor_system::select_editor_target;
-use crate::engine::ecs::system::{LayoutSystem, ScrollingSystem};
+use crate::engine::ecs::system::ScrollingSystem;
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World,
@@ -22,6 +22,8 @@ const PAGE_SIZE: usize = 48;
 const MAX_DEPTH: usize = 5;
 /// Gap between world panel right edge and inspector panel left edge (overlay units).
 const PANEL_GAP: f32 = 0.12;
+const WORLD_PANEL_WIDTH_GU: f32 = 29.5;
+const INSPECTOR_PANEL_WIDTH_GU: f32 = 22.0;
 
 /// Title bar height in world units. Two glyph rows tall.
 const TITLE_BAR_HEIGHT: f32 = 2.0 * TEXT_SCALE;
@@ -91,9 +93,7 @@ impl InspectorSystem {
         // Width budget for all panels combined, in glyph units.  Enough for ~3 panels at
         // `TextComponent::DEFAULT_WRAP_AT`. Panels overflowing wrap to the next row via
         // inline-block flow.
-        let layout_width_gu = 3.0
-            * (LayoutSystem::default_panel_width_chars() as f32)
-            + 6.0;
+        let layout_width_gu = 3.0 * WORLD_PANEL_WIDTH_GU + 6.0;
 
         // SelectableComponent::off sits at the top of the chain so every descendant
         // (panels, their content, etc.) is non-selectable as a region. Per-panel
@@ -410,12 +410,19 @@ fn spawn_panel_title_bar(
         Box::new({
             let mut s = StyleComponent::new();
             s.display = Some(crate::engine::ecs::component::style::Display::InlineBlock);
+            if show_buttons {
+                let button_gap_gu = 0.625;
+                let button_width_gu = TITLEBAR_BUTTON_WIDTH / TEXT_SCALE;
+                let buttons_total_gu = 2.0 * (button_width_gu + button_gap_gu);
+                s.width = SizeDimension::GlyphUnits((panel_width_gu - buttons_total_gu).max(0.0));
+            } else {
+                s.width = SizeDimension::Percent(100.0);
+            }
             s.height = SizeDimension::GlyphUnits(TITLE_BAR_HEIGHT_GU);
             s.padding = EdgeInsets::axes(0.0, label_item_padding_x_gu);
             s
         }),
     );
-    let label_width_world = label.chars().count() as f32 * TEXT_SCALE * 0.55;
     let label_t = world.add_component_boxed_named(
         "panel_titlebar_label_t",
         Box::new(
@@ -464,29 +471,6 @@ fn spawn_panel_title_bar(
     let _ = world.add_child(panel_t, gizmo);
 
     let buttons = if show_buttons {
-        let button_gap_gu = 0.625;
-        let button_width_gu = TITLEBAR_BUTTON_WIDTH / TEXT_SCALE;
-        let buttons_total_gu = button_width_gu * 2.0 + button_gap_gu * 2.0;
-        let label_total_gu = (label_width_world / TEXT_SCALE) + label_item_padding_x_gu * 2.0;
-        let spacer_gu = (panel_width_gu - label_total_gu - buttons_total_gu).max(0.0);
-
-        let spacer = world.add_component_boxed_named(
-            "panel_titlebar_spacer",
-            Box::new(TransformComponent::new()),
-        );
-        let spacer_style = world.add_component_boxed_named(
-            "panel_titlebar_spacer_style",
-            Box::new({
-                let mut s = StyleComponent::new();
-                s.display = Some(crate::engine::ecs::component::style::Display::InlineBlock);
-                s.width = SizeDimension::GlyphUnits(spacer_gu);
-                s.height = SizeDimension::GlyphUnits(TITLE_BAR_HEIGHT_GU);
-                s
-            }),
-        );
-        let _ = world.add_child(title_row, spacer);
-        let _ = world.add_child(spacer, spacer_style);
-
         // Save / Load buttons — layout-owned inline-block items under the title row.
         // This preserves the current visuals/click surfaces while letting the
         // title bar width come from the panel shell instead of right-edge math.
@@ -776,11 +760,7 @@ fn spawn_world_panel(
     editor_root: ComponentId,
     editor_layout_root: ComponentId,
 ) -> (ComponentId, ComponentId, ComponentId) {
-    let wp_width = LayoutSystem::estimate_panel_width(
-        crate::engine::ecs::component::TextComponent::DEFAULT_WRAP_AT,
-        TEXT_SCALE,
-        MAX_DEPTH as f32 * INDENT_UNIT,
-    );
+    let wp_width = WORLD_PANEL_WIDTH_GU * TEXT_SCALE;
     let wp_height = PAGE_SIZE as f32 * ROW_HEIGHT;
 
     let wpc = world.add_component_boxed_named(
@@ -876,11 +856,7 @@ fn spawn_inspector_panel(
     editor_root: ComponentId,
     editor_layout_root: ComponentId,
 ) -> (ComponentId, ComponentId, ComponentId) {
-    let ip_width = LayoutSystem::estimate_panel_width(
-        crate::engine::ecs::component::TextComponent::DEFAULT_WRAP_AT,
-        TEXT_SCALE,
-        0.0,
-    );
+    let ip_width = INSPECTOR_PANEL_WIDTH_GU * TEXT_SCALE;
     let ip_height = PAGE_SIZE as f32 * ROW_HEIGHT;
 
     let ipc = world.add_component_boxed_named(
