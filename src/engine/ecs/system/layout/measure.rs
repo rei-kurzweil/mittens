@@ -1,6 +1,6 @@
 use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::{BoundsComponent, HtmlElementComponent, LayoutComponent, RenderableComponent, StyleComponent, TextComponent, TransformComponent};
+use crate::engine::ecs::component::{BoundsComponent, ColorComponent, HtmlElementComponent, LayoutComponent, RenderableComponent, StyleComponent, TextComponent, TransformComponent};
 use crate::engine::ecs::component::style::{Display, SizeDimension, WordWrapMode};
 use crate::engine::ecs::system::text_system::TextSystem;
 use crate::engine::graphics::bounds::Aabb;
@@ -424,6 +424,74 @@ pub(crate) fn apply_text_wrap_for_item(
             text: cur_text,
         },
     );
+}
+
+/// Layout-owned `ColorComponent` child label. Spawned/maintained by
+/// `apply_text_color_for_item` whenever the styled TC has `Style.color = Some(_)`.
+/// Sits as an immediate child of the styled TC (sibling of `__bg`) so the
+/// renderable ancestor walk picks it up for every glyph in the subtree.
+const OWNED_TEXT_COLOR_LABEL: &str = "__text_color";
+
+/// Spawn / update / remove the layout-owned `__text_color` helper based on
+/// `Style.color` of the styled TC. Cascade is provided by the renderable
+/// system's ancestor color walk
+/// (`RenderableSystem::inherited_color_for_renderable`) — no per-glyph
+/// attachment needed, and nested styled TCs override naturally because their
+/// helper sits closer to the glyph in the walk.
+pub(crate) fn apply_text_color_for_item(
+    world: &mut World,
+    emit: &mut dyn crate::engine::ecs::SignalEmitter,
+    tc_id: ComponentId,
+) {
+    let style_color = world.children_of(tc_id).iter().find_map(|&child| {
+        world
+            .get_component_by_id_as::<StyleComponent>(child)
+            .map(|s| s.color)
+    }).flatten();
+
+    let existing = world.children_of(tc_id).iter().copied().find(|&ch| {
+        world.component_label(ch) == Some(OWNED_TEXT_COLOR_LABEL)
+            && world.get_component_by_id_as::<ColorComponent>(ch).is_some()
+    });
+
+    match (style_color, existing) {
+        (Some(rgba), Some(id)) => {
+            // Update if rgba changed; re-register so the renderable picks it up.
+            let cur = world.get_component_by_id_as::<ColorComponent>(id).map(|c| c.rgba);
+            if cur != Some(rgba) {
+                if let Some(c) = world.get_component_by_id_as_mut::<ColorComponent>(id) {
+                    c.rgba = rgba;
+                }
+                emit.push_intent_now(
+                    id,
+                    crate::engine::ecs::IntentValue::RegisterColor {
+                        component_ids: vec![id],
+                    },
+                );
+            }
+        }
+        (Some(rgba), None) => {
+            // Spawn unconditionally. `find_text_id_in_local_content_subtree`
+            // halts at nested TransformComponent boundaries, so it can't see
+            // text living past styled-child layout items; using it as a gate
+            // would suppress the helper exactly where cascade is wanted.
+            // A helper with no descendant text is harmless — the renderable
+            // ancestor walk just never hits it.
+            let color_id = world.add_component_boxed_named(
+                OWNED_TEXT_COLOR_LABEL,
+                Box::new(ColorComponent::rgba(rgba[0], rgba[1], rgba[2], rgba[3])),
+            );
+            let _ = world.add_child(tc_id, color_id);
+            world.init_component_tree(color_id, emit);
+        }
+        (None, Some(id)) => {
+            emit.push_intent_now(
+                id,
+                crate::engine::ecs::IntentValue::RemoveSubtree { component_ids: vec![id] },
+            );
+        }
+        (None, None) => {}
+    }
 }
 
 /// Pull text-wrap overrides off the `StyleComponent` sitting under `tc_id`,

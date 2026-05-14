@@ -23,7 +23,7 @@ let panel_bg   = [0.96, 0.96, 0.98, 1.0]
 let sidebar_bg = [0.30, 0.40, 0.70, 1.0]
 let content_bg = [1.00, 1.00, 1.00, 1.0]
 let card_bg    = [0.95, 0.88, 0.92, 1.0]
-let text_color = C.rgba(0.05, 0.05, 0.05, 1.0)
+let text_color = [0.05, 0.05, 0.05, 1.0]
 
 let panel = T.position(-4.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
     LayoutRoot {
@@ -39,11 +39,12 @@ let panel = T.position(-4.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 width(25%)
                 padding(2%)
                 background_color = sidebar_bg
+                color = [0.95, 0.96, 1.0, 1.0]
             }
             T.position(0, 0, 0.2) {
                 Style {
                 }
-                Text { "sidebar nav" text_color  }
+                Text { "sidebar nav" }
             }
         }
 
@@ -55,6 +56,7 @@ let panel = T.position(-4.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                 width(75%)
                 padding(2%)
                 background_color = content_bg
+                color = text_color
             }
 
             // Card 1
@@ -69,7 +71,7 @@ let panel = T.position(-4.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                     Style {
                         display("inline-block")
                     }
-                    Text { "first card — percent padding scales with the container" text_color }
+                    Text { "first card — percent padding scales with the container" }
                 }
             }
 
@@ -85,7 +87,7 @@ let panel = T.position(-4.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                     Style {
                         display("inline-block")
                     }
-                    Text { "second card — try shrinking the panel width" text_color }
+                    Text { "second card — try shrinking the panel width" }
                 }
             }
 
@@ -101,7 +103,7 @@ let panel = T.position(-4.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                     Style {
                         display("inline-block")
                     }
-                    Text { "third card — vertical padding resolves against width too" text_color }
+                    Text { "third card — vertical padding resolves against width too" }
                 }
             }
         }

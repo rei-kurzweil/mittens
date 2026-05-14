@@ -559,6 +559,10 @@ fn apply_named_assignment(
                 style.background_z = val_as_f32(val)?;
                 return Ok(());
             }
+            "color" => {
+                style.color = Some(val_as_f32_array::<4>(val)?);
+                return Ok(());
+            }
             _ => {}
         }
     }
@@ -838,6 +842,7 @@ fn apply_call(
             "margin_xy"   => st.margin  = EdgeInsets::axes_dim(arg_size_dimension(args, 0)?, arg_size_dimension(args, 1)?),
             "background_color" => st.background_color = Some(arg_f32_arr::<4>(args, 0)?),
             "background_z" => st.background_z = arg_f32(args, 0)?,
+            "color" => st.color = Some(arg_f32_arr::<4>(args, 0)?),
             "flex_direction" => {
                 st.flex_direction = match arg_str(args, 0)? {
                     "row"|"Row"                       => FlexDirection::Row,

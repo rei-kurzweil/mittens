@@ -247,6 +247,7 @@ pub struct StylePatch {
     pub z_index:          Option<Option<i32>>,
     pub background_color: Option<Option<[f32; 4]>>,
     pub background_z:     Option<f32>,
+    pub color:            Option<Option<[f32; 4]>>,
     pub word_wrap:        Option<Option<WordWrapMode>>,
     pub word_wrap_tokens: Option<Option<Vec<String>>>,
 }
@@ -325,6 +326,15 @@ pub struct StyleComponent {
     /// Negative = behind content. Default: -0.1.
     pub background_z: f32,
 
+    // ── Foreground (text) color ──────────────────────────────────────────
+    /// CSS `color`. Inherited by every descendant glyph via the renderable
+    /// ancestor color walk (`RenderableSystem::inherited_color_for_renderable`).
+    /// When `Some`, layout spawns/maintains a `__text_color` `ColorComponent`
+    /// as an immediate child of this item's TC; when `None`, any existing
+    /// helper is removed. Nested styled TCs with their own `color` override
+    /// naturally because their helper sits closer to the glyph in the walk.
+    pub color: Option<[f32; 4]>,
+
     // ── Text wrap ────────────────────────────────────────────────────────
     /// `None` = don't override the descendant `TextComponent`'s authored mode.
     /// `Some(_)` = write through to the descendant TextComponent during layout.
@@ -370,6 +380,7 @@ impl Default for StyleComponent {
             z_index: None,
             background_color: None,
             background_z: -0.1,
+            color: None,
             word_wrap: None,
             word_wrap_tokens: None,
             component: None,
@@ -411,6 +422,7 @@ impl StyleComponent {
         if let Some(v) = patch.z_index          { self.z_index = v; }
         if let Some(v) = patch.background_color { self.background_color = v; }
         if let Some(v) = patch.background_z     { self.background_z = v; }
+        if let Some(v) = patch.color            { self.color = v; }
         if let Some(v) = patch.word_wrap        { self.word_wrap = v; }
         if let Some(v) = patch.word_wrap_tokens { self.word_wrap_tokens = v; }
     }
@@ -455,6 +467,19 @@ impl Component for StyleComponent {
         }
         if let Some(v) = data.get("background_z").and_then(|v| v.as_f64()) {
             self.background_z = v as f32;
+        }
+        if let Some(v) = data.get("color") {
+            if v.is_null() {
+                self.color = None;
+            } else if let Some(arr) = v.as_array() {
+                if arr.len() == 4 {
+                    let r = arr[0].as_f64().unwrap_or(0.0) as f32;
+                    let g = arr[1].as_f64().unwrap_or(0.0) as f32;
+                    let b = arr[2].as_f64().unwrap_or(0.0) as f32;
+                    let a = arr[3].as_f64().unwrap_or(1.0) as f32;
+                    self.color = Some([r, g, b, a]);
+                }
+            }
         }
         Ok(())
     }
