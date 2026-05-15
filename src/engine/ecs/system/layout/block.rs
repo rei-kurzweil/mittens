@@ -281,7 +281,7 @@ fn sync_scrolling_metrics(
     ScrollingSystem::sync_component(world, emit, scroll_id);
 }
 
-fn sync_overflow_topology(
+pub(crate) fn sync_overflow_topology(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     tc_id: ComponentId,
@@ -927,5 +927,61 @@ mod tests {
         assert_eq!(load_tc.transform.translation[0], 0.0);
         assert!(save_tc.transform.translation[1] < title_tc.transform.translation[1]);
         assert!(load_tc.transform.translation[1] < save_tc.transform.translation[1]);
+    }
+
+    #[test]
+    fn inline_overflow_hidden_creates_clipped_content_root() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut layout_system = LayoutSystem::new();
+
+        let root = world.add_component(LayoutComponent::new(20.0).with_height(12.0));
+
+        let row = world.add_component_boxed_named("row", Box::new(TransformComponent::new()));
+        let row_style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.background_color = Some([0.2, 0.2, 0.2, 1.0]);
+            style
+        });
+        let _ = world.add_child(root, row);
+        let _ = world.add_child(row, row_style);
+
+        let chip = world.add_component_boxed_named("chip", Box::new(TransformComponent::new()));
+        let chip_style = world.add_component({
+            let mut s = StyleComponent::new();
+            s.display = Some(crate::engine::ecs::component::style::Display::InlineBlock);
+            s.width = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(8.0);
+            s.background_color = Some([0.9, 0.8, 0.2, 1.0]);
+            s.overflow = crate::engine::ecs::component::Overflow::Hidden;
+            s
+        });
+        let text_wrapper = world.add_component_boxed_named("text_wrapper", Box::new(TransformComponent::new()));
+        let text = world.add_component_boxed_named("text", Box::new(TextComponent::new("inline 1.6 inline 1.6")));
+
+        let _ = world.add_child(row, chip);
+        let _ = world.add_child(chip, chip_style);
+        let _ = world.add_child(chip, text_wrapper);
+        let _ = world.add_child(text_wrapper, text);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let clipped = world.children_of(chip).iter().copied().find(|&child| {
+            world.component_label(child) == Some(super::OWNED_CLIPPED_CONTENT_LABEL)
+                && world.get_component_by_id_as::<TransformComponent>(child).is_some()
+        });
+        let clip = world.children_of(chip).iter().copied().find(|&child| {
+            world.component_label(child) == Some(super::OWNED_LAYOUT_STENCIL_CLIP_LABEL)
+                && world.get_component_by_id_as::<StencilClipComponent>(child).is_some()
+        });
+
+        assert!(clipped.is_some(), "expected inline overflow-hidden item to get clipped content root");
+        assert!(clip.is_some(), "expected inline overflow-hidden item to get stencil clip sibling");
+        assert_eq!(world.parent_of(text_wrapper), clipped, "authored inline content should move under clipped content root");
     }
 }

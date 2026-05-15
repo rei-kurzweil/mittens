@@ -27,9 +27,10 @@ fn inline_chip(label, size, bg) {
     let chip = T.position(0.0, 0.0, 0.2) {
         Style {
             display("inline-block")
-            margin_xy(0.4, 0.4)
-            padding_xy(0.45, 0.65)
+                width(46%)
+                margin_xy(0.2, 0.3)
             background_color = bg
+            overflow("hidden")
             font_size(size)
         }
         T.position(0.0, 0.0, 0.15) {
@@ -46,9 +47,10 @@ fn inline_chip(label, size, bg) {
 fn block_sample(title, size, subtitle) {
     let card = T.position(0.0, 0.0, 0.2) {
         Style {
-            margin(0.5)
-            padding(0.65)
+            margin_bottom(0.35)
+            padding(0.45)
             background_color = sample_bg
+            overflow("hidden")
         }
 
         T.position(0.0, 0.0, 0.2) {
@@ -84,28 +86,30 @@ fn block_sample(title, size, subtitle) {
 T.position(-3.4, 2.3, 0.0).scale(0.10, 0.10, 0.10) {
     LayoutRoot {
         name = "font_size_demo_root"
-        available_width(18.0)
+        available_width(25.0)
         available_height(48.0)
 
         T {
             name = "panel"
             Style {
-                width(84.0)
-                padding(0.8)
+                width(100%)
+                padding(0.45)
                 background_color = panel_bg
+                overflow("hidden")
             }
 
             T.position(0.0, 0.0, 0.2) {
                 name = "title_block"
                 Style {
-                    margin_bottom(0.7)
-                    padding_xy(0.45, 0.55)
+                    margin_bottom(0.4)
+                    padding_xy(0.25, 0.35)
                     background_color = section_bg
-                    font_size(1.4)
+                    overflow("hidden")
+                        font_size(1.05)
                 }
                 T.position(0.0, 0.0, 0.15) {
                     Text {
-                        "Style.font_size on block containers"
+                            "font_size in 15gu"
                         text_color
                         EM.on()
                     }
@@ -115,26 +119,29 @@ T.position(-3.4, 2.3, 0.0).scale(0.10, 0.10, 0.10) {
             T.position(0.0, 0.0, 0.2) {
                 name = "inline_section"
                 Style {
-                    margin_bottom(0.8)
-                    padding(0.55)
+                    margin_bottom(0.45)
+                    padding(0.35)
                     background_color = section_bg
+                    overflow("hidden")
                 }
 
-                inline_chip("inline 0.60", 0.60, chip_bg)
-                inline_chip("inline 1.00", 1.00, chip_bg)
-                inline_chip("inline 1.60", 1.60, chip_bg)
+                inline_chip("inline 0.6", 0.60, chip_bg)
+                inline_chip("inline 1.0", 1.00, chip_bg)
+                inline_chip("inline 1.6", 1.60, chip_bg)
 
                 T.position(0.0, 0.0, 0.2) {
                     Style {
                         display("inline-block")
-                        margin_xy(0.4, 0.4)
-                        padding_xy(0.45, 0.65)
+                            width(46%)
+                            margin_xy(0.2, 0.3)
+                        padding_xy(0.25, 0.35)
                         background_color = [0.86, 0.78, 0.92, 1.0]
+                        overflow("hidden")
                     }
                     T.position(0.0, 0.0, 0.15) {
                         Text {
-                            font_size(1.9)
-                            "Text.font_size(1.9)"
+                            font_size(1.25)
+                            "Text.font_size(1.25)"
                             text_color
                             EM.on()
                         }
@@ -145,13 +152,14 @@ T.position(-3.4, 2.3, 0.0).scale(0.10, 0.10, 0.10) {
             T.position(0.0, 0.0, 0.2) {
                 name = "block_section"
                 Style {
-                    padding(0.55)
+                    padding(0.35)
                     background_color = section_bg
+                    overflow("hidden")
                 }
 
-                block_sample("block font_size 0.75", 0.75, "container-driven font scale")
-                block_sample("block font_size 1.20", 1.20, "same layout, larger glyphs")
-                block_sample("block font_size 1.80", 1.80, "more vertical pressure in the same card")
+                block_sample("block 0.75", 0.75, "container scale")
+                block_sample("block 1.20", 1.20, "larger glyphs")
+                block_sample("block 1.80", 1.80, "more wrap")
             }
         }
     }

@@ -10,6 +10,8 @@ use crate::meow_meow::parser::MeowMeowParser;
 use crate::meow_meow::runner::MeowMeowRunner;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;
 use crate::engine::ecs::{CommandQueue, ComponentId, EventSignal, RxWorld, Signal, World};
+use crate::engine::ecs::component::{LayoutComponent, StyleComponent};
+use crate::engine::ecs::component::style::SizeDimension;
 
 fn parse(src: &str) -> Vec<Statement> {
     let tokens = MeowMeowTokenizer::new(src).tokenize().expect("tokenize ok");
@@ -410,7 +412,6 @@ fn live_handler_query_can_see_world() {
 
     let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
-
     let btn_id = world
         .all_components()
         .filter(|&id| world.parent_of(id).is_none())
@@ -438,6 +439,51 @@ fn live_handler_query_can_see_world() {
         )),
         "expected handler query to resolve target and emit SetText"
     );
+}
+
+#[test]
+fn mms_layoutroot_available_width_and_percent_style_width_reach_live_components() {
+    let src = r##"
+        LayoutRoot {
+            name = "root"
+            available_width(29.0)
+
+            T {
+                name = "panel"
+                Style {
+                    width(100%)
+                }
+            }
+        }
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    let root = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("root"))
+        .expect("root component");
+    let layout = world
+        .get_component_by_id_as::<LayoutComponent>(root)
+        .expect("layout component on root");
+    assert!((layout.available_width - 29.0).abs() < 1e-6);
+
+    let panel = world
+        .find_component(root, "#panel")
+        .expect("panel transform");
+    let style_id = world.children_of(panel).iter().copied().find(|&child| {
+        world.get_component_by_id_as::<StyleComponent>(child).is_some()
+    }).expect("panel style");
+    let style = world
+        .get_component_by_id_as::<StyleComponent>(style_id)
+        .expect("style component");
+
+    assert_eq!(style.width, SizeDimension::Percent(100.0));
 }
 
 #[test]
