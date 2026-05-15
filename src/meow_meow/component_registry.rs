@@ -906,6 +906,14 @@ fn apply_call(
         }
         return Ok(());
     }
+    if let Some(editor) = world.get_component_by_id_as_mut::<EditorComponent>(id) {
+        match method {
+            "panels" => editor.spawn_panels = arg_bool(args, 0)?,
+            "serialize_editor_panels" => editor.serialize_editor_panels = arg_bool(args, 0)?,
+            _ => {}
+        }
+        return Ok(());
+    }
     if let Some(rs) = world.get_component_by_id_as_mut::<RendererStatsComponent>(id) {
         if method == "camera_target" {
             let target = match arg_str(args, 0)? {
