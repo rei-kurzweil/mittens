@@ -1431,3 +1431,299 @@ fn roundtrip_renderer_settings_msaa_off() {
     assert!(!got.msaa4x);
     assert_eq!(got.window_size, Some([1920, 1080]));
 }
+
+// --- Low value round-trip tests ---
+
+#[test]
+fn roundtrip_stencil_clip() {
+    use crate::engine::ecs::component::StencilClipComponent;
+    let mut original = StencilClipComponent::new();
+    original.stencil_ref = 3;
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<StencilClipComponent>(id).unwrap();
+    assert_eq!(got.stencil_ref, 3);
+}
+
+#[test]
+fn roundtrip_bounds() {
+    use crate::engine::ecs::component::BoundsComponent;
+    use crate::engine::graphics::bounds::Aabb;
+    let original = BoundsComponent::new(Aabb { min: [-1.0, -2.0, -3.0], max: [1.0, 2.0, 3.0] });
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<BoundsComponent>(id).unwrap();
+    assert_eq!(got.local.min, [-1.0, -2.0, -3.0]);
+    assert_eq!(got.local.max, [1.0, 2.0, 3.0]);
+}
+
+#[test]
+fn roundtrip_mesh() {
+    use crate::engine::ecs::component::MeshComponent;
+    let (world, id) = roundtrip_component(MeshComponent::new("scene.glb:body:0"));
+    let got = world.get_component_by_id_as::<MeshComponent>(id).unwrap();
+    assert_eq!(got.key, "scene.glb:body:0");
+}
+
+#[test]
+fn roundtrip_gesture_coord_type() {
+    use crate::engine::ecs::component::{GestureCoordTypeComponent, GestureCoordType};
+    let (world, id) = roundtrip_component(GestureCoordTypeComponent::screen_space_1d_slider());
+    let got = world.get_component_by_id_as::<GestureCoordTypeComponent>(id).unwrap();
+    assert_eq!(got.coord_type, GestureCoordType::ScreenSpace1DSlider);
+}
+
+#[test]
+fn roundtrip_collision_shape_cube() {
+    use crate::engine::ecs::component::{CollisionShapeComponent, CollisionShape};
+    let original = CollisionShapeComponent::new(CollisionShape::cube_half_extents([2.0, 3.0, 4.0]));
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<CollisionShapeComponent>(id).unwrap();
+    match got.shape {
+        CollisionShape::Cube { half_extents } => assert_eq!(half_extents, [2.0, 3.0, 4.0]),
+        _ => panic!("expected Cube"),
+    }
+}
+
+#[test]
+fn roundtrip_collision_shape_sphere() {
+    use crate::engine::ecs::component::{CollisionShapeComponent, CollisionShape};
+    let original = CollisionShapeComponent::new(CollisionShape::sphere_radius(1.5));
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<CollisionShapeComponent>(id).unwrap();
+    match got.shape {
+        CollisionShape::Sphere { radius } => assert!((radius - 1.5).abs() < 1e-6),
+        _ => panic!("expected Sphere"),
+    }
+}
+
+#[test]
+fn roundtrip_raycastable_shape() {
+    use crate::engine::ecs::component::{RaycastableShapeComponent, RaycastableShapeType};
+    let (world, id) = roundtrip_component(RaycastableShapeComponent::cone());
+    let got = world.get_component_by_id_as::<RaycastableShapeComponent>(id).unwrap();
+    assert_eq!(got.shape, RaycastableShapeType::Cone);
+}
+
+#[test]
+fn roundtrip_collision() {
+    use crate::engine::ecs::component::{CollisionComponent, CollisionMode};
+    let (world, id) = roundtrip_component(CollisionComponent::KINEMATIC());
+    let got = world.get_component_by_id_as::<CollisionComponent>(id).unwrap();
+    assert_eq!(got.mode, CollisionMode::Kinematic);
+}
+
+#[test]
+fn roundtrip_gravity() {
+    use crate::engine::ecs::component::GravityComponent;
+    let (world, id) = roundtrip_component(GravityComponent::new().with_coefficient(0.5));
+    let got = world.get_component_by_id_as::<GravityComponent>(id).unwrap();
+    assert!(got.enabled);
+    assert!((got.coefficient - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_pointer_disabled() {
+    use crate::engine::ecs::component::PointerComponent;
+    let (world, id) = roundtrip_component(PointerComponent::disabled());
+    let got = world.get_component_by_id_as::<PointerComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_skinned_mesh() {
+    use crate::engine::ecs::component::SkinnedMeshComponent;
+    let (world, id) = roundtrip_component(SkinnedMeshComponent::new(7));
+    let got = world.get_component_by_id_as::<SkinnedMeshComponent>(id).unwrap();
+    assert_eq!(got.skin_index, 7);
+}
+
+#[test]
+fn roundtrip_transform_sample_ancestor() {
+    use crate::engine::ecs::component::TransformSampleAncestorComponent;
+    let (world, id) = roundtrip_component(TransformSampleAncestorComponent::new().with_skip(3));
+    let got = world.get_component_by_id_as::<TransformSampleAncestorComponent>(id).unwrap();
+    assert_eq!(got.skip, 3);
+}
+
+#[test]
+fn roundtrip_quat_temporal_filter() {
+    use crate::engine::ecs::component::QuatTemporalFilterComponent;
+    let (world, id) = roundtrip_component(QuatTemporalFilterComponent::new().with_smoothing_factor(220.0));
+    let got = world.get_component_by_id_as::<QuatTemporalFilterComponent>(id).unwrap();
+    assert!((got.smoothing_factor - 220.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_vector3_temporal_filter() {
+    use crate::engine::ecs::component::Vector3TemporalFilterComponent;
+    let (world, id) = roundtrip_component(Vector3TemporalFilterComponent::new().with_smoothing_factor(15.0));
+    let got = world.get_component_by_id_as::<Vector3TemporalFilterComponent>(id).unwrap();
+    assert!((got.smoothing_factor - 15.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_quat_yaw_follow() {
+    use crate::engine::ecs::component::QuatYawFollowComponent;
+    let original = QuatYawFollowComponent::new(0.5, 2.0)
+        .with_forward_plus_z()
+        .with_initial_yaw(std::f32::consts::PI);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<QuatYawFollowComponent>(id).unwrap();
+    assert!((got.threshold - 0.5).abs() < 1e-6);
+    assert!((got.rate - 2.0).abs() < 1e-6);
+    assert!(got.forward_plus_z);
+    assert!((got.initial_yaw - std::f32::consts::PI).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_signal_route_upward() {
+    use crate::engine::ecs::component::SignalRouteUpwardComponent;
+    let original = SignalRouteUpwardComponent::new("UpdateTransform", "transform_pipeline");
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<SignalRouteUpwardComponent>(id).unwrap();
+    assert_eq!(got.intent_kind, "UpdateTransform");
+    assert_eq!(got.parent_type, "transform_pipeline");
+}
+
+#[test]
+fn roundtrip_avatar_body_yaw() {
+    use crate::engine::ecs::component::AvatarBodyYawComponent;
+    let original = AvatarBodyYawComponent::new()
+        .with_threshold(0.5)
+        .with_rate(2.0)
+        .with_forward_plus_z();
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<AvatarBodyYawComponent>(id).unwrap();
+    assert!((got.threshold - 0.5).abs() < 1e-6);
+    assert!((got.rate - 2.0).abs() < 1e-6);
+    assert!(got.forward_plus_z);
+}
+
+#[test]
+fn roundtrip_world_panel() {
+    use crate::engine::ecs::component::WorldPanelComponent;
+    let (_world, _id) = roundtrip_component(WorldPanelComponent::new());
+}
+
+#[test]
+fn roundtrip_inspector_panel() {
+    use crate::engine::ecs::component::InspectorPanelComponent;
+    let (_world, _id) = roundtrip_component(InspectorPanelComponent::new());
+}
+
+#[test]
+fn roundtrip_raycast() {
+    use crate::engine::ecs::component::{RayCastComponent, RayCastMode};
+    let original = RayCastComponent::continuous().with_max_distance(75.0);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<RayCastComponent>(id).unwrap();
+    assert_eq!(got.mode, RayCastMode::Continuous);
+    assert!((got.max_distance - 75.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_avatar_control() {
+    use crate::engine::ecs::component::AvatarControlComponent;
+    let original = AvatarControlComponent::new()
+        .with_head_bone("J_Bip_C_Neck")
+        .with_left_hand_bone("J_Bip_L_Hand")
+        .with_right_hand_bone("J_Bip_R_Hand")
+        .with_forward_plus_z()
+        .with_hand_rotation_smoothing(220.0)
+        .with_camera_bone("J_Bip_C_Head")
+        .with_avatar_height(1.7);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<AvatarControlComponent>(id).unwrap();
+    assert_eq!(got.head_bone, "J_Bip_C_Neck");
+    assert_eq!(got.left_hand_bone.as_deref(), Some("J_Bip_L_Hand"));
+    assert_eq!(got.right_hand_bone.as_deref(), Some("J_Bip_R_Hand"));
+    assert!(got.forward_plus_z);
+    assert_eq!(got.hand_rotation_smoothing, Some(220.0));
+    assert_eq!(got.camera_bone.as_deref(), Some("J_Bip_C_Head"));
+    assert_eq!(got.avatar_height, Some(1.7));
+}
+
+#[test]
+fn roundtrip_music_note_c5() {
+    use crate::engine::ecs::component::{MusicNote, MusicNoteComponent};
+    let note = MusicNote::c(5, 0.25).with_velocity(0.8);
+    let (world, id) = roundtrip_component(MusicNoteComponent::new(note));
+    let got = world.get_component_by_id_as::<MusicNoteComponent>(id).unwrap();
+    assert_eq!(got.note.pitch_name(), "c");
+    assert_eq!(got.note.octave(), 5);
+    assert!((got.note.duration_beats() - 0.25).abs() < 1e-6);
+    assert!((got.note.velocity() - 0.8).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_ik_chain_aim() {
+    use crate::engine::ecs::component::{IKChainComponent, IKSolver};
+    use slotmap::Key;
+    use crate::engine::ecs::ComponentId;
+    let sentinel = ComponentId::null();
+    let original = IKChainComponent::new(
+        IKSolver::AimConstraint { offset_yaw: std::f32::consts::PI },
+        sentinel,
+        sentinel,
+    ).with_weight(0.5);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<IKChainComponent>(id).unwrap();
+    match got.solver {
+        IKSolver::AimConstraint { offset_yaw } => {
+            assert!((offset_yaw - std::f32::consts::PI).abs() < 1e-6);
+        }
+        _ => panic!("expected AimConstraint"),
+    }
+    assert!((got.weight - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_transform_gizmo_translate() {
+    use crate::engine::ecs::component::{TransformGizmoTranslateComponent, TransformGizmoAxis};
+    let (world, id) = roundtrip_component(TransformGizmoTranslateComponent::new(TransformGizmoAxis::Y));
+    let got = world.get_component_by_id_as::<TransformGizmoTranslateComponent>(id).unwrap();
+    assert_eq!(got.axis, TransformGizmoAxis::Y);
+}
+
+#[test]
+fn roundtrip_transform_gizmo() {
+    use crate::engine::ecs::component::TransformGizmoComponent;
+    let (world, id) = roundtrip_component(TransformGizmoComponent::new().with_scale(0.5));
+    let got = world.get_component_by_id_as::<TransformGizmoComponent>(id).unwrap();
+    assert!((got.scale - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_renderer_stats() {
+    use crate::engine::ecs::component::RendererStatsComponent;
+    use crate::engine::graphics::CameraTarget;
+    let mut original = RendererStatsComponent::new();
+    original.enabled = false;
+    original.target = CameraTarget::Xr;
+    original.update_interval_sec = 0.5;
+    original.smoothing = 0.8;
+    original.color = [0.5, 0.6, 0.7, 1.0];
+    original.emissive = false;
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<RendererStatsComponent>(id).unwrap();
+    assert!(!got.enabled);
+    assert!(matches!(got.target, CameraTarget::Xr));
+    assert!((got.update_interval_sec - 0.5).abs() < 1e-6);
+    assert!((got.smoothing - 0.8).abs() < 1e-6);
+    assert_eq!(got.color, [0.5, 0.6, 0.7, 1.0]);
+    assert!(!got.emissive);
+}
+
+#[test]
+fn roundtrip_kinetic_response() {
+    use crate::engine::ecs::component::{KineticResponseComponent, KineticResponseMode};
+    let original = KineticResponseComponent::push()
+        .with_push_strength(8.0)
+        .with_friction(0.5)
+        .with_friction_y(0.25);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<KineticResponseComponent>(id).unwrap();
+    assert_eq!(got.mode, KineticResponseMode::Push);
+    assert!((got.push_strength - 8.0).abs() < 1e-6);
+    assert!((got.friction - 0.5).abs() < 1e-6);
+    assert!((got.friction_y - 0.25).abs() < 1e-6);
+}
