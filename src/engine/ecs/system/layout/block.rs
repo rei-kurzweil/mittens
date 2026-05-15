@@ -107,7 +107,7 @@ fn layout_items(
 
         // ── Background quad / overflow helper topology ───────────────────
         sync_bg_quad(world, emit, item.tc_id, item.padding_left_gu, item.padding_top_gu, item.box_width_gu, item.box_height_gu, unit_scale);
-        apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu);
+        apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu, unit_scale);
         let content_root = sync_overflow_topology(world, emit, item.tc_id, item.content_height_gu);
 
         let nested_items = measure_container_items(
@@ -440,6 +440,7 @@ pub(crate) fn apply_text_align(
     tc_id: ComponentId,
     content_w_gu: f32,
     content_h_gu: f32,
+    unit_scale: f32,
 ) {
     let style = world.children_of(tc_id).iter().find_map(|&ch| {
         world.get_component_by_id_as::<StyleComponent>(ch).map(|s| (s.text_align, s.word_wrap, s.word_wrap_tokens.clone()))
@@ -485,7 +486,7 @@ pub(crate) fn apply_text_align(
         inner_tc,
         IntentValue::UpdateTransform {
             component_ids: vec![inner_tc],
-            translation: [x_offset, y_offset, z],
+            translation: [x_offset * unit_scale, y_offset * unit_scale, z],
             rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
             scale,
         },
@@ -803,6 +804,55 @@ mod tests {
 
         assert_eq!(title_bar_tc.transform.translation, [10.0, -1.0, 0.005]);
         assert_eq!(title_label_tc.transform.translation, [0.02, -0.04, 0.01]);
+    }
+
+    #[test]
+    fn text_align_scales_offsets_by_layout_unit_scale() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut layout_system = LayoutSystem::new();
+
+        let root = world.add_component(LayoutComponent::new(20.0).with_unit_scale(0.08));
+
+        let button = world.add_component_boxed_named("button", Box::new(TransformComponent::new()));
+        let button_style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.width = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(6.0);
+            style.height = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(2.0);
+            style.text_align = crate::engine::ecs::component::style::TextAlign::Center;
+            style
+        });
+        let text_wrap = world.add_component_boxed_named(
+            "text_wrap",
+            Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.05)),
+        );
+        let text_scale = world.add_component_boxed_named(
+            "text_scale",
+            Box::new(TransformComponent::new().with_scale(0.08, 0.08, 0.08)),
+        );
+        let text = world.add_component_boxed_named("text", Box::new(TextComponent::new("Save")));
+
+        let _ = world.add_child(root, button);
+        let _ = world.add_child(button, button_style);
+        let _ = world.add_child(button, text_wrap);
+        let _ = world.add_child(text_wrap, text_scale);
+        let _ = world.add_child(text_scale, text);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let text_wrap_tc = world
+            .get_component_by_id_as::<TransformComponent>(text_wrap)
+            .expect("text_wrap transform");
+
+        assert!((text_wrap_tc.transform.translation[0] - 0.12).abs() < 1e-4);
+        assert!((text_wrap_tc.transform.translation[1] + 0.08).abs() < 1e-4);
+        assert!((text_wrap_tc.transform.translation[2] - 0.05).abs() < 1e-4);
     }
 
     #[test]

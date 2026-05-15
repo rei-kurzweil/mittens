@@ -1,7 +1,7 @@
 // world-panel.mms — import the reusable world-panel factory and use it in-scene.
 
 BGC {
-    C.rgba(0.18, 0.18, 0.20, 1.0)
+    C.rgba(0.25, 0.25, 0.25, 1.0)
 }
 
 I {
@@ -67,3 +67,21 @@ on(save_btn, "Click", fn(e) {
 on(load_btn, "Click", fn(e) {
     status_text.set_text("load_button clicked")
 })
+
+AL {
+    C.rgba(0.22, 0.22, 0.22, 1.0)
+}
+
+T.position(-1.6, 2.8, 2.2) {
+    DL {
+        intensity(0.95)
+        color(1.0, 1.0, 1.0)
+    }
+}
+
+T.position(1.8, 1.4, 2.8) {
+    DL {
+        intensity(0.35)
+        color(1.0, 1.0, 1.0)
+    }
+}
