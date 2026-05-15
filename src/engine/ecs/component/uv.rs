@@ -66,20 +66,12 @@ impl Component for UVComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("uvs".to_string(), serde_json::json!(self.uvs));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(uvs) = data.get("uvs") {
-            self.uvs = serde_json::from_value(uvs.clone())
-                .map_err(|e| format!("Failed to decode uvs: {}", e))?;
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let mut ce = ce("UV");
+        for [u, v] in &self.uvs {
+            ce = ce.with_call("uv", vec![num(*u as f64), num(*v as f64)]);
         }
-        Ok(())
+        ce
     }
 }

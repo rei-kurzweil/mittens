@@ -73,20 +73,22 @@ Priority is roughly "what's likely to be live-edited and need round-trip":
 
 ### Medium value
 
-- [ ] `TransparentCutoutComponent`
-- [ ] `TextureFilteringComponent`
-- [ ] `EmissivePassComponent`, `BloomComponent`, `BlurPassComponent`
-- [ ] `RenderGraphComponent`
-- [ ] `LightQuantizationComponent`
-- [ ] `NormalVisualisationComponent`
-- [ ] `UVComponent`
-- [ ] `ScrollingComponent`
-- [ ] `ClockComponent` (bpm)
+- [x] `TransparentCutoutComponent` — `TransparentCutout {}` (enabled) or `.disabled()`
+- [x] `TextureFilteringComponent` — `TextureFiltering.linear/nearest/nearest_magnification()`
+- [x] `EmissivePassComponent` — `EmissivePass {}` (marker)
+- [x] `BloomComponent` — `Bloom.enabled().intensity().radius_ndc().emissive_scale().half_res()` + optional `.output_texture()`
+- [x] `BlurPassComponent` — `BlurPass.enabled().radius_ndc().half_res()`
+- [x] `RenderGraphComponent` — `RenderGraph.on/off()`
+- [x] `LightQuantizationComponent` — `LightQuantization.steps(x)`
+- [x] `NormalVisualisationComponent` — `NormalVis.thickness(x)`
+- [x] `UVComponent` — `UV {}` chained with `.uv(u, v)` per vertex
+- [x] `ScrollingComponent` — `Scrolling.new(viewport, content)` (runtime drag/track state intentionally not serialized)
+- [x] `ClockComponent` — `Clock.bpm(x)`
 - [ ] `ActionComponent` — has multiple shapes (print, update_transform); complex
-- [ ] `RouterComponent`
-- [ ] `TransitionComponent`
-- [ ] `TextShadowComponent`
-- [ ] `RendererSettingsComponent`
+- [x] `RouterComponent` — `Router.target("name").ignore(["a","b"])`
+- [x] `TransitionComponent` — `Transition.enabled().duration_beats().<easing>().capture_from_current().<replace_policy>()`
+- [x] `TextShadowComponent` — `TextShadow.rgba([…]).scale(x).offset([x,y,z])`
+- [x] `RendererSettingsComponent` — `RendererSettings {}` or `.msaa_off()` + optional `.window_size(w, h)`
 
 ### Low value (transient / runtime-only / not user-authored)
 

@@ -54,31 +54,11 @@ impl Component for BlurPassComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("enabled".to_string(), serde_json::json!(self.enabled));
-        map.insert("radius_ndc".to_string(), serde_json::json!(self.radius_ndc));
-        map.insert("half_res".to_string(), serde_json::json!(self.half_res));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(enabled) = data.get("enabled") {
-            self.enabled = serde_json::from_value(enabled.clone())
-                .map_err(|e| format!("Failed to decode blur_pass.enabled: {e}"))?;
-        }
-        if let Some(radius_ndc) = data.get("radius_ndc") {
-            self.radius_ndc = serde_json::from_value::<f32>(radius_ndc.clone())
-                .map_err(|e| format!("Failed to decode blur_pass.radius_ndc: {e}"))?
-                .max(0.0);
-        }
-        if let Some(half_res) = data.get("half_res") {
-            self.half_res = serde_json::from_value(half_res.clone())
-                .map_err(|e| format!("Failed to decode blur_pass.half_res: {e}"))?;
-        }
-        Ok(())
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce("BlurPass")
+            .with_call("enabled", vec![b(self.enabled)])
+            .with_call("radius_ndc", vec![num(self.radius_ndc as f64)])
+            .with_call("half_res", vec![b(self.half_res)])
     }
 }

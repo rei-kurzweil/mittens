@@ -58,28 +58,8 @@ impl Component for LightQuantizationComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert(
-            "quant_steps".to_string(),
-            serde_json::Value::Number(
-                serde_json::Number::from_f64(self.quant_steps as f64).unwrap_or_else(|| {
-                    // Fallback (NaN/inf): default.
-                    serde_json::Number::from_f64(Self::DEFAULT_STEPS as f64).unwrap()
-                }),
-            ),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("quant_steps") {
-            self.quant_steps = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode quant_steps: {}", e))?;
-        }
-        Ok(())
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce_call("LightQuantization", "steps", vec![num(self.quant_steps as f64)])
     }
 }

@@ -52,21 +52,12 @@ impl Component for TransparentCutoutComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("enabled".to_string(), serde_json::json!(self.enabled));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("enabled") {
-            if let Some(b) = v.as_bool() {
-                self.enabled = b;
-            }
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        if self.enabled {
+            ce("TransparentCutout")
+        } else {
+            ce_call("TransparentCutout", "disabled", vec![])
         }
-        Ok(())
     }
 }

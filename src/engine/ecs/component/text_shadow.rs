@@ -91,39 +91,17 @@ impl Component for TextShadowComponent {
         // TextShadow is consumed by TextSystem at TextComponent expansion time.
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("rgba".to_string(), serde_json::json!(self.rgba));
-        map.insert("scale".to_string(), serde_json::json!(self.scale));
-        map.insert("offset".to_string(), serde_json::json!(self.offset));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(rgba) = data.get("rgba") {
-            self.rgba = serde_json::from_value(rgba.clone())
-                .map_err(|e| format!("Failed to decode rgba: {}", e))?;
-        } else {
-            self.rgba = Self::DEFAULT_RGBA;
-        }
-
-        if let Some(scale) = data.get("scale") {
-            self.scale = serde_json::from_value(scale.clone())
-                .map_err(|e| format!("Failed to decode scale: {}", e))?;
-        } else {
-            self.scale = Self::DEFAULT_SCALE;
-        }
-
-        if let Some(offset) = data.get("offset") {
-            self.offset = serde_json::from_value(offset.clone())
-                .map_err(|e| format!("Failed to decode offset: {}", e))?;
-        } else {
-            self.offset = Self::DEFAULT_OFFSET;
-        }
-
-        Ok(())
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce("TextShadow")
+            .with_call(
+                "rgba",
+                vec![array(nums(self.rgba.iter().map(|&v| v as f64)))],
+            )
+            .with_call("scale", vec![num(self.scale as f64)])
+            .with_call(
+                "offset",
+                vec![array(nums(self.offset.iter().map(|&v| v as f64)))],
+            )
     }
 }

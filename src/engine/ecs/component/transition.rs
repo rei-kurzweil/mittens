@@ -144,45 +144,13 @@ impl Component for TransitionComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("enabled".to_string(), serde_json::json!(self.enabled));
-        map.insert(
-            "duration_beats".to_string(),
-            serde_json::json!(self.duration_beats),
-        );
-        map.insert("easing".to_string(), serde_json::json!(self.easing.as_str()));
-        map.insert(
-            "capture_from_current".to_string(),
-            serde_json::json!(self.capture_from_current),
-        );
-        map.insert("replace".to_string(), serde_json::json!(self.replace.as_str()));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(enabled) = data.get("enabled") {
-            self.enabled = serde_json::from_value(enabled.clone())
-                .map_err(|e| format!("Failed to decode enabled: {}", e))?;
-        }
-        if let Some(duration_beats) = data.get("duration_beats") {
-            let parsed: f64 = serde_json::from_value(duration_beats.clone())
-                .map_err(|e| format!("Failed to decode duration_beats: {}", e))?;
-            self.duration_beats = if parsed.is_finite() { parsed.max(0.0) } else { 0.0 };
-        }
-        if let Some(easing) = data.get("easing").and_then(|v| v.as_str()) {
-            self.easing = TransitionEasing::parse(easing)?;
-        }
-        if let Some(capture_from_current) = data.get("capture_from_current") {
-            self.capture_from_current = serde_json::from_value(capture_from_current.clone())
-                .map_err(|e| format!("Failed to decode capture_from_current: {}", e))?;
-        }
-        if let Some(replace) = data.get("replace").and_then(|v| v.as_str()) {
-            self.replace = TransitionReplacePolicy::parse(replace)?;
-        }
-        Ok(())
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce("Transition")
+            .with_call("enabled", vec![b(self.enabled)])
+            .with_call("duration_beats", vec![num(self.duration_beats)])
+            .with_call(self.easing.as_str(), vec![])
+            .with_call("capture_from_current", vec![b(self.capture_from_current)])
+            .with_call(self.replace.as_str(), vec![])
     }
 }

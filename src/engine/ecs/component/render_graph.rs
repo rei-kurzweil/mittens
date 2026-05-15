@@ -53,20 +53,9 @@ impl Component for RenderGraphComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("enabled".to_string(), serde_json::json!(self.enabled));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(enabled) = data.get("enabled") {
-            self.enabled = serde_json::from_value(enabled.clone())
-                .map_err(|e| format!("Failed to decode enabled: {e}"))?;
-        }
-        Ok(())
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = if self.enabled { "on" } else { "off" };
+        ce_call("RenderGraph", ctor, vec![])
     }
 }

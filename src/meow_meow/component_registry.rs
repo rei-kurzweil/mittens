@@ -16,7 +16,8 @@ use crate::engine::ecs::component::{
     HtmlElementComponent, ElementType,
     InputComponent, InputTransformModeComponent, InputXRComponent,
     InspectorPanelComponent, KeyframeComponent, LayoutComponent, NormalVisualisationComponent,
-    OpacityComponent, OpenXRComponent, OverlayComponent, PointLightComponent, PointerComponent,
+    LightQuantizationComponent, OpacityComponent, OpenXRComponent, OverlayComponent,
+    PointLightComponent, PointerComponent, TransparentCutoutComponent,
     RouterComponent,
     RenderGraphComponent, ScrollingComponent, SelectableComponent,
     StyleComponent, AlignItems, BoxSizing, Display, EdgeInsets, FlexDirection, FlexWrap,
@@ -522,8 +523,20 @@ fn create_component(
             _ => add!(RenderGraphComponent::new()),
         },
         "EmissivePass" => add!(EmissivePassComponent::new()),
-        "BlurPass" => add!(BlurPassComponent::new()),
-        "Bloom" => add!(BloomComponent::new()),
+        "BlurPass" => {
+            let id = world.add_component(BlurPassComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
+        "Bloom" => {
+            let id = world.add_component(BloomComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "DirectionalLight" => {
             let id = world.add_component(DirectionalLightComponent::new());
             if let Some(method) = ctor {
@@ -646,11 +659,26 @@ fn create_component(
                 Some("msaa_off") => RendererSettingsComponent::msaa_off(),
                 _ => RendererSettingsComponent::new(),
             };
-            add!(c)
+            let id = world.add_component(c);
+            // Builder calls (e.g. `.window_size(...)`) chained after the ctor go
+            // through apply_call in spawn_tree's call-list pass. The non-`msaa_off`
+            // path may pass through a builder name as the first ctor; route it.
+            if let Some(method) = ctor {
+                if method != "msaa_off" {
+                    apply_call(world, id, method, args)?;
+                }
+            }
+            Ok(id)
         }
         "RendererStats" => add!(RendererStatsComponent::new()),
         "Text" => add!(TextComponent::new("")),
-        "TextShadow" => add!(TextShadowComponent::new()),
+        "TextShadow" => {
+            let id = world.add_component(TextShadowComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "AvatarBodyYaw" => add!(AvatarBodyYawComponent::new()),
         "AvatarControl" => add!(AvatarControlComponent::new()),
         "Editor" => {
@@ -660,7 +688,13 @@ fn create_component(
             }
             Ok(id)
         }
-        "Router" => add!(RouterComponent::new()),
+        "Router" => {
+            let id = world.add_component(RouterComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "Selectable" => match ctor {
             Some("off") => add!(SelectableComponent::off()),
             _ => add!(SelectableComponent::on()),
@@ -719,8 +753,20 @@ fn create_component(
             Some("from_dds") => add!(TextureComponent::from_dds(arg_str(args, 0)?)),
             _ => add!(TextureComponent::unresolved()),
         },
-        "Transition" => add!(TransitionComponent::new()),
-        "UV" => add!(UVComponent::new()),
+        "Transition" => {
+            let id = world.add_component(TransitionComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
+        "UV" => {
+            let id = world.add_component(UVComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "Clock" => {
             let mut c = ClockComponent::new();
             if let Some("bpm") = ctor {
@@ -767,6 +813,14 @@ fn create_component(
             }
             add!(c)
         }
+        "TransparentCutout" => match ctor {
+            Some("disabled") => add!(TransparentCutoutComponent::new().with_enabled(false)),
+            _ => add!(TransparentCutoutComponent::new()),
+        },
+        "LightQuantization" => match ctor {
+            Some("steps") => add!(LightQuantizationComponent::steps(arg_f32(args, 0)?)),
+            _ => add!(LightQuantizationComponent::new()),
+        },
         other => Err(format!("unknown component type: '{other}'")),
     }
 }
@@ -912,6 +966,9 @@ fn apply_call(
                 *bloom = bloom.clone().with_emissive_scale(arg_f32(args, 0)?)
             }
             "half_res" => *bloom = bloom.clone().with_half_res(arg_bool(args, 0)?),
+            "output_texture" => {
+                *bloom = bloom.clone().with_output_texture(arg_str(args, 0)?);
+            }
             _ => {}
         }
         return Ok(());
@@ -1035,6 +1092,23 @@ fn apply_call(
                 *ts = ts.clone().with_offset_xy(arr);
             }
             "z_offset" => *ts = ts.clone().with_z_offset(arg_f32(args, 0)?),
+            "offset" => {
+                let arr = arg_f32_arr::<3>(args, 0)?;
+                *ts = ts.clone().with_offset(arr);
+            }
+            "rgba" => {
+                let arr = arg_f32_arr::<4>(args, 0)?;
+                *ts = ts.clone().with_rgba(arr);
+            }
+            "scale" => *ts = ts.clone().with_scale(arg_f32(args, 0)?),
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(router) = world.get_component_by_id_as_mut::<RouterComponent>(id) {
+        match method {
+            "target" => router.target_name = Some(arg_str(args, 0)?.to_string()),
+            "ignore" => router.ignore_names = arg_str_vec(args, 0)?,
             _ => {}
         }
         return Ok(());
