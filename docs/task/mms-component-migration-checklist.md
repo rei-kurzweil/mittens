@@ -35,6 +35,12 @@ with no args.
       proper migration needs builders for each. Most authored Style ends up
       in MMS source today, so the stub is acceptable until we round-trip
       live-edited Style.
+- [x] `OpacityComponent` — `Opacity.opacity(x)` + optional `.multiple_layers()`
+- [x] `EmissiveComponent` — `Emissive.on()` / `Emissive.off()` + optional `.intensity(x)`
+- [x] `AmbientLightComponent` — `AmbientLight.rgb(r,g,b)`
+- [x] `DirectionalLightComponent` — `DirectionalLight.intensity(x).color(r,g,b)`
+- [x] `PointLightComponent` — `PointLight.intensity(x).distance(x).color(r,g,b)`
+- [x] `GLTFComponent` — `GLTF.new(uri)` + optional `.with_visualized_transforms(true)`
 
 ## Components still using default `to_mms_ast`
 
@@ -46,12 +52,6 @@ Priority is roughly "what's likely to be live-edited and need round-trip":
 
 ### High value
 
-- [ ] `OpacityComponent` — needs `apply_call` for `opacity()` + `multiple_layers()`
-- [ ] `EmissiveComponent` — needs `apply_call` for `intensity()`
-- [ ] `AmbientLightComponent` — `AmbientLight.rgb()` already in registry; just add `to_mms_ast`
-- [ ] `DirectionalLightComponent` — registry has `intensity()` + `color()` builders
-- [ ] `PointLightComponent` — registry has `intensity()` / `distance()` / `color()` builders
-- [ ] `GLTFComponent` — registry has `.new(uri)`; add `to_mms_ast`
 - [ ] `TextureComponent` — registry has multiple ctors (`uri`, `from_png`, `from_dds`, `render_image`); pick from runtime state
 - [ ] `Camera3DComponent`, `Camera2DComponent`, `CameraXRComponent`
 - [ ] `OpenXRComponent`, `ControllerXRComponent`, `InputXRComponent`

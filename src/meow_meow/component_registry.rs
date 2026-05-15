@@ -15,7 +15,7 @@ use crate::engine::ecs::component::{
     HtmlElementComponent, ElementType,
     InputComponent, InputTransformModeComponent, InputXRComponent,
     InspectorPanelComponent, KeyframeComponent, LayoutComponent, NormalVisualisationComponent,
-    OpenXRComponent, OverlayComponent, PointLightComponent, PointerComponent,
+    OpacityComponent, OpenXRComponent, OverlayComponent, PointLightComponent, PointerComponent,
     RouterComponent,
     RenderGraphComponent, ScrollingComponent, SelectableComponent,
     StyleComponent, AlignItems, BoxSizing, Display, EdgeInsets, FlexDirection, FlexWrap,
@@ -524,6 +524,7 @@ fn create_component(
             Some("off") => add!(EmissiveComponent::off()),
             _ => add!(EmissiveComponent::on()),
         },
+        "Opacity" => add!(OpacityComponent::new()),
         "Input" => {
             let mut c = InputComponent::new();
             if let Some("speed") = ctor {
@@ -859,6 +860,26 @@ fn apply_call(
             }
             "half_res" => *bloom = bloom.clone().with_half_res(arg_bool(args, 0)?),
             _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(op) = world.get_component_by_id_as_mut::<OpacityComponent>(id) {
+        match method {
+            "opacity" => *op = op.with_opacity(arg_f32(args, 0)?),
+            "multiple_layers" => *op = op.with_multiple_layers(),
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(em) = world.get_component_by_id_as_mut::<EmissiveComponent>(id) {
+        if method == "intensity" {
+            em.intensity = arg_f32(args, 0)?.max(0.0);
+        }
+        return Ok(());
+    }
+    if let Some(gltf) = world.get_component_by_id_as_mut::<GLTFComponent>(id) {
+        if method == "with_visualized_transforms" {
+            *gltf = gltf.clone().with_visualized_transforms(arg_bool(args, 0)?);
         }
         return Ok(());
     }
