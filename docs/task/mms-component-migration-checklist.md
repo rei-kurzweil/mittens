@@ -52,17 +52,24 @@ Priority is roughly "what's likely to be live-edited and need round-trip":
 
 ### High value
 
-- [ ] `TextureComponent` — registry has multiple ctors (`uri`, `from_png`, `from_dds`, `render_image`); pick from runtime state
-- [ ] `Camera3DComponent`, `Camera2DComponent`, `CameraXRComponent`
-- [ ] `OpenXRComponent`, `ControllerXRComponent`, `InputXRComponent`
-- [ ] `AnimationComponent` (state — playing/paused/looping)
-- [ ] `KeyframeComponent` (beat)
-- [ ] `InputComponent` (speed)
-- [ ] `InputTransformModeComponent`
-- [ ] `EditorComponent` — but the editor's own subtree is excluded from save
-- [ ] `BackgroundComponent`, `OverlayComponent`, `BackgroundColorComponent`
-- [ ] `RaycastableComponent`, `SelectableComponent`
-- [ ] `HtmlElementComponent` — many element-type variants
+- [x] `TextureComponent` — `Texture.with_uri/from_dds/render_image(...)` (handle source is runtime-only, emits unresolved)
+- [x] `Camera3DComponent` — `Camera3D.target(...).fov(...).near(...).far(...)`
+- [x] `Camera2DComponent` — `Camera2D.target(...)` (registry entry added)
+- [x] `CameraXRComponent` — `CameraXR.on/off()` + optional `.target("window")`
+- [x] `OpenXRComponent` — `OpenXR.on/off()`
+- [x] `ControllerXRComponent` — `ControllerXR.new(enabled, hand, pose)`
+- [x] `InputXRComponent` — `InputXR.on/off()`
+- [x] `AnimationComponent` — `Animation.playing/looping/paused()`
+- [x] `KeyframeComponent` — `Keyframe.at(beat)`
+- [x] `InputComponent` — `Input.speed(x)`
+- [x] `InputTransformModeComponent` — `InputTransformMode.forward_y/forward_z()` + optional `.roll_axis_y()` / `.fps_rotation()`
+- [x] `EditorComponent` — `Editor.translation_space(...).rotation_space(...)` (panel positions still lost)
+- [x] `BackgroundComponent` — `Background {}` + optional `.occlusion_and_lighting()` / `.ray_casting()`
+- [x] `BackgroundColorComponent` — `BackgroundColor {}` (marker)
+- [x] `OverlayComponent` — `Overlay {}` (marker, never had encode/decode)
+- [x] `RaycastableComponent` — `Raycastable.enabled/disabled/drag_only/click_only()` + optional `.pointer_events("pass_through")`
+- [x] `SelectableComponent` — `Selectable.on/off()`
+- [x] `HtmlElementComponent` — element-type ctor (`div`, `span`, `h1`–`h6`, `header`, `footer`, `main`, `nav`, `aside`, `section`, `article`, `body`, `p`); rarer element types fall back to bare `HtmlElement {}` until apply_call vocab is expanded
 
 ### Medium value
 

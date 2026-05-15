@@ -74,42 +74,13 @@ impl Component for AnimationComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        let state = match self.state {
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = match self.state {
             AnimationState::Playing => "playing",
             AnimationState::Looping => "looping",
             AnimationState::Paused => "paused",
         };
-        map.insert("state".to_string(), serde_json::json!(state));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        // New schema.
-        if let Some(state) = data.get("state").and_then(|v| v.as_str()) {
-            self.state = match state {
-                "playing" => AnimationState::Playing,
-                "looping" => AnimationState::Looping,
-                "paused" => AnimationState::Paused,
-                other => return Err(format!("Unknown animation state: {}", other)),
-            };
-            return Ok(());
-        }
-
-        // Backward compatibility: old schema used { playing: bool }.
-        if let Some(playing) = data.get("playing") {
-            let playing: bool = serde_json::from_value(playing.clone())
-                .map_err(|e| format!("Failed to decode playing: {}", e))?;
-            self.state = if playing {
-                AnimationState::Looping
-            } else {
-                AnimationState::Paused
-            };
-        }
-        Ok(())
+        ce_call("Animation", ctor, vec![])
     }
 }

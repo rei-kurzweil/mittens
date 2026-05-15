@@ -48,20 +48,8 @@ impl Component for KeyframeComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("beat".to_string(), serde_json::json!(self.beat));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(beat) = data.get("beat") {
-            self.beat = serde_json::from_value(beat.clone())
-                .map_err(|e| format!("Failed to decode beat: {}", e))?;
-        }
-        Ok(())
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce_call("Keyframe", "at", vec![num(self.beat)])
     }
 }

@@ -9,9 +9,10 @@
 use crate::engine::ecs::component::{
     ActionComponent, AmbientLightComponent, AnimationComponent, AnimationState, BloomComponent,
     BlurPassComponent, AvatarBodyYawComponent, AvatarControlComponent, BackgroundColorComponent,
-    BackgroundComponent, Camera3DComponent, CameraXRComponent, ClockComponent, ColorComponent,
+    BackgroundComponent, Camera2DComponent, Camera3DComponent, CameraXRComponent, ClockComponent, ColorComponent,
     ControllerHand, ControllerPoseKind, ControllerXRComponent, DirectionalLightComponent,
-    EditorComponent, EmissiveComponent, EmissivePassComponent, GLTFComponent,
+    EditorComponent, EmissiveComponent, EmissivePassComponent, GLTFComponent, TransformGizmoCoordSpace,
+    PointerEvents,
     HtmlElementComponent, ElementType,
     InputComponent, InputTransformModeComponent, InputXRComponent,
     InspectorPanelComponent, KeyframeComponent, LayoutComponent, NormalVisualisationComponent,
@@ -500,7 +501,13 @@ fn create_component(
             _ => Err(format!("Renderable: unknown constructor '{}'", ctor.unwrap_or(""))),
         },
         "StencilClip" => add!(StencilClipComponent::new()),
-        "Background" => add!(BackgroundComponent::new()),
+        "Background" => {
+            let id = world.add_component(BackgroundComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "Overlay" => add!(OverlayComponent::new()),
         "BackgroundColor" => add!(BackgroundColorComponent::new()),
         "AmbientLight" => match ctor {
@@ -557,18 +564,37 @@ fn create_component(
         },
         "InputTransformMode" => {
             let c = match ctor {
+                Some("forward_y") => InputTransformModeComponent::forward_y(),
                 Some("forward_z") => InputTransformModeComponent::forward_z(),
                 _ => InputTransformModeComponent::forward_z(),
             };
-            add!(c)
+            let id = world.add_component(c);
+            // Remaining builder calls (e.g. roll_axis_y, fps_rotation) get applied
+            // by spawn_tree's normal call-list pass via apply_call.
+            Ok(id)
         }
-        "Camera3D" => add!(Camera3DComponent::new()),
+        "Camera3D" => {
+            let id = world.add_component(Camera3DComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
+        "Camera2D" => {
+            let id = world.add_component(Camera2DComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "CameraXR" => match ctor {
+            Some("off") => add!(CameraXRComponent::off()),
             Some("on") => add!(CameraXRComponent::on()),
             _ => add!(CameraXRComponent::on()),
         },
         "Pointer" => add!(PointerComponent::new()),
         "OpenXR" => match ctor {
+            Some("off") => add!(OpenXRComponent::off()),
             Some("on") => add!(OpenXRComponent::on()),
             _ => add!(OpenXRComponent::on()),
         },
@@ -627,7 +653,13 @@ fn create_component(
         "TextShadow" => add!(TextShadowComponent::new()),
         "AvatarBodyYaw" => add!(AvatarBodyYawComponent::new()),
         "AvatarControl" => add!(AvatarControlComponent::new()),
-        "Editor" => add!(EditorComponent::new()),
+        "Editor" => {
+            let id = world.add_component(EditorComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "Router" => add!(RouterComponent::new()),
         "Selectable" => match ctor {
             Some("off") => add!(SelectableComponent::off()),
@@ -668,6 +700,9 @@ fn create_component(
             add!(LayoutComponent::new(w))
         }
         "Raycastable" => match ctor {
+            Some("disabled") => add!(RaycastableComponent::disabled()),
+            Some("drag_only") => add!(RaycastableComponent::drag_only()),
+            Some("click_only") => add!(RaycastableComponent::click_only()),
             Some("enabled") => add!(RaycastableComponent::enabled()),
             _ => add!(RaycastableComponent::enabled()),
         },
@@ -878,6 +913,78 @@ fn apply_call(
             }
             "half_res" => *bloom = bloom.clone().with_half_res(arg_bool(args, 0)?),
             _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(c3) = world.get_component_by_id_as_mut::<Camera3DComponent>(id) {
+        match method {
+            "fov" => *c3 = c3.clone().with_fov(arg_f32(args, 0)?),
+            "near" => *c3 = c3.clone().with_near(arg_f32(args, 0)?),
+            "far" => *c3 = c3.clone().with_far(arg_f32(args, 0)?),
+            "target" => {
+                c3.target = match arg_str(args, 0)? {
+                    "xr" => CameraTarget::Xr,
+                    _ => CameraTarget::Window,
+                };
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(c2) = world.get_component_by_id_as_mut::<Camera2DComponent>(id) {
+        if method == "target" {
+            c2.target = match arg_str(args, 0)? {
+                "xr" => CameraTarget::Xr,
+                _ => CameraTarget::Window,
+            };
+        }
+        return Ok(());
+    }
+    if let Some(cxr) = world.get_component_by_id_as_mut::<CameraXRComponent>(id) {
+        if method == "target" {
+            cxr.target = match arg_str(args, 0)? {
+                "window" => CameraTarget::Window,
+                _ => CameraTarget::Xr,
+            };
+        }
+        return Ok(());
+    }
+    if let Some(bg) = world.get_component_by_id_as_mut::<BackgroundComponent>(id) {
+        match method {
+            "occlusion_and_lighting" => bg.occlusion_and_lighting = true,
+            "ray_casting" => bg.ray_casting = true,
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(ed) = world.get_component_by_id_as_mut::<EditorComponent>(id) {
+        match method {
+            "translation_space" => {
+                let space = match arg_str(args, 0)? {
+                    "local" => TransformGizmoCoordSpace::Local,
+                    _ => TransformGizmoCoordSpace::World,
+                };
+                ed.transform_gizmo_translation_space = space;
+            }
+            "rotation_space" => {
+                let space = match arg_str(args, 0)? {
+                    "local" => TransformGizmoCoordSpace::Local,
+                    _ => TransformGizmoCoordSpace::World,
+                };
+                ed.transform_gizmo_rotation_space = space;
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(rc) = world.get_component_by_id_as_mut::<RaycastableComponent>(id) {
+        if method == "pointer_events" {
+            rc.pointer_events = match arg_str(args, 0)? {
+                "drag_only" => PointerEvents::DragOnly,
+                "click_only" => PointerEvents::ClickOnly,
+                "pass_through" => PointerEvents::PassThrough,
+                _ => PointerEvents::All,
+            };
         }
         return Ok(());
     }

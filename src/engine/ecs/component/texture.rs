@@ -152,35 +152,21 @@ impl Component for TextureComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        // Keep on-disk format stable for now: only URI-backed textures are serialized.
-        // Handle-backed textures are runtime-only.
-        if let Some(uri) = self.uri() {
-            map.insert("uri".to_string(), serde_json::json!(uri));
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        if let Some(selector) = &self.render_image {
+            return ce_call("Texture", "render_image", vec![s(selector)]);
         }
-        if let Some(render_image) = &self.render_image {
-            map.insert("render_image".to_string(), serde_json::json!(render_image));
+        match (&self.source, self.format) {
+            (TextureSource::Uri(uri), _) if uri.is_empty() => ce("Texture"),
+            (TextureSource::Uri(uri), CatEngineTextureFormat::DdsBc7) => {
+                ce_call("Texture", "from_dds", vec![s(uri)])
+            }
+            (TextureSource::Uri(uri), CatEngineTextureFormat::Rgba8) => {
+                ce_call("Texture", "with_uri", vec![s(uri)])
+            }
+            // Handle-backed textures are runtime-only; emit unresolved.
+            (TextureSource::Handle(_), _) => ce("Texture"),
         }
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(uri) = data.get("uri") {
-            let uri_str: String = serde_json::from_value(uri.clone())
-                .map_err(|e| format!("Failed to decode uri: {}", e))?;
-            self.source = TextureSource::Uri(uri_str);
-        }
-        if let Some(render_image) = data.get("render_image") {
-            self.render_image = Some(
-                serde_json::from_value(render_image.clone())
-                    .map_err(|e| format!("Failed to decode render_image: {}", e))?,
-            );
-        }
-        self.refresh_format_from_uri();
-        Ok(())
     }
 }

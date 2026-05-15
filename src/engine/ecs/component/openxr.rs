@@ -42,19 +42,9 @@ impl Component for OpenXRComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("enabled".to_string(), serde_json::Value::Bool(self.enabled));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("enabled") {
-            self.enabled = v.as_bool().unwrap_or(false);
-        }
-        Ok(())
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = if self.enabled { "on" } else { "off" };
+        ce_call("OpenXR", ctor, vec![])
     }
 }

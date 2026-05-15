@@ -48,33 +48,15 @@ impl Component for BackgroundComponent {
         "background"
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert(
-            "occlusion_and_lighting".to_string(),
-            serde_json::json!(self.occlusion_and_lighting),
-        );
-        map.insert(
-            "ray_casting".to_string(),
-            serde_json::json!(self.ray_casting),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("occlusion_and_lighting") {
-            if let Some(b) = v.as_bool() {
-                self.occlusion_and_lighting = b;
-            }
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let mut ce = ce("Background");
+        if self.occlusion_and_lighting {
+            ce = ce.with_call("occlusion_and_lighting", vec![]);
         }
-        if let Some(v) = data.get("ray_casting") {
-            if let Some(b) = v.as_bool() {
-                self.ray_casting = b;
-            }
+        if self.ray_casting {
+            ce = ce.with_call("ray_casting", vec![]);
         }
-        Ok(())
+        ce
     }
 }
