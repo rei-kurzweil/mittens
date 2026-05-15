@@ -1260,3 +1260,174 @@ fn roundtrip_html_element_h1() {
     let got = world.get_component_by_id_as::<HtmlElementComponent>(id).unwrap();
     assert_eq!(got.element_type, ElementType::H1);
 }
+
+// --- Medium value round-trip tests ---
+
+#[test]
+fn roundtrip_transparent_cutout_disabled() {
+    use crate::engine::ecs::component::TransparentCutoutComponent;
+    let (world, id) = roundtrip_component(TransparentCutoutComponent::new().with_enabled(false));
+    let got = world.get_component_by_id_as::<TransparentCutoutComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_texture_filtering_nearest() {
+    use crate::engine::ecs::component::TextureFilteringComponent;
+    use crate::engine::graphics::TextureFiltering;
+    let (world, id) = roundtrip_component(TextureFilteringComponent::nearest());
+    let got = world.get_component_by_id_as::<TextureFilteringComponent>(id).unwrap();
+    assert_eq!(got.filtering, TextureFiltering::Nearest);
+}
+
+#[test]
+fn roundtrip_emissive_pass() {
+    use crate::engine::ecs::component::EmissivePassComponent;
+    let (_world, _id) = roundtrip_component(EmissivePassComponent::new());
+}
+
+#[test]
+fn roundtrip_bloom() {
+    use crate::engine::ecs::component::BloomComponent;
+    let original = BloomComponent::new()
+        .with_enabled(false)
+        .with_intensity(0.75)
+        .with_radius_ndc(0.125)
+        .with_emissive_scale(1.5)
+        .with_half_res(true)
+        .with_output_texture("scene_bloom");
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<BloomComponent>(id).unwrap();
+    assert!(!got.enabled);
+    assert!((got.intensity - 0.75).abs() < 1e-6);
+    assert!((got.radius_ndc - 0.125).abs() < 1e-6);
+    assert!((got.emissive_scale - 1.5).abs() < 1e-6);
+    assert!(got.half_res);
+    assert_eq!(got.output_texture.as_deref(), Some("scene_bloom"));
+}
+
+#[test]
+fn roundtrip_blur_pass() {
+    use crate::engine::ecs::component::BlurPassComponent;
+    let original = BlurPassComponent::new()
+        .with_enabled(false)
+        .with_radius_ndc(0.25)
+        .with_half_res(true);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<BlurPassComponent>(id).unwrap();
+    assert!(!got.enabled);
+    assert!((got.radius_ndc - 0.25).abs() < 1e-6);
+    assert!(got.half_res);
+}
+
+#[test]
+fn roundtrip_render_graph_off() {
+    use crate::engine::ecs::component::RenderGraphComponent;
+    let (world, id) = roundtrip_component(RenderGraphComponent::off());
+    let got = world.get_component_by_id_as::<RenderGraphComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_light_quantization() {
+    use crate::engine::ecs::component::LightQuantizationComponent;
+    let (world, id) = roundtrip_component(LightQuantizationComponent::steps(5.0));
+    let got = world.get_component_by_id_as::<LightQuantizationComponent>(id).unwrap();
+    assert!((got.quant_steps - 5.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_normal_visualisation() {
+    use crate::engine::ecs::component::NormalVisualisationComponent;
+    let (world, id) = roundtrip_component(NormalVisualisationComponent::new().with_thickness(0.05));
+    let got = world.get_component_by_id_as::<NormalVisualisationComponent>(id).unwrap();
+    assert!((got.thickness - 0.05).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_uv() {
+    use crate::engine::ecs::component::UVComponent;
+    let original = UVComponent::new()
+        .with_uv(0.0, 0.0)
+        .with_uv(1.0, 0.0)
+        .with_uv(0.5, 1.0);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<UVComponent>(id).unwrap();
+    assert_eq!(got.uvs.len(), 3);
+    assert!((got.uvs[2][0] - 0.5).abs() < 1e-6);
+    assert!((got.uvs[2][1] - 1.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_scrolling() {
+    use crate::engine::ecs::component::ScrollingComponent;
+    let (world, id) = roundtrip_component(ScrollingComponent::new(2.0, 8.0));
+    let got = world.get_component_by_id_as::<ScrollingComponent>(id).unwrap();
+    assert!((got.viewport_height - 2.0).abs() < 1e-6);
+    assert!((got.content_height - 8.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_clock() {
+    use crate::engine::ecs::component::ClockComponent;
+    let (world, id) = roundtrip_component(ClockComponent::new().with_bpm(140.0));
+    let got = world.get_component_by_id_as::<ClockComponent>(id).unwrap();
+    assert!((got.bpm - 140.0).abs() < 1e-9);
+}
+
+#[test]
+fn roundtrip_router() {
+    use crate::engine::ecs::component::RouterComponent;
+    let original = RouterComponent::new()
+        .with_target_name("content")
+        .with_ignored_names(["a", "b", "c"]);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<RouterComponent>(id).unwrap();
+    assert_eq!(got.target_name.as_deref(), Some("content"));
+    assert_eq!(got.ignore_names, vec!["a", "b", "c"]);
+}
+
+#[test]
+fn roundtrip_transition() {
+    use crate::engine::ecs::component::{TransitionComponent, TransitionEasing, TransitionReplacePolicy};
+    let original = TransitionComponent::new()
+        .enabled(true)
+        .with_duration_beats(2.0)
+        .with_capture_from_current(false)
+        .with_easing(TransitionEasing::EaseInOutCubic)
+        .with_replace(TransitionReplacePolicy::AllowParallel);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<TransitionComponent>(id).unwrap();
+    assert!(got.enabled);
+    assert!((got.duration_beats - 2.0).abs() < 1e-9);
+    assert!(!got.capture_from_current);
+    assert_eq!(got.easing, TransitionEasing::EaseInOutCubic);
+    assert_eq!(got.replace, TransitionReplacePolicy::AllowParallel);
+}
+
+#[test]
+fn roundtrip_text_shadow() {
+    use crate::engine::ecs::component::TextShadowComponent;
+    let original = TextShadowComponent::new()
+        .with_rgba([0.1, 0.2, 0.3, 0.5])
+        .with_scale(1.5)
+        .with_offset([0.25, -0.5, 0.001]);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<TextShadowComponent>(id).unwrap();
+    assert!((got.rgba[0] - 0.1).abs() < 1e-6);
+    assert!((got.rgba[3] - 0.5).abs() < 1e-6);
+    assert!((got.scale - 1.5).abs() < 1e-6);
+    assert!((got.offset[0] - 0.25).abs() < 1e-6);
+    assert!((got.offset[1] + 0.5).abs() < 1e-6);
+    assert!((got.offset[2] - 0.001).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_renderer_settings_msaa_off() {
+    use crate::engine::ecs::component::RendererSettingsComponent;
+    let original = RendererSettingsComponent::msaa_off().with_window_size(1920, 1080);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<RendererSettingsComponent>(id).unwrap();
+    assert!(!got.msaa4x);
+    assert_eq!(got.window_size, Some([1920, 1080]));
+}
