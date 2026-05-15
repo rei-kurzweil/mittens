@@ -20,10 +20,35 @@ I {
 
 import { world_panel } from "../assets/components/world-panel.mms"
 
+let TEXT_SCALE = 0.08
+let WORLD_PANEL_WIDTH_GU = 29.5
+let WORLD_PANEL_TOTAL_HEIGHT_GU = 57.5
+let EDITOR_LAYOUT_WIDTH_GU = 3.0 * WORLD_PANEL_WIDTH_GU + 6.0
+
 let panel = world_panel("World", true)
 
-T.position(-2.0, 3.8, 0.4).scale(0.1, 0.1, 0.1) {
-    panel
+Selectable.off() {
+    T.position(-0.7, 1.6, -1.2) {
+        Overlay {
+            LayoutRoot {
+                name = "example_editor_layout_root"
+                available_width(EDITOR_LAYOUT_WIDTH_GU)
+                unit_scale(TEXT_SCALE)
+
+                T {
+                    name = "example_world_panel_shell"
+                    Style {
+                        display("inline-block")
+                        width(WORLD_PANEL_WIDTH_GU)
+                        height(WORLD_PANEL_TOTAL_HEIGHT_GU)
+                        margin_xy(0.5, 0.5)
+                    }
+
+                    panel
+                }
+            }
+        }
+    }
 }
 
 let save_btn = panel.query("#save_button")
@@ -42,15 +67,3 @@ on(save_btn, "Click", fn(e) {
 on(load_btn, "Click", fn(e) {
     status_text.set_text("load_button clicked")
 })
-
-T.position(-2.0, 3.0, 2.0) {
-    PL {
-        intensity(2.4)
-        distance(60.0)
-        C.rgba(1.0, 1.0, 1.0, 1.0)
-    }
-}
-
-AL {
-    C.rgba(0.30, 0.30, 0.30, 1.0)
-}

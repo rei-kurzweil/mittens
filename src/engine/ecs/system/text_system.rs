@@ -271,6 +271,7 @@ impl TextSystem {
 
         let text = text_comp.text.clone();
         let wrap_at = text_comp.wrap_at;
+        let font_size = text_comp.font_size;
         let word_wrap = text_comp.word_wrap;
         let word_wrap_tokens = text_comp.word_wrap_tokens.clone();
 
@@ -341,7 +342,7 @@ impl TextSystem {
             wrap_state.apply_word_wrap_lookahead(word_run_len.get(i).copied().unwrap_or(1));
 
             let (x, y) = wrap_state.cursor_pos();
-            let t = TransformComponent::new().with_position(x, y, 0.0);
+            let t = TransformComponent::new().with_position(x, y, 0.0).with_scale(font_size, font_size, 1.0);
             let t_id = world.add_component(t);
             let _ = world.add_child(component, t_id);
 
@@ -534,4 +535,29 @@ fn uvs_for_glyph(ch: char) -> Vec<[f32; 2]> {
     // 0 bottom-left, 1 bottom-right, 2 top-right, 3 top-left
     // Since row 0 is the *top* of the atlas, bottom vertices must use v1.
     vec![[u0, v1], [u1, v1], [u1, v0], [u0, v0]]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TextSystem;
+    use crate::engine::ecs::component::TextComponent;
+    use crate::engine::ecs::World;
+    use crate::engine::graphics::VisualWorld;
+
+    #[test]
+    fn register_text_scales_spawned_glyphs_by_font_size() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let text_id = world.add_component(TextComponent::new("A").with_font_size(0.25));
+        let mut text_system = TextSystem::default();
+
+        let spawned = text_system.register_text(&mut world, &mut visuals, text_id);
+        assert_eq!(spawned.len(), 1);
+
+        let glyph_t = world
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(spawned[0].transform)
+            .expect("glyph transform");
+        assert!((glyph_t.transform.scale[0] - 0.25).abs() < 1e-6);
+        assert!((glyph_t.transform.scale[1] - 0.25).abs() < 1e-6);
+    }
 }

@@ -88,8 +88,8 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
     // Percent resolves against the *containing block's content width*
     // (`avail_w_gu` — passed in by the caller, already net of the parent's
     // own padding). Not against this item's own avail-minus-padding.
-    let avail_content_w_gu = (avail_w_gu - margin_left_gu - margin_right_gu
-                                          - padding_left_gu - padding_right_gu).max(0.0);
+    let max_box_w_gu = (avail_w_gu - margin_left_gu - margin_right_gu).max(0.0);
+    let avail_content_w_gu = (max_box_w_gu - padding_left_gu - padding_right_gu).max(0.0);
     let renderable_intrinsic_width = matches!(width, SizeDimension::Auto)
         .then(|| intrinsic_block_width(world, tc_id, display, avail_content_w_gu))
         .flatten();
@@ -100,21 +100,23 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
     let (content_width_gu, box_width_gu) = match (width, box_sizing) {
         // Explicit length, border-box: width is the outer box; content shrinks for padding.
         (SizeDimension::GlyphUnits(w), BoxSizing::BorderBox) => {
-            ((w - padding_h).max(0.0), w)
+            let box_w = w.min(max_box_w_gu);
+            ((box_w - padding_h).max(0.0), box_w)
         }
         // Explicit length, content-box (CSS default): width is the content; padding adds outside.
         (SizeDimension::GlyphUnits(w), BoxSizing::ContentBox) => {
-            (w, w + padding_h)
+            let box_w = (w + padding_h).min(max_box_w_gu);
+            ((box_w - padding_h).max(0.0), box_w)
         }
         // Percent, border-box: % resolves to the outer box width.
         (SizeDimension::Percent(p), BoxSizing::BorderBox) => {
-            let box_w = avail_w_gu * p / 100.0;
+            let box_w = (avail_w_gu * p / 100.0).min(max_box_w_gu);
             ((box_w - padding_h).max(0.0), box_w)
         }
         // Percent, content-box: % resolves to the content width.
         (SizeDimension::Percent(p), BoxSizing::ContentBox) => {
-            let c = avail_w_gu * p / 100.0;
-            (c, c + padding_h)
+            let box_w = (avail_w_gu * p / 100.0 + padding_h).min(max_box_w_gu);
+            ((box_w - padding_h).max(0.0), box_w)
         }
         // Auto width: independent of box-sizing — content from intrinsic/fill, box adds padding.
         (SizeDimension::Auto, _) => {
@@ -424,6 +426,61 @@ pub(crate) fn apply_text_wrap_for_item(
             text: cur_text,
         },
     );
+}
+
+pub(crate) fn apply_text_font_size_for_item(
+    world: &mut World,
+    emit: &mut dyn crate::engine::ecs::SignalEmitter,
+    tc_id: ComponentId,
+) {
+    let style_font_size = world.children_of(tc_id).iter().find_map(|&child| {
+        world
+            .get_component_by_id_as::<StyleComponent>(child)
+            .map(|s| s.font_size)
+    });
+
+    let Some(text_id) = find_text_component_in_subtree(world, tc_id) else {
+        return;
+    };
+
+    let (cur_font_size, authored_font_size, cur_text) = match world.get_component_by_id_as::<TextComponent>(text_id) {
+        Some(tc) => (tc.font_size, tc.authored_font_size, tc.text.clone()),
+        None => return,
+    };
+
+    let new_font_size = match style_font_size {
+        Some(size) if size > 0.0 => size,
+        _ => authored_font_size,
+    };
+
+    if (new_font_size - cur_font_size).abs() <= f32::EPSILON {
+        return;
+    }
+
+    if let Some(tc) = world.get_component_by_id_as_mut::<TextComponent>(text_id) {
+        tc.set_effective_font_size(new_font_size);
+    }
+
+    emit.push_intent_now(
+        text_id,
+        crate::engine::ecs::IntentValue::SetText {
+            component_ids: vec![text_id],
+            text: cur_text,
+        },
+    );
+}
+
+fn find_text_component_in_subtree(world: &World, root: ComponentId) -> Option<ComponentId> {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        if world.get_component_by_id_as::<TextComponent>(node).is_some() {
+            return Some(node);
+        }
+        for &child in world.children_of(node) {
+            stack.push(child);
+        }
+    }
+    None
 }
 
 /// Layout-owned `ColorComponent` child label. Spawned/maintained by
@@ -912,6 +969,39 @@ mod tests {
     }
 
     #[test]
+    fn style_font_size_overrides_descendant_text_font_size() {
+        use crate::engine::ecs::SignalEmitter;
+        use crate::engine::ecs::ComponentId;
+        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
+        use super::apply_text_font_size_for_item;
+
+        struct NullEmit;
+        impl SignalEmitter for NullEmit {
+            fn push_event(&mut self, _: ComponentId, _: EventSignal) {}
+            fn push_intent(&mut self, _: ComponentId, _: IntentSignal) {}
+        }
+
+        let mut world = World::default();
+        let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));
+        let style = world.add_component_boxed_named("style", Box::new({
+            let mut s = StyleComponent::new();
+            s.font_size = 0.25;
+            s
+        }));
+        let text = world.add_component_boxed_named("txt", Box::new(TextComponent::new("hello").with_font_size(1.0)));
+        let _ = world.add_child(tc, style);
+        let _ = world.add_child(tc, text);
+
+        let mut emit = NullEmit;
+        apply_text_font_size_for_item(&mut world, &mut emit, tc);
+
+        let effective = world.get_component_by_id_as::<TextComponent>(text).unwrap().font_size;
+        let authored = world.get_component_by_id_as::<TextComponent>(text).unwrap().authored_font_size;
+        assert!((effective - 0.25).abs() < 1e-6);
+        assert!((authored - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
     fn content_box_explicit_width_with_padding_grows_outer_box() {
         use crate::engine::ecs::component::style::{BoxSizing, EdgeInsets};
         let mut world = World::default();
@@ -991,7 +1081,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_inline_panel_children_keep_width_when_layoutroot_shrinks() {
+    fn explicit_inline_panel_children_clamp_to_layoutroot_width_when_layoutroot_shrinks() {
         let mut world = World::default();
 
         let root = world.add_component(LayoutComponent::new(29.5));
@@ -1031,17 +1121,19 @@ mod tests {
             .set_available_width(9.5);
 
         let (narrow_items, narrow_avail, _, _) = measure_items(&world, root);
-        let total_narrow_width: f32 = narrow_items.iter().map(|item| item.margin_box_width_gu).sum();
 
         assert_eq!(narrow_items.len(), 3);
         assert_eq!(narrow_avail, 9.5);
-        assert!((narrow_items[0].margin_box_width_gu - wide_items[0].margin_box_width_gu).abs() < 1e-4);
-        assert!((narrow_items[1].margin_box_width_gu - wide_items[1].margin_box_width_gu).abs() < 1e-4);
-        assert!((narrow_items[2].margin_box_width_gu - wide_items[2].margin_box_width_gu).abs() < 1e-4);
+        assert!((narrow_items[0].margin_box_width_gu - narrow_avail).abs() < 1e-4);
         assert!(
-            total_narrow_width > narrow_avail,
-            "explicit inline child widths still sum to {total_narrow_width}, exceeding narrow root width {narrow_avail}"
+            (narrow_items[1].margin_box_width_gu - wide_items[1].margin_box_width_gu).abs() < 1e-4,
+            "save button should keep its authored width when already within the narrow root budget"
         );
+        assert!(
+            (narrow_items[2].margin_box_width_gu - wide_items[2].margin_box_width_gu).abs() < 1e-4,
+            "load button should keep its authored width when already within the narrow root budget"
+        );
+        assert!(narrow_items.iter().all(|item| item.margin_box_width_gu <= narrow_avail + 1e-4));
     }
 
     #[test]

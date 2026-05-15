@@ -1170,6 +1170,37 @@ fn eval_method_call(
                 return Ok(Value::Null);
             }
 
+            if matches!(
+                component_type.as_str(),
+                "Text" | "TXT" | "TextComponent" | "text"
+            )
+                && method == "set_font_size"
+            {
+                let font_size = match args.first() {
+                    Some(Value::Number(n)) => *n as f32,
+                    Some(other) => return Err(format!(
+                        "set_font_size: expected number argument, got {:?}", other
+                    )),
+                    None => return Err("set_font_size: missing number argument".into()),
+                };
+                let Some(world) = ctx.host_world else {
+                    return Err("set_font_size(): no host world".into());
+                };
+                let world = unsafe { &mut *world };
+                let cur_text = world
+                    .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(id)
+                    .map(|t| t.text.clone())
+                    .ok_or_else(|| "set_font_size(): not a TextComponent".to_string())?;
+                if let Some(t) = world.get_component_by_id_as_mut::<crate::engine::ecs::component::TextComponent>(id) {
+                    t.set_font_size(font_size);
+                }
+                ctx.emits.push(IntentValue::SetText {
+                    component_ids: vec![id],
+                    text: cur_text,
+                });
+                return Ok(Value::Null);
+            }
+
             Err(format!("no method '{}' on component type '{}'", method, component_type))
         }
         other => Err(format!("method call '{}': receiver is not a ComponentObject, got {:?}", method, other)),

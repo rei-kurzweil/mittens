@@ -8,6 +8,17 @@ use crate::engine::ecs::component::Component;
 pub struct TextComponent {
     pub text: String,
 
+    /// Effective visual scale applied to spawned glyph quads.
+    ///
+    /// This affects glyph rendering only; layout still measures text in glyph
+    /// columns. `Style.font_size` may temporarily override this value during
+    /// layout, while `authored_font_size` preserves the authored/default size.
+    pub font_size: f32,
+
+    /// Author-provided font size. Preserved when layout applies or removes a
+    /// style-driven override so the effective `font_size` can be restored.
+    pub authored_font_size: f32,
+
     /// Wrap after this many characters. This is the **effective** value used by
     /// `TextSystem` for glyph layout. The layout pass may narrow it to fit the
     /// containing block, but it never exceeds [`Self::authored_wrap_at`].
@@ -39,6 +50,7 @@ pub struct TextComponent {
 }
 
 impl TextComponent {
+    pub const DEFAULT_FONT_SIZE: f32 = 1.0;
     /// Default authored wrap cap: `0` = no author cap. Layout still wraps to
     /// fit the containing block; this default just means the author didn't
     /// impose an additional column limit. To set an explicit cap, use
@@ -49,6 +61,8 @@ impl TextComponent {
     pub fn new(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
+            font_size: Self::DEFAULT_FONT_SIZE,
+            authored_font_size: Self::DEFAULT_FONT_SIZE,
             wrap_at: Self::DEFAULT_WRAP_AT,
             authored_wrap_at: Self::DEFAULT_WRAP_AT,
             // Default to CSS `overflow-wrap: normal` semantics — only break at
@@ -68,6 +82,8 @@ impl TextComponent {
     pub fn with_wrap(text: impl Into<String>, wrap_at: usize) -> Self {
         Self {
             text: text.into(),
+            font_size: Self::DEFAULT_FONT_SIZE,
+            authored_font_size: Self::DEFAULT_FONT_SIZE,
             wrap_at,
             authored_wrap_at: wrap_at,
             word_wrap: false,
@@ -87,6 +103,8 @@ impl TextComponent {
     pub fn with_word_wrap(text: impl Into<String>, wrap_at: usize) -> Self {
         Self {
             text: text.into(),
+            font_size: Self::DEFAULT_FONT_SIZE,
+            authored_font_size: Self::DEFAULT_FONT_SIZE,
             wrap_at,
             authored_wrap_at: wrap_at,
             word_wrap: true,
@@ -120,6 +138,8 @@ impl TextComponent {
 
         Self {
             text: text.into(),
+            font_size: Self::DEFAULT_FONT_SIZE,
+            authored_font_size: Self::DEFAULT_FONT_SIZE,
             wrap_at,
             authored_wrap_at: wrap_at,
             word_wrap: true,
@@ -139,6 +159,21 @@ impl TextComponent {
 
     pub(crate) fn mark_built(&mut self) {
         self.built = true;
+    }
+
+    pub fn with_font_size(mut self, font_size: f32) -> Self {
+        self.font_size = font_size;
+        self.authored_font_size = font_size;
+        self
+    }
+
+    pub fn set_font_size(&mut self, font_size: f32) {
+        self.font_size = font_size;
+        self.authored_font_size = font_size;
+    }
+
+    pub fn set_effective_font_size(&mut self, font_size: f32) {
+        self.font_size = font_size;
     }
 }
 
@@ -179,6 +214,9 @@ impl Component for TextComponent {
             node.body
                 .statements
                 .push(Statement::Expression(Expression::String(self.text.clone())));
+        }
+        if (self.authored_font_size - Self::DEFAULT_FONT_SIZE).abs() > f32::EPSILON {
+            node = node.with_call("font_size", nums([self.authored_font_size as f64]));
         }
         node
     }

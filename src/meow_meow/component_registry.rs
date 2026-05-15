@@ -893,6 +893,13 @@ fn apply_call(
         }
         return Ok(());
     }
+    if let Some(text) = world.get_component_by_id_as_mut::<TextComponent>(id) {
+        match method {
+            "font_size" => text.set_font_size(arg_f32(args, 0)?),
+            _ => {}
+        }
+        return Ok(());
+    }
     if let Some(rs) = world.get_component_by_id_as_mut::<RendererStatsComponent>(id) {
         if method == "camera_target" {
             let target = match arg_str(args, 0)? {
@@ -1086,6 +1093,7 @@ fn apply_call(
             "right"  => st.right  = Some(arg_size_dimension(args, 0)?),
             "bottom" => st.bottom = Some(arg_size_dimension(args, 0)?),
             "left"   => st.left   = Some(arg_size_dimension(args, 0)?),
+            "font_size" => st.font_size = arg_f32(args, 0)?,
             "overflow" => {
                 st.overflow = match arg_str(args, 0)? {
                     "visible" => Overflow::Visible,
@@ -1139,7 +1147,7 @@ fn apply_call(
 fn apply_positional(world: &mut World, id: ComponentId, val: &Value) -> Result<(), String> {
     if let Value::String(s) = val {
         if let Some(t) = world.get_component_by_id_as_mut::<TextComponent>(id) {
-            *t = TextComponent::new(s.as_str());
+            t.text = s.clone();
             return Ok(());
         }
     }

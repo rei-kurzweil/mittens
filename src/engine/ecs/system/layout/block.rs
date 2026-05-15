@@ -25,7 +25,7 @@ use crate::engine::ecs::component::{
     StyleComponent, TextComponent, TransformComponent,
 };
 use crate::engine::ecs::system::ScrollingSystem;
-use super::measure::{apply_text_color_for_item, apply_text_wrap_for_item, measure_container_items, measure_items, MeasuredItem};
+use super::measure::{apply_text_color_for_item, apply_text_font_size_for_item, apply_text_wrap_for_item, measure_container_items, measure_items, MeasuredItem};
 use crate::engine::ecs::component::style::{Display, TextAlign};
 use crate::engine::ecs::system::text_system::TextSystem;
 
@@ -102,6 +102,7 @@ fn layout_items(
         // Push the container-derived wrap_at into any descendant TextComponent
         // and rebuild glyphs so the rendered text matches the measured width.
         apply_text_wrap_for_item(world, emit, item.tc_id, item.content_width_gu);
+        apply_text_font_size_for_item(world, emit, item.tc_id);
         apply_text_color_for_item(world, emit, item.tc_id);
 
         // ── Background quad / overflow helper topology ───────────────────
@@ -845,7 +846,7 @@ mod tests {
     }
 
     #[test]
-    fn nested_inline_child_background_can_exceed_layoutroot_width_after_layout() {
+    fn nested_inline_child_background_clamps_to_layoutroot_width_after_layout() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
         let mut systems = SystemWorld::default();
@@ -899,9 +900,17 @@ mod tests {
         };
 
         let title_bg = child_bg(&world, title).expect("title bg");
+        let save_bg = child_bg(&world, save).expect("save bg");
+        let load_bg = child_bg(&world, load).expect("load bg");
         let title_bg_tc = world
             .get_component_by_id_as::<TransformComponent>(title_bg)
             .expect("title bg transform");
+        let save_bg_tc = world
+            .get_component_by_id_as::<TransformComponent>(save_bg)
+            .expect("save bg transform");
+        let load_bg_tc = world
+            .get_component_by_id_as::<TransformComponent>(load_bg)
+            .expect("load bg transform");
         let title_tc = world
             .get_component_by_id_as::<TransformComponent>(title)
             .expect("title transform");
@@ -912,11 +921,9 @@ mod tests {
             .get_component_by_id_as::<TransformComponent>(load)
             .expect("load transform");
 
-        assert!(
-            title_bg_tc.transform.scale[0] > 9.5,
-            "title background width {} should exceed the 9.5gu root width",
-            title_bg_tc.transform.scale[0]
-        );
+        assert!((title_bg_tc.transform.scale[0] - 9.5).abs() < 1e-4);
+        assert!(save_bg_tc.transform.scale[0] <= 9.5 + 1e-4);
+        assert!(load_bg_tc.transform.scale[0] <= 9.5 + 1e-4);
         assert_eq!(title_tc.transform.translation[0], 0.0);
         assert_eq!(save_tc.transform.translation[0], 0.0);
         assert_eq!(load_tc.transform.translation[0], 0.0);

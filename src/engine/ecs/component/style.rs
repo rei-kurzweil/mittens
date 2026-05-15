@@ -243,6 +243,7 @@ pub struct StylePatch {
     pub bottom:           Option<Option<SizeDimension>>,
     pub left:             Option<Option<SizeDimension>>,
     pub line_height:      Option<f32>,
+    pub font_size:        Option<f32>,
     pub overflow:         Option<Overflow>,
     pub z_index:          Option<Option<i32>>,
     pub background_color: Option<Option<[f32; 4]>>,
@@ -308,6 +309,12 @@ pub struct StyleComponent {
     // ── Text / typography ────────────────────────────────────────────────
     /// Line height in glyph units. Default: 1.0.
     pub line_height: f32,
+    /// Visual glyph scale applied by descendant `TextComponent`s.
+    ///
+    /// This is a render-time multiplier, not a layout-unit conversion: text
+    /// still measures in glyph columns for wrapping and intrinsic sizing, but
+    /// each spawned glyph quad scales by `font_size` inside that grid cell.
+    pub font_size: f32,
     /// Text alignment within the content box. Default: `Auto` (no positioning).
     pub text_align: TextAlign,
 
@@ -375,6 +382,7 @@ impl Default for StyleComponent {
             bottom: None,
             left: None,
             line_height: 1.0,
+            font_size: 1.0,
             text_align: TextAlign::Auto,
             overflow: Overflow::Visible,
             z_index: None,
@@ -418,6 +426,7 @@ impl StyleComponent {
         if let Some(v) = patch.bottom           { self.bottom = v; }
         if let Some(v) = patch.left             { self.left = v; }
         if let Some(v) = patch.line_height      { self.line_height = v; }
+        if let Some(v) = patch.font_size        { self.font_size = v; }
         if let Some(v) = patch.overflow         { self.overflow = v; }
         if let Some(v) = patch.z_index          { self.z_index = v; }
         if let Some(v) = patch.background_color { self.background_color = v; }

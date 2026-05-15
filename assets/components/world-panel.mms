@@ -11,7 +11,7 @@
 // For now, `show_placeholders = true` lets a standalone MMS example render
 // visible routed content before Rust-side row rebuilding is wired into this.
 
-let WORLD_PANEL_WIDTH_GU = 9.5
+let WORLD_PANEL_WIDTH_GU = 29.5
 let WORLD_PANEL_CONTENT_HEIGHT_GU = 54.0
 let TITLE_BAR_HEIGHT_GU = 3.0
 let TITLE_CONTENT_GAP_GU = 0.5
