@@ -101,8 +101,8 @@ fn layout_items(
 
         // Push the container-derived wrap_at into any descendant TextComponent
         // and rebuild glyphs so the rendered text matches the measured width.
-        apply_text_wrap_for_item(world, emit, item.tc_id, item.content_width_gu);
         apply_text_font_size_for_item(world, emit, item.tc_id);
+        apply_text_wrap_for_item(world, emit, item.tc_id, item.content_width_gu);
         apply_text_color_for_item(world, emit, item.tc_id);
 
         // ── Background quad / overflow helper topology ───────────────────
@@ -457,13 +457,11 @@ pub(crate) fn apply_text_align(
     // post-wrap shape (callers of layout run `apply_text_wrap_for_item` later,
     // but glyphs build with the authored wrap_at and we want the natural-
     // wrap width here — i.e. no wrap — to drive alignment math).
-    let (text, word_wrap, tokens) = match find_text_descriptor(world, inner_tc) {
+    let (text, word_wrap, tokens, font_size) = match find_text_descriptor(world, inner_tc) {
         Some(t) => t,
         None => return,
     };
-    let (max_col, line_count) = TextSystem::measure(&text, 0, word_wrap, &tokens);
-    let text_w = max_col as f32;
-    let text_h = line_count as f32;
+    let (text_w, text_h) = TextSystem::measure(&text, 0, word_wrap, &tokens, font_size);
 
     // Glyphs are 1×1 quads centered at column / row positions. The leftmost
     // glyph's center sits at x = inner_tc.x and spans [-0.5, +0.5] around it,
@@ -526,11 +524,11 @@ fn subtree_has_text(world: &World, root: ComponentId) -> bool {
     false
 }
 
-fn find_text_descriptor(world: &World, root: ComponentId) -> Option<(String, bool, Vec<String>)> {
+fn find_text_descriptor(world: &World, root: ComponentId) -> Option<(String, bool, Vec<String>, f32)> {
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
         if let Some(t) = world.get_component_by_id_as::<TextComponent>(node) {
-            return Some((t.text.clone(), t.word_wrap, t.word_wrap_tokens.clone()));
+            return Some((t.text.clone(), t.word_wrap, t.word_wrap_tokens.clone(), t.font_size));
         }
         for &child in world.children_of(node) {
             stack.push(child);

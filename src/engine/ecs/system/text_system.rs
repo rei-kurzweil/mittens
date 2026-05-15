@@ -22,12 +22,13 @@ struct WordWrapState {
     last_wrap_allowed: bool,
     wrap_at: usize,
     word_wrap: bool,
+    font_size: f32,
 }
 
 impl WordWrapState {
     const TAB_WIDTH: usize = 4;
 
-    fn new(wrap_at: usize, word_wrap: bool) -> Self {
+    fn new(wrap_at: usize, word_wrap: bool, font_size: f32) -> Self {
         Self {
             col: 0,
             row: 0,
@@ -36,6 +37,7 @@ impl WordWrapState {
             last_wrap_allowed: false,
             wrap_at,
             word_wrap,
+            font_size,
         }
     }
 
@@ -69,7 +71,7 @@ impl WordWrapState {
     }
 
     fn cursor_pos(&self) -> (f32, f32) {
-        (self.col as f32, -(self.row as f32))
+        (self.col as f32 * self.font_size, -(self.row as f32 * self.font_size))
     }
 
     fn advance_space(&mut self, i: usize, wrap_allowed_after: &[bool]) {
@@ -333,7 +335,7 @@ impl TextSystem {
         let wrap_allowed_after: Vec<bool> = compute_wrap_allowed_after(&chars, &word_wrap_tokens);
         let word_run_len = compute_word_run_len(&wrap_allowed_after);
 
-        let mut wrap_state = WordWrapState::new(wrap_at, word_wrap);
+        let mut wrap_state = WordWrapState::new(wrap_at, word_wrap, font_size);
 
         for (i, ch) in chars.iter().copied().enumerate() {
             if !Self::handle_word_wrap_for(ch, i, &wrap_allowed_after, &mut wrap_state) {
@@ -407,9 +409,7 @@ impl TextSystem {
 
     /// Pure text measurement — runs wrap logic without spawning any glyphs.
     ///
-    /// Returns `(max_col, line_count)`:
-    /// - `max_col`    — widest line in character columns (for background sizing)
-    /// - `line_count` — total number of lines after wrapping
+    /// Returns `(width_gu, height_gu)` in glyph units after applying font size.
     ///
     /// `wrap_at = 0` disables wrapping.
     pub fn measure(
@@ -417,11 +417,12 @@ impl TextSystem {
         wrap_at: usize,
         word_wrap: bool,
         word_wrap_tokens: &[String],
-    ) -> (usize, usize) {
+        font_size: f32,
+    ) -> (f32, f32) {
         let chars: Vec<char> = text.chars().collect();
         let wrap_allowed_after = compute_wrap_allowed_after(&chars, word_wrap_tokens);
         let word_run_len = compute_word_run_len(&wrap_allowed_after);
-        let mut state = WordWrapState::new(wrap_at, word_wrap);
+        let mut state = WordWrapState::new(wrap_at, word_wrap, font_size);
 
         for (i, ch) in chars.iter().copied().enumerate() {
             if ch == '\n' {
@@ -442,7 +443,7 @@ impl TextSystem {
         }
 
         state.max_col = state.max_col.max(state.col);
-        (state.max_col, state.row + 1)
+        (state.max_col as f32 * font_size, (state.row + 1) as f32 * font_size)
     }
 }
 
@@ -559,5 +560,16 @@ mod tests {
             .expect("glyph transform");
         assert!((glyph_t.transform.scale[0] - 0.25).abs() < 1e-6);
         assert!((glyph_t.transform.scale[1] - 0.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn measure_font_size_scales_text_advance_and_height() {
+        let (w_small, h_small) = TextSystem::measure("AB", 0, true, &[], 0.5);
+        let (w_large, h_large) = TextSystem::measure("AB", 0, true, &[], 2.0);
+
+        assert!((w_small - 1.0).abs() < 1e-6);
+        assert!((w_large - 4.0).abs() < 1e-6);
+        assert!((h_small - 0.5).abs() < 1e-6);
+        assert!((h_large - 2.0).abs() < 1e-6);
     }
 }

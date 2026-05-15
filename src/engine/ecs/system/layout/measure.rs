@@ -246,6 +246,11 @@ fn container_cols_for_width(content_width_gu: f32) -> usize {
     (content_width_gu / CHAR_WIDTH_GU).floor().max(1.0) as usize
 }
 
+fn container_cols_for_width_and_font_size(content_width_gu: f32, font_size: f32) -> usize {
+    let glyph_advance_gu = (font_size.max(f32::EPSILON)) * CHAR_WIDTH_GU;
+    (content_width_gu / glyph_advance_gu).floor().max(1.0) as usize
+}
+
 /// Walk the subtree of `root` and return the `ComponentId` of the first
 /// `TextComponent` found within local content (not crossing nested TCs).
 pub(crate) fn find_text_id_in_local_content_subtree(
@@ -278,12 +283,12 @@ pub(crate) fn find_text_id_in_local_content_subtree(
 fn find_text_in_local_content_subtree(
     world: &World,
     root: ComponentId,
-) -> Option<(String, usize, bool, Vec<String>)> {
+) -> Option<(String, usize, bool, Vec<String>, f32)> {
     fn visit(
         world: &World,
         node: ComponentId,
         root: ComponentId,
-    ) -> Option<(String, usize, bool, Vec<String>)> {
+    ) -> Option<(String, usize, bool, Vec<String>, f32)> {
         if let Some(t) = world.get_component_by_id_as::<TextComponent>(node) {
             // Return the *authored* wrap_at — callers use this as a hard cap
             // against the current container width. `t.wrap_at` reflects a prior
@@ -294,6 +299,7 @@ fn find_text_in_local_content_subtree(
                 t.authored_wrap_at,
                 t.word_wrap,
                 t.word_wrap_tokens.clone(),
+                t.font_size,
             ));
         }
 
@@ -322,16 +328,26 @@ fn find_text_in_local_content_subtree(
     visit(world, root, root)
 }
 
+fn read_text_font_size_style(world: &World, tc_id: ComponentId) -> Option<f32> {
+    world.children_of(tc_id).iter().find_map(|&child| {
+        world
+            .get_component_by_id_as::<StyleComponent>(child)
+            .map(|s| s.font_size)
+            .filter(|v| *v > 0.0)
+    })
+}
+
 /// Measure the intrinsic block-axis height (in glyph units) of a TC subtree
 /// by finding its `TextComponent` and running `TextSystem::measure`.
 ///
 /// Returns `0.0` if no `TextComponent` is found in the subtree.
 fn text_intrinsic_height(world: &World, tc_id: ComponentId, content_width_gu: f32) -> f32 {
-    let Some((text, existing_wrap_at, word_wrap, tokens)) =
+    let Some((text, existing_wrap_at, word_wrap, tokens, text_font_size)) =
         find_text_in_local_content_subtree(world, tc_id)
     else {
         return 0.0;
     };
+    let effective_font_size = read_text_font_size_style(world, tc_id).unwrap_or(text_font_size);
 
     // Derive wrap_at from available width if the content area is known and wider
     // than a single character; otherwise fall back to the TextComponent's own wrap_at.
@@ -342,7 +358,7 @@ fn text_intrinsic_height(world: &World, tc_id: ComponentId, content_width_gu: f3
     // spans [col-0.5, col+0.5]. Reserve half a glyph on the right edge so the
     // last glyph's right half fits inside the content box (and inside padding).
     let wrap_at = if content_width_gu > CHAR_WIDTH_GU {
-        let container_cols = container_cols_for_width(content_width_gu);
+        let container_cols = container_cols_for_width_and_font_size(content_width_gu, effective_font_size);
         if existing_wrap_at == 0 { container_cols } else { container_cols.min(existing_wrap_at) }
     } else if existing_wrap_at == 0 {
         // No container width and no author cap — measure unwrapped.
@@ -351,8 +367,8 @@ fn text_intrinsic_height(world: &World, tc_id: ComponentId, content_width_gu: f3
         existing_wrap_at
     };
 
-    let (_max_col, line_count) = TextSystem::measure(&text, wrap_at.max(1), word_wrap, &tokens);
-    line_count as f32 // 1.0 gu per line; caller multiplies by style.line_height if needed
+    let (_width_gu, height_gu) = TextSystem::measure(&text, wrap_at.max(1), word_wrap, &tokens, effective_font_size);
+    height_gu
 }
 
 /// If `tc_id` has a descendant `TextComponent` in its local content subtree,
@@ -373,17 +389,16 @@ pub(crate) fn apply_text_wrap_for_item(
     if content_width_gu <= CHAR_WIDTH_GU {
         return;
     }
-    let container_cols = container_cols_for_width(content_width_gu);
-
     // Style overrides on the styled TC propagate onto the descendant TextComponent.
     // No cascade today — only this TC's own StyleComponent is consulted.
     let (style_word_wrap, style_tokens) = read_text_wrap_style(world, tc_id);
 
-    let (cur_wrap_at, authored_wrap_at, cur_word_wrap, cur_tokens, cur_text) =
+    let (cur_wrap_at, authored_wrap_at, cur_word_wrap, cur_tokens, cur_text, cur_font_size) =
         match world.get_component_by_id_as::<TextComponent>(text_id) {
-            Some(tc) => (tc.wrap_at, tc.authored_wrap_at, tc.word_wrap, tc.word_wrap_tokens.clone(), tc.text.clone()),
+            Some(tc) => (tc.wrap_at, tc.authored_wrap_at, tc.word_wrap, tc.word_wrap_tokens.clone(), tc.text.clone(), tc.font_size),
             None => return,
         };
+    let container_cols = container_cols_for_width_and_font_size(content_width_gu, cur_font_size);
 
     // Cap against the *authored* wrap_at, not the current value (the current
     // value may have been narrowed by a prior layout pass at a smaller
@@ -626,13 +641,14 @@ pub(crate) fn intrinsic_block_width(
 /// width, then take the widest resulting line. Pairs with
 /// `text_intrinsic_height`.
 fn text_intrinsic_width(world: &World, tc_id: ComponentId, avail_content_w_gu: f32) -> f32 {
-    let Some((text, tc_wrap_at, word_wrap, tokens)) =
+    let Some((text, tc_wrap_at, word_wrap, tokens, text_font_size)) =
         find_text_in_local_content_subtree(world, tc_id)
     else {
         return 0.0;
     };
+    let effective_font_size = read_text_font_size_style(world, tc_id).unwrap_or(text_font_size);
     let avail_cols = if avail_content_w_gu > CHAR_WIDTH_GU {
-        container_cols_for_width(avail_content_w_gu)
+        container_cols_for_width_and_font_size(avail_content_w_gu, effective_font_size)
     } else {
         0
     };
@@ -643,13 +659,12 @@ fn text_intrinsic_width(world: &World, tc_id: ComponentId, avail_content_w_gu: f
         (a, 0) => a,
         (a, w) => a.min(w),
     };
-    let (max_col, _line_count) = TextSystem::measure(&text, wrap_at, word_wrap, &tokens);
+    let (measured, _height_gu) = TextSystem::measure(&text, wrap_at, word_wrap, &tokens, effective_font_size);
     // CSS shrink-to-fit caps an inline-block's width at the available content
     // width even if the text inside overflows (word-wrap: normal with a long
     // unbreakable token). Without this cap, the box claims a width wider than
     // its containing block and downstream measurements (wrap_at on glyph
     // rebuild, sibling line-break decisions) inherit the inflated value.
-    let measured = max_col as f32 * CHAR_WIDTH_GU;
     if avail_content_w_gu > 0.0 { measured.min(avail_content_w_gu) } else { measured }
 }
 

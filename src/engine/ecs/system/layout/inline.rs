@@ -85,8 +85,8 @@ pub(crate) fn layout_items(
             },
         );
 
-        apply_text_wrap_for_item(world, emit, item.tc_id, item.content_width_gu);
         apply_text_font_size_for_item(world, emit, item.tc_id);
+        apply_text_wrap_for_item(world, emit, item.tc_id, item.content_width_gu);
         apply_text_color_for_item(world, emit, item.tc_id);
 
         // Background quad — share the block-flow implementation so
