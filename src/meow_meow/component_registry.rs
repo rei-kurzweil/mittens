@@ -517,14 +517,32 @@ fn create_component(
         "EmissivePass" => add!(EmissivePassComponent::new()),
         "BlurPass" => add!(BlurPassComponent::new()),
         "Bloom" => add!(BloomComponent::new()),
-        "DirectionalLight" => add!(DirectionalLightComponent::new()),
-        "PointLight" => add!(PointLightComponent::new()),
+        "DirectionalLight" => {
+            let id = world.add_component(DirectionalLightComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
+        "PointLight" => {
+            let id = world.add_component(PointLightComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "Emissive" => match ctor {
             Some("on") => add!(EmissiveComponent::on()),
             Some("off") => add!(EmissiveComponent::off()),
             _ => add!(EmissiveComponent::on()),
         },
-        "Opacity" => add!(OpacityComponent::new()),
+        "Opacity" => {
+            let id = world.add_component(OpacityComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "Input" => {
             let mut c = InputComponent::new();
             if let Some("speed") = ctor {

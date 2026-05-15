@@ -891,3 +891,165 @@ fn body_for_with_if_inside() {
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.intents.len(), 1);
 }
+
+// ---------------------------------------------------------------------------
+// to_mms_ast round-trip tests
+//
+// Build a live component → emit MMS via `to_mms_ast` → unparse → parse →
+// materialize → `spawn_tree_uninitialized` → downcast and assert fields.
+// This is the path scene save/load and `attach_clone` actually follow.
+// ---------------------------------------------------------------------------
+
+use crate::engine::ecs::component::Component as ComponentTrait;
+
+fn roundtrip_component<C: ComponentTrait + 'static>(
+    original: C,
+) -> (World, ComponentId) {
+    let ce_ast = original.to_mms_ast();
+    let text = crate::meow_meow::unparser::unparse_component(&ce_ast);
+    let prog = parse(&text);
+    assert_eq!(prog.len(), 1, "unparsed `{text}` did not produce one stmt");
+    let parsed_ce = as_component!(prog.into_iter().next().unwrap());
+    let mat = crate::meow_meow::component_registry::ce_ast_to_materialized(&parsed_ce)
+        .expect("materialize");
+    let mut world = World::default();
+    let mut emit = CommandQueue::new();
+    let id = crate::meow_meow::component_registry::spawn_tree_uninitialized(
+        &mat, &mut world, &mut emit,
+    )
+    .expect("spawn");
+    (world, id)
+}
+
+#[test]
+fn roundtrip_opacity() {
+    use crate::engine::ecs::component::OpacityComponent;
+    let original = OpacityComponent::new()
+        .with_opacity(0.42)
+        .with_multiple_layers();
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<OpacityComponent>(id)
+        .expect("Opacity downcast");
+    assert!((got.opacity - 0.42).abs() < 1e-6, "opacity: {}", got.opacity);
+    assert!(got.multiple_layers);
+}
+
+#[test]
+fn roundtrip_opacity_default_multiple_layers_omitted() {
+    use crate::engine::ecs::component::OpacityComponent;
+    // multiple_layers=false should not emit the toggle call.
+    let original = OpacityComponent::new().with_opacity(0.75);
+    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(&original));
+    assert!(
+        !text.contains("multiple_layers"),
+        "expected `multiple_layers` not emitted when false: {text}"
+    );
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<OpacityComponent>(id)
+        .unwrap();
+    assert!((got.opacity - 0.75).abs() < 1e-6);
+    assert!(!got.multiple_layers);
+}
+
+#[test]
+fn roundtrip_emissive_on() {
+    use crate::engine::ecs::component::EmissiveComponent;
+    let (world, id) = roundtrip_component(EmissiveComponent::on());
+    let got = world
+        .get_component_by_id_as::<EmissiveComponent>(id)
+        .unwrap();
+    assert_eq!(got.intensity, 1.0);
+}
+
+#[test]
+fn roundtrip_emissive_off() {
+    use crate::engine::ecs::component::EmissiveComponent;
+    let (world, id) = roundtrip_component(EmissiveComponent::off());
+    let got = world
+        .get_component_by_id_as::<EmissiveComponent>(id)
+        .unwrap();
+    assert_eq!(got.intensity, 0.0);
+}
+
+#[test]
+fn roundtrip_emissive_custom_intensity() {
+    use crate::engine::ecs::component::EmissiveComponent;
+    let (world, id) = roundtrip_component(EmissiveComponent::new(2.5));
+    let got = world
+        .get_component_by_id_as::<EmissiveComponent>(id)
+        .unwrap();
+    assert!((got.intensity - 2.5).abs() < 1e-6, "intensity: {}", got.intensity);
+}
+
+#[test]
+fn roundtrip_ambient_light() {
+    use crate::engine::ecs::component::AmbientLightComponent;
+    let (world, id) = roundtrip_component(AmbientLightComponent::rgb(0.1, 0.5, 0.9));
+    let got = world
+        .get_component_by_id_as::<AmbientLightComponent>(id)
+        .unwrap();
+    assert!((got.rgb[0] - 0.1).abs() < 1e-6);
+    assert!((got.rgb[1] - 0.5).abs() < 1e-6);
+    assert!((got.rgb[2] - 0.9).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_directional_light() {
+    use crate::engine::ecs::component::DirectionalLightComponent;
+    let original = DirectionalLightComponent::new()
+        .with_intensity(2.0)
+        .with_color(0.5, 0.6, 0.7);
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<DirectionalLightComponent>(id)
+        .unwrap();
+    assert!((got.intensity - 2.0).abs() < 1e-6);
+    assert!((got.color[0] - 0.5).abs() < 1e-6);
+    assert!((got.color[1] - 0.6).abs() < 1e-6);
+    assert!((got.color[2] - 0.7).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_point_light() {
+    use crate::engine::ecs::component::PointLightComponent;
+    let original = PointLightComponent::new()
+        .with_intensity(3.0)
+        .with_distance(15.0)
+        .with_color(0.25, 0.5, 0.75);
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<PointLightComponent>(id)
+        .unwrap();
+    assert!((got.intensity - 3.0).abs() < 1e-6);
+    assert!((got.distance - 15.0).abs() < 1e-6);
+    assert!((got.color[0] - 0.25).abs() < 1e-6);
+    assert!((got.color[1] - 0.5).abs() < 1e-6);
+    assert!((got.color[2] - 0.75).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_gltf() {
+    use crate::engine::ecs::component::GLTFComponent;
+    let original = GLTFComponent::new("models/cat.glb").with_visualized_transforms(true);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<GLTFComponent>(id).unwrap();
+    assert_eq!(got.uri, "models/cat.glb");
+    assert!(got.with_visualized_transforms);
+}
+
+#[test]
+fn roundtrip_gltf_no_visualized_transforms_omits_call() {
+    use crate::engine::ecs::component::GLTFComponent;
+    let original = GLTFComponent::new("models/cat.glb");
+    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(&original));
+    assert!(
+        !text.contains("with_visualized_transforms"),
+        "expected `with_visualized_transforms` omitted when false: {text}"
+    );
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<GLTFComponent>(id).unwrap();
+    assert_eq!(got.uri, "models/cat.glb");
+    assert!(!got.with_visualized_transforms);
+}
