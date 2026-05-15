@@ -78,9 +78,9 @@ impl Component for RaycastableShapeComponent {
         "raycastable_shape"
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        let shape = match self.shape {
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = match self.shape {
             RaycastableShapeType::Aabb => "aabb",
             RaycastableShapeType::Cone => "cone",
             RaycastableShapeType::Ring2D => "ring_2d",
@@ -90,29 +90,6 @@ impl Component for RaycastableShapeComponent {
             RaycastableShapeType::Box => "box",
             RaycastableShapeType::InferFromBaseMesh => "infer_from_base_mesh",
         };
-        map.insert("shape".to_string(), serde_json::json!(shape));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("shape") {
-            if let Some(s) = v.as_str() {
-                self.shape = match s {
-                    "aabb" => RaycastableShapeType::Aabb,
-                    "cone" => RaycastableShapeType::Cone,
-                    "ring_2d" => RaycastableShapeType::Ring2D,
-                    "quad_2d" => RaycastableShapeType::Quad2D,
-                    "triangle_2d" => RaycastableShapeType::Triangle2D,
-                    "tetrahedron" => RaycastableShapeType::Tetrahedron,
-                    "box" => RaycastableShapeType::Box,
-                    "infer_from_base_mesh" => RaycastableShapeType::InferFromBaseMesh,
-                    other => return Err(format!("Unknown raycastable shape: {other}")),
-                };
-            }
-        }
-        Ok(())
+        ce_call("RaycastableShape", ctor, vec![])
     }
 }

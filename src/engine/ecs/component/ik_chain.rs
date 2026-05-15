@@ -101,39 +101,27 @@ impl Component for IKChainComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("weight".to_string(), serde_json::json!(self.weight));
-        match self.solver {
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        // target_id / end_effector_id are runtime-only (wired by AvatarControlSystem);
+        // omitted from the AST.
+        let solver_call = match self.solver {
             IKSolver::AimConstraint { offset_yaw } => {
-                map.insert("solver".to_string(), serde_json::json!("aim_constraint"));
-                map.insert("offset_yaw".to_string(), serde_json::json!(offset_yaw));
+                ("aim_constraint", vec![num(offset_yaw as f64)])
             }
-            IKSolver::TwoBoneIK { pole_direction, copy_end_rotation } => {
-                map.insert("solver".to_string(), serde_json::json!("two_bone_ik"));
-                map.insert("pole_direction".to_string(), serde_json::json!(pole_direction));
-                map.insert("copy_end_rotation".to_string(), serde_json::json!(copy_end_rotation));
-            }
-            IKSolver::Fabrik { max_iterations, tolerance } => {
-                map.insert("solver".to_string(), serde_json::json!("fabrik"));
-                map.insert("max_iterations".to_string(), serde_json::json!(max_iterations));
-                map.insert("tolerance".to_string(), serde_json::json!(tolerance));
-            }
-        }
-        // target_id and end_effector_id are runtime-only; not encoded.
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("weight") {
-            if let Some(f) = v.as_f64() {
-                self.weight = f as f32;
-            }
-        }
-        // target_id and end_effector_id are wired at runtime (by AvatarControlSystem).
-        Ok(())
+            IKSolver::TwoBoneIK { pole_direction, copy_end_rotation } => (
+                "two_bone_ik",
+                vec![
+                    array(nums(pole_direction.iter().map(|&v| v as f64))),
+                    b(copy_end_rotation),
+                ],
+            ),
+            IKSolver::Fabrik { max_iterations, tolerance } => (
+                "fabrik",
+                vec![num(max_iterations as f64), num(tolerance as f64)],
+            ),
+        };
+        ce_call("IKChain", solver_call.0, solver_call.1)
+            .with_call("weight", vec![num(self.weight as f64)])
     }
 }

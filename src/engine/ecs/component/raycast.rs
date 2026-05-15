@@ -99,38 +99,13 @@ impl Component for RayCastComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        let mode = match self.mode {
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = match self.mode {
             RayCastMode::Continuous => "continuous",
             RayCastMode::EventDriven => "event_driven",
         };
-        map.insert("mode".to_string(), serde_json::json!(mode));
-        map.insert(
-            "max_distance".to_string(),
-            serde_json::json!(self.max_distance),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        self.cast_requests = 0;
-        if let Some(mode) = data.get("mode") {
-            let mode_str: String = serde_json::from_value(mode.clone())
-                .map_err(|e| format!("Failed to decode raycast mode: {}", e))?;
-            self.mode = match mode_str.as_str() {
-                "continuous" => RayCastMode::Continuous,
-                "event_driven" => RayCastMode::EventDriven,
-                other => return Err(format!("Unknown raycast mode: {}", other)),
-            };
-        }
-        if let Some(md) = data.get("max_distance") {
-            self.max_distance = serde_json::from_value(md.clone())
-                .map_err(|e| format!("Failed to decode max_distance: {}", e))?;
-        }
-        Ok(())
+        ce_call("Raycast", ctor, vec![])
+            .with_call("max_distance", vec![num(self.max_distance as f64)])
     }
 }

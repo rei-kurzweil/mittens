@@ -31,7 +31,17 @@ use crate::engine::ecs::component::{
     TransformMapTranslationComponent, TransformMergeTRSComponent,
     TransformPipelineComponent, TransformPipelineOutputComponent,
     TransformSampleAncestorComponent,
+    BoundsComponent, MeshComponent, GestureCoordTypeComponent, GestureCoordType,
+    CollisionShapeComponent, CollisionShape, CollisionComponent, CollisionMode,
+    GravityComponent, MusicNote, MusicNoteComponent,
+    Vector3TemporalFilterComponent, QuatYawFollowComponent,
+    SignalRouteUpwardComponent, SkinnedMeshComponent, RayCastComponent, RayCastMode,
+    RaycastableShapeComponent, RaycastableShapeType, IKChainComponent, IKSolver,
+    TransformGizmoComponent, TransformGizmoTranslateComponent, TransformGizmoRotateComponent,
+    TransformGizmoScaleComponent, TransformGizmoAxis,
+    KineticResponseComponent, KineticResponseMode,
 };
+use crate::engine::graphics::bounds::Aabb;
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::graphics::CameraTarget;
@@ -444,6 +454,15 @@ fn arg_str(args: &[Value], i: usize) -> Result<&str, String> { val_as_str(arg(ar
 fn arg_f32_arr<const N: usize>(args: &[Value], i: usize) -> Result<[f32; N], String> { val_as_f32_array(arg(args, i)?) }
 fn arg_str_vec(args: &[Value], i: usize) -> Result<Vec<String>, String> { val_as_str_vec(arg(args, i)?) }
 
+fn parse_gizmo_axis(ctor: Option<&str>) -> TransformGizmoAxis {
+    match ctor {
+        Some("x") | Some("X") => TransformGizmoAxis::X,
+        Some("y") | Some("Y") => TransformGizmoAxis::Y,
+        Some("z") | Some("Z") => TransformGizmoAxis::Z,
+        _ => TransformGizmoAxis::X,
+    }
+}
+
 /// Accept either a unit-literal (`50%`, `20gu`) or a bare number (interpreted
 /// as glyph units) and produce a `SizeDimension`. Used by Style sizing setters.
 fn arg_size_dimension(args: &[Value], i: usize) -> Result<SizeDimension, String> {
@@ -501,7 +520,13 @@ fn create_component(
             Some("tetrahedron") => add!(RenderableComponent::tetrahedron()),
             _ => Err(format!("Renderable: unknown constructor '{}'", ctor.unwrap_or(""))),
         },
-        "StencilClip" => add!(StencilClipComponent::new()),
+        "StencilClip" => {
+            let id = world.add_component(StencilClipComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "Background" => {
             let id = world.add_component(BackgroundComponent::new());
             if let Some(method) = ctor {
@@ -605,7 +630,10 @@ fn create_component(
             Some("on") => add!(CameraXRComponent::on()),
             _ => add!(CameraXRComponent::on()),
         },
-        "Pointer" => add!(PointerComponent::new()),
+        "Pointer" => match ctor {
+            Some("disabled") => add!(PointerComponent::disabled()),
+            _ => add!(PointerComponent::new()),
+        },
         "OpenXR" => match ctor {
             Some("off") => add!(OpenXRComponent::off()),
             Some("on") => add!(OpenXRComponent::on()),
@@ -670,7 +698,13 @@ fn create_component(
             }
             Ok(id)
         }
-        "RendererStats" => add!(RendererStatsComponent::new()),
+        "RendererStats" => {
+            let id = world.add_component(RendererStatsComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "Text" => add!(TextComponent::new("")),
         "TextShadow" => {
             let id = world.add_component(TextShadowComponent::new());
@@ -679,8 +713,13 @@ fn create_component(
             }
             Ok(id)
         }
-        "AvatarBodyYaw" => add!(AvatarBodyYawComponent::new()),
-        "AvatarControl" => add!(AvatarControlComponent::new()),
+        "AvatarControl" => {
+            let id = world.add_component(AvatarControlComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "Editor" => {
             let id = world.add_component(EditorComponent::new());
             if let Some(method) = ctor {
@@ -821,6 +860,158 @@ fn create_component(
             Some("steps") => add!(LightQuantizationComponent::steps(arg_f32(args, 0)?)),
             _ => add!(LightQuantizationComponent::new()),
         },
+        "Bounds" => {
+            let (min, max) = match ctor {
+                Some("aabb") => (arg_f32_arr::<3>(args, 0)?, arg_f32_arr::<3>(args, 1)?),
+                _ => ([0.0; 3], [0.0; 3]),
+            };
+            add!(BoundsComponent::new(Aabb { min, max }))
+        }
+        "Mesh" => match ctor {
+            Some("new") => add!(MeshComponent::new(arg_str(args, 0)?)),
+            _ => add!(MeshComponent::new("")),
+        },
+        "GestureCoordType" => match ctor {
+            Some("screen_space_1d_slider") => add!(GestureCoordTypeComponent::screen_space_1d_slider()),
+            Some("world_plane") => add!(GestureCoordTypeComponent::world_plane()),
+            _ => add!(GestureCoordTypeComponent::world_plane()),
+        },
+        "CollisionShape" => match ctor {
+            Some("cube") => {
+                let half_extents = arg_f32_arr::<3>(args, 0)?;
+                add!(CollisionShapeComponent::new(
+                    CollisionShape::cube_half_extents(half_extents)
+                ))
+            }
+            Some("sphere") => add!(CollisionShapeComponent::new(
+                CollisionShape::sphere_radius(arg_f32(args, 0)?)
+            )),
+            _ => add!(CollisionShapeComponent::cube()),
+        },
+        "RaycastableShape" => {
+            let shape = match ctor {
+                Some("aabb") => RaycastableShapeType::Aabb,
+                Some("cone") => RaycastableShapeType::Cone,
+                Some("ring_2d") => RaycastableShapeType::Ring2D,
+                Some("quad_2d") => RaycastableShapeType::Quad2D,
+                Some("triangle_2d") => RaycastableShapeType::Triangle2D,
+                Some("tetrahedron") => RaycastableShapeType::Tetrahedron,
+                Some("box") => RaycastableShapeType::Box,
+                _ => RaycastableShapeType::InferFromBaseMesh,
+            };
+            add!(RaycastableShapeComponent::new(shape))
+        }
+        "Collision" => match ctor {
+            Some("static") => add!(CollisionComponent::STATIC()),
+            Some("kinematic") => add!(CollisionComponent::KINEMATIC()),
+            Some("rigged") => add!(CollisionComponent::RIGGED()),
+            _ => add!(CollisionComponent::STATIC()),
+        },
+        "Gravity" => {
+            let id = world.add_component(GravityComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
+        "SkinnedMesh" => match ctor {
+            Some("new") => add!(SkinnedMeshComponent::new(arg_f32(args, 0)? as usize)),
+            _ => add!(SkinnedMeshComponent::new(0)),
+        },
+        "Vector3TemporalFilter" => {
+            let mut c = Vector3TemporalFilterComponent::new();
+            if let Some("smoothing_factor") = ctor {
+                c = c.with_smoothing_factor(arg_f32(args, 0)?);
+            }
+            add!(c)
+        }
+        "QuatYawFollow" => match ctor {
+            Some("new") => add!(QuatYawFollowComponent::new(arg_f32(args, 0)?, arg_f32(args, 1)?)),
+            _ => add!(QuatYawFollowComponent::default()),
+        },
+        "SignalRouteUpward" => match ctor {
+            Some("new") => add!(SignalRouteUpwardComponent::new(
+                arg_str(args, 0)?, arg_str(args, 1)?
+            )),
+            _ => add!(SignalRouteUpwardComponent::default()),
+        },
+        "AvatarBodyYaw" => {
+            let id = world.add_component(AvatarBodyYawComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
+        "Raycast" => match ctor {
+            Some("continuous") => add!(RayCastComponent::continuous()),
+            Some("event_driven") => add!(RayCastComponent::event_driven()),
+            _ => add!(RayCastComponent::event_driven()),
+        },
+        "MusicNote" => {
+            let pitch = match ctor {
+                Some("a") | Some("b") | Some("c") | Some("d") | Some("e") | Some("f") | Some("g") => ctor.unwrap(),
+                _ => "a",
+            };
+            let octave = arg_f32(args, 0)? as u16;
+            let duration = arg_f32(args, 1)?;
+            let note = match pitch {
+                "a" => MusicNote::a(octave, duration),
+                "b" => MusicNote::b(octave, duration),
+                "c" => MusicNote::c(octave, duration),
+                "d" => MusicNote::d(octave, duration),
+                "e" => MusicNote::e(octave, duration),
+                "f" => MusicNote::f(octave, duration),
+                "g" => MusicNote::g(octave, duration),
+                _ => MusicNote::default(),
+            };
+            add!(MusicNoteComponent::new(note))
+        }
+        "IKChain" => {
+            let solver = match ctor {
+                Some("aim_constraint") => IKSolver::AimConstraint {
+                    offset_yaw: arg_f32(args, 0)?,
+                },
+                Some("two_bone_ik") => IKSolver::TwoBoneIK {
+                    pole_direction: arg_f32_arr::<3>(args, 0)?,
+                    copy_end_rotation: arg_bool(args, 1)?,
+                },
+                Some("fabrik") => IKSolver::Fabrik {
+                    max_iterations: arg_f32(args, 0)? as u32,
+                    tolerance: arg_f32(args, 1)?,
+                },
+                _ => IKSolver::AimConstraint { offset_yaw: 0.0 },
+            };
+            // target_id and end_effector_id are runtime-wired by AvatarControlSystem;
+            // pass a sentinel for now.
+            use slotmap::Key;
+            let sentinel = ComponentId::null();
+            add!(IKChainComponent::new(solver, sentinel, sentinel))
+        }
+        "TransformGizmo" => {
+            let id = world.add_component(TransformGizmoComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
+        "TransformGizmoTranslate" => add!(TransformGizmoTranslateComponent::new(
+            parse_gizmo_axis(ctor)
+        )),
+        "TransformGizmoRotate" => add!(TransformGizmoRotateComponent::new(
+            parse_gizmo_axis(ctor)
+        )),
+        "TransformGizmoScale" => add!(TransformGizmoScaleComponent::new(
+            parse_gizmo_axis(ctor)
+        )),
+        "KineticResponse" => {
+            let c = match ctor {
+                Some("push") => KineticResponseComponent::push(),
+                Some("slide") => KineticResponseComponent::slide(),
+                _ => KineticResponseComponent::slide(),
+            };
+            let id = world.add_component(c);
+            Ok(id)
+        }
         other => Err(format!("unknown component type: '{other}'")),
     }
 }
@@ -970,6 +1161,98 @@ fn apply_call(
                 *bloom = bloom.clone().with_output_texture(arg_str(args, 0)?);
             }
             _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(sc) = world.get_component_by_id_as_mut::<StencilClipComponent>(id) {
+        if method == "stencil_ref" {
+            sc.stencil_ref = arg_f32(args, 0)? as u8;
+        }
+        return Ok(());
+    }
+    if let Some(g) = world.get_component_by_id_as_mut::<GravityComponent>(id) {
+        match method {
+            "enabled" => g.enabled = arg_bool(args, 0)?,
+            "coefficient" => g.coefficient = arg_f32(args, 0)?,
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(aby) = world.get_component_by_id_as_mut::<AvatarBodyYawComponent>(id) {
+        match method {
+            "threshold" => *aby = aby.clone().with_threshold(arg_f32(args, 0)?),
+            "rate" => *aby = aby.clone().with_rate(arg_f32(args, 0)?),
+            "forward_plus_z" => *aby = aby.clone().with_forward_plus_z(),
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(gz) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(id) {
+        if method == "scale" {
+            *gz = gz.clone().with_scale(arg_f32(args, 0)?);
+        }
+        return Ok(());
+    }
+    if let Some(kr) = world.get_component_by_id_as_mut::<KineticResponseComponent>(id) {
+        match method {
+            "enabled" => kr.enabled = arg_bool(args, 0)?,
+            "max_iterations" => kr.max_iterations = arg_f32(args, 0)? as u32,
+            "push_out_epsilon" => kr.push_out_epsilon = arg_f32(args, 0)?,
+            "push_strength" => kr.push_strength = arg_f32(args, 0)?,
+            "friction" => kr.friction = arg_f32(args, 0)?,
+            "friction_y" => kr.friction_y = arg_f32(args, 0)?,
+            "max_speed" => kr.max_speed = arg_f32(args, 0)?,
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(rs) = world.get_component_by_id_as_mut::<RendererStatsComponent>(id) {
+        match method {
+            "enabled" => rs.enabled = arg_bool(args, 0)?,
+            "update_interval_sec" => rs.update_interval_sec = arg_f32(args, 0)?,
+            "smoothing" => rs.smoothing = arg_f32(args, 0)?,
+            "color" => rs.color = arg_f32_arr::<4>(args, 0)?,
+            "emissive" => rs.emissive = arg_bool(args, 0)?,
+            "camera_target" => {
+                let target = match arg_str(args, 0)? {
+                    "Xr" | "xr" => CameraTarget::Xr,
+                    _ => CameraTarget::Window,
+                };
+                *rs = rs.clone().with_camera_target(target);
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(mn) = world.get_component_by_id_as_mut::<MusicNoteComponent>(id) {
+        if method == "velocity" {
+            mn.note = mn.note.with_velocity(arg_f32(args, 0)?);
+        }
+        return Ok(());
+    }
+    if let Some(ik) = world.get_component_by_id_as_mut::<IKChainComponent>(id) {
+        if method == "weight" {
+            *ik = ik.clone().with_weight(arg_f32(args, 0)?);
+        }
+        return Ok(());
+    }
+    if let Some(rc) = world.get_component_by_id_as_mut::<RayCastComponent>(id) {
+        if method == "max_distance" {
+            *rc = rc.with_max_distance(arg_f32(args, 0)?);
+        }
+        return Ok(());
+    }
+    if let Some(yf) = world.get_component_by_id_as_mut::<QuatYawFollowComponent>(id) {
+        match method {
+            "forward_plus_z" => *yf = yf.with_forward_plus_z(),
+            "initial_yaw" => *yf = yf.with_initial_yaw(arg_f32(args, 0)?),
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(v3f) = world.get_component_by_id_as_mut::<Vector3TemporalFilterComponent>(id) {
+        if method == "smoothing_factor" {
+            *v3f = v3f.with_smoothing_factor(arg_f32(args, 0)?);
         }
         return Ok(());
     }

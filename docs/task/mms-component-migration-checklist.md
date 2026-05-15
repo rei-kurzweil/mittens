@@ -92,29 +92,36 @@ Priority is roughly "what's likely to be live-edited and need round-trip":
 
 ### Low value (transient / runtime-only / not user-authored)
 
-- [ ] `RendererStatsComponent`
-- [ ] `RaycastComponent`, `PointerComponent`
-- [ ] `RaycastableShapeComponent`
-- [ ] `BoundsComponent`, `MeshComponent`
-- [ ] `CollisionComponent`, `CollisionShapeComponent`, `GravityComponent`,
-      `KineticResponseComponent` — physics state typically not authored in MMS
-- [ ] `SkinnedMeshComponent`
-- [ ] `GestureCoordTypeComponent`
-- [ ] `SignalRouteUpwardComponent`
-- [ ] `StencilClipComponent`
-- [ ] `AvatarBodyYawComponent`, `AvatarControlComponent`
-- [ ] `WorldPanelComponent`, `InspectorPanelComponent` — editor UI; excluded from save
-- [ ] `IKChainComponent`
+- [x] `RendererStatsComponent` — `RendererStats {}` with builder chain
+- [x] `RaycastComponent` — `Raycast.continuous/event_driven()` + `.max_distance(x)`
+- [x] `PointerComponent` — `Pointer {}` or `.disabled()`
+- [x] `RaycastableShapeComponent` — `RaycastableShape.<shape>()` enum ctor
+- [x] `BoundsComponent` — `Bounds.aabb([…], […])`
+- [x] `MeshComponent` — `Mesh.new(key)`
+- [x] `CollisionComponent` — `Collision.static/kinematic/rigged()`
+- [x] `CollisionShapeComponent` — `CollisionShape.cube([h,h,h])` / `.sphere(r)`
+- [x] `GravityComponent` — `Gravity {}` with `.enabled().coefficient()`
+- [x] `KineticResponseComponent` — `KineticResponse.slide/push()` with builder chain
+- [x] `SkinnedMeshComponent` — `SkinnedMesh.new(skin_index)` (skin_id is runtime)
+- [x] `GestureCoordTypeComponent` — `GestureCoordType.world_plane/screen_space_1d_slider()`
+- [x] `SignalRouteUpwardComponent` — `SignalRouteUpward.new(intent_kind, parent_type)`
+- [x] `StencilClipComponent` — `StencilClip {}` + optional `.stencil_ref(n)`
+- [x] `AvatarBodyYawComponent` — `AvatarBodyYaw {}` with builder chain
+- [x] `AvatarControlComponent` — `AvatarControl {}` with bone-name builder chain
+- [x] `WorldPanelComponent` — `WorldPanel {}` (marker; auto-spawned by editor)
+- [x] `InspectorPanelComponent` — `InspectorPanel {}` (marker; auto-spawned by editor)
+- [x] `IKChainComponent` — `IKChain.<solver>(...)` + `.weight(x)` (target/end_effector are runtime-wired)
 - [ ] All `Audio*` components (output, oscillator, gain, mix, limiter,
-      buffer size, low/high/band-pass filter)
-- [ ] `MusicNoteComponent`
-- [ ] All transform-pipeline operators (`TransformPipeline`,
-      `TransformForkTRS`, `TransformMap{Translation,Rotation,Scale}`,
-      `TransformMergeTRS`, `TransformPipelineOutput`, `TransformDrop`,
-      `TransformSampleAncestor`)
-- [ ] `QuatTemporalFilterComponent`, `Vector3TemporalFilterComponent`,
-      `QuatExtractYawComponent`, `QuatYawFollowComponent`
-- [ ] `TransformGizmoComponent` + its `Translate`/`Rotate`/`Scale` variants
+      buffer size, low/high/band-pass filter) — deferred per AudioNode consolidation plan
+- [x] `MusicNoteComponent` — `MusicNote.<pitch>(octave, duration)` + optional `.velocity(x)`
+- [x] All transform-pipeline operators (markers via default `to_mms_ast`,
+      `TransformSampleAncestor.skip(n)` for the only one with state)
+- [x] `QuatTemporalFilterComponent` — `QuatTemporalFilter.smoothing_factor(x)`
+- [x] `Vector3TemporalFilterComponent` — `Vector3TemporalFilter.smoothing_factor(x)`
+- [x] `QuatExtractYawComponent` — `QuatExtractYaw {}` (marker via default)
+- [x] `QuatYawFollowComponent` — `QuatYawFollow.new(threshold, rate)` with builder chain
+- [x] `TransformGizmoComponent` — `TransformGizmo {}.scale(x)`
+- [x] `TransformGizmoTranslate/Rotate/Scale` — `.x/y/z()` axis ctor
 
 ## Process for migrating one component
 

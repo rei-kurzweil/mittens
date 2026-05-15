@@ -48,34 +48,12 @@ impl Component for SignalRouteUpwardComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert(
-            "intent_kind".to_string(),
-            serde_json::json!(self.intent_kind),
-        );
-        map.insert(
-            "parent_type".to_string(),
-            serde_json::json!(self.parent_type),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        let Some(v) = data.get("intent_kind") else {
-            return Err("Missing intent_kind".to_string());
-        };
-        let Some(p) = data.get("parent_type") else {
-            return Err("Missing parent_type".to_string());
-        };
-
-        self.intent_kind = serde_json::from_value(v.clone())
-            .map_err(|e| format!("Failed to decode intent_kind: {e}"))?;
-        self.parent_type = serde_json::from_value(p.clone())
-            .map_err(|e| format!("Failed to decode parent_type: {e}"))?;
-        Ok(())
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce_call(
+            "SignalRouteUpward",
+            "new",
+            vec![s(&self.intent_kind), s(&self.parent_type)],
+        )
     }
 }

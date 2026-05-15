@@ -34,23 +34,15 @@ impl Component for BoundsComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("min".to_string(), serde_json::json!(self.local.min));
-        map.insert("max".to_string(), serde_json::json!(self.local.max));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("min") {
-            self.local.min = serde_json::from_value(v.clone()).map_err(|e| format!("min: {e}"))?;
-        }
-        if let Some(v) = data.get("max") {
-            self.local.max = serde_json::from_value(v.clone()).map_err(|e| format!("max: {e}"))?;
-        }
-        Ok(())
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce_call(
+            "Bounds",
+            "aabb",
+            vec![
+                array(nums(self.local.min.iter().map(|&v| v as f64))),
+                array(nums(self.local.max.iter().map(|&v| v as f64))),
+            ],
+        )
     }
 }

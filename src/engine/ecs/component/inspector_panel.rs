@@ -56,14 +56,7 @@ impl Component for InspectorPanelComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        std::collections::HashMap::new()
-    }
-
-    fn decode(
-        &mut self,
-        _data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        Ok(())
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        crate::engine::ecs::component::ce_helpers::ce("InspectorPanel")
     }
 }

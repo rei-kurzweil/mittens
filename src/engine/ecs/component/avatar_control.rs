@@ -278,79 +278,30 @@ impl Component for AvatarControlComponent {
     fn as_any(&self) -> &dyn std::any::Any { self }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("head_bone".to_string(), serde_json::json!(self.head_bone));
-        if let Some(ref b) = self.left_hand_bone {
-            map.insert("left_hand_bone".to_string(), serde_json::json!(b));
+    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let mut c = ce("AvatarControl")
+            .with_call("head_bone", vec![s(&self.head_bone)])
+            .with_call("body_yaw_threshold", vec![num(self.body_yaw_threshold as f64)])
+            .with_call("body_yaw_rate", vec![num(self.body_yaw_rate as f64)]);
+        if let Some(b) = &self.left_hand_bone {
+            c = c.with_call("left_hand_bone", vec![s(b)]);
         }
-        if let Some(ref b) = self.right_hand_bone {
-            map.insert("right_hand_bone".to_string(), serde_json::json!(b));
+        if let Some(b) = &self.right_hand_bone {
+            c = c.with_call("right_hand_bone", vec![s(b)]);
         }
-        if let Some(ref b) = self.left_upper_arm_bone {
-            map.insert("left_upper_arm_bone".to_string(), serde_json::json!(b));
+        if self.forward_plus_z {
+            c = c.with_call("forward_plus_z", vec![]);
         }
-        if let Some(ref b) = self.left_lower_arm_bone {
-            map.insert("left_lower_arm_bone".to_string(), serde_json::json!(b));
+        if let Some(factor) = self.hand_rotation_smoothing {
+            c = c.with_call("hand_rotation_smoothing", vec![num(factor as f64)]);
         }
-        if let Some(ref b) = self.right_upper_arm_bone {
-            map.insert("right_upper_arm_bone".to_string(), serde_json::json!(b));
-        }
-        if let Some(ref b) = self.right_lower_arm_bone {
-            map.insert("right_lower_arm_bone".to_string(), serde_json::json!(b));
-        }
-        map.insert("body_yaw_threshold".to_string(), serde_json::json!(self.body_yaw_threshold));
-        map.insert("body_yaw_rate".to_string(), serde_json::json!(self.body_yaw_rate));
-        map.insert("forward_plus_z".to_string(), serde_json::json!(self.forward_plus_z));
-        if let Some(ref b) = self.camera_bone {
-            map.insert("camera_bone".to_string(), serde_json::json!(b));
+        if let Some(b) = &self.camera_bone {
+            c = c.with_call("camera_bone", vec![s(b)]);
         }
         if let Some(h) = self.avatar_height {
-            map.insert("avatar_height".to_string(), serde_json::json!(h));
+            c = c.with_call("avatar_height", vec![num(h as f64)]);
         }
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("head_bone") {
-            if let Some(s) = v.as_str() { self.head_bone = s.to_string(); }
-        }
-        if let Some(v) = data.get("left_hand_bone") {
-            self.left_hand_bone = v.as_str().map(|s| s.to_string());
-        }
-        if let Some(v) = data.get("right_hand_bone") {
-            self.right_hand_bone = v.as_str().map(|s| s.to_string());
-        }
-        if let Some(v) = data.get("left_upper_arm_bone") {
-            self.left_upper_arm_bone = v.as_str().map(|s| s.to_string());
-        }
-        if let Some(v) = data.get("left_lower_arm_bone") {
-            self.left_lower_arm_bone = v.as_str().map(|s| s.to_string());
-        }
-        if let Some(v) = data.get("right_upper_arm_bone") {
-            self.right_upper_arm_bone = v.as_str().map(|s| s.to_string());
-        }
-        if let Some(v) = data.get("right_lower_arm_bone") {
-            self.right_lower_arm_bone = v.as_str().map(|s| s.to_string());
-        }
-        if let Some(v) = data.get("body_yaw_threshold") {
-            if let Some(f) = v.as_f64() { self.body_yaw_threshold = f as f32; }
-        }
-        if let Some(v) = data.get("body_yaw_rate") {
-            if let Some(f) = v.as_f64() { self.body_yaw_rate = f as f32; }
-        }
-        if let Some(v) = data.get("forward_plus_z") {
-            if let Some(b) = v.as_bool() { self.forward_plus_z = b; }
-        }
-        if let Some(v) = data.get("camera_bone") {
-            self.camera_bone = v.as_str().map(|s| s.to_string());
-        }
-        if let Some(v) = data.get("avatar_height") {
-            self.avatar_height = v.as_f64().map(|f| f as f32);
-        }
-        Ok(())
+        c
     }
 }
