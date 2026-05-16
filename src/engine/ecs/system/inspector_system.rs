@@ -174,6 +174,11 @@ impl InspectorSystem {
                 };
                 let renderable = *renderable;
 
+                let serialize_editor_panels = world
+                    .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(editor_root)
+                    .map(|ed| ed.serialize_editor_panels)
+                    .unwrap_or(false);
+
                 let (row_roots, row_to_node, save_btn, load_btn, status_text, file_path) = {
                     let Some(wpc) = world.get_component_by_id_as::<WorldPanelComponent>(wpc_id)
                     else {
@@ -192,7 +197,12 @@ impl InspectorSystem {
                 // --- Save button hit: dump scene → MMS file → update status ---
                 if let Some(save_btn) = save_btn {
                     if find_ancestor_in_list(world, renderable, &[save_btn]).is_some() {
-                    let mms = dump_scene_to_mms(world, Some(editor_ui_root));
+                    let mms = dump_scene_to_mms(
+                        world,
+                        Some(editor_root),
+                        Some(editor_ui_root),
+                        serialize_editor_panels,
+                    );
                     let msg = match ensure_parent_dir(&file_path)
                         .and_then(|_| std::fs::write(&file_path, &mms).map_err(|e| e.to_string()))
                     {
@@ -540,26 +550,92 @@ fn default_save_filename() -> String {
 /// Skips:
 /// - The editor's own panels (anything reachable from `editor_layout_*`).
 /// - The editor root itself.
-fn dump_scene_to_mms(world: &World, editor_layout_root: Option<ComponentId>) -> String {
-    let editor_subtree: std::collections::HashSet<ComponentId> = match editor_layout_root {
-        Some(root) => collect_subtree(world, root),
-        None => std::collections::HashSet::new(),
+fn dump_scene_to_mms(
+    world: &World,
+    editor_root: Option<ComponentId>,
+    editor_layout_root: Option<ComponentId>,
+    serialize_editor_panels: bool,
+) -> String {
+    let editor_panel_subtree: std::collections::HashSet<ComponentId> = if serialize_editor_panels {
+        std::collections::HashSet::new()
+    } else {
+        match editor_layout_root {
+            Some(root) => collect_subtree(world, root),
+            None => std::collections::HashSet::new(),
+        }
     };
     let mut out = String::new();
     for cid in world
         .all_components()
         .filter(|&cid| world.parent_of(cid).is_none())
-        .filter(|cid| !editor_subtree.contains(cid))
     {
-        match crate::meow_meow::component_registry::subtree_to_ce_ast(world, cid) {
-            Ok(ce) => {
+        for ce in collect_serializable_component_asts(
+            world,
+            cid,
+            editor_root,
+            &editor_panel_subtree,
+            serialize_editor_panels,
+        ) {
                 out.push_str(&crate::meow_meow::unparser::unparse_component(&ce));
                 out.push_str("\n\n");
-            }
-            Err(e) => eprintln!("[save] subtree_to_ce_ast failed for {cid:?}: {e}"),
         }
     }
     out
+}
+
+fn collect_serializable_component_asts(
+    world: &World,
+    root: ComponentId,
+    editor_root: Option<ComponentId>,
+    editor_panel_subtree: &std::collections::HashSet<ComponentId>,
+    serialize_editor_panels: bool,
+) -> Vec<crate::meow_meow::ast::ComponentExpression> {
+    use crate::meow_meow::ast::{Expression, Statement};
+
+    if !serialize_editor_panels {
+        if editor_panel_subtree.contains(&root) || should_skip_saved_editor_node(world, root) {
+            return Vec::new();
+        }
+
+        let is_editor_wrapper = Some(root) == editor_root
+            || world
+                .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(root)
+                .is_some();
+        let is_auto_raycast_wrapper = world.component_name(root) == Some("editor_auto_raycastable");
+
+        if is_editor_wrapper || is_auto_raycast_wrapper {
+            let mut out = Vec::new();
+            for &child in world.children_of(root) {
+                out.extend(collect_serializable_component_asts(
+                    world,
+                    child,
+                    editor_root,
+                    editor_panel_subtree,
+                    serialize_editor_panels,
+                ));
+            }
+            return out;
+        }
+    }
+
+    let Some(node) = world.get_component_record(root) else {
+        return Vec::new();
+    };
+    let mut ce = node.component.to_mms_ast();
+    for &child in &node.children {
+        for child_ce in collect_serializable_component_asts(
+            world,
+            child,
+            editor_root,
+            editor_panel_subtree,
+            serialize_editor_panels,
+        ) {
+            ce.body
+                .statements
+                .push(Statement::Expression(Expression::Component(child_ce)));
+        }
+    }
+    vec![ce]
 }
 
 fn collect_subtree(
@@ -577,6 +653,18 @@ fn collect_subtree(
         }
     }
     out
+}
+
+fn should_skip_saved_editor_node(world: &World, node: ComponentId) -> bool {
+    if should_skip_world_panel_node(world, node) {
+        return true;
+    }
+    world
+        .get_component_by_id_as::<WorldPanelComponent>(node)
+        .is_some()
+        || world
+            .get_component_by_id_as::<InspectorPanelComponent>(node)
+            .is_some()
 }
 
 /// Join `io_working_dir` + `filename` with a single separator. Both halves
@@ -1212,6 +1300,75 @@ fn mms_node_label(node: &crate::engine::ecs::component::ComponentNode) -> String
         format!("{type_name} {{}}")
     } else {
         format!("{type_name} {{ {attrs} }}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dump_scene_to_mms;
+    use crate::engine::ecs::World;
+    use crate::engine::ecs::component::{EditorComponent, LayoutComponent, OverlayComponent, TextComponent, TransformComponent, TransformGizmoComponent};
+
+    #[test]
+    fn dump_scene_to_mms_excludes_editor_wrappers_but_keeps_scene_children_by_default() {
+        let mut world = World::default();
+
+        let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let editor_root = world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let auto_wrap = world.add_component_boxed_named("editor_auto_raycastable", Box::new(crate::engine::ecs::component::RaycastableComponent::enabled()));
+        let kept_node = world.add_component_boxed_named("kept_node", Box::new(TransformComponent::new()));
+        let kept_text = world.add_component_boxed_named("kept_text", Box::new(TextComponent::new("KEEP_ME")));
+        let gizmo_anchor = world.add_component_boxed_named("editor_gizmo_anchor", Box::new(TransformComponent::new()));
+        let gizmo = world.add_component_boxed_named("editor_transform_gizmo", Box::new(TransformGizmoComponent::new()));
+
+        let panel_root = world.add_component_boxed_named("editor_layout_anchor", Box::new(TransformComponent::new()));
+        let panel_overlay = world.add_component_boxed_named("editor_layout_overlay", Box::new(OverlayComponent::new()));
+        let panel_layout = world.add_component_boxed_named("editor_layout_root", Box::new(LayoutComponent::new(20.0)));
+        let panel_text = world.add_component_boxed_named("panel_text", Box::new(TextComponent::new("PANEL_ONLY")));
+
+        let _ = world.add_child(scene_root, editor_root);
+        let _ = world.add_child(editor_root, auto_wrap);
+        let _ = world.add_child(auto_wrap, kept_node);
+        let _ = world.add_child(kept_node, kept_text);
+        let _ = world.add_child(editor_root, gizmo_anchor);
+        let _ = world.add_child(gizmo_anchor, gizmo);
+
+        let _ = world.add_child(panel_root, panel_overlay);
+        let _ = world.add_child(panel_overlay, panel_layout);
+        let _ = world.add_child(panel_layout, panel_text);
+
+        let dumped = dump_scene_to_mms(&world, Some(editor_root), Some(panel_root), false);
+
+        assert!(dumped.contains("KEEP_ME"));
+        assert!(!dumped.contains("PANEL_ONLY"));
+        assert!(!dumped.contains("transform_gizmo"));
+        assert!(!dumped.contains("editor_auto_raycastable"));
+        assert!(!dumped.contains("editor_gizmo_anchor"));
+    }
+
+    #[test]
+    fn dump_scene_to_mms_includes_editor_panels_when_flag_enabled() {
+        let mut world = World::default();
+
+        let editor_root = world.add_component_boxed_named(
+            "editor_root",
+            Box::new(EditorComponent::new().with_serialize_editor_panels(true)),
+        );
+        let editor_text = world.add_component_boxed_named("editor_text", Box::new(TextComponent::new("EDITOR_ONLY")));
+        let panel_root = world.add_component_boxed_named("editor_layout_anchor", Box::new(TransformComponent::new()));
+        let panel_overlay = world.add_component_boxed_named("editor_layout_overlay", Box::new(OverlayComponent::new()));
+        let panel_layout = world.add_component_boxed_named("editor_layout_root", Box::new(LayoutComponent::new(20.0)));
+        let panel_text = world.add_component_boxed_named("panel_text", Box::new(TextComponent::new("PANEL_ONLY")));
+
+        let _ = world.add_child(editor_root, editor_text);
+        let _ = world.add_child(panel_root, panel_overlay);
+        let _ = world.add_child(panel_overlay, panel_layout);
+        let _ = world.add_child(panel_layout, panel_text);
+
+        let dumped = dump_scene_to_mms(&world, Some(editor_root), Some(panel_root), true);
+
+        assert!(dumped.contains("EDITOR_ONLY"));
+        assert!(dumped.contains("PANEL_ONLY"));
     }
 }
 

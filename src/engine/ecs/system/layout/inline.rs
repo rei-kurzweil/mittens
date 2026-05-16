@@ -85,8 +85,8 @@ pub(crate) fn layout_items(
             },
         );
 
-        apply_text_wrap_for_item(world, emit, item.tc_id, item.content_width_gu);
         apply_text_font_size_for_item(world, emit, item.tc_id);
+        apply_text_wrap_for_item(world, emit, item.tc_id, item.content_width_gu);
         apply_text_color_for_item(world, emit, item.tc_id);
 
         // Background quad — share the block-flow implementation so
@@ -102,7 +102,8 @@ pub(crate) fn layout_items(
             item.box_height_gu,
             unit_scale,
         );
-        apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu);
+        apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu, unit_scale);
+        let content_root = super::block::sync_overflow_topology(world, emit, item.tc_id, item.content_height_gu);
 
         // Recurse into the item's own children using whichever formatting
         // context their `display` modes call for. Inline-block items can
@@ -110,7 +111,7 @@ pub(crate) fn layout_items(
         // (a stacked sub-tree); both must be honored.
         let nested_items = measure_container_items(
             world,
-            item.tc_id,
+            content_root,
             item.content_width_gu,
             None,
         );

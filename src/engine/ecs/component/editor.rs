@@ -41,6 +41,10 @@ pub struct EditorComponent {
     /// Spawn world-tree and inspector panels automatically on init. Default: true.
     pub spawn_panels: bool,
 
+    /// Include editor-owned runtime UI and editor wrappers when serializing a scene.
+    /// Default: false.
+    pub serialize_editor_panels: bool,
+
     /// World-space position of the world-tree panel. Default: (-0.7, 1.6, -1.2).
     pub world_panel_pos: (f32, f32, f32),
 
@@ -61,6 +65,7 @@ impl Default for EditorComponent {
             transform_gizmo_translation_space: TransformGizmoCoordSpace::World,
             transform_gizmo_rotation_space: TransformGizmoCoordSpace::Local,
             spawn_panels: true,
+            serialize_editor_panels: false,
             world_panel_pos: (-0.7, 1.6, -1.2),
             // Same x as world_panel_pos intentionally — InspectorSystem::setup_panels_for_editor
             // detects this and auto-places the inspector to the right of the world panel using
@@ -92,6 +97,11 @@ impl EditorComponent {
     /// Suppress automatic panel spawning. Call as `.with_panels(false)`.
     pub fn with_panels(mut self, enabled: bool) -> Self {
         self.spawn_panels = enabled;
+        self
+    }
+
+    pub fn with_serialize_editor_panels(mut self, enabled: bool) -> Self {
+        self.serialize_editor_panels = enabled;
         self
     }
 
@@ -150,5 +160,6 @@ impl Component for EditorComponent {
         ce("Editor")
             .with_call("translation_space", vec![s(translation)])
             .with_call("rotation_space", vec![s(rotation)])
+
     }
 }

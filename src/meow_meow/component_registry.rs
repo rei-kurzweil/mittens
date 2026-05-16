@@ -1341,8 +1341,14 @@ fn apply_call(
     }
     if let Some(l) = world.get_component_by_id_as_mut::<LayoutComponent>(id) {
         match method {
-            "width" => l.available_width = arg_f32(args, 0)?,
-            "height" => l.available_height = Some(arg_f32(args, 0)?),
+            "width" | "available_width" => {
+                l.available_width = arg_f32(args, 0)?;
+                l.dirty = true;
+            }
+            "height" | "available_height" => {
+                l.available_height = Some(arg_f32(args, 0)?);
+                l.dirty = true;
+            }
             "unit_scale" => l.unit_scale = arg_f32(args, 0)?,
             _ => {}
         }
@@ -1676,6 +1682,14 @@ fn apply_call(
         }
         return Ok(());
     }
+    if let Some(editor) = world.get_component_by_id_as_mut::<EditorComponent>(id) {
+        match method {
+            "panels" => editor.spawn_panels = arg_bool(args, 0)?,
+            "serialize_editor_panels" => editor.serialize_editor_panels = arg_bool(args, 0)?,
+            _ => {}
+        }
+        return Ok(());
+    }
     if let Some(rs) = world.get_component_by_id_as_mut::<RendererStatsComponent>(id) {
         if method == "camera_target" {
             let target = match arg_str(args, 0)? {
@@ -1908,20 +1922,6 @@ fn apply_call(
             }
             "word_wrap_tokens" => {
                 st.word_wrap_tokens = Some(arg_str_vec(args, 0)?);
-            }
-            _ => {}
-        }
-        return Ok(());
-    }
-    if let Some(lo) = world.get_component_by_id_as_mut::<LayoutComponent>(id) {
-        match method {
-            "available_width"  => {
-                lo.available_width = arg_f32(args, 0)?;
-                lo.dirty = true;
-            }
-            "available_height" => {
-                lo.available_height = Some(arg_f32(args, 0)?);
-                lo.dirty = true;
             }
             _ => {}
         }

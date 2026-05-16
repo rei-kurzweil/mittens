@@ -101,13 +101,13 @@ fn layout_items(
 
         // Push the container-derived wrap_at into any descendant TextComponent
         // and rebuild glyphs so the rendered text matches the measured width.
-        apply_text_wrap_for_item(world, emit, item.tc_id, item.content_width_gu);
         apply_text_font_size_for_item(world, emit, item.tc_id);
+        apply_text_wrap_for_item(world, emit, item.tc_id, item.content_width_gu);
         apply_text_color_for_item(world, emit, item.tc_id);
 
         // ── Background quad / overflow helper topology ───────────────────
         sync_bg_quad(world, emit, item.tc_id, item.padding_left_gu, item.padding_top_gu, item.box_width_gu, item.box_height_gu, unit_scale);
-        apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu);
+        apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu, unit_scale);
         let content_root = sync_overflow_topology(world, emit, item.tc_id, item.content_height_gu);
 
         let nested_items = measure_container_items(
@@ -281,7 +281,7 @@ fn sync_scrolling_metrics(
     ScrollingSystem::sync_component(world, emit, scroll_id);
 }
 
-fn sync_overflow_topology(
+pub(crate) fn sync_overflow_topology(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     tc_id: ComponentId,
@@ -440,6 +440,7 @@ pub(crate) fn apply_text_align(
     tc_id: ComponentId,
     content_w_gu: f32,
     content_h_gu: f32,
+    unit_scale: f32,
 ) {
     let style = world.children_of(tc_id).iter().find_map(|&ch| {
         world.get_component_by_id_as::<StyleComponent>(ch).map(|s| (s.text_align, s.word_wrap, s.word_wrap_tokens.clone()))
@@ -457,13 +458,11 @@ pub(crate) fn apply_text_align(
     // post-wrap shape (callers of layout run `apply_text_wrap_for_item` later,
     // but glyphs build with the authored wrap_at and we want the natural-
     // wrap width here — i.e. no wrap — to drive alignment math).
-    let (text, word_wrap, tokens) = match find_text_descriptor(world, inner_tc) {
+    let (text, word_wrap, tokens, font_size) = match find_text_descriptor(world, inner_tc) {
         Some(t) => t,
         None => return,
     };
-    let (max_col, line_count) = TextSystem::measure(&text, 0, word_wrap, &tokens);
-    let text_w = max_col as f32;
-    let text_h = line_count as f32;
+    let (text_w, text_h) = TextSystem::measure(&text, 0, word_wrap, &tokens, font_size);
 
     // Glyphs are 1×1 quads centered at column / row positions. The leftmost
     // glyph's center sits at x = inner_tc.x and spans [-0.5, +0.5] around it,
@@ -487,7 +486,7 @@ pub(crate) fn apply_text_align(
         inner_tc,
         IntentValue::UpdateTransform {
             component_ids: vec![inner_tc],
-            translation: [x_offset, y_offset, z],
+            translation: [x_offset * unit_scale, y_offset * unit_scale, z],
             rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
             scale,
         },
@@ -526,11 +525,11 @@ fn subtree_has_text(world: &World, root: ComponentId) -> bool {
     false
 }
 
-fn find_text_descriptor(world: &World, root: ComponentId) -> Option<(String, bool, Vec<String>)> {
+fn find_text_descriptor(world: &World, root: ComponentId) -> Option<(String, bool, Vec<String>, f32)> {
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
         if let Some(t) = world.get_component_by_id_as::<TextComponent>(node) {
-            return Some((t.text.clone(), t.word_wrap, t.word_wrap_tokens.clone()));
+            return Some((t.text.clone(), t.word_wrap, t.word_wrap_tokens.clone(), t.font_size));
         }
         for &child in world.children_of(node) {
             stack.push(child);
@@ -808,6 +807,55 @@ mod tests {
     }
 
     #[test]
+    fn text_align_scales_offsets_by_layout_unit_scale() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut layout_system = LayoutSystem::new();
+
+        let root = world.add_component(LayoutComponent::new(20.0).with_unit_scale(0.08));
+
+        let button = world.add_component_boxed_named("button", Box::new(TransformComponent::new()));
+        let button_style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.width = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(6.0);
+            style.height = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(2.0);
+            style.text_align = crate::engine::ecs::component::style::TextAlign::Center;
+            style
+        });
+        let text_wrap = world.add_component_boxed_named(
+            "text_wrap",
+            Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.05)),
+        );
+        let text_scale = world.add_component_boxed_named(
+            "text_scale",
+            Box::new(TransformComponent::new().with_scale(0.08, 0.08, 0.08)),
+        );
+        let text = world.add_component_boxed_named("text", Box::new(TextComponent::new("Save")));
+
+        let _ = world.add_child(root, button);
+        let _ = world.add_child(button, button_style);
+        let _ = world.add_child(button, text_wrap);
+        let _ = world.add_child(text_wrap, text_scale);
+        let _ = world.add_child(text_scale, text);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let text_wrap_tc = world
+            .get_component_by_id_as::<TransformComponent>(text_wrap)
+            .expect("text_wrap transform");
+
+        assert!((text_wrap_tc.transform.translation[0] - 0.12).abs() < 1e-4);
+        assert!((text_wrap_tc.transform.translation[1] + 0.08).abs() < 1e-4);
+        assert!((text_wrap_tc.transform.translation[2] - 0.05).abs() < 1e-4);
+    }
+
+    #[test]
     fn overflow_scroll_uses_sibling_layout_owned_stencil_clip() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
@@ -929,5 +977,61 @@ mod tests {
         assert_eq!(load_tc.transform.translation[0], 0.0);
         assert!(save_tc.transform.translation[1] < title_tc.transform.translation[1]);
         assert!(load_tc.transform.translation[1] < save_tc.transform.translation[1]);
+    }
+
+    #[test]
+    fn inline_overflow_hidden_creates_clipped_content_root() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut layout_system = LayoutSystem::new();
+
+        let root = world.add_component(LayoutComponent::new(20.0).with_height(12.0));
+
+        let row = world.add_component_boxed_named("row", Box::new(TransformComponent::new()));
+        let row_style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.background_color = Some([0.2, 0.2, 0.2, 1.0]);
+            style
+        });
+        let _ = world.add_child(root, row);
+        let _ = world.add_child(row, row_style);
+
+        let chip = world.add_component_boxed_named("chip", Box::new(TransformComponent::new()));
+        let chip_style = world.add_component({
+            let mut s = StyleComponent::new();
+            s.display = Some(crate::engine::ecs::component::style::Display::InlineBlock);
+            s.width = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(8.0);
+            s.background_color = Some([0.9, 0.8, 0.2, 1.0]);
+            s.overflow = crate::engine::ecs::component::Overflow::Hidden;
+            s
+        });
+        let text_wrapper = world.add_component_boxed_named("text_wrapper", Box::new(TransformComponent::new()));
+        let text = world.add_component_boxed_named("text", Box::new(TextComponent::new("inline 1.6 inline 1.6")));
+
+        let _ = world.add_child(row, chip);
+        let _ = world.add_child(chip, chip_style);
+        let _ = world.add_child(chip, text_wrapper);
+        let _ = world.add_child(text_wrapper, text);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let clipped = world.children_of(chip).iter().copied().find(|&child| {
+            world.component_label(child) == Some(super::OWNED_CLIPPED_CONTENT_LABEL)
+                && world.get_component_by_id_as::<TransformComponent>(child).is_some()
+        });
+        let clip = world.children_of(chip).iter().copied().find(|&child| {
+            world.component_label(child) == Some(super::OWNED_LAYOUT_STENCIL_CLIP_LABEL)
+                && world.get_component_by_id_as::<StencilClipComponent>(child).is_some()
+        });
+
+        assert!(clipped.is_some(), "expected inline overflow-hidden item to get clipped content root");
+        assert!(clip.is_some(), "expected inline overflow-hidden item to get stencil clip sibling");
+        assert_eq!(world.parent_of(text_wrapper), clipped, "authored inline content should move under clipped content root");
     }
 }
