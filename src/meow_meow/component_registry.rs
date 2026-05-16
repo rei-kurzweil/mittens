@@ -1543,10 +1543,21 @@ fn apply_call(
         return Ok(());
     }
     if let Some(anim) = world.get_component_by_id_as_mut::<AnimationComponent>(id) {
+        use crate::engine::ecs::component::ResolveTargetsMode;
         match method {
             "playing" => *anim = anim.clone().with_state(AnimationState::Playing),
             "looping" => *anim = anim.clone().with_state(AnimationState::Looping),
             "paused"  => *anim = anim.clone().with_state(AnimationState::Paused),
+            "resolve_targets" => {
+                let mode = match arg_str(args, 0)? {
+                    "on_attach" => ResolveTargetsMode::OnAttach,
+                    "on_play"   => ResolveTargetsMode::OnPlay,
+                    other => return Err(format!(
+                        "Animation.resolve_targets: expected 'on_attach' or 'on_play', got {other:?}"
+                    )),
+                };
+                *anim = anim.clone().with_resolve_targets(mode);
+            }
             _ => {}
         }
         return Ok(());

@@ -1161,6 +1161,31 @@ fn roundtrip_animation_paused() {
 }
 
 #[test]
+fn roundtrip_animation_resolve_targets_on_play() {
+    use crate::engine::ecs::component::{AnimationComponent, ResolveTargetsMode};
+    let (world, id) = roundtrip_component(
+        AnimationComponent::new().with_resolve_targets(ResolveTargetsMode::OnPlay),
+    );
+    let got = world.get_component_by_id_as::<AnimationComponent>(id).unwrap();
+    assert_eq!(got.resolve_targets, ResolveTargetsMode::OnPlay);
+}
+
+#[test]
+fn roundtrip_animation_default_omits_resolve_targets_in_text() {
+    use crate::engine::ecs::component::AnimationComponent;
+    let original = AnimationComponent::new();
+    let world_stub = crate::engine::ecs::World::default();
+    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(
+        &original,
+        &world_stub,
+    ));
+    assert!(
+        !text.contains("resolve_targets"),
+        "default mode should not emit resolve_targets call: {text}"
+    );
+}
+
+#[test]
 fn roundtrip_keyframe() {
     use crate::engine::ecs::component::KeyframeComponent;
     let (world, id) = roundtrip_component(KeyframeComponent::new(4.25));

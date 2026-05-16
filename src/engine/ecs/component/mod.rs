@@ -88,6 +88,7 @@ pub use avatar_control::AvatarControlComponent;
 pub use ambient_light::AmbientLightComponent;
 pub use animation::AnimationComponent;
 pub use animation::AnimationState;
+pub use animation::ResolveTargetsMode;
 pub use bloom::BloomComponent;
 pub use blur_pass::BlurPassComponent;
 pub use audio_band_pass_filter::*;
