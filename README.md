@@ -1,9 +1,16 @@
-# cat-engine 0.5 "mittens"
 
+# cat-engine 0.5 "mittens"
 <img width="1920" height="745" alt="Screenshot_20260303_015535" src="https://github.com/user-attachments/assets/16d9656c-9df3-4a96-89bd-658d222e78d0" />
 
-small game engine `[obstensively]` for making cats,
-using vulkan instanced rendering and several layers to describe game objects:
+An opinionated game engine specially made for social vr, vtubing, css-driven UI and 3D character animation.    
+
+Three main pillars:
+src/engine (vulkan renderer, components and ecs systems)
+src/meow_meow (a cute programming language for building scenes and wiring up events)
+src/query (a query engine supporting css or meow meow query language; used by engine and meow_meow)
+
+### see docs/spec and docs/meow_meow for more details 
+### website and docs v2 coming in cat engine 0.6 (next major release)
 
 ## Running examples
 
