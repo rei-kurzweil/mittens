@@ -192,6 +192,125 @@ impl Component for ActionComponent {
         );
     }
 
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        use crate::meow_meow::ast::Expression;
+
+        // Render an ActionTarget back to the surface form the author wrote.
+        // Guid → "@uuid:<hex>". Query → the original selector string. Both
+        // are Expression::String so the registry's arg_target_source can
+        // re-parse them.
+        fn target_expr(t: &ActionTarget) -> Expression {
+            match t {
+                ActionTarget::Guid(u) => Expression::String(format!("@uuid:{u}")),
+                ActionTarget::Query(s) => Expression::String(s.clone()),
+            }
+        }
+        // For "vec-of-targets" arg slots: always emit an Array so the
+        // dump form matches the registry's expectation
+        // (`arg_target_source_vec` accepts arrays or single values, but
+        // emitting an array is unambiguous and round-trip-stable).
+        let targets_expr = |slice: &[ActionTarget]| -> Expression {
+            Expression::Array(slice.iter().map(target_expr).collect())
+        };
+
+        match &self.signal {
+            IntentValue::Noop => ce_call("Action", "noop", vec![]),
+            IntentValue::Print { message } => {
+                ce_call("Action", "print", vec![s(message)])
+            }
+            IntentValue::SetColor { rgba, .. } => ce_call(
+                "Action",
+                "set_color",
+                vec![
+                    targets_expr(&self.target_sources),
+                    array(nums(rgba.iter().map(|&v| v as f64))),
+                ],
+            ),
+            IntentValue::SetText { text, .. } => ce_call(
+                "Action",
+                "set_text",
+                vec![targets_expr(&self.target_sources), s(text)],
+            ),
+            IntentValue::SetPosition { position, .. } => ce_call(
+                "Action",
+                "set_position",
+                vec![
+                    targets_expr(&self.target_sources),
+                    array(nums(position.iter().map(|&v| v as f64))),
+                ],
+            ),
+            IntentValue::Attach { .. } => {
+                // target_sources convention: [parents..., child].
+                let (parents, child) =
+                    self.target_sources.split_at(self.target_sources.len().saturating_sub(1));
+                let child_expr = child
+                    .first()
+                    .map(target_expr)
+                    .unwrap_or_else(|| s(""));
+                ce_call("Action", "attach", vec![targets_expr(parents), child_expr])
+            }
+            IntentValue::AttachClone { .. } => {
+                let (parents, prefab) =
+                    self.target_sources.split_at(self.target_sources.len().saturating_sub(1));
+                let prefab_expr = prefab
+                    .first()
+                    .map(target_expr)
+                    .unwrap_or_else(|| s(""));
+                ce_call(
+                    "Action",
+                    "attach_clone",
+                    vec![targets_expr(parents), prefab_expr],
+                )
+            }
+            IntentValue::Detach { .. } => {
+                ce_call("Action", "detach", vec![targets_expr(&self.target_sources)])
+            }
+            IntentValue::RemoveSubtree { .. } => ce_call(
+                "Action",
+                "remove_subtree",
+                vec![targets_expr(&self.target_sources)],
+            ),
+            IntentValue::RequestRaycast { .. } => ce_call(
+                "Action",
+                "request_raycast",
+                vec![targets_expr(&self.target_sources)],
+            ),
+            IntentValue::UpdateTransform {
+                translation,
+                rotation_quat_xyzw,
+                scale,
+                ..
+            } => {
+                // Dump uses the quat form (`update_transform_quat`) for
+                // lossless round-trip. The runtime form is always a
+                // quaternion; the euler authoring path is one-way.
+                let target_expr_ = self
+                    .target_sources
+                    .first()
+                    .map(target_expr)
+                    .unwrap_or_else(|| s(""));
+                ce_call(
+                    "Action",
+                    "update_transform_quat",
+                    vec![
+                        target_expr_,
+                        array(nums(translation.iter().map(|&v| v as f64))),
+                        array(nums(rotation_quat_xyzw.iter().map(|&v| v as f64))),
+                        array(nums(scale.iter().map(|&v| v as f64))),
+                    ],
+                )
+            }
+            // Variants ActionComponent shouldn't carry (engine-internal,
+            // or not yet wired into the MMS surface). Fall back to a
+            // noop so dump still produces parseable output.
+            _ => ce_call("Action", "noop", vec![]),
+        }
+    }
+
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
         let mut map = std::collections::HashMap::new();
 

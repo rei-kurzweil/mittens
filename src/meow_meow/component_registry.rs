@@ -254,13 +254,75 @@ fn resolve_type_name(raw: &str) -> String {
 /// - `attach_clone` intent: subtree → CE → MaterializedCE → spawn_tree (clone).
 /// - REPL `dump` and scene save: subtree → CE → unparser → text.
 pub fn subtree_to_ce_ast(world: &World, root: ComponentId) -> Result<ComponentExpression, String> {
+    // First pass: collect every GUID referenced by any ActionComponent in
+    // the subtree via `ActionTarget::Guid`. These are the targets that
+    // need their GUID preserved across save/load so the dumped
+    // `@uuid:<g>` selector still resolves on reload.
+    let mut referenced_guids: std::collections::HashSet<uuid::Uuid> =
+        std::collections::HashSet::new();
+    collect_referenced_guids(world, root, &mut referenced_guids);
+
+    subtree_to_ce_ast_inner(world, root, &referenced_guids)
+}
+
+fn collect_referenced_guids(
+    world: &World,
+    node: ComponentId,
+    out: &mut std::collections::HashSet<uuid::Uuid>,
+) {
+    use crate::engine::ecs::component::{ActionComponent, ActionTarget};
+    if let Some(action) = world.get_component_by_id_as::<ActionComponent>(node) {
+        for src in &action.target_sources {
+            if let ActionTarget::Guid(u) = src {
+                out.insert(*u);
+            }
+        }
+    }
+    let children: Vec<ComponentId> = world
+        .get_component_record(node)
+        .map(|n| n.children.clone())
+        .unwrap_or_default();
+    for child in children {
+        collect_referenced_guids(world, child, out);
+    }
+}
+
+fn subtree_to_ce_ast_inner(
+    world: &World,
+    root: ComponentId,
+    referenced_guids: &std::collections::HashSet<uuid::Uuid>,
+) -> Result<ComponentExpression, String> {
     let node = world
         .get_component_record(root)
         .ok_or_else(|| format!("subtree_to_ce_ast: missing component {root:?}"))?;
     let mut ce = node.component.to_mms_ast(world);
+
+    // Preserve `name` if the author set one. `name` lets `#name`
+    // selectors keep resolving across reload; it is independent of
+    // `guid` (which serves `@uuid:` selectors). Both are emitted when
+    // both apply.
+    if !node.name.is_empty() {
+        ce.body.statements.push(Statement::Reassign {
+            name: crate::meow_meow::ast::Ident("name".to_string()),
+            value: Expression::String(node.name.clone()),
+        });
+    }
+
+    // Preserve `guid` whenever this component is referenced by some
+    // Action via `ActionTarget::Guid`. The dumped `@uuid:<g>` selector
+    // can only resolve on reload if `spawn_tree` restores the same GUID.
+    // Whether `name` is also set is irrelevant — names don't help
+    // `@uuid:` lookups.
+    if referenced_guids.contains(&node.guid) {
+        ce.body.statements.push(Statement::Reassign {
+            name: crate::meow_meow::ast::Ident("guid".to_string()),
+            value: Expression::String(node.guid.to_string()),
+        });
+    }
+
     let children: Vec<ComponentId> = node.children.clone();
     for child_id in children {
-        let child_ce = subtree_to_ce_ast(world, child_id)?;
+        let child_ce = subtree_to_ce_ast_inner(world, child_id, referenced_guids)?;
         ce.body
             .statements
             .push(Statement::Expression(Expression::Component(child_ce)));
@@ -1011,6 +1073,19 @@ fn create_component(
                         translation: transform.transform.translation,
                         rotation_quat_xyzw: transform.transform.rotation,
                         scale: transform.transform.scale,
+                    };
+                    add!(ActionComponent::new_authored(signal, vec![target]))
+                }
+                Some("update_transform_quat") => {
+                    let target = arg_target_source(world, args, 0)?;
+                    let translation = arg_f32_arr::<3>(args, 1)?;
+                    let rotation_quat = arg_f32_arr::<4>(args, 2)?;
+                    let scale = arg_f32_arr::<3>(args, 3)?;
+                    let signal = IV::UpdateTransform {
+                        component_ids: null_ids(1),
+                        translation,
+                        rotation_quat_xyzw: rotation_quat,
+                        scale,
                     };
                     add!(ActionComponent::new_authored(signal, vec![target]))
                 }
