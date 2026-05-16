@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::engine::ecs::component::{
-    ActionComponent, AnimationComponent, AnimationState, KeyframeComponent,
+    ActionComponent, ActionTarget, AnimationComponent, AnimationState, KeyframeComponent,
+    ResolveTargetsMode, action::{apply_resolved_targets, signal_target_slot_count},
 };
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::animation_system_evaluator::AnimationEvaluator;
@@ -20,6 +21,67 @@ struct AnimationRuntime {
     audio_cycle: u64,
     start_beat: f64,
     pending_state: Option<AnimationState>,
+    /// For `ResolveTargetsMode::OnAttach`: set once the first tick has
+    /// bulk-resolved every ActionComponent target under this animation's
+    /// keyframes. `OnPlay` mode ignores this and resolves per-action lazily
+    /// just before each push.
+    attach_resolved: bool,
+}
+
+/// Resolve `ActionComponent::target_sources` into concrete ComponentIds and
+/// write them into the matching ComponentId slots of `signal`. Idempotent —
+/// returns Ok immediately if the action is already resolved.
+///
+/// Lookup rules:
+/// - `ActionTarget::Guid(uuid)` → `world.component_id_by_guid` (O(1)).
+/// - `ActionTarget::Query(selector)` → `world.find_component` walked from
+///   every world root (matches the registry-time `resolve_action_target`
+///   behavior for forward refs / scenes spawned with multiple roots).
+fn resolve_action_targets(world: &mut World, action_id: ComponentId) -> Result<(), String> {
+    let (sources, expected_slots) = {
+        let Some(action) = world.get_component_by_id_as::<ActionComponent>(action_id) else {
+            return Err(format!("resolve: action {action_id:?} missing"));
+        };
+        if action.resolved {
+            return Ok(());
+        }
+        (action.target_sources.clone(), signal_target_slot_count(&action.signal))
+    };
+
+    if sources.len() != expected_slots {
+        return Err(format!(
+            "resolve: action {action_id:?} has {} target_sources but signal expects {} slots",
+            sources.len(),
+            expected_slots
+        ));
+    }
+
+    let mut resolved: Vec<ComponentId> = Vec::with_capacity(sources.len());
+    for source in &sources {
+        let id = match source {
+            ActionTarget::Guid(uuid) => world
+                .component_id_by_guid(*uuid)
+                .ok_or_else(|| format!("resolve: no component with guid {uuid}"))?,
+            ActionTarget::Query(selector) => {
+                let roots: Vec<ComponentId> = world
+                    .all_components()
+                    .filter(|&cid| world.parent_of(cid).is_none())
+                    .collect();
+                roots
+                    .into_iter()
+                    .find_map(|root| world.find_component(root, selector))
+                    .ok_or_else(|| format!("resolve: selector {selector:?} matched nothing"))?
+            }
+        };
+        resolved.push(id);
+    }
+
+    let Some(action) = world.get_component_by_id_as_mut::<ActionComponent>(action_id) else {
+        return Err(format!("resolve: action {action_id:?} vanished during resolve"));
+    };
+    apply_resolved_targets(&mut action.signal, &resolved);
+    action.resolved = true;
+    Ok(())
 }
 
 #[derive(Debug, Default)]
@@ -132,10 +194,11 @@ impl AnimationSystem {
 
         // Drive animations.
         for (&anim, runtime) in self.animations.iter_mut() {
-            let state = match world.get_component_by_id_as::<AnimationComponent>(anim) {
-                Some(c) => c.state,
-                None => continue,
-            };
+            let (state, resolve_mode) =
+                match world.get_component_by_id_as::<AnimationComponent>(anim) {
+                    Some(c) => (c.state, c.resolve_targets),
+                    None => continue,
+                };
 
             if state == AnimationState::Paused {
                 continue;
@@ -143,6 +206,35 @@ impl AnimationSystem {
 
             if runtime.keyframes.is_empty() {
                 continue;
+            }
+
+            // OnAttach: on first tick, eagerly resolve every action under this
+            // animation's keyframes. Errors are logged but don't halt the
+            // animation — individual broken actions just skip in the push
+            // path below. OnPlay defers per-action to the push site.
+            if matches!(resolve_mode, ResolveTargetsMode::OnAttach) && !runtime.attach_resolved {
+                let action_ids: Vec<ComponentId> = runtime
+                    .keyframes
+                    .iter()
+                    .flat_map(|&kf| {
+                        world
+                            .children_of(kf)
+                            .iter()
+                            .copied()
+                            .filter(|&cid| {
+                                world.get_component_by_id_as::<ActionComponent>(cid).is_some()
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect();
+                for action_cid in action_ids {
+                    if let Err(e) = resolve_action_targets(world, action_cid) {
+                        eprintln!(
+                            "[AnimationSystem] OnAttach resolve failed for {action_cid:?}: {e}"
+                        );
+                    }
+                }
+                runtime.attach_resolved = true;
             }
 
             // Compute beat range for this animation.
@@ -223,6 +315,12 @@ impl AnimationSystem {
                         .collect();
 
                     for action_cid in action_ids {
+                        if let Err(e) = resolve_action_targets(world, action_cid) {
+                            eprintln!(
+                                "[AnimationSystem] lazy resolve failed for {action_cid:?}: {e}"
+                            );
+                            continue;
+                        }
                         let Some(action_comp) =
                             world.get_component_by_id_as::<ActionComponent>(action_cid)
                         else {
@@ -287,6 +385,12 @@ impl AnimationSystem {
 
                     let mut saw_any_action = false;
                     for action_cid in action_ids {
+                        if let Err(e) = resolve_action_targets(world, action_cid) {
+                            eprintln!(
+                                "[AnimationSystem] lazy resolve failed for {action_cid:?}: {e}"
+                            );
+                            continue;
+                        }
                         let Some(action_comp) =
                             world.get_component_by_id_as::<ActionComponent>(action_cid)
                         else {

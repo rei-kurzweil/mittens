@@ -83,6 +83,7 @@ pub use self::gltf::GLTFComponent;
 pub use self::mesh::MeshComponent;
 pub use crate::engine::ecs::system::model::collision_types::{CollisionMode, CollisionShape};
 pub use action::ActionComponent;
+pub use action::ActionTarget;
 pub use avatar_body_yaw::AvatarBodyYawComponent;
 pub use avatar_control::AvatarControlComponent;
 pub use ambient_light::AmbientLightComponent;
