@@ -79,6 +79,7 @@ pub fn spawn_tree(
                     node.name = val_as_str(val).unwrap_or("").to_string();
                 }
             }
+            "guid" => apply_guid_named_prop(world, id, val)?,
             "class" => {
                 if let Some(node) = world.get_component_record_mut(id) {
                     match val {
@@ -163,6 +164,7 @@ pub fn spawn_tree_uninitialized(
                     node.name = val_as_str(val).unwrap_or("").to_string();
                 }
             }
+            "guid" => apply_guid_named_prop(world, id, val)?,
             "class" => {
                 if let Some(node) = world.get_component_record_mut(id) {
                     match val {
@@ -522,6 +524,16 @@ pub(crate) fn arg_target_source_vec(
         Value::Array(items) => items.iter().map(|v| value_to_target_source(world, v)).collect(),
         other => value_to_target_source(world, other).map(|t| vec![t]),
     }
+}
+
+/// Handle `guid = "8c4f3e72-..."` on a component CE. Replaces the freshly
+/// minted GUID with the authored one so `@uuid:` selectors saved against
+/// this component still resolve across save/load.
+fn apply_guid_named_prop(world: &mut World, id: ComponentId, val: &Value) -> Result<(), String> {
+    let s = val_as_str(val).map_err(|e| format!("guid prop: {e}"))?;
+    let parsed = uuid::Uuid::parse_str(s)
+        .map_err(|e| format!("guid prop: invalid uuid '{s}': {e}"))?;
+    world.set_component_guid(id, parsed)
 }
 
 fn value_to_target_source(

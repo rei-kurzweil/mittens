@@ -75,6 +75,41 @@ impl World {
         self.guid_index.get(&guid).copied()
     }
 
+    /// Replace the GUID of an already-inserted component, keeping its
+    /// ComponentId stable. Used by spawn paths that restore an authored
+    /// `guid = "..."` property after `create_component` has already minted
+    /// a fresh GUID.
+    ///
+    /// Returns Err if the target id is missing, or if the new guid is
+    /// already taken by another component (would silently overwrite the
+    /// reverse index otherwise).
+    pub fn set_component_guid(
+        &mut self,
+        id: ComponentId,
+        new_guid: uuid::Uuid,
+    ) -> Result<(), String> {
+        let Some(node) = self.get_component_record(id) else {
+            return Err(format!("set_component_guid: component {id:?} missing"));
+        };
+        let old_guid = node.guid;
+        if old_guid == new_guid {
+            return Ok(());
+        }
+        if let Some(&existing) = self.guid_index.get(&new_guid) {
+            if existing != id {
+                return Err(format!(
+                    "set_component_guid: guid {new_guid} already in use by {existing:?}"
+                ));
+            }
+        }
+        self.guid_index.remove(&old_guid);
+        self.guid_index.insert(new_guid, id);
+        if let Some(node) = self.get_component_record_mut(id) {
+            node.guid = new_guid;
+        }
+        Ok(())
+    }
+
     /// Add a new component to the world (no parent) and return its id.
     ///
     /// Note: this currently does *not* call `Component::init`. That should happen via a
