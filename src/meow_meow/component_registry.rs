@@ -494,6 +494,64 @@ fn value_to_target(world: &World, v: &Value) -> Result<ComponentId, String> {
     }
 }
 
+/// Produce an `ActionTarget` (authoring metadata) from the i-th arg.
+///
+/// Mapping:
+/// - `Value::ComponentObject { id, .. }` → `Guid(world.guid_of(id))`. The
+///   live handle case collapses to a guid so dump emits `@uuid:<g>` and
+///   runtime resolution uses the O(1) guid index instead of a selector walk.
+/// - String starting `@uuid:<hex>` → `Guid(parsed)`. Pre-parsing here means
+///   runtime resolution skips selector parsing entirely for the common
+///   guid-reference case.
+/// - Any other string / identifier → `Query(s)` verbatim.
+pub(crate) fn arg_target_source(
+    world: &World,
+    args: &[Value],
+    i: usize,
+) -> Result<crate::engine::ecs::component::ActionTarget, String> {
+    value_to_target_source(world, arg(args, i)?)
+}
+
+/// Vec form of `arg_target_source`. Mixed handle / string elements OK.
+pub(crate) fn arg_target_source_vec(
+    world: &World,
+    args: &[Value],
+    i: usize,
+) -> Result<Vec<crate::engine::ecs::component::ActionTarget>, String> {
+    match arg(args, i)? {
+        Value::Array(items) => items.iter().map(|v| value_to_target_source(world, v)).collect(),
+        other => value_to_target_source(world, other).map(|t| vec![t]),
+    }
+}
+
+fn value_to_target_source(
+    world: &World,
+    v: &Value,
+) -> Result<crate::engine::ecs::component::ActionTarget, String> {
+    use crate::engine::ecs::component::ActionTarget;
+    match v {
+        Value::ComponentObject { id, .. } => {
+            let guid = world
+                .get_component_record(*id)
+                .map(|n| n.guid)
+                .ok_or_else(|| format!("component handle {id:?} not found in world"))?;
+            Ok(ActionTarget::Guid(guid))
+        }
+        Value::String(s) | Value::Identifier(s) => {
+            if let Some(hex) = s.strip_prefix("@uuid:") {
+                let uuid = uuid::Uuid::parse_str(hex)
+                    .map_err(|e| format!("invalid uuid in '@uuid:{hex}': {e}"))?;
+                Ok(ActionTarget::Guid(uuid))
+            } else {
+                Ok(ActionTarget::Query(s.clone()))
+            }
+        }
+        other => Err(format!(
+            "expected component handle or selector string, got {other:?}"
+        )),
+    }
+}
+
 fn parse_gizmo_axis(ctor: Option<&str>) -> TransformGizmoAxis {
     match ctor {
         Some("x") | Some("X") => TransformGizmoAxis::X,
@@ -865,25 +923,87 @@ fn create_component(
             Some("at") => add!(KeyframeComponent::new(arg_f32(args, 0)? as f64)),
             _ => Err("Keyframe requires .at(beat)".into()),
         },
-        "Action" => match ctor {
-            Some("print") => add!(ActionComponent::print(arg_str(args, 0)?)),
-            Some("update_transform") => {
-                let target = resolve_action_target(world, arg_str(args, 0)?)?;
-                let translation = arg_f32_arr::<3>(args, 1)?;
-                let rotation_euler = arg_f32_arr::<3>(args, 2)?;
-                let scale = arg_f32_arr::<3>(args, 3)?;
-                let transform = TransformComponent::new()
-                    .with_position(translation[0], translation[1], translation[2])
-                    .with_rotation_euler(rotation_euler[0], rotation_euler[1], rotation_euler[2])
-                    .with_scale(scale[0], scale[1], scale[2]);
-                add!(ActionComponent::new(crate::engine::ecs::IntentValue::UpdateTransform {
-                    component_ids: vec![target],
-                    translation: transform.transform.translation,
-                    rotation_quat_xyzw: transform.transform.rotation,
-                    scale: transform.transform.scale,
-                }))
+        "Action" => {
+            use crate::engine::ecs::IntentValue as IV;
+            use slotmap::Key;
+            let null_ids = |n: usize| vec![ComponentId::null(); n];
+            match ctor {
+                Some("noop") => add!(ActionComponent::default()),
+                Some("print") => add!(ActionComponent::print(arg_str(args, 0)?)),
+                Some("set_color") => {
+                    let targets = arg_target_source_vec(world, args, 0)?;
+                    let rgba = arg_f32_arr::<4>(args, 1)?;
+                    let signal = IV::SetColor { component_ids: null_ids(targets.len()), rgba };
+                    add!(ActionComponent::new_authored(signal, targets))
+                }
+                Some("set_text") => {
+                    let targets = arg_target_source_vec(world, args, 0)?;
+                    let text = arg_str(args, 1)?.to_string();
+                    let signal = IV::SetText { component_ids: null_ids(targets.len()), text };
+                    add!(ActionComponent::new_authored(signal, targets))
+                }
+                Some("set_position") => {
+                    let targets = arg_target_source_vec(world, args, 0)?;
+                    let position = arg_f32_arr::<3>(args, 1)?;
+                    let signal = IV::SetPosition { component_ids: null_ids(targets.len()), position };
+                    add!(ActionComponent::new_authored(signal, targets))
+                }
+                Some("attach") => {
+                    let parents = arg_target_source_vec(world, args, 0)?;
+                    let child = arg_target_source(world, args, 1)?;
+                    let mut sources = parents.clone();
+                    sources.push(child);
+                    let signal = IV::Attach {
+                        parents: null_ids(parents.len()),
+                        child: ComponentId::null(),
+                    };
+                    add!(ActionComponent::new_authored(signal, sources))
+                }
+                Some("attach_clone") => {
+                    let parents = arg_target_source_vec(world, args, 0)?;
+                    let prefab = arg_target_source(world, args, 1)?;
+                    let mut sources = parents.clone();
+                    sources.push(prefab);
+                    let signal = IV::AttachClone {
+                        parents: null_ids(parents.len()),
+                        prefab_root: ComponentId::null(),
+                    };
+                    add!(ActionComponent::new_authored(signal, sources))
+                }
+                Some("detach") => {
+                    let targets = arg_target_source_vec(world, args, 0)?;
+                    let signal = IV::Detach { component_ids: null_ids(targets.len()) };
+                    add!(ActionComponent::new_authored(signal, targets))
+                }
+                Some("remove_subtree") => {
+                    let targets = arg_target_source_vec(world, args, 0)?;
+                    let signal = IV::RemoveSubtree { component_ids: null_ids(targets.len()) };
+                    add!(ActionComponent::new_authored(signal, targets))
+                }
+                Some("request_raycast") => {
+                    let targets = arg_target_source_vec(world, args, 0)?;
+                    let signal = IV::RequestRaycast { component_ids: null_ids(targets.len()) };
+                    add!(ActionComponent::new_authored(signal, targets))
+                }
+                Some("update_transform") => {
+                    let target = arg_target_source(world, args, 0)?;
+                    let translation = arg_f32_arr::<3>(args, 1)?;
+                    let rotation_euler = arg_f32_arr::<3>(args, 2)?;
+                    let scale = arg_f32_arr::<3>(args, 3)?;
+                    let transform = TransformComponent::new()
+                        .with_position(translation[0], translation[1], translation[2])
+                        .with_rotation_euler(rotation_euler[0], rotation_euler[1], rotation_euler[2])
+                        .with_scale(scale[0], scale[1], scale[2]);
+                    let signal = IV::UpdateTransform {
+                        component_ids: null_ids(1),
+                        translation: transform.transform.translation,
+                        rotation_quat_xyzw: transform.transform.rotation,
+                        scale: transform.transform.scale,
+                    };
+                    add!(ActionComponent::new_authored(signal, vec![target]))
+                }
+                _ => add!(ActionComponent::default()),
             }
-            _ => add!(ActionComponent::default()),
         },
         "NormalVis" => {
             let mut c = NormalVisualisationComponent::new();
