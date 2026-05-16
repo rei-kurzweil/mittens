@@ -1,5 +1,5 @@
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::Component;
+use crate::engine::ecs::component::{ActionTarget, Component};
 
 /// Solver configuration for an `IKChainComponent`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -64,6 +64,13 @@ pub struct IKChainComponent {
     /// Blend weight: 0.0 = no IK applied, 1.0 = full solve.
     pub weight: f32,
 
+    /// Authored form of `target_id` for round-trip dump. `None` for
+    /// IKChains wired purely at runtime (e.g. by `AvatarControlSystem`),
+    /// which have no MMS source to preserve.
+    pub target_source: Option<ActionTarget>,
+    /// Authored form of `end_effector_id` for round-trip dump.
+    pub end_effector_source: Option<ActionTarget>,
+
     component: Option<ComponentId>,
 }
 
@@ -74,12 +81,24 @@ impl IKChainComponent {
             target_id,
             end_effector_id,
             weight: 1.0,
+            target_source: None,
+            end_effector_source: None,
             component: None,
         }
     }
 
     pub fn with_weight(mut self, w: f32) -> Self {
         self.weight = w;
+        self
+    }
+
+    pub fn with_target_source(mut self, src: ActionTarget) -> Self {
+        self.target_source = Some(src);
+        self
+    }
+
+    pub fn with_end_effector_source(mut self, src: ActionTarget) -> Self {
+        self.end_effector_source = Some(src);
         self
     }
 }
@@ -103,8 +122,7 @@ impl Component for IKChainComponent {
 
     fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
-        // target_id / end_effector_id are runtime-only (wired by AvatarControlSystem);
-        // omitted from the AST.
+        use crate::meow_meow::ast::Expression;
         let solver_call = match self.solver {
             IKSolver::AimConstraint { offset_yaw } => {
                 ("aim_constraint", vec![num(offset_yaw as f64)])
@@ -121,7 +139,20 @@ impl Component for IKChainComponent {
                 vec![num(max_iterations as f64), num(tolerance as f64)],
             ),
         };
-        ce_call("IKChain", solver_call.0, solver_call.1)
-            .with_call("weight", vec![num(self.weight as f64)])
+        fn target_expr(t: &ActionTarget) -> Expression {
+            match t {
+                ActionTarget::Guid(u) => Expression::String(format!("@uuid:{u}")),
+                ActionTarget::Query(s) => Expression::String(s.clone()),
+            }
+        }
+        let mut ce = ce_call("IKChain", solver_call.0, solver_call.1)
+            .with_call("weight", vec![num(self.weight as f64)]);
+        if let Some(src) = &self.target_source {
+            ce = ce.with_call("target", vec![target_expr(src)]);
+        }
+        if let Some(src) = &self.end_effector_source {
+            ce = ce.with_call("end_effector", vec![target_expr(src)]);
+        }
+        ce
     }
 }

@@ -270,9 +270,16 @@ fn collect_referenced_guids(
     node: ComponentId,
     out: &mut std::collections::HashSet<uuid::Uuid>,
 ) {
-    use crate::engine::ecs::component::{ActionComponent, ActionTarget};
+    use crate::engine::ecs::component::{ActionComponent, ActionTarget, IKChainComponent};
     if let Some(action) = world.get_component_by_id_as::<ActionComponent>(node) {
         for src in &action.target_sources {
+            if let ActionTarget::Guid(u) = src {
+                out.insert(*u);
+            }
+        }
+    }
+    if let Some(ik) = world.get_component_by_id_as::<IKChainComponent>(node) {
+        for src in [&ik.target_source, &ik.end_effector_source].iter().copied().flatten() {
             if let ActionTarget::Guid(u) = src {
                 out.insert(*u);
             }
@@ -565,6 +572,30 @@ fn apply_guid_named_prop(world: &mut World, id: ComponentId, val: &Value) -> Res
     let parsed = uuid::Uuid::parse_str(s)
         .map_err(|e| format!("guid prop: invalid uuid '{s}': {e}"))?;
     world.set_component_guid(id, parsed)
+}
+
+/// Best-effort resolution of an `ActionTarget` to a ComponentId at
+/// registry-call time. Returns `None` when the referent doesn't exist
+/// yet — caller is expected to leave the resolved id as a null sentinel
+/// and have a later system pass fill it in (e.g. the AnimationSystem
+/// resolution path for Action; AvatarControlSystem for IKChain).
+pub(crate) fn resolve_target_source(
+    world: &World,
+    src: &crate::engine::ecs::component::ActionTarget,
+) -> Option<ComponentId> {
+    use crate::engine::ecs::component::ActionTarget;
+    match src {
+        ActionTarget::Guid(uuid) => world.component_id_by_guid(*uuid),
+        ActionTarget::Query(selector) => {
+            let roots: Vec<ComponentId> = world
+                .all_components()
+                .filter(|&cid| world.parent_of(cid).is_none())
+                .collect();
+            roots
+                .into_iter()
+                .find_map(|root| world.find_component(root, selector))
+        }
+    }
 }
 
 fn value_to_target_source(
@@ -1446,9 +1477,35 @@ fn apply_call(
         }
         return Ok(());
     }
-    if let Some(ik) = world.get_component_by_id_as_mut::<IKChainComponent>(id) {
-        if method == "weight" {
-            *ik = ik.clone().with_weight(arg_f32(args, 0)?);
+    if world.get_component_by_id_as::<IKChainComponent>(id).is_some() {
+        match method {
+            "weight" => {
+                let w = arg_f32(args, 0)?;
+                if let Some(ik) = world.get_component_by_id_as_mut::<IKChainComponent>(id) {
+                    *ik = ik.clone().with_weight(w);
+                }
+            }
+            "target" => {
+                let src = arg_target_source(world, args, 0)?;
+                let resolved = resolve_target_source(world, &src);
+                if let Some(ik) = world.get_component_by_id_as_mut::<IKChainComponent>(id) {
+                    ik.target_source = Some(src);
+                    if let Some(r) = resolved {
+                        ik.target_id = r;
+                    }
+                }
+            }
+            "end_effector" => {
+                let src = arg_target_source(world, args, 0)?;
+                let resolved = resolve_target_source(world, &src);
+                if let Some(ik) = world.get_component_by_id_as_mut::<IKChainComponent>(id) {
+                    ik.end_effector_source = Some(src);
+                    if let Some(r) = resolved {
+                        ik.end_effector_id = r;
+                    }
+                }
+            }
+            _ => {}
         }
         return Ok(());
     }

@@ -1372,6 +1372,91 @@ fn roundtrip_action_unreferenced_component_does_not_get_guid_emit() {
     );
 }
 
+#[test]
+fn roundtrip_ikchain_target_and_end_effector_via_selectors() {
+    use crate::engine::ecs::component::{
+        ActionTarget, IKChainComponent, IKSolver, TransformComponent,
+    };
+
+    let mut w = World::default();
+    let root = w.add_component(TransformComponent::new());
+    let target = w.add_component_boxed_named("hand_target", Box::new(TransformComponent::new()));
+    w.add_child(root, target).unwrap();
+    let ee = w.add_component_boxed_named("end_effector", Box::new(TransformComponent::new()));
+    w.add_child(root, ee).unwrap();
+    let mut ik = IKChainComponent::new(
+        IKSolver::TwoBoneIK { pole_direction: [0.0, 1.0, 0.0], copy_end_rotation: false },
+        target,
+        ee,
+    );
+    ik = ik
+        .with_target_source(ActionTarget::Query("#hand_target".to_string()))
+        .with_end_effector_source(ActionTarget::Query("#end_effector".to_string()));
+    let ik_id = w.add_component(ik);
+    w.add_child(root, ik_id).unwrap();
+
+    let (new_world, new_root) = roundtrip_subtree(&w, root);
+    let new_ik_id = find_first::<IKChainComponent>(&new_world, new_root).unwrap();
+    let new_ik = new_world
+        .get_component_by_id_as::<IKChainComponent>(new_ik_id)
+        .unwrap();
+    match &new_ik.target_source {
+        Some(ActionTarget::Query(s)) => assert_eq!(s, "#hand_target"),
+        other => panic!("expected Query target_source, got {other:?}"),
+    }
+    match &new_ik.end_effector_source {
+        Some(ActionTarget::Query(s)) => assert_eq!(s, "#end_effector"),
+        other => panic!("expected Query end_effector_source, got {other:?}"),
+    }
+    // Registry should have resolved them too since the named targets
+    // exist in the same subtree.
+    assert_ne!(new_ik.target_id, ee, "target_id should not have been mis-resolved");
+    assert!(
+        new_world.get_component_record(new_ik.target_id).is_some(),
+        "target_id should resolve to a live component"
+    );
+    assert!(
+        new_world.get_component_record(new_ik.end_effector_id).is_some(),
+        "end_effector_id should resolve to a live component"
+    );
+}
+
+#[test]
+fn roundtrip_ikchain_guid_handle_preserves_target_guid() {
+    use crate::engine::ecs::component::{
+        ActionTarget, IKChainComponent, IKSolver, TransformComponent,
+    };
+
+    let mut w = World::default();
+    let root = w.add_component(TransformComponent::new());
+    let target = w.add_component(TransformComponent::new()); // unnamed
+    w.add_child(root, target).unwrap();
+    let ee = w.add_component(TransformComponent::new());
+    w.add_child(root, ee).unwrap();
+    let target_guid = w.get_component_record(target).unwrap().guid;
+    let ee_guid = w.get_component_record(ee).unwrap().guid;
+
+    let ik = IKChainComponent::new(
+        IKSolver::AimConstraint { offset_yaw: 0.0 },
+        target,
+        ee,
+    )
+    .with_target_source(ActionTarget::Guid(target_guid))
+    .with_end_effector_source(ActionTarget::Guid(ee_guid));
+    let ik_id = w.add_component(ik);
+    w.add_child(root, ik_id).unwrap();
+
+    let (new_world, _new_root) = roundtrip_subtree(&w, root);
+    assert!(
+        new_world.component_id_by_guid(target_guid).is_some(),
+        "target guid not preserved"
+    );
+    assert!(
+        new_world.component_id_by_guid(ee_guid).is_some(),
+        "end_effector guid not preserved"
+    );
+}
+
 /// DFS lookup of the first component of type `C` under `root`.
 fn find_first<C: ComponentTrait + 'static>(world: &World, root: ComponentId) -> Option<ComponentId> {
     if world.get_component_by_id_as::<C>(root).is_some() {
