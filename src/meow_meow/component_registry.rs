@@ -527,46 +527,6 @@ fn arg_str(args: &[Value], i: usize) -> Result<&str, String> { val_as_str(arg(ar
 fn arg_f32_arr<const N: usize>(args: &[Value], i: usize) -> Result<[f32; N], String> { val_as_f32_array(arg(args, i)?) }
 fn arg_str_vec(args: &[Value], i: usize) -> Result<Vec<String>, String> { val_as_str_vec(arg(args, i)?) }
 
-/// Resolve the i-th arg to a single `ComponentId`.
-///
-/// Accepts either a `Value::ComponentObject { id, .. }` (handed in by the
-/// evaluator when MMS code passes a let-bound component directly — zero
-/// resolution cost) or a selector string / identifier, which goes through
-/// `resolve_action_target` (one query walk).
-pub(crate) fn arg_target(
-    world: &World,
-    args: &[Value],
-    i: usize,
-) -> Result<ComponentId, String> {
-    value_to_target(world, arg(args, i)?)
-}
-
-/// Resolve the i-th arg to a `Vec<ComponentId>`.
-///
-/// Accepts a `Value::Array` of any mix of selector strings / identifiers /
-/// `ComponentObject`s, or a single non-array value treated as a one-element
-/// vec.
-pub(crate) fn arg_target_vec(
-    world: &World,
-    args: &[Value],
-    i: usize,
-) -> Result<Vec<ComponentId>, String> {
-    match arg(args, i)? {
-        Value::Array(items) => items.iter().map(|v| value_to_target(world, v)).collect(),
-        other => value_to_target(world, other).map(|id| vec![id]),
-    }
-}
-
-fn value_to_target(world: &World, v: &Value) -> Result<ComponentId, String> {
-    match v {
-        Value::ComponentObject { id, .. } => Ok(*id),
-        Value::String(s) | Value::Identifier(s) => resolve_action_target(world, s),
-        other => Err(format!(
-            "expected component handle or selector string, got {other:?}"
-        )),
-    }
-}
-
 /// Produce an `ActionTarget` (authoring metadata) from the i-th arg.
 ///
 /// Mapping:
@@ -1950,23 +1910,3 @@ fn apply_transform_builder(
     }
 }
 
-/// Resolve a ComponentId reference passed as a string in MMS source.
-///
-/// Strings are interpreted as mmq selectors — `#name`, `Type`, `Type#name`,
-/// `[attr=value]`, `@uuid:<hex>`. Bare unprefixed labels are not accepted;
-/// authors who want name-based lookup must write `#name` explicitly. This
-/// keeps the surface uniform with the rest of the query system and leaves
-/// room for a future ComponentId FFI literal (Phase 2) without grammar
-/// collisions.
-fn resolve_action_target(world: &World, selector: &str) -> Result<ComponentId, String> {
-    let roots: Vec<ComponentId> = world
-        .all_components()
-        .filter(|&cid| world.parent_of(cid).is_none())
-        .collect();
-    for root in roots {
-        if let Some(found) = world.find_component(root, selector) {
-            return Ok(found);
-        }
-    }
-    Err(format!("Action target not found for selector: {}", selector))
-}
