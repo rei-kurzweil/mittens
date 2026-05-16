@@ -359,6 +359,7 @@ pub fn ce_ast_to_materialized(ce: &ComponentExpression) -> Result<MaterializedCE
     }
 
     let mut children: Vec<CeChild> = Vec::new();
+    let mut named: Vec<(String, Value)> = Vec::new();
     for stmt in &ce.body.statements {
         match stmt {
             Statement::Expression(Expression::Component(child_ce)) => {
@@ -375,10 +376,18 @@ pub fn ce_ast_to_materialized(ce: &ComponentExpression) -> Result<MaterializedCE
                     calls.push((name.clone(), args));
                 }
             }
+            Statement::Reassign { name, value } => {
+                // Named-prop in a CE body, e.g. `name = "hero"`, `guid = "..."`.
+                // The full evaluator handles this via builder.named.push in
+                // evaluator.rs; replicate the same mapping here so the
+                // ground-CE dump path preserves named props on round-trip.
+                let val = expression_to_value(value)?;
+                named.push((name.0.clone(), val));
+            }
             _ => {
-                // Skip non-CE, non-call statements (assignments, control flow) —
-                // `to_mms_ast` impls should not emit these. If one slips through,
-                // we drop it rather than fail the clone.
+                // Skip other statement kinds (control flow, lets) —
+                // `to_mms_ast` impls should not emit these. If one slips
+                // through, we drop it rather than fail the clone.
             }
         }
     }
@@ -388,7 +397,7 @@ pub fn ce_ast_to_materialized(ce: &ComponentExpression) -> Result<MaterializedCE
         ctor_method,
         ctor_args,
         calls,
-        named: Vec::new(),
+        named,
         positionals: Vec::new(),
         children,
     })
