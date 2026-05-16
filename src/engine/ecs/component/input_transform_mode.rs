@@ -82,57 +82,19 @@ impl Component for InputTransformModeComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        let axis = match self.forward_axis {
-            ForwardAxis::Y => "y",
-            ForwardAxis::Z => "z",
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = match self.forward_axis {
+            ForwardAxis::Y => "forward_y",
+            ForwardAxis::Z => "forward_z",
         };
-        map.insert("forward_axis".to_string(), serde_json::json!(axis));
-
-        let roll_axis = match self.roll_axis {
-            RollAxis::X => "x",
-            RollAxis::Y => "y",
-            RollAxis::Z => "z",
-        };
-        map.insert("roll_axis".to_string(), serde_json::json!(roll_axis));
-
-        map.insert(
-            "fps_rotation".to_string(),
-            serde_json::json!(self.fps_rotation),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(axis) = data.get("forward_axis") {
-            let axis: String = serde_json::from_value(axis.clone())
-                .map_err(|e| format!("Failed to decode forward_axis: {}", e))?;
-            self.forward_axis = match axis.as_str() {
-                "y" | "Y" => ForwardAxis::Y,
-                "z" | "Z" => ForwardAxis::Z,
-                _ => return Err(format!("Unknown forward_axis: '{}'", axis)),
-            };
+        let mut ce = ce_call("InputTransformMode", ctor, vec![]);
+        if matches!(self.roll_axis, RollAxis::Y) {
+            ce = ce.with_call("roll_axis_y", vec![]);
         }
-
-        if let Some(axis) = data.get("roll_axis") {
-            let axis: String = serde_json::from_value(axis.clone())
-                .map_err(|e| format!("Failed to decode roll_axis: {}", e))?;
-            self.roll_axis = match axis.as_str() {
-                "x" | "X" => RollAxis::X,
-                "y" | "Y" => RollAxis::Y,
-                "z" | "Z" => RollAxis::Z,
-                _ => return Err(format!("Unknown roll_axis: '{}'", axis)),
-            };
+        if self.fps_rotation {
+            ce = ce.with_call("fps_rotation", vec![]);
         }
-
-        if let Some(v) = data.get("fps_rotation") {
-            self.fps_rotation = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode fps_rotation: {}", e))?;
-        }
-        Ok(())
+        ce
     }
 }

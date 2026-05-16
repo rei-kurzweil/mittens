@@ -70,29 +70,16 @@ impl Component for RendererSettingsComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("msaa4x".to_string(), serde_json::json!(self.msaa4x));
-        if let Some(window_size) = self.window_size {
-            map.insert("window_size".to_string(), serde_json::json!(window_size));
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let mut ce = if self.msaa4x {
+            ce("RendererSettings")
+        } else {
+            ce_call("RendererSettings", "msaa_off", vec![])
+        };
+        if let Some([w, h]) = self.window_size {
+            ce = ce.with_call("window_size", vec![num(w as f64), num(h as f64)]);
         }
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(msaa4x) = data.get("msaa4x") {
-            self.msaa4x = serde_json::from_value(msaa4x.clone())
-                .map_err(|e| format!("Failed to decode msaa4x: {e}"))?;
-        }
-        if let Some(window_size) = data.get("window_size") {
-            self.window_size = Some(
-                serde_json::from_value(window_size.clone())
-                    .map_err(|e| format!("Failed to decode window_size: {e}"))?,
-            );
-        }
-        Ok(())
+        ce
     }
 }

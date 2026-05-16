@@ -67,20 +67,12 @@ impl Component for StencilClipComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("stencil_ref".to_string(), serde_json::json!(self.stencil_ref));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("stencil_ref") {
-            self.stencil_ref = serde_json::from_value(v.clone())
-                .map_err(|e| format!("stencil_ref: {e}"))?;
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        if self.stencil_ref == 0 {
+            ce("StencilClip")
+        } else {
+            ce("StencilClip").with_call("stencil_ref", vec![num(self.stencil_ref as f64)])
         }
-        Ok(())
     }
 }

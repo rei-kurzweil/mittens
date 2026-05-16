@@ -206,23 +206,20 @@ impl Component for MusicNoteComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert(
-            "note".to_string(),
-            serde_json::to_value(&self.note).unwrap_or_else(|_| serde_json::json!({})),
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let pitch = self.note.pitch_name();
+        let mut c = ce_call(
+            "MusicNote",
+            pitch,
+            vec![
+                num(self.note.octave() as f64),
+                num(self.note.duration_beats() as f64),
+            ],
         );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("note") {
-            self.note = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode note: {}", e))?;
+        if (self.note.velocity() - 1.0).abs() > f32::EPSILON {
+            c = c.with_call("velocity", vec![num(self.note.velocity() as f64)]);
         }
-        Ok(())
+        c
     }
 }

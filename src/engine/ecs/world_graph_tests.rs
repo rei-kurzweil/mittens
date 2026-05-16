@@ -131,4 +131,28 @@ mod tests {
         let found = w.find_all_components(root, "[name='match']");
         assert_eq!(found, vec![left, right]);
     }
+
+    #[test]
+    fn find_component_matches_guid_via_mmq_and_css_forms() {
+        let mut w = World::default();
+
+        let root = w.add_component_boxed_named(
+            "root",
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
+        let target = w.add_component(crate::engine::ecs::component::TransformComponent::new());
+        w.add_child(root, target).unwrap();
+
+        let guid = w.get_component_record(target).unwrap().guid;
+        let guid_str = guid.to_string();
+
+        let mmq_sel = format!("@uuid:{}", guid_str);
+        assert_eq!(w.find_component(root, &mmq_sel), Some(target));
+
+        let css_sel = format!("[guid={}]", guid_str);
+        assert_eq!(w.find_component(root, &css_sel), Some(target));
+
+        // Bogus guid string → no match, no panic.
+        assert_eq!(w.find_component(root, "[guid=not-a-uuid]"), None);
+    }
 }

@@ -33,14 +33,28 @@ impl<'w> QueryTreeAdapter for WorldQueryAdapter<'w> {
         self.world.component_label(node).map_or(false, |n| n == name)
     }
 
+    fn matches_guid(&self, node: Self::NodeId, guid: &str) -> bool {
+        let Ok(parsed) = uuid::Uuid::parse_str(guid) else {
+            return false;
+        };
+        self.world
+            .get_component_record(node)
+            .map_or(false, |n| n.guid == parsed)
+    }
+
     fn matches_attribute(&self, node: Self::NodeId, attribute: &AttributeSelector) -> bool {
-        if attribute.name == "name" {
-            return attribute
+        match attribute.name.as_str() {
+            "name" => attribute
                 .value
                 .as_deref()
                 .map(|name| self.matches_name(node, name))
-                .unwrap_or(false);
+                .unwrap_or(false),
+            "guid" => attribute
+                .value
+                .as_deref()
+                .map(|guid| self.matches_guid(node, guid))
+                .unwrap_or(false),
+            _ => false,
         }
-        false
     }
 }

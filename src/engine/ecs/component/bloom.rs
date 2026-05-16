@@ -79,58 +79,17 @@ impl Component for BloomComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("enabled".to_string(), serde_json::json!(self.enabled));
-        map.insert("intensity".to_string(), serde_json::json!(self.intensity));
-        map.insert("radius_ndc".to_string(), serde_json::json!(self.radius_ndc));
-        map.insert(
-            "emissive_scale".to_string(),
-            serde_json::json!(self.emissive_scale),
-        );
-        map.insert("half_res".to_string(), serde_json::json!(self.half_res));
-        if let Some(output_texture) = &self.output_texture {
-            map.insert(
-                "output_texture".to_string(),
-                serde_json::json!(output_texture),
-            );
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let mut ce = ce("Bloom")
+            .with_call("enabled", vec![b(self.enabled)])
+            .with_call("intensity", vec![num(self.intensity as f64)])
+            .with_call("radius_ndc", vec![num(self.radius_ndc as f64)])
+            .with_call("emissive_scale", vec![num(self.emissive_scale as f64)])
+            .with_call("half_res", vec![b(self.half_res)]);
+        if let Some(tex) = &self.output_texture {
+            ce = ce.with_call("output_texture", vec![s(tex)]);
         }
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(enabled) = data.get("enabled") {
-            self.enabled = serde_json::from_value(enabled.clone())
-                .map_err(|e| format!("Failed to decode bloom.enabled: {e}"))?;
-        }
-        if let Some(intensity) = data.get("intensity") {
-            self.intensity = serde_json::from_value::<f32>(intensity.clone())
-                .map_err(|e| format!("Failed to decode bloom.intensity: {e}"))?
-                .max(0.0);
-        }
-        if let Some(radius_ndc) = data.get("radius_ndc") {
-            self.radius_ndc = serde_json::from_value::<f32>(radius_ndc.clone())
-                .map_err(|e| format!("Failed to decode bloom.radius_ndc: {e}"))?
-                .max(0.0);
-        }
-        if let Some(emissive_scale) = data.get("emissive_scale") {
-            self.emissive_scale = serde_json::from_value::<f32>(emissive_scale.clone())
-                .map_err(|e| format!("Failed to decode bloom.emissive_scale: {e}"))?
-                .max(0.0);
-        }
-        if let Some(half_res) = data.get("half_res") {
-            self.half_res = serde_json::from_value(half_res.clone())
-                .map_err(|e| format!("Failed to decode bloom.half_res: {e}"))?;
-        }
-        if let Some(output_texture) = data.get("output_texture") {
-            self.output_texture = Some(
-                serde_json::from_value(output_texture.clone())
-                    .map_err(|e| format!("Failed to decode bloom.output_texture: {e}"))?,
-            );
-        }
-        Ok(())
+        ce
     }
 }

@@ -78,28 +78,10 @@ impl Component for GravityComponent {
     ) {
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("enabled".to_string(), serde_json::json!(self.enabled));
-        map.insert(
-            "coefficient".to_string(),
-            serde_json::json!(self.coefficient),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(enabled) = data.get("enabled") {
-            self.enabled = serde_json::from_value(enabled.clone())
-                .map_err(|e| format!("Failed to decode gravity.enabled: {e}"))?;
-        }
-        if let Some(coef) = data.get("coefficient") {
-            self.coefficient = serde_json::from_value(coef.clone())
-                .map_err(|e| format!("Failed to decode gravity.coefficient: {e}"))?;
-        }
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce("Gravity")
+            .with_call("enabled", vec![b(self.enabled)])
+            .with_call("coefficient", vec![num(self.coefficient as f64)])
     }
 }

@@ -22,14 +22,7 @@ impl Component for EmissivePassComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        std::collections::HashMap::new()
-    }
-
-    fn decode(
-        &mut self,
-        _data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        crate::engine::ecs::component::ce_helpers::ce("EmissivePass")
     }
 }

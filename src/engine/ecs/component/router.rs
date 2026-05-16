@@ -54,33 +54,16 @@ impl Component for RouterComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        if let Some(target_name) = &self.target_name {
-            map.insert("target_name".to_string(), serde_json::json!(target_name));
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let mut ce = ce("Router");
+        if let Some(target) = &self.target_name {
+            ce = ce.with_call("target", vec![s(target)]);
         }
-        map.insert("ignore_names".to_string(), serde_json::json!(self.ignore_names));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        self.target_name = match data.get("target_name") {
-            Some(value) => Some(
-                serde_json::from_value(value.clone())
-                    .map_err(|e| format!("Failed to decode target_name: {e}"))?,
-            ),
-            None => None,
-        };
-
-        self.ignore_names = match data.get("ignore_names") {
-            Some(value) => serde_json::from_value(value.clone())
-                .map_err(|e| format!("Failed to decode ignore_names: {e}"))?,
-            None => Vec::new(),
-        };
-
-        Ok(())
+        if !self.ignore_names.is_empty() {
+            let items: Vec<_> = self.ignore_names.iter().map(|n| s(n)).collect();
+            ce = ce.with_call("ignore", vec![array(items)]);
+        }
+        ce
     }
 }

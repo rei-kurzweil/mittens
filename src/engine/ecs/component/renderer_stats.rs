@@ -136,67 +136,21 @@ impl Component for RendererStatsComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("enabled".to_string(), serde_json::json!(self.enabled));
-        map.insert(
-            "target".to_string(),
-            serde_json::json!(match self.target {
-                CameraTarget::Window => "window",
-                CameraTarget::Xr => "xr",
-            }),
-        );
-        map.insert(
-            "update_interval_sec".to_string(),
-            serde_json::json!(self.update_interval_sec),
-        );
-        map.insert("smoothing".to_string(), serde_json::json!(self.smoothing));
-        map.insert("color".to_string(), serde_json::json!(self.color));
-        map.insert("emissive".to_string(), serde_json::json!(self.emissive));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(enabled) = data.get("enabled") {
-            self.enabled = serde_json::from_value(enabled.clone())
-                .map_err(|e| format!("Failed to decode enabled: {e}"))?;
-        }
-        self.target = match data
-            .get("target")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "Missing required field: target".to_string())?
-        {
-            "xr" => CameraTarget::Xr,
-            "window" => CameraTarget::Window,
-            other => return Err(format!("Invalid target: {other}")),
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let target_str = match self.target {
+            CameraTarget::Window => "Window",
+            CameraTarget::Xr => "Xr",
         };
-        if let Some(update_interval_sec) = data.get("update_interval_sec") {
-            self.update_interval_sec = serde_json::from_value(update_interval_sec.clone())
-                .map_err(|e| format!("Failed to decode update_interval_sec: {e}"))?;
-        }
-        if let Some(smoothing) = data.get("smoothing") {
-            self.smoothing = serde_json::from_value(smoothing.clone())
-                .map_err(|e| format!("Failed to decode smoothing: {e}"))?;
-        }
-        if let Some(color) = data.get("color") {
-            self.color = serde_json::from_value(color.clone())
-                .map_err(|e| format!("Failed to decode color: {e}"))?;
-        }
-        if let Some(emissive) = data.get("emissive") {
-            self.emissive = serde_json::from_value(emissive.clone())
-                .map_err(|e| format!("Failed to decode emissive: {e}"))?;
-        }
-
-        // Sanitize.
-        if !self.update_interval_sec.is_finite() || self.update_interval_sec < 0.0 {
-            self.update_interval_sec = 0.25;
-        }
-        if !self.smoothing.is_finite() {
-            self.smoothing = 0.9;
-        }
-        Ok(())
+        ce("RendererStats")
+            .with_call("enabled", vec![b(self.enabled)])
+            .with_call("camera_target", vec![s(target_str)])
+            .with_call("update_interval_sec", vec![num(self.update_interval_sec as f64)])
+            .with_call("smoothing", vec![num(self.smoothing as f64)])
+            .with_call(
+                "color",
+                vec![array(nums(self.color.iter().map(|&v| v as f64)))],
+            )
+            .with_call("emissive", vec![b(self.emissive)])
     }
 }

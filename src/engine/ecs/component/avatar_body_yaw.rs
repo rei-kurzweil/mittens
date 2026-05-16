@@ -101,27 +101,14 @@ impl Component for AvatarBodyYawComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("threshold".to_string(), serde_json::json!(self.threshold));
-        map.insert("rate".to_string(), serde_json::json!(self.rate));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("threshold") {
-            if let Some(f) = v.as_f64() {
-                self.threshold = f as f32;
-            }
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let mut c = ce("AvatarBodyYaw")
+            .with_call("threshold", vec![num(self.threshold as f64)])
+            .with_call("rate", vec![num(self.rate as f64)]);
+        if self.forward_plus_z {
+            c = c.with_call("forward_plus_z", vec![]);
         }
-        if let Some(v) = data.get("rate") {
-            if let Some(f) = v.as_f64() {
-                self.rate = f as f32;
-            }
-        }
-        Ok(())
+        c
     }
 }

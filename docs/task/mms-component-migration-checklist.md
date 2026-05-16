@@ -35,6 +35,12 @@ with no args.
       proper migration needs builders for each. Most authored Style ends up
       in MMS source today, so the stub is acceptable until we round-trip
       live-edited Style.
+- [x] `OpacityComponent` — `Opacity.opacity(x)` + optional `.multiple_layers()`
+- [x] `EmissiveComponent` — `Emissive.on()` / `Emissive.off()` + optional `.intensity(x)`
+- [x] `AmbientLightComponent` — `AmbientLight.rgb(r,g,b)`
+- [x] `DirectionalLightComponent` — `DirectionalLight.intensity(x).color(r,g,b)`
+- [x] `PointLightComponent` — `PointLight.intensity(x).distance(x).color(r,g,b)`
+- [x] `GLTFComponent` — `GLTF.new(uri)` + optional `.with_visualized_transforms(true)`
 
 ## Components still using default `to_mms_ast`
 
@@ -46,66 +52,76 @@ Priority is roughly "what's likely to be live-edited and need round-trip":
 
 ### High value
 
-- [ ] `OpacityComponent` — needs `apply_call` for `opacity()` + `multiple_layers()`
-- [ ] `EmissiveComponent` — needs `apply_call` for `intensity()`
-- [ ] `AmbientLightComponent` — `AmbientLight.rgb()` already in registry; just add `to_mms_ast`
-- [ ] `DirectionalLightComponent` — registry has `intensity()` + `color()` builders
-- [ ] `PointLightComponent` — registry has `intensity()` / `distance()` / `color()` builders
-- [ ] `GLTFComponent` — registry has `.new(uri)`; add `to_mms_ast`
-- [ ] `TextureComponent` — registry has multiple ctors (`uri`, `from_png`, `from_dds`, `render_image`); pick from runtime state
-- [ ] `Camera3DComponent`, `Camera2DComponent`, `CameraXRComponent`
-- [ ] `OpenXRComponent`, `ControllerXRComponent`, `InputXRComponent`
-- [ ] `AnimationComponent` (state — playing/paused/looping)
-- [ ] `KeyframeComponent` (beat)
-- [ ] `InputComponent` (speed)
-- [ ] `InputTransformModeComponent`
-- [ ] `EditorComponent` — but the editor's own subtree is excluded from save
-- [ ] `BackgroundComponent`, `OverlayComponent`, `BackgroundColorComponent`
-- [ ] `RaycastableComponent`, `SelectableComponent`
-- [ ] `HtmlElementComponent` — many element-type variants
+- [x] `TextureComponent` — `Texture.with_uri/from_dds/render_image(...)` (handle source is runtime-only, emits unresolved)
+- [x] `Camera3DComponent` — `Camera3D.target(...).fov(...).near(...).far(...)`
+- [x] `Camera2DComponent` — `Camera2D.target(...)` (registry entry added)
+- [x] `CameraXRComponent` — `CameraXR.on/off()` + optional `.target("window")`
+- [x] `OpenXRComponent` — `OpenXR.on/off()`
+- [x] `ControllerXRComponent` — `ControllerXR.new(enabled, hand, pose)`
+- [x] `InputXRComponent` — `InputXR.on/off()`
+- [x] `AnimationComponent` — `Animation.playing/looping/paused()`
+- [x] `KeyframeComponent` — `Keyframe.at(beat)`
+- [x] `InputComponent` — `Input.speed(x)`
+- [x] `InputTransformModeComponent` — `InputTransformMode.forward_y/forward_z()` + optional `.roll_axis_y()` / `.fps_rotation()`
+- [x] `EditorComponent` — `Editor.translation_space(...).rotation_space(...)` (panel positions still lost)
+- [x] `BackgroundComponent` — `Background {}` + optional `.occlusion_and_lighting()` / `.ray_casting()`
+- [x] `BackgroundColorComponent` — `BackgroundColor {}` (marker)
+- [x] `OverlayComponent` — `Overlay {}` (marker, never had encode/decode)
+- [x] `RaycastableComponent` — `Raycastable.enabled/disabled/drag_only/click_only()` + optional `.pointer_events("pass_through")`
+- [x] `SelectableComponent` — `Selectable.on/off()`
+- [x] `HtmlElementComponent` — element-type ctor (`div`, `span`, `h1`–`h6`, `header`, `footer`, `main`, `nav`, `aside`, `section`, `article`, `body`, `p`); rarer element types fall back to bare `HtmlElement {}` until apply_call vocab is expanded
 
 ### Medium value
 
-- [ ] `TransparentCutoutComponent`
-- [ ] `TextureFilteringComponent`
-- [ ] `EmissivePassComponent`, `BloomComponent`, `BlurPassComponent`
-- [ ] `RenderGraphComponent`
-- [ ] `LightQuantizationComponent`
-- [ ] `NormalVisualisationComponent`
-- [ ] `UVComponent`
-- [ ] `ScrollingComponent`
-- [ ] `ClockComponent` (bpm)
+- [x] `TransparentCutoutComponent` — `TransparentCutout {}` (enabled) or `.disabled()`
+- [x] `TextureFilteringComponent` — `TextureFiltering.linear/nearest/nearest_magnification()`
+- [x] `EmissivePassComponent` — `EmissivePass {}` (marker)
+- [x] `BloomComponent` — `Bloom.enabled().intensity().radius_ndc().emissive_scale().half_res()` + optional `.output_texture()`
+- [x] `BlurPassComponent` — `BlurPass.enabled().radius_ndc().half_res()`
+- [x] `RenderGraphComponent` — `RenderGraph.on/off()`
+- [x] `LightQuantizationComponent` — `LightQuantization.steps(x)`
+- [x] `NormalVisualisationComponent` — `NormalVis.thickness(x)`
+- [x] `UVComponent` — `UV {}` chained with `.uv(u, v)` per vertex
+- [x] `ScrollingComponent` — `Scrolling.new(viewport, content)` (runtime drag/track state intentionally not serialized)
+- [x] `ClockComponent` — `Clock.bpm(x)`
 - [ ] `ActionComponent` — has multiple shapes (print, update_transform); complex
-- [ ] `RouterComponent`
-- [ ] `TransitionComponent`
-- [ ] `TextShadowComponent`
-- [ ] `RendererSettingsComponent`
+- [x] `RouterComponent` — `Router.target("name").ignore(["a","b"])`
+- [x] `TransitionComponent` — `Transition.enabled().duration_beats().<easing>().capture_from_current().<replace_policy>()`
+- [x] `TextShadowComponent` — `TextShadow.rgba([…]).scale(x).offset([x,y,z])`
+- [x] `RendererSettingsComponent` — `RendererSettings {}` or `.msaa_off()` + optional `.window_size(w, h)`
 
 ### Low value (transient / runtime-only / not user-authored)
 
-- [ ] `RendererStatsComponent`
-- [ ] `RaycastComponent`, `PointerComponent`
-- [ ] `RaycastableShapeComponent`
-- [ ] `BoundsComponent`, `MeshComponent`
-- [ ] `CollisionComponent`, `CollisionShapeComponent`, `GravityComponent`,
-      `KineticResponseComponent` — physics state typically not authored in MMS
-- [ ] `SkinnedMeshComponent`
-- [ ] `GestureCoordTypeComponent`
-- [ ] `SignalRouteUpwardComponent`
-- [ ] `StencilClipComponent`
-- [ ] `AvatarBodyYawComponent`, `AvatarControlComponent`
-- [ ] `WorldPanelComponent`, `InspectorPanelComponent` — editor UI; excluded from save
-- [ ] `IKChainComponent`
+- [x] `RendererStatsComponent` — `RendererStats {}` with builder chain
+- [x] `RaycastComponent` — `Raycast.continuous/event_driven()` + `.max_distance(x)`
+- [x] `PointerComponent` — `Pointer {}` or `.disabled()`
+- [x] `RaycastableShapeComponent` — `RaycastableShape.<shape>()` enum ctor
+- [x] `BoundsComponent` — `Bounds.aabb([…], […])`
+- [x] `MeshComponent` — `Mesh.new(key)`
+- [x] `CollisionComponent` — `Collision.static/kinematic/rigged()`
+- [x] `CollisionShapeComponent` — `CollisionShape.cube([h,h,h])` / `.sphere(r)`
+- [x] `GravityComponent` — `Gravity {}` with `.enabled().coefficient()`
+- [x] `KineticResponseComponent` — `KineticResponse.slide/push()` with builder chain
+- [x] `SkinnedMeshComponent` — `SkinnedMesh.new(skin_index)` (skin_id is runtime)
+- [x] `GestureCoordTypeComponent` — `GestureCoordType.world_plane/screen_space_1d_slider()`
+- [x] `SignalRouteUpwardComponent` — `SignalRouteUpward.new(intent_kind, parent_type)`
+- [x] `StencilClipComponent` — `StencilClip {}` + optional `.stencil_ref(n)`
+- [x] `AvatarBodyYawComponent` — `AvatarBodyYaw {}` with builder chain
+- [x] `AvatarControlComponent` — `AvatarControl {}` with bone-name builder chain
+- [x] `WorldPanelComponent` — `WorldPanel {}` (marker; auto-spawned by editor)
+- [x] `InspectorPanelComponent` — `InspectorPanel {}` (marker; auto-spawned by editor)
+- [x] `IKChainComponent` — `IKChain.<solver>(...)` + `.weight(x)` (target/end_effector are runtime-wired)
 - [ ] All `Audio*` components (output, oscillator, gain, mix, limiter,
-      buffer size, low/high/band-pass filter)
-- [ ] `MusicNoteComponent`
-- [ ] All transform-pipeline operators (`TransformPipeline`,
-      `TransformForkTRS`, `TransformMap{Translation,Rotation,Scale}`,
-      `TransformMergeTRS`, `TransformPipelineOutput`, `TransformDrop`,
-      `TransformSampleAncestor`)
-- [ ] `QuatTemporalFilterComponent`, `Vector3TemporalFilterComponent`,
-      `QuatExtractYawComponent`, `QuatYawFollowComponent`
-- [ ] `TransformGizmoComponent` + its `Translate`/`Rotate`/`Scale` variants
+      buffer size, low/high/band-pass filter) — deferred per AudioNode consolidation plan
+- [x] `MusicNoteComponent` — `MusicNote.<pitch>(octave, duration)` + optional `.velocity(x)`
+- [x] All transform-pipeline operators (markers via default `to_mms_ast`,
+      `TransformSampleAncestor.skip(n)` for the only one with state)
+- [x] `QuatTemporalFilterComponent` — `QuatTemporalFilter.smoothing_factor(x)`
+- [x] `Vector3TemporalFilterComponent` — `Vector3TemporalFilter.smoothing_factor(x)`
+- [x] `QuatExtractYawComponent` — `QuatExtractYaw {}` (marker via default)
+- [x] `QuatYawFollowComponent` — `QuatYawFollow.new(threshold, rate)` with builder chain
+- [x] `TransformGizmoComponent` — `TransformGizmo {}.scale(x)`
+- [x] `TransformGizmoTranslate/Rotate/Scale` — `.x/y/z()` axis ctor
 
 ## Process for migrating one component
 

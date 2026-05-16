@@ -48,28 +48,8 @@ impl Component for SkinnedMeshComponent {
         // No-op: SkinnedMeshSystem discovers these each frame.
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        // Runtime-only; avoid serializing ComponentId references.
-        let mut map = std::collections::HashMap::new();
-        map.insert(
-            "skin_index".to_string(),
-            serde_json::json!(self.skin_index as u32),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("skin_index") {
-            let idx: u32 = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode skin_index: {}", e))?;
-            self.skin_index = idx as usize;
-        }
-
-        // Runtime-only reference.
-        self.skin_id = None;
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce_call("SkinnedMesh", "new", vec![num(self.skin_index as f64)])
     }
 }

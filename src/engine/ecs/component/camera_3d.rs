@@ -104,75 +104,16 @@ impl Component for Camera3DComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
         let target = match self.target {
             CameraTarget::Window => "window",
             CameraTarget::Xr => "xr",
         };
-        map.insert(
-            "target".to_string(),
-            serde_json::Value::String(target.to_string()),
-        );
-
-        map.insert(
-            "fov_y_deg".to_string(),
-            serde_json::Value::Number(
-                serde_json::Number::from_f64(self.fov_y_degrees as f64).unwrap_or_else(|| {
-                    serde_json::Number::from_f64(Self::DEFAULT_FOV_Y_DEGREES as f64).unwrap()
-                }),
-            ),
-        );
-        map.insert(
-            "z_near".to_string(),
-            serde_json::Value::Number(
-                serde_json::Number::from_f64(self.z_near as f64).unwrap_or_else(|| {
-                    serde_json::Number::from_f64(Self::DEFAULT_Z_NEAR as f64).unwrap()
-                }),
-            ),
-        );
-        map.insert(
-            "z_far".to_string(),
-            serde_json::Value::Number(
-                serde_json::Number::from_f64(self.z_far as f64).unwrap_or_else(|| {
-                    serde_json::Number::from_f64(Self::DEFAULT_Z_FAR as f64).unwrap()
-                }),
-            ),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        _data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        // Handle will be regenerated during init().
-        if let Some(v) = _data.get("target") {
-            if let Some(s) = v.as_str() {
-                self.target = match s {
-                    "xr" => CameraTarget::Xr,
-                    "window" | _ => CameraTarget::Window,
-                };
-            }
-        }
-
-        if let Some(v) = _data.get("fov_y_deg") {
-            self.fov_y_degrees = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode fov_y_deg: {}", e))?;
-        }
-        if let Some(v) = _data.get("z_near") {
-            self.z_near = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode z_near: {}", e))?;
-        }
-        if let Some(v) = _data.get("z_far") {
-            self.z_far = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode z_far: {}", e))?;
-        }
-
-        // Basic sanity: keep near/far in a valid ordering.
-        if self.z_far <= self.z_near {
-            self.z_far = self.z_near + 0.01;
-        }
-        Ok(())
+        ce("Camera3D")
+            .with_call("target", vec![s(target)])
+            .with_call("fov", vec![num(self.fov_y_degrees as f64)])
+            .with_call("near", vec![num(self.z_near as f64)])
+            .with_call("far", vec![num(self.z_far as f64)])
     }
 }

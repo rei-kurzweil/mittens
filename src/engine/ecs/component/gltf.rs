@@ -59,34 +59,12 @@ impl Component for GLTFComponent {
         // No-op: GLTFSystem discovers these during tick().
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("uri".to_string(), serde_json::json!(self.uri));
-        map.insert(
-            "with_visualized_transforms".to_string(),
-            serde_json::json!(self.with_visualized_transforms),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        let uri = data
-            .get("uri")
-            .ok_or_else(|| "Missing required field: uri".to_string())?;
-        self.uri = serde_json::from_value(uri.clone())
-            .map_err(|e| format!("Failed to decode uri: {e}"))?;
-
-        let with_visualized_transforms = data
-            .get("with_visualized_transforms")
-            .ok_or_else(|| "Missing required field: with_visualized_transforms".to_string())?;
-        self.with_visualized_transforms =
-            serde_json::from_value(with_visualized_transforms.clone())
-                .map_err(|e| format!("Failed to decode with_visualized_transforms: {e}"))?;
-
-        self.spawned = false;
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let mut ce = ce_call("GLTF", "new", vec![s(&self.uri)]);
+        if self.with_visualized_transforms {
+            ce = ce.with_call("with_visualized_transforms", vec![b(true)]);
+        }
+        ce
     }
 }

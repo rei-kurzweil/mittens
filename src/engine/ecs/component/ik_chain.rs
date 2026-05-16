@@ -1,5 +1,5 @@
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::Component;
+use crate::engine::ecs::component::{ComponentRef, Component};
 
 /// Solver configuration for an `IKChainComponent`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -64,6 +64,13 @@ pub struct IKChainComponent {
     /// Blend weight: 0.0 = no IK applied, 1.0 = full solve.
     pub weight: f32,
 
+    /// Authored form of `target_id` for round-trip dump. `None` for
+    /// IKChains wired purely at runtime (e.g. by `AvatarControlSystem`),
+    /// which have no MMS source to preserve.
+    pub target_source: Option<ComponentRef>,
+    /// Authored form of `end_effector_id` for round-trip dump.
+    pub end_effector_source: Option<ComponentRef>,
+
     component: Option<ComponentId>,
 }
 
@@ -74,12 +81,24 @@ impl IKChainComponent {
             target_id,
             end_effector_id,
             weight: 1.0,
+            target_source: None,
+            end_effector_source: None,
             component: None,
         }
     }
 
     pub fn with_weight(mut self, w: f32) -> Self {
         self.weight = w;
+        self
+    }
+
+    pub fn with_target_source(mut self, src: ComponentRef) -> Self {
+        self.target_source = Some(src);
+        self
+    }
+
+    pub fn with_end_effector_source(mut self, src: ComponentRef) -> Self {
+        self.end_effector_source = Some(src);
         self
     }
 }
@@ -101,39 +120,39 @@ impl Component for IKChainComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("weight".to_string(), serde_json::json!(self.weight));
-        match self.solver {
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        use crate::meow_meow::ast::Expression;
+        let solver_call = match self.solver {
             IKSolver::AimConstraint { offset_yaw } => {
-                map.insert("solver".to_string(), serde_json::json!("aim_constraint"));
-                map.insert("offset_yaw".to_string(), serde_json::json!(offset_yaw));
+                ("aim_constraint", vec![num(offset_yaw as f64)])
             }
-            IKSolver::TwoBoneIK { pole_direction, copy_end_rotation } => {
-                map.insert("solver".to_string(), serde_json::json!("two_bone_ik"));
-                map.insert("pole_direction".to_string(), serde_json::json!(pole_direction));
-                map.insert("copy_end_rotation".to_string(), serde_json::json!(copy_end_rotation));
-            }
-            IKSolver::Fabrik { max_iterations, tolerance } => {
-                map.insert("solver".to_string(), serde_json::json!("fabrik"));
-                map.insert("max_iterations".to_string(), serde_json::json!(max_iterations));
-                map.insert("tolerance".to_string(), serde_json::json!(tolerance));
-            }
-        }
-        // target_id and end_effector_id are runtime-only; not encoded.
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("weight") {
-            if let Some(f) = v.as_f64() {
-                self.weight = f as f32;
+            IKSolver::TwoBoneIK { pole_direction, copy_end_rotation } => (
+                "two_bone_ik",
+                vec![
+                    array(nums(pole_direction.iter().map(|&v| v as f64))),
+                    b(copy_end_rotation),
+                ],
+            ),
+            IKSolver::Fabrik { max_iterations, tolerance } => (
+                "fabrik",
+                vec![num(max_iterations as f64), num(tolerance as f64)],
+            ),
+        };
+        fn target_expr(t: &ComponentRef) -> Expression {
+            match t {
+                ComponentRef::Guid(u) => Expression::String(format!("@uuid:{u}")),
+                ComponentRef::Query(s) => Expression::String(s.clone()),
             }
         }
-        // target_id and end_effector_id are wired at runtime (by AvatarControlSystem).
-        Ok(())
+        let mut ce = ce_call("IKChain", solver_call.0, solver_call.1)
+            .with_call("weight", vec![num(self.weight as f64)]);
+        if let Some(src) = &self.target_source {
+            ce = ce.with_call("target", vec![target_expr(src)]);
+        }
+        if let Some(src) = &self.end_effector_source {
+            ce = ce.with_call("end_effector", vec![target_expr(src)]);
+        }
+        ce
     }
 }

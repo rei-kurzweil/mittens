@@ -937,3 +937,1172 @@ fn body_for_with_if_inside() {
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.intents.len(), 1);
 }
+
+// ---------------------------------------------------------------------------
+// to_mms_ast round-trip tests
+//
+// Build a live component → emit MMS via `to_mms_ast` → unparse → parse →
+// materialize → `spawn_tree_uninitialized` → downcast and assert fields.
+// This is the path scene save/load and `attach_clone` actually follow.
+// ---------------------------------------------------------------------------
+
+use crate::engine::ecs::component::Component as ComponentTrait;
+
+fn roundtrip_component<C: ComponentTrait + 'static>(
+    original: C,
+) -> (World, ComponentId) {
+    // Round-trip helper assumes the component encodes losslessly without
+    // needing live world context (no ComponentId refs). Use an empty world
+    // as a stand-in.
+    let world_stub = World::default();
+    let ce_ast = original.to_mms_ast(&world_stub);
+    let text = crate::meow_meow::unparser::unparse_component(&ce_ast);
+    let prog = parse(&text);
+    assert_eq!(prog.len(), 1, "unparsed `{text}` did not produce one stmt");
+    let parsed_ce = as_component!(prog.into_iter().next().unwrap());
+    let mat = crate::meow_meow::component_registry::ce_ast_to_materialized(&parsed_ce)
+        .expect("materialize");
+    let mut world = World::default();
+    let mut emit = CommandQueue::new();
+    let id = crate::meow_meow::component_registry::spawn_tree_uninitialized(
+        &mat, &mut world, &mut emit,
+    )
+    .expect("spawn");
+    (world, id)
+}
+
+#[test]
+fn roundtrip_opacity() {
+    use crate::engine::ecs::component::OpacityComponent;
+    let original = OpacityComponent::new()
+        .with_opacity(0.42)
+        .with_multiple_layers();
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<OpacityComponent>(id)
+        .expect("Opacity downcast");
+    assert!((got.opacity - 0.42).abs() < 1e-6, "opacity: {}", got.opacity);
+    assert!(got.multiple_layers);
+}
+
+#[test]
+fn roundtrip_opacity_default_multiple_layers_omitted() {
+    use crate::engine::ecs::component::OpacityComponent;
+    // multiple_layers=false should not emit the toggle call.
+    let original = OpacityComponent::new().with_opacity(0.75);
+    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(&original, &World::default()));
+    assert!(
+        !text.contains("multiple_layers"),
+        "expected `multiple_layers` not emitted when false: {text}"
+    );
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<OpacityComponent>(id)
+        .unwrap();
+    assert!((got.opacity - 0.75).abs() < 1e-6);
+    assert!(!got.multiple_layers);
+}
+
+#[test]
+fn roundtrip_emissive_on() {
+    use crate::engine::ecs::component::EmissiveComponent;
+    let (world, id) = roundtrip_component(EmissiveComponent::on());
+    let got = world
+        .get_component_by_id_as::<EmissiveComponent>(id)
+        .unwrap();
+    assert_eq!(got.intensity, 1.0);
+}
+
+#[test]
+fn roundtrip_emissive_off() {
+    use crate::engine::ecs::component::EmissiveComponent;
+    let (world, id) = roundtrip_component(EmissiveComponent::off());
+    let got = world
+        .get_component_by_id_as::<EmissiveComponent>(id)
+        .unwrap();
+    assert_eq!(got.intensity, 0.0);
+}
+
+#[test]
+fn roundtrip_emissive_custom_intensity() {
+    use crate::engine::ecs::component::EmissiveComponent;
+    let (world, id) = roundtrip_component(EmissiveComponent::new(2.5));
+    let got = world
+        .get_component_by_id_as::<EmissiveComponent>(id)
+        .unwrap();
+    assert!((got.intensity - 2.5).abs() < 1e-6, "intensity: {}", got.intensity);
+}
+
+#[test]
+fn roundtrip_ambient_light() {
+    use crate::engine::ecs::component::AmbientLightComponent;
+    let (world, id) = roundtrip_component(AmbientLightComponent::rgb(0.1, 0.5, 0.9));
+    let got = world
+        .get_component_by_id_as::<AmbientLightComponent>(id)
+        .unwrap();
+    assert!((got.rgb[0] - 0.1).abs() < 1e-6);
+    assert!((got.rgb[1] - 0.5).abs() < 1e-6);
+    assert!((got.rgb[2] - 0.9).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_directional_light() {
+    use crate::engine::ecs::component::DirectionalLightComponent;
+    let original = DirectionalLightComponent::new()
+        .with_intensity(2.0)
+        .with_color(0.5, 0.6, 0.7);
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<DirectionalLightComponent>(id)
+        .unwrap();
+    assert!((got.intensity - 2.0).abs() < 1e-6);
+    assert!((got.color[0] - 0.5).abs() < 1e-6);
+    assert!((got.color[1] - 0.6).abs() < 1e-6);
+    assert!((got.color[2] - 0.7).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_point_light() {
+    use crate::engine::ecs::component::PointLightComponent;
+    let original = PointLightComponent::new()
+        .with_intensity(3.0)
+        .with_distance(15.0)
+        .with_color(0.25, 0.5, 0.75);
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<PointLightComponent>(id)
+        .unwrap();
+    assert!((got.intensity - 3.0).abs() < 1e-6);
+    assert!((got.distance - 15.0).abs() < 1e-6);
+    assert!((got.color[0] - 0.25).abs() < 1e-6);
+    assert!((got.color[1] - 0.5).abs() < 1e-6);
+    assert!((got.color[2] - 0.75).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_gltf() {
+    use crate::engine::ecs::component::GLTFComponent;
+    let original = GLTFComponent::new("models/cat.glb").with_visualized_transforms(true);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<GLTFComponent>(id).unwrap();
+    assert_eq!(got.uri, "models/cat.glb");
+    assert!(got.with_visualized_transforms);
+}
+
+#[test]
+fn roundtrip_gltf_no_visualized_transforms_omits_call() {
+    use crate::engine::ecs::component::GLTFComponent;
+    let original = GLTFComponent::new("models/cat.glb");
+    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(&original, &World::default()));
+    assert!(
+        !text.contains("with_visualized_transforms"),
+        "expected `with_visualized_transforms` omitted when false: {text}"
+    );
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<GLTFComponent>(id).unwrap();
+    assert_eq!(got.uri, "models/cat.glb");
+    assert!(!got.with_visualized_transforms);
+}
+
+#[test]
+fn roundtrip_texture_with_uri() {
+    use crate::engine::ecs::component::{TextureComponent, CatEngineTextureFormat};
+    use crate::engine::ecs::component::texture::TextureSource;
+    let (world, id) = roundtrip_component(TextureComponent::with_uri("textures/cat.png"));
+    let got = world.get_component_by_id_as::<TextureComponent>(id).unwrap();
+    match &got.source {
+        TextureSource::Uri(u) => assert_eq!(u, "textures/cat.png"),
+        _ => panic!("expected URI source"),
+    }
+    assert_eq!(got.format, CatEngineTextureFormat::Rgba8);
+    assert!(got.render_image.is_none());
+}
+
+#[test]
+fn roundtrip_texture_from_dds() {
+    use crate::engine::ecs::component::{TextureComponent, CatEngineTextureFormat};
+    let (world, id) = roundtrip_component(TextureComponent::from_dds("textures/cat.dds"));
+    let got = world.get_component_by_id_as::<TextureComponent>(id).unwrap();
+    assert_eq!(got.format, CatEngineTextureFormat::DdsBc7);
+}
+
+#[test]
+fn roundtrip_texture_render_image() {
+    use crate::engine::ecs::component::TextureComponent;
+    let (world, id) = roundtrip_component(TextureComponent::render_image("#main"));
+    let got = world.get_component_by_id_as::<TextureComponent>(id).unwrap();
+    assert_eq!(got.render_image.as_deref(), Some("#main"));
+}
+
+#[test]
+fn roundtrip_camera_3d() {
+    use crate::engine::ecs::component::Camera3DComponent;
+    use crate::engine::graphics::CameraTarget;
+    let original = Camera3DComponent::new()
+        .with_fov(75.0)
+        .with_near(0.5)
+        .with_far(200.0);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<Camera3DComponent>(id).unwrap();
+    assert!((got.fov_y_degrees - 75.0).abs() < 1e-6);
+    assert!((got.z_near - 0.5).abs() < 1e-6);
+    assert!((got.z_far - 200.0).abs() < 1e-6);
+    assert!(matches!(got.target, CameraTarget::Window));
+}
+
+#[test]
+fn roundtrip_camera_2d() {
+    use crate::engine::ecs::component::Camera2DComponent;
+    use crate::engine::graphics::CameraTarget;
+    let mut original = Camera2DComponent::new();
+    original.target = CameraTarget::Xr;
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<Camera2DComponent>(id).unwrap();
+    assert!(matches!(got.target, CameraTarget::Xr));
+}
+
+#[test]
+fn roundtrip_camera_xr_off() {
+    use crate::engine::ecs::component::CameraXRComponent;
+    let (world, id) = roundtrip_component(CameraXRComponent::off());
+    let got = world.get_component_by_id_as::<CameraXRComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_openxr_off() {
+    use crate::engine::ecs::component::OpenXRComponent;
+    let (world, id) = roundtrip_component(OpenXRComponent::off());
+    let got = world.get_component_by_id_as::<OpenXRComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_controller_xr() {
+    use crate::engine::ecs::component::{ControllerXRComponent, ControllerHand, ControllerPoseKind};
+    let original =
+        ControllerXRComponent::new(true, ControllerHand::Right, ControllerPoseKind::Grip);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<ControllerXRComponent>(id).unwrap();
+    assert!(got.enabled);
+    assert_eq!(got.hand, ControllerHand::Right);
+    assert_eq!(got.pose, ControllerPoseKind::Grip);
+}
+
+#[test]
+fn roundtrip_input_xr_off() {
+    use crate::engine::ecs::component::InputXRComponent;
+    let (world, id) = roundtrip_component(InputXRComponent::off());
+    let got = world.get_component_by_id_as::<InputXRComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_animation_paused() {
+    use crate::engine::ecs::component::{AnimationComponent, AnimationState};
+    let (world, id) =
+        roundtrip_component(AnimationComponent::new().with_state(AnimationState::Paused));
+    let got = world.get_component_by_id_as::<AnimationComponent>(id).unwrap();
+    assert_eq!(got.state, AnimationState::Paused);
+}
+
+#[test]
+fn roundtrip_animation_resolve_targets_on_play() {
+    use crate::engine::ecs::component::{AnimationComponent, ResolveTargetsMode};
+    let (world, id) = roundtrip_component(
+        AnimationComponent::new().with_resolve_targets(ResolveTargetsMode::OnPlay),
+    );
+    let got = world.get_component_by_id_as::<AnimationComponent>(id).unwrap();
+    assert_eq!(got.resolve_targets, ResolveTargetsMode::OnPlay);
+}
+
+// ---------------------------------------------------------------------------
+// Action round-trip tests
+//
+// These exercise the subtree dump path (`subtree_to_ce_ast`) because Action
+// references other components by ComponentId — the dump needs the surrounding
+// world to derive `@uuid:` strings and the guid-preservation pre-pass needs
+// the full subtree to know which targets are referenced.
+// ---------------------------------------------------------------------------
+
+/// Build a live source world, dump the subtree rooted at `root` via
+/// `subtree_to_ce_ast`, unparse → parse → spawn into a fresh world, and
+/// return the fresh world plus the respawned root id.
+fn roundtrip_subtree(source_world: &World, root: ComponentId) -> (World, ComponentId) {
+    let ce_ast = crate::meow_meow::component_registry::subtree_to_ce_ast(source_world, root)
+        .expect("subtree_to_ce_ast");
+    let text = crate::meow_meow::unparser::unparse_component(&ce_ast);
+    let prog = parse(&text);
+    assert_eq!(prog.len(), 1, "unparsed `{text}` did not produce one stmt");
+    let parsed_ce = as_component!(prog.into_iter().next().unwrap());
+    let mat = crate::meow_meow::component_registry::ce_ast_to_materialized(&parsed_ce)
+        .expect("materialize");
+    let mut world = World::default();
+    let mut emit = CommandQueue::new();
+    let id = crate::meow_meow::component_registry::spawn_tree_uninitialized(
+        &mat,
+        &mut world,
+        &mut emit,
+    )
+    .expect("spawn");
+    (world, id)
+}
+
+#[test]
+fn roundtrip_action_query_selector_preserved_verbatim() {
+    use crate::engine::ecs::component::{
+        ActionComponent, ComponentRef, KeyframeComponent, TransformComponent,
+    };
+    use crate::engine::ecs::IntentValue;
+    use slotmap::Key;
+
+    let mut w = World::default();
+    let root = w.add_component(TransformComponent::new());
+    let target = w.add_component_boxed_named("hero", Box::new(TransformComponent::new()));
+    w.add_child(root, target).unwrap();
+    let kf = w.add_component(KeyframeComponent::new(0.0));
+    w.add_child(root, kf).unwrap();
+    let signal = IntentValue::SetColor {
+        component_ids: vec![ComponentId::null()],
+        rgba: [1.0, 0.0, 0.0, 1.0],
+    };
+    let action = w.add_component(ActionComponent::new_authored(
+        signal,
+        vec![ComponentRef::Query("#hero".to_string())],
+    ));
+    w.add_child(kf, action).unwrap();
+
+    let (new_world, new_root) = roundtrip_subtree(&w, root);
+    // Find the respawned Action by walking.
+    let new_action = find_first::<ActionComponent>(&new_world, new_root).expect("action exists");
+    let comp = new_world
+        .get_component_by_id_as::<ActionComponent>(new_action)
+        .unwrap();
+    assert_eq!(comp.target_sources.len(), 1);
+    match &comp.target_sources[0] {
+        ComponentRef::Query(s) => assert_eq!(s, "#hero"),
+        other => panic!("expected Query selector, got {other:?}"),
+    }
+}
+
+#[test]
+fn roundtrip_action_handle_becomes_guid_and_target_keeps_guid() {
+    use crate::engine::ecs::component::{
+        ActionComponent, ComponentRef, KeyframeComponent, TransformComponent,
+    };
+    use crate::engine::ecs::IntentValue;
+    use slotmap::Key;
+
+    let mut w = World::default();
+    let root = w.add_component(TransformComponent::new());
+    // Unnamed target; only the GUID identifies it.
+    let target = w.add_component(TransformComponent::new());
+    w.add_child(root, target).unwrap();
+    let target_guid = w.get_component_record(target).unwrap().guid;
+
+    let kf = w.add_component(KeyframeComponent::new(0.0));
+    w.add_child(root, kf).unwrap();
+
+    let signal = IntentValue::SetPosition {
+        component_ids: vec![ComponentId::null()],
+        position: [1.0, 2.0, 3.0],
+    };
+    let action = w.add_component(ActionComponent::new_authored(
+        signal,
+        vec![ComponentRef::Guid(target_guid)],
+    ));
+    w.add_child(kf, action).unwrap();
+
+    let (new_world, new_root) = roundtrip_subtree(&w, root);
+
+    // The action's target_sources should preserve the same guid.
+    let new_action = find_first::<ActionComponent>(&new_world, new_root).unwrap();
+    let comp = new_world
+        .get_component_by_id_as::<ActionComponent>(new_action)
+        .unwrap();
+    match &comp.target_sources[0] {
+        ComponentRef::Guid(u) => assert_eq!(*u, target_guid),
+        other => panic!("expected Guid, got {other:?}"),
+    }
+
+    // The target component should have its guid restored on the new
+    // world's guid_index — otherwise OnAttach/OnPlay resolution would
+    // fail to find it.
+    assert!(
+        new_world.component_id_by_guid(target_guid).is_some(),
+        "target guid not restored across round-trip"
+    );
+}
+
+#[test]
+fn roundtrip_action_named_and_guid_referenced_target_emits_both() {
+    use crate::engine::ecs::component::{
+        ActionComponent, ComponentRef, KeyframeComponent, TransformComponent,
+    };
+    use crate::engine::ecs::IntentValue;
+    use slotmap::Key;
+
+    let mut w = World::default();
+    let root = w.add_component(TransformComponent::new());
+    // Target has BOTH a name and gets referenced by guid (author wrote
+    // `let hero = T { name = "hero" }; Action.set_color(hero, ...)`).
+    let target = w.add_component_boxed_named("hero", Box::new(TransformComponent::new()));
+    w.add_child(root, target).unwrap();
+    let target_guid = w.get_component_record(target).unwrap().guid;
+
+    let kf = w.add_component(KeyframeComponent::new(0.0));
+    w.add_child(root, kf).unwrap();
+    let signal = IntentValue::SetColor {
+        component_ids: vec![ComponentId::null()],
+        rgba: [0.0, 1.0, 0.0, 1.0],
+    };
+    let action = w.add_component(ActionComponent::new_authored(
+        signal,
+        vec![ComponentRef::Guid(target_guid)],
+    ));
+    w.add_child(kf, action).unwrap();
+
+    // Inspect the dump text directly: both `name = "hero"` and
+    // `guid = "<uuid>"` should be present on the target's CE.
+    let ce = crate::meow_meow::component_registry::subtree_to_ce_ast(&w, root)
+        .expect("subtree_to_ce_ast");
+    let text = crate::meow_meow::unparser::unparse_component(&ce);
+    assert!(text.contains("name = \"hero\""), "expected name emit: {text}");
+    assert!(
+        text.contains(&format!("guid = \"{target_guid}\"")),
+        "expected guid emit: {text}"
+    );
+
+    // And both round-trip live.
+    let (new_world, new_root) = roundtrip_subtree(&w, root);
+    let new_target = new_world
+        .component_id_by_guid(target_guid)
+        .expect("target guid restored");
+    let new_target_node = new_world.get_component_record(new_target).unwrap();
+    assert_eq!(new_target_node.name, "hero");
+    assert_eq!(new_target_node.guid, target_guid);
+
+    // The action's target_sources still resolves to the same guid.
+    let new_action = find_first::<ActionComponent>(&new_world, new_root).unwrap();
+    let comp = new_world
+        .get_component_by_id_as::<ActionComponent>(new_action)
+        .unwrap();
+    match &comp.target_sources[0] {
+        ComponentRef::Guid(u) => assert_eq!(*u, target_guid),
+        other => panic!("expected Guid, got {other:?}"),
+    }
+}
+
+#[test]
+fn roundtrip_action_unreferenced_component_does_not_get_guid_emit() {
+    use crate::engine::ecs::component::{ActionComponent, TransformComponent};
+    use crate::engine::ecs::IntentValue;
+
+    let mut w = World::default();
+    let root = w.add_component(TransformComponent::new());
+    let bystander = w.add_component(TransformComponent::new());
+    w.add_child(root, bystander).unwrap();
+    // No Action references `bystander`.
+    let action = w.add_component(ActionComponent::new(IntentValue::Print {
+        message: "hi".into(),
+    }));
+    w.add_child(root, action).unwrap();
+
+    let ce = crate::meow_meow::component_registry::subtree_to_ce_ast(&w, root)
+        .expect("subtree_to_ce_ast");
+    let text = crate::meow_meow::unparser::unparse_component(&ce);
+    let bystander_guid = w.get_component_record(bystander).unwrap().guid;
+    assert!(
+        !text.contains(&format!("guid = \"{bystander_guid}\"")),
+        "unreferenced component should not get guid emit: {text}"
+    );
+}
+
+#[test]
+fn roundtrip_ikchain_target_and_end_effector_via_selectors() {
+    use crate::engine::ecs::component::{
+        ComponentRef, IKChainComponent, IKSolver, TransformComponent,
+    };
+
+    let mut w = World::default();
+    let root = w.add_component(TransformComponent::new());
+    let target = w.add_component_boxed_named("hand_target", Box::new(TransformComponent::new()));
+    w.add_child(root, target).unwrap();
+    let ee = w.add_component_boxed_named("end_effector", Box::new(TransformComponent::new()));
+    w.add_child(root, ee).unwrap();
+    let mut ik = IKChainComponent::new(
+        IKSolver::TwoBoneIK { pole_direction: [0.0, 1.0, 0.0], copy_end_rotation: false },
+        target,
+        ee,
+    );
+    ik = ik
+        .with_target_source(ComponentRef::Query("#hand_target".to_string()))
+        .with_end_effector_source(ComponentRef::Query("#end_effector".to_string()));
+    let ik_id = w.add_component(ik);
+    w.add_child(root, ik_id).unwrap();
+
+    let (new_world, new_root) = roundtrip_subtree(&w, root);
+    let new_ik_id = find_first::<IKChainComponent>(&new_world, new_root).unwrap();
+    let new_ik = new_world
+        .get_component_by_id_as::<IKChainComponent>(new_ik_id)
+        .unwrap();
+    match &new_ik.target_source {
+        Some(ComponentRef::Query(s)) => assert_eq!(s, "#hand_target"),
+        other => panic!("expected Query target_source, got {other:?}"),
+    }
+    match &new_ik.end_effector_source {
+        Some(ComponentRef::Query(s)) => assert_eq!(s, "#end_effector"),
+        other => panic!("expected Query end_effector_source, got {other:?}"),
+    }
+    // Registry should have resolved them too since the named targets
+    // exist in the same subtree.
+    assert_ne!(new_ik.target_id, ee, "target_id should not have been mis-resolved");
+    assert!(
+        new_world.get_component_record(new_ik.target_id).is_some(),
+        "target_id should resolve to a live component"
+    );
+    assert!(
+        new_world.get_component_record(new_ik.end_effector_id).is_some(),
+        "end_effector_id should resolve to a live component"
+    );
+}
+
+#[test]
+fn roundtrip_ikchain_guid_handle_preserves_target_guid() {
+    use crate::engine::ecs::component::{
+        ComponentRef, IKChainComponent, IKSolver, TransformComponent,
+    };
+
+    let mut w = World::default();
+    let root = w.add_component(TransformComponent::new());
+    let target = w.add_component(TransformComponent::new()); // unnamed
+    w.add_child(root, target).unwrap();
+    let ee = w.add_component(TransformComponent::new());
+    w.add_child(root, ee).unwrap();
+    let target_guid = w.get_component_record(target).unwrap().guid;
+    let ee_guid = w.get_component_record(ee).unwrap().guid;
+
+    let ik = IKChainComponent::new(
+        IKSolver::AimConstraint { offset_yaw: 0.0 },
+        target,
+        ee,
+    )
+    .with_target_source(ComponentRef::Guid(target_guid))
+    .with_end_effector_source(ComponentRef::Guid(ee_guid));
+    let ik_id = w.add_component(ik);
+    w.add_child(root, ik_id).unwrap();
+
+    let (new_world, _new_root) = roundtrip_subtree(&w, root);
+    assert!(
+        new_world.component_id_by_guid(target_guid).is_some(),
+        "target guid not preserved"
+    );
+    assert!(
+        new_world.component_id_by_guid(ee_guid).is_some(),
+        "end_effector guid not preserved"
+    );
+}
+
+/// DFS lookup of the first component of type `C` under `root`.
+fn find_first<C: ComponentTrait + 'static>(world: &World, root: ComponentId) -> Option<ComponentId> {
+    if world.get_component_by_id_as::<C>(root).is_some() {
+        return Some(root);
+    }
+    let children: Vec<ComponentId> = world
+        .get_component_record(root)
+        .map(|n| n.children.clone())
+        .unwrap_or_default();
+    for child in children {
+        if let Some(hit) = find_first::<C>(world, child) {
+            return Some(hit);
+        }
+    }
+    None
+}
+
+#[test]
+fn roundtrip_animation_default_omits_resolve_targets_in_text() {
+    use crate::engine::ecs::component::AnimationComponent;
+    let original = AnimationComponent::new();
+    let world_stub = crate::engine::ecs::World::default();
+    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(
+        &original,
+        &world_stub,
+    ));
+    assert!(
+        !text.contains("resolve_targets"),
+        "default mode should not emit resolve_targets call: {text}"
+    );
+}
+
+#[test]
+fn roundtrip_keyframe() {
+    use crate::engine::ecs::component::KeyframeComponent;
+    let (world, id) = roundtrip_component(KeyframeComponent::new(4.25));
+    let got = world.get_component_by_id_as::<KeyframeComponent>(id).unwrap();
+    assert!((got.beat - 4.25).abs() < 1e-9);
+}
+
+#[test]
+fn roundtrip_input_speed() {
+    use crate::engine::ecs::component::InputComponent;
+    let (world, id) = roundtrip_component(InputComponent::new().with_speed(0.25));
+    let got = world.get_component_by_id_as::<InputComponent>(id).unwrap();
+    assert!((got.speed - 0.25).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_input_transform_mode() {
+    use crate::engine::ecs::component::{InputTransformModeComponent, ForwardAxis, RollAxis};
+    let original = InputTransformModeComponent::forward_y()
+        .with_roll_axis_y()
+        .with_fps_rotation();
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<InputTransformModeComponent>(id).unwrap();
+    assert_eq!(got.forward_axis, ForwardAxis::Y);
+    assert_eq!(got.roll_axis, RollAxis::Y);
+    assert!(got.fps_rotation);
+}
+
+#[test]
+fn roundtrip_editor() {
+    use crate::engine::ecs::component::{EditorComponent, TransformGizmoCoordSpace};
+    let original = EditorComponent::new()
+        .with_transform_gizmo_translation_space(TransformGizmoCoordSpace::Local)
+        .with_transform_gizmo_rotation_space(TransformGizmoCoordSpace::World);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<EditorComponent>(id).unwrap();
+    assert_eq!(got.transform_gizmo_translation_space, TransformGizmoCoordSpace::Local);
+    assert_eq!(got.transform_gizmo_rotation_space, TransformGizmoCoordSpace::World);
+}
+
+#[test]
+fn roundtrip_background() {
+    use crate::engine::ecs::component::BackgroundComponent;
+    let original = BackgroundComponent::new()
+        .with_occlusion_and_lighting()
+        .with_ray_casting();
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<BackgroundComponent>(id).unwrap();
+    assert!(got.occlusion_and_lighting);
+    assert!(got.ray_casting);
+}
+
+#[test]
+fn roundtrip_background_color() {
+    use crate::engine::ecs::component::BackgroundColorComponent;
+    let (_world, _id) = roundtrip_component(BackgroundColorComponent::new());
+}
+
+#[test]
+fn roundtrip_raycastable_drag_only() {
+    use crate::engine::ecs::component::{RaycastableComponent, PointerEvents};
+    let (world, id) = roundtrip_component(RaycastableComponent::drag_only());
+    let got = world.get_component_by_id_as::<RaycastableComponent>(id).unwrap();
+    assert!(got.enable);
+    assert_eq!(got.pointer_events, PointerEvents::DragOnly);
+}
+
+#[test]
+fn roundtrip_raycastable_disabled() {
+    use crate::engine::ecs::component::RaycastableComponent;
+    let (world, id) = roundtrip_component(RaycastableComponent::disabled());
+    let got = world.get_component_by_id_as::<RaycastableComponent>(id).unwrap();
+    assert!(!got.enable);
+}
+
+#[test]
+fn roundtrip_raycastable_pass_through() {
+    use crate::engine::ecs::component::{RaycastableComponent, PointerEvents};
+    let original = RaycastableComponent {
+        enable: true,
+        pointer_events: PointerEvents::PassThrough,
+    };
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<RaycastableComponent>(id).unwrap();
+    assert!(got.enable);
+    assert_eq!(got.pointer_events, PointerEvents::PassThrough);
+}
+
+#[test]
+fn roundtrip_selectable_off() {
+    use crate::engine::ecs::component::SelectableComponent;
+    let (world, id) = roundtrip_component(SelectableComponent::off());
+    let got = world.get_component_by_id_as::<SelectableComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_html_element_h1() {
+    use crate::engine::ecs::component::{HtmlElementComponent, ElementType};
+    let (world, id) = roundtrip_component(HtmlElementComponent::new(ElementType::H1));
+    let got = world.get_component_by_id_as::<HtmlElementComponent>(id).unwrap();
+    assert_eq!(got.element_type, ElementType::H1);
+}
+
+// --- Medium value round-trip tests ---
+
+#[test]
+fn roundtrip_transparent_cutout_disabled() {
+    use crate::engine::ecs::component::TransparentCutoutComponent;
+    let (world, id) = roundtrip_component(TransparentCutoutComponent::new().with_enabled(false));
+    let got = world.get_component_by_id_as::<TransparentCutoutComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_texture_filtering_nearest() {
+    use crate::engine::ecs::component::TextureFilteringComponent;
+    use crate::engine::graphics::TextureFiltering;
+    let (world, id) = roundtrip_component(TextureFilteringComponent::nearest());
+    let got = world.get_component_by_id_as::<TextureFilteringComponent>(id).unwrap();
+    assert_eq!(got.filtering, TextureFiltering::Nearest);
+}
+
+#[test]
+fn roundtrip_emissive_pass() {
+    use crate::engine::ecs::component::EmissivePassComponent;
+    let (_world, _id) = roundtrip_component(EmissivePassComponent::new());
+}
+
+#[test]
+fn roundtrip_bloom() {
+    use crate::engine::ecs::component::BloomComponent;
+    let original = BloomComponent::new()
+        .with_enabled(false)
+        .with_intensity(0.75)
+        .with_radius_ndc(0.125)
+        .with_emissive_scale(1.5)
+        .with_half_res(true)
+        .with_output_texture("scene_bloom");
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<BloomComponent>(id).unwrap();
+    assert!(!got.enabled);
+    assert!((got.intensity - 0.75).abs() < 1e-6);
+    assert!((got.radius_ndc - 0.125).abs() < 1e-6);
+    assert!((got.emissive_scale - 1.5).abs() < 1e-6);
+    assert!(got.half_res);
+    assert_eq!(got.output_texture.as_deref(), Some("scene_bloom"));
+}
+
+#[test]
+fn roundtrip_blur_pass() {
+    use crate::engine::ecs::component::BlurPassComponent;
+    let original = BlurPassComponent::new()
+        .with_enabled(false)
+        .with_radius_ndc(0.25)
+        .with_half_res(true);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<BlurPassComponent>(id).unwrap();
+    assert!(!got.enabled);
+    assert!((got.radius_ndc - 0.25).abs() < 1e-6);
+    assert!(got.half_res);
+}
+
+#[test]
+fn roundtrip_render_graph_off() {
+    use crate::engine::ecs::component::RenderGraphComponent;
+    let (world, id) = roundtrip_component(RenderGraphComponent::off());
+    let got = world.get_component_by_id_as::<RenderGraphComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_light_quantization() {
+    use crate::engine::ecs::component::LightQuantizationComponent;
+    let (world, id) = roundtrip_component(LightQuantizationComponent::steps(5.0));
+    let got = world.get_component_by_id_as::<LightQuantizationComponent>(id).unwrap();
+    assert!((got.quant_steps - 5.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_normal_visualisation() {
+    use crate::engine::ecs::component::NormalVisualisationComponent;
+    let (world, id) = roundtrip_component(NormalVisualisationComponent::new().with_thickness(0.05));
+    let got = world.get_component_by_id_as::<NormalVisualisationComponent>(id).unwrap();
+    assert!((got.thickness - 0.05).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_uv() {
+    use crate::engine::ecs::component::UVComponent;
+    let original = UVComponent::new()
+        .with_uv(0.0, 0.0)
+        .with_uv(1.0, 0.0)
+        .with_uv(0.5, 1.0);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<UVComponent>(id).unwrap();
+    assert_eq!(got.uvs.len(), 3);
+    assert!((got.uvs[2][0] - 0.5).abs() < 1e-6);
+    assert!((got.uvs[2][1] - 1.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_scrolling() {
+    use crate::engine::ecs::component::ScrollingComponent;
+    let (world, id) = roundtrip_component(ScrollingComponent::new(2.0, 8.0));
+    let got = world.get_component_by_id_as::<ScrollingComponent>(id).unwrap();
+    assert!((got.viewport_height - 2.0).abs() < 1e-6);
+    assert!((got.content_height - 8.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_clock() {
+    use crate::engine::ecs::component::ClockComponent;
+    let (world, id) = roundtrip_component(ClockComponent::new().with_bpm(140.0));
+    let got = world.get_component_by_id_as::<ClockComponent>(id).unwrap();
+    assert!((got.bpm - 140.0).abs() < 1e-9);
+}
+
+#[test]
+fn roundtrip_router() {
+    use crate::engine::ecs::component::RouterComponent;
+    let original = RouterComponent::new()
+        .with_target_name("content")
+        .with_ignored_names(["a", "b", "c"]);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<RouterComponent>(id).unwrap();
+    assert_eq!(got.target_name.as_deref(), Some("content"));
+    assert_eq!(got.ignore_names, vec!["a", "b", "c"]);
+}
+
+#[test]
+fn roundtrip_transition() {
+    use crate::engine::ecs::component::{TransitionComponent, TransitionEasing, TransitionReplacePolicy};
+    let original = TransitionComponent::new()
+        .enabled(true)
+        .with_duration_beats(2.0)
+        .with_capture_from_current(false)
+        .with_easing(TransitionEasing::EaseInOutCubic)
+        .with_replace(TransitionReplacePolicy::AllowParallel);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<TransitionComponent>(id).unwrap();
+    assert!(got.enabled);
+    assert!((got.duration_beats - 2.0).abs() < 1e-9);
+    assert!(!got.capture_from_current);
+    assert_eq!(got.easing, TransitionEasing::EaseInOutCubic);
+    assert_eq!(got.replace, TransitionReplacePolicy::AllowParallel);
+}
+
+#[test]
+fn roundtrip_text_shadow() {
+    use crate::engine::ecs::component::TextShadowComponent;
+    let original = TextShadowComponent::new()
+        .with_rgba([0.1, 0.2, 0.3, 0.5])
+        .with_scale(1.5)
+        .with_offset([0.25, -0.5, 0.001]);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<TextShadowComponent>(id).unwrap();
+    assert!((got.rgba[0] - 0.1).abs() < 1e-6);
+    assert!((got.rgba[3] - 0.5).abs() < 1e-6);
+    assert!((got.scale - 1.5).abs() < 1e-6);
+    assert!((got.offset[0] - 0.25).abs() < 1e-6);
+    assert!((got.offset[1] + 0.5).abs() < 1e-6);
+    assert!((got.offset[2] - 0.001).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_renderer_settings_msaa_off() {
+    use crate::engine::ecs::component::RendererSettingsComponent;
+    let original = RendererSettingsComponent::msaa_off().with_window_size(1920, 1080);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<RendererSettingsComponent>(id).unwrap();
+    assert!(!got.msaa4x);
+    assert_eq!(got.window_size, Some([1920, 1080]));
+}
+
+// --- Low value round-trip tests ---
+
+#[test]
+fn roundtrip_stencil_clip() {
+    use crate::engine::ecs::component::StencilClipComponent;
+    let mut original = StencilClipComponent::new();
+    original.stencil_ref = 3;
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<StencilClipComponent>(id).unwrap();
+    assert_eq!(got.stencil_ref, 3);
+}
+
+#[test]
+fn roundtrip_bounds() {
+    use crate::engine::ecs::component::BoundsComponent;
+    use crate::engine::graphics::bounds::Aabb;
+    let original = BoundsComponent::new(Aabb { min: [-1.0, -2.0, -3.0], max: [1.0, 2.0, 3.0] });
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<BoundsComponent>(id).unwrap();
+    assert_eq!(got.local.min, [-1.0, -2.0, -3.0]);
+    assert_eq!(got.local.max, [1.0, 2.0, 3.0]);
+}
+
+#[test]
+fn roundtrip_mesh() {
+    use crate::engine::ecs::component::MeshComponent;
+    let (world, id) = roundtrip_component(MeshComponent::new("scene.glb:body:0"));
+    let got = world.get_component_by_id_as::<MeshComponent>(id).unwrap();
+    assert_eq!(got.key, "scene.glb:body:0");
+}
+
+#[test]
+fn roundtrip_gesture_coord_type() {
+    use crate::engine::ecs::component::{GestureCoordTypeComponent, GestureCoordType};
+    let (world, id) = roundtrip_component(GestureCoordTypeComponent::screen_space_1d_slider());
+    let got = world.get_component_by_id_as::<GestureCoordTypeComponent>(id).unwrap();
+    assert_eq!(got.coord_type, GestureCoordType::ScreenSpace1DSlider);
+}
+
+#[test]
+fn roundtrip_collision_shape_cube() {
+    use crate::engine::ecs::component::{CollisionShapeComponent, CollisionShape};
+    let original = CollisionShapeComponent::new(CollisionShape::cube_half_extents([2.0, 3.0, 4.0]));
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<CollisionShapeComponent>(id).unwrap();
+    match got.shape {
+        CollisionShape::Cube { half_extents } => assert_eq!(half_extents, [2.0, 3.0, 4.0]),
+        _ => panic!("expected Cube"),
+    }
+}
+
+#[test]
+fn roundtrip_collision_shape_sphere() {
+    use crate::engine::ecs::component::{CollisionShapeComponent, CollisionShape};
+    let original = CollisionShapeComponent::new(CollisionShape::sphere_radius(1.5));
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<CollisionShapeComponent>(id).unwrap();
+    match got.shape {
+        CollisionShape::Sphere { radius } => assert!((radius - 1.5).abs() < 1e-6),
+        _ => panic!("expected Sphere"),
+    }
+}
+
+#[test]
+fn roundtrip_raycastable_shape() {
+    use crate::engine::ecs::component::{RaycastableShapeComponent, RaycastableShapeType};
+    let (world, id) = roundtrip_component(RaycastableShapeComponent::cone());
+    let got = world.get_component_by_id_as::<RaycastableShapeComponent>(id).unwrap();
+    assert_eq!(got.shape, RaycastableShapeType::Cone);
+}
+
+#[test]
+fn roundtrip_collision() {
+    use crate::engine::ecs::component::{CollisionComponent, CollisionMode};
+    let (world, id) = roundtrip_component(CollisionComponent::KINEMATIC());
+    let got = world.get_component_by_id_as::<CollisionComponent>(id).unwrap();
+    assert_eq!(got.mode, CollisionMode::Kinematic);
+}
+
+#[test]
+fn roundtrip_gravity() {
+    use crate::engine::ecs::component::GravityComponent;
+    let (world, id) = roundtrip_component(GravityComponent::new().with_coefficient(0.5));
+    let got = world.get_component_by_id_as::<GravityComponent>(id).unwrap();
+    assert!(got.enabled);
+    assert!((got.coefficient - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_pointer_disabled() {
+    use crate::engine::ecs::component::PointerComponent;
+    let (world, id) = roundtrip_component(PointerComponent::disabled());
+    let got = world.get_component_by_id_as::<PointerComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_skinned_mesh() {
+    use crate::engine::ecs::component::SkinnedMeshComponent;
+    let (world, id) = roundtrip_component(SkinnedMeshComponent::new(7));
+    let got = world.get_component_by_id_as::<SkinnedMeshComponent>(id).unwrap();
+    assert_eq!(got.skin_index, 7);
+}
+
+#[test]
+fn roundtrip_transform_sample_ancestor() {
+    use crate::engine::ecs::component::TransformSampleAncestorComponent;
+    let (world, id) = roundtrip_component(TransformSampleAncestorComponent::new().with_skip(3));
+    let got = world.get_component_by_id_as::<TransformSampleAncestorComponent>(id).unwrap();
+    assert_eq!(got.skip, 3);
+}
+
+#[test]
+fn roundtrip_quat_temporal_filter() {
+    use crate::engine::ecs::component::QuatTemporalFilterComponent;
+    let (world, id) = roundtrip_component(QuatTemporalFilterComponent::new().with_smoothing_factor(220.0));
+    let got = world.get_component_by_id_as::<QuatTemporalFilterComponent>(id).unwrap();
+    assert!((got.smoothing_factor - 220.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_vector3_temporal_filter() {
+    use crate::engine::ecs::component::Vector3TemporalFilterComponent;
+    let (world, id) = roundtrip_component(Vector3TemporalFilterComponent::new().with_smoothing_factor(15.0));
+    let got = world.get_component_by_id_as::<Vector3TemporalFilterComponent>(id).unwrap();
+    assert!((got.smoothing_factor - 15.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_quat_yaw_follow() {
+    use crate::engine::ecs::component::QuatYawFollowComponent;
+    let original = QuatYawFollowComponent::new(0.5, 2.0)
+        .with_forward_plus_z()
+        .with_initial_yaw(std::f32::consts::PI);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<QuatYawFollowComponent>(id).unwrap();
+    assert!((got.threshold - 0.5).abs() < 1e-6);
+    assert!((got.rate - 2.0).abs() < 1e-6);
+    assert!(got.forward_plus_z);
+    assert!((got.initial_yaw - std::f32::consts::PI).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_signal_route_upward() {
+    use crate::engine::ecs::component::SignalRouteUpwardComponent;
+    let original = SignalRouteUpwardComponent::new("UpdateTransform", "transform_pipeline");
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<SignalRouteUpwardComponent>(id).unwrap();
+    assert_eq!(got.intent_kind, "UpdateTransform");
+    assert_eq!(got.parent_type, "transform_pipeline");
+}
+
+#[test]
+fn roundtrip_avatar_body_yaw() {
+    use crate::engine::ecs::component::AvatarBodyYawComponent;
+    let original = AvatarBodyYawComponent::new()
+        .with_threshold(0.5)
+        .with_rate(2.0)
+        .with_forward_plus_z();
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<AvatarBodyYawComponent>(id).unwrap();
+    assert!((got.threshold - 0.5).abs() < 1e-6);
+    assert!((got.rate - 2.0).abs() < 1e-6);
+    assert!(got.forward_plus_z);
+}
+
+#[test]
+fn roundtrip_world_panel() {
+    use crate::engine::ecs::component::WorldPanelComponent;
+    let (_world, _id) = roundtrip_component(WorldPanelComponent::new());
+}
+
+#[test]
+fn roundtrip_inspector_panel() {
+    use crate::engine::ecs::component::InspectorPanelComponent;
+    let (_world, _id) = roundtrip_component(InspectorPanelComponent::new());
+}
+
+#[test]
+fn roundtrip_raycast() {
+    use crate::engine::ecs::component::{RayCastComponent, RayCastMode};
+    let original = RayCastComponent::continuous().with_max_distance(75.0);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<RayCastComponent>(id).unwrap();
+    assert_eq!(got.mode, RayCastMode::Continuous);
+    assert!((got.max_distance - 75.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_avatar_control() {
+    use crate::engine::ecs::component::AvatarControlComponent;
+    let original = AvatarControlComponent::new()
+        .with_head_bone("J_Bip_C_Neck")
+        .with_left_hand_bone("J_Bip_L_Hand")
+        .with_right_hand_bone("J_Bip_R_Hand")
+        .with_forward_plus_z()
+        .with_hand_rotation_smoothing(220.0)
+        .with_camera_bone("J_Bip_C_Head")
+        .with_avatar_height(1.7);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<AvatarControlComponent>(id).unwrap();
+    assert_eq!(got.head_bone, "J_Bip_C_Neck");
+    assert_eq!(got.left_hand_bone.as_deref(), Some("J_Bip_L_Hand"));
+    assert_eq!(got.right_hand_bone.as_deref(), Some("J_Bip_R_Hand"));
+    assert!(got.forward_plus_z);
+    assert_eq!(got.hand_rotation_smoothing, Some(220.0));
+    assert_eq!(got.camera_bone.as_deref(), Some("J_Bip_C_Head"));
+    assert_eq!(got.avatar_height, Some(1.7));
+}
+
+#[test]
+fn roundtrip_music_note_c5() {
+    use crate::engine::ecs::component::{MusicNote, MusicNoteComponent};
+    let note = MusicNote::c(5, 0.25).with_velocity(0.8);
+    let (world, id) = roundtrip_component(MusicNoteComponent::new(note));
+    let got = world.get_component_by_id_as::<MusicNoteComponent>(id).unwrap();
+    assert_eq!(got.note.pitch_name(), "c");
+    assert_eq!(got.note.octave(), 5);
+    assert!((got.note.duration_beats() - 0.25).abs() < 1e-6);
+    assert!((got.note.velocity() - 0.8).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_ik_chain_aim() {
+    use crate::engine::ecs::component::{IKChainComponent, IKSolver};
+    use slotmap::Key;
+    use crate::engine::ecs::ComponentId;
+    let sentinel = ComponentId::null();
+    let original = IKChainComponent::new(
+        IKSolver::AimConstraint { offset_yaw: std::f32::consts::PI },
+        sentinel,
+        sentinel,
+    ).with_weight(0.5);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<IKChainComponent>(id).unwrap();
+    match got.solver {
+        IKSolver::AimConstraint { offset_yaw } => {
+            assert!((offset_yaw - std::f32::consts::PI).abs() < 1e-6);
+        }
+        _ => panic!("expected AimConstraint"),
+    }
+    assert!((got.weight - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_transform_gizmo_translate() {
+    use crate::engine::ecs::component::{TransformGizmoTranslateComponent, TransformGizmoAxis};
+    let (world, id) = roundtrip_component(TransformGizmoTranslateComponent::new(TransformGizmoAxis::Y));
+    let got = world.get_component_by_id_as::<TransformGizmoTranslateComponent>(id).unwrap();
+    assert_eq!(got.axis, TransformGizmoAxis::Y);
+}
+
+#[test]
+fn roundtrip_transform_gizmo() {
+    use crate::engine::ecs::component::TransformGizmoComponent;
+    let (world, id) = roundtrip_component(TransformGizmoComponent::new().with_scale(0.5));
+    let got = world.get_component_by_id_as::<TransformGizmoComponent>(id).unwrap();
+    assert!((got.scale - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_renderer_stats() {
+    use crate::engine::ecs::component::RendererStatsComponent;
+    use crate::engine::graphics::CameraTarget;
+    let mut original = RendererStatsComponent::new();
+    original.enabled = false;
+    original.target = CameraTarget::Xr;
+    original.update_interval_sec = 0.5;
+    original.smoothing = 0.8;
+    original.color = [0.5, 0.6, 0.7, 1.0];
+    original.emissive = false;
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<RendererStatsComponent>(id).unwrap();
+    assert!(!got.enabled);
+    assert!(matches!(got.target, CameraTarget::Xr));
+    assert!((got.update_interval_sec - 0.5).abs() < 1e-6);
+    assert!((got.smoothing - 0.8).abs() < 1e-6);
+    assert_eq!(got.color, [0.5, 0.6, 0.7, 1.0]);
+    assert!(!got.emissive);
+}
+
+#[test]
+fn roundtrip_kinetic_response() {
+    use crate::engine::ecs::component::{KineticResponseComponent, KineticResponseMode};
+    let original = KineticResponseComponent::push()
+        .with_push_strength(8.0)
+        .with_friction(0.5)
+        .with_friction_y(0.25);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<KineticResponseComponent>(id).unwrap();
+    assert_eq!(got.mode, KineticResponseMode::Push);
+    assert!((got.push_strength - 8.0).abs() < 1e-6);
+    assert!((got.friction - 0.5).abs() < 1e-6);
+    assert!((got.friction_y - 0.25).abs() < 1e-6);
+}

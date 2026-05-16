@@ -53,37 +53,13 @@ impl Component for TextureFilteringComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        let mode = match self.filtering {
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = match self.filtering {
             TextureFiltering::Linear => "linear",
             TextureFiltering::Nearest => "nearest",
             TextureFiltering::NearestMagnification => "nearest_magnification",
         };
-        map.insert("mode".to_string(), serde_json::json!(mode));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(mode) = data.get("mode") {
-            let mode_str: String = serde_json::from_value(mode.clone())
-                .map_err(|e| format!("Failed to decode mode: {}", e))?;
-            self.filtering = match mode_str.as_str() {
-                "linear" => TextureFiltering::Linear,
-                "nearest" => TextureFiltering::Nearest,
-                "nearest_magnification" | "nearestMag" | "nearest_mag" => {
-                    TextureFiltering::NearestMagnification
-                }
-                other => {
-                    return Err(format!(
-                        "Invalid texture filtering mode '{other}'. Expected: linear|nearest|nearest_magnification"
-                    ));
-                }
-            };
-        }
-        Ok(())
+        ce_call("TextureFiltering", ctor, vec![])
     }
 }

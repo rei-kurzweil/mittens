@@ -111,54 +111,32 @@ impl Component for HtmlElementComponent {
     fn as_any(&self) -> &dyn std::any::Any { self }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        let type_str = format!("{:?}", self.element_type).to_lowercase();
-        map.insert("element_type".to_string(), serde_json::json!(type_str));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(t) = data.get("element_type").and_then(|v| v.as_str()) {
-            self.element_type = match t {
-                "div" => ElementType::Div,
-                "span" => ElementType::Span,
-                "body" => ElementType::Body,
-                "header" => ElementType::Header,
-                "footer" => ElementType::Footer,
-                "main" => ElementType::Main,
-                "nav" => ElementType::Nav,
-                "aside" => ElementType::Aside,
-                "section" => ElementType::Section,
-                "article" => ElementType::Article,
-                "p" => ElementType::P,
-                "h1" => ElementType::H1,
-                "h2" => ElementType::H2,
-                "h3" => ElementType::H3,
-                "h4" => ElementType::H4,
-                "h5" => ElementType::H5,
-                "h6" => ElementType::H6,
-                "a" => ElementType::A,
-                "strong" => ElementType::Strong,
-                "em" => ElementType::Em,
-                "code" => ElementType::Code,
-                "img" => ElementType::Img,
-                "table" => ElementType::Table,
-                "thead" => ElementType::Thead,
-                "tbody" => ElementType::Tbody,
-                "tr" => ElementType::Tr,
-                "th" => ElementType::Th,
-                "td" => ElementType::Td,
-                "input" => ElementType::Input,
-                "button" => ElementType::Button,
-                "textarea" => ElementType::Textarea,
-                "select" => ElementType::Select,
-                _ => ElementType::Element,
-            };
-        }
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = match self.element_type {
+            ElementType::Div => "div",
+            ElementType::Span => "span",
+            ElementType::Body => "body",
+            ElementType::Header => "header",
+            ElementType::Footer => "footer",
+            ElementType::Main => "main",
+            ElementType::Nav => "nav",
+            ElementType::Aside => "aside",
+            ElementType::Section => "section",
+            ElementType::Article => "article",
+            ElementType::P => "p",
+            ElementType::H1 => "h1",
+            ElementType::H2 => "h2",
+            ElementType::H3 => "h3",
+            ElementType::H4 => "h4",
+            ElementType::H5 => "h5",
+            ElementType::H6 => "h6",
+            // Element types without dedicated ctors fall back to bare `HtmlElement {}`,
+            // which `create_component` resolves to `ElementType::Element`. Most authored
+            // scenes use the named ctors above; the rest of the enum is reachable via
+            // future `apply_call` builders or named assignment.
+            _ => return ce("HtmlElement"),
+        };
+        ce_call("HtmlElement", ctor, vec![])
     }
 }

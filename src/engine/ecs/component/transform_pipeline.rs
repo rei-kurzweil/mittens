@@ -162,21 +162,12 @@ impl Component for TransformSampleAncestorComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("skip".to_string(), serde_json::json!(self.skip));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("skip") {
-            self.skip = v
-                .as_u64()
-                .ok_or_else(|| "skip must be a non-negative integer".to_string())? as usize;
-        }
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce_call(
+            "TransformSampleAncestor",
+            "skip",
+            vec![num(self.skip as f64)],
+        )
     }
 }

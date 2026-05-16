@@ -147,62 +147,19 @@ impl Component for EditorComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert(
-            "transform_gizmo_translation_space".to_string(),
-            serde_json::json!(match self.transform_gizmo_translation_space {
-                TransformGizmoCoordSpace::Local => "local",
-                TransformGizmoCoordSpace::World => "world",
-            }),
-        );
-        map.insert(
-            "transform_gizmo_rotation_space".to_string(),
-            serde_json::json!(match self.transform_gizmo_rotation_space {
-                TransformGizmoCoordSpace::Local => "local",
-                TransformGizmoCoordSpace::World => "world",
-            }),
-        );
-        map.insert(
-            "serialize_editor_panels".to_string(),
-            serde_json::json!(self.serialize_editor_panels),
-        );
-        map
-    }
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let translation = match self.transform_gizmo_translation_space {
+            TransformGizmoCoordSpace::Local => "local",
+            TransformGizmoCoordSpace::World => "world",
+        };
+        let rotation = match self.transform_gizmo_rotation_space {
+            TransformGizmoCoordSpace::Local => "local",
+            TransformGizmoCoordSpace::World => "world",
+        };
+        ce("Editor")
+            .with_call("translation_space", vec![s(translation)])
+            .with_call("rotation_space", vec![s(rotation)])
 
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("transform_gizmo_translation_space") {
-            let s: String = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode transform_gizmo_translation_space: {e}"))?;
-            self.transform_gizmo_translation_space = match s.trim().to_ascii_lowercase().as_str() {
-                "local" => TransformGizmoCoordSpace::Local,
-                "world" => TransformGizmoCoordSpace::World,
-                other => {
-                    return Err(format!(
-                        "Unknown transform_gizmo_translation_space '{other}'"
-                    ));
-                }
-            };
-        }
-
-        if let Some(v) = data.get("transform_gizmo_rotation_space") {
-            let s: String = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode transform_gizmo_rotation_space: {e}"))?;
-            self.transform_gizmo_rotation_space = match s.trim().to_ascii_lowercase().as_str() {
-                "local" => TransformGizmoCoordSpace::Local,
-                "world" => TransformGizmoCoordSpace::World,
-                other => return Err(format!("Unknown transform_gizmo_rotation_space '{other}'")),
-            };
-        }
-
-        if let Some(v) = data.get("serialize_editor_panels") {
-            self.serialize_editor_panels = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode serialize_editor_panels: {e}"))?;
-        }
-
-        Ok(())
     }
 }

@@ -130,30 +130,15 @@ impl Component for ScrollingComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert(
-            "viewport_height".to_string(),
-            serde_json::json!(self.viewport_height),
-        );
-        map.insert(
-            "content_height".to_string(),
-            serde_json::json!(self.content_height),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("viewport_height").and_then(|v| v.as_f64()) {
-            self.viewport_height = v as f32;
-        }
-        if let Some(v) = data.get("content_height").and_then(|v| v.as_f64()) {
-            self.content_height = v as f32;
-        }
-        let _ = self.clamp_to_content();
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce_call(
+            "Scrolling",
+            "new",
+            vec![
+                num(self.viewport_height as f64),
+                num(self.content_height as f64),
+            ],
+        )
     }
 }

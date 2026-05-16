@@ -54,29 +54,12 @@ impl Component for GestureCoordTypeComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        let coord_type = match self.coord_type {
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = match self.coord_type {
             GestureCoordType::WorldPlane => "world_plane",
             GestureCoordType::ScreenSpace1DSlider => "screen_space_1d_slider",
         };
-        map.insert("coord_type".to_string(), serde_json::json!(coord_type));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("coord_type") {
-            let s: String = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode coord_type: {}", e))?;
-            self.coord_type = match s.as_str() {
-                "world_plane" => GestureCoordType::WorldPlane,
-                "screen_space_1d_slider" => GestureCoordType::ScreenSpace1DSlider,
-                other => return Err(format!("Unknown coord_type: {}", other)),
-            };
-        }
-        Ok(())
+        ce_call("GestureCoordType", ctor, vec![])
     }
 }

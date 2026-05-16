@@ -87,20 +87,8 @@ impl Component for NormalVisualisationComponent {
         }
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("thickness".to_string(), serde_json::json!(self.thickness));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("thickness") {
-            self.thickness = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode thickness: {e}"))?;
-        }
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce_call("NormalVis", "thickness", vec![num(self.thickness as f64)])
     }
 }

@@ -54,22 +54,13 @@ impl Component for EmissiveComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("intensity".to_string(), serde_json::json!(self.intensity));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        let Some(v) = data.get("intensity") else {
-            return Err("emissive.intensity missing".to_string());
-        };
-        self.intensity = serde_json::from_value::<f32>(v.clone())
-            .map_err(|e| format!("Failed to decode emissive.intensity: {e}"))?
-            .max(0.0);
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = if self.intensity == 0.0 { "off" } else { "on" };
+        let mut ce = ce_call("Emissive", ctor, vec![]);
+        if self.intensity != 0.0 && self.intensity != 1.0 {
+            ce = ce.with_call("intensity", vec![num(self.intensity as f64)]);
+        }
+        ce
     }
 }

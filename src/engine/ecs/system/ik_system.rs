@@ -20,7 +20,73 @@ impl IKSystem {
             .filter(|&id| world.get_component_by_id_as::<IKChainComponent>(id).is_some())
             .collect();
         for id in ids {
+            // Lazy resolution of `target_source` / `end_effector_source` into
+            // the actual ComponentId fields. Matches AnimationSystem's
+            // behavior for ActionComponent and supports forward refs
+            // (sources authored before the referent exists). No-op when the
+            // ids are already filled (either by registry-time resolve at
+            // call-construction, or by a previous tick).
+            resolve_ik_chain_refs(world, id);
             tick_chain(id, world, emit);
+        }
+    }
+}
+
+/// Best-effort resolve of IKChain's `target_source` / `end_effector_source`
+/// into the matching `target_id` / `end_effector_id` slots when the latter
+/// are null. Silent no-op on miss — the IK solver short-circuits on a null
+/// target anyway, so a still-unresolved chain just skips that tick. A future
+/// tick may succeed once the referent spawns.
+fn resolve_ik_chain_refs(world: &mut World, id: ComponentId) {
+    use crate::engine::ecs::component::ComponentRef;
+    use slotmap::Key;
+    let (target_src, end_src, target_id, end_id) = {
+        let Some(ik) = world.get_component_by_id_as::<IKChainComponent>(id) else {
+            return;
+        };
+        (
+            ik.target_source.clone(),
+            ik.end_effector_source.clone(),
+            ik.target_id,
+            ik.end_effector_id,
+        )
+    };
+
+    let resolve = |src: &ComponentRef| -> Option<ComponentId> {
+        match src {
+            ComponentRef::Guid(uuid) => world.component_id_by_guid(*uuid),
+            ComponentRef::Query(selector) => {
+                let roots: Vec<ComponentId> = world
+                    .all_components()
+                    .filter(|&cid| world.parent_of(cid).is_none())
+                    .collect();
+                roots
+                    .into_iter()
+                    .find_map(|root| world.find_component(root, selector))
+            }
+        }
+    };
+
+    let new_target = if target_id.is_null() {
+        target_src.as_ref().and_then(resolve)
+    } else {
+        None
+    };
+    let new_end = if end_id.is_null() {
+        end_src.as_ref().and_then(resolve)
+    } else {
+        None
+    };
+
+    if new_target.is_none() && new_end.is_none() {
+        return;
+    }
+    if let Some(ik) = world.get_component_by_id_as_mut::<IKChainComponent>(id) {
+        if let Some(t) = new_target {
+            ik.target_id = t;
+        }
+        if let Some(e) = new_end {
+            ik.end_effector_id = e;
         }
     }
 }
@@ -445,5 +511,89 @@ fn tc_world_rot(world: &World, id: ComponentId) -> [f32; 4] {
         .get_component_by_id_as::<TransformComponent>(id)
         .map(|t| mat_to_quat(t.transform.matrix_world))
         .unwrap_or([0.0, 0.0, 0.0, 1.0])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::ecs::CommandQueue;
+    use crate::engine::ecs::component::{ComponentRef, IKChainComponent, IKSolver};
+    use slotmap::Key;
+
+    #[test]
+    fn resolves_forward_reference_on_first_tick() {
+        let mut w = World::default();
+
+        // Author IKChain *before* the target/end_effector components exist.
+        // Both ids start as null sentinels; only the sources carry the
+        // selector strings.
+        let ik_id = w.add_component(
+            IKChainComponent::new(
+                IKSolver::TwoBoneIK { pole_direction: [0.0, 1.0, 0.0], copy_end_rotation: false },
+                ComponentId::null(),
+                ComponentId::null(),
+            )
+            .with_target_source(ComponentRef::Query("#hand".to_string()))
+            .with_end_effector_source(ComponentRef::Query("#elbow".to_string())),
+        );
+
+        // Now spawn the targets the IKChain refers to.
+        let hand = w.add_component_boxed_named(
+            "hand",
+            Box::new(TransformComponent::new()),
+        );
+        let elbow = w.add_component_boxed_named(
+            "elbow",
+            Box::new(TransformComponent::new()),
+        );
+
+        // Sanity: nothing resolved yet.
+        {
+            let ik = w.get_component_by_id_as::<IKChainComponent>(ik_id).unwrap();
+            assert!(ik.target_id.is_null());
+            assert!(ik.end_effector_id.is_null());
+        }
+
+        // First tick triggers the deferred resolve.
+        let mut emit = CommandQueue::new();
+        let mut sys = IKSystem::new();
+        sys.tick(&mut w, &mut emit, 0.016);
+
+        let ik = w.get_component_by_id_as::<IKChainComponent>(ik_id).unwrap();
+        assert_eq!(ik.target_id, hand);
+        assert_eq!(ik.end_effector_id, elbow);
+    }
+
+    #[test]
+    fn does_not_overwrite_already_resolved_ids() {
+        let mut w = World::default();
+        let pre_target = w.add_component(TransformComponent::new());
+        let pre_ee = w.add_component(TransformComponent::new());
+        let unrelated = w.add_component_boxed_named(
+            "hand",
+            Box::new(TransformComponent::new()),
+        );
+
+        let ik_id = w.add_component(
+            IKChainComponent::new(
+                IKSolver::AimConstraint { offset_yaw: 0.0 },
+                pre_target,
+                pre_ee,
+            )
+            // Source points at a different component named "hand" — but
+            // since target_id / end_effector_id are already non-null, the
+            // resolve pass should leave them alone.
+            .with_target_source(ComponentRef::Query("#hand".to_string())),
+        );
+
+        let mut emit = CommandQueue::new();
+        let mut sys = IKSystem::new();
+        sys.tick(&mut w, &mut emit, 0.016);
+
+        let ik = w.get_component_by_id_as::<IKChainComponent>(ik_id).unwrap();
+        assert_eq!(ik.target_id, pre_target);
+        assert_ne!(ik.target_id, unrelated);
+        assert_eq!(ik.end_effector_id, pre_ee);
+    }
 }
 

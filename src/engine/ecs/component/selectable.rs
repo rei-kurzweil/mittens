@@ -48,20 +48,9 @@ impl Component for SelectableComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut m = std::collections::HashMap::new();
-        m.insert("enabled".to_string(), serde_json::json!(self.enabled));
-        m
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("enabled") {
-            self.enabled =
-                serde_json::from_value(v.clone()).map_err(|e| format!("selectable.enabled: {e}"))?;
-        }
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = if self.enabled { "on" } else { "off" };
+        ce_call("Selectable", ctor, vec![])
     }
 }

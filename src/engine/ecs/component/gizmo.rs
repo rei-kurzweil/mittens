@@ -45,34 +45,17 @@ impl Component for TransformGizmoTranslateComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert(
-            "axis".to_string(),
-            serde_json::json!(match self.axis {
-                TransformGizmoAxis::X => "x",
-                TransformGizmoAxis::Y => "y",
-                TransformGizmoAxis::Z => "z",
-            }),
-        );
-        map
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce_call("TransformGizmoTranslate", axis_ctor(self.axis), vec![])
     }
+}
 
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(axis) = data.get("axis") {
-            let axis: String = serde_json::from_value(axis.clone())
-                .map_err(|e| format!("Failed to decode axis: {e}"))?;
-            self.axis = match axis.as_str() {
-                "x" | "X" => TransformGizmoAxis::X,
-                "y" | "Y" => TransformGizmoAxis::Y,
-                "z" | "Z" => TransformGizmoAxis::Z,
-                other => return Err(format!("Unknown axis '{other}'")),
-            };
-        }
-        Ok(())
+fn axis_ctor(axis: TransformGizmoAxis) -> &'static str {
+    match axis {
+        TransformGizmoAxis::X => "x",
+        TransformGizmoAxis::Y => "y",
+        TransformGizmoAxis::Z => "z",
     }
 }
 
@@ -103,34 +86,9 @@ impl Component for TransformGizmoRotateComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert(
-            "axis".to_string(),
-            serde_json::json!(match self.axis {
-                TransformGizmoAxis::X => "x",
-                TransformGizmoAxis::Y => "y",
-                TransformGizmoAxis::Z => "z",
-            }),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(axis) = data.get("axis") {
-            let axis: String = serde_json::from_value(axis.clone())
-                .map_err(|e| format!("Failed to decode axis: {e}"))?;
-            self.axis = match axis.as_str() {
-                "x" | "X" => TransformGizmoAxis::X,
-                "y" | "Y" => TransformGizmoAxis::Y,
-                "z" | "Z" => TransformGizmoAxis::Z,
-                other => return Err(format!("Unknown axis '{other}'")),
-            };
-        }
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce_call("TransformGizmoRotate", axis_ctor(self.axis), vec![])
     }
 }
 
@@ -161,34 +119,9 @@ impl Component for TransformGizmoScaleComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert(
-            "axis".to_string(),
-            serde_json::json!(match self.axis {
-                TransformGizmoAxis::X => "x",
-                TransformGizmoAxis::Y => "y",
-                TransformGizmoAxis::Z => "z",
-            }),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(axis) = data.get("axis") {
-            let axis: String = serde_json::from_value(axis.clone())
-                .map_err(|e| format!("Failed to decode axis: {e}"))?;
-            self.axis = match axis.as_str() {
-                "x" | "X" => TransformGizmoAxis::X,
-                "y" | "Y" => TransformGizmoAxis::Y,
-                "z" | "Z" => TransformGizmoAxis::Z,
-                other => return Err(format!("Unknown axis '{other}'")),
-            };
-        }
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce_call("TransformGizmoScale", axis_ctor(self.axis), vec![])
     }
 }
 
@@ -277,21 +210,9 @@ impl Component for TransformGizmoComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("scale".to_string(), serde_json::json!(self.scale));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("scale") {
-            self.scale = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode scale: {e}"))?;
-        }
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce("TransformGizmo").with_call("scale", vec![num(self.scale as f64)])
     }
 
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {

@@ -101,50 +101,20 @@ impl Component for ControllerXRComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("enabled".to_string(), serde_json::Value::Bool(self.enabled));
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
         let hand = match self.hand {
-            ControllerHand::Left => "left",
-            ControllerHand::Right => "right",
+            ControllerHand::Left => "Left",
+            ControllerHand::Right => "Right",
         };
-        map.insert(
-            "hand".to_string(),
-            serde_json::Value::String(hand.to_string()),
-        );
-
         let pose = match self.pose {
-            ControllerPoseKind::Aim => "aim",
-            ControllerPoseKind::Grip => "grip",
+            ControllerPoseKind::Aim => "Aim",
+            ControllerPoseKind::Grip => "Grip",
         };
-        map.insert(
-            "pose".to_string(),
-            serde_json::Value::String(pose.to_string()),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("enabled") {
-            self.enabled = v.as_bool().unwrap_or(false);
-        }
-        if let Some(v) = data.get("hand").and_then(|v| v.as_str()) {
-            self.hand = match v {
-                "left" => ControllerHand::Left,
-                "right" => ControllerHand::Right,
-                other => return Err(format!("Unknown ControllerHand: {other}")),
-            };
-        }
-        if let Some(v) = data.get("pose").and_then(|v| v.as_str()) {
-            self.pose = match v {
-                "aim" => ControllerPoseKind::Aim,
-                "grip" => ControllerPoseKind::Grip,
-                other => return Err(format!("Unknown ControllerPoseKind: {other}")),
-            };
-        }
-        Ok(())
+        ce_call(
+            "ControllerXR",
+            "new",
+            vec![b(self.enabled), s(hand), s(pose)],
+        )
     }
 }

@@ -95,32 +95,20 @@ impl Component for QuatYawFollowComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("threshold".to_string(), serde_json::json!(self.threshold));
-        map.insert("rate".to_string(), serde_json::json!(self.rate));
-        map.insert("forward_plus_z".to_string(), serde_json::json!(self.forward_plus_z));
-        map.insert("initial_yaw".to_string(), serde_json::json!(self.initial_yaw));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("threshold") {
-            if let Some(f) = v.as_f64() { self.threshold = f as f32; }
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let mut c = ce_call(
+            "QuatYawFollow",
+            "new",
+            vec![num(self.threshold as f64), num(self.rate as f64)],
+        );
+        if self.forward_plus_z {
+            c = c.with_call("forward_plus_z", vec![]);
         }
-        if let Some(v) = data.get("rate") {
-            if let Some(f) = v.as_f64() { self.rate = f as f32; }
+        if self.initial_yaw != 0.0 {
+            c = c.with_call("initial_yaw", vec![num(self.initial_yaw as f64)]);
         }
-        if let Some(v) = data.get("forward_plus_z") {
-            if let Some(b) = v.as_bool() { self.forward_plus_z = b; }
-        }
-        if let Some(v) = data.get("initial_yaw") {
-            if let Some(f) = v.as_f64() { self.initial_yaw = f as f32; }
-        }
-        Ok(())
+        c
     }
 }
 
@@ -161,24 +149,13 @@ impl Component for Vector3TemporalFilterComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert(
-            "smoothing_factor".to_string(),
-            serde_json::json!(self.smoothing_factor),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(value) = data.get("smoothing_factor") {
-            self.smoothing_factor = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Failed to decode smoothing_factor: {e}"))?;
-        }
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce_call(
+            "Vector3TemporalFilter",
+            "smoothing_factor",
+            vec![num(self.smoothing_factor as f64)],
+        )
     }
 }
 
@@ -219,23 +196,12 @@ impl Component for QuatTemporalFilterComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert(
-            "smoothing_factor".to_string(),
-            serde_json::json!(self.smoothing_factor),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(value) = data.get("smoothing_factor") {
-            self.smoothing_factor = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Failed to decode smoothing_factor: {e}"))?;
-        }
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce_call(
+            "QuatTemporalFilter",
+            "smoothing_factor",
+            vec![num(self.smoothing_factor as f64)],
+        )
     }
 }

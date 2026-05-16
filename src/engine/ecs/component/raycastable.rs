@@ -83,36 +83,18 @@ impl Component for RaycastableComponent {
         "raycastable"
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("enable".to_string(), serde_json::json!(self.enable));
-        let pe = match self.pointer_events {
-            PointerEvents::All => "all",
-            PointerEvents::DragOnly => "drag_only",
-            PointerEvents::ClickOnly => "click_only",
-            PointerEvents::PassThrough => "pass_through",
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = match (self.enable, self.pointer_events) {
+            (false, _) => "disabled",
+            (true, PointerEvents::DragOnly) => "drag_only",
+            (true, PointerEvents::ClickOnly) => "click_only",
+            (true, _) => "enabled",
         };
-        map.insert("pointer_events".to_string(), serde_json::json!(pe));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("enable") {
-            if let Some(b) = v.as_bool() {
-                self.enable = b;
-            }
+        let mut ce = ce_call("Raycastable", ctor, vec![]);
+        if self.enable && matches!(self.pointer_events, PointerEvents::PassThrough) {
+            ce = ce.with_call("pointer_events", vec![s("pass_through")]);
         }
-        if let Some(v) = data.get("pointer_events").and_then(|v| v.as_str()) {
-            self.pointer_events = match v {
-                "drag_only" => PointerEvents::DragOnly,
-                "click_only" => PointerEvents::ClickOnly,
-                "pass_through" => PointerEvents::PassThrough,
-                _ => PointerEvents::All,
-            };
-        }
-        Ok(())
+        ce
     }
 }

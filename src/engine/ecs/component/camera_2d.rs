@@ -68,32 +68,12 @@ impl Component for Camera2DComponent {
         );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
         let target = match self.target {
             CameraTarget::Window => "window",
             CameraTarget::Xr => "xr",
         };
-        map.insert(
-            "target".to_string(),
-            serde_json::Value::String(target.to_string()),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        _data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        // Handle will be regenerated during init().
-        if let Some(v) = _data.get("target") {
-            if let Some(s) = v.as_str() {
-                self.target = match s {
-                    "xr" => CameraTarget::Xr,
-                    "window" | _ => CameraTarget::Window,
-                };
-            }
-        }
-        Ok(())
+        ce("Camera2D").with_call("target", vec![s(target)])
     }
 }
