@@ -140,6 +140,20 @@ impl<'a> Parser<'a> {
                     let ident = self.parse_identifier()?;
                     simple_selectors.push(SimpleSelector::Name(ident));
                 }
+                Some('@') => {
+                    self.bump_char();
+                    // Currently only `@uuid:<hex+hyphens>` is recognized.
+                    let scheme = self.parse_identifier()?;
+                    if scheme != "uuid" {
+                        return Err(self.err(format!(
+                            "unknown @-selector scheme '{}', expected 'uuid'",
+                            scheme
+                        )));
+                    }
+                    self.expect_char(':')?;
+                    let guid = self.parse_guid_literal()?;
+                    simple_selectors.push(SimpleSelector::Guid(guid));
+                }
                 Some('[') => {
                     simple_selectors
                         .push(SimpleSelector::Attribute(self.parse_attribute_selector()?));
@@ -219,6 +233,21 @@ impl<'a> Parser<'a> {
             return Err(self.err("expected identifier"));
         }
 
+        Ok(self.input[start..self.pos].to_string())
+    }
+
+    fn parse_guid_literal(&mut self) -> Result<String, QueryParseError> {
+        let start = self.pos;
+        while let Some(ch) = self.peek_char() {
+            if ch.is_ascii_hexdigit() || ch == '-' {
+                self.bump_char();
+            } else {
+                break;
+            }
+        }
+        if start == self.pos {
+            return Err(self.err("expected guid literal"));
+        }
         Ok(self.input[start..self.pos].to_string())
     }
 
@@ -353,6 +382,26 @@ mod tests {
         let mut p = MmqQuerySyntax::new();
         let ast = p.parse("T, R").expect("parse");
         assert_eq!(ast.selector_groups.len(), 2);
+    }
+
+    #[test]
+    fn parses_guid_selector() {
+        let mut p = MmqQuerySyntax::new();
+        let ast = p
+            .parse("@uuid:8c4f3e72-1234-5678-9abc-def012345678")
+            .expect("parse");
+        match &ast.selector_groups[0].segments[0].compound.simple_selectors[0] {
+            SimpleSelector::Guid(g) => {
+                assert_eq!(g, "8c4f3e72-1234-5678-9abc-def012345678")
+            }
+            other => panic!("expected guid, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn guid_selector_rejects_unknown_scheme() {
+        let mut p = MmqQuerySyntax::new();
+        assert!(p.parse("@oid:1234").is_err());
     }
 
     #[test]
