@@ -29,10 +29,6 @@ pub struct RayCastSystem {
 
 #[derive(Debug, Clone, Copy)]
 struct CursorRay {
-    x_ndc: f32,
-    y_ndc: f32,
-    near: [f32; 3],
-    far: [f32; 3],
     origin: [f32; 3],
     dir: [f32; 3],
 }
@@ -500,10 +496,6 @@ impl RayCastSystem {
 
         let dir = Self::vec3_normalize(Self::vec3_sub(far, near));
         Some(CursorRay {
-            x_ndc,
-            y_ndc,
-            near,
-            far,
             origin: near,
             dir,
         })
@@ -916,70 +908,15 @@ impl System for RayCastSystem {
                 continue;
             }
 
-            // Extra debug on click: dump the ray + camera position so we can sanity check.
-            if rc.mode == RayCastMode::EventDriven
-                && input.mouse_pressed.contains(&MouseButton::Left)
-            {
-                let view = visuals.camera_view();
-                let cam_pos = math::mat4_inverse(view)
-                    .map(|inv_view| {
-                        let t = inv_view[3];
-                        [t[0], t[1], t[2]]
-                    })
-                    .unwrap_or([f32::NAN, f32::NAN, f32::NAN]);
-
-                println!(
-                    "[RayCast] ray debug: cursor={:?} ndc=({:.3},{:.3}) cam_pos=({:.3},{:.3},{:.3}) origin=({:.3},{:.3},{:.3}) dir=({:.3},{:.3},{:.3}) near=({:.3},{:.3},{:.3}) far=({:.3},{:.3},{:.3})",
-                    input.cursor_pos,
-                    ray.x_ndc,
-                    ray.y_ndc,
-                    cam_pos[0],
-                    cam_pos[1],
-                    cam_pos[2],
-                    ray.origin[0],
-                    ray.origin[1],
-                    ray.origin[2],
-                    ray.dir[0],
-                    ray.dir[1],
-                    ray.dir[2],
-                    ray.near[0],
-                    ray.near[1],
-                    ray.near[2],
-                    ray.far[0],
-                    ray.far[1],
-                    ray.far[2]
-                );
-            }
-
             let hits = self.cast_against_renderables(world, ray.origin, ray.dir, rc.max_distance);
             let best = hits.first().copied();
 
             match rc.mode {
                 RayCastMode::Continuous => {
-                    let prev = self.last_hit.get(&rcid).copied().flatten();
                     let next = best.map(|(cid, _)| cid);
-                    if prev != next {
-                        if let Some((hit_cid, t)) = best {
-                            let parent = world.parent_of(hit_cid);
-                            println!(
-                                "[RayCast] hit renderable={:?} parent={:?} t={:.3}",
-                                hit_cid, parent, t
-                            );
-                        } else {
-                            println!("[RayCast] no hit");
-                        }
-                    }
                     self.last_hit.insert(rcid, next);
                 }
-                RayCastMode::EventDriven => {
-                    if let Some((hit_cid, t)) = best {
-                        let parent = world.parent_of(hit_cid);
-                        println!(
-                            "[RayCast] click hit renderable={:?} parent={:?} t={:.3}",
-                            hit_cid, parent, t
-                        );
-                    }
-                }
+                RayCastMode::EventDriven => {}
             }
 
             if cast_requested {
@@ -1021,27 +958,24 @@ impl RayCastSystem {
 
                 let source = Self::inferred_source_kind(world, rcid);
 
-                let (origin, dir, debug_cursor) = match source {
+                let (origin, dir) = match source {
                     RaySourceKind::CursorThroughActiveCamera => {
                         let Some(r) = cursor_ray else {
                             continue;
                         };
-                        (r.origin, r.dir, Some(r))
+                        (r.origin, r.dir)
                     }
                     RaySourceKind::ParentForward => {
                         let Some((o, d)) = Self::ray_from_parent_forward(world, rcid) else {
                             continue;
                         };
-                        (o, d, None)
+                        (o, d)
                     }
                 };
 
                 if !Self::should_cast(mode, input, cast_requested, source) {
                     continue;
                 }
-
-                let click_cast = input.mouse_pressed.contains(&MouseButton::Left);
-                let action_cast = cast_requested && !click_cast;
 
                 let mut hits =
                     self.cast_against_renderables_bvh(world, bvh, origin, dir, max_distance);
@@ -1067,33 +1001,10 @@ impl RayCastSystem {
                 let best = hits.first().copied();
                 match mode {
                     RayCastMode::Continuous => {
-                        let prev = self.last_hit.get(&rcid).copied().flatten();
                         let next = best.map(|(cid, _)| cid);
-                        if prev != next {
-                            if let Some((hit_cid, t)) = best {
-                                let parent = world.parent_of(hit_cid);
-                                println!(
-                                    "[RayCast] hit renderable={:?} parent={:?} t={:.3}",
-                                    hit_cid, parent, t
-                                );
-                            } else {
-                                println!("[RayCast] no hit");
-                            }
-                        }
                         self.last_hit.insert(rcid, next);
                     }
-                    RayCastMode::EventDriven => {
-                        if let Some((hit_cid, t)) = best {
-                            let parent = world.parent_of(hit_cid);
-                            println!(
-                                "[RayCast] {} hit renderable={:?} parent={:?} t={:.3}",
-                                if action_cast { "action" } else { "click" },
-                                hit_cid,
-                                parent,
-                                t
-                            );
-                        }
-                    }
+                    RayCastMode::EventDriven => {}
                 }
 
                 if cast_requested {
