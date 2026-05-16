@@ -67,7 +67,7 @@ impl Component for PointerComponent {
         );
     }
 
-    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         if self.enabled {
             ce("Pointer")

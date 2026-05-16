@@ -255,7 +255,7 @@ pub fn subtree_to_ce_ast(world: &World, root: ComponentId) -> Result<ComponentEx
     let node = world
         .get_component_record(root)
         .ok_or_else(|| format!("subtree_to_ce_ast: missing component {root:?}"))?;
-    let mut ce = node.component.to_mms_ast();
+    let mut ce = node.component.to_mms_ast(world);
     let children: Vec<ComponentId> = node.children.clone();
     for child_id in children {
         let child_ce = subtree_to_ce_ast(world, child_id)?;

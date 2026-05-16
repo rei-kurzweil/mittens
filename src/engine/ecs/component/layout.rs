@@ -80,7 +80,7 @@ impl Component for LayoutComponent {
     fn as_any(&self) -> &dyn std::any::Any { self }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
 
-    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let mut ce = ce_call("LayoutRoot", "width", nums([self.available_width as f64]));
         if let Some(h) = self.available_height {

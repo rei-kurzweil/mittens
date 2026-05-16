@@ -305,7 +305,7 @@ pub trait Component: std::any::Any {
     /// constructors/body, using `name()` (snake_case) as the type — this
     /// works for "tag" components with no state but most overrides will
     /// want to emit proper builder calls for their fields.
-    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
         crate::meow_meow::ast::ComponentExpression {
             component_type: crate::meow_meow::ast::Ident(self.name().to_string()),
             constructors: Vec::new(),

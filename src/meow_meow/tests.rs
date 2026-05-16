@@ -905,7 +905,11 @@ use crate::engine::ecs::component::Component as ComponentTrait;
 fn roundtrip_component<C: ComponentTrait + 'static>(
     original: C,
 ) -> (World, ComponentId) {
-    let ce_ast = original.to_mms_ast();
+    // Round-trip helper assumes the component encodes losslessly without
+    // needing live world context (no ComponentId refs). Use an empty world
+    // as a stand-in.
+    let world_stub = World::default();
+    let ce_ast = original.to_mms_ast(&world_stub);
     let text = crate::meow_meow::unparser::unparse_component(&ce_ast);
     let prog = parse(&text);
     assert_eq!(prog.len(), 1, "unparsed `{text}` did not produce one stmt");
@@ -940,7 +944,7 @@ fn roundtrip_opacity_default_multiple_layers_omitted() {
     use crate::engine::ecs::component::OpacityComponent;
     // multiple_layers=false should not emit the toggle call.
     let original = OpacityComponent::new().with_opacity(0.75);
-    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(&original));
+    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(&original, &World::default()));
     assert!(
         !text.contains("multiple_layers"),
         "expected `multiple_layers` not emitted when false: {text}"
@@ -1043,7 +1047,7 @@ fn roundtrip_gltf() {
 fn roundtrip_gltf_no_visualized_transforms_omits_call() {
     use crate::engine::ecs::component::GLTFComponent;
     let original = GLTFComponent::new("models/cat.glb");
-    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(&original));
+    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(&original, &World::default()));
     assert!(
         !text.contains("with_visualized_transforms"),
         "expected `with_visualized_transforms` omitted when false: {text}"

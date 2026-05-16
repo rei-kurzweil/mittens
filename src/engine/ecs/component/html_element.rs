@@ -111,7 +111,7 @@ impl Component for HtmlElementComponent {
     fn as_any(&self) -> &dyn std::any::Any { self }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
 
-    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let ctor = match self.element_type {
             ElementType::Div => "div",

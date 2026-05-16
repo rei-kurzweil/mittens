@@ -95,7 +95,7 @@ impl Component for QuatYawFollowComponent {
         self
     }
 
-    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let mut c = ce_call(
             "QuatYawFollow",
@@ -149,7 +149,7 @@ impl Component for Vector3TemporalFilterComponent {
         self
     }
 
-    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce_call(
             "Vector3TemporalFilter",
@@ -196,7 +196,7 @@ impl Component for QuatTemporalFilterComponent {
         self
     }
 
-    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce_call(
             "QuatTemporalFilter",

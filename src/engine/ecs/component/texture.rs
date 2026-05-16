@@ -152,7 +152,7 @@ impl Component for TextureComponent {
         );
     }
 
-    fn to_mms_ast(&self) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         if let Some(selector) = &self.render_image {
             return ce_call("Texture", "render_image", vec![s(selector)]);
