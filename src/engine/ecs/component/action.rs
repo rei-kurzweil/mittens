@@ -2,14 +2,63 @@ use super::Component;
 use crate::engine::ecs::{ComponentId, IntentValue};
 use slotmap::{Key, KeyData};
 
+/// How a ComponentId target was authored. Preserved verbatim through dump
+/// so save → reload reproduces the original source form.
+///
+/// `Guid` covers two authoring paths that collapse to "we know the target's
+/// uuid": author wrote `@uuid:<hex>` as a selector string, or author passed
+/// a live `Value::ComponentObject` (let-bound / query result) which the
+/// registry resolves to a guid at call-construction time.
+///
+/// `Query` is anything else the author wrote as a selector string —
+/// `#name`, `[attr=value]`, etc. — preserved as-is so dump emits the same
+/// string.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActionTarget {
+    Guid(uuid::Uuid),
+    Query(String),
+}
+
 #[derive(Debug, Clone)]
 pub struct ActionComponent {
+    /// Runtime intent. ComponentId slots inside are `ComponentId::null()`
+    /// placeholders until resolution; after resolution, they're real ids
+    /// filled in from `target_sources` in the variant's declaration order.
     pub signal: IntentValue,
+    /// Authoring metadata, one entry per ComponentId slot in `signal`,
+    /// ordered by the slot's declaration order in the variant. Used by
+    /// dump (lossless round-trip) and by resolution (look up ids).
+    pub target_sources: Vec<ActionTarget>,
+    /// Whether `signal`'s ComponentId slots hold real ids (true) or null
+    /// placeholders (false). Set by the resolution pass invoked by
+    /// `AnimationSystem` per the owning `AnimationComponent`'s configured
+    /// resolve timing.
+    pub resolved: bool,
 }
 
 impl ActionComponent {
+    /// Construct from an already-resolved IntentValue (no ComponentId
+    /// targets, or all targets pre-resolved). Use this for built-in /
+    /// engine-emitted actions; MMS authoring goes through the registry
+    /// which builds with `new_authored` instead.
     pub fn new(signal: IntentValue) -> Self {
-        Self { signal }
+        Self {
+            signal,
+            target_sources: Vec::new(),
+            resolved: true,
+        }
+    }
+
+    /// Construct from a signal whose ComponentId slots are placeholders
+    /// plus the authoring sources for each slot (in declaration order).
+    /// `resolved` starts false; resolution happens when the owning
+    /// `AnimationSystem` first processes this action.
+    pub fn new_authored(signal: IntentValue, target_sources: Vec<ActionTarget>) -> Self {
+        Self {
+            signal,
+            target_sources,
+            resolved: false,
+        }
     }
 
     pub fn print(message: impl Into<String>) -> Self {
@@ -23,8 +72,102 @@ impl Default for ActionComponent {
     fn default() -> Self {
         Self {
             signal: IntentValue::Noop,
+            target_sources: Vec::new(),
+            resolved: true,
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// IntentValue slot enumeration
+//
+// Used by ActionComponent for: (a) sanity-checking that `target_sources.len()`
+// matches the number of ComponentId slots in the variant; (b) reading current
+// slot values for dump; (c) writing resolved ids into slots after lookup.
+//
+// Only covers the variants ActionComponent.signal actually carries. Variants
+// the engine emits internally (Register*, intra-system bookkeeping) are not
+// authorable from MMS and never appear here — they return zero slots.
+// ---------------------------------------------------------------------------
+
+/// Number of ComponentId slots in `signal`'s variant (counts each element
+/// of any `Vec<ComponentId>` field).
+pub fn signal_target_slot_count(signal: &IntentValue) -> usize {
+    use IntentValue::*;
+    match signal {
+        Noop | Print { .. } => 0,
+
+        SetColor { component_ids, .. }
+        | SetText { component_ids, .. }
+        | SetPosition { component_ids, .. }
+        | Detach { component_ids }
+        | RemoveSubtree { component_ids }
+        | AudioGraphRebuild { component_ids }
+        | RequestRaycast { component_ids }
+        | AudioLowPassSetCutoffHz { component_ids, .. }
+        | AudioBandPassSetCenterHz { component_ids, .. }
+        | OscillatorSetEnabled { component_ids, .. }
+        | OscillatorSetPitch { component_ids, .. }
+        | OscillatorScheduleSetPitch { component_ids, .. }
+        | OscillatorScheduleSetNote { component_ids, .. }
+        | OscillatorScheduleMusicNote { component_ids, .. }
+        | MusicSetNote { component_ids, .. }
+        | UpdateTransform { component_ids, .. } => component_ids.len(),
+
+        Attach { parents, .. } | AttachClone { parents, .. } => parents.len() + 1,
+        RemoveChild { parents, .. } | RemoveChildren { parents } => parents.len(),
+
+        // Variants ActionComponent never carries — no authored targets.
+        _ => 0,
+    }
+}
+
+/// Apply resolved ids back into `signal`'s ComponentId slots in declaration
+/// order. Caller must guarantee `ids.len() == signal_target_slot_count(signal)`.
+pub fn apply_resolved_targets(signal: &mut IntentValue, ids: &[ComponentId]) {
+    use IntentValue::*;
+    let mut cursor = 0usize;
+    let mut take = |n: usize| -> &[ComponentId] {
+        let slice = &ids[cursor..cursor + n];
+        cursor += n;
+        slice
+    };
+    match signal {
+        Noop | Print { .. } => {}
+
+        SetColor { component_ids, .. }
+        | SetText { component_ids, .. }
+        | SetPosition { component_ids, .. }
+        | Detach { component_ids }
+        | RemoveSubtree { component_ids }
+        | AudioGraphRebuild { component_ids }
+        | RequestRaycast { component_ids }
+        | AudioLowPassSetCutoffHz { component_ids, .. }
+        | AudioBandPassSetCenterHz { component_ids, .. }
+        | OscillatorSetEnabled { component_ids, .. }
+        | OscillatorSetPitch { component_ids, .. }
+        | OscillatorScheduleSetPitch { component_ids, .. }
+        | OscillatorScheduleSetNote { component_ids, .. }
+        | OscillatorScheduleMusicNote { component_ids, .. }
+        | MusicSetNote { component_ids, .. }
+        | UpdateTransform { component_ids, .. } => {
+            let n = component_ids.len();
+            component_ids.copy_from_slice(take(n));
+        }
+
+        Attach { parents, child } | AttachClone { parents, prefab_root: child } => {
+            let n = parents.len();
+            parents.copy_from_slice(take(n));
+            *child = take(1)[0];
+        }
+        RemoveChild { parents, .. } | RemoveChildren { parents } => {
+            let n = parents.len();
+            parents.copy_from_slice(take(n));
+        }
+
+        _ => {}
+    }
+    debug_assert_eq!(cursor, ids.len(), "slot count mismatch in apply_resolved_targets");
 }
 
 impl Component for ActionComponent {
@@ -456,6 +599,53 @@ fn get_ids(
         .get(key)
         .ok_or_else(|| format!("ActionComponent missing '{key}'"))?;
     decode_ids(v)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use slotmap::KeyData;
+
+    fn cid(n: u64) -> ComponentId {
+        ComponentId::from(KeyData::from_ffi(n))
+    }
+
+    #[test]
+    fn slot_count_matches_apply_for_attach_variant() {
+        let mut iv = IntentValue::Attach {
+            parents: vec![ComponentId::null(), ComponentId::null()],
+            child: ComponentId::null(),
+        };
+        assert_eq!(signal_target_slot_count(&iv), 3);
+        apply_resolved_targets(&mut iv, &[cid(10), cid(11), cid(12)]);
+        let IntentValue::Attach { parents, child } = iv else {
+            unreachable!()
+        };
+        assert_eq!(parents, vec![cid(10), cid(11)]);
+        assert_eq!(child, cid(12));
+    }
+
+    #[test]
+    fn slot_count_matches_apply_for_vec_only_variant() {
+        let mut iv = IntentValue::SetColor {
+            component_ids: vec![ComponentId::null(), ComponentId::null()],
+            rgba: [1.0, 0.0, 0.0, 1.0],
+        };
+        assert_eq!(signal_target_slot_count(&iv), 2);
+        apply_resolved_targets(&mut iv, &[cid(7), cid(8)]);
+        let IntentValue::SetColor { component_ids, .. } = iv else {
+            unreachable!()
+        };
+        assert_eq!(component_ids, vec![cid(7), cid(8)]);
+    }
+
+    #[test]
+    fn no_slots_for_print() {
+        let iv = IntentValue::Print {
+            message: "hi".into(),
+        };
+        assert_eq!(signal_target_slot_count(&iv), 0);
+    }
 }
 
 fn get_value_as<T: serde::de::DeserializeOwned>(
