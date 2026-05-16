@@ -255,7 +255,7 @@ fn resolve_type_name(raw: &str) -> String {
 /// - REPL `dump` and scene save: subtree → CE → unparser → text.
 pub fn subtree_to_ce_ast(world: &World, root: ComponentId) -> Result<ComponentExpression, String> {
     // First pass: collect every GUID referenced by any ActionComponent in
-    // the subtree via `ActionTarget::Guid`. These are the targets that
+    // the subtree via `ComponentRef::Guid`. These are the targets that
     // need their GUID preserved across save/load so the dumped
     // `@uuid:<g>` selector still resolves on reload.
     let mut referenced_guids: std::collections::HashSet<uuid::Uuid> =
@@ -270,17 +270,17 @@ fn collect_referenced_guids(
     node: ComponentId,
     out: &mut std::collections::HashSet<uuid::Uuid>,
 ) {
-    use crate::engine::ecs::component::{ActionComponent, ActionTarget, IKChainComponent};
+    use crate::engine::ecs::component::{ActionComponent, ComponentRef, IKChainComponent};
     if let Some(action) = world.get_component_by_id_as::<ActionComponent>(node) {
         for src in &action.target_sources {
-            if let ActionTarget::Guid(u) = src {
+            if let ComponentRef::Guid(u) = src {
                 out.insert(*u);
             }
         }
     }
     if let Some(ik) = world.get_component_by_id_as::<IKChainComponent>(node) {
         for src in [&ik.target_source, &ik.end_effector_source].iter().copied().flatten() {
-            if let ActionTarget::Guid(u) = src {
+            if let ComponentRef::Guid(u) = src {
                 out.insert(*u);
             }
         }
@@ -316,7 +316,7 @@ fn subtree_to_ce_ast_inner(
     }
 
     // Preserve `guid` whenever this component is referenced by some
-    // Action via `ActionTarget::Guid`. The dumped `@uuid:<g>` selector
+    // Action via `ComponentRef::Guid`. The dumped `@uuid:<g>` selector
     // can only resolve on reload if `spawn_tree` restores the same GUID.
     // Whether `name` is also set is irrelevant — names don't help
     // `@uuid:` lookups.
@@ -534,7 +534,7 @@ fn arg_str(args: &[Value], i: usize) -> Result<&str, String> { val_as_str(arg(ar
 fn arg_f32_arr<const N: usize>(args: &[Value], i: usize) -> Result<[f32; N], String> { val_as_f32_array(arg(args, i)?) }
 fn arg_str_vec(args: &[Value], i: usize) -> Result<Vec<String>, String> { val_as_str_vec(arg(args, i)?) }
 
-/// Produce an `ActionTarget` (authoring metadata) from the i-th arg.
+/// Produce an `ComponentRef` (authoring metadata) from the i-th arg.
 ///
 /// Mapping:
 /// - `Value::ComponentObject { id, .. }` → `Guid(world.guid_of(id))`. The
@@ -544,23 +544,23 @@ fn arg_str_vec(args: &[Value], i: usize) -> Result<Vec<String>, String> { val_as
 ///   runtime resolution skips selector parsing entirely for the common
 ///   guid-reference case.
 /// - Any other string / identifier → `Query(s)` verbatim.
-pub(crate) fn arg_target_source(
+pub(crate) fn arg_component_ref(
     world: &World,
     args: &[Value],
     i: usize,
-) -> Result<crate::engine::ecs::component::ActionTarget, String> {
-    value_to_target_source(world, arg(args, i)?)
+) -> Result<crate::engine::ecs::component::ComponentRef, String> {
+    value_to_component_ref(world, arg(args, i)?)
 }
 
-/// Vec form of `arg_target_source`. Mixed handle / string elements OK.
-pub(crate) fn arg_target_source_vec(
+/// Vec form of `arg_component_ref`. Mixed handle / string elements OK.
+pub(crate) fn arg_component_ref_vec(
     world: &World,
     args: &[Value],
     i: usize,
-) -> Result<Vec<crate::engine::ecs::component::ActionTarget>, String> {
+) -> Result<Vec<crate::engine::ecs::component::ComponentRef>, String> {
     match arg(args, i)? {
-        Value::Array(items) => items.iter().map(|v| value_to_target_source(world, v)).collect(),
-        other => value_to_target_source(world, other).map(|t| vec![t]),
+        Value::Array(items) => items.iter().map(|v| value_to_component_ref(world, v)).collect(),
+        other => value_to_component_ref(world, other).map(|t| vec![t]),
     }
 }
 
@@ -574,19 +574,19 @@ fn apply_guid_named_prop(world: &mut World, id: ComponentId, val: &Value) -> Res
     world.set_component_guid(id, parsed)
 }
 
-/// Best-effort resolution of an `ActionTarget` to a ComponentId at
+/// Best-effort resolution of an `ComponentRef` to a ComponentId at
 /// registry-call time. Returns `None` when the referent doesn't exist
 /// yet — caller is expected to leave the resolved id as a null sentinel
 /// and have a later system pass fill it in (e.g. the AnimationSystem
 /// resolution path for Action; AvatarControlSystem for IKChain).
-pub(crate) fn resolve_target_source(
+pub(crate) fn resolve_component_ref(
     world: &World,
-    src: &crate::engine::ecs::component::ActionTarget,
+    src: &crate::engine::ecs::component::ComponentRef,
 ) -> Option<ComponentId> {
-    use crate::engine::ecs::component::ActionTarget;
+    use crate::engine::ecs::component::ComponentRef;
     match src {
-        ActionTarget::Guid(uuid) => world.component_id_by_guid(*uuid),
-        ActionTarget::Query(selector) => {
+        ComponentRef::Guid(uuid) => world.component_id_by_guid(*uuid),
+        ComponentRef::Query(selector) => {
             let roots: Vec<ComponentId> = world
                 .all_components()
                 .filter(|&cid| world.parent_of(cid).is_none())
@@ -598,26 +598,26 @@ pub(crate) fn resolve_target_source(
     }
 }
 
-fn value_to_target_source(
+fn value_to_component_ref(
     world: &World,
     v: &Value,
-) -> Result<crate::engine::ecs::component::ActionTarget, String> {
-    use crate::engine::ecs::component::ActionTarget;
+) -> Result<crate::engine::ecs::component::ComponentRef, String> {
+    use crate::engine::ecs::component::ComponentRef;
     match v {
         Value::ComponentObject { id, .. } => {
             let guid = world
                 .get_component_record(*id)
                 .map(|n| n.guid)
                 .ok_or_else(|| format!("component handle {id:?} not found in world"))?;
-            Ok(ActionTarget::Guid(guid))
+            Ok(ComponentRef::Guid(guid))
         }
         Value::String(s) | Value::Identifier(s) => {
             if let Some(hex) = s.strip_prefix("@uuid:") {
                 let uuid = uuid::Uuid::parse_str(hex)
                     .map_err(|e| format!("invalid uuid in '@uuid:{hex}': {e}"))?;
-                Ok(ActionTarget::Guid(uuid))
+                Ok(ComponentRef::Guid(uuid))
             } else {
-                Ok(ActionTarget::Query(s.clone()))
+                Ok(ComponentRef::Query(s.clone()))
             }
         }
         other => Err(format!(
@@ -1005,26 +1005,26 @@ fn create_component(
                 Some("noop") => add!(ActionComponent::default()),
                 Some("print") => add!(ActionComponent::print(arg_str(args, 0)?)),
                 Some("set_color") => {
-                    let targets = arg_target_source_vec(world, args, 0)?;
+                    let targets = arg_component_ref_vec(world, args, 0)?;
                     let rgba = arg_f32_arr::<4>(args, 1)?;
                     let signal = IV::SetColor { component_ids: null_ids(targets.len()), rgba };
                     add!(ActionComponent::new_authored(signal, targets))
                 }
                 Some("set_text") => {
-                    let targets = arg_target_source_vec(world, args, 0)?;
+                    let targets = arg_component_ref_vec(world, args, 0)?;
                     let text = arg_str(args, 1)?.to_string();
                     let signal = IV::SetText { component_ids: null_ids(targets.len()), text };
                     add!(ActionComponent::new_authored(signal, targets))
                 }
                 Some("set_position") => {
-                    let targets = arg_target_source_vec(world, args, 0)?;
+                    let targets = arg_component_ref_vec(world, args, 0)?;
                     let position = arg_f32_arr::<3>(args, 1)?;
                     let signal = IV::SetPosition { component_ids: null_ids(targets.len()), position };
                     add!(ActionComponent::new_authored(signal, targets))
                 }
                 Some("attach") => {
-                    let parents = arg_target_source_vec(world, args, 0)?;
-                    let child = arg_target_source(world, args, 1)?;
+                    let parents = arg_component_ref_vec(world, args, 0)?;
+                    let child = arg_component_ref(world, args, 1)?;
                     let mut sources = parents.clone();
                     sources.push(child);
                     let signal = IV::Attach {
@@ -1034,8 +1034,8 @@ fn create_component(
                     add!(ActionComponent::new_authored(signal, sources))
                 }
                 Some("attach_clone") => {
-                    let parents = arg_target_source_vec(world, args, 0)?;
-                    let prefab = arg_target_source(world, args, 1)?;
+                    let parents = arg_component_ref_vec(world, args, 0)?;
+                    let prefab = arg_component_ref(world, args, 1)?;
                     let mut sources = parents.clone();
                     sources.push(prefab);
                     let signal = IV::AttachClone {
@@ -1045,22 +1045,22 @@ fn create_component(
                     add!(ActionComponent::new_authored(signal, sources))
                 }
                 Some("detach") => {
-                    let targets = arg_target_source_vec(world, args, 0)?;
+                    let targets = arg_component_ref_vec(world, args, 0)?;
                     let signal = IV::Detach { component_ids: null_ids(targets.len()) };
                     add!(ActionComponent::new_authored(signal, targets))
                 }
                 Some("remove_subtree") => {
-                    let targets = arg_target_source_vec(world, args, 0)?;
+                    let targets = arg_component_ref_vec(world, args, 0)?;
                     let signal = IV::RemoveSubtree { component_ids: null_ids(targets.len()) };
                     add!(ActionComponent::new_authored(signal, targets))
                 }
                 Some("request_raycast") => {
-                    let targets = arg_target_source_vec(world, args, 0)?;
+                    let targets = arg_component_ref_vec(world, args, 0)?;
                     let signal = IV::RequestRaycast { component_ids: null_ids(targets.len()) };
                     add!(ActionComponent::new_authored(signal, targets))
                 }
                 Some("update_transform") => {
-                    let target = arg_target_source(world, args, 0)?;
+                    let target = arg_component_ref(world, args, 0)?;
                     let translation = arg_f32_arr::<3>(args, 1)?;
                     let rotation_euler = arg_f32_arr::<3>(args, 2)?;
                     let scale = arg_f32_arr::<3>(args, 3)?;
@@ -1077,7 +1077,7 @@ fn create_component(
                     add!(ActionComponent::new_authored(signal, vec![target]))
                 }
                 Some("update_transform_quat") => {
-                    let target = arg_target_source(world, args, 0)?;
+                    let target = arg_component_ref(world, args, 0)?;
                     let translation = arg_f32_arr::<3>(args, 1)?;
                     let rotation_quat = arg_f32_arr::<4>(args, 2)?;
                     let scale = arg_f32_arr::<3>(args, 3)?;
@@ -1486,8 +1486,8 @@ fn apply_call(
                 }
             }
             "target" => {
-                let src = arg_target_source(world, args, 0)?;
-                let resolved = resolve_target_source(world, &src);
+                let src = arg_component_ref(world, args, 0)?;
+                let resolved = resolve_component_ref(world, &src);
                 if let Some(ik) = world.get_component_by_id_as_mut::<IKChainComponent>(id) {
                     ik.target_source = Some(src);
                     if let Some(r) = resolved {
@@ -1496,8 +1496,8 @@ fn apply_call(
                 }
             }
             "end_effector" => {
-                let src = arg_target_source(world, args, 0)?;
-                let resolved = resolve_target_source(world, &src);
+                let src = arg_component_ref(world, args, 0)?;
+                let resolved = resolve_component_ref(world, &src);
                 if let Some(ik) = world.get_component_by_id_as_mut::<IKChainComponent>(id) {
                     ik.end_effector_source = Some(src);
                     if let Some(r) = resolved {

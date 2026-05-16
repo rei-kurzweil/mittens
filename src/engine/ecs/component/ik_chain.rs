@@ -1,5 +1,5 @@
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::{ActionTarget, Component};
+use crate::engine::ecs::component::{ComponentRef, Component};
 
 /// Solver configuration for an `IKChainComponent`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -67,9 +67,9 @@ pub struct IKChainComponent {
     /// Authored form of `target_id` for round-trip dump. `None` for
     /// IKChains wired purely at runtime (e.g. by `AvatarControlSystem`),
     /// which have no MMS source to preserve.
-    pub target_source: Option<ActionTarget>,
+    pub target_source: Option<ComponentRef>,
     /// Authored form of `end_effector_id` for round-trip dump.
-    pub end_effector_source: Option<ActionTarget>,
+    pub end_effector_source: Option<ComponentRef>,
 
     component: Option<ComponentId>,
 }
@@ -92,12 +92,12 @@ impl IKChainComponent {
         self
     }
 
-    pub fn with_target_source(mut self, src: ActionTarget) -> Self {
+    pub fn with_target_source(mut self, src: ComponentRef) -> Self {
         self.target_source = Some(src);
         self
     }
 
-    pub fn with_end_effector_source(mut self, src: ActionTarget) -> Self {
+    pub fn with_end_effector_source(mut self, src: ComponentRef) -> Self {
         self.end_effector_source = Some(src);
         self
     }
@@ -139,10 +139,10 @@ impl Component for IKChainComponent {
                 vec![num(max_iterations as f64), num(tolerance as f64)],
             ),
         };
-        fn target_expr(t: &ActionTarget) -> Expression {
+        fn target_expr(t: &ComponentRef) -> Expression {
             match t {
-                ActionTarget::Guid(u) => Expression::String(format!("@uuid:{u}")),
-                ActionTarget::Query(s) => Expression::String(s.clone()),
+                ComponentRef::Guid(u) => Expression::String(format!("@uuid:{u}")),
+                ComponentRef::Query(s) => Expression::String(s.clone()),
             }
         }
         let mut ce = ce_call("IKChain", solver_call.0, solver_call.1)

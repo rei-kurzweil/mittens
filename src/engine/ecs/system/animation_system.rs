@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::engine::ecs::component::{
-    ActionComponent, ActionTarget, AnimationComponent, AnimationState, KeyframeComponent,
+    ActionComponent, ComponentRef, AnimationComponent, AnimationState, KeyframeComponent,
     ResolveTargetsMode, action::{apply_resolved_targets, signal_target_slot_count},
 };
 use crate::engine::ecs::system::System;
@@ -33,8 +33,8 @@ struct AnimationRuntime {
 /// returns Ok immediately if the action is already resolved.
 ///
 /// Lookup rules:
-/// - `ActionTarget::Guid(uuid)` → `world.component_id_by_guid` (O(1)).
-/// - `ActionTarget::Query(selector)` → `world.find_component` walked from
+/// - `ComponentRef::Guid(uuid)` → `world.component_id_by_guid` (O(1)).
+/// - `ComponentRef::Query(selector)` → `world.find_component` walked from
 ///   every world root (matches the registry-time `resolve_action_target`
 ///   behavior for forward refs / scenes spawned with multiple roots).
 fn resolve_action_targets(world: &mut World, action_id: ComponentId) -> Result<(), String> {
@@ -59,10 +59,10 @@ fn resolve_action_targets(world: &mut World, action_id: ComponentId) -> Result<(
     let mut resolved: Vec<ComponentId> = Vec::with_capacity(sources.len());
     for source in &sources {
         let id = match source {
-            ActionTarget::Guid(uuid) => world
+            ComponentRef::Guid(uuid) => world
                 .component_id_by_guid(*uuid)
                 .ok_or_else(|| format!("resolve: no component with guid {uuid}"))?,
-            ActionTarget::Query(selector) => {
+            ComponentRef::Query(selector) => {
                 let roots: Vec<ComponentId> = world
                     .all_components()
                     .filter(|&cid| world.parent_of(cid).is_none())

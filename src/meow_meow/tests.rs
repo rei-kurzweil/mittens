@@ -1205,7 +1205,7 @@ fn roundtrip_subtree(source_world: &World, root: ComponentId) -> (World, Compone
 #[test]
 fn roundtrip_action_query_selector_preserved_verbatim() {
     use crate::engine::ecs::component::{
-        ActionComponent, ActionTarget, KeyframeComponent, TransformComponent,
+        ActionComponent, ComponentRef, KeyframeComponent, TransformComponent,
     };
     use crate::engine::ecs::IntentValue;
     use slotmap::Key;
@@ -1222,7 +1222,7 @@ fn roundtrip_action_query_selector_preserved_verbatim() {
     };
     let action = w.add_component(ActionComponent::new_authored(
         signal,
-        vec![ActionTarget::Query("#hero".to_string())],
+        vec![ComponentRef::Query("#hero".to_string())],
     ));
     w.add_child(kf, action).unwrap();
 
@@ -1234,7 +1234,7 @@ fn roundtrip_action_query_selector_preserved_verbatim() {
         .unwrap();
     assert_eq!(comp.target_sources.len(), 1);
     match &comp.target_sources[0] {
-        ActionTarget::Query(s) => assert_eq!(s, "#hero"),
+        ComponentRef::Query(s) => assert_eq!(s, "#hero"),
         other => panic!("expected Query selector, got {other:?}"),
     }
 }
@@ -1242,7 +1242,7 @@ fn roundtrip_action_query_selector_preserved_verbatim() {
 #[test]
 fn roundtrip_action_handle_becomes_guid_and_target_keeps_guid() {
     use crate::engine::ecs::component::{
-        ActionComponent, ActionTarget, KeyframeComponent, TransformComponent,
+        ActionComponent, ComponentRef, KeyframeComponent, TransformComponent,
     };
     use crate::engine::ecs::IntentValue;
     use slotmap::Key;
@@ -1263,7 +1263,7 @@ fn roundtrip_action_handle_becomes_guid_and_target_keeps_guid() {
     };
     let action = w.add_component(ActionComponent::new_authored(
         signal,
-        vec![ActionTarget::Guid(target_guid)],
+        vec![ComponentRef::Guid(target_guid)],
     ));
     w.add_child(kf, action).unwrap();
 
@@ -1275,7 +1275,7 @@ fn roundtrip_action_handle_becomes_guid_and_target_keeps_guid() {
         .get_component_by_id_as::<ActionComponent>(new_action)
         .unwrap();
     match &comp.target_sources[0] {
-        ActionTarget::Guid(u) => assert_eq!(*u, target_guid),
+        ComponentRef::Guid(u) => assert_eq!(*u, target_guid),
         other => panic!("expected Guid, got {other:?}"),
     }
 
@@ -1291,7 +1291,7 @@ fn roundtrip_action_handle_becomes_guid_and_target_keeps_guid() {
 #[test]
 fn roundtrip_action_named_and_guid_referenced_target_emits_both() {
     use crate::engine::ecs::component::{
-        ActionComponent, ActionTarget, KeyframeComponent, TransformComponent,
+        ActionComponent, ComponentRef, KeyframeComponent, TransformComponent,
     };
     use crate::engine::ecs::IntentValue;
     use slotmap::Key;
@@ -1312,7 +1312,7 @@ fn roundtrip_action_named_and_guid_referenced_target_emits_both() {
     };
     let action = w.add_component(ActionComponent::new_authored(
         signal,
-        vec![ActionTarget::Guid(target_guid)],
+        vec![ComponentRef::Guid(target_guid)],
     ));
     w.add_child(kf, action).unwrap();
 
@@ -1342,7 +1342,7 @@ fn roundtrip_action_named_and_guid_referenced_target_emits_both() {
         .get_component_by_id_as::<ActionComponent>(new_action)
         .unwrap();
     match &comp.target_sources[0] {
-        ActionTarget::Guid(u) => assert_eq!(*u, target_guid),
+        ComponentRef::Guid(u) => assert_eq!(*u, target_guid),
         other => panic!("expected Guid, got {other:?}"),
     }
 }
@@ -1375,7 +1375,7 @@ fn roundtrip_action_unreferenced_component_does_not_get_guid_emit() {
 #[test]
 fn roundtrip_ikchain_target_and_end_effector_via_selectors() {
     use crate::engine::ecs::component::{
-        ActionTarget, IKChainComponent, IKSolver, TransformComponent,
+        ComponentRef, IKChainComponent, IKSolver, TransformComponent,
     };
 
     let mut w = World::default();
@@ -1390,8 +1390,8 @@ fn roundtrip_ikchain_target_and_end_effector_via_selectors() {
         ee,
     );
     ik = ik
-        .with_target_source(ActionTarget::Query("#hand_target".to_string()))
-        .with_end_effector_source(ActionTarget::Query("#end_effector".to_string()));
+        .with_target_source(ComponentRef::Query("#hand_target".to_string()))
+        .with_end_effector_source(ComponentRef::Query("#end_effector".to_string()));
     let ik_id = w.add_component(ik);
     w.add_child(root, ik_id).unwrap();
 
@@ -1401,11 +1401,11 @@ fn roundtrip_ikchain_target_and_end_effector_via_selectors() {
         .get_component_by_id_as::<IKChainComponent>(new_ik_id)
         .unwrap();
     match &new_ik.target_source {
-        Some(ActionTarget::Query(s)) => assert_eq!(s, "#hand_target"),
+        Some(ComponentRef::Query(s)) => assert_eq!(s, "#hand_target"),
         other => panic!("expected Query target_source, got {other:?}"),
     }
     match &new_ik.end_effector_source {
-        Some(ActionTarget::Query(s)) => assert_eq!(s, "#end_effector"),
+        Some(ComponentRef::Query(s)) => assert_eq!(s, "#end_effector"),
         other => panic!("expected Query end_effector_source, got {other:?}"),
     }
     // Registry should have resolved them too since the named targets
@@ -1424,7 +1424,7 @@ fn roundtrip_ikchain_target_and_end_effector_via_selectors() {
 #[test]
 fn roundtrip_ikchain_guid_handle_preserves_target_guid() {
     use crate::engine::ecs::component::{
-        ActionTarget, IKChainComponent, IKSolver, TransformComponent,
+        ComponentRef, IKChainComponent, IKSolver, TransformComponent,
     };
 
     let mut w = World::default();
@@ -1441,8 +1441,8 @@ fn roundtrip_ikchain_guid_handle_preserves_target_guid() {
         target,
         ee,
     )
-    .with_target_source(ActionTarget::Guid(target_guid))
-    .with_end_effector_source(ActionTarget::Guid(ee_guid));
+    .with_target_source(ComponentRef::Guid(target_guid))
+    .with_end_effector_source(ComponentRef::Guid(ee_guid));
     let ik_id = w.add_component(ik);
     w.add_child(root, ik_id).unwrap();
 

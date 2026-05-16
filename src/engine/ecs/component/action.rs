@@ -1,22 +1,5 @@
-use super::Component;
+use super::{Component, ComponentRef};
 use crate::engine::ecs::{ComponentId, IntentValue};
-
-/// How a ComponentId target was authored. Preserved verbatim through dump
-/// so save → reload reproduces the original source form.
-///
-/// `Guid` covers two authoring paths that collapse to "we know the target's
-/// uuid": author wrote `@uuid:<hex>` as a selector string, or author passed
-/// a live `Value::ComponentObject` (let-bound / query result) which the
-/// registry resolves to a guid at call-construction time.
-///
-/// `Query` is anything else the author wrote as a selector string —
-/// `#name`, `[attr=value]`, etc. — preserved as-is so dump emits the same
-/// string.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ActionTarget {
-    Guid(uuid::Uuid),
-    Query(String),
-}
 
 #[derive(Debug, Clone)]
 pub struct ActionComponent {
@@ -27,7 +10,7 @@ pub struct ActionComponent {
     /// Authoring metadata, one entry per ComponentId slot in `signal`,
     /// ordered by the slot's declaration order in the variant. Used by
     /// dump (lossless round-trip) and by resolution (look up ids).
-    pub target_sources: Vec<ActionTarget>,
+    pub target_sources: Vec<ComponentRef>,
     /// Whether `signal`'s ComponentId slots hold real ids (true) or null
     /// placeholders (false). Set by the resolution pass invoked by
     /// `AnimationSystem` per the owning `AnimationComponent`'s configured
@@ -52,7 +35,7 @@ impl ActionComponent {
     /// plus the authoring sources for each slot (in declaration order).
     /// `resolved` starts false; resolution happens when the owning
     /// `AnimationSystem` first processes this action.
-    pub fn new_authored(signal: IntentValue, target_sources: Vec<ActionTarget>) -> Self {
+    pub fn new_authored(signal: IntentValue, target_sources: Vec<ComponentRef>) -> Self {
         Self {
             signal,
             target_sources,
@@ -198,21 +181,21 @@ impl Component for ActionComponent {
         use crate::engine::ecs::component::ce_helpers::*;
         use crate::meow_meow::ast::Expression;
 
-        // Render an ActionTarget back to the surface form the author wrote.
+        // Render an ComponentRef back to the surface form the author wrote.
         // Guid → "@uuid:<hex>". Query → the original selector string. Both
         // are Expression::String so the registry's arg_target_source can
         // re-parse them.
-        fn target_expr(t: &ActionTarget) -> Expression {
+        fn target_expr(t: &ComponentRef) -> Expression {
             match t {
-                ActionTarget::Guid(u) => Expression::String(format!("@uuid:{u}")),
-                ActionTarget::Query(s) => Expression::String(s.clone()),
+                ComponentRef::Guid(u) => Expression::String(format!("@uuid:{u}")),
+                ComponentRef::Query(s) => Expression::String(s.clone()),
             }
         }
         // For "vec-of-targets" arg slots: always emit an Array so the
         // dump form matches the registry's expectation
         // (`arg_target_source_vec` accepts arrays or single values, but
         // emitting an array is unambiguous and round-trip-stable).
-        let targets_expr = |slice: &[ActionTarget]| -> Expression {
+        let targets_expr = |slice: &[ComponentRef]| -> Expression {
             Expression::Array(slice.iter().map(target_expr).collect())
         };
 
