@@ -2,7 +2,8 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     Camera2DComponent, Camera3DComponent, CollisionComponent, RenderableComponent,
-    TransformComponent, TransformParentComponent, TransformPipelineOutputComponent,
+    TransformComponent, TransformForkTRSComponent, TransformParentComponent,
+    TransformPipelineComponent, TransformPipelineOutputComponent,
 };
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::System;
@@ -75,6 +76,12 @@ impl TransformSystem {
         world
             .get_component_by_id_as::<TransformPipelineOutputComponent>(cid)
             .is_some()
+            || world
+                .get_component_by_id_as::<TransformPipelineComponent>(cid)
+                .is_some()
+            || world
+                .get_component_by_id_as::<TransformForkTRSComponent>(cid)
+                .is_some()
             || world.get_component_by_id_as::<TransformParentComponent>(cid).is_some()
     }
 

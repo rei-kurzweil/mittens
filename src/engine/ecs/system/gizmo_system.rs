@@ -4,7 +4,6 @@ use crate::engine::ecs::component::{
     TransformGizmoComponent, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
     TransformGizmoTranslateComponent, TransformMapRotationComponent,
     TransformMapScaleComponent, TransformMapTranslationComponent,
-    TransformPipelineComponent, TransformPipelineOutputComponent,
 };
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
@@ -982,7 +981,6 @@ impl TransformGizmoSystem {
             world: &mut World,
             parent: ComponentId,
             pipeline_name: &str,
-            output_name: &str,
             include_translation_map: bool,
             include_rotation_map: bool,
             include_scale_map: bool,
@@ -990,17 +988,11 @@ impl TransformGizmoSystem {
             drop_rotation: bool,
             drop_scale: bool,
         ) -> ComponentId {
-            let pipeline = world.add_component_boxed_named(
-                pipeline_name,
-                Box::new(TransformPipelineComponent::new()),
-            );
-            let _ = world.add_child(parent, pipeline);
-
             let fork = world.add_component_boxed_named(
-                format!("{pipeline_name}:fork"),
+                pipeline_name,
                 Box::new(TransformForkTRSComponent::new()),
             );
-            let _ = world.add_child(pipeline, fork);
+            let _ = world.add_child(parent, fork);
 
             if include_translation_map {
                 let map = world.add_component_boxed_named(
@@ -1047,12 +1039,7 @@ impl TransformGizmoSystem {
                 }
             }
 
-            let output = world.add_component_boxed_named(
-                output_name,
-                Box::new(TransformPipelineOutputComponent::new()),
-            );
-            let _ = world.add_child(pipeline, output);
-            output
+            fork
         }
 
         if Self::debug_enabled() {
@@ -1068,7 +1055,6 @@ impl TransformGizmoSystem {
             world,
             component,
             "gizmo_pipeline",
-            "gizmo_pipeline_output",
             true,
             true,
             true,
@@ -1119,7 +1105,6 @@ impl TransformGizmoSystem {
             world,
             gizmo_visual_parent,
             "gizmo_space_world_pipeline",
-            "gizmo_space_world_output",
             true,
             true,
             true,
@@ -1131,7 +1116,6 @@ impl TransformGizmoSystem {
             world,
             gizmo_visual_parent,
             "gizmo_space_local_pipeline",
-            "gizmo_space_local_output",
             true,
             true,
             true,

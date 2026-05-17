@@ -127,11 +127,16 @@ impl TransformPipelineSystem {
         world: &World,
         root: ComponentId,
     ) -> Option<TransformPipeline> {
-        if world
-            .get_component_by_id_as::<TransformPipelineComponent>(root)
-            .is_some()
-        {
+        if world.get_component_by_id_as::<TransformPipelineComponent>(root).is_some() {
             return self.parse_pipeline_block(world, root);
+        }
+        if world.get_component_by_id_as::<TransformForkTRSComponent>(root).is_some() {
+            return Some(TransformPipeline {
+                owner_component: Some(root),
+                input: TransformPipelineInput::ParentWorld,
+                stages: vec![TransformPipelineStage::ForkTrs(self.parse_fork_trs(world, root))],
+                output: TransformPipelineOutput::ImplicitTransform,
+            });
         }
         None
     }
@@ -143,12 +148,43 @@ impl TransformPipelineSystem {
         input_world: TransformMatrix,
     ) -> Option<(TransformMatrix, Vec<ComponentId>)> {
         let block = self.parse_component_tree(world, root)?;
-        let outputs = match &block.output {
-            TransformPipelineOutput::ImplicitTransform => Vec::new(),
-            TransformPipelineOutput::OutputRoots(roots) => roots.clone(),
-        };
+        let outputs = self.downstream_children(world, root, &block);
         let world_matrix = self.evaluate_block(&block, input_world, world, self.last_dt_sec);
         Some((world_matrix, outputs))
+    }
+
+    fn downstream_children(
+        &self,
+        world: &World,
+        root: ComponentId,
+        block: &TransformPipeline,
+    ) -> Vec<ComponentId> {
+        if world.get_component_by_id_as::<TransformForkTRSComponent>(root).is_some() {
+            return world
+                .children_of(root)
+                .iter()
+                .copied()
+                .filter(|&child| {
+                    world.get_component_by_id_as::<TransformMapTranslationComponent>(child).is_none()
+                        && world.get_component_by_id_as::<TransformMapRotationComponent>(child).is_none()
+                        && world.get_component_by_id_as::<TransformMapScaleComponent>(child).is_none()
+                        && world.get_component_by_id_as::<TransformMergeTRSComponent>(child).is_none()
+                })
+                .collect();
+        }
+
+        if let TransformPipelineOutput::OutputRoots(roots) = &block.output {
+            if !roots.is_empty() {
+                return roots.clone();
+            }
+        }
+
+        world
+            .children_of(root)
+            .iter()
+            .copied()
+            .filter(|&child| self.parse_stage(world, child).is_none())
+            .collect()
     }
 
     pub fn pipeline_for_controller_rotation_smoothing(
@@ -925,5 +961,57 @@ mod tests {
         assert_eq!(stage.translation_ops, vec![TransformPipelineVec3Op::Pass]);
         assert_eq!(stage.rotation_ops, vec![TransformPipelineQuatOp::Pass]);
         assert_eq!(stage.scale_ops, vec![TransformPipelineVec3Op::Pass]);
+    }
+
+    #[test]
+    fn parses_fork_trs_as_root_pipeline() {
+        let mut world = World::default();
+        let fork = world.add_component(TransformForkTRSComponent::new());
+        let map_rotation = world.add_component(TransformMapRotationComponent::new());
+        let quat_filter =
+            world.add_component(QuatTemporalFilterComponent::new().with_smoothing_factor(9.0));
+
+        world.set_parent(map_rotation, Some(fork)).unwrap();
+        world.set_parent(quat_filter, Some(map_rotation)).unwrap();
+
+        let parser = TransformPipelineSystem::new();
+        let block = parser.parse_component_tree(&world, fork).expect("fork root block");
+        assert_eq!(block.owner_component, Some(fork));
+        assert_eq!(block.stages.len(), 1);
+        let TransformPipelineStage::ForkTrs(stage) = &block.stages[0] else {
+            panic!("expected fork stage");
+        };
+        assert_eq!(
+            stage.rotation_ops,
+            vec![TransformPipelineQuatOp::TemporalFilter {
+                smoothing_factor: 9.0
+            }]
+        );
+    }
+
+    #[test]
+    fn fork_root_returns_non_map_children_as_downstream_children() {
+        let mut world = World::default();
+        let fork = world.add_component(TransformForkTRSComponent::new());
+        let map_rotation = world.add_component(TransformMapRotationComponent::new());
+        let quat_filter =
+            world.add_component(QuatTemporalFilterComponent::new().with_smoothing_factor(9.0));
+        let downstream = world.add_component(TransformComponent::new());
+
+        world.set_parent(map_rotation, Some(fork)).unwrap();
+        world.set_parent(quat_filter, Some(map_rotation)).unwrap();
+        world.set_parent(downstream, Some(fork)).unwrap();
+
+        let mut system = TransformPipelineSystem::new();
+        let ident = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let (_, children) = system
+            .evaluate_pipeline_node(&world, fork, ident)
+            .expect("fork root eval");
+        assert_eq!(children, vec![downstream]);
     }
 }

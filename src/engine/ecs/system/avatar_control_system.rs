@@ -2,8 +2,7 @@ use crate::engine::ecs::component::{
     AvatarControlComponent, Camera3DComponent, CameraXRComponent, ControllerHand,
     ControllerXRComponent, IKChainComponent, IKSolver, QuatTemporalFilterComponent,
     QuatYawFollowComponent, TransformComponent, TransformForkTRSComponent,
-    TransformMapRotationComponent, TransformPipelineComponent,
-    TransformPipelineOutputComponent,
+    TransformMapRotationComponent,
 };
 use crate::engine::ecs::system::bone_mapping_system::BoneMappingSystem;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
@@ -250,38 +249,32 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     //
     // Topology:
     //   AVC
-    //     └── body_pipeline  (TransformPipelineComponent)
-    //           TransformForkTRSComponent
-    //             TransformMapRotationComponent
-    //               QuatYawFollowComponent { threshold, rate, initial_yaw, forward_plus_z }
-    //           TransformPipelineOutputComponent
-    //             model_root  ← re-parented here
+    //     └── body_pipeline  (TransformForkTRSComponent)
+    //           TransformMapRotationComponent
+    //             QuatYawFollowComponent { threshold, rate, initial_yaw, forward_plus_z }
+    //           model_root  ← re-parented here
     // -----------------------------------------------------------------------
     if !skip_body_pipeline {
-        let body_pipeline_id  = world.add_component(TransformPipelineComponent::new());
-        let fork_id           = world.add_component(TransformForkTRSComponent::new());
+        let body_pipeline_id  = world.add_component(TransformForkTRSComponent::new());
         let map_rot_id        = world.add_component(TransformMapRotationComponent::new());
         let yaw_follow_id     = world.add_component(
             QuatYawFollowComponent::new(body_yaw_threshold, body_yaw_rate)
                 .with_initial_yaw(initial_body_yaw)
                 .with_forward_plus_z_if(forward_plus_z),
         );
-        let pipeline_output_id = world.add_component(TransformPipelineOutputComponent::new());
 
         // Wire internal pipeline structure (all new, uninitialized).
-        let _ = world.set_parent(fork_id,           Some(body_pipeline_id));
-        let _ = world.set_parent(map_rot_id,         Some(fork_id));
-        let _ = world.set_parent(yaw_follow_id,      Some(map_rot_id));
-        let _ = world.set_parent(pipeline_output_id, Some(body_pipeline_id));
+        let _ = world.set_parent(map_rot_id, Some(body_pipeline_id));
+        let _ = world.set_parent(yaw_follow_id, Some(map_rot_id));
 
         if let Some(c) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
             c.body_pipeline_id = Some(body_pipeline_id);
         }
 
-        // Attach pipeline to AVC (initializes the pipeline tree).
+        // Attach fork-root pipeline to AVC (initializes the pipeline tree).
         emit_attach(emit, id, body_pipeline_id);
-        // Re-parent model_root under the pipeline output.
-        emit_attach(emit, pipeline_output_id, model_root_id);
+        // Re-parent model_root under the fork root.
+        emit_attach(emit, body_pipeline_id, model_root_id);
     }
 
     // -----------------------------------------------------------------------
@@ -343,22 +336,18 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
 
             if let Some(smoothing_factor) = hand_rotation_smoothing {
                 // Create smoothing pipeline under raw_driver.
-                let hp_id      = world.add_component(TransformPipelineComponent::new());
                 let hfork_id   = world.add_component(TransformForkTRSComponent::new());
                 let hmrot_id   = world.add_component(TransformMapRotationComponent::new());
                 let hfilt_id   = world.add_component(
                     QuatTemporalFilterComponent::new().with_smoothing_factor(smoothing_factor),
                 );
-                let hout_id    = world.add_component(TransformPipelineOutputComponent::new());
                 let smoothed_t = world.add_component(TransformComponent::new());
 
-                let _ = world.set_parent(hfork_id,   Some(hp_id));
-                let _ = world.set_parent(hmrot_id,   Some(hfork_id));
-                let _ = world.set_parent(hfilt_id,   Some(hmrot_id));
-                let _ = world.set_parent(hout_id,    Some(hp_id));
-                let _ = world.set_parent(smoothed_t, Some(hout_id));
+                let _ = world.set_parent(hmrot_id, Some(hfork_id));
+                let _ = world.set_parent(hfilt_id, Some(hmrot_id));
+                let _ = world.set_parent(smoothed_t, Some(hfork_id));
 
-                emit_attach(emit, raw_driver, hp_id);
+                emit_attach(emit, raw_driver, hfork_id);
                 emit_attach(emit, smoothed_t, bone);
             } else {
                 emit_attach(emit, raw_driver, bone);
