@@ -7,8 +7,9 @@ An opinionated game engine specially made for social vr, vtubing, css-driven UI 
 ### Cat Engine has three main components:
 + src/engine (vulkan renderer, components and ecs systems)
 + src/meow_meow (a cute programming language for building scenes and wiring up events)
-+ src/query (a query engine supporting css or meow meow query language; used by engine and meow_meow)
++ src/query (a query engine supporting css or meow meow query language; used by engine and meow_meow
 
+(see docs/meow_meow for an overview of .mms scripts)
 
 ## Running examples
 - Run examples in release mode by default: `cargo run --release --example <name>`.
