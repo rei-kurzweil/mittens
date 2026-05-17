@@ -4,6 +4,10 @@ Date: 2026-05-16
 
 This task captures the current serialization direction after the recent merge work.
 
+Related task:
+
+- [transform-parent-component-ref-routing.md](transform-parent-component-ref-routing.md)
+
 The main save/export goal is:
 
 - preserve a raw exact subtree dump path for debugging and tooling
@@ -82,6 +86,112 @@ It is:
 
 This doc does not lock in the exact transform-pipeline design yet. It only records that this prerequisite should be solved before the serialization policy work, because it makes the later save rules much simpler and more defensible.
 
+### What exists today in the transform pipeline
+
+The current runtime already gives us a few useful pieces, but they are narrower than the desired armature-viz split wants.
+
+What exists now:
+
+- pipeline input is always `ParentWorld`
+- a pipeline can redirect traversal to explicit `TransformPipelineOutput` roots
+- per-channel ops can already replace translation or rotation by sampling an ancestor transform via `TransformSampleAncestor.skip(n)`
+
+That means the engine already supports one form of “do not just inherit from the immediate authored parent.”
+
+However, the current operator is strictly relative and topology-local:
+
+- `TransformSampleAncestor` walks upward from the pipeline owner
+- it samples the `n`-th ancestor `TransformComponent`
+- it cannot point at an arbitrary other transform in the world
+- it does not use `ComponentRef`
+
+So the current system can express:
+
+- “use the parent bone above this splice instead of the immediate controller-driven transform”
+
+but it cannot yet express:
+
+- “treat the transform referenced by this selector or durable component reference as the input parent/basis for this pipeline”
+
+That missing capability is the main gap for a clean authored-tree / helper-tree split.
+
+### What exists today in `ComponentRef`
+
+The engine now has a durable, serializable `ComponentRef` abstraction.
+
+Current authored forms are:
+
+- `ComponentRef::Guid(uuid)`
+- `ComponentRef::Query(selector)`
+
+Current users are:
+
+- `ActionComponent.target_sources`
+- `IKChainComponent.target_source`
+- `IKChainComponent.end_effector_source`
+
+Current runtime resolution model:
+
+- guid refs resolve through `World::component_id_by_guid`
+- selector refs resolve through `World::find_component`
+- `AnimationSystem` resolves `ActionComponent` refs when needed
+- `IKSystem` resolves IK refs before solving
+
+This is useful because it means the durable authored-reference machinery already exists and already round-trips through MMS cleanly.
+
+### What is missing if transform pipeline ops should use `ComponentRef`
+
+Applying `ComponentRef` to the transform pipeline looks plausible, but it is not a one-line extension.
+
+Today, the transform-pipeline authored components are mostly tiny marker/config components that parse directly into runtime enums and `Copy` data.
+
+They do not currently have a resolution phase analogous to Action or IK.
+
+So if a future pipeline operator should say “sample world transform from this referenced component” or “treat this referenced transform as the parent/input basis,” that likely requires:
+
+- a new authored component or input component that stores `ComponentRef`
+- a resolution story for that ref at runtime
+- a decision about when unresolved refs are retried
+- runtime enum support in `TransformPipelineInput` or the per-channel op enums for ref-based sampling/input selection
+
+The important point is that this is feasible with current building blocks, but it is not already implemented.
+
+### Boilerplate / API shape note
+
+The current authored transform-pipeline topology is also somewhat verbose.
+
+Common shape today:
+
+```text
+TransformComponent
+  TransformPipeline
+    TransformForkTRS
+      TransformMapRotation
+        QuatTemporalFilter
+    TransformPipelineOutput
+      TransformComponent
+        ... driven subtree ...
+```
+
+That means even a simple “fork TRS and filter one channel” case requires:
+
+- an outer `TransformPipeline`
+- a `TransformForkTRS`
+- one or more map nodes
+- a `TransformPipelineOutput` node when driving a separate subtree
+
+That does support the current runtime model, but it is a clunky authoring surface.
+
+We should treat the question of reducing that boilerplate as a separate API-design task.
+
+Examples of the kind of future cleanup that may make sense:
+
+- allowing `TransformForkTRS` to act as a pipeline root without an otherwise-empty outer `TransformPipeline`
+- allowing more direct authoring of the common “filter one channel, passthrough the others” case
+- making input selection feel first-class instead of encoded indirectly through relative ancestor sampling
+
+Those changes should not be bundled into the serialization or armature-viz split task. The immediate prerequisite only needs enough transform-routing power to support the separate helper tree cleanly.
+
 ---
 
 ## 2. Serialization direction after that prerequisite
@@ -153,6 +263,8 @@ The important scope rule is:
 
 - verify whether the existing transform-pipeline output-root model can drive the separate helper tree cleanly
 - prefer an explicit transform-routing solution over re-entangling helper topology back into the authored subtree
+- evaluate whether this needs a new ref-based input/source operator rather than more `skip(n)` ancestor sampling
+- use the existing `ComponentRef` durability/resolution model as the starting point if a ref-based operator is added
 
 ### Stage 3 — add `SerializeComponent` and MMS `Serialize.on()` / `Serialize.off()`
 
@@ -195,5 +307,10 @@ The serialization task is complete when:
 ## 6. Open questions
 
 1. Can the current transform-pipeline output-root model drive separate armature visualization trees directly, or does it need a small extension?
-2. Should `Serialize.on()` be implemented immediately, or only after a real use case exists?
-3. Which existing user-facing commands should map to filtered scene/world save versus raw exact dump?
+2. Should the new transform-routing operator be:
+  - a pipeline input override using a referenced transform as the parent basis, or
+  - a per-channel sampling operator using a referenced transform source, or both?
+3. How much of the existing `ComponentRef` resolution model can be reused directly for transform-pipeline nodes, and where should that resolution live?
+4. Should transform-pipeline authoring boilerplate reduction be designed in the same pass, or explicitly deferred to a separate task after the new routing/input capability exists?
+5. Should `Serialize.on()` be implemented immediately, or only after a real use case exists?
+6. Which existing user-facing commands should map to filtered scene/world save versus raw exact dump?

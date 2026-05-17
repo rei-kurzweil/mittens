@@ -2,6 +2,16 @@
 
 This doc describes the current transform-pipeline direction in the engine.
 
+Conceptually, a transform pipeline should mean one or more transform operators inserted into a transform hierarchy between an upstream transform basis and a downstream subtree.
+
+The important consequence of that model is:
+
+- operators compose through ordinary parent/child structure
+- each operator consumes the transform output of its parent
+- each operator passes its own transform output to its children
+
+So “pipeline” should describe the inserted operator chain, not require a separate wrapper-centric authored model.
+
 It is broader than XR. The same transform-pipeline machinery should be able to cover:
 
 - XR controller / hand transform stabilization
@@ -21,6 +31,7 @@ The important current design shift is:
 ## Goals
 
 - Keep transform processing explicit in topology.
+- Keep the conceptual model simple: operators wedged into the hierarchy, not a parallel graph language for common cases.
 - Support per-channel transform operations.
 - Support temporal operators without pushing runtime state into serialized authored data.
 - Keep the current runtime shape simple enough for the use cases we actually have.
@@ -36,6 +47,8 @@ The important current design shift is:
 ## 1. Current authored model
 
 Authoring is done with explicit pipeline primitives in the component tree.
+
+The current authored surface is more wrapper-heavy than the intended conceptual model. The longer-term direction is that a transform pipeline should read as an operator chain inserted between two parts of the transform hierarchy.
 
 Current primitive components are:
 
@@ -60,11 +73,14 @@ TransformComponent
       TransformMapRotation
         QuatTemporalFilter
       TransformMapScale
-    TransformMergeTRS
-    TransformPipelineOutput
       TransformComponent
         ... driven subtree ...
 ```
+
+The important cleanup direction is:
+
+- the inserted operators are the interesting part
+- the mandatory wrapper and explicit output marker are not the desired long-term conceptual center
 
 Two important current examples:
 
