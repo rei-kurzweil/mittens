@@ -2,11 +2,11 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     Camera2DComponent, Camera3DComponent, CollisionComponent, RenderableComponent,
-    TransformComponent, TransformForkTRSComponent, TransformParentComponent,
+    TransformComponent, TransformParentComponent,
 };
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::System;
-use crate::engine::ecs::system::TransformPipelineSystem;
+use crate::engine::ecs::system::TransformStreamSystem;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::user_input::InputState;
@@ -71,49 +71,29 @@ impl TransformSystem {
         None
     }
 
-    fn is_transform_stream_boundary_between_tcs(world: &World, cid: ComponentId) -> bool {
-        world
-            .get_component_by_id_as::<TransformForkTRSComponent>(cid)
-            .is_some()
-            || world.get_component_by_id_as::<TransformParentComponent>(cid).is_some()
-    }
-
-    fn apply_transform_parent_basis(
-        world: &World,
-        node: ComponentId,
-        current_world: TransformMatrix,
-    ) -> TransformMatrix {
-        world
-            .get_component_by_id_as::<TransformParentComponent>(node)
-            .and_then(|tp| tp.resolve_target_component(world))
-            .and_then(|target| Self::world_model(world, target))
-            .unwrap_or(current_world)
-    }
-
     fn propagate_subtree(
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
         root_node: ComponentId,
         inherited_world: TransformMatrix,
-        transform_pipeline_system: &mut TransformPipelineSystem,
+        transform_stream_system: &mut TransformStreamSystem,
         camera_system: &mut crate::engine::ecs::system::CameraSystem,
         collision_system: &mut CollisionSystem,
     ) {
         let mut stack: Vec<(ComponentId, TransformMatrix)> = vec![(root_node, inherited_world)];
         while let Some((node, current_world)) = stack.pop() {
-            let current_world = Self::apply_transform_parent_basis(world, node, current_world);
-            let pipeline_evaluated = transform_pipeline_system.evaluate_pipeline_node(
+            let stream_evaluated = transform_stream_system.evaluate_stream_node(
                 world,
                 node,
                 current_world,
             );
-            let (current_world, pipeline_output_roots) = match pipeline_evaluated {
+            let (current_world, stream_output_roots) = match stream_evaluated {
                 Some((processed_world, outputs)) => (processed_world, Some(outputs)),
                 None => (current_world, None),
             };
 
-            let children: Vec<ComponentId> = match pipeline_output_roots {
+            let children: Vec<ComponentId> = match stream_output_roots {
                 Some(outputs) if !outputs.is_empty() => outputs,
                 _ => world.children_of(node).to_vec(),
             };
@@ -173,7 +153,7 @@ impl TransformSystem {
         world: &mut World,
         visuals: &mut VisualWorld,
         changed_component: ComponentId,
-        transform_pipeline_system: &mut TransformPipelineSystem,
+        transform_stream_system: &mut TransformStreamSystem,
         camera_system: &mut crate::engine::ecs::system::CameraSystem,
         light_system: &mut crate::engine::ecs::system::LightSystem,
         collision_system: &mut CollisionSystem,
@@ -205,7 +185,7 @@ impl TransformSystem {
                 visuals,
                 dependent,
                 inherited_world,
-                transform_pipeline_system,
+                transform_stream_system,
                 camera_system,
                 collision_system,
             );
@@ -260,7 +240,7 @@ impl TransformSystem {
         world: &mut World,
         visuals: &mut VisualWorld,
         component: ComponentId,
-        transform_pipeline_system: &mut TransformPipelineSystem,
+        transform_stream_system: &mut TransformStreamSystem,
         camera_system: &mut crate::engine::ecs::system::CameraSystem,
         light_system: &mut crate::engine::ecs::system::LightSystem,
         collision_system: &mut CollisionSystem,
@@ -275,7 +255,7 @@ impl TransformSystem {
         // operator and overwrite its output with incorrect values. Instead we treat that TC
         // as the chain root and start the chain-world from its cached `matrix_world`.
         let mut transform_chain: Vec<ComponentId> = Vec::new();
-        let mut pipeline_boundary = false; // true → transform_chain[0] is a pipeline-output TC
+        let mut stream_boundary = false; // true → transform_chain[0] is stream-operator-managed
         let mut cur = component;
         'chain: loop {
             if world.get_component_by_id_as::<TransformComponent>(cur).is_some() {
@@ -285,12 +265,12 @@ impl TransformSystem {
                 // inherited world basis). If so, its world is operator-managed — stop here.
                 let mut probe = cur;
                 while let Some(p) = world.parent_of(probe) {
-                    if Self::is_transform_stream_boundary_between_tcs(world, p) {
-                        pipeline_boundary = true;
+                    if transform_stream_system.is_transform_stream_boundary(world, p) {
+                        stream_boundary = true;
                         break 'chain;
                     }
                     if world.get_component_by_id_as::<TransformComponent>(p).is_some() {
-                        break; // reached next TC ancestor without finding a pipeline output
+                        break; // reached next TC ancestor without finding a stream boundary
                     }
                     probe = p;
                 }
@@ -302,10 +282,10 @@ impl TransformSystem {
 
         // Compute world matrices down the chain and write them back.
         //
-        // If `pipeline_boundary` is set, transform_chain[0] is under a pipeline output.
-        // Its cached `matrix_world` is the pipeline's result — use it as the starting world
-        // and skip recomputing it from local matrices (which would bypass the pipeline).
-        let (start_idx, mut chain_world) = if pipeline_boundary && !transform_chain.is_empty() {
+        // If `stream_boundary` is set, transform_chain[0] is under a stream operator.
+        // Its cached `matrix_world` is stream-managed — use it as the starting world and
+        // skip recomputing it from local matrices (which would bypass the operator).
+        let (start_idx, mut chain_world) = if stream_boundary && !transform_chain.is_empty() {
             let cached = world
                 .get_component_by_id_as::<TransformComponent>(transform_chain[0])
                 .map(|t| t.transform.matrix_world)
@@ -342,7 +322,7 @@ impl TransformSystem {
             visuals,
             component,
             root_world,
-            transform_pipeline_system,
+            transform_stream_system,
             camera_system,
             collision_system,
         );
@@ -354,7 +334,7 @@ impl TransformSystem {
             world,
             visuals,
             component,
-            transform_pipeline_system,
+            transform_stream_system,
             camera_system,
             light_system,
             collision_system,
@@ -367,7 +347,7 @@ mod tests {
     use super::TransformSystem;
     use crate::engine::ecs::component::{TransformComponent, TransformParentComponent};
     use crate::engine::ecs::system::{
-        CameraSystem, CollisionSystem, LightSystem, TransformPipelineSystem,
+        CameraSystem, CollisionSystem, LightSystem, TransformStreamSystem,
     };
     use crate::engine::ecs::World;
     use crate::engine::graphics::VisualWorld;
@@ -377,7 +357,7 @@ mod tests {
         let mut world = World::default();
         let mut visuals = VisualWorld::default();
         let mut transform_system = TransformSystem::new();
-        let mut transform_pipeline_system = TransformPipelineSystem::new();
+        let mut transform_stream_system = TransformStreamSystem::new();
         let mut camera_system = CameraSystem::new();
         let mut light_system = LightSystem::new();
         let mut collision_system = CollisionSystem::new();
@@ -399,7 +379,7 @@ mod tests {
             &mut world,
             &mut visuals,
             source,
-            &mut transform_pipeline_system,
+            &mut transform_stream_system,
             &mut camera_system,
             &mut light_system,
             &mut collision_system,

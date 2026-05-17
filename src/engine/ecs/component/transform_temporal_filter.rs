@@ -33,7 +33,7 @@ impl Component for QuatExtractYawComponent {
 /// advances a running `body_yaw` toward the head yaw when the delta exceeds
 /// `threshold`, at `rate` rad/s. Outputs a pure-Y quaternion for `body_yaw`.
 ///
-/// State lives in `TransformPipelineSystem` alongside `QuatTemporalFilter` state,
+/// State lives in `TransformStreamSystem` alongside `QuatTemporalFilter` state,
 /// keyed by stage path.
 ///
 /// `forward_plus_z` controls the yaw-extraction convention:

@@ -38,7 +38,7 @@ pub mod system_world;
 pub mod text_system;
 pub mod texture_system;
 pub mod transition_system;
-pub mod transform_pipeline_system;
+pub mod transform_stream_system;
 pub mod transform_system;
 
 pub use animation_system::AnimationSystem;
@@ -75,7 +75,7 @@ pub use system_world::SystemWorld;
 pub use text_system::TextSystem;
 pub use texture_system::TextureSystem;
 pub use transition_system::TransitionSystem;
-pub use transform_pipeline_system::TransformPipelineSystem;
+pub use transform_stream_system::TransformStreamSystem;
 pub use transform_system::TransformSystem;
 
 use super::World;

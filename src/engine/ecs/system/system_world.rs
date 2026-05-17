@@ -26,7 +26,7 @@ use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::TransitionSystem;
-use crate::engine::ecs::system::TransformPipelineSystem;
+use crate::engine::ecs::system::TransformStreamSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
 use crate::engine::ecs::system::{AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, GestureSystem, IKSystem, InspectorSystem, LayoutSystem, TransformGizmoSystem};
@@ -47,7 +47,7 @@ pub struct SystemWorld {
     pub animation: AnimationSystem,
     pub transition: TransitionSystem,
 
-    pub transform_pipeline: TransformPipelineSystem,
+    pub transform_stream: TransformStreamSystem,
     pub transform: TransformSystem,
     pub bvh: BvhSystem,
     pub collision: CollisionSystem,
@@ -1339,7 +1339,7 @@ impl SystemWorld {
             world,
             visuals,
             component,
-            &mut self.transform_pipeline,
+            &mut self.transform_stream,
             &mut self.camera,
             &mut self.light,
             &mut self.collision,
@@ -1599,7 +1599,7 @@ impl SystemWorld {
         queue.flush(world, self, visuals);
         self.tick_transition_runtime(world, visuals);
 
-        self.transform_pipeline.tick(world, visuals, input, dt_sec);
+        self.transform_stream.tick(world, visuals, input, dt_sec);
 
         // Ensure transforms are propagated before any camera systems consume world matrices.
         self.transform.tick(world, visuals, input, dt_sec);

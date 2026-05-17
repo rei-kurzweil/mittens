@@ -6,7 +6,7 @@ Supersedes: `docs/spec/ik-transform-pipelines.md`
 
 IK is a post-FK pass. It reads the world matrices established by `TransformSystem` and
 writes corrected local rotations back via `UpdateTransform`. It shares no primitives with
-`TransformPipelineSystem` — the two systems are orthogonal.
+`TransformStreamSystem` — the two systems are orthogonal.
 
 ---
 

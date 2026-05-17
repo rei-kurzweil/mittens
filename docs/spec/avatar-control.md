@@ -109,7 +109,7 @@ TransformPipeline  (input = driven_t world matrix, via nearest TC ancestor)
   ForkTRS
     MapRotation
       QuatYawFollow { threshold: body_yaw_threshold, rate: body_yaw_rate }
-        (state owned by TransformPipelineSystem, keyed by stage path)
+        (state owned by TransformStreamSystem, keyed by stage path)
     MergeTRS  (translation + scale pass through unchanged)
   PipelineOutput
     model_root  (re-parented here; inherits shaped body yaw, no pitch/roll)
@@ -233,7 +233,7 @@ The only authoring differences:
 
 `AvatarControlSystem::tick` only re-attempts init until `splice_head` is live.
 All per-frame pose work is handled by:
-- `TransformPipelineSystem` — body pipeline (yaw follow) + hand smoothing pipeline
+- `TransformStreamSystem` — body pipeline (yaw follow) + hand smoothing pipeline
 - `IKSystem` — head AimConstraint + arm TwoBoneIK
 
 ---

@@ -2,7 +2,7 @@ use crate::engine::ecs::component::{
     QuatExtractYawComponent, QuatTemporalFilterComponent, QuatYawFollowComponent,
     TransformComponent, TransformDropComponent, TransformForkTRSComponent,
     TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
-    TransformMergeTRSComponent, TransformSampleAncestorComponent,
+    TransformMergeTRSComponent, TransformParentComponent, TransformSampleAncestorComponent,
     Vector3TemporalFilterComponent,
 };
 use crate::engine::ecs::system::System;
@@ -102,16 +102,21 @@ struct Vec3TemporalState {
 }
 
 #[derive(Debug, Default)]
-pub struct TransformPipelineSystem {
+pub struct TransformStreamSystem {
     last_dt_sec: Option<f32>,
     vec3_temporal_state: HashMap<TransformPipelineStageKey, Vec3TemporalState>,
     quat_temporal_state: HashMap<TransformPipelineStageKey, QuatTemporalState>,
     yaw_follow_state: HashMap<TransformPipelineStageKey, f32>,
 }
 
-impl TransformPipelineSystem {
+impl TransformStreamSystem {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn is_transform_stream_boundary(&self, world: &World, cid: ComponentId) -> bool {
+        world.get_component_by_id_as::<TransformForkTRSComponent>(cid).is_some()
+            || world.get_component_by_id_as::<TransformParentComponent>(cid).is_some()
     }
 
     pub fn parse_component_tree(
@@ -129,16 +134,52 @@ impl TransformPipelineSystem {
         None
     }
 
-    pub fn evaluate_pipeline_node(
+    pub fn evaluate_stream_node(
         &mut self,
         world: &World,
         root: ComponentId,
         input_world: TransformMatrix,
     ) -> Option<(TransformMatrix, Vec<ComponentId>)> {
-        let block = self.parse_component_tree(world, root)?;
-        let outputs = self.downstream_children(world, root, &block);
-        let world_matrix = self.evaluate_block(&block, input_world, world, self.last_dt_sec);
-        Some((world_matrix, outputs))
+        let rebased_world = Self::apply_transform_parent_basis(world, root, input_world);
+
+        if let Some(block) = self.parse_component_tree(world, root) {
+            let outputs = self.downstream_children(world, root, &block);
+            let world_matrix = self.evaluate_block(&block, rebased_world, world, self.last_dt_sec);
+            return Some((world_matrix, outputs));
+        }
+
+        if world.get_component_by_id_as::<TransformParentComponent>(root).is_some() {
+            return Some((rebased_world, world.children_of(root).to_vec()));
+        }
+
+        None
+    }
+
+    fn apply_transform_parent_basis(
+        world: &World,
+        node: ComponentId,
+        current_world: TransformMatrix,
+    ) -> TransformMatrix {
+        world
+            .get_component_by_id_as::<TransformParentComponent>(node)
+            .and_then(|tp| tp.resolve_target_component(world))
+            .and_then(|target| Self::world_model(world, target))
+            .unwrap_or(current_world)
+    }
+
+    fn world_model(world: &World, cid: ComponentId) -> Option<TransformMatrix> {
+        if let Some(t) = world.get_component_by_id_as::<TransformComponent>(cid) {
+            return Some(t.transform.matrix_world);
+        }
+
+        let mut cur = cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(t) = world.get_component_by_id_as::<TransformComponent>(parent) {
+                return Some(t.transform.matrix_world);
+            }
+            cur = parent;
+        }
+        None
     }
 
     fn downstream_children(
@@ -763,11 +804,11 @@ impl TransformPipelineSystem {
 
 impl From<TransformMatrix> for TransformPipelineChannels {
     fn from(value: TransformMatrix) -> Self {
-        TransformPipelineSystem::decompose_matrix(value)
+        TransformStreamSystem::decompose_matrix(value)
     }
 }
 
-impl System for TransformPipelineSystem {
+impl System for TransformStreamSystem {
     fn tick(
         &mut self,
         _world: &mut World,
@@ -790,7 +831,7 @@ mod tests {
 
     #[test]
     fn controller_rotation_pipeline_contains_temporal_quat_op() {
-        let block = TransformPipelineSystem::pipeline_for_controller_rotation_smoothing(None, 1.0);
+        let block = TransformStreamSystem::pipeline_for_controller_rotation_smoothing(None, 1.0);
         let stage = match &block.stages[0] {
             TransformPipelineStage::ForkTrs(stage) => stage,
         };
@@ -819,7 +860,7 @@ mod tests {
         world.set_parent(map_rotation, Some(fork)).unwrap();
         world.set_parent(quat_filter, Some(map_rotation)).unwrap();
 
-        let parser = TransformPipelineSystem::new();
+        let parser = TransformStreamSystem::new();
         let block = parser.parse_component_tree(&world, fork).expect("pipeline block");
         assert_eq!(block.owner_component, Some(fork));
         assert_eq!(block.stages.len(), 1);
@@ -849,7 +890,7 @@ mod tests {
 
         world.set_parent(map_scale, Some(fork)).unwrap();
 
-        let parser = TransformPipelineSystem::new();
+        let parser = TransformStreamSystem::new();
         let block = parser.parse_component_tree(&world, fork).expect("pipeline block");
         let stage = match &block.stages[0] {
             TransformPipelineStage::ForkTrs(stage) => stage,
@@ -871,7 +912,7 @@ mod tests {
         world.set_parent(map_rotation, Some(fork)).unwrap();
         world.set_parent(quat_filter, Some(map_rotation)).unwrap();
 
-        let parser = TransformPipelineSystem::new();
+        let parser = TransformStreamSystem::new();
         let block = parser.parse_component_tree(&world, fork).expect("fork root block");
         assert_eq!(block.owner_component, Some(fork));
         assert_eq!(block.stages.len(), 1);
@@ -899,7 +940,7 @@ mod tests {
         world.set_parent(quat_filter, Some(map_rotation)).unwrap();
         world.set_parent(downstream, Some(fork)).unwrap();
 
-        let mut system = TransformPipelineSystem::new();
+        let mut system = TransformStreamSystem::new();
         let ident = [
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -907,7 +948,7 @@ mod tests {
             [0.0, 0.0, 0.0, 1.0],
         ];
         let (_, children) = system
-            .evaluate_pipeline_node(&world, fork, ident)
+            .evaluate_stream_node(&world, fork, ident)
             .expect("fork root eval");
         assert_eq!(children, vec![downstream]);
     }

@@ -184,7 +184,7 @@ This means the `ControllerXRComponent` acts like a pose source/driver node, and 
 
 **Transform filtering / smoothing:**
 - Future smoothing and follow behavior should build on the general **transform pipeline** described in `docs/spec/transform-pipeline.md`
-- Rather than hardcoding smoothing into `OpenXRSystem`, use `TransformPipelineSystem` operators like `QuatTemporalFilter` or `Vector3TemporalFilter`
+- Rather than hardcoding smoothing into `OpenXRSystem`, use `TransformStreamSystem` operators like `QuatTemporalFilter` or `Vector3TemporalFilter`
 - This keeps XR input focused on source acquisition and pose resolution
 
 **Hand armature driving:**
@@ -227,6 +227,6 @@ For per-finger/per-joint hand tracking, see `docs/spec/hand-tracking-armature.md
 **Transform system integration:**
 - `src/engine/ecs/system/transform_system.rs` — world matrix propagation; used to find XR camera rig transform
 
-**Transform pipeline (for future filtering):**
-- `src/engine/ecs/system/transform_pipeline_system.rs` — temporal operators and transform composition
+**Transform stream system (for future filtering):**
+- `src/engine/ecs/system/transform_stream_system.rs` — temporal operators and transform composition
 - `docs/spec/transform-pipeline.md` — full design documentation

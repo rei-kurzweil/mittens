@@ -125,5 +125,5 @@ If **debug cubes freeze**, but VTuber wrists still do not:
 ## Related files
 
 - `examples/vr-input.rs`
-- `src/engine/ecs/system/transform_pipeline_system.rs`
+- `src/engine/ecs/system/transform_stream_system.rs`
 - `src/engine/ecs/system/openxr_system.rs`

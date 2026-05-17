@@ -5,7 +5,7 @@ Date: 2026-03-23
 Historical note: references below to `TransformPipeline` / `TransformPipelineOutput` describe the removed authored wrapper/output topology. The current authored shape is `TransformForkTRS` as the root operator node, with downstream transforms attached directly under that fork.
 
 Spring bones and jiggle bones are both FK — no IK involvement. They live entirely in the
-`TransformPipelineSystem` as a new quaternion operator: `QuatSpringComponent`.
+`TransformStreamSystem` as a new quaternion operator: `QuatSpringComponent`.
 
 ---
 
@@ -123,9 +123,9 @@ tip lags more than the root because each stage adds its own inertia.
 
 ---
 
-## State in TransformPipelineSystem
+## State in TransformStreamSystem
 
-Spring state (angular velocity, previous rotation) lives in `TransformPipelineSystem`
+Spring state (angular velocity, previous rotation) lives in `TransformStreamSystem`
 alongside the existing `QuatTemporalFilter` state, keyed by **stage path** (component ID
 chain from pipeline root to this op). This means:
 

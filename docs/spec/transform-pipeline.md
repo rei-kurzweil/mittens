@@ -26,7 +26,7 @@ The important current design shift is:
 
 - authored transform shaping is primitive-only
 - there is no filter sugar/desugaring layer
-- the runtime evaluator is `TransformPipelineSystem`
+- the runtime evaluator is `TransformStreamSystem`
 
 ---
 
@@ -90,7 +90,7 @@ So the authored model is already doing real work; this is not just speculative v
 
 ---
 
-## 2. Runtime ownership: `TransformPipelineSystem`
+## 2. Runtime ownership: `TransformStreamSystem`
 
 There is no separate `TransformPipelineProcessor` type in the codebase.
 
@@ -98,7 +98,7 @@ That term is redundant for the current architecture.
 
 The runtime evaluator is simply:
 
-- `TransformPipelineSystem`
+- `TransformStreamSystem`
 
 Today it is responsible for:
 
@@ -112,13 +112,13 @@ Today it is responsible for:
 Its relationship to the pipeline system is:
 
 1. walk the normal transform subtree
-2. when a node is a transform-pipeline boundary, ask `TransformPipelineSystem` to evaluate it
+2. when a node is a transform-stream boundary, ask `TransformStreamSystem` to evaluate it
 3. continue traversal from the fork root's non-operator children
 
 So the clean runtime split is:
 
 - `TransformSystem`: subtree propagation / cached world matrices / side effects
-- `TransformPipelineSystem`: transform-processing evaluation
+- `TransformStreamSystem`: transform-stream evaluation
 
 That is enough. We do not need a second “processor” abstraction unless we later introduce a genuinely separate compiled-runtime layer.
 
@@ -288,7 +288,7 @@ But today both modes reassemble the same channel set in practice; explicit merge
 
 ## 6. Temporal state shape
 
-Temporal state currently lives in `TransformPipelineSystem`, not on authored components.
+Temporal state currently lives in `TransformStreamSystem`, not on authored components.
 
 It is keyed by:
 
@@ -443,7 +443,7 @@ But that should be introduced when the use cases demand it, not in advance.
 The best near-term direction is probably:
 
 - keep the authored topology exactly as it is now
-- keep `TransformPipelineSystem` as the sole runtime evaluator
+- keep `TransformStreamSystem` as the sole runtime evaluator
 - keep the internal representation rooted and tree-shaped
 - make the internal names a little more honest about what they are
 
@@ -487,7 +487,7 @@ This may read more clearly than “block inside block inside stage”.
 The strongest current recommendation is:
 
 1. keep the authored model primitive-only
-2. treat `TransformPipelineSystem` as the runtime evaluator; do not introduce a separate `TransformPipelineProcessor` concept
+2. treat `TransformStreamSystem` as the runtime evaluator; do not introduce a separate `TransformPipelineProcessor` concept
 3. treat the current internal shape as a rooted parsed execution plan, not a general graph
 4. keep `TransformPipeline` for now unless the parsed/runtime-vs-authored name overlap starts getting in the way
 5. only move to `Node` / `Edge` if we gain real multi-input or shared-subgraph use cases
@@ -507,7 +507,7 @@ without prematurely paying graph-runtime complexity costs.
 Today, transform pipelines are:
 
 - authored as explicit topology primitives
-- evaluated by `TransformPipelineSystem`
+- evaluated by `TransformStreamSystem`
 - represented in memory as rooted parsed blocks/stages
 - executed as ordered channel-processing steps over one inherited world transform
 

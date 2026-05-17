@@ -328,8 +328,8 @@ universe.attach(thumb_base, pipeline);
 - `src/engine/ecs/system/skinned_mesh_system.rs` — bone-to-GPU transform mapping
 - `src/engine/ecs/system/transform_system.rs` — world matrix propagation
 
-**Transform pipeline (for filtering):**
-- `src/engine/ecs/system/transform_pipeline_system.rs`
+**Transform stream system (for filtering):**
+- `src/engine/ecs/system/transform_stream_system.rs`
 
 **Example:**
 - `examples/vtuber-joints-example.rs` — loads VTuber model, inspects joints
