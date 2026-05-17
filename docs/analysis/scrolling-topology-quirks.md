@@ -2,6 +2,8 @@
 
 Date: 2026-04-17
 
+Historical note: this debugging note refers to `TransformPipelineOutput`, which has been removed from the authored API. The current authored shape is `TransformForkTRS` with the driven `T` attached directly under the fork root.
+
 Notes from debugging the authored scrolling list in [examples/ui-layout.mms](../../examples/ui-layout.mms).
 
 The forward-looking refactor plan that should remove this quirk is tracked in

@@ -238,20 +238,15 @@ Consider the full vr-input controller example (from `examples/vr-input.rs`):
 ```txt
 ControllerXR.new(true, hand, Aim) {
     T.with_scale(0.06, 0.06, 0.12) {
-        TransformPipeline {
-            TransformForkTRS {
-                TransformMapTranslation {}
-                TransformMapRotation {
-                    QuatTemporalFilter.with_smoothing_factor(rotation_smoothing)
-                }
-                TransformMapScale {}
-                TransformMergeTRS {}
-            }
-            TransformPipelineOutput {
-                T {
-                    Renderable.cube() {
-                        Color.rgba(color.0, color.1, color.2, color.3)
-                    }
+    TransformForkTRS {
+      TransformMapTranslation {}
+      TransformMapRotation {
+        QuatTemporalFilter.with_smoothing_factor(rotation_smoothing)
+      }
+      TransformMapScale {}
+      T {
+        Renderable.cube() {
+          Color.rgba(color.0, color.1, color.2, color.3)
                 }
             }
         }
@@ -265,7 +260,7 @@ At a glance this reads like a tree description. Under the hood, every line that 
 |---|---|
 | `ControllerXR.new(true, hand, Aim)` | `ControllerXRComponent::new(true, hand, ControllerPoseKind::Aim)` |
 | `T.with_scale(0.06, 0.06, 0.12)` | `TransformComponent::new().with_scale(0.06, 0.06, 0.12)` |
-| `TransformPipeline {}` | `TransformPipelineComponent::new()` |
+| `TransformForkTRS {}` | `TransformForkTRSComponent::new()` |
 | `QuatTemporalFilter.with_smoothing_factor(rotation_smoothing)` | `QuatTemporalFilterComponent::new().with_smoothing_factor(rotation_smoothing)` |
 | `Renderable.cube()` | `RenderableComponent::cube()` (named constructor, not `::new`) |
 | `Color.rgba(r, g, b, a)` | `ColorComponent::rgba(r, g, b, a)` |

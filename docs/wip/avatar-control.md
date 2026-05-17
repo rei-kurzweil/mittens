@@ -2,6 +2,8 @@
 
 Date: 2026-03-24
 
+Historical note: topology references below to `TransformPipelineComponent` or `TransformPipelineOutput` describe the removed authored wrapper/output topology. Current authored avatar-control pipelines use `TransformForkTRS` as the root operator node with direct downstream children.
+
 Scratch space for thinking through AVC evolution: current system inventory,
 spine IK implications, the head-drift problem, and how IKSystem and
 TransformPipelineSystem do or don't share structure.

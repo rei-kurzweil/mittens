@@ -2,6 +2,8 @@
 
 Date: 2026-03-21
 
+Historical note: references below to `TransformPipeline` / `TransformPipelineOutput` describe a removed authored topology. Current authored transform shaping uses `TransformForkTRS` as the pipeline root with downstream content attached directly under that fork.
+
 This document examines the problem of correctly grounding a VTuber-style skinned avatar
 in a 1st-person VR scene, given the current engine architecture. It exists to clarify
 what is broken, what each fix option requires, and where the engine needs new work.

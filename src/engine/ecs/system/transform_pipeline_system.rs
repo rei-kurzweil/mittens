@@ -2,8 +2,8 @@ use crate::engine::ecs::component::{
     QuatExtractYawComponent, QuatTemporalFilterComponent, QuatYawFollowComponent,
     TransformComponent, TransformDropComponent, TransformForkTRSComponent,
     TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
-    TransformMergeTRSComponent, TransformPipelineComponent, TransformPipelineOutputComponent,
-    TransformSampleAncestorComponent, Vector3TemporalFilterComponent,
+    TransformMergeTRSComponent, TransformSampleAncestorComponent,
+    Vector3TemporalFilterComponent,
 };
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::{ComponentId, World};
@@ -17,12 +17,6 @@ use std::sync::OnceLock;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransformPipelineInput {
     ParentWorld,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TransformPipelineOutput {
-    ImplicitTransform,
-    OutputRoots(Vec<ComponentId>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -65,15 +59,13 @@ pub struct TransformForkTrsStage {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TransformPipelineStage {
     ForkTrs(TransformForkTrsStage),
-    Pipeline(Box<TransformPipeline>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TransformPipeline {
+pub struct TransformPipelinePlan {
     pub owner_component: Option<ComponentId>,
     pub input: TransformPipelineInput,
     pub stages: Vec<TransformPipelineStage>,
-    pub output: TransformPipelineOutput,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -126,16 +118,12 @@ impl TransformPipelineSystem {
         &self,
         world: &World,
         root: ComponentId,
-    ) -> Option<TransformPipeline> {
-        if world.get_component_by_id_as::<TransformPipelineComponent>(root).is_some() {
-            return self.parse_pipeline_block(world, root);
-        }
+    ) -> Option<TransformPipelinePlan> {
         if world.get_component_by_id_as::<TransformForkTRSComponent>(root).is_some() {
-            return Some(TransformPipeline {
+            return Some(TransformPipelinePlan {
                 owner_component: Some(root),
                 input: TransformPipelineInput::ParentWorld,
                 stages: vec![TransformPipelineStage::ForkTrs(self.parse_fork_trs(world, root))],
-                output: TransformPipelineOutput::ImplicitTransform,
             });
         }
         None
@@ -157,41 +145,26 @@ impl TransformPipelineSystem {
         &self,
         world: &World,
         root: ComponentId,
-        block: &TransformPipeline,
+        _block: &TransformPipelinePlan,
     ) -> Vec<ComponentId> {
-        if world.get_component_by_id_as::<TransformForkTRSComponent>(root).is_some() {
-            return world
-                .children_of(root)
-                .iter()
-                .copied()
-                .filter(|&child| {
-                    world.get_component_by_id_as::<TransformMapTranslationComponent>(child).is_none()
-                        && world.get_component_by_id_as::<TransformMapRotationComponent>(child).is_none()
-                        && world.get_component_by_id_as::<TransformMapScaleComponent>(child).is_none()
-                        && world.get_component_by_id_as::<TransformMergeTRSComponent>(child).is_none()
-                })
-                .collect();
-        }
-
-        if let TransformPipelineOutput::OutputRoots(roots) = &block.output {
-            if !roots.is_empty() {
-                return roots.clone();
-            }
-        }
-
         world
             .children_of(root)
             .iter()
             .copied()
-            .filter(|&child| self.parse_stage(world, child).is_none())
+            .filter(|&child| {
+                world.get_component_by_id_as::<TransformMapTranslationComponent>(child).is_none()
+                    && world.get_component_by_id_as::<TransformMapRotationComponent>(child).is_none()
+                    && world.get_component_by_id_as::<TransformMapScaleComponent>(child).is_none()
+                    && world.get_component_by_id_as::<TransformMergeTRSComponent>(child).is_none()
+            })
             .collect()
     }
 
     pub fn pipeline_for_controller_rotation_smoothing(
         owner_component: Option<ComponentId>,
         smoothing_factor: f32,
-    ) -> TransformPipeline {
-        TransformPipeline {
+    ) -> TransformPipelinePlan {
+        TransformPipelinePlan {
             owner_component,
             input: TransformPipelineInput::ParentWorld,
             stages: vec![TransformPipelineStage::ForkTrs(TransformForkTrsStage {
@@ -199,69 +172,7 @@ impl TransformPipelineSystem {
                 rotation_ops: vec![TransformPipelineQuatOp::TemporalFilter { smoothing_factor }],
                 scale_ops: vec![TransformPipelineVec3Op::Pass],
             })],
-            output: TransformPipelineOutput::ImplicitTransform,
         }
-    }
-
-    fn parse_pipeline_block(
-        &self,
-        world: &World,
-        root: ComponentId,
-    ) -> Option<TransformPipeline> {
-        if world
-            .get_component_by_id_as::<TransformPipelineComponent>(root)
-            .is_none()
-        {
-            return None;
-        }
-
-        let mut stages = Vec::new();
-        let mut output_roots = Vec::new();
-
-        for &child in world.children_of(root) {
-            if world
-                .get_component_by_id_as::<TransformPipelineOutputComponent>(child)
-                .is_some()
-            {
-                output_roots.push(child);
-                continue;
-            }
-
-            if let Some(stage) = self.parse_stage(world, child) {
-                stages.push(stage);
-            }
-        }
-
-        Some(TransformPipeline {
-            owner_component: Some(root),
-            input: TransformPipelineInput::ParentWorld,
-            stages,
-            output: if output_roots.is_empty() {
-                TransformPipelineOutput::ImplicitTransform
-            } else {
-                TransformPipelineOutput::OutputRoots(output_roots)
-            },
-        })
-    }
-
-    fn parse_stage(&self, world: &World, node: ComponentId) -> Option<TransformPipelineStage> {
-        if world
-            .get_component_by_id_as::<TransformForkTRSComponent>(node)
-            .is_some()
-        {
-            return Some(TransformPipelineStage::ForkTrs(self.parse_fork_trs(world, node)));
-        }
-
-        if world
-            .get_component_by_id_as::<TransformPipelineComponent>(node)
-            .is_some()
-        {
-            return self
-                .parse_pipeline_block(world, node)
-                .map(|pipeline| TransformPipelineStage::Pipeline(Box::new(pipeline)));
-        }
-
-        None
     }
 
     fn parse_fork_trs(&self, world: &World, node: ComponentId) -> TransformForkTrsStage {
@@ -300,7 +211,7 @@ impl TransformPipelineSystem {
             {
                 debug_assert!(
                     world.children_of(child).is_empty(),
-                    "TransformMergeTRS should not contain child stages; attach pipeline content under TransformPipelineOutput instead"
+                    "TransformMergeTRS should not contain child stages; attach driven children directly under the TransformForkTRS root"
                 );
                 continue;
             }
@@ -374,7 +285,7 @@ impl TransformPipelineSystem {
 
     pub fn evaluate_block(
         &mut self,
-        pipeline: &TransformPipeline,
+        pipeline: &TransformPipelinePlan,
         input_world: TransformMatrix,
         world: &World,
         dt_sec: Option<f32>,
@@ -399,9 +310,6 @@ impl TransformPipelineSystem {
         match stage {
             TransformPipelineStage::ForkTrs(fork) => {
                 self.evaluate_fork_trs(owner_component, fork, input, stage_path, world, dt_sec)
-            }
-            TransformPipelineStage::Pipeline(pipeline) => {
-                self.evaluate_block(pipeline, Self::recompose_matrix(input), world, dt_sec).into()
             }
         }
     }
@@ -876,17 +784,15 @@ mod tests {
     use super::*;
     use crate::engine::ecs::component::{
         QuatTemporalFilterComponent, TransformForkTRSComponent, TransformMapRotationComponent,
-        TransformMapScaleComponent, TransformMapTranslationComponent,
-        TransformPipelineComponent, TransformPipelineOutputComponent,
-        Vector3TemporalFilterComponent,
+        TransformMapScaleComponent, TransformMapTranslationComponent, Vector3TemporalFilterComponent,
     };
     use crate::engine::ecs::World;
 
     #[test]
     fn controller_rotation_pipeline_contains_temporal_quat_op() {
         let block = TransformPipelineSystem::pipeline_for_controller_rotation_smoothing(None, 1.0);
-        let TransformPipelineStage::ForkTrs(stage) = &block.stages[0] else {
-            panic!("expected fork stage");
+        let stage = match &block.stages[0] {
+            TransformPipelineStage::ForkTrs(stage) => stage,
         };
         assert_eq!(
             stage.rotation_ops,
@@ -897,9 +803,8 @@ mod tests {
     }
 
     #[test]
-    fn parses_authored_pipeline_component_tree() {
+    fn parses_fork_root_component_tree() {
         let mut world = World::default();
-        let pipeline = world.add_component(TransformPipelineComponent::new());
         let fork = world.add_component(TransformForkTRSComponent::new());
         let map_translation = world.add_component(TransformMapTranslationComponent::new());
         let vec_filter = world.add_component(
@@ -908,22 +813,18 @@ mod tests {
         let map_rotation = world.add_component(TransformMapRotationComponent::new());
         let quat_filter =
             world.add_component(QuatTemporalFilterComponent::new().with_smoothing_factor(18.0));
-        let output = world.add_component(TransformPipelineOutputComponent::new());
 
-        world.set_parent(fork, Some(pipeline)).unwrap();
         world.set_parent(map_translation, Some(fork)).unwrap();
         world.set_parent(vec_filter, Some(map_translation)).unwrap();
         world.set_parent(map_rotation, Some(fork)).unwrap();
         world.set_parent(quat_filter, Some(map_rotation)).unwrap();
-        world.set_parent(output, Some(pipeline)).unwrap();
 
         let parser = TransformPipelineSystem::new();
-        let block = parser.parse_component_tree(&world, pipeline).expect("pipeline block");
-        assert_eq!(block.owner_component, Some(pipeline));
+        let block = parser.parse_component_tree(&world, fork).expect("pipeline block");
+        assert_eq!(block.owner_component, Some(fork));
         assert_eq!(block.stages.len(), 1);
-        assert_eq!(block.output, TransformPipelineOutput::OutputRoots(vec![output]));
-        let TransformPipelineStage::ForkTrs(stage) = &block.stages[0] else {
-            panic!("expected fork stage");
+        let stage = match &block.stages[0] {
+            TransformPipelineStage::ForkTrs(stage) => stage,
         };
         assert_eq!(
             stage.translation_ops,
@@ -943,19 +844,15 @@ mod tests {
     #[test]
     fn fork_trs_defaults_missing_streams_to_pass() {
         let mut world = World::default();
-        let pipeline = world.add_component(TransformPipelineComponent::new());
         let fork = world.add_component(TransformForkTRSComponent::new());
         let map_scale = world.add_component(TransformMapScaleComponent::new());
-        let output = world.add_component(TransformPipelineOutputComponent::new());
 
-        world.set_parent(fork, Some(pipeline)).unwrap();
         world.set_parent(map_scale, Some(fork)).unwrap();
-        world.set_parent(output, Some(pipeline)).unwrap();
 
         let parser = TransformPipelineSystem::new();
-        let block = parser.parse_component_tree(&world, pipeline).expect("pipeline block");
-        let TransformPipelineStage::ForkTrs(stage) = &block.stages[0] else {
-            panic!("expected fork stage");
+        let block = parser.parse_component_tree(&world, fork).expect("pipeline block");
+        let stage = match &block.stages[0] {
+            TransformPipelineStage::ForkTrs(stage) => stage,
         };
 
         assert_eq!(stage.translation_ops, vec![TransformPipelineVec3Op::Pass]);
@@ -978,8 +875,8 @@ mod tests {
         let block = parser.parse_component_tree(&world, fork).expect("fork root block");
         assert_eq!(block.owner_component, Some(fork));
         assert_eq!(block.stages.len(), 1);
-        let TransformPipelineStage::ForkTrs(stage) = &block.stages[0] else {
-            panic!("expected fork stage");
+        let stage = match &block.stages[0] {
+            TransformPipelineStage::ForkTrs(stage) => stage,
         };
         assert_eq!(
             stage.rotation_ops,

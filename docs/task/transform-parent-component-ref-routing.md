@@ -2,6 +2,8 @@
 
 Date: 2026-05-17
 
+Status note: the authored `TransformPipeline` / `TransformPipelineOutput` wrapper/output topology has now been removed. Any references below to those names are historical; current authored transform shaping uses `TransformForkTRS` with downstream content attached directly under the fork root.
+
 This task captures the transform-routing capability needed before armature visualization can live comfortably in a separate helper tree.
 
 It should be approached after the transform-pipeline cleanup pass, not before.

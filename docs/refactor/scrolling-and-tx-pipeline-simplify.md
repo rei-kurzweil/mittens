@@ -2,6 +2,8 @@
 
 Date: 2026-04-17
 
+Historical note: references below to `TransformPipelineOutput` describe the removed authored output marker. Current authored scrolling/topology experiments should read those shapes as `TransformForkTRS` roots with the driven `T` attached directly under the fork.
+
 This note captures a refactor direction that became clearer while debugging the authored scrolling list in [examples/ui-layout.mms](../../examples/ui-layout.mms).
 
 It is adjacent to, but not the same as, the older scrolling/layout ownership note in [docs/refactor/scrolling-component-layout-system.md](scrolling-component-layout-system.md).

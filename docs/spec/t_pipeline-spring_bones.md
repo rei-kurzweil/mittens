@@ -2,6 +2,8 @@
 
 Date: 2026-03-23
 
+Historical note: references below to `TransformPipeline` / `TransformPipelineOutput` describe the removed authored wrapper/output topology. The current authored shape is `TransformForkTRS` as the root operator node, with downstream transforms attached directly under that fork.
+
 Spring bones and jiggle bones are both FK — no IK involvement. They live entirely in the
 `TransformPipelineSystem` as a new quaternion operator: `QuatSpringComponent`.
 

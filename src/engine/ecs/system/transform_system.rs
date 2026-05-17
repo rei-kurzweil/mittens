@@ -3,7 +3,6 @@ use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     Camera2DComponent, Camera3DComponent, CollisionComponent, RenderableComponent,
     TransformComponent, TransformForkTRSComponent, TransformParentComponent,
-    TransformPipelineComponent, TransformPipelineOutputComponent,
 };
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::System;
@@ -74,14 +73,8 @@ impl TransformSystem {
 
     fn is_transform_stream_boundary_between_tcs(world: &World, cid: ComponentId) -> bool {
         world
-            .get_component_by_id_as::<TransformPipelineOutputComponent>(cid)
+            .get_component_by_id_as::<TransformForkTRSComponent>(cid)
             .is_some()
-            || world
-                .get_component_by_id_as::<TransformPipelineComponent>(cid)
-                .is_some()
-            || world
-                .get_component_by_id_as::<TransformForkTRSComponent>(cid)
-                .is_some()
             || world.get_component_by_id_as::<TransformParentComponent>(cid).is_some()
     }
 

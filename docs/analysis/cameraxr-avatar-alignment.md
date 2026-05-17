@@ -2,6 +2,8 @@
 
 Date: 2026-03-23
 
+Historical note: examples below that mention `TransformPipeline` / `TransformPipelineOutput` describe the removed authored wrapper/output topology. Current authored transform shaping uses `TransformForkTRS` as the pipeline root with downstream content attached directly under that fork.
+
 This doc audits the full data path from physical HMD pose → ECS → rendered XR view and
 avatar head bone, explains why CXR re-parenting to a bone is a no-op for rendering, and
 explores the user hypothesis that "the head bone should just copy the InputXR pose directly".

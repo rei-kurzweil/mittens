@@ -120,7 +120,7 @@ pub struct AvatarControlComponent {
     pub(crate) splice_right_hand:    Option<ComponentId>,
     pub(crate) displaced_right_hand: Option<ComponentId>,
 
-    /// ComponentId of the body pipeline root (`TransformPipelineComponent`).
+    /// ComponentId of the body pipeline root (`TransformForkTRSComponent`).
     /// Set by `try_init_splices`.
     pub(crate) body_pipeline_id: Option<ComponentId>,
 

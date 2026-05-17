@@ -1,5 +1,7 @@
 # VTuber Head & Body Pose — Diagnostics
 
+Historical note: topology references below to `TransformPipelineComponent` or `TransformPipelineOutput` describe the removed authored wrapper/output topology. The current authored form is `TransformForkTRS` as the pipeline root with direct downstream children.
+
 ## Topology overview (vtuber-desktop)
 
 ```

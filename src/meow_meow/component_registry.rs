@@ -30,7 +30,6 @@ use crate::engine::ecs::component::{
     TransformParentComponent,
     TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
     TransformMapTranslationComponent, TransformMergeTRSComponent,
-    TransformPipelineComponent, TransformPipelineOutputComponent,
     TransformSampleAncestorComponent,
     BoundsComponent, MeshComponent, GestureCoordTypeComponent, GestureCoordType,
     CollisionShapeComponent, CollisionShape, CollisionComponent, CollisionMode,
@@ -838,7 +837,6 @@ fn create_component(
             }
             _ => Err("ControllerXR requires .new(enabled, hand, pose)".into()),
         },
-        "TransformPipeline" => add!(TransformPipelineComponent::new()),
         "TransformParent" => match ctor {
             Some("target") => add!(
                 TransformParentComponent::new().with_target_source(arg_component_ref(world, args, 0)?)
@@ -850,7 +848,6 @@ fn create_component(
         "TransformMapRotation" => add!(TransformMapRotationComponent::new()),
         "TransformMapScale" => add!(TransformMapScaleComponent::new()),
         "TransformMergeTRS" => add!(TransformMergeTRSComponent::new()),
-        "TransformPipelineOutput" => add!(TransformPipelineOutputComponent::new()),
         "TransformDrop" => add!(TransformDropComponent::new()),
         "TransformSampleAncestor" => {
             let mut c = TransformSampleAncestorComponent::new();

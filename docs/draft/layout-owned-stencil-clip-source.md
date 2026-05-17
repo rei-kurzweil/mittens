@@ -2,6 +2,8 @@
 
 Status: draft
 
+Historical note: examples below that mention `TransformPipeline` / `TransformPipelineOutput` describe the removed authored wrapper/output topology. Current authored scrolling/clipping shapes use `TransformForkTRS` with downstream content attached directly under the fork root.
+
 Companion to:
 - `docs/draft/stencil-clip-algorithm.md`
 - `docs/refactor/scrolling-component-layout-system.md`

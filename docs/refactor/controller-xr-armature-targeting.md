@@ -1,5 +1,7 @@
 # ControllerXR armature targeting for VTuber hands
 
+Historical note: references below to `TransformPipeline` / `TransformPipelineOutput` describe the removed authored wrapper/output topology. The supported authored form is `TransformForkTRS` as the pipeline root with downstream content attached directly under that fork.
+
 This note explores how XR controller / hand-tracking input should drive a **subset of an imported armature** (for example the VTuber model’s hands) without changing `src/` or examples yet.
 
 The immediate motivation is:

@@ -1,5 +1,7 @@
 # MMS Housekeeping and Module Example — Analysis
 
+Historical note: references below to `TransformPipelineComponent` describe a removed authored component. Current authored transform shaping starts at `TransformForkTRS`, with downstream content attached directly under that fork.
+
 > Covers: (1) the `source_path` threading problem and how to fix it,
 > (2) whether module eval code should live in a separate file,
 > (3) plan for `cat.mms` and the `mms-module-example` example.

@@ -1,5 +1,7 @@
 # Avatar control — pipeline decomposition sketch
 
+Historical note: references below to `TransformPipelineOutputComponent` describe the removed authored output marker. Current authored avatar-control pipelines use `TransformForkTRS` as the root operator node with downstream content attached directly under that fork.
+
 ## The problem with the current AvatarControlSystem
 
 `AvatarControlSystem` does two things every tick:

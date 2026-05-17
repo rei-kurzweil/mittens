@@ -2,6 +2,8 @@
 
 This doc describes the current transform-pipeline direction in the engine.
 
+Current authored usage: `TransformForkTRS` is the pipeline root. `TransformPipeline` and `TransformPipelineOutput` were removed from the authored API; any driven transform or content now attaches directly as a non-map child of the fork root.
+
 Conceptually, a transform pipeline should mean one or more transform operators inserted into a transform hierarchy between an upstream transform basis and a downstream subtree.
 
 The important consequence of that model is:
@@ -52,14 +54,12 @@ The current authored surface is more wrapper-heavy than the intended conceptual 
 
 Current primitive components are:
 
-- `TransformPipelineComponent`
 - `TransformForkTRSComponent`
 - `TransformMapTranslationComponent`
 - `TransformMapRotationComponent`
 - `TransformMapScaleComponent`
 - `TransformDropComponent`
 - `TransformMergeTRSComponent`
-- `TransformPipelineOutputComponent`
 - `Vector3TemporalFilterComponent`
 - `QuatTemporalFilterComponent`
 
@@ -67,14 +67,13 @@ The common authored shape today is:
 
 ```text
 TransformComponent
-  TransformPipeline
-    TransformForkTRS
-      TransformMapTranslation
-      TransformMapRotation
-        QuatTemporalFilter
-      TransformMapScale
-      TransformComponent
-        ... driven subtree ...
+  TransformForkTRS
+    TransformMapTranslation
+    TransformMapRotation
+      QuatTemporalFilter
+    TransformMapScale
+    TransformComponent
+      ... driven subtree ...
 ```
 
 The important cleanup direction is:
@@ -103,10 +102,10 @@ The runtime evaluator is simply:
 
 Today it is responsible for:
 
-- parsing authored pipeline topology rooted at a `TransformPipelineComponent`
+- parsing authored pipeline topology rooted at a `TransformForkTRSComponent`
 - evaluating the parsed pipeline against an inherited world transform
 - owning temporal operator state
-- returning the processed world transform and any explicit output roots
+- returning the processed world transform and the fork root's downstream children
 
 `TransformSystem` stays responsible for ordinary transform-tree propagation.
 
@@ -114,7 +113,7 @@ Its relationship to the pipeline system is:
 
 1. walk the normal transform subtree
 2. when a node is a transform-pipeline boundary, ask `TransformPipelineSystem` to evaluate it
-3. continue traversal from the pipeline output roots, or from normal children if there are none
+3. continue traversal from the fork root's non-operator children
 
 So the clean runtime split is:
 
@@ -132,23 +131,20 @@ The current in-memory shape is not a general graph.
 It is a parsed rooted program-like tree:
 
 ```rust
-pub struct TransformPipeline {
+pub struct TransformPipelinePlan {
     pub owner_component: Option<ComponentId>,
     pub input: TransformPipelineInput,
     pub stages: Vec<TransformPipelineStage>,
-    pub output: TransformPipelineOutput,
 }
 
 pub enum TransformPipelineStage {
     ForkTrs(TransformForkTrsStage),
-  Pipeline(Box<TransformPipeline>),
 }
 
 pub struct TransformForkTrsStage {
     pub translation_ops: Vec<TransformPipelineVec3Op>,
     pub rotation_ops: Vec<TransformPipelineQuatOp>,
     pub scale_ops: Vec<TransformPipelineVec3Op>,
-    pub merge_mode: TransformPipelineMergeMode,
 }
 ```
 
@@ -168,10 +164,7 @@ The important properties of this runtime shape are:
 - input is currently only `ParentWorld`
 - evaluation is stage-ordered, not edge-scheduled
 - the main stage type today is TRS fork + per-channel op lists
-- nested pipeline blocks are possible structurally
-- output is either:
-  - `ImplicitTransform`, or
-  - `OutputRoots(Vec<ComponentId>)`
+- downstream traversal is whatever non-operator children are attached under the fork root
 
 So the current runtime model is much closer to:
 
@@ -185,14 +178,14 @@ than to:
 
 ## 4. What `TransformPipeline` does in memory
 
-`TransformPipeline` is the runtime representation of one authored pipeline root.
+`TransformPipelinePlan` is the runtime representation of one authored pipeline root.
 
 Conceptually it means:
 
 - take one input transform stream
 - run an ordered list of processing stages on it
 - produce one processed transform stream
-- optionally redirect traversal to explicit output roots
+- continue traversal through the fork root's downstream children
 
 In other words, a block is not “a transform node” in world topology.
 
@@ -203,7 +196,7 @@ It is an internal executable description for:
 - one ordered body of work
 - one output routing decision
 
-That means the in-memory `TransformPipeline` type is not the authored ECS component of the same name.
+That means the in-memory `TransformPipelinePlan` type is not an authored ECS component.
 
 It is a parsed runtime pipeline description whose semantics are closer to:
 
@@ -229,13 +222,13 @@ So it parses the topology into a smaller internal representation that says, in e
 - here is the input source
 - here are the stages
 - here are the channel ops
-- here is where traversal should continue afterward
+- here are the downstream children that should receive the processed basis
 
 That is what the block is for.
 
 ### Why the current block shape is a bit awkward
 
-The current parsed `TransformPipeline` shape works, but it is slightly more abstract than what we actually need today.
+The current parsed `TransformPipelinePlan` shape works, but it is slightly more abstract than what we actually need today.
 
 Current reality:
 
@@ -261,18 +254,18 @@ That does not make it wrong, but it does mean:
 At runtime, evaluation is:
 
 1. parse the rooted component subtree if the current node is a `TransformPipelineComponent`
+1. parse the rooted component subtree if the current node is a `TransformForkTRSComponent`
 2. decompose the inherited world matrix into channels:
    - translation
    - rotation quaternion
    - scale
 3. apply stages in order
 4. recompose a world matrix
-5. return the processed world matrix plus output roots
+5. return the processed world matrix plus downstream children
 
 The main evaluator functions are:
 
 - `parse_component_tree(...)`
-- `parse_pipeline_block(...)`
 - `parse_fork_trs(...)`
 - `evaluate_pipeline_node(...)`
 - `evaluate_block(...)`

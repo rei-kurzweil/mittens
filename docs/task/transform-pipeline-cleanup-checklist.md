@@ -2,6 +2,8 @@
 
 Date: 2026-05-17
 
+Status note: the cleanup described here has now landed for authored topology. `TransformPipeline` and `TransformPipelineOutput` were removed; current authored transform shaping uses `TransformForkTRS` as the pipeline root with downstream content attached directly under the fork.
+
 This task comes before the ref-based transform-parent routing work.
 
 The immediate goal is to simplify and clarify the authored transform-pipeline surface before adding new routing operators such as `TransformParent` or a ref-based transform input.

@@ -2,6 +2,8 @@
 
 Date: 2026-05-16
 
+Status note: the authored `TransformPipeline` / `TransformPipelineOutput` wrapper/output topology has now been removed. Any references below to those names are historical; current authored transform shaping uses `TransformForkTRS` with downstream content attached directly under the fork root.
+
 This task captures the current serialization direction after the recent merge work.
 
 Related task:

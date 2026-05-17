@@ -1,5 +1,7 @@
 # VR controller rotation-filter A/B
 
+Historical note: references below to `TransformPipelineOutput` describe the removed authored output marker. The current authored topology for this test is `TransformForkTRS` with the filtered cube attached directly under the fork root.
+
 ## Goal
 
 We want a fast A/B test for whether quaternion rotation smoothing in the transform pipeline is

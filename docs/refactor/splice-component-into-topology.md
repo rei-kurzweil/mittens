@@ -2,6 +2,8 @@
 
 Date: 2026-03-20
 
+Historical note: examples below that mention `TransformPipeline` / `TransformPipelineOutput` describe the removed authored wrapper/output topology. Current authored transform shaping uses `TransformForkTRS` as the root operator node, with downstream content attached directly under that fork.
+
 This note proposes a small but high-value topology convenience API:
 
 > Insert a new component **between an existing parent and child** without rebuilding the subtree.

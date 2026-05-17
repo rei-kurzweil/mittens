@@ -1,5 +1,7 @@
 # Meow Meow Script — Objectives
 
+Historical note: any examples below that mention `TransformPipeline` / `TransformPipelineOutput` predate the authored API cleanup. Current authored transform shaping uses `TransformForkTRS` as the root operator node with downstream content attached directly under it.
+
 This document describes **what MMS is trying to be and why**, separate from how it is implemented.
 
 ---

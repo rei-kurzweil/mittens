@@ -2,6 +2,8 @@
 
 Date: 2026-04-15
 
+Historical note: this note refers to `TransformPipelineOutput`, which has been removed from the authored API. Current authored scrolling/clipping topology uses `TransformForkTRS` with the driven `T` attached directly under the fork root.
+
 Tracks the current findings for the `examples/ui-layout.mms` scrolling + clipping reference shape before making further `src/` changes.
 
 ---

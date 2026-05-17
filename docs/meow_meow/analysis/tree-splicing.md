@@ -2,6 +2,8 @@
 
 Date: 2026-03-21
 
+Historical note: examples below that mention `TransformPipelineOutput` describe the removed authored output marker. Current authored transform shaping uses `TransformForkTRS` as the root operator node, with downstream content attached directly under that fork.
+
 Explores what MeowMeow Script would need in order to express **component-tree splicing** — the
 operation of inserting a subtree into an existing component tree in a way that the original child
 is reattached to a nominated leaf inside the inserted subtree.

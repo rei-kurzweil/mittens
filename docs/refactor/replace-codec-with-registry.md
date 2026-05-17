@@ -1,5 +1,7 @@
 # Replace ComponentCodec with MMS-Native Serialization
 
+Historical note: any mentions below of `TransformPipelineComponent` / `TransformPipelineOutputComponent` refer to removed authored components. Current authored transform shaping starts at `TransformForkTRS`, with downstream content attached directly under that fork.
+
 ## Goal
 
 Delete `component_codec.rs` and the JSON `encode`/`decode` path. Replace with:

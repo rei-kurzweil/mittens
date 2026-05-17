@@ -2,6 +2,8 @@
 
 Date: 2026-03-21
 
+Historical note: references below to `TransformPipeline` / `TransformPipelineOutput` describe the removed authored wrapper/output topology. Current authored controller smoothing uses `TransformForkTRS` as the root operator node with downstream content attached directly under that fork.
+
 This note documents the **current stopgap topology** used in [examples/vr-input.rs](examples/vr-input.rs)
 to drive VTuber hand bones from `ControllerXRComponent`.
 

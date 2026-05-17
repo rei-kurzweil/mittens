@@ -7,8 +7,7 @@ use cat_engine::engine::ecs::component::{
     QuatTemporalFilterComponent, RaycastableComponent, RenderGraphComponent, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TransformComponent,
     TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
-    TransformMapTranslationComponent, TransformPipelineComponent,
-    TransformPipelineOutputComponent,
+    TransformMapTranslationComponent,
 };
 use cat_engine::engine::graphics::CameraTarget;
 use cat_engine::engine::graphics::primitives::{MaterialHandle, Renderable};
@@ -140,13 +139,8 @@ fn spawn_controller_cube(
         return controller_marker;
     }
 
-    let pipeline = universe
-        .world
-        .add_component(TransformPipelineComponent::new());
-    let _ = universe.attach(controller_t, pipeline);
-
     let fork = universe.world.add_component(TransformForkTRSComponent::new());
-    let _ = universe.attach(pipeline, fork);
+    let _ = universe.attach(controller_t, fork);
 
     let map_translation = universe
         .world
@@ -165,13 +159,8 @@ fn spawn_controller_cube(
     let map_scale = universe.world.add_component(TransformMapScaleComponent::new());
     let _ = universe.attach(fork, map_scale);
 
-    let output = universe
-        .world
-        .add_component(TransformPipelineOutputComponent::new());
-    let _ = universe.attach(pipeline, output);
-
     let filtered_t = universe.world.add_component(TransformComponent::new());
-    let _ = universe.attach(output, filtered_t);
+    let _ = universe.attach(fork, filtered_t);
 
     let cube = universe.world.add_component(RenderableComponent::cube());
     let cube_color = universe

@@ -1,5 +1,7 @@
 # MMS Phase 1 — Parser + Stop-Gap Evaluator
 
+Historical note: examples below that mention `TransformPipeline` / `TransformPipelineOutput` predate the authored API cleanup. Current authored transform shaping uses `TransformForkTRS` as the root operator node, with downstream content attached directly under that fork.
+
 Phase 1 goal: get all component expression forms to parse correctly, build a
 stop-gap tree-walking evaluator that produces a command list (no compiler or VM
 yet), and replace the JSON `encode()`/`decode()` path on components with `.mms`

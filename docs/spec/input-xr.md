@@ -258,12 +258,10 @@ That means the useful authored topology is:
 ```text
 InputXR {
     Transform {
-        TransformPipeline {
+        TransformForkTRS {
             ... optional smoothing / remapping / offsets ...
-            TransformPipelineOutput {
-                CameraXR {}
-                GLTF { "vtuber-model.gltf" }
-            }
+            CameraXR {}
+            GLTF { "vtuber-model.gltf" }
         }
     }
 }

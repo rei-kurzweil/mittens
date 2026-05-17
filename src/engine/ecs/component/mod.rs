@@ -169,7 +169,6 @@ pub use transform_parent::TransformParentComponent;
 pub use world_panel::WorldPanelComponent;
 pub use transform_pipeline::{
     TransformDropComponent, TransformForkTRSComponent, TransformMergeTRSComponent,
-    TransformPipelineComponent, TransformPipelineOutputComponent,
     TransformSampleAncestorComponent,
 };
 pub use transform_pipeline_map::{

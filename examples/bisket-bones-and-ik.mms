@@ -72,7 +72,7 @@ ED {
 //     └── I (body_input)
 //           └── T (driven_t)
 //                 └── AVC
-//                       ├── TransformPipeline (body yaw pipeline)
+//                       ├── TransformForkTRS (body yaw pipeline root)
 //                       │     └── … → T (model_root, y = -1.6)
 //                       │                └── GLTF { EM }
 //                       └── [sys] splice_head  (TC injected above neck)

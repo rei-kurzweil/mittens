@@ -92,12 +92,11 @@ BG {
 //     └── InputXR
 //           └── T (driven_t)
 //                 └── AVC
-//                       ├── TransformPipeline (body pipeline)
-//                       │     TransformForkTRS
+//                       ├── TransformForkTRS (body pipeline root)
+//                       │     TransformMapRotation
 //                       │       TransformMapRotation
 //                       │         QuatYawFollow { threshold, rate, initial_yaw: π }
 //                       │       TransformMergeTRS
-//                       │     TransformPipelineOutput
 //                       │       └── T  ← model_root (y auto-calibrated from J_Bip_C_Head)
 //                       │             └── GLTF { EM }
 //                       │                   └── ... → J_Bip_C_Head
@@ -142,19 +141,15 @@ InputXR.on() {
         // Controller debug cubes (Aim pose, rotation-smoothed)
         CTLXR.new(true, Left, Aim) {
             T.scale(0.06, 0.06, 0.12) {
-                TransformPipeline {
-                    TransformForkTRS {
-                        TransformMapTranslation {}
-                        TransformMapRotation {
-                            QuatTemporalFilter.smoothing_factor(220.0)
-                        }
-                        TransformMapScale {}
+                TransformForkTRS {
+                    TransformMapTranslation {}
+                    TransformMapRotation {
+                        QuatTemporalFilter.smoothing_factor(220.0)
                     }
-                    TransformPipelineOutput {
-                        T {
-                            R.cube() {
-                                C.rgba(0.10, 0.90, 1.00, 1.0)
-                            }
+                    TransformMapScale {}
+                    T {
+                        R.cube() {
+                            C.rgba(0.10, 0.90, 1.00, 1.0)
                         }
                     }
                 }
@@ -163,19 +158,15 @@ InputXR.on() {
 
         CTLXR.new(true, Right, Aim) {
             T.scale(0.06, 0.06, 0.12) {
-                TransformPipeline {
-                    TransformForkTRS {
-                        TransformMapTranslation {}
-                        TransformMapRotation {
-                            QuatTemporalFilter.smoothing_factor(220.0)
-                        }
-                        TransformMapScale {}
+                TransformForkTRS {
+                    TransformMapTranslation {}
+                    TransformMapRotation {
+                        QuatTemporalFilter.smoothing_factor(220.0)
                     }
-                    TransformPipelineOutput {
-                        T {
-                            R.cube() {
-                                C.rgba(1.00, 0.35, 0.35, 1.0)
-                            }
+                    TransformMapScale {}
+                    T {
+                        R.cube() {
+                            C.rgba(1.00, 0.35, 0.35, 1.0)
                         }
                     }
                 }

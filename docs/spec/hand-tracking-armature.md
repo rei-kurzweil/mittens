@@ -2,6 +2,8 @@
 
 This document describes how to drive glTF armature/skeleton hierarchies from OpenXR hand-tracking joint data, enabling realistic hand poses for VTubers, VRM avatars, and other skinned models.
 
+Current authored usage note: `TransformPipeline` and `TransformPipelineOutput` were removed. Any smoothing pipeline in this doc should be read as `TransformForkTRS` rooted directly under the driven transform, with the smoothed hand or finger transform attached directly under that fork.
+
 **Scope:**
 - Hand-joint tracking from `XR_EXT_hand_tracking`
 - Mapping OpenXR joints to glTF armature bones
@@ -184,23 +186,17 @@ TransformComponent (hand root transform, applied to scene)
   ↓
 TransformComponent (finger base, driven by OpenXR joint)
   ↓
-TransformPipelineComponent
+TransformForkTRS
   ↓
-  TransformForkTRS
+  TransformMapRotation
     ↓
-    TransformMapRotation
-      ↓
-      QuatTemporalFilter (lower_frequency_hz=10.0)
-    ↓
-    TransformMapTranslation (passthrough)
-    ↓
-    TransformMapScale (passthrough)
+    QuatTemporalFilter (lower_frequency_hz=10.0)
   ↓
-  TransformMergeTRS
+  TransformMapTranslation (passthrough)
   ↓
-  TransformPipelineOutput
-    ↓
-    TransformComponent (smoothed finger output, used for skinning)
+  TransformMapScale (passthrough)
+  ↓
+  TransformComponent (smoothed finger output, used for skinning)
 ```
 
 The `QuatTemporalFilter` applies a low-pass filter to rotation, smoothing jitter while preserving large motions. Translation and scale typically pass through unchanged.
@@ -274,9 +270,9 @@ Wrap finger bones in transform pipelines to smooth noisy input:
 
 ```rust
 let thumb_base = find_bone_by_name(left_hand_root, "hand.L.thumb.01")?;
-let pipeline = universe.world.add_component(TransformPipelineComponent::new());
+let pipeline = universe.world.add_component(TransformForkTRSComponent::new());
 
-// ... build fork/map/filter/merge/output pipeline ...
+// ... build map/filter nodes and attach the smoothed output transform directly under `pipeline` ...
 
 universe.attach(thumb_base, pipeline);
 ```

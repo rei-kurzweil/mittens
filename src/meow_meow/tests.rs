@@ -138,19 +138,15 @@ fn parse_controller_cube_tree() {
     let src = r#"
 CTLXR.new(true, Left, Aim) {
     T.with_scale(0.06, 0.06, 0.12) {
-        TransformPipeline {
-            TransformForkTRS {
-                TransformMapTranslation {}
-                TransformMapRotation {
-                    QuatTemporalFilter.with_smoothing_factor(220.0)
-                }
-                TransformMapScale {}
+        TransformForkTRS {
+            TransformMapTranslation {}
+            TransformMapRotation {
+                QuatTemporalFilter.with_smoothing_factor(220.0)
             }
-            TransformPipelineOutput {
-                T {
-                    R.cube() {
-                        C.rgba(0.10, 0.90, 1.00, 1.0)
-                    }
+            TransformMapScale {}
+            T {
+                R.cube() {
+                    C.rgba(0.10, 0.90, 1.00, 1.0)
                 }
             }
         }
@@ -173,18 +169,17 @@ CTLXR.new(true, Left, Aim) {
     assert_eq!(t_scale.component_type.0, "T");
     assert_eq!(t_scale.constructors.first().unwrap().method.0, "with_scale");
 
-    // T → TransformPipeline
+    // T → TransformForkTRS
     assert_eq!(t_scale.body.statements.len(), 1);
     let pipeline = as_component!(&t_scale.body.statements[0]);
-    assert_eq!(pipeline.component_type.0, "TransformPipeline");
+    assert_eq!(pipeline.component_type.0, "TransformForkTRS");
 
-    // pipeline → fork + output
-    assert_eq!(pipeline.body.statements.len(), 2);
-    let fork = as_component!(&pipeline.body.statements[0]);
-    assert_eq!(fork.component_type.0, "TransformForkTRS");
+    // fork root → translation, rotation, scale, downstream T
+    assert_eq!(pipeline.body.statements.len(), 4);
+    let fork = pipeline;
 
     // fork → translation, rotation, scale
-    assert_eq!(fork.body.statements.len(), 3);
+    assert_eq!(fork.body.statements.len(), 4);
     let map_rot = as_component!(&fork.body.statements[1]);
     assert_eq!(map_rot.component_type.0, "TransformMapRotation");
 
@@ -194,9 +189,8 @@ CTLXR.new(true, Left, Aim) {
     assert_eq!(filter.component_type.0, "QuatTemporalFilter");
     assert_eq!(filter.constructors.first().unwrap().method.0, "with_smoothing_factor");
 
-    // output → T → R.cube → C.rgba
-    let output = as_component!(&pipeline.body.statements[1]);
-    let out_t = as_component!(&output.body.statements[0]);
+    // downstream T → R.cube → C.rgba
+    let out_t = as_component!(&fork.body.statements[3]);
     let cube = as_component!(&out_t.body.statements[0]);
     assert_eq!(cube.component_type.0, "R");
     assert_eq!(cube.constructors.first().unwrap().method.0, "cube");
