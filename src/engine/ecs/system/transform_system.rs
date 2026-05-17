@@ -2,7 +2,7 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     Camera2DComponent, Camera3DComponent, CollisionComponent, RenderableComponent,
-    TransformComponent, TransformPipelineOutputComponent,
+    TransformComponent, TransformParentComponent, TransformPipelineOutputComponent,
 };
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::System;
@@ -45,6 +45,181 @@ impl TransformSystem {
             }
         }
         out
+    }
+
+    fn is_descendant_of(world: &World, mut node: ComponentId, ancestor: ComponentId) -> bool {
+        while let Some(parent) = world.parent_of(node) {
+            if parent == ancestor {
+                return true;
+            }
+            node = parent;
+        }
+        false
+    }
+
+    fn nearest_transform_self_or_ancestor(world: &World, cid: ComponentId) -> Option<ComponentId> {
+        if world.get_component_by_id_as::<TransformComponent>(cid).is_some() {
+            return Some(cid);
+        }
+        let mut cur = cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if world.get_component_by_id_as::<TransformComponent>(parent).is_some() {
+                return Some(parent);
+            }
+            cur = parent;
+        }
+        None
+    }
+
+    fn is_transform_stream_boundary_between_tcs(world: &World, cid: ComponentId) -> bool {
+        world
+            .get_component_by_id_as::<TransformPipelineOutputComponent>(cid)
+            .is_some()
+            || world.get_component_by_id_as::<TransformParentComponent>(cid).is_some()
+    }
+
+    fn apply_transform_parent_basis(
+        world: &World,
+        node: ComponentId,
+        current_world: TransformMatrix,
+    ) -> TransformMatrix {
+        world
+            .get_component_by_id_as::<TransformParentComponent>(node)
+            .and_then(|tp| tp.resolve_target_component(world))
+            .and_then(|target| Self::world_model(world, target))
+            .unwrap_or(current_world)
+    }
+
+    fn propagate_subtree(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        root_node: ComponentId,
+        inherited_world: TransformMatrix,
+        transform_pipeline_system: &mut TransformPipelineSystem,
+        camera_system: &mut crate::engine::ecs::system::CameraSystem,
+        collision_system: &mut CollisionSystem,
+    ) {
+        let mut stack: Vec<(ComponentId, TransformMatrix)> = vec![(root_node, inherited_world)];
+        while let Some((node, current_world)) = stack.pop() {
+            let current_world = Self::apply_transform_parent_basis(world, node, current_world);
+            let pipeline_evaluated = transform_pipeline_system.evaluate_pipeline_node(
+                world,
+                node,
+                current_world,
+            );
+            let (current_world, pipeline_output_roots) = match pipeline_evaluated {
+                Some((processed_world, outputs)) => (processed_world, Some(outputs)),
+                None => (current_world, None),
+            };
+
+            let children: Vec<ComponentId> = match pipeline_output_roots {
+                Some(outputs) if !outputs.is_empty() => outputs,
+                _ => world.children_of(node).to_vec(),
+            };
+            for child in children {
+                let next_world = if let Some(t) =
+                    world.get_component_by_id_as_mut::<TransformComponent>(child)
+                {
+                    let w = Self::mat4_mul(current_world, t.transform.model);
+                    t.transform.matrix_world = w;
+                    w
+                } else {
+                    current_world
+                };
+
+                if world
+                    .get_component_by_id_as::<TransformComponent>(node)
+                    .is_some()
+                {
+                    if world
+                        .get_component_by_id_as::<Camera2DComponent>(child)
+                        .is_some()
+                    {
+                        camera_system
+                            .update_camera_2d_from_parent_transform(world, visuals, child, node);
+                    }
+
+                    if world
+                        .get_component_by_id_as::<Camera3DComponent>(child)
+                        .is_some()
+                    {
+                        camera_system
+                            .update_camera_3d_from_parent_transform(world, visuals, child, node);
+                    }
+
+                    if world
+                        .get_component_by_id_as::<CollisionComponent>(child)
+                        .is_some()
+                    {
+                        collision_system.update_from_transform(world, child, node);
+                    }
+                }
+
+                if let Some(handle) = world
+                    .get_component_by_id_as::<RenderableComponent>(child)
+                    .and_then(|r| r.get_handle())
+                {
+                    visuals.update_model(handle, next_world);
+                }
+
+                stack.push((child, next_world));
+            }
+        }
+    }
+
+    fn update_transform_parent_dependents(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        changed_component: ComponentId,
+        transform_pipeline_system: &mut TransformPipelineSystem,
+        camera_system: &mut crate::engine::ecs::system::CameraSystem,
+        light_system: &mut crate::engine::ecs::system::LightSystem,
+        collision_system: &mut CollisionSystem,
+    ) {
+        let dependents: Vec<ComponentId> = world
+            .all_components()
+            .filter(|&cid| world.get_component_by_id_as::<TransformParentComponent>(cid).is_some())
+            .filter(|&cid| !Self::is_descendant_of(world, cid, changed_component))
+            .filter(|&cid| {
+                world
+                    .get_component_by_id_as::<TransformParentComponent>(cid)
+                    .and_then(|tp| tp.resolve_target_component(world))
+                    .and_then(|target| Self::nearest_transform_self_or_ancestor(world, target))
+                    == Some(changed_component)
+            })
+            .collect();
+
+        for dependent in dependents {
+            let Some(inherited_world) = world
+                .get_component_by_id_as::<TransformParentComponent>(dependent)
+                .and_then(|tp| tp.resolve_target_component(world))
+                .and_then(|target| Self::world_model(world, target))
+            else {
+                continue;
+            };
+
+            self.propagate_subtree(
+                world,
+                visuals,
+                dependent,
+                inherited_world,
+                transform_pipeline_system,
+                camera_system,
+                collision_system,
+            );
+
+            let child_transform_roots: Vec<ComponentId> = world
+                .children_of(dependent)
+                .iter()
+                .copied()
+                .filter(|&cid| world.get_component_by_id_as::<TransformComponent>(cid).is_some())
+                .collect();
+            for root in child_transform_roots {
+                light_system.transform_changed(world, visuals, root);
+            }
+        }
     }
 
     /// Compute the world-space model matrix for a component by walking up the component tree
@@ -94,10 +269,10 @@ impl TransformSystem {
         // Then update any dependent renderables/cameras under the subtree.
 
         // Build the chain of ancestor transforms (including `component`) from root -> leaf,
-        // stopping at any TC whose immediate non-TC ancestors include a
-        // `TransformPipelineOutputComponent`.  Such a TC's `matrix_world` is owned by the
-        // pipeline: walking further up and recomputing from local matrices would bypass the
-        // pipeline and overwrite its output with incorrect values.  Instead we treat that TC
+        // stopping at any TC whose immediate non-TC ancestors include a transform-stream
+        // boundary node. Such a TC's `matrix_world` is owned by that boundary's computed
+        // basis: walking further up and recomputing from local matrices would bypass the
+        // operator and overwrite its output with incorrect values. Instead we treat that TC
         // as the chain root and start the chain-world from its cached `matrix_world`.
         let mut transform_chain: Vec<ComponentId> = Vec::new();
         let mut pipeline_boundary = false; // true → transform_chain[0] is a pipeline-output TC
@@ -105,15 +280,12 @@ impl TransformSystem {
         'chain: loop {
             if world.get_component_by_id_as::<TransformComponent>(cur).is_some() {
                 transform_chain.push(cur);
-                // Check whether this TC sits directly under a TransformPipelineOutputComponent
-                // (i.e., any non-TC node on the path to the next TC ancestor is a pipeline
-                // output node).  If so, its world is pipeline-managed — stop here.
+                // Check whether this TC sits directly under a transform-stream boundary node
+                // (i.e., any non-TC node on the path to the next TC ancestor changes the
+                // inherited world basis). If so, its world is operator-managed — stop here.
                 let mut probe = cur;
                 while let Some(p) = world.parent_of(probe) {
-                    if world
-                        .get_component_by_id_as::<TransformPipelineOutputComponent>(p)
-                        .is_some()
-                    {
+                    if Self::is_transform_stream_boundary_between_tcs(world, p) {
                         pipeline_boundary = true;
                         break 'chain;
                     }
@@ -165,92 +337,78 @@ impl TransformSystem {
             None => return,
         };
 
-        // DFS the component subtree.
-        //
-        // `current_world` means: the world-space transform basis that descendants of `node`
-        // should currently inherit from.
-        //
-        // More concretely, this starts as the changed transform's cached `matrix_world`, then
-        // may be modified by filter/pipeline nodes that do not themselves introduce a new
-        // `TransformComponent`, but still alter the inherited transform stream seen by their
-        // descendants. When we later hit a real `TransformComponent` child, we compose that
-        // child's local model against this `current_world` to produce its new cached world
-        // matrix.
-        let mut stack: Vec<(ComponentId, TransformMatrix)> = vec![(component, root_world)];
-        while let Some((node, current_world)) = stack.pop() {
-            let pipeline_evaluated = transform_pipeline_system.evaluate_pipeline_node(
-                world,
-                node,
-                current_world,
-            );
-            let (current_world, pipeline_output_roots) = match pipeline_evaluated {
-                Some((processed_world, outputs)) => (processed_world, Some(outputs)),
-                None => (current_world, None),
-            };
-
-            let children: Vec<ComponentId> = match pipeline_output_roots {
-                Some(outputs) if !outputs.is_empty() => outputs,
-                _ => world.children_of(node).to_vec(),
-            };
-            for child in children {
-                // If we encounter a TransformComponent, update its cached world matrix and
-                // use it for its subtree.
-                let next_world = if let Some(t) =
-                    world.get_component_by_id_as_mut::<TransformComponent>(child)
-                {
-                    let w = Self::mat4_mul(current_world, t.transform.model);
-                    t.transform.matrix_world = w;
-                    w
-                } else {
-                    current_world
-                };
-
-                // If `node` is a TransformComponent and it directly parents a camera component,
-                // update that camera (the update methods themselves guard on active handle).
-                if world
-                    .get_component_by_id_as::<TransformComponent>(node)
-                    .is_some()
-                {
-                    if world
-                        .get_component_by_id_as::<Camera2DComponent>(child)
-                        .is_some()
-                    {
-                        camera_system
-                            .update_camera_2d_from_parent_transform(world, visuals, child, node);
-                    }
-
-                    if world
-                        .get_component_by_id_as::<Camera3DComponent>(child)
-                        .is_some()
-                    {
-                        camera_system
-                            .update_camera_3d_from_parent_transform(world, visuals, child, node);
-                    }
-
-                    // If this transform directly parents a CollisionComponent, update it.
-                    if world
-                        .get_component_by_id_as::<CollisionComponent>(child)
-                        .is_some()
-                    {
-                        collision_system.update_from_transform(world, child, node);
-                    }
-                }
-
-                // Update VisualWorld model matrices for any renderables in the subtree.
-                if let Some(handle) = world
-                    .get_component_by_id_as::<RenderableComponent>(child)
-                    .and_then(|r| r.get_handle())
-                {
-                    visuals.update_model(handle, next_world);
-                }
-
-                stack.push((child, next_world));
-            }
-        }
+        self.propagate_subtree(
+            world,
+            visuals,
+            component,
+            root_world,
+            transform_pipeline_system,
+            camera_system,
+            collision_system,
+        );
 
         // If any point lights live under this transform, update their world-space position.
         // LightSystem uses TransformSystem::world_position(), which now reads cached matrices.
         light_system.transform_changed(world, visuals, component);
+        self.update_transform_parent_dependents(
+            world,
+            visuals,
+            component,
+            transform_pipeline_system,
+            camera_system,
+            light_system,
+            collision_system,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TransformSystem;
+    use crate::engine::ecs::component::{TransformComponent, TransformParentComponent};
+    use crate::engine::ecs::system::{
+        CameraSystem, CollisionSystem, LightSystem, TransformPipelineSystem,
+    };
+    use crate::engine::ecs::World;
+    use crate::engine::graphics::VisualWorld;
+
+    #[test]
+    fn transform_parent_updates_cross_tree_child_when_target_changes() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::default();
+        let mut transform_system = TransformSystem::new();
+        let mut transform_pipeline_system = TransformPipelineSystem::new();
+        let mut camera_system = CameraSystem::new();
+        let mut light_system = LightSystem::new();
+        let mut collision_system = CollisionSystem::new();
+
+        let source = world.add_component(TransformComponent::new().with_position(1.0, 0.0, 0.0));
+        let dependent_root = world.add_component(TransformComponent::new());
+        let transform_parent = world.add_component(
+            TransformParentComponent::new().with_target_source(
+                crate::engine::ecs::component::ComponentRef::Query("#source".to_string()),
+            ),
+        );
+        let child = world.add_component(TransformComponent::new().with_position(0.0, 2.0, 0.0));
+
+        world.get_component_record_mut(source).unwrap().name = "source".to_string();
+        world.add_child(dependent_root, transform_parent).unwrap();
+        world.add_child(transform_parent, child).unwrap();
+
+        transform_system.transform_changed(
+            &mut world,
+            &mut visuals,
+            source,
+            &mut transform_pipeline_system,
+            &mut camera_system,
+            &mut light_system,
+            &mut collision_system,
+        );
+
+        assert_eq!(
+            TransformSystem::world_position(&world, child),
+            Some([1.0, 2.0, 0.0])
+        );
     }
 }
 

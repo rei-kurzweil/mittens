@@ -621,7 +621,7 @@ fn collect_serializable_component_asts(
     let Some(node) = world.get_component_record(root) else {
         return Vec::new();
     };
-    let mut ce = node.component.to_mms_ast();
+    let mut ce = node.component.to_mms_ast(world);
     for &child in &node.children {
         for child_ce in collect_serializable_component_asts(
             world,

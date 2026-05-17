@@ -1924,6 +1924,24 @@ fn roundtrip_transform_sample_ancestor() {
 }
 
 #[test]
+fn roundtrip_transform_parent() {
+    use crate::engine::ecs::component::{ComponentRef, TransformParentComponent};
+    let original = TransformParentComponent::new()
+        .with_target_source(ComponentRef::Query("#hero".to_string()))
+        .with_root_source(ComponentRef::Query("#scene".to_string()));
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<TransformParentComponent>(id).unwrap();
+    match got.target_source.as_ref() {
+        Some(ComponentRef::Query(s)) => assert_eq!(s, "#hero"),
+        other => panic!("unexpected target_source: {other:?}"),
+    }
+    match got.root_source.as_ref() {
+        Some(ComponentRef::Query(s)) => assert_eq!(s, "#scene"),
+        other => panic!("unexpected root_source: {other:?}"),
+    }
+}
+
+#[test]
 fn roundtrip_quat_temporal_filter() {
     use crate::engine::ecs::component::QuatTemporalFilterComponent;
     let (world, id) = roundtrip_component(QuatTemporalFilterComponent::new().with_smoothing_factor(220.0));

@@ -27,6 +27,7 @@ use crate::engine::ecs::component::{
     QuatTemporalFilterComponent, RaycastableComponent, RenderableComponent,
     RendererSettingsComponent, RendererStatsComponent, TextComponent, TextShadowComponent,
     StencilClipComponent, TextureFilteringComponent, TransformComponent, TransformDropComponent,
+    TransformParentComponent,
     TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
     TransformMapTranslationComponent, TransformMergeTRSComponent,
     TransformPipelineComponent, TransformPipelineOutputComponent,
@@ -270,7 +271,9 @@ fn collect_referenced_guids(
     node: ComponentId,
     out: &mut std::collections::HashSet<uuid::Uuid>,
 ) {
-    use crate::engine::ecs::component::{ActionComponent, ComponentRef, IKChainComponent};
+    use crate::engine::ecs::component::{
+        ActionComponent, ComponentRef, IKChainComponent, TransformParentComponent,
+    };
     if let Some(action) = world.get_component_by_id_as::<ActionComponent>(node) {
         for src in &action.target_sources {
             if let ComponentRef::Guid(u) = src {
@@ -280,6 +283,13 @@ fn collect_referenced_guids(
     }
     if let Some(ik) = world.get_component_by_id_as::<IKChainComponent>(node) {
         for src in [&ik.target_source, &ik.end_effector_source].iter().copied().flatten() {
+            if let ComponentRef::Guid(u) = src {
+                out.insert(*u);
+            }
+        }
+    }
+    if let Some(tp) = world.get_component_by_id_as::<TransformParentComponent>(node) {
+        for src in [&tp.target_source, &tp.root_source].iter().copied().flatten() {
             if let ComponentRef::Guid(u) = src {
                 out.insert(*u);
             }
@@ -829,6 +839,12 @@ fn create_component(
             _ => Err("ControllerXR requires .new(enabled, hand, pose)".into()),
         },
         "TransformPipeline" => add!(TransformPipelineComponent::new()),
+        "TransformParent" => match ctor {
+            Some("target") => add!(
+                TransformParentComponent::new().with_target_source(arg_component_ref(world, args, 0)?)
+            ),
+            _ => add!(TransformParentComponent::new()),
+        },
         "TransformForkTRS" => add!(TransformForkTRSComponent::new()),
         "TransformMapTranslation" => add!(TransformMapTranslationComponent::new()),
         "TransformMapRotation" => add!(TransformMapRotationComponent::new()),
@@ -1509,6 +1525,24 @@ fn apply_call(
                     if let Some(r) = resolved {
                         ik.end_effector_id = r;
                     }
+                }
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+    if world.get_component_by_id_as::<TransformParentComponent>(id).is_some() {
+        match method {
+            "target" => {
+                let src = arg_component_ref(world, args, 0)?;
+                if let Some(tp) = world.get_component_by_id_as_mut::<TransformParentComponent>(id) {
+                    tp.target_source = Some(src);
+                }
+            }
+            "root" => {
+                let src = arg_component_ref(world, args, 0)?;
+                if let Some(tp) = world.get_component_by_id_as_mut::<TransformParentComponent>(id) {
+                    tp.root_source = Some(src);
                 }
             }
             _ => {}

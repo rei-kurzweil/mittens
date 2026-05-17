@@ -74,6 +74,7 @@ pub mod texture;
 pub mod texture_filtering;
 pub mod transition;
 pub mod transform;
+pub mod transform_parent;
 pub mod transform_pipeline;
 pub mod world_panel;
 pub mod transform_pipeline_map;
@@ -164,6 +165,7 @@ pub use texture::{CatEngineTextureFormat, TextureComponent};
 pub use texture_filtering::TextureFilteringComponent;
 pub use transition::{TransitionComponent, TransitionEasing, TransitionReplacePolicy};
 pub use transform::TransformComponent;
+pub use transform_parent::TransformParentComponent;
 pub use world_panel::WorldPanelComponent;
 pub use transform_pipeline::{
     TransformDropComponent, TransformForkTRSComponent, TransformMergeTRSComponent,
