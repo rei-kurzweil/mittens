@@ -200,14 +200,8 @@ Both params are optional and may be supplied at the call site **or**
 pre-authored on the component at registration / definition time (see
 §6.4.1). Call-site values override pre-authored defaults.
 
-Resolution order for each param:
-
-1. argument passed to `.play(...)`
-2. pre-authored default on the note (`target(...)`, `at_beat(...)` in the
-   component body)
-3. context / topology default (see §6.6 for `audio_source`)
-4. for `scheduled_beat`: `None` → fire immediately (beat_offset = 0)
-   for `audio_source`: compile error
+Full resolution precedence (covers both params, plus context/topology
+fallbacks for `audio_source`): see §6.6.
 
 #### 6.4.1 Pre-authored defaults
 
