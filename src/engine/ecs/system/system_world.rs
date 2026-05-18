@@ -1264,7 +1264,6 @@ impl SystemWorld {
         _visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.music.apply_music_note_to_oscillator(world, component);
         self.audio.register_audio_oscillator(world, component);
     }
 

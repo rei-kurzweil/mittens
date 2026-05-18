@@ -1491,8 +1491,17 @@ fn apply_call(
         return Ok(());
     }
     if let Some(mn) = world.get_component_by_id_as_mut::<MusicNoteComponent>(id) {
-        if method == "velocity" {
-            mn.note = mn.note.with_velocity(arg_f32(args, 0)?);
+        match method {
+            "velocity" => {
+                mn.note = mn.note.with_velocity(arg_f32(args, 0)?);
+            }
+            "play_on_attach" => {
+                mn.play_on_attach = true;
+            }
+            "at_beat" => {
+                mn.scheduled_beat = Some(arg_f32(args, 0)? as f64);
+            }
+            _ => {}
         }
         return Ok(());
     }

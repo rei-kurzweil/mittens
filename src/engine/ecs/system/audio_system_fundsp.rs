@@ -631,7 +631,6 @@ fn apply_audio_op(oscs: &mut [AudioOscillator], op: AudioOp) {
         AudioOp::SetHz(hz) => {
             for o in oscs.iter_mut() {
                 o.frequency = hz;
-                o.music_note_applied = true;
             }
         }
         AudioOp::SetGain(_) => {}

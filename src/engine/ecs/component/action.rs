@@ -92,7 +92,6 @@ pub fn signal_target_slot_count(signal: &IntentValue) -> usize {
         | OscillatorSetPitch { component_ids, .. }
         | OscillatorScheduleSetPitch { component_ids, .. }
         | AudioSchedulePlay { component_ids, .. }
-        | MusicSetNote { component_ids, .. }
         | UpdateTransform { component_ids, .. } => component_ids.len(),
 
         Attach { parents, .. } | AttachClone { parents, .. } => parents.len() + 1,
@@ -129,7 +128,6 @@ pub fn apply_resolved_targets(signal: &mut IntentValue, ids: &[ComponentId]) {
         | OscillatorSetPitch { component_ids, .. }
         | OscillatorScheduleSetPitch { component_ids, .. }
         | AudioSchedulePlay { component_ids, .. }
-        | MusicSetNote { component_ids, .. }
         | UpdateTransform { component_ids, .. } => {
             let n = component_ids.len();
             component_ids.copy_from_slice(take(n));

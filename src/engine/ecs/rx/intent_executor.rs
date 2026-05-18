@@ -44,7 +44,6 @@ impl RxIntentExecutor {
                 | IntentValue::OscillatorSetPitch { .. }
                 | IntentValue::OscillatorScheduleSetPitch { .. }
                 | IntentValue::AudioSchedulePlay { .. }
-                | IntentValue::MusicSetNote { .. }
         )
     }
 
@@ -58,7 +57,7 @@ impl RxIntentExecutor {
 fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &Signal) {
     use crate::engine::ecs::component::{
         AudioBandPassFilterComponent, AudioLowPassFilterComponent, AudioOscillatorComponent,
-        ColorComponent, MusicNoteComponent, RayCastComponent, TransformComponent,
+        ColorComponent, RayCastComponent, TransformComponent,
     };
     use crate::engine::ecs::system::MusicSystem;
     use crate::engine::ecs::system::audio_system::AudioOp;
@@ -496,7 +495,6 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 {
                     for osc in c.oscillators.iter_mut() {
                         osc.frequency = *frequency_hz;
-                        osc.music_note_applied = true;
                     }
                     emit.push_intent_now(
                         osc_cid,
@@ -616,43 +614,6 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        IntentValue::MusicSetNote {
-            component_ids,
-            note,
-        } => {
-            let mut osc_cids = Vec::new();
-            for &t in component_ids.iter() {
-                collect_oscillator_targets(world, t, &mut osc_cids);
-            }
-            osc_cids.sort();
-            osc_cids.dedup();
-            for osc_cid in osc_cids {
-                if let Some(note_cid) = find_first_music_note_component(world, osc_cid) {
-                    if let Some(nc) =
-                        world.get_component_by_id_as_mut::<MusicNoteComponent>(note_cid)
-                    {
-                        nc.note = *note;
-                    }
-                }
-
-                let freq = MusicSystem::frequency_hz_for_note(*note);
-                if let Some(c) =
-                    world.get_component_by_id_as_mut::<AudioOscillatorComponent>(osc_cid)
-                {
-                    for osc in c.oscillators.iter_mut() {
-                        osc.frequency = freq;
-                        osc.music_note_applied = true;
-                    }
-                    emit.push_intent_now(
-                        osc_cid,
-                        IntentValue::RegisterAudioOscillator {
-                            component_ids: vec![osc_cid],
-                        },
-                    );
-                }
-            }
-        }
-
         _ => {}
     }
 }
@@ -745,32 +706,6 @@ fn emit_topology_transform_refresh(world: &World, emit: &mut dyn SignalEmitter, 
     }
 }
 
-fn find_first_music_note_component(world: &World, target: ComponentId) -> Option<ComponentId> {
-    use crate::engine::ecs::component::MusicNoteComponent;
-
-    // Find the first MusicNoteComponent anywhere in the subtree.
-    if world
-        .get_component_by_id_as::<MusicNoteComponent>(target)
-        .is_some()
-    {
-        return Some(target);
-    }
-
-    let mut stack = vec![target];
-    while let Some(node) = stack.pop() {
-        for &ch in world.children_of(node) {
-            if world
-                .get_component_by_id_as::<MusicNoteComponent>(ch)
-                .is_some()
-            {
-                return Some(ch);
-            }
-            stack.push(ch);
-        }
-    }
-    None
-}
-
 fn collect_color_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {
     use crate::engine::ecs::component::{ColorComponent, RenderableComponent};
 
@@ -828,6 +763,7 @@ fn collect_oscillator_targets(world: &World, target: ComponentId, out: &mut Vec<
         return;
     }
 
+    let before = out.len();
     let mut stack = vec![target];
     while let Some(node) = stack.pop() {
         for &ch in world.children_of(node) {
@@ -839,6 +775,22 @@ fn collect_oscillator_targets(world: &World, target: ComponentId, out: &mut Vec<
             .is_some()
         {
             out.push(node);
+        }
+    }
+
+    // Fallback per docs/spec/audio-sources.md §6.6 rank 5: if no oscillator was
+    // found in the subtree, walk parents to find the nearest source ancestor.
+    if out.len() == before {
+        let mut cur = target;
+        while let Some(p) = world.parent_of(cur) {
+            if world
+                .get_component_by_id_as::<AudioOscillatorComponent>(p)
+                .is_some()
+            {
+                out.push(p);
+                return;
+            }
+            cur = p;
         }
     }
 }

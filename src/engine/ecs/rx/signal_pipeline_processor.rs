@@ -77,7 +77,6 @@ impl SignalPipelineProcessor {
             | IntentValue::OscillatorSetPitch { component_ids, .. }
             | IntentValue::OscillatorScheduleSetPitch { component_ids, .. }
             | IntentValue::AudioSchedulePlay { component_ids, .. }
-            | IntentValue::MusicSetNote { component_ids, .. }
             | IntentValue::RegisterRenderable { component_ids }
             | IntentValue::RemoveRenderable { component_ids }
             | IntentValue::RegisterStencilClip { component_ids }
@@ -167,7 +166,6 @@ impl SignalPipelineProcessor {
             | IntentValue::OscillatorSetPitch { component_ids, .. }
             | IntentValue::OscillatorScheduleSetPitch { component_ids, .. }
             | IntentValue::AudioSchedulePlay { component_ids, .. }
-            | IntentValue::MusicSetNote { component_ids, .. }
             | IntentValue::RegisterRenderable { component_ids }
             | IntentValue::RemoveRenderable { component_ids }
             | IntentValue::RegisterStencilClip { component_ids }

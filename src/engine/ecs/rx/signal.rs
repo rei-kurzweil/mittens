@@ -318,11 +318,6 @@ pub enum IntentValue {
         duration: Option<f64>,
     },
 
-    MusicSetNote {
-        component_ids: Vec<ComponentId>,
-        note: crate::engine::ecs::component::MusicNote,
-    },
-
     RegisterRenderable {
         component_ids: Vec<ComponentId>,
     },
@@ -569,7 +564,6 @@ impl IntentValue {
             IntentValue::OscillatorSetPitch { .. } => "oscillator_set_pitch",
             IntentValue::OscillatorScheduleSetPitch { .. } => "oscillator_schedule_set_pitch",
             IntentValue::AudioSchedulePlay { .. } => "audio_schedule_play",
-            IntentValue::MusicSetNote { .. } => "music_set_note",
 
             IntentValue::RegisterRenderable { .. } => "register_renderable",
             IntentValue::RemoveRenderable { .. } => "remove_renderable",

@@ -21,12 +21,6 @@ pub struct AudioOscillator {
     pub frequency: f32,
     pub amplitude: f32,
     pub enabled: bool,
-
-    /// If true, `MusicSystem` will not overwrite this oscillator's frequency.
-    /// This is set to true once a MusicNote has been applied, or after any
-    /// action mutates the frequency (set/multiply pitch).
-    #[serde(default)]
-    pub(crate) music_note_applied: bool,
 }
 
 impl AudioOscillator {
@@ -87,7 +81,6 @@ impl Default for AudioOscillator {
             frequency: 440.0,
             amplitude: 0.2,
             enabled: true,
-            music_note_applied: false,
         }
     }
 }
