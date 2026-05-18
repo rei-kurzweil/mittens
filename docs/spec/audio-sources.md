@@ -134,47 +134,49 @@ That is a one-shot **initial-tuning setter**, not a trigger. It is also not
 parallel to `ActionComponent` — actions trigger over time, this just sets a
 default at init.
 
-### 6.3 Recommendation: desugar `MusicNote` to an `Action`
+### 6.3 Recommendation: `MusicNoteComponent` stays, semantics change
 
-Treat `MusicNote.C(4, 1.0)` (and friends) as **MMS sugar** for an
-`ActionComponent` whose signal is `AudioSchedulePlay` targeting the parent
-source. Not an ECS component at all.
+`MusicNoteComponent` keeps its component status but stops being an
+init-time tuning setter. New role: authored trigger that emits
+`AudioSchedulePlay`, with its target resolved by the enclosing
+`MusicContext` (or explicit constructor ref, or topology — see §6.6).
 
-Desugaring:
-
-```text
-AudioOscillator {
-    MusicNote.C(4, 1.0)
-}
-```
-
-becomes:
+Conceptual mapping:
 
 ```text
-AudioOscillator {
-    Action {
-        signal = AudioSchedulePlay {
-            targets = [<parent oscillator>]
-            note = MusicNote.C(4, 1.0)
-        }
-    }
-}
+old: MusicNoteComponent → MusicSystem::apply_music_note_to_oscillator
+                          → mutates AudioOscillatorComponent.frequency at init
+
+new: MusicNoteComponent → has .play() method + optional play_on_attach trigger
+                          → emits IntentValue::AudioSchedulePlay { note, targets }
+                          → targets resolved per §6.6 precedence
 ```
 
-The action fires through whatever drives it (keyframe, `OnInit`-style
-trigger, manual emission) — same path as every other action.
+Why keep it as a component:
 
-Reasons:
+- the MMS surface is already `MusicNote.C(4, 1.0)` and authors expect a
+  component-shaped thing they can attach, inspect, address, animate
+- `.play()` / `play_on_attach()` / pre-authored `target(...)` config all
+  need a stable place to live — a component is that place
+- `MusicContext` resolution needs to find notes by walking the tree; that
+  only works if notes are components
+- editor/inspector already enumerates components
 
-- removes the "two roles, same name" confusion — `MusicNote` is *only* a
-  trigger payload now
-- `AudioSchedulePlay.note` becomes the only `MusicNote` carrier in the runtime
-- `MusicNoteComponent` and `MusicSystem::apply_music_note_to_oscillator` both
-  disappear (no subtree walk, no `music_note_applied` flag, no init-time
-  frequency mutation)
-- one fewer ECS component to register, encode, inspect
-- preserves trigger semantics: a `MusicNote` always means "play this", never
-  "silently retune the oscillator's resting frequency"
+What changes:
+
+- `MusicSystem::apply_music_note_to_oscillator` is **removed** — no more
+  subtree walk, no more `music_note_applied` flag, no more silent
+  retuning of `AudioOscillatorComponent.frequency`
+- `MusicNoteComponent` gains a `target` field (resolved component ref),
+  a `scheduled_beat` field (optional), and a `play_on_attach` flag
+- `Component::init` for `MusicNoteComponent` checks `play_on_attach` and
+  emits `AudioSchedulePlay` if set
+- a new `.play(beat?, source?)` method on the component binding emits
+  `AudioSchedulePlay` on demand (per §6.4)
+
+`AudioSchedulePlay.note` is the only `MusicNote` value carrier at runtime.
+The two-roles-same-name problem from §6.2 is resolved by removing the
+init-time tuning role; the component's only job now is "trigger a note".
 
 ### 6.4 Firing model
 
