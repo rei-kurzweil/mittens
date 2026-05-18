@@ -57,7 +57,7 @@ impl RxIntentExecutor {
 fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &Signal) {
     use crate::engine::ecs::component::{
         AudioBandPassFilterComponent, AudioLowPassFilterComponent, AudioOscillatorComponent,
-        ColorComponent, RayCastComponent, TransformComponent,
+        ColorComponent, MusicNoteComponent, RayCastComponent, TransformComponent,
     };
     use crate::engine::ecs::system::MusicSystem;
     use crate::engine::ecs::system::audio_system::AudioOp;
@@ -555,7 +555,20 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
 
             let mut osc_cids = Vec::new();
             for &t in component_ids.iter() {
+                let before = osc_cids.len();
                 collect_oscillator_targets(world, t, &mut osc_cids);
+                // Cache the resolved oscillator back into the MusicNoteComponent
+                // when this dispatch originated from one with no pre-resolved
+                // target. Subsequent fires skip the ancestor walk.
+                if let Some(&found) = osc_cids[before..].first() {
+                    if let Some(mn) =
+                        world.get_component_by_id_as_mut::<MusicNoteComponent>(t)
+                    {
+                        if mn.target_resolved.is_none() {
+                            mn.target_resolved = Some(found);
+                        }
+                    }
+                }
             }
             osc_cids.sort();
             osc_cids.dedup();

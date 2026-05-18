@@ -1,5 +1,5 @@
-use super::Component;
-use crate::engine::ecs::ComponentId;
+use super::{Component, ComponentRef};
+use crate::engine::ecs::{ComponentId, World};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -163,12 +163,18 @@ pub struct MusicNoteComponent {
     pub note: MusicNote,
 
     /// Pre-authored target audio source (`audio_source` per spec §6.4.1).
-    /// When None, resolution falls back to context / topology / error per
-    /// docs/spec/audio-sources.md §6.6. Runtime-only — serde round-trip
-    /// loses this; MMS authoring sets it through the component registry
-    /// resolution path (phase 3).
+    /// Durable ref preserved through serde / MMS dump. `target_resolved` is
+    /// the runtime cache filled by `resolve_target`. When both are None,
+    /// dispatch falls back to ancestor-walk per docs/spec/audio-sources.md
+    /// §6.6 rank 5 (the executor caches the result back here).
     #[serde(skip)]
-    pub target: Option<ComponentId>,
+    pub target_source: Option<ComponentRef>,
+
+    /// Runtime cache of the resolved target. Skipped by serde — fresh
+    /// loads re-resolve from `target_source` (or ancestor walk) on first
+    /// use, then this stays populated.
+    #[serde(skip)]
+    pub target_resolved: Option<ComponentId>,
 
     /// Pre-authored default beat (`scheduled_beat` per spec §6.4.1). When
     /// None, `.play()` fires immediately (beat_offset = 0).
@@ -188,7 +194,8 @@ impl MusicNoteComponent {
     pub fn new(note: MusicNote) -> Self {
         Self {
             note,
-            target: None,
+            target_source: None,
+            target_resolved: None,
             scheduled_beat: None,
             play_on_attach: false,
             component: None,
@@ -199,8 +206,8 @@ impl MusicNoteComponent {
         Self::new(note)
     }
 
-    pub fn with_target(mut self, target: ComponentId) -> Self {
-        self.target = Some(target);
+    pub fn with_target_source(mut self, source: ComponentRef) -> Self {
+        self.target_source = Some(source);
         self
     }
 
@@ -216,6 +223,32 @@ impl MusicNoteComponent {
 
     pub fn id(&self) -> Option<ComponentId> {
         self.component
+    }
+
+    /// Resolve `target_source` into `target_resolved` and return it.
+    /// Returns the cached id immediately if already resolved.
+    /// Returns `None` when no `target_source` is set — the executor's
+    /// ancestor-walk fallback handles that case and writes back the
+    /// resolved id to `target_resolved` afterward.
+    pub fn resolve_target(&mut self, world: &World) -> Option<ComponentId> {
+        if self.target_resolved.is_some() {
+            return self.target_resolved;
+        }
+        let src = self.target_source.as_ref()?;
+        let resolved = match src {
+            ComponentRef::Guid(uuid) => world.component_id_by_guid(*uuid),
+            ComponentRef::Query(selector) => {
+                let roots: Vec<ComponentId> = world
+                    .all_components()
+                    .filter(|&cid| world.parent_of(cid).is_none())
+                    .collect();
+                roots
+                    .into_iter()
+                    .find_map(|root| world.find_component(root, selector))
+            }
+        };
+        self.target_resolved = resolved;
+        resolved
     }
 }
 
@@ -252,9 +285,12 @@ impl Component for MusicNoteComponent {
         }
         // Per docs/spec/audio-sources.md §6.4: play_on_attach fires
         // AudioSchedulePlay when the component initializes. Target resolution
-        // is deferred to the executor — collect_oscillator_targets walks the
-        // subtree and falls back to ancestor lookup (§6.6 rank 5).
-        let target = self.target.unwrap_or(component);
+        // is deferred to the executor — `target_resolved` is filled either
+        // by `resolve_target` (when `target_source` is set) or by the
+        // executor's ancestor-walk writeback (when neither is set).
+        // Passing `component` (self id) here lets the executor walk both
+        // subtree and ancestor scopes.
+        let target = self.target_resolved.unwrap_or(component);
         emit.push_intent_now(
             component,
             crate::engine::ecs::IntentValue::AudioSchedulePlay {
