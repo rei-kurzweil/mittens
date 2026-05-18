@@ -364,12 +364,26 @@ no source ancestor. Compile error otherwise.
 
 #### Resolution precedence
 
-When multiple sources of truth could supply the target:
+Unified for both `audio_source` and `scheduled_beat`. Call-site always
+wins; whatever shows up in `.play(...)` overrides construction.
 
-1. explicit ref in note constructor — always wins
-2. enclosing `MusicContext` voice (named or index)
-3. nearest `AudioSource` ancestor in parent topology
-4. compile error
+| Rank | Source of value | Example |
+|---|---|---|
+| 1 | `.play(...)` call-site arg | `note.play(8.0, lead_osc)` |
+| 2 | Pre-authored default in note body | `MusicNote.C(...) { target("bass") at_beat(4.0) }` |
+| 3 | Constructor positional arg | `MusicNote.C(4, 1.0, "bass")` |
+| 4 | Enclosing `MusicContext` voice 0 (source only) | first entry in `voices {}` |
+| 5 | Nearest `AudioSource` ancestor (source only) | parent topology |
+| 6 | For `audio_source`: compile error<br>For `scheduled_beat`: fire immediately (`beat_offset = 0`) | — |
+
+Notes:
+
+- ranks 2 and 3 are both construction-time. Using both for the same
+  field is a conflict — compile error. Pick one style per note.
+- ranks 4 and 5 apply only to `audio_source`. `scheduled_beat` has no
+  topological default; absence just means "now".
+- ranks 1 and 2 always override 3, 4, 5. There is no "merge" — higher
+  rank fully replaces lower.
 
 #### Error case
 
