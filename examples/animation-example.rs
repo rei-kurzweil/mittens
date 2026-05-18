@@ -262,22 +262,28 @@ fn main() {
         let kick = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::IntentValue::OscillatorScheduleMusicNote {
+                engine::ecs::IntentValue::AudioSchedulePlay {
                     component_ids: vec![osc_drum_comp],
                     beat_offset: 0.0,
                     beat_context: None,
-                    note: engine::ecs::component::MusicNote::c(0, kick_dur).with_velocity(0.9),
+                    note: Some(engine::ecs::component::MusicNote::c(0, kick_dur).with_velocity(0.9)),
+                    gain: None,
+                    rate: None,
+                    duration: None,
                 },
             ));
 
         let noise = universe
             .world
             .add_component(engine::ecs::component::ActionComponent::new(
-                engine::ecs::IntentValue::OscillatorScheduleMusicNote {
+                engine::ecs::IntentValue::AudioSchedulePlay {
                     component_ids: vec![osc_noise_comp],
                     beat_offset: 0.5,
                     beat_context: None,
-                    note: engine::ecs::component::MusicNote::c(9, noise_dur).with_velocity(0.25),
+                    note: Some(engine::ecs::component::MusicNote::c(9, noise_dur).with_velocity(0.25)),
+                    gain: None,
+                    rate: None,
+                    duration: None,
                 },
             ));
 

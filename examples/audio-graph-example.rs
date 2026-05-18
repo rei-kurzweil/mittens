@@ -644,11 +644,14 @@ fn main() {
             let act_a = universe
                 .world
                 .add_component(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::IntentValue::OscillatorScheduleMusicNote {
+                    engine::ecs::IntentValue::AudioSchedulePlay {
                         component_ids: vec![osc_a_comp],
                         beat_offset: 0.0,
                         beat_context: None,
-                        note: note_a,
+                        note: Some(note_a),
+                        gain: None,
+                        rate: None,
+                        duration: None,
                     },
                 ));
 

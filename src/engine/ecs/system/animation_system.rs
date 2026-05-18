@@ -330,8 +330,7 @@ impl AnimationSystem {
                         let mut signal = action_comp.signal.clone();
                         match &mut signal {
                             IntentValue::OscillatorScheduleSetPitch { beat_context, .. }
-                            | IntentValue::OscillatorScheduleSetNote { beat_context, .. }
-                            | IntentValue::OscillatorScheduleMusicNote { beat_context, .. } => {
+                            | IntentValue::AudioSchedulePlay { beat_context, .. } => {
                                 // For lookahead, use the keyframe's intended global beat as
                                 // the scheduling context (so beat_offset is relative to kf beat).
                                 *beat_context = Some(kf_global_beat);
@@ -409,8 +408,7 @@ impl AnimationSystem {
                         {
                             match action_comp.signal {
                                 IntentValue::OscillatorScheduleSetPitch { .. }
-                                | IntentValue::OscillatorScheduleSetNote { .. }
-                                | IntentValue::OscillatorScheduleMusicNote { .. } => continue,
+                                | IntentValue::AudioSchedulePlay { .. } => continue,
                                 _ => {}
                             };
                         }
@@ -418,8 +416,7 @@ impl AnimationSystem {
                         let mut signal = action_comp.signal.clone();
                         match &mut signal {
                             IntentValue::OscillatorScheduleSetPitch { beat_context, .. }
-                            | IntentValue::OscillatorScheduleSetNote { beat_context, .. }
-                            | IntentValue::OscillatorScheduleMusicNote { beat_context, .. } => {
+                            | IntentValue::AudioSchedulePlay { beat_context, .. } => {
                                 // Real-time execution uses the current beat as context.
                                 *beat_context = Some(beat_now);
                             }

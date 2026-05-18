@@ -43,8 +43,7 @@ impl RxIntentExecutor {
                 | IntentValue::OscillatorSetEnabled { .. }
                 | IntentValue::OscillatorSetPitch { .. }
                 | IntentValue::OscillatorScheduleSetPitch { .. }
-                | IntentValue::OscillatorScheduleSetNote { .. }
-                | IntentValue::OscillatorScheduleMusicNote { .. }
+                | IntentValue::AudioSchedulePlay { .. }
                 | IntentValue::MusicSetNote { .. }
         )
     }
@@ -535,76 +534,26 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             }
         }
 
-        IntentValue::OscillatorScheduleSetNote {
-            component_ids,
-            beat_offset,
-            beat_context,
-            pitch,
-            octave,
-            duration_beats,
-        } => {
-            let duration_beats = (*duration_beats).max(0.0) as f64;
-            let beat = beat_context.unwrap_or(beat_now) + *beat_offset;
-
-            let note = crate::engine::ecs::component::MusicNote::from_pitch(
-                duration_beats as f32,
-                *pitch,
-                *octave,
-            );
-            let frequency_hz = MusicSystem::frequency_hz_for_note(note);
-
-            let mut osc_cids = Vec::new();
-            for &t in component_ids.iter() {
-                collect_oscillator_targets(world, t, &mut osc_cids);
-            }
-            osc_cids.sort();
-            osc_cids.dedup();
-            for osc_cid in osc_cids {
-                emit.push_intent_now(
-                    osc_cid,
-                    IntentValue::ScheduleAudioOscillatorEnabled {
-                        component_ids: vec![osc_cid],
-                        beat,
-                        enabled: true,
-                    },
-                );
-                emit.push_intent_now(
-                    osc_cid,
-                    IntentValue::ScheduleAudioPitchSetHz {
-                        component_ids: vec![osc_cid],
-                        beat,
-                        frequency_hz,
-                    },
-                );
-                if duration_beats.is_finite() && duration_beats > 0.0 {
-                    emit.push_intent_now(
-                        osc_cid,
-                        IntentValue::ScheduleAudioOscillatorEnabled {
-                            component_ids: vec![osc_cid],
-                            beat: beat + duration_beats,
-                            enabled: false,
-                        },
-                    );
-                }
-            }
-        }
-
-        IntentValue::OscillatorScheduleMusicNote {
+        IntentValue::AudioSchedulePlay {
             component_ids,
             beat_offset,
             beat_context,
             note,
+            gain,
+            rate: _,
+            duration,
         } => {
-            let velocity = note.velocity();
-            let velocity = if velocity.is_finite() {
-                velocity.max(0.0)
-            } else {
-                1.0
-            };
-
-            let frequency_hz = MusicSystem::frequency_hz_for_note(*note);
-            let duration_beats = note.duration_beats() as f64;
             let beat = beat_context.unwrap_or(beat_now) + *beat_offset;
+
+            // Per-source semantics (oscillator path): set pitch from note (if any),
+            // gate on, set gain, gate off after duration. See docs/spec/audio-sources.md §4.
+            let frequency_hz = note.as_ref().map(|n| MusicSystem::frequency_hz_for_note(*n));
+
+            let velocity_gain = gain.or_else(|| note.as_ref().map(|n| n.velocity()));
+            let final_gain = velocity_gain.map(|g| if g.is_finite() { g.max(0.0) } else { 1.0 });
+
+            let note_duration = note.as_ref().map(|n| n.duration_beats() as f64);
+            let stop_after = duration.or(note_duration);
 
             let mut osc_cids = Vec::new();
             for &t in component_ids.iter() {
@@ -621,40 +570,48 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                         enabled: true,
                     },
                 );
-                emit.push_intent_now(
-                    osc_cid,
-                    IntentValue::ScheduleAudioPitchSetHz {
-                        component_ids: vec![osc_cid],
-                        beat,
-                        frequency_hz,
-                    },
-                );
-                emit.push_intent_now(
-                    osc_cid,
-                    IntentValue::ScheduleAudioGainSet {
-                        component_ids: vec![osc_cid],
-                        beat,
-                        gain: velocity,
-                    },
-                );
-
-                if duration_beats.is_finite() && duration_beats > 0.0 {
+                if let Some(frequency_hz) = frequency_hz {
                     emit.push_intent_now(
                         osc_cid,
-                        IntentValue::ScheduleAudioOscillatorEnabled {
+                        IntentValue::ScheduleAudioPitchSetHz {
                             component_ids: vec![osc_cid],
-                            beat: beat + duration_beats,
-                            enabled: false,
+                            beat,
+                            frequency_hz,
                         },
                     );
+                }
+                if let Some(g) = final_gain {
                     emit.push_intent_now(
                         osc_cid,
                         IntentValue::ScheduleAudioGainSet {
                             component_ids: vec![osc_cid],
-                            beat: beat + duration_beats,
-                            gain: 1.0,
+                            beat,
+                            gain: g,
                         },
                     );
+                }
+
+                if let Some(dur) = stop_after {
+                    if dur.is_finite() && dur > 0.0 {
+                        emit.push_intent_now(
+                            osc_cid,
+                            IntentValue::ScheduleAudioOscillatorEnabled {
+                                component_ids: vec![osc_cid],
+                                beat: beat + dur,
+                                enabled: false,
+                            },
+                        );
+                        if final_gain.is_some() {
+                            emit.push_intent_now(
+                                osc_cid,
+                                IntentValue::ScheduleAudioGainSet {
+                                    component_ids: vec![osc_cid],
+                                    beat: beat + dur,
+                                    gain: 1.0,
+                                },
+                            );
+                        }
+                    }
                 }
             }
         }

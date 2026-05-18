@@ -300,22 +300,22 @@ pub enum IntentValue {
         frequency_hz: f32,
     },
 
-    /// Schedule a musical note at beat = beat_context + beat_offset.
-    OscillatorScheduleSetNote {
+    /// Unified play/trigger intent for any `AudioSource` (oscillator or clip).
+    /// Fires at beat = beat_context + beat_offset.
+    ///
+    /// `note` carries pitch/velocity/duration semantics when meaningful.
+    /// `gain` / `rate` / `duration` are generic playback overrides:
+    /// - oscillator: `rate` ignored, `gain` overrides note velocity, `duration` overrides note.duration
+    /// - clip: `rate` sets playback rate, `gain` overrides note velocity, `duration` overrides note.duration
+    /// See docs/spec/audio-sources.md §3 and §4.
+    AudioSchedulePlay {
         component_ids: Vec<ComponentId>,
         beat_offset: f64,
         beat_context: Option<f64>,
-        pitch: crate::engine::ecs::component::NotePitch,
-        octave: u16,
-        duration_beats: f32,
-    },
-
-    /// Schedule a note represented by a MusicNote payload at beat = beat_context + beat_offset.
-    OscillatorScheduleMusicNote {
-        component_ids: Vec<ComponentId>,
-        beat_offset: f64,
-        beat_context: Option<f64>,
-        note: crate::engine::ecs::component::MusicNote,
+        note: Option<crate::engine::ecs::component::MusicNote>,
+        gain: Option<f32>,
+        rate: Option<f32>,
+        duration: Option<f64>,
     },
 
     MusicSetNote {
@@ -568,8 +568,7 @@ impl IntentValue {
             IntentValue::OscillatorSetEnabled { .. } => "oscillator_set_enabled",
             IntentValue::OscillatorSetPitch { .. } => "oscillator_set_pitch",
             IntentValue::OscillatorScheduleSetPitch { .. } => "oscillator_schedule_set_pitch",
-            IntentValue::OscillatorScheduleSetNote { .. } => "oscillator_schedule_set_note",
-            IntentValue::OscillatorScheduleMusicNote { .. } => "oscillator_schedule_music_note",
+            IntentValue::AudioSchedulePlay { .. } => "audio_schedule_play",
             IntentValue::MusicSetNote { .. } => "music_set_note",
 
             IntentValue::RegisterRenderable { .. } => "register_renderable",
