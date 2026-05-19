@@ -12,6 +12,7 @@ use crate::meow_meow::tokenizer::MeowMeowTokenizer;
 use crate::engine::ecs::{CommandQueue, ComponentId, EventSignal, RxWorld, Signal, World};
 use crate::engine::ecs::component::{LayoutComponent, StyleComponent};
 use crate::engine::ecs::component::style::SizeDimension;
+use crate::meow_meow::unparser::unparse_program;
 
 fn parse(src: &str) -> Vec<Statement> {
     let tokens = MeowMeowTokenizer::new(src).tokenize().expect("tokenize ok");
@@ -112,6 +113,28 @@ fn parse_named_assignment_array() {
     assert_eq!(name.0, "rotation");
     let Expression::Array(items) = value else { panic!() };
     assert_eq!(items.len(), 3);
+}
+
+#[test]
+fn parse_else_if_chain() {
+    let prog = parse("if false { T {} } else if true { R {} } else { C {} }");
+    let Statement::If(if_stmt) = &prog[0] else { panic!("expected if statement") };
+    let else_if = match if_stmt.else_branch.as_ref() {
+        Some(crate::meow_meow::ast::ElseBranch::If(next_if)) => next_if,
+        _ => panic!("expected else-if branch"),
+    };
+    assert!(matches!(
+        else_if.else_branch.as_ref(),
+        Some(crate::meow_meow::ast::ElseBranch::Block(_))
+    ));
+}
+
+#[test]
+fn unparse_roundtrip_else_if_chain() {
+    let src = "if false { T {} } else if true { R {} } else { C {} }";
+    let prog = parse(src);
+    let reparsed = parse(&unparse_program(&prog));
+    assert_eq!(reparsed, prog);
 }
 
 // ---------------------------------------------------------------------------
@@ -912,6 +935,13 @@ fn body_if_false_excludes_child() {
 #[test]
 fn body_if_else_picks_else_branch() {
     let out = eval("T { if false { R.cube() {} } else { R.sphere() {} } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+}
+
+#[test]
+fn body_else_if_picks_first_matching_branch() {
+    let out = eval("T { if false { R.cube() {} } else if true { R.sphere() {} } else { R.cone() {} } }");
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.intents.len(), 1);
 }

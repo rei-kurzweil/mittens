@@ -157,5 +157,11 @@ pub struct ReturnStatement {
 pub struct IfStatement {
     pub condition: Expression,
     pub then_branch: BlockStatement,
-    pub else_branch: Option<BlockStatement>,
+    pub else_branch: Option<ElseBranch>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ElseBranch {
+    Block(BlockStatement),
+    If(Box<IfStatement>),
 }

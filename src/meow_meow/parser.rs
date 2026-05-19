@@ -1,6 +1,6 @@
 use crate::meow_meow::ast::{
     AssignmentStatement, BinOpKind, BlockStatement, CallExpression,
-    ComponentExpression, ConstructorCall, Expression, Ident, IfStatement, ImportItem,
+    ComponentExpression, ConstructorCall, ElseBranch, Expression, Ident, IfStatement, ImportItem,
     ReturnStatement, Span, Statement, UnaryOpKind,
 };
 use crate::meow_meow::token::{Token, TokenKind};
@@ -133,16 +133,7 @@ impl MeowMeowParser {
                 Ok(Statement::Return(ReturnStatement { value: Some(value) }))
             }
             TokenKind::If => {
-                self.consume(&TokenKind::If)?;
-                // No parentheses: `if condition { }` — condition is everything up to `{`
-                let condition = self.parse_expression()?;
-                let then_branch = self.parse_block_statement()?;
-                let else_branch = if self.try_consume(&TokenKind::Else) {
-                    Some(self.parse_block_statement()?)
-                } else {
-                    None
-                };
-                Ok(Statement::If(IfStatement { condition, then_branch, else_branch }))
+                Ok(Statement::If(self.parse_if_statement()?))
             }
             TokenKind::For => {
                 self.consume(&TokenKind::For)?;
@@ -203,6 +194,23 @@ impl MeowMeowParser {
             statements.push(self.parse_statement()?);
         }
         Ok(BlockStatement { statements })
+    }
+
+    fn parse_if_statement(&mut self) -> Result<IfStatement, ParseError> {
+        self.consume(&TokenKind::If)?;
+        // No parentheses: `if condition { }` — condition is everything up to `{`
+        let condition = self.parse_expression()?;
+        let then_branch = self.parse_block_statement()?;
+        let else_branch = if self.try_consume(&TokenKind::Else) {
+            if matches!(self.peek_kind(), TokenKind::If) {
+                Some(ElseBranch::If(Box::new(self.parse_if_statement()?)))
+            } else {
+                Some(ElseBranch::Block(self.parse_block_statement()?))
+            }
+        } else {
+            None
+        };
+        Ok(IfStatement { condition, then_branch, else_branch })
     }
 
     /// Pratt parser entry point.

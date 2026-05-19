@@ -12,7 +12,7 @@
 
 use crate::meow_meow::ast::{
     AssignmentStatement, BinOpKind, BlockStatement, CallExpression,
-    ComponentExpression, ConstructorCall, Expression, Ident, IfStatement, ImportItem,
+    ComponentExpression, ConstructorCall, ElseBranch, Expression, Ident, IfStatement, ImportItem,
     ReturnStatement, Statement, UnaryOpKind,
 };
 use crate::meow_meow::token::Unit;
@@ -133,7 +133,14 @@ impl<'a> Printer<'a> {
         self.block(&i.then_branch);
         if let Some(e) = &i.else_branch {
             self.out.push_str(" else ");
-            self.block(e);
+            self.else_branch(e);
+        }
+    }
+
+    fn else_branch(&mut self, e: &ElseBranch) {
+        match e {
+            ElseBranch::Block(block) => self.block(block),
+            ElseBranch::If(next_if) => self.if_stmt(next_if),
         }
     }
 

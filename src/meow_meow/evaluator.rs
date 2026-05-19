@@ -10,7 +10,7 @@ use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::SignalKind;
 use crate::engine::ecs::World;
 use crate::meow_meow::ast::{
-    BinOpKind, CallExpression, ComponentExpression,
+    BinOpKind, CallExpression, ComponentExpression, ElseBranch,
     Expression, IfStatement, ImportItem, Statement, UnaryOpKind,
 };
 use crate::meow_meow::object::{CeChild, FrameKind, MaterializedCE, ObjectWorld, Value};
@@ -644,18 +644,26 @@ fn eval_if(
     ctx: &mut EvalContext<'_>,
 ) -> Result<StmtEffect, String> {
     let cond = eval_expr(&if_stmt.condition, ctx)?;
-    let stmts = if is_truthy(&cond) {
-        Some(&if_stmt.then_branch.statements)
+    let branch = if is_truthy(&cond) {
+        Some(&if_stmt.then_branch)
     } else {
-        if_stmt.else_branch.as_ref().map(|b| &b.statements)
+        None
     };
-    match stmts {
-        Some(s) => {
+    if let Some(block) = branch {
+        ctx.object_world.push_frame(FrameKind::Block);
+        let result = eval_block_stmts(&block.statements, ctx);
+        ctx.object_world.pop_frame();
+        return result;
+    }
+
+    match &if_stmt.else_branch {
+        Some(ElseBranch::Block(block)) => {
             ctx.object_world.push_frame(FrameKind::Block);
-            let result = eval_block_stmts(s, ctx);
+            let result = eval_block_stmts(&block.statements, ctx);
             ctx.object_world.pop_frame();
             result
         }
+        Some(ElseBranch::If(next_if)) => eval_if(next_if, ctx),
         None => Ok(StmtEffect::None),
     }
 }

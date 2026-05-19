@@ -1,6 +1,7 @@
 /// AstTransform passes applied between parsing and evaluation.
 use crate::meow_meow::ast::{
-    BinOpKind, BlockStatement, CallExpression, Expression, Ident, IfStatement, Statement,
+    BinOpKind, BlockStatement, CallExpression, ElseBranch, Expression, Ident, IfStatement,
+    Statement,
 };
 
 // ---------------------------------------------------------------------------
@@ -65,7 +66,14 @@ fn lift_block(block: &mut BlockStatement) {
 fn lift_if(if_stmt: &mut IfStatement) {
     lift_block(&mut if_stmt.then_branch);
     if let Some(else_branch) = &mut if_stmt.else_branch {
-        lift_block(else_branch);
+        lift_else_branch(else_branch);
+    }
+}
+
+fn lift_else_branch(else_branch: &mut ElseBranch) {
+    match else_branch {
+        ElseBranch::Block(block) => lift_block(block),
+        ElseBranch::If(if_stmt) => lift_if(if_stmt),
     }
 }
 
@@ -130,13 +138,7 @@ fn qd_stmt(stmt: &mut Statement) {
                 qd_expr(expr);
             }
         }
-        Statement::If(if_stmt) => {
-            qd_expr(&mut if_stmt.condition);
-            qd_block(&mut if_stmt.then_branch);
-            if let Some(else_branch) = &mut if_stmt.else_branch {
-                qd_block(else_branch);
-            }
-        }
+        Statement::If(if_stmt) => qd_if(if_stmt),
         Statement::Block(block) => qd_block(block),
         Statement::ForIn { iterable, body, .. } => {
             qd_expr(iterable);
@@ -153,6 +155,21 @@ fn qd_stmt(stmt: &mut Statement) {
 fn qd_block(block: &mut BlockStatement) {
     for stmt in block.statements.iter_mut() {
         qd_stmt(stmt);
+    }
+}
+
+fn qd_if(if_stmt: &mut IfStatement) {
+    qd_expr(&mut if_stmt.condition);
+    qd_block(&mut if_stmt.then_branch);
+    if let Some(else_branch) = &mut if_stmt.else_branch {
+        qd_else_branch(else_branch);
+    }
+}
+
+fn qd_else_branch(else_branch: &mut ElseBranch) {
+    match else_branch {
+        ElseBranch::Block(block) => qd_block(block),
+        ElseBranch::If(if_stmt) => qd_if(if_stmt),
     }
 }
 
