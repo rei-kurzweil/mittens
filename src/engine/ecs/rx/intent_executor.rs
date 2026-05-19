@@ -555,11 +555,33 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
 
             let mut osc_cids = Vec::new();
             for &t in component_ids.iter() {
+                // When the target is a MusicNoteComponent, run its full
+                // resolution chain (cache → target_source → context voice)
+                // before the ancestor-walk fallback. See
+                // docs/spec/audio-sources.md §6.6.
+                let mut resolved_via_note: Option<ComponentId> = None;
+                if world.get_component_by_id_as::<MusicNoteComponent>(t).is_some() {
+                    // Take the component out, resolve (needs &mut World), put back.
+                    let mut taken: MusicNoteComponent = world
+                        .get_component_by_id_as::<MusicNoteComponent>(t)
+                        .cloned()
+                        .unwrap();
+                    resolved_via_note = taken.resolve_target(world);
+                    if let Some(slot) =
+                        world.get_component_by_id_as_mut::<MusicNoteComponent>(t)
+                    {
+                        slot.target_resolved = taken.target_resolved;
+                    }
+                }
+                if let Some(via_note) = resolved_via_note {
+                    osc_cids.push(via_note);
+                    continue;
+                }
+
                 let before = osc_cids.len();
                 collect_oscillator_targets(world, t, &mut osc_cids);
-                // Cache the resolved oscillator back into the MusicNoteComponent
-                // when this dispatch originated from one with no pre-resolved
-                // target. Subsequent fires skip the ancestor walk.
+                // Cache the ancestor-walk result back into the
+                // MusicNoteComponent so subsequent fires skip the walk.
                 if let Some(&found) = osc_cids[before..].first() {
                     if let Some(mn) =
                         world.get_component_by_id_as_mut::<MusicNoteComponent>(t)

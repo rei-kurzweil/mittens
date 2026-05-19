@@ -33,7 +33,7 @@ use crate::engine::ecs::component::{
     TransformSampleAncestorComponent,
     BoundsComponent, MeshComponent, GestureCoordTypeComponent, GestureCoordType,
     CollisionShapeComponent, CollisionShape, CollisionComponent, CollisionMode,
-    GravityComponent, MusicNote, MusicNoteComponent,
+    GravityComponent, MusicNote, MusicNoteComponent, MusicContextComponent,
     Vector3TemporalFilterComponent, QuatYawFollowComponent,
     SignalRouteUpwardComponent, SkinnedMeshComponent, RayCastComponent, RayCastMode,
     RaycastableShapeComponent, RaycastableShapeType, IKChainComponent, IKSolver,
@@ -1224,7 +1224,23 @@ fn create_component(
                 "g" => MusicNote::g(octave, duration),
                 _ => MusicNote::default(),
             };
-            add!(MusicNoteComponent::new(note))
+            let mut mn = MusicNoteComponent::new(note);
+            // Optional 3rd positional arg: either a voice name ("bass") or
+            // a component ref. Per docs/spec/audio-sources.md §6.6 rank 3.
+            if let Ok(v) = arg(args, 2) {
+                match v {
+                    Value::String(s) => mn.voice_name = Some(s.clone()),
+                    _ => {
+                        if let Ok(src) = value_to_component_ref(world, v) {
+                            mn.target_source = Some(src);
+                        }
+                    }
+                }
+            }
+            add!(mn)
+        }
+        "MusicContext" => {
+            add!(MusicContextComponent::new())
         }
         "IKChain" => {
             let solver = match ctor {
@@ -1490,18 +1506,49 @@ fn apply_call(
         }
         return Ok(());
     }
-    if let Some(mn) = world.get_component_by_id_as_mut::<MusicNoteComponent>(id) {
+    if world.get_component_by_id_as::<MusicNoteComponent>(id).is_some() {
         match method {
             "velocity" => {
-                mn.note = mn.note.with_velocity(arg_f32(args, 0)?);
+                if let Some(mn) = world.get_component_by_id_as_mut::<MusicNoteComponent>(id) {
+                    mn.note = mn.note.with_velocity(arg_f32(args, 0)?);
+                }
             }
             "play_on_attach" => {
-                mn.play_on_attach = true;
+                if let Some(mn) = world.get_component_by_id_as_mut::<MusicNoteComponent>(id) {
+                    mn.play_on_attach = true;
+                }
             }
             "at_beat" => {
-                mn.scheduled_beat = Some(arg_f32(args, 0)? as f64);
+                let b = arg_f32(args, 0)? as f64;
+                if let Some(mn) = world.get_component_by_id_as_mut::<MusicNoteComponent>(id) {
+                    mn.scheduled_beat = Some(b);
+                }
+            }
+            "voice" => {
+                // voice("bass") — name lookup against MusicContext ancestor.
+                let name = val_as_str(arg(args, 0)?)?.to_string();
+                if let Some(mn) = world.get_component_by_id_as_mut::<MusicNoteComponent>(id) {
+                    mn.voice_name = Some(name);
+                }
+            }
+            "target" => {
+                // target(ref) — explicit ComponentRef override.
+                let src = arg_component_ref(world, args, 0)?;
+                if let Some(mn) = world.get_component_by_id_as_mut::<MusicNoteComponent>(id) {
+                    mn.target_source = Some(src);
+                }
             }
             _ => {}
+        }
+        return Ok(());
+    }
+    if world.get_component_by_id_as::<MusicContextComponent>(id).is_some() {
+        if method == "voice" {
+            let name = val_as_str(arg(args, 0)?)?.to_string();
+            let src = arg_component_ref(world, args, 1)?;
+            if let Some(mc) = world.get_component_by_id_as_mut::<MusicContextComponent>(id) {
+                mc.add_voice(name, src);
+            }
         }
         return Ok(());
     }
