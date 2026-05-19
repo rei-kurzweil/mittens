@@ -616,13 +616,18 @@ pub(crate) struct AudioClockState {
 }
 
 fn op_priority(op: AudioOp) -> u8 {
+    // Same-beat ordering: previous-note gate-off first, then parameter
+    // updates, then new-note gate-on last. This keeps back-to-back notes
+    // (where one note's stop coincides with the next note's start) from
+    // having the new gate-on cancelled by the old gate-off. See
+    // docs/spec/audio-sources.md §4 (per-variant trigger semantics).
     match op {
-        AudioOp::SetEnabled(true) => 0,
+        AudioOp::SetEnabled(false) => 0,
         AudioOp::SetHz(_) => 1,
         AudioOp::SetGain(_) => 1,
         AudioOp::SetLowPassCutoffHz(_) => 1,
         AudioOp::SetBandPassCenterHz(_) => 1,
-        AudioOp::SetEnabled(false) => 2,
+        AudioOp::SetEnabled(true) => 2,
     }
 }
 

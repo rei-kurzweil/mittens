@@ -56,8 +56,9 @@ impl RxIntentExecutor {
 
 fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &Signal) {
     use crate::engine::ecs::component::{
-        AudioBandPassFilterComponent, AudioLowPassFilterComponent, AudioOscillatorComponent,
-        ColorComponent, MusicNoteComponent, RayCastComponent, TransformComponent,
+        AudioBandPassFilterComponent, AudioClipComponent, AudioClipLoadState,
+        AudioLowPassFilterComponent, AudioOscillatorComponent, ColorComponent,
+        MusicNoteComponent, RayCastComponent, TransformComponent,
     };
     use crate::engine::ecs::system::MusicSystem;
     use crate::engine::ecs::system::audio_system::AudioOp;
@@ -553,15 +554,13 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             let note_duration = note.as_ref().map(|n| n.duration_beats() as f64);
             let stop_after = duration.or(note_duration);
 
-            let mut osc_cids = Vec::new();
+            // Resolve every input id to a concrete audio source id (osc or clip).
+            let mut source_cids = Vec::new();
             for &t in component_ids.iter() {
-                // When the target is a MusicNoteComponent, run its full
-                // resolution chain (cache → target_source → context voice)
-                // before the ancestor-walk fallback. See
-                // docs/spec/audio-sources.md §6.6.
+                // MusicNoteComponent: full resolution chain (cache →
+                // target_source → context voice). See §6.6.
                 let mut resolved_via_note: Option<ComponentId> = None;
                 if world.get_component_by_id_as::<MusicNoteComponent>(t).is_some() {
-                    // Take the component out, resolve (needs &mut World), put back.
                     let mut taken: MusicNoteComponent = world
                         .get_component_by_id_as::<MusicNoteComponent>(t)
                         .cloned()
@@ -574,15 +573,15 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     }
                 }
                 if let Some(via_note) = resolved_via_note {
-                    osc_cids.push(via_note);
+                    source_cids.push(via_note);
                     continue;
                 }
 
-                let before = osc_cids.len();
-                collect_oscillator_targets(world, t, &mut osc_cids);
+                let before = source_cids.len();
+                collect_audio_source_targets(world, t, &mut source_cids);
                 // Cache the ancestor-walk result back into the
                 // MusicNoteComponent so subsequent fires skip the walk.
-                if let Some(&found) = osc_cids[before..].first() {
+                if let Some(&found) = source_cids[before..].first() {
                     if let Some(mn) =
                         world.get_component_by_id_as_mut::<MusicNoteComponent>(t)
                     {
@@ -592,56 +591,82 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     }
                 }
             }
-            osc_cids.sort();
-            osc_cids.dedup();
-            for osc_cid in osc_cids {
-                emit.push_intent_now(
-                    osc_cid,
-                    IntentValue::ScheduleAudioOscillatorEnabled {
-                        component_ids: vec![osc_cid],
-                        beat,
-                        enabled: true,
-                    },
-                );
-                if let Some(frequency_hz) = frequency_hz {
-                    emit.push_intent_now(
-                        osc_cid,
-                        IntentValue::ScheduleAudioPitchSetHz {
-                            component_ids: vec![osc_cid],
-                            beat,
-                            frequency_hz,
-                        },
-                    );
-                }
-                if let Some(g) = final_gain {
-                    emit.push_intent_now(
-                        osc_cid,
-                        IntentValue::ScheduleAudioGainSet {
-                            component_ids: vec![osc_cid],
-                            beat,
-                            gain: g,
-                        },
-                    );
-                }
+            source_cids.sort();
+            source_cids.dedup();
 
-                if let Some(dur) = stop_after {
-                    if dur.is_finite() && dur > 0.0 {
+            for src_cid in source_cids {
+                // Dispatch by source kind. Oscillator → gate+pitch+gain schedule;
+                // Clip → cursor reset (stub log in phase 4).
+                if world.get_component_by_id_as::<AudioOscillatorComponent>(src_cid).is_some() {
+                    emit.push_intent_now(
+                        src_cid,
+                        IntentValue::ScheduleAudioOscillatorEnabled {
+                            component_ids: vec![src_cid],
+                            beat,
+                            enabled: true,
+                        },
+                    );
+                    if let Some(frequency_hz) = frequency_hz {
                         emit.push_intent_now(
-                            osc_cid,
-                            IntentValue::ScheduleAudioOscillatorEnabled {
-                                component_ids: vec![osc_cid],
-                                beat: beat + dur,
-                                enabled: false,
+                            src_cid,
+                            IntentValue::ScheduleAudioPitchSetHz {
+                                component_ids: vec![src_cid],
+                                beat,
+                                frequency_hz,
                             },
                         );
-                        if final_gain.is_some() {
+                    }
+                    if let Some(g) = final_gain {
+                        emit.push_intent_now(
+                            src_cid,
+                            IntentValue::ScheduleAudioGainSet {
+                                component_ids: vec![src_cid],
+                                beat,
+                                gain: g,
+                            },
+                        );
+                    }
+
+                    if let Some(dur) = stop_after {
+                        if dur.is_finite() && dur > 0.0 {
                             emit.push_intent_now(
-                                osc_cid,
-                                IntentValue::ScheduleAudioGainSet {
-                                    component_ids: vec![osc_cid],
+                                src_cid,
+                                IntentValue::ScheduleAudioOscillatorEnabled {
+                                    component_ids: vec![src_cid],
                                     beat: beat + dur,
-                                    gain: 1.0,
+                                    enabled: false,
                                 },
+                            );
+                            if final_gain.is_some() {
+                                emit.push_intent_now(
+                                    src_cid,
+                                    IntentValue::ScheduleAudioGainSet {
+                                        component_ids: vec![src_cid],
+                                        beat: beat + dur,
+                                        gain: 1.0,
+                                    },
+                                );
+                            }
+                        }
+                    }
+                } else if let Some(clip) =
+                    world.get_component_by_id_as::<AudioClipComponent>(src_cid)
+                {
+                    match &clip.load_state {
+                        AudioClipLoadState::Failed(reason) => {
+                            // Silent for the player; one diagnostic line per
+                            // dispatch is loud enough during phase 4.
+                            eprintln!(
+                                "[AudioSchedulePlay] skip clip {:?} ({}): {}",
+                                src_cid, clip.uri, reason
+                            );
+                        }
+                        AudioClipLoadState::Pending | AudioClipLoadState::Loaded => {
+                            // Phase 4 stub: log the scheduled play. Phase 5
+                            // wires this to the decode/render thread protocol.
+                            println!(
+                                "[AudioSchedulePlay] clip {:?} ({}) at beat {:.4} stop_after={:?} gain={:?}",
+                                src_cid, clip.uri, beat, stop_after, final_gain
                             );
                         }
                     }
@@ -787,6 +812,47 @@ fn collect_color_targets(world: &World, target: ComponentId, out: &mut Vec<Compo
     }
 }
 
+fn is_audio_source(world: &World, id: ComponentId) -> bool {
+    use crate::engine::ecs::component::{AudioClipComponent, AudioOscillatorComponent};
+    world.get_component_by_id_as::<AudioOscillatorComponent>(id).is_some()
+        || world.get_component_by_id_as::<AudioClipComponent>(id).is_some()
+}
+
+/// Collect ids of `AudioSource`s reachable from `target`.
+///
+/// Treats `AudioOscillatorComponent` and `AudioClipComponent` as peer
+/// source variants (§5 of docs/spec/audio-sources.md). Search order:
+/// the target itself, then the subtree, then fall back to walking
+/// ancestors for the nearest source (§6.6 rank 5).
+fn collect_audio_source_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {
+    if is_audio_source(world, target) {
+        out.push(target);
+        return;
+    }
+
+    let before = out.len();
+    let mut stack = vec![target];
+    while let Some(node) = stack.pop() {
+        for &ch in world.children_of(node) {
+            stack.push(ch);
+        }
+        if is_audio_source(world, node) {
+            out.push(node);
+        }
+    }
+
+    if out.len() == before {
+        let mut cur = target;
+        while let Some(p) = world.parent_of(cur) {
+            if is_audio_source(world, p) {
+                out.push(p);
+                return;
+            }
+            cur = p;
+        }
+    }
+}
+
 fn collect_oscillator_targets(world: &World, target: ComponentId, out: &mut Vec<ComponentId>) {
     use crate::engine::ecs::component::AudioOscillatorComponent;
 
@@ -813,8 +879,6 @@ fn collect_oscillator_targets(world: &World, target: ComponentId, out: &mut Vec<
         }
     }
 
-    // Fallback per docs/spec/audio-sources.md §6.6 rank 5: if no oscillator was
-    // found in the subtree, walk parents to find the nearest source ancestor.
     if out.len() == before {
         let mut cur = target;
         while let Some(p) = world.parent_of(cur) {

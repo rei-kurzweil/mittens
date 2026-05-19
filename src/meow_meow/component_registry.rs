@@ -33,6 +33,8 @@ use crate::engine::ecs::component::{
     TransformSampleAncestorComponent,
     BoundsComponent, MeshComponent, GestureCoordTypeComponent, GestureCoordType,
     CollisionShapeComponent, CollisionShape, CollisionComponent, CollisionMode,
+    AudioClipComponent, AudioOscillator, AudioOscillatorComponent, AudioOutputComponent,
+    AudioTriggerMode, OscillatorType,
     GravityComponent, MusicNote, MusicNoteComponent, MusicContextComponent,
     Vector3TemporalFilterComponent, QuatYawFollowComponent,
     SignalRouteUpwardComponent, SkinnedMeshComponent, RayCastComponent, RayCastMode,
@@ -1242,6 +1244,38 @@ fn create_component(
         "MusicContext" => {
             add!(MusicContextComponent::new())
         }
+        "AudioOutput" => {
+            add!(AudioOutputComponent::new())
+        }
+        "AudioOscillator" => {
+            let kind = match ctor {
+                Some("sin") => OscillatorType::Sin,
+                Some("triangle") => OscillatorType::Triangle,
+                Some("square") => OscillatorType::Square,
+                Some("square_3") => OscillatorType::Square3,
+                Some("saw") => OscillatorType::Saw,
+                Some("noise") => OscillatorType::Noise,
+                Some("drum") => OscillatorType::Drum,
+                _ => OscillatorType::Sin,
+            };
+            add!(AudioOscillatorComponent::single(
+                AudioOscillator::new(kind)
+            ))
+        }
+        "AudioClip" => {
+            // Constructor variants accept the URI as positional arg 0. The
+            // ctor name (`wav`/`opus`/`ogg`/`mp3`/`flac`/`new`) is purely
+            // documentation — codec is detected from the file by the
+            // decode pipeline. `latched`/`one_shot` flip the trigger mode.
+            let uri = arg_str(args, 0).unwrap_or("").to_string();
+            let mut c = AudioClipComponent::new(uri);
+            match ctor {
+                Some("one_shot") => c = c.with_trigger_mode(AudioTriggerMode::OneShot),
+                Some("latched") => c = c.with_trigger_mode(AudioTriggerMode::Latched),
+                _ => {}
+            }
+            add!(c)
+        }
         "IKChain" => {
             let solver = match ctor {
                 Some("aim_constraint") => IKSolver::AimConstraint {
@@ -1549,6 +1583,57 @@ fn apply_call(
             if let Some(mc) = world.get_component_by_id_as_mut::<MusicContextComponent>(id) {
                 mc.add_voice(name, src);
             }
+        }
+        return Ok(());
+    }
+    if world.get_component_by_id_as::<AudioOscillatorComponent>(id).is_some() {
+        match method {
+            "frequency" => {
+                let hz = arg_f32(args, 0)?;
+                if let Some(c) = world.get_component_by_id_as_mut::<AudioOscillatorComponent>(id) {
+                    for o in c.oscillators.iter_mut() {
+                        o.frequency = hz;
+                    }
+                }
+            }
+            "amplitude" => {
+                let a = arg_f32(args, 0)?;
+                if let Some(c) = world.get_component_by_id_as_mut::<AudioOscillatorComponent>(id) {
+                    for o in c.oscillators.iter_mut() {
+                        o.amplitude = a;
+                    }
+                }
+            }
+            "enabled" => {
+                let en = arg_bool(args, 0)?;
+                if let Some(c) = world.get_component_by_id_as_mut::<AudioOscillatorComponent>(id) {
+                    for o in c.oscillators.iter_mut() {
+                        o.enabled = en;
+                    }
+                }
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+    if world.get_component_by_id_as::<AudioClipComponent>(id).is_some() {
+        match method {
+            "one_shot" => {
+                if let Some(c) = world.get_component_by_id_as_mut::<AudioClipComponent>(id) {
+                    c.trigger_mode = AudioTriggerMode::OneShot;
+                }
+            }
+            "latched" => {
+                if let Some(c) = world.get_component_by_id_as_mut::<AudioClipComponent>(id) {
+                    c.trigger_mode = AudioTriggerMode::Latched;
+                }
+            }
+            "retrigger" => {
+                if let Some(c) = world.get_component_by_id_as_mut::<AudioClipComponent>(id) {
+                    c.trigger_mode = AudioTriggerMode::Retrigger;
+                }
+            }
+            _ => {}
         }
         return Ok(());
     }

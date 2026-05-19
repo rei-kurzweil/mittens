@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::engine::ecs::component::{
     ActionComponent, ComponentRef, AnimationComponent, AnimationState, KeyframeComponent,
-    ResolveTargetsMode, action::{apply_resolved_targets, signal_target_slot_count},
+    MusicNoteComponent, ResolveTargetsMode,
+    action::{apply_resolved_targets, signal_target_slot_count},
 };
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::animation_system_evaluator::AnimationEvaluator;
@@ -37,6 +38,48 @@ struct AnimationRuntime {
 /// - `ComponentRef::Query(selector)` → `world.find_component` walked from
 ///   every world root (matches the registry-time `resolve_action_target`
 ///   behavior for forward refs / scenes spawned with multiple roots).
+/// Emit one `AudioSchedulePlay` per `MusicNoteComponent` child of `kf_id`.
+/// `beat_context` is the absolute beat the note should fire at — set by
+/// the audio lookahead pass to the keyframe's global beat, or by the
+/// realtime pass to the current beat.
+fn fire_music_note_children(
+    world: &mut World,
+    rx: &mut RxWorld,
+    kf_id: ComponentId,
+    beat_context: Option<f64>,
+) {
+    let note_ids: Vec<ComponentId> = world
+        .children_of(kf_id)
+        .iter()
+        .copied()
+        .filter(|&cid| {
+            world
+                .get_component_by_id_as::<MusicNoteComponent>(cid)
+                .is_some()
+        })
+        .collect();
+
+    for note_cid in note_ids {
+        // Snapshot the note value (clone is cheap — MusicNote is small).
+        let note = match world.get_component_by_id_as::<MusicNoteComponent>(note_cid) {
+            Some(mn) => mn.note,
+            None => continue,
+        };
+        rx.push_intent_now(
+            note_cid,
+            IntentValue::AudioSchedulePlay {
+                component_ids: vec![note_cid],
+                beat_offset: 0.0,
+                beat_context,
+                note: Some(note),
+                gain: None,
+                rate: None,
+                duration: None,
+            },
+        );
+    }
+}
+
 fn resolve_action_targets(world: &mut World, action_id: ComponentId) -> Result<(), String> {
     let (sources, expected_slots) = {
         let Some(action) = world.get_component_by_id_as::<ActionComponent>(action_id) else {
@@ -343,6 +386,10 @@ impl AnimationSystem {
                         };
                     }
 
+                    // MusicNote children of the keyframe also schedule via
+                    // AudioSchedulePlay — same lookahead semantics as Actions.
+                    fire_music_note_children(world, rx, kf_id, Some(kf_global_beat));
+
                     runtime
                         .audio_scheduled_cycle_by_keyframe
                         .insert(kf_id, kf_cycle);
@@ -424,6 +471,17 @@ impl AnimationSystem {
                         };
 
                         rx.push_intent_now(action_cid, signal);
+                    }
+
+                    // Realtime path for MusicNote children — skipped if
+                    // lookahead already scheduled this cycle.
+                    let already_scheduled = runtime
+                        .audio_scheduled_cycle_by_keyframe
+                        .get(&kf_id)
+                        .copied()
+                        == Some(runtime.audio_cycle);
+                    if !already_scheduled {
+                        fire_music_note_children(world, rx, kf_id, Some(beat_now));
                     }
 
                     if !saw_any_action {
