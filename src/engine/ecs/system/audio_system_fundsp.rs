@@ -421,7 +421,7 @@ pub(crate) struct RtClipAsset {
 /// Per-clip playback state on the audio thread. One per registered
 /// `AudioClipComponent`, keyed by `component_ffi`.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct RtClipVoice {
+pub(crate) struct RtClipInstance {
     /// Sample-frame cursor. f64 for sub-sample rate playback later;
     /// phase 5 advances at 1.0/frame because clips are resampled to the
     /// engine sample rate at load time.
@@ -439,7 +439,7 @@ pub(crate) struct SynthRtState {
 
     /// Asset registry (AudioAssets — docs/draft/audio_decoding_thread.md §1.1).
     pub(crate) clip_assets: HashMap<u64, RtClipAsset>,
-    pub(crate) clip_voices: HashMap<u64, RtClipVoice>,
+    pub(crate) clip_instances: HashMap<u64, RtClipInstance>,
 
     // Debug-only tracing for audio ops from the RT thread.
     pub(crate) trace_lp_ops_inited: bool,
@@ -936,7 +936,7 @@ fn render_sample_from_map_unclamped(
 /// generators. Effect chains apply the same way (graphs keyed by the
 /// clip's component_ffi).
 fn render_sample_from_clips(
-    clip_voices: &mut HashMap<u64, RtClipVoice>,
+    clip_instances: &mut HashMap<u64, RtClipInstance>,
     clip_assets: &HashMap<u64, RtClipAsset>,
     gains: &HashMap<u64, f32>,
     gates: &mut HashMap<u64, ComponentGate>,
@@ -944,7 +944,7 @@ fn render_sample_from_clips(
     sample_rate_hz: u32,
 ) -> f32 {
     let mut out = 0.0f32;
-    for (&cid_ffi, voice) in clip_voices.iter_mut() {
+    for (&cid_ffi, voice) in clip_instances.iter_mut() {
         if !voice.playing {
             continue;
         }
@@ -1101,13 +1101,13 @@ pub(crate) fn render_buffer<T: Copy>(
                     },
                 );
                 synth_state
-                    .clip_voices
+                    .clip_instances
                     .entry(clip_id)
                     .or_default();
             }
             AudioQueueItem::DropClip { clip_id } => {
                 synth_state.clip_assets.remove(&clip_id);
-                synth_state.clip_voices.remove(&clip_id);
+                synth_state.clip_instances.remove(&clip_id);
             }
             AudioQueueItem::GraphMessage(op) => {
                 if !op.beat.is_finite() {
@@ -1193,7 +1193,7 @@ pub(crate) fn render_buffer<T: Copy>(
     let graphs = &mut synth_state.graphs;
     let fundsp = &mut synth_state.fundsp;
     let clip_assets = &synth_state.clip_assets;
-    let clip_voices = &mut synth_state.clip_voices;
+    let clip_instances = &mut synth_state.clip_instances;
 
     const ENABLE_RAMP_SEC: f32 = 0.005;
     const DISABLE_RAMP_SEC: f32 = 0.010;
@@ -1364,7 +1364,7 @@ pub(crate) fn render_buffer<T: Copy>(
                                 // Handled above.
                             }
                         }
-                    } else if let Some(voice) = clip_voices.get_mut(&target) {
+                    } else if let Some(voice) = clip_instances.get_mut(&target) {
                         match op {
                             AudioOp::SetEnabled(true) => {
                                 // Spec §4: clip trigger resets cursor to 0.
@@ -1400,7 +1400,7 @@ pub(crate) fn render_buffer<T: Copy>(
             sample_rate_hz,
         );
         let clip_part = render_sample_from_clips(
-            clip_voices,
+            clip_instances,
             clip_assets,
             &*gains,
             gates,
