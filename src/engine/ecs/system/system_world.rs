@@ -1267,6 +1267,15 @@ impl SystemWorld {
         self.audio.register_audio_oscillator(world, component);
     }
 
+    pub fn register_audio_clip(
+        &mut self,
+        world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.audio.register_audio_clip(world, component);
+    }
+
     pub fn register_audio_buffer_size(
         &mut self,
         world: &mut World,
@@ -1704,6 +1713,11 @@ impl SystemWorld {
 
         // Batch audio graph rebuild work once after all mutations for this frame.
         self.audio.rebuild_dirty_audio_graphs(world);
+
+        // Drain decode-worker completion messages so newly-loaded clips
+        // ship to the RT thread and `AudioClipComponent.load_state`
+        // updates land in the world.
+        self.audio.drain_decode_completions_public(world);
     }
 }
 

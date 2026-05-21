@@ -35,6 +35,11 @@ fundsp = "0.20"
 # Audio output + audio-clock driver
 cpal = "0.15"
 
+# PCM decoding (WAV, OGG Vorbis, FLAC, MP3; Opus via the `opus` feature)
+symphonia = { version = "0.5", default-features = false, features = [
+    "wav", "pcm", "vorbis", "ogg", "flac", "mp3"
+] }
+
 # Spatial acceleration structures (ray/AABB + BVH)
 bvh = "0.7"
 

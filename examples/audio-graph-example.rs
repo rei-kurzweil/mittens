@@ -413,6 +413,7 @@ fn main() {
             } => {
                 format!("Limiter atk={attack_ms:.1}ms rel={release_ms:.1}ms thr={threshold:.3}")
             }
+            AudioGraphNodeKind::ClipSource => "ClipSource".to_string(),
         }
     }
 

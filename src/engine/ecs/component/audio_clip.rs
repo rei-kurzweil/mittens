@@ -109,16 +109,19 @@ impl Component for AudioClipComponent {
 
     fn init(
         &mut self,
-        _emit: &mut dyn crate::engine::ecs::SignalEmitter,
-        _component: ComponentId,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        component: ComponentId,
     ) {
-        // Synchronous existence check stands in for the decode thread.
-        // Phase 5 will issue a `LoadClip` request and update load_state
-        // when the asset thread replies.
-        self.load_state = Self::check_uri_exists(&self.uri);
-        if let AudioClipLoadState::Failed(reason) = &self.load_state {
-            eprintln!("[AudioClip] {}: {}", self.uri, reason);
-        }
+        // Phase 5: request a decode via the AudioSystem. The decode
+        // worker resolves missing files / unsupported codecs and reports
+        // back through the engine's completion channel, which updates
+        // `load_state` to `Loaded` / `Failed`.
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterAudioClip {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {

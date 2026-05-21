@@ -473,6 +473,9 @@ pub enum IntentValue {
     RegisterAudioOscillator {
         component_ids: Vec<ComponentId>,
     },
+    RegisterAudioClip {
+        component_ids: Vec<ComponentId>,
+    },
     RegisterAudioBufferSize {
         component_ids: Vec<ComponentId>,
     },
@@ -621,6 +624,7 @@ impl IntentValue {
             IntentValue::RegisterAudioOutput { .. } => "register_audio_output",
             IntentValue::AudioGraphDirtyImmediate { .. } => "audio_graph_dirty_immediate",
             IntentValue::RegisterAudioOscillator { .. } => "register_audio_oscillator",
+            IntentValue::RegisterAudioClip { .. } => "register_audio_clip",
             IntentValue::RegisterAudioBufferSize { .. } => "register_audio_buffer_size",
             IntentValue::RegisterClock { .. } => "register_clock",
             IntentValue::RegisterTransformGizmo { .. } => "register_transform_gizmo",

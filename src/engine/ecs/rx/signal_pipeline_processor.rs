@@ -122,6 +122,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterAudioOutput { component_ids }
             | IntentValue::AudioGraphDirtyImmediate { component_ids }
             | IntentValue::RegisterAudioOscillator { component_ids }
+            | IntentValue::RegisterAudioClip { component_ids }
             | IntentValue::RegisterAudioBufferSize { component_ids }
             | IntentValue::RegisterClock { component_ids }
             | IntentValue::RegisterTransformGizmo { component_ids }
@@ -211,6 +212,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterAudioOutput { component_ids }
             | IntentValue::AudioGraphDirtyImmediate { component_ids }
             | IntentValue::RegisterAudioOscillator { component_ids }
+            | IntentValue::RegisterAudioClip { component_ids }
             | IntentValue::RegisterAudioBufferSize { component_ids }
             | IntentValue::RegisterClock { component_ids }
             | IntentValue::RegisterTransformGizmo { component_ids }

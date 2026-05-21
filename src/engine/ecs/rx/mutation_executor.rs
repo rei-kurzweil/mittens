@@ -400,6 +400,11 @@ impl RxMutationExecutor {
                     systems.register_audio_oscillator(world, visuals, component);
                 }
             }
+            IntentValue::RegisterAudioClip { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_audio_clip(world, visuals, component);
+                }
+            }
             IntentValue::RegisterAudioBufferSize { component_ids } => {
                 for &component in component_ids.iter() {
                     systems.register_audio_buffer_size(world, visuals, component);

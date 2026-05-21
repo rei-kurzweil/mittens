@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::{
-    AudioBandPassFilterComponent, AudioGainComponent, AudioHighPassFilterComponent,
-    AudioLimiterComponent, AudioLowPassFilterComponent, AudioMixComponent,
-    AudioOscillatorComponent,
+    AudioBandPassFilterComponent, AudioClipComponent, AudioGainComponent,
+    AudioHighPassFilterComponent, AudioLimiterComponent, AudioLowPassFilterComponent,
+    AudioMixComponent, AudioOscillatorComponent,
 };
 use crate::engine::ecs::{ComponentId, World};
 
@@ -29,6 +29,9 @@ pub enum AudioGraphNodeKind {
     OscillatorSource {
         voices: usize,
     },
+    /// PCM-backed playable source. The RT thread pulls samples from
+    /// `SynthRtState::clip_assets` keyed by the source's component_ffi.
+    ClipSource,
     Gain {
         gain: f32,
     },
@@ -80,6 +83,22 @@ impl AudioGraphCompiler {
             let kind = AudioGraphNodeKind::OscillatorSource {
                 voices: src.oscillators.len(),
             };
+            let (mix, children) = Self::compile_effect_children(world, source_root);
+            return Ok(CompiledAudioGraph {
+                root: AudioGraphNode {
+                    component: source_root,
+                    kind,
+                    mix,
+                    children,
+                },
+            });
+        }
+
+        if world
+            .get_component_by_id_as::<AudioClipComponent>(source_root)
+            .is_some()
+        {
+            let kind = AudioGraphNodeKind::ClipSource;
             let (mix, children) = Self::compile_effect_children(world, source_root);
             return Ok(CompiledAudioGraph {
                 root: AudioGraphNode {
@@ -188,6 +207,12 @@ impl AudioGraphNode {
             AudioGraphNodeKind::OscillatorSource { voices } => {
                 format!(
                     "{pad}- AudioOscillatorComponent {{ oscillators: <len={voices}> }} (component={:?})\n",
+                    self.component
+                )
+            }
+            AudioGraphNodeKind::ClipSource => {
+                format!(
+                    "{pad}- AudioClipComponent (component={:?})\n",
                     self.component
                 )
             }

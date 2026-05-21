@@ -654,20 +654,46 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 {
                     match &clip.load_state {
                         AudioClipLoadState::Failed(reason) => {
-                            // Silent for the player; one diagnostic line per
-                            // dispatch is loud enough during phase 4.
                             eprintln!(
                                 "[AudioSchedulePlay] skip clip {:?} ({}): {}",
                                 src_cid, clip.uri, reason
                             );
                         }
                         AudioClipLoadState::Pending | AudioClipLoadState::Loaded => {
-                            // Phase 4 stub: log the scheduled play. Phase 5
-                            // wires this to the decode/render thread protocol.
-                            println!(
-                                "[AudioSchedulePlay] clip {:?} ({}) at beat {:.4} stop_after={:?} gain={:?}",
-                                src_cid, clip.uri, beat, stop_after, final_gain
+                            // Schedule playback via the same SetEnabled
+                            // ops the oscillator path uses. The RT thread
+                            // resets the clip's cursor on SetEnabled(true)
+                            // (docs/spec/audio-sources.md §4).
+                            emit.push_intent_now(
+                                src_cid,
+                                IntentValue::ScheduleAudioOscillatorEnabled {
+                                    component_ids: vec![src_cid],
+                                    beat,
+                                    enabled: true,
+                                },
                             );
+                            if let Some(g) = final_gain {
+                                emit.push_intent_now(
+                                    src_cid,
+                                    IntentValue::ScheduleAudioGainSet {
+                                        component_ids: vec![src_cid],
+                                        beat,
+                                        gain: g,
+                                    },
+                                );
+                            }
+                            if let Some(dur) = stop_after {
+                                if dur.is_finite() && dur > 0.0 {
+                                    emit.push_intent_now(
+                                        src_cid,
+                                        IntentValue::ScheduleAudioOscillatorEnabled {
+                                            component_ids: vec![src_cid],
+                                            beat: beat + dur,
+                                            enabled: false,
+                                        },
+                                    );
+                                }
+                            }
                         }
                     }
                 }
