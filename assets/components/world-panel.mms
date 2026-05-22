@@ -6,7 +6,7 @@
 // - named title bar nodes
 // - named save/load buttons
 // - named status text
-// - a named `rows_mount` layout root
+// - a named `rows_mount` container
 // - one visible row per entry in `items`
 //
 // v1 item contract: `items` is an array of display strings.
@@ -131,10 +131,11 @@ export fn world_panel(title, items) {
                     background_color = [0.96, 0.92, 0.18, 0.80]
                 }
 
-                LayoutRoot {
+                T {
                     name = "rows_mount"
-                    available_width(WORLD_PANEL_WIDTH_GU)
-                    unit_scale(TEXT_SCALE)
+                    Style {
+                        width(100%)
+                    }
 
                     for item in items {
                         world_panel_row(item, [0.92, 0.97, 0.92, 1.0])

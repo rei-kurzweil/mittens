@@ -178,7 +178,13 @@ impl MeowMeowRunner {
                                 signal_kind,
                                 scope,
                                 move |world, emit, _signal| {
-                                    if let Err(e) = eval_mms_fn(&handler, vec![Value::Null], Some(world), Some(emit)) {
+                                    if let Err(e) = eval_mms_fn(
+                                        &handler,
+                                        vec![Value::Null],
+                                        None,
+                                        Some(world),
+                                        Some(emit),
+                                    ) {
                                         eprintln!("[mms] handler error: {e}");
                                     }
                                 },

@@ -1419,6 +1419,7 @@ fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
 pub(crate) fn eval_mms_fn(
     fn_val: &Value,
     args: Vec<Value>,
+    channels: Option<&mut EvalChannels>,
     world_host: Option<&mut World>,
     emit: Option<&mut dyn SignalEmitter>,
 ) -> Result<Value, String> {
@@ -1434,7 +1435,7 @@ pub(crate) fn eval_mms_fn(
     let mut ctx = EvalContext {
         emits: &mut emits,
         source_path: None,
-        channels: None,
+        channels,
         ce_builder: None,
         object_world: &mut world,
         host_world: world_host.map(|world| world as *mut World),

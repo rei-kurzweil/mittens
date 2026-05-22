@@ -4,7 +4,7 @@
 //
 // `inspector_panel(title, items)` returns a panel root with:
 // - named title bar nodes
-// - a named `rows_mount` layout root
+// - a named `rows_mount` container
 // - one visible row per entry in `items`
 //
 // v1 item contract: `items` is an array of display strings.
@@ -80,10 +80,11 @@ export fn inspector_panel(title, items) {
                     background_color = [0.96, 0.92, 0.18, 0.80]
                 }
 
-                LayoutRoot {
+                T {
                     name = "rows_mount"
-                    available_width(INSPECTOR_PANEL_WIDTH_GU)
-                    unit_scale(TEXT_SCALE)
+                    Style {
+                        width(100%)
+                    }
 
                     for item in items {
                         inspector_panel_row(item)
