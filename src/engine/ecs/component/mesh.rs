@@ -7,7 +7,8 @@ use crate::engine::ecs::component::Component;
 /// The key can refer to imported meshes (e.g. "{gltf}:{mesh}:{prim}") registered in `RenderAssets`.
 #[derive(Debug, Clone)]
 pub struct MeshComponent {
-    pub key: String,
+    pub 
+    key: String,
 }
 
 impl MeshComponent {

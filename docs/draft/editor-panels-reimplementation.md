@@ -51,16 +51,32 @@ For the world panel, each item likely needs:
 - display label
 - depth
 - selected flag
-- action payload owned by Rust
+- target ref for the represented component
 
 For the inspector panel, each item likely needs:
 
 - stable item key
 - display label
 - optional section kind
-- optional action payload owned by Rust
+- optional target ref
 
-The action payload should stay in Rust, not in MMS.
+The editor-facing command surface should stay in Rust, but the item model should
+carry the target identity that MMS handlers will pass into editor intents.
+
+Current limitation:
+
+- MMS does not yet have the authored record/struct surface needed to pass these
+	items cleanly into a factory function.
+
+So the spec work now should expand beyond panels:
+
+- define general structured data interop from Rust into MMS
+
+For the panel experiment, the preferred first encoding is:
+
+- item records passed from Rust
+- `target_ref` stored as a canonical string
+- prefer `@uuid:...` strings over selector strings when Rust knows the target guid
 
 ### 2. MMS renders a shell plus a rerenderable content subtree
 
@@ -90,23 +106,24 @@ Important requirement:
 
 That gives Rust a reliable way to query the rendered nodes after the tree is spawned.
 
-### 3. Rust binds host-side behavior after render
+### 3. MMS owns row click handlers and emits editor intents
 
-After spawning the MMS panel subtree, Rust should:
+Preferred experiment:
 
-1. query the rendered row nodes
-2. map those row nodes back to item keys
-3. register scoped click handlers in `RxWorld`
+1. Rust builds items that include `target_ref`
+2. MMS renders the rows
+3. MMS installs `on(row, "Click", ...)` handlers inside the content factory
+4. those handlers emit editor-facing intents such as `EDITOR_SELECT(target_ref)`
 
-Those handlers should close over Rust-owned action payloads.
+Rust still owns the implementation of those editor intents.
 
 Examples:
 
-- world row click selects a `ComponentId`
-- inspector row click switches a section or focuses a property target
-- toolbar/button click changes editor mode or gizmo state
+- world row click emits `EDITOR_SELECT(item.target_ref)`
+- inspector row click emits the appropriate editor intent for its section or target
+- toolbar/button click emits an editor-mode or gizmo intent
 
-This keeps MMS out of the editor API surface while still letting MMS own structure.
+This keeps the editor API narrow while letting MMS own interaction authorship.
 
 ## Rerender Semantics
 
@@ -155,11 +172,16 @@ Example direction:
 
 ### Phase 3: post-render binding
 
-Add a Rust-side binding pass:
+Expose the first editor-facing intent surface to MMS.
 
-1. render the MMS subtree
-2. query named row nodes
-3. install click handlers in `RxWorld`
+Starting point:
+
+1. define `EDITOR_SELECT(target_ref)` as a spec-level intent
+2. let content-factory row handlers emit it
+3. keep the executor / routing logic on the Rust side when runtime work resumes
+
+For the first pass, `target_ref` should usually be a canonical ref string,
+preferably `@uuid:...` when Rust knows the guid.
 
 ### Phase 4: lifecycle
 
