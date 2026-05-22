@@ -2047,18 +2047,6 @@ fn roundtrip_avatar_body_yaw() {
 }
 
 #[test]
-fn roundtrip_world_panel() {
-    use crate::engine::ecs::component::WorldPanelComponent;
-    let (_world, _id) = roundtrip_component(WorldPanelComponent::new());
-}
-
-#[test]
-fn roundtrip_inspector_panel() {
-    use crate::engine::ecs::component::InspectorPanelComponent;
-    let (_world, _id) = roundtrip_component(InspectorPanelComponent::new());
-}
-
-#[test]
 fn roundtrip_raycast() {
     use crate::engine::ecs::component::{RayCastComponent, RayCastMode};
     let original = RayCastComponent::continuous().with_max_distance(75.0);

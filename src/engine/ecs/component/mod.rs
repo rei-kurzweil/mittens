@@ -31,7 +31,6 @@ pub mod directional_light;
 pub mod editor;
 pub mod emissive_pass;
 pub mod emissive;
-pub mod inspector_panel;
 pub mod gesture_coord_type;
 pub mod gizmo;
 pub mod normal_visualisation;
@@ -78,7 +77,6 @@ pub mod transition;
 pub mod transform;
 pub mod transform_parent;
 pub mod transform_pipeline;
-pub mod world_panel;
 pub mod transform_pipeline_map;
 pub mod transform_temporal_filter;
 pub mod uv;
@@ -121,7 +119,6 @@ pub use directional_light::DirectionalLightComponent;
 pub use editor::EditorComponent;
 pub use editor::TransformGizmoCoordSpace;
 pub use emissive_pass::EmissivePassComponent;
-pub use inspector_panel::InspectorPanelComponent;
 pub use emissive::EmissiveComponent;
 pub use normal_visualisation::NormalVisualisationComponent;
 pub use gesture_coord_type::{GestureCoordType, GestureCoordTypeComponent};
@@ -170,7 +167,6 @@ pub use texture_filtering::TextureFilteringComponent;
 pub use transition::{TransitionComponent, TransitionEasing, TransitionReplacePolicy};
 pub use transform::TransformComponent;
 pub use transform_parent::TransformParentComponent;
-pub use world_panel::WorldPanelComponent;
 pub use transform_pipeline::{
     TransformDropComponent, TransformForkTRSComponent, TransformMergeTRSComponent,
     TransformSampleAncestorComponent,

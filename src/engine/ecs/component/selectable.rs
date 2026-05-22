@@ -7,8 +7,7 @@ use crate::engine::ecs::component::Component;
 /// `SelectableComponent::off()` excludes it from editor selection — clicking a descendant
 /// will not move the gizmo, update the inspector context, or trigger `SelectionChanged`.
 ///
-/// Used by `WorldPanelComponent` and `InspectorPanelComponent` to self-exclude panel UI from
-/// scene picking.
+/// Used by editor-owned helper subtrees to self-exclude UI from scene picking.
 #[derive(Debug, Clone, Copy)]
 pub struct SelectableComponent {
     pub enabled: bool,
