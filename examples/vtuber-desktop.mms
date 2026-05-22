@@ -5,7 +5,7 @@
 // it lives in the .rs loader if needed.
 
 // --- Renderer settings ---
-RendererSettings.msaa_off() {
+RendererSettings {
     window_size(1280, 960)
 }
 

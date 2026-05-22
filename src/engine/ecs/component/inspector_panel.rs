@@ -9,8 +9,11 @@ use crate::engine::ecs::component::Component;
 /// SelectableComponent::off()
 ///   OverlayComponent
 ///     InspectorPanelComponent    ← this component
-///       TransformComponent       ← rows_track: moved by ScrollingSystem
-///         [row TransformComponents added dynamically]
+///     content_slot: TransformComponent
+///       StyleComponent { overflow = Scroll }
+///       rows_track: TransformComponent
+///         rows_layout: LayoutComponent
+///           [row TransformComponents added dynamically]
 /// ```
 #[derive(Debug, Default, Clone)]
 pub struct InspectorPanelComponent {
@@ -20,7 +23,7 @@ pub struct InspectorPanelComponent {
     /// Currently inspected component (drives panel content).
     pub inspected: Option<ComponentId>,
 
-    /// Runtime: TransformComponent that row content is attached to.
+    /// Runtime: TransformComponent attached under the overflow-styled content slot.
     pub(crate) rows_track: Option<ComponentId>,
 
     /// Runtime: LayoutComponent (child of rows_track) that LayoutSystem uses to

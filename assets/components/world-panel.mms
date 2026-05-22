@@ -1,15 +1,15 @@
 // assets/components/world-panel.mms
 //
-// Reusable World panel chrome for MMS-first iteration.
+// Reusable World panel factory for MMS-driven panel rendering.
 //
-// `world_panel(title, show_placeholders)` returns a panel root with:
+// `world_panel(title, items)` returns a panel root with:
 // - named title bar nodes
 // - named save/load buttons
 // - named status text
-// - a router that routes direct children of the panel root into `rows_mount`
+// - a named `rows_mount` layout root
+// - one visible row per entry in `items`
 //
-// For now, `show_placeholders = true` lets a standalone MMS example render
-// visible routed content before Rust-side row rebuilding is wired into this.
+// v1 item contract: `items` is an array of display strings.
 
 let WORLD_PANEL_WIDTH_GU = 29.5
 let WORLD_PANEL_CONTENT_HEIGHT_GU = 54.0
@@ -50,8 +50,9 @@ fn panel_button(node_name, label) {
     return root
 }
 
-fn placeholder_row(label, bg) {
+fn world_panel_row(label, bg) {
     let row = T.position(0.0, 0.0, 0.1) {
+        Raycastable.enabled()
         Style {
             margin_xy(0.25, 0.20)
             padding_xy(0.55, 0.45)
@@ -67,17 +68,12 @@ fn placeholder_row(label, bg) {
     return row
 }
 
-export fn world_panel(title, show_placeholders) {
+export fn world_panel(title, items) {
     let save_button = panel_button("save_button", "Save")
     let load_button = panel_button("load_button", "Load")
 
     let root = T {
         name = "world_panel_root"
-
-        Router {
-            target = "rows_mount"
-            ignore = ["panel_layout_root", "title_bar", "content_slot", "save_status_wrap"]
-        }
 
         T.position(0.02, 0.6, 0.05) {
             name = "save_status_wrap"
@@ -139,15 +135,13 @@ export fn world_panel(title, show_placeholders) {
                     name = "rows_mount"
                     available_width(WORLD_PANEL_WIDTH_GU)
                     unit_scale(TEXT_SCALE)
+
+                    for item in items {
+                        world_panel_row(item, [0.92, 0.97, 0.92, 1.0])
+                    }
                 }
             }
 
-        }
-
-        if show_placeholders {
-            placeholder_row("root child routed into rows_mount", [0.92, 0.97, 0.92, 1.0])
-            placeholder_row("save/load handlers can query named descendants", [0.90, 0.95, 0.98, 1.0])
-            placeholder_row("rows_mount is the intended Rust injection target", [0.97, 0.92, 0.92, 1.0])
         }
     }
 

@@ -1,13 +1,11 @@
 use crate::engine::ecs::component::{
     ColorComponent, EmissiveComponent, HtmlElementComponent, InspectorPanelComponent,
     LayoutComponent, OverlayComponent, RaycastableComponent,
-    ScrollingComponent,
     SelectableComponent, StyleComponent, TransformComponent,
     TransformGizmoComponent, WorldPanelComponent,
     style::{EdgeInsets, Overflow, SizeDimension},
 };
 use crate::engine::ecs::system::editor_system::select_editor_target;
-use crate::engine::ecs::system::ScrollingSystem;
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World,
@@ -147,11 +145,13 @@ impl InspectorSystem {
         // attach to the world-singleton layout root and flow side-by-side.
         let layout_root = self.ensure_editor_layout_root(world, emit);
 
-        let (wpc_id, wpa_id, wsc_id) = spawn_world_panel(world, emit, editor_root, layout_root);
-        let (ipc_id, _ipa_id, isc_id) = spawn_inspector_panel(world, emit, editor_root, layout_root);
+        let (world_panel_component_id, world_panel_anchor_id) =
+            spawn_world_panel(world, emit, editor_root, layout_root);
+        let (inspector_panel_component_id, _inspector_panel_anchor_id) =
+            spawn_inspector_panel(world, emit, editor_root, layout_root);
 
-        rebuild_world_panel(world, emit, wpc_id, wsc_id, editor_root, None);
-        rebuild_inspector_panel(world, emit, ipc_id, isc_id, None);
+        rebuild_world_panel(world, emit, world_panel_component_id, editor_root, None);
+        rebuild_inspector_panel(world, emit, inspector_panel_component_id, None);
 
         // --- World panel: Click on a row → select that node ---
         // Capture the top-level UI root of this editor so the Save handler
@@ -167,7 +167,7 @@ impl InspectorSystem {
 
         rx.add_handler_closure(
             SignalKind::Click,
-            wpa_id,
+            world_panel_anchor_id,
             move |world, emit, env| {
                 let Some(EventSignal::Click { renderable, .. }) = env.event.as_ref() else {
                     return;
@@ -180,17 +180,18 @@ impl InspectorSystem {
                     .unwrap_or(false);
 
                 let (row_roots, row_to_node, save_btn, load_btn, status_text, file_path) = {
-                    let Some(wpc) = world.get_component_by_id_as::<WorldPanelComponent>(wpc_id)
+                    let Some(world_panel) = world
+                        .get_component_by_id_as::<WorldPanelComponent>(world_panel_component_id)
                     else {
                         return;
                     };
                     (
-                        wpc.row_roots.clone(),
-                        wpc.row_to_node.clone(),
-                        wpc.save_button_renderable,
-                        wpc.load_button_renderable,
-                        wpc.save_status_text,
-                        resolved_io_path(&wpc.io_working_dir, &wpc.save_filename),
+                        world_panel.row_roots.clone(),
+                        world_panel.row_to_node.clone(),
+                        world_panel.save_button_renderable,
+                        world_panel.load_button_renderable,
+                        world_panel.save_status_text,
+                        resolved_io_path(&world_panel.io_working_dir, &world_panel.save_filename),
                     )
                 };
 
@@ -266,15 +267,8 @@ impl InspectorSystem {
                 };
                 let selected = *selected;
 
-                if let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(wsc_id) {
-                    sc.scroll_offset = 0.0;
-                };
-                if let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(isc_id) {
-                    sc.scroll_offset = 0.0;
-                }
-
-                rebuild_world_panel(world, emit, wpc_id, wsc_id, editor_root, selected);
-                rebuild_inspector_panel(world, emit, ipc_id, isc_id, selected);
+                rebuild_world_panel(world, emit, world_panel_component_id, editor_root, selected);
+                rebuild_inspector_panel(world, emit, inspector_panel_component_id, selected);
             },
         );
     }
@@ -826,19 +820,15 @@ fn spawn_world_panel(
     emit: &mut dyn SignalEmitter,
     editor_root: ComponentId,
     editor_layout_root: ComponentId,
-) -> (ComponentId, ComponentId, ComponentId) {
-    let wp_width = WORLD_PANEL_WIDTH_GU * TEXT_SCALE;
-    let wp_height = PAGE_SIZE as f32 * ROW_HEIGHT;
+) -> (ComponentId, ComponentId) {
+    let world_panel_width = WORLD_PANEL_WIDTH_GU * TEXT_SCALE;
+    let world_panel_height = PAGE_SIZE as f32 * ROW_HEIGHT;
 
-    let wpc = world.add_component_boxed_named(
+    let world_panel_component = world.add_component_boxed_named(
         "world_panel",
         Box::new(WorldPanelComponent::new()),
     );
-    let wsc = world.add_component_boxed_named(
-        "world_panel_scroll",
-        Box::new(ScrollingComponent::new(wp_height, wp_height)),
-    );
-    let wpr = world.add_component_boxed_named(
+    let world_panel_rows_track = world.add_component_boxed_named(
         "world_panel_rows_track",
         Box::new(TransformComponent::new()),
     );
@@ -846,11 +836,11 @@ fn spawn_world_panel(
     // Panel root + LayoutComponent + header slot (with title bar visuals + gizmo).
     // Parent is the singleton editor layout root; the inline-block style on
     // panel_t makes the layout system flow it beside sibling panels.
-    let (wp_t, layout_root, buttons) = spawn_panel_title_bar(
+    let (world_panel_transform, panel_layout_root, title_bar_buttons) = spawn_panel_title_bar(
         world,
         editor_layout_root,
-        wp_width,
-        wp_height,
+        world_panel_width,
+        world_panel_height,
         "World",
         /* show_buttons */ true,
     );
@@ -868,82 +858,75 @@ fn spawn_world_panel(
         "content_style",
         Box::new({
             let mut s = StyleComponent::new();
-            s.height = SizeDimension::GlyphUnits(wp_height / TEXT_SCALE);
+            s.height = SizeDimension::GlyphUnits(world_panel_height / TEXT_SCALE);
             s.overflow = Overflow::Scroll;
             s.background_color = Some(SCROLL_BG_COLOR);
             s
         }),
     );
 
-    let _ = world.add_child(layout_root, content_slot);
+    let _ = world.add_child(panel_layout_root, content_slot);
     let _ = world.add_child(content_slot, content_style);
 
-    let _ = world.add_child(content_slot, wpc);
-    let _ = world.add_child(wpc, wsc);
-    let _ = world.add_child(wsc, wpr);
+    let _ = world.add_child(content_slot, world_panel_component);
+    let _ = world.add_child(content_slot, world_panel_rows_track);
 
     // ── Row layout root ──────────────────────────────────────────────────
     // LayoutSystem positions row TCs within this layout context.
     // available_height is None → rows stack without a height constraint.
-    let wpr_layout = world.add_component_boxed_named(
+    let world_panel_rows_layout = world.add_component_boxed_named(
         "world_panel_rows_layout",
         Box::new(
-            LayoutComponent::new(wp_width / TEXT_SCALE)
+            LayoutComponent::new(world_panel_width / TEXT_SCALE)
                 .with_unit_scale(TEXT_SCALE),
         ),
     );
-    let _ = world.add_child(wpr, wpr_layout);
+    let _ = world.add_child(world_panel_rows_track, world_panel_rows_layout);
 
-    let _ = wp_t; // panel_t used only for gizmo ancestry
+    let _ = world_panel_transform; // panel_t used only for gizmo ancestry
 
-    if let Some(c) = world.get_component_by_id_as_mut::<WorldPanelComponent>(wpc) {
-        c.editor_root = Some(editor_root);
-        c.rows_track = Some(wpr);
-        c.rows_layout = Some(wpr_layout);
-        if let Some(b) = buttons {
-            c.save_button_renderable = Some(b.save_root);
-            c.load_button_renderable = Some(b.load_root);
-            c.save_status_text = Some(b.save_status_text);
+    if let Some(world_panel) = world
+        .get_component_by_id_as_mut::<WorldPanelComponent>(world_panel_component)
+    {
+        world_panel.editor_root = Some(editor_root);
+        world_panel.rows_track = Some(world_panel_rows_track);
+        world_panel.rows_layout = Some(world_panel_rows_layout);
+        if let Some(buttons) = title_bar_buttons {
+            world_panel.save_button_renderable = Some(buttons.save_root);
+            world_panel.load_button_renderable = Some(buttons.load_root);
+            world_panel.save_status_text = Some(buttons.save_status_text);
         }
-        c.save_filename = default_save_filename();
-    }
-    if let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(wsc) {
-        sc.set_track(wpr, [0.0, 0.0, 0.0]);
+        world_panel.save_filename = default_save_filename();
     }
 
-    world.init_component_tree(wp_t, emit);
-    ScrollingSystem::sync_component(world, emit, wsc);
-    (wpc, wp_t, wsc)
+    world.init_component_tree(world_panel_transform, emit);
+    (world_panel_component, world_panel_transform)
 }
 
-/// Returns `(panel_component_id, panel_anchor_id, scroll_component_id)`.
+/// Returns `(panel_component_id, panel_anchor_id)`.
 fn spawn_inspector_panel(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     editor_root: ComponentId,
     editor_layout_root: ComponentId,
-) -> (ComponentId, ComponentId, ComponentId) {
-    let ip_width = INSPECTOR_PANEL_WIDTH_GU * TEXT_SCALE;
-    let ip_height = PAGE_SIZE as f32 * ROW_HEIGHT;
+) -> (ComponentId, ComponentId) {
+    let inspector_panel_width = INSPECTOR_PANEL_WIDTH_GU * TEXT_SCALE;
+    let inspector_panel_height = PAGE_SIZE as f32 * ROW_HEIGHT;
 
-    let ipc = world.add_component_boxed_named(
+    let inspector_panel_component = world.add_component_boxed_named(
         "inspector_panel",
         Box::new(InspectorPanelComponent::new()),
     );
-    let isc = world.add_component_boxed_named(
-        "inspector_panel_scroll",
-        Box::new(ScrollingComponent::new(ip_height, ip_height)),
-    );
-    let ipr = world.add_component_boxed_named(
+    let inspector_panel_rows_track = world.add_component_boxed_named(
         "inspector_panel_rows_track",
         Box::new(TransformComponent::new()),
     );
 
-    let (ip_t, layout_root, _) = spawn_panel_title_bar(
+    let (inspector_panel_transform, panel_layout_root, _) = spawn_panel_title_bar(
         world,
         editor_layout_root,
-        ip_width,
-        ip_height,
+        inspector_panel_width,
+        inspector_panel_height,
         "Inspector",
         /* show_buttons */ false,
     );
@@ -956,40 +939,37 @@ fn spawn_inspector_panel(
         "content_style",
         Box::new({
             let mut s = StyleComponent::new();
-            s.height = SizeDimension::GlyphUnits(ip_height / TEXT_SCALE);
+            s.height = SizeDimension::GlyphUnits(inspector_panel_height / TEXT_SCALE);
             s.overflow = Overflow::Scroll;
             s.background_color = Some(SCROLL_BG_COLOR);
             s
         }),
     );
 
-    let _ = world.add_child(layout_root, content_slot);
+    let _ = world.add_child(panel_layout_root, content_slot);
     let _ = world.add_child(content_slot, content_style);
-    let _ = world.add_child(content_slot, ipc);
-    let _ = world.add_child(ipc, isc);
-    let _ = world.add_child(isc, ipr);
+    let _ = world.add_child(content_slot, inspector_panel_component);
+    let _ = world.add_child(content_slot, inspector_panel_rows_track);
 
-    let ipr_layout = world.add_component_boxed_named(
+    let inspector_panel_rows_layout = world.add_component_boxed_named(
         "inspector_panel_rows_layout",
         Box::new(
-            LayoutComponent::new(ip_width / TEXT_SCALE)
+            LayoutComponent::new(inspector_panel_width / TEXT_SCALE)
                 .with_unit_scale(TEXT_SCALE),
         ),
     );
-    let _ = world.add_child(ipr, ipr_layout);
+    let _ = world.add_child(inspector_panel_rows_track, inspector_panel_rows_layout);
 
-    if let Some(c) = world.get_component_by_id_as_mut::<InspectorPanelComponent>(ipc) {
-        c.editor_root = Some(editor_root);
-        c.rows_track = Some(ipr);
-        c.rows_layout = Some(ipr_layout);
-    }
-    if let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(isc) {
-        sc.set_track(ipr, [0.0, 0.0, 0.0]);
+    if let Some(inspector_panel) = world
+        .get_component_by_id_as_mut::<InspectorPanelComponent>(inspector_panel_component)
+    {
+        inspector_panel.editor_root = Some(editor_root);
+        inspector_panel.rows_track = Some(inspector_panel_rows_track);
+        inspector_panel.rows_layout = Some(inspector_panel_rows_layout);
     }
 
-    world.init_component_tree(ip_t, emit);
-    ScrollingSystem::sync_component(world, emit, isc);
-    (ipc, ip_t, isc)
+    world.init_component_tree(inspector_panel_transform, emit);
+    (inspector_panel_component, inspector_panel_transform)
 }
 
 // ---------------------------------------------------------------------------
@@ -999,16 +979,17 @@ fn spawn_inspector_panel(
 fn rebuild_world_panel(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
-    wpc_id: ComponentId,
-    wsc_id: ComponentId,
+    world_panel_component_id: ComponentId,
     editor_root: ComponentId,
     selected: Option<ComponentId>,
 ) {
     let (rows_track, rows_layout_id) = {
-        let Some(wpc) = world.get_component_by_id_as::<WorldPanelComponent>(wpc_id) else {
+        let Some(world_panel) = world
+            .get_component_by_id_as::<WorldPanelComponent>(world_panel_component_id)
+        else {
             return;
         };
-        (wpc.rows_track, wpc.rows_layout)
+        (world_panel.rows_track, world_panel.rows_layout)
     };
     let Some(rows_track) = rows_track else { return };
     let Some(rows_layout_id) = rows_layout_id else { return };
@@ -1084,26 +1065,27 @@ fn rebuild_world_panel(
         lc.dirty = true;
     }
 
-    if let Some(wpc) = world.get_component_by_id_as_mut::<WorldPanelComponent>(wpc_id) {
-        wpc.row_roots = new_rows;
-        wpc.row_to_node = new_row_to_node;
+    if let Some(world_panel) = world
+        .get_component_by_id_as_mut::<WorldPanelComponent>(world_panel_component_id)
+    {
+        world_panel.row_roots = new_rows;
+        world_panel.row_to_node = new_row_to_node;
     }
-
-    ScrollingSystem::set_content_height(world, emit, wsc_id, nodes.len() as f32 * ROW_HEIGHT);
 }
 
 fn rebuild_inspector_panel(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
-    ipc_id: ComponentId,
-    isc_id: ComponentId,
+    inspector_panel_component_id: ComponentId,
     selected: Option<ComponentId>,
 ) {
     let (rows_track, rows_layout_id) = {
-        let Some(ipc) = world.get_component_by_id_as::<InspectorPanelComponent>(ipc_id) else {
+        let Some(inspector_panel) = world
+            .get_component_by_id_as::<InspectorPanelComponent>(inspector_panel_component_id)
+        else {
             return;
         };
-        (ipc.rows_track, ipc.rows_layout)
+        (inspector_panel.rows_track, inspector_panel.rows_layout)
     };
     let Some(rows_track) = rows_track else { return };
     let Some(rows_layout_id) = rows_layout_id else { return };
@@ -1174,12 +1156,12 @@ fn rebuild_inspector_panel(
         lc.dirty = true;
     }
 
-    if let Some(ipc) = world.get_component_by_id_as_mut::<InspectorPanelComponent>(ipc_id) {
-        ipc.row_roots = new_rows;
-        ipc.inspected = selected;
+    if let Some(inspector_panel) = world
+        .get_component_by_id_as_mut::<InspectorPanelComponent>(inspector_panel_component_id)
+    {
+        inspector_panel.row_roots = new_rows;
+        inspector_panel.inspected = selected;
     }
-
-    ScrollingSystem::set_content_height(world, emit, isc_id, lines.len() as f32 * ROW_HEIGHT);
 }
 
 // ---------------------------------------------------------------------------

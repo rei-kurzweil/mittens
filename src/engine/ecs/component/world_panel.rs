@@ -9,15 +9,18 @@ use crate::engine::ecs::component::Component;
 /// SelectableComponent::off()     ← panel excluded from scene picking
 ///   OverlayComponent             ← always-on-top rendering
 ///     WorldPanelComponent        ← this component (stores rows_track + row_roots)
-///       TransformComponent       ← rows_track: moved by ScrollingSystem
-///         [row TransformComponents added dynamically]
+///     content_slot: TransformComponent
+///       StyleComponent { overflow = Scroll }
+///       rows_track: TransformComponent
+///         rows_layout: LayoutComponent
+///           [row TransformComponents added dynamically]
 /// ```
 #[derive(Debug, Default, Clone)]
 pub struct WorldPanelComponent {
     /// The editor root this panel belongs to.
     pub editor_root: Option<ComponentId>,
 
-    /// Runtime: TransformComponent that row content is attached to.
+    /// Runtime: TransformComponent attached under the overflow-styled content slot.
     pub(crate) rows_track: Option<ComponentId>,
 
     /// Runtime: LayoutComponent (child of rows_track) that LayoutSystem uses to

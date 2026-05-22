@@ -740,6 +740,33 @@ fn eval_import_positional_ce() {
     let _ = std::fs::remove_file(&user_path);
 }
 
+#[test]
+fn eval_panel_component_factories_from_assets() {
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let user_path = workspace_root.join("target/_mms_test_panel_factories_user.mms");
+
+    std::fs::write(
+        &user_path,
+        r#"
+import { world_panel } from "../assets/components/world-panel.mms"
+import { inspector_panel } from "../assets/components/inspector-panel.mms"
+
+let world_items = ["Root", "Camera", "Light"]
+let inspector_items = ["Transform {}", "Style {}"]
+
+world_panel("World", world_items)
+inspector_panel("Inspector", inspector_items)
+"#,
+    )
+    .unwrap();
+
+    let out = MeowMeowRunner::eval_file(user_path.to_str().unwrap());
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 2, "intents: {:?}", out.intents);
+
+    let _ = std::fs::remove_file(&user_path);
+}
+
 // ---------------------------------------------------------------------------
 // Reassignment
 // ---------------------------------------------------------------------------

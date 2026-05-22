@@ -25,7 +25,13 @@ let WORLD_PANEL_WIDTH_GU = 29.5
 let WORLD_PANEL_TOTAL_HEIGHT_GU = 57.5
 let EDITOR_LAYOUT_WIDTH_GU = 3.0 * WORLD_PANEL_WIDTH_GU + 6.0
 
-let panel = world_panel("World", true)
+let items = [
+    "root child routed into rows_mount",
+    "save/load handlers can query named descendants",
+    "rows_mount is the intended Rust injection target"
+]
+
+let panel = world_panel("World", items)
 
 Selectable.off() {
     T.position(-0.7, 1.6, -1.2) {

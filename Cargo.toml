@@ -51,4 +51,8 @@ gltf = { version = "1", features = ["import"] }
 name = "mindmap_example_0_3"
 path = "examples/mindmap-example.0.3.rs"
 
+[[example]]
+name = "panel-pierce"
+path = "examples/triage/panel-pierce.rs"
+
 
