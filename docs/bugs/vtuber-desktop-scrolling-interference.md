@@ -12,7 +12,7 @@ In the `vtuber-desktop` example, scrolling the "World" panel is inconsistent and
 
 - [examples/vtuber-desktop.mms](../../examples/vtuber-desktop.mms)
 - [examples/vtuber-desktop.rs](../../examples/vtuber-desktop.rs)
-- Uses [assets/components/world-panel.mms](../../assets/components/world-panel.mms)
+- Uses [assets/components/world_panel.mms](../../assets/components/world_panel.mms)
 
 Steps to reproduce:
 1. Run the `vtuber-desktop` example.
@@ -32,7 +32,7 @@ Raycasting seems to "pierce" through the UI panel or prioritize background objec
 - `src/engine/ecs/system/raycast_system.rs`: How are multiple hits handled and sorted?
 - `src/engine/ecs/system/gesture_system.rs`: How does the `DragUpdatePolicy` and the initial hit detection logic handle layered objects?
 - `src/engine/ecs/system/scroll_system.rs`: How is the `drag_scope` assigned and does it properly capture events when foregrounded?
-- `assets/components/world-panel.mms`: Check the `PointerEvents` and `Raycastable` configuration for the panel and its content slot.
+- `assets/components/world_panel.mms`: Check the `PointerEvents` and `Raycastable` configuration for the panel and its content slot.
 
 ## Questions to answer
 

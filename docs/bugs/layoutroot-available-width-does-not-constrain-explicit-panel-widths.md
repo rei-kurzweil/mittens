@@ -10,7 +10,7 @@ No source changes made yet.
 
 In the MMS world-panel repro, changing the layout root width does not make the visible panel narrower.
 
-Current repro state in [assets/components/world-panel.mms](../../assets/components/world-panel.mms):
+Current repro state in [assets/components/world_panel.mms](../../assets/components/world_panel.mms):
 
 - `WORLD_PANEL_WIDTH_GU = 9.5`
 - the panel still renders much wider than that
@@ -24,7 +24,7 @@ From user repro notes:
 
 ## Repro
 
-- [assets/components/world-panel.mms](../../assets/components/world-panel.mms)
+- [assets/components/world_panel.mms](../../assets/components/world_panel.mms)
 - [examples/world-panel.mms](../../examples/world-panel.mms)
 - [examples/world-panel.rs](../../examples/world-panel.rs)
 
@@ -34,7 +34,7 @@ Run:
 cargo run --release --example world-panel
 ```
 
-Then vary `WORLD_PANEL_WIDTH_GU` in [assets/components/world-panel.mms](../../assets/components/world-panel.mms) between values like `29.5`, `19`, and `9.5`.
+Then vary `WORLD_PANEL_WIDTH_GU` in [assets/components/world_panel.mms](../../assets/components/world_panel.mms) between values like `29.5`, `19`, and `9.5`.
 
 ## Expected behavior
 
@@ -113,7 +113,7 @@ Without that:
 
 ## Relevant files
 
-- [assets/components/world-panel.mms](../../assets/components/world-panel.mms)
+- [assets/components/world_panel.mms](../../assets/components/world_panel.mms)
 - [examples/world-panel.mms](../../examples/world-panel.mms)
 - [examples/world-panel.rs](../../examples/world-panel.rs)
 - [src/engine/ecs/system/layout/mod.rs](../../src/engine/ecs/system/layout/mod.rs)

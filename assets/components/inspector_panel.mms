@@ -1,4 +1,4 @@
-// assets/components/inspector-panel.mms
+// assets/components/inspector_panel.mms
 //
 // Reusable Inspector panel factory for MMS-driven panel rendering.
 //

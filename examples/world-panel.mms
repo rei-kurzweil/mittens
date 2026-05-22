@@ -1,4 +1,4 @@
-// world-panel.mms — import the reusable world-panel factory and use it in-scene.
+// world-panel.mms — import the reusable world_panel factory and use it in-scene.
 
 BGC {
     C.rgba(0.25, 0.25, 0.25, 1.0)
@@ -18,7 +18,7 @@ I {
     }
 }
 
-import { world_panel } from "../assets/components/world-panel.mms"
+import { world_panel } from "../assets/components/world_panel.mms"
 
 let TEXT_SCALE = 0.08
 let WORLD_PANEL_WIDTH_GU = 29.5
@@ -26,9 +26,9 @@ let WORLD_PANEL_TOTAL_HEIGHT_GU = 57.5
 let EDITOR_LAYOUT_WIDTH_GU = 3.0 * WORLD_PANEL_WIDTH_GU + 6.0
 
 let items = [
-    "root child routed into rows_mount",
+    "root child routed into world_panel_content",
     "save/load handlers can query named descendants",
-    "rows_mount is the intended Rust injection target"
+    "world_panel_content is the intended Rust rerender target"
 ]
 
 let panel = world_panel("World", items)
@@ -61,9 +61,14 @@ let save_btn = panel.query("#save_button")
 let load_btn = panel.query("#load_button")
 let status_text = panel.query("#panel_status_value")
 let rows_mount = panel.query("#rows_mount")
+let content_root = panel.query("#world_panel_content_root")
 
 if rows_mount {
     status_text.set_text("rows_mount ready")
+}
+
+if content_root {
+    status_text.set_text("world_panel_content ready")
 }
 
 on(save_btn, "Click", fn(e) {

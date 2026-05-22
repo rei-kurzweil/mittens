@@ -39,6 +39,12 @@ Desired ownership split:
 
 Rust should compute a plain data snapshot for each panel.
 
+For the next experiment, keep that model in `InspectorSystem`.
+
+That is intentionally local and provisional. We are not committing to a general
+panel runtime or a reusable view-model framework before experimenting with the
+`InspectorSystem` implementation shape.
+
 For the world panel, each item likely needs:
 
 - stable item key
@@ -56,9 +62,27 @@ For the inspector panel, each item likely needs:
 
 The action payload should stay in Rust, not in MMS.
 
-### 2. MMS renders the entire panel from that view model
+### 2. MMS renders a shell plus a rerenderable content subtree
 
-The panel factory should produce the full subtree, including all rows.
+The world panel should now be split into two factory functions:
+
+- `world_panel(title, items)` in `assets/components/world_panel.mms`
+- `world_panel_content(items)` in `assets/components/world_panel_content.mms`
+
+Contract:
+
+- `world_panel(...)` owns the stable shell
+- title bar, buttons, status label, layout root, and scroll slot stay there
+- `world_panel_content(...)` owns the body that can be replaced later
+- rows and any other item-driven content live there
+
+This gives `InspectorSystem` a concrete experiment path:
+
+1. keep the panel model in Rust
+2. render the outer shell once
+3. rerender only `world_panel_content(...)` when the model changes
+
+The same pattern can later be applied to the inspector panel if it proves useful.
 
 Important requirement:
 
@@ -109,6 +133,16 @@ Bad rerender triggers:
 Define a Rust-side panel view model type and a stable item-key scheme.
 
 Keep it small and explicit.
+
+For the first pass, that model can live directly inside `InspectorSystem` as a
+private struct or set of structs.
+
+Suggested world-panel split:
+
+- `WorldPanelShellModel`: title text and other shell-level fixed values
+- `WorldPanelContentModel`: item list used to render `world_panel_content(...)`
+
+The critical boundary is that only the content model participates in frequent rerenders.
 
 ### Phase 2: rendered node identity
 

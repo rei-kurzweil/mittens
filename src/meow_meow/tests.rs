@@ -748,8 +748,8 @@ fn eval_panel_component_factories_from_assets() {
     std::fs::write(
         &user_path,
         r#"
-import { world_panel } from "../assets/components/world-panel.mms"
-import { inspector_panel } from "../assets/components/inspector-panel.mms"
+import { world_panel } from "../assets/components/world_panel.mms"
+import { inspector_panel } from "../assets/components/inspector_panel.mms"
 
 let world_items = ["Root", "Camera", "Light"]
 let inspector_items = ["Transform {}", "Style {}"]

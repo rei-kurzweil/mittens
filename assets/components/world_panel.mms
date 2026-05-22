@@ -1,15 +1,15 @@
-// assets/components/world-panel.mms
+// assets/components/world_panel.mms
 //
-// Reusable World panel factory for MMS-driven panel rendering.
+// Reusable World panel shell for MMS-driven panel rendering.
 //
 // `world_panel(title, items)` returns a panel root with:
 // - named title bar nodes
 // - named save/load buttons
 // - named status text
-// - a named `rows_mount` container
-// - one visible row per entry in `items`
-//
-// v1 item contract: `items` is an array of display strings.
+// - a named `content_slot`
+// - a nested `world_panel_content(items)` subtree for the rerenderable body
+
+import { world_panel_content } from "./world_panel_content.mms"
 
 let WORLD_PANEL_WIDTH_GU = 29.5
 let WORLD_PANEL_CONTENT_HEIGHT_GU = 54.0
@@ -50,27 +50,10 @@ fn panel_button(node_name, label) {
     return root
 }
 
-fn world_panel_row(label, bg) {
-    let row = T.position(0.0, 0.0, 0.1) {
-        Raycastable.enabled()
-        Style {
-            margin_xy(0.25, 0.20)
-            padding_xy(0.55, 0.45)
-            background_color = bg
-        }
-        T.position(0.0, 0.0, 0.015).scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE) {
-            Text {
-                label
-                C.rgba(0.06, 0.09, 0.08, 1.0)
-            }
-        }
-    }
-    return row
-}
-
 export fn world_panel(title, items) {
     let save_button = panel_button("save_button", "Save")
     let load_button = panel_button("load_button", "Load")
+    let content = world_panel_content(items)
 
     let root = T {
         name = "world_panel_root"
@@ -131,16 +114,7 @@ export fn world_panel(title, items) {
                     background_color = [0.96, 0.92, 0.18, 0.80]
                 }
 
-                T {
-                    name = "rows_mount"
-                    Style {
-                        width(100%)
-                    }
-
-                    for item in items {
-                        world_panel_row(item, [0.92, 0.97, 0.92, 1.0])
-                    }
-                }
+                content
             }
 
         }
