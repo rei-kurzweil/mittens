@@ -18,6 +18,7 @@ pub mod collision_system;
 pub mod editor_system;
 pub mod gesture_system;
 pub mod inspector_system;
+pub(crate) mod inspector_system_stopgap_mms_adapter;
 pub mod layout;
 pub mod gizmo_system;
 pub mod gltf_system;
