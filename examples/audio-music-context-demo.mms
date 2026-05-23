@@ -31,9 +31,14 @@ AudioOutput {
         name = "bass"
     }
 
-    AudioClip.wav("assets/audio/KAB1_174_AmenBreak_Cut_02.wav") {
+    let amen = AudioClip.wav("assets/audio/KAB1_174_AmenBreak_Cut_02.wav") {
         name = "amen_break"
-    }
+    };
+    amen;
+    // Sibling instance — shares amen's decoded buffer, starts 0.5
+    // beats into the sample. Smoke-tests `.instance()` wiring.
+    let amen_late = amen.instance(0.5);
+    amen_late;
 }
 
 MusicContext {

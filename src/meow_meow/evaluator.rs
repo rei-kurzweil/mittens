@@ -1209,6 +1209,56 @@ fn eval_method_call(
                 return Ok(Value::Null);
             }
 
+            // AudioClip.instance([start_beat], [stop_beat]) — produce a
+            // new clip that shares the receiver's decoded buffer but
+            // gets its own playhead. Mirrors `let x = CE` semantics:
+            // returns a detached handle, caller attaches by referencing
+            // the binding inside a CE body (or manually). See
+            // docs/draft/audio-clip-instance-cloning.md §3.
+            if matches!(
+                component_type.as_str(),
+                "AudioClip" | "AudioClipComponent" | "audio_clip"
+            ) && method == "instance"
+            {
+                // Pass the receiver as a live `ComponentObject` handle —
+                // the host-side registry (`arg_component_ref`) reads its
+                // guid from the world. Works in both inline + channelled
+                // evaluator modes; no `host_world` needed here.
+                let receiver = Value::ComponentObject {
+                    id,
+                    component_type: component_type.clone(),
+                };
+                let mut ctor_args: Vec<Value> = vec![receiver];
+                if let Some(v) = args.first() {
+                    ctor_args.push(v.clone());
+                }
+                if let Some(v) = args.get(1) {
+                    ctor_args.push(v.clone());
+                }
+
+                let ce = MaterializedCE {
+                    component_type: "AudioClip".to_string(),
+                    ctor_method: Some("instance".to_string()),
+                    ctor_args,
+                    calls: Vec::new(),
+                    named: Vec::new(),
+                    positionals: Vec::new(),
+                    children: Vec::new(),
+                };
+
+                let Some(ch) = ctx.channels.as_mut() else {
+                    return Err("instance(): no host channel".into());
+                };
+                let new_id = match ch.call(HostCallKind::Register(ce)) {
+                    Some(HostValue::ComponentId(cid)) => cid,
+                    _ => return Err("instance(): host Register failed".into()),
+                };
+                return Ok(Value::ComponentObject {
+                    id: new_id,
+                    component_type: "AudioClip".to_string(),
+                });
+            }
+
             Err(format!("no method '{}' on component type '{}'", method, component_type))
         }
         other => Err(format!("method call '{}': receiver is not a ComponentObject, got {:?}", method, other)),
