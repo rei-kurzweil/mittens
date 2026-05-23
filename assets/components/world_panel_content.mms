@@ -19,10 +19,12 @@
 let TEXT_SCALE = 0.08
 
 fn world_panel_row(row_name, label, bg) {
-    let row = T.position(0.0, 0.0, 0.1) {
+    let row = T {
         name = row_name
         Raycastable.enabled()
         Style {
+            display("block")
+            width(100%)
             margin_xy(0.25, 0.20)
             padding_xy(0.55, 0.45)
             background_color = bg
@@ -40,10 +42,15 @@ fn world_panel_row(row_name, label, bg) {
 export fn world_panel_content(items) {
     let root = T {
         name = "world_panel_content_root"
+        Style {
+            display("block")
+            width(100%)
+        }
 
         T {
             name = "rows_mount"
             Style {
+                display("block")
                 width(100%)
             }
 

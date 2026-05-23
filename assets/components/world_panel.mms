@@ -74,11 +74,14 @@ export fn world_panel(title, items) {
                     padding_xy(0.0, 0.25)
                     background_color = [0.08, 0.24, 0.11, 0.92]
                     color = [0.92, 1.00, 0.92, 1.0]
-                    font_size(1.0)
                 }
-                Text {
-                    name = "panel_status_value"
-                    "idle"
+                T.position(0.0, 0.0, 0.015) {
+                    T.scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE) {
+                        Text {
+                            name = "panel_status_value"
+                            "idle"
+                        }
+                    }
                 }
             }
 
