@@ -92,6 +92,26 @@ impl MeowMeowRunner {
         Self::load_module_source(&source, Some(path))
     }
 
+    pub fn call_mms_module_fn(
+        module: &LoadedMmsModule,
+        name: &str,
+        args: Vec<Value>,
+        channels: Option<&mut crate::meow_meow::evaluator::EvalChannels>,
+        world_host: Option<&mut World>,
+        emit: Option<&mut dyn SignalEmitter>,
+    ) -> Result<Value, String> {
+        let Some(export) = module.named_export(name) else {
+            return Err(format!("call_mms_module_fn: export '{}' not found", name));
+        };
+        if !matches!(export, Value::Function { .. }) {
+            return Err(format!(
+                "call_mms_module_fn: export '{}' is not a function",
+                name
+            ));
+        }
+        eval_mms_fn(export, args, channels, world_host, emit)
+    }
+
     /// Evaluate `source` with live world access.
     ///
     /// Handles two HostCall kinds during evaluation:

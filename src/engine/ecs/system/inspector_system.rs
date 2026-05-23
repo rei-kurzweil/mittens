@@ -2,7 +2,6 @@ use crate::engine::ecs::IntentValue;
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::meow_meow::component_registry::spawn_tree_uninitialized;
-use crate::meow_meow::evaluator::eval_mms_fn;
 use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
 use crate::meow_meow::runner::MeowMeowRunner;
 
@@ -74,16 +73,18 @@ impl InspectorSystem {
             }
         };
 
-        let Some(world_panel_fn) = module.named_export("world_panel") else {
-            eprintln!("[InspectorSystem] world panel export 'world_panel' was not found");
-            return;
-        };
-
         let args = vec![
             Value::String(model.title.clone()),
             Value::Array(model.items.iter().cloned().map(Value::String).collect()),
         ];
-        let panel_value = match eval_mms_fn(world_panel_fn, args, None, Some(world), Some(emit)) {
+        let panel_value = match MeowMeowRunner::call_mms_module_fn(
+            &module,
+            "world_panel",
+            args,
+            None,
+            Some(world),
+            Some(emit),
+        ) {
             Ok(value) => value,
             Err(error) => {
                 eprintln!("[InspectorSystem] world panel export call error: {error}");

@@ -782,6 +782,33 @@ fn load_module_file_exposes_named_exports_as_evaluated_values() {
 }
 
 #[test]
+fn call_mms_module_fn_invokes_exported_factory_function() {
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let module_path = workspace_root.join("assets/components/world_panel.mms");
+
+    let module = MeowMeowRunner::load_module_file(module_path.to_str().unwrap())
+        .expect("expected module to load");
+
+    let value = MeowMeowRunner::call_mms_module_fn(
+        &module,
+        "world_panel",
+        vec![
+            Value::String("World".to_string()),
+            Value::Array(vec![
+                Value::String("Root".to_string()),
+                Value::String("Camera".to_string()),
+            ]),
+        ],
+        None,
+        None,
+        None,
+    )
+    .expect("expected exported factory call to succeed");
+
+    assert!(matches!(value, Value::ComponentExpr(_)));
+}
+
+#[test]
 fn eval_world_panel_content_rows_are_queryable_by_index_name() {
     let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = workspace_root.join("target/_mms_test_world_panel_content_names.mms");
