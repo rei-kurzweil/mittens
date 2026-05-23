@@ -17,8 +17,8 @@ Clock.bpm(174)
 let amen   = AudioClip.wav("assets/audio/KAB1_174_AmenBreak_Cut_02.wav") {
     name = "amen_break"
 };
-let amen_q = amen.instance(0.25);
-let amen_h = amen.instance(0.5);
+let amen_q = amen.instance(0.5);
+let amen_h = amen.instance(0.75);
 
 AudioOutput {
     AudioOscillator.square() {
@@ -97,10 +97,13 @@ MusicContext {
         // Half-clone late in the bar for a stutter effect.
         Keyframe.at(5.50) { MusicNote.c(2, 0.5, "amen_half") }
 
-        Keyframe.at(6.0) {  MusicNote.a(2, 0.9, "synth_bass") }
+        Keyframe.at(6.0) {  MusicNote.a(2, 0.9, "synth_bass") 
+                            MusicNote.c(2, 0.5, "amen_half")
+        }
         Keyframe.at(6.10) { MusicNote.a(1, 0.9, "synth_bass") }
 
         Keyframe.at(6.50) { MusicNote.a(4, 0.25, "lead") }
+        Keyframe.at(6.75) { MusicNote.c(2, 0.5, "amen_half") }
         Keyframe.at(7.0)  { MusicNote.e(3, 0.25, "lead") }
     }
 }
