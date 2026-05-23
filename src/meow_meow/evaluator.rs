@@ -87,6 +87,16 @@ pub enum HostCallKind {
         scope: Option<ComponentId>,
         multiple: bool,
     },
+    /// Create a new `AudioClipComponent` that shares `source`'s decoded
+    /// asset but gets its own playhead (RT instance). Returns the new
+    /// component's id, detached — mirrors `Register` semantics so the
+    /// caller can splice it via the usual CE-body bare-reference path.
+    /// See docs/draft/audio-clip-instance-cloning.md §3.
+    AudioClipInstance {
+        source: ComponentId,
+        start_beat: Option<f64>,
+        stop_beat: Option<f64>,
+    },
 }
 
 /// Values the host can return in response to a `HostCall`.
@@ -1220,38 +1230,33 @@ fn eval_method_call(
                 "AudioClip" | "AudioClipComponent" | "audio_clip"
             ) && method == "instance"
             {
-                // Pass the receiver as a live `ComponentObject` handle —
-                // the host-side registry (`arg_component_ref`) reads its
-                // guid from the world. Works in both inline + channelled
-                // evaluator modes; no `host_world` needed here.
-                let receiver = Value::ComponentObject {
-                    id,
-                    component_type: component_type.clone(),
+                let start_beat = match args.first() {
+                    Some(Value::Number(n)) => Some(*n),
+                    Some(Value::Null) | None => None,
+                    Some(other) => return Err(format!(
+                        "instance(): start_beat must be a number, got {:?}",
+                        other
+                    )),
                 };
-                let mut ctor_args: Vec<Value> = vec![receiver];
-                if let Some(v) = args.first() {
-                    ctor_args.push(v.clone());
-                }
-                if let Some(v) = args.get(1) {
-                    ctor_args.push(v.clone());
-                }
-
-                let ce = MaterializedCE {
-                    component_type: "AudioClip".to_string(),
-                    ctor_method: Some("instance".to_string()),
-                    ctor_args,
-                    calls: Vec::new(),
-                    named: Vec::new(),
-                    positionals: Vec::new(),
-                    children: Vec::new(),
+                let stop_beat = match args.get(1) {
+                    Some(Value::Number(n)) => Some(*n),
+                    Some(Value::Null) | None => None,
+                    Some(other) => return Err(format!(
+                        "instance(): stop_beat must be a number, got {:?}",
+                        other
+                    )),
                 };
 
                 let Some(ch) = ctx.channels.as_mut() else {
                     return Err("instance(): no host channel".into());
                 };
-                let new_id = match ch.call(HostCallKind::Register(ce)) {
+                let new_id = match ch.call(HostCallKind::AudioClipInstance {
+                    source: id,
+                    start_beat,
+                    stop_beat,
+                }) {
                     Some(HostValue::ComponentId(cid)) => cid,
-                    _ => return Err("instance(): host Register failed".into()),
+                    _ => return Err("instance(): host AudioClipInstance failed".into()),
                 };
                 return Ok(Value::ComponentObject {
                     id: new_id,

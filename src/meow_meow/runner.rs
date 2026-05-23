@@ -249,6 +249,29 @@ impl MeowMeowRunner {
                             );
                             HostValue::Null
                         }
+                        HostCallKind::AudioClipInstance { source, start_beat, stop_beat } => {
+                            use crate::engine::ecs::component::AudioClipComponent;
+                            match world.get_component_by_id_as::<AudioClipComponent>(source) {
+                                Some(src) => {
+                                    let mut c = AudioClipComponent::instance_of(src);
+                                    if let Some(sb) = start_beat {
+                                        c.start_beat = sb;
+                                    }
+                                    if let Some(eb) = stop_beat {
+                                        c.stop_beat = Some(eb);
+                                    }
+                                    let id = world.add_component(c);
+                                    HostValue::ComponentId(id)
+                                }
+                                None => {
+                                    output.errors.push(
+                                        "HostCall::AudioClipInstance: source is not an AudioClip"
+                                            .to_string(),
+                                    );
+                                    HostValue::Null
+                                }
+                            }
+                        }
                     };
                     let _ = handle.requests.push(EvalRequest::HostCallResult { id, value: reply });
                 }

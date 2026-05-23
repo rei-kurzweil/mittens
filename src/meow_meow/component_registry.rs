@@ -1261,33 +1261,9 @@ fn create_component(
             ))
         }
         "AudioClip" => {
-            // `instance` ctor: clone an existing clip so the new
-            // component shares the decoded asset but gets its own
-            // playhead. Arg 0 is a component ref to the source; args
-            // 1/2 (optional) are start_beat / stop_beat in beats. See
-            // docs/draft/audio-clip-instance-cloning.md.
-            if ctor == Some("instance") {
-                let src_ref = arg_component_ref(world, args, 0)?;
-                let src_id = resolve_component_ref(world, &src_ref).ok_or_else(|| {
-                    "AudioClip.instance: source clip not found".to_string()
-                })?;
-                let mut c = {
-                    let src = world
-                        .get_component_by_id_as::<AudioClipComponent>(src_id)
-                        .ok_or_else(|| {
-                            "AudioClip.instance: source is not an AudioClip".to_string()
-                        })?;
-                    AudioClipComponent::instance_of(src)
-                };
-                if let Ok(sb) = arg_f32(args, 1) {
-                    c.start_beat = sb as f64;
-                }
-                if let Ok(eb) = arg_f32(args, 2) {
-                    c.stop_beat = Some(eb as f64);
-                }
-                return add!(c);
-            }
-
+            // Cloning is a *method* on a live AudioClip handle, not a
+            // ctor — see `eval_method_call` + `HostCallKind::AudioClipInstance`.
+            //
             // Constructor variants accept the URI as positional arg 0. The
             // ctor name (`wav`/`opus`/`ogg`/`mp3`/`flac`/`new`) is purely
             // documentation — codec is detected from the file by the
