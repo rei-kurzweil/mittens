@@ -92,21 +92,41 @@ MMS should own:
 - row structure
 - row styling
 - row naming
-- row-local event handlers
 
 Rust should own:
 
 - building the item list
 - deciding when to rerender
-- exposing the editor command surface that MMS handlers can call through intents
+- attaching row signal handlers in v1
+- exposing any later editor command surface when MMS-owned handlers become practical
 
-## Clicking Items In MMS
+## Clicking Items In V1
 
-Yes, the item click handlers can live in MMS.
+For v1, item click handlers should be attached from Rust after rendering.
 
-That is the preferred experiment now.
+Why:
 
-The content factory should eventually be able to do something conceptually like:
+- `items` is still just `[String]`
+- MMS does not yet have the record/struct surface needed to pass stable item metadata cleanly
+- Rust can query named rows from the rendered content root and bind handlers there
+
+The useful v1 contract is therefore:
+
+- `world_panel_content(...)` renders named rows under `rows_mount`
+- Rust queries those rows from `world_panel_content_root`
+- Rust attaches click/select handlers after the subtree is spawned
+
+Because v1 items do not yet carry stable keys, row names are derived from render order:
+
+- `item_0`
+- `item_1`
+- `item_2`
+
+That is good enough for the first Rust-side binding pass.
+
+## Clicking Items In MMS Later
+
+Once MMS can receive structured item records, the content factory should eventually be able to do something conceptually like:
 
 ```mms
 export fn world_panel_content(items) {
@@ -126,8 +146,7 @@ export fn world_panel_content(items) {
 }
 ```
 
-That snippet is contract-level pseudo-MMS, not a requirement that the current runtime
-already supports this exact syntax.
+That snippet is later contract-level pseudo-MMS, not a requirement for v1.
 
 ## Editor API Surface
 
@@ -168,7 +187,7 @@ Acceptable experimental contract:
 
 If both are supported later, they should be treated as one semantic target concept rather than two unrelated APIs.
 
-Recommended first contract:
+Recommended later contract:
 
 - Rust passes item text together with `target_ref` into the factory
 - `target_ref` is preferably a guid string in `@uuid:...` form
@@ -176,16 +195,21 @@ Recommended first contract:
 
 ## Row Identity
 
-Even if MMS owns click handlers, rows should still get stable names derived from `item.key`.
+For v1, rows should get easy query names from the rendered content root.
 
 Why keep this?
 
 - debugging
+- Rust-side post-render binding
 - future testability
-- fallback Rust-side binding if needed
 - queryability from other MMS code
 
-Example direction:
+V1 direction with string-only items:
+
+- first row name: `item_0`
+- second row name: `item_1`
+
+Later direction with stable item keys:
 
 - item key: `node_42`
 - row name: `item_node_42`
@@ -216,6 +240,10 @@ Options:
 - parallel arrays and helper functions
 
 The only hard requirement is that the model carries `target_ref` and that the content factory can author the click handler against it.
+
+For v1, before structured values exist, the hard requirement is smaller:
+
+- Rust must be able to query rendered rows reliably from `world_panel_content_root`
 
 ## Records And Structs Requirement
 

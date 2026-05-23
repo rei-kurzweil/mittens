@@ -106,24 +106,24 @@ Important requirement:
 
 That gives Rust a reliable way to query the rendered nodes after the tree is spawned.
 
-### 3. MMS owns row click handlers and emits editor intents
+### 3. Rust binds row click handlers in v1
 
-Preferred experiment:
+Preferred v1 experiment:
 
-1. Rust builds items that include `target_ref`
+1. Rust builds the current item list
 2. MMS renders the rows
-3. MMS installs `on(row, "Click", ...)` handlers inside the content factory
-4. those handlers emit editor-facing intents such as `EDITOR_SELECT(target_ref)`
+3. each row gets a deterministic queryable name under the rendered content root
+4. Rust queries those rows and installs the click handlers after render
 
-Rust still owns the implementation of those editor intents.
+This keeps the first runtime path compatible with today's string-only item contract.
 
-Examples:
+Examples of the later structured-data path:
 
 - world row click emits `EDITOR_SELECT(item.target_ref)`
 - inspector row click emits the appropriate editor intent for its section or target
 - toolbar/button click emits an editor-mode or gizmo intent
 
-This keeps the editor API narrow while letting MMS own interaction authorship.
+That later path still keeps the editor API narrow while letting MMS own interaction authorship.
 
 ## Rerender Semantics
 
@@ -165,22 +165,29 @@ The critical boundary is that only the content model participates in frequent re
 
 Update MMS panel assets so every interactive item gets a predictable node name derived from its key.
 
-Example direction:
+V1 direction while items are only strings:
+
+- `item_0`
+- `item_1`
+
+Later direction once item keys exist:
 
 - item key: `node_42`
 - row node name: `item_node_42`
 
 ### Phase 3: post-render binding
 
-Expose the first editor-facing intent surface to MMS.
+Bind handlers from Rust against the named rendered rows.
+
+Later, expose the first editor-facing intent surface to MMS.
 
 Starting point:
 
-1. define `EDITOR_SELECT(target_ref)` as a spec-level intent
-2. let content-factory row handlers emit it
-3. keep the executor / routing logic on the Rust side when runtime work resumes
+1. query rows from the rendered content root
+2. bind click handlers from Rust
+3. keep the executor / routing logic on the Rust side
 
-For the first pass, `target_ref` should usually be a canonical ref string,
+Later, `target_ref` should usually be a canonical ref string,
 preferably `@uuid:...` when Rust knows the guid.
 
 ### Phase 4: lifecycle

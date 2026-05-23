@@ -7,23 +7,20 @@
 //
 // v1 item contract: `items` is an array of display strings.
 //
-// Draft v2 contract:
-// - each item should carry a stable key
-// - each item should carry its display label
-// - each item should carry the target component identity it represents
-//   as a target_ref field inside a record / map item
-// - the preferred first encoding for that target_ref is a canonical string
-//   in `@uuid:...` form
-// - selector strings are the fallback, not the preferred contract
-// - item click handlers should be authored here in MMS and emit an
-//   editor-facing intent such as `EDITOR_SELECT(item.target_ref)`
+// v1 interaction contract:
+// - Rust attaches signal handlers after rendering
+// - rows must therefore get easy query names under `world_panel_content_root`
+// - until items carry stable keys, row names are derived from render order:
+//   `item_0`, `item_1`, ...
 //
-// That intent surface is still spec-only; no runtime support is added here yet.
+// Draft v2 contract remains records/maps passed from Rust with stable keys and
+// target refs, but that is spec work only for now.
 
 let TEXT_SCALE = 0.08
 
-fn world_panel_row(label, bg) {
+fn world_panel_row(row_name, label, bg) {
     let row = T.position(0.0, 0.0, 0.1) {
+        name = row_name
         Raycastable.enabled()
         Style {
             margin_xy(0.25, 0.20)
@@ -50,8 +47,11 @@ export fn world_panel_content(items) {
                 width(100%)
             }
 
+            let idx = 0
             for item in items {
-                world_panel_row(item, [0.92, 0.97, 0.92, 1.0])
+                let row_name = "item_" + idx
+                world_panel_row(row_name, item, [0.92, 0.97, 0.92, 1.0])
+                idx = idx + 1
             }
         }
     }

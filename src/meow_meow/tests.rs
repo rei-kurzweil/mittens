@@ -767,6 +767,39 @@ inspector_panel("Inspector", inspector_items)
     let _ = std::fs::remove_file(&user_path);
 }
 
+#[test]
+fn eval_world_panel_content_rows_are_queryable_by_index_name() {
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = workspace_root.join("target/_mms_test_world_panel_content_names.mms");
+    let source = r##"
+import { world_panel_content } from "../assets/components/world_panel_content.mms"
+
+let root = world_panel_content(["Root", "Camera", "Light"])
+let rows_mount = root.query("#rows_mount")
+let row_0 = root.query("#item_0")
+let row_1 = root.query("#item_1")
+let row_2 = root.query("#item_2")
+
+assert(rows_mount, "expected rows_mount to exist")
+assert(row_0, "expected item_0 row to exist")
+assert(row_1, "expected item_1 row to exist")
+assert(row_2, "expected item_2 row to exist")
+"##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world_at_path(
+        source,
+        Some(source_path.to_str().unwrap()),
+        &mut world,
+        &mut rx,
+        &mut emit,
+    );
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+}
+
 // ---------------------------------------------------------------------------
 // Reassignment
 // ---------------------------------------------------------------------------
