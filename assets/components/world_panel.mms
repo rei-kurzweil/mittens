@@ -13,9 +13,10 @@ import { world_panel_content } from "./world_panel_content.mms"
 
 let WORLD_PANEL_WIDTH_GU = 29.5
 let WORLD_PANEL_CONTENT_HEIGHT_GU = 54.0
+let STATUS_BAR_HEIGHT_GU = 1.75
 let TITLE_BAR_HEIGHT_GU = 3.0
 let TITLE_CONTENT_GAP_GU = 0.5
-let WORLD_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + WORLD_PANEL_CONTENT_HEIGHT_GU
+let WORLD_PANEL_TOTAL_HEIGHT_GU = STATUS_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + WORLD_PANEL_CONTENT_HEIGHT_GU
 let TEXT_SCALE = 0.08
 let TITLEBAR_BUTTON_WIDTH_GU = 6.875
 let TITLEBAR_BUTTON_HEIGHT_GU = 2.4
@@ -58,17 +59,6 @@ export fn world_panel(title, items) {
     let root = T {
         name = "world_panel_root"
 
-        T.position(0.02, 0.6, 0.05) {
-            name = "save_status_wrap"
-            T.position(0.0, 0.0, 0.015).scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE) {
-                Text {
-                    name = "panel_status_value"
-                    "idle"
-                    C.rgba(0.92, 1.00, 0.92, 1.0)
-                }
-            }
-        }
-
         LayoutRoot {
             name = "panel_layout_root"
             available_width(WORLD_PANEL_WIDTH_GU)
@@ -76,8 +66,26 @@ export fn world_panel(title, items) {
             unit_scale(TEXT_SCALE)
 
             T {
+                name = "save_status_wrap"
+                Style {
+                    display("block")
+                    height(STATUS_BAR_HEIGHT_GU)
+                    margin_bottom(TITLE_CONTENT_GAP_GU)
+                    padding_xy(0.0, 0.25)
+                    background_color = [0.08, 0.24, 0.11, 0.92]
+                    color = [0.92, 1.00, 0.92, 1.0]
+                    font_size(1.0)
+                }
+                Text {
+                    name = "panel_status_value"
+                    "idle"
+                }
+            }
+
+            T {
                 name = "title_bar"
                 Style {
+                    display("block")
                     height(TITLE_BAR_HEIGHT_GU)
                     margin_bottom(TITLE_CONTENT_GAP_GU)
                     background_color = [0.18, 0.78, 0.22, 0.95]
@@ -109,6 +117,7 @@ export fn world_panel(title, items) {
             T {
                 name = "content_slot"
                 Style {
+                    display("block")
                     height(WORLD_PANEL_CONTENT_HEIGHT_GU)
                     overflow("scroll")
                     background_color = [0.96, 0.92, 0.18, 0.80]
