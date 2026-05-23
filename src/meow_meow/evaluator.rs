@@ -508,7 +508,7 @@ fn eval_stmt(
             let resolved = resolve_import_path(path, ctx.source_path);
             let content = std::fs::read_to_string(&resolved)
                 .map_err(|e| format!("import error: cannot read '{}': {}", path, e))?;
-            let module_val = eval_as_module(&content, Some(&resolved))?;
+            let module_val = eval_module_source(&content, Some(&resolved))?;
             let (named, sequence) = match module_val {
                 Value::Module { named, sequence } => (named, sequence),
                 _ => return Err("import: internal error".to_string()),
@@ -1454,7 +1454,7 @@ pub(crate) fn eval_mms_fn(
 
 /// Evaluate a source file as a module (sandboxed — emits go to `sequence`, not the engine).
 /// Returns `Value::Module { named, sequence }`.
-fn eval_as_module(source: &str, source_path: Option<&str>) -> Result<Value, String> {
+pub(crate) fn eval_module_source(source: &str, source_path: Option<&str>) -> Result<Value, String> {
     let mut stmts = parse_source(source)?;
     EmitLiftTransform::apply(&mut stmts);
     QueryDesugarTransform::apply(&mut stmts);

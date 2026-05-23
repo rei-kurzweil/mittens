@@ -1,16 +1,31 @@
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use crate::engine::ecs::{IntentValue, RxWorld, SignalEmitter, World};
 use crate::meow_meow::evaluator::{
-    eval_mms_fn, EvalRequest, EvalResponse, HostCallKind, HostValue, MeowMeowEvaluator,
+    eval_mms_fn, eval_module_source, EvalRequest, EvalResponse, HostCallKind, HostValue,
+    MeowMeowEvaluator,
 };
-use crate::meow_meow::object::Value;
+use crate::meow_meow::object::{MaterializedCE, Value};
 
 /// The result of evaluating an MMS script: collected intents and any errors.
 #[derive(Debug, Default)]
 pub struct EvalOutput {
     pub intents: Vec<IntentValue>,
     pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LoadedMmsModule {
+    pub named_exports: HashMap<String, Value>,
+    pub sequence: Vec<MaterializedCE>,
+    pub source_path: Option<String>,
+}
+
+impl LoadedMmsModule {
+    pub fn named_export(&self, name: &str) -> Option<&Value> {
+        self.named_exports.get(name)
+    }
 }
 
 /// Synchronous wrapper around [`MeowMeowEvaluator`].
@@ -52,6 +67,29 @@ impl MeowMeowRunner {
                 output
             }
         }
+    }
+
+    pub fn load_module_source(
+        source: &str,
+        source_path: Option<&str>,
+    ) -> Result<LoadedMmsModule, String> {
+        match eval_module_source(source, source_path)? {
+            Value::Module { named, sequence } => Ok(LoadedMmsModule {
+                named_exports: named,
+                sequence,
+                source_path: source_path.map(|s| s.to_string()),
+            }),
+            other => Err(format!(
+                "load_module_source: expected module result, got {:?}",
+                other
+            )),
+        }
+    }
+
+    pub fn load_module_file(path: &str) -> Result<LoadedMmsModule, String> {
+        let source = std::fs::read_to_string(path)
+            .map_err(|e| format!("cannot read module '{}': {}", path, e))?;
+        Self::load_module_source(&source, Some(path))
     }
 
     /// Evaluate `source` with live world access.

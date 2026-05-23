@@ -768,6 +768,20 @@ inspector_panel("Inspector", inspector_items)
 }
 
 #[test]
+fn load_module_file_exposes_named_exports_as_evaluated_values() {
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let module_path = workspace_root.join("assets/components/world_panel.mms");
+
+    let module = MeowMeowRunner::load_module_file(module_path.to_str().unwrap())
+        .expect("expected module to load");
+
+    assert!(matches!(
+        module.named_export("world_panel"),
+        Some(Value::Function { .. })
+    ));
+}
+
+#[test]
 fn eval_world_panel_content_rows_are_queryable_by_index_name() {
     let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = workspace_root.join("target/_mms_test_world_panel_content_names.mms");
