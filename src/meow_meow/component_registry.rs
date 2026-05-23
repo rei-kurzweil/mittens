@@ -999,12 +999,15 @@ fn create_component(
             add!(c)
         }
         "Animation" => {
-            let state = match ctor {
-                Some("playing") => AnimationState::Playing,
-                Some("paused")  => AnimationState::Paused,
-                _               => AnimationState::Looping,
-            };
-            add!(AnimationComponent::new().with_state(state))
+            let mut c = AnimationComponent::new();
+            match ctor {
+                Some("playing") => c = c.with_state(AnimationState::Playing),
+                Some("paused")  => c = c.with_state(AnimationState::Paused),
+                Some("looping") => c = c.with_state(AnimationState::Looping),
+                Some("length")  => c = c.with_length_beats(arg_f32(args, 0)? as f64),
+                _ => {}
+            }
+            add!(c)
         }
         "Keyframe" => match ctor {
             Some("at") => add!(KeyframeComponent::new(arg_f32(args, 0)? as f64)),
@@ -1968,6 +1971,10 @@ fn apply_call(
             "playing" => *anim = anim.clone().with_state(AnimationState::Playing),
             "looping" => *anim = anim.clone().with_state(AnimationState::Looping),
             "paused"  => *anim = anim.clone().with_state(AnimationState::Paused),
+            "length"  => {
+                let n = arg_f32(args, 0)? as f64;
+                *anim = anim.clone().with_length_beats(n);
+            }
             "resolve_targets" => {
                 let mode = match arg_str(args, 0)? {
                     "on_attach" => ResolveTargetsMode::OnAttach,

@@ -54,7 +54,7 @@ MusicContext {
     voice("amen_quarter", amen_q)
     voice("amen_half", amen_h)
 
-    Animation.looping() {
+    Animation.length(16).looping() {
         name = "beepy_loop"
 
         Keyframe.at(0.00) {
@@ -105,5 +105,56 @@ MusicContext {
         Keyframe.at(6.50) { MusicNote.a(4, 0.25, "lead") }
         Keyframe.at(6.75) { MusicNote.c(2, 0.5, "amen_half") }
         Keyframe.at(7.0)  { MusicNote.e(3, 0.25, "lead") }
+
+        // -------- Repeat, shifted by +8 beats --------
+        // Loop length = floor(max_keyframe_beat) + 1 → 15 → 16 beats.
+        Keyframe.at(8.00) {
+            MusicNote.e(4, 0.25, "lead")
+            MusicNote.c(2, 1.0, "amen_break")
+        }
+        Keyframe.at(8.25)  { MusicNote.c(2, 0.25, "amen_quarter") }
+
+        Keyframe.at(8.50)  { MusicNote.c(4, 0.25, "lead") }
+
+        Keyframe.at(9.00)  { MusicNote.a(4, 0.25, "lead") }
+        Keyframe.at(9.25)  { MusicNote.c(2, 0.25, "amen_half") }
+
+        Keyframe.at(9.5)  {
+            MusicNote.e(3, 0.25, "lead")
+            MusicNote.c(2, 0.5, "amen_break")
+        }
+
+        Keyframe.at(10.00) { MusicNote.a(2, 0.9, "synth_bass") }
+        Keyframe.at(10.10) { MusicNote.a(1, 0.9, "synth_bass") }
+        Keyframe.at(10.50) { MusicNote.c(2, 0.5, "amen_quarter") }
+
+        Keyframe.at(11.00) {
+            MusicNote.a(2, 0.9, "synth_bass")
+            MusicNote.c(2, 0.5, "amen_break")
+        }
+        Keyframe.at(11.10) { MusicNote.a(1, 0.9, "synth_bass") }
+
+        Keyframe.at(11.50) {
+            MusicNote.a(2, 0.9, "synth_bass")
+            MusicNote.c(2, 3.5, "amen_break")
+        }
+        Keyframe.at(12.10) { MusicNote.a(1, 0.9, "synth_bass") }
+
+        Keyframe.at(13.00) { MusicNote.a(2, 0.9, "synth_bass") }
+        Keyframe.at(13.10) { MusicNote.a(1, 0.9, "synth_bass") }
+        Keyframe.at(13.50) { MusicNote.c(2, 0.5, "amen_half") }
+
+        Keyframe.at(14.00) {
+            MusicNote.a(2, 0.9, "synth_bass")
+            MusicNote.c(2, 0.5, "amen_half")
+        }
+        Keyframe.at(14.10) { MusicNote.a(1, 0.9, "synth_bass") }
+
+        Keyframe.at(14.50) { MusicNote.a(4, 0.25, "lead") }
+        Keyframe.at(14.75) { MusicNote.c(2, 0.5, "amen_half") }
+        Keyframe.at(14.00) { MusicNote.e(3, 0.25, "lead") }
+        Keyframe.at(15.00) { MusicNote.c(2, 0.5, "amen_half") }
+        Keyframe.at(15.50) { MusicNote.c(2, 0.5, "amen_half") }
+        Keyframe.at(16.00) { MusicNote.c(2, 0.5, "amen_half") }
     }
 }

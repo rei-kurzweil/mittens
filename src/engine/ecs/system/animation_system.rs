@@ -237,9 +237,9 @@ impl AnimationSystem {
 
         // Drive animations.
         for (&anim, runtime) in self.animations.iter_mut() {
-            let (state, resolve_mode) =
+            let (state, resolve_mode, length_override) =
                 match world.get_component_by_id_as::<AnimationComponent>(anim) {
-                    Some(c) => (c.state, c.resolve_targets),
+                    Some(c) => (c.state, c.resolve_targets, c.length_beats),
                     None => continue,
                 };
 
@@ -300,10 +300,15 @@ impl AnimationSystem {
             // Use per-animation local beat time so animations can restart/loop.
             let mut local_beat = (beat_now - runtime.start_beat).max(0.0);
             let span = (max_beat - min_beat).max(0.0);
-            // Default loop length: snap to the next whole beat after the last keyframe.
-            // This keeps common musical loops stable even when you include off-beat keyframes
-            // (e.g. max_beat=31.5 should loop at 32.0 beats, not 32.5).
-            let loop_len = if span < 1e-6 { 1.0 } else { span.floor() + 1.0 };
+            // Explicit `Animation.length(n)` wins. Otherwise default:
+            // snap to the next whole beat after the last keyframe so
+            // common musical loops stay stable even with off-beat
+            // keyframes (e.g. max_beat=31.5 → 32.0, not 32.5).
+            let loop_len = match length_override {
+                Some(n) if n.is_finite() && n > 0.0 => n,
+                _ if span < 1e-6 => 1.0,
+                _ => span.floor() + 1.0,
+            };
 
             if state == AnimationState::Looping {
                 // Wrap local beat into [0, loop_len).

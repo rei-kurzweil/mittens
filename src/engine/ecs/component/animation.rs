@@ -34,6 +34,10 @@ impl Default for ResolveTargetsMode {
 pub struct AnimationComponent {
     pub state: AnimationState,
     pub resolve_targets: ResolveTargetsMode,
+    /// Explicit loop length in beats. `None` falls back to the derived
+    /// default in `AnimationSystem` (`floor(max_keyframe_beat) + 1`).
+    /// Authored via `Animation.length(beats)`.
+    pub length_beats: Option<f64>,
 
     component: Option<ComponentId>,
 }
@@ -43,6 +47,7 @@ impl AnimationComponent {
         Self {
             state: AnimationState::Looping,
             resolve_targets: ResolveTargetsMode::default(),
+            length_beats: None,
             component: None,
         }
     }
@@ -54,6 +59,11 @@ impl AnimationComponent {
 
     pub fn with_resolve_targets(mut self, mode: ResolveTargetsMode) -> Self {
         self.resolve_targets = mode;
+        self
+    }
+
+    pub fn with_length_beats(mut self, beats: f64) -> Self {
+        self.length_beats = Some(beats);
         self
     }
 
@@ -119,6 +129,9 @@ impl Component for AnimationComponent {
                 ResolveTargetsMode::OnPlay => "on_play",
             };
             ce = ce.with_call("resolve_targets", vec![s(mode)]);
+        }
+        if let Some(n) = self.length_beats {
+            ce = ce.with_call("length", vec![num(n)]);
         }
         ce
     }
