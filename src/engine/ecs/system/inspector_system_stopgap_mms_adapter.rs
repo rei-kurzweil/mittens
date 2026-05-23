@@ -177,6 +177,16 @@ impl InspectorSystemStopgapMmsReconciler {
             return;
         };
 
+        let overlay_ce = MaterializedCE {
+            component_type: "Overlay".to_string(),
+            ctor_method: None,
+            ctor_args: Vec::new(),
+            calls: Vec::new(),
+            named: Vec::new(),
+            positionals: Vec::new(),
+            children: vec![CeChild::Spawn(*panel_root)],
+        };
+
         let mount_ce = MaterializedCE {
             component_type: "T".to_string(),
             ctor_method: Some("position".to_string()),
@@ -191,7 +201,7 @@ impl InspectorSystemStopgapMmsReconciler {
                 Value::String(WORLD_PANEL_MOUNT_NAME.to_string()),
             )],
             positionals: Vec::new(),
-            children: vec![CeChild::Spawn(*panel_root)],
+            children: vec![CeChild::Spawn(overlay_ce)],
         };
 
         let panel_mount_root = match spawn_tree_uninitialized(&mount_ce, world, emit) {

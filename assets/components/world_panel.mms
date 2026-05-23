@@ -56,7 +56,7 @@ export fn world_panel(title, items) {
     let load_button = panel_button("load_button", "Load")
     let content = world_panel_content(items)
 
-    let root = T {
+    let panel = T {
         name = "world_panel_root"
 
         LayoutRoot {
@@ -132,5 +132,7 @@ export fn world_panel(title, items) {
         }
     }
 
-    return root
+    return Selectable.off() {
+        panel
+    }
 }

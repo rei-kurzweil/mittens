@@ -30,7 +30,9 @@ impl InspectorSystem {
 mod tests {
     use super::InspectorSystem;
     use crate::engine::ecs::command_queue::CommandQueue;
-    use crate::engine::ecs::component::{EditorComponent, TransformComponent};
+    use crate::engine::ecs::component::{
+        EditorComponent, OverlayComponent, SelectableComponent, TransformComponent,
+    };
     use crate::engine::ecs::{EventSignal, SystemWorld, World};
     use crate::engine::graphics::VisualWorld;
 
@@ -67,7 +69,19 @@ mod tests {
             .find_component(editor_root, "#world_panel_root")
             .expect("expected world panel root under editor root");
         assert_eq!(world.parent_of(panel_mount), Some(editor_root));
-        assert_eq!(world.parent_of(panel_root), Some(panel_mount));
+        let panel_selectable = world
+            .parent_of(panel_root)
+            .expect("expected selectable-off ancestor above world panel root");
+        assert!(world
+            .get_component_by_id_as::<SelectableComponent>(panel_selectable)
+            .is_some_and(|selectable| !selectable.enabled));
+        let panel_overlay = world
+            .parent_of(panel_selectable)
+            .expect("expected overlay ancestor above selectable-off wrapper");
+        assert_eq!(world.parent_of(panel_overlay), Some(panel_mount));
+        assert!(world
+            .get_component_by_id_as::<OverlayComponent>(panel_overlay)
+            .is_some());
         assert!(world.find_component(editor_root, "#panel_status_value").is_some());
         assert!(world.find_component(editor_root, "#rows_mount").is_some());
         assert!(world.find_component(editor_root, "#item_0").is_some());
