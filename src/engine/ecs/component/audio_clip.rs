@@ -49,11 +49,26 @@ impl Default for AudioClipLoadState {
 
 /// PCM-backed audio source. Peer to `AudioOscillatorComponent` in the
 /// unified `AudioSource` model.
+///
+/// Cloning model (docs/draft/audio-clip-instance-cloning.md):
+/// `source_component = Some(other)` marks this clip as an instance
+/// sharing `other`'s decoded buffer. Each instance still has its own
+/// playhead on the RT side; only the asset is shared.
 #[derive(Debug, Clone)]
 pub struct AudioClipComponent {
     pub uri: String,
     pub trigger_mode: AudioTriggerMode,
     pub load_state: AudioClipLoadState,
+    /// When `Some`, this clip is an instance of another `AudioClipComponent`
+    /// and shares its decoded asset (no re-decode). The URI is inherited
+    /// from the source at registration time.
+    pub source_component: Option<ComponentId>,
+    /// Initial cursor offset, in transport beats, applied each time the
+    /// clip is triggered (`SetEnabled(true)`).
+    pub start_beat: f64,
+    /// Optional hard stop in beats relative to the trigger fire beat.
+    /// Combined with the trigger's `duration` as the minimum of the two.
+    pub stop_beat: Option<f64>,
     component: Option<ComponentId>,
 }
 
@@ -63,12 +78,42 @@ impl AudioClipComponent {
             uri: uri.into(),
             trigger_mode: AudioTriggerMode::Retrigger,
             load_state: AudioClipLoadState::Pending,
+            source_component: None,
+            start_beat: 0.0,
+            stop_beat: None,
+            component: None,
+        }
+    }
+
+    /// Build a clip that shares another clip's decoded buffer. The URI
+    /// is copied from `source` directly — the caller already has the
+    /// authoritative value, so registration doesn't need to chase the
+    /// component graph. `source_component` is recorded as metadata
+    /// (useful for inspector / future "follow source" features).
+    pub fn instance_of(source: &AudioClipComponent) -> Self {
+        Self {
+            uri: source.uri.clone(),
+            trigger_mode: AudioTriggerMode::Retrigger,
+            load_state: AudioClipLoadState::Pending,
+            source_component: source.component,
+            start_beat: 0.0,
+            stop_beat: None,
             component: None,
         }
     }
 
     pub fn with_trigger_mode(mut self, mode: AudioTriggerMode) -> Self {
         self.trigger_mode = mode;
+        self
+    }
+
+    pub fn with_start_beat(mut self, beat: f64) -> Self {
+        self.start_beat = beat;
+        self
+    }
+
+    pub fn with_stop_beat(mut self, beat: f64) -> Self {
+        self.stop_beat = Some(beat);
         self
     }
 

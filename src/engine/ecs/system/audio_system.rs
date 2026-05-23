@@ -104,11 +104,31 @@ pub struct AudioSystem {
     /// decode worker resamples / remixes to match the stream.
     playback_format: Option<super::audio_sample_format_convert::PlaybackFormat>,
     /// Registered clip URI per component, used to surface diagnostics
-    /// when the decode worker reports back.
+    /// when the decode worker reports back. For cloned instances this
+    /// is the URI inherited from the source.
     clip_uris: std::collections::HashMap<ComponentId, String>,
+    /// Per-asset decode state, keyed by `asset_key` (URI hash). Allows
+    /// multiple `AudioClipComponent`s sharing a URI (including clones
+    /// via `source_component`) to dedup a single decode pass.
+    /// See docs/draft/audio-clip-instance-cloning.md §2.
+    asset_states: std::collections::HashMap<u64, AssetDecodeState>,
+    /// Components waiting on a given asset to finish decoding. Drained
+    /// when the worker reports back (success or failure).
+    asset_subscribers: std::collections::HashMap<u64, Vec<ComponentId>>,
     /// Decoded clip uploads buffered until the RT producer is ready.
     /// Flushed on `register_audio_output`.
     pending_clip_uploads: Vec<AudioQueueItem>,
+    /// Voice registrations buffered until the RT producer is ready.
+    /// Flushed on `register_audio_output` after asset uploads.
+    pending_clip_instance_registrations: Vec<AudioQueueItem>,
+}
+
+/// Decode-progress for a shared asset. URI is kept for diagnostics.
+#[derive(Debug, Clone)]
+enum AssetDecodeState {
+    Pending { uri: String },
+    Loaded { uri: String },
+    Failed { uri: String, reason: String },
 }
 
 impl Default for AudioSystem {
@@ -133,7 +153,10 @@ impl Default for AudioSystem {
             decode_complete_tx: None,
             playback_format: None,
             clip_uris: std::collections::HashMap::new(),
+            asset_states: std::collections::HashMap::new(),
+            asset_subscribers: std::collections::HashMap::new(),
             pending_clip_uploads: Vec::new(),
+            pending_clip_instance_registrations: Vec::new(),
         }
     }
 }
@@ -344,6 +367,11 @@ impl AudioSystem {
             }
             // Flush any clip uploads that decoded before the stream was up.
             for item in self.pending_clip_uploads.drain(..) {
+                let _ = tx.push(item);
+            }
+            // Then flush voice registrations queued before the stream
+            // existed (asset must arrive first so render finds it).
+            for item in self.pending_clip_instance_registrations.drain(..) {
                 let _ = tx.push(item);
             }
         }
@@ -780,7 +808,6 @@ impl AudioSystem {
     fn drain_decode_completions(&mut self, world: &mut World) {
         use super::audio_decode_thread::LoadedClipMessage;
         use crate::engine::ecs::component::{AudioClipComponent, AudioClipLoadState};
-        use slotmap::Key;
 
         let Some(rx) = self.decode_complete_rx.as_ref() else {
             return;
@@ -791,15 +818,18 @@ impl AudioSystem {
                 Ok(m) => m,
                 Err(_) => break,
             };
+            // `clip_id` end-to-end is the URI-derived asset key — we
+            // pass it into `LoadClipRequest` and the worker echoes it
+            // back. See `register_audio_clip`.
             match msg {
                 LoadedClipMessage::Loaded {
-                    clip_id,
+                    clip_id: asset_key,
                     samples,
                     channels,
                     sample_rate,
                 } => {
                     let upload = AudioQueueItem::UploadClip {
-                        clip_id,
+                        asset_key,
                         samples: samples.clone(),
                         channels,
                         sample_rate,
@@ -809,34 +839,50 @@ impl AudioSystem {
                     } else {
                         self.pending_clip_uploads.push(upload);
                     }
-                    // Find the AudioClipComponent whose ffi == clip_id and
-                    // mark it Loaded.
-                    let target = self
-                        .clip_uris
-                        .keys()
-                        .copied()
-                        .find(|cid| cid.data().as_ffi() == clip_id);
-                    if let Some(cid) = target {
-                        if let Some(c) =
-                            world.get_component_by_id_as_mut::<AudioClipComponent>(cid)
-                        {
-                            c.load_state = AudioClipLoadState::Loaded;
+                    let uri = match self.asset_states.get(&asset_key) {
+                        Some(AssetDecodeState::Pending { uri })
+                        | Some(AssetDecodeState::Loaded { uri })
+                        | Some(AssetDecodeState::Failed { uri, .. }) => uri.clone(),
+                        None => String::new(),
+                    };
+                    self.asset_states
+                        .insert(asset_key, AssetDecodeState::Loaded { uri });
+                    // Mark every subscriber Loaded.
+                    if let Some(subs) = self.asset_subscribers.remove(&asset_key) {
+                        for cid in subs {
+                            if let Some(c) =
+                                world.get_component_by_id_as_mut::<AudioClipComponent>(cid)
+                            {
+                                c.load_state = AudioClipLoadState::Loaded;
+                            }
                         }
                     }
                 }
-                LoadedClipMessage::Failed { clip_id, reason } => {
-                    let target = self
-                        .clip_uris
-                        .keys()
-                        .copied()
-                        .find(|cid| cid.data().as_ffi() == clip_id);
-                    if let Some(cid) = target {
-                        let uri = self.clip_uris.get(&cid).cloned().unwrap_or_default();
-                        eprintln!("[AudioClip] {uri}: {reason}");
-                        if let Some(c) =
-                            world.get_component_by_id_as_mut::<AudioClipComponent>(cid)
-                        {
-                            c.load_state = AudioClipLoadState::Failed(reason);
+                LoadedClipMessage::Failed {
+                    clip_id: asset_key,
+                    reason,
+                } => {
+                    let uri = match self.asset_states.get(&asset_key) {
+                        Some(AssetDecodeState::Pending { uri })
+                        | Some(AssetDecodeState::Loaded { uri })
+                        | Some(AssetDecodeState::Failed { uri, .. }) => uri.clone(),
+                        None => String::new(),
+                    };
+                    eprintln!("[AudioClip] {uri}: {reason}");
+                    self.asset_states.insert(
+                        asset_key,
+                        AssetDecodeState::Failed {
+                            uri,
+                            reason: reason.clone(),
+                        },
+                    );
+                    if let Some(subs) = self.asset_subscribers.remove(&asset_key) {
+                        for cid in subs {
+                            if let Some(c) =
+                                world.get_component_by_id_as_mut::<AudioClipComponent>(cid)
+                            {
+                                c.load_state = AudioClipLoadState::Failed(reason.clone());
+                            }
                         }
                     }
                 }
@@ -846,17 +892,48 @@ impl AudioSystem {
 
     /// Register an `AudioClipComponent` for decode + RT playback. Spawns
     /// the decode worker lazily on first call.
+    ///
+    /// Decode is deduplicated by URI hash (`asset_key`): two clips with
+    /// the same URI — or a clip and an `.instance_of()` clone — share
+    /// one decoded buffer on the RT side. Each component still gets its
+    /// own `RtClipInstance` voice via `RegisterClipInstance`.
     pub fn register_audio_clip(&mut self, world: &mut World, component: ComponentId) {
         use super::audio_decode_thread::{spawn_decode_thread, LoadClipRequest};
         use super::audio_sample_format_convert::PlaybackFormat;
-        use crate::engine::ecs::component::AudioClipComponent;
+        use crate::engine::ecs::component::{AudioClipComponent, AudioClipLoadState};
         use slotmap::Key;
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
 
-        let Some(clip) = world.get_component_by_id_as::<AudioClipComponent>(component) else {
-            return;
+        // Clones copy the URI in at construction (see
+        // `AudioClipComponent::instance_of`), so this is just a
+        // straight read.
+        let (uri, start_beat, stop_beat) = {
+            let Some(clip) = world.get_component_by_id_as::<AudioClipComponent>(component)
+            else {
+                return;
+            };
+            (clip.uri.clone(), clip.start_beat, clip.stop_beat)
         };
-        let uri = clip.uri.clone();
+
+        if uri.is_empty() {
+            if let Some(c) = world.get_component_by_id_as_mut::<AudioClipComponent>(component)
+            {
+                c.load_state = AudioClipLoadState::Failed("clip has no uri".into());
+            }
+            return;
+        }
+
         self.clip_uris.insert(component, uri.clone());
+
+        // Compute the asset key (URI hash). DefaultHasher is per-process
+        // but the value never escapes this process — only the RT thread
+        // sees it via the audio queue.
+        let asset_key = {
+            let mut h = DefaultHasher::new();
+            uri.hash(&mut h);
+            h.finish()
+        };
 
         // Ensure the decode thread + completion channel exist.
         if self.decode_thread.is_none() {
@@ -866,24 +943,67 @@ impl AudioSystem {
             self.decode_thread = Some(spawn_decode_thread(tx));
         }
 
-        // Without a playback format yet (no AudioOutput registered), fall
-        // back to the default; the worker will resample to whatever this
-        // is and the RT will use it. Real engines push the cpal stream's
-        // sample-rate; here we use a placeholder until the stream is up.
         let target = self.playback_format.unwrap_or(PlaybackFormat {
             sample_rate: 48_000,
             channels: 1,
         });
 
-        let clip_id = component.data().as_ffi();
-        let Some(handle) = self.decode_thread.as_ref() else {
-            return;
+        // Dedup decode: only one LoadClipRequest per asset_key.
+        let needs_decode = !self.asset_states.contains_key(&asset_key);
+        if needs_decode {
+            self.asset_states.insert(
+                asset_key,
+                AssetDecodeState::Pending {
+                    uri: uri.clone(),
+                },
+            );
+            if let Some(handle) = self.decode_thread.as_ref() {
+                let _ = handle.tx.send(LoadClipRequest {
+                    clip_id: asset_key,
+                    uri: uri.clone(),
+                    target,
+                });
+            }
+        }
+
+        // Set this component's load_state immediately if the asset is
+        // already resolved; otherwise subscribe for the next completion.
+        match self.asset_states.get(&asset_key).cloned() {
+            Some(AssetDecodeState::Loaded { .. }) => {
+                if let Some(c) =
+                    world.get_component_by_id_as_mut::<AudioClipComponent>(component)
+                {
+                    c.load_state = AudioClipLoadState::Loaded;
+                }
+            }
+            Some(AssetDecodeState::Failed { reason, .. }) => {
+                if let Some(c) =
+                    world.get_component_by_id_as_mut::<AudioClipComponent>(component)
+                {
+                    c.load_state = AudioClipLoadState::Failed(reason);
+                }
+            }
+            _ => {
+                self.asset_subscribers
+                    .entry(asset_key)
+                    .or_default()
+                    .push(component);
+            }
+        }
+
+        // Register the voice on the RT thread (or buffer it until the
+        // stream is up).
+        let register = AudioQueueItem::RegisterClipInstance {
+            component_ffi: component.data().as_ffi(),
+            asset_key,
+            start_beat,
+            stop_beat,
         };
-        let _ = handle.tx.send(LoadClipRequest {
-            clip_id,
-            uri,
-            target,
-        });
+        if let Some(tx) = self.audio_tx.as_mut() {
+            let _ = tx.push(register);
+        } else {
+            self.pending_clip_instance_registrations.push(register);
+        }
 
         // Touch graph dirtiness so the clip becomes a node in the
         // compiled audio graph.
