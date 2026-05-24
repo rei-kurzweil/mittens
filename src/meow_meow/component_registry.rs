@@ -43,6 +43,7 @@ use crate::engine::ecs::component::{
     TransformGizmoScaleComponent, TransformGizmoAxis,
     KineticResponseComponent,
 };
+use crate::engine::ecs::component::style::VerticalAlign;
 use crate::engine::graphics::bounds::Aabb;
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::ecs::SignalEmitter;
@@ -646,8 +647,9 @@ fn parse_gizmo_axis(ctor: Option<&str>) -> TransformGizmoAxis {
     }
 }
 
-/// Accept either a unit-literal (`50%`, `20gu`) or a bare number (interpreted
-/// as glyph units) and produce a `SizeDimension`. Used by Style sizing setters.
+/// Accept either a unit-literal (`50%`, `20gu`, `0.08wu`) or a bare number
+/// (interpreted as glyph units) and produce a `SizeDimension`. Used by Style
+/// sizing setters.
 fn arg_size_dimension(args: &[Value], i: usize) -> Result<SizeDimension, String> {
     use crate::meow_meow::token::Unit;
     match arg(args, i)? {
@@ -655,8 +657,9 @@ fn arg_size_dimension(args: &[Value], i: usize) -> Result<SizeDimension, String>
         Value::Dimension { value, unit } => match unit {
             Unit::Percent => Ok(SizeDimension::Percent(*value as f32)),
             Unit::GlyphUnits => Ok(SizeDimension::GlyphUnits(*value as f32)),
+            Unit::WorldUnits => Ok(SizeDimension::WorldUnits(*value as f32)),
             Unit::Degrees | Unit::Radians => {
-                Err(format!("expected length unit (gu, %) for size, got {:?}", unit))
+                Err(format!("expected length unit (gu, wu, %) for size, got {:?}", unit))
             }
         },
         v => Err(format!("expected number or dimension for size, got {:?}", v)),
@@ -2056,6 +2059,16 @@ fn apply_call(
                     _                => return Ok(()),
                 };
             }
+            "font_size" => st.font_size = arg_size_dimension(args, 0)?,
+            "vertical_align" => {
+                st.vertical_align = match arg_str(args, 0)? {
+                    "top"                    => VerticalAlign::Top,
+                    "middle" | "center"    => VerticalAlign::Middle,
+                    "bottom"                 => VerticalAlign::Bottom,
+                    "auto" | "none"        => VerticalAlign::Auto,
+                    _                         => return Ok(()),
+                };
+            }
             "flex_grow"   => st.flex_grow   = arg_f32(args, 0)?,
             "flex_shrink" => st.flex_shrink = arg_f32(args, 0)?,
             "gap"         => { st.row_gap = arg_f32(args, 0)?; st.column_gap = st.row_gap; }
@@ -2074,7 +2087,6 @@ fn apply_call(
             "right"  => st.right  = Some(arg_size_dimension(args, 0)?),
             "bottom" => st.bottom = Some(arg_size_dimension(args, 0)?),
             "left"   => st.left   = Some(arg_size_dimension(args, 0)?),
-            "font_size" => st.font_size = arg_f32(args, 0)?,
             "overflow" => {
                 st.overflow = match arg_str(args, 0)? {
                     "visible" => Overflow::Visible,

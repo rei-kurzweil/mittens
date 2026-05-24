@@ -114,9 +114,6 @@ mod tests {
         let item_0 = world
             .find_component(editor_root, "#item_0")
             .expect("expected item_0 row under editor root");
-        let panel_status_value = world
-            .find_component(editor_root, "#panel_status_value")
-            .expect("expected panel status text under editor root");
 
         systems.rx.push_event(
             item_0,
@@ -129,6 +126,10 @@ mod tests {
         );
 
         let _ = systems.process_signals(&mut world, &mut visuals, &mut emit, 100_000);
+
+        let panel_status_value = world
+            .find_component(editor_root, "#panel_status_value")
+            .expect("expected panel status text under editor root after rerender");
 
         let status_text = world
             .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(

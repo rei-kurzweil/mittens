@@ -1416,6 +1416,7 @@ fn value_display(val: &Value) -> String {
             let suffix = match unit {
                 crate::meow_meow::token::Unit::Percent => "%",
                 crate::meow_meow::token::Unit::GlyphUnits => "gu",
+                crate::meow_meow::token::Unit::WorldUnits => "wu",
                 crate::meow_meow::token::Unit::Degrees => "deg",
                 crate::meow_meow::token::Unit::Radians => "rad",
             };

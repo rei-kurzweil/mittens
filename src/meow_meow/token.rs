@@ -15,6 +15,10 @@ pub enum Unit {
     Percent,
     /// `gu` — glyph units (cat-engine's intrinsic layout unit).
     GlyphUnits,
+    /// `wu` — world units (cat-engine's renderer-frame unit). A layout
+    /// consumer converts to/from glyph units via the nearest LayoutRoot's
+    /// `unit_scale`.
+    WorldUnits,
     /// `deg` — degrees (forward-compatible; no current consumer).
     Degrees,
     /// `rad` — radians (forward-compatible; no current consumer).

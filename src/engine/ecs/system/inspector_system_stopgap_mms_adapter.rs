@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 
-use crate::engine::ecs::component::TextComponent;
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
 use crate::meow_meow::component_registry::spawn_tree_uninitialized;
@@ -9,6 +8,8 @@ use crate::meow_meow::runner::MeowMeowRunner;
 
 const WORLD_PANEL_MOUNT_NAME: &str = "editor_world_panel_mount";
 const WORLD_PANEL_ROOT_SELECTOR: &str = "#world_panel_root";
+const PANEL_STATUS_ROOT_SELECTOR: &str = "#panel_status_root";
+const PANEL_STATUS_WRAP_SELECTOR: &str = "#save_status_wrap";
 const PANEL_STATUS_VALUE_SELECTOR: &str = "#panel_status_value";
 const SAVE_BUTTON_SELECTOR: &str = "#save_button";
 const LOAD_BUTTON_SELECTOR: &str = "#load_button";
@@ -62,28 +63,18 @@ impl InspectorSystemStopgapMmsAdapter {
                 return;
             }
 
-            let Some(status_id) = world.find_component(editor_root, PANEL_STATUS_VALUE_SELECTOR) else {
+            let Some(status_wrap) = world.find_component(editor_root, PANEL_STATUS_WRAP_SELECTOR) else {
                 return;
             };
 
             let status_text = panel_click_status(world, editor_root, *renderable)
                 .unwrap_or_else(|| "idle".to_string());
 
-            let needs_update = world
-                .get_component_by_id_as::<TextComponent>(status_id)
-                .map(|text| text.text != status_text)
-                .unwrap_or(true);
-            if !needs_update {
+            if panel_status_text(world, editor_root).as_deref() == Some(status_text.as_str()) {
                 return;
             }
 
-            emit.push_intent_now(
-                status_id,
-                IntentValue::SetText {
-                    component_ids: vec![status_id],
-                    text: status_text,
-                },
-            );
+            rerender_world_panel_status(world, emit, editor_root, status_wrap, &status_text);
         });
     }
 }
@@ -237,6 +228,79 @@ fn panel_click_status(world: &World, editor_root: ComponentId, renderable: Compo
         .map(|row_name| format!("selected {row_name}"))
 }
 
+fn panel_status_text(world: &World, editor_root: ComponentId) -> Option<String> {
+    world
+        .find_component(editor_root, PANEL_STATUS_VALUE_SELECTOR)
+        .and_then(|status_id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(status_id)
+                .map(|text| text.text.clone())
+        })
+}
+
+fn rerender_world_panel_status(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    editor_root: ComponentId,
+    status_wrap: ComponentId,
+    label: &str,
+) {
+    let module = match MeowMeowRunner::load_module_file(world_panel_status_asset_path()) {
+        Ok(module) => module,
+        Err(error) => {
+            eprintln!("[InspectorSystemStopgapMmsAdapter] world panel status module load error: {error}");
+            return;
+        }
+    };
+
+    let status_value = match MeowMeowRunner::call_mms_module_fn(
+        &module,
+        "world_panel_status",
+        vec![Value::String(label.to_string())],
+        None,
+        Some(world),
+        Some(emit),
+    ) {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("[InspectorSystemStopgapMmsAdapter] world panel status export call error: {error}");
+            return;
+        }
+    };
+
+    let Value::ComponentExpr(status_root) = status_value else {
+        eprintln!(
+            "[InspectorSystemStopgapMmsAdapter] world panel status export did not return a component tree"
+        );
+        return;
+    };
+
+    if let Some(existing_status_root) = world.find_component(editor_root, PANEL_STATUS_ROOT_SELECTOR) {
+        emit.push_intent_now(
+            existing_status_root,
+            IntentValue::RemoveSubtree {
+                component_ids: vec![existing_status_root],
+            },
+        );
+    }
+
+    let spawned_status_root = match spawn_tree_uninitialized(status_root.as_ref(), world, emit) {
+        Ok(component_id) => component_id,
+        Err(error) => {
+            eprintln!("[InspectorSystemStopgapMmsAdapter] world panel status spawn error: {error}");
+            return;
+        }
+    };
+
+    emit.push_intent_now(
+        spawned_status_root,
+        IntentValue::Attach {
+            parents: vec![status_wrap],
+            child: spawned_status_root,
+        },
+    );
+}
+
 fn clicked_named_ancestor(world: &World, node: ComponentId, prefix: &str) -> Option<String> {
     let mut current = Some(node);
     while let Some(component_id) = current {
@@ -276,4 +340,8 @@ fn world_panel_item_label(world: &World, component_id: ComponentId) -> String {
 
 fn world_panel_asset_path() -> &'static str {
     concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/world_panel.mms")
+}
+
+fn world_panel_status_asset_path() -> &'static str {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/world_panel_status.mms")
 }

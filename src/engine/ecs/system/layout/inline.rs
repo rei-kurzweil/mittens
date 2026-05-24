@@ -12,6 +12,7 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::{IntentValue, SignalEmitter, World};
 
+use super::box_model_viz::sync_box_model_viz;
 use super::block::apply_text_align;
 use super::measure::{apply_text_color_for_item, apply_text_font_size_for_item, apply_text_wrap_for_item, measure_container_items, measure_items, MeasuredItem};
 use crate::engine::ecs::component::style::Display;
@@ -50,7 +51,7 @@ pub(crate) fn layout_items(
         // (text wrap, child layout) is computed at the final width.
         let item: MeasuredItem = if original.is_auto_width {
             let remaining = (avail_w_gu - cursor_x_gu).max(0.0);
-            super::measure::measure_item(world, original.tc_id, remaining)
+            super::measure::measure_item(world, original.tc_id, remaining, unit_scale)
         } else {
             original.clone()
         };
@@ -85,8 +86,8 @@ pub(crate) fn layout_items(
             },
         );
 
-        apply_text_font_size_for_item(world, emit, item.tc_id);
-        apply_text_wrap_for_item(world, emit, item.tc_id, item.content_width_gu);
+        apply_text_font_size_for_item(world, emit, item.tc_id, unit_scale);
+        apply_text_wrap_for_item(world, emit, item.tc_id, item.content_width_gu, unit_scale);
         apply_text_color_for_item(world, emit, item.tc_id);
 
         // Background quad — share the block-flow implementation so
@@ -102,6 +103,7 @@ pub(crate) fn layout_items(
             item.box_height_gu,
             unit_scale,
         );
+        sync_box_model_viz(world, emit, item, unit_scale);
         apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu, unit_scale);
         let content_root = super::block::sync_overflow_topology(world, emit, item.tc_id, item.content_height_gu);
 
@@ -114,6 +116,7 @@ pub(crate) fn layout_items(
             content_root,
             item.content_width_gu,
             None,
+            unit_scale,
         );
         if !nested_items.is_empty() {
             let all_inline_block = nested_items

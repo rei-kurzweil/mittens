@@ -25,8 +25,10 @@ use crate::engine::ecs::component::{
     StyleComponent, TextComponent, TransformComponent,
 };
 use crate::engine::ecs::system::ScrollingSystem;
+use super::box_model_viz::sync_box_model_viz;
 use super::measure::{apply_text_color_for_item, apply_text_font_size_for_item, apply_text_wrap_for_item, measure_container_items, measure_items, MeasuredItem};
-use crate::engine::ecs::component::style::{Display, TextAlign};
+use crate::engine::ecs::component::style::{Display, SizeDimension, TextAlign};
+use crate::engine::ecs::component::style::VerticalAlign;
 use crate::engine::ecs::system::text_system::TextSystem;
 
 const OWNED_CLIPPED_CONTENT_LABEL: &str = "__clip_content";
@@ -101,12 +103,13 @@ fn layout_items(
 
         // Push the container-derived wrap_at into any descendant TextComponent
         // and rebuild glyphs so the rendered text matches the measured width.
-        apply_text_font_size_for_item(world, emit, item.tc_id);
-        apply_text_wrap_for_item(world, emit, item.tc_id, item.content_width_gu);
+        apply_text_font_size_for_item(world, emit, item.tc_id, unit_scale);
+        apply_text_wrap_for_item(world, emit, item.tc_id, item.content_width_gu, unit_scale);
         apply_text_color_for_item(world, emit, item.tc_id);
 
         // ── Background quad / overflow helper topology ───────────────────
         sync_bg_quad(world, emit, item.tc_id, item.padding_left_gu, item.padding_top_gu, item.box_width_gu, item.box_height_gu, unit_scale);
+        sync_box_model_viz(world, emit, item, unit_scale);
         apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu, unit_scale);
         let content_root = sync_overflow_topology(world, emit, item.tc_id, item.content_height_gu);
 
@@ -115,6 +118,7 @@ fn layout_items(
             content_root,
             item.content_width_gu,
             Some(item.content_height_gu),
+            unit_scale,
         );
         if let Some(scroll_id) = immediate_owned_scroll_wrapper(world, item.tc_id) {
             sync_scrolling_metrics(world, emit, scroll_id, item.content_height_gu, &nested_items);
@@ -429,11 +433,12 @@ fn subtree_first_renderable(world: &World, root: ComponentId) -> Option<Componen
 ///
 /// Layout positions the *styled* T at the content box's top-left corner; without
 /// extra help, any Text inside renders from that origin and sits at the top-left
-/// of the content area. When the author sets `text_align`, locate the first
-/// direct-child T whose subtree contains a `TextComponent`, measure the text,
-/// and emit `UpdateTransform` so the glyph block sits aligned horizontally per
-/// the alignment value and **always vertically centered** within the content
-/// box. `TextAlign::Auto` (default) preserves the author's translation.
+/// of the content area. When the author sets `text_align` or `vertical_align`,
+/// locate the first direct-child T whose subtree contains a `TextComponent`,
+/// measure the text, and emit `UpdateTransform` so the glyph block sits aligned
+/// within the content box. `VerticalAlign::Auto` preserves the legacy behavior:
+/// if `text_align` is set, text is vertically centered; otherwise the author's
+/// translation is preserved.
 pub(crate) fn apply_text_align(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
@@ -443,10 +448,23 @@ pub(crate) fn apply_text_align(
     unit_scale: f32,
 ) {
     let style = world.children_of(tc_id).iter().find_map(|&ch| {
-        world.get_component_by_id_as::<StyleComponent>(ch).map(|s| (s.text_align, s.word_wrap, s.word_wrap_tokens.clone()))
+        world.get_component_by_id_as::<StyleComponent>(ch).map(|s| {
+            (s.text_align, s.vertical_align, s.font_size, s.word_wrap, s.word_wrap_tokens.clone())
+        })
     });
-    let Some((align, _style_wrap, _style_tokens)) = style else { return; };
-    if align == TextAlign::Auto {
+    let Some((align, vertical_align, style_font_size, _style_wrap, _style_tokens)) = style else { return; };
+
+    // No alignment intent → leave the author's inner-T transform alone. This
+    // preserves the "decorative descendant text" pattern (e.g. a title-bar T
+    // with an absolutely positioned label) where the author has placed the
+    // glyph block deliberately and the layout system has no business shoving
+    // it half-a-glyph from the content-box origin. A styled item with an
+    // explicit `font_size` opts into the inset (signals "this box hosts text
+    // and wants it sized to its content area").
+    if align == TextAlign::Auto
+        && vertical_align == VerticalAlign::Auto
+        && matches!(style_font_size, SizeDimension::Auto)
+    {
         return;
     }
 
@@ -458,35 +476,54 @@ pub(crate) fn apply_text_align(
     // post-wrap shape (callers of layout run `apply_text_wrap_for_item` later,
     // but glyphs build with the authored wrap_at and we want the natural-
     // wrap width here — i.e. no wrap — to drive alignment math).
-    let (text, word_wrap, tokens, font_size) = match find_text_descriptor(world, inner_tc) {
+    let (text, word_wrap, tokens, font_size_wu) = match find_text_descriptor(world, inner_tc) {
         Some(t) => t,
         None => return,
     };
-    let (text_w, text_h) = TextSystem::measure(&text, 0, word_wrap, &tokens, font_size);
+    // `TextSystem::measure` returns dimensions in **world units** because the
+    // renderer scales glyph quads by `font_size_wu` in the inner TC's local
+    // frame (and we keep that frame at scale 1.0). Layout math here mixes that
+    // with `content_w_gu` / `content_h_gu` (glyph units) — so we convert the
+    // GU values up to wu before the centering math, then leave the result in
+    // wu since the emitted transform translation is in the styled TC's
+    // (world-unit) frame.
+    let (text_w_wu, text_h_wu) = TextSystem::measure(&text, 0, word_wrap, &tokens, font_size_wu);
 
-    // Glyphs are 1×1 quads centered at column / row positions. The leftmost
-    // glyph's center sits at x = inner_tc.x and spans [-0.5, +0.5] around it,
-    // so adding 0.5 to the alignment offset puts the left edge of the first
-    // glyph at content_x = 0. Same logic on y (row 0 center at y = inner_tc.y,
-    // glyph spans [-0.5, +0.5]; top edge at y = 0 needs y_offset of -0.5).
-    let x_offset = match align {
-        TextAlign::Left  => 0.5,
-        TextAlign::Right => (content_w_gu - text_w + 0.5).max(0.5),
-        TextAlign::Center => (content_w_gu - text_w + 1.0) / 2.0,
-        TextAlign::Auto => 0.0,
-    };
-    let y_offset = -((content_h_gu - text_h + 1.0) / 2.0);
+    // Half a glyph quad on each axis (wu). Glyph centers sit on column/row
+    // positions, so the leftmost glyph extends a half-glyph past the text
+    // origin; we inset by that amount so the box's left edge clears the
+    // glyph's left edge.
+    let half_glyph_wu = font_size_wu * 0.5;
 
-    let (scale, z) = world
+    let content_w_wu = content_w_gu * unit_scale;
+    let content_h_wu = content_h_gu * unit_scale;
+
+    let (translation, scale) = world
         .get_component_by_id_as::<TransformComponent>(inner_tc)
-        .map(|tc| (tc.transform.scale, tc.transform.translation[2]))
-        .unwrap_or(([1.0, 1.0, 1.0], 0.0));
+        .map(|tc| (tc.transform.translation, tc.transform.scale))
+        .unwrap_or(([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]));
+
+    let x_translation = match align {
+        TextAlign::Left => half_glyph_wu,
+        TextAlign::Right => (content_w_wu - text_w_wu + half_glyph_wu).max(half_glyph_wu),
+        TextAlign::Center => ((content_w_wu - text_w_wu) * 0.5) + half_glyph_wu,
+        TextAlign::Auto => half_glyph_wu,
+    };
+    let y_translation = match vertical_align {
+        VerticalAlign::Top => -half_glyph_wu,
+        VerticalAlign::Middle => -(((content_h_wu - text_h_wu) * 0.5) + half_glyph_wu),
+        VerticalAlign::Bottom => -(((content_h_wu - text_h_wu) + half_glyph_wu).max(half_glyph_wu)),
+        VerticalAlign::Auto if align != TextAlign::Auto => {
+            -(((content_h_wu - text_h_wu) * 0.5) + half_glyph_wu)
+        }
+        VerticalAlign::Auto => -half_glyph_wu,
+    };
 
     emit.push_intent_now(
         inner_tc,
         IntentValue::UpdateTransform {
             component_ids: vec![inner_tc],
-            translation: [x_offset * unit_scale, y_offset * unit_scale, z],
+            translation: [x_translation, y_translation, translation[2]],
             rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
             scale,
         },
@@ -698,7 +735,7 @@ fn spawn_bg_quad(
 #[cfg(test)]
 mod tests {
     use crate::engine::ecs::component::{ColorComponent, LayoutComponent, StencilClipComponent, StyleComponent, TextComponent, TransformComponent};
-    use crate::engine::ecs::component::style::EdgeInsets;
+    use crate::engine::ecs::component::style::{EdgeInsets, SizeDimension};
     use crate::engine::ecs::{CommandQueue, SystemWorld, World};
     use crate::engine::graphics::VisualWorld;
     use crate::engine::ecs::system::layout::LayoutSystem;
@@ -822,23 +859,21 @@ mod tests {
             style.width = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(6.0);
             style.height = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(2.0);
             style.text_align = crate::engine::ecs::component::style::TextAlign::Center;
+            // 0.08 wu per glyph quad — under unit_scale=0.08 this is the
+            // "1 row per GU" canonical sizing.
+            style.font_size = crate::engine::ecs::component::style::SizeDimension::WorldUnits(0.08);
             style
         });
         let text_wrap = world.add_component_boxed_named(
             "text_wrap",
             Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.05)),
         );
-        let text_scale = world.add_component_boxed_named(
-            "text_scale",
-            Box::new(TransformComponent::new().with_scale(0.08, 0.08, 0.08)),
-        );
         let text = world.add_component_boxed_named("text", Box::new(TextComponent::new("Save")));
 
         let _ = world.add_child(root, button);
         let _ = world.add_child(button, button_style);
         let _ = world.add_child(button, text_wrap);
-        let _ = world.add_child(text_wrap, text_scale);
-        let _ = world.add_child(text_scale, text);
+        let _ = world.add_child(text_wrap, text);
 
         world.init_component_tree(root, &mut queue);
         systems.process_commands(&mut world, &mut visuals, &mut queue);
@@ -852,6 +887,149 @@ mod tests {
 
         assert!((text_wrap_tc.transform.translation[0] - 0.12).abs() < 1e-4);
         assert!((text_wrap_tc.transform.translation[1] + 0.08).abs() < 1e-4);
+        assert!((text_wrap_tc.transform.translation[2] - 0.05).abs() < 1e-4);
+    }
+
+    #[test]
+    fn vertical_align_top_overrides_legacy_centering() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut layout_system = LayoutSystem::new();
+
+        let root = world.add_component(LayoutComponent::new(20.0).with_unit_scale(0.08));
+
+        let button = world.add_component_boxed_named("button", Box::new(TransformComponent::new()));
+        let button_style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.width = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(6.0);
+            style.height = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(2.0);
+            style.text_align = crate::engine::ecs::component::style::TextAlign::Center;
+            style.vertical_align = crate::engine::ecs::component::style::VerticalAlign::Top;
+            style.font_size = crate::engine::ecs::component::style::SizeDimension::WorldUnits(0.08);
+            style
+        });
+        let text_wrap = world.add_component_boxed_named(
+            "text_wrap",
+            Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.05)),
+        );
+        let text = world.add_component_boxed_named("text", Box::new(TextComponent::new("Save")));
+
+        let _ = world.add_child(root, button);
+        let _ = world.add_child(button, button_style);
+        let _ = world.add_child(button, text_wrap);
+        let _ = world.add_child(text_wrap, text);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let text_wrap_tc = world
+            .get_component_by_id_as::<TransformComponent>(text_wrap)
+            .expect("text_wrap transform");
+
+        assert!((text_wrap_tc.transform.translation[0] - 0.12).abs() < 1e-4);
+        assert!((text_wrap_tc.transform.translation[1] + 0.04).abs() < 1e-4);
+        assert!((text_wrap_tc.transform.translation[2] - 0.05).abs() < 1e-4);
+    }
+
+    #[test]
+    fn vertical_align_middle_respects_text_font_size() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut layout_system = LayoutSystem::new();
+
+        let root = world.add_component(LayoutComponent::new(20.0).with_unit_scale(0.08));
+
+        let button = world.add_component_boxed_named("button", Box::new(TransformComponent::new()));
+        let button_style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.width = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(6.875);
+            style.height = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(2.4);
+            style.text_align = crate::engine::ecs::component::style::TextAlign::Center;
+            style.vertical_align = crate::engine::ecs::component::style::VerticalAlign::Middle;
+            style.font_size = crate::engine::ecs::component::style::SizeDimension::WorldUnits(0.08);
+            style
+        });
+        let text_wrap = world.add_component_boxed_named(
+            "text_wrap",
+            Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.05)),
+        );
+        let text = world.add_component_boxed_named("text", Box::new(TextComponent::new("Save")));
+
+        let _ = world.add_child(root, button);
+        let _ = world.add_child(button, button_style);
+        let _ = world.add_child(button, text_wrap);
+        let _ = world.add_child(text_wrap, text);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let text_wrap_tc = world
+            .get_component_by_id_as::<TransformComponent>(text_wrap)
+            .expect("text_wrap transform");
+
+        // Box content width = 6.875 GU = 0.55 wu under unit_scale=0.08.
+        // "Save" measures to 4 columns × 0.08 wu = 0.32 wu. Center inset:
+        //   x = (0.55 - 0.32) / 2 + half_glyph_wu (0.04) = 0.155 wu
+        // Vertical: content_h = 2.4 GU = 0.192 wu; text_h = 0.08 wu →
+        //   y = -((0.192 - 0.08) / 2 + 0.04) = -0.096 wu
+        assert!((text_wrap_tc.transform.translation[0] - 0.155).abs() < 1e-4);
+        assert!((text_wrap_tc.transform.translation[1] + 0.096).abs() < 1e-4);
+        assert!((text_wrap_tc.transform.translation[2] - 0.05).abs() < 1e-4);
+    }
+
+    #[test]
+    fn auto_aligned_text_is_inset_by_half_glyph() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut layout_system = LayoutSystem::new();
+
+        let root = world.add_component(LayoutComponent::new(20.0).with_unit_scale(0.08));
+
+        let row = world.add_component_boxed_named("row", Box::new(TransformComponent::new()));
+        let row_style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.font_size = crate::engine::ecs::component::style::SizeDimension::WorldUnits(0.08);
+            style.padding = EdgeInsets::all(0.45);
+            style
+        });
+        let text_wrap = world.add_component_boxed_named(
+            "text_wrap",
+            Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.05)),
+        );
+        let text = world.add_component_boxed_named("text", Box::new(TextComponent::new("idle")));
+
+        let _ = world.add_child(root, row);
+        let _ = world.add_child(row, row_style);
+        let _ = world.add_child(row, text_wrap);
+        let _ = world.add_child(text_wrap, text);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let text_wrap_tc = world
+            .get_component_by_id_as::<TransformComponent>(text_wrap)
+            .expect("text_wrap transform");
+
+        // Half-glyph (font_size_wu / 2 = 0.04 wu) inset from the content
+        // box's top-left so the leftmost / topmost glyph quad's edge sits
+        // flush with the content area.
+        assert!((text_wrap_tc.transform.translation[0] - 0.04).abs() < 1e-4);
+        assert!((text_wrap_tc.transform.translation[1] + 0.04).abs() < 1e-4);
         assert!((text_wrap_tc.transform.translation[2] - 0.05).abs() < 1e-4);
     }
 
@@ -1033,5 +1211,167 @@ mod tests {
         assert!(clipped.is_some(), "expected inline overflow-hidden item to get clipped content root");
         assert!(clip.is_some(), "expected inline overflow-hidden item to get stencil clip sibling");
         assert_eq!(world.parent_of(text_wrapper), clipped, "authored inline content should move under clipped content root");
+    }
+
+    /// Multi-line text under `vertical_align: middle` and `unit_scale != 1.0`
+    /// must center the **rendered** text block (rows × font_size in world units),
+    /// not the GU-claimed block. Previously the math mixed GU and WU and only
+    /// happened to work for single-line text. With three lines under a panel
+    /// `unit_scale = 0.08` and `font_size = 1gu`, the rendered block is
+    /// `3 * 0.08 = 0.24 wu`, the content box is `4 GU * 0.08 = 0.32 wu`, and
+    /// the inner T should sit at `y = -((0.32 - 0.24) / 2 + 0.04) = -0.08 wu`.
+    #[test]
+    fn vertical_align_middle_centers_multi_line_text_under_unit_scale() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut layout_system = LayoutSystem::new();
+
+        let root = world.add_component(LayoutComponent::new(20.0).with_unit_scale(0.08));
+
+        let box_tc = world.add_component_boxed_named("box", Box::new(TransformComponent::new()));
+        let box_style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.width = SizeDimension::GlyphUnits(10.0);
+            style.height = SizeDimension::GlyphUnits(4.0);
+            style.text_align = crate::engine::ecs::component::style::TextAlign::Left;
+            style.vertical_align = crate::engine::ecs::component::style::VerticalAlign::Middle;
+            // 1 row per GU — the canonical "GU = row" sizing.
+            style.font_size = SizeDimension::GlyphUnits(1.0);
+            style
+        });
+        let text_wrap = world.add_component_boxed_named(
+            "text_wrap",
+            Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.05)),
+        );
+        let text = world.add_component_boxed_named(
+            "text",
+            Box::new(TextComponent::new("a\nb\nc")),
+        );
+        let _ = world.add_child(root, box_tc);
+        let _ = world.add_child(box_tc, box_style);
+        let _ = world.add_child(box_tc, text_wrap);
+        let _ = world.add_child(text_wrap, text);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let text_wrap_tc = world
+            .get_component_by_id_as::<TransformComponent>(text_wrap)
+            .expect("text_wrap transform");
+
+        // Verify y centers the rendered three-row block, not the GU-claimed
+        // single-glyph cell. content_h_wu = 0.32, text_h_wu = 3*0.08 = 0.24.
+        assert!(
+            (text_wrap_tc.transform.translation[1] + 0.08).abs() < 1e-4,
+            "expected y ≈ -0.08, got {}",
+            text_wrap_tc.transform.translation[1]
+        );
+    }
+
+    /// `Style.font_size` may be authored in glyph units. Under `unit_scale = 0.08`,
+    /// `1gu` resolves to a 0.08 wu glyph quad — what the renderer actually
+    /// scales by.
+    #[test]
+    fn style_font_size_in_glyph_units_resolves_to_world_units_via_unit_scale() {
+        use crate::engine::ecs::component::TextComponent;
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut layout_system = LayoutSystem::new();
+
+        let root = world.add_component(LayoutComponent::new(20.0).with_unit_scale(0.08));
+        let row = world.add_component_boxed_named("row", Box::new(TransformComponent::new()));
+        let row_style = world.add_component({
+            let mut s = StyleComponent::new();
+            s.font_size = SizeDimension::GlyphUnits(1.0);
+            s.padding = crate::engine::ecs::component::style::EdgeInsets::all(0.5);
+            s
+        });
+        let text = world.add_component_boxed_named("text", Box::new(TextComponent::new("hi")));
+        let _ = world.add_child(root, row);
+        let _ = world.add_child(row, row_style);
+        let _ = world.add_child(row, text);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let stamped = world
+            .get_component_by_id_as::<TextComponent>(text)
+            .expect("text component")
+            .font_size;
+        assert!((stamped - 0.08).abs() < 1e-6, "GlyphUnits(1.0) under unit_scale=0.08 should stamp 0.08 wu, got {stamped}");
+    }
+
+    /// `Style.font_size` may also be authored in world units. The wu value
+    /// passes through to the descendant `TextComponent` unchanged regardless
+    /// of the enclosing `unit_scale`.
+    #[test]
+    fn style_font_size_in_world_units_passes_through_unchanged() {
+        use crate::engine::ecs::component::TextComponent;
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut layout_system = LayoutSystem::new();
+
+        let root = world.add_component(LayoutComponent::new(20.0).with_unit_scale(0.08));
+        let row = world.add_component_boxed_named("row", Box::new(TransformComponent::new()));
+        let row_style = world.add_component({
+            let mut s = StyleComponent::new();
+            s.font_size = SizeDimension::WorldUnits(0.12);
+            s
+        });
+        let text = world.add_component_boxed_named("text", Box::new(TextComponent::new("hi")));
+        let _ = world.add_child(root, row);
+        let _ = world.add_child(row, row_style);
+        let _ = world.add_child(row, text);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let stamped = world
+            .get_component_by_id_as::<TextComponent>(text)
+            .expect("text component")
+            .font_size;
+        assert!((stamped - 0.12).abs() < 1e-6, "WorldUnits(0.12) should stamp 0.12 wu directly, got {stamped}");
+    }
+
+    /// Regression for the `world_panel_content` row bug: an auto-height styled
+    /// box with a single line of text and `font_size = 1gu` (canonical "one row
+    /// per glyph unit") must reserve a content area whose height equals the
+    /// rendered glyph height. Pre-refactor the content_height was
+    /// `rows * font_size` in *mixed* units and ended up 12.5× too small under
+    /// `unit_scale = 0.08`, so glyphs spilled into the padding/margin band.
+    #[test]
+    fn auto_height_styled_row_contains_rendered_text_under_unit_scale() {
+        use crate::engine::ecs::component::TextComponent;
+        let mut world = World::default();
+
+        let _root = world.add_component(LayoutComponent::new(20.0).with_unit_scale(0.08));
+        let row = world.add_component_boxed_named("row", Box::new(TransformComponent::new()));
+        let row_style = world.add_component({
+            let mut s = StyleComponent::new();
+            s.font_size = SizeDimension::GlyphUnits(1.0);
+            s
+        });
+        let text = world.add_component_boxed_named("text", Box::new(TextComponent::new("idle")));
+        let _ = world.add_child(row, row_style);
+        let _ = world.add_child(row, text);
+
+        let measured = super::super::measure::measure_item(&world, row, 20.0, 0.08);
+        assert!(
+            (measured.content_height_gu - 1.0).abs() < 1e-4,
+            "expected content_height_gu = 1.0 (one row per GU), got {}",
+            measured.content_height_gu
+        );
     }
 }

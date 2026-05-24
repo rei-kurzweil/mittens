@@ -373,6 +373,7 @@ fn unit_suffix(u: Unit) -> &'static str {
     match u {
         Unit::Percent => "%",
         Unit::GlyphUnits => "gu",
+        Unit::WorldUnits => "wu",
         Unit::Degrees => "deg",
         Unit::Radians => "rad",
     }

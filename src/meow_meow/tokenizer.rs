@@ -352,6 +352,7 @@ impl<'a> MeowMeowTokenizer<'a> {
         }
         let unit = match &self.input[start..end] {
             "gu"  => Unit::GlyphUnits,
+            "wu"  => Unit::WorldUnits,
             "deg" => Unit::Degrees,
             "rad" => Unit::Radians,
             _ => return None,

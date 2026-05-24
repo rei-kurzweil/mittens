@@ -27,9 +27,10 @@ fn world_panel_row(row_name, label, bg) {
             width(100%)
             margin_xy(0.25, 0.20)
             padding_xy(0.55, 0.45)
+            font_size(1)
             background_color = bg
         }
-        T.position(0.0, 0.0, 0.015).scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE) {
+        T.position(0.0, 0.0, 0.015) {
             Text {
                 label
                 C.rgba(0.06, 0.09, 0.08, 1.0)

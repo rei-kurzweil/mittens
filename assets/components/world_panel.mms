@@ -10,10 +10,11 @@
 // - a nested `world_panel_content(items)` subtree for the rerenderable body
 
 import { world_panel_content } from "./world_panel_content.mms"
+import { world_panel_status } from "./world_panel_status.mms"
 
 let WORLD_PANEL_WIDTH_GU = 29.5
 let WORLD_PANEL_CONTENT_HEIGHT_GU = 54.0
-let STATUS_BAR_HEIGHT_GU = 1.75
+let STATUS_BAR_HEIGHT_GU = 2.5
 let TITLE_BAR_HEIGHT_GU = 3.0
 let TITLE_CONTENT_GAP_GU = 0.5
 let WORLD_PANEL_TOTAL_HEIGHT_GU = STATUS_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + WORLD_PANEL_CONTENT_HEIGHT_GU
@@ -38,14 +39,14 @@ fn panel_button(node_name, label) {
             margin_left(TITLEBAR_BUTTON_MARGIN_LEFT_GU)
             padding_xy(0.0, 0.45)
             text_align("center")
+            vertical_align("middle")
+            font_size(1)
             background_color = [0.10, 0.55, 0.18, 1.0]
             background_z(0.02)
             color = [0.75, 1.00, 0.45, 1.0]
         }
         T.position(0.0, 0.0, 0.05) {
-            T.scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE) {
-                Text { label }
-            }
+            Text { label }
         }
     }
     return root
@@ -55,6 +56,7 @@ export fn world_panel(title, items) {
     let save_button = panel_button("save_button", "Save")
     let load_button = panel_button("load_button", "Load")
     let content = world_panel_content(items)
+    let status = world_panel_status("idle")
 
     let panel = T {
         name = "world_panel_root"
@@ -71,25 +73,20 @@ export fn world_panel(title, items) {
                     display("block")
                     height(STATUS_BAR_HEIGHT_GU)
                     margin_bottom(TITLE_CONTENT_GAP_GU)
-                    padding_xy(0.0, 0.25)
+                    padding_xy(0.25, 0.45)
+                    text_align("left")
+                    vertical_align("middle")
+                    font_size(1)
                     background_color = [0.08, 0.24, 0.11, 0.92]
                     color = [0.92, 1.00, 0.92, 1.0]
                 }
-                T.position(0.0, 0.0, 0.015) {
-                    T.scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE) {
-                        Text {
-                            name = "panel_status_value"
-                            "idle"
-                        }
-                    }
-                }
+                status
             }
 
             T {
                 name = "title_bar"
                 Style {
                     display("block")
-                    height(TITLE_BAR_HEIGHT_GU)
                     margin_bottom(TITLE_CONTENT_GAP_GU)
                     background_color = [0.18, 0.78, 0.22, 0.95]
                 }
@@ -100,15 +97,16 @@ export fn world_panel(title, items) {
                         display("inline-block")
                         width(TITLE_LABEL_WIDTH_GU)
                         height(TITLE_BAR_HEIGHT_GU)
-                        padding_xy(0.0, TITLE_LABEL_PADDING_X_GU)
+                        padding_xy(0.25, TITLE_LABEL_PADDING_X_GU)
+                        text_align("left")
+                        vertical_align("middle")
+                        font_size(1)
                         color = [0.90, 1.00, 0.92, 1.0]
                     }
                     T.position(0.0, 0.0, 0.015) {
-                        T.scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE) {
-                            Text {
-                                name = "title_label"
-                                title
-                            }
+                        Text {
+                            name = "title_label"
+                            title
                         }
                     }
                 }

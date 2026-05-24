@@ -97,6 +97,19 @@ pub enum TextAlign {
     Right,
 }
 
+/// Vertical text alignment within a styled box.
+///
+/// This currently applies to the same text-bearing inner transform that
+/// `text_align` controls horizontally.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VerticalAlign {
+    #[default]
+    Auto,
+    Top,
+    Middle,
+    Bottom,
+}
+
 /// CSS `box-sizing` values.
 ///
 /// Controls whether `width` / `height` describe the content area
@@ -125,13 +138,18 @@ pub enum Overflow {
 
 /// A dimension that can be auto, a fixed glyph-unit value, or a percentage.
 ///
-/// All fixed values are in **glyph units** (1.0 = one monospace character cell).
+/// Fixed values may be in **glyph units** (1.0 = one monospace character cell)
+/// or **world units** (1.0 = one cat-engine world-space unit). Layout converts
+/// world units to glyph units via the nearest [`LayoutComponent`]'s `unit_scale`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum SizeDimension {
     #[default]
     Auto,
     /// Fixed size in glyph units.
     GlyphUnits(f32),
+    /// Fixed size in world units. Resolves to glyph units via
+    /// `wu_value / unit_scale`.
+    WorldUnits(f32),
     /// Percentage of the containing block's dimension (0.0–100.0).
     Percent(f32),
 }
@@ -176,13 +194,15 @@ impl EdgeInsets {
     }
 
     /// Resolve all sides to glyph units against the inline-axis container width.
-    /// `container_w_gu` is the width of the containing block in glyph units.
-    pub fn resolve(&self, container_w_gu: f32) -> ResolvedInsets {
+    /// `container_w_gu` is the width of the containing block in glyph units;
+    /// `unit_scale` is the nearest `LayoutComponent`'s glyph-unit → world-unit
+    /// factor (used to resolve `SizeDimension::WorldUnits`).
+    pub fn resolve(&self, container_w_gu: f32, unit_scale: f32) -> ResolvedInsets {
         ResolvedInsets {
-            top: resolve_size_inline(self.top, container_w_gu),
-            right: resolve_size_inline(self.right, container_w_gu),
-            bottom: resolve_size_inline(self.bottom, container_w_gu),
-            left: resolve_size_inline(self.left, container_w_gu),
+            top: resolve_size_inline(self.top, container_w_gu, unit_scale),
+            right: resolve_size_inline(self.right, container_w_gu, unit_scale),
+            bottom: resolve_size_inline(self.bottom, container_w_gu, unit_scale),
+            left: resolve_size_inline(self.left, container_w_gu, unit_scale),
         }
     }
 }
@@ -202,11 +222,20 @@ impl ResolvedInsets {
     pub fn vertical(&self) -> f32 { self.top + self.bottom }
 }
 
-/// Resolve a `SizeDimension` against a known container length (inline-axis).
+/// Resolve a `SizeDimension` to **glyph units** against a known container
+/// length (inline-axis).
+///
 /// `Auto` → 0.0 (caller handles `Auto` specially for width/height).
-pub fn resolve_size_inline(sd: SizeDimension, container_w_gu: f32) -> f32 {
+/// `WorldUnits(v)` → `v / unit_scale` (caller passes the nearest
+/// `LayoutComponent.unit_scale`; `unit_scale = 0.0` is treated as identity to
+/// avoid division blow-ups when something below tries to resolve before a
+/// layout root is in scope).
+pub fn resolve_size_inline(sd: SizeDimension, container_w_gu: f32, unit_scale: f32) -> f32 {
     match sd {
         SizeDimension::GlyphUnits(v) => v,
+        SizeDimension::WorldUnits(v) => {
+            if unit_scale.abs() > f32::EPSILON { v / unit_scale } else { v }
+        }
         SizeDimension::Percent(p) => container_w_gu * p / 100.0,
         SizeDimension::Auto => 0.0,
     }
@@ -243,7 +272,8 @@ pub struct StylePatch {
     pub bottom:           Option<Option<SizeDimension>>,
     pub left:             Option<Option<SizeDimension>>,
     pub line_height:      Option<f32>,
-    pub font_size:        Option<f32>,
+    pub font_size:        Option<SizeDimension>,
+    pub vertical_align:   Option<VerticalAlign>,
     pub overflow:         Option<Overflow>,
     pub z_index:          Option<Option<i32>>,
     pub background_color: Option<Option<[f32; 4]>>,
@@ -311,12 +341,20 @@ pub struct StyleComponent {
     pub line_height: f32,
     /// Visual glyph scale applied by descendant `TextComponent`s.
     ///
-    /// This is a render-time multiplier, not a layout-unit conversion: text
-    /// still measures in glyph columns for wrapping and intrinsic sizing, but
-    /// each spawned glyph quad scales by `font_size` inside that grid cell.
-    pub font_size: f32,
+    /// Carries its unit: `GlyphUnits(1.0)` = one row of glyphs per glyph unit
+    /// (the layout system's intrinsic measure); `WorldUnits(0.08)` = each row
+    /// of glyphs is 0.08 world units tall (the renderer's glyph quad scale).
+    /// Layout resolves to world units via the nearest `LayoutComponent.unit_scale`
+    /// before stamping the value onto descendant `TextComponent`s.
+    /// `Auto` falls back to the descendant's authored font size.
+    pub font_size: SizeDimension,
     /// Text alignment within the content box. Default: `Auto` (no positioning).
     pub text_align: TextAlign,
+    /// Vertical text alignment within the content box.
+    ///
+    /// `Auto` preserves the legacy behavior: if `text_align` is set, text is
+    /// vertically centered; otherwise the authored translation is preserved.
+    pub vertical_align: VerticalAlign,
 
     // ── Overflow ─────────────────────────────────────────────────────────
     pub overflow: Overflow,
@@ -382,8 +420,9 @@ impl Default for StyleComponent {
             bottom: None,
             left: None,
             line_height: 1.0,
-            font_size: 1.0,
+            font_size: SizeDimension::Auto,
             text_align: TextAlign::Auto,
+            vertical_align: VerticalAlign::Auto,
             overflow: Overflow::Visible,
             z_index: None,
             background_color: None,
@@ -427,6 +466,7 @@ impl StyleComponent {
         if let Some(v) = patch.left             { self.left = v; }
         if let Some(v) = patch.line_height      { self.line_height = v; }
         if let Some(v) = patch.font_size        { self.font_size = v; }
+        if let Some(v) = patch.vertical_align   { self.vertical_align = v; }
         if let Some(v) = patch.overflow         { self.overflow = v; }
         if let Some(v) = patch.z_index          { self.z_index = v; }
         if let Some(v) = patch.background_color { self.background_color = v; }

@@ -47,7 +47,12 @@ pub(crate) struct MeasuredItem {
 ///
 /// Reads the [`StyleComponent`] from among `tc_id`'s ECS children and computes
 /// the full box model (content, padding, margin) for both axes.
-pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> MeasuredItem {
+///
+/// `unit_scale` is the nearest enclosing `LayoutComponent.unit_scale` —
+/// used to convert `SizeDimension::WorldUnits(_)` values back to glyph units
+/// for the GU-internal layout math, and to convert the renderer's wu glyph
+/// scale back into GU for text intrinsic sizing.
+pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32, unit_scale: f32) -> MeasuredItem {
     // Copy style fields out before the borrow ends.
     let children: Vec<ComponentId> = world.children_of(tc_id).to_vec();
     let style = children.iter().find_map(|&child| {
@@ -68,8 +73,8 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
     let is_block = matches!(display, None | Some(Display::Block));
 
     // Resolve padding/margin against the inline-axis container width (CSS semantic).
-    let margin = margin.resolve(avail_w_gu);
-    let padding = padding.resolve(avail_w_gu);
+    let margin = margin.resolve(avail_w_gu, unit_scale);
+    let padding = padding.resolve(avail_w_gu, unit_scale);
 
     // ── Horizontal ───────────────────────────────────────────────────────
     let margin_left_gu   = margin.left;
@@ -91,13 +96,22 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
     let max_box_w_gu = (avail_w_gu - margin_left_gu - margin_right_gu).max(0.0);
     let avail_content_w_gu = (max_box_w_gu - padding_left_gu - padding_right_gu).max(0.0);
     let renderable_intrinsic_width = matches!(width, SizeDimension::Auto)
-        .then(|| intrinsic_block_width(world, tc_id, display, avail_content_w_gu))
+        .then(|| intrinsic_block_width(world, tc_id, display, avail_content_w_gu, unit_scale))
         .flatten();
 
     let is_auto_width = matches!(width, SizeDimension::Auto)
         && matches!(display, None | Some(Display::Block | Display::InlineBlock | Display::Inline));
     let padding_h = padding_left_gu + padding_right_gu;
-    let (content_width_gu, box_width_gu) = match (width, box_sizing) {
+    // Resolve a `WorldUnits(_)` width / height to glyph units once at the top
+    // of the match so the rest stays unit-agnostic.
+    let width_gu = match width {
+        SizeDimension::WorldUnits(v) if unit_scale.abs() > f32::EPSILON => {
+            SizeDimension::GlyphUnits(v / unit_scale)
+        }
+        SizeDimension::WorldUnits(v) => SizeDimension::GlyphUnits(v),
+        other => other,
+    };
+    let (content_width_gu, box_width_gu) = match (width_gu, box_sizing) {
         // Explicit length, border-box: width is the outer box; content shrinks for padding.
         (SizeDimension::GlyphUnits(w), BoxSizing::BorderBox) => {
             let box_w = w.min(max_box_w_gu);
@@ -126,6 +140,9 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
             };
             (content, padding_h + content)
         }
+        // `WorldUnits` is normalised to `GlyphUnits` above — the arm is
+        // unreachable but kept exhaustive for the compiler.
+        (SizeDimension::WorldUnits(_), _) => (0.0, padding_h),
     };
     let margin_box_width_gu = margin_left_gu + box_width_gu + margin_right_gu;
 
@@ -137,7 +154,14 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
 
     let is_inline_block = matches!(display, Some(Display::InlineBlock | Display::Inline));
     let padding_v = padding_top_gu + padding_bottom_gu;
-    let (content_height_gu, box_height_gu) = match (height, box_sizing) {
+    let height_gu = match height {
+        SizeDimension::WorldUnits(v) if unit_scale.abs() > f32::EPSILON => {
+            SizeDimension::GlyphUnits(v / unit_scale)
+        }
+        SizeDimension::WorldUnits(v) => SizeDimension::GlyphUnits(v),
+        other => other,
+    };
+    let (content_height_gu, box_height_gu) = match (height_gu, box_sizing) {
         (SizeDimension::GlyphUnits(h), BoxSizing::BorderBox) => {
             ((h - padding_v).max(0.0), h)
         }
@@ -148,10 +172,12 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32) -> Measu
         // CSS conservative behavior for percent heights with auto parents).
         (SizeDimension::Percent(_), _) => (0.0, padding_v),
         (SizeDimension::Auto, _) if is_block || is_inline_block => {
-            let c = intrinsic_block_height(world, tc_id, content_width_gu);
+            let c = intrinsic_block_height(world, tc_id, content_width_gu, unit_scale);
             (c, padding_v + c)
         }
         (SizeDimension::Auto, _) => (0.0, padding_v),
+        // Unreachable — normalised above.
+        (SizeDimension::WorldUnits(_), _) => (0.0, padding_v),
     };
     let margin_box_height_gu = margin_top_gu + box_height_gu + margin_bottom_gu;
 
@@ -181,6 +207,7 @@ pub(crate) fn measure_container_items(
     container_id: ComponentId,
     avail_w_gu: f32,
     _avail_h_gu: Option<f32>,
+    unit_scale: f32,
 ) -> Vec<MeasuredItem> {
     let children: Vec<ComponentId> = world.children_of(container_id).to_vec();
     children
@@ -193,7 +220,7 @@ pub(crate) fn measure_container_items(
                     .unwrap_or(false)
                 && is_layout_item(world, child)
         })
-        .map(|child| measure_item(world, child, avail_w_gu))
+        .map(|child| measure_item(world, child, avail_w_gu, unit_scale))
         .collect()
 }
 
@@ -220,7 +247,7 @@ pub(crate) fn measure_items(
         (lc.available_width, lc.available_height, lc.unit_scale)
     };
 
-    let items = measure_container_items(world, layout_id, avail_w, avail_h);
+    let items = measure_container_items(world, layout_id, avail_w, avail_h, unit_scale);
 
     (items, avail_w, avail_h, unit_scale)
 }
@@ -246,9 +273,24 @@ fn container_cols_for_width(content_width_gu: f32) -> usize {
     (content_width_gu / CHAR_WIDTH_GU).floor().max(1.0) as usize
 }
 
-fn container_cols_for_width_and_font_size(content_width_gu: f32, font_size: f32) -> usize {
-    let glyph_advance_gu = (font_size.max(f32::EPSILON)) * CHAR_WIDTH_GU;
-    (content_width_gu / glyph_advance_gu).floor().max(1.0) as usize
+/// `font_size_wu` is the glyph advance in **world units** (the renderer-frame
+/// scale a glyph quad is drawn at). `content_width_gu` is the content-box
+/// width in glyph units. `unit_scale` converts between the two: 1 GU =
+/// `unit_scale` wu. The column count is the floor of how many `font_size_wu`-
+/// wide glyphs fit in `content_width_gu * unit_scale` world units.
+fn container_cols_for_width_and_font_size(
+    content_width_gu: f32,
+    font_size_wu: f32,
+    unit_scale: f32,
+) -> usize {
+    if unit_scale.abs() <= f32::EPSILON {
+        // Identity fallback: no layout root scale in scope; treat font_size as GU.
+        let glyph_advance_gu = font_size_wu.max(f32::EPSILON) * CHAR_WIDTH_GU;
+        return (content_width_gu / glyph_advance_gu).floor().max(1.0) as usize;
+    }
+    let content_width_wu = content_width_gu * unit_scale;
+    let glyph_advance_wu = font_size_wu.max(f32::EPSILON) * CHAR_WIDTH_GU;
+    (content_width_wu / glyph_advance_wu).floor().max(1.0) as usize
 }
 
 /// Walk the subtree of `root` and return the `ComponentId` of the first
@@ -339,26 +381,61 @@ fn find_text_in_local_content_subtree(
     visit(world, root, root)
 }
 
-fn read_text_font_size_style(world: &World, tc_id: ComponentId) -> Option<f32> {
-    world.children_of(tc_id).iter().find_map(|&child| {
-        world
-            .get_component_by_id_as::<StyleComponent>(child)
-            .map(|s| s.font_size)
-            .filter(|v| *v > 0.0)
-    })
+/// Convert a length expressed in world units back into glyph units using the
+/// nearest layout root's `unit_scale`. `unit_scale = 0.0` (no layout root in
+/// scope, or a degenerate root) returns the input unchanged so callers can
+/// reuse this in non-layout contexts without special-casing.
+fn wu_to_gu(value_wu: f32, unit_scale: f32) -> f32 {
+    if unit_scale.abs() > f32::EPSILON { value_wu / unit_scale } else { value_wu }
+}
+
+/// Resolve `Style.font_size` (a `SizeDimension`) to a **world-unit** glyph
+/// scale, using `unit_scale` for the GU → WU conversion. Returns `None` when
+/// the styled TC has no `StyleComponent`, or when its `font_size` is `Auto`
+/// (which means "fall through to the descendant `TextComponent`'s authored
+/// value"). Negative / zero values are also treated as "unset" — they would
+/// produce invisible glyphs and almost always indicate a missed override.
+fn resolved_style_font_size_wu(
+    world: &World,
+    tc_id: ComponentId,
+    unit_scale: f32,
+) -> Option<f32> {
+    let style_size = world.children_of(tc_id).iter().find_map(|&child| {
+        world.get_component_by_id_as::<StyleComponent>(child).map(|s| s.font_size)
+    })?;
+    let wu = match style_size {
+        SizeDimension::Auto => return None,
+        SizeDimension::GlyphUnits(g) => g * unit_scale,
+        SizeDimension::WorldUnits(w) => w,
+        // `Percent` doesn't have a defined CSS meaning for `font-size` here;
+        // treat as "unset" rather than guessing what reference value to use.
+        SizeDimension::Percent(_) => return None,
+    };
+    (wu > 0.0).then_some(wu)
 }
 
 /// Measure the intrinsic block-axis height (in glyph units) of a TC subtree
 /// by finding its `TextComponent` and running `TextSystem::measure`.
 ///
 /// Returns `0.0` if no `TextComponent` is found in the subtree.
-fn text_intrinsic_height(world: &World, tc_id: ComponentId, content_width_gu: f32) -> f32 {
-    let Some((text, existing_wrap_at, word_wrap, tokens, text_font_size)) =
+///
+/// `TextSystem::measure` works in world units (it multiplies `rows * font_size_wu`),
+/// since the renderer scales glyph quads by `font_size_wu` in the styled-TC's
+/// local world frame. We convert back to GU via `unit_scale` so the layout
+/// system stays GU-internal.
+fn text_intrinsic_height(
+    world: &World,
+    tc_id: ComponentId,
+    content_width_gu: f32,
+    unit_scale: f32,
+) -> f32 {
+    let Some((text, existing_wrap_at, word_wrap, tokens, text_font_size_wu)) =
         find_text_in_local_content_subtree(world, tc_id)
     else {
         return 0.0;
     };
-    let effective_font_size = read_text_font_size_style(world, tc_id).unwrap_or(text_font_size);
+    let effective_font_size_wu =
+        resolved_style_font_size_wu(world, tc_id, unit_scale).unwrap_or(text_font_size_wu);
 
     // Derive wrap_at from available width if the content area is known and wider
     // than a single character; otherwise fall back to the TextComponent's own wrap_at.
@@ -369,7 +446,11 @@ fn text_intrinsic_height(world: &World, tc_id: ComponentId, content_width_gu: f3
     // spans [col-0.5, col+0.5]. Reserve half a glyph on the right edge so the
     // last glyph's right half fits inside the content box (and inside padding).
     let wrap_at = if content_width_gu > CHAR_WIDTH_GU {
-        let container_cols = container_cols_for_width_and_font_size(content_width_gu, effective_font_size);
+        let container_cols = container_cols_for_width_and_font_size(
+            content_width_gu,
+            effective_font_size_wu,
+            unit_scale,
+        );
         if existing_wrap_at == 0 { container_cols } else { container_cols.min(existing_wrap_at) }
     } else if existing_wrap_at == 0 {
         // No container width and no author cap — measure unwrapped.
@@ -378,8 +459,9 @@ fn text_intrinsic_height(world: &World, tc_id: ComponentId, content_width_gu: f3
         existing_wrap_at
     };
 
-    let (_width_gu, height_gu) = TextSystem::measure(&text, wrap_at.max(1), word_wrap, &tokens, effective_font_size);
-    height_gu
+    let (_width_wu, height_wu) =
+        TextSystem::measure(&text, wrap_at.max(1), word_wrap, &tokens, effective_font_size_wu);
+    wu_to_gu(height_wu, unit_scale)
 }
 
 /// If `tc_id` has a descendant `TextComponent` in its local content subtree,
@@ -393,6 +475,7 @@ pub(crate) fn apply_text_wrap_for_item(
     emit: &mut dyn crate::engine::ecs::SignalEmitter,
     tc_id: ComponentId,
     content_width_gu: f32,
+    unit_scale: f32,
 ) {
     let Some(text_id) = find_text_id_in_local_content_subtree(world, tc_id) else {
         return;
@@ -404,12 +487,13 @@ pub(crate) fn apply_text_wrap_for_item(
     // No cascade today — only this TC's own StyleComponent is consulted.
     let (style_word_wrap, style_tokens) = read_text_wrap_style(world, tc_id);
 
-    let (cur_wrap_at, authored_wrap_at, cur_word_wrap, cur_tokens, cur_text, cur_font_size) =
+    let (cur_wrap_at, authored_wrap_at, cur_word_wrap, cur_tokens, cur_text, cur_font_size_wu) =
         match world.get_component_by_id_as::<TextComponent>(text_id) {
             Some(tc) => (tc.wrap_at, tc.authored_wrap_at, tc.word_wrap, tc.word_wrap_tokens.clone(), tc.text.clone(), tc.font_size),
             None => return,
         };
-    let container_cols = container_cols_for_width_and_font_size(content_width_gu, cur_font_size);
+    let container_cols =
+        container_cols_for_width_and_font_size(content_width_gu, cur_font_size_wu, unit_scale);
 
     // Cap against the *authored* wrap_at, not the current value (the current
     // value may have been narrowed by a prior layout pass at a smaller
@@ -458,12 +542,14 @@ pub(crate) fn apply_text_font_size_for_item(
     world: &mut World,
     emit: &mut dyn crate::engine::ecs::SignalEmitter,
     tc_id: ComponentId,
+    unit_scale: f32,
 ) {
-    let style_font_size = world.children_of(tc_id).iter().find_map(|&child| {
-        world
-            .get_component_by_id_as::<StyleComponent>(child)
-            .map(|s| s.font_size)
-    });
+    // `Style.font_size` carries a unit (`SizeDimension`): `GlyphUnits(g)`
+    // means "g glyph units per row" → wu via `g * unit_scale`; `WorldUnits(w)`
+    // means "w world units per row" → wu directly; `Auto` defers to the
+    // descendant `TextComponent`'s authored value. `Percent` has no defined
+    // reference here and is treated as `Auto`.
+    let style_font_size_wu = resolved_style_font_size_wu(world, tc_id, unit_scale);
 
     let Some(text_id) = find_text_component_in_subtree(world, tc_id) else {
         return;
@@ -474,10 +560,7 @@ pub(crate) fn apply_text_font_size_for_item(
         None => return,
     };
 
-    let new_font_size = match style_font_size {
-        Some(size) if size > 0.0 => size,
-        _ => authored_font_size,
-    };
+    let new_font_size = style_font_size_wu.unwrap_or(authored_font_size);
 
     if (new_font_size - cur_font_size).abs() <= f32::EPSILON {
         return;
@@ -633,13 +716,14 @@ pub(crate) fn intrinsic_block_width(
     tc_id: ComponentId,
     display: Option<Display>,
     avail_content_w_gu: f32,
+    unit_scale: f32,
 ) -> Option<f32> {
     let is_inline_block = matches!(display, Some(Display::InlineBlock | Display::Inline));
     if find_text_in_local_content_subtree(world, tc_id).is_some() {
         // CSS-aligned: inline-block shrinks to fit its content; block fills
         // the available inline budget so text wraps inside it.
         if is_inline_block {
-            return Some(text_intrinsic_width(world, tc_id, avail_content_w_gu));
+            return Some(text_intrinsic_width(world, tc_id, avail_content_w_gu, unit_scale));
         }
         return None;
     }
@@ -651,15 +735,25 @@ pub(crate) fn intrinsic_block_width(
 /// inline-block shrink-to-fit: cap to the containing block's available
 /// width, then take the widest resulting line. Pairs with
 /// `text_intrinsic_height`.
-fn text_intrinsic_width(world: &World, tc_id: ComponentId, avail_content_w_gu: f32) -> f32 {
-    let Some((text, tc_wrap_at, word_wrap, tokens, text_font_size)) =
+fn text_intrinsic_width(
+    world: &World,
+    tc_id: ComponentId,
+    avail_content_w_gu: f32,
+    unit_scale: f32,
+) -> f32 {
+    let Some((text, tc_wrap_at, word_wrap, tokens, text_font_size_wu)) =
         find_text_in_local_content_subtree(world, tc_id)
     else {
         return 0.0;
     };
-    let effective_font_size = read_text_font_size_style(world, tc_id).unwrap_or(text_font_size);
+    let effective_font_size_wu =
+        resolved_style_font_size_wu(world, tc_id, unit_scale).unwrap_or(text_font_size_wu);
     let avail_cols = if avail_content_w_gu > CHAR_WIDTH_GU {
-        container_cols_for_width_and_font_size(avail_content_w_gu, effective_font_size)
+        container_cols_for_width_and_font_size(
+            avail_content_w_gu,
+            effective_font_size_wu,
+            unit_scale,
+        )
     } else {
         0
     };
@@ -670,25 +764,32 @@ fn text_intrinsic_width(world: &World, tc_id: ComponentId, avail_content_w_gu: f
         (a, 0) => a,
         (a, w) => a.min(w),
     };
-    let (measured, _height_gu) = TextSystem::measure(&text, wrap_at, word_wrap, &tokens, effective_font_size);
+    let (measured_wu, _height_wu) =
+        TextSystem::measure(&text, wrap_at, word_wrap, &tokens, effective_font_size_wu);
+    let measured_gu = wu_to_gu(measured_wu, unit_scale);
     // CSS shrink-to-fit caps an inline-block's width at the available content
     // width even if the text inside overflows (word-wrap: normal with a long
     // unbreakable token). Without this cap, the box claims a width wider than
     // its containing block and downstream measurements (wrap_at on glyph
     // rebuild, sibling line-break decisions) inherit the inflated value.
-    if avail_content_w_gu > 0.0 { measured.min(avail_content_w_gu) } else { measured }
+    if avail_content_w_gu > 0.0 { measured_gu.min(avail_content_w_gu) } else { measured_gu }
 }
 
-fn intrinsic_block_height(world: &World, tc_id: ComponentId, content_width_gu: f32) -> f32 {
+fn intrinsic_block_height(
+    world: &World,
+    tc_id: ComponentId,
+    content_width_gu: f32,
+    unit_scale: f32,
+) -> f32 {
     if find_text_in_local_content_subtree(world, tc_id).is_some() {
-        return text_intrinsic_height(world, tc_id, content_width_gu);
+        return text_intrinsic_height(world, tc_id, content_width_gu, unit_scale);
     }
 
     if let Some(aabb) = find_renderable_local_bounds(world, tc_id) {
         return aabb.height();
     }
 
-    let child_items = measure_container_items(world, tc_id, content_width_gu, None);
+    let child_items = measure_container_items(world, tc_id, content_width_gu, None, unit_scale);
     if !child_items.is_empty() {
         let all_inline = child_items
             .iter()
@@ -792,7 +893,7 @@ mod tests {
         let _ = world.add_child(row, color);
         let _ = world.add_child(color, text);
 
-        let measured = measure_item(&world, container, 29.5);
+        let measured = measure_item(&world, container, 29.5, 1.0);
         assert_eq!(measured.content_height_gu, 0.0);
     }
 
@@ -816,7 +917,7 @@ mod tests {
         let _ = world.add_child(row, color);
         let _ = world.add_child(color, text);
 
-        let measured = measure_item(&world, row, 12.0);
+        let measured = measure_item(&world, row, 12.0, 1.0);
         assert_eq!(measured.content_height_gu, 1.0);
     }
 
@@ -888,7 +989,7 @@ mod tests {
         let _ = world.add_child(row, color);
         let _ = world.add_child(color, text);
 
-        let measured = measure_item(&world, container, 4.0);
+        let measured = measure_item(&world, container, 4.0, 1.0);
         assert!(measured.content_height_gu > 1.0, "wrapped descendant layout text should increase intrinsic height");
     }
 
@@ -910,7 +1011,7 @@ mod tests {
         let _ = world.add_child(tc, style);
         let _ = world.add_child(tc, text);
 
-        let measured = measure_item(&world, tc, 40.0);
+        let measured = measure_item(&world, tc, 40.0, 1.0);
         assert_eq!(measured.content_width_gu, 3.0);
     }
 
@@ -932,7 +1033,7 @@ mod tests {
         let _ = world.add_child(tc, style);
         let _ = world.add_child(tc, text);
 
-        let measured = measure_item(&world, tc, 40.0);
+        let measured = measure_item(&world, tc, 40.0, 1.0);
         assert_eq!(measured.content_width_gu, 40.0);
     }
 
@@ -955,7 +1056,7 @@ mod tests {
         let _ = world.add_child(tc, style);
         let _ = world.add_child(tc, text);
 
-        let measured = measure_item(&world, tc, 40.0);
+        let measured = measure_item(&world, tc, 40.0, 1.0);
         assert_eq!(measured.content_width_gu, 12.0);
     }
 
@@ -983,12 +1084,12 @@ mod tests {
         let mut emit = NullEmit;
 
         // 1st pass: narrow container forces wrap_at down.
-        apply_text_wrap_for_item(&mut world, &mut emit, tc, 10.0);
+        apply_text_wrap_for_item(&mut world, &mut emit, tc, 10.0, 1.0);
         let narrow = world.get_component_by_id_as::<TextComponent>(text).unwrap().wrap_at;
         assert!(narrow < 60, "narrow container should reduce wrap_at, got {}", narrow);
 
         // 2nd pass: container grows back; wrap_at must widen toward the authored cap.
-        apply_text_wrap_for_item(&mut world, &mut emit, tc, 80.0);
+        apply_text_wrap_for_item(&mut world, &mut emit, tc, 80.0, 1.0);
         let wide = world.get_component_by_id_as::<TextComponent>(text).unwrap().wrap_at;
         assert!(wide > narrow, "wide container should re-widen wrap_at, got {} (was {})", wide, narrow);
         assert!(wide <= 60, "wrap_at must never exceed authored cap (60), got {}", wide);
@@ -1011,7 +1112,7 @@ mod tests {
         let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));
         let style = world.add_component_boxed_named("style", Box::new({
             let mut s = StyleComponent::new();
-            s.font_size = 0.25;
+            s.font_size = SizeDimension::WorldUnits(0.25);
             s
         }));
         let text = world.add_component_boxed_named("txt", Box::new(TextComponent::new("hello").with_font_size(1.0)));
@@ -1019,7 +1120,7 @@ mod tests {
         let _ = world.add_child(tc, text);
 
         let mut emit = NullEmit;
-        apply_text_font_size_for_item(&mut world, &mut emit, tc);
+        apply_text_font_size_for_item(&mut world, &mut emit, tc, 1.0);
 
         let effective = world.get_component_by_id_as::<TextComponent>(text).unwrap().font_size;
         let authored = world.get_component_by_id_as::<TextComponent>(text).unwrap().authored_font_size;
@@ -1058,7 +1159,7 @@ mod tests {
         let _ = world.add_child(inner, text);
 
         let mut emit = NullEmit;
-        apply_text_wrap_for_item(&mut world, &mut emit, tc, 8.0);
+        apply_text_wrap_for_item(&mut world, &mut emit, tc, 8.0, 1.0);
 
         let wrap_at = world.get_component_by_id_as::<TextComponent>(text).unwrap().wrap_at;
         assert!(wrap_at < 60, "expected wrap_at to narrow through inner transform wrapper, got {wrap_at}");
@@ -1079,7 +1180,7 @@ mod tests {
         }));
         let _ = world.add_child(tc, style);
 
-        let measured = measure_item(&world, tc, 40.0);
+        let measured = measure_item(&world, tc, 40.0, 1.0);
         assert_eq!(measured.content_width_gu, 20.0, "content stays at width(20) under content-box");
         assert_eq!(measured.box_width_gu, 24.0, "outer box = content + 2*padding");
     }
@@ -1098,7 +1199,7 @@ mod tests {
         }));
         let _ = world.add_child(tc, style);
 
-        let measured = measure_item(&world, tc, 40.0);
+        let measured = measure_item(&world, tc, 40.0, 1.0);
         assert_eq!(measured.box_width_gu, 20.0, "outer box stays at width(20)");
         assert_eq!(measured.content_width_gu, 16.0, "content shrinks for padding");
     }
@@ -1211,7 +1312,7 @@ mod tests {
         }));
         let _ = world.add_child(tc, style);
 
-        let measured = measure_item(&world, tc, 40.0);
+        let measured = measure_item(&world, tc, 40.0, 1.0);
         assert_eq!(measured.content_width_gu, 20.0);
     }
 
@@ -1247,7 +1348,7 @@ mod tests {
         assert!((items[0].box_width_gu - 10.0).abs() < 1e-4);
         assert!((items[0].content_width_gu - 8.4).abs() < 1e-4);
 
-        let nested = measure_container_items(&world, panel, items[0].content_width_gu, None);
+        let nested = measure_container_items(&world, panel, items[0].content_width_gu, None, 1.0);
         assert_eq!(nested.len(), 1);
         assert!((nested[0].box_width_gu - 8.4).abs() < 1e-4);
 
@@ -1262,7 +1363,7 @@ mod tests {
         assert!((narrow_items[0].box_width_gu - 6.0).abs() < 1e-4);
         assert!((narrow_items[0].content_width_gu - 4.4).abs() < 1e-4);
 
-        let narrow_nested = measure_container_items(&world, panel, narrow_items[0].content_width_gu, None);
+        let narrow_nested = measure_container_items(&world, panel, narrow_items[0].content_width_gu, None, 1.0);
         assert_eq!(narrow_nested.len(), 1);
         assert!((narrow_nested[0].box_width_gu - 4.4).abs() < 1e-4);
     }
@@ -1281,7 +1382,7 @@ mod tests {
         }));
         let _ = world.add_child(tc, style);
 
-        let measured = measure_item(&world, tc, 40.0);
+        let measured = measure_item(&world, tc, 40.0, 1.0);
         assert_eq!(measured.padding_left_gu, 4.0);
         assert_eq!(measured.padding_right_gu, 4.0);
         assert_eq!(measured.padding_top_gu, 4.0);
@@ -1302,7 +1403,7 @@ mod tests {
             s
         }));
         let _ = world.add_child(tc, style);
-        let measured = measure_item(&world, tc, 40.0);
+        let measured = measure_item(&world, tc, 40.0, 1.0);
         assert_eq!(measured.content_width_gu, 20.0);
     }
 }

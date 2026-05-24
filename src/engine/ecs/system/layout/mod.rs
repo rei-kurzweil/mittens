@@ -1,5 +1,6 @@
 pub mod measure;
 pub mod block;
+pub mod box_model_viz;
 pub mod flex;
 pub mod inline;
 
@@ -69,11 +70,11 @@ impl LayoutSystem {
         // If every item is inline-block, run inline layout (horizontal cursor + wrap).
         // Otherwise default to block layout. Mixed containers stay on block — true
         // CSS-style inline-context-with-mixed-children is deferred until needed.
-        let avail_w = world
+        let (avail_w, unit_scale) = world
             .get_component_by_id_as::<LayoutComponent>(layout_id)
-            .map(|l| l.available_width)
-            .unwrap_or(0.0);
-        let items = measure_container_items(world, layout_id, avail_w, None);
+            .map(|l| (l.available_width, l.unit_scale))
+            .unwrap_or((0.0, 1.0));
+        let items = measure_container_items(world, layout_id, avail_w, None, unit_scale);
         // `Display::Inline` falls through to inline-block treatment until
         // true inline flow (line boxes, baseline alignment, mid-run wrap)
         // lands — see `docs/draft/inline-layout.md`.

@@ -37,23 +37,6 @@ T.position(0.15, -0.45, 1.0) {
     }
 }
 
-// ── Desktop camera rig ───────────────────────────────────────────────────────
-T.position(0.0, 1.2, 3.0).rotate(-0.15, 0.0, 0.0) {
-    C3D {}
-    Pointer {}
-    T {
-        position(0.65, 1.45, 1.8)
-        scale(0.055, 0.055, 1.0)
-        TXT {
-            "wasd / rf / qe\nright-mouse drag\nto move + look"
-            Raycastable.enabled()
-            C.rgba(0.0, 0.0, 0.0, 1.0)
-            EM.on()
-            TextureFiltering.linear()
-        }
-    }
-}
-
 // ── Floor (so bisket isn't floating in the void) ─────────────────────────────
 ED {
     T.position(0.0, -0.78, -0.4).scale(12.0, 0.18, 9.5) {
@@ -97,6 +80,11 @@ ED {
                     GLTF.new("assets/models/bisket.8.0.glb") { EM.on() }
                 }
             }
-        }
+            
+            T.position(0,3.5, 2.15) {
+                C3D {}
+                Pointer {}
+            }
+        }   
     }
 }

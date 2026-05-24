@@ -22,9 +22,10 @@ fn inspector_panel_row(label) {
         Style {
             margin_xy(0.25, 0.20)
             padding_xy(0.55, 0.45)
+            font_size(1)
             background_color = [0.92, 0.92, 0.92, 0.80]
         }
-        T.position(0.0, 0.0, 0.015).scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE) {
+        T.position(0.0, 0.0, 0.015) {
             Text {
                 label
                 C.rgba(0.0, 0.0, 0.0, 1.0)
@@ -59,14 +60,13 @@ export fn inspector_panel(title, items) {
                         width(100%)
                         height(TITLE_BAR_HEIGHT_GU)
                         padding_xy(0.0, TITLE_LABEL_PADDING_X_GU)
+                        font_size(1)
                         color = [0.90, 1.00, 0.92, 1.0]
                     }
                     T.position(0.0, 0.0, 0.015) {
-                        T.scale(TEXT_SCALE, TEXT_SCALE, TEXT_SCALE) {
-                            Text {
-                                name = "title_label"
-                                title
-                            }
+                        Text {
+                            name = "title_label"
+                            title
                         }
                     }
                 }
