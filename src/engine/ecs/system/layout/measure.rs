@@ -224,7 +224,7 @@ pub(crate) fn measure_container_items(
         .collect()
 }
 
-fn is_layout_item(world: &World, tc_id: ComponentId) -> bool {
+pub(crate) fn is_layout_item(world: &World, tc_id: ComponentId) -> bool {
     world.children_of(tc_id).iter().any(|&child| {
         world.get_component_by_id_as::<StyleComponent>(child).is_some()
             || world.get_component_by_id_as::<HtmlElementComponent>(child).is_some()

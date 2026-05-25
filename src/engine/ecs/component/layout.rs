@@ -36,6 +36,14 @@ pub struct LayoutComponent {
     /// (e.g. `0.08`) so the emitted `UpdateTransform` translations land in world space.
     pub unit_scale: f32,
 
+    /// When `true`, the layout pass spawns box-model viz quads (padding, content,
+    /// margin) for each styled item in this subtree. Per-tree dynamic toggle —
+    /// flipped via `IntentValue::SetLayoutInspect` (MMS: `layout.set_inspect(bool)`).
+    /// Static MMS declarations can also enable viz by attaching an
+    /// [`InspectLayoutComponent`](crate::engine::ecs::component::InspectLayoutComponent)
+    /// child to the LayoutRoot.
+    pub inspect: bool,
+
     component: Option<ComponentId>,
 }
 
@@ -46,6 +54,7 @@ impl LayoutComponent {
             available_height: None,
             dirty: true,
             unit_scale: 1.0,
+            inspect: false,
             component: None,
         }
     }

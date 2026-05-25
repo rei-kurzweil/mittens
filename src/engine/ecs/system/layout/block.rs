@@ -19,8 +19,8 @@ use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::{IntentValue, SignalEmitter};
 use crate::engine::ecs::component::{
-    ColorComponent, OpacityComponent, Overflow, RenderableComponent, RouterComponent,
-    ScrollingComponent, StencilClipComponent,
+    ColorComponent, InspectLayoutComponent, OpacityComponent, Overflow, RenderableComponent,
+    RouterComponent, ScrollingComponent, StencilClipComponent,
     RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType,
     StyleComponent, TextComponent, TransformComponent,
 };
@@ -51,8 +51,9 @@ pub fn layout(
     layout_id: ComponentId,
 ) {
     let (items, _avail_w, _avail_h, unit_scale) = measure_items(world, layout_id);
+    let viz = layout_root_has_inspect(world, layout_id);
 
-    layout_items(world, emit, &items, unit_scale, 0);
+    layout_items(world, emit, &items, unit_scale, 0, viz);
 }
 
 /// Public-to-the-layout-module entry so `inline::layout_items` can recurse
@@ -63,20 +64,25 @@ pub(crate) fn layout_items_for(
     items: &[MeasuredItem],
     unit_scale: f32,
     depth: i32,
+    viz: bool,
 ) {
-    layout_items(world, emit, items, unit_scale, depth);
+    layout_items(world, emit, items, unit_scale, depth, viz);
 }
 
-/// `depth` is the nesting depth from the LayoutRoot (0 at root). All siblings
-/// at one nesting level share the same resolved Z; descendants stack one full
-/// `LAYER_DISTANCE` per level so a child's `__bg` lands ahead of its parent's
-/// content. See `docs/draft/layout-stacking-z-index.md`.
+/// `depth` is the *layer* depth from the LayoutRoot (0 at root). Sibling items
+/// at one level share the same resolved Z; the depth only advances when
+/// recursing into an item that *owns a layer* (has its own `__bg` quad or an
+/// overflow clip) — items without a bg are structural and don't need their
+/// children to sit on a new Z plane. `viz` propagates the LayoutRoot's
+/// [`InspectLayoutComponent`] presence so each item's box-model viz can be
+/// toggled per layout tree.
 fn layout_items(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     items: &[MeasuredItem],
     unit_scale: f32,
     depth: i32,
+    viz: bool,
 ) {
 
     let mut cursor_gu = 0.0_f32;
@@ -120,7 +126,8 @@ fn layout_items(
 
         // ── Background quad / overflow helper topology ───────────────────
         sync_bg_quad(world, emit, item.tc_id, item.padding_left_gu, item.padding_top_gu, item.box_width_gu, item.box_height_gu, unit_scale);
-        sync_box_model_viz(world, emit, item, unit_scale);
+        sync_auto_text_lift(world, emit, item.tc_id);
+        sync_box_model_viz(world, emit, item, unit_scale, viz);
         apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu, unit_scale);
         let content_root = sync_overflow_topology(world, emit, item.tc_id, item.content_height_gu);
 
@@ -143,6 +150,15 @@ fn layout_items(
             let all_inline_block = nested_items
                 .iter()
                 .all(|it| matches!(it.display, Some(Display::InlineBlock | Display::Inline)));
+            // Children only sit on a new Z layer when *this* item owns one
+            // (has a bg or an overflow clip). Structural wrappers without
+            // their own bg keep their children on the parent's layer, so
+            // deeply-nested layout trees don't accumulate Z by accident.
+            let child_depth = if item_owns_layer(world, item.tc_id) {
+                depth + 1
+            } else {
+                depth
+            };
             if all_inline_block {
                 super::inline::layout_items(
                     world,
@@ -150,15 +166,95 @@ fn layout_items(
                     &nested_items,
                     item.content_width_gu,
                     unit_scale,
-                    depth + 1,
+                    child_depth,
+                    viz,
                 );
             } else {
-                layout_items(world, emit, &nested_items, unit_scale, depth + 1);
+                layout_items(world, emit, &nested_items, unit_scale, child_depth, viz);
             }
         }
 
         cursor_gu += item.box_height_gu + item.margin_bottom_gu;
     }
+}
+
+/// Auto-lift the immediate non-styled TC children of a styled item so their
+/// content (typically a `Text { … }` wrapper) sits clearly ahead of the item's
+/// own `__bg` quad without authors having to hand-author `T.position(_,_,Z)`.
+///
+/// Only fires when the child's authored local Z is exactly `0.0` — any
+/// non-zero value is treated as an explicit author override and preserved.
+/// Layout-owned helpers (labels starting with `__`) and TC children that are
+/// themselves layout items are skipped: the former have their own placement
+/// rules (e.g. `__bg`), the latter get full layer treatment from the recursive
+/// `layout_items` pass.
+pub(crate) fn sync_auto_text_lift(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    tc_id: ComponentId,
+) {
+    let candidates: Vec<ComponentId> = world
+        .children_of(tc_id)
+        .iter()
+        .copied()
+        .filter(|&child| {
+            world.get_component_by_id_as::<TransformComponent>(child).is_some()
+                && !world
+                    .component_label(child)
+                    .map(|label| label.starts_with("__"))
+                    .unwrap_or(false)
+                && !super::measure::is_layout_item(world, child)
+        })
+        .collect();
+
+    for child in candidates {
+        let Some(tc) = world.get_component_by_id_as::<TransformComponent>(child) else { continue; };
+        if tc.transform.translation[2] != 0.0 {
+            continue;
+        }
+        let translation = [
+            tc.transform.translation[0],
+            tc.transform.translation[1],
+            super::AUTO_TEXT_LIFT_Z,
+        ];
+        let scale = tc.transform.scale;
+        let rotation_quat_xyzw = tc.transform.rotation;
+        emit.push_intent_now(
+            child,
+            IntentValue::UpdateTransform {
+                component_ids: vec![child],
+                translation,
+                rotation_quat_xyzw,
+                scale,
+            },
+        );
+    }
+}
+
+/// Does this styled item carry rendering content that justifies a new Z
+/// layer for its children? `true` when it has a `__bg` quad (i.e.
+/// `Style.background_color` is `Some`) or any clipping overflow mode.
+/// Structural wrappers without their own bg return `false` and so don't
+/// push their children onto a deeper layer.
+pub(crate) fn item_owns_layer(world: &World, tc_id: ComponentId) -> bool {
+    world.children_of(tc_id).iter().any(|&ch| {
+        world.get_component_by_id_as::<StyleComponent>(ch)
+            .map(|s| s.background_color.is_some()
+                || !matches!(s.overflow, Overflow::Visible))
+            .unwrap_or(false)
+    })
+}
+
+pub(crate) fn layout_root_has_inspect(world: &World, layout_id: ComponentId) -> bool {
+    use crate::engine::ecs::component::LayoutComponent;
+    let flag = world
+        .get_component_by_id_as::<LayoutComponent>(layout_id)
+        .map(|l| l.inspect)
+        .unwrap_or(false);
+    flag
+        || world.children_of(layout_id).iter().any(|&ch| {
+            world.get_component_by_id_as::<InspectLayoutComponent>(ch).is_some()
+        })
 }
 
 fn style_overflow(world: &World, tc_id: ComponentId) -> Overflow {

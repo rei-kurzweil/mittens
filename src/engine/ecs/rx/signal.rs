@@ -235,6 +235,10 @@ pub enum IntentValue {
         component_ids: Vec<ComponentId>,
         width: f32,
     },
+    SetLayoutInspect {
+        component_ids: Vec<ComponentId>,
+        enabled: bool,
+    },
 
     Attach {
         parents: Vec<ComponentId>,
@@ -548,6 +552,7 @@ impl IntentValue {
             IntentValue::SetText { .. } => "set_text",
             IntentValue::SetPosition { .. } => "set_position",
             IntentValue::SetLayoutAvailableWidth { .. } => "set_layout_available_width",
+            IntentValue::SetLayoutInspect { .. } => "set_layout_inspect",
 
             IntentValue::Attach { .. } => "attach",
             IntentValue::QueryFindComponent { .. } => "query_find_component",

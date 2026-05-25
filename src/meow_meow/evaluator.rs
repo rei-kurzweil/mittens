@@ -1167,6 +1167,27 @@ fn eval_method_call(
                 return Ok(Value::Null);
             }
 
+            // Layout viz toggle: layout.set_inspect(bool) / .enable_inspect() / .disable_inspect().
+            if matches!(component_type.as_str(), "layout" | "LayoutRoot" | "LayoutComponent")
+                && matches!(method, "set_inspect" | "enable_inspect" | "disable_inspect")
+            {
+                let enabled = match (method, args.first()) {
+                    ("enable_inspect", _) => true,
+                    ("disable_inspect", _) => false,
+                    ("set_inspect", Some(Value::Bool(b))) => *b,
+                    ("set_inspect", Some(other)) => return Err(format!(
+                        "set_inspect: expected bool argument, got {:?}", other
+                    )),
+                    ("set_inspect", None) => return Err("set_inspect: missing bool argument".into()),
+                    _ => unreachable!(),
+                };
+                ctx.emits.push(IntentValue::SetLayoutInspect {
+                    component_ids: vec![id],
+                    enabled,
+                });
+                return Ok(Value::Null);
+            }
+
             // Text mutation: text.set_text("...").
             if matches!(
                 component_type.as_str(),

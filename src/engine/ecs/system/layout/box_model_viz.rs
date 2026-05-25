@@ -3,7 +3,6 @@ use crate::engine::ecs::component::{ColorComponent, OpacityComponent, OverlayCom
 
 use super::measure::MeasuredItem;
 
-const ENABLE_BOX_MODEL_VIZ: bool = true;
 const OWNED_BOX_MODEL_VIZ_ROOT: &str = "__box_model_viz";
 const OWNED_BOX_MODEL_VIZ_OVERLAY: &str = "__box_model_viz_overlay";
 
@@ -40,8 +39,9 @@ pub(crate) fn sync_box_model_viz(
     emit: &mut dyn SignalEmitter,
     item: &MeasuredItem,
     unit_scale: f32,
+    enabled: bool,
 ) {
-    if !ENABLE_BOX_MODEL_VIZ {
+    if !enabled {
         remove_box_model_viz(world, emit, item.tc_id);
         return;
     }

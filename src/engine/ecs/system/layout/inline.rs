@@ -24,7 +24,8 @@ use crate::engine::ecs::component::style::Display;
 /// would exceed `available_width`.
 pub fn layout(world: &mut World, emit: &mut dyn SignalEmitter, layout_id: ComponentId) {
     let (items, avail_w_gu, _avail_h_gu, unit_scale) = measure_items(world, layout_id);
-    layout_items(world, emit, &items, avail_w_gu, unit_scale, 0);
+    let viz = super::block::layout_root_has_inspect(world, layout_id);
+    layout_items(world, emit, &items, avail_w_gu, unit_scale, 0, viz);
 }
 
 /// Inline-formatting-context layout over a pre-measured item list.
@@ -40,6 +41,7 @@ pub(crate) fn layout_items(
     avail_w_gu: f32,
     unit_scale: f32,
     depth: i32,
+    viz: bool,
 ) {
     let mut cursor_x_gu: f32 = 0.0;
     let mut cursor_y_gu: f32 = 0.0;
@@ -107,7 +109,8 @@ pub(crate) fn layout_items(
             item.box_height_gu,
             unit_scale,
         );
-        sync_box_model_viz(world, emit, item, unit_scale);
+        super::block::sync_auto_text_lift(world, emit, item.tc_id);
+        sync_box_model_viz(world, emit, item, unit_scale, viz);
         apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu, unit_scale);
         let content_root = super::block::sync_overflow_topology(world, emit, item.tc_id, item.content_height_gu);
 
@@ -126,10 +129,15 @@ pub(crate) fn layout_items(
             let all_inline_block = nested_items
                 .iter()
                 .all(|it| matches!(it.display, Some(Display::InlineBlock | Display::Inline)));
-            if all_inline_block {
-                layout_items(world, emit, &nested_items, item.content_width_gu, unit_scale, depth + 1);
+            let child_depth = if super::block::item_owns_layer(world, item.tc_id) {
+                depth + 1
             } else {
-                super::block::layout_items_for(world, emit, &nested_items, unit_scale, depth + 1);
+                depth
+            };
+            if all_inline_block {
+                layout_items(world, emit, &nested_items, item.content_width_gu, unit_scale, child_depth, viz);
+            } else {
+                super::block::layout_items_for(world, emit, &nested_items, unit_scale, child_depth, viz);
             }
         }
 

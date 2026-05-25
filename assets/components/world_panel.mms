@@ -42,10 +42,9 @@ fn panel_button(node_name, label) {
             vertical_align("middle")
             font_size(1)
             background_color = [0.10, 0.55, 0.18, 1.0]
-            background_z(0.02)
             color = [0.75, 1.00, 0.45, 1.0]
         }
-        T.position(0.0, 0.0, 0.05) {
+        T.position(0.0, 0.0, 0.0) {
             Text { label }
         }
     }
@@ -103,7 +102,7 @@ export fn world_panel(title, items) {
                         font_size(1)
                         color = [0.90, 1.00, 0.92, 1.0]
                     }
-                    T.position(0.0, 0.0, 0.015) {
+                    T.position(0.0, 0.0, 0.0) {
                         Text {
                             name = "title_label"
                             title

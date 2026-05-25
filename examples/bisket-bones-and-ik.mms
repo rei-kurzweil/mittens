@@ -7,6 +7,13 @@
 // Next step (separate iteration): wiggle the kemonomimi ears via
 // DynamicBoneComponent / QuatSpring chain — the bone names for the ear strand
 // need to come from the .glb skeleton.
+//
+// World panel: a `world_panel` is mounted to the right of bisket. Its "Save"
+// button enables layout box-model viz on the panel's LayoutRoot
+// (`InspectLayout` semantics); its "Load" button disables it. Per-tree toggle
+// so the rest of the scene stays clean.
+
+import { world_panel } from "../assets/components/world_panel.mms"
 
 // ── Renderer settings ─────────────────────────────────────────────────────────
 RendererSettings {
@@ -80,11 +87,40 @@ ED {
                     GLTF.new("assets/models/bisket.8.0.glb") { EM.on() }
                 }
             }
-            
-            T.position(0,3.5, 2.15) {
+
+            T.position(0, 3, 0) {
                 C3D {}
                 Pointer {}
             }
-        }   
+        }
     }
 }
+
+// ── World panel (right of bisket) with viz toggle buttons ───────────────────
+let panel_items = [
+    "Save → enable_inspect on panel_layout_root",
+    "Load → disable_inspect",
+    "viz quads are local to this LayoutRoot"
+]
+let panel = world_panel("Inspect", panel_items)
+
+T.position(2.2, 1.4, -0.6) {
+    Selectable.off() {
+        panel
+    }
+}
+
+let panel_layout = panel.query("#panel_layout_root")
+let inspect_on_btn = panel.query("#save_button")
+let inspect_off_btn = panel.query("#load_button")
+let panel_status = panel.query("#panel_status_value")
+
+on(inspect_on_btn, "Click", fn(e) {
+    panel_layout.enable_inspect()
+    panel_status.set_text("inspect: on")
+})
+
+on(inspect_off_btn, "Click", fn(e) {
+    panel_layout.disable_inspect()
+    panel_status.set_text("inspect: off")
+})

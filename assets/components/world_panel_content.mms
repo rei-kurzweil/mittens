@@ -30,7 +30,7 @@ fn world_panel_row(row_name, label, bg) {
             font_size(1)
             background_color = bg
         }
-        T.position(0.0, 0.0, 0.015) {
+        T.position(0.0, 0.0, 0.0) {
             Text {
                 label
                 C.rgba(0.06, 0.09, 0.08, 1.0)

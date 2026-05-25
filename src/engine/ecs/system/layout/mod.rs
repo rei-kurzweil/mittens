@@ -25,6 +25,13 @@ const DEFAULT_PANEL_WIDTH_CHARS: usize = 40;
 /// See `docs/draft/layout-stacking-z-index.md`.
 pub(crate) const LAYER_DISTANCE: f32 = 0.05;
 
+/// Local-Z lift applied by layout to the first non-styled TC descendant of a
+/// styled item when the author hasn't written their own Z offset. Keeps text
+/// (which usually lives one TC deep inside the styled item) clearly ahead of
+/// the item's `__bg` quad at `-0.5 * LAYER_DISTANCE`, without overflowing into
+/// the next layer's content plane at `+1.0 * LAYER_DISTANCE`.
+pub(crate) const AUTO_TEXT_LIFT_Z: f32 = 0.4 * LAYER_DISTANCE;
+
 /// Drives CSS-like layout for all dirty [`LayoutComponent`] subtrees.
 ///
 /// Each tick, dirty roots are found and dispatched to the appropriate

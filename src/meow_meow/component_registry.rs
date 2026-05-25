@@ -16,6 +16,7 @@ use crate::engine::ecs::component::{
     HtmlElementComponent, ElementType,
     InputComponent, InputTransformModeComponent, InputXRComponent,
     KeyframeComponent, LayoutComponent, NormalVisualisationComponent,
+    InspectLayoutComponent,
     LightQuantizationComponent, OpacityComponent, OpenXRComponent, OverlayComponent,
     PointLightComponent, PointerComponent, TransparentCutoutComponent,
     RouterComponent,
@@ -721,6 +722,7 @@ fn create_component(
             Ok(id)
         }
         "Overlay" => add!(OverlayComponent::new()),
+        "InspectLayout" => add!(InspectLayoutComponent::new()),
         "BackgroundColor" => add!(BackgroundColorComponent::new()),
         "AmbientLight" => match ctor {
             Some("rgb") => add!(AmbientLightComponent::rgb(
