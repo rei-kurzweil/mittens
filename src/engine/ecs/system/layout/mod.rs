@@ -16,6 +16,15 @@ const CHAR_WIDTH_GLYPH: f32 = 0.55;
 /// Fallback panel column budget when `wrap_at = 0` means "no authored cap".
 const DEFAULT_PANEL_WIDTH_CHARS: usize = 40;
 
+/// Local-Z step between consecutive layout-managed styled siblings.
+///
+/// Authors no longer need to hand-author small Z nudges like
+/// `T.position(_, _, 0.05)` to keep text above generated backgrounds: layout
+/// stamps `resolved_z = layer_index * LAYER_DISTANCE` onto each styled item TC
+/// and places its `__bg` quad at `resolved_z - 0.5 * LAYER_DISTANCE`.
+/// See `docs/draft/layout-stacking-z-index.md`.
+pub(crate) const LAYER_DISTANCE: f32 = 0.05;
+
 /// Drives CSS-like layout for all dirty [`LayoutComponent`] subtrees.
 ///
 /// Each tick, dirty roots are found and dispatched to the appropriate

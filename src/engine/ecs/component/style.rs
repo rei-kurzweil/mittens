@@ -277,7 +277,7 @@ pub struct StylePatch {
     pub overflow:         Option<Overflow>,
     pub z_index:          Option<Option<i32>>,
     pub background_color: Option<Option<[f32; 4]>>,
-    pub background_z:     Option<f32>,
+    pub background_z:     Option<Option<f32>>,
     pub color:            Option<Option<[f32; 4]>>,
     pub word_wrap:        Option<Option<WordWrapMode>>,
     pub word_wrap_tokens: Option<Option<Vec<String>>>,
@@ -367,9 +367,13 @@ pub struct StyleComponent {
     /// background quad (covering the padding box) as a child of this item's TC.
     /// When `None`, no background quad is created (or an existing one is removed).
     pub background_color: Option<[f32; 4]>,
-    /// Z offset of the background quad in the item TC's local space (glyph units).
-    /// Negative = behind content. Default: -0.1.
-    pub background_z: f32,
+    /// Optional override for the `__bg` quad's local Z in the item TC's frame.
+    ///
+    /// `None` (default) means layout derives the background Z from the item's
+    /// resolved stacking layer: `resolved_z - 0.5 * LAYER_DISTANCE`. `Some(z)`
+    /// pins the background to an absolute local Z, overriding the half-step
+    /// rule. See `docs/draft/layout-stacking-z-index.md`.
+    pub background_z: Option<f32>,
 
     // ── Foreground (text) color ──────────────────────────────────────────
     /// CSS `color`. Inherited by every descendant glyph via the renderable
@@ -426,7 +430,7 @@ impl Default for StyleComponent {
             overflow: Overflow::Visible,
             z_index: None,
             background_color: None,
-            background_z: -0.1,
+            background_z: None,
             color: None,
             word_wrap: None,
             word_wrap_tokens: None,

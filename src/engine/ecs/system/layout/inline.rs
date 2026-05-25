@@ -43,6 +43,7 @@ pub(crate) fn layout_items(
     let mut cursor_x_gu: f32 = 0.0;
     let mut cursor_y_gu: f32 = 0.0;
     let mut line_height_gu: f32 = 0.0;
+    let mut layer_counter: i32 = 0;
 
     for original in items {
         // Auto-width inline-block items consume the remaining inline-axis budget
@@ -67,10 +68,14 @@ pub(crate) fn layout_items(
         let content_origin_x_gu = cursor_x_gu + item.margin_left_gu + item.padding_left_gu;
         let content_origin_y_gu = cursor_y_gu + item.margin_top_gu + item.padding_top_gu;
 
-        let (tc_scale, tc_z) = world
+        let (tc_scale, authored_z) = world
             .get_component_by_id_as::<TransformComponent>(item.tc_id)
             .map(|tc| (tc.transform.scale, tc.transform.translation[2]))
             .unwrap_or(([1.0, 1.0, 1.0], 0.0));
+
+        let layer_index = super::block::resolve_layer(world, item.tc_id, &mut layer_counter);
+        let resolved_z = layer_index as f32 * super::LAYER_DISTANCE;
+        let composed_z = authored_z + resolved_z;
 
         emit.push_intent_now(
             item.tc_id,
@@ -79,7 +84,7 @@ pub(crate) fn layout_items(
                 translation: [
                     content_origin_x_gu * unit_scale,
                     -(content_origin_y_gu * unit_scale),
-                    tc_z,
+                    composed_z,
                 ],
                 rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
                 scale: tc_scale,
@@ -102,6 +107,7 @@ pub(crate) fn layout_items(
             item.box_width_gu,
             item.box_height_gu,
             unit_scale,
+            resolved_z,
         );
         sync_box_model_viz(world, emit, item, unit_scale);
         apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu, unit_scale);

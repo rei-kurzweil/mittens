@@ -74,6 +74,7 @@ fn layout_items(
 ) {
 
     let mut cursor_gu = 0.0_f32;
+    let mut layer_counter: i32 = 0;
 
     for item in items {
         cursor_gu += item.margin_top_gu;
@@ -81,11 +82,17 @@ fn layout_items(
         let content_origin_y_gu = cursor_gu + item.padding_top_gu;
         let content_origin_x_gu = item.margin_left_gu + item.padding_left_gu;
 
-        // Preserve the TC's existing local Z and scale — LayoutSystem controls X/Y only.
-        let (tc_scale, tc_z) = world
+        // LayoutSystem controls X/Y and (via stacking) Z; authored TC Z is preserved
+        // and *composed* on top of the layout-resolved layer Z so authors can still
+        // bias an item locally without losing layer ordering.
+        let (tc_scale, authored_z) = world
             .get_component_by_id_as::<TransformComponent>(item.tc_id)
             .map(|tc| (tc.transform.scale, tc.transform.translation[2]))
             .unwrap_or(([1.0, 1.0, 1.0], 0.0));
+
+        let layer_index = resolve_layer(world, item.tc_id, &mut layer_counter);
+        let resolved_z = layer_index as f32 * super::LAYER_DISTANCE;
+        let composed_z = authored_z + resolved_z;
 
         emit.push_intent_now(
             item.tc_id,
@@ -94,7 +101,7 @@ fn layout_items(
                 translation: [
                       content_origin_x_gu * unit_scale,
                     -(content_origin_y_gu * unit_scale),
-                                        tc_z,
+                                        composed_z,
                 ],
                 rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
                 scale: tc_scale,
@@ -108,7 +115,7 @@ fn layout_items(
         apply_text_color_for_item(world, emit, item.tc_id);
 
         // ── Background quad / overflow helper topology ───────────────────
-        sync_bg_quad(world, emit, item.tc_id, item.padding_left_gu, item.padding_top_gu, item.box_width_gu, item.box_height_gu, unit_scale);
+        sync_bg_quad(world, emit, item.tc_id, item.padding_left_gu, item.padding_top_gu, item.box_width_gu, item.box_height_gu, unit_scale, resolved_z);
         sync_box_model_viz(world, emit, item, unit_scale);
         apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu, unit_scale);
         let content_root = sync_overflow_topology(world, emit, item.tc_id, item.content_height_gu);
@@ -146,6 +153,31 @@ fn layout_items(
         }
 
         cursor_gu += item.box_height_gu + item.margin_bottom_gu;
+    }
+}
+
+/// Pick the stacking layer index for one styled layout item.
+///
+/// - If the item carries an explicit `Style.z_index`, use it as an absolute
+///   layer within the current layout context and bump the auto counter past it
+///   (draft "policy 2"), so later automatic siblings don't collapse under a
+///   manually elevated sibling.
+/// - Otherwise consume and advance the auto counter by one.
+pub(crate) fn resolve_layer(world: &World, tc_id: ComponentId, counter: &mut i32) -> i32 {
+    let explicit = world.children_of(tc_id).iter().find_map(|&ch| {
+        world.get_component_by_id_as::<StyleComponent>(ch)
+            .and_then(|s| s.z_index)
+    });
+    match explicit {
+        Some(z) => {
+            *counter = (*counter).max(z + 1);
+            z
+        }
+        None => {
+            let layer = *counter;
+            *counter += 1;
+            layer
+        }
     }
 }
 
@@ -322,6 +354,7 @@ pub(crate) fn sync_bg_quad(
     box_width_gu: f32,
     box_height_gu: f32,
     unit_scale: f32,
+    resolved_z: f32,
 ) {
     // Collect children to avoid holding a borrow on world during mutation.
     let children: Vec<ComponentId> = world.children_of(tc_id).to_vec();
@@ -335,11 +368,17 @@ pub(crate) fn sync_bg_quad(
         .find(|&&ch| world.component_label(ch) == Some("__bg"))
         .copied();
 
+    // Default bg sits half a layer behind the item's content layer. Authors can
+    // pin an absolute local Z via `Style { background_z = … }`; otherwise the
+    // half-step derivation keeps backgrounds behind their own content and in
+    // front of the previous sibling's background by construction.
+    let default_bg_z = resolved_z - 0.5 * super::LAYER_DISTANCE;
+
     let (needs_clip, needs_scroll_drag_surface, bg_spec) = match bg_style {
-        Some((rgba, bg_z, overflow)) => (
+        Some((rgba, bg_z_override, overflow)) => (
             matches!(overflow, Overflow::Hidden | Overflow::Scroll),
             matches!(overflow, Overflow::Scroll),
-            Some((rgba, bg_z)),
+            Some((rgba, bg_z_override.unwrap_or(default_bg_z))),
         ),
         None => (false, false, None),
     };

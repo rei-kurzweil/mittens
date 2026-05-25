@@ -1346,7 +1346,7 @@ fn apply_named_assignment(
                 return Ok(());
             }
             "background_z" => {
-                style.background_z = val_as_f32(val)?;
+                style.background_z = Some(val_as_f32(val)?);
                 return Ok(());
             }
             "color" => {
@@ -2018,7 +2018,7 @@ fn apply_call(
             "margin"      => st.margin  = EdgeInsets::all_dim(arg_size_dimension(args, 0)?),
             "margin_xy"   => st.margin  = EdgeInsets::axes_dim(arg_size_dimension(args, 0)?, arg_size_dimension(args, 1)?),
             "background_color" => st.background_color = Some(arg_f32_arr::<4>(args, 0)?),
-            "background_z" => st.background_z = arg_f32(args, 0)?,
+            "background_z" => st.background_z = Some(arg_f32(args, 0)?),
             "color" => st.color = Some(arg_f32_arr::<4>(args, 0)?),
             "flex_direction" => {
                 st.flex_direction = match arg_str(args, 0)? {

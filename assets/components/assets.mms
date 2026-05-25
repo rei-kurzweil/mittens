@@ -15,8 +15,9 @@ export fn assets(title, items) {
             Style {
                 height(6.0)
                 background_color = [0.15, 0.15, 0.15, 1.0]
+                font_size(1.5)
             }
-            T.position(2.0, 1.8, 0.05).scale(1.2, 1.2, 1.2) {
+            T.position(2.0, 1.8, 0.0) {
                 Text {
                     title
                     C.rgba(1.0, 1.0, 1.0, 1.0)
