@@ -24,7 +24,7 @@ use crate::engine::ecs::component::style::Display;
 /// would exceed `available_width`.
 pub fn layout(world: &mut World, emit: &mut dyn SignalEmitter, layout_id: ComponentId) {
     let (items, avail_w_gu, _avail_h_gu, unit_scale) = measure_items(world, layout_id);
-    layout_items(world, emit, &items, avail_w_gu, unit_scale);
+    layout_items(world, emit, &items, avail_w_gu, unit_scale, 0);
 }
 
 /// Inline-formatting-context layout over a pre-measured item list.
@@ -39,11 +39,12 @@ pub(crate) fn layout_items(
     items: &[MeasuredItem],
     avail_w_gu: f32,
     unit_scale: f32,
+    depth: i32,
 ) {
     let mut cursor_x_gu: f32 = 0.0;
     let mut cursor_y_gu: f32 = 0.0;
     let mut line_height_gu: f32 = 0.0;
-    let mut layer_counter: i32 = 0;
+    let resolved_z = depth as f32 * super::LAYER_DISTANCE;
 
     for original in items {
         // Auto-width inline-block items consume the remaining inline-axis budget
@@ -73,8 +74,6 @@ pub(crate) fn layout_items(
             .map(|tc| (tc.transform.scale, tc.transform.translation[2]))
             .unwrap_or(([1.0, 1.0, 1.0], 0.0));
 
-        let layer_index = super::block::resolve_layer(world, item.tc_id, &mut layer_counter);
-        let resolved_z = layer_index as f32 * super::LAYER_DISTANCE;
         let composed_z = authored_z + resolved_z;
 
         emit.push_intent_now(
@@ -107,7 +106,6 @@ pub(crate) fn layout_items(
             item.box_width_gu,
             item.box_height_gu,
             unit_scale,
-            resolved_z,
         );
         sync_box_model_viz(world, emit, item, unit_scale);
         apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu, unit_scale);
@@ -129,9 +127,9 @@ pub(crate) fn layout_items(
                 .iter()
                 .all(|it| matches!(it.display, Some(Display::InlineBlock | Display::Inline)));
             if all_inline_block {
-                layout_items(world, emit, &nested_items, item.content_width_gu, unit_scale);
+                layout_items(world, emit, &nested_items, item.content_width_gu, unit_scale, depth + 1);
             } else {
-                super::block::layout_items_for(world, emit, &nested_items, unit_scale);
+                super::block::layout_items_for(world, emit, &nested_items, unit_scale, depth + 1);
             }
         }
 

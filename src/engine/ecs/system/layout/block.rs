@@ -52,7 +52,7 @@ pub fn layout(
 ) {
     let (items, _avail_w, _avail_h, unit_scale) = measure_items(world, layout_id);
 
-    layout_items(world, emit, &items, unit_scale);
+    layout_items(world, emit, &items, unit_scale, 0);
 }
 
 /// Public-to-the-layout-module entry so `inline::layout_items` can recurse
@@ -62,19 +62,25 @@ pub(crate) fn layout_items_for(
     emit: &mut dyn SignalEmitter,
     items: &[MeasuredItem],
     unit_scale: f32,
+    depth: i32,
 ) {
-    layout_items(world, emit, items, unit_scale);
+    layout_items(world, emit, items, unit_scale, depth);
 }
 
+/// `depth` is the nesting depth from the LayoutRoot (0 at root). All siblings
+/// at one nesting level share the same resolved Z; descendants stack one full
+/// `LAYER_DISTANCE` per level so a child's `__bg` lands ahead of its parent's
+/// content. See `docs/draft/layout-stacking-z-index.md`.
 fn layout_items(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     items: &[MeasuredItem],
     unit_scale: f32,
+    depth: i32,
 ) {
 
     let mut cursor_gu = 0.0_f32;
-    let mut layer_counter: i32 = 0;
+    let resolved_z = depth as f32 * super::LAYER_DISTANCE;
 
     for item in items {
         cursor_gu += item.margin_top_gu;
@@ -90,8 +96,6 @@ fn layout_items(
             .map(|tc| (tc.transform.scale, tc.transform.translation[2]))
             .unwrap_or(([1.0, 1.0, 1.0], 0.0));
 
-        let layer_index = resolve_layer(world, item.tc_id, &mut layer_counter);
-        let resolved_z = layer_index as f32 * super::LAYER_DISTANCE;
         let composed_z = authored_z + resolved_z;
 
         emit.push_intent_now(
@@ -115,7 +119,7 @@ fn layout_items(
         apply_text_color_for_item(world, emit, item.tc_id);
 
         // ── Background quad / overflow helper topology ───────────────────
-        sync_bg_quad(world, emit, item.tc_id, item.padding_left_gu, item.padding_top_gu, item.box_width_gu, item.box_height_gu, unit_scale, resolved_z);
+        sync_bg_quad(world, emit, item.tc_id, item.padding_left_gu, item.padding_top_gu, item.box_width_gu, item.box_height_gu, unit_scale);
         sync_box_model_viz(world, emit, item, unit_scale);
         apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu, unit_scale);
         let content_root = sync_overflow_topology(world, emit, item.tc_id, item.content_height_gu);
@@ -146,38 +150,14 @@ fn layout_items(
                     &nested_items,
                     item.content_width_gu,
                     unit_scale,
+                    depth + 1,
                 );
             } else {
-                layout_items(world, emit, &nested_items, unit_scale);
+                layout_items(world, emit, &nested_items, unit_scale, depth + 1);
             }
         }
 
         cursor_gu += item.box_height_gu + item.margin_bottom_gu;
-    }
-}
-
-/// Pick the stacking layer index for one styled layout item.
-///
-/// - If the item carries an explicit `Style.z_index`, use it as an absolute
-///   layer within the current layout context and bump the auto counter past it
-///   (draft "policy 2"), so later automatic siblings don't collapse under a
-///   manually elevated sibling.
-/// - Otherwise consume and advance the auto counter by one.
-pub(crate) fn resolve_layer(world: &World, tc_id: ComponentId, counter: &mut i32) -> i32 {
-    let explicit = world.children_of(tc_id).iter().find_map(|&ch| {
-        world.get_component_by_id_as::<StyleComponent>(ch)
-            .and_then(|s| s.z_index)
-    });
-    match explicit {
-        Some(z) => {
-            *counter = (*counter).max(z + 1);
-            z
-        }
-        None => {
-            let layer = *counter;
-            *counter += 1;
-            layer
-        }
     }
 }
 
@@ -354,7 +334,6 @@ pub(crate) fn sync_bg_quad(
     box_width_gu: f32,
     box_height_gu: f32,
     unit_scale: f32,
-    resolved_z: f32,
 ) {
     // Collect children to avoid holding a borrow on world during mutation.
     let children: Vec<ComponentId> = world.children_of(tc_id).to_vec();
@@ -368,11 +347,11 @@ pub(crate) fn sync_bg_quad(
         .find(|&&ch| world.component_label(ch) == Some("__bg"))
         .copied();
 
-    // Default bg sits half a layer behind the item's content layer. Authors can
-    // pin an absolute local Z via `Style { background_z = … }`; otherwise the
-    // half-step derivation keeps backgrounds behind their own content and in
-    // front of the previous sibling's background by construction.
-    let default_bg_z = resolved_z - 0.5 * super::LAYER_DISTANCE;
+    // The bg quad is a child of the item TC; its translation is in the item's
+    // local frame, which already sits at the item's layer-resolved Z. So the
+    // default bg only needs the half-step offset behind its parent's content
+    // origin. `Style.background_z` overrides this absolute (still in local Z).
+    let default_bg_z = -0.5 * super::LAYER_DISTANCE;
 
     let (needs_clip, needs_scroll_drag_surface, bg_spec) = match bg_style {
         Some((rgba, bg_z_override, overflow)) => (
