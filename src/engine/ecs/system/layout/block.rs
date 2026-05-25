@@ -94,15 +94,17 @@ fn layout_items(
         let content_origin_y_gu = cursor_gu + item.padding_top_gu;
         let content_origin_x_gu = item.margin_left_gu + item.padding_left_gu;
 
-        // LayoutSystem controls X/Y and (via stacking) Z; authored TC Z is preserved
-        // and *composed* on top of the layout-resolved layer Z so authors can still
-        // bias an item locally without losing layer ordering.
-        let (tc_scale, authored_z) = world
+        // LayoutSystem owns X/Y/Z on styled item TCs. Z is overwritten with the
+        // layer-resolved value each pass; composing with the prior TC translation
+        // would drift on re-layout because we'd read back our own write as
+        // "authored". Per-item Z bias is left to `Style.z_index` (currently inert
+        // — see `docs/draft/layout-stacking-z-index.md`).
+        let tc_scale = world
             .get_component_by_id_as::<TransformComponent>(item.tc_id)
-            .map(|tc| (tc.transform.scale, tc.transform.translation[2]))
-            .unwrap_or(([1.0, 1.0, 1.0], 0.0));
+            .map(|tc| tc.transform.scale)
+            .unwrap_or([1.0, 1.0, 1.0]);
 
-        let composed_z = authored_z + resolved_z;
+        let composed_z = resolved_z;
 
         emit.push_intent_now(
             item.tc_id,

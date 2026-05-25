@@ -71,12 +71,12 @@ pub(crate) fn layout_items(
         let content_origin_x_gu = cursor_x_gu + item.margin_left_gu + item.padding_left_gu;
         let content_origin_y_gu = cursor_y_gu + item.margin_top_gu + item.padding_top_gu;
 
-        let (tc_scale, authored_z) = world
+        let tc_scale = world
             .get_component_by_id_as::<TransformComponent>(item.tc_id)
-            .map(|tc| (tc.transform.scale, tc.transform.translation[2]))
-            .unwrap_or(([1.0, 1.0, 1.0], 0.0));
+            .map(|tc| tc.transform.scale)
+            .unwrap_or([1.0, 1.0, 1.0]);
 
-        let composed_z = authored_z + resolved_z;
+        let composed_z = resolved_z;
 
         emit.push_intent_now(
             item.tc_id,
