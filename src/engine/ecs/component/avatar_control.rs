@@ -32,9 +32,9 @@ use crate::engine::ecs::component::Component;
 ///               ├── model_root  (TransformComponent, Y offset)
 ///               │     └── GLTFComponent
 ///               │           └── [armature]
-///               │                 neck_parent
+///               │                 J_Bip_C_Neck
 ///               │                   └── splice_head  ← injected by system
-///               │                         └── J_Bip_C_Neck (displaced)
+///               │                         └── J_Bip_C_Head (displaced; aim-driven by driven_t)
 ///               │                 left_lower_arm
 ///               │                   └── ControllerXR (Left, Grip)  ← moved here by system
 ///               │                         └── controller_driven_t
@@ -48,7 +48,13 @@ use crate::engine::ecs::component::Component;
 /// ```
 #[derive(Debug, Clone)]
 pub struct AvatarControlComponent {
-    /// Name of the bone to displace for head rotation. Default: "J_Bip_C_Neck".
+    /// Name of the bone to displace for head rotation. Default: "J_Bip_C_Head".
+    ///
+    /// This bone receives the HMD/Input world rotation directly via an `AimConstraint`
+    /// IK chain. Rotating the head bone (not the neck) is critical for VR/desktop:
+    /// rotating the neck twists the entire torso from the neck up, which looks wrong.
+    /// The head's rotation is isolated from the spine so the body can yaw-follow
+    /// underneath independently.
     pub head_bone: String,
 
     /// Name of the left hand bone to splice. `None` = no left hand splice.
@@ -100,9 +106,9 @@ pub struct AvatarControlComponent {
     ///   3. Re-parent any `Camera3DComponent` or `CameraXRComponent` direct children of
     ///      this AVC under this bone, giving them the bone's world transform each tick.
     ///
-    /// Typically set one joint above `head_bone`: e.g. `"J_Bip_C_Head"` when
-    /// `head_bone` is `"J_Bip_C_Neck"`.  If `None`, no auto-calibration or camera
-    /// re-parenting is performed.
+    /// Typically the same as `head_bone` (e.g. `"J_Bip_C_Head"`) so the camera
+    /// inherits both the head's world position (eye height) and rotation.
+    /// If `None`, no auto-calibration or camera re-parenting is performed.
     pub camera_bone: Option<String>,
 
     /// Explicit avatar height (metres) used to set model_root.y = -avatar_height.
@@ -238,7 +244,7 @@ impl AvatarControlComponent {
 impl Default for AvatarControlComponent {
     fn default() -> Self {
         Self {
-            head_bone: "J_Bip_C_Neck".to_string(),
+            head_bone: "J_Bip_C_Head".to_string(),
             left_hand_bone: None,
             right_hand_bone: None,
             left_upper_arm_bone: None,

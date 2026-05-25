@@ -290,7 +290,9 @@ fn main() {
     //
     // InputXRComponent drives body translation and head rotation through AvatarControlSystem.
     // AvatarControlSystem:
-    //   - Splices a TransformComponent under J_Bip_C_Neck's parent to drive head rotation.
+    //   - Splices a TransformComponent under J_Bip_C_Head's parent (the neck) to drive
+    //     head rotation directly. Rotating the head — not the neck — isolates the spine
+    //     so the torso doesn't twist with HMD yaw.
     //   - Strips rotation from model_root (body faces body_yaw, not raw HMD yaw).
     //   - Bakes the π Y handedness correction into the head rotation math.
     //   - Smoothly rotates body to follow head when yaw delta exceeds threshold.
@@ -321,7 +323,7 @@ fn main() {
     // and causes any CameraXR/Camera3D direct children of AVC to be re-parented to that bone.
     let avatar_control = universe.world.add_component(
         AvatarControlComponent::new()
-            .with_head_bone("J_Bip_C_Neck")
+            .with_head_bone("J_Bip_C_Head")
             .with_camera_bone("J_Bip_C_Head")
             .with_left_hand_bone("J_Bip_L_Hand")
             .with_right_hand_bone("J_Bip_R_Hand")

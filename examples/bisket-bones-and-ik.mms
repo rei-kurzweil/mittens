@@ -79,7 +79,7 @@ ED {
         }
         T {
             AVC {
-                head_bone("J_Bip_C_Neck")
+                head_bone("J_Bip_C_Head")
                 initial_yaw(0.0)
                 body_yaw_threshold(3.14 / 7.5)
 
@@ -88,7 +88,7 @@ ED {
                 }
             }
 
-            T.position(0, 3, 0) {
+            T.position(0, 0, 0) {
                 C3D {}
                 Pointer {}
             }

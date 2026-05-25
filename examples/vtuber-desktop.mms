@@ -156,7 +156,7 @@ ED {
 //                       ├── TransformForkTRS (body yaw pipeline root)
 //                       │     └── … → T (model_root, y = -avatar_height)
 //                       │                └── GLTF { EM }
-//                       └── [sys] splice_head  (TC injected above J_Bip_C_Neck)
+//                       └── [sys] splice_head  (TC injected above J_Bip_C_Head)
 //                                   └── IKChain { AimConstraint }
 ED {
     I.speed(1.5) {
@@ -166,7 +166,7 @@ ED {
         }
         T {
             AVC {
-                head_bone("J_Bip_C_Neck")
+                head_bone("J_Bip_C_Head")
                 initial_yaw(0.0)
                 body_yaw_threshold(3.14 / 7.5)
 

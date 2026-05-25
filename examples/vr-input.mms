@@ -109,7 +109,7 @@ ED {
     InputXR.on() {
         T {
             AVC {
-                head_bone("J_Bip_C_Neck")
+                head_bone("J_Bip_C_Head")
                 //avatar_height(1.85)
                 camera_bone("J_Bip_C_Head")
                 left_hand_bone("J_Bip_L_Hand")
