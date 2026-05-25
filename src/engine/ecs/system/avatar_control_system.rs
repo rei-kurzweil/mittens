@@ -218,7 +218,14 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         );
     }
 
-    // Discover Camera3D and CameraXR direct children of AVC.
+    // Discover camera children of AVC.  Two authoring forms accepted:
+    //   1. Bare camera as direct child:           AVC { C3D {} }
+    //   2. Camera wrapped in a T for eye offset:  AVC { T.position(0, 0.08, 0.05) { C3D {} } }
+    //
+    // In form 2, the T is the node we reparent (preserving its local transform as the
+    // eye offset relative to the head bone pivot).  In form 1, the camera reparents
+    // directly and ends up at the bone pivot — fine when the bone IS the eye position
+    // (VR with HMD-driven head bone), wrong when the bone is at the skull base.
     let camera_children: Vec<ComponentId> = world
         .children_of(id)
         .iter()
@@ -226,9 +233,15 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         .filter(|&ch| {
             let is_c3d = world.get_component_by_id_as::<Camera3DComponent>(ch).is_some();
             let is_cxr = world.get_component_by_id_as::<CameraXRComponent>(ch).is_some();
+            let wraps_cam = world.get_component_by_id_as::<TransformComponent>(ch).is_some()
+                && world.children_of(ch).iter().any(|&gc| {
+                    world.get_component_by_id_as::<Camera3DComponent>(gc).is_some()
+                        || world.get_component_by_id_as::<CameraXRComponent>(gc).is_some()
+                });
             if is_c3d { println!("[AVC] found Camera3D child {:?} — will re-parent to camera_bone", ch); }
             if is_cxr { println!("[AVC] found CameraXR child {:?} — will re-parent to camera_bone", ch); }
-            is_c3d || is_cxr
+            if wraps_cam { println!("[AVC] found T-wrapped camera child {:?} — will re-parent T to camera_bone (offset preserved)", ch); }
+            is_c3d || is_cxr || wraps_cam
         })
         .collect();
     if camera_children.is_empty() && camera_bone_id.is_some() {

@@ -80,17 +80,23 @@ ED {
         T {
             AVC {
                 head_bone("J_Bip_C_Head")
+                camera_bone("J_Bip_C_Head")
                 initial_yaw(0.0)
                 body_yaw_threshold(3.14 / 7.5)
 
                 T.position(0.0, -1.6, 0.0) {
                     GLTF.new("assets/models/bisket.8.0.glb") { EM.on() }
                 }
-            }
 
-            T.position(0, 0, 0) {
-                C3D {}
-                Pointer {}
+                // Camera reparented under J_Bip_C_Head by AVC.
+                //   - position: eye offset relative to head bone pivot (forward +Z, up +Y)
+                //   - rotation(0, π, 0): cameras render down -Z but the avatar's anatomical
+                //     forward is +Z (VRM); flip the camera 180° so its view direction matches
+                //     the avatar's forward. (CameraXR doesn't need this — OpenXR overrides pose.)
+                T.position(0.0, 0.08, 0.07).rotation(0.0, 3.14159, 0.0) {
+                    C3D {}
+                    Pointer {}
+                }
             }
         }
     }
