@@ -232,15 +232,172 @@ the avatar faces.
   doesn't always need to author a T wrapper for the eye offset.
 
 ### Body / spine FABRIK
-- [ ] Implement `IKSolver::Fabrik` in `ik_system.rs` (currently declared in
-  `ik_chain.rs` but no match arm).
-- [ ] Add `BoneMappingSystem::resolve_spine_chain(model_root, "J_Bip_C_Head")`
-  walking hips → spine → chest → upper_chest → neck → head.
-- [ ] AVC: build the FABRIK chain at init when the spine chain resolves.
-  Target = `driven_t`, end-effector = head bone, root pinned to hips.
-- [ ] Move body yaw-follow sink from `model_root` to the hips bone TC.
-- [ ] Add translation-follow for hips (xz-track `driven_t.xz` with lerp;
-  Y stays grounded — foot IK later).
+
+#### Current observable state (the symptom FABRIK fixes)
+
+Running `examples/bisket-vr-demo` in VR:
+- Eyes land at HMD position ✓ (head IK target_position_offset works)
+- Body stands at natural pose, feet on floor ✓ (model_root.y calibrated from
+  camera_bone)
+- Head bone is visibly pulled DOWN by `eye_offset.y` and BACK by
+  `eye_offset.z` from where the body's FK rest pose expects it
+- Result: head appears "further back than it should be" relative to the
+  shoulders/neck — like the avatar's head is detached and floating behind.
+
+FABRIK closes this gap by bending the spine (hips → ... → neck) so the head
+bone naturally lands at the AimConstraint-determined position WITHOUT
+shifting the body. Each spine joint redistributes a fraction of the offset.
+
+#### Implementation order
+
+**Step A — `BoneMappingSystem::resolve_spine_chain`** (`src/engine/ecs/system/bone_mapping_system.rs`)
+
+Existing `BoneMappingSystem` has `resolve_arm_chain` (hand → lower_arm →
+upper_arm) and `tc_ancestor_at_distance` (walks TC parent chain with optional
+distance filter). Mirror those for the spine.
+
+Signature:
+```rust
+pub struct ResolvedSpineChain {
+    pub head: ComponentId,
+    pub neck: ComponentId,
+    pub upper_chest: ComponentId,  // optional in some rigs
+    pub chest: ComponentId,
+    pub spine: ComponentId,
+    pub hips: ComponentId,
+    /// Ordered hips → ... → head (FABRIK convention: root first, end-effector last)
+    pub chain: Vec<ComponentId>,
+}
+
+pub fn resolve_spine_chain(
+    world: &World,
+    model_root: ComponentId,
+    head_bone_name: &str,
+    hips_bone_name: Option<&str>,        // default: "J_Bip_C_Hips"
+    explicit_intermediates: Option<&[Option<&str>]>, // override per-joint
+) -> Option<ResolvedSpineChain>;
+```
+
+Topology fallback: walk UP from head_bone via `tc_ancestor_at_distance`
+(threshold ≈ 0.03m to skip helper bones), collecting TC joints until we hit a
+named hips bone or 32-step limit. Then reverse the collection so the chain
+runs hips → head.
+
+For VRM, the expected walk yields: head ← neck ← upper_chest ← chest ← spine
+← hips (5–6 joints depending on rig).
+
+**Step B — `IKSolver::Fabrik` implementation** (`src/engine/ecs/system/ik_system.rs`)
+
+Variant already exists in `ik_chain.rs`:
+```rust
+Fabrik { max_iterations: u32, tolerance: f32 }
+```
+But `ik_system.rs::tick_chain` has no match arm — currently silently does
+nothing. Add `solve_fabrik(world, emit, root_tc, target_id, chain, max_iter, tol, weight)`.
+
+Algorithm (textbook FABRIK):
+1. Measure bone lengths between consecutive chain joints in world space
+   (current FK pose).
+2. If target within reach: iterate up to `max_iterations`, each iteration:
+   - **Forward pass**: place end-effector at target, walk back along chain
+     adjusting each joint to maintain bone length to its child.
+   - **Backward pass**: pin root joint at its original world position, walk
+     forward adjusting each joint to maintain bone length to its parent.
+   - Stop when `|end_effector_pos - target_pos| < tolerance`.
+3. If target unreachable (distance > sum of bone lengths): extend the chain
+   straight toward target (each joint along the line).
+4. Convert per-joint world positions back to local TRS:
+   - For each joint i, compute the desired direction to joint i+1 in world.
+   - Compose with the parent joint's world rotation to derive local rotation.
+   - Emit `UpdateTransform` per joint with new translation (in parent local)
+     and rotation.
+
+Subtleties:
+- Translation along bones changes the joint pose; rotation aligns the joint's
+  forward axis with the direction to the next joint.
+- Need to choose what "forward" means per joint (look at next joint).
+  For spine bones, the bone's local +Y typically points up the chain
+  (VRM convention) — use Y as the "look toward child" axis.
+- End-effector rotation: if `copy_end_rotation` style flag is desired,
+  preserve the head bone's world rotation (set by the AimConstraint that
+  runs separately on the head). Otherwise, FABRIK leaves end-effector rot
+  to be whatever its FK chain naturally produces.
+
+Easier alternative: have FABRIK only solve POSITIONS (per-joint translation
+in world via rotation of parent), and let the head AimConstraint continue to
+own head bone rotation. They compose: AimConstraint runs after FABRIK in the
+tick order, so head bone rotation gets overridden.
+
+**Step C — AVC integration** (`src/engine/ecs/system/avatar_control_system.rs`)
+
+In `try_init_splices`, after resolving head splice but before/after building
+the head IK:
+1. Call `BoneMappingSystem::resolve_spine_chain(world, model_root, &head_bone_name, hips_bone.as_deref(), ...)`.
+2. If resolved, spawn an `IKChainComponent` with:
+   - `solver: IKSolver::Fabrik { max_iterations: 8, tolerance: 0.001 }`
+   - `target_id: head_splice_id` (the splice TC AimConstraint writes — its
+     world pose is HMD - eye_offset, where the spine should reach)
+   - `end_effector_id: chain.last()` (head bone, or one-before-head if we
+     want the AimConstraint to own the head pose)
+   - `weight: 1.0`
+3. Parent the chain component under `chain[0]` (hips), since IKSystem reads
+   `parent_of(ik_id)` as the root joint.
+
+Tick order matters: FABRIK must run BEFORE the head AimConstraint so the
+chain reaches toward where the head WILL be (or after — needs decision).
+Currently IKSystem iterates all `IKChainComponent`s in arbitrary order;
+might need explicit priority or two separate ticks.
+
+**Step D — new AVC bone-mapping fields**
+
+Mirror `head_bone`/`left_hand_bone`/etc. Defaults for VRM:
+```rust
+pub hips_bone:        Option<String>,  // default None → "J_Bip_C_Hips"
+pub spine_bone:       Option<String>,  // default None → topology-derive
+pub chest_bone:       Option<String>,
+pub upper_chest_bone: Option<String>,
+pub neck_bone:        Option<String>,
+```
+With `.with_hips_bone(...)` etc. builders. MMS bindings in
+`component_registry.rs::1890+` (alongside existing `head_bone` etc.).
+
+Add to `to_mms_ast` for round-trip.
+
+**Step E — move body yaw-follow sink from `model_root` to hips**
+
+Current: `TransformForkTRS → MapRotation → QuatYawFollow → model_root` —
+rotates the entire avatar around its origin.
+
+Desired: `TransformForkTRS → MapRotation → QuatYawFollow → hips_bone_tc` —
+only hips rotates. Spine FABRIK redistributes rotation through the chain so
+upper body follows naturally without the rigid block-rotation feel.
+
+This requires the body pipeline to write directly to the hips bone's local
+transform (rotation channel). Since hips lives deep inside the model_root
+subtree (model_root → GLTF → Armature → Root → Hips), and the body pipeline
+output is currently a parent of model_root, we need to either:
+- Route the yaw-follow output through a transform pipeline whose sink is the
+  hips bone TC (rather than reparenting it), or
+- Use an `IKChain { AimConstraint, copy_position: false }` on the hips bone,
+  target = body_yaw_follow_output_t.
+
+Second option is more consistent with the head approach.
+
+**Step F — hips translation-follow**
+
+After yaw is on the hips: also need translation. As the player walks (HMD
+moves in XZ), the body should follow. Apply via a `TransformMapTranslation`
+in the body pipeline, or an `AimConstraint { copy_position: true,
+target_position_offset: (0, -avatar_height, 0) }` on hips with appropriate
+smoothing.
+
+Y stays grounded (avatar feet on floor). Foot IK is separate.
+
+#### Cleanup after FABRIK lands
+
+- Remove `AvatarBodyYawComponent` + `AvatarBodyYawSystem` (already unused).
+- Decide whether `eye_height_from_head_bone(f32)` shortcut field on AVC is
+  still useful or fully subsumed by the T-wrapper approach.
 
 ### Cleanup
 - [ ] Remove `AvatarBodyYawComponent` + `AvatarBodyYawSystem` if unused — the
@@ -255,6 +412,20 @@ the avatar faces.
 - [ ] After FABRIK lands: torso bends naturally when looking up/down/around
 
 ### Known issues
+
+**Arm IK broken (pre-existing, unrelated to this redesign).** In VR demos the
+avatar's arms render as completely invisible — likely a zero scale or
+zero-length transform somewhere in the `TwoBoneIK` solve path, or the arm
+bone chain folding in on itself. The separate-from-AVC Aim controllers (the
+cyan/red debug cubes outside the AVC subtree) track fine. So the breakage is
+specifically in how AVC wires up the in-subtree Grip controllers to the
+`TwoBoneIK { pole_direction, copy_end_rotation }` arm chain — not in OpenXR
+or controller tracking itself. Predates this redesign session; not introduced
+by any of the head/eye-offset/copy_position changes documented above. Worth
+investigating after FABRIK lands, or in parallel as a separate task. Suspect
+areas: `solve_two_bone` in `ik_system.rs` (~line 230), the `arm_left`/`arm_right`
+construction in AVC (`avatar_control_system.rs` ~line 130–160), or the
+`min_bone_length = Some(0.03)` filter in `resolve_arm_chain`.
 
 **VR head-mesh visibility when pitching.** Same root cause as the (now-fixed)
 desktop camera divergence: the head bone *pivot* sits at the skull base, while
@@ -279,3 +450,61 @@ position. Two paths:
 For the demo, `bisket-vr-demo.mms` includes a desktop overview camera
 (`CameraTarget::Window`) positioned in front of the avatar so the operator
 can see the rig from outside the headset while debugging.
+
+## Files & landmarks (cold-context reference)
+
+| Path | What lives there |
+| ---- | ---------------- |
+| `src/engine/ecs/component/avatar_control.rs` | `AvatarControlComponent` — bone-name config, eye-height fallback, runtime IDs. Add `hips_bone` etc. here. |
+| `src/engine/ecs/system/avatar_control_system.rs` | `try_init_splices` — splice/IK chain construction at first tick. Around line 240 = camera-children discovery (eye_offset extraction). Around line 300 = head IK creation. Spine FABRIK construction goes near here. |
+| `src/engine/ecs/system/bone_mapping_system.rs` | `BoneMappingSystem` — currently has `resolve_arm_chain` + `tc_ancestor_at_distance` + `find_branching_ancestor`. Add `resolve_spine_chain` mirroring the arm one. |
+| `src/engine/ecs/component/ik_chain.rs` | `IKChainComponent` + `IKSolver` enum. `Fabrik` variant exists; needs solver impl in ik_system. |
+| `src/engine/ecs/system/ik_system.rs` | `tick_chain` dispatch + `solve_aim` (line ~170) + `solve_two_bone` (line ~230). Add `solve_fabrik` here; add match arm in `tick_chain`. |
+| `src/meow_meow/component_registry.rs` | MMS bindings. AVC methods around line 1890; IK solver constructors around line 1290. |
+| `examples/bisket-vr-demo.{rs,mms}` | Primary VR test scene. mms has the AVC config; rs has bone-marker spawning (post-GLTF-spawn pattern). |
+| `examples/vr-input.{rs,mms}` | Earlier VR demo (pc-rei avatar). Same patterns. |
+| `examples/bisket-bones-and-ik.mms` | Desktop equivalent. |
+| `docs/task/mms-event-payloads-and-runtime-attach.md` | Separate task: MMS-side event handler payloads + runtime `attach()`. Independent of this work; useful for in-app debug authoring. |
+
+## Architecture context (from `CLAUDE.md` + experience this session)
+
+- **Tick order matters**: systems run in a fixed order in `SystemWorld::tick()`.
+  IKSystem ticks after `process_signals` rounds finish for animation/transform
+  — IK reads world matrices that are already up to date. Adding FABRIK does
+  not change this; it just adds another solver invocation in the IK loop.
+- **`UpdateTransform` intent vs world matrices**: IK solvers compute desired
+  world poses, then convert to local TRS, then emit `UpdateTransform` intents
+  that get drained at the next `process_signals` boundary. They don't directly
+  mutate `matrix_world`.
+- **`copy_position` in AimConstraint** writes BOTH local translation and
+  rotation. FABRIK should similarly emit per-joint UpdateTransform intents.
+- **Body pipeline = transform fork**: `TransformForkTRS` lets us tap input
+  pose channels (T, R, S) independently, transform them, and merge back. It's
+  how the body yaw-follow currently consumes `driven_t`'s rotation and emits a
+  yaw-only quat for model_root. The same machinery can be retargeted to a hips
+  bone sink.
+
+## Verification plan for FABRIK rollout
+
+1. **Implement `solve_fabrik` and unit-test in isolation.** Build a 4-joint
+   chain with known bone lengths; assert end-effector reaches target within
+   tolerance for reachable targets, lies on the line for unreachable ones.
+2. **Wire spine chain in `bisket-vr-demo` only first.** Verify in-headset that:
+   - Looking up: neck/chest visibly bend back, head stays at HMD
+   - Looking down: spine bends forward, head still at HMD
+   - Walking around: hips translate-follow, spine takes a beat to catch up
+3. **Once stable, propagate to `vr-input` (pc-rei) and `bisket-bones-and-ik`
+   (desktop).**
+4. **Cleanup**: remove `AvatarBodyYawComponent` + system.
+
+## Open questions for the fresh context
+
+- Should FABRIK own head bone rotation, or leave it to the head AimConstraint?
+  (Recommendation: leave to AimConstraint — it has the right input source and
+  the eye-offset logic. FABRIK solves positions only.)
+- What's the right FABRIK target — `driven_t` directly, or the `splice_head`
+  that AimConstraint writes? (Recommendation: `splice_head` — it already has
+  the eye_offset applied, so FABRIK aims at where the head bone *will be*.)
+- How aggressive should the body-yaw threshold be when the spine bends? The
+  visible swing from yaw-follow plus spine bend might double-count if both
+  systems chase the head independently. Test and iterate.
