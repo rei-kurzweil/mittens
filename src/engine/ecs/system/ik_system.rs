@@ -109,8 +109,8 @@ fn tick_chain(id: ComponentId, world: &World, emit: &mut dyn SignalEmitter) {
     };
 
     match solver {
-        IKSolver::AimConstraint { offset_yaw } => {
-            solve_aim(world, emit, root_tc, target_id, offset_yaw, weight);
+        IKSolver::AimConstraint { offset_yaw, copy_position } => {
+            solve_aim(world, emit, root_tc, target_id, offset_yaw, copy_position, weight);
         }
         IKSolver::TwoBoneIK { pole_direction, copy_end_rotation } => {
             // Build the 3-node chain directly: [root, first-TC-child-of-root, end_effector_id].
@@ -176,6 +176,7 @@ fn solve_aim(
     root_tc: ComponentId,
     target_id: ComponentId,
     offset_yaw: f32,
+    copy_position: bool,
     weight: f32,
 ) {
     let Some(target_tc) = world.get_component_by_id_as::<TransformComponent>(target_id) else {
@@ -183,12 +184,23 @@ fn solve_aim(
     };
     let target_world_rot = mat_to_quat(target_tc.transform.matrix_world);
     let desired_world_rot = quat_mul(target_world_rot, quat_rotation_y(offset_yaw));
+    let target_world_pos = [
+        target_tc.transform.matrix_world[3][0],
+        target_tc.transform.matrix_world[3][1],
+        target_tc.transform.matrix_world[3][2],
+    ];
 
-    let parent_world_rot = world
+    let parent_world_mat = world
         .parent_of(root_tc)
         .and_then(|p| world.get_component_by_id_as::<TransformComponent>(p))
-        .map(|t| mat_to_quat(t.transform.matrix_world))
-        .unwrap_or([0.0, 0.0, 0.0, 1.0]);
+        .map(|t| t.transform.matrix_world)
+        .unwrap_or([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]);
+    let parent_world_rot = mat_to_quat(parent_world_mat);
 
     let full_local_rot = quat_mul(quat_conjugate(parent_world_rot), desired_world_rot);
 
@@ -202,16 +214,42 @@ fn solve_aim(
         full_local_rot
     };
 
-    let (t, s) = world
+    let (cur_t, s) = world
         .get_component_by_id_as::<TransformComponent>(root_tc)
         .map(|tc| (tc.transform.translation, tc.transform.scale))
         .unwrap_or(([0.0; 3], [1.0, 1.0, 1.0]));
+
+    let local_t = if copy_position {
+        // Invert parent world matrix to get local position from target world position.
+        // Closed-form inverse of an affine TRS matrix: local_pos = R^T * (target_pos - parent_pos) / parent_scale.
+        // Easier: use the inverse-transpose of the 3x3 rotation+scale block, then translate.
+        let parent_pos = [parent_world_mat[3][0], parent_world_mat[3][1], parent_world_mat[3][2]];
+        let delta = [
+            target_world_pos[0] - parent_pos[0],
+            target_world_pos[1] - parent_pos[1],
+            target_world_pos[2] - parent_pos[2],
+        ];
+        // Apply inverse parent rotation (assuming uniform scale; for non-uniform scale this would be approximate).
+        let inv_parent_rot = quat_conjugate(parent_world_rot);
+        let local_pos = quat_rotate_vec3(inv_parent_rot, delta);
+        if weight < 1.0 {
+            [
+                cur_t[0] + (local_pos[0] - cur_t[0]) * weight,
+                cur_t[1] + (local_pos[1] - cur_t[1]) * weight,
+                cur_t[2] + (local_pos[2] - cur_t[2]) * weight,
+            ]
+        } else {
+            local_pos
+        }
+    } else {
+        cur_t
+    };
 
     emit.push_intent_now(
         root_tc,
         IntentValue::UpdateTransform {
             component_ids: vec![root_tc],
-            translation: t,
+            translation: local_t,
             rotation_quat_xyzw: local_rot,
             scale: s,
         },
@@ -576,7 +614,7 @@ mod tests {
 
         let ik_id = w.add_component(
             IKChainComponent::new(
-                IKSolver::AimConstraint { offset_yaw: 0.0 },
+                IKSolver::AimConstraint { offset_yaw: 0.0, copy_position: false },
                 pre_target,
                 pre_ee,
             )

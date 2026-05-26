@@ -4,14 +4,20 @@ use crate::engine::ecs::component::{ComponentRef, Component};
 /// Solver configuration for an `IKChainComponent`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum IKSolver {
-    /// Single-bone orientation match.
+    /// Single-bone pose match.
     ///
     /// Sets the root joint's world rotation to match the target TC's world rotation,
     /// post-multiplied by a fixed yaw offset.  Used for neck/head alignment from InputXR.
     ///
     /// `offset_yaw`: rotation applied after copying target world rotation.
     /// Use `std::f32::consts::PI` for the OpenXR (−Z forward) → VRM (+Z forward) flip.
-    AimConstraint { offset_yaw: f32 },
+    ///
+    /// `copy_position`: when true, also overrides the joint's world position to the
+    /// target's world position.  Required for HMD-driven head bones so the bone tracks
+    /// physical head translation (HMD moves forward+down when you pitch), not just
+    /// rotation.  Visually detaches the bone from its FK parent until a spine FABRIK
+    /// solver bends the chain to follow.  Default false (rotation-only behavior).
+    AimConstraint { offset_yaw: f32, copy_position: bool },
 
     /// Closed-form 2-bone IK.
     ///
@@ -124,9 +130,10 @@ impl Component for IKChainComponent {
         use crate::engine::ecs::component::ce_helpers::*;
         use crate::meow_meow::ast::Expression;
         let solver_call = match self.solver {
-            IKSolver::AimConstraint { offset_yaw } => {
-                ("aim_constraint", vec![num(offset_yaw as f64)])
-            }
+            IKSolver::AimConstraint { offset_yaw, copy_position } => (
+                "aim_constraint",
+                vec![num(offset_yaw as f64), b(copy_position)],
+            ),
             IKSolver::TwoBoneIK { pole_direction, copy_end_rotation } => (
                 "two_bone_ik",
                 vec![

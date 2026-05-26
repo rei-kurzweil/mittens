@@ -1289,6 +1289,7 @@ fn create_component(
             let solver = match ctor {
                 Some("aim_constraint") => IKSolver::AimConstraint {
                     offset_yaw: arg_f32(args, 0)?,
+                    copy_position: arg_bool(args, 1).unwrap_or(false),
                 },
                 Some("two_bone_ik") => IKSolver::TwoBoneIK {
                     pole_direction: arg_f32_arr::<3>(args, 0)?,
@@ -1298,7 +1299,7 @@ fn create_component(
                     max_iterations: arg_f32(args, 0)? as u32,
                     tolerance: arg_f32(args, 1)?,
                 },
-                _ => IKSolver::AimConstraint { offset_yaw: 0.0 },
+                _ => IKSolver::AimConstraint { offset_yaw: 0.0, copy_position: false },
             };
             // target_id and end_effector_id are runtime-wired by AvatarControlSystem;
             // pass a sentinel for now.
@@ -1899,6 +1900,7 @@ fn apply_call(
             "hand_rotation_smoothing" => *avc = avc.clone().with_hand_rotation_smoothing(arg_f32(args, 0)?),
             "camera_bone"             => *avc = avc.clone().with_camera_bone(arg_str(args, 0)?),
             "avatar_height"           => *avc = avc.clone().with_avatar_height(arg_f32(args, 0)?),
+            "eye_height_from_head_bone" => *avc = avc.clone().with_eye_height_from_head_bone(arg_f32(args, 0)?),
             _ => {}
         }
         return Ok(());

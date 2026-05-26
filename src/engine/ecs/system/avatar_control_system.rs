@@ -58,7 +58,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     let (head_bone_name, left_hand_bone, right_hand_bone,
          body_yaw_threshold, body_yaw_rate, forward_plus_z,
          initial_body_yaw, hand_rotation_smoothing, skip_body_pipeline,
-         camera_bone_name, avatar_height_override,
+         camera_bone_name, avatar_height_override, eye_height_from_head_bone,
          left_upper_arm_bone, left_lower_arm_bone,
          right_upper_arm_bone, right_lower_arm_bone) = {
         let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
@@ -76,6 +76,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             c.skip_body_pipeline,
             c.camera_bone.clone(),
             c.avatar_height,
+            c.eye_height_from_head_bone,
             c.left_upper_arm_bone.clone(),
             c.left_lower_arm_bone.clone(),
             c.right_upper_arm_bone.clone(),
@@ -206,6 +207,11 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         None
     };
 
+    // Shift the avatar down so the EYES (not the head bone pivot) land at
+    // driven_t's world Y.  `eye_height_from_head_bone` is the gap between
+    // the head bone pivot and the eye line (~0.08 m for VRM).
+    let model_root_y = model_root_y.map(|y| y - eye_height_from_head_bone.unwrap_or(0.0));
+
     if let Some(y) = model_root_y {
         emit.push_intent_now(
             model_root_id,
@@ -297,7 +303,11 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // -----------------------------------------------------------------------
     let head_ik_offset_yaw = if forward_plus_z { 0.0 } else { std::f32::consts::PI };
     let head_ik_id = world.add_component(IKChainComponent::new(
-        IKSolver::AimConstraint { offset_yaw: head_ik_offset_yaw },
+        // copy_position: true — head bone tracks HMD translation as well as rotation,
+        // so it stays glued to driven_t when the player physically tilts (which moves
+        // the HMD forward/down/back relative to a static neck pivot).  Without this
+        // the head pivots in place and the HMD/camera diverges from the head bone.
+        IKSolver::AimConstraint { offset_yaw: head_ik_offset_yaw, copy_position: true },
         driven_t_id,
         head_splice_id,
     ));

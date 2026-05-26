@@ -116,6 +116,20 @@ pub struct AvatarControlComponent {
     /// Use this when the camera bone lookup fails or the mesh height is known in advance.
     pub avatar_height: Option<f32>,
 
+    /// Vertical distance (metres) from the head bone pivot to the eyes.
+    ///
+    /// VRM `J_Bip_C_Head` pivot sits at the skull base; the eye line is typically
+    /// ~0.08 m above that.  When this is set, AVC shifts `model_root.y` down by
+    /// this amount so the EYES (not the bone pivot) land at `driven_t`'s world Y
+    /// — i.e. at HMD height in VR, or at the desktop input height.
+    ///
+    /// Without this, the avatar's eyes sit above the HMD eye position and the
+    /// face/hair mesh swings into the XR camera frustum when pitching down.
+    ///
+    /// Applies on top of either `camera_bone` auto-calibration or
+    /// `avatar_height` override.  Default: `None` (no adjustment).
+    pub eye_height_from_head_bone: Option<f32>,
+
     // Runtime IDs set by AvatarControlSystem on first tick:
     pub(crate) splice_head:          Option<ComponentId>,
     pub(crate) displaced_head:       Option<ComponentId>,
@@ -239,6 +253,13 @@ impl AvatarControlComponent {
         self.avatar_height = Some(height);
         self
     }
+
+    /// Shift `model_root.y` down so the avatar's EYES (not the head bone pivot)
+    /// land at `driven_t`'s world Y.  Default eye offset for VRM is ~0.08.
+    pub fn with_eye_height_from_head_bone(mut self, dy: f32) -> Self {
+        self.eye_height_from_head_bone = Some(dy);
+        self
+    }
 }
 
 impl Default for AvatarControlComponent {
@@ -258,6 +279,7 @@ impl Default for AvatarControlComponent {
             hand_rotation_smoothing: None,
             camera_bone: None,
             avatar_height: None,
+            eye_height_from_head_bone: None,
             splice_head: None,
             displaced_head: None,
             splice_left_hand: None,
@@ -307,6 +329,9 @@ impl Component for AvatarControlComponent {
         }
         if let Some(h) = self.avatar_height {
             c = c.with_call("avatar_height", vec![num(h as f64)]);
+        }
+        if let Some(dy) = self.eye_height_from_head_bone {
+            c = c.with_call("eye_height_from_head_bone", vec![num(dy as f64)]);
         }
         c
     }
