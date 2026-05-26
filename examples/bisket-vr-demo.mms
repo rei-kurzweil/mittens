@@ -33,7 +33,9 @@ RendererSettings.msaa_off() {
     window_size(320, 240)
 }
 
-BGC.rgba(0.62, 0.80, 1.00, 1.0)
+BGC {
+    C.rgba(1.0, 0.65, 0.75, 1.0)
+}
 AL.rgb(0.18, 0.18, 0.22)
 
 RenderGraph {
@@ -95,7 +97,6 @@ ED {
                 right_hand_bone("J_Bip_R_Hand")
                 initial_yaw(3.14159)
                 hand_rotation_smoothing(220.0)
-                head_ik_eye_height(0.04)
 
                 T {
                     GLTF.new("assets/models/bisket.8.0.glb") { EM.on() }
@@ -104,12 +105,12 @@ ED {
                 // Camera wrapped in T(eye_offset). The T's translation is the
                 // eye position relative to the head bone pivot (head-local
                 // frame; +Y up, +Z forward). AVC discovers it during init and
-                // reparents the T under J_Bip_C_Head. This position is used for
-                // camera placement only; it does NOT affect how the spine bends.
-                // The head IK targeting (spine bending) is controlled separately
-                // via head_ik_eye_height(0.04) above, allowing the camera to be
-                // positioned independently from the IK aim point.
-                T.position(0.0, 0.2, 0.1) {
+                // reparents the T under J_Bip_C_Head.
+                // This authored offset is used to place the head pivot relative
+                // to the fixed HMD pose AND to offset the whole avatar baseline,
+                // so changing it moves body/neck together instead of crushing the
+                // upper torso with a head-only correction.
+                T.position(0.0, 0.08, 0.12) {
                     CXR { Pointer {} }
                 }
                 
@@ -204,3 +205,27 @@ I.speed(1.0) {
 
 // --- OpenXR runtime ---
 XR.on()
+
+
+// pink yellow and orange lighting
+T.position(0, 2, 0) {
+    DL {
+        intensity(0.8)
+        color(1.0, 0.45, 0.85)
+    }
+}
+
+
+T.position(-1, -1, 0) {
+    DL {
+        intensity(0.8)
+        color(1.0, 0.9, 0.15)
+    }
+}
+
+T.position(1, -1, 0) {
+    DL {
+        intensity(0.8)
+        color(1.0, 0.6, 0.15)
+    }
+}

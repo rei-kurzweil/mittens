@@ -3,7 +3,7 @@ use cat_engine::engine::ecs::component::{
     RaycastableComponent, RenderableComponent, TransformComponent,
 };
 use cat_engine::engine::ecs::{ComponentId, EventSignal, Signal, SignalEmitter, SignalKind, World};
-use cat_engine::utils::math::mat_to_quat;
+use cat_engine::utils::math::{mat_to_quat, quat_rotate_vec3, quat_rotation_y};
 use cat_engine::{engine, meow_meow, utils};
 use std::sync::OnceLock;
 
@@ -31,6 +31,16 @@ struct DumpTargets {
     driven_t: ComponentId,
     /// splice_head — runtime AimConstraint sink (parent of head_bone).
     splice_head: ComponentId,
+    /// Head bone for head-local camera offset checks.
+    head_bone: ComponentId,
+    /// Upper chest (if found) for torso tilt diagnostics.
+    upper_chest: Option<ComponentId>,
+    /// Transform wrapper parent of CameraXR (if authored as T { CXR }).
+    camera_wrapper_t: Option<ComponentId>,
+    /// Authored camera offset in head-local frame from the wrapper transform.
+    authored_eye_offset_head_local: [f32; 3],
+    /// OpenXR vs avatar forward-axis mapping used by AVC.
+    head_ik_offset_yaw: f32,
 }
 
 static DUMP_TARGETS: OnceLock<DumpTargets> = OnceLock::new();
@@ -52,6 +62,14 @@ fn world_rot_quat(world: &World, id: ComponentId) -> [f32; 4] {
         .unwrap_or([0.0, 0.0, 0.0, 1.0])
 }
 
+fn v3_len(v: [f32; 3]) -> f32 {
+    (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+}
+
+fn deg(rad: f32) -> f32 {
+    rad * (180.0 / std::f32::consts::PI)
+}
+
 fn on_dump_click(
     world: &mut World,
     _emit: &mut dyn SignalEmitter,
@@ -65,6 +83,64 @@ fn on_dump_click(
     let driven_p = world_pos(world, targets.driven_t);
     let driven_q = world_rot_quat(world, targets.driven_t);
     let splice_p = world_pos(world, targets.splice_head);
+    let head_p = world_pos(world, targets.head_bone);
+    let head_q = world_rot_quat(world, targets.head_bone);
+
+    // Expected head pivot from HMD pose + authored eye offset convention.
+    let neg_eye = [
+        -targets.authored_eye_offset_head_local[0],
+        -targets.authored_eye_offset_head_local[1],
+        -targets.authored_eye_offset_head_local[2],
+    ];
+    let head_target_offset_local =
+        quat_rotate_vec3(quat_rotation_y(targets.head_ik_offset_yaw), neg_eye);
+    let head_target_offset_world = quat_rotate_vec3(driven_q, head_target_offset_local);
+    let expected_splice = [
+        driven_p[0] + head_target_offset_world[0],
+        driven_p[1] + head_target_offset_world[1],
+        driven_p[2] + head_target_offset_world[2],
+    ];
+    let splice_err = [
+        splice_p[0] - expected_splice[0],
+        splice_p[1] - expected_splice[1],
+        splice_p[2] - expected_splice[2],
+    ];
+
+    // Camera-wrapper vs head local-offset consistency check.
+    let mut cam_rel_report = String::from("camera_wrapper: <none>");
+    if let Some(cam_t) = targets.camera_wrapper_t {
+        let cam_p = world_pos(world, cam_t);
+        let expected_cam_world_off = quat_rotate_vec3(head_q, targets.authored_eye_offset_head_local);
+        let expected_cam = [
+            head_p[0] + expected_cam_world_off[0],
+            head_p[1] + expected_cam_world_off[1],
+            head_p[2] + expected_cam_world_off[2],
+        ];
+        let cam_err = [
+            cam_p[0] - expected_cam[0],
+            cam_p[1] - expected_cam[1],
+            cam_p[2] - expected_cam[2],
+        ];
+        cam_rel_report = format!(
+            "camera_wrapper  pos=[{:+.3},{:+.3},{:+.3}]  expected_from_head=[{:+.3},{:+.3},{:+.3}]  err=[{:+.3},{:+.3},{:+.3}] |err|={:.4}m",
+            cam_p[0], cam_p[1], cam_p[2],
+            expected_cam[0], expected_cam[1], expected_cam[2],
+            cam_err[0], cam_err[1], cam_err[2],
+            v3_len(cam_err)
+        );
+    }
+
+    // Torso tilt diagnostic (forward pitch of upper chest).
+    let mut torso_report = String::from("upper_chest_tilt: <not found>");
+    if let Some(upper_chest) = targets.upper_chest {
+        let chest_q = world_rot_quat(world, upper_chest);
+        let fwd = quat_rotate_vec3(chest_q, [0.0, 0.0, 1.0]);
+        let pitch_deg = deg(fwd[1].atan2((fwd[0] * fwd[0] + fwd[2] * fwd[2]).sqrt()));
+        torso_report = format!(
+            "upper_chest_fwd=[{:+.3},{:+.3},{:+.3}] pitch={:+.2}deg",
+            fwd[0], fwd[1], fwd[2], pitch_deg
+        );
+    }
 
     println!("\n================ BONE DUMP (click) ================");
     println!(
@@ -73,9 +149,14 @@ fn on_dump_click(
         driven_q[0], driven_q[1], driven_q[2], driven_q[3],
     );
     println!(
-        "splice_head  pos=[{:+.3},{:+.3},{:+.3}]  (= AimConstraint output, head pivot)",
+        "splice_head  pos=[{:+.3},{:+.3},{:+.3}]  expected=[{:+.3},{:+.3},{:+.3}]  err=[{:+.3},{:+.3},{:+.3}] |err|={:.4}m",
         splice_p[0], splice_p[1], splice_p[2],
+        expected_splice[0], expected_splice[1], expected_splice[2],
+        splice_err[0], splice_err[1], splice_err[2],
+        v3_len(splice_err),
     );
+    println!("{}", cam_rel_report);
+    println!("{}", torso_report);
     println!("\n  {:<22}  {:>7}  {:>7}  {:>7}     {:>+7}  {:>+7}  {:>+7}",
              "bone", "x", "y", "z", "Δx_to_drv", "Δy_to_drv", "Δz_to_drv");
     let mut prev_pos: Option<[f32; 3]> = None;
@@ -211,6 +292,11 @@ fn main() {
         });
         if let Some(avc_id) = avc_id_opt {
             let driven_t = universe.world.parent_of(avc_id).unwrap_or(avc_id);
+            let head_ik_offset_yaw = universe
+                .world
+                .get_component_by_id_as::<AvatarControlComponent>(avc_id)
+                .map(|c| if c.forward_plus_z { 0.0 } else { std::f32::consts::PI })
+                .unwrap_or(std::f32::consts::PI);
 
             // Find each bone under any root (model_root is unique per avatar here).
             let mut bones: Vec<(String, ComponentId)> = Vec::new();
@@ -229,7 +315,45 @@ fn main() {
                 .and_then(|(_, head)| universe.world.parent_of(*head))
                 .unwrap_or(avc_id);
 
-            let _ = DUMP_TARGETS.set(DumpTargets { bones, driven_t, splice_head });
+            let head_bone = bones
+                .iter()
+                .find(|(n, _)| n == "J_Bip_C_Head")
+                .map(|(_, id)| *id)
+                .unwrap_or(splice_head);
+
+            let upper_chest = bones
+                .iter()
+                .find(|(n, _)| n == "J_Bip_C_UpperChest")
+                .map(|(_, id)| *id);
+
+            // Find CameraXR + its transform wrapper to recover authored eye offset.
+            let cxr_id = universe.world.all_components().find(|&cid| {
+                universe
+                    .world
+                    .get_component_by_id_as::<cat_engine::engine::ecs::component::CameraXRComponent>(cid)
+                    .is_some()
+            });
+            let camera_wrapper_t = cxr_id.and_then(|cid| {
+                universe
+                    .world
+                    .parent_of(cid)
+                    .filter(|&p| universe.world.get_component_by_id_as::<TransformComponent>(p).is_some())
+            });
+            let authored_eye_offset_head_local = camera_wrapper_t
+                .and_then(|t| universe.world.get_component_by_id_as::<TransformComponent>(t))
+                .map(|t| t.transform.translation)
+                .unwrap_or([0.0, 0.0, 0.0]);
+
+            let _ = DUMP_TARGETS.set(DumpTargets {
+                bones,
+                driven_t,
+                splice_head,
+                head_bone,
+                upper_chest,
+                camera_wrapper_t,
+                authored_eye_offset_head_local,
+                head_ik_offset_yaw,
+            });
 
             // Spawn the button.  Position chosen so it's reachable in-VR from
             // a standing pose: 0.35 m to the right, hip-height, slightly out.
