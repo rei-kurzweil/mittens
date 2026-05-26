@@ -106,7 +106,7 @@ ED {
                 // reparents the T under J_Bip_C_Head, AND uses the translation
                 // as the head IK target_position_offset so the head bone pulls
                 // down to land the eye mesh exactly at the HMD position.
-                T.position(0.0, 0.14, 0.12) {
+                T.position(0.0, 0.14, 0.07) {
                     CXR { Pointer {} }
                 }
                 

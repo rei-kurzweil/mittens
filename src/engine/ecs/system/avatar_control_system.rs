@@ -208,12 +208,11 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         None
     };
 
-    // NOTE: `eye_height_from_head_bone` is intentionally NOT applied here.
-    // It now only affects the head IK target (below), shifting the head bone down
-    // by eye_height so the eye mesh lines up with the HMD.  The body stays at the
-    // natural calibration so the neck/chest are at their FK-rest world Y; the
-    // visible gap between the head and neck is what spine FABRIK will close.
-
+    // model_root.y calibrated from camera_bone (or avatar_height override) only.
+    // The T { camera } eye offset is intentionally NOT applied to model_root — it
+    // exists to relate the camera to the head bone, not to translate the body.
+    // The visible gap between the head bone (placed by AimConstraint at HMD - eye_offset)
+    // and the body's FK rest position is what spine FABRIK is meant to close.
     if let Some(y) = model_root_y {
         emit.push_intent_now(
             model_root_id,

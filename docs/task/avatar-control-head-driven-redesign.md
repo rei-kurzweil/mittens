@@ -118,6 +118,24 @@ positions the camera directly via parent inheritance) and VR (where OpenXR
 overrides the camera pose, so the T translation is consumed by AVC as a
 declaration of where the eye sits, used to drop the head IK target).
 
+### Step 3f — body-shift attempt → reverted
+
+First attempt shifted `model_root.translation` by `head_target_offset` so the
+body's FK head position would match the AimConstraint head position. Got the Z
+sign wrong (didn't account for the body's `initial_yaw=π` rotation flipping
+the translation in world space), so the head appeared *further* back from the
+body, not closer. Reverted.
+
+Decision (Rei): `T { camera }` translation should ONLY affect the head-vs-camera
+relationship (head IK target), NOT the body. The visible head/neck gap is left
+as-is — it's exactly the work item that spine FABRIK is meant to solve. The
+body stays at the natural Y-only calibration from `camera_bone`.
+
+- `src/engine/ecs/system/avatar_control_system.rs`
+  - Reverted to: `model_root.translation = [0, y, 0]` (Y-only from camera_bone).
+  - `head_target_offset` is computed from `eye_offset_head_local` and applied
+    to the head IK only.
+
 ### Step 3d — overlay-routed bone markers in `bisket-vr-demo`
 
 Bone markers were emissive but occluded by the avatar's head/body mesh in
