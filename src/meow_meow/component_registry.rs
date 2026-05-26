@@ -1290,6 +1290,8 @@ fn create_component(
                 Some("aim_constraint") => IKSolver::AimConstraint {
                     offset_yaw: arg_f32(args, 0)?,
                     copy_position: arg_bool(args, 1).unwrap_or(false),
+                    target_position_offset: arg_f32_arr::<3>(args, 2)
+                        .unwrap_or([0.0, 0.0, 0.0]),
                 },
                 Some("two_bone_ik") => IKSolver::TwoBoneIK {
                     pole_direction: arg_f32_arr::<3>(args, 0)?,
@@ -1299,7 +1301,11 @@ fn create_component(
                     max_iterations: arg_f32(args, 0)? as u32,
                     tolerance: arg_f32(args, 1)?,
                 },
-                _ => IKSolver::AimConstraint { offset_yaw: 0.0, copy_position: false },
+                _ => IKSolver::AimConstraint {
+                    offset_yaw: 0.0,
+                    copy_position: false,
+                    target_position_offset: [0.0, 0.0, 0.0],
+                },
             };
             // target_id and end_effector_id are runtime-wired by AvatarControlSystem;
             // pass a sentinel for now.

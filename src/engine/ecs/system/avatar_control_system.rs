@@ -6,6 +6,7 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::system::bone_mapping_system::BoneMappingSystem;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
+use crate::utils::math::{quat_rotate_vec3, quat_rotation_y};
 
 #[derive(Debug, Default)]
 pub struct AvatarControlSystem;
@@ -207,10 +208,11 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         None
     };
 
-    // Shift the avatar down so the EYES (not the head bone pivot) land at
-    // driven_t's world Y.  `eye_height_from_head_bone` is the gap between
-    // the head bone pivot and the eye line (~0.08 m for VRM).
-    let model_root_y = model_root_y.map(|y| y - eye_height_from_head_bone.unwrap_or(0.0));
+    // NOTE: `eye_height_from_head_bone` is intentionally NOT applied here.
+    // It now only affects the head IK target (below), shifting the head bone down
+    // by eye_height so the eye mesh lines up with the HMD.  The body stays at the
+    // natural calibration so the neck/chest are at their FK-rest world Y; the
+    // visible gap between the head and neck is what spine FABRIK will close.
 
     if let Some(y) = model_root_y {
         emit.push_intent_now(
@@ -226,33 +228,57 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
 
     // Discover camera children of AVC.  Two authoring forms accepted:
     //   1. Bare camera as direct child:           AVC { C3D {} }
-    //   2. Camera wrapped in a T for eye offset:  AVC { T.position(0, 0.08, 0.05) { C3D {} } }
+    //   2. Camera wrapped in a T for eye offset:  AVC { T.position(0, 0.08, 0.07) { C3D {} } }
     //
-    // In form 2, the T is the node we reparent (preserving its local transform as the
-    // eye offset relative to the head bone pivot).  In form 1, the camera reparents
-    // directly and ends up at the bone pivot — fine when the bone IS the eye position
-    // (VR with HMD-driven head bone), wrong when the bone is at the skull base.
-    let camera_children: Vec<ComponentId> = world
+    // In form 2, the T is the node we reparent under `camera_bone`, preserving its
+    // local transform as the eye offset (in head-local frame).  We also record that
+    // translation and use it to drive the head IK's `target_position_offset` so the
+    // head bone pulls down to land the eyes at the HMD/input position.
+    //
+    // For each camera child we record (node_to_reparent, eye_offset_head_local):
+    //   - bare camera → (cam, [0,0,0])      — no offset; bone pivot IS eye position
+    //   - T { cam }   → (T,   T.translation) — T translation = eye offset
+    let camera_children: Vec<(ComponentId, [f32; 3])> = world
         .children_of(id)
         .iter()
         .copied()
-        .filter(|&ch| {
+        .filter_map(|ch| {
             let is_c3d = world.get_component_by_id_as::<Camera3DComponent>(ch).is_some();
             let is_cxr = world.get_component_by_id_as::<CameraXRComponent>(ch).is_some();
-            let wraps_cam = world.get_component_by_id_as::<TransformComponent>(ch).is_some()
-                && world.children_of(ch).iter().any(|&gc| {
+            if is_c3d || is_cxr {
+                println!("[AVC] found bare camera child {:?} — re-parent to camera_bone (no eye offset)", ch);
+                return Some((ch, [0.0, 0.0, 0.0]));
+            }
+            // T-wrapped form: a TransformComponent whose subtree contains a camera.
+            if let Some(tc) = world.get_component_by_id_as::<TransformComponent>(ch) {
+                let wraps_cam = world.children_of(ch).iter().any(|&gc| {
                     world.get_component_by_id_as::<Camera3DComponent>(gc).is_some()
                         || world.get_component_by_id_as::<CameraXRComponent>(gc).is_some()
                 });
-            if is_c3d { println!("[AVC] found Camera3D child {:?} — will re-parent to camera_bone", ch); }
-            if is_cxr { println!("[AVC] found CameraXR child {:?} — will re-parent to camera_bone", ch); }
-            if wraps_cam { println!("[AVC] found T-wrapped camera child {:?} — will re-parent T to camera_bone (offset preserved)", ch); }
-            is_c3d || is_cxr || wraps_cam
+                if wraps_cam {
+                    let eye_offset = tc.transform.translation;
+                    println!("[AVC] found T-wrapped camera child {:?} — eye_offset = {:?}", ch, eye_offset);
+                    return Some((ch, eye_offset));
+                }
+            }
+            None
         })
         .collect();
     if camera_children.is_empty() && camera_bone_id.is_some() {
         println!("[AVC] WARNING: camera_bone set but no Camera3D/CameraXR direct children of AVC found");
     }
+
+    // Derive the eye offset (head-local) for the head IK target_position_offset.
+    //   priority 1: first non-zero T-wrapper translation among camera_children
+    //                (the T's translation IS the camera-relative-to-head-bone offset)
+    //   priority 2: explicit eye_height_from_head_bone fallback (Y only)
+    //   priority 3: [0, 0, 0] — head bone pivot IS the eye position (e.g., when
+    //                the avatar's head bone happens to be at eye level already)
+    let eye_offset_head_local: [f32; 3] = camera_children
+        .iter()
+        .map(|&(_, off)| off)
+        .find(|off| off != &[0.0, 0.0, 0.0])
+        .unwrap_or([0.0, eye_height_from_head_bone.unwrap_or(0.0), 0.0]);
 
     // Store runtime IDs (body_pipeline_id stored after pipeline creation below).
     if let Some(c) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
@@ -302,12 +328,25 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // each tick via IKSystem — reads driven_t world rot, applies handedness flip.
     // -----------------------------------------------------------------------
     let head_ik_offset_yaw = if forward_plus_z { 0.0 } else { std::f32::consts::PI };
+    // target_position_offset (in DRIVEN_T local frame) — derived from eye_offset_head_local:
+    //   head_bone_world = driven_t_world + R(driven_t_rot) * target_offset
+    //   want: camera_world = head_bone_world + R(head_bone_rot) * eye_offset = driven_t_world
+    //   solve: target_offset = R(rot_y(offset_yaw)) * -eye_offset
+    // For VR (offset_yaw=π): X,Z flip but Y stays — so Y-only offsets like (0, 0.08, 0)
+    // give target_offset = (0, -0.08, 0) regardless of mode; depth (Z) flips between
+    // desktop and VR because the avatar/HMD forward axes differ.
+    let neg_eye = [-eye_offset_head_local[0], -eye_offset_head_local[1], -eye_offset_head_local[2]];
+    let head_target_offset = quat_rotate_vec3(quat_rotation_y(head_ik_offset_yaw), neg_eye);
     let head_ik_id = world.add_component(IKChainComponent::new(
         // copy_position: true — head bone tracks HMD translation as well as rotation,
         // so it stays glued to driven_t when the player physically tilts (which moves
         // the HMD forward/down/back relative to a static neck pivot).  Without this
         // the head pivots in place and the HMD/camera diverges from the head bone.
-        IKSolver::AimConstraint { offset_yaw: head_ik_offset_yaw, copy_position: true },
+        IKSolver::AimConstraint {
+            offset_yaw: head_ik_offset_yaw,
+            copy_position: true,
+            target_position_offset: head_target_offset,
+        },
         driven_t_id,
         head_splice_id,
     ));
@@ -383,9 +422,9 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // under the camera bone so they inherit its world transform each tick.
     // -----------------------------------------------------------------------
     if let Some(cam_bone_id) = camera_bone_id {
-        for cam in &camera_children {
+        for &(cam, _eye_offset) in &camera_children {
             println!("[AVC] re-parenting camera {:?} under camera_bone {:?}", cam, cam_bone_id);
-            emit_attach(emit, cam_bone_id, *cam);
+            emit_attach(emit, cam_bone_id, cam);
         }
     } else if !camera_children.is_empty() {
         println!("[AVC] WARNING: camera children found but camera_bone not resolved — no re-parenting");

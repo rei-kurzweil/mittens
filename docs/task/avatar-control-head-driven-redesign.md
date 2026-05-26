@@ -59,6 +59,75 @@ Only the head bone rotates; spine stays still until a body yaw-follow kicks in.
     preserving its local transform as the eye offset relative to the head
     bone pivot.
 
+### Step 3c — AimConstraint `target_position_offset` (eye-height applied to head only)
+
+After `copy_position` landed, the head bone pivot was at the HMD position — but
+the eye mesh sits ~8 cm above the bone pivot, so the camera (= HMD) was looking
+out from the chin/jaw, with the face mesh visible above the camera. The
+existing `eye_height_from_head_bone(0.08)` was dropping the *entire avatar* via
+`model_root.y`, which only affected the FK rest pose of the body; once
+`copy_position` started overriding the head bone, the eye-offset on `model_root`
+no longer shifted the head and was effectively just lowering the body.
+
+Insight (Rei): the eye-height knob should translate the head *relative to the
+HMD driver*, not move the whole character. Implemented by giving `AimConstraint`
+a target-local position offset and removing the `model_root.y` subtraction.
+
+- `src/engine/ecs/component/ik_chain.rs`
+  - `IKSolver::AimConstraint { offset_yaw, copy_position, target_position_offset }`
+    — new `[f32; 3]` field, applied in the target's local frame before copying
+    its world position into the joint. Ignored when `copy_position == false`.
+- `src/engine/ecs/system/ik_system.rs`
+  - `solve_aim` rotates the offset by the target's world rotation, then adds
+    it to the target's world position. For an HMD target with `(0, -eye_h, 0)`
+    this shifts the bone down along the HMD's local Y so the eye mesh (above
+    the pivot in head-local) lines up with the HMD.
+- `src/engine/ecs/system/avatar_control_system.rs`
+  - AVC head IK now passes
+    `target_position_offset = (0, -eye_height_from_head_bone.unwrap_or(0.0), 0)`.
+  - Removed the `model_root.y -= eye_height` subtraction. Body stays at the
+    natural calibration (head bone FK rest = HMD); the visible head/neck gap
+    is what spine FABRIK will close.
+- `src/meow_meow/component_registry.rs`
+  - `aim_constraint(offset_yaw, copy_position?, target_position_offset?)` —
+    third arg optional, defaults to `(0,0,0)`.
+
+### Step 3e — eye offset sourced from camera-wrapper T (one source of truth)
+
+Insight (Rei): the eye offset is semantically *where the camera sits relative to
+the head bone pivot*. So it should live on the camera's wrapper T (which already
+exists for the desktop forward-axis flip), and AVC should pick it up — not be a
+separate scalar field. Depth (Z) also matters, so a vec3 is needed.
+
+- `src/engine/ecs/system/avatar_control_system.rs`
+  - Camera-children discovery now returns `(node_to_reparent, eye_offset_head_local)`:
+    - bare `C3D`/`CXR` → eye_offset = `[0, 0, 0]`
+    - `T { camera }` → eye_offset = T's local translation
+  - Eye offset priority: first non-zero T-wrapper translation → fallback
+    `eye_height_from_head_bone(f32)` (Y only) → `[0,0,0]`.
+  - Head IK `target_position_offset` derived as
+    `R(rot_y(head_ik_offset_yaw)) * -eye_offset_head_local`. For VR the X/Z
+    flip; Y is preserved across modes.
+- `examples/bisket-vr-demo.mms`
+  - `CXR` now wrapped in `T.position(0, 0.08, 0.07) { CXR { ... } }`.
+  - `eye_height_from_head_bone(...)` line removed — the T translation is the
+    single source of truth.
+
+Eye offset semantics now match between desktop (where the T translation
+positions the camera directly via parent inheritance) and VR (where OpenXR
+overrides the camera pose, so the T translation is consumed by AVC as a
+declaration of where the eye sits, used to drop the head IK target).
+
+### Step 3d — overlay-routed bone markers in `bisket-vr-demo`
+
+Bone markers were emissive but occluded by the avatar's head/body mesh in
+first-person VR. Wrapping each marker in an `OverlayComponent` routes its
+subtree into the overlay render pass (drawn after all other phases), so the
+markers are visible through the mesh — useful for visualising where each bone
+actually sits relative to the XR camera.
+
+Topology per marker: `bone → OV → T(scale) → R.cube { C, EM, Raycastable }`.
+
 ### Step 3b — AimConstraint copy_position (head bone tracks HMD translation)
 
 In VR, physically pitching your head moves the HMD forward+down (your real head

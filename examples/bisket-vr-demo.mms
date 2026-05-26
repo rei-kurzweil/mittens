@@ -91,10 +91,6 @@ ED {
             AVC {
                 head_bone("J_Bip_C_Head")
                 camera_bone("J_Bip_C_Head")
-                // Drop the avatar by ~8cm so the EYES (not the skull-base bone
-                // pivot) sit at HMD height. Without this the face/hair pokes
-                // into the XR camera frustum when pitching down.
-                eye_height_from_head_bone(0.14)
                 left_hand_bone("J_Bip_L_Hand")
                 right_hand_bone("J_Bip_R_Hand")
                 initial_yaw(3.14159)
@@ -104,10 +100,15 @@ ED {
                     GLTF.new("assets/models/bisket.8.0.glb") { EM.on() }
                 }
 
-                // CXR direct child — re-parented under J_Bip_C_Head by AVC.
-                // OpenXR overrides pose so the 180° camera flip (needed on
-                // desktop C3D) is unnecessary here.
-                CXR { Pointer {} }
+                // Camera wrapped in T(eye_offset). The T's translation IS the
+                // eye position relative to the head bone pivot (head-local
+                // frame; +Y up, +Z forward). AVC discovers it during init,
+                // reparents the T under J_Bip_C_Head, AND uses the translation
+                // as the head IK target_position_offset so the head bone pulls
+                // down to land the eye mesh exactly at the HMD position.
+                T.position(0.0, 0.14, 0.12) {
+                    CXR { Pointer {} }
+                }
                 
                 // Tracked Grip controllers — re-parented to lower-arm bones
                 // by AVC, drive J_Bip_{L,R}_Hand via TwoBoneIK.

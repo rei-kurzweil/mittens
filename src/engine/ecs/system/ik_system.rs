@@ -109,8 +109,17 @@ fn tick_chain(id: ComponentId, world: &World, emit: &mut dyn SignalEmitter) {
     };
 
     match solver {
-        IKSolver::AimConstraint { offset_yaw, copy_position } => {
-            solve_aim(world, emit, root_tc, target_id, offset_yaw, copy_position, weight);
+        IKSolver::AimConstraint { offset_yaw, copy_position, target_position_offset } => {
+            solve_aim(
+                world,
+                emit,
+                root_tc,
+                target_id,
+                offset_yaw,
+                copy_position,
+                target_position_offset,
+                weight,
+            );
         }
         IKSolver::TwoBoneIK { pole_direction, copy_end_rotation } => {
             // Build the 3-node chain directly: [root, first-TC-child-of-root, end_effector_id].
@@ -177,6 +186,7 @@ fn solve_aim(
     target_id: ComponentId,
     offset_yaw: f32,
     copy_position: bool,
+    target_position_offset: [f32; 3],
     weight: f32,
 ) {
     let Some(target_tc) = world.get_component_by_id_as::<TransformComponent>(target_id) else {
@@ -184,10 +194,16 @@ fn solve_aim(
     };
     let target_world_rot = mat_to_quat(target_tc.transform.matrix_world);
     let desired_world_rot = quat_mul(target_world_rot, quat_rotation_y(offset_yaw));
+    // Apply the offset in TARGET local frame, then add to target world position.
+    // For an HMD target with offset = (0, -eye_height, 0), this drops the bone target
+    // down along the HMD's local Y so the eye mesh (above the bone pivot) lines up
+    // with the HMD position.
+    let target_local_offset_world =
+        quat_rotate_vec3(target_world_rot, target_position_offset);
     let target_world_pos = [
-        target_tc.transform.matrix_world[3][0],
-        target_tc.transform.matrix_world[3][1],
-        target_tc.transform.matrix_world[3][2],
+        target_tc.transform.matrix_world[3][0] + target_local_offset_world[0],
+        target_tc.transform.matrix_world[3][1] + target_local_offset_world[1],
+        target_tc.transform.matrix_world[3][2] + target_local_offset_world[2],
     ];
 
     let parent_world_mat = world
@@ -614,7 +630,7 @@ mod tests {
 
         let ik_id = w.add_component(
             IKChainComponent::new(
-                IKSolver::AimConstraint { offset_yaw: 0.0, copy_position: false },
+                IKSolver::AimConstraint { offset_yaw: 0.0, copy_position: false, target_position_offset: [0.0, 0.0, 0.0] },
                 pre_target,
                 pre_ee,
             )

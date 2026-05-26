@@ -17,7 +17,18 @@ pub enum IKSolver {
     /// physical head translation (HMD moves forward+down when you pitch), not just
     /// rotation.  Visually detaches the bone from its FK parent until a spine FABRIK
     /// solver bends the chain to follow.  Default false (rotation-only behavior).
-    AimConstraint { offset_yaw: f32, copy_position: bool },
+    ///
+    /// `target_position_offset`: offset applied in the **target's local frame** before
+    /// copying its world position.  Used to compensate for the gap between the head
+    /// bone pivot (typically at the skull base) and the camera/eye position: passing
+    /// `(0, -eye_height, 0)` shifts the bone down so the eye mesh (which sits above
+    /// the bone pivot) lands at the HMD position.  Ignored when `copy_position` is
+    /// false.
+    AimConstraint {
+        offset_yaw: f32,
+        copy_position: bool,
+        target_position_offset: [f32; 3],
+    },
 
     /// Closed-form 2-bone IK.
     ///
@@ -130,9 +141,13 @@ impl Component for IKChainComponent {
         use crate::engine::ecs::component::ce_helpers::*;
         use crate::meow_meow::ast::Expression;
         let solver_call = match self.solver {
-            IKSolver::AimConstraint { offset_yaw, copy_position } => (
+            IKSolver::AimConstraint { offset_yaw, copy_position, target_position_offset } => (
                 "aim_constraint",
-                vec![num(offset_yaw as f64), b(copy_position)],
+                vec![
+                    num(offset_yaw as f64),
+                    b(copy_position),
+                    array(nums(target_position_offset.iter().map(|&v| v as f64))),
+                ],
             ),
             IKSolver::TwoBoneIK { pole_direction, copy_end_rotation } => (
                 "two_bone_ik",
