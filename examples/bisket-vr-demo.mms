@@ -29,8 +29,8 @@
 //   cargo run --release --example bisket-vr-demo
 
 // --- Renderer settings ---
-RendererSettings.msaa_off() {
-    window_size(320, 240)
+RendererSettings {
+    window_size(640, 480)
 }
 
 BGC {

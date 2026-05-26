@@ -373,9 +373,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // Full desired head-pivot offset in driven_t local space.
     let head_target_offset = quat_rotate_vec3(quat_rotation_y(head_ik_offset_yaw), neg_eye);
 
-    // Dedicated fixed head target under driven_t.  Spine FABRIK chases this node,
-    // so head position is defined by HMD pose + authored eye offset, and the body
-    // solves around it.
+    // Dedicated fixed visible-head mount under driven_t.
     let head_target_id = world.add_component(
         TransformComponent::new()
             .with_position(
@@ -386,8 +384,17 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             .with_rotation_quat(quat_rotation_y(head_ik_offset_yaw)),
     );
     let _ = world.set_parent(head_target_id, Some(driven_t_id));
+
+    // Separate spine target: keep vertical alignment with the HMD/eye line, but do
+    // not make the torso chase the camera's authored forward offset. Forward Z on
+    // the camera is a view offset, not a torso bend target.
+    let spine_target_id = world.add_component(
+        TransformComponent::new().with_position(0.0, head_target_offset[1], 0.0),
+    );
+    let _ = world.set_parent(spine_target_id, Some(driven_t_id));
     emit_attach(emit, head_parent_id, head_splice_id);
     emit_attach(emit, driven_t_id, head_target_id);
+    emit_attach(emit, driven_t_id, spine_target_id);
     emit_attach(emit, head_target_id, head_bone_id);
 
     // Zero head_bone's local translation — splice_head now carries the rest offset
@@ -425,13 +432,13 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
                     tolerance: 0.001,
                     target_position_offset: [0.0, 0.0, 0.0],
                 },
-                head_target_id,
+                spine_target_id,
                 head_splice_id,
             ));
             let _ = world.set_parent(spine_ik_id, Some(hips_id));
             println!(
-                "[AVC] spine FABRIK chain wired: hips={:?} end_effector=splice_head={:?} target=head_target={:?} offset={:?}",
-                hips_id, head_splice_id, head_target_id, head_target_offset,
+                "[AVC] spine FABRIK chain wired: hips={:?} end_effector=splice_head={:?} target=spine_target={:?} offset_y={:?}",
+                hips_id, head_splice_id, spine_target_id, head_target_offset[1],
             );
         } else {
             println!("[AVC] hips bone '{}' not found — spine FABRIK disabled", hips_name);
