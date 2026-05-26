@@ -20,6 +20,8 @@ The remaining body behavior is still wrong for the current product goal:
 
 - the torso pitches forward because the spine is still being asked to solve
   toward a target derived from the HMD/camera offset,
+- the current AVC-installed arm IK / FABRIK path is also not working well
+  enough to keep as the baseline and should be re-implemented separately,
 - the neck can stretch / translate instead of behaving like a rotational joint,
 - the current behavior is overcomplicated for the near-term need,
 - crouch / kneel posture should eventually come from authored animation, not
@@ -62,6 +64,7 @@ future:
 ## Non-goals for this task
 
 - no spine FABRIK for normal body follow,
+- no arm FABRIK in the first simple-humanoid body-follow phase,
 - no procedural crouch solved through spine IK,
 - no attempt to make the torso exactly match the HMD pitch,
 - no separate X-rule and Z-rule unless later testing proves that split is
@@ -75,6 +78,11 @@ future:
 Introduce a dedicated helper module for AVC body behavior:
 
 - add `src/engine/ecs/system/ik/simple-humanoid.rs`,
+- Phase 1 starts by preserving the current working head/camera path unchanged,
+- then remove or bypass AVC's current body IK wiring,
+- also remove or bypass AVC's current arm IK / FABRIK wiring for this path,
+- treat both body IK and arm IK removal as intentional cleanup, not temporary
+  coexistence with the new heuristic,
 - this module owns a body anchor / model_root planar follow state derived from
   the pose driver,
 - the tracked head remains authoritative while the body anchor is allowed to lag
@@ -90,6 +98,7 @@ Introduce a dedicated helper module for AVC body behavior:
 - body must not inherit pose-driver pitch or roll,
 - body follow should be stable in VR even when looking sharply up/down,
 - no spine IK in this phase,
+- no arm IK in this phase,
 - do not introduce a new transform-stream operator unless reuse pressure shows
   up after the AVC-specific version is proven.
 
@@ -97,6 +106,7 @@ Expected AVC integration:
 
 - keep the fixed head/camera mount path exactly as-is,
 - remove or bypass the current spine FABRIK body-follow path for this mode,
+- remove or bypass the current AVC arm IK / FABRIK path for this mode,
 - route model_root/body anchor updates through the simple-humanoid heuristic,
 - preserve existing yaw-follow semantics where useful, but make the heuristic
   the owner of body translation behavior.
@@ -109,6 +119,8 @@ Acceptance criteria:
 - larger planar separation causes body recenter/follow on the ground plane,
 - walking / leaning causes body planar follow only,
 - head/camera lock remains stable,
+- AVC no longer depends on the current body or arm IK setup for baseline VR body
+  behavior,
 - body never jitters because of HMD pitch/roll.
 
 ## Phase 2 — neck constraints and rigid upper chain behavior
@@ -134,7 +146,33 @@ Acceptance criteria:
 - no visible telescoping / stretching,
 - no camera-relative drift introduced by the neck fix.
 
-## Phase 3 — avatar animation for crouch / kneel
+## Phase 3 — arm IK reimplementation
+
+Reintroduce arm IK only after the body-follow and neck behavior are stable.
+
+Scope:
+
+- arm FABRIK is a separate concern from `simple-humanoid.rs`,
+- do not couple arm solving to the planar body-follow heuristic unless later
+  implementation experience proves that shared ownership is simpler,
+- AVC may still be the integration point, but the arm solver logic should live
+  in its own implementation surface,
+- rebuild arm solve behavior against the simplified body/head baseline rather
+  than trying to preserve the current failing setup.
+
+Initial expectation:
+
+- arms should be reintroduced after Phases 1 and 2 are working,
+- arm targets / constraints should be revisited from scratch,
+- arm solve success should not depend on torso pitch compensation from spine IK.
+
+Acceptance criteria:
+
+- arm IK is restored only after the simplified body baseline is stable,
+- the new arm implementation is independent from the removed AVC arm IK path,
+- head/camera and neck stability are not regressed by reintroducing arms.
+
+## Phase 4 — avatar animation for crouch / kneel
 
 Replace procedural body-drop behavior with authored animation blending.
 
@@ -175,10 +213,14 @@ Likely affected docs:
 - any AVC comments / topology diagrams in `src/engine/ecs/component/avatar_control.rs`
 - any examples or comments that still describe spine FABRIK as the current body
   follow path.
+- any docs or comments that still imply the current AVC arm IK path is part of
+  the retained baseline.
 
 Update them to reflect:
 
 - fixed head mount under the pose driver,
 - simple-humanoid body-follow heuristic,
 - no spine IK for normal body follow,
+- arm IK removed from the initial AVC rewrite and reintroduced later as a
+  separate concern,
 - avatar-animation ownership of crouch/kneel behavior.
