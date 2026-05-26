@@ -193,6 +193,7 @@ I.speed(1.0) {
     }
     T.position(0.0, 1.4, -3.5).rotation(0.0, 3.14159, 0.0) {
         C3D {}
+        Pointer {}
     }
 
 }
