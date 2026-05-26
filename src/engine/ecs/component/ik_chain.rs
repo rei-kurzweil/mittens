@@ -44,10 +44,18 @@ pub enum IKSolver {
 
     /// Iterative FABRIK solver — works for any chain length ≥ 2.
     ///
-    /// Used for spine bending (future, gated on TranslationFollow existing).
+    /// Used for spine bending: chain hips → ... → splice_head with the head pose
+    /// driver as the target.  The spine rotates so the end-effector (splice_head)
+    /// FK-lands at the target position.
+    ///
+    /// `target_position_offset`: same semantics as `AimConstraint` — offset in the
+    /// target's local frame, added to its world position before chasing.  Used to
+    /// shift the target down by `eye_offset` so the head bone pivot (not the eye
+    /// mesh above it) lines up with the HMD position.
     Fabrik {
         max_iterations: u32,
         tolerance: f32,
+        target_position_offset: [f32; 3],
     },
 }
 
@@ -156,9 +164,13 @@ impl Component for IKChainComponent {
                     b(copy_end_rotation),
                 ],
             ),
-            IKSolver::Fabrik { max_iterations, tolerance } => (
+            IKSolver::Fabrik { max_iterations, tolerance, target_position_offset } => (
                 "fabrik",
-                vec![num(max_iterations as f64), num(tolerance as f64)],
+                vec![
+                    num(max_iterations as f64),
+                    num(tolerance as f64),
+                    array(nums(target_position_offset.iter().map(|&v| v as f64))),
+                ],
             ),
         };
         fn target_expr(t: &ComponentRef) -> Expression {

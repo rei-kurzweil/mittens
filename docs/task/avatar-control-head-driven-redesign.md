@@ -196,6 +196,55 @@ head bone *pivot* is at the skull base. The mesh swings around that pivot
 while the camera stays at the HMD eye position. The full fix is per-camera
 mesh culling (see Known issues).
 
+### Step 4 — spine FABRIK chain (first cut)
+
+The plan in `To do` below assumed head bone would stay HMD-pinned via
+`copy_position` and FABRIK would close the visible neck/head gap with spine
+bending.  That doesn't actually work: an end-effector whose world position is
+controlled by `copy_position` is *grounded* — spine rotations don't move it,
+so FABRIK measures zero gap and does nothing.
+
+The fix flips the approach: **head bone position is FK-driven by the spine,
+AimConstraint is rotation-only, and FABRIK chases the HMD target**.
+
+Concretely:
+
+- `splice_head` carries the rest neck→head offset (translation copied from
+  `head_bone` at splice time, head_bone re-anchored with zero local
+  translation).  So splice_head IS the head pivot, and FK from neck places
+  splice_head at the rest head position.
+- Head AimConstraint flipped to `copy_position: false, target_position_offset
+  = [0,0,0]` — splice_head's *rotation* matches the HMD, but its *position*
+  is whatever FK from the bent spine produces.
+- New `IKSolver::Fabrik { target_position_offset }` field (symmetric with
+  `AimConstraint`), so the FABRIK chain can chase `HMD + R(HMD) *
+  (-eye_offset)` and put the head bone pivot (not the eye mesh above it) at
+  the HMD position.
+- `BoneMappingSystem::resolve_spine_chain` walks UP from head via
+  `tc_ancestor_at_distance` (threshold 0.03m to skip helpers), collecting TC
+  joints until a named hips bone or 8 hops.
+- `collect_tc_chain` (ik_system) flipped from "walk down via first-TC-child"
+  to "walk UP from end_id via parents".  Walking up is unique, so it picks
+  out the spine path even when intermediate joints fork (e.g. chest →
+  upper_chest + clavicles).
+- `AvatarControlComponent` gets `hips_bone: Option<String>` (defaults to
+  `"J_Bip_C_Hips"` when unset; FABRIK silently skipped if the bone isn't
+  found).
+- AVC `try_init_splices`: after head IK, resolve hips, spawn
+  `IKChain { Fabrik, target_id=driven_t, target_position_offset=head_target_offset,
+  end_effector_id=splice_head }` parented under the hips bone.
+
+Files touched:
+- `src/engine/ecs/component/ik_chain.rs`
+- `src/engine/ecs/component/avatar_control.rs`
+- `src/engine/ecs/system/ik_system.rs`
+- `src/engine/ecs/system/bone_mapping_system.rs`
+- `src/engine/ecs/system/avatar_control_system.rs`
+- `src/meow_meow/component_registry.rs`
+
+To verify in-headset (next): looking up/down should bend neck/chest visibly;
+walking shouldn't yet because hips translate-follow is still TODO.
+
 ### Step 3 — desktop camera convention
 
 In `examples/bisket-bones-and-ik.mms`:
@@ -232,6 +281,13 @@ the avatar faces.
   doesn't always need to author a T wrapper for the eye offset.
 
 ### Body / spine FABRIK
+
+> **Status (2026-05-26):** First cut landed — see `### Step 4 — spine FABRIK
+> chain (first cut)` above.  The approach differs from the original plan in
+> this section (head AimConstraint is now rotation-only; the head pivot is
+> FK-driven by spine bending rather than warped via `copy_position`).  The
+> sections below remain as design context for what's still ahead: Step E
+> (hips yaw), Step F (hips translate-follow), and cleanup.
 
 #### Current observable state (the symptom FABRIK fixes)
 
@@ -462,6 +518,7 @@ can see the rig from outside the headset while debugging.
 | `src/engine/ecs/system/ik_system.rs` | `tick_chain` dispatch + `solve_aim` (line ~170) + `solve_two_bone` (line ~230). Add `solve_fabrik` here; add match arm in `tick_chain`. |
 | `src/meow_meow/component_registry.rs` | MMS bindings. AVC methods around line 1890; IK solver constructors around line 1290. |
 | `examples/bisket-vr-demo.{rs,mms}` | Primary VR test scene. mms has the AVC config; rs has bone-marker spawning (post-GLTF-spawn pattern). |
+| `examples/bisket-vr-debug.{rs,mms}` | Headless verification harness — REF + AVC avatars side-by-side, scripted poses, prints diff table + invariants. See `docs/analysis/avatar-control-verification.md`. |
 | `examples/vr-input.{rs,mms}` | Earlier VR demo (pc-rei avatar). Same patterns. |
 | `examples/bisket-bones-and-ik.mms` | Desktop equivalent. |
 | `docs/task/mms-event-payloads-and-runtime-attach.md` | Separate task: MMS-side event handler payloads + runtime `attach()`. Independent of this work; useful for in-app debug authoring. |

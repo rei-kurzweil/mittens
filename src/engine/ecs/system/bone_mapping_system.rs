@@ -16,6 +16,17 @@ pub struct ResolvedArmChain {
     pub hand: ComponentId,
 }
 
+/// Resolved spine chain for FABRIK setup.
+///
+/// `chain` is ordered hips → ... → head (root-first FABRIK convention).
+/// Intermediate joints (spine/chest/upper_chest/neck) are whatever TC ancestors
+/// the topology walk produced between hips and head — count varies by rig.
+pub struct ResolvedSpineChain {
+    pub hips: ComponentId,
+    pub head: ComponentId,
+    pub chain: Vec<ComponentId>,
+}
+
 impl BoneMappingSystem {
     /// Resolve a 2-bone arm chain from (optional) explicit names + topology fallback.
     ///
@@ -52,6 +63,40 @@ impl BoneMappingSystem {
         };
 
         Some(ResolvedArmChain { upper_arm, lower_arm, hand })
+    }
+
+    /// Resolve a spine chain from head bone up to (optionally named) hips bone.
+    ///
+    /// Walks UP from `head_id` via `tc_ancestor_at_distance` (threshold ~0.03m to
+    /// skip helper bones), collecting TC joints.  Stops when it hits `hips_name`
+    /// (by component name) if provided, or after at most 8 hops otherwise.
+    ///
+    /// Returns the chain in HIPS → HEAD order (FABRIK convention: root first).
+    /// Returns `None` if the walk produces fewer than 2 joints.
+    pub fn resolve_spine_chain(
+        world: &World,
+        model_root: ComponentId,
+        head_id: ComponentId,
+        hips_name: Option<&str>,
+        min_bone_length: Option<f32>,
+    ) -> Option<ResolvedSpineChain> {
+        let hips_id = hips_name.and_then(|n| world.find_component(model_root, &format!("#{}", n)));
+        let mut up: Vec<ComponentId> = vec![head_id];
+        let mut cur = head_id;
+        for _ in 0..8 {
+            let parent = Self::tc_ancestor_at_distance(world, cur, min_bone_length)?;
+            up.push(parent);
+            // Stop if we hit the named hips.
+            if Some(parent) == hips_id { break; }
+            // Or stop if we've stepped above model_root.
+            if parent == model_root { break; }
+            cur = parent;
+        }
+        if up.len() < 2 { return None; }
+        up.reverse();
+        let hips = *up.first().unwrap();
+        let head = *up.last().unwrap();
+        Some(ResolvedSpineChain { hips, head, chain: up })
     }
 
     /// Walk upward from `start`, returning the nearest TC ancestor whose world position

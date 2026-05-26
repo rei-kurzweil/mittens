@@ -106,7 +106,14 @@ ED {
                 // reparents the T under J_Bip_C_Head, AND uses the translation
                 // as the head IK target_position_offset so the head bone pulls
                 // down to land the eye mesh exactly at the HMD position.
-                T.position(0.0, 0.14, 0.07) {
+                // Eye offset (head-local; +Y up, +Z forward in head-local
+                // frame). 0.08 Y: pivot→eye-line vertical distance, calibrated
+                // empirically.  0.04 Z: eye-line forward of pivot — kept small
+                // because any positive Z puts the head pivot behind the HMD,
+                // so the face mesh ends up wrapping around the camera and
+                // pitching down looks "into the skull".  Will go to 0 when
+                // per-camera mesh culling lands (see Known issues).
+                T.position(0.0, 0.08, 0.04) {
                     CXR { Pointer {} }
                 }
                 

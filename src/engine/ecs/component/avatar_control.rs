@@ -116,6 +116,13 @@ pub struct AvatarControlComponent {
     /// Use this when the camera bone lookup fails or the mesh height is known in advance.
     pub avatar_height: Option<f32>,
 
+    /// Name of the hips bone — the FABRIK spine chain root.  Default: `"J_Bip_C_Hips"`.
+    ///
+    /// Resolved against `model_root` once during `try_init_splices`.  If `None` or
+    /// not found, no spine FABRIK chain is wired — head bone falls back to FK
+    /// (visible detachment from neck under pitch).
+    pub hips_bone: Option<String>,
+
     /// Vertical distance (metres) from the head bone pivot to the eyes.
     ///
     /// VRM `J_Bip_C_Head` pivot sits at the skull base; the eye line is typically
@@ -260,6 +267,13 @@ impl AvatarControlComponent {
         self.eye_height_from_head_bone = Some(dy);
         self
     }
+
+    /// Set the hips bone name — root of the spine FABRIK chain.
+    /// Default (when unset): `"J_Bip_C_Hips"`.
+    pub fn with_hips_bone(mut self, name: impl Into<String>) -> Self {
+        self.hips_bone = Some(name.into());
+        self
+    }
 }
 
 impl Default for AvatarControlComponent {
@@ -279,6 +293,7 @@ impl Default for AvatarControlComponent {
             hand_rotation_smoothing: None,
             camera_bone: None,
             avatar_height: None,
+            hips_bone: None,
             eye_height_from_head_bone: None,
             splice_head: None,
             displaced_head: None,
@@ -332,6 +347,9 @@ impl Component for AvatarControlComponent {
         }
         if let Some(dy) = self.eye_height_from_head_bone {
             c = c.with_call("eye_height_from_head_bone", vec![num(dy as f64)]);
+        }
+        if let Some(b) = &self.hips_bone {
+            c = c.with_call("hips_bone", vec![s(b)]);
         }
         c
     }

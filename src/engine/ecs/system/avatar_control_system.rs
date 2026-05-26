@@ -60,6 +60,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
          body_yaw_threshold, body_yaw_rate, forward_plus_z,
          initial_body_yaw, hand_rotation_smoothing, skip_body_pipeline,
          camera_bone_name, avatar_height_override, eye_height_from_head_bone,
+         hips_bone_name,
          left_upper_arm_bone, left_lower_arm_bone,
          right_upper_arm_bone, right_lower_arm_bone) = {
         let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
@@ -78,6 +79,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             c.camera_bone.clone(),
             c.avatar_height,
             c.eye_height_from_head_bone,
+            c.hips_bone.clone().or_else(|| Some("J_Bip_C_Hips".to_string())),
             c.left_upper_arm_bone.clone(),
             c.left_lower_arm_bone.clone(),
             c.right_upper_arm_bone.clone(),
@@ -126,7 +128,19 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         return;
     };
     let Some(head_parent_id) = world.parent_of(head_bone_id) else { return };
-    let head_splice_id = world.add_component(TransformComponent::new());
+
+    // Read head_bone's REST local TRS before splicing.  The splice_head TC will be
+    // stamped with this translation so it sits at the FK rest head position; the
+    // head_bone is then re-anchored under splice_head with zero translation.
+    // This way splice_head IS the head pivot (FK-positioned by spine bending), and
+    // the spine FABRIK chain's last bone length = rest neck-to-head distance.
+    let (head_rest_t, head_rest_rot, head_rest_s) = world
+        .get_component_by_id_as::<TransformComponent>(head_bone_id)
+        .map(|t| (t.transform.translation, t.transform.rotation, t.transform.scale))
+        .unwrap_or(([0.0; 3], [0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0]));
+    let head_splice_id = world.add_component(
+        TransformComponent::new().with_position(head_rest_t[0], head_rest_t[1], head_rest_t[2]),
+    );
 
     // Resolve hand splices (raw driver = controller's driven_t or plain TC).
     let left  = resolve_hand_splice(world, model_root_id, left_hand_bone.as_deref(),  left_ctrl);
@@ -183,6 +197,43 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         found
     });
 
+    // Discover camera children + derive eye_offset_head_local FIRST — the
+    // model_root xz compensation below needs the offset, and the eye_offset
+    // also feeds the head IK target_position_offset (used much later).
+    let camera_children: Vec<(ComponentId, [f32; 3])> = world
+        .children_of(id)
+        .iter()
+        .copied()
+        .filter_map(|ch| {
+            let is_c3d = world.get_component_by_id_as::<Camera3DComponent>(ch).is_some();
+            let is_cxr = world.get_component_by_id_as::<CameraXRComponent>(ch).is_some();
+            if is_c3d || is_cxr {
+                println!("[AVC] found bare camera child {:?} — re-parent to camera_bone (no eye offset)", ch);
+                return Some((ch, [0.0, 0.0, 0.0]));
+            }
+            if let Some(tc) = world.get_component_by_id_as::<TransformComponent>(ch) {
+                let wraps_cam = world.children_of(ch).iter().any(|&gc| {
+                    world.get_component_by_id_as::<Camera3DComponent>(gc).is_some()
+                        || world.get_component_by_id_as::<CameraXRComponent>(gc).is_some()
+                });
+                if wraps_cam {
+                    let eye_offset = tc.transform.translation;
+                    println!("[AVC] found T-wrapped camera child {:?} — eye_offset = {:?}", ch, eye_offset);
+                    return Some((ch, eye_offset));
+                }
+            }
+            None
+        })
+        .collect();
+    if camera_children.is_empty() && camera_bone_id.is_some() {
+        println!("[AVC] WARNING: camera_bone set but no Camera3D/CameraXR direct children of AVC found");
+    }
+    let eye_offset_head_local: [f32; 3] = camera_children
+        .iter()
+        .map(|&(_, off)| off)
+        .find(|off| off != &[0.0, 0.0, 0.0])
+        .unwrap_or([0.0, eye_height_from_head_bone.unwrap_or(0.0), 0.0]);
+
     let model_root_y: Option<f32> = if let Some(h) = avatar_height_override {
         println!("[AVC] using avatar_height_override = {}", h);
         Some(-h)
@@ -209,10 +260,6 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     };
 
     // model_root.y calibrated from camera_bone (or avatar_height override) only.
-    // The T { camera } eye offset is intentionally NOT applied to model_root — it
-    // exists to relate the camera to the head bone, not to translate the body.
-    // The visible gap between the head bone (placed by AimConstraint at HMD - eye_offset)
-    // and the body's FK rest position is what spine FABRIK is meant to close.
     if let Some(y) = model_root_y {
         emit.push_intent_now(
             model_root_id,
@@ -224,60 +271,6 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             },
         );
     }
-
-    // Discover camera children of AVC.  Two authoring forms accepted:
-    //   1. Bare camera as direct child:           AVC { C3D {} }
-    //   2. Camera wrapped in a T for eye offset:  AVC { T.position(0, 0.08, 0.07) { C3D {} } }
-    //
-    // In form 2, the T is the node we reparent under `camera_bone`, preserving its
-    // local transform as the eye offset (in head-local frame).  We also record that
-    // translation and use it to drive the head IK's `target_position_offset` so the
-    // head bone pulls down to land the eyes at the HMD/input position.
-    //
-    // For each camera child we record (node_to_reparent, eye_offset_head_local):
-    //   - bare camera → (cam, [0,0,0])      — no offset; bone pivot IS eye position
-    //   - T { cam }   → (T,   T.translation) — T translation = eye offset
-    let camera_children: Vec<(ComponentId, [f32; 3])> = world
-        .children_of(id)
-        .iter()
-        .copied()
-        .filter_map(|ch| {
-            let is_c3d = world.get_component_by_id_as::<Camera3DComponent>(ch).is_some();
-            let is_cxr = world.get_component_by_id_as::<CameraXRComponent>(ch).is_some();
-            if is_c3d || is_cxr {
-                println!("[AVC] found bare camera child {:?} — re-parent to camera_bone (no eye offset)", ch);
-                return Some((ch, [0.0, 0.0, 0.0]));
-            }
-            // T-wrapped form: a TransformComponent whose subtree contains a camera.
-            if let Some(tc) = world.get_component_by_id_as::<TransformComponent>(ch) {
-                let wraps_cam = world.children_of(ch).iter().any(|&gc| {
-                    world.get_component_by_id_as::<Camera3DComponent>(gc).is_some()
-                        || world.get_component_by_id_as::<CameraXRComponent>(gc).is_some()
-                });
-                if wraps_cam {
-                    let eye_offset = tc.transform.translation;
-                    println!("[AVC] found T-wrapped camera child {:?} — eye_offset = {:?}", ch, eye_offset);
-                    return Some((ch, eye_offset));
-                }
-            }
-            None
-        })
-        .collect();
-    if camera_children.is_empty() && camera_bone_id.is_some() {
-        println!("[AVC] WARNING: camera_bone set but no Camera3D/CameraXR direct children of AVC found");
-    }
-
-    // Derive the eye offset (head-local) for the head IK target_position_offset.
-    //   priority 1: first non-zero T-wrapper translation among camera_children
-    //                (the T's translation IS the camera-relative-to-head-bone offset)
-    //   priority 2: explicit eye_height_from_head_bone fallback (Y only)
-    //   priority 3: [0, 0, 0] — head bone pivot IS the eye position (e.g., when
-    //                the avatar's head bone happens to be at eye level already)
-    let eye_offset_head_local: [f32; 3] = camera_children
-        .iter()
-        .map(|&(_, off)| off)
-        .find(|off| off != &[0.0, 0.0, 0.0])
-        .unwrap_or([0.0, eye_height_from_head_bone.unwrap_or(0.0), 0.0]);
 
     // Store runtime IDs (body_pipeline_id stored after pipeline creation below).
     if let Some(c) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
@@ -307,7 +300,6 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
                 .with_forward_plus_z_if(forward_plus_z),
         );
 
-        // Wire internal pipeline structure (all new, uninitialized).
         let _ = world.set_parent(map_rot_id, Some(body_pipeline_id));
         let _ = world.set_parent(yaw_follow_id, Some(map_rot_id));
 
@@ -315,9 +307,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             c.body_pipeline_id = Some(body_pipeline_id);
         }
 
-        // Attach fork-root pipeline to AVC (initializes the pipeline tree).
         emit_attach(emit, id, body_pipeline_id);
-        // Re-parent model_root under the fork root.
         emit_attach(emit, body_pipeline_id, model_root_id);
     }
 
@@ -337,14 +327,14 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     let neg_eye = [-eye_offset_head_local[0], -eye_offset_head_local[1], -eye_offset_head_local[2]];
     let head_target_offset = quat_rotate_vec3(quat_rotation_y(head_ik_offset_yaw), neg_eye);
     let head_ik_id = world.add_component(IKChainComponent::new(
-        // copy_position: true — head bone tracks HMD translation as well as rotation,
-        // so it stays glued to driven_t when the player physically tilts (which moves
-        // the HMD forward/down/back relative to a static neck pivot).  Without this
-        // the head pivots in place and the HMD/camera diverges from the head bone.
+        // copy_position: false — splice_head's position is set by FK from the spine
+        // FABRIK chain, not warped to HMD.  AimConstraint here is rotation-only.
+        // The eye-offset is consumed by the FABRIK target_position_offset below so
+        // the spine bends to put the head pivot at `HMD + R(HMD) * (-eye_offset)`.
         IKSolver::AimConstraint {
             offset_yaw: head_ik_offset_yaw,
-            copy_position: true,
-            target_position_offset: head_target_offset,
+            copy_position: false,
+            target_position_offset: [0.0, 0.0, 0.0],
         },
         driven_t_id,
         head_splice_id,
@@ -353,6 +343,54 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
 
     emit_attach(emit, head_parent_id, head_splice_id);
     emit_attach(emit, head_splice_id, head_bone_id);
+
+    // Zero head_bone's local translation — splice_head now carries the rest offset
+    // from neck.  Preserve head_bone's rest rotation/scale so face mesh orientation
+    // stays correct.  Emitted *after* the reparent attach so the UpdateTransform
+    // lands on head_bone in its new parent (splice_head) without fighting the
+    // attach intent's matrix recompute.
+    emit.push_intent_now(
+        head_bone_id,
+        IntentValue::UpdateTransform {
+            component_ids: vec![head_bone_id],
+            translation: [0.0, 0.0, 0.0],
+            rotation_quat_xyzw: head_rest_rot,
+            scale: head_rest_s,
+        },
+    );
+
+    // -----------------------------------------------------------------------
+    // Spine FABRIK chain: hips → ... → splice_head.
+    //
+    // Bends the spine so the FK chain places splice_head at the head pose
+    // driver's target.  target_position_offset carries the eye-offset (head
+    // pivot vs camera position) so the head bone pivot, not the eye mesh,
+    // lands at the HMD.
+    //
+    // root_tc = hips (IKChain parented under it).  end_effector = splice_head.
+    // collect_tc_chain in ik_system walks UP from end → root for a unique path.
+    // -----------------------------------------------------------------------
+    if let Some(hips_name) = hips_bone_name.as_deref() {
+        let hips_sel = format!("#{}", hips_name);
+        if let Some(hips_id) = world.find_component(model_root_id, &hips_sel) {
+            let spine_ik_id = world.add_component(IKChainComponent::new(
+                IKSolver::Fabrik {
+                    max_iterations: 8,
+                    tolerance: 0.001,
+                    target_position_offset: head_target_offset,
+                },
+                driven_t_id,
+                head_splice_id,
+            ));
+            let _ = world.set_parent(spine_ik_id, Some(hips_id));
+            println!(
+                "[AVC] spine FABRIK chain wired: hips={:?} end_effector=splice_head={:?} target=driven_t={:?} offset={:?}",
+                hips_id, head_splice_id, driven_t_id, head_target_offset,
+            );
+        } else {
+            println!("[AVC] hips bone '{}' not found — spine FABRIK disabled", hips_name);
+        }
+    }
 
     // -----------------------------------------------------------------------
     // Hand splices and arm IK.

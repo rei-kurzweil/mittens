@@ -1300,6 +1300,8 @@ fn create_component(
                 Some("fabrik") => IKSolver::Fabrik {
                     max_iterations: arg_f32(args, 0)? as u32,
                     tolerance: arg_f32(args, 1)?,
+                    target_position_offset: arg_f32_arr::<3>(args, 2)
+                        .unwrap_or([0.0, 0.0, 0.0]),
                 },
                 _ => IKSolver::AimConstraint {
                     offset_yaw: 0.0,
@@ -1907,6 +1909,7 @@ fn apply_call(
             "camera_bone"             => *avc = avc.clone().with_camera_bone(arg_str(args, 0)?),
             "avatar_height"           => *avc = avc.clone().with_avatar_height(arg_f32(args, 0)?),
             "eye_height_from_head_bone" => *avc = avc.clone().with_eye_height_from_head_bone(arg_f32(args, 0)?),
+            "hips_bone"                 => *avc = avc.clone().with_hips_bone(arg_str(args, 0)?),
             _ => {}
         }
         return Ok(());

@@ -134,12 +134,21 @@ fn tick_chain(id: ComponentId, world: &World, emit: &mut dyn SignalEmitter) {
             let chain = [root_tc, mid_tc, end_effector_id];
             solve_two_bone(world, emit, &chain, target_id, pole_direction, copy_end_rotation, weight);
         }
-        IKSolver::Fabrik { max_iterations, tolerance } => {
+        IKSolver::Fabrik { max_iterations, tolerance, target_position_offset } => {
             let chain = collect_tc_chain(world, root_tc, end_effector_id);
             if chain.len() < 2 {
                 return;
             }
-            solve_fabrik(world, emit, &chain, target_id, max_iterations, tolerance, weight);
+            solve_fabrik(
+                world,
+                emit,
+                &chain,
+                target_id,
+                target_position_offset,
+                max_iterations,
+                tolerance,
+                weight,
+            );
         }
     }
 }
@@ -148,28 +157,32 @@ fn tick_chain(id: ComponentId, world: &World, emit: &mut dyn SignalEmitter) {
 // Chain collection
 // ---------------------------------------------------------------------------
 
-/// Walk the TC hierarchy from `root` down the first-TC-child path until `end_id` is reached.
-/// Returns the collected IDs in root-to-end order.
+/// Walk UP from `end_id` via TC parents until reaching `root`.  Returns the
+/// collected IDs in root-to-end order.
+///
+/// Walking up is unique (each TC has one parent) so this picks out a single
+/// topological path even when intermediate joints have multiple TC children
+/// (e.g. the spine fork into clavicles).  Returns empty if `end_id` is not
+/// a TC descendant of `root` within 32 hops.
 fn collect_tc_chain(world: &World, root: ComponentId, end_id: ComponentId) -> Vec<ComponentId> {
-    let mut chain = vec![root];
     if root == end_id {
-        return chain;
+        return vec![root];
     }
-    let mut cur = root;
+    let mut up: Vec<ComponentId> = vec![end_id];
+    let mut cur = end_id;
     for _ in 0..32 {
-        let next = world
-            .children_of(cur)
-            .iter()
-            .copied()
-            .find(|&ch| world.get_component_by_id_as::<TransformComponent>(ch).is_some());
-        let Some(next) = next else { break };
-        chain.push(next);
-        if next == end_id {
-            break;
+        let Some(parent) = world.parent_of(cur) else { return Vec::new() };
+        if world.get_component_by_id_as::<TransformComponent>(parent).is_none() {
+            return Vec::new();
         }
-        cur = next;
+        up.push(parent);
+        if parent == root {
+            up.reverse();
+            return up;
+        }
+        cur = parent;
     }
-    chain
+    Vec::new()
 }
 
 // ---------------------------------------------------------------------------
@@ -458,6 +471,7 @@ fn solve_fabrik(
     emit: &mut dyn SignalEmitter,
     chain: &[ComponentId],
     target_id: ComponentId,
+    target_position_offset: [f32; 3],
     max_iterations: u32,
     tolerance: f32,
     weight: f32,
@@ -469,7 +483,15 @@ fn solve_fabrik(
         .map(|i| vec3_len(vec3_sub(positions[i + 1], positions[i])).max(1e-6))
         .collect();
     let root_pos = positions[0];
-    let target_pos = tc_world_pos(world, target_id);
+    // Target = target world pos + R(target_world_rot) * target_position_offset.
+    // Symmetric with solve_aim: lets a Y-only offset like (0, -eye_h, 0) drop the
+    // chase point down along the target's local Y, regardless of target yaw.
+    let target_pos = {
+        let base = tc_world_pos(world, target_id);
+        let target_rot = tc_world_rot(world, target_id);
+        let off = quat_rotate_vec3(target_rot, target_position_offset);
+        [base[0] + off[0], base[1] + off[1], base[2] + off[2]]
+    };
 
     // FABRIK iterations.
     for _ in 0..max_iterations {
