@@ -1,10 +1,8 @@
 use crate::engine::ecs::component::{
     AvatarControlComponent, Camera3DComponent, CameraXRComponent, ControllerHand,
-    ControllerXRComponent, IKChainComponent, IKSolver, QuatTemporalFilterComponent,
-    QuatYawFollowComponent, TransformComponent, TransformForkTRSComponent,
-    TransformMapRotationComponent,
+    ControllerXRComponent, QuatTemporalFilterComponent, QuatYawFollowComponent,
+    TransformComponent, TransformForkTRSComponent, TransformMapRotationComponent,
 };
-use crate::engine::ecs::system::bone_mapping_system::BoneMappingSystem;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::utils::math::{quat_rotate_vec3, quat_rotation_y};
 
@@ -83,9 +81,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
          initial_body_yaw, hand_rotation_smoothing, skip_body_pipeline,
          camera_bone_name, avatar_height_override, eye_height_from_head_bone,
          head_ik_eye_height,
-         hips_bone_name,
-         left_upper_arm_bone, left_lower_arm_bone,
-         right_upper_arm_bone, right_lower_arm_bone) = {
+         neck_bone_name) = {
         let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
             return;
         };
@@ -103,11 +99,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             c.avatar_height,
             c.eye_height_from_head_bone,
             c.head_ik_eye_height,
-            c.hips_bone.clone().or_else(|| Some("J_Bip_C_Hips".to_string())),
-            c.left_upper_arm_bone.clone(),
-            c.left_lower_arm_bone.clone(),
-            c.right_upper_arm_bone.clone(),
-            c.right_lower_arm_bone.clone(),
+            c.neck_bone.clone(),
         )
     };
 
@@ -167,41 +159,14 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     );
 
     // Resolve hand splices (raw driver = controller's driven_t or plain TC).
+    //
+    // Arm IK / TwoBoneIK has been removed in favour of the simple-humanoid path
+    // (see `docs/task/avatar-control-simple-humanoid-body-follow.md`, Phase 3).
+    // Hands are wired via the simple splice mode below — the bone is displaced
+    // under the controller's driven_t and inherits its world transform without
+    // any solver in between.
     let left  = resolve_hand_splice(world, model_root_id, left_hand_bone.as_deref(),  left_ctrl);
     let right = resolve_hand_splice(world, model_root_id, right_hand_bone.as_deref(), right_ctrl);
-
-    // Attempt arm chain resolution for TwoBoneIK.  Only attempted when a controller
-    // is present — without a real driver the IK target would be stuck at origin.
-    let arm_left = if left_ctrl.is_some() {
-        left_hand_bone.as_deref().and_then(|hand_name| {
-            BoneMappingSystem::resolve_arm_chain(
-                world,
-                model_root_id,
-                hand_name,
-                left_lower_arm_bone.as_deref(),
-                left_upper_arm_bone.as_deref(),
-                Some(0.03),
-            )
-        })
-    } else {
-        None
-    };
-    let arm_right = if right_ctrl.is_some() {
-        right_hand_bone.as_deref().and_then(|hand_name| {
-            BoneMappingSystem::resolve_arm_chain(
-                world,
-                model_root_id,
-                hand_name,
-                right_lower_arm_bone.as_deref(),
-                right_upper_arm_bone.as_deref(),
-                Some(0.03),
-            )
-        })
-    } else {
-        None
-    };
-    if arm_left.is_some()  { println!("[AVC] left arm chain resolved for TwoBoneIK"); }
-    if arm_right.is_some() { println!("[AVC] right arm chain resolved for TwoBoneIK"); }
 
     // --- Camera bone: auto-calibrate model_root.y + discover camera children ---
     //
@@ -307,7 +272,9 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     };
 
     // model_root baseline calibration plus authored eye offset compensation.
-    // This moves the whole avatar relative to the fixed XR camera pose.
+    // This moves the whole avatar relative to the fixed XR camera pose.  The
+    // initial UpdateTransform sets the body in roughly the right place before
+    // SimpleHumanoidSystem takes over translation each tick.
     if let Some(txyz) = model_root_translation {
         emit.push_intent_now(
             model_root_id,
@@ -320,11 +287,44 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         );
     }
 
+    // Resolve neck bone (for the Phase 2 rest-pin) and cache its rest local
+    // translation.  Optional — pin is silently disabled if the bone isn't
+    // found or the user cleared `neck_bone`.
+    let (neck_bone_id, neck_rest_t) = match neck_bone_name.as_deref() {
+        Some(name) => {
+            let sel = format!("#{}", name);
+            match world.find_component(model_root_id, &sel) {
+                Some(nid) => {
+                    let rest = world
+                        .get_component_by_id_as::<TransformComponent>(nid)
+                        .map(|t| t.transform.translation);
+                    if rest.is_none() {
+                        println!("[AVC] neck bone '{}' resolved but has no TransformComponent — skipping pin", name);
+                    }
+                    (Some(nid), rest)
+                }
+                None => {
+                    println!("[AVC] neck bone '{}' not found under model_root — neck pin disabled", name);
+                    (None, None)
+                }
+            }
+        }
+        None => (None, None),
+    };
+
+    // Y component of model_root.local — what SimpleHumanoidSystem keeps each
+    // tick.  Defaults to 0.0 if neither camera_bone nor avatar_height resolved.
+    let model_root_local_y = model_root_translation.map(|t| t[1]).unwrap_or(0.0);
+
     // Store runtime IDs (body_pipeline_id stored after pipeline creation below).
     if let Some(c) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
         c.splice_head       = Some(head_splice_id);
         c.displaced_head    = Some(head_bone_id);
         c.splice_camera_bone = camera_bone_id;
+        c.model_root_id     = Some(model_root_id);
+        c.model_root_local_y = model_root_local_y;
+        c.neck_bone_id      = neck_bone_id;
+        c.neck_rest_translation = neck_rest_t;
         if let Some((_, driver, bone)) = left  { c.splice_left_hand  = Some(driver); c.displaced_left_hand  = Some(bone); }
         if let Some((_, driver, bone)) = right { c.splice_right_hand = Some(driver); c.displaced_right_hand = Some(bone); }
     }
@@ -385,16 +385,8 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     );
     let _ = world.set_parent(head_target_id, Some(driven_t_id));
 
-    // Separate spine target: keep vertical alignment with the HMD/eye line, but do
-    // not make the torso chase the camera's authored forward offset. Forward Z on
-    // the camera is a view offset, not a torso bend target.
-    let spine_target_id = world.add_component(
-        TransformComponent::new().with_position(0.0, head_target_offset[1], 0.0),
-    );
-    let _ = world.set_parent(spine_target_id, Some(driven_t_id));
     emit_attach(emit, head_parent_id, head_splice_id);
     emit_attach(emit, driven_t_id, head_target_id);
-    emit_attach(emit, driven_t_id, spine_target_id);
     emit_attach(emit, head_target_id, head_bone_id);
 
     // Zero head_bone's local translation — splice_head now carries the rest offset
@@ -413,97 +405,40 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     );
 
     // -----------------------------------------------------------------------
-    // Spine FABRIK chain: hips → ... → splice_head.
+    // Hand splices (simple splice mode only).
     //
-    // Bends the spine so the FK chain places splice_head at the head pose
-    // driver's target.  target_position_offset carries the eye-offset (head
-    // pivot vs camera position) so the head bone pivot, not the eye mesh,
-    // lands at the HMD.
-    //
-    // root_tc = hips (IKChain parented under it).  end_effector = splice_head.
-    // collect_tc_chain in ik_system walks UP from end → root for a unique path.
+    // Arm IK / TwoBoneIK has been removed for the simple-humanoid baseline.
+    // Each configured hand bone is displaced under its controller's driven_t
+    // (or a smoothing pipeline output) so the hand inherits the controller's
+    // world transform directly.  Arm IK will be reintroduced as a separate
+    // module in Phase 3 of the simple-humanoid task.
     // -----------------------------------------------------------------------
-    if let Some(hips_name) = hips_bone_name.as_deref() {
-        let hips_sel = format!("#{}", hips_name);
-        if let Some(hips_id) = world.find_component(model_root_id, &hips_sel) {
-            let spine_ik_id = world.add_component(IKChainComponent::new(
-                IKSolver::Fabrik {
-                    max_iterations: 8,
-                    tolerance: 0.001,
-                    target_position_offset: [0.0, 0.0, 0.0],
-                },
-                spine_target_id,
-                head_splice_id,
-            ));
-            let _ = world.set_parent(spine_ik_id, Some(hips_id));
-            println!(
-                "[AVC] spine FABRIK chain wired: hips={:?} end_effector=splice_head={:?} target=spine_target={:?} offset_y={:?}",
-                hips_id, head_splice_id, spine_target_id, head_target_offset[1],
-            );
-        } else {
-            println!("[AVC] hips bone '{}' not found — spine FABRIK disabled", hips_name);
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Hand splices and arm IK.
-    //
-    // For each hand, two modes:
-    //
-    //   Arm IK mode (BoneMappingSystem resolved upper/lower arm):
-    //     - Controller stays under AVC — OpenXRSystem handles world→local correctly.
-    //     - Arm bone stays in FK skeleton (not displaced under controller).
-    //     - IKChainComponent { TwoBoneIK } placed under upper_arm drives the chain.
-    //     - target_id = raw_driver (controller), end_effector_id = hand bone.
-    //     - copy_end_rotation: true — wrist rotation copied from controller.
-    //
-    //   Simple splice mode (arm chain not available):
-    //     - Controller re-parented under bone's original parent.
-    //     - Hand bone displaced under controller (or smoothing pipeline output).
-    //     - Optional QuatTemporalFilter smoothing pipeline on rotation.
-    // -----------------------------------------------------------------------
-    for (hand, arm_chain) in [(left, arm_left), (right, arm_right)] {
+    for hand in [left, right] {
         let Some((bone_parent, raw_driver, bone)) = hand else { continue };
 
-        if let Some(arm) = arm_chain {
-            // --- Arm IK mode ---
-            // Pole hint: elbow pointing down is a safe neutral for arms at rest.
-            // Body-local pole direction (open question; world-space for now).
-            let ik_id = world.add_component(IKChainComponent::new(
-                IKSolver::TwoBoneIK {
-                    pole_direction: [0.0, -1.0, 0.0],
-                    copy_end_rotation: true,
-                },
-                raw_driver, // IK target = controller driven_t world position
-                arm.hand,   // end effector = hand bone (stays in FK skeleton)
-            ));
-            let _ = world.set_parent(ik_id, Some(arm.upper_arm));
+        let splice_root = world
+            .parent_of(raw_driver)
+            .filter(|&p| p != bone_parent)
+            .unwrap_or(raw_driver);
+        emit_attach(emit, bone_parent, splice_root);
+
+        if let Some(smoothing_factor) = hand_rotation_smoothing {
+            // Create smoothing pipeline under raw_driver.
+            let hfork_id   = world.add_component(TransformForkTRSComponent::new());
+            let hmrot_id   = world.add_component(TransformMapRotationComponent::new());
+            let hfilt_id   = world.add_component(
+                QuatTemporalFilterComponent::new().with_smoothing_factor(smoothing_factor),
+            );
+            let smoothed_t = world.add_component(TransformComponent::new());
+
+            let _ = world.set_parent(hmrot_id, Some(hfork_id));
+            let _ = world.set_parent(hfilt_id, Some(hmrot_id));
+            let _ = world.set_parent(smoothed_t, Some(hfork_id));
+
+            emit_attach(emit, raw_driver, hfork_id);
+            emit_attach(emit, smoothed_t, bone);
         } else {
-            // --- Simple splice mode ---
-            let splice_root = world
-                .parent_of(raw_driver)
-                .filter(|&p| p != bone_parent)
-                .unwrap_or(raw_driver);
-            emit_attach(emit, bone_parent, splice_root);
-
-            if let Some(smoothing_factor) = hand_rotation_smoothing {
-                // Create smoothing pipeline under raw_driver.
-                let hfork_id   = world.add_component(TransformForkTRSComponent::new());
-                let hmrot_id   = world.add_component(TransformMapRotationComponent::new());
-                let hfilt_id   = world.add_component(
-                    QuatTemporalFilterComponent::new().with_smoothing_factor(smoothing_factor),
-                );
-                let smoothed_t = world.add_component(TransformComponent::new());
-
-                let _ = world.set_parent(hmrot_id, Some(hfork_id));
-                let _ = world.set_parent(hfilt_id, Some(hmrot_id));
-                let _ = world.set_parent(smoothed_t, Some(hfork_id));
-
-                emit_attach(emit, raw_driver, hfork_id);
-                emit_attach(emit, smoothed_t, bone);
-            } else {
-                emit_attach(emit, raw_driver, bone);
-            }
+            emit_attach(emit, raw_driver, bone);
         }
     }
 

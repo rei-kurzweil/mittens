@@ -174,6 +174,49 @@ pub struct AvatarControlComponent {
     /// Use this to isolate whether torso-twist bugs originate in the body pipeline.
     pub skip_body_pipeline: bool,
 
+    // ---------------------------------------------------------------------
+    // Simple-humanoid body-follow heuristic (see
+    // `docs/task/avatar-control-simple-humanoid-body-follow.md`).
+    // ---------------------------------------------------------------------
+
+    /// Planar (XZ) deadzone radius in metres.  When the head/driver leaves
+    /// this radius around the current body anchor, the anchor begins to
+    /// follow.  Default: 0.20 m.
+    pub body_planar_deadzone: f32,
+
+    /// Body planar follow rate (m/s) used once the driver leaves the
+    /// deadzone.  The anchor moves toward the driver at this speed, capped
+    /// so it never crosses the deadzone boundary in a single tick.
+    /// Default: 1.5.
+    pub body_planar_follow_rate: f32,
+
+    /// Name of the neck bone used by the Phase 2 rest-pin.  When set and
+    /// the bone is found under `model_root`, `SimpleHumanoidSystem` records
+    /// its rest local translation at init and restores it each tick if any
+    /// other system perturbs it.  Default: `"J_Bip_C_Neck"`.
+    pub neck_bone: Option<String>,
+
+    // Runtime state set by AvatarControlSystem / SimpleHumanoidSystem:
+    /// `model_root` component id, stashed at init so the simple-humanoid
+    /// system doesn't have to re-walk topology each tick.
+    pub(crate) model_root_id: Option<ComponentId>,
+
+    /// `model_root.local.translation.y` at rest (body height offset).  Set
+    /// once at init from `camera_bone` auto-calibration or `avatar_height`.
+    pub(crate) model_root_local_y: f32,
+
+    /// Current body anchor world XZ position.
+    pub(crate) body_anchor_world_xz: [f32; 2],
+
+    /// Whether `body_anchor_world_xz` has been seeded from `driven_t` yet.
+    pub(crate) body_anchor_initialized: bool,
+
+    /// Resolved neck bone id (under `model_root`).  `None` if not found.
+    pub(crate) neck_bone_id: Option<ComponentId>,
+
+    /// Neck rest local translation cached at init for the rest-pin.
+    pub(crate) neck_rest_translation: Option<[f32; 3]>,
+
     component: Option<ComponentId>,
 }
 
@@ -289,6 +332,33 @@ impl AvatarControlComponent {
         self
     }
 
+    /// Set the planar deadzone radius (metres) for the simple-humanoid
+    /// body-follow heuristic.  Default: 0.20.
+    pub fn with_body_planar_deadzone(mut self, r: f32) -> Self {
+        self.body_planar_deadzone = r;
+        self
+    }
+
+    /// Set the planar follow rate (m/s) used once the head/driver leaves the
+    /// deadzone.  Default: 1.5.
+    pub fn with_body_planar_follow_rate(mut self, r: f32) -> Self {
+        self.body_planar_follow_rate = r;
+        self
+    }
+
+    /// Override the neck bone name used by the Phase 2 rest-pin.  Pass `None`
+    /// to disable the pin entirely.
+    pub fn with_neck_bone(mut self, name: impl Into<String>) -> Self {
+        self.neck_bone = Some(name.into());
+        self
+    }
+
+    /// Disable the neck rest-pin.
+    pub fn without_neck_pin(mut self) -> Self {
+        self.neck_bone = None;
+        self
+    }
+
     /// Set the vertical offset for the head IK target calculation (metres).
     /// Decoupled from the camera position so spine bending and camera positioning
     /// can be controlled independently. Default: `None`.
@@ -327,6 +397,15 @@ impl Default for AvatarControlComponent {
             splice_camera_bone: None,
             skip_body_pipeline: false,
             head_ik_eye_height: None,
+            body_planar_deadzone: 0.20,
+            body_planar_follow_rate: 1.5,
+            neck_bone: Some("J_Bip_C_Neck".to_string()),
+            model_root_id: None,
+            model_root_local_y: 0.0,
+            body_anchor_world_xz: [0.0, 0.0],
+            body_anchor_initialized: false,
+            neck_bone_id: None,
+            neck_rest_translation: None,
             component: None,
         }
     }
