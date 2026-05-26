@@ -156,6 +156,29 @@ pub fn quat_from_axis_angle(axis: [f32; 3], angle_rad: f32) -> [f32; 4] {
     [axis[0] * s, axis[1] * s, axis[2] * s, c]
 }
 
+/// Extract rotation axis and angle (radians) from a quaternion.
+/// Returns (axis, angle) where angle is in range [-π, π].
+/// For near-zero rotations, returns ([0, 0, 1], 0).
+pub fn quat_to_axis_angle(q: [f32; 4]) -> ([f32; 3], f32) {
+    let [x, y, z, w] = q;
+    let len_sq = x * x + y * y + z * z;
+
+    if len_sq < 1e-10 {
+        // Near identity quaternion
+        return ([0.0, 0.0, 1.0], 0.0);
+    }
+
+    let sin_half_angle = len_sq.sqrt();
+    let angle = 2.0 * sin_half_angle.atan2(w);
+    let axis = if sin_half_angle > 1e-6 {
+        [x / sin_half_angle, y / sin_half_angle, z / sin_half_angle]
+    } else {
+        [0.0, 0.0, 1.0]
+    };
+
+    (axis, angle)
+}
+
 /// Invert a column-major 4x4 matrix.
 ///
 /// Returns `None` if the matrix is singular.

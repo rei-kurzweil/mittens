@@ -2,7 +2,7 @@ use crate::engine::ecs::component::{IKChainComponent, IKSolver, TransformCompone
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::utils::math::{
     mat_to_quat, quat_conjugate, quat_mul, quat_nlerp, quat_rotate_vec3, quat_rotation_y,
-    shortest_arc_quat, vec3_add, vec3_cross, vec3_dot, vec3_len, vec3_normalize, vec3_scale,
+    shortest_arc_quat, quat_to_axis_angle, quat_from_axis_angle,  vec3_add, vec3_cross, vec3_dot, vec3_len, vec3_normalize, vec3_scale,
     vec3_sub, vec3_lerp,
 };
 
@@ -521,6 +521,29 @@ fn solve_fabrik(
         .map(|t| mat_to_quat(t.transform.matrix_world))
         .unwrap_or([0.0, 0.0, 0.0, 1.0f32]);
 
+    // Detect neck bone by name — it should be one bone before the head in the chain.
+    // Typical name patterns: "J_Bip_C_Neck", "Armature.Neck", "Neck", etc.
+    let neck_index = chain.iter().position(|&id| {
+        world
+            .get_component_by_id_as::<TransformComponent>(id)
+            .and_then(|_| Some(()))
+            .is_some()
+            && world
+                .children_of(id)
+                .iter()
+                .any(|&child| {
+                    // Head is typically a direct child of neck (or wrapped in splice).
+                    let is_head = world
+                        .get_component_by_id_as::<TransformComponent>(child)
+                        .and_then(|_| {
+                            // Just check if it's the next bone in the chain
+                            chain.iter().find(|&&c| c == child).map(|_| ())
+                        })
+                        .is_some();
+                    is_head
+                })
+        });
+
     for i in 0..n - 1 {
         let tc = chain[i];
         let cur_world_rot = tc_world_rot(world, tc);
@@ -536,7 +559,26 @@ fn solve_fabrik(
             if vec3_len(d) > 1e-6 { vec3_normalize(d) } else { cur_fwd }
         };
 
-        let delta = shortest_arc_quat(cur_fwd, desired_fwd);
+        // If this is the neck bone, constrain its rotation to be minimal (keep it
+        // rigid relative to the upper torso). The neck should inherit the upper body's
+        // yaw/rotation without bending, so we clamp the rotation angle.
+        let delta = if neck_index == Some(i) {
+            // Neck constraint: allow only small deviations from the current forward direction.
+            // Use a very tight cone (max ~15 degrees) to keep the neck stiff.
+            let unconstrained_delta = shortest_arc_quat(cur_fwd, desired_fwd);
+            let (axis, angle) = quat_to_axis_angle(unconstrained_delta);
+            let max_neck_angle = 0.26f32; // ~15 degrees
+            if angle.abs() > max_neck_angle {
+                // Clamp the rotation angle
+                let clamped_angle = angle.max(-max_neck_angle).min(max_neck_angle);
+                quat_from_axis_angle(axis, clamped_angle)
+            } else {
+                unconstrained_delta
+            }
+        } else {
+            shortest_arc_quat(cur_fwd, desired_fwd)
+        };
+
         let new_world_rot = quat_mul(delta, cur_world_rot);
         let full_local = quat_mul(quat_conjugate(parent_world_rot), new_world_rot);
 

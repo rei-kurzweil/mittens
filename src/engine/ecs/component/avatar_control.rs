@@ -137,6 +137,20 @@ pub struct AvatarControlComponent {
     /// `avatar_height` override.  Default: `None` (no adjustment).
     pub eye_height_from_head_bone: Option<f32>,
 
+    /// Vertical offset (metres) used exclusively for the head IK target calculation.
+    ///
+    /// This is decoupled from the camera position transform (`T { CXR }` wrapper)
+    /// so the camera can be positioned freely without affecting how the FABRIK solver
+    /// bends the spine.  Typically set to a small value like 0.04–0.08 to account for
+    /// the gap between the head bone pivot and the eye position, causing the spine to
+    /// bend so the head lands at the right height relative to the HMD.
+    ///
+    /// When set, the FABRIK target_position_offset uses this value (Y-only) instead of
+    /// reading the camera transform's translation.  If `None`, no offset is applied to
+    /// the IK target (the head bone pivot chases the HMD position directly).
+    /// Default: `None`.
+    pub head_ik_eye_height: Option<f32>,
+
     // Runtime IDs set by AvatarControlSystem on first tick:
     pub(crate) splice_head:          Option<ComponentId>,
     pub(crate) displaced_head:       Option<ComponentId>,
@@ -274,6 +288,14 @@ impl AvatarControlComponent {
         self.hips_bone = Some(name.into());
         self
     }
+
+    /// Set the vertical offset for the head IK target calculation (metres).
+    /// Decoupled from the camera position so spine bending and camera positioning
+    /// can be controlled independently. Default: `None`.
+    pub fn with_head_ik_eye_height(mut self, dy: f32) -> Self {
+        self.head_ik_eye_height = Some(dy);
+        self
+    }
 }
 
 impl Default for AvatarControlComponent {
@@ -304,6 +326,7 @@ impl Default for AvatarControlComponent {
             body_pipeline_id: None,
             splice_camera_bone: None,
             skip_body_pipeline: false,
+            head_ik_eye_height: None,
             component: None,
         }
     }
@@ -347,6 +370,9 @@ impl Component for AvatarControlComponent {
         }
         if let Some(dy) = self.eye_height_from_head_bone {
             c = c.with_call("eye_height_from_head_bone", vec![num(dy as f64)]);
+        }
+        if let Some(dy) = self.head_ik_eye_height {
+            c = c.with_call("head_ik_eye_height", vec![num(dy as f64)]);
         }
         if let Some(b) = &self.hips_bone {
             c = c.with_call("hips_bone", vec![s(b)]);

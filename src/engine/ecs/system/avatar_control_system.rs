@@ -60,6 +60,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
          body_yaw_threshold, body_yaw_rate, forward_plus_z,
          initial_body_yaw, hand_rotation_smoothing, skip_body_pipeline,
          camera_bone_name, avatar_height_override, eye_height_from_head_bone,
+         head_ik_eye_height,
          hips_bone_name,
          left_upper_arm_bone, left_lower_arm_bone,
          right_upper_arm_bone, right_lower_arm_bone) = {
@@ -79,6 +80,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             c.camera_bone.clone(),
             c.avatar_height,
             c.eye_height_from_head_bone,
+            c.head_ik_eye_height,
             c.hips_bone.clone().or_else(|| Some("J_Bip_C_Hips".to_string())),
             c.left_upper_arm_bone.clone(),
             c.left_lower_arm_bone.clone(),
@@ -228,7 +230,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     if camera_children.is_empty() && camera_bone_id.is_some() {
         println!("[AVC] WARNING: camera_bone set but no Camera3D/CameraXR direct children of AVC found");
     }
-    let eye_offset_head_local: [f32; 3] = camera_children
+    let _eye_offset_head_local: [f32; 3] = camera_children
         .iter()
         .map(|&(_, off)| off)
         .find(|off| off != &[0.0, 0.0, 0.0])
@@ -311,20 +313,13 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         emit_attach(emit, body_pipeline_id, model_root_id);
     }
 
-    // -----------------------------------------------------------------------
-    // Head splice: splice_head under neck_parent, head bone under splice_head.
-    // IKChainComponent (AimConstraint) wired under splice_head drives rotation
-    // each tick via IKSystem — reads driven_t world rot, applies handedness flip.
-    // -----------------------------------------------------------------------
+    // Head IK target offset: use head_ik_eye_height (decoupled from camera position).
+    // This is the vertical distance from the head bone pivot to the eye/HMD position,
+    // used to bend the spine so the head lands at the right height.
+    // Calculated as Y-only offset in the target's local frame.
+    let ik_eye_offset_y = head_ik_eye_height.unwrap_or(0.0);
     let head_ik_offset_yaw = if forward_plus_z { 0.0 } else { std::f32::consts::PI };
-    // target_position_offset (in DRIVEN_T local frame) — derived from eye_offset_head_local:
-    //   head_bone_world = driven_t_world + R(driven_t_rot) * target_offset
-    //   want: camera_world = head_bone_world + R(head_bone_rot) * eye_offset = driven_t_world
-    //   solve: target_offset = R(rot_y(offset_yaw)) * -eye_offset
-    // For VR (offset_yaw=π): X,Z flip but Y stays — so Y-only offsets like (0, 0.08, 0)
-    // give target_offset = (0, -0.08, 0) regardless of mode; depth (Z) flips between
-    // desktop and VR because the avatar/HMD forward axes differ.
-    let neg_eye = [-eye_offset_head_local[0], -eye_offset_head_local[1], -eye_offset_head_local[2]];
+    let neg_eye = [0.0, -ik_eye_offset_y, 0.0];
     let head_target_offset = quat_rotate_vec3(quat_rotation_y(head_ik_offset_yaw), neg_eye);
     let head_ik_id = world.add_component(IKChainComponent::new(
         // copy_position: false — splice_head's position is set by FK from the spine
