@@ -2,7 +2,11 @@
 
 ## Status
 
-Open bug / investigation note.
+Promoted to implementation task.
+
+Primary follow-up:
+
+- [docs/task/text-origin-contract-for-layout-aligned-ui.md](../task/text-origin-contract-for-layout-aligned-ui.md)
 
 ## Symptom
 
@@ -69,15 +73,16 @@ This is internally consistent, but it makes the visual result depend on whether 
 
 ## Likely cause
 
-The likely mismatch is not "padding ignored" but "text aligned to glyph cell metrics rather than visible glyph ink/baseline".
+The likely mismatch is not "padding ignored" but "text aligned through the wrong origin contract".
 
 Relevant details:
 
 - `TextSystem::measure` reports text height as whole rows of `font_size`, in [src/engine/ecs/system/text_system.rs](../../src/engine/ecs/system/text_system.rs)
 - glyphs are spawned at row/column origins and scaled by `font_size`, also in [src/engine/ecs/system/text_system.rs](../../src/engine/ecs/system/text_system.rs)
 - `apply_text_align` uses `half_glyph_wu = font_size_wu * 0.5` and places the text wrapper at `y = -half_glyph_wu` for top/auto alignment, in [src/engine/ecs/system/layout/block.rs](../../src/engine/ecs/system/layout/block.rs)
+- the current font atlas glyph art is authored centered inside each 16x16 atlas cell, so this does not look like an atlas-bias problem
 
-So layout is aligning the text block as if the full glyph cell is the visual content. If the atlas glyphs are baseline-biased inside those cells, the letters will read low even though the cell itself is correctly inside the content box.
+So the stronger explanation is that layout is compensating for a text-space origin that should instead be fixed in the text system. The text node origin currently behaves too much like a glyph-cell-center origin, and `apply_text_align` has to paper over that with a half-glyph correction.
 
 ## Why timing / flow feels suspicious
 
@@ -109,9 +114,9 @@ Questions to answer:
 
 ## Likely fix direction
 
-Most likely engine-side fix:
+Preferred engine-side fix:
 
-- make text vertical alignment derive from explicit font metrics or resolved ink bounds rather than the current generic half-glyph inset
+- change the text origin contract so the text-bearing transform origin means the top-left of the text block, then remove the half-glyph correction from layout alignment
 
 Possible shorter-term workaround:
 

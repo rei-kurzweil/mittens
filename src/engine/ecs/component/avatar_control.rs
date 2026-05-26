@@ -181,13 +181,14 @@ pub struct AvatarControlComponent {
 
     /// Planar (XZ) deadzone radius in metres.  When the head/driver leaves
     /// this radius around the current body anchor, the anchor begins to
-    /// follow.  Default: 0.20 m.
+    /// follow.  Default: 0.05 m — small enough that the visible offset
+    /// between head and torso stays within head-width.
     pub body_planar_deadzone: f32,
 
     /// Body planar follow rate (m/s) used once the driver leaves the
     /// deadzone.  The anchor moves toward the driver at this speed, capped
     /// so it never crosses the deadzone boundary in a single tick.
-    /// Default: 1.5.
+    /// Default: 4.0.
     pub body_planar_follow_rate: f32,
 
     /// Name of the neck bone used by the Phase 2 rest-pin.  When set and
@@ -397,8 +398,8 @@ impl Default for AvatarControlComponent {
             splice_camera_bone: None,
             skip_body_pipeline: false,
             head_ik_eye_height: None,
-            body_planar_deadzone: 0.20,
-            body_planar_follow_rate: 1.5,
+            body_planar_deadzone: 0.05,
+            body_planar_follow_rate: 4.0,
             neck_bone: Some("J_Bip_C_Neck".to_string()),
             model_root_id: None,
             model_root_local_y: 0.0,
