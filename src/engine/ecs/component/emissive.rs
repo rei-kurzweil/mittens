@@ -1,23 +1,34 @@
-use crate::engine::ecs::CommandQueue;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct EmissiveComponent {
-    pub enabled: bool,
+    pub intensity: f32,
+}
+
+impl Default for EmissiveComponent {
+    fn default() -> Self {
+        Self::on()
+    }
 }
 
 impl EmissiveComponent {
-    pub fn new(enabled: bool) -> Self {
-        Self { enabled }
+    pub fn new(intensity: f32) -> Self {
+        Self {
+            intensity: if intensity.is_finite() {
+                intensity.max(0.0)
+            } else {
+                0.0
+            },
+        }
     }
 
     pub fn on() -> Self {
-        Self { enabled: true }
+        Self { intensity: 1.0 }
     }
 
     pub fn off() -> Self {
-        Self { enabled: false }
+        Self { intensity: 0.0 }
     }
 }
 
@@ -34,23 +45,22 @@ impl Component for EmissiveComponent {
         "emissive"
     }
 
-    fn init(&mut self, queue: &mut CommandQueue, component: ComponentId) {
-        queue.queue_register_emissive(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterEmissive {
+                component_ids: vec![component],
+            },
+        );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("enabled".to_string(), serde_json::Value::Bool(self.enabled));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("enabled") {
-            self.enabled = v.as_bool().unwrap_or(false);
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = if self.intensity == 0.0 { "off" } else { "on" };
+        let mut ce = ce_call("Emissive", ctor, vec![]);
+        if self.intensity != 0.0 && self.intensity != 1.0 {
+            ce = ce.with_call("intensity", vec![num(self.intensity as f64)]);
         }
-        Ok(())
+        ce
     }
 }

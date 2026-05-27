@@ -71,6 +71,20 @@ impl SkinnedMeshSystem {
         }
     }
 
+    /// Read-only access to the resolved joint transform ComponentIds for a particular
+    /// (GLTFComponent instance, SkinId) pair.
+    ///
+    /// The returned slice is in the same order as `VisualWorld::skin(skin_id).joint_node_indices`.
+    pub fn instance_joints_for_skin(
+        &self,
+        gltf_component: ComponentId,
+        skin_id: SkinId,
+    ) -> Option<&[Option<ComponentId>]> {
+        self.instance_joints
+            .get(&(gltf_component, skin_id))
+            .map(|v| v.as_slice())
+    }
+
     fn mat4_identity() -> TransformMatrix {
         [
             [1.0, 0.0, 0.0, 0.0],
@@ -180,7 +194,10 @@ impl SkinnedMeshSystem {
 
             // Candidate 2: any GLTFComponent child of this node.
             for &child in world.children_of(cid) {
-                if world.get_component_by_id_as::<GLTFComponent>(child).is_some() {
+                if world
+                    .get_component_by_id_as::<GLTFComponent>(child)
+                    .is_some()
+                {
                     if self.instance_joints.contains_key(&(child, skin_id)) {
                         return Some(child);
                     }

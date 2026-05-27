@@ -1,5 +1,8 @@
 use cat_engine::{engine, utils};
 
+#[path = "example_util/mod.rs"]
+mod example_util;
+
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ColorComponent,
     InputComponent, InputTransformModeComponent, PointLightComponent, RenderableComponent,
@@ -13,15 +16,15 @@ fn spawn_gold_cube(
     scale: f32,
     color: (f32, f32, f32),
 ) {
-    let t = universe.world.register(
+    let t = universe.world.add_component(
         TransformComponent::new()
             .with_position(position.0, position.1, position.2)
             .with_scale(scale, scale, scale),
     );
-    let r = universe.world.register(RenderableComponent::cube());
+    let r = universe.world.add_component(RenderableComponent::cube());
     let c = universe
         .world
-        .register(ColorComponent::rgba(color.0, color.1, color.2, 1.0));
+        .add_component(ColorComponent::rgba(color.0, color.1, color.2, 1.0));
 
     let _ = universe.attach(parent, t);
     let _ = universe.attach(t, r);
@@ -35,40 +38,43 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Orange/yellow-ish clear color so cutout edges read.
-    let clear = universe
-        .world
-        .register(BackgroundColorComponent::rgba(0.98, 0.72, 0.22, 1.0));
+    let clear = universe.world.add_component(BackgroundColorComponent::new());
+    let clear_c = universe.world.add_component(ColorComponent::rgba(0.98, 0.72, 0.22, 1.0));
+    let _ = universe.world.add_child(clear, clear_c);
     universe.add(clear);
 
     // Warm-ish ambient so the gold cubes don’t go too dark.
     let ambient = universe
         .world
-        .register(AmbientLightComponent::rgb(0.22, 0.16, 0.08));
+        .add_component(AmbientLightComponent::rgb(0.22, 0.16, 0.08));
     universe.add(ambient);
 
     // --- Camera rig (WASD/QE) ---
     let input = universe
         .world
-        .register(InputComponent::new().with_speed(2.0));
+        .add_component(InputComponent::new().with_speed(2.0));
     let input_mode = universe
         .world
-        .register(InputTransformModeComponent::forward_z().with_roll_axis_y());
+        .add_component(InputTransformModeComponent::forward_z().with_roll_axis_y());
     let _ = universe.attach(input, input_mode);
 
     // Start a bit pulled back, looking toward the origin.
     let rig_transform = universe
         .world
-        .register(TransformComponent::new().with_position(0.0, 0.0, 5.0));
+        .add_component(TransformComponent::new().with_position(0.0, 0.0, 5.0));
     let _ = universe.attach(input, rig_transform);
 
     let camera3d = universe
         .world
-        .register(Camera3DComponent::new().with_far(200.0).with_fov(55.0));
+        .add_component(Camera3DComponent::new().with_far(200.0).with_fov(55.0));
     let _ = universe.attach(rig_transform, camera3d);
+
+    // Topology: I { T { C3D } } — add a small camera-attached controls hint.
+    example_util::spawn_desktop_camera_controls_hint(&mut universe, rig_transform);
     universe.add(input);
 
     // Key light for toon shading.
-    let light = universe.world.register(
+    let light = universe.world.add_component(
         PointLightComponent::new()
             .with_distance(50.0)
             .with_intensity(2.2)
@@ -76,7 +82,7 @@ fn main() {
     );
     let light_transform = universe
         .world
-        .register(TransformComponent::new().with_position(2.0, 3.0, 4.0));
+        .add_component(TransformComponent::new().with_position(2.0, 3.0, 4.0));
     let _ = universe.attach(light_transform, light);
     universe.add(light_transform);
 
@@ -85,7 +91,7 @@ fn main() {
     // Not attached to the camera rig.
     let cat_grid_root = universe
         .world
-        .register(TransformComponent::new().with_position(0.0, 0.0, 9.0));
+        .add_component(TransformComponent::new().with_position(0.0, 0.0, 9.0));
     universe.add(cat_grid_root);
 
     let grid_w: i32 = 10;
@@ -102,21 +108,25 @@ fn main() {
 
             let pz: f32 = (x as f32) % half_w;
 
-            let quad_t = universe.world.register(
+            let quad_t = universe.world.add_component(
                 TransformComponent::new()
                     .with_position(px, py, pz)
                     .with_scale(0.55, 0.55, 1.0),
             );
-            let quad_r = universe.world.register(RenderableComponent::square());
+            let quad_r = universe.world.add_component(RenderableComponent::square());
 
-            let quad_tex = universe.world.register(TextureComponent::with_uri(
+            let quad_tex = universe.world.add_component(TextureComponent::with_uri(
                 "assets/textures/cat-face-amused.dds",
             ));
-            let quad_filtering = universe.world.register(TextureFilteringComponent::linear());
-            let quad_cutout = universe.world.register(TransparentCutoutComponent::new());
+            let quad_filtering = universe
+                .world
+                .add_component(TextureFilteringComponent::linear());
+            let quad_cutout = universe
+                .world
+                .add_component(TransparentCutoutComponent::new());
             let quad_color = universe
                 .world
-                .register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+                .add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
 
             let _ = universe.attach(cat_grid_root, quad_t);
             let _ = universe.attach(quad_t, quad_r);
@@ -131,14 +141,14 @@ fn main() {
     // Parent them under a transform so it’s easy to tweak their depth.
     let cubes_root = universe
         .world
-        .register(TransformComponent::new().with_position(0.0, 0.0, 4.6));
+        .add_component(TransformComponent::new().with_position(0.0, 0.0, 4.6));
 
     // point light for cats
     let cat_light_tx = universe
         .world
-        .register(TransformComponent::new().with_position(0.0, 2.0, 7.0));
+        .add_component(TransformComponent::new().with_position(0.0, 2.0, 7.0));
 
-    let cat_light = universe.world.register(
+    let cat_light = universe.world.add_component(
         PointLightComponent::new()
             .with_distance(150.0)
             .with_intensity(1.5)

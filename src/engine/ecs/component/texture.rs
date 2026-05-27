@@ -54,6 +54,7 @@ impl CatEngineTextureFormat {
 pub struct TextureComponent {
     pub source: TextureSource,
     pub format: CatEngineTextureFormat,
+    pub render_image: Option<String>,
 }
 
 impl TextureComponent {
@@ -63,11 +64,28 @@ impl TextureComponent {
         Self {
             source: TextureSource::Uri(uri),
             format,
+            render_image: None,
+        }
+    }
+
+    pub fn unresolved() -> Self {
+        Self {
+            source: TextureSource::Uri(String::new()),
+            format: CatEngineTextureFormat::Rgba8,
+            render_image: None,
         }
     }
 
     pub fn with_uri(uri: impl Into<String>) -> Self {
         Self::new(uri)
+    }
+
+    pub fn render_image(selector: impl Into<String>) -> Self {
+        Self {
+            source: TextureSource::Uri(String::new()),
+            format: CatEngineTextureFormat::Rgba8,
+            render_image: Some(selector.into()),
+        }
     }
 
     pub fn from_handle(handle: TextureHandle) -> Self {
@@ -76,6 +94,7 @@ impl TextureComponent {
             // Format is irrelevant for handle-based textures (already uploaded), but keep a
             // sensible default.
             format: CatEngineTextureFormat::Rgba8,
+            render_image: None,
         }
     }
 
@@ -104,8 +123,9 @@ impl TextureComponent {
 
     pub fn uri(&self) -> Option<&str> {
         match &self.source {
-            TextureSource::Uri(s) => Some(s.as_str()),
+            TextureSource::Uri(s) if !s.is_empty() => Some(s.as_str()),
             TextureSource::Handle(_) => None,
+            TextureSource::Uri(_) => None,
         }
     }
 }
@@ -123,30 +143,30 @@ impl Component for TextureComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_register_texture(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterTexture {
+                component_ids: vec![component],
+            },
+        );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        // Keep on-disk format stable for now: only URI-backed textures are serialized.
-        // Handle-backed textures are runtime-only.
-        if let Some(uri) = self.uri() {
-            map.insert("uri".to_string(), serde_json::json!(uri));
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        if let Some(selector) = &self.render_image {
+            return ce_call("Texture", "render_image", vec![s(selector)]);
         }
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(uri) = data.get("uri") {
-            let uri_str: String = serde_json::from_value(uri.clone())
-                .map_err(|e| format!("Failed to decode uri: {}", e))?;
-            self.source = TextureSource::Uri(uri_str);
+        match (&self.source, self.format) {
+            (TextureSource::Uri(uri), _) if uri.is_empty() => ce("Texture"),
+            (TextureSource::Uri(uri), CatEngineTextureFormat::DdsBc7) => {
+                ce_call("Texture", "from_dds", vec![s(uri)])
+            }
+            (TextureSource::Uri(uri), CatEngineTextureFormat::Rgba8) => {
+                ce_call("Texture", "with_uri", vec![s(uri)])
+            }
+            // Handle-backed textures are runtime-only; emit unresolved.
+            (TextureSource::Handle(_), _) => ce("Texture"),
         }
-        self.refresh_format_from_uri();
-        Ok(())
     }
 }

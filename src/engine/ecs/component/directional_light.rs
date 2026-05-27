@@ -56,11 +56,16 @@ impl Component for DirectionalLightComponent {
 
     fn init(
         &mut self,
-        queue: &mut crate::engine::ecs::CommandQueue,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
         component: crate::engine::ecs::ComponentId,
     ) {
         // Uses the same light registration path as point lights.
-        queue.queue_register_light(component);
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterLight {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -71,25 +76,13 @@ impl Component for DirectionalLightComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("intensity".to_string(), serde_json::json!(self.intensity));
-        map.insert("color".to_string(), serde_json::json!(self.color));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(intensity) = data.get("intensity") {
-            self.intensity = serde_json::from_value(intensity.clone())
-                .map_err(|e| format!("Failed to decode intensity: {}", e))?;
-        }
-        if let Some(color) = data.get("color") {
-            self.color = serde_json::from_value(color.clone())
-                .map_err(|e| format!("Failed to decode color: {}", e))?;
-        }
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce("DirectionalLight")
+            .with_call("intensity", vec![num(self.intensity as f64)])
+            .with_call(
+                "color",
+                nums(self.color.iter().map(|&v| v as f64)),
+            )
     }
 }

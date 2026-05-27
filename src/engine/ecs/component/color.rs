@@ -45,24 +45,17 @@ impl Component for ColorComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_register_color(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterColor {
+                component_ids: vec![component],
+            },
+        );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("rgba".to_string(), serde_json::json!(self.rgba));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(rgba) = data.get("rgba") {
-            self.rgba = serde_json::from_value(rgba.clone())
-                .map_err(|e| format!("Failed to decode rgba: {}", e))?;
-        }
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce_call("Color", "rgba", nums(self.rgba.iter().map(|&v| v as f64)))
     }
 }

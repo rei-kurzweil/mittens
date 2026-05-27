@@ -1,68 +1,278 @@
 use std::time::{Duration, Instant};
 
-use crate::meow_meow::ast::expression::Expression;
-use crate::meow_meow::ast::statement::Statement;
+use crate::engine;
+use crate::meow_meow::ast::{
+    AssignmentStatement, Expression, ImportItem, Statement,
+};
 use crate::meow_meow::evaluator::{EvalRequest, EvalResponse, MeowMeowEvaluator};
+use crate::meow_meow::object::Value;
 use crate::meow_meow::parser::MeowMeowParser;
+use crate::meow_meow::runner::MeowMeowRunner;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;
+use crate::engine::ecs::{CommandQueue, ComponentId, EventSignal, RxWorld, Signal, World};
+use crate::engine::ecs::component::{LayoutComponent, StyleComponent};
+use crate::engine::ecs::component::style::SizeDimension;
+use crate::meow_meow::unparser::unparse_program;
+
+fn parse(src: &str) -> Vec<Statement> {
+    let tokens = MeowMeowTokenizer::new(src).tokenize().expect("tokenize ok");
+    MeowMeowParser::new(tokens).parse_program().expect("parse ok")
+}
+
+/// Helper: extract a `ComponentExpression` from a `Statement::Expression(Expression::Component(_))`.
+macro_rules! as_component {
+    ($stmt:expr) => {{
+        let Statement::Expression(Expression::Component(c)) = $stmt else { panic!("expected component expression statement") };
+        c
+    }};
+}
+
+// ---------------------------------------------------------------------------
+// Component expression: basic forms
+// ---------------------------------------------------------------------------
 
 #[test]
-fn parses_component_tree_calls_and_params() {
-    let src = r#"
-T {
-    TXT { "kristi vs puppy", "click to start" }
+fn parse_bare_component() {
+    let prog = parse("T {}");
+    assert_eq!(prog.len(), 1);
+    let c = as_component!(&prog[0]);
+    assert_eq!(c.component_type.0, "T");
+    assert!(c.constructors.is_empty());
+    assert!(c.body.statements.is_empty());
+}
 
-    Background name="bg" {
-        with_occlusion_and_lighting()
-        T name="inner" {
-            QUAD_2D
+#[test]
+fn parse_constructor_no_body() {
+    let prog = parse("Color.rgba(1.0, 0.0, 0.5, 1.0)");
+    assert_eq!(prog.len(), 1);
+    let c = as_component!(&prog[0]);
+    assert_eq!(c.component_type.0, "Color");
+    let hc = c.constructors.first().expect("constructor");
+    assert_eq!(hc.method.0, "rgba");
+    assert_eq!(hc.args.len(), 4);
+    assert!(c.body.statements.is_empty());
+}
+
+#[test]
+fn parse_constructor_with_body() {
+    let prog = parse("T.with_scale(0.06, 0.06, 0.12) { C {} }");
+    let c = as_component!(&prog[0]);
+    assert_eq!(c.component_type.0, "T");
+    let hc = c.constructors.first().expect("constructor");
+    assert_eq!(hc.method.0, "with_scale");
+    assert_eq!(hc.args.len(), 3);
+    assert_eq!(c.body.statements.len(), 1);
+    let child = as_component!(&c.body.statements[0]);
+    assert_eq!(child.component_type.0, "C");
+}
+
+#[test]
+fn parse_named_assignment_in_body() {
+    let prog = parse(r#"T { name = "root" }"#);
+    let c = as_component!(&prog[0]);
+    assert_eq!(c.body.statements.len(), 1);
+    let Statement::Reassign { name, value } = &c.body.statements[0] else { panic!("expected Reassign") };
+    assert_eq!(name.0, "name");
+    assert!(matches!(value, Expression::String(s) if s == "root"));
+}
+
+#[test]
+fn parse_call_in_body() {
+    let prog = parse("BG { with_occlusion_and_lighting() }");
+    let c = as_component!(&prog[0]);
+    assert_eq!(c.body.statements.len(), 1);
+    let Statement::Expression(Expression::Call(call)) = &c.body.statements[0] else { panic!("expected Call") };
+    let Expression::Identifier(callee_id) = call.callee.as_ref() else { panic!("expected Identifier callee") };
+    assert_eq!(callee_id.0, "with_occlusion_and_lighting");
+    assert!(call.args.is_empty());
+}
+
+#[test]
+fn parse_positional_string() {
+    let prog = parse(r#"TXT { "hello" }"#);
+    let c = as_component!(&prog[0]);
+    assert_eq!(c.body.statements.len(), 1);
+    let Statement::Expression(Expression::String(s)) = &c.body.statements[0] else { panic!("expected string expr") };
+    assert_eq!(s, "hello");
+}
+
+#[test]
+fn parse_positional_ident_flag() {
+    let prog = parse("R { QUAD_2D }");
+    let c = as_component!(&prog[0]);
+    assert_eq!(c.body.statements.len(), 1);
+    let Statement::Expression(Expression::Identifier(id)) = &c.body.statements[0] else { panic!("expected ident expr") };
+    assert_eq!(id.0, "QUAD_2D");
+}
+
+#[test]
+fn parse_named_assignment_array() {
+    let prog = parse("T { rotation = [0.0, 0.0, 3.14] }");
+    let c = as_component!(&prog[0]);
+    let Statement::Reassign { name, value } = &c.body.statements[0] else { panic!("expected Reassign") };
+    assert_eq!(name.0, "rotation");
+    let Expression::Array(items) = value else { panic!() };
+    assert_eq!(items.len(), 3);
+}
+
+#[test]
+fn parse_else_if_chain() {
+    let prog = parse("if false { T {} } else if true { R {} } else { C {} }");
+    let Statement::If(if_stmt) = &prog[0] else { panic!("expected if statement") };
+    let else_if = match if_stmt.else_branch.as_ref() {
+        Some(crate::meow_meow::ast::ElseBranch::If(next_if)) => next_if,
+        _ => panic!("expected else-if branch"),
+    };
+    assert!(matches!(
+        else_if.else_branch.as_ref(),
+        Some(crate::meow_meow::ast::ElseBranch::Block(_))
+    ));
+}
+
+#[test]
+fn unparse_roundtrip_else_if_chain() {
+    let src = "if false { T {} } else if true { R {} } else { C {} }";
+    let prog = parse(src);
+    let reparsed = parse(&unparse_program(&prog));
+    assert_eq!(reparsed, prog);
+}
+
+// ---------------------------------------------------------------------------
+// Body item ordering is preserved
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_body_ordering_preserved() {
+    // call, then child, then identifier — order must be preserved as Statements
+    let prog = parse("T { call() C {} IDENT }");
+    let c = as_component!(&prog[0]);
+    assert_eq!(c.body.statements.len(), 3);
+    assert!(matches!(&c.body.statements[0], Statement::Expression(Expression::Call(_))));
+    assert!(matches!(&c.body.statements[1], Statement::Expression(Expression::Component(_))));
+    assert!(matches!(&c.body.statements[2], Statement::Expression(Expression::Identifier(_))));
+}
+
+// ---------------------------------------------------------------------------
+// Nested tree (controller cube from vr-input.mms)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_controller_cube_tree() {
+    let src = r#"
+CTLXR.new(true, Left, Aim) {
+    T.with_scale(0.06, 0.06, 0.12) {
+        TransformForkTRS {
+            TransformMapTranslation {}
+            TransformMapRotation {
+                QuatTemporalFilter.with_smoothing_factor(220.0)
+            }
+            TransformMapScale {}
+            T {
+                R.cube() {
+                    C.rgba(0.10, 0.90, 1.00, 1.0)
+                }
+            }
         }
     }
 }
 "#;
+    let prog = parse(src);
+    assert_eq!(prog.len(), 1);
 
-    let tokens = MeowMeowTokenizer::new(src).tokenize().expect("tokenize ok");
-    let program = MeowMeowParser::new(tokens)
-        .parse_program()
-        .expect("parse ok");
+    let root = as_component!(&prog[0]);
+    assert_eq!(root.component_type.0, "CTLXR");
+    let hc = root.constructors.first().expect("constructor on CTLXR");
+    assert_eq!(hc.method.0, "new");
+    assert_eq!(hc.args.len(), 3);
+    assert!(matches!(&hc.args[0], Expression::Bool(true)));
 
-    assert_eq!(program.len(), 1);
+    // one child: T.with_scale
+    assert_eq!(root.body.statements.len(), 1);
+    let t_scale = as_component!(&root.body.statements[0]);
+    assert_eq!(t_scale.component_type.0, "T");
+    assert_eq!(t_scale.constructors.first().unwrap().method.0, "with_scale");
 
-    let Statement::Expression(Expression::Component(root)) = &program[0] else {
-        panic!("expected a single top-level component expression");
-    };
+    // T → TransformForkTRS
+    assert_eq!(t_scale.body.statements.len(), 1);
+    let pipeline = as_component!(&t_scale.body.statements[0]);
+    assert_eq!(pipeline.component_type.0, "TransformForkTRS");
 
-    assert_eq!(root.component_type.0, "T");
-    assert!(root.parameters.is_empty());
+    // fork root → translation, rotation, scale, downstream T
+    assert_eq!(pipeline.body.statements.len(), 4);
+    let fork = pipeline;
 
-    // Children: TXT + Background
-    assert_eq!(root.children.len(), 2);
+    // fork → translation, rotation, scale
+    assert_eq!(fork.body.statements.len(), 4);
+    let map_rot = as_component!(&fork.body.statements[1]);
+    assert_eq!(map_rot.component_type.0, "TransformMapRotation");
 
-    let txt = &root.children[0];
-    assert_eq!(txt.component_type.0, "TXT");
-    assert!(txt.calls.is_empty());
-    assert_eq!(txt.positional.len(), 2);
+    // rotation filter child
+    assert_eq!(map_rot.body.statements.len(), 1);
+    let filter = as_component!(&map_rot.body.statements[0]);
+    assert_eq!(filter.component_type.0, "QuatTemporalFilter");
+    assert_eq!(filter.constructors.first().unwrap().method.0, "with_smoothing_factor");
 
-    let bg = &root.children[1];
-    assert_eq!(bg.component_type.0, "Background");
-    assert_eq!(bg.parameters.len(), 1);
-    assert_eq!(bg.parameters[0].name.0, "name");
-    assert_eq!(bg.calls.len(), 1);
-    assert_eq!(bg.calls[0].callee.0, "with_occlusion_and_lighting");
-
-    // Background child: inner T
-    assert_eq!(bg.children.len(), 1);
-    let inner = &bg.children[0];
-    assert_eq!(inner.component_type.0, "T");
-    assert_eq!(inner.parameters.len(), 1);
-    assert_eq!(inner.parameters[0].name.0, "name");
-    assert_eq!(inner.positional.len(), 1);
-
-    let Expression::Identifier(flag) = &inner.positional[0] else {
-        panic!("expected QUAD_2D to parse as a positional identifier expression");
-    };
-    assert_eq!(flag.0, "QUAD_2D");
+    // downstream T → R.cube → C.rgba
+    let out_t = as_component!(&fork.body.statements[3]);
+    let cube = as_component!(&out_t.body.statements[0]);
+    assert_eq!(cube.component_type.0, "R");
+    assert_eq!(cube.constructors.first().unwrap().method.0, "cube");
+    let color = as_component!(&cube.body.statements[0]);
+    assert_eq!(color.component_type.0, "C");
+    assert_eq!(color.constructors.first().unwrap().method.0, "rgba");
 }
+
+// ---------------------------------------------------------------------------
+// Multiple top-level statements
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_multiple_roots() {
+    let prog = parse("T {} R {} XR.on()");
+    assert_eq!(prog.len(), 3);
+    let c2 = as_component!(&prog[2]);
+    assert_eq!(c2.component_type.0, "XR");
+    assert_eq!(c2.constructors.first().unwrap().method.0, "on");
+}
+
+// ---------------------------------------------------------------------------
+// Let binding
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_let_binding() {
+    let prog = parse("let x = 42");
+    assert_eq!(prog.len(), 1);
+    let Statement::Assignment(a) = &prog[0] else { panic!() };
+    assert_eq!(a.name.0, "x");
+    assert!(matches!(a.value, Expression::Number(n) if n == 42.0));
+}
+
+// ---------------------------------------------------------------------------
+// Error cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_error_unterminated_body() {
+    let tokens = MeowMeowTokenizer::new("T {").tokenize().expect("tokenize ok");
+    let err = MeowMeowParser::new(tokens).parse_program().unwrap_err();
+    assert!(err.message.contains("Unterminated"));
+}
+
+#[test]
+fn runner_parse_errors_include_source_line_and_caret() {
+    // An unterminated component body is still a parse error and should include
+    // a source line + caret in the error message.
+    let out = MeowMeowRunner::eval("T {\n    R.cube()\n");
+    assert!(!out.errors.is_empty(), "expected parse error");
+    let msg = &out.errors[0];
+    assert!(msg.contains("parse error at"), "got: {msg}");
+    assert!(msg.contains("^"), "got: {msg}");
+}
+
+// ---------------------------------------------------------------------------
+// Evaluator thread smoke test
+// ---------------------------------------------------------------------------
 
 #[test]
 fn evaluator_thread_parses_and_responds() {
@@ -71,7 +281,7 @@ fn evaluator_thread_parses_and_responds() {
     handle
         .requests
         .push(EvalRequest::ParseScript {
-            source: "T { TXT { \"meow\" } }".to_string(),
+            source: "T.with_scale(1.0, 2.0, 3.0) { R.cube() { C.rgba(1,0,0,1) } }".to_string(),
         })
         .expect("push request");
 
@@ -82,17 +292,1948 @@ fn evaluator_thread_parses_and_responds() {
         match handle.responses.pop() {
             Ok(EvalResponse::ParsedOk { debug_ast }) => {
                 assert!(debug_ast.contains("ComponentExpression"));
+                assert!(debug_ast.contains("with_scale"));
                 got_ok = true;
                 break;
             }
+            Ok(EvalResponse::Intent(_)) => {} // ParseScript shouldn't emit intents, skip
             Ok(EvalResponse::Error { message }) => panic!("unexpected eval error: {message}"),
             Ok(EvalResponse::ShutdownAck) => panic!("unexpected shutdown ack"),
-            Err(rtrb::PopError::Empty) => {
-                std::thread::yield_now();
-            }
+            Ok(EvalResponse::HostCall { .. }) => {} // ParseScript never triggers HostCalls
+            Err(rtrb::PopError::Empty) => std::thread::yield_now(),
         }
     }
 
     assert!(got_ok, "timed out waiting for evaluator response");
     handle.shutdown_and_join();
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5: for/in, range(), break, continue
+// ---------------------------------------------------------------------------
+
+// --- parse tests ---
+
+#[test]
+fn parse_for_in_array_literal() {
+    let prog = parse("for x in [1, 2, 3] { T {} }");
+    assert_eq!(prog.len(), 1);
+    let Statement::ForIn { binding, iterable, body } = &prog[0] else { panic!() };
+    assert_eq!(binding.0, "x");
+    assert!(matches!(iterable, Expression::Array(_)));
+    assert_eq!(body.statements.len(), 1);
+}
+
+#[test]
+fn parse_for_in_range_call() {
+    let prog = parse("for i in range(10) { T {} }");
+    assert_eq!(prog.len(), 1);
+    let Statement::ForIn { binding, iterable, .. } = &prog[0] else { panic!() };
+    assert_eq!(binding.0, "i");
+    let Expression::Call(call) = iterable else { panic!() };
+    let Expression::Identifier(callee_id) = call.callee.as_ref() else { panic!("expected Identifier callee") };
+    assert_eq!(callee_id.0, "range");
+    assert_eq!(call.args.len(), 1);
+}
+
+#[test]
+fn parse_break_and_continue() {
+    let prog = parse("for i in range(5) { break; continue }");
+    let Statement::ForIn { body, .. } = &prog[0] else { panic!() };
+    assert!(matches!(body.statements[0], Statement::Break));
+    assert!(matches!(body.statements[1], Statement::Continue));
+}
+
+// --- eval tests ---
+
+fn eval(src: &str) -> crate::meow_meow::runner::EvalOutput {
+    MeowMeowRunner::eval(src)
+}
+
+#[test]
+fn live_eval_emitted_tree_is_queryable_by_next_statement() {
+    let src = r##"
+        T {
+            name = "panel"
+            T {
+                name = "btn_a"
+                Raycastable.enabled()
+                Text { "hello" }
+            }
+        }
+
+        let btn_a = query("#btn_a")
+        assert(btn_a, "expected btn_a to exist after prior emit")
+        on(btn_a, "Click", fn(event) {
+            print("clicked")
+        })
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert!(world.find_component(world.all_components().find(|&id| world.parent_of(id).is_none()).unwrap(), "#btn_a").is_some());
+}
+
+#[test]
+fn live_eval_reassigned_component_expr_supports_query_method_after_emit() {
+    let src = r##"
+        let layout_root = null
+
+        T {
+            layout_root = LayoutRoot {
+                T {
+                    name = "btn_a"
+                    Text { "hello" }
+                }
+            }
+
+            layout_root
+        }
+
+        let btn_a = layout_root.query("#btn_a")
+        assert(btn_a, "expected layout_root.query('#btn_a') to work after prior emit")
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+}
+
+#[test]
+fn live_handler_query_can_see_world() {
+    let src = r##"
+        T { name = "btn" }
+        T {
+            Text { "(unclicked)" name = "target" }
+        }
+
+        let btn = query("#btn")
+        on(btn, "Click", fn(event) {
+            let t = query("#target")
+            if t {
+                t.set_text("clicked")
+            }
+        })
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    let btn_id = world
+        .all_components()
+        .filter(|&id| world.parent_of(id).is_none())
+        .find_map(|root| world.find_component(root, "#btn"))
+        .expect("expected #btn");
+
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            btn_id,
+            EventSignal::Click {
+                raycaster: ComponentId::default(),
+                renderable: btn_id,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        ),
+    );
+
+    let intents = rx.drain_ready_intents();
+    assert!(
+        intents.iter().any(|signal| matches!(
+            signal.intent.as_ref().map(|intent| &intent.value),
+            Some(crate::engine::ecs::IntentValue::SetText { text, .. }) if text == "clicked"
+        )),
+        "expected handler query to resolve target and emit SetText"
+    );
+}
+
+#[test]
+fn mms_layoutroot_available_width_and_percent_style_width_reach_live_components() {
+    let src = r##"
+        LayoutRoot {
+            name = "root"
+            available_width(29.0)
+
+            T {
+                name = "panel"
+                Style {
+                    width(100%)
+                }
+            }
+        }
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    let root = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("root"))
+        .expect("root component");
+    let layout = world
+        .get_component_by_id_as::<LayoutComponent>(root)
+        .expect("layout component on root");
+    assert!((layout.available_width - 29.0).abs() < 1e-6);
+
+    let panel = world
+        .find_component(root, "#panel")
+        .expect("panel transform");
+    let style_id = world.children_of(panel).iter().copied().find(|&child| {
+        world.get_component_by_id_as::<StyleComponent>(child).is_some()
+    }).expect("panel style");
+    let style = world
+        .get_component_by_id_as::<StyleComponent>(style_id)
+        .expect("style component");
+
+    assert_eq!(style.width, SizeDimension::Percent(100.0));
+}
+
+#[test]
+fn handler_registered_inside_function_body_fires() {
+    // Regression for: function-call EvalContext used to hard-code
+    // `channels: None` / `host_world: None`, so `on(...)` inside a
+    // factory function silently no-op'd. After forwarding the caller's
+    // channels + host_world through, the handler must actually register.
+    let src = r##"
+        T { name = "btn" }
+        T {
+            Text { "(unclicked)" name = "target" }
+        }
+
+        fn wire_click(target_handle) {
+            on(target_handle, "Click", fn(event) {
+                let t = query("#target")
+                if t {
+                    t.set_text("clicked-from-fn")
+                }
+            })
+        }
+
+        let btn = query("#btn")
+        wire_click(btn)
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    let btn_id = world
+        .all_components()
+        .filter(|&id| world.parent_of(id).is_none())
+        .find_map(|root| world.find_component(root, "#btn"))
+        .expect("expected #btn");
+
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            btn_id,
+            EventSignal::Click {
+                raycaster: ComponentId::default(),
+                renderable: btn_id,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        ),
+    );
+
+    let intents = rx.drain_ready_intents();
+    assert!(
+        intents.iter().any(|signal| matches!(
+            signal.intent.as_ref().map(|intent| &intent.value),
+            Some(crate::engine::ecs::IntentValue::SetText { text, .. }) if text == "clicked-from-fn"
+        )),
+        "expected on(...) registered inside fn body to fire and emit SetText"
+    );
+}
+
+#[test]
+fn eval_for_in_array_emits_correct_count() {
+    // 3 elements → 3 SpawnComponentTree intents
+    let out = eval("for x in [1, 2, 3] { T {} }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 3);
+}
+
+#[test]
+fn eval_for_in_range_emits_correct_count() {
+    let out = eval("for i in range(5) { T {} }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 5);
+}
+
+#[test]
+fn eval_range_two_arg() {
+    // range(2, 5) → [2, 3, 4] → 3 intents
+    let out = eval("for i in range(2, 5) { T {} }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 3);
+}
+
+#[test]
+fn eval_break_stops_loop_early() {
+    // break after first iteration → only 1 intent despite 10-element range
+    let out = eval("for i in range(10) { T {} break }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+}
+
+#[test]
+fn eval_continue_skips_rest_of_body() {
+    // continue before second emit → only the first emit fires each iteration
+    // 3 iterations × 1 emit each = 3 intents (second T {} never reached)
+    let out = eval("for i in range(3) { T {} continue T {} }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 3);
+}
+
+#[test]
+fn eval_break_inside_if() {
+    // break inside an if branch propagates out of the loop
+    let out = eval("for i in range(10) { if i == 3.0 { break } T {} }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    // iterations 0,1,2 emit T (i==3 is the 4th iteration, 0-indexed, so 3 emits before break)
+    assert_eq!(out.intents.len(), 3);
+}
+
+#[test]
+fn eval_nested_for_loops() {
+    // outer 3 × inner 2 = 6 intents
+    let out = eval("for i in range(3) { for j in range(2) { T {} } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 6);
+}
+
+#[test]
+fn eval_break_only_exits_inner_loop() {
+    // break only exits inner loop; outer loop continues
+    // outer 3 iters, inner breaks after 1 → 3 intents
+    let out = eval("for i in range(3) { for j in range(5) { T {} break } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 3);
+}
+
+#[test]
+fn eval_for_binding_accessible_in_body() {
+    // range(0) → empty → 0 intents
+    let out = eval("for i in range(0) { T {} }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 0);
+}
+
+#[test]
+fn eval_return_propagates_through_for() {
+    // return inside a for loop inside a function exits the function, not just the loop
+    let out = eval(r#"
+        fn f() {
+            for i in range(10) {
+                T {}
+                return null
+            }
+        }
+        f()
+    "#);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// Export / Import
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_export_let() {
+    let prog = parse("export let pi = 3.14");
+    assert_eq!(prog.len(), 1);
+    let Statement::Assignment(AssignmentStatement { name, exported, .. }) = &prog[0] else { panic!() };
+    assert_eq!(name.0, "pi");
+    assert!(*exported);
+}
+
+#[test]
+fn parse_export_fn() {
+    let prog = parse("export fn lerp(a, b, t) { return a + (b - a) * t }");
+    assert_eq!(prog.len(), 1);
+    let Statement::Assignment(AssignmentStatement { name, exported, .. }) = &prog[0] else { panic!() };
+    assert_eq!(name.0, "lerp");
+    assert!(*exported);
+}
+
+#[test]
+fn parse_import_named() {
+    let prog = parse(r#"import { pi, lerp } from "math.mms""#);
+    assert_eq!(prog.len(), 1);
+    let Statement::Import { items, path } = &prog[0] else { panic!() };
+    assert_eq!(path, "math.mms");
+    assert_eq!(items.len(), 2);
+    assert!(matches!(&items[0], ImportItem::Named(id) if id.0 == "pi"));
+    assert!(matches!(&items[1], ImportItem::Named(id) if id.0 == "lerp"));
+}
+
+#[test]
+fn parse_import_alias() {
+    let prog = parse(r#"import { pi as PI, 0 as cube } from "parts.mms""#);
+    assert_eq!(prog.len(), 1);
+    let Statement::Import { items, .. } = &prog[0] else { panic!() };
+    assert!(matches!(&items[0], ImportItem::NamedAlias { name, alias } if name.0 == "pi" && alias.0 == "PI"));
+    assert!(matches!(&items[1], ImportItem::PositionalAlias { index: 0, alias } if alias.0 == "cube"));
+}
+
+#[test]
+fn eval_export_and_import_via_files() {
+    // Write a small library file that exports a value and a function.
+    let tmp = std::env::temp_dir();
+    let lib_path = tmp.join("_mms_test_lib.mms");
+    let user_path = tmp.join("_mms_test_user.mms");
+
+    std::fs::write(&lib_path, r#"
+export let count = 3.0
+export fn make_row(n) {
+    for i in range(n) { T {} }
+}
+"#).unwrap();
+
+    std::fs::write(&user_path, "import { count, make_row } from \"_mms_test_lib.mms\"\nmake_row(count)\n").unwrap();
+
+    let out = MeowMeowRunner::eval_file(user_path.to_str().unwrap());
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    // count == 3 → make_row(3) → 3 T {} emits
+    assert_eq!(out.intents.len(), 3, "intents: {:?}", out.intents);
+
+    // cleanup
+    let _ = std::fs::remove_file(&lib_path);
+    let _ = std::fs::remove_file(&user_path);
+}
+
+#[test]
+fn eval_import_positional_ce() {
+    // Library emits a CE at index 0; user imports it and re-emits it.
+    let tmp = std::env::temp_dir();
+    let lib_path = tmp.join("_mms_test_ce_lib.mms");
+    let user_path = tmp.join("_mms_test_ce_user.mms");
+
+    std::fs::write(&lib_path, "T.position(1.0, 0.0, 0.0) {}").unwrap();
+    std::fs::write(&user_path, "import { 0 as my_t } from \"_mms_test_ce_lib.mms\"\nmy_t\n").unwrap();
+
+    let out = MeowMeowRunner::eval_file(user_path.to_str().unwrap());
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+
+    let _ = std::fs::remove_file(&lib_path);
+    let _ = std::fs::remove_file(&user_path);
+}
+
+#[test]
+fn eval_panel_component_factories_from_assets() {
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let user_path = workspace_root.join("target/_mms_test_panel_factories_user.mms");
+
+    std::fs::write(
+        &user_path,
+        r#"
+import { world_panel } from "../assets/components/world_panel.mms"
+import { inspector_panel } from "../assets/components/inspector_panel.mms"
+
+let world_items = ["Root", "Camera", "Light"]
+let inspector_items = ["Transform {}", "Style {}"]
+
+world_panel("World", world_items)
+inspector_panel("Inspector", inspector_items)
+"#,
+    )
+    .unwrap();
+
+    let out = MeowMeowRunner::eval_file(user_path.to_str().unwrap());
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 2, "intents: {:?}", out.intents);
+
+    let _ = std::fs::remove_file(&user_path);
+}
+
+#[test]
+fn load_module_file_exposes_named_exports_as_evaluated_values() {
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let module_path = workspace_root.join("assets/components/world_panel.mms");
+
+    let module = MeowMeowRunner::load_module_file(module_path.to_str().unwrap())
+        .expect("expected module to load");
+
+    assert!(matches!(
+        module.named_export("world_panel"),
+        Some(Value::Function { .. })
+    ));
+}
+
+#[test]
+fn call_mms_module_fn_invokes_exported_factory_function() {
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let module_path = workspace_root.join("assets/components/world_panel.mms");
+
+    let module = MeowMeowRunner::load_module_file(module_path.to_str().unwrap())
+        .expect("expected module to load");
+
+    let value = MeowMeowRunner::call_mms_module_fn(
+        &module,
+        "world_panel",
+        vec![
+            Value::String("World".to_string()),
+            Value::Array(vec![
+                Value::String("Root".to_string()),
+                Value::String("Camera".to_string()),
+            ]),
+        ],
+        None,
+        None,
+        None,
+    )
+    .expect("expected exported factory call to succeed");
+
+    assert!(matches!(value, Value::ComponentExpr(_)));
+}
+
+#[test]
+fn eval_world_panel_content_rows_are_queryable_by_index_name() {
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = workspace_root.join("target/_mms_test_world_panel_content_names.mms");
+    let source = r##"
+import { world_panel_content } from "../assets/components/world_panel_content.mms"
+
+let root = world_panel_content(["Root", "Camera", "Light"])
+let rows_mount = root.query("#rows_mount")
+let row_0 = root.query("#item_0")
+let row_1 = root.query("#item_1")
+let row_2 = root.query("#item_2")
+
+assert(rows_mount, "expected rows_mount to exist")
+assert(row_0, "expected item_0 row to exist")
+assert(row_1, "expected item_1 row to exist")
+assert(row_2, "expected item_2 row to exist")
+"##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world_at_path(
+        source,
+        Some(source_path.to_str().unwrap()),
+        &mut world,
+        &mut rx,
+        &mut emit,
+    );
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+}
+
+// ---------------------------------------------------------------------------
+// Reassignment
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_reassign() {
+    let prog = parse("let x = 1\nx = 2");
+    assert_eq!(prog.len(), 2);
+    assert!(matches!(&prog[0], Statement::Assignment(_)));
+    let Statement::Reassign { name, .. } = &prog[1] else { panic!("expected Reassign") };
+    assert_eq!(name.0, "x");
+}
+
+#[test]
+fn eval_reassign_basic() {
+    // A number incremented via reassignment should be visible to later code.
+    let src = r#"
+        let x = 10
+        x = 20
+        let arr = [x]
+    "#;
+    let out = MeowMeowRunner::eval(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+}
+
+#[test]
+fn eval_reassign_undefined_errors() {
+    let out = MeowMeowRunner::eval("x = 5");
+    assert!(!out.errors.is_empty(), "expected an error for undefined reassignment");
+    assert!(out.errors[0].contains("not defined"), "got: {}", out.errors[0]);
+}
+
+#[test]
+fn eval_if_reassign_propagates_to_outer_scope() {
+    // `y` declared in outer block, reassigned inside if-branch —
+    // the emitted CE must use the updated value.
+    let src = r#"
+        let y = -1.0
+        if (1 > 0) {
+            y = 99.0
+        }
+        T.position(0.0, y, 0.0) {}
+    "#;
+    let out = MeowMeowRunner::eval(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+    // Verify the CE position used the updated y (second arg of the constructor call).
+    let engine::ecs::IntentValue::SpawnComponentTree { root, .. } = &out.intents[0] else { panic!() };
+    assert_eq!(root.ctor_method.as_deref(), Some("position"), "expected position ctor");
+    let Value::Number(y_val) = &root.ctor_args[1] else { panic!("expected number arg at index 1") };
+    assert!((*y_val - 99.0).abs() < 1e-6, "expected y=99.0, got {y_val}");
+}
+
+#[test]
+fn eval_for_accumulator_pattern() {
+    // sum = sum + i across iterations — the classic accumulator.
+    let src = r#"
+        let sum = 0
+        for i in [1, 2, 3] {
+            sum = sum + i
+        }
+    "#;
+    // No errors means the reassignment and loop executed correctly.
+    let out = MeowMeowRunner::eval(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+}
+
+#[test]
+fn eval_for_accumulator_propagates_after_loop_exit() {
+    // After the frame-stack refactor, reassignment to an outer-declared variable
+    // inside a loop body should walk up to the declaring frame — so `sum` is 6
+    // *after* the loop, not 0. Observable here via a conditional emit.
+    //
+    // Pre-refactor: `loop_env = env.clone()` sandboxes the loop; sum stays 0;
+    // the `if sum == 6` branch never fires; intents.len() == 0.
+    let out = eval(r#"
+        let sum = 0
+        for i in [1, 2, 3] {
+            sum = sum + i
+        }
+        if sum == 6 { T {} }
+    "#);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(
+        out.intents.len(),
+        1,
+        "expected sum to propagate out of the loop and equal 6"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// While loop
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_while_loop() {
+    let prog = parse("while true { T {} }");
+    assert_eq!(prog.len(), 1);
+    let Statement::While { condition, body } = &prog[0] else { panic!("expected While") };
+    assert!(matches!(condition, Expression::Bool(true)));
+    assert_eq!(body.statements.len(), 1);
+}
+
+#[test]
+fn eval_while_counts_up_to_limit() {
+    // Emit one T per iteration; stop when i reaches 4.
+    let out = eval(r#"
+        let i = 0
+        while i < 4 {
+            T {}
+            i = i + 1
+        }
+    "#);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 4);
+}
+
+#[test]
+fn eval_while_break_exits_early() {
+    let out = eval(r#"
+        let i = 0
+        while true {
+            if i == 3 { break }
+            T {}
+            i = i + 1
+        }
+    "#);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 3);
+}
+
+#[test]
+fn eval_while_continue_skips_body_tail() {
+    // Only emit T when i is even; continue skips the emit on odd iterations.
+    // i goes 0..5 → 0,2,4 emit → 3 intents
+    let out = eval(r#"
+        let i = 0
+        while i < 5 {
+            i = i + 1
+            if i == 2 { continue }
+            if i == 4 { continue }
+            T {}
+        }
+    "#);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 3);
+}
+
+#[test]
+fn eval_while_false_never_runs() {
+    let out = eval("while false { T {} }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Component body: for / if / block statements
+// ---------------------------------------------------------------------------
+
+#[test]
+fn body_for_expands_children() {
+    // `for i in range(3)` inside a component body → 3 children under the parent
+    let out = eval("T { for i in range(3) { R.cube() {} } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    // One top-level spawn; it will have 3 children internally.
+    assert_eq!(out.intents.len(), 1);
+}
+
+#[test]
+fn body_for_captures_binding() {
+    // The loop variable should be captured as a value in each child's constructor args.
+    let out = eval(r#"T { for i in [1, 2, 3] { T.position(i, 0, 0) {} } }"#);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+}
+
+#[test]
+fn body_if_true_includes_child() {
+    let out = eval("T { if true { R.cube() {} } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+}
+
+#[test]
+fn body_if_false_excludes_child() {
+    // When condition is false and there is no else branch, the child should be absent.
+    // The parent T still spawns (1 intent) but has no children.
+    let out = eval("T { if false { R.cube() {} } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+}
+
+#[test]
+fn body_if_else_picks_else_branch() {
+    let out = eval("T { if false { R.cube() {} } else { R.sphere() {} } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+}
+
+#[test]
+fn body_else_if_picks_first_matching_branch() {
+    let out = eval("T { if false { R.cube() {} } else if true { R.sphere() {} } else { R.cone() {} } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+}
+
+#[test]
+fn body_for_nested_in_for() {
+    // 3x3 grid: outer `for` produces 3 iterations each containing inner `for` of 3 → 9 children.
+    let out = eval("T { for x in range(3) { for y in range(3) { R.cube() {} } } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+}
+
+#[test]
+fn body_for_with_if_inside() {
+    // Only even indices: range(6) → 0,1,2,3,4,5 → 3 children (0,2,4)
+    let out = eval("T { for i in range(6) { if i % 2 == 0 { R.cube() {} } } }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// to_mms_ast round-trip tests
+//
+// Build a live component → emit MMS via `to_mms_ast` → unparse → parse →
+// materialize → `spawn_tree_uninitialized` → downcast and assert fields.
+// This is the path scene save/load and `attach_clone` actually follow.
+// ---------------------------------------------------------------------------
+
+use crate::engine::ecs::component::Component as ComponentTrait;
+
+fn roundtrip_component<C: ComponentTrait + 'static>(
+    original: C,
+) -> (World, ComponentId) {
+    // Round-trip helper assumes the component encodes losslessly without
+    // needing live world context (no ComponentId refs). Use an empty world
+    // as a stand-in.
+    let world_stub = World::default();
+    let ce_ast = original.to_mms_ast(&world_stub);
+    let text = crate::meow_meow::unparser::unparse_component(&ce_ast);
+    let prog = parse(&text);
+    assert_eq!(prog.len(), 1, "unparsed `{text}` did not produce one stmt");
+    let parsed_ce = as_component!(prog.into_iter().next().unwrap());
+    let mat = crate::meow_meow::component_registry::ce_ast_to_materialized(&parsed_ce)
+        .expect("materialize");
+    let mut world = World::default();
+    let mut emit = CommandQueue::new();
+    let id = crate::meow_meow::component_registry::spawn_tree_uninitialized(
+        &mat, &mut world, &mut emit,
+    )
+    .expect("spawn");
+    (world, id)
+}
+
+#[test]
+fn roundtrip_opacity() {
+    use crate::engine::ecs::component::OpacityComponent;
+    let original = OpacityComponent::new()
+        .with_opacity(0.42)
+        .with_multiple_layers();
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<OpacityComponent>(id)
+        .expect("Opacity downcast");
+    assert!((got.opacity - 0.42).abs() < 1e-6, "opacity: {}", got.opacity);
+    assert!(got.multiple_layers);
+}
+
+#[test]
+fn roundtrip_opacity_default_multiple_layers_omitted() {
+    use crate::engine::ecs::component::OpacityComponent;
+    // multiple_layers=false should not emit the toggle call.
+    let original = OpacityComponent::new().with_opacity(0.75);
+    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(&original, &World::default()));
+    assert!(
+        !text.contains("multiple_layers"),
+        "expected `multiple_layers` not emitted when false: {text}"
+    );
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<OpacityComponent>(id)
+        .unwrap();
+    assert!((got.opacity - 0.75).abs() < 1e-6);
+    assert!(!got.multiple_layers);
+}
+
+#[test]
+fn roundtrip_emissive_on() {
+    use crate::engine::ecs::component::EmissiveComponent;
+    let (world, id) = roundtrip_component(EmissiveComponent::on());
+    let got = world
+        .get_component_by_id_as::<EmissiveComponent>(id)
+        .unwrap();
+    assert_eq!(got.intensity, 1.0);
+}
+
+#[test]
+fn roundtrip_emissive_off() {
+    use crate::engine::ecs::component::EmissiveComponent;
+    let (world, id) = roundtrip_component(EmissiveComponent::off());
+    let got = world
+        .get_component_by_id_as::<EmissiveComponent>(id)
+        .unwrap();
+    assert_eq!(got.intensity, 0.0);
+}
+
+#[test]
+fn roundtrip_emissive_custom_intensity() {
+    use crate::engine::ecs::component::EmissiveComponent;
+    let (world, id) = roundtrip_component(EmissiveComponent::new(2.5));
+    let got = world
+        .get_component_by_id_as::<EmissiveComponent>(id)
+        .unwrap();
+    assert!((got.intensity - 2.5).abs() < 1e-6, "intensity: {}", got.intensity);
+}
+
+#[test]
+fn roundtrip_ambient_light() {
+    use crate::engine::ecs::component::AmbientLightComponent;
+    let (world, id) = roundtrip_component(AmbientLightComponent::rgb(0.1, 0.5, 0.9));
+    let got = world
+        .get_component_by_id_as::<AmbientLightComponent>(id)
+        .unwrap();
+    assert!((got.rgb[0] - 0.1).abs() < 1e-6);
+    assert!((got.rgb[1] - 0.5).abs() < 1e-6);
+    assert!((got.rgb[2] - 0.9).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_directional_light() {
+    use crate::engine::ecs::component::DirectionalLightComponent;
+    let original = DirectionalLightComponent::new()
+        .with_intensity(2.0)
+        .with_color(0.5, 0.6, 0.7);
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<DirectionalLightComponent>(id)
+        .unwrap();
+    assert!((got.intensity - 2.0).abs() < 1e-6);
+    assert!((got.color[0] - 0.5).abs() < 1e-6);
+    assert!((got.color[1] - 0.6).abs() < 1e-6);
+    assert!((got.color[2] - 0.7).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_point_light() {
+    use crate::engine::ecs::component::PointLightComponent;
+    let original = PointLightComponent::new()
+        .with_intensity(3.0)
+        .with_distance(15.0)
+        .with_color(0.25, 0.5, 0.75);
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<PointLightComponent>(id)
+        .unwrap();
+    assert!((got.intensity - 3.0).abs() < 1e-6);
+    assert!((got.distance - 15.0).abs() < 1e-6);
+    assert!((got.color[0] - 0.25).abs() < 1e-6);
+    assert!((got.color[1] - 0.5).abs() < 1e-6);
+    assert!((got.color[2] - 0.75).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_gltf() {
+    use crate::engine::ecs::component::GLTFComponent;
+    let original = GLTFComponent::new("models/cat.glb").with_visualized_transforms(true);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<GLTFComponent>(id).unwrap();
+    assert_eq!(got.uri, "models/cat.glb");
+    assert!(got.with_visualized_transforms);
+}
+
+#[test]
+fn roundtrip_gltf_no_visualized_transforms_omits_call() {
+    use crate::engine::ecs::component::GLTFComponent;
+    let original = GLTFComponent::new("models/cat.glb");
+    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(&original, &World::default()));
+    assert!(
+        !text.contains("with_visualized_transforms"),
+        "expected `with_visualized_transforms` omitted when false: {text}"
+    );
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<GLTFComponent>(id).unwrap();
+    assert_eq!(got.uri, "models/cat.glb");
+    assert!(!got.with_visualized_transforms);
+}
+
+#[test]
+fn roundtrip_texture_with_uri() {
+    use crate::engine::ecs::component::{TextureComponent, CatEngineTextureFormat};
+    use crate::engine::ecs::component::texture::TextureSource;
+    let (world, id) = roundtrip_component(TextureComponent::with_uri("textures/cat.png"));
+    let got = world.get_component_by_id_as::<TextureComponent>(id).unwrap();
+    match &got.source {
+        TextureSource::Uri(u) => assert_eq!(u, "textures/cat.png"),
+        _ => panic!("expected URI source"),
+    }
+    assert_eq!(got.format, CatEngineTextureFormat::Rgba8);
+    assert!(got.render_image.is_none());
+}
+
+#[test]
+fn roundtrip_texture_from_dds() {
+    use crate::engine::ecs::component::{TextureComponent, CatEngineTextureFormat};
+    let (world, id) = roundtrip_component(TextureComponent::from_dds("textures/cat.dds"));
+    let got = world.get_component_by_id_as::<TextureComponent>(id).unwrap();
+    assert_eq!(got.format, CatEngineTextureFormat::DdsBc7);
+}
+
+#[test]
+fn roundtrip_texture_render_image() {
+    use crate::engine::ecs::component::TextureComponent;
+    let (world, id) = roundtrip_component(TextureComponent::render_image("#main"));
+    let got = world.get_component_by_id_as::<TextureComponent>(id).unwrap();
+    assert_eq!(got.render_image.as_deref(), Some("#main"));
+}
+
+#[test]
+fn roundtrip_camera_3d() {
+    use crate::engine::ecs::component::Camera3DComponent;
+    use crate::engine::graphics::CameraTarget;
+    let original = Camera3DComponent::new()
+        .with_fov(75.0)
+        .with_near(0.5)
+        .with_far(200.0);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<Camera3DComponent>(id).unwrap();
+    assert!((got.fov_y_degrees - 75.0).abs() < 1e-6);
+    assert!((got.z_near - 0.5).abs() < 1e-6);
+    assert!((got.z_far - 200.0).abs() < 1e-6);
+    assert!(matches!(got.target, CameraTarget::Window));
+}
+
+#[test]
+fn roundtrip_camera_2d() {
+    use crate::engine::ecs::component::Camera2DComponent;
+    use crate::engine::graphics::CameraTarget;
+    let mut original = Camera2DComponent::new();
+    original.target = CameraTarget::Xr;
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<Camera2DComponent>(id).unwrap();
+    assert!(matches!(got.target, CameraTarget::Xr));
+}
+
+#[test]
+fn roundtrip_camera_xr_off() {
+    use crate::engine::ecs::component::CameraXRComponent;
+    let (world, id) = roundtrip_component(CameraXRComponent::off());
+    let got = world.get_component_by_id_as::<CameraXRComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_openxr_off() {
+    use crate::engine::ecs::component::OpenXRComponent;
+    let (world, id) = roundtrip_component(OpenXRComponent::off());
+    let got = world.get_component_by_id_as::<OpenXRComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_controller_xr() {
+    use crate::engine::ecs::component::{ControllerXRComponent, ControllerHand, ControllerPoseKind};
+    let original =
+        ControllerXRComponent::new(true, ControllerHand::Right, ControllerPoseKind::Grip);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<ControllerXRComponent>(id).unwrap();
+    assert!(got.enabled);
+    assert_eq!(got.hand, ControllerHand::Right);
+    assert_eq!(got.pose, ControllerPoseKind::Grip);
+}
+
+#[test]
+fn roundtrip_input_xr_off() {
+    use crate::engine::ecs::component::InputXRComponent;
+    let (world, id) = roundtrip_component(InputXRComponent::off());
+    let got = world.get_component_by_id_as::<InputXRComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_animation_paused() {
+    use crate::engine::ecs::component::{AnimationComponent, AnimationState};
+    let (world, id) =
+        roundtrip_component(AnimationComponent::new().with_state(AnimationState::Paused));
+    let got = world.get_component_by_id_as::<AnimationComponent>(id).unwrap();
+    assert_eq!(got.state, AnimationState::Paused);
+}
+
+#[test]
+fn roundtrip_animation_resolve_targets_on_play() {
+    use crate::engine::ecs::component::{AnimationComponent, ResolveTargetsMode};
+    let (world, id) = roundtrip_component(
+        AnimationComponent::new().with_resolve_targets(ResolveTargetsMode::OnPlay),
+    );
+    let got = world.get_component_by_id_as::<AnimationComponent>(id).unwrap();
+    assert_eq!(got.resolve_targets, ResolveTargetsMode::OnPlay);
+}
+
+// ---------------------------------------------------------------------------
+// Action round-trip tests
+//
+// These exercise the subtree dump path (`subtree_to_ce_ast`) because Action
+// references other components by ComponentId — the dump needs the surrounding
+// world to derive `@uuid:` strings and the guid-preservation pre-pass needs
+// the full subtree to know which targets are referenced.
+// ---------------------------------------------------------------------------
+
+/// Build a live source world, dump the subtree rooted at `root` via
+/// `subtree_to_ce_ast`, unparse → parse → spawn into a fresh world, and
+/// return the fresh world plus the respawned root id.
+fn roundtrip_subtree(source_world: &World, root: ComponentId) -> (World, ComponentId) {
+    let ce_ast = crate::meow_meow::component_registry::subtree_to_ce_ast(source_world, root)
+        .expect("subtree_to_ce_ast");
+    let text = crate::meow_meow::unparser::unparse_component(&ce_ast);
+    let prog = parse(&text);
+    assert_eq!(prog.len(), 1, "unparsed `{text}` did not produce one stmt");
+    let parsed_ce = as_component!(prog.into_iter().next().unwrap());
+    let mat = crate::meow_meow::component_registry::ce_ast_to_materialized(&parsed_ce)
+        .expect("materialize");
+    let mut world = World::default();
+    let mut emit = CommandQueue::new();
+    let id = crate::meow_meow::component_registry::spawn_tree_uninitialized(
+        &mat,
+        &mut world,
+        &mut emit,
+    )
+    .expect("spawn");
+    (world, id)
+}
+
+#[test]
+fn roundtrip_action_query_selector_preserved_verbatim() {
+    use crate::engine::ecs::component::{
+        ActionComponent, ComponentRef, KeyframeComponent, TransformComponent,
+    };
+    use crate::engine::ecs::IntentValue;
+    use slotmap::Key;
+
+    let mut w = World::default();
+    let root = w.add_component(TransformComponent::new());
+    let target = w.add_component_boxed_named("hero", Box::new(TransformComponent::new()));
+    w.add_child(root, target).unwrap();
+    let kf = w.add_component(KeyframeComponent::new(0.0));
+    w.add_child(root, kf).unwrap();
+    let signal = IntentValue::SetColor {
+        component_ids: vec![ComponentId::null()],
+        rgba: [1.0, 0.0, 0.0, 1.0],
+    };
+    let action = w.add_component(ActionComponent::new_authored(
+        signal,
+        vec![ComponentRef::Query("#hero".to_string())],
+    ));
+    w.add_child(kf, action).unwrap();
+
+    let (new_world, new_root) = roundtrip_subtree(&w, root);
+    // Find the respawned Action by walking.
+    let new_action = find_first::<ActionComponent>(&new_world, new_root).expect("action exists");
+    let comp = new_world
+        .get_component_by_id_as::<ActionComponent>(new_action)
+        .unwrap();
+    assert_eq!(comp.target_sources.len(), 1);
+    match &comp.target_sources[0] {
+        ComponentRef::Query(s) => assert_eq!(s, "#hero"),
+        other => panic!("expected Query selector, got {other:?}"),
+    }
+}
+
+#[test]
+fn roundtrip_action_handle_becomes_guid_and_target_keeps_guid() {
+    use crate::engine::ecs::component::{
+        ActionComponent, ComponentRef, KeyframeComponent, TransformComponent,
+    };
+    use crate::engine::ecs::IntentValue;
+    use slotmap::Key;
+
+    let mut w = World::default();
+    let root = w.add_component(TransformComponent::new());
+    // Unnamed target; only the GUID identifies it.
+    let target = w.add_component(TransformComponent::new());
+    w.add_child(root, target).unwrap();
+    let target_guid = w.get_component_record(target).unwrap().guid;
+
+    let kf = w.add_component(KeyframeComponent::new(0.0));
+    w.add_child(root, kf).unwrap();
+
+    let signal = IntentValue::SetPosition {
+        component_ids: vec![ComponentId::null()],
+        position: [1.0, 2.0, 3.0],
+    };
+    let action = w.add_component(ActionComponent::new_authored(
+        signal,
+        vec![ComponentRef::Guid(target_guid)],
+    ));
+    w.add_child(kf, action).unwrap();
+
+    let (new_world, new_root) = roundtrip_subtree(&w, root);
+
+    // The action's target_sources should preserve the same guid.
+    let new_action = find_first::<ActionComponent>(&new_world, new_root).unwrap();
+    let comp = new_world
+        .get_component_by_id_as::<ActionComponent>(new_action)
+        .unwrap();
+    match &comp.target_sources[0] {
+        ComponentRef::Guid(u) => assert_eq!(*u, target_guid),
+        other => panic!("expected Guid, got {other:?}"),
+    }
+
+    // The target component should have its guid restored on the new
+    // world's guid_index — otherwise OnAttach/OnPlay resolution would
+    // fail to find it.
+    assert!(
+        new_world.component_id_by_guid(target_guid).is_some(),
+        "target guid not restored across round-trip"
+    );
+}
+
+#[test]
+fn roundtrip_action_named_and_guid_referenced_target_emits_both() {
+    use crate::engine::ecs::component::{
+        ActionComponent, ComponentRef, KeyframeComponent, TransformComponent,
+    };
+    use crate::engine::ecs::IntentValue;
+    use slotmap::Key;
+
+    let mut w = World::default();
+    let root = w.add_component(TransformComponent::new());
+    // Target has BOTH a name and gets referenced by guid (author wrote
+    // `let hero = T { name = "hero" }; Action.set_color(hero, ...)`).
+    let target = w.add_component_boxed_named("hero", Box::new(TransformComponent::new()));
+    w.add_child(root, target).unwrap();
+    let target_guid = w.get_component_record(target).unwrap().guid;
+
+    let kf = w.add_component(KeyframeComponent::new(0.0));
+    w.add_child(root, kf).unwrap();
+    let signal = IntentValue::SetColor {
+        component_ids: vec![ComponentId::null()],
+        rgba: [0.0, 1.0, 0.0, 1.0],
+    };
+    let action = w.add_component(ActionComponent::new_authored(
+        signal,
+        vec![ComponentRef::Guid(target_guid)],
+    ));
+    w.add_child(kf, action).unwrap();
+
+    // Inspect the dump text directly: both `name = "hero"` and
+    // `guid = "<uuid>"` should be present on the target's CE.
+    let ce = crate::meow_meow::component_registry::subtree_to_ce_ast(&w, root)
+        .expect("subtree_to_ce_ast");
+    let text = crate::meow_meow::unparser::unparse_component(&ce);
+    assert!(text.contains("name = \"hero\""), "expected name emit: {text}");
+    assert!(
+        text.contains(&format!("guid = \"{target_guid}\"")),
+        "expected guid emit: {text}"
+    );
+
+    // And both round-trip live.
+    let (new_world, new_root) = roundtrip_subtree(&w, root);
+    let new_target = new_world
+        .component_id_by_guid(target_guid)
+        .expect("target guid restored");
+    let new_target_node = new_world.get_component_record(new_target).unwrap();
+    assert_eq!(new_target_node.name, "hero");
+    assert_eq!(new_target_node.guid, target_guid);
+
+    // The action's target_sources still resolves to the same guid.
+    let new_action = find_first::<ActionComponent>(&new_world, new_root).unwrap();
+    let comp = new_world
+        .get_component_by_id_as::<ActionComponent>(new_action)
+        .unwrap();
+    match &comp.target_sources[0] {
+        ComponentRef::Guid(u) => assert_eq!(*u, target_guid),
+        other => panic!("expected Guid, got {other:?}"),
+    }
+}
+
+#[test]
+fn roundtrip_action_unreferenced_component_does_not_get_guid_emit() {
+    use crate::engine::ecs::component::{ActionComponent, TransformComponent};
+    use crate::engine::ecs::IntentValue;
+
+    let mut w = World::default();
+    let root = w.add_component(TransformComponent::new());
+    let bystander = w.add_component(TransformComponent::new());
+    w.add_child(root, bystander).unwrap();
+    // No Action references `bystander`.
+    let action = w.add_component(ActionComponent::new(IntentValue::Print {
+        message: "hi".into(),
+    }));
+    w.add_child(root, action).unwrap();
+
+    let ce = crate::meow_meow::component_registry::subtree_to_ce_ast(&w, root)
+        .expect("subtree_to_ce_ast");
+    let text = crate::meow_meow::unparser::unparse_component(&ce);
+    let bystander_guid = w.get_component_record(bystander).unwrap().guid;
+    assert!(
+        !text.contains(&format!("guid = \"{bystander_guid}\"")),
+        "unreferenced component should not get guid emit: {text}"
+    );
+}
+
+#[test]
+fn roundtrip_ikchain_target_and_end_effector_via_selectors() {
+    use crate::engine::ecs::component::{
+        ComponentRef, IKChainComponent, IKSolver, TransformComponent,
+    };
+
+    let mut w = World::default();
+    let root = w.add_component(TransformComponent::new());
+    let target = w.add_component_boxed_named("hand_target", Box::new(TransformComponent::new()));
+    w.add_child(root, target).unwrap();
+    let ee = w.add_component_boxed_named("end_effector", Box::new(TransformComponent::new()));
+    w.add_child(root, ee).unwrap();
+    let mut ik = IKChainComponent::new(
+        IKSolver::TwoBoneIK { pole_direction: [0.0, 1.0, 0.0], copy_end_rotation: false },
+        target,
+        ee,
+    );
+    ik = ik
+        .with_target_source(ComponentRef::Query("#hand_target".to_string()))
+        .with_end_effector_source(ComponentRef::Query("#end_effector".to_string()));
+    let ik_id = w.add_component(ik);
+    w.add_child(root, ik_id).unwrap();
+
+    let (new_world, new_root) = roundtrip_subtree(&w, root);
+    let new_ik_id = find_first::<IKChainComponent>(&new_world, new_root).unwrap();
+    let new_ik = new_world
+        .get_component_by_id_as::<IKChainComponent>(new_ik_id)
+        .unwrap();
+    match &new_ik.target_source {
+        Some(ComponentRef::Query(s)) => assert_eq!(s, "#hand_target"),
+        other => panic!("expected Query target_source, got {other:?}"),
+    }
+    match &new_ik.end_effector_source {
+        Some(ComponentRef::Query(s)) => assert_eq!(s, "#end_effector"),
+        other => panic!("expected Query end_effector_source, got {other:?}"),
+    }
+    // Registry should have resolved them too since the named targets
+    // exist in the same subtree.
+    assert_ne!(new_ik.target_id, ee, "target_id should not have been mis-resolved");
+    assert!(
+        new_world.get_component_record(new_ik.target_id).is_some(),
+        "target_id should resolve to a live component"
+    );
+    assert!(
+        new_world.get_component_record(new_ik.end_effector_id).is_some(),
+        "end_effector_id should resolve to a live component"
+    );
+}
+
+#[test]
+fn roundtrip_ikchain_guid_handle_preserves_target_guid() {
+    use crate::engine::ecs::component::{
+        ComponentRef, IKChainComponent, IKSolver, TransformComponent,
+    };
+
+    let mut w = World::default();
+    let root = w.add_component(TransformComponent::new());
+    let target = w.add_component(TransformComponent::new()); // unnamed
+    w.add_child(root, target).unwrap();
+    let ee = w.add_component(TransformComponent::new());
+    w.add_child(root, ee).unwrap();
+    let target_guid = w.get_component_record(target).unwrap().guid;
+    let ee_guid = w.get_component_record(ee).unwrap().guid;
+
+    let ik = IKChainComponent::new(
+        IKSolver::AimConstraint { offset_yaw: 0.0 },
+        target,
+        ee,
+    )
+    .with_target_source(ComponentRef::Guid(target_guid))
+    .with_end_effector_source(ComponentRef::Guid(ee_guid));
+    let ik_id = w.add_component(ik);
+    w.add_child(root, ik_id).unwrap();
+
+    let (new_world, _new_root) = roundtrip_subtree(&w, root);
+    assert!(
+        new_world.component_id_by_guid(target_guid).is_some(),
+        "target guid not preserved"
+    );
+    assert!(
+        new_world.component_id_by_guid(ee_guid).is_some(),
+        "end_effector guid not preserved"
+    );
+}
+
+/// DFS lookup of the first component of type `C` under `root`.
+fn find_first<C: ComponentTrait + 'static>(world: &World, root: ComponentId) -> Option<ComponentId> {
+    if world.get_component_by_id_as::<C>(root).is_some() {
+        return Some(root);
+    }
+    let children: Vec<ComponentId> = world
+        .get_component_record(root)
+        .map(|n| n.children.clone())
+        .unwrap_or_default();
+    for child in children {
+        if let Some(hit) = find_first::<C>(world, child) {
+            return Some(hit);
+        }
+    }
+    None
+}
+
+#[test]
+fn roundtrip_animation_default_omits_resolve_targets_in_text() {
+    use crate::engine::ecs::component::AnimationComponent;
+    let original = AnimationComponent::new();
+    let world_stub = crate::engine::ecs::World::default();
+    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(
+        &original,
+        &world_stub,
+    ));
+    assert!(
+        !text.contains("resolve_targets"),
+        "default mode should not emit resolve_targets call: {text}"
+    );
+}
+
+#[test]
+fn roundtrip_keyframe() {
+    use crate::engine::ecs::component::KeyframeComponent;
+    let (world, id) = roundtrip_component(KeyframeComponent::new(4.25));
+    let got = world.get_component_by_id_as::<KeyframeComponent>(id).unwrap();
+    assert!((got.beat - 4.25).abs() < 1e-9);
+}
+
+#[test]
+fn roundtrip_input_speed() {
+    use crate::engine::ecs::component::InputComponent;
+    let (world, id) = roundtrip_component(InputComponent::new().with_speed(0.25));
+    let got = world.get_component_by_id_as::<InputComponent>(id).unwrap();
+    assert!((got.speed - 0.25).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_input_transform_mode() {
+    use crate::engine::ecs::component::{InputTransformModeComponent, ForwardAxis, RollAxis};
+    let original = InputTransformModeComponent::forward_y()
+        .with_roll_axis_y()
+        .with_fps_rotation();
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<InputTransformModeComponent>(id).unwrap();
+    assert_eq!(got.forward_axis, ForwardAxis::Y);
+    assert_eq!(got.roll_axis, RollAxis::Y);
+    assert!(got.fps_rotation);
+}
+
+#[test]
+fn roundtrip_editor() {
+    use crate::engine::ecs::component::{EditorComponent, TransformGizmoCoordSpace};
+    let original = EditorComponent::new()
+        .with_transform_gizmo_translation_space(TransformGizmoCoordSpace::Local)
+        .with_transform_gizmo_rotation_space(TransformGizmoCoordSpace::World);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<EditorComponent>(id).unwrap();
+    assert_eq!(got.transform_gizmo_translation_space, TransformGizmoCoordSpace::Local);
+    assert_eq!(got.transform_gizmo_rotation_space, TransformGizmoCoordSpace::World);
+}
+
+#[test]
+fn roundtrip_background() {
+    use crate::engine::ecs::component::BackgroundComponent;
+    let original = BackgroundComponent::new()
+        .with_occlusion_and_lighting()
+        .with_ray_casting();
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<BackgroundComponent>(id).unwrap();
+    assert!(got.occlusion_and_lighting);
+    assert!(got.ray_casting);
+}
+
+#[test]
+fn roundtrip_background_color() {
+    use crate::engine::ecs::component::BackgroundColorComponent;
+    let (_world, _id) = roundtrip_component(BackgroundColorComponent::new());
+}
+
+#[test]
+fn roundtrip_raycastable_drag_only() {
+    use crate::engine::ecs::component::{RaycastableComponent, PointerEvents};
+    let (world, id) = roundtrip_component(RaycastableComponent::drag_only());
+    let got = world.get_component_by_id_as::<RaycastableComponent>(id).unwrap();
+    assert!(got.enable);
+    assert_eq!(got.pointer_events, PointerEvents::DragOnly);
+}
+
+#[test]
+fn roundtrip_raycastable_disabled() {
+    use crate::engine::ecs::component::RaycastableComponent;
+    let (world, id) = roundtrip_component(RaycastableComponent::disabled());
+    let got = world.get_component_by_id_as::<RaycastableComponent>(id).unwrap();
+    assert!(!got.enable);
+}
+
+#[test]
+fn roundtrip_raycastable_pass_through() {
+    use crate::engine::ecs::component::{RaycastableComponent, PointerEvents};
+    let original = RaycastableComponent {
+        enable: true,
+        pointer_events: PointerEvents::PassThrough,
+    };
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<RaycastableComponent>(id).unwrap();
+    assert!(got.enable);
+    assert_eq!(got.pointer_events, PointerEvents::PassThrough);
+}
+
+#[test]
+fn roundtrip_selectable_off() {
+    use crate::engine::ecs::component::SelectableComponent;
+    let (world, id) = roundtrip_component(SelectableComponent::off());
+    let got = world.get_component_by_id_as::<SelectableComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_html_element_h1() {
+    use crate::engine::ecs::component::{HtmlElementComponent, ElementType};
+    let (world, id) = roundtrip_component(HtmlElementComponent::new(ElementType::H1));
+    let got = world.get_component_by_id_as::<HtmlElementComponent>(id).unwrap();
+    assert_eq!(got.element_type, ElementType::H1);
+}
+
+// --- Medium value round-trip tests ---
+
+#[test]
+fn roundtrip_transparent_cutout_disabled() {
+    use crate::engine::ecs::component::TransparentCutoutComponent;
+    let (world, id) = roundtrip_component(TransparentCutoutComponent::new().with_enabled(false));
+    let got = world.get_component_by_id_as::<TransparentCutoutComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_texture_filtering_nearest() {
+    use crate::engine::ecs::component::TextureFilteringComponent;
+    use crate::engine::graphics::TextureFiltering;
+    let (world, id) = roundtrip_component(TextureFilteringComponent::nearest());
+    let got = world.get_component_by_id_as::<TextureFilteringComponent>(id).unwrap();
+    assert_eq!(got.filtering, TextureFiltering::Nearest);
+}
+
+#[test]
+fn roundtrip_emissive_pass() {
+    use crate::engine::ecs::component::EmissivePassComponent;
+    let (_world, _id) = roundtrip_component(EmissivePassComponent::new());
+}
+
+#[test]
+fn roundtrip_bloom() {
+    use crate::engine::ecs::component::BloomComponent;
+    let original = BloomComponent::new()
+        .with_enabled(false)
+        .with_intensity(0.75)
+        .with_radius_ndc(0.125)
+        .with_emissive_scale(1.5)
+        .with_half_res(true)
+        .with_output_texture("scene_bloom");
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<BloomComponent>(id).unwrap();
+    assert!(!got.enabled);
+    assert!((got.intensity - 0.75).abs() < 1e-6);
+    assert!((got.radius_ndc - 0.125).abs() < 1e-6);
+    assert!((got.emissive_scale - 1.5).abs() < 1e-6);
+    assert!(got.half_res);
+    assert_eq!(got.output_texture.as_deref(), Some("scene_bloom"));
+}
+
+#[test]
+fn roundtrip_blur_pass() {
+    use crate::engine::ecs::component::BlurPassComponent;
+    let original = BlurPassComponent::new()
+        .with_enabled(false)
+        .with_radius_ndc(0.25)
+        .with_half_res(true);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<BlurPassComponent>(id).unwrap();
+    assert!(!got.enabled);
+    assert!((got.radius_ndc - 0.25).abs() < 1e-6);
+    assert!(got.half_res);
+}
+
+#[test]
+fn roundtrip_render_graph_off() {
+    use crate::engine::ecs::component::RenderGraphComponent;
+    let (world, id) = roundtrip_component(RenderGraphComponent::off());
+    let got = world.get_component_by_id_as::<RenderGraphComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_light_quantization() {
+    use crate::engine::ecs::component::LightQuantizationComponent;
+    let (world, id) = roundtrip_component(LightQuantizationComponent::steps(5.0));
+    let got = world.get_component_by_id_as::<LightQuantizationComponent>(id).unwrap();
+    assert!((got.quant_steps - 5.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_normal_visualisation() {
+    use crate::engine::ecs::component::NormalVisualisationComponent;
+    let (world, id) = roundtrip_component(NormalVisualisationComponent::new().with_thickness(0.05));
+    let got = world.get_component_by_id_as::<NormalVisualisationComponent>(id).unwrap();
+    assert!((got.thickness - 0.05).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_uv() {
+    use crate::engine::ecs::component::UVComponent;
+    let original = UVComponent::new()
+        .with_uv(0.0, 0.0)
+        .with_uv(1.0, 0.0)
+        .with_uv(0.5, 1.0);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<UVComponent>(id).unwrap();
+    assert_eq!(got.uvs.len(), 3);
+    assert!((got.uvs[2][0] - 0.5).abs() < 1e-6);
+    assert!((got.uvs[2][1] - 1.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_scrolling() {
+    use crate::engine::ecs::component::ScrollingComponent;
+    let (world, id) = roundtrip_component(ScrollingComponent::new(2.0, 8.0));
+    let got = world.get_component_by_id_as::<ScrollingComponent>(id).unwrap();
+    assert!((got.viewport_height - 2.0).abs() < 1e-6);
+    assert!((got.content_height - 8.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_clock() {
+    use crate::engine::ecs::component::ClockComponent;
+    let (world, id) = roundtrip_component(ClockComponent::new().with_bpm(140.0));
+    let got = world.get_component_by_id_as::<ClockComponent>(id).unwrap();
+    assert!((got.bpm - 140.0).abs() < 1e-9);
+}
+
+#[test]
+fn roundtrip_router() {
+    use crate::engine::ecs::component::RouterComponent;
+    let original = RouterComponent::new()
+        .with_target_name("content")
+        .with_ignored_names(["a", "b", "c"]);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<RouterComponent>(id).unwrap();
+    assert_eq!(got.target_name.as_deref(), Some("content"));
+    assert_eq!(got.ignore_names, vec!["a", "b", "c"]);
+}
+
+#[test]
+fn roundtrip_transition() {
+    use crate::engine::ecs::component::{TransitionComponent, TransitionEasing, TransitionReplacePolicy};
+    let original = TransitionComponent::new()
+        .enabled(true)
+        .with_duration_beats(2.0)
+        .with_capture_from_current(false)
+        .with_easing(TransitionEasing::EaseInOutCubic)
+        .with_replace(TransitionReplacePolicy::AllowParallel);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<TransitionComponent>(id).unwrap();
+    assert!(got.enabled);
+    assert!((got.duration_beats - 2.0).abs() < 1e-9);
+    assert!(!got.capture_from_current);
+    assert_eq!(got.easing, TransitionEasing::EaseInOutCubic);
+    assert_eq!(got.replace, TransitionReplacePolicy::AllowParallel);
+}
+
+#[test]
+fn roundtrip_text_shadow() {
+    use crate::engine::ecs::component::TextShadowComponent;
+    let original = TextShadowComponent::new()
+        .with_rgba([0.1, 0.2, 0.3, 0.5])
+        .with_scale(1.5)
+        .with_offset([0.25, -0.5, 0.001]);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<TextShadowComponent>(id).unwrap();
+    assert!((got.rgba[0] - 0.1).abs() < 1e-6);
+    assert!((got.rgba[3] - 0.5).abs() < 1e-6);
+    assert!((got.scale - 1.5).abs() < 1e-6);
+    assert!((got.offset[0] - 0.25).abs() < 1e-6);
+    assert!((got.offset[1] + 0.5).abs() < 1e-6);
+    assert!((got.offset[2] - 0.001).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_renderer_settings_msaa_off() {
+    use crate::engine::ecs::component::RendererSettingsComponent;
+    let original = RendererSettingsComponent::msaa_off().with_window_size(1920, 1080);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<RendererSettingsComponent>(id).unwrap();
+    assert!(!got.msaa4x);
+    assert_eq!(got.window_size, Some([1920, 1080]));
+}
+
+// --- Low value round-trip tests ---
+
+#[test]
+fn roundtrip_stencil_clip() {
+    use crate::engine::ecs::component::StencilClipComponent;
+    let mut original = StencilClipComponent::new();
+    original.stencil_ref = 3;
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<StencilClipComponent>(id).unwrap();
+    assert_eq!(got.stencil_ref, 3);
+}
+
+#[test]
+fn roundtrip_bounds() {
+    use crate::engine::ecs::component::BoundsComponent;
+    use crate::engine::graphics::bounds::Aabb;
+    let original = BoundsComponent::new(Aabb { min: [-1.0, -2.0, -3.0], max: [1.0, 2.0, 3.0] });
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<BoundsComponent>(id).unwrap();
+    assert_eq!(got.local.min, [-1.0, -2.0, -3.0]);
+    assert_eq!(got.local.max, [1.0, 2.0, 3.0]);
+}
+
+#[test]
+fn roundtrip_mesh() {
+    use crate::engine::ecs::component::MeshComponent;
+    let (world, id) = roundtrip_component(MeshComponent::new("scene.glb:body:0"));
+    let got = world.get_component_by_id_as::<MeshComponent>(id).unwrap();
+    assert_eq!(got.key, "scene.glb:body:0");
+}
+
+#[test]
+fn roundtrip_gesture_coord_type() {
+    use crate::engine::ecs::component::{GestureCoordTypeComponent, GestureCoordType};
+    let (world, id) = roundtrip_component(GestureCoordTypeComponent::screen_space_1d_slider());
+    let got = world.get_component_by_id_as::<GestureCoordTypeComponent>(id).unwrap();
+    assert_eq!(got.coord_type, GestureCoordType::ScreenSpace1DSlider);
+}
+
+#[test]
+fn roundtrip_collision_shape_cube() {
+    use crate::engine::ecs::component::{CollisionShapeComponent, CollisionShape};
+    let original = CollisionShapeComponent::new(CollisionShape::cube_half_extents([2.0, 3.0, 4.0]));
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<CollisionShapeComponent>(id).unwrap();
+    match got.shape {
+        CollisionShape::Cube { half_extents } => assert_eq!(half_extents, [2.0, 3.0, 4.0]),
+        _ => panic!("expected Cube"),
+    }
+}
+
+#[test]
+fn roundtrip_collision_shape_sphere() {
+    use crate::engine::ecs::component::{CollisionShapeComponent, CollisionShape};
+    let original = CollisionShapeComponent::new(CollisionShape::sphere_radius(1.5));
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<CollisionShapeComponent>(id).unwrap();
+    match got.shape {
+        CollisionShape::Sphere { radius } => assert!((radius - 1.5).abs() < 1e-6),
+        _ => panic!("expected Sphere"),
+    }
+}
+
+#[test]
+fn roundtrip_raycastable_shape() {
+    use crate::engine::ecs::component::{RaycastableShapeComponent, RaycastableShapeType};
+    let (world, id) = roundtrip_component(RaycastableShapeComponent::cone());
+    let got = world.get_component_by_id_as::<RaycastableShapeComponent>(id).unwrap();
+    assert_eq!(got.shape, RaycastableShapeType::Cone);
+}
+
+#[test]
+fn roundtrip_collision() {
+    use crate::engine::ecs::component::{CollisionComponent, CollisionMode};
+    let (world, id) = roundtrip_component(CollisionComponent::KINEMATIC());
+    let got = world.get_component_by_id_as::<CollisionComponent>(id).unwrap();
+    assert_eq!(got.mode, CollisionMode::Kinematic);
+}
+
+#[test]
+fn roundtrip_gravity() {
+    use crate::engine::ecs::component::GravityComponent;
+    let (world, id) = roundtrip_component(GravityComponent::new().with_coefficient(0.5));
+    let got = world.get_component_by_id_as::<GravityComponent>(id).unwrap();
+    assert!(got.enabled);
+    assert!((got.coefficient - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_pointer_disabled() {
+    use crate::engine::ecs::component::PointerComponent;
+    let (world, id) = roundtrip_component(PointerComponent::disabled());
+    let got = world.get_component_by_id_as::<PointerComponent>(id).unwrap();
+    assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_skinned_mesh() {
+    use crate::engine::ecs::component::SkinnedMeshComponent;
+    let (world, id) = roundtrip_component(SkinnedMeshComponent::new(7));
+    let got = world.get_component_by_id_as::<SkinnedMeshComponent>(id).unwrap();
+    assert_eq!(got.skin_index, 7);
+}
+
+#[test]
+fn roundtrip_transform_sample_ancestor() {
+    use crate::engine::ecs::component::TransformSampleAncestorComponent;
+    let (world, id) = roundtrip_component(TransformSampleAncestorComponent::new().with_skip(3));
+    let got = world.get_component_by_id_as::<TransformSampleAncestorComponent>(id).unwrap();
+    assert_eq!(got.skip, 3);
+}
+
+#[test]
+fn roundtrip_transform_parent() {
+    use crate::engine::ecs::component::{ComponentRef, TransformParentComponent};
+    let original = TransformParentComponent::new()
+        .with_target_source(ComponentRef::Query("#hero".to_string()))
+        .with_root_source(ComponentRef::Query("#scene".to_string()));
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<TransformParentComponent>(id).unwrap();
+    match got.target_source.as_ref() {
+        Some(ComponentRef::Query(s)) => assert_eq!(s, "#hero"),
+        other => panic!("unexpected target_source: {other:?}"),
+    }
+    match got.root_source.as_ref() {
+        Some(ComponentRef::Query(s)) => assert_eq!(s, "#scene"),
+        other => panic!("unexpected root_source: {other:?}"),
+    }
+}
+
+#[test]
+fn roundtrip_quat_temporal_filter() {
+    use crate::engine::ecs::component::QuatTemporalFilterComponent;
+    let (world, id) = roundtrip_component(QuatTemporalFilterComponent::new().with_smoothing_factor(220.0));
+    let got = world.get_component_by_id_as::<QuatTemporalFilterComponent>(id).unwrap();
+    assert!((got.smoothing_factor - 220.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_vector3_temporal_filter() {
+    use crate::engine::ecs::component::Vector3TemporalFilterComponent;
+    let (world, id) = roundtrip_component(Vector3TemporalFilterComponent::new().with_smoothing_factor(15.0));
+    let got = world.get_component_by_id_as::<Vector3TemporalFilterComponent>(id).unwrap();
+    assert!((got.smoothing_factor - 15.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_quat_yaw_follow() {
+    use crate::engine::ecs::component::QuatYawFollowComponent;
+    let original = QuatYawFollowComponent::new(0.5, 2.0)
+        .with_forward_plus_z()
+        .with_initial_yaw(std::f32::consts::PI);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<QuatYawFollowComponent>(id).unwrap();
+    assert!((got.threshold - 0.5).abs() < 1e-6);
+    assert!((got.rate - 2.0).abs() < 1e-6);
+    assert!(got.forward_plus_z);
+    assert!((got.initial_yaw - std::f32::consts::PI).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_signal_route_upward() {
+    use crate::engine::ecs::component::SignalRouteUpwardComponent;
+    let original = SignalRouteUpwardComponent::new("UpdateTransform", "transform_pipeline");
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<SignalRouteUpwardComponent>(id).unwrap();
+    assert_eq!(got.intent_kind, "UpdateTransform");
+    assert_eq!(got.parent_type, "transform_pipeline");
+}
+
+#[test]
+fn roundtrip_avatar_body_yaw() {
+    use crate::engine::ecs::component::AvatarBodyYawComponent;
+    let original = AvatarBodyYawComponent::new()
+        .with_threshold(0.5)
+        .with_rate(2.0)
+        .with_forward_plus_z();
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<AvatarBodyYawComponent>(id).unwrap();
+    assert!((got.threshold - 0.5).abs() < 1e-6);
+    assert!((got.rate - 2.0).abs() < 1e-6);
+    assert!(got.forward_plus_z);
+}
+
+#[test]
+fn roundtrip_raycast() {
+    use crate::engine::ecs::component::{RayCastComponent, RayCastMode};
+    let original = RayCastComponent::continuous().with_max_distance(75.0);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<RayCastComponent>(id).unwrap();
+    assert_eq!(got.mode, RayCastMode::Continuous);
+    assert!((got.max_distance - 75.0).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_avatar_control() {
+    use crate::engine::ecs::component::AvatarControlComponent;
+    let original = AvatarControlComponent::new()
+        .with_head_bone("J_Bip_C_Neck")
+        .with_left_hand_bone("J_Bip_L_Hand")
+        .with_right_hand_bone("J_Bip_R_Hand")
+        .with_forward_plus_z()
+        .with_hand_rotation_smoothing(220.0)
+        .with_camera_bone("J_Bip_C_Head")
+        .with_avatar_height(1.7);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<AvatarControlComponent>(id).unwrap();
+    assert_eq!(got.head_bone, "J_Bip_C_Neck");
+    assert_eq!(got.left_hand_bone.as_deref(), Some("J_Bip_L_Hand"));
+    assert_eq!(got.right_hand_bone.as_deref(), Some("J_Bip_R_Hand"));
+    assert!(got.forward_plus_z);
+    assert_eq!(got.hand_rotation_smoothing, Some(220.0));
+    assert_eq!(got.camera_bone.as_deref(), Some("J_Bip_C_Head"));
+    assert_eq!(got.avatar_height, Some(1.7));
+}
+
+#[test]
+fn roundtrip_music_note_c5() {
+    use crate::engine::ecs::component::{MusicNote, MusicNoteComponent};
+    let note = MusicNote::c(5, 0.25).with_velocity(0.8);
+    let (world, id) = roundtrip_component(MusicNoteComponent::new(note));
+    let got = world.get_component_by_id_as::<MusicNoteComponent>(id).unwrap();
+    assert_eq!(got.note.pitch_name(), "c");
+    assert_eq!(got.note.octave(), 5);
+    assert!((got.note.duration_beats() - 0.25).abs() < 1e-6);
+    assert!((got.note.velocity() - 0.8).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_ik_chain_aim() {
+    use crate::engine::ecs::component::{IKChainComponent, IKSolver};
+    use slotmap::Key;
+    use crate::engine::ecs::ComponentId;
+    let sentinel = ComponentId::null();
+    let original = IKChainComponent::new(
+        IKSolver::AimConstraint { offset_yaw: std::f32::consts::PI },
+        sentinel,
+        sentinel,
+    ).with_weight(0.5);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<IKChainComponent>(id).unwrap();
+    match got.solver {
+        IKSolver::AimConstraint { offset_yaw } => {
+            assert!((offset_yaw - std::f32::consts::PI).abs() < 1e-6);
+        }
+        _ => panic!("expected AimConstraint"),
+    }
+    assert!((got.weight - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_transform_gizmo_translate() {
+    use crate::engine::ecs::component::{TransformGizmoTranslateComponent, TransformGizmoAxis};
+    let (world, id) = roundtrip_component(TransformGizmoTranslateComponent::new(TransformGizmoAxis::Y));
+    let got = world.get_component_by_id_as::<TransformGizmoTranslateComponent>(id).unwrap();
+    assert_eq!(got.axis, TransformGizmoAxis::Y);
+}
+
+#[test]
+fn roundtrip_transform_gizmo() {
+    use crate::engine::ecs::component::TransformGizmoComponent;
+    let (world, id) = roundtrip_component(TransformGizmoComponent::new().with_scale(0.5));
+    let got = world.get_component_by_id_as::<TransformGizmoComponent>(id).unwrap();
+    assert!((got.scale - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_renderer_stats() {
+    use crate::engine::ecs::component::RendererStatsComponent;
+    use crate::engine::graphics::CameraTarget;
+    let mut original = RendererStatsComponent::new();
+    original.enabled = false;
+    original.target = CameraTarget::Xr;
+    original.update_interval_sec = 0.5;
+    original.smoothing = 0.8;
+    original.color = [0.5, 0.6, 0.7, 1.0];
+    original.emissive = false;
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<RendererStatsComponent>(id).unwrap();
+    assert!(!got.enabled);
+    assert!(matches!(got.target, CameraTarget::Xr));
+    assert!((got.update_interval_sec - 0.5).abs() < 1e-6);
+    assert!((got.smoothing - 0.8).abs() < 1e-6);
+    assert_eq!(got.color, [0.5, 0.6, 0.7, 1.0]);
+    assert!(!got.emissive);
+}
+
+#[test]
+fn roundtrip_kinetic_response() {
+    use crate::engine::ecs::component::{KineticResponseComponent, KineticResponseMode};
+    let original = KineticResponseComponent::push()
+        .with_push_strength(8.0)
+        .with_friction(0.5)
+        .with_friction_y(0.25);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<KineticResponseComponent>(id).unwrap();
+    assert_eq!(got.mode, KineticResponseMode::Push);
+    assert!((got.push_strength - 8.0).abs() < 1e-6);
+    assert!((got.friction - 0.5).abs() < 1e-6);
+    assert!((got.friction_y - 0.25).abs() < 1e-6);
 }

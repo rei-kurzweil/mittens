@@ -1,5 +1,39 @@
 use crate::engine::ecs::component::Component;
 
+/// Controls which pointer event types a raycastable captures vs. passes through.
+///
+/// When the gesture system walks the depth-sorted hit list, it stops at the first hit that
+/// captures the event type being resolved. Objects behind a capturer never see that event type.
+///
+/// ```
+/// depth-sorted hits: [drag_plane (DragOnly), row (All)]
+///
+/// for drag  → drag_plane captures, stops. row never sees DragStart/DragMove.
+/// for click → drag_plane passes (DragOnly). row captures, stops.
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PointerEvents {
+    /// Captures drag and click. Default for all raycastable geometry.
+    #[default]
+    All,
+    /// Captures drag events only; click propagates to the next hit.
+    DragOnly,
+    /// Captures click events only; drag propagates to the next hit.
+    ClickOnly,
+    /// Passes all pointer events through. Geometry is hittable but invisible to the gesture
+    /// system (e.g. a structural collision volume that should never receive input).
+    PassThrough,
+}
+
+impl PointerEvents {
+    pub fn captures_drag(self) -> bool {
+        matches!(self, Self::All | Self::DragOnly)
+    }
+    pub fn captures_click(self) -> bool {
+        matches!(self, Self::All | Self::ClickOnly)
+    }
+}
+
 /// Controls whether renderables should be eligible for ray casting (BVH insertion).
 ///
 /// This is intentionally separate from `RenderableComponent` so raycasting policy can be
@@ -8,18 +42,13 @@ use crate::engine::ecs::component::Component;
 pub struct RaycastableComponent {
     /// If true, ray casting is enabled.
     pub enable: bool,
-
-    /// If true, this component sets the *default* raycasting policy for renderables that do not
-    /// have a RaycastableComponent.
-    pub set_default: bool,
+    /// Which pointer event types this object captures vs. passes through to hits behind it.
+    pub pointer_events: PointerEvents,
 }
 
 impl RaycastableComponent {
     pub fn new(enable: bool) -> Self {
-        Self {
-            enable,
-            set_default: false,
-        }
+        Self { enable, pointer_events: PointerEvents::All }
     }
 
     pub fn enabled() -> Self {
@@ -30,9 +59,14 @@ impl RaycastableComponent {
         Self::new(false)
     }
 
-    pub fn with_set_default(mut self, set_default: bool) -> Self {
-        self.set_default = set_default;
-        self
+    /// Captures drag events only; click falls through to hits behind this object.
+    pub fn drag_only() -> Self {
+        Self { enable: true, pointer_events: PointerEvents::DragOnly }
+    }
+
+    /// Captures click events only; drag falls through to hits behind this object.
+    pub fn click_only() -> Self {
+        Self { enable: true, pointer_events: PointerEvents::ClickOnly }
     }
 }
 
@@ -49,30 +83,18 @@ impl Component for RaycastableComponent {
         "raycastable"
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("enable".to_string(), serde_json::json!(self.enable));
-        map.insert(
-            "set_default".to_string(),
-            serde_json::json!(self.set_default),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("enable") {
-            if let Some(b) = v.as_bool() {
-                self.enable = b;
-            }
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = match (self.enable, self.pointer_events) {
+            (false, _) => "disabled",
+            (true, PointerEvents::DragOnly) => "drag_only",
+            (true, PointerEvents::ClickOnly) => "click_only",
+            (true, _) => "enabled",
+        };
+        let mut ce = ce_call("Raycastable", ctor, vec![]);
+        if self.enable && matches!(self.pointer_events, PointerEvents::PassThrough) {
+            ce = ce.with_call("pointer_events", vec![s("pass_through")]);
         }
-        if let Some(v) = data.get("set_default") {
-            if let Some(b) = v.as_bool() {
-                self.set_default = b;
-            }
-        }
-        Ok(())
+        ce
     }
 }

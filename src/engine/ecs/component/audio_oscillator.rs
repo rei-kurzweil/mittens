@@ -21,12 +21,6 @@ pub struct AudioOscillator {
     pub frequency: f32,
     pub amplitude: f32,
     pub enabled: bool,
-
-    /// If true, `MusicSystem` will not overwrite this oscillator's frequency.
-    /// This is set to true once a MusicNote has been applied, or after any
-    /// action mutates the frequency (set/multiply pitch).
-    #[serde(default)]
-    pub(crate) music_note_applied: bool,
 }
 
 impl AudioOscillator {
@@ -87,7 +81,6 @@ impl Default for AudioOscillator {
             frequency: 440.0,
             amplitude: 0.2,
             enabled: true,
-            music_note_applied: false,
         }
     }
 }
@@ -132,9 +125,19 @@ impl Component for AudioOscillatorComponent {
         "audio_oscillator"
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_register_audio_oscillator(component);
-        queue.queue_audio_graph_dirty(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterAudioOscillator {
+                component_ids: vec![component],
+            },
+        );
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::AudioGraphDirtyImmediate {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

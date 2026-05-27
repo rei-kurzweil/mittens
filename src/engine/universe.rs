@@ -1,5 +1,8 @@
+use crate::engine::ecs::SignalEmitter;
 use crate::engine::user_input::InputState;
 use crate::engine::{ecs, graphics};
+use std::collections::HashSet;
+use std::sync::mpsc;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -33,6 +36,20 @@ impl Universe {
         }
     }
 
+    pub fn set_msaa_mode(&mut self, mode: graphics::MsaaMode) -> Result<(), &'static str> {
+        self.renderer.set_msaa_mode(mode)
+    }
+
+    pub fn preferred_window_size(&self) -> Option<[u32; 2]> {
+        self.visuals.preferred_window_size().or_else(|| {
+            self.world.all_components().find_map(|cid| {
+                self.world
+                    .get_component_by_id_as::<ecs::component::RendererSettingsComponent>(cid)
+                    .and_then(|s| s.window_size)
+            })
+        })
+    }
+
     pub fn enable_repl(&mut self) {
         if self.repl.is_none() {
             self.repl = Some(crate::engine::repl::Repl::new());
@@ -47,6 +64,66 @@ impl Universe {
     pub fn add(&mut self, root: ecs::ComponentId) {
         self.world
             .init_component_tree(root, &mut self.command_queue);
+    }
+
+    fn drain_pending_signals(&mut self) {
+        // Universe helpers are synchronous convenience APIs.
+        // They emit intents and then drain them immediately so the caller sees the effect.
+        self.systems
+            .process_commands(&mut self.world, &mut self.visuals, &mut self.command_queue);
+    }
+
+    // --- Query helpers (read-only World access) ---
+    pub fn parent_of(&self, c: ecs::ComponentId) -> Option<ecs::ComponentId> {
+        self.world.parent_of(c)
+    }
+
+    pub fn children_of(&self, c: ecs::ComponentId) -> &[ecs::ComponentId] {
+        self.world.children_of(c)
+    }
+
+    pub fn get_component_by_id_as<T: 'static>(&self, c: ecs::ComponentId) -> Option<&T> {
+        self.world.get_component_by_id_as::<T>(c)
+    }
+
+    pub fn component_name(&self, c: ecs::ComponentId) -> Option<&str> {
+        self.world.component_name(c)
+    }
+
+    pub fn find_component(
+        &mut self,
+        root: ecs::ComponentId,
+        selector: &str,
+    ) -> Option<ecs::ComponentId> {
+        let (tx, rx) = mpsc::channel();
+        self.command_queue.push_intent_now(
+            root,
+            ecs::IntentValue::QueryFindComponent {
+                root,
+                selector: selector.to_string(),
+                reply: tx,
+            },
+        );
+        self.drain_pending_signals();
+        rx.recv().ok().flatten()
+    }
+
+    pub fn find_all_components(
+        &mut self,
+        root: ecs::ComponentId,
+        selector: &str,
+    ) -> Vec<ecs::ComponentId> {
+        let (tx, rx) = mpsc::channel();
+        self.command_queue.push_intent_now(
+            root,
+            ecs::IntentValue::QueryFindAllComponents {
+                root,
+                selector: selector.to_string(),
+                reply: tx,
+            },
+        );
+        self.drain_pending_signals();
+        rx.recv().unwrap_or_default()
     }
 
     /// Add a signal handler rooted at `scope_root`.
@@ -72,7 +149,6 @@ impl Universe {
         self.systems.rx.remove_handler(kind, scope_root, handler)
     }
 
-
     /// Attach `child` under `parent`.
     ///
     /// If `parent` is already initialized, the newly-attached subtree rooted at `child`
@@ -82,22 +158,21 @@ impl Universe {
         parent: ecs::ComponentId,
         child: ecs::ComponentId,
     ) -> Result<(), &'static str> {
-        let old_parent = self.world.parent_of(child);
-        self.world.add_child(parent, child)?;
+        if self.world.get_component_record(parent).is_none() {
+            return Err("parent does not exist");
+        }
+        if self.world.get_component_record(child).is_none() {
+            return Err("child does not exist");
+        }
 
-        self.systems.rx.push(
+        self.command_queue.push_intent_now(
             child,
-            ecs::EventSignal::ParentChanged {
+            ecs::IntentValue::Attach {
+                parents: vec![parent],
                 child,
-                old_parent,
-                new_parent: Some(parent),
             },
         );
-
-        if self.world.is_initialized(parent) {
-            self.world
-                .init_component_tree(child, &mut self.command_queue);
-        }
+        self.drain_pending_signals();
         Ok(())
     }
 
@@ -121,19 +196,14 @@ impl Universe {
             .get(index)
             .ok_or("child index out of range")?;
 
-        // Detach immediately to avoid dangling parent->child edges until the queue flush.
-        self.world.detach_from_parent(child);
-
-        self.systems.rx.push(
-            child,
-            ecs::EventSignal::ParentChanged {
-                child,
-                old_parent: Some(parent),
-                new_parent: None,
+        self.command_queue.push_intent_now(
+            parent,
+            ecs::IntentValue::RemoveChild {
+                parents: vec![parent],
+                index,
             },
         );
-
-        self.command_queue.queue_remove_subtree(child);
+        self.drain_pending_signals();
         Ok(child)
     }
 
@@ -151,23 +221,16 @@ impl Universe {
             return Err("parent does not exist");
         }
 
-        // Snapshot child list because it mutates as we detach and queue deletions.
+        // Snapshot child list for the return value.
         let children: Vec<ecs::ComponentId> = self.world.children_of(parent).to_vec();
-        for child in children.iter().copied() {
-            self.world.detach_from_parent(child);
 
-            self.systems.rx.push(
-                child,
-                ecs::EventSignal::ParentChanged {
-                    child,
-                    old_parent: Some(parent),
-                    new_parent: None,
-                },
-            );
-
-            self.command_queue.queue_remove_subtree(child);
-        }
-
+        self.command_queue.push_intent_now(
+            parent,
+            ecs::IntentValue::RemoveChildren {
+                parents: vec![parent],
+            },
+        );
+        self.drain_pending_signals();
         Ok(children)
     }
 
@@ -183,39 +246,54 @@ impl Universe {
         parent: ecs::ComponentId,
         prefab_root: ecs::ComponentId,
     ) -> Result<ecs::ComponentId, String> {
-        let node = ecs::ComponentCodec::encode_subtree_node(&self.world, prefab_root)?;
-        let new_root = ecs::ComponentCodec::decode_subtree_node_with_new_guids(
-            &mut self.world,
-            Some(parent),
-            &node,
-        )?;
-
-        if self.world.get_component_record(new_root).is_none() {
-            return Err("attach_clone: new root missing after decode".to_string());
+        if self.world.get_component_record(parent).is_none() {
+            return Err("attach_clone: parent does not exist".to_string());
+        }
+        if self.world.get_component_record(prefab_root).is_none() {
+            return Err("attach_clone: prefab_root does not exist".to_string());
         }
 
-        if self.world.is_initialized(parent) {
-            self.world
-                .init_component_tree(new_root, &mut self.command_queue);
-        }
+        let before: HashSet<ecs::ComponentId> =
+            self.world.children_of(parent).iter().copied().collect();
 
-        self.systems.rx.push(
-            new_root,
-            ecs::EventSignal::ParentChanged {
-                child: new_root,
-                old_parent: None,
-                new_parent: Some(parent),
+        self.command_queue.push_intent_now(
+            parent,
+            ecs::IntentValue::AttachClone {
+                parents: vec![parent],
+                prefab_root,
             },
         );
+        self.drain_pending_signals();
 
-        Ok(new_root)
+        let after_children = self.world.children_of(parent);
+        let mut new_children = after_children
+            .iter()
+            .copied()
+            .filter(|c| !before.contains(c))
+            .collect::<Vec<_>>();
+
+        if new_children.len() != 1 {
+            new_children.sort();
+            return Err(format!(
+                "attach_clone: expected exactly 1 new child under parent; got {} ({new_children:?})",
+                new_children.len()
+            ));
+        }
+
+        Ok(new_children[0])
     }
 
     fn sync_repl(&mut self) {
+        // Always drain queued system-driven REPL commands so they don't grow unbounded
+        // when REPL is disabled.
+        let scripted = self.systems.take_repl_commands();
+
         let (Some(repl), Some(backend)) = (&self.repl, self.repl_backend.as_mut()) else {
             return;
         };
+
         backend.exec_all(&self.world, repl.try_recv_all());
+        backend.exec_all(&self.world, scripted);
     }
 
     /// Initialize the renderer for a window.
@@ -227,6 +305,19 @@ impl Universe {
         let size = window.inner_size();
         self.visuals
             .set_viewport([size.width as f32, size.height as f32]);
+
+        // Apply renderer settings from the component graph if the caller didn't explicitly
+        // override them (e.g. via CLI).
+        if self.renderer.msaa_mode_override().is_none() {
+            for cid in self.world.all_components() {
+                if let Some(s) = self
+                    .world
+                    .get_component_by_id_as::<ecs::component::RendererSettingsComponent>(cid)
+                {
+                    let _ = self.renderer.set_msaa_mode(s.msaa_mode());
+                }
+            }
+        }
 
         let xr_required = self.systems.openxr.required_vulkan_extensions();
         if let Some((ref instance_exts, ref device_exts)) = xr_required {
@@ -289,6 +380,10 @@ impl Universe {
         // Process commands after tick so any commands queued during tick are processed in the same frame
         self.systems
             .process_commands(&mut self.world, &mut self.visuals, &mut self.command_queue);
+
+        // Editor systems may enqueue REPL navigation commands during this update.
+        // Sync once more so the REPL reflects the just-applied world topology.
+        self.sync_repl();
     }
 
     pub fn render(&mut self) {
@@ -298,6 +393,7 @@ impl Universe {
             &mut self.visuals,
             &mut self.render_assets,
             &mut self.renderer as &mut dyn graphics::RenderUploader,
+            &mut self.command_queue,
         );
 
         // Render XR (if enabled) before the window present.

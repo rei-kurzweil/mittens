@@ -1,8 +1,10 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::BackgroundColorComponent;
+use crate::engine::ecs::component::OverlayComponent;
 use crate::engine::ecs::component::{
     BackgroundComponent, ColorComponent, EmissiveComponent, LightQuantizationComponent,
-    MeshComponent, OpacityComponent, RenderableComponent, TransparentCutoutComponent, UVComponent,
+    MeshComponent, OpacityComponent, RenderableComponent, RendererSettingsComponent,
+    TransparentCutoutComponent, UVComponent,
 };
 
 use crate::engine::ecs::World;
@@ -61,12 +63,19 @@ pub struct RenderableSystem {
     /// Per-instance emissive/unlit override for a renderable.
     ///
     /// Keyed by the RenderableComponent's ComponentId.
-    pending_emissive: HashMap<ComponentId, u32>,
+    pending_emissive: HashMap<ComponentId, f32>,
 
     /// Per-renderable toon light quantization steps.
     ///
     /// Keyed by the RenderableComponent's ComponentId.
     pending_quant_steps: HashMap<ComponentId, f32>,
+
+    /// NormalVisualisationComponents waiting for their subtree to be spawned.
+    ///
+    /// Populated by `register_normal_vis` during the intent phase.
+    /// Consumed in `flush_pending` where `RenderAssets` is available.
+    /// Tuple: (normal_vis_component_id, parent_renderable_id, base_mesh_handle, thickness)
+    pending_normal_vis: Vec<(ComponentId, ComponentId, CpuMeshHandle, f32)>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -119,6 +128,20 @@ fn clone_mesh_with_uv_overrides(
 }
 
 impl RenderableSystem {
+    fn material_with_emissive(
+        material: MaterialHandle,
+        emissive_intensity: f32,
+    ) -> MaterialHandle {
+        let is_emissive = emissive_intensity > 0.0;
+        match (material, is_emissive) {
+            (MaterialHandle::TOON_MESH, true) => MaterialHandle::EMISSIVE_TOON_MESH,
+            (MaterialHandle::SKINNED_TOON_MESH, true) => MaterialHandle::SKINNED_EMISSIVE_TOON_MESH,
+            (MaterialHandle::EMISSIVE_TOON_MESH, false) => MaterialHandle::TOON_MESH,
+            (MaterialHandle::SKINNED_EMISSIVE_TOON_MESH, false) => MaterialHandle::SKINNED_TOON_MESH,
+            _ => material,
+        }
+    }
+
     fn inherited_background_for_renderable(
         world: &World,
         renderable_cid: ComponentId,
@@ -133,6 +156,21 @@ impl RenderableSystem {
             cur = parent;
         }
         (false, false)
+    }
+
+    fn inherited_overlay_for_renderable(world: &World, renderable_cid: ComponentId) -> bool {
+        // Nearest OverlayComponent ancestor wins.
+        let mut cur = renderable_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if world
+                .get_component_by_id_as::<OverlayComponent>(parent)
+                .is_some()
+            {
+                return true;
+            }
+            cur = parent;
+        }
+        false
     }
 
     fn immediate_color_child(world: &World, node: ComponentId) -> Option<[f32; 4]> {
@@ -159,6 +197,14 @@ impl RenderableSystem {
             world
                 .get_component_by_id_as::<TransparentCutoutComponent>(ch)
                 .map(|c| c.enabled)
+        })
+    }
+
+    fn immediate_emissive_child(world: &World, node: ComponentId) -> Option<f32> {
+        world.children_of(node).iter().find_map(|&ch| {
+            world
+                .get_component_by_id_as::<EmissiveComponent>(ch)
+                .map(|e| e.intensity.max(0.0))
         })
     }
 
@@ -273,6 +319,11 @@ impl RenderableSystem {
             };
 
             let _ = visuals.update_emissive(handle, emissive);
+
+            if let Some(inst) = visuals.instance(handle) {
+                let material = Self::material_with_emissive(inst.renderable.material, emissive);
+                let _ = visuals.update_material(handle, material);
+            }
             let _ = self.pending_emissive.remove(&renderable_cid);
         }
     }
@@ -480,7 +531,12 @@ impl RenderableSystem {
         // Inheritance case: ColorComponent is attached above renderables (e.g., on TextComponent).
         // Apply it to descendant renderables that do NOT have an explicit per-renderable ColorComponent.
         let mut q = VecDeque::new();
-        q.push_back(component);
+
+        // Style nodes (like ColorComponent) are typically attached as immediate children of a
+        // container node (e.g. TextComponent root). In that case the renderables we want to affect
+        // are descendants of the *container*, not descendants of the ColorComponent itself.
+        let start = world.parent_of(component).unwrap_or(component);
+        q.push_back(start);
 
         while let Some(node) = q.pop_front() {
             for &ch in world.children_of(node).iter() {
@@ -696,25 +752,44 @@ impl RenderableSystem {
             return;
         };
 
-        // Find the ancestor RenderableComponent that this EmissiveComponent should apply to.
-        let mut cur = component;
-        let mut renderable_cid: Option<ComponentId> = None;
-        while let Some(parent) = world.parent_of(cur) {
+        let emissive = emissive_comp.intensity.max(0.0);
+
+        // Normal case: EmissiveComponent is attached directly under a RenderableComponent.
+        if let Some(parent) = world.parent_of(component) {
             if world
                 .get_component_by_id_as::<RenderableComponent>(parent)
                 .is_some()
             {
-                renderable_cid = Some(parent);
-                break;
+                self.pending_emissive.insert(parent, emissive);
+                return;
             }
-            cur = parent;
         }
-        let Some(renderable_cid) = renderable_cid else {
-            return;
-        };
 
-        self.pending_emissive
-            .insert(renderable_cid, if emissive_comp.enabled { 1 } else { 0 });
+        // Inheritance case: EmissiveComponent is attached as a style node under a container
+        // (e.g. TextComponent). Apply it to descendant renderables that do NOT have an explicit
+        // per-renderable EmissiveComponent.
+        let start = world.parent_of(component).unwrap_or(component);
+        let mut q = VecDeque::new();
+        q.push_back(start);
+
+        while let Some(node) = q.pop_front() {
+            for &ch in world.children_of(node).iter() {
+                q.push_back(ch);
+            }
+
+            if world
+                .get_component_by_id_as::<RenderableComponent>(node)
+                .is_none()
+            {
+                continue;
+            }
+
+            if Self::immediate_emissive_child(world, node).is_some() {
+                continue;
+            }
+
+            self.pending_emissive.insert(node, emissive);
+        }
     }
 
     pub fn register_uv(
@@ -754,12 +829,71 @@ impl RenderableSystem {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        let Some(bg) = world.get_component_by_id_as::<BackgroundColorComponent>(component) else {
+        if world.get_component_by_id_as::<BackgroundColorComponent>(component).is_none() {
+            return;
+        }
+
+        const DEFAULT: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
+        let rgba = world
+            .children_of(component)
+            .iter()
+            .find_map(|&ch| {
+                world.get_component_by_id_as::<ColorComponent>(ch).map(|c| c.rgba)
+            })
+            .unwrap_or(DEFAULT);
+
+        // Global state: last registered wins.
+        visuals.set_clear_color(rgba);
+    }
+
+    pub fn register_renderer_settings(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let Some(settings) = world.get_component_by_id_as::<RendererSettingsComponent>(component)
+        else {
             return;
         };
 
         // Global state: last registered wins.
-        visuals.set_clear_color(bg.rgba);
+        visuals.set_renderer_msaa_mode(settings.msaa_mode());
+        visuals.set_preferred_window_size(settings.window_size);
+    }
+
+    /// Register a `NormalVisualisationComponent` for deferred spawning.
+    ///
+    /// Called from the `RegisterNormalVis` intent handler during tick (where `World` is
+    /// available but `RenderAssets` is not). Walks up to the nearest parent
+    /// `RenderableComponent`, records its `base_mesh` handle, and queues the spawn for
+    /// `flush_pending` where mesh vertex data can be read.
+    pub fn register_normal_vis(&mut self, world: &World, component: ComponentId) {
+        use crate::engine::ecs::component::{NormalVisualisationComponent, RenderableComponent};
+
+        let Some(nv) = world.get_component_by_id_as::<NormalVisualisationComponent>(component)
+        else {
+            return;
+        };
+        let thickness = nv.thickness;
+
+        // Walk up to find the nearest ancestor RenderableComponent.
+        let mut cur = component;
+        let mut parent_renderable: Option<(ComponentId, CpuMeshHandle)> = None;
+        while let Some(p) = world.parent_of(cur) {
+            if let Some(r) = world.get_component_by_id_as::<RenderableComponent>(p) {
+                parent_renderable = Some((p, r.renderable.base_mesh));
+                break;
+            }
+            cur = p;
+        }
+
+        let Some((renderable_id, base_mesh)) = parent_renderable else {
+            return;
+        };
+
+        self.pending_normal_vis
+            .push((component, renderable_id, base_mesh, thickness));
     }
 
     /// Register a renderable component with this system.
@@ -871,7 +1005,8 @@ impl RenderableSystem {
         visuals: &mut VisualWorld,
         render_assets: &mut RenderAssets,
         uploader: &mut dyn MeshUploader,
-    ) {
+        queue: &mut crate::engine::ecs::CommandQueue,
+    ) -> bool {
         let parse_bool_env = |name: &str| {
             std::env::var(name)
                 .ok()
@@ -885,6 +1020,7 @@ impl RenderableSystem {
         let debug_mesh_stats = parse_bool_env("CAT_DEBUG_RENDERABLE_MESH_STATS");
         let debug_mesh_stats_all = parse_bool_env("CAT_DEBUG_RENDERABLE_MESH_STATS_ALL");
         static MESH_STATS_LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
+        let mut inserted_any = false;
 
         // println!(
         //     "[RenderableSystem] flush_pending: pending_len={} visuals.instances={} ",
@@ -1020,7 +1156,12 @@ impl RenderableSystem {
                 .pending_emissive
                 .get(&p.renderable_cid)
                 .copied()
-                .unwrap_or(0);
+                .unwrap_or(0.0);
+
+            let gpu_r = GpuRenderable::new(
+                gpu_r.mesh,
+                Self::material_with_emissive(gpu_r.material, emissive),
+            );
 
             let quant_steps = self
                 .pending_quant_steps
@@ -1035,6 +1176,8 @@ impl RenderableSystem {
             let (background, background_occluded_lit) =
                 Self::inherited_background_for_renderable(world, p.renderable_cid);
 
+            let overlay = Self::inherited_overlay_for_renderable(world, p.renderable_cid);
+
             let handle = visuals.register(
                 p.renderable_cid,
                 gpu_r,
@@ -1045,6 +1188,7 @@ impl RenderableSystem {
                 transparent_cutout,
                 background,
                 background_occluded_lit,
+                overlay,
                 emissive,
                 None,
                 quant_steps,
@@ -1075,6 +1219,7 @@ impl RenderableSystem {
 
             // (If you log ComponentId in a format string, use {:?}.)
             self.pending.remove(&key);
+            inserted_any = true;
         }
 
         self.apply_pending_uv_updates_to_registered_renderables(
@@ -1088,6 +1233,96 @@ impl RenderableSystem {
         self.apply_pending_cutout_updates_to_registered_renderables(world, visuals);
         self.apply_pending_emissive_updates_to_registered_renderables(world, visuals);
         self.apply_pending_quant_updates_to_registered_renderables(world, visuals);
+
+        self.spawn_pending_normal_vis(world, render_assets, queue);
+
+        inserted_any
+    }
+
+    fn spawn_pending_normal_vis(
+        &mut self,
+        world: &mut World,
+        render_assets: &RenderAssets,
+        queue: &mut crate::engine::ecs::CommandQueue,
+    ) {
+        use crate::engine::ecs::component::{
+            ColorComponent, EmissiveComponent, NormalVisualisationComponent, RenderableComponent,
+            TransformComponent,
+        };
+        use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Renderable};
+
+        let pending = std::mem::take(&mut self.pending_normal_vis);
+        for (nv_id, _renderable_id, base_mesh, thickness) in pending {
+            // Skip if already spawned (double-init guard).
+            if let Some(nv) =
+                world.get_component_by_id_as::<NormalVisualisationComponent>(nv_id)
+            {
+                if !nv.spawned_roots.is_empty() {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+
+            let Some(cpu_mesh) = render_assets.cpu_mesh(base_mesh) else {
+                // Mesh not loaded yet — try again next frame.
+                self.pending_normal_vis
+                    .push((nv_id, _renderable_id, base_mesh, thickness));
+                continue;
+            };
+
+            let half_height = thickness * 5.0;
+            let mut spawned_roots: Vec<ComponentId> = Vec::new();
+
+            for vertex in &cpu_mesh.vertices {
+                let pos = vertex.pos;
+                let n = vertex.normal;
+
+                // Normalize the normal (defensive).
+                let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+                let n = if len > 1e-6 {
+                    [n[0] / len, n[1] / len, n[2] / len]
+                } else {
+                    [0.0, 1.0, 0.0]
+                };
+
+                // Cube center: offset half-height along the normal from the vertex.
+                let cx = pos[0] + n[0] * half_height;
+                let cy = pos[1] + n[1] * half_height;
+                let cz = pos[2] + n[2] * half_height;
+
+                // Quaternion to rotate Y-axis [0,1,0] onto the normal.
+                let quat = crate::utils::math::shortest_arc_quat([0.0, 1.0, 0.0], n);
+
+                let t_id = world.add_component(
+                    TransformComponent::new()
+                        .with_position(cx, cy, cz)
+                        .with_rotation_quat(quat)
+                        .with_scale(thickness, thickness * 10.0, thickness),
+                );
+                let r_id = world.add_component(RenderableComponent::new(Renderable::new(
+                    CpuMeshHandle::CUBE,
+                    MaterialHandle::TOON_MESH,
+                )));
+                let c_id =
+                    world.add_component(ColorComponent::rgba(0.0, 1.0, 1.0, 1.0));
+                let e_id = world.add_component(EmissiveComponent::on());
+
+                let _ = world.add_child(nv_id, t_id);
+                let _ = world.add_child(t_id, r_id);
+                let _ = world.add_child(r_id, c_id);
+                let _ = world.add_child(r_id, e_id);
+
+                world.init_component_tree(t_id, queue);
+                spawned_roots.push(t_id);
+            }
+
+            if let Some(nv) =
+                world.get_component_by_id_as_mut::<NormalVisualisationComponent>(nv_id)
+            {
+                nv.spawned_roots = spawned_roots;
+            }
+        }
     }
 }
 
@@ -1106,5 +1341,58 @@ impl System for RenderableSystem {
         //
         // Later, tick() can be used for per-frame sync (transform updates, material changes, etc.)
         // once we decide how to represent those components and what events/dirty flags we have.
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RenderableSystem;
+    use crate::engine::ecs::World;
+    use crate::engine::ecs::component::{EmissiveComponent, RenderableComponent, TextComponent, TransformComponent, TransparentCutoutComponent};
+    use crate::engine::graphics::VisualWorld;
+
+    #[test]
+    fn text_like_renderable_inherits_cutout_from_ancestor_but_not_implicitly() {
+        let mut world = World::default();
+
+        let text = world.add_component(TextComponent::new("item"));
+        let glyph_t = world.add_component(TransformComponent::new());
+        let glyph_r = world.add_component(RenderableComponent::square());
+
+        let _ = world.add_child(text, glyph_t);
+        let _ = world.add_child(glyph_t, glyph_r);
+
+        assert_eq!(RenderableSystem::inherited_cutout_for_renderable(&world, glyph_r), None);
+
+        let cutout = world.add_component(TransparentCutoutComponent::new());
+        let _ = world.add_child(text, cutout);
+
+        assert_eq!(
+            RenderableSystem::inherited_cutout_for_renderable(&world, glyph_r),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn text_style_emissive_targets_descendants_not_ancestor_renderable() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::default();
+        let mut renderable = RenderableSystem::default();
+
+        let plane = world.add_component(RenderableComponent::square());
+        let text = world.add_component(TextComponent::new("item"));
+        let glyph_t = world.add_component(TransformComponent::new());
+        let glyph_r = world.add_component(RenderableComponent::square());
+        let emissive = world.add_component(EmissiveComponent::on());
+
+        let _ = world.add_child(plane, text);
+        let _ = world.add_child(text, glyph_t);
+        let _ = world.add_child(glyph_t, glyph_r);
+        let _ = world.add_child(text, emissive);
+
+        renderable.register_emissive(&mut world, &mut visuals, emissive);
+
+        assert_eq!(renderable.pending_emissive.get(&plane), None);
+        assert_eq!(renderable.pending_emissive.get(&glyph_r), Some(&1.0));
     }
 }

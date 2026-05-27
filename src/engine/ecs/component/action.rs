@@ -1,413 +1,151 @@
-use super::Component;
-use crate::engine::ecs::ComponentId;
-use slotmap::{Key, KeyData};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ActionMethod {
-    Noop,
-    Print,
-    SetColor,
-    SetText,
-    /// Set position (translation) on TransformComponents.
-    SetPosition,
-    /// Set full transform (translation + rotation quat + scale) on TransformComponents.
-    SetTransform,
-    /// Attach `child` under `parent` (component graph topology change).
-    Attach,
-    /// Clone a prefab subtree and attach the cloned root under each target parent.
-    AttachClone,
-    /// Detach each target from its parent.
-    Detach,
-    /// Remove (delete) the child at a given index from each target parent.
-    RemoveChild,
-    /// Remove (delete) all children from each target parent.
-    RemoveChildren,
-    /// Remove each target component and all descendants.
-    RemoveSubtree,
-    /// Mark the audio graph dirty (forces an end-of-frame recompile + RT graph swap scheduling).
-    AudioGraphRebuild,
-
-    /// Request a raycast on the target RayCastComponent(s) this frame.
-    ///
-    /// Intended for animations: keyframes can trigger raycasts without mouse input.
-    Raycast,
-    AudioLowPassSetCutoffHz,
-    AudioBandPassSetCenterHz,
-    OscillatorSetEnabled,
-    OscillatorSetPitch,
-    OscillatorScheduleSetPitch,
-    OscillatorScheduleSetNote,
-    OscillatorScheduleMusicNote,
-    MusicSetNote,
-    /// Placeholder for future unification with the command queue.
-    ///
-    /// Encoded as: method="command_queue", command_name="...".
-    CommandQueue {
-        command_name: String,
-    },
-}
-
-impl ActionMethod {
-    fn encode(&self, map: &mut std::collections::HashMap<String, serde_json::Value>) {
-        match self {
-            ActionMethod::Noop => {
-                map.insert("method".to_string(), serde_json::json!("noop"));
-            }
-            ActionMethod::Print => {
-                map.insert("method".to_string(), serde_json::json!("print"));
-            }
-            ActionMethod::SetColor => {
-                map.insert("method".to_string(), serde_json::json!("set_color"));
-            }
-            ActionMethod::SetText => {
-                map.insert("method".to_string(), serde_json::json!("set_text"));
-            }
-            ActionMethod::SetPosition => {
-                map.insert("method".to_string(), serde_json::json!("set_position"));
-            }
-            ActionMethod::SetTransform => {
-                map.insert("method".to_string(), serde_json::json!("set_transform"));
-            }
-            ActionMethod::Attach => {
-                map.insert("method".to_string(), serde_json::json!("attach"));
-            }
-            ActionMethod::AttachClone => {
-                map.insert("method".to_string(), serde_json::json!("attach_clone"));
-            }
-            ActionMethod::Detach => {
-                map.insert("method".to_string(), serde_json::json!("detach"));
-            }
-            ActionMethod::RemoveChild => {
-                map.insert("method".to_string(), serde_json::json!("remove_child"));
-            }
-            ActionMethod::RemoveChildren => {
-                map.insert("method".to_string(), serde_json::json!("remove_children"));
-            }
-            ActionMethod::RemoveSubtree => {
-                map.insert("method".to_string(), serde_json::json!("remove_subtree"));
-            }
-            ActionMethod::AudioGraphRebuild => {
-                map.insert(
-                    "method".to_string(),
-                    serde_json::json!("audio_graph_rebuild"),
-                );
-            }
-            ActionMethod::Raycast => {
-                map.insert("method".to_string(), serde_json::json!("raycast"));
-            }
-            ActionMethod::AudioLowPassSetCutoffHz => {
-                map.insert(
-                    "method".to_string(),
-                    serde_json::json!("audio_low_pass_set_cutoff_hz"),
-                );
-            }
-            ActionMethod::AudioBandPassSetCenterHz => {
-                map.insert(
-                    "method".to_string(),
-                    serde_json::json!("audio_band_pass_set_center_hz"),
-                );
-            }
-            ActionMethod::OscillatorSetEnabled => {
-                map.insert(
-                    "method".to_string(),
-                    serde_json::json!("oscillator_set_enabled"),
-                );
-            }
-            ActionMethod::OscillatorSetPitch => {
-                map.insert(
-                    "method".to_string(),
-                    serde_json::json!("oscillator_set_pitch"),
-                );
-            }
-            ActionMethod::OscillatorScheduleSetPitch => {
-                map.insert(
-                    "method".to_string(),
-                    serde_json::json!("oscillator_schedule_set_pitch"),
-                );
-            }
-            ActionMethod::OscillatorScheduleSetNote => {
-                map.insert(
-                    "method".to_string(),
-                    serde_json::json!("oscillator_schedule_set_note"),
-                );
-            }
-            ActionMethod::OscillatorScheduleMusicNote => {
-                map.insert(
-                    "method".to_string(),
-                    serde_json::json!("oscillator_schedule_music_note"),
-                );
-            }
-            ActionMethod::MusicSetNote => {
-                map.insert("method".to_string(), serde_json::json!("music_set_note"));
-            }
-            ActionMethod::CommandQueue { command_name } => {
-                map.insert("method".to_string(), serde_json::json!("command_queue"));
-                map.insert("command_name".to_string(), serde_json::json!(command_name));
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Action {
-    pub target: Vec<ComponentId>,
-    pub method: ActionMethod,
-    pub params: Vec<serde_json::Value>,
-}
-
-impl Default for Action {
-    fn default() -> Self {
-        Self {
-            target: Vec::new(),
-            method: ActionMethod::Noop,
-            params: Vec::new(),
-        }
-    }
-}
-
-impl Action {
-    pub fn print(message: impl Into<String>) -> Self {
-        Self {
-            target: Vec::new(),
-            method: ActionMethod::Print,
-            params: vec![serde_json::json!(message.into())],
-        }
-    }
-
-    pub fn set_color(target: Vec<ComponentId>, rgba: [f32; 4]) -> Self {
-        Self {
-            target,
-            method: ActionMethod::SetColor,
-            params: vec![serde_json::json!(rgba)],
-        }
-    }
-
-    pub fn set_text(target: Vec<ComponentId>, text: impl Into<String>) -> Self {
-        Self {
-            target,
-            method: ActionMethod::SetText,
-            params: vec![serde_json::json!(text.into())],
-        }
-    }
-
-    /// Set translation (x,y,z) on TransformComponents.
-    pub fn set_position(target: Vec<ComponentId>, x: f32, y: f32, z: f32) -> Self {
-        Self {
-            target,
-            method: ActionMethod::SetPosition,
-            params: vec![serde_json::json!([x, y, z])],
-        }
-    }
-
-    /// Set full transform on TransformComponents.
-    ///
-    /// Params are encoded as: [translation[x,y,z], rotation_quat[x,y,z,w], scale[x,y,z]].
-    pub fn set_transform(
-        target: Vec<ComponentId>,
-        translation: [f32; 3],
-        rotation_quat_xyzw: [f32; 4],
-        scale: [f32; 3],
-    ) -> Self {
-        Self {
-            target,
-            method: ActionMethod::SetTransform,
-            params: vec![
-                serde_json::json!(translation),
-                serde_json::json!(rotation_quat_xyzw),
-                serde_json::json!(scale),
-            ],
-        }
-    }
-
-    /// Attach `child` under `parent`.
-    ///
-    /// Mirrors `Universe::attach(parent, child)` / `World::add_child(parent, child)`.
-    pub fn attach(parent: ComponentId, child: ComponentId) -> Self {
-        Self {
-            target: vec![parent],
-            method: ActionMethod::Attach,
-            params: vec![serde_json::json!(child.data().as_ffi())],
-        }
-    }
-
-    /// Request a raycast on the given RayCastComponent this frame.
-    pub fn raycast(raycaster: ComponentId) -> Self {
-        Self {
-            target: vec![raycaster],
-            method: ActionMethod::Raycast,
-            params: vec![],
-        }
-    }
-
-    /// Clone the subtree rooted at `prefab_root` and attach the clone under `parent`.
-    pub fn attach_clone(parent: ComponentId, prefab_root: ComponentId) -> Self {
-        Self {
-            target: vec![parent],
-            method: ActionMethod::AttachClone,
-            params: vec![serde_json::json!(prefab_root.data().as_ffi())],
-        }
-    }
-
-    /// Detach each target from its current parent.
-    ///
-    /// Mirrors `World::detach_from_parent(child)`.
-    pub fn detach(target: Vec<ComponentId>) -> Self {
-        Self {
-            target,
-            method: ActionMethod::Detach,
-            params: Vec::new(),
-        }
-    }
-
-    /// Common misspelling alias (kept for convenience).
-    pub fn detatch(target: Vec<ComponentId>) -> Self {
-        Self::detach(target)
-    }
-
-    /// Remove (delete) the child at `index` from `parent`.
-    pub fn remove_child(parent: ComponentId, index: usize) -> Self {
-        Self {
-            target: vec![parent],
-            method: ActionMethod::RemoveChild,
-            params: vec![serde_json::json!(index as u64)],
-        }
-    }
-
-    /// Remove (delete) all direct children from `parent`.
-    pub fn remove_children(parent: ComponentId) -> Self {
-        Self {
-            target: vec![parent],
-            method: ActionMethod::RemoveChildren,
-            params: Vec::new(),
-        }
-    }
-
-    /// Remove each target component and all its descendants.
-    ///
-    /// Mirrors `World::remove_component_subtree(root)`.
-    pub fn remove_subtree(target: Vec<ComponentId>) -> Self {
-        Self {
-            target,
-            method: ActionMethod::RemoveSubtree,
-            params: Vec::new(),
-        }
-    }
-
-    /// Force the audio graph to be recompiled (and swapped into the audio worker).
-    ///
-    /// This doesn't change topology by itself; it just ensures any world mutations are
-    /// reflected in the RT graph.
-    pub fn audio_graph_rebuild(target: Vec<ComponentId>) -> Self {
-        Self {
-            target,
-            method: ActionMethod::AudioGraphRebuild,
-            params: Vec::new(),
-        }
-    }
-
-    pub fn audio_low_pass_set_cutoff_hz(target: Vec<ComponentId>, cutoff_hz: f32) -> Self {
-        Self {
-            target,
-            method: ActionMethod::AudioLowPassSetCutoffHz,
-            params: vec![serde_json::json!(cutoff_hz)],
-        }
-    }
-
-    pub fn audio_band_pass_set_center_hz(target: Vec<ComponentId>, center_hz: f32) -> Self {
-        Self {
-            target,
-            method: ActionMethod::AudioBandPassSetCenterHz,
-            params: vec![serde_json::json!(center_hz)],
-        }
-    }
-
-    pub fn oscillator_set_enabled(target: Vec<ComponentId>, enabled: bool) -> Self {
-        Self {
-            target,
-            method: ActionMethod::OscillatorSetEnabled,
-            params: vec![serde_json::json!(enabled)],
-        }
-    }
-
-    /// Set oscillator frequency directly (in Hz).
-    pub fn oscillator_set_pitch(target: Vec<ComponentId>, frequency_hz: f32) -> Self {
-        Self {
-            target,
-            method: ActionMethod::OscillatorSetPitch,
-            params: vec![serde_json::json!(frequency_hz)],
-        }
-    }
-
-    /// Schedule an oscillator frequency set (Hz) at a beat offset.
-    ///
-    /// The `beat` parameter is interpreted as an offset relative to the `beat_now`
-    /// value passed to `ActionSystem::execute(...)`.
-    pub fn oscillator_schedule_set_pitch(
-        target: Vec<ComponentId>,
-        beat: f64,
-        frequency_hz: f32,
-    ) -> Self {
-        Self {
-            target,
-            method: ActionMethod::OscillatorScheduleSetPitch,
-            params: vec![serde_json::json!(beat), serde_json::json!(frequency_hz)],
-        }
-    }
-
-    /// Schedule an oscillator to play a musical note at a beat offset.
-    ///
-    /// `note.duration_beats()` is interpreted in beats, and will schedule a note-off
-    /// (disable) at `beat + duration`.
-    ///
-    /// The `beat` parameter is interpreted as an offset relative to the `beat_now`
-    /// value passed to `ActionSystem::execute(...)`.
-    pub fn oscillator_schedule_music_note(
-        target: Vec<ComponentId>,
-        beat: f64,
-        note: crate::engine::ecs::component::MusicNote,
-    ) -> Self {
-        Self {
-            target,
-            method: ActionMethod::OscillatorScheduleMusicNote,
-            params: vec![serde_json::json!(beat), serde_json::json!(note)],
-        }
-    }
-
-    /// Update the first `MusicNoteComponent` found under each target oscillator (subtree search),
-    /// and re-apply its pitch/octave to the oscillator frequency.
-    pub fn music_set_note(
-        target: Vec<ComponentId>,
-        note: crate::engine::ecs::component::MusicNote,
-    ) -> Self {
-        Self {
-            target,
-            method: ActionMethod::MusicSetNote,
-            params: vec![serde_json::json!(note)],
-        }
-    }
-}
+use super::{Component, ComponentRef};
+use crate::engine::ecs::{ComponentId, IntentValue};
 
 #[derive(Debug, Clone)]
 pub struct ActionComponent {
-    pub action: Action,
+    /// Runtime intent. ComponentId slots inside are `ComponentId::null()`
+    /// placeholders until resolution; after resolution, they're real ids
+    /// filled in from `target_sources` in the variant's declaration order.
+    pub signal: IntentValue,
+    /// Authoring metadata, one entry per ComponentId slot in `signal`,
+    /// ordered by the slot's declaration order in the variant. Used by
+    /// dump (lossless round-trip) and by resolution (look up ids).
+    pub target_sources: Vec<ComponentRef>,
+    /// Whether `signal`'s ComponentId slots hold real ids (true) or null
+    /// placeholders (false). Set by the resolution pass invoked by
+    /// `AnimationSystem` per the owning `AnimationComponent`'s configured
+    /// resolve timing.
+    pub resolved: bool,
 }
 
 impl ActionComponent {
-    pub fn new(action: Action) -> Self {
-        Self { action }
+    /// Construct from an already-resolved IntentValue (no ComponentId
+    /// targets, or all targets pre-resolved). Use this for built-in /
+    /// engine-emitted actions; MMS authoring goes through the registry
+    /// which builds with `new_authored` instead.
+    pub fn new(signal: IntentValue) -> Self {
+        Self {
+            signal,
+            target_sources: Vec::new(),
+            resolved: true,
+        }
+    }
+
+    /// Construct from a signal whose ComponentId slots are placeholders
+    /// plus the authoring sources for each slot (in declaration order).
+    /// `resolved` starts false; resolution happens when the owning
+    /// `AnimationSystem` first processes this action.
+    pub fn new_authored(signal: IntentValue, target_sources: Vec<ComponentRef>) -> Self {
+        Self {
+            signal,
+            target_sources,
+            resolved: false,
+        }
     }
 
     pub fn print(message: impl Into<String>) -> Self {
-        Self::new(Action::print(message))
+        Self::new(IntentValue::Print {
+            message: message.into(),
+        })
     }
 }
 
 impl Default for ActionComponent {
     fn default() -> Self {
         Self {
-            action: Action::default(),
+            signal: IntentValue::Noop,
+            target_sources: Vec::new(),
+            resolved: true,
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// IntentValue slot enumeration
+//
+// Used by ActionComponent for: (a) sanity-checking that `target_sources.len()`
+// matches the number of ComponentId slots in the variant; (b) reading current
+// slot values for dump; (c) writing resolved ids into slots after lookup.
+//
+// Only covers the variants ActionComponent.signal actually carries. Variants
+// the engine emits internally (Register*, intra-system bookkeeping) are not
+// authorable from MMS and never appear here — they return zero slots.
+// ---------------------------------------------------------------------------
+
+/// Number of ComponentId slots in `signal`'s variant (counts each element
+/// of any `Vec<ComponentId>` field).
+pub fn signal_target_slot_count(signal: &IntentValue) -> usize {
+    use IntentValue::*;
+    match signal {
+        Noop | Print { .. } => 0,
+
+        SetColor { component_ids, .. }
+        | SetText { component_ids, .. }
+        | SetPosition { component_ids, .. }
+        | Detach { component_ids }
+        | RemoveSubtree { component_ids }
+        | AudioGraphRebuild { component_ids }
+        | RequestRaycast { component_ids }
+        | AudioLowPassSetCutoffHz { component_ids, .. }
+        | AudioBandPassSetCenterHz { component_ids, .. }
+        | OscillatorSetEnabled { component_ids, .. }
+        | OscillatorSetPitch { component_ids, .. }
+        | OscillatorScheduleSetPitch { component_ids, .. }
+        | AudioSchedulePlay { component_ids, .. }
+        | UpdateTransform { component_ids, .. } => component_ids.len(),
+
+        Attach { parents, .. } | AttachClone { parents, .. } => parents.len() + 1,
+        RemoveChild { parents, .. } | RemoveChildren { parents } => parents.len(),
+
+        // Variants ActionComponent never carries — no authored targets.
+        _ => 0,
+    }
+}
+
+/// Apply resolved ids back into `signal`'s ComponentId slots in declaration
+/// order. Caller must guarantee `ids.len() == signal_target_slot_count(signal)`.
+pub fn apply_resolved_targets(signal: &mut IntentValue, ids: &[ComponentId]) {
+    use IntentValue::*;
+    let mut cursor = 0usize;
+    let mut take = |n: usize| -> &[ComponentId] {
+        let slice = &ids[cursor..cursor + n];
+        cursor += n;
+        slice
+    };
+    match signal {
+        Noop | Print { .. } => {}
+
+        SetColor { component_ids, .. }
+        | SetText { component_ids, .. }
+        | SetPosition { component_ids, .. }
+        | Detach { component_ids }
+        | RemoveSubtree { component_ids }
+        | AudioGraphRebuild { component_ids }
+        | RequestRaycast { component_ids }
+        | AudioLowPassSetCutoffHz { component_ids, .. }
+        | AudioBandPassSetCenterHz { component_ids, .. }
+        | OscillatorSetEnabled { component_ids, .. }
+        | OscillatorSetPitch { component_ids, .. }
+        | OscillatorScheduleSetPitch { component_ids, .. }
+        | AudioSchedulePlay { component_ids, .. }
+        | UpdateTransform { component_ids, .. } => {
+            let n = component_ids.len();
+            component_ids.copy_from_slice(take(n));
+        }
+
+        Attach { parents, child } | AttachClone { parents, prefab_root: child } => {
+            let n = parents.len();
+            parents.copy_from_slice(take(n));
+            *child = take(1)[0];
+        }
+        RemoveChild { parents, .. } | RemoveChildren { parents } => {
+            let n = parents.len();
+            parents.copy_from_slice(take(n));
+        }
+
+        _ => {}
+    }
+    debug_assert_eq!(cursor, ids.len(), "slot count mismatch in apply_resolved_targets");
 }
 
 impl Component for ActionComponent {
@@ -423,92 +161,181 @@ impl Component for ActionComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-
-        let target_ffi: Vec<u64> = self
-            .action
-            .target
-            .iter()
-            .map(|cid| cid.data().as_ffi())
-            .collect();
-        map.insert("target".to_string(), serde_json::json!(target_ffi));
-        self.action.method.encode(&mut map);
-        map.insert("params".to_string(), serde_json::json!(self.action.params));
-
-        map
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterAction {
+                component_ids: vec![component],
+            },
+        );
     }
 
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        // Backward compatibility: old schema used { message: String }.
-        if let Some(message) = data.get("message") {
-            let msg: String = serde_json::from_value(message.clone())
-                .map_err(|e| format!("Failed to decode message: {}", e))?;
-            self.action = Action::print(msg);
-            return Ok(());
-        }
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        use crate::meow_meow::ast::Expression;
 
-        if let Some(target) = data.get("target") {
-            let target_ffi: Vec<u64> = serde_json::from_value(target.clone())
-                .map_err(|e| format!("Failed to decode target: {}", e))?;
-            self.action.target = target_ffi
-                .into_iter()
-                .map(|ffi| KeyData::from_ffi(ffi).into())
-                .collect();
-        }
-
-        if let Some(params) = data.get("params") {
-            self.action.params = serde_json::from_value(params.clone())
-                .map_err(|e| format!("Failed to decode params: {}", e))?;
-        }
-
-        let method = data
-            .get("method")
-            .and_then(|v| v.as_str())
-            .unwrap_or("noop");
-
-        self.action.method = match method {
-            "noop" => ActionMethod::Noop,
-            "print" => ActionMethod::Print,
-            "set_color" => ActionMethod::SetColor,
-            "set_text" => ActionMethod::SetText,
-            "set_position" => ActionMethod::SetPosition,
-            "set_transform" => ActionMethod::SetTransform,
-            "attach" => ActionMethod::Attach,
-            "attach_clone" => ActionMethod::AttachClone,
-            "detach" => ActionMethod::Detach,
-            "remove_child" => ActionMethod::RemoveChild,
-            "remove_children" => ActionMethod::RemoveChildren,
-            "remove_subtree" => ActionMethod::RemoveSubtree,
-            "audio_graph_rebuild" => ActionMethod::AudioGraphRebuild,
-            "raycast" => ActionMethod::Raycast,
-            "audio_low_pass_set_cutoff_hz" => ActionMethod::AudioLowPassSetCutoffHz,
-            "audio_band_pass_set_center_hz" => ActionMethod::AudioBandPassSetCenterHz,
-            "oscillator_set_enabled" => ActionMethod::OscillatorSetEnabled,
-            // Deprecated/removed: keep backward compatibility but do nothing.
-            "oscillator_multiply_pitch" => ActionMethod::Noop,
-            "oscillator_set_pitch" => ActionMethod::OscillatorSetPitch,
-            // Deprecated/removed: keep backward compatibility but do nothing.
-            "oscillator_schedule_multiply_pitch" => ActionMethod::Noop,
-            "oscillator_schedule_set_pitch" => ActionMethod::OscillatorScheduleSetPitch,
-            "oscillator_schedule_set_note" => ActionMethod::OscillatorScheduleSetNote,
-            "oscillator_schedule_music_note" => ActionMethod::OscillatorScheduleMusicNote,
-            "music_set_note" => ActionMethod::MusicSetNote,
-            "command_queue" => ActionMethod::CommandQueue {
-                command_name: data
-                    .get("command_name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            },
-            other => {
-                return Err(format!("Unknown action method: {}", other));
+        // Render an ComponentRef back to the surface form the author wrote.
+        // Guid → "@uuid:<hex>". Query → the original selector string. Both
+        // are Expression::String so the registry's arg_target_source can
+        // re-parse them.
+        fn target_expr(t: &ComponentRef) -> Expression {
+            match t {
+                ComponentRef::Guid(u) => Expression::String(format!("@uuid:{u}")),
+                ComponentRef::Query(s) => Expression::String(s.clone()),
             }
+        }
+        // For "vec-of-targets" arg slots: always emit an Array so the
+        // dump form matches the registry's expectation
+        // (`arg_target_source_vec` accepts arrays or single values, but
+        // emitting an array is unambiguous and round-trip-stable).
+        let targets_expr = |slice: &[ComponentRef]| -> Expression {
+            Expression::Array(slice.iter().map(target_expr).collect())
         };
 
-        Ok(())
+        match &self.signal {
+            IntentValue::Noop => ce_call("Action", "noop", vec![]),
+            IntentValue::Print { message } => {
+                ce_call("Action", "print", vec![s(message)])
+            }
+            IntentValue::SetColor { rgba, .. } => ce_call(
+                "Action",
+                "set_color",
+                vec![
+                    targets_expr(&self.target_sources),
+                    array(nums(rgba.iter().map(|&v| v as f64))),
+                ],
+            ),
+            IntentValue::SetText { text, .. } => ce_call(
+                "Action",
+                "set_text",
+                vec![targets_expr(&self.target_sources), s(text)],
+            ),
+            IntentValue::SetPosition { position, .. } => ce_call(
+                "Action",
+                "set_position",
+                vec![
+                    targets_expr(&self.target_sources),
+                    array(nums(position.iter().map(|&v| v as f64))),
+                ],
+            ),
+            IntentValue::Attach { .. } => {
+                // target_sources convention: [parents..., child].
+                let (parents, child) =
+                    self.target_sources.split_at(self.target_sources.len().saturating_sub(1));
+                let child_expr = child
+                    .first()
+                    .map(target_expr)
+                    .unwrap_or_else(|| s(""));
+                ce_call("Action", "attach", vec![targets_expr(parents), child_expr])
+            }
+            IntentValue::AttachClone { .. } => {
+                let (parents, prefab) =
+                    self.target_sources.split_at(self.target_sources.len().saturating_sub(1));
+                let prefab_expr = prefab
+                    .first()
+                    .map(target_expr)
+                    .unwrap_or_else(|| s(""));
+                ce_call(
+                    "Action",
+                    "attach_clone",
+                    vec![targets_expr(parents), prefab_expr],
+                )
+            }
+            IntentValue::Detach { .. } => {
+                ce_call("Action", "detach", vec![targets_expr(&self.target_sources)])
+            }
+            IntentValue::RemoveSubtree { .. } => ce_call(
+                "Action",
+                "remove_subtree",
+                vec![targets_expr(&self.target_sources)],
+            ),
+            IntentValue::RequestRaycast { .. } => ce_call(
+                "Action",
+                "request_raycast",
+                vec![targets_expr(&self.target_sources)],
+            ),
+            IntentValue::UpdateTransform {
+                translation,
+                rotation_quat_xyzw,
+                scale,
+                ..
+            } => {
+                // Dump uses the quat form (`update_transform_quat`) for
+                // lossless round-trip. The runtime form is always a
+                // quaternion; the euler authoring path is one-way.
+                let target_expr_ = self
+                    .target_sources
+                    .first()
+                    .map(target_expr)
+                    .unwrap_or_else(|| s(""));
+                ce_call(
+                    "Action",
+                    "update_transform_quat",
+                    vec![
+                        target_expr_,
+                        array(nums(translation.iter().map(|&v| v as f64))),
+                        array(nums(rotation_quat_xyzw.iter().map(|&v| v as f64))),
+                        array(nums(scale.iter().map(|&v| v as f64))),
+                    ],
+                )
+            }
+            // Variants ActionComponent shouldn't carry (engine-internal,
+            // or not yet wired into the MMS surface). Fall back to a
+            // noop so dump still produces parseable output.
+            _ => ce_call("Action", "noop", vec![]),
+        }
+    }
+
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use slotmap::{Key, KeyData};
+
+    fn cid(n: u64) -> ComponentId {
+        ComponentId::from(KeyData::from_ffi(n))
+    }
+
+    #[test]
+    fn slot_count_matches_apply_for_attach_variant() {
+        let mut iv = IntentValue::Attach {
+            parents: vec![ComponentId::null(), ComponentId::null()],
+            child: ComponentId::null(),
+        };
+        assert_eq!(signal_target_slot_count(&iv), 3);
+        apply_resolved_targets(&mut iv, &[cid(10), cid(11), cid(12)]);
+        let IntentValue::Attach { parents, child } = iv else {
+            unreachable!()
+        };
+        assert_eq!(parents, vec![cid(10), cid(11)]);
+        assert_eq!(child, cid(12));
+    }
+
+    #[test]
+    fn slot_count_matches_apply_for_vec_only_variant() {
+        let mut iv = IntentValue::SetColor {
+            component_ids: vec![ComponentId::null(), ComponentId::null()],
+            rgba: [1.0, 0.0, 0.0, 1.0],
+        };
+        assert_eq!(signal_target_slot_count(&iv), 2);
+        apply_resolved_targets(&mut iv, &[cid(7), cid(8)]);
+        let IntentValue::SetColor { component_ids, .. } = iv else {
+            unreachable!()
+        };
+        assert_eq!(component_ids, vec![cid(7), cid(8)]);
+    }
+
+    #[test]
+    fn no_slots_for_print() {
+        let iv = IntentValue::Print {
+            message: "hi".into(),
+        };
+        assert_eq!(signal_target_slot_count(&iv), 0);
     }
 }
+

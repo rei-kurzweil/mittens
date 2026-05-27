@@ -8,8 +8,33 @@ use crate::engine::ecs::component::Component;
 pub struct TextComponent {
     pub text: String,
 
-    /// Wrap after this many characters.
+    /// Effective visual scale applied to spawned glyph quads.
+    ///
+    /// This affects glyph rendering only; layout still measures text in glyph
+    /// columns. `Style.font_size` may temporarily override this value during
+    /// layout, while `authored_font_size` preserves the authored/default size.
+    pub font_size: f32,
+
+    /// Author-provided font size. Preserved when layout applies or removes a
+    /// style-driven override so the effective `font_size` can be restored.
+    pub authored_font_size: f32,
+
+    /// Wrap after this many characters. This is the **effective** value used by
+    /// `TextSystem` for glyph layout. The layout pass may narrow it to fit the
+    /// containing block, but it never exceeds [`Self::authored_wrap_at`].
     pub wrap_at: usize,
+
+    /// Author-provided wrap cap. Captured at construction (and on `decode`)
+    /// and never modified by the layout pass. Layout uses this as the upper
+    /// bound when re-deriving `wrap_at` from the current container width —
+    /// so when the container grows again, `wrap_at` can be widened back up
+    /// to (but not past) `authored_wrap_at`.
+    ///
+    /// **Invariant**: any future "set the wrap cap" mutation path (an MMS
+    /// `wrap_at(N)` setter, a Rust `set_wrap` helper, etc.) MUST update
+    /// both `wrap_at` and `authored_wrap_at`. Updating only `wrap_at` will
+    /// be silently undone by the next layout pass.
+    pub authored_wrap_at: usize,
 
     /// If true, wrap only at whitespace boundaries (avoid breaking words).
     /// When false, wraps strictly by character count.
@@ -25,14 +50,26 @@ pub struct TextComponent {
 }
 
 impl TextComponent {
-    pub const DEFAULT_WRAP_AT: usize = 40;
+    pub const DEFAULT_FONT_SIZE: f32 = 1.0;
+    /// Default authored wrap cap: `0` = no author cap. Layout still wraps to
+    /// fit the containing block; this default just means the author didn't
+    /// impose an additional column limit. To set an explicit cap, use
+    /// [`with_wrap`](Self::with_wrap) / [`with_word_wrap`](Self::with_word_wrap).
+    pub const DEFAULT_WRAP_AT: usize = 0;
     pub const DEFAULT_WORD_WRAP_TOKENS: [&'static str; 2] = [" ", "\t"];
 
     pub fn new(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
+            font_size: Self::DEFAULT_FONT_SIZE,
+            authored_font_size: Self::DEFAULT_FONT_SIZE,
             wrap_at: Self::DEFAULT_WRAP_AT,
-            word_wrap: false,
+            authored_wrap_at: Self::DEFAULT_WRAP_AT,
+            // Default to CSS `overflow-wrap: normal` semantics — only break at
+            // whitespace/token boundaries. `with_wrap` (which takes an explicit
+            // column cap) keeps the legacy hard-wrap behavior because callers
+            // using it generally want strict column control.
+            word_wrap: true,
             word_wrap_tokens: Self::DEFAULT_WORD_WRAP_TOKENS
                 .iter()
                 .map(|s| s.to_string())
@@ -45,7 +82,10 @@ impl TextComponent {
     pub fn with_wrap(text: impl Into<String>, wrap_at: usize) -> Self {
         Self {
             text: text.into(),
+            font_size: Self::DEFAULT_FONT_SIZE,
+            authored_font_size: Self::DEFAULT_FONT_SIZE,
             wrap_at,
+            authored_wrap_at: wrap_at,
             word_wrap: false,
             word_wrap_tokens: Self::DEFAULT_WORD_WRAP_TOKENS
                 .iter()
@@ -63,7 +103,10 @@ impl TextComponent {
     pub fn with_word_wrap(text: impl Into<String>, wrap_at: usize) -> Self {
         Self {
             text: text.into(),
+            font_size: Self::DEFAULT_FONT_SIZE,
+            authored_font_size: Self::DEFAULT_FONT_SIZE,
             wrap_at,
+            authored_wrap_at: wrap_at,
             word_wrap: true,
             word_wrap_tokens: Self::DEFAULT_WORD_WRAP_TOKENS
                 .iter()
@@ -95,7 +138,10 @@ impl TextComponent {
 
         Self {
             text: text.into(),
+            font_size: Self::DEFAULT_FONT_SIZE,
+            authored_font_size: Self::DEFAULT_FONT_SIZE,
             wrap_at,
+            authored_wrap_at: wrap_at,
             word_wrap: true,
             word_wrap_tokens: all_tokens,
             built: false,
@@ -113,6 +159,21 @@ impl TextComponent {
 
     pub(crate) fn mark_built(&mut self) {
         self.built = true;
+    }
+
+    pub fn with_font_size(mut self, font_size: f32) -> Self {
+        self.font_size = font_size;
+        self.authored_font_size = font_size;
+        self
+    }
+
+    pub fn set_font_size(&mut self, font_size: f32) {
+        self.font_size = font_size;
+        self.authored_font_size = font_size;
+    }
+
+    pub fn set_effective_font_size(&mut self, font_size: f32) {
+        self.font_size = font_size;
     }
 }
 
@@ -133,67 +194,30 @@ impl Component for TextComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         let _ = self.component;
-        queue.queue_register_text(component);
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterText {
+                component_ids: vec![component],
+            },
+        );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("text".to_string(), serde_json::json!(self.text));
-        map.insert(
-            "wrap_at".to_string(),
-            serde_json::json!(self.wrap_at as u64),
-        );
-        map.insert("word_wrap".to_string(), serde_json::json!(self.word_wrap));
-        map.insert(
-            "word_wrap_tokens".to_string(),
-            serde_json::json!(self.word_wrap_tokens),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(text) = data.get("text") {
-            self.text = serde_json::from_value(text.clone())
-                .map_err(|e| format!("Failed to decode text: {}", e))?;
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        use crate::meow_meow::ast::{Expression, Statement};
+        let mut node = ce("Text");
+        if !self.text.is_empty() {
+            // `Text` consumes a positional string literal in its body
+            // (see `apply_positional` in component_registry).
+            node.body
+                .statements
+                .push(Statement::Expression(Expression::String(self.text.clone())));
         }
-        if let Some(wrap_at) = data.get("wrap_at") {
-            let wrap_u64: u64 = serde_json::from_value(wrap_at.clone())
-                .map_err(|e| format!("Failed to decode wrap_at: {}", e))?;
-            self.wrap_at = wrap_u64 as usize;
+        if (self.authored_font_size - Self::DEFAULT_FONT_SIZE).abs() > f32::EPSILON {
+            node = node.with_call("font_size", nums([self.authored_font_size as f64]));
         }
-        if let Some(word_wrap) = data.get("word_wrap") {
-            self.word_wrap = serde_json::from_value(word_wrap.clone())
-                .map_err(|e| format!("Failed to decode word_wrap: {}", e))?;
-        } else {
-            // Back-compat with old serialized data.
-            self.word_wrap = false;
-        }
-
-        if let Some(tokens) = data.get("word_wrap_tokens") {
-            self.word_wrap_tokens = serde_json::from_value(tokens.clone())
-                .map_err(|e| format!("Failed to decode word_wrap_tokens: {}", e))?;
-        } else {
-            // Back-compat with old serialized data.
-            self.word_wrap_tokens = Self::DEFAULT_WORD_WRAP_TOKENS
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
-        }
-
-        // Always ensure whitespace tokens are present.
-        for tok in Self::DEFAULT_WORD_WRAP_TOKENS {
-            if !self.word_wrap_tokens.iter().any(|t| t == tok) {
-                self.word_wrap_tokens.push(tok.to_string());
-            }
-        }
-
-        // Always rebuild runtime glyph nodes.
-        self.built = false;
-        Ok(())
+        node
     }
 }

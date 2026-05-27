@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 struct TextureRecord {
     uri: Option<String>,
+    render_image: Option<String>,
     format: CatEngineTextureFormat,
     gpu: Option<TextureHandle>,
 }
@@ -60,6 +61,7 @@ impl TextureSystem {
             .entry(component)
             .or_insert_with(|| TextureRecord {
                 uri: tex_comp.uri().map(|s| s.to_string()),
+                render_image: tex_comp.render_image.clone(),
                 format: tex_comp.format,
                 gpu: match tex_comp.source {
                     TextureSource::Handle(h) => Some(h),
@@ -173,6 +175,12 @@ impl TextureSystem {
             };
 
             if record.gpu.is_none() {
+                if let Some(render_image) = record.render_image.as_deref() {
+                    if let Some(existing) = visuals.runtime_texture_handle(render_image) {
+                        record.gpu = Some(existing);
+                    }
+                }
+
                 if let Some(uri) = record.uri.as_deref() {
                     if let Some(cached) = self.uri_cache.get(uri).copied() {
                         record.gpu = Some(cached);

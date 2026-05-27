@@ -1,8 +1,15 @@
 pub mod action;
+pub mod component_ref;
+pub mod avatar_body_yaw;
+pub mod bone_rest_pose;
+pub mod avatar_control;
 pub mod ambient_light;
 pub mod animation;
+pub mod bloom;
+pub mod blur_pass;
 pub mod audio_band_pass_filter;
 pub mod audio_buffer_size;
+pub mod audio_clip;
 pub mod audio_gain;
 pub mod audio_high_pass_filter;
 pub mod audio_limiter;
@@ -12,6 +19,7 @@ pub mod audio_oscillator;
 pub mod audio_output;
 pub mod background;
 pub mod background_color;
+pub mod bounds;
 pub mod camera_2d;
 pub mod camera_3d;
 pub mod camera_xr;
@@ -19,43 +27,79 @@ pub mod clock;
 pub mod collision;
 pub mod collision_shape;
 pub mod color;
+pub mod controller_xr;
 pub mod directional_light;
+pub mod editor;
+pub mod emissive_pass;
 pub mod emissive;
-pub mod gravity;
+pub mod gesture_coord_type;
+pub mod gizmo;
+pub mod normal_visualisation;
 pub mod gltf;
+pub mod gravity;
+pub mod html_element;
+pub mod layout;
+pub mod ik_chain;
 pub mod input;
+pub mod input_xr;
 pub mod input_transform_mode;
-pub mod joint;
 pub mod keyframe;
+pub mod kinetic_response;
 pub mod light_quantization;
 pub mod mesh;
+pub mod music_context;
 pub mod music_note;
 pub mod opacity;
-pub mod kinetic_response;
+pub mod inspect_layout;
+pub mod overlay;
+pub mod render_graph;
+pub mod router;
+pub mod scrolling;
+pub mod selectable;
+pub mod stencil_clip;
+pub mod signal_route_upward;
 pub mod skinned_mesh;
+pub mod style;
 pub mod transparent_cutout;
 
 pub mod openxr;
 pub mod point_light;
+pub mod pointer;
 pub mod raycast;
 pub mod raycastable;
+pub mod raycastable_shape;
 pub mod renderable;
+pub mod renderer_stats;
+pub mod renderer_settings;
 pub mod text;
+pub mod text_shadow;
 pub mod texture;
 pub mod texture_filtering;
+pub mod transition;
 pub mod transform;
+pub mod transform_parent;
+pub mod transform_pipeline;
+pub mod transform_pipeline_map;
+pub mod transform_temporal_filter;
 pub mod uv;
 
 pub use self::gltf::GLTFComponent;
 pub use self::mesh::MeshComponent;
 pub use crate::engine::ecs::system::model::collision_types::{CollisionMode, CollisionShape};
 pub use action::ActionComponent;
-pub use action::{Action, ActionMethod};
+pub use component_ref::ComponentRef;
+pub use avatar_body_yaw::AvatarBodyYawComponent;
+pub use bone_rest_pose::BoneRestPoseComponent;
+pub use avatar_control::AvatarControlComponent;
 pub use ambient_light::AmbientLightComponent;
 pub use animation::AnimationComponent;
 pub use animation::AnimationState;
+pub use animation::ResolveTargetsMode;
+pub use bloom::BloomComponent;
+pub use blur_pass::BlurPassComponent;
 pub use audio_band_pass_filter::*;
 pub use audio_buffer_size::AudioBufferSizeComponent;
+pub use audio_clip::{AudioClipComponent, AudioClipLoadState, AudioTriggerMode};
 pub use audio_gain::*;
 pub use audio_high_pass_filter::*;
 pub use audio_limiter::*;
@@ -65,6 +109,7 @@ pub use audio_oscillator::{AudioOscillator, AudioOscillatorComponent, Oscillator
 pub use audio_output::AudioOutputComponent;
 pub use background::BackgroundComponent;
 pub use background_color::BackgroundColorComponent;
+pub use bounds::BoundsComponent;
 pub use camera_2d::Camera2DComponent;
 pub use camera_3d::Camera3DComponent;
 pub use camera_xr::CameraXRComponent;
@@ -72,28 +117,72 @@ pub use clock::ClockComponent;
 pub use collision::CollisionComponent;
 pub use collision_shape::CollisionShapeComponent;
 pub use color::ColorComponent;
+pub use controller_xr::{ControllerHand, ControllerPoseKind, ControllerXRComponent};
 pub use directional_light::DirectionalLightComponent;
+pub use editor::EditorComponent;
+pub use editor::TransformGizmoCoordSpace;
+pub use emissive_pass::EmissivePassComponent;
 pub use emissive::EmissiveComponent;
+pub use normal_visualisation::NormalVisualisationComponent;
+pub use gesture_coord_type::{GestureCoordType, GestureCoordTypeComponent};
+pub use gizmo::{
+    TransformGizmoAxis, TransformGizmoComponent, TransformGizmoRotateComponent,
+    TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
+};
 pub use gravity::GravityComponent;
+pub use html_element::{ElementType, HtmlElementComponent};
+pub use layout::LayoutComponent;
+pub use ik_chain::{IKChainComponent, IKSolver};
 pub use input::InputComponent;
+pub use input_xr::InputXRComponent;
 pub use input_transform_mode::{ForwardAxis, InputTransformModeComponent, RollAxis};
-pub use joint::JointComponent;
 pub use keyframe::KeyframeComponent;
+pub use kinetic_response::{KineticResponseComponent, KineticResponseMode};
 pub use light_quantization::LightQuantizationComponent;
 pub(crate) use music_note::NotePitch;
+pub use music_context::MusicContextComponent;
 pub use music_note::{MusicNote, MusicNoteComponent};
 pub use opacity::OpacityComponent;
-pub use kinetic_response::{KineticResponseComponent, KineticResponseMode};
 pub use openxr::OpenXRComponent;
+pub use inspect_layout::InspectLayoutComponent;
+pub use overlay::OverlayComponent;
+pub use selectable::SelectableComponent;
+pub use stencil_clip::StencilClipComponent;
 pub use point_light::PointLightComponent;
+pub use pointer::PointerComponent;
 pub use raycast::{RayCastComponent, RayCastMode};
-pub use raycastable::RaycastableComponent;
+pub use raycastable::{PointerEvents, RaycastableComponent};
+pub use raycastable_shape::{RaycastableShapeComponent, RaycastableShapeType};
 pub use renderable::RenderableComponent;
+pub use render_graph::RenderGraphComponent;
+pub use router::RouterComponent;
+pub use renderer_stats::RendererStatsComponent;
+pub use renderer_settings::RendererSettingsComponent;
+pub use signal_route_upward::SignalRouteUpwardComponent;
 pub use skinned_mesh::SkinnedMeshComponent;
+pub use style::{
+    AlignItems, BoxSizing, Display, EdgeInsets, FlexDirection, FlexWrap, JustifyContent,
+    Overflow, Position, SizeDimension, StyleComponent, StylePatch, TextAlign, WordWrapMode,
+};
 pub use text::TextComponent;
+pub use text_shadow::TextShadowComponent;
 pub use texture::{CatEngineTextureFormat, TextureComponent};
 pub use texture_filtering::TextureFilteringComponent;
+pub use transition::{TransitionComponent, TransitionEasing, TransitionReplacePolicy};
 pub use transform::TransformComponent;
+pub use transform_parent::TransformParentComponent;
+pub use transform_pipeline::{
+    TransformDropComponent, TransformForkTRSComponent, TransformMergeTRSComponent,
+    TransformSampleAncestorComponent,
+};
+pub use transform_pipeline_map::{
+    TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
+};
+pub use transform_temporal_filter::{
+    QuatExtractYawComponent, QuatTemporalFilterComponent, QuatYawFollowComponent,
+    Vector3TemporalFilterComponent,
+};
+pub use scrolling::ScrollingComponent;
 pub use transparent_cutout::TransparentCutoutComponent;
 pub use uv::UVComponent;
 
@@ -107,7 +196,15 @@ pub type LightComponent = point_light::PointLightComponent;
 
 pub struct ComponentNode {
     pub guid: uuid::Uuid,
+    /// Engine-side type identifier from `Component::name()` (e.g. `"transform"`, `"text"`).
+    /// Set at construction, never changes.
+    pub component_type: String,
+    /// User-assigned label for this node (e.g. `name = "catgirl"` in MMS).
+    /// Defaults to empty. Used for `#label` query selectors.
     pub name: String,
+    /// CSS-style class membership (e.g. `class = "avatar"` in MMS).
+    /// Used for `.class` query selectors.
+    pub classes: Vec<String>,
     pub component: Box<dyn Component>,
     pub parent: Option<crate::engine::ecs::ComponentId>,
     pub children: Vec<crate::engine::ecs::ComponentId>,
@@ -116,10 +213,12 @@ pub struct ComponentNode {
 
 impl ComponentNode {
     pub fn new(component: Box<dyn Component>) -> Self {
-        let name = component.name().to_string();
+        let component_type = component.name().to_string();
         Self {
             guid: uuid::Uuid::new_v4(),
-            name,
+            component_type,
+            name: String::new(),
+            classes: Vec::new(),
             component,
             parent: None,
             children: Vec::new(),
@@ -127,10 +226,15 @@ impl ComponentNode {
         }
     }
 
+    /// Create a node with a user-assigned label (`name`).
+    /// `component_type` is still derived from `component.name()`.
     pub fn new_named(name: impl Into<String>, component: Box<dyn Component>) -> Self {
+        let component_type = component.name().to_string();
         Self {
             guid: uuid::Uuid::new_v4(),
+            component_type,
             name: name.into(),
+            classes: Vec::new(),
             component,
             parent: None,
             children: Vec::new(),
@@ -143,9 +247,12 @@ impl ComponentNode {
         name: impl Into<String>,
         component: Box<dyn Component>,
     ) -> Self {
+        let component_type = component.name().to_string();
         Self {
             guid,
+            component_type,
             name: name.into(),
+            classes: Vec::new(),
             component,
             parent: None,
             children: Vec::new(),
@@ -168,7 +275,7 @@ pub trait Component: std::any::Any {
     /// Called when component is added to the World
     fn init(
         &mut self,
-        _queue: &mut crate::engine::ecs::CommandQueue,
+        _emit: &mut dyn crate::engine::ecs::SignalEmitter,
         _component: crate::engine::ecs::ComponentId,
     ) {
     }
@@ -176,7 +283,7 @@ pub trait Component: std::any::Any {
     /// Called when component is removed from the World.
     fn cleanup(
         &mut self,
-        _queue: &mut crate::engine::ecs::CommandQueue,
+        _emit: &mut dyn crate::engine::ecs::SignalEmitter,
         _component: crate::engine::ecs::ComponentId,
     ) {
     }
@@ -196,5 +303,98 @@ pub trait Component: std::any::Any {
         _data: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<(), String> {
         Ok(())
+    }
+
+    /// Encode this component as an MMS Component Expression AST node.
+    ///
+    /// The returned `ComponentExpression` should round-trip through the
+    /// MMS pipeline: `unparse → parse → eval_ce → spawn_tree` reconstructs
+    /// an equivalent component. Default impl emits a bare CE with no
+    /// constructors/body, using `name()` (snake_case) as the type — this
+    /// works for "tag" components with no state but most overrides will
+    /// want to emit proper builder calls for their fields.
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        crate::meow_meow::ast::ComponentExpression {
+            component_type: crate::meow_meow::ast::Ident(self.name().to_string()),
+            constructors: Vec::new(),
+            body: crate::meow_meow::ast::BlockStatement { statements: Vec::new() },
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers for component `to_mms_ast` implementations.
+// Imported by each component file: `use super::ce_helpers::*;` (or fully qualified).
+// ---------------------------------------------------------------------------
+
+pub mod ce_helpers {
+    use crate::meow_meow::ast::{
+        BlockStatement, ComponentExpression, ConstructorCall, Expression, Ident, UnaryOpKind,
+    };
+
+    /// Empty CE: `Name {}` (no constructors, empty body).
+    pub fn ce(type_name: &str) -> ComponentExpression {
+        ComponentExpression {
+            component_type: Ident(type_name.to_string()),
+            constructors: Vec::new(),
+            body: BlockStatement { statements: Vec::new() },
+        }
+    }
+
+    /// CE with a single primary constructor: `Name.method(args)`.
+    pub fn ce_call(type_name: &str, method: &str, args: Vec<Expression>) -> ComponentExpression {
+        ComponentExpression {
+            component_type: Ident(type_name.to_string()),
+            constructors: vec![ConstructorCall {
+                method: Ident(method.to_string()),
+                args,
+            }],
+            body: BlockStatement { statements: Vec::new() },
+        }
+    }
+
+    pub trait CeBuilder {
+        fn with_call(self, method: &str, args: Vec<Expression>) -> Self;
+    }
+
+    impl CeBuilder for ComponentExpression {
+        fn with_call(mut self, method: &str, args: Vec<Expression>) -> Self {
+            self.constructors.push(ConstructorCall {
+                method: Ident(method.to_string()),
+                args,
+            });
+            self
+        }
+    }
+
+    pub fn num(n: f64) -> Expression {
+        if n < 0.0 {
+            Expression::UnaryOp {
+                op: UnaryOpKind::Neg,
+                operand: Box::new(Expression::Number(-n)),
+            }
+        } else {
+            Expression::Number(n)
+        }
+    }
+
+    pub fn nums<I: IntoIterator<Item = f64>>(values: I) -> Vec<Expression> {
+        values.into_iter().map(num).collect()
+    }
+
+    pub fn s(text: &str) -> Expression {
+        Expression::String(text.to_string())
+    }
+
+    pub fn b(value: bool) -> Expression {
+        Expression::Bool(value)
+    }
+
+    pub fn ident(name: &str) -> Expression {
+        Expression::Identifier(Ident(name.to_string()))
+    }
+
+    pub fn array(items: Vec<Expression>) -> Expression {
+        Expression::Array(items)
     }
 }

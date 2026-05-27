@@ -35,6 +35,11 @@ fundsp = "0.20"
 # Audio output + audio-clock driver
 cpal = "0.15"
 
+# PCM decoding (WAV, OGG Vorbis, FLAC, MP3; Opus via the `opus` feature)
+symphonia = { version = "0.5", default-features = false, features = [
+    "wav", "pcm", "vorbis", "ogg", "flac", "mp3"
+] }
+
 # Spatial acceleration structures (ray/AABB + BVH)
 bvh = "0.7"
 
@@ -45,5 +50,9 @@ gltf = { version = "1", features = ["import"] }
 # Cargo derives target names from filenames; dots are not allowed in crate names.
 name = "mindmap_example_0_3"
 path = "examples/mindmap-example.0.3.rs"
+
+[[example]]
+name = "panel-pierce"
+path = "examples/triage/panel-pierce.rs"
 
 

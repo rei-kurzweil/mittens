@@ -4,7 +4,7 @@ layout(location = 0) in vec3 v_world_pos;
 layout(location = 1) in vec3 v_normal;
 layout(location = 2) in vec2 v_uv;
 layout(location = 3) in vec4 v_color;
-layout(location = 4) flat in uint v_emissive;
+layout(location = 4) flat in float v_emissive;
 
 layout(location = 0) out vec4 f_color;
 
@@ -66,7 +66,7 @@ void main() {
         discard;
     }
 
-    if (mat.emissive != 0u || v_emissive != 0u) {
+    if (mat.emissive != 0u || v_emissive > 0.0) {
         f_color = vec4(base, base_rgba.a);
         return;
     }

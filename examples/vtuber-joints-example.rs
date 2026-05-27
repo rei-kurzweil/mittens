@@ -1,9 +1,9 @@
 use cat_engine::engine::ecs::component::{
-    Action, ActionComponent, AmbientLightComponent, AnimationComponent, AnimationState,
-    BackgroundColorComponent, Camera3DComponent, ColorComponent, DirectionalLightComponent,
-    ClockComponent, EmissiveComponent, GLTFComponent, InputComponent, InputTransformModeComponent,
-    JointComponent, KeyframeComponent, MeshComponent, RenderableComponent, SkinnedMeshComponent,
-    TransformComponent,
+    AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, CameraXRComponent,
+    ClockComponent, ColorComponent, DirectionalLightComponent, EditorComponent,
+    EmissiveComponent, GLTFComponent, InputComponent, InputTransformModeComponent,
+    InputXRComponent, MeshComponent, PointerComponent, RaycastableComponent,
+    RenderableComponent, SkinnedMeshComponent, TransformComponent,
 };
 use cat_engine::{engine, utils};
 use std::collections::{HashMap, HashSet};
@@ -18,26 +18,28 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Slow the global beat clock so beat-based animations run half as fast.
-    let clock = universe.world.register(ClockComponent::new().with_bpm(60.0));
+    let clock = universe
+        .world
+        .add_component(ClockComponent::new().with_bpm(60.0));
     universe.add(clock);
 
     // Light pink background.
-    let background = universe
-        .world
-        .register(BackgroundColorComponent::rgba(1.0, 0.82, 0.90, 1.0));
+    let background = universe.world.add_component(BackgroundColorComponent::new());
+    let background_c = universe.world.add_component(ColorComponent::rgba(1.0, 0.82, 0.90, 1.0));
+    let _ = universe.world.add_child(background, background_c);
     universe.add(background);
 
     // Small ambient so shadowed areas aren't pure black.
     let ambient = universe
         .world
-        .register(AmbientLightComponent::rgb(0.10, 0.10, 0.12));
+        .add_component(AmbientLightComponent::rgb(0.10, 0.10, 0.12));
     universe.add(ambient);
 
     // --- Camera rig (WASD + mouse) ---
     let input = universe
         .world
-        .register(InputComponent::new().with_speed(1.5));
-    let input_mode = universe.world.register(
+        .add_component(InputComponent::new().with_speed(1.5));
+    let input_mode = universe.world.add_component(
         InputTransformModeComponent::forward_z()
             .with_fps_rotation()
             .with_roll_axis_y(),
@@ -47,32 +49,39 @@ fn main() {
     // Start slightly pulled back looking towards the origin.
     let rig_transform = universe
         .world
-        .register(TransformComponent::new().with_position(0.0, 0.0, 6.0));
+        .add_component(TransformComponent::new().with_position(0.0, 0.0, 6.0));
     let _ = universe.attach(input, rig_transform);
 
-    let camera3d = universe.world.register(Camera3DComponent::new());
+    let camera3d = universe.world.add_component(Camera3DComponent::new());
     let _ = universe.attach(rig_transform, camera3d);
+
+    // Pointer so gizmos can be interacted with.
+    let pointer = universe.world.add_component(PointerComponent::new());
+    let _ = universe.attach(rig_transform, pointer);
+
+    // Topology: I { T { C3D } } — add a small camera-attached controls hint.
+    example_util::spawn_desktop_camera_controls_hint(&mut universe, rig_transform);
 
     universe.add(input);
 
     // --- lighting ---
-    let sun = universe.world.register(
+    let sun = universe.world.add_component(
         DirectionalLightComponent::new()
             .with_intensity(1.2)
             .with_color(1.0, 0.98, 0.94),
     );
     let sun_dir = universe
         .world
-        .register(TransformComponent::new().with_position(0.0, -0.35, 1.0));
+        .add_component(TransformComponent::new().with_position(0.0, -0.35, 1.0));
     let _ = universe.attach(sun_dir, sun);
     universe.add(sun_dir);
 
-    let light_transform = universe.world.register(
+    let light_transform = universe.world.add_component(
         TransformComponent::new()
             .with_position(1.0, 6.0, 3.0)
             .with_scale(0.1, 0.1, 0.1),
     );
-    let light = universe.world.register(
+    let light = universe.world.add_component(
         engine::ecs::component::PointLightComponent::new()
             .with_distance(120.0)
             .with_color(1.0, 1.0, 1.0),
@@ -83,22 +92,40 @@ fn main() {
     // --- VTuber model ---
     let model_uri = "assets/models/pc-rei.hoodie.glb";
 
-    let model_root = universe.world.register(TransformComponent::new());
-    let model = universe.world.register(GLTFComponent::new(model_uri));
+    // Wrap the model subtree in an editor root so transform-only glTF nodes can be visualized
+    // (and thus raycasted/selected) without affecting non-editor scenes.
+    let editor_root = universe.world.add_component(EditorComponent::new());
+
+    let model_root = universe.world.add_component(TransformComponent::new());
+    let model = universe.world.add_component(GLTFComponent::new(model_uri));
 
     // emissive for pc-rei
-    let emissive = universe.world.register(EmissiveComponent { enabled: true });
+    let emissive = universe
+        .world
+        .add_component(EmissiveComponent::on());
     let _ = universe.attach(model, emissive);
+
+    let xr_input = universe.world.add_component(InputXRComponent::on());
+    let xr_head = universe.world.add_component(TransformComponent::new());
+    let xr_camera = universe.world.add_component(CameraXRComponent::on());
+    let _ = universe.attach(xr_input, xr_head);
+    let _ = universe.attach(xr_head, xr_camera);
+    let xr_pointer = universe.world.add_component(PointerComponent::new());
+    let _ = universe.attach(xr_camera, xr_pointer);
+    let _ = universe.attach(xr_head, editor_root);
 
     let _ = universe.attach(model_root, model);
 
-    // Initialize the model root so GLTFComponent gets registered.
-    universe.add(model_root);
+    let _ = universe.attach(editor_root, model_root);
+
+    // Initialize the editor root so GLTFComponent gets registered.
+    universe.add(xr_input);
+    universe.add(editor_root);
 
     // --- Background clouds (occluded + lit) ---
-    let bg_root = universe
-        .world
-        .register(engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting());
+    let bg_root = universe.world.add_component(
+        engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting(),
+    );
     universe.add(bg_root);
     let mut cloud_params = example_util::CloudRingParams::default();
     cloud_params.cloud_count = 8; // +3 clusters
@@ -113,15 +140,15 @@ fn main() {
                       position: (f32, f32, f32),
                       scale: (f32, f32, f32),
                       color: (f32, f32, f32, f32)| {
-        let transform = universe.world.register(
+        let transform = universe.world.add_component(
             TransformComponent::new()
                 .with_position(position.0, position.1, position.2)
                 .with_scale(scale.0, scale.1, scale.2),
         );
-        let renderable = universe.world.register(RenderableComponent::cube());
+        let renderable = universe.world.add_component(RenderableComponent::cube());
         let color = universe
             .world
-            .register(ColorComponent::rgba(color.0, color.1, color.2, color.3));
+            .add_component(ColorComponent::rgba(color.0, color.1, color.2, color.3));
 
         let _ = universe.attach(transform, renderable);
         let _ = universe.attach(renderable, color);
@@ -153,9 +180,88 @@ fn main() {
         (0.75, 0.70, 0.65, 1.0),
     );
 
+    // --- Editor-side stacked cubes (inside the editor subtree for picking/gizmos) ---
+    {
+        let spawn_editor_cube = |universe: &mut engine::Universe,
+                                 editor_root: engine::ecs::ComponentId,
+                                 name: &str,
+                                 position: (f32, f32, f32),
+                                 scale: (f32, f32, f32),
+                                 color: (f32, f32, f32, f32)| {
+            let transform = universe.world.add_component_boxed_named(
+                format!("{name}_t"),
+                Box::new(
+                    TransformComponent::new()
+                        .with_position(position.0, position.1, position.2)
+                        .with_scale(scale.0, scale.1, scale.2),
+                ),
+            );
+            let renderable = universe.world.add_component_boxed_named(
+                format!("{name}_r"),
+                Box::new(RenderableComponent::cube()),
+            );
+            let color_comp = universe.world.add_component_boxed_named(
+                format!("{name}_color"),
+                Box::new(ColorComponent::rgba(color.0, color.1, color.2, color.3)),
+            );
+            let raycastable = universe.world.add_component_boxed_named(
+                format!("{name}_raycastable"),
+                Box::new(RaycastableComponent::enabled()),
+            );
+
+            let _ = universe.world.add_child(transform, renderable);
+            let _ = universe.world.add_child(renderable, color_comp);
+            let _ = universe.world.add_child(renderable, raycastable);
+
+            // One attach into the initialized editor subtree triggers init for the new subtree.
+            let _ = universe.attach(editor_root, transform);
+        };
+
+        // Place the stack beside the desk (a bit to the right).
+        let stack_x = 1.35;
+        let stack_z = 1.0;
+        let s = 0.25;
+        let half = 0.5 * s;
+        let light_brown = (0.80, 0.72, 0.55, 1.0);
+        let cyan = (0.20, 1.00, 1.00, 1.0);
+
+        spawn_editor_cube(
+            &mut universe,
+            editor_root,
+            "editor_stack_0",
+            (stack_x, half, stack_z),
+            (s, s, s),
+            light_brown,
+        );
+        spawn_editor_cube(
+            &mut universe,
+            editor_root,
+            "editor_stack_1",
+            (stack_x, half + 1.0 * s, stack_z),
+            (s, s, s),
+            light_brown,
+        );
+        spawn_editor_cube(
+            &mut universe,
+            editor_root,
+            "editor_stack_2",
+            (stack_x, half + 2.0 * s, stack_z),
+            (s, s, s),
+            light_brown,
+        );
+        spawn_editor_cube(
+            &mut universe,
+            editor_root,
+            "editor_stack_top",
+            (stack_x, half + 3.0 * s, stack_z),
+            (s, s, s),
+            cyan,
+        );
+    }
+
     let xr_root = universe
         .world
-        .register(engine::ecs::component::OpenXRComponent::on());
+        .add_component(engine::ecs::component::OpenXRComponent::on());
     universe.add(xr_root);
 
     universe.systems.process_commands(
@@ -189,24 +295,30 @@ fn main() {
         .flush_mesh_imports_only(&mut universe.render_assets);
 
     // --- Joint printout + animation binding (in the example) ---
-    let all_joints = collect_joint_transforms(&universe.world, model_root);
+    let all_joints = collect_joint_transforms(
+        &universe.world,
+        &universe.systems.skinned_mesh,
+        &universe.visuals,
+        model,
+        model_root,
+    );
     println!("[vtuber-joints-example] joints found: {}", all_joints.len());
     for (i, (node_index, joint_tx)) in all_joints.iter().enumerate() {
         println!("  joint[{i:03}] node_index={node_index} transform={joint_tx:?}");
     }
 
-    let node_index_to_transform: HashMap<usize, engine::ecs::ComponentId> = all_joints
-        .iter()
-        .copied()
-        .collect();
+    let node_index_to_transform: HashMap<usize, engine::ecs::ComponentId> =
+        all_joints.iter().copied().collect();
 
     // Example settings are hardcoded to keep this example simple.
     let joint_offset: usize = 0;
     let wiggle_count: usize = 16;
 
     let target_mesh_key = "pc-rei.hoodie:Body_(merged).baked:prim0".to_string();
-    let target_joint_names: Vec<String> =
-        vec!["J_Bip_L_UpperArm".to_string(), "J_Bip_R_UpperArm".to_string()];
+    let target_joint_names: Vec<String> = vec![
+        "J_Bip_L_UpperArm".to_string(),
+        "J_Bip_R_UpperArm".to_string(),
+    ];
 
     let print_transform_updates: bool = false;
 
@@ -230,7 +342,12 @@ fn main() {
         selected_joint_transforms.len()
     );
 
-    debug_print_selected_joint_influence(&universe, &target_mesh_key, model_root, &selected_joint_transforms);
+    debug_print_selected_joint_influence(
+        &universe,
+        &target_mesh_key,
+        model_root,
+        &selected_joint_transforms,
+    );
 
     println!("[vtuber-joints-example] selected joints:");
     for (i, (node_index, joint_tx)) in selected_joint_transforms.iter().enumerate() {
@@ -239,73 +356,13 @@ fn main() {
             .get_component_record(*joint_tx)
             .map(|n| n.name.as_str())
             .unwrap_or("<unknown>");
-        println!(
-            "  sel[{i:02}] node_index={node_index} name={name} transform={joint_tx:?}"
-        );
+        println!("  sel[{i:02}] node_index={node_index} name={name} transform={joint_tx:?}");
     }
 
-    // Create a looping animation with many keyframes, and attach actions to the selected joints.
-    let anim = universe
-        .world
-        .register(AnimationComponent::new().with_state(AnimationState::Looping));
-    let _ = universe.attach(model_root, anim);
-
-    // Fill [0, 2) beats densely so it looks smooth at bpm=60 (2 beats = 2 seconds).
-    // Important: keep max beat < 2.0 so AnimationSystem uses loop_len=2.
-    let steps: usize = 32;
-    // Rotate around Z, with half the previous distance.
-    let amplitude_rad: f32 = 0.325;
-    let axis_parent: [f32; 3] = [0.0, 0.0, 1.0];
-    for i in 0..steps {
-        let beat = (i as f64) * (2.0 / (steps as f64));
-        let kf = universe.world.register(KeyframeComponent::new(beat));
-        let _ = universe.attach(anim, kf);
-
-        let angle = ((std::f64::consts::PI * beat).sin() as f32) * amplitude_rad;
-
-        for &(_node_index, joint_tx) in selected_joint_transforms.iter() {
-            let Some((translation, base_rotation, scale)) = universe
-                .world
-                .get_component_by_id_as::<TransformComponent>(joint_tx)
-                .map(|t| {
-                    (
-                        t.transform.translation,
-                        t.transform.rotation,
-                        t.transform.scale,
-                    )
-                })
-            else {
-                continue;
-            };
-
-            // Joints often have exported local axes that don't match the model's visible axes.
-            // To rotate around *parent/model-space* +Z, convert that axis into this joint's
-            // local space and then apply a local delta.
-            let axis_local = quat_rotate_vec3(quat_conjugate(quat_normalize(base_rotation)), axis_parent);
-            let delta_local = quat_from_axis_angle(axis_local, angle);
-            let rotation = quat_mul(base_rotation, delta_local);
-
-            if print_transform_updates {
-                // Print at runtime (when the keyframe fires) which transforms are updated and to what.
-                let msg = format!(
-                    "[vtuber-joints-example] beat={beat:.3} set_transform target={joint_tx:?} rotation_quat_xyzw={:?}",
-                    rotation
-                );
-                let print_action = Action::print(msg);
-                let print_action_cid = universe.world.register(ActionComponent::new(print_action));
-                let _ = universe.attach(kf, print_action_cid);
-            }
-
-            let action = Action::set_transform(vec![joint_tx], translation, rotation, scale);
-            let action_cid = universe.world.register(ActionComponent::new(action));
-            let _ = universe.attach(kf, action_cid);
-        }
+    if print_transform_updates {
+        println!("[vtuber-joints-example] note: joint animation disabled");
     }
 
-    // Ensure Animation/Keyframes are registered.
-    universe
-        .world
-        .init_component_tree(anim, &mut universe.command_queue);
     universe.systems.process_commands(
         &mut universe.world,
         &mut universe.visuals,
@@ -349,11 +406,7 @@ fn select_named_joints(
         }
     }
 
-    if out.is_empty() {
-        None
-    } else {
-        Some(out)
-    }
+    if out.is_empty() { None } else { Some(out) }
 }
 
 fn debug_print_selected_joint_influence(
@@ -443,17 +496,13 @@ fn debug_print_selected_joint_influence(
                 let total = totals.get(j).copied().unwrap_or(0.0);
                 println!(
                     "  influence: name='{}' node_index={} skin_joint_index={} total_weight={:.3}",
-                    name,
-                    node_index,
-                    j,
-                    total
+                    name, node_index, j, total
                 );
             }
             None => {
                 println!(
                     "  influence: name='{}' node_index={} skin_joint_index=<none>",
-                    name,
-                    node_index
+                    name, node_index
                 );
             }
         }
@@ -523,11 +572,8 @@ fn select_body_prim0_influencers(
         }
     }
 
-    let mut ranked: Vec<(usize, f32)> = total_weight_per_joint
-        .iter()
-        .copied()
-        .enumerate()
-        .collect();
+    let mut ranked: Vec<(usize, f32)> =
+        total_weight_per_joint.iter().copied().enumerate().collect();
     ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let min_total: f32 = 10.0;
@@ -578,11 +624,7 @@ fn select_body_prim0_influencers(
         out.push((node_index, joint_tx));
     }
 
-    if out.is_empty() {
-        None
-    } else {
-        Some(out)
-    }
+    if out.is_empty() { None } else { Some(out) }
 }
 
 fn find_renderable_by_mesh_key(
@@ -640,29 +682,50 @@ fn find_skin_id_for_renderable(
 
 fn collect_joint_transforms(
     world: &engine::ecs::World,
+    skinned_mesh: &engine::ecs::system::SkinnedMeshSystem,
+    visuals: &engine::graphics::VisualWorld,
+    gltf_component: engine::ecs::ComponentId,
     root: engine::ecs::ComponentId,
 ) -> Vec<(usize, engine::ecs::ComponentId)> {
-    let mut joints: Vec<(usize, engine::ecs::ComponentId)> = Vec::new();
-
-    let mut stack = vec![root];
-    while let Some(node) = stack.pop() {
-        if let Some(j) = world.get_component_by_id_as::<JointComponent>(node) {
-            if let Some(parent_tx) = world.parent_of(node) {
-                if world
-                    .get_component_by_id_as::<TransformComponent>(parent_tx)
-                    .is_some()
-                {
-                    joints.push((j.node_index, parent_tx));
+    fn find_first_skin_id_in_subtree(
+        world: &engine::ecs::World,
+        root: engine::ecs::ComponentId,
+    ) -> Option<engine::graphics::SkinId> {
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            if let Some(sm) = world.get_component_by_id_as::<SkinnedMeshComponent>(node) {
+                if let Some(id) = sm.skin_id {
+                    return Some(id);
                 }
             }
+            for &ch in world.children_of(node) {
+                stack.push(ch);
+            }
         }
-        for &ch in world.children_of(node) {
-            stack.push(ch);
-        }
+        None
     }
 
-    joints.sort_by_key(|(idx, _)| *idx);
-    joints
+    let Some(skin_id) = find_first_skin_id_in_subtree(world, root) else {
+        return Vec::new();
+    };
+    let Some(skin) = visuals.skin(skin_id) else {
+        return Vec::new();
+    };
+    let Some(joints) = skinned_mesh.instance_joints_for_skin(gltf_component, skin_id) else {
+        return Vec::new();
+    };
+
+    let joint_count = skin.joint_count().min(joints.len());
+    let mut out: Vec<(usize, engine::ecs::ComponentId)> = Vec::with_capacity(joint_count);
+    for i in 0..joint_count {
+        let Some(joint_tx) = joints[i] else {
+            continue;
+        };
+        let node_index = skin.joint_node_indices[i];
+        out.push((node_index, joint_tx));
+    }
+
+    out
 }
 
 fn select_joint_range(

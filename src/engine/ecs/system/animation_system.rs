@@ -1,12 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::engine::ecs::component::{
-    ActionComponent, ActionMethod, AnimationComponent, AnimationState, KeyframeComponent,
+    ActionComponent, ComponentRef, AnimationComponent, AnimationState, KeyframeComponent,
+    MusicNoteComponent, ResolveTargetsMode,
+    action::{apply_resolved_targets, signal_target_slot_count},
 };
-use crate::engine::ecs::system::ActionSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::animation_system_evaluator::AnimationEvaluator;
-use crate::engine::ecs::{CommandQueue, ComponentId, RxWorld, World};
+use crate::engine::ecs::{ComponentId, IntentValue, RxWorld, SignalEmitter, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 
@@ -21,6 +22,109 @@ struct AnimationRuntime {
     audio_cycle: u64,
     start_beat: f64,
     pending_state: Option<AnimationState>,
+    /// For `ResolveTargetsMode::OnAttach`: set once the first tick has
+    /// bulk-resolved every ActionComponent target under this animation's
+    /// keyframes. `OnPlay` mode ignores this and resolves per-action lazily
+    /// just before each push.
+    attach_resolved: bool,
+}
+
+/// Resolve `ActionComponent::target_sources` into concrete ComponentIds and
+/// write them into the matching ComponentId slots of `signal`. Idempotent —
+/// returns Ok immediately if the action is already resolved.
+///
+/// Lookup rules:
+/// - `ComponentRef::Guid(uuid)` → `world.component_id_by_guid` (O(1)).
+/// - `ComponentRef::Query(selector)` → `world.find_component` walked from
+///   every world root (matches the registry-time `resolve_action_target`
+///   behavior for forward refs / scenes spawned with multiple roots).
+/// Emit one `AudioSchedulePlay` per `MusicNoteComponent` child of `kf_id`.
+/// `beat_context` is the absolute beat the note should fire at — set by
+/// the audio lookahead pass to the keyframe's global beat, or by the
+/// realtime pass to the current beat.
+fn fire_music_note_children(
+    world: &mut World,
+    rx: &mut RxWorld,
+    kf_id: ComponentId,
+    beat_context: Option<f64>,
+) {
+    let note_ids: Vec<ComponentId> = world
+        .children_of(kf_id)
+        .iter()
+        .copied()
+        .filter(|&cid| {
+            world
+                .get_component_by_id_as::<MusicNoteComponent>(cid)
+                .is_some()
+        })
+        .collect();
+
+    for note_cid in note_ids {
+        // Snapshot the note value (clone is cheap — MusicNote is small).
+        let note = match world.get_component_by_id_as::<MusicNoteComponent>(note_cid) {
+            Some(mn) => mn.note,
+            None => continue,
+        };
+        rx.push_intent_now(
+            note_cid,
+            IntentValue::AudioSchedulePlay {
+                component_ids: vec![note_cid],
+                beat_offset: 0.0,
+                beat_context,
+                note: Some(note),
+                gain: None,
+                rate: None,
+                duration: None,
+            },
+        );
+    }
+}
+
+fn resolve_action_targets(world: &mut World, action_id: ComponentId) -> Result<(), String> {
+    let (sources, expected_slots) = {
+        let Some(action) = world.get_component_by_id_as::<ActionComponent>(action_id) else {
+            return Err(format!("resolve: action {action_id:?} missing"));
+        };
+        if action.resolved {
+            return Ok(());
+        }
+        (action.target_sources.clone(), signal_target_slot_count(&action.signal))
+    };
+
+    if sources.len() != expected_slots {
+        return Err(format!(
+            "resolve: action {action_id:?} has {} target_sources but signal expects {} slots",
+            sources.len(),
+            expected_slots
+        ));
+    }
+
+    let mut resolved: Vec<ComponentId> = Vec::with_capacity(sources.len());
+    for source in &sources {
+        let id = match source {
+            ComponentRef::Guid(uuid) => world
+                .component_id_by_guid(*uuid)
+                .ok_or_else(|| format!("resolve: no component with guid {uuid}"))?,
+            ComponentRef::Query(selector) => {
+                let roots: Vec<ComponentId> = world
+                    .all_components()
+                    .filter(|&cid| world.parent_of(cid).is_none())
+                    .collect();
+                roots
+                    .into_iter()
+                    .find_map(|root| world.find_component(root, selector))
+                    .ok_or_else(|| format!("resolve: selector {selector:?} matched nothing"))?
+            }
+        };
+        resolved.push(id);
+    }
+
+    let Some(action) = world.get_component_by_id_as_mut::<ActionComponent>(action_id) else {
+        return Err(format!("resolve: action {action_id:?} vanished during resolve"));
+    };
+    apply_resolved_targets(&mut action.signal, &resolved);
+    action.resolved = true;
+    Ok(())
 }
 
 #[derive(Debug, Default)]
@@ -102,15 +206,7 @@ impl AnimationSystem {
         }
     }
 
-    pub fn tick_with_beat(
-        &mut self,
-        world: &mut World,
-        beat_now: f64,
-        bpm: f64,
-        action_system: &mut ActionSystem,
-        rx: &mut RxWorld,
-        queue: &mut CommandQueue,
-    ) {
+    pub fn tick_with_beat(&mut self, world: &mut World, beat_now: f64, bpm: f64, rx: &mut RxWorld) {
         // If time jumps backwards, reset fired state.
         if beat_now + 1e-9 < self.last_beat {
             for runtime in self.animations.values_mut() {
@@ -141,10 +237,11 @@ impl AnimationSystem {
 
         // Drive animations.
         for (&anim, runtime) in self.animations.iter_mut() {
-            let state = match world.get_component_by_id_as::<AnimationComponent>(anim) {
-                Some(c) => c.state,
-                None => continue,
-            };
+            let (state, resolve_mode, length_override) =
+                match world.get_component_by_id_as::<AnimationComponent>(anim) {
+                    Some(c) => (c.state, c.resolve_targets, c.length_beats),
+                    None => continue,
+                };
 
             if state == AnimationState::Paused {
                 continue;
@@ -152,6 +249,35 @@ impl AnimationSystem {
 
             if runtime.keyframes.is_empty() {
                 continue;
+            }
+
+            // OnAttach: on first tick, eagerly resolve every action under this
+            // animation's keyframes. Errors are logged but don't halt the
+            // animation — individual broken actions just skip in the push
+            // path below. OnPlay defers per-action to the push site.
+            if matches!(resolve_mode, ResolveTargetsMode::OnAttach) && !runtime.attach_resolved {
+                let action_ids: Vec<ComponentId> = runtime
+                    .keyframes
+                    .iter()
+                    .flat_map(|&kf| {
+                        world
+                            .children_of(kf)
+                            .iter()
+                            .copied()
+                            .filter(|&cid| {
+                                world.get_component_by_id_as::<ActionComponent>(cid).is_some()
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect();
+                for action_cid in action_ids {
+                    if let Err(e) = resolve_action_targets(world, action_cid) {
+                        eprintln!(
+                            "[AnimationSystem] OnAttach resolve failed for {action_cid:?}: {e}"
+                        );
+                    }
+                }
+                runtime.attach_resolved = true;
             }
 
             // Compute beat range for this animation.
@@ -174,10 +300,15 @@ impl AnimationSystem {
             // Use per-animation local beat time so animations can restart/loop.
             let mut local_beat = (beat_now - runtime.start_beat).max(0.0);
             let span = (max_beat - min_beat).max(0.0);
-            // Default loop length: snap to the next whole beat after the last keyframe.
-            // This keeps common musical loops stable even when you include off-beat keyframes
-            // (e.g. max_beat=31.5 should loop at 32.0 beats, not 32.5).
-            let loop_len = if span < 1e-6 { 1.0 } else { span.floor() + 1.0 };
+            // Explicit `Animation.length(n)` wins. Otherwise default:
+            // snap to the next whole beat after the last keyframe so
+            // common musical loops stay stable even with off-beat
+            // keyframes (e.g. max_beat=31.5 → 32.0, not 32.5).
+            let loop_len = match length_override {
+                Some(n) if n.is_finite() && n > 0.0 => n,
+                _ if span < 1e-6 => 1.0,
+                _ => span.floor() + 1.0,
+            };
 
             if state == AnimationState::Looping {
                 // Wrap local beat into [0, loop_len).
@@ -232,25 +363,37 @@ impl AnimationSystem {
                         .collect();
 
                     for action_cid in action_ids {
+                        if let Err(e) = resolve_action_targets(world, action_cid) {
+                            eprintln!(
+                                "[AnimationSystem] lazy resolve failed for {action_cid:?}: {e}"
+                            );
+                            continue;
+                        }
                         let Some(action_comp) =
                             world.get_component_by_id_as::<ActionComponent>(action_cid)
                         else {
                             continue;
                         };
 
-                        let action = action_comp.action.clone();
-                        match action.method {
-                            ActionMethod::OscillatorScheduleSetPitch
-                            | ActionMethod::OscillatorScheduleSetNote
-                            | ActionMethod::OscillatorScheduleMusicNote => {
-                                action_system.execute(world, queue, rx, kf_global_beat, &action);
+                        let mut signal = action_comp.signal.clone();
+                        match &mut signal {
+                            IntentValue::OscillatorScheduleSetPitch { beat_context, .. }
+                            | IntentValue::AudioSchedulePlay { beat_context, .. } => {
+                                // For lookahead, use the keyframe's intended global beat as
+                                // the scheduling context (so beat_offset is relative to kf beat).
+                                *beat_context = Some(kf_global_beat);
+                                rx.push_intent_now(action_cid, signal);
                             }
                             _ => {
                                 // Non-audio-scheduled actions must not run in lookahead
                                 // (they have immediate side effects).
                             }
-                        }
+                        };
                     }
+
+                    // MusicNote children of the keyframe also schedule via
+                    // AudioSchedulePlay — same lookahead semantics as Actions.
+                    fire_music_note_children(world, rx, kf_id, Some(kf_global_beat));
 
                     runtime
                         .audio_scheduled_cycle_by_keyframe
@@ -293,6 +436,12 @@ impl AnimationSystem {
 
                     let mut saw_any_action = false;
                     for action_cid in action_ids {
+                        if let Err(e) = resolve_action_targets(world, action_cid) {
+                            eprintln!(
+                                "[AnimationSystem] lazy resolve failed for {action_cid:?}: {e}"
+                            );
+                            continue;
+                        }
                         let Some(action_comp) =
                             world.get_component_by_id_as::<ActionComponent>(action_cid)
                         else {
@@ -309,18 +458,35 @@ impl AnimationSystem {
                             .copied()
                             == Some(runtime.audio_cycle)
                         {
-                            match action_comp.action.method {
-                                ActionMethod::OscillatorScheduleSetPitch
-                                | ActionMethod::OscillatorScheduleSetNote
-                                | ActionMethod::OscillatorScheduleMusicNote => {
-                                    continue;
-                                }
+                            match action_comp.signal {
+                                IntentValue::OscillatorScheduleSetPitch { .. }
+                                | IntentValue::AudioSchedulePlay { .. } => continue,
                                 _ => {}
-                            }
+                            };
                         }
 
-                        let action = action_comp.action.clone();
-                        action_system.execute(world, queue, rx, beat_now, &action);
+                        let mut signal = action_comp.signal.clone();
+                        match &mut signal {
+                            IntentValue::OscillatorScheduleSetPitch { beat_context, .. }
+                            | IntentValue::AudioSchedulePlay { beat_context, .. } => {
+                                // Real-time execution uses the current beat as context.
+                                *beat_context = Some(beat_now);
+                            }
+                            _ => {}
+                        };
+
+                        rx.push_intent_now(action_cid, signal);
+                    }
+
+                    // Realtime path for MusicNote children — skipped if
+                    // lookahead already scheduled this cycle.
+                    let already_scheduled = runtime
+                        .audio_scheduled_cycle_by_keyframe
+                        .get(&kf_id)
+                        .copied()
+                        == Some(runtime.audio_cycle);
+                    if !already_scheduled {
+                        fire_music_note_children(world, rx, kf_id, Some(beat_now));
                     }
 
                     if !saw_any_action {

@@ -68,39 +68,21 @@ impl Component for OpacityComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_register_opacity(component);
-    }
-
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("opacity".to_string(), serde_json::json!(self.opacity));
-        map.insert(
-            "multiple_layers".to_string(),
-            serde_json::json!(self.multiple_layers),
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterOpacity {
+                component_ids: vec![component],
+            },
         );
-        map
     }
 
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("opacity") {
-            // Accept either a float (0..1) or an integer (0..255) for convenience.
-            if let Some(f) = v.as_f64() {
-                self.opacity = (f as f32).clamp(0.0, 1.0);
-            } else if let Some(i) = v.as_i64() {
-                let i = i.clamp(0, 255) as u8;
-                self.opacity = (i as f32) / 255.0;
-            }
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let mut ce = ce_call("Opacity", "opacity", vec![num(self.opacity as f64)]);
+        if self.multiple_layers {
+            ce = ce.with_call("multiple_layers", vec![]);
         }
-
-        if let Some(v) = data.get("multiple_layers") {
-            if let Some(b) = v.as_bool() {
-                self.multiple_layers = b;
-            }
-        }
-        Ok(())
+        ce
     }
 }

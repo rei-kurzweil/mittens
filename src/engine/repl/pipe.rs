@@ -1,4 +1,7 @@
 use crate::engine::ecs;
+use crate::meow_meow::ast::ComponentExpression;
+use crate::meow_meow::component_registry::subtree_to_ce_ast;
+use crate::meow_meow::unparser::unparse_component;
 
 use super::repl_backend::ReplBackend;
 use super::util;
@@ -6,7 +9,7 @@ use super::util;
 #[derive(Debug, Clone)]
 enum PipeValue {
     Id(ecs::ComponentId),
-    Node(ecs::component_codec::ComponentDataNode),
+    Tree(ComponentExpression),
 }
 
 fn source_ls(
@@ -24,7 +27,7 @@ fn source_cat(
     backend: &ReplBackend,
     world: &ecs::World,
     args: &[&str],
-) -> Result<Vec<ecs::component_codec::ComponentDataNode>, String> {
+) -> Result<Vec<ComponentExpression>, String> {
     let target = match args {
         [] => backend.cwd(),
         [one] => backend.resolve_path_or_item(world, one)?,
@@ -37,14 +40,13 @@ fn source_cat(
                 .all_components()
                 .filter(|&cid| world.parent_of(cid).is_none())
                 .collect();
-
             let mut out = Vec::new();
             for cid in root_ids {
-                out.push(ecs::ComponentCodec::encode_subtree_node(world, cid)?);
+                out.push(subtree_to_ce_ast(world, cid)?);
             }
             Ok(out)
         }
-        Some(root) => Ok(vec![ecs::ComponentCodec::encode_subtree_node(world, root)?]),
+        Some(root) => Ok(vec![subtree_to_ce_ast(world, root)?]),
     }
 }
 
@@ -52,69 +54,52 @@ fn stage_grep(world: &ecs::World, input: Vec<PipeValue>, pattern: &str) -> Vec<P
     let needle = pattern.to_ascii_lowercase();
     let mut out: Vec<PipeValue> = Vec::new();
 
-    // If the stream contains serialized nodes, grep operates on the serialized tree and outputs
-    // entire matching subtrees as JSON.
-    let any_nodes = input.iter().any(|v| matches!(v, PipeValue::Node(_)));
-    if any_nodes {
-        fn node_matches(node: &ecs::component_codec::ComponentDataNode, needle: &str) -> bool {
-            if node.name.to_ascii_lowercase().contains(needle) {
-                return true;
-            }
-            if node.type_name.to_ascii_lowercase().contains(needle) {
-                return true;
-            }
-            // Also allow matching on guid string and encoded keys/values.
-            if node.guid.to_string().to_ascii_lowercase().contains(needle) {
-                return true;
-            }
-            for (k, v) in &node.data {
-                if k.to_ascii_lowercase().contains(needle) {
-                    return true;
-                }
-                if let Some(s) = v.as_str() {
-                    if s.to_ascii_lowercase().contains(needle) {
-                        return true;
-                    }
-                }
-            }
-            false
+    // If the stream contains serialized trees, grep operates on the MMS source
+    // form of each subtree and emits whole matching subtrees.
+    let any_trees = input.iter().any(|v| matches!(v, PipeValue::Tree(_)));
+    if any_trees {
+        fn ce_matches(ce: &ComponentExpression, needle: &str) -> bool {
+            // Match against the unparsed MMS text — covers type name,
+            // builder names, literal args, and nested children.
+            unparse_component(ce)
+                .to_ascii_lowercase()
+                .contains(needle)
         }
 
-        fn collect_matching_subtrees(
-            node: &ecs::component_codec::ComponentDataNode,
+        fn collect_matching(
+            ce: &ComponentExpression,
             needle: &str,
-            out: &mut Vec<ecs::component_codec::ComponentDataNode>,
+            out: &mut Vec<ComponentExpression>,
         ) {
-            if node_matches(node, needle) {
-                out.push(node.clone());
+            if ce_matches(ce, needle) {
+                out.push(ce.clone());
                 return;
             }
-            for child in &node.components {
-                collect_matching_subtrees(child, needle, out);
+            for stmt in &ce.body.statements {
+                if let crate::meow_meow::ast::Statement::Expression(
+                    crate::meow_meow::ast::Expression::Component(child),
+                ) = stmt
+                {
+                    collect_matching(child, needle, out);
+                }
             }
         }
 
         for value in input {
-            let PipeValue::Node(node) = value else {
+            let PipeValue::Tree(ce) = value else {
                 continue;
             };
-
-            let mut matches: Vec<ecs::component_codec::ComponentDataNode> = Vec::new();
-            collect_matching_subtrees(&node, &needle, &mut matches);
-
+            let mut matches: Vec<ComponentExpression> = Vec::new();
+            collect_matching(&ce, &needle, &mut matches);
             for m in matches {
-                match serde_json::to_string_pretty(&m) {
-                    Ok(json) => println!("{}", json),
-                    Err(e) => println!("🐈 grep: failed to serialize JSON: {}", e),
-                }
-                out.push(PipeValue::Node(m));
+                println!("{}", unparse_component(&m));
+                out.push(PipeValue::Tree(m));
             }
         }
-
         return out;
     }
 
-    // Otherwise, grep operates on live components in the world and prints matching properties.
+    // Otherwise, grep operates on live components in the world and prints matching props.
     for (i, value) in input.into_iter().enumerate() {
         let PipeValue::Id(cid) = value else {
             continue;
@@ -123,60 +108,38 @@ fn stage_grep(world: &ecs::World, input: Vec<PipeValue>, pattern: &str) -> Vec<P
             continue;
         };
 
-        let mut matches: Vec<(String, serde_json::Value)> = Vec::new();
-
-        // Treat these as searchable "properties" too.
         let type_name = node.component.name().to_string();
-        let meta = [
-            (
-                "name".to_string(),
-                serde_json::Value::String(node.name.clone()),
-            ),
-            (
-                "type".to_string(),
-                serde_json::Value::String(type_name.clone()),
-            ),
-            (
-                "guid".to_string(),
-                serde_json::Value::String(node.guid.to_string()),
-            ),
+        let meta: [(String, String); 3] = [
+            ("name".to_string(), node.name.clone()),
+            ("type".to_string(), type_name),
+            ("guid".to_string(), node.guid.to_string()),
         ];
 
-        for (k, v) in meta {
-            let k_l = k.to_ascii_lowercase();
-            let v_hit = v
-                .as_str()
-                .map(|s| s.to_ascii_lowercase().contains(&needle))
-                .unwrap_or(false);
-            if k_l.contains(&needle) || v_hit {
-                matches.push((k, v));
+        let mut matches: Vec<(String, String)> = Vec::new();
+        for (k, v) in &meta {
+            if k.to_ascii_lowercase().contains(&needle)
+                || v.to_ascii_lowercase().contains(&needle)
+            {
+                matches.push((k.clone(), v.clone()));
             }
         }
 
-        for (k, v) in node.component.encode() {
-            let k_l = k.to_ascii_lowercase();
-            let v_hit = v
-                .as_str()
-                .map(|s| s.to_ascii_lowercase().contains(&needle))
-                .unwrap_or(false);
-
-            if k_l.contains(&needle) || v_hit {
-                matches.push((k, v));
-            }
+        // Match against the unparsed CE form for body content.
+        let ce_text = subtree_to_ce_ast(world, cid)
+            .map(|ce| unparse_component(&ce))
+            .unwrap_or_default();
+        if ce_text.to_ascii_lowercase().contains(&needle) {
+            matches.push(("mms".to_string(), ce_text));
         }
 
         if matches.is_empty() {
             continue;
         }
-
         out.push(PipeValue::Id(cid));
-
         if let Some(line) = util::format_ls_line(world, i, cid) {
             println!("{}", line);
         }
-
         for (k, v) in matches {
-            // Print full serialized property value.
             println!("🐈   {} = {}", k, v);
         }
     }
@@ -197,11 +160,8 @@ fn sink_print_summary(world: &ecs::World, items: Vec<PipeValue>) {
                     println!("{}", line);
                 }
             }
-            PipeValue::Node(node) => {
-                println!(
-                    "🐈 {}: {}  type={}  guid={}",
-                    i, node.name, node.type_name, node.guid
-                );
+            PipeValue::Tree(ce) => {
+                println!("🐈 {}: {}", i, unparse_component(&ce));
             }
         }
     }
@@ -235,7 +195,6 @@ pub fn try_exec_piped(
 
     let mut stage_parts: Vec<&str> = raw_parts[1..].iter().map(|s| s.trim()).collect();
 
-    // Trailing `|` means "print summary".
     let mut has_trailing_sink = false;
     if stage_parts.last().is_some_and(|s| s.is_empty()) {
         has_trailing_sink = true;
@@ -255,7 +214,7 @@ pub fn try_exec_piped(
             .collect(),
         "cat" => source_cat(backend, world, &src_args)?
             .into_iter()
-            .map(PipeValue::Node)
+            .map(PipeValue::Tree)
             .collect(),
         _ => {
             return Err(format!(

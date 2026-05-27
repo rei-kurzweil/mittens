@@ -43,25 +43,21 @@ impl Component for TransparentCutoutComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_register_transparent_cutout(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterTransparentCutout {
+                component_ids: vec![component],
+            },
+        );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("enabled".to_string(), serde_json::json!(self.enabled));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("enabled") {
-            if let Some(b) = v.as_bool() {
-                self.enabled = b;
-            }
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        if self.enabled {
+            ce("TransparentCutout")
+        } else {
+            ce_call("TransparentCutout", "disabled", vec![])
         }
-        Ok(())
     }
 }

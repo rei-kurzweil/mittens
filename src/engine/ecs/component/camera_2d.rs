@@ -25,10 +25,15 @@ impl Camera2DComponent {
     }
 
     /// Ask the CameraSystem to make this the active camera.
-    pub fn make_active_camera(&mut self, queue: &mut crate::engine::ecs::CommandQueue) {
+    pub fn make_active_camera(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter) {
         if self.handle.is_some() {
             if let Some(component) = self.component_id {
-                queue.queue_make_active_camera(component);
+                emit.push_intent_now(
+                    component,
+                    crate::engine::ecs::IntentValue::MakeActiveCamera {
+                        component_ids: vec![component],
+                    },
+                );
             }
         }
     }
@@ -53,37 +58,22 @@ impl Component for Camera2DComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         self.component_id = Some(component);
-        queue.queue_register_camera2d(component);
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterCamera2d {
+                component_ids: vec![component],
+            },
+        );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
         let target = match self.target {
             CameraTarget::Window => "window",
             CameraTarget::Xr => "xr",
         };
-        map.insert(
-            "target".to_string(),
-            serde_json::Value::String(target.to_string()),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        _data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        // Handle will be regenerated during init().
-        if let Some(v) = _data.get("target") {
-            if let Some(s) = v.as_str() {
-                self.target = match s {
-                    "xr" => CameraTarget::Xr,
-                    "window" | _ => CameraTarget::Window,
-                };
-            }
-        }
-        Ok(())
+        ce("Camera2D").with_call("target", vec![s(target)])
     }
 }

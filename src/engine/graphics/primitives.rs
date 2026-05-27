@@ -196,6 +196,10 @@ impl CpuMeshHandle {
     pub const CUBE: CpuMeshHandle = CpuMeshHandle(2);
     pub const TETRAHEDRON: CpuMeshHandle = CpuMeshHandle(3);
     pub const SPHERE: CpuMeshHandle = CpuMeshHandle(4);
+
+    // Appended built-ins (keep stable and in sync with RenderAssets registration order).
+    pub const CONE: CpuMeshHandle = CpuMeshHandle(5);
+    pub const CIRCLE_2D: CpuMeshHandle = CpuMeshHandle(6);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -237,6 +241,18 @@ impl Material {
         vertex_shader: "assets/shaders/skinned-toon-mesh.vert",
         fragment_shader: "assets/shaders/toon-mesh.frag",
     };
+
+    /// Emissive toon material.
+    pub const EMISSIVE_TOON_MESH: Material = Material {
+        vertex_shader: "assets/shaders/toon-mesh.vert",
+        fragment_shader: "assets/shaders/emissive-toon-mesh.frag",
+    };
+
+    /// Skinned emissive toon material.
+    pub const SKINNED_EMISSIVE_TOON_MESH: Material = Material {
+        vertex_shader: "assets/shaders/skinned-toon-mesh.vert",
+        fragment_shader: "assets/shaders/emissive-toon-mesh.frag",
+    };
 }
 
 impl MaterialHandle {
@@ -248,4 +264,10 @@ impl MaterialHandle {
 
     /// Skinned toon mesh material (see `Material::SKINNED_TOON_MESH`).
     pub const SKINNED_TOON_MESH: MaterialHandle = MaterialHandle(2);
+
+    /// Emissive toon mesh material (see `Material::EMISSIVE_TOON_MESH`).
+    pub const EMISSIVE_TOON_MESH: MaterialHandle = MaterialHandle(3);
+
+    /// Skinned emissive toon mesh material (see `Material::SKINNED_EMISSIVE_TOON_MESH`).
+    pub const SKINNED_EMISSIVE_TOON_MESH: MaterialHandle = MaterialHandle(4);
 }

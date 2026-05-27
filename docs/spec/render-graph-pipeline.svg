@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="516" viewBox="0 0 700 516">
+  <defs>
+    <marker id="ah" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#546e7a"/>
+    </marker>
+    <marker id="ah-green" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#2e7d32"/>
+    </marker>
+    <style>
+      text { font-family: "JetBrains Mono", "Fira Mono", "Courier New", monospace; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="700" height="516" fill="#12141a"/>
+
+  <!-- Title -->
+  <text x="350" y="30" text-anchor="middle" font-size="14" font-weight="700" fill="#b0bec5">Cat Engine · Render Pipeline (Base)</text>
+
+  <!-- Dynamic rendering scope outline (dashed) -->
+  <rect x="18" y="46" width="402" height="408" rx="6" fill="none" stroke="#37474f" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="219" y="62" text-anchor="middle" font-size="10" fill="#546e7a">Single Vulkan dynamic-rendering scope</text>
+
+  <!-- Phase 1: Background -->
+  <rect x="30" y="70" width="378" height="42" rx="3" fill="#0d1433"/>
+  <rect x="30" y="70" width="5"   height="42" rx="2" fill="#5c6bc0"/>
+  <text x="46" y="86"  font-size="12" font-weight="700" fill="#9fa8da">1  Background</text>
+  <text x="46" y="102" font-size="10" fill="#7986cb">no depth write  ·  instanced</text>
+
+  <!-- Phase 2: Background Occluded+Lit -->
+  <rect x="30" y="118" width="378" height="42" rx="3" fill="#180d2e"/>
+  <rect x="30" y="118" width="5"   height="42" rx="2" fill="#7b1fa2"/>
+  <text x="46" y="134" font-size="12" font-weight="700" fill="#ce93d8">2  Background Occluded+Lit</text>
+  <text x="46" y="150" font-size="10" fill="#ab47bc">depth write ON  ·  instanced</text>
+
+  <!-- Depth clear band -->
+  <rect x="30" y="166" width="378" height="14" rx="0" fill="#0d1117"/>
+  <line x1="30" y1="173" x2="408" y2="173" stroke="#263238" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="219" y="176" text-anchor="middle" font-size="9" fill="#455a64">▼  depth clear  ▼</text>
+
+  <!-- Phase 3: Opaque -->
+  <rect x="30" y="182" width="378" height="42" rx="3" fill="#0a1f0a"/>
+  <rect x="30" y="182" width="5"   height="42" rx="2" fill="#2e7d32"/>
+  <text x="46" y="198" font-size="12" font-weight="700" fill="#81c784">3  Opaque</text>
+  <text x="46" y="214" font-size="10" fill="#66bb6a">depth test + write  ·  instanced batches</text>
+
+  <!-- Phase 4: Cutout -->
+  <rect x="30" y="230" width="378" height="42" rx="3" fill="#0f1f00"/>
+  <rect x="30" y="230" width="5"   height="42" rx="2" fill="#558b2f"/>
+  <text x="46" y="246" font-size="12" font-weight="700" fill="#aed581">4  Cutout / Alpha-Tested</text>
+  <text x="46" y="262" font-size="10" fill="#9ccc65">depth write  ·  instanced</text>
+
+  <!-- Phase 5: Transparent Single-Layer -->
+  <rect x="30" y="278" width="378" height="42" rx="3" fill="#2e0e00"/>
+  <rect x="30" y="278" width="5"   height="42" rx="2" fill="#e65100"/>
+  <text x="46" y="294" font-size="12" font-weight="700" fill="#ff8a65">5  Transparent Single-Layer</text>
+  <text x="46" y="310" font-size="10" fill="#ff7043">no depth write  ·  instanced</text>
+
+  <!-- Phase 6: Transparent Multi-Layer -->
+  <rect x="30" y="326" width="378" height="42" rx="3" fill="#200600"/>
+  <rect x="30" y="326" width="5"   height="42" rx="2" fill="#bf360c"/>
+  <text x="46" y="342" font-size="12" font-weight="700" fill="#ff7043">6  Transparent Multi-Layer</text>
+  <text x="46" y="358" font-size="10" fill="#ff5722">no depth write  ·  back-to-front sorted</text>
+
+  <!-- Depth clear band -->
+  <rect x="30" y="374" width="378" height="14" rx="0" fill="#0d1117"/>
+  <line x1="30" y1="381" x2="408" y2="381" stroke="#263238" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="219" y="384" text-anchor="middle" font-size="9" fill="#455a64">▼  depth clear  ▼</text>
+
+  <!-- Phase 7: Overlay -->
+  <rect x="30" y="390" width="378" height="42" rx="3" fill="#12003a"/>
+  <rect x="30" y="390" width="5"   height="42" rx="2" fill="#4a148c"/>
+  <text x="46" y="406" font-size="12" font-weight="700" fill="#ba68c8">7  Overlay</text>
+  <text x="46" y="422" font-size="10" fill="#ab47bc">gizmos · debug · selection outlines</text>
+
+  <!-- Scope → attachments arrow -->
+  <line x1="420" y1="264" x2="438" y2="264" stroke="#546e7a" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <!-- ── Right column: Image Attachments ── -->
+
+  <!-- Color attachment -->
+  <rect x="442" y="70" width="240" height="136" rx="5" fill="#0d1b21" stroke="#37474f" stroke-width="1"/>
+  <text x="562" y="89"  text-anchor="middle" font-size="12" font-weight="700" fill="#80cbc4">Color Attachment</text>
+  <line x1="442" y1="95" x2="682" y2="95" stroke="#1c2c36" stroke-width="1"/>
+  <text x="454" y="112" font-size="10" fill="#546e7a">format  </text><text x="510" y="112" font-size="10" fill="#b2dfdb">R8G8B8A8_SRGB</text>
+  <text x="454" y="128" font-size="10" fill="#546e7a">MSAA    </text><text x="510" y="128" font-size="10" fill="#b2dfdb">4× (optional)</text>
+  <text x="454" y="144" font-size="10" fill="#546e7a">load    </text><text x="510" y="144" font-size="10" fill="#b2dfdb">Clear</text>
+  <text x="454" y="160" font-size="10" fill="#546e7a">store   </text><text x="510" y="160" font-size="10" fill="#b2dfdb">Store</text>
+  <text x="454" y="196" font-size="9"  fill="#37474f">resolves MSAA → sRGB swapchain image</text>
+
+  <!-- Depth attachment -->
+  <rect x="442" y="220" width="240" height="106" rx="5" fill="#0d1b21" stroke="#37474f" stroke-width="1"/>
+  <text x="562" y="239" text-anchor="middle" font-size="12" font-weight="700" fill="#ff8a65">Depth Attachment</text>
+  <line x1="442" y1="245" x2="682" y2="245" stroke="#1c2c36" stroke-width="1"/>
+  <text x="454" y="262" font-size="10" fill="#546e7a">format  </text><text x="510" y="262" font-size="10" fill="#ffccbc">D32_SFLOAT</text>
+  <text x="454" y="278" font-size="10" fill="#546e7a">MSAA    </text><text x="510" y="278" font-size="10" fill="#ffccbc">matched to color</text>
+  <text x="454" y="294" font-size="10" fill="#546e7a">store   </text><text x="510" y="294" font-size="10" fill="#ff5722">DontCare (discarded)</text>
+  <text x="454" y="316" font-size="9"  fill="#37474f">cleared twice mid-frame</text>
+
+  <!-- Swapchain present -->
+  <rect x="442" y="340" width="240" height="54" rx="5" fill="#001a00" stroke="#2e7d32" stroke-width="1.5"/>
+  <text x="562" y="362" text-anchor="middle" font-size="12" font-weight="700" fill="#69f0ae">→ Swapchain Present</text>
+  <text x="562" y="380" text-anchor="middle" font-size="10" fill="#4caf50">R8G8B8A8_SRGB</text>
+
+  <!-- Color → Swapchain arrow -->
+  <line x1="562" y1="206" x2="562" y2="338" stroke="#2e7d32" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#ah-green)"/>
+
+  <!-- Notes -->
+  <text x="442" y="420" font-size="9" fill="#37474f">Phases 3–6 share depth read + write.</text>
+  <text x="442" y="436" font-size="9" fill="#37474f">All phases share one color attachment.</text>
+  <text x="442" y="452" font-size="9" fill="#37474f">Not separate Vulkan render passes —</text>
+  <text x="442" y="468" font-size="9" fill="#37474f">one dynamic-rendering scope.</text>
+</svg>

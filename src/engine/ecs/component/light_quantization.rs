@@ -49,32 +49,17 @@ impl Component for LightQuantizationComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_register_light_quantization(component);
-    }
-
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert(
-            "quant_steps".to_string(),
-            serde_json::Value::Number(
-                serde_json::Number::from_f64(self.quant_steps as f64).unwrap_or_else(|| {
-                    // Fallback (NaN/inf): default.
-                    serde_json::Number::from_f64(Self::DEFAULT_STEPS as f64).unwrap()
-                }),
-            ),
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterLightQuantization {
+                component_ids: vec![component],
+            },
         );
-        map
     }
 
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("quant_steps") {
-            self.quant_steps = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode quant_steps: {}", e))?;
-        }
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce_call("LightQuantization", "steps", vec![num(self.quant_steps as f64)])
     }
 }

@@ -42,7 +42,10 @@ impl RenderableComponent {
     /// Predefined renderable: 2D triangle (unique CPU mesh registered into `render_assets`).
     pub fn triangle_dynamic(render_assets: &mut RenderAssets) -> Self {
         let h = render_assets.register_mesh(MeshFactory::triangle_2d());
-        Self::from_cpu_mesh_handle(h, MaterialHandle::TOON_MESH)
+        Self::new(
+            Renderable::new(h, MaterialHandle::TOON_MESH)
+                .with_base_mesh(CpuMeshHandle::TRIANGLE_2D),
+        )
     }
 
     /// Predefined renderable: 2D square/quad (shared built-in mesh handle).
@@ -50,10 +53,17 @@ impl RenderableComponent {
         Self::from_cpu_mesh_handle(CpuMeshHandle::QUAD_2D, MaterialHandle::TOON_MESH)
     }
 
+    /// Predefined renderable: 2D plane/quad (alias of `square`).
+    pub fn plane() -> Self {
+        Self::square()
+    }
+
     /// Predefined renderable: 2D square/quad (unique CPU mesh registered into `render_assets`).
     pub fn square_dynamic(render_assets: &mut RenderAssets) -> Self {
         let h = render_assets.register_mesh(MeshFactory::quad_2d());
-        Self::from_cpu_mesh_handle(h, MaterialHandle::TOON_MESH)
+        Self::new(
+            Renderable::new(h, MaterialHandle::TOON_MESH).with_base_mesh(CpuMeshHandle::QUAD_2D),
+        )
     }
 
     /// Predefined renderable: cube primitive (shared built-in mesh handle).
@@ -64,7 +74,7 @@ impl RenderableComponent {
     /// Predefined renderable: cube primitive (unique CPU mesh registered into `render_assets`).
     pub fn cube_dynamic(render_assets: &mut RenderAssets) -> Self {
         let h = render_assets.register_mesh(MeshFactory::cube());
-        Self::from_cpu_mesh_handle(h, MaterialHandle::TOON_MESH)
+        Self::new(Renderable::new(h, MaterialHandle::TOON_MESH).with_base_mesh(CpuMeshHandle::CUBE))
     }
 
     /// Predefined renderable: sphere primitive (shared built-in mesh handle).
@@ -75,7 +85,9 @@ impl RenderableComponent {
     /// Predefined renderable: sphere primitive (unique CPU mesh registered into `render_assets`).
     pub fn sphere_dynamic(render_assets: &mut RenderAssets) -> Self {
         let h = render_assets.register_mesh(MeshFactory::sphere());
-        Self::from_cpu_mesh_handle(h, MaterialHandle::TOON_MESH)
+        Self::new(
+            Renderable::new(h, MaterialHandle::TOON_MESH).with_base_mesh(CpuMeshHandle::SPHERE),
+        )
     }
 
     /// Predefined renderable: tetrahedron primitive (shared built-in mesh handle).
@@ -86,12 +98,20 @@ impl RenderableComponent {
     /// Predefined renderable: tetrahedron primitive (unique CPU mesh registered into `render_assets`).
     pub fn tetrahedron_dynamic(render_assets: &mut RenderAssets) -> Self {
         let h = render_assets.register_mesh(MeshFactory::tetrahedron());
-        Self::from_cpu_mesh_handle(h, MaterialHandle::TOON_MESH)
+        Self::new(
+            Renderable::new(h, MaterialHandle::TOON_MESH)
+                .with_base_mesh(CpuMeshHandle::TETRAHEDRON),
+        )
     }
 
     /// Predefined renderable: tetrahedron (alias of `tetrahedron`).
     pub fn color_tetrahedron() -> Self {
         Self::tetrahedron()
+    }
+
+    /// Predefined renderable: 2D circle (shared built-in mesh handle).
+    pub fn circle2d() -> Self {
+        Self::from_cpu_mesh_handle(CpuMeshHandle::CIRCLE_2D, MaterialHandle::TOON_MESH)
     }
 }
 
@@ -112,55 +132,47 @@ impl Component for RenderableComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        // Queue registration command instead of immediately registering
-        queue.queue_register_renderable(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterRenderable {
+                component_ids: vec![component],
+            },
+        );
     }
 
-    fn cleanup(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_remove_renderable(component);
-    }
-
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert(
-            "mesh".to_string(),
-            serde_json::json!(self.renderable.mesh.0),
-        );
-        map.insert(
-            "base_mesh".to_string(),
-            serde_json::json!(self.renderable.base_mesh.0),
-        );
-        map.insert(
-            "material".to_string(),
-            serde_json::json!(self.renderable.material.0),
-        );
-        map
-    }
-
-    fn decode(
+    fn cleanup(
         &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(mesh) = data.get("mesh") {
-            let mesh_id: u32 = serde_json::from_value(mesh.clone())
-                .map_err(|e| format!("Failed to decode mesh: {}", e))?;
-            self.renderable.mesh = crate::engine::graphics::primitives::CpuMeshHandle(mesh_id);
-        }
-        if let Some(base_mesh) = data.get("base_mesh") {
-            let base_mesh_id: u32 = serde_json::from_value(base_mesh.clone())
-                .map_err(|e| format!("Failed to decode base_mesh: {}", e))?;
-            self.renderable.base_mesh =
-                crate::engine::graphics::primitives::CpuMeshHandle(base_mesh_id);
-        } else {
-            // Back-compat: older scenes/components only stored `mesh`.
-            self.renderable.base_mesh = self.renderable.mesh;
-        }
-        if let Some(material) = data.get("material") {
-            let material_id: u32 = serde_json::from_value(material.clone())
-                .map_err(|e| format!("Failed to decode material: {}", e))?;
-            self.renderable.material = MaterialHandle(material_id);
-        }
-        Ok(())
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        component: ComponentId,
+    ) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RemoveRenderable {
+                component_ids: vec![component],
+            },
+        );
     }
+
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        // Map known shared primitive handles back to the constructor that
+        // produces them. Custom dynamic meshes (registered with
+        // `RenderAssets`) don't have a round-tripable identifier and are
+        // emitted as bare `Renderable` — clones will get the default mesh.
+        let ctor = match self.renderable.base_mesh {
+            CpuMeshHandle::CUBE => Some("cube"),
+            CpuMeshHandle::SPHERE => Some("sphere"),
+            CpuMeshHandle::TRIANGLE_2D => Some("triangle"),
+            CpuMeshHandle::QUAD_2D => Some("square"),
+            CpuMeshHandle::TETRAHEDRON => Some("tetrahedron"),
+            CpuMeshHandle::CIRCLE_2D => Some("circle2d"),
+            _ => None,
+        };
+        match ctor {
+            Some(name) => ce_call("Renderable", name, vec![]),
+            None => ce("Renderable"),
+        }
+    }
+
 }

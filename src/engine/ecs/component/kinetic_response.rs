@@ -124,84 +124,41 @@ impl Component for KineticResponseComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_register_kinetic_response(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterKineticResponse {
+                component_ids: vec![component],
+            },
+        );
     }
 
-    fn cleanup(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_remove_kinetic_response(component);
-    }
-
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("enabled".to_string(), serde_json::json!(self.enabled));
-        map.insert(
-            "mode".to_string(),
-            serde_json::json!(match self.mode {
-                KineticResponseMode::Slide => "slide",
-                KineticResponseMode::Push => "push",
-            }),
-        );
-        map.insert(
-            "max_iterations".to_string(),
-            serde_json::json!(self.max_iterations),
-        );
-        map.insert(
-            "push_out_epsilon".to_string(),
-            serde_json::json!(self.push_out_epsilon),
-        );
-        map.insert(
-            "push_strength".to_string(),
-            serde_json::json!(self.push_strength),
-        );
-        map.insert("friction".to_string(), serde_json::json!(self.friction));
-        map.insert("friction_y".to_string(), serde_json::json!(self.friction_y));
-        map.insert("max_speed".to_string(), serde_json::json!(self.max_speed));
-        map
-    }
-
-    fn decode(
+    fn cleanup(
         &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(enabled) = data.get("enabled") {
-            self.enabled = serde_json::from_value(enabled.clone())
-                .map_err(|e| format!("Failed to decode kinetic_response.enabled: {e}"))?;
-        }
-        if let Some(mode) = data.get("mode") {
-            let mode_str: String = serde_json::from_value(mode.clone())
-                .map_err(|e| format!("Failed to decode kinetic_response.mode: {e}"))?;
-            self.mode = match mode_str.as_str() {
-                "slide" => KineticResponseMode::Slide,
-                "push" => KineticResponseMode::Push,
-                other => return Err(format!("Unknown kinetic response mode: {other}")),
-            };
-        }
-        if let Some(max_it) = data.get("max_iterations") {
-            self.max_iterations = serde_json::from_value(max_it.clone())
-                .map_err(|e| format!("Failed to decode kinetic_response.max_iterations: {e}"))?;
-        }
-        if let Some(eps) = data.get("push_out_epsilon") {
-            self.push_out_epsilon = serde_json::from_value(eps.clone())
-                .map_err(|e| format!("Failed to decode kinetic_response.push_out_epsilon: {e}"))?;
-        }
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        component: ComponentId,
+    ) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RemoveKineticResponse {
+                component_ids: vec![component],
+            },
+        );
+    }
 
-        if let Some(v) = data.get("push_strength") {
-            self.push_strength = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode kinetic_response.push_strength: {e}"))?;
-        }
-        if let Some(v) = data.get("friction") {
-            self.friction = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode kinetic_response.friction: {e}"))?;
-        }
-        if let Some(v) = data.get("friction_y") {
-            self.friction_y = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode kinetic_response.friction_y: {e}"))?;
-        }
-        if let Some(v) = data.get("max_speed") {
-            self.max_speed = serde_json::from_value(v.clone())
-                .map_err(|e| format!("Failed to decode kinetic_response.max_speed: {e}"))?;
-        }
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = match self.mode {
+            KineticResponseMode::Slide => "slide",
+            KineticResponseMode::Push => "push",
+        };
+        ce_call("KineticResponse", ctor, vec![])
+            .with_call("enabled", vec![b(self.enabled)])
+            .with_call("max_iterations", vec![num(self.max_iterations as f64)])
+            .with_call("push_out_epsilon", vec![num(self.push_out_epsilon as f64)])
+            .with_call("push_strength", vec![num(self.push_strength as f64)])
+            .with_call("friction", vec![num(self.friction as f64)])
+            .with_call("friction_y", vec![num(self.friction_y as f64)])
+            .with_call("max_speed", vec![num(self.max_speed as f64)])
     }
 }

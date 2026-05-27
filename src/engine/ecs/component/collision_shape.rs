@@ -47,53 +47,17 @@ impl Component for CollisionShapeComponent {
         self
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
         match self.shape {
-            CollisionShape::Cube { half_extents } => {
-                map.insert("kind".to_string(), serde_json::json!("cube"));
-                map.insert("half_extents".to_string(), serde_json::json!(half_extents));
-            }
+            CollisionShape::Cube { half_extents } => ce_call(
+                "CollisionShape",
+                "cube",
+                vec![array(nums(half_extents.iter().map(|&v| v as f64)))],
+            ),
             CollisionShape::Sphere { radius } => {
-                map.insert("kind".to_string(), serde_json::json!("sphere"));
-                map.insert("radius".to_string(), serde_json::json!(radius));
+                ce_call("CollisionShape", "sphere", vec![num(radius as f64)])
             }
         }
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        let Some(kind) = data.get("kind") else {
-            return Ok(());
-        };
-        let kind_str: String = serde_json::from_value(kind.clone())
-            .map_err(|e| format!("Failed to decode collision shape kind: {}", e))?;
-
-        match kind_str.as_str() {
-            "cube" => {
-                if let Some(he) = data.get("half_extents") {
-                    let half_extents: [f32; 3] = serde_json::from_value(he.clone())
-                        .map_err(|e| format!("Failed to decode half_extents: {}", e))?;
-                    self.shape = CollisionShape::cube_half_extents(half_extents);
-                } else {
-                    self.shape = CollisionShape::CUBE();
-                }
-            }
-            "sphere" => {
-                if let Some(r) = data.get("radius") {
-                    let radius: f32 = serde_json::from_value(r.clone())
-                        .map_err(|e| format!("Failed to decode radius: {}", e))?;
-                    self.shape = CollisionShape::sphere_radius(radius);
-                } else {
-                    self.shape = CollisionShape::SPHERE();
-                }
-            }
-            other => return Err(format!("Unknown collision shape kind: {}", other)),
-        }
-
-        Ok(())
     }
 }

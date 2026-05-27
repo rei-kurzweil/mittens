@@ -22,7 +22,7 @@ impl UVComponent {
     ///
     /// - If an inner vec has <2 values, missing values are treated as 0.
     /// - If it has >2 values, extras are ignored.
-    pub fn fromVec(uvs: Vec<Vec<f32>>) -> Self {
+    pub fn from_vec(uvs: Vec<Vec<f32>>) -> Self {
         let mut out: Vec<[f32; 2]> = Vec::with_capacity(uvs.len());
         for uv in uvs {
             let u = uv.get(0).copied().unwrap_or(0.0);
@@ -57,24 +57,21 @@ impl Component for UVComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_register_uv(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterUv {
+                component_ids: vec![component],
+            },
+        );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("uvs".to_string(), serde_json::json!(self.uvs));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(uvs) = data.get("uvs") {
-            self.uvs = serde_json::from_value(uvs.clone())
-                .map_err(|e| format!("Failed to decode uvs: {}", e))?;
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let mut ce = ce("UV");
+        for [u, v] in &self.uvs {
+            ce = ce.with_call("uv", vec![num(*u as f64), num(*v as f64)]);
         }
-        Ok(())
+        ce
     }
 }

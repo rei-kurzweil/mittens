@@ -1,46 +1,5 @@
-use crate::meow_meow::ast::expression::Span;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum TokenKind {
-    Ident(String),
-    String(String),
-    Number(f64),
-
-    Let,
-    If,
-    Else,
-    Return,
-    New,
-    True,
-    False,
-    Null,
-
-    LBrace,
-    RBrace,
-    LParen,
-    RParen,
-    LBracket,
-    RBracket,
-
-    Comma,
-    Dot,
-    Eq,
-    Semicolon,
-
-    Eof,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Token {
-    pub kind: TokenKind,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct TokenizeError {
-    pub message: String,
-    pub span: Span,
-}
+use crate::meow_meow::ast::Span;
+use crate::meow_meow::token::{Token, TokenKind, TokenizeError, Unit};
 
 pub struct MeowMeowTokenizer<'a> {
     input: &'a str,
@@ -114,16 +73,94 @@ impl<'a> MeowMeowTokenizer<'a> {
                 self.idx += 1;
                 TokenKind::Dot
             }
-            b'=' => {
-                self.idx += 1;
-                TokenKind::Eq
-            }
             b';' => {
                 self.idx += 1;
                 TokenKind::Semicolon
             }
+            b'+' => { self.idx += 1; TokenKind::Plus }
+            b'-' => {
+                self.idx += 1;
+                if self.idx < self.bytes.len() && self.bytes[self.idx] == b'>' {
+                    self.idx += 1;
+                    TokenKind::Arrow
+                } else {
+                    TokenKind::Minus
+                }
+            }
+            b'*' => { self.idx += 1; TokenKind::Star }
+            b'/' => { self.idx += 1; TokenKind::Slash }
+            b'%' => { self.idx += 1; TokenKind::Percent }
+            b'=' => {
+                self.idx += 1;
+                if self.idx < self.bytes.len() && self.bytes[self.idx] == b'=' {
+                    self.idx += 1;
+                    TokenKind::EqEq
+                } else {
+                    TokenKind::Eq
+                }
+            }
+            b'!' => {
+                self.idx += 1;
+                if self.idx < self.bytes.len() && self.bytes[self.idx] == b'=' {
+                    self.idx += 1;
+                    TokenKind::BangEq
+                } else {
+                    TokenKind::Bang
+                }
+            }
+            b'<' => {
+                self.idx += 1;
+                if self.idx < self.bytes.len() && self.bytes[self.idx] == b'=' {
+                    self.idx += 1;
+                    TokenKind::LtEq
+                } else {
+                    TokenKind::Lt
+                }
+            }
+            b'>' => {
+                self.idx += 1;
+                if self.idx < self.bytes.len() && self.bytes[self.idx] == b'=' {
+                    self.idx += 1;
+                    TokenKind::GtEq
+                } else {
+                    TokenKind::Gt
+                }
+            }
+            b'&' => {
+                self.idx += 1;
+                if self.idx < self.bytes.len() && self.bytes[self.idx] == b'&' {
+                    self.idx += 1;
+                    TokenKind::AmpAmp
+                } else {
+                    return Err(TokenizeError {
+                        message: "Expected '&&'".to_string(),
+                        span: Span::new(start, self.idx),
+                    });
+                }
+            }
+            b'|' => {
+                self.idx += 1;
+                if self.idx < self.bytes.len() && self.bytes[self.idx] == b'|' {
+                    self.idx += 1;
+                    TokenKind::PipePipe
+                } else if self.idx < self.bytes.len() && self.bytes[self.idx] == b'>' {
+                    self.idx += 1;
+                    TokenKind::PipeGt
+                } else {
+                    return Err(TokenizeError {
+                        message: "Expected '||' or '|>'".to_string(),
+                        span: Span::new(start, self.idx),
+                    });
+                }
+            }
             b'"' => TokenKind::String(self.read_string()?),
-            b'-' | b'0'..=b'9' => TokenKind::Number(self.read_number()?),
+            b'0'..=b'9' => {
+                let n = self.read_number()?;
+                match self.try_read_unit_suffix() {
+                    Some(unit) => TokenKind::Dimension(n, unit),
+                    None => TokenKind::Number(n),
+                }
+            }
             _ => {
                 if is_ident_start(b) {
                     let ident = self.read_ident();
@@ -132,10 +169,19 @@ impl<'a> MeowMeowTokenizer<'a> {
                         "if" => TokenKind::If,
                         "else" => TokenKind::Else,
                         "return" => TokenKind::Return,
-                        "new" => TokenKind::New,
                         "true" => TokenKind::True,
                         "false" => TokenKind::False,
                         "null" => TokenKind::Null,
+                        "fn"       => TokenKind::Fn,
+                        "for"      => TokenKind::For,
+                        "while"    => TokenKind::While,
+                        "in"       => TokenKind::In,
+                        "break"    => TokenKind::Break,
+                        "continue" => TokenKind::Continue,
+                        "export"   => TokenKind::Export,
+                        "import"   => TokenKind::Import,
+                        "from"     => TokenKind::From,
+                        "as"       => TokenKind::As,
                         _ => TokenKind::Ident(ident),
                     }
                 } else {
@@ -260,9 +306,6 @@ impl<'a> MeowMeowTokenizer<'a> {
 
     fn read_number(&mut self) -> Result<f64, TokenizeError> {
         let start = self.idx;
-        if self.bytes[self.idx] == b'-' {
-            self.idx += 1;
-        }
         while self.idx < self.bytes.len() {
             match self.bytes[self.idx] {
                 b'0'..=b'9' => self.idx += 1,
@@ -284,6 +327,38 @@ impl<'a> MeowMeowTokenizer<'a> {
             message: format!("Invalid number literal: {s}"),
             span: Span::new(start, self.idx),
         })
+    }
+
+    /// Try to consume a unit suffix attached (no whitespace) to a numeric
+    /// literal. Recognized: `%`, `gu`, `deg`, `rad`. Returns `None` if the
+    /// next character isn't part of a recognized suffix — caller falls back
+    /// to a bare `Number` token.
+    fn try_read_unit_suffix(&mut self) -> Option<Unit> {
+        if self.idx >= self.bytes.len() {
+            return None;
+        }
+        if self.bytes[self.idx] == b'%' {
+            self.idx += 1;
+            return Some(Unit::Percent);
+        }
+        // Letter-prefixed suffixes: peek without consuming, only commit on match.
+        let start = self.idx;
+        let mut end = start;
+        while end < self.bytes.len() && is_ident_continue(self.bytes[end]) {
+            end += 1;
+        }
+        if end == start {
+            return None;
+        }
+        let unit = match &self.input[start..end] {
+            "gu"  => Unit::GlyphUnits,
+            "wu"  => Unit::WorldUnits,
+            "deg" => Unit::Degrees,
+            "rad" => Unit::Radians,
+            _ => return None,
+        };
+        self.idx = end;
+        Some(unit)
     }
 
     fn peek2(&self) -> Option<(u8, u8)> {
@@ -308,5 +383,5 @@ fn is_ident_start(b: u8) -> bool {
 }
 
 fn is_ident_continue(b: u8) -> bool {
-    is_ident_start(b) || matches!(b, b'0'..=b'9' | b'-')
+    is_ident_start(b) || matches!(b, b'0'..=b'9')
 }

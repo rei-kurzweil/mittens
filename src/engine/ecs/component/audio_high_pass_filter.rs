@@ -38,8 +38,13 @@ impl Component for AudioHighPassFilterComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_audio_graph_dirty(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::AudioGraphDirtyImmediate {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {

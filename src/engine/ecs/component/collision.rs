@@ -62,39 +62,35 @@ impl Component for CollisionComponent {
         self
     }
 
-    fn init(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_register_collision(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterCollision {
+                component_ids: vec![component],
+            },
+        );
     }
 
-    fn cleanup(&mut self, queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
-        queue.queue_remove_collision(component);
+    fn cleanup(
+        &mut self,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        component: ComponentId,
+    ) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RemoveCollision {
+                component_ids: vec![component],
+            },
+        );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        let mode_str = match self.mode {
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = match self.mode {
             CollisionMode::Static => "static",
             CollisionMode::Kinematic => "kinematic",
             CollisionMode::Rigged => "rigged",
         };
-        map.insert("mode".to_string(), serde_json::json!(mode_str));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(mode) = data.get("mode") {
-            let mode_str: String = serde_json::from_value(mode.clone())
-                .map_err(|e| format!("Failed to decode collision mode: {}", e))?;
-            self.mode = match mode_str.as_str() {
-                "static" => CollisionMode::Static,
-                "kinematic" => CollisionMode::Kinematic,
-                "rigged" => CollisionMode::Rigged,
-                other => return Err(format!("Unknown collision mode: {}", other)),
-            };
-        }
-        Ok(())
+        ce_call("Collision", ctor, vec![])
     }
 }

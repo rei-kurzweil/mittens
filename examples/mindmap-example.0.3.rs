@@ -1,5 +1,8 @@
 use cat_engine::{engine, utils};
 
+#[path = "example_util/mod.rs"]
+mod example_util;
+
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ColorComponent,
     InputComponent, InputTransformModeComponent, RenderableComponent, TextComponent,
@@ -45,24 +48,24 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Dark blue background.
-    let background = universe
-        .world
-        .register(BackgroundColorComponent::rgba(0.02, 0.03, 0.08, 1.0));
+    let background = universe.world.add_component(BackgroundColorComponent::new());
+    let background_c = universe.world.add_component(ColorComponent::rgba(0.02, 0.03, 0.08, 1.0));
+    let _ = universe.world.add_child(background, background_c);
     universe.add(background);
 
     // Ambient so text/lines are readable without placing explicit lights.
     let ambient = universe
         .world
-        .register(AmbientLightComponent::rgb(0.75, 0.75, 0.85));
+        .add_component(AmbientLightComponent::rgb(0.75, 0.75, 0.85));
     universe.add(ambient);
 
     // I { T { C3D } }
     let input = universe
         .world
-        .register(InputComponent::new().with_speed(3.0));
+        .add_component(InputComponent::new().with_speed(3.0));
 
     // Optional: match other examples (WASD + mouse, forward -Z).
-    let input_mode = universe.world.register(
+    let input_mode = universe.world.add_component(
         InputTransformModeComponent::forward_z()
             .with_fps_rotation()
             .with_roll_axis_y(),
@@ -71,11 +74,14 @@ fn main() {
 
     let cam_transform = universe
         .world
-        .register(TransformComponent::new().with_position(0.0, 0.0, 10.0));
+        .add_component(TransformComponent::new().with_position(0.0, 0.0, 10.0));
     let _ = universe.attach(input, cam_transform);
 
-    let camera = universe.world.register(Camera3DComponent::new());
+    let camera = universe.world.add_component(Camera3DComponent::new());
     let _ = universe.attach(cam_transform, camera);
+
+    // Topology: I { T { C3D } } — add a small camera-attached controls hint.
+    example_util::spawn_desktop_camera_controls_hint(&mut universe, cam_transform);
 
     universe.add(input);
 
@@ -208,7 +214,7 @@ fn main() {
             kinds_by_id.insert(node.id.clone(), kind.clone());
 
             // T { TXT { node.id } }
-            let node_t = universe.world.register(
+            let node_t = universe.world.add_component(
                 TransformComponent::new()
                     .with_position(x, y, z)
                     //.with_rotation_quat(TEXT_YAW_180)
@@ -218,7 +224,7 @@ fn main() {
 
             let node_txt = universe
                 .world
-                .register(TextComponent::with_word_wrap_tokens(
+                .add_component(TextComponent::with_word_wrap_tokens(
                     node.id.clone(),
                     WRAP_AT,
                     WORD_WRAP_TOKENS,
@@ -229,7 +235,7 @@ fn main() {
             // TextSystem looks for an immediate TextureFilteringComponent child.
             let node_txt_filter = universe
                 .world
-                .register(TextureFilteringComponent::nearest());
+                .add_component(TextureFilteringComponent::nearest());
             let _ = universe.attach(node_txt, node_txt_filter);
 
             universe.add(node_t);
@@ -317,7 +323,7 @@ fn main() {
         ];
 
         // Root carries position + rotation only.
-        let edge_root = universe.world.register(
+        let edge_root = universe.world.add_component(
             TransformComponent::new()
                 .with_position(mid[0], mid[1], mid[2])
                 .with_rotation_quat(q),
@@ -335,8 +341,8 @@ fn main() {
             ));
         let _ = universe.attach(edge_root, box_t);
 
-        let edge_r = universe.world.register(RenderableComponent::cube());
-        let edge_c = universe.world.register(ColorComponent::rgba(
+        let edge_r = universe.world.add_component(RenderableComponent::cube());
+        let edge_c = universe.world.add_component(ColorComponent::rgba(
             edge_color_r,
             edge_color_g,
             edge_color_b,
@@ -346,7 +352,7 @@ fn main() {
         let _ = universe.attach(edge_r, edge_c);
 
         // Label transform: not scaled. Place slightly "above" the edge in local Y.
-        let label_t = universe.world.register(
+        let label_t = universe.world.add_component(
             TransformComponent::new()
                 .with_position(0.0, 0.25, 0.15)
                 .with_rotation_quat(TEXT_YAW_180)
@@ -356,7 +362,7 @@ fn main() {
 
         let label_txt = universe
             .world
-            .register(TextComponent::with_word_wrap_tokens(
+            .add_component(TextComponent::with_word_wrap_tokens(
                 edge.via.clone(),
                 WRAP_AT,
                 WORD_WRAP_TOKENS,
@@ -365,7 +371,7 @@ fn main() {
 
         let label_filter = universe
             .world
-            .register(TextureFilteringComponent::nearest());
+            .add_component(TextureFilteringComponent::nearest());
         let _ = universe.attach(label_txt, label_filter);
 
         universe.add(edge_root);

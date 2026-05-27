@@ -1,4 +1,3 @@
-use crate::engine::ecs::CommandQueue;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
 
@@ -34,23 +33,18 @@ impl Component for OpenXRComponent {
         "openxr"
     }
 
-    fn init(&mut self, queue: &mut CommandQueue, component: ComponentId) {
-        queue.queue_register_openxr(component);
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterOpenxr {
+                component_ids: vec![component],
+            },
+        );
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("enabled".to_string(), serde_json::Value::Bool(self.enabled));
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("enabled") {
-            self.enabled = v.as_bool().unwrap_or(false);
-        }
-        Ok(())
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = if self.enabled { "on" } else { "off" };
+        ce_call("OpenXR", ctor, vec![])
     }
 }

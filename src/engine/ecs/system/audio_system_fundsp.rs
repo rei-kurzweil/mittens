@@ -408,6 +408,35 @@ mod fundsp_backend {
     }
 }
 
+/// PCM-backed asset usable from the audio thread. Stored interleaved
+/// frame-major. Phase 5: filled by `AudioQueueItem::UploadClip` after the
+/// decode worker hands back converted PCM.
+#[derive(Debug, Clone)]
+pub(crate) struct RtClipAsset {
+    pub samples: Arc<Vec<f32>>,
+    pub channels: u16,
+    pub sample_rate: u32,
+}
+
+/// Per-clip playback state on the audio thread. One per registered
+/// `AudioClipComponent`, keyed by `component_ffi`. The asset it reads
+/// is looked up via `SynthRtState::clip_asset_for_instance` so multiple
+/// instances can share a single decoded buffer (clone-of-clip).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RtClipInstance {
+    /// Sample-frame cursor. f64 for sub-sample rate playback later;
+    /// phase 5 advances at 1.0/frame because clips are resampled to the
+    /// engine sample rate at load time.
+    pub cursor: f64,
+    pub playing: bool,
+    /// Initial cursor offset in beats, applied on `SetEnabled(true)`.
+    /// Authored via `AudioClipComponent::start_beat`.
+    pub start_beat: f64,
+    /// Optional hard stop in beats relative to the trigger fire beat.
+    /// `None` = play to end of asset (or until duration override).
+    pub stop_beat: Option<f64>,
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct SynthRtState {
     pub(crate) osc_snapshot: HashMap<u64, Vec<AudioOscillator>>,
@@ -415,6 +444,16 @@ pub(crate) struct SynthRtState {
     pub(crate) component_gate: HashMap<u64, ComponentGate>,
     pub(crate) graphs: HashMap<u64, RtAudioGraph>,
     pub(crate) fundsp: fundsp_backend::FundspState,
+
+    /// Asset registry keyed by `asset_key` (URI hash from the main
+    /// thread). Multiple `clip_instances` may share a single asset —
+    /// see docs/draft/audio-clip-instance-cloning.md §2.
+    pub(crate) clip_assets: HashMap<u64, RtClipAsset>,
+    /// Per-voice playback state keyed by `component_ffi`.
+    pub(crate) clip_instances: HashMap<u64, RtClipInstance>,
+    /// Maps `component_ffi` → `asset_key` so render can find the
+    /// shared asset for any instance.
+    pub(crate) clip_asset_for_instance: HashMap<u64, u64>,
 
     // Debug-only tracing for audio ops from the RT thread.
     pub(crate) trace_lp_ops_inited: bool,
@@ -446,6 +485,7 @@ impl Default for ComponentGate {
 #[derive(Debug, Clone, Copy)]
 pub enum RtAudioGraphNodeKind {
     OscillatorSource,
+    ClipSource,
     Gain {
         gain: f32,
     },
@@ -595,6 +635,35 @@ pub enum AudioQueueItem {
     },
     Message(ScheduledAudioOp),
     GraphMessage(ScheduledGraphOp),
+    /// Upload a decoded clip asset. Sent by the main thread after the
+    /// decode worker reports completion. `samples` is the engine-format
+    /// PCM (interleaved frame-major). `asset_key` is a URI-derived hash
+    /// so multiple instances can share one buffer.
+    UploadClip {
+        asset_key: u64,
+        samples: Arc<Vec<f32>>,
+        channels: u16,
+        sample_rate: u32,
+    },
+    /// Drop a previously uploaded clip asset. Safe to send even if no
+    /// asset exists for the key.
+    DropClip {
+        asset_key: u64,
+    },
+    /// Register a playback voice (one `AudioClipComponent` worth of
+    /// state) that reads from `asset_key`. Allocates a fresh
+    /// `RtClipInstance` keyed by `component_ffi`.
+    RegisterClipInstance {
+        component_ffi: u64,
+        asset_key: u64,
+        start_beat: f64,
+        stop_beat: Option<f64>,
+    },
+    /// Drop a previously registered voice without touching the shared
+    /// asset.
+    DropClipInstance {
+        component_ffi: u64,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -616,13 +685,18 @@ pub(crate) struct AudioClockState {
 }
 
 fn op_priority(op: AudioOp) -> u8 {
+    // Same-beat ordering: previous-note gate-off first, then parameter
+    // updates, then new-note gate-on last. This keeps back-to-back notes
+    // (where one note's stop coincides with the next note's start) from
+    // having the new gate-on cancelled by the old gate-off. See
+    // docs/spec/audio-sources.md §4 (per-variant trigger semantics).
     match op {
-        AudioOp::SetEnabled(true) => 0,
+        AudioOp::SetEnabled(false) => 0,
         AudioOp::SetHz(_) => 1,
         AudioOp::SetGain(_) => 1,
         AudioOp::SetLowPassCutoffHz(_) => 1,
         AudioOp::SetBandPassCenterHz(_) => 1,
-        AudioOp::SetEnabled(false) => 2,
+        AudioOp::SetEnabled(true) => 2,
     }
 }
 
@@ -631,7 +705,6 @@ fn apply_audio_op(oscs: &mut [AudioOscillator], op: AudioOp) {
         AudioOp::SetHz(hz) => {
             for o in oscs.iter_mut() {
                 o.frequency = hz;
-                o.music_note_applied = true;
             }
         }
         AudioOp::SetGain(_) => {}
@@ -742,6 +815,9 @@ fn process_graph_node(
 
     let mut y = match kind {
         RtAudioGraphNodeKind::OscillatorSource => input,
+        // ClipSource is a pass-through: the per-clip mix already computed
+        // `input` for this frame (see render_sample_from_clips).
+        RtAudioGraphNodeKind::ClipSource => input,
         RtAudioGraphNodeKind::Gain { gain } => input * sanitize_param_f32(gain, 1.0),
         RtAudioGraphNodeKind::LowPass {
             cutoff_hz,
@@ -824,6 +900,21 @@ fn render_sample_from_map(
     fundsp: &mut fundsp_backend::FundspState,
     sample_rate_hz: u32,
 ) -> f32 {
+    render_sample_from_map_unclamped(map, gains, gates, graphs, fundsp, sample_rate_hz)
+        .clamp(-1.0, 1.0)
+}
+
+/// Same as `render_sample_from_map` but returns the raw sum without
+/// clamping. Used when mixing additional sources (e.g. clips) before the
+/// final clamp.
+fn render_sample_from_map_unclamped(
+    map: &mut HashMap<u64, Vec<AudioOscillator>>,
+    gains: &HashMap<u64, f32>,
+    gates: &mut HashMap<u64, ComponentGate>,
+    graphs: &mut HashMap<u64, RtAudioGraph>,
+    fundsp: &mut fundsp_backend::FundspState,
+    sample_rate_hz: u32,
+) -> f32 {
     let mut out = 0.0f32;
     for (&cid_ffi, oscs) in map.iter_mut() {
         let base_g = gains.get(&cid_ffi).copied().unwrap_or(1.0);
@@ -866,7 +957,78 @@ fn render_sample_from_map(
             out += base;
         }
     }
-    out.clamp(-1.0, 1.0)
+    out
+}
+
+/// Mix one sample frame's contribution from every playing
+/// `AudioClipComponent`. Mirrors `render_sample_from_map_unclamped` for
+/// oscillators but reads from the asset registry instead of running
+/// generators. Effect chains apply the same way (graphs keyed by the
+/// clip's component_ffi).
+fn render_sample_from_clips(
+    clip_instances: &mut HashMap<u64, RtClipInstance>,
+    clip_assets: &HashMap<u64, RtClipAsset>,
+    clip_asset_for_instance: &HashMap<u64, u64>,
+    gains: &HashMap<u64, f32>,
+    gates: &mut HashMap<u64, ComponentGate>,
+    graphs: &mut HashMap<u64, RtAudioGraph>,
+    sample_rate_hz: u32,
+) -> f32 {
+    let mut out = 0.0f32;
+    for (&cid_ffi, voice) in clip_instances.iter_mut() {
+        if !voice.playing {
+            continue;
+        }
+        let asset_key = clip_asset_for_instance
+            .get(&cid_ffi)
+            .copied()
+            .unwrap_or(cid_ffi);
+        let Some(asset) = clip_assets.get(&asset_key) else {
+            continue;
+        };
+        let ch = asset.channels.max(1) as usize;
+        let frame_count = asset.samples.len() / ch;
+        if frame_count == 0 {
+            voice.playing = false;
+            continue;
+        }
+
+        let base_g = gains.get(&cid_ffi).copied().unwrap_or(1.0);
+        let base_g = if base_g.is_finite() {
+            base_g.max(0.0)
+        } else {
+            1.0
+        };
+        let gate = gates.entry(cid_ffi).or_default();
+        gate.tick();
+        if gate.pending_disable && gate.remaining == 0 && gate.current <= 0.0 {
+            gate.pending_disable = false;
+        }
+        let g = base_g * gate.current;
+
+        // Read one frame; advance cursor regardless of gain so paused
+        // clips don't suddenly skip ahead when re-enabled mid-stream.
+        let frame_idx = voice.cursor as usize;
+        if frame_idx >= frame_count {
+            voice.playing = false;
+            continue;
+        }
+        let base_offset = frame_idx * ch;
+        let mut acc = 0.0f32;
+        for c in 0..ch {
+            acc += asset.samples[base_offset + c];
+        }
+        let base = (acc / ch as f32) * g;
+        voice.cursor += 1.0;
+
+        if let Some(graph) = graphs.get_mut(&cid_ffi) {
+            let sr = (sample_rate_hz as f32).max(1.0);
+            out += process_graph_node(graph, 0, base, sr, 0);
+        } else {
+            out += base;
+        }
+    }
+    out
 }
 
 pub(crate) fn render_buffer<T: Copy>(
@@ -959,6 +1121,41 @@ pub(crate) fn render_buffer<T: Copy>(
                     .unwrap_or_else(|i| i);
                 rt.events.insert(idx, op);
             }
+            AudioQueueItem::UploadClip {
+                asset_key,
+                samples,
+                channels,
+                sample_rate,
+            } => {
+                synth_state.clip_assets.insert(
+                    asset_key,
+                    RtClipAsset {
+                        samples,
+                        channels,
+                        sample_rate,
+                    },
+                );
+            }
+            AudioQueueItem::DropClip { asset_key } => {
+                synth_state.clip_assets.remove(&asset_key);
+            }
+            AudioQueueItem::RegisterClipInstance {
+                component_ffi,
+                asset_key,
+                start_beat,
+                stop_beat,
+            } => {
+                synth_state
+                    .clip_asset_for_instance
+                    .insert(component_ffi, asset_key);
+                let voice = synth_state.clip_instances.entry(component_ffi).or_default();
+                voice.start_beat = start_beat;
+                voice.stop_beat = stop_beat;
+            }
+            AudioQueueItem::DropClipInstance { component_ffi } => {
+                synth_state.clip_instances.remove(&component_ffi);
+                synth_state.clip_asset_for_instance.remove(&component_ffi);
+            }
             AudioQueueItem::GraphMessage(op) => {
                 if !op.beat.is_finite() {
                     continue;
@@ -1042,6 +1239,9 @@ pub(crate) fn render_buffer<T: Copy>(
     let gates = &mut synth_state.component_gate;
     let graphs = &mut synth_state.graphs;
     let fundsp = &mut synth_state.fundsp;
+    let clip_assets = &synth_state.clip_assets;
+    let clip_instances = &mut synth_state.clip_instances;
+    let clip_asset_for_instance = &synth_state.clip_asset_for_instance;
 
     const ENABLE_RAMP_SEC: f32 = 0.005;
     const DISABLE_RAMP_SEC: f32 = 0.010;
@@ -1212,14 +1412,59 @@ pub(crate) fn render_buffer<T: Copy>(
                                 // Handled above.
                             }
                         }
+                    } else if let Some(voice) = clip_instances.get_mut(&target) {
+                        match op {
+                            AudioOp::SetEnabled(true) => {
+                                // Spec §4 + cloning draft §4: trigger seeds
+                                // cursor from authored `start_beat` (beats →
+                                // frames via current bpm + asset SR). Defaults
+                                // to 0 when start_beat is 0 / asset missing.
+                                let frames_per_beat = clip_asset_for_instance
+                                    .get(&target)
+                                    .and_then(|k| clip_assets.get(k))
+                                    .map(|a| (a.sample_rate as f64) * 60.0 / bpm.max(1.0))
+                                    .unwrap_or(0.0);
+                                voice.cursor = (voice.start_beat * frames_per_beat).max(0.0);
+                                voice.playing = true;
+                                let gate = gates.entry(target).or_default();
+                                gate.current = 0.0;
+                                gate.ramp_to(1.0, enable_ramp_samples.max(1), false);
+                            }
+                            AudioOp::SetEnabled(false) => {
+                                let gate = gates.entry(target).or_default();
+                                gate.ramp_to(0.0, disable_ramp_samples.max(1), true);
+                                voice.playing = false;
+                            }
+                            AudioOp::SetGain(g) => {
+                                let g = if g.is_finite() { g.max(0.0) } else { 1.0 };
+                                gains.insert(target, g);
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }
             op_cursor += 1;
         }
 
-        let s =
-            render_sample_from_map(osc_snapshot, &*gains, gates, graphs, fundsp, sample_rate_hz);
+        let osc_part = render_sample_from_map_unclamped(
+            osc_snapshot,
+            &*gains,
+            gates,
+            graphs,
+            fundsp,
+            sample_rate_hz,
+        );
+        let clip_part = render_sample_from_clips(
+            clip_instances,
+            clip_assets,
+            clip_asset_for_instance,
+            &*gains,
+            gates,
+            graphs,
+            sample_rate_hz,
+        );
+        let s = (osc_part + clip_part).clamp(-1.0, 1.0);
         let t = to_sample(s);
         for v in frame.iter_mut() {
             *v = t;

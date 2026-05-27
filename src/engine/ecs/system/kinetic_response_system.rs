@@ -1,10 +1,9 @@
-use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    CollisionComponent, CollisionMode, CollisionShape, CollisionShapeComponent, KineticResponseComponent,
-    KineticResponseMode, RenderableComponent, TransformComponent,
+    CollisionComponent, CollisionMode, CollisionShape, CollisionShapeComponent,
+    KineticResponseComponent, KineticResponseMode, RenderableComponent, TransformComponent,
 };
 use crate::engine::ecs::system::{CollisionSystem, TransformSystem};
+use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 use crate::utils::math;
@@ -29,7 +28,9 @@ impl KineticResponseSystem {
         let mut cur = component;
         let mut gravity_coef = 0.0f32;
         while let Some(parent) = world.parent_of(cur) {
-            if let Some(g) = world.get_component_by_id_as::<crate::engine::ecs::component::GravityComponent>(parent) {
+            if let Some(g) = world
+                .get_component_by_id_as::<crate::engine::ecs::component::GravityComponent>(parent)
+            {
                 if g.enabled {
                     gravity_coef = g.coefficient;
                     break;
@@ -53,7 +54,7 @@ impl KineticResponseSystem {
         _visuals: &mut VisualWorld,
         _input: &InputState,
         dt_sec: f32,
-        queue: &mut crate::engine::ecs::CommandQueue,
+        emit: &mut dyn SignalEmitter,
         collision: &CollisionSystem,
     ) {
         if self.responders.is_empty() {
@@ -74,7 +75,10 @@ impl KineticResponseSystem {
                     .entry(a)
                     .or_default()
                     .push((b, [-delta_ab[0], -delta_ab[1], -delta_ab[2]]));
-                overlaps_by_collider.entry(b).or_default().push((a, delta_ab));
+                overlaps_by_collider
+                    .entry(b)
+                    .or_default()
+                    .push((a, delta_ab));
             }
         }
 
@@ -82,7 +86,9 @@ impl KineticResponseSystem {
         let mut pending_updates: Vec<(ComponentId, ComponentId, [f32; 3], [f32; 3])> = Vec::new();
 
         for response_cid in responder_ids {
-            let Some(response) = world.get_component_by_id_as::<KineticResponseComponent>(response_cid) else {
+            let Some(response) =
+                world.get_component_by_id_as::<KineticResponseComponent>(response_cid)
+            else {
                 continue;
             };
             if !response.enabled {
@@ -112,7 +118,8 @@ impl KineticResponseSystem {
             }
 
             // Only treat kinematic/rigged colliders as responders.
-            let Some(collider) = world.get_component_by_id_as::<CollisionComponent>(collider_cid) else {
+            let Some(collider) = world.get_component_by_id_as::<CollisionComponent>(collider_cid)
+            else {
                 continue;
             };
             if collider.mode == CollisionMode::Static {
@@ -146,7 +153,8 @@ impl KineticResponseSystem {
             }
 
             let mut moved = false;
-            let mut desired_world_pos = match TransformSystem::world_position(world, transform_cid) {
+            let mut desired_world_pos = match TransformSystem::world_position(world, transform_cid)
+            {
                 Some(p) => p,
                 None => continue,
             };
@@ -308,19 +316,31 @@ impl KineticResponseSystem {
                 continue;
             }
 
-            let new_local_translation = world_to_local_translation(world, transform_cid, desired_world_pos);
+            let new_local_translation =
+                world_to_local_translation(world, transform_cid, desired_world_pos);
 
             pending_updates.push((response_cid, transform_cid, new_local_translation, velocity));
         }
 
         for (response_cid, transform_cid, new_local_translation, new_velocity) in pending_updates {
-            if let Some(r) = world.get_component_by_id_as_mut::<KineticResponseComponent>(response_cid) {
+            if let Some(r) =
+                world.get_component_by_id_as_mut::<KineticResponseComponent>(response_cid)
+            {
                 r.velocity = new_velocity;
             }
             if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(transform_cid) {
                 t.transform.translation = new_local_translation;
                 t.transform.recompute_model();
-                queue.queue_update_transform(transform_cid, t.transform);
+                let transform = t.transform;
+                emit.push_intent_now(
+                    transform_cid,
+                    IntentValue::UpdateTransform {
+                        component_ids: vec![transform_cid],
+                        translation: transform.translation,
+                        rotation_quat_xyzw: transform.rotation,
+                        scale: transform.scale,
+                    },
+                );
             }
         }
     }
@@ -383,7 +403,11 @@ fn compute_push_out_aabb(
     }
 
     let mut out = [0.0f32; 3];
-    let dir = if a_center[axis] < b_center[axis] { -1.0 } else { 1.0 };
+    let dir = if a_center[axis] < b_center[axis] {
+        -1.0
+    } else {
+        1.0
+    };
     out[axis] = dir * (min_overlap + eps);
     Some(out)
 }

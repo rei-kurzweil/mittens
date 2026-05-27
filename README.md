@@ -1,9 +1,19 @@
-# cat engine「0.4」
+
+# cat-engine 0.5 "mittens"
 <img width="1920" height="745" alt="Screenshot_20260303_015535" src="https://github.com/user-attachments/assets/16d9656c-9df3-4a96-89bd-658d222e78d0" />
 
+An opinionated game engine specially made for social vr, vtubing, css-driven UI and 3D character animation.    
 
-small game engine `[obstensively]` for making cats,
-using vulkan instanced rendering and several layers to describe game objects:
+### Cat Engine has three main components:
++ src/engine (vulkan renderer, components and ecs systems)
++ src/meow_meow (a cute programming language for building scenes and wiring up events)
++ src/query (a query engine supporting css or meow meow query language; used by engine and meow_meow
+
+(see docs/meow_meow for an overview of .mms scripts)
+
+## Running examples
+- Run examples in release mode by default: `cargo run --release --example <name>`.
+- Avoid debug example runs unless you specifically need debug-only diagnostics or faster compile iteration.
 
 ## Windowing
 + uses winit to make a window and passes the RawDisplayHandle to renderer to render into the window
@@ -75,39 +85,71 @@ let guid = universe.world.get_component_record(instance_root).unwrap().guid;
 + displays data from VisualWorld through vulkan
 + TODO: make WgpuRenderer for web / webasm
 
-### Transparency / Opacity
+### Render phases (render graph summary)
 
-The renderer uses a 3-phase transparency model so we get decent performance for "simple" transparency, but still have a correct path for stacked transparency.
+Rendering is recorded in a single dynamic-rendering scope, but split into explicit phases (a small “render graph”) built by `VisualWorld` and recorded by `VulkanoRenderer`.
 
-This is not multiple Vulkan "render passes" (we use dynamic rendering). It’s a single rendering scope where we record draw commands in three phases, switching pipelines/state between phases:
+Current phase order (high level):
 
-1. **Opaque phase** (instanced)
-  + Depth test: ON
-  + Depth write: ON
-  + Batching/instancing: YES
-2. **Transparent single-layer phase** (instanced)
-  + Depth test: ON
-  + Depth write: OFF (so later transparent layers can still blend)
-  + Batching/instancing: YES (fast)
-3. **Transparent multi-layer phase** (sorted)
-  + Depth test: ON
-  + Depth write: OFF
-  + Batching: grouped by (material, mesh, texture), but **drawn one-by-one in back-to-front order** for correct blending
+1. **Background** (instanced, no depth write)
+2. **Background occluded+lit** (instanced, depth write ON for self-occlusion)
+   - Then the renderer clears depth so background never occludes the foreground.
+3. **Opaque** (instanced, depth write ON)
+4. **Cutout** (instanced, alpha-tested)
+5. **Transparent single-layer** (instanced)
+6. **Transparent multi-layer** (sorted back-to-front, drawn one-by-one for correct blending)
 
-This is driven by `VisualWorld` building separate draw orders/caches, and `VulkanoRenderer` recording all three phases in `build_draw_batches_command_buffer`.
+See [docs/render-phases.md](docs/render-phases.md) for details and the relevant code entry points.
 
 # Components
 
+## Transforms
+
+Transforms are central in cat-engine: most component subtrees are rooted at a `TransformComponent`, and many engine systems interpret the component tree as “a scene graph of nested transforms + things attached under them”.
+
+0. **Brief intro: `TransformComponent`**
+  - Stores local TRS (translation / rotation / scale) and a cached `matrix_world`.
+  - Local TRS is represented as a *model matrix* (`transform.model`), and the engine propagates it through the component tree to compute `matrix_world` for nested transforms.
+
+1. **How transforms can be nested**
+  - A `TransformComponent` can parent other `TransformComponent`s.
+  - Nesting is defined by the ECS topology (parent/child relationships in the component tree).
+
+2. **What that means for model vs `matrix_world` propagation**
+  - Each transform has a local `model` matrix derived from its TRS.
+  - World-space transforms are computed by multiplying ancestor models down the tree:
+    - `matrix_world(child) = matrix_world(parent) * model(child)`
+  - `TransformSystem` caches `matrix_world` on each `TransformComponent` and uses it as the source of truth for systems that need world-space.
+  - Topology changes (Attach/Detach) can require recomputation even if local TRS didn’t change; the engine has a dedicated intent for that (`UpdateTransformWorld`).
+
+3. **Which systems are affected by transforms**
+  - `RenderableSystem` / `VisualWorld`: instance model matrices for renderables
+  - `CameraSystem`: camera view/projection updates when parent transform changes
+  - `LightSystem`: point light world-space position updates
+  - `CollisionSystem`: collider world-space updates
+  - `SkinnedMeshSystem`: joint world matrices / skinning matrices become dirty
+  - `BvhSystem` + `RaycastSystem`: BVH refit and raycast correctness depends on world matrices
+  - `OpenXRSystem`: XR devices/cameras often read/write world transforms
+  - Editor gizmos: visual alignment + drag application depend on consistent `matrix_world`
+
+4. **Which systems determine / write transform intents**
+  - User code: calling `TransformComponent::{set_position,set_rotation_*,set_scale}` queues `UpdateTransform`
+  - `InputSystem`: movement/controls update transforms via `UpdateTransform`
+  - `OpenXRSystem`: device pose application uses `UpdateTransform`
+  - `KineticResponseSystem`: kinematic collision response integrates motion via `UpdateTransform`
+  - `TransformGizmoSystem`: editor gestures call transform setters (which queue `UpdateTransform`)
+
+4.1 **Transform propagation pipelines / transform operators**
+  - `TransformSystem::transform_changed(...)` is the core propagation pipeline: it recomputes cached `matrix_world` for a transform subtree and pushes side effects to dependent systems.
+  - `TransformFilterComponent` is a “filter-as-node” operator that changes what descendants inherit (e.g. inherit translation+rotation but *not* scale). It’s used heavily for editor/gizmo visuals.
+  - For deeper notes/specs:
+    - `TransformFilterComponent` motivation: `docs/analysis/gizmo-transform-propagation.md`
+    - Gizmo coord spaces (Local/World): `docs/spec/editor-gizmo-coord-spaces.md`
+    - Transform update flow and refit/rebuild behavior: `docs/analysis/refresh-transform.md`
+
 + TransformComponent
-  + lets position anything in space (and rotate and scale it)
-  + affects children:
-    + RenderableComponent
-    + Camera2DComponent
-    + Camera3DComponent
-    + PointLightComponent
-    + CollisionComponent
-  + affected by parents:
-    + InputComponent (recieves transform input from InputComponent)
+  + lets position anything in space (translation/rotation/scale)
+  + can be nested to build scene graphs; see “Transforms” above for propagation + affected systems
 
 + RenderableComponent
   + Several built-in RenderableComponents are available as special constructors on the impl.
@@ -157,11 +199,13 @@ InputComponent {
   + Per-instance opacity multiplier (separate from `ColorComponent` alpha).
   + Routed into the instanced vertex buffer as `i_opacity` and multiplied into the fragment alpha.
   + Like color, opacity can be inherited from ancestors (so you can set it once on a parent and affect all children).
-  + Influences which transparency **draw phase** an instance uses:
+  + Influences which virtual render pass (render phase) an instance uses:
     + Instances are treated as transparent if `opacity < 0.999` **or** `color.a < 0.999`.
       + (Note: texture alpha is not currently considered for pass selection.)
+    + If it is not transparent, it goes through the **opaque** instanced phase.
     + Transparent instances with `multiple_layers=false` go through the **transparent single-layer** instanced phase.
     + Transparent instances with `multiple_layers=true` go through the **transparent multi-layer** sorted phase.
+    + This does not control the **cutout** or **background** phases; those are driven by other instance flags/components.
   + Usage:
     + `OpacityComponent::new().with_opacity(0.5)`
     + `OpacityComponent::new().with_opacity(0.5).with_multiple_layers()` when it must blend correctly with other transparent surfaces.
@@ -197,58 +241,9 @@ InputComponent {
   + (see `GravityComponent` below) gravity is inherited from ancestors.
 
   + KineticResponseComponent
-    + Opt-in kinematic collision response for a collider.
-    + **Policy:** collision detection/queries still work without this; collision signals still emit. This component only controls *automatic movement* in response to overlaps.
-    + **Topology requirement:** attach as a direct child of a `CollisionComponent` (which itself should be a direct child of a `TransformComponent`).
-
-Example topology:
-
-```rust
-TransformComponent {
-  CollisionComponent::KINEMATIC() {
-    CollisionShapeComponent { ... }
-    KineticResponseComponent::push() { ... }
-  }
-    RenderableComponent { ... }
-}
-
-GravityComponent {
-  TransformComponent {
-    CollisionComponent::KINEMATIC() {
-      CollisionShapeComponent { ... }
-      KineticResponseComponent::push() { ... }
-    }
-  }
-}
-```
-
-  + **Modes**
-    + `slide` (`KineticResponseComponent::slide()`)
-      + Classic kinematic “push out of statics” behavior.
-      + Each tick, if overlapping static colliders, pushes the transform out along the minimum-penetration axis (AABB).
-      + Good for camera rigs and players sliding along level geometry.
-    + `push` (`KineticResponseComponent::push()`)
-      + “Pushable” behavior.
-      + Accumulates a runtime velocity away from overlapping **non-static** colliders, integrates it every tick, and still resolves overlaps against static colliders.
-      + Includes a simple horizontal bounce on static side-wall contacts (X/Z velocity reflection) so bodies don’t just stick while being corrected.
-
-  + **Tuning fields (encode/decode keys shown)**
-    + `enabled: bool` — master toggle.
-    + `mode: "slide" | "push"`
-    + `max_iterations: u32` — max static push-out iterations per tick.
-    + `push_out_epsilon: f32` — tiny extra separation to reduce jitter at exact contact.
-    + `push_strength: f32` — strength of push-mode acceleration from non-static overlaps.
-      + Builder: `with_push_strength(f32)`
-    + `max_speed: f32` — clamp on push-mode speed (world units/sec).
-    + `friction: f32` — per-second velocity damping applied every tick in push-mode.
-      + Off by default (`0.0`).
-      + Builder: `with_friction(f32)`
-    + `friction_y: f32` — per-second damping applied to **Y velocity only**, and only when resolving a **vertical (Y-axis) static overlap** (e.g. floor/roof contact).
-      + Off by default (`0.0`).
-      + Builder: `with_friction_y(f32)`
-
-  + **Runtime state**
-    + `velocity: [f32; 3]` is runtime-only (not serialized).
+    + Opt-in kinematic collision response (automatic movement/push-out in response to overlaps).
+    + **Topology requirement:** attach as a direct child of a `CollisionComponent`.
+    + Modes and tuning fields are documented in: [docs/spec/kinetic-response.md](docs/spec/kinetic-response.md)
 
 + GravityComponent
   + Gravity field component.
@@ -264,57 +259,86 @@ GravityComponent {
   + handles session, frame loop, and input events from XR runtime
 
 
-# Actions
+# Signals
 
-Actions are data-driven “commands” stored in the component graph as `ActionComponent`s.
-They are typically executed by the `AnimationSystem` when a `KeyframeComponent` fires, but can also be executed directly via `ActionSystem`.
+This engine uses an explicit **drain-point** signal model.
 
-## ActionComponent schema
+Instead of letting systems mutate everything immediately (and in arbitrary order), code emits **signals** into the per-frame queue, and the engine drains them in a consistent sequence.
 
-An `ActionComponent` encodes to a small JSON-ish record:
+Signal types:
 
-- `target: [u64, ...]` — list of component ids (slotmap FFI ids)
-- `method: "..."` — action method string
-- `params: [ ... ]` — method-specific parameters
+- **Events** (`EventSignal`): facts/observations ("parent changed", "drag started", ...).
+  - Dispatched to handlers (global handlers and/or scoped handlers rooted at a scope subtree).
+  - Event handlers should be *observers*: they typically emit follow-up intents rather than directly performing large mutations.
 
-## Supported actions
+- **Intents** (`IntentSignal` carrying an `IntentValue`): requests for side effects ("attach", "set transform", "remove subtree", ...).
+  - Executed at drain points.
+  - Can be scheduled for the future via `at_beat(...)` (timed intents sit in a holding-pen until due).
 
-Common topology/scene actions:
+Execution order (inside `SystemWorld::process_signals`):
 
-- `set_color(target, rgba)` (`method = "set_color"`)
-- `set_text(target, text)` (`method = "set_text"`)
-- `set_position(target, x, y, z)` (`method = "set_position"`)
+1. **Dispatch ready events** to handlers.
+   - Any *events emitted by handlers* are **deferred to the next tick**.
+   - Any *intents emitted by handlers* are queued for later execution.
 
-- `attach(parent, child)` (`method = "attach"`)
-- `detach(targets)` (`method = "detach"`)
-- `remove_subtree(targets)` (`method = "remove_subtree"`)
+2. **Promote timed intents** that have become due at the current beat.
 
-Prefab + child removal helpers (mirror the `Universe` helpers):
+3. **Execute ready intents**.
+   - Intents may emit more intents; those will run later in the same tick (after queue draining), up to the `max_signals` cap.
+   - Intents may also emit events, but (like handler-emitted events) those are deferred to the next tick.
 
-- `attach_clone(parent, prefab_root)` (`method = "attach_clone"`)
-  - Clones the prefab subtree and attaches the cloned root under each target parent.
+Implementation detail: intent execution is split into two layers:
 
-- `remove_child(parent, index)` (`method = "remove_child"`)
-  - Detaches the selected child immediately and queues deletion of that subtree.
-  - `index` is based on the current `children_of(parent)` order; if you want a stable index, avoid attaching other “marker” children under the same parent.
+- `RxIntentExecutor`: “interpretation” intents that expand into follow-up work.
+- `RxMutationExecutor`: low-level canonical mutations (register/update/remove, etc.).
 
-- `remove_children(parent)` (`method = "remove_children"`)
-  - Detaches + queues deletion for all direct children.
+Scoped handler lifecycle: systems can install handlers rooted at a component subtree (e.g. gizmos). When a subtree is removed, any scoped handlers rooted in that deleted subtree are removed automatically.
 
-Audio actions:
+See [docs/signals.md](docs/signals.md) for the deeper rationale.
 
-- `audio_graph_rebuild(targets)` (`method = "audio_graph_rebuild"`)
-- `audio_low_pass_set_cutoff_hz(targets, cutoff_hz)` (`method = "audio_low_pass_set_cutoff_hz"`)
-- `audio_band_pass_set_center_hz(targets, center_hz)` (`method = "audio_band_pass_set_center_hz"`)
 
-Oscillator/music actions:
+# Building Widgets
 
-- `oscillator_set_enabled(targets, enabled)` (`method = "oscillator_set_enabled"`)
-- `oscillator_set_pitch(targets, frequency_hz)` (`method = "oscillator_set_pitch"`)
-- `oscillator_schedule_set_pitch(targets, beat_offset, frequency_hz)` (`method = "oscillator_schedule_set_pitch"`)
-- `oscillator_schedule_set_note(targets, beat_offset, pitch, octave)` (`method = "oscillator_schedule_set_note"`)
-- `oscillator_schedule_music_note(targets, beat_offset, note)` (`method = "oscillator_schedule_music_note"`)
-- `music_set_note(targets, note)` (`method = "music_set_note"`)
+This engine’s “widgets” (gizmos, editor handles, debug UI-in-world) are usually built as **component subtrees** plus **scoped signal handlers**.
+
+At a high level:
+
+- A widget is a small subtree of components that contains renderable geometry (things you can see) and `RaycastableComponent` markers (things you can click/drag).
+- Interaction comes in as signals (`RayIntersected`, `DragStart`, `DragMove`, `DragEnd`). Systems install scoped handlers rooted at the widget subtree, so the widget can respond to events happening on any of its descendants.
+
+## Transform gizmo (example widget)
+
+The transform gizmo is a reference implementation of this pattern:
+
+- `TransformGizmoComponent` is attached under a target `TransformComponent`.
+- On init, `TransformGizmoSystem` spawns a visual subtree (rotate rings, translate arrows) and marks the clickable parts as raycastable.
+- During a drag, the gizmo figures out “what operation is this?” by walking up ancestry from the hit renderable and looking for handle marker components:
+  - `TransformGizmoTranslateComponent { axis }`
+  - `TransformGizmoRotateComponent { axis }`
+  - `TransformGizmoScaleComponent { axis }`
+
+## GestureCoordType (how a handle interprets motion)
+
+Some handles need different coordinate mappings. This is controlled by attaching a `GestureCoordTypeComponent` somewhere in the ancestry of the clicked handle renderable:
+
+- `GestureCoordType::WorldPlane`
+  - Use world-space hit-point deltas (good for translation along an axis, with the gesture system providing a stable drag plane).
+- `GestureCoordType::ScreenSpace1DSlider`
+  - Use screen-space deltas (good for rotation rings, where you want “drag anywhere” behavior).
+
+The up-to-date, code-matching interaction pipeline docs are:
+
+- [docs/spec/gestures-and-gizmos.md](docs/spec/gestures-and-gizmos.md)
+- [docs/refactor/gesture-screen-distance.md](docs/refactor/gesture-screen-distance.md)
+
+## Building your own widget
+
+Typical steps:
+
+1. Create a root marker component for the widget (stores runtime state like “active pointer”, “drag start value”, etc.).
+2. Spawn a visual subtree under that root, including raycastable renderables.
+3. Install scoped handlers for `DragStart/DragMove/DragEnd` rooted at the widget.
+4. In handlers, mutate the target component(s) directly (or emit intents if you need the changes to flow through the drain-point signal model).
 
 
 # REPL / CLI
@@ -384,7 +408,26 @@ Pipes use `|` but they pipe *component objects* (ComponentIds), not strings.
 https://github.com/user-attachments/assets/ce4ac311-1087-4792-bec8-5dd012d848f2
 
 
-Credits:
+
+## Profiling (flamegraph)
+
+You can profile binaries (including examples) using `cargo-flamegraph` without adding any dependency to this project.
+
+Prereqs:
+
+- Install the Cargo subcommand: `cargo install cargo-flamegraph`
+- Linux: install `perf` (Arch/EndeavourOS: `sudo pacman -S perf`)
+
+Example (profile an optimized release build of an example with debug symbols and frame pointers):
+
+```bash
+CARGO_PROFILE_RELEASE_DEBUG=true \
+  RUSTFLAGS="-C debuginfo=1 -C force-frame-pointers=yes" \
+  cargo flamegraph --release --example vtuber-joints-example
+```
+
+
+# Credits:
 
 Special thanks to [2gd4.me](https://2gd4.me) for designing font_system.png
  

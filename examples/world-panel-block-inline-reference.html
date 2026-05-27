@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>World Panel Block/Inline-Block Reference</title>
+  <style>
+    :root {
+      --gu: 12px;
+      --panel-width: calc(29.5 * var(--gu));
+      --panel-frame-padding: calc(0.35 * var(--gu));
+      --panel-frame-outer-width: calc(var(--panel-width) + (2 * var(--panel-frame-padding)) + 2px);
+      --content-height: calc(54 * var(--gu));
+      --status-height: calc(2.5 * var(--gu));
+      --title-height: calc(3 * var(--gu));
+      --title-content-height: calc(var(--title-height) - (2 * var(--title-padding-y)));
+      --gap: calc(0.5 * var(--gu));
+      --title-label-width: calc(14.5 * var(--gu));
+      --title-label-padding-x: calc(0.25 * var(--gu));
+      --button-width: calc(6.875 * var(--gu));
+      --button-height: calc(2.4 * var(--gu));
+      --button-margin-y: calc(0.3 * var(--gu));
+      --button-margin-left: calc(0.625 * var(--gu));
+      --row-margin-x: calc(0.25 * var(--gu));
+      --row-margin-y: calc(0.2 * var(--gu));
+      --row-padding-y: calc(0.55 * var(--gu));
+      --row-padding-x: calc(0.45 * var(--gu));
+      --status-padding-y: calc(0.25 * var(--gu));
+      --status-padding-x: calc(0.45 * var(--gu));
+      --title-padding-y: calc(0.25 * var(--gu));
+      --panel-green: rgba(46, 199, 56, 0.95);
+      --button-green: rgba(26, 140, 46, 1);
+      --button-text: rgba(191, 255, 115, 1);
+      --status-green: rgba(20, 61, 28, 0.92);
+      --status-text: rgba(235, 255, 235, 1);
+      --content-yellow: rgba(245, 235, 46, 0.8);
+      --row-bg: rgba(235, 247, 235, 1);
+      --row-text: rgba(15, 23, 20, 1);
+      --title-text: rgba(230, 255, 235, 1);
+      --page-bg: linear-gradient(180deg, #dfe8dc 0%, #c5d6c0 100%);
+      --panel-shadow: 0 18px 40px rgba(18, 37, 17, 0.22);
+      --border: rgba(18, 37, 17, 0.18);
+      --font: "IBM Plex Sans", "Segoe UI", sans-serif;
+      --mono: "IBM Plex Mono", "Cascadia Mono", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 32px;
+      background: var(--page-bg);
+      color: #102013;
+      font-family: var(--font);
+    }
+
+    .stage {
+      width: min(var(--panel-frame-outer-width), calc(100vw - 64px));
+      margin: 0 auto;
+    }
+
+    .panel-frame {
+      width: fit-content;
+      max-width: 100%;
+      background: rgba(240, 246, 238, 0.85);
+      border: 1px solid var(--border);
+      box-shadow: var(--panel-shadow);
+      backdrop-filter: blur(6px);
+      padding: var(--panel-frame-padding);
+    }
+
+    .panel {
+      width: var(--panel-width);
+      max-width: 100%;
+    }
+
+    .status-bar {
+      display: block;
+      height: var(--status-height);
+      margin-bottom: var(--gap);
+      padding: var(--status-padding-y) var(--status-padding-x);
+      background: var(--status-green);
+      color: var(--status-text);
+      font-size: 14px;
+      line-height: 1.2;
+      text-align: left;
+      letter-spacing: 0.01em;
+      overflow: hidden;
+    }
+
+    .title-bar {
+      display: block;
+      height: var(--title-height);
+      margin-bottom: var(--gap);
+      background: var(--panel-green);
+      font-size: 0;
+      overflow: hidden;
+    }
+
+    .title-label-wrap {
+      display: inline-block;
+      width: var(--title-label-width);
+      height: var(--title-height);
+      padding: var(--title-padding-y) var(--title-label-padding-x);
+      color: var(--title-text);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .title-label {
+      display: block;
+      font-size: 16px;
+      line-height: var(--title-content-height);
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+
+    .panel-button {
+      display: inline-block;
+      width: var(--button-width);
+      height: var(--button-height);
+      margin-top: var(--button-margin-y);
+      margin-bottom: var(--button-margin-y);
+      margin-left: var(--button-margin-left);
+      padding: 0 calc(0.45 * var(--gu));
+      border: 0;
+      background: var(--button-green);
+      color: var(--button-text);
+      font-family: var(--font);
+      font-size: 14px;
+      font-weight: 600;
+      line-height: var(--button-height);
+      text-align: center;
+      vertical-align: top;
+      cursor: default;
+    }
+
+    .panel-button-label {
+      display: block;
+      line-height: inherit;
+    }
+
+    .content-slot {
+      display: block;
+      height: min(var(--content-height), 60vh);
+      overflow: auto;
+      background: var(--content-yellow);
+    }
+
+    .world-panel-content-root {
+      display: block;
+      width: 100%;
+    }
+
+    .rows-mount {
+      display: block;
+      width: 100%;
+    }
+
+    .row {
+      display: block;
+      width: 100%;
+      margin: var(--row-margin-y) var(--row-margin-x);
+      padding: var(--row-padding-y) var(--row-padding-x);
+      background: var(--row-bg);
+      color: var(--row-text);
+      font-family: var(--mono);
+      font-size: 14px;
+      line-height: 1.3;
+    }
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <section class="panel-frame" aria-label="World panel block and inline-block reference">
+      <div class="panel">
+        <div class="status-bar">selected item_3</div>
+
+        <div class="title-bar">
+          <div class="title-label-wrap"><span class="title-label">World</span></div><div class="panel-button" role="button" aria-label="Save"><span class="panel-button-label">Save</span></div><div class="panel-button" role="button" aria-label="Load"><span class="panel-button-label">Load</span></div>
+        </div>
+
+        <div class="content-slot">
+          <div class="world-panel-content-root">
+            <div class="rows-mount">
+              <div class="row">Root</div>
+              <div class="row">Camera Rig</div>
+              <div class="row">Directional Light</div>
+              <div class="row">VTuber Desktop Avatar</div>
+              <div class="row">World Panel Content Root</div>
+              <div class="row">Inspector Mount Placeholder</div>
+              <div class="row">Layout Root</div>
+              <div class="row">Renderer Stats Debug Node</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

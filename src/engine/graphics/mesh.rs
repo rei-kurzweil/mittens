@@ -339,4 +339,171 @@ impl MeshFactory {
 
         CpuMesh::new(vertices, indices)
     }
+
+    /// Cone centered at origin, axis-aligned along +Z.
+    ///
+    /// Geometry:
+    /// - height = 1.0 (z in [-0.5, +0.5])
+    /// - base radius = 0.5 (at z = -0.5)
+    ///
+    /// `number_of_segments` controls radial tessellation.
+    pub fn cone(number_of_segments: u32) -> CpuMesh {
+        let segs = number_of_segments.max(3);
+        let radius = 0.5_f32;
+        let z_base = -0.5_f32;
+        let z_tip = 0.5_f32;
+
+        let tip = [0.0_f32, 0.0_f32, z_tip];
+        let base_center = [0.0_f32, 0.0_f32, z_base];
+
+        let mut vertices: Vec<CpuVertex> = Vec::new();
+        let mut indices: Vec<u32> = Vec::new();
+
+        fn vec3_sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+            [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+        }
+
+        fn vec3_cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+            [
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0],
+            ]
+        }
+
+        fn vec3_len(v: [f32; 3]) -> f32 {
+            (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+        }
+
+        fn vec3_normalize(v: [f32; 3]) -> [f32; 3] {
+            let len = vec3_len(v);
+            if len > 0.0 {
+                [v[0] / len, v[1] / len, v[2] / len]
+            } else {
+                [0.0, 0.0, 1.0]
+            }
+        }
+
+        // Side faces: flat-shaded (unique verts per triangle).
+        for i in 0..segs {
+            let a0 = (i as f32) / (segs as f32) * std::f32::consts::TAU;
+            let a1 = ((i + 1) as f32) / (segs as f32) * std::f32::consts::TAU;
+            let (s0, c0) = a0.sin_cos();
+            let (s1, c1) = a1.sin_cos();
+
+            let p0 = [c0 * radius, s0 * radius, z_base];
+            let p1 = [c1 * radius, s1 * radius, z_base];
+
+            // Normal from triangle (tip, p0, p1).
+            let e0 = vec3_sub(p0, tip);
+            let e1 = vec3_sub(p1, tip);
+            let n = vec3_normalize(vec3_cross(e0, e1));
+
+            let base = vertices.len() as u32;
+            vertices.push(CpuVertex {
+                pos: tip,
+                uv: [0.5, 0.0],
+                normal: n,
+            });
+            vertices.push(CpuVertex {
+                pos: p0,
+                uv: [0.0, 1.0],
+                normal: n,
+            });
+            vertices.push(CpuVertex {
+                pos: p1,
+                uv: [1.0, 1.0],
+                normal: n,
+            });
+            indices.extend_from_slice(&[base, base + 1, base + 2]);
+        }
+
+        // Base cap: triangles wound CCW when viewed from -Z (outside).
+        let n_base = [0.0_f32, 0.0_f32, -1.0_f32];
+        for i in 0..segs {
+            let a0 = (i as f32) / (segs as f32) * std::f32::consts::TAU;
+            let a1 = ((i + 1) as f32) / (segs as f32) * std::f32::consts::TAU;
+            let (s0, c0) = a0.sin_cos();
+            let (s1, c1) = a1.sin_cos();
+
+            let p0 = [c0 * radius, s0 * radius, z_base];
+            let p1 = [c1 * radius, s1 * radius, z_base];
+
+            let base = vertices.len() as u32;
+            vertices.push(CpuVertex {
+                pos: base_center,
+                uv: [0.5, 0.5],
+                normal: n_base,
+            });
+            vertices.push(CpuVertex {
+                pos: p1,
+                uv: [0.5 + p1[0], 0.5 - p1[1]],
+                normal: n_base,
+            });
+            vertices.push(CpuVertex {
+                pos: p0,
+                uv: [0.5 + p0[0], 0.5 - p0[1]],
+                normal: n_base,
+            });
+
+            indices.extend_from_slice(&[base, base + 1, base + 2]);
+        }
+
+        CpuMesh::new(vertices, indices)
+    }
+
+    /// 2D ring/annulus in the XY plane (normal +Z).
+    ///
+    /// `inner_radius` and `outer_radius` are in object-space units.
+    pub fn circle_2d(inner_radius: f32, outer_radius: f32, number_of_segments: u32) -> CpuMesh {
+        let segs = number_of_segments.max(3);
+        let inner = inner_radius.max(0.0);
+        let outer = outer_radius.max(inner + 1.0e-6);
+        let n = [0.0_f32, 0.0_f32, 1.0_f32];
+
+        let mut vertices: Vec<CpuVertex> = Vec::with_capacity((segs as usize) * 2);
+        let mut indices: Vec<u32> = Vec::with_capacity((segs as usize) * 6);
+
+        // Outer ring vertices.
+        for i in 0..segs {
+            let a = (i as f32) / (segs as f32) * std::f32::consts::TAU;
+            let (s, c) = a.sin_cos();
+            let x = c * outer;
+            let y = s * outer;
+            let uv = [0.5 + x / (2.0 * outer), 0.5 - y / (2.0 * outer)];
+            vertices.push(CpuVertex {
+                pos: [x, y, 0.0],
+                uv,
+                normal: n,
+            });
+        }
+        // Inner ring vertices.
+        for i in 0..segs {
+            let a = (i as f32) / (segs as f32) * std::f32::consts::TAU;
+            let (s, c) = a.sin_cos();
+            let x = c * inner;
+            let y = s * inner;
+            let uv = [0.5 + x / (2.0 * outer), 0.5 - y / (2.0 * outer)];
+            vertices.push(CpuVertex {
+                pos: [x, y, 0.0],
+                uv,
+                normal: n,
+            });
+        }
+
+        // Indices (two triangles per segment).
+        for i in 0..segs {
+            let next = (i + 1) % segs;
+            let outer_i = i;
+            let outer_n = next;
+            let inner_i = segs + i;
+            let inner_n = segs + next;
+
+            // Quad: outer_i -> outer_n -> inner_n -> inner_i
+            indices.extend_from_slice(&[outer_i, outer_n, inner_n]);
+            indices.extend_from_slice(&[outer_i, inner_n, inner_i]);
+        }
+
+        CpuMesh::new(vertices, indices)
+    }
 }

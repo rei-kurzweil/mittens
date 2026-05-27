@@ -1,22 +1,39 @@
 use crate::engine::ecs::component::CameraXRComponent;
 use crate::engine::ecs::component::OpenXRComponent;
+use crate::engine::ecs::component::{
+    ControllerHand, ControllerPoseKind, ControllerXRComponent, InputXRComponent,
+};
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
-use crate::engine::ecs::{ComponentId, World};
+use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::engine::graphics::CameraData;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::VulkanoRenderer;
 use crate::engine::graphics::XRSwapchain;
 use crate::engine::graphics::XrVulkanGraphics;
+use crate::engine::graphics::xr_renderer;
 use crate::engine::user_input::InputState;
+use crate::utils::math;
 
 use ash::vk::Handle as _;
+
+use std::collections::{HashSet, VecDeque};
+use std::sync::OnceLock;
+use std::time::Instant;
 
 pub struct OpenXRSystem {
     state: Option<OpenXRState>,
     last_init_error: Option<String>,
     vulkan_graphics: Option<XrVulkanGraphics>,
     preferred_swapchain_format: Option<u32>,
+
+    // Best-effort XR frame timing diagnostics.
+    last_render_instant: Option<Instant>,
+    last_render_dt_sec: Option<f32>,
+
+    input_xr_components: HashSet<ComponentId>,
+    controller_components: HashSet<ComponentId>,
+
 }
 
 struct OpenXRState {
@@ -39,6 +56,7 @@ struct OpenXRSessionState {
     frame_stream: openxr::FrameStream<openxr::Vulkan>,
     reference_space: openxr::Space,
     running: bool,
+    current_state: openxr::SessionState,
 
     xr_swapchain: XRSwapchain,
 
@@ -48,8 +66,66 @@ struct OpenXRSessionState {
 
     vk_device: ash::Device,
     vk_queue: ash::vk::Queue,
+
+    #[allow(dead_code)]
     vk_command_pool: ash::vk::CommandPool,
     vk_command_buffer: ash::vk::CommandBuffer,
+
+    hand_tracking: Option<HandTrackingState>,
+    hand_root_pose_cache: HandRootPoseCache,
+    hand_rotation_debug: HandRotationDebugState,
+    head_pose_cache: Option<openxr::Posef>,
+    controller_input: Option<ControllerInput>,
+    controller_pose_cache: ControllerPoseCache,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct ControllerPoseCache {
+    left_aim: Option<openxr::Posef>,
+    right_aim: Option<openxr::Posef>,
+    left_grip: Option<openxr::Posef>,
+    right_grip: Option<openxr::Posef>,
+}
+
+struct HandTrackingState {
+    left: openxr::HandTracker,
+    right: openxr::HandTracker,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct HandRootPoseCache {
+    left_root: Option<openxr::Posef>,
+    right_root: Option<openxr::Posef>,
+    left_root_joint: Option<openxr::HandJointEXT>,
+    right_root_joint: Option<openxr::HandJointEXT>,
+}
+
+#[derive(Debug, Default)]
+struct HandRotationDebugState {
+    left: RollingAngleWindow,
+    right: RollingAngleWindow,
+}
+
+#[derive(Debug, Default)]
+struct RollingAngleWindow {
+    previous_quat_xyzw: Option<[f32; 4]>,
+    step_deg: VecDeque<f32>,
+    sample_count: u64,
+}
+
+#[allow(dead_code)]
+struct ControllerInput {
+    action_set: openxr::ActionSet,
+    aim_pose: openxr::Action<openxr::Posef>,
+    grip_pose: openxr::Action<openxr::Posef>,
+
+    left: openxr::Path,
+    right: openxr::Path,
+
+    left_aim_space: openxr::Space,
+    right_aim_space: openxr::Space,
+    left_grip_space: openxr::Space,
+    right_grip_space: openxr::Space,
 }
 
 impl Default for OpenXRSystem {
@@ -59,6 +135,13 @@ impl Default for OpenXRSystem {
             last_init_error: None,
             vulkan_graphics: None,
             preferred_swapchain_format: None,
+
+            last_render_instant: None,
+            last_render_dt_sec: None,
+
+            input_xr_components: HashSet::new(),
+            controller_components: HashSet::new(),
+
         }
     }
 }
@@ -68,11 +151,252 @@ impl std::fmt::Debug for OpenXRSystem {
         f.debug_struct("OpenXRSystem")
             .field("initialized", &self.state.is_some())
             .field("last_init_error", &self.last_init_error)
+            .field("last_render_dt_sec", &self.last_render_dt_sec)
             .finish()
     }
 }
 
 impl OpenXRSystem {
+    fn debug_hand_rotation_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            std::env::var("CAT_DEBUG_XR_HAND_ROTATION")
+                .ok()
+                .map(|value| {
+                    let value = value.trim().to_ascii_lowercase();
+                    matches!(value.as_str(), "1" | "true" | "yes" | "on")
+                })
+                .unwrap_or(false)
+        })
+    }
+
+    fn debug_hand_rotation_window_len() -> usize {
+        static WINDOW_LEN: OnceLock<usize> = OnceLock::new();
+        *WINDOW_LEN.get_or_init(|| {
+            std::env::var("CAT_DEBUG_XR_HAND_ROTATION_WINDOW")
+                .ok()
+                .and_then(|value| value.parse::<usize>().ok())
+                .map(|value| value.clamp(1, 600))
+                .unwrap_or(60)
+        })
+    }
+
+    fn quat_from_posef(pose: openxr::Posef) -> [f32; 4] {
+        [
+            pose.orientation.x,
+            pose.orientation.y,
+            pose.orientation.z,
+            pose.orientation.w,
+        ]
+    }
+
+    fn quat_normalize(q: [f32; 4]) -> [f32; 4] {
+        let len = (q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]).sqrt();
+        if len > 0.0 {
+            [q[0] / len, q[1] / len, q[2] / len, q[3] / len]
+        } else {
+            [0.0, 0.0, 0.0, 1.0]
+        }
+    }
+
+    fn quat_nlerp(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
+        let mut end = b;
+        let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+        if dot < 0.0 {
+            end = [-b[0], -b[1], -b[2], -b[3]];
+        }
+        let one_minus_t = 1.0 - t;
+        Self::quat_normalize([
+            a[0] * one_minus_t + end[0] * t,
+            a[1] * one_minus_t + end[1] * t,
+            a[2] * one_minus_t + end[2] * t,
+            a[3] * one_minus_t + end[3] * t,
+        ])
+    }
+
+    fn pose_from_quat_translation(
+        rotation_xyzw: [f32; 4],
+        translation_xyz: [f32; 3],
+    ) -> openxr::Posef {
+        openxr::Posef {
+            orientation: openxr::Quaternionf {
+                x: rotation_xyzw[0],
+                y: rotation_xyzw[1],
+                z: rotation_xyzw[2],
+                w: rotation_xyzw[3],
+            },
+            position: openxr::Vector3f {
+                x: translation_xyz[0],
+                y: translation_xyz[1],
+                z: translation_xyz[2],
+            },
+        }
+    }
+
+    fn derive_head_pose(views: &[openxr::View]) -> Option<openxr::Posef> {
+        match views {
+            [] => None,
+            [view] => Some(view.pose),
+            [left, right, ..] => {
+                let left_q = Self::quat_from_posef(left.pose);
+                let right_q = Self::quat_from_posef(right.pose);
+                let center_q = Self::quat_nlerp(left_q, right_q, 0.5);
+                let center_t = [
+                    0.5 * (left.pose.position.x + right.pose.position.x),
+                    0.5 * (left.pose.position.y + right.pose.position.y),
+                    0.5 * (left.pose.position.z + right.pose.position.z),
+                ];
+                Some(Self::pose_from_quat_translation(center_q, center_t))
+            }
+        }
+    }
+
+    fn quat_angle_degrees(a: [f32; 4], b: [f32; 4]) -> f32 {
+        let a = Self::quat_normalize(a);
+        let b = Self::quat_normalize(b);
+        let dot = (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3])
+            .abs()
+            .clamp(0.0, 1.0);
+        (2.0 * dot.acos()).to_degrees()
+    }
+
+    fn rolling_avg(window: &VecDeque<f32>) -> f32 {
+        if window.is_empty() {
+            0.0
+        } else {
+            window.iter().copied().sum::<f32>() / window.len() as f32
+        }
+    }
+
+    fn rolling_max(window: &VecDeque<f32>) -> f32 {
+        window.iter().copied().fold(0.0, f32::max)
+    }
+
+    fn update_hand_rotation_debug(
+        debug_state: &mut HandRotationDebugState,
+        hand: ControllerHand,
+        _joint: Option<openxr::HandJointEXT>,
+        pose: openxr::Posef,
+    ) {
+        if !Self::debug_hand_rotation_enabled() {
+            return;
+        }
+
+        let quat = Self::quat_from_posef(pose);
+        let window_len = Self::debug_hand_rotation_window_len();
+        let debug = match hand {
+            ControllerHand::Left => &mut debug_state.left,
+            ControllerHand::Right => &mut debug_state.right,
+        };
+
+        let step_deg = debug
+            .previous_quat_xyzw
+            .map(|previous| Self::quat_angle_degrees(previous, quat))
+            .unwrap_or(0.0);
+        debug.previous_quat_xyzw = Some(quat);
+
+        if debug.step_deg.len() >= window_len {
+            let _ = debug.step_deg.pop_front();
+        }
+        debug.step_deg.push_back(step_deg);
+        debug.sample_count += 1;
+
+        let _ = window_len;
+    }
+
+    fn preferred_pose(
+        sess: &OpenXRSessionState,
+        hand: ControllerHand,
+        pose: ControllerPoseKind,
+    ) -> (Option<openxr::Posef>, &'static str) {
+        let hand_root = match hand {
+            ControllerHand::Left => sess.hand_root_pose_cache.left_root,
+            ControllerHand::Right => sess.hand_root_pose_cache.right_root,
+        };
+        if let Some(pose) = hand_root {
+            return (Some(pose), "hand_root");
+        }
+
+        let controller_pose = match (hand, pose) {
+            (ControllerHand::Left, ControllerPoseKind::Aim) => sess.controller_pose_cache.left_aim,
+            (ControllerHand::Right, ControllerPoseKind::Aim) => {
+                sess.controller_pose_cache.right_aim
+            }
+            (ControllerHand::Left, ControllerPoseKind::Grip) => {
+                sess.controller_pose_cache.left_grip
+            }
+            (ControllerHand::Right, ControllerPoseKind::Grip) => {
+                sess.controller_pose_cache.right_grip
+            }
+        };
+
+        if controller_pose.is_some() {
+            (controller_pose, "controller_action")
+        } else {
+            (None, "none")
+        }
+    }
+
+    fn transform_child_of(world: &World, component: ComponentId) -> Option<ComponentId> {
+        world.children_of(component).iter().copied().find(|&cid| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(cid)
+                .is_some()
+        })
+    }
+
+    fn transform_parent_world(world: &World, transform_cid: ComponentId) -> [[f32; 4]; 4] {
+        world
+            .parent_of(transform_cid)
+            .and_then(|parent| TransformSystem::world_model(world, parent))
+            .unwrap_or([
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ])
+    }
+
+    fn input_xr_ancestor(world: &World, cid: ComponentId) -> Option<ComponentId> {
+        let mut cur = cid;
+        loop {
+            if world.get_component_by_id_as::<InputXRComponent>(cur).is_some() {
+                return Some(cur);
+            }
+            let Some(parent) = world.parent_of(cur) else {
+                return None;
+            };
+            cur = parent;
+        }
+    }
+
+    fn xr_rig_origin_world(world: &World, visuals: &VisualWorld) -> [[f32; 4]; 4] {
+        let Some(camera_cid) = visuals
+            .active_xr_camera()
+            .or_else(|| Self::first_enabled_camera_xr(world))
+        else {
+            return [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ];
+        };
+
+        if let Some(input_xr_cid) = Self::input_xr_ancestor(world, camera_cid) {
+            if let Some(driven_transform) = Self::transform_child_of(world, input_xr_cid) {
+                return Self::transform_parent_world(world, driven_transform);
+            }
+        }
+
+        TransformSystem::world_model(world, camera_cid).unwrap_or([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+    }
+
     /// Hint: prefer this Vulkan `VkFormat` (as raw `u32`) when creating the OpenXR swapchain.
     ///
     /// This is used to match the window renderer's color attachment format, so we can copy
@@ -167,10 +491,410 @@ impl OpenXRSystem {
         }
     }
 
+    pub fn register_controller_xr(
+        &mut self,
+        _world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.controller_components.insert(component);
+    }
+
+    pub fn register_input_xr(
+        &mut self,
+        _world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.input_xr_components.insert(component);
+    }
+
+    pub fn remove_controller_xr(
+        &mut self,
+        _world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.controller_components.remove(&component);
+    }
+
+    pub fn remove_input_xr(
+        &mut self,
+        _world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.input_xr_components.remove(&component);
+    }
+
+    fn pump_events(&mut self) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+
+        // Drain events; for now we just print key session state transitions.
+        loop {
+            let evt = match state.instance.poll_event(&mut state.events) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("[OpenXR] poll_event error: {e:?}");
+                    return;
+                }
+            };
+
+            let Some(evt) = evt else {
+                break;
+            };
+
+            match evt {
+                openxr::Event::InstanceLossPending(_) => {
+                    eprintln!("[OpenXR] Event: InstanceLossPending");
+                }
+                openxr::Event::SessionStateChanged(e) => {
+                    println!("[OpenXR] Event: SessionStateChanged -> {:?}", e.state());
+
+                    if let Some(sess) = state.session.as_mut() {
+                        sess.current_state = e.state();
+                        match e.state() {
+                            openxr::SessionState::READY => {
+                                if !sess.running {
+                                    if let Err(err) = sess.session.begin(state.view_type) {
+                                        eprintln!("[OpenXR] session.begin failed: {err:?}");
+                                    } else {
+                                        sess.running = true;
+                                    }
+                                }
+                            }
+                            openxr::SessionState::STOPPING => {
+                                if sess.running {
+                                    if let Err(err) = sess.session.end() {
+                                        eprintln!("[OpenXR] session.end failed: {err:?}");
+                                    }
+                                    sess.running = false;
+                                }
+                            }
+                            openxr::SessionState::EXITING | openxr::SessionState::LOSS_PENDING => {
+                                sess.running = false;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                openxr::Event::EventsLost(e) => {
+                    eprintln!("[OpenXR] Event: EventsLost ({})", e.lost_event_count());
+                }
+                _ => {
+                    // Too noisy to print everything by default.
+                }
+            }
+        }
+    }
+
+    /// Like `tick`, but also queues transform updates for registered ControllerXRComponents.
+    ///
+    /// Controller poses are sourced from the last cache update performed during `render_xr`.
+    pub fn tick_with_queue(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        _input: &InputState,
+        emit: &mut dyn SignalEmitter,
+        _dt_sec: f32,
+    ) {
+        self.pump_events();
+
+        let Some(state) = self.state.as_ref() else {
+            return;
+        };
+        let Some(sess) = state.session.as_ref() else {
+            return;
+        };
+        if !sess.running {
+            return;
+        }
+
+        // Compose headset/controller poses with the authored XR rig origin.
+        let rig_world = Self::xr_rig_origin_world(world, visuals);
+
+        let input_xr_ids: Vec<ComponentId> = self.input_xr_components.iter().copied().collect();
+        for input_xr_cid in input_xr_ids {
+            let Some(cfg) = world.get_component_by_id_as::<InputXRComponent>(input_xr_cid) else {
+                self.input_xr_components.remove(&input_xr_cid);
+                continue;
+            };
+
+            if !cfg.enabled {
+                continue;
+            }
+
+            let Some(head_pose) = sess.head_pose_cache else {
+                continue;
+            };
+
+            let Some(tcid) = Self::transform_child_of(world, input_xr_cid) else {
+                continue;
+            };
+
+            let world_from_head = Self::mul_mat4(
+                &Self::transform_parent_world(world, tcid),
+                &Self::mat4_from_pose(head_pose),
+            );
+            let desired_world_pos = [
+                world_from_head[3][0],
+                world_from_head[3][1],
+                world_from_head[3][2],
+            ];
+            let desired_world_rot = Self::quat_from_mat4(&world_from_head);
+
+            let local_translation =
+                Self::world_to_local_translation(world, tcid, desired_world_pos);
+            let parent_world_rot =
+                Self::parent_world_rotation_quat(world, tcid).unwrap_or([0.0, 0.0, 0.0, 1.0]);
+            let local_rotation =
+                math::quat_mul(math::quat_conjugate(parent_world_rot), desired_world_rot);
+
+            let Some(t) = world
+                .get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(
+                    tcid,
+                )
+            else {
+                continue;
+            };
+
+            t.transform.translation = local_translation;
+            t.transform.rotation = local_rotation;
+            t.transform.recompute_model();
+
+            let transform = t.transform;
+            emit.push_intent_now(
+                tcid,
+                IntentValue::UpdateTransform {
+                    component_ids: vec![tcid],
+                    translation: transform.translation,
+                    rotation_quat_xyzw: transform.rotation,
+                    scale: transform.scale,
+                },
+            );
+        }
+
+        let controller_ids: Vec<ComponentId> = self.controller_components.iter().copied().collect();
+        for controller_cid in controller_ids {
+            let Some(cfg) = world.get_component_by_id_as::<ControllerXRComponent>(controller_cid)
+            else {
+                self.controller_components.remove(&controller_cid);
+                continue;
+            };
+
+            if !cfg.enabled {
+                continue;
+            }
+
+            let (pose, _pose_source) = Self::preferred_pose(sess, cfg.hand, cfg.pose);
+
+            let Some(pose) = pose else {
+                continue;
+            };
+
+            // Semantics: ControllerXRComponent drives a TransformComponent child, if present.
+            let Some(tcid) = Self::transform_child_of(world, controller_cid) else {
+                continue;
+            };
+
+            // Pose is in OpenXR reference space; convert to engine world by applying rig transform.
+            let world_from_controller = Self::mul_mat4(&rig_world, &Self::mat4_from_pose(pose));
+            let desired_world_pos = [
+                world_from_controller[3][0],
+                world_from_controller[3][1],
+                world_from_controller[3][2],
+            ];
+            let desired_world_rot = Self::quat_from_mat4(&world_from_controller);
+
+            let local_translation =
+                Self::world_to_local_translation(world, tcid, desired_world_pos);
+            let parent_world_rot =
+                Self::parent_world_rotation_quat(world, tcid).unwrap_or([0.0, 0.0, 0.0, 1.0]);
+            let local_rotation =
+                math::quat_mul(math::quat_conjugate(parent_world_rot), desired_world_rot);
+
+            let Some(t) = world
+                .get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(
+                    tcid,
+                )
+            else {
+                continue;
+            };
+
+            // Convert world-space target into local-space values relative to the nearest parent
+            // transform above `tcid` (if any), matching how transform chains are composed.
+            t.transform.translation = local_translation;
+            t.transform.rotation = local_rotation;
+            t.transform.recompute_model();
+
+            let transform = t.transform;
+            emit.push_intent_now(
+                tcid,
+                IntentValue::UpdateTransform {
+                    component_ids: vec![tcid],
+                    translation: transform.translation,
+                    rotation_quat_xyzw: transform.rotation,
+                    scale: transform.scale,
+                },
+            );
+        }
+    }
+
+    fn world_to_local_translation(
+        world: &World,
+        transform_cid: ComponentId,
+        desired_world: [f32; 3],
+    ) -> [f32; 3] {
+        let mut cur = transform_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(t) = world
+                .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(parent)
+            {
+                if let Some(inv) = math::mat4_inverse(t.transform.matrix_world) {
+                    let p_local = Self::mat4_mul_vec4(
+                        inv,
+                        [desired_world[0], desired_world[1], desired_world[2], 1.0],
+                    );
+                    return [p_local[0], p_local[1], p_local[2]];
+                }
+                break;
+            }
+            cur = parent;
+        }
+
+        desired_world
+    }
+
+    fn parent_world_rotation_quat(world: &World, transform_cid: ComponentId) -> Option<[f32; 4]> {
+        let mut cur = transform_cid;
+        while let Some(parent) = world.parent_of(cur) {
+            if let Some(t) = world
+                .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(parent)
+            {
+                return Some(Self::quat_from_mat4(&t.transform.matrix_world));
+            }
+            cur = parent;
+        }
+        None
+    }
+
+    fn mat4_mul_vec4(m: [[f32; 4]; 4], v: [f32; 4]) -> [f32; 4] {
+        [
+            m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2] + m[3][0] * v[3],
+            m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2] + m[3][1] * v[3],
+            m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2] + m[3][2] * v[3],
+            m[0][3] * v[0] + m[1][3] * v[1] + m[2][3] * v[2] + m[3][3] * v[3],
+        ]
+    }
+
+    /// Extract a unit quaternion from the rotation part of a column-major 4x4 matrix.
+    ///
+    /// Best-effort: normalizes basis vectors to remove uniform/non-uniform scale.
+    fn quat_from_mat4(m: &[[f32; 4]; 4]) -> [f32; 4] {
+        let mut x = [m[0][0], m[0][1], m[0][2]];
+        let mut y = [m[1][0], m[1][1], m[1][2]];
+        let mut z = [m[2][0], m[2][1], m[2][2]];
+
+        let nx = (x[0] * x[0] + x[1] * x[1] + x[2] * x[2]).sqrt();
+        let ny = (y[0] * y[0] + y[1] * y[1] + y[2] * y[2]).sqrt();
+        let nz = (z[0] * z[0] + z[1] * z[1] + z[2] * z[2]).sqrt();
+        if nx > 0.0 {
+            x[0] /= nx;
+            x[1] /= nx;
+            x[2] /= nx;
+        }
+        if ny > 0.0 {
+            y[0] /= ny;
+            y[1] /= ny;
+            y[2] /= ny;
+        }
+        if nz > 0.0 {
+            z[0] /= nz;
+            z[1] /= nz;
+            z[2] /= nz;
+        }
+
+        // Convert column-major basis into row-major rotation entries.
+        let r00 = x[0];
+        let r01 = y[0];
+        let r02 = z[0];
+        let r10 = x[1];
+        let r11 = y[1];
+        let r12 = z[1];
+        let r20 = x[2];
+        let r21 = y[2];
+        let r22 = z[2];
+
+        let trace = r00 + r11 + r22;
+        let (qx, qy, qz, qw) = if trace > 0.0 {
+            let s = (trace + 1.0).sqrt() * 2.0;
+            ((r21 - r12) / s, (r02 - r20) / s, (r10 - r01) / s, 0.25 * s)
+        } else if r00 > r11 && r00 > r22 {
+            let s = (1.0 + r00 - r11 - r22).sqrt() * 2.0;
+            (0.25 * s, (r01 + r10) / s, (r02 + r20) / s, (r21 - r12) / s)
+        } else if r11 > r22 {
+            let s = (1.0 + r11 - r00 - r22).sqrt() * 2.0;
+            ((r01 + r10) / s, 0.25 * s, (r12 + r21) / s, (r02 - r20) / s)
+        } else {
+            let s = (1.0 + r22 - r00 - r11).sqrt() * 2.0;
+            ((r02 + r20) / s, (r12 + r21) / s, 0.25 * s, (r10 - r01) / s)
+        };
+
+        let len = (qx * qx + qy * qy + qz * qz + qw * qw).sqrt();
+        if len > 0.0 {
+            [qx / len, qy / len, qz / len, qw / len]
+        } else {
+            [0.0, 0.0, 0.0, 1.0]
+        }
+    }
+
+    fn try_init_hand_tracking(
+        session: &openxr::Session<openxr::Vulkan>,
+    ) -> Result<HandTrackingState, String> {
+        let left = session
+            .create_hand_tracker(openxr::HandEXT::LEFT)
+            .map_err(|e| format!("create_hand_tracker(left): {e:?}"))?;
+        let right = session
+            .create_hand_tracker(openxr::HandEXT::RIGHT)
+            .map_err(|e| format!("create_hand_tracker(right): {e:?}"))?;
+
+        Ok(HandTrackingState { left, right })
+    }
+
+    fn valid_pose_from_hand_joint(joint: &openxr::HandJointLocationEXT) -> Option<openxr::Posef> {
+        let flags = joint.location_flags;
+        if flags.contains(openxr::SpaceLocationFlags::POSITION_VALID)
+            && flags.contains(openxr::SpaceLocationFlags::ORIENTATION_VALID)
+        {
+            Some(joint.pose)
+        } else {
+            None
+        }
+    }
+
+    fn select_hand_root_pose(
+        joints: &openxr::HandJointLocations,
+    ) -> Option<(openxr::Posef, openxr::HandJointEXT)> {
+        let wrist = &joints[openxr::HandJointEXT::WRIST];
+        if let Some(pose) = Self::valid_pose_from_hand_joint(wrist) {
+            return Some((pose, openxr::HandJointEXT::WRIST));
+        }
+
+        let palm = &joints[openxr::HandJointEXT::PALM];
+        Self::valid_pose_from_hand_joint(palm).map(|pose| (pose, openxr::HandJointEXT::PALM))
+    }
+
     fn try_init_openxr() -> Result<OpenXRState, String> {
         // Prefer dynamically loading the OpenXR loader. This keeps us from requiring
         // special linker setup and matches typical Linux setups.
         let entry = unsafe { openxr::Entry::load().map_err(|e| format!("Entry::load: {e:?}"))? };
+
+        let available_extensions = entry
+            .enumerate_extensions()
+            .map_err(|e| format!("enumerate_extensions: {e:?}"))?;
 
         let app_info = openxr::ApplicationInfo {
             application_name: "cat-engine",
@@ -187,11 +911,32 @@ impl OpenXRSystem {
         extensions.khr_vulkan_enable2 = false;
         // Needed for Vulkan session creation.
         extensions.khr_vulkan_enable = true;
+        if available_extensions.ext_hand_tracking {
+            extensions.ext_hand_tracking = true;
+        }
+        if available_extensions.ext_hand_interaction {
+            extensions.ext_hand_interaction = true;
+        }
+        if available_extensions.htc_vive_focus3_controller_interaction {
+            extensions.htc_vive_focus3_controller_interaction = true;
+        }
+        if available_extensions.htc_hand_interaction {
+            extensions.htc_hand_interaction = true;
+        }
         let layers: [&str; 0] = [];
 
         let instance = entry
             .create_instance(&app_info, &extensions, &layers)
             .map_err(|e| format!("create_instance: {e:?}"))?;
+
+        println!(
+            "[OpenXR] Enabled extensions: khr_vulkan_enable={}, ext_hand_tracking={}, ext_hand_interaction={}, htc_vive_focus3_controller_interaction={}, htc_hand_interaction={}",
+            extensions.khr_vulkan_enable,
+            extensions.ext_hand_tracking,
+            extensions.ext_hand_interaction,
+            extensions.htc_vive_focus3_controller_interaction,
+            extensions.htc_hand_interaction,
+        );
 
         // Best-effort runtime identification (helps debugging which OpenXR runtime is active).
         if let Ok(props) = instance.properties() {
@@ -308,6 +1053,41 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             .create_reference_space(openxr::ReferenceSpaceType::LOCAL, openxr::Posef::IDENTITY)
             .map_err(|e| format!("create_reference_space(LOCAL): {e:?}"))?;
 
+        let controller_input = match Self::try_init_controller_input(&state.instance, &session) {
+            Ok(v) => {
+                println!("[OpenXR] Controller input initialized.");
+                Some(v)
+            }
+            Err(err) => {
+                eprintln!("[OpenXR] Controller input init failed: {err}");
+                None
+            }
+        };
+
+        let hand_tracking = match state.instance.supports_hand_tracking(state.system) {
+            Ok(v) => {
+                println!("[OpenXR] Runtime supports hand tracking: {v}");
+                if v {
+                    match Self::try_init_hand_tracking(&session) {
+                        Ok(trackers) => {
+                            println!("[OpenXR] Hand tracking initialized.");
+                            Some(trackers)
+                        }
+                        Err(err) => {
+                            eprintln!("[OpenXR] Hand tracking init failed: {err}");
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+            Err(e) => {
+                eprintln!("[OpenXR] supports_hand_tracking query failed: {e:?}");
+                None
+            }
+        };
+
         let xr_swapchain = XRSwapchain::new(
             &state.instance,
             &session,
@@ -360,6 +1140,7 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             frame_stream,
             reference_space,
             running: false,
+            current_state: openxr::SessionState::IDLE,
 
             xr_swapchain,
 
@@ -371,10 +1152,112 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             vk_queue,
             vk_command_pool,
             vk_command_buffer,
+
+            hand_tracking,
+            hand_root_pose_cache: HandRootPoseCache::default(),
+            hand_rotation_debug: HandRotationDebugState::default(),
+            head_pose_cache: None,
+            controller_input,
+            controller_pose_cache: ControllerPoseCache::default(),
         });
 
         println!("[OpenXR] Session created (Vulkan)");
         Ok(())
+    }
+
+    fn try_init_controller_input(
+        instance: &openxr::Instance,
+        session: &openxr::Session<openxr::Vulkan>,
+    ) -> Result<ControllerInput, String> {
+        let left = instance
+            .string_to_path("/user/hand/left")
+            .map_err(|e| format!("string_to_path(/user/hand/left): {e:?}"))?;
+        let right = instance
+            .string_to_path("/user/hand/right")
+            .map_err(|e| format!("string_to_path(/user/hand/right): {e:?}"))?;
+
+        let action_set = instance
+            .create_action_set("cat_engine", "Cat Engine", 0)
+            .map_err(|e| format!("create_action_set: {e:?}"))?;
+
+        let subaction_paths = [left, right];
+        let aim_pose = action_set
+            .create_action::<openxr::Posef>("aim_pose", "Aim Pose", &subaction_paths)
+            .map_err(|e| format!("create_action(aim_pose): {e:?}"))?;
+        let grip_pose = action_set
+            .create_action::<openxr::Posef>("grip_pose", "Grip Pose", &subaction_paths)
+            .map_err(|e| format!("create_action(grip_pose): {e:?}"))?;
+
+        // Create spaces for each subaction path.
+        let left_aim_space = aim_pose
+            .create_space(session.clone(), left, openxr::Posef::IDENTITY)
+            .map_err(|e| format!("aim_pose.create_space(left): {e:?}"))?;
+        let right_aim_space = aim_pose
+            .create_space(session.clone(), right, openxr::Posef::IDENTITY)
+            .map_err(|e| format!("aim_pose.create_space(right): {e:?}"))?;
+        let left_grip_space = grip_pose
+            .create_space(session.clone(), left, openxr::Posef::IDENTITY)
+            .map_err(|e| format!("grip_pose.create_space(left): {e:?}"))?;
+        let right_grip_space = grip_pose
+            .create_space(session.clone(), right, openxr::Posef::IDENTITY)
+            .map_err(|e| format!("grip_pose.create_space(right): {e:?}"))?;
+
+        // Attach the action set so sync_actions can be called.
+        session
+            .attach_action_sets(&[&action_set])
+            .map_err(|e| format!("attach_action_sets: {e:?}"))?;
+
+        // Best-effort bindings for common interaction profiles.
+        // Runtimes will ignore profiles they don't support.
+        let profiles = [
+            "/interaction_profiles/khr/simple_controller",
+            "/interaction_profiles/oculus/touch_controller",
+            "/interaction_profiles/htc/vive_controller",
+            "/interaction_profiles/htc/vive_focus3_controller",
+            "/interaction_profiles/valve/index_controller",
+            "/interaction_profiles/microsoft/motion_controller",
+            "/interaction_profiles/ext/hand_interaction_ext",
+        ];
+
+        let left_aim_path = instance
+            .string_to_path("/user/hand/left/input/aim/pose")
+            .map_err(|e| format!("string_to_path(left aim): {e:?}"))?;
+        let right_aim_path = instance
+            .string_to_path("/user/hand/right/input/aim/pose")
+            .map_err(|e| format!("string_to_path(right aim): {e:?}"))?;
+        let left_grip_path = instance
+            .string_to_path("/user/hand/left/input/grip/pose")
+            .map_err(|e| format!("string_to_path(left grip): {e:?}"))?;
+        let right_grip_path = instance
+            .string_to_path("/user/hand/right/input/grip/pose")
+            .map_err(|e| format!("string_to_path(right grip): {e:?}"))?;
+
+        let bindings = [
+            openxr::Binding::new(&aim_pose, left_aim_path),
+            openxr::Binding::new(&aim_pose, right_aim_path),
+            openxr::Binding::new(&grip_pose, left_grip_path),
+            openxr::Binding::new(&grip_pose, right_grip_path),
+        ];
+
+        for profile_str in profiles {
+            let Ok(profile) = instance.string_to_path(profile_str) else {
+                continue;
+            };
+            // Not all runtimes support every profile; treat as best-effort.
+            let _ = instance.suggest_interaction_profile_bindings(profile, &bindings);
+        }
+
+        Ok(ControllerInput {
+            action_set,
+            aim_pose,
+            grip_pose,
+            left,
+            right,
+            left_aim_space,
+            right_aim_space,
+            left_grip_space,
+            right_grip_space,
+        })
     }
 
     fn first_enabled_camera_xr(world: &World) -> Option<ComponentId> {
@@ -510,108 +1393,6 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
         ]
     }
 
-    fn clear_xr_swapchain_image(
-        sess: &OpenXRSessionState,
-        image: ash::vk::Image,
-        rgba: [f32; 4],
-        was_initialized: bool,
-    ) -> Result<(), ash::vk::Result> {
-        let clear = ash::vk::ClearColorValue { float32: rgba };
-
-        let old_layout = if was_initialized {
-            ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
-        } else {
-            ash::vk::ImageLayout::UNDEFINED
-        };
-
-        let src_stage = if was_initialized {
-            ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT
-        } else {
-            ash::vk::PipelineStageFlags::TOP_OF_PIPE
-        };
-
-        let src_access = if was_initialized {
-            ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE
-        } else {
-            ash::vk::AccessFlags::empty()
-        };
-
-        unsafe {
-            sess.vk_device.reset_command_buffer(
-                sess.vk_command_buffer,
-                ash::vk::CommandBufferResetFlags::empty(),
-            )?;
-
-            sess.vk_device.begin_command_buffer(
-                sess.vk_command_buffer,
-                &ash::vk::CommandBufferBeginInfo::default()
-                    .flags(ash::vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
-            )?;
-
-            let range = ash::vk::ImageSubresourceRange::default()
-                .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
-                .base_mip_level(0)
-                .level_count(1)
-                .base_array_layer(0)
-                .layer_count(sess.xr_swapchain.view_count());
-
-            // Transition UNDEFINED -> TRANSFER_DST_OPTIMAL.
-            let barrier_to_transfer = ash::vk::ImageMemoryBarrier::default()
-                .old_layout(old_layout)
-                .new_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                .src_access_mask(src_access)
-                .dst_access_mask(ash::vk::AccessFlags::TRANSFER_WRITE)
-                .image(image)
-                .subresource_range(range);
-
-            sess.vk_device.cmd_pipeline_barrier(
-                sess.vk_command_buffer,
-                src_stage,
-                ash::vk::PipelineStageFlags::TRANSFER,
-                ash::vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[barrier_to_transfer],
-            );
-
-            sess.vk_device.cmd_clear_color_image(
-                sess.vk_command_buffer,
-                image,
-                ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                &clear,
-                &[range],
-            );
-
-            // Transition TRANSFER_DST_OPTIMAL -> COLOR_ATTACHMENT_OPTIMAL.
-            let barrier_to_color = ash::vk::ImageMemoryBarrier::default()
-                .old_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                .new_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .src_access_mask(ash::vk::AccessFlags::TRANSFER_WRITE)
-                .dst_access_mask(ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                .image(image)
-                .subresource_range(range);
-
-            sess.vk_device.cmd_pipeline_barrier(
-                sess.vk_command_buffer,
-                ash::vk::PipelineStageFlags::TRANSFER,
-                ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                ash::vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[barrier_to_color],
-            );
-
-            sess.vk_device.end_command_buffer(sess.vk_command_buffer)?;
-
-            let command_buffers = [sess.vk_command_buffer];
-            let submit_info = ash::vk::SubmitInfo::default().command_buffers(&command_buffers);
-            sess.vk_device
-                .queue_submit(sess.vk_queue, &[submit_info], ash::vk::Fence::null())?;
-            sess.vk_device.queue_wait_idle(sess.vk_queue)?;
-        }
-
-        Ok(())
-    }
 }
 
 impl System for OpenXRSystem {
@@ -622,72 +1403,15 @@ impl System for OpenXRSystem {
         _input: &InputState,
         _dt_sec: f32,
     ) {
-        let Some(state) = self.state.as_mut() else {
-            return;
-        };
-
-        // Drain events; for now we just print them so you can see the runtime is alive.
-        loop {
-            let evt = match state.instance.poll_event(&mut state.events) {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("[OpenXR] poll_event error: {e:?}");
-                    return;
-                }
-            };
-
-            let Some(evt) = evt else {
-                break;
-            };
-
-            // Avoid depending on Debug impls that might be missing.
-            match evt {
-                openxr::Event::InstanceLossPending(_) => {
-                    eprintln!("[OpenXR] Event: InstanceLossPending");
-                }
-                openxr::Event::SessionStateChanged(e) => {
-                    println!("[OpenXR] Event: SessionStateChanged -> {:?}", e.state());
-
-                    if let Some(sess) = state.session.as_mut() {
-                        match e.state() {
-                            openxr::SessionState::READY => {
-                                if !sess.running {
-                                    if let Err(err) = sess.session.begin(state.view_type) {
-                                        eprintln!("[OpenXR] session.begin failed: {err:?}");
-                                    } else {
-                                        sess.running = true;
-                                    }
-                                }
-                            }
-                            openxr::SessionState::STOPPING => {
-                                if sess.running {
-                                    if let Err(err) = sess.session.end() {
-                                        eprintln!("[OpenXR] session.end failed: {err:?}");
-                                    }
-                                    sess.running = false;
-                                }
-                            }
-                            openxr::SessionState::EXITING | openxr::SessionState::LOSS_PENDING => {
-                                sess.running = false;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                openxr::Event::EventsLost(e) => {
-                    eprintln!("[OpenXR] Event: EventsLost ({})", e.lost_event_count());
-                }
-                _ => {
-                    // Too noisy to print everything by default.
-                }
-            }
-        }
-
-        // Rendering is driven from Universe::render via `OpenXRSystem::render_xr`.
+        self.pump_events();
     }
 }
 
 impl OpenXRSystem {
+    pub fn last_render_dt_sec(&self) -> Option<f32> {
+        self.last_render_dt_sec
+    }
+
     pub fn render_xr(
         &mut self,
         world: &World,
@@ -695,14 +1419,27 @@ impl OpenXRSystem {
         renderer: &mut VulkanoRenderer,
     ) {
         let Some(state) = self.state.as_mut() else {
+            visuals.set_xr_frame_dt_sec(None);
             return;
         };
 
         let Some(sess) = state.session.as_mut() else {
+            visuals.set_xr_frame_dt_sec(None);
             return;
         };
         if !sess.running {
+            visuals.set_xr_frame_dt_sec(None);
             return;
+        }
+
+        let now = Instant::now();
+        let dt_sec = self
+            .last_render_instant
+            .map(|prev| now.saturating_duration_since(prev).as_secs_f32());
+        self.last_render_instant = Some(now);
+        if let Some(dt_sec) = dt_sec {
+            self.last_render_dt_sec = Some(dt_sec);
+            visuals.set_xr_frame_dt_sec(Some(dt_sec));
         }
 
         let frame_state = match sess.frame_waiter.wait() {
@@ -742,17 +1479,172 @@ impl OpenXRSystem {
             }
         };
 
+        sess.head_pose_cache = Self::derive_head_pose(&views);
+
+        let mut left_root_for_debug: Option<(openxr::Posef, openxr::HandJointEXT)> = None;
+        let mut right_root_for_debug: Option<(openxr::Posef, openxr::HandJointEXT)> = None;
+
+        if let Some(hand_tracking) = sess.hand_tracking.as_ref() {
+            let left_joints = sess.reference_space.locate_hand_joints(
+                &hand_tracking.left,
+                frame_state.predicted_display_time,
+            );
+            let right_joints = sess.reference_space.locate_hand_joints(
+                &hand_tracking.right,
+                frame_state.predicted_display_time,
+            );
+
+            match left_joints {
+                Ok(Some(joints)) => {
+                    let root = Self::select_hand_root_pose(&joints);
+                    sess.hand_root_pose_cache.left_root = root.map(|(pose, _)| pose);
+                    sess.hand_root_pose_cache.left_root_joint = root.map(|(_, joint)| joint);
+                    left_root_for_debug = root;
+                }
+                Ok(None) => {
+                    sess.hand_root_pose_cache.left_root = None;
+                    sess.hand_root_pose_cache.left_root_joint = None;
+                }
+                Err(e) => {
+                    sess.hand_root_pose_cache.left_root = None;
+                    sess.hand_root_pose_cache.left_root_joint = None;
+                    eprintln!("[OpenXR] locate_hand_joints(left) failed: {e:?}");
+                }
+            }
+
+            match right_joints {
+                Ok(Some(joints)) => {
+                    let root = Self::select_hand_root_pose(&joints);
+                    sess.hand_root_pose_cache.right_root = root.map(|(pose, _)| pose);
+                    sess.hand_root_pose_cache.right_root_joint = root.map(|(_, joint)| joint);
+                    right_root_for_debug = root;
+                }
+                Ok(None) => {
+                    sess.hand_root_pose_cache.right_root = None;
+                    sess.hand_root_pose_cache.right_root_joint = None;
+                }
+                Err(e) => {
+                    sess.hand_root_pose_cache.right_root = None;
+                    sess.hand_root_pose_cache.right_root_joint = None;
+                    eprintln!("[OpenXR] locate_hand_joints(right) failed: {e:?}");
+                }
+            }
+        } else {
+            sess.hand_root_pose_cache = HandRootPoseCache::default();
+        }
+
+        if let Some((pose, joint)) = left_root_for_debug {
+            Self::update_hand_rotation_debug(
+                &mut sess.hand_rotation_debug,
+                ControllerHand::Left,
+                Some(joint),
+                pose,
+            );
+        }
+        if let Some((pose, joint)) = right_root_for_debug {
+            Self::update_hand_rotation_debug(
+                &mut sess.hand_rotation_debug,
+                ControllerHand::Right,
+                Some(joint),
+                pose,
+            );
+        }
+
+        // Update controller pose cache at the same predicted time as views.
+        if let Some(ci) = sess.controller_input.as_ref() {
+            // Sync actions (best-effort).
+            let active = openxr::ActiveActionSet::new(&ci.action_set);
+            match sess.session.sync_actions(&[active]) {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("[OpenXR] sync_actions failed: {e:?}");
+                }
+            }
+
+            let update_pose = |space: &openxr::Space, base: &openxr::Space, t: openxr::Time| {
+                space.locate(base, t).ok()
+            };
+
+            if let Some(loc) = update_pose(
+                &ci.left_aim_space,
+                &sess.reference_space,
+                frame_state.predicted_display_time,
+            ) {
+                if loc
+                    .location_flags
+                    .contains(openxr::SpaceLocationFlags::POSITION_VALID)
+                    && loc
+                        .location_flags
+                        .contains(openxr::SpaceLocationFlags::ORIENTATION_VALID)
+                {
+                    sess.controller_pose_cache.left_aim = Some(loc.pose);
+                } else {
+                    sess.controller_pose_cache.left_aim = None;
+                }
+            } else {
+                sess.controller_pose_cache.left_aim = None;
+            }
+            if let Some(loc) = update_pose(
+                &ci.right_aim_space,
+                &sess.reference_space,
+                frame_state.predicted_display_time,
+            ) {
+                if loc
+                    .location_flags
+                    .contains(openxr::SpaceLocationFlags::POSITION_VALID)
+                    && loc
+                        .location_flags
+                        .contains(openxr::SpaceLocationFlags::ORIENTATION_VALID)
+                {
+                    sess.controller_pose_cache.right_aim = Some(loc.pose);
+                } else {
+                    sess.controller_pose_cache.right_aim = None;
+                }
+            } else {
+                sess.controller_pose_cache.right_aim = None;
+            }
+            if let Some(loc) = update_pose(
+                &ci.left_grip_space,
+                &sess.reference_space,
+                frame_state.predicted_display_time,
+            ) {
+                if loc
+                    .location_flags
+                    .contains(openxr::SpaceLocationFlags::POSITION_VALID)
+                    && loc
+                        .location_flags
+                        .contains(openxr::SpaceLocationFlags::ORIENTATION_VALID)
+                {
+                    sess.controller_pose_cache.left_grip = Some(loc.pose);
+                } else {
+                    sess.controller_pose_cache.left_grip = None;
+                }
+            } else {
+                sess.controller_pose_cache.left_grip = None;
+            }
+            if let Some(loc) = update_pose(
+                &ci.right_grip_space,
+                &sess.reference_space,
+                frame_state.predicted_display_time,
+            ) {
+                if loc
+                    .location_flags
+                    .contains(openxr::SpaceLocationFlags::POSITION_VALID)
+                    && loc
+                        .location_flags
+                        .contains(openxr::SpaceLocationFlags::ORIENTATION_VALID)
+                {
+                    sess.controller_pose_cache.right_grip = Some(loc.pose);
+                } else {
+                    sess.controller_pose_cache.right_grip = None;
+                }
+            } else {
+                sess.controller_pose_cache.right_grip = None;
+            }
+        }
+
         // Publish XR per-eye camera matrices into VisualWorld (CameraTarget::Xr).
-        let rig_world = visuals
-            .active_xr_camera()
-            .or_else(|| Self::first_enabled_camera_xr(world))
-            .and_then(|cid| TransformSystem::world_model(world, cid))
-            .unwrap_or([
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ]);
+        let rig_world = Self::xr_rig_origin_world(world, visuals);
 
         let mut eyes = Vec::with_capacity(views.len());
         for v in &views {
@@ -822,8 +1714,11 @@ impl OpenXRSystem {
                     );
                 }
 
-                if let Err(e) = Self::clear_xr_swapchain_image(
-                    sess,
+                if let Err(e) = xr_renderer::clear_xr_swapchain_image(
+                    &sess.vk_device,
+                    sess.vk_queue,
+                    sess.vk_command_buffer,
+                    sess.xr_swapchain.view_count(),
                     dst_image,
                     visuals.clear_color(),
                     dst_was_initialized,
@@ -841,14 +1736,21 @@ impl OpenXRSystem {
                     }
                 }
 
-                if let Err(e) = Self::copy_offscreen_to_xr_layers(
-                    sess,
+                if let Err(e) = xr_renderer::copy_offscreen_to_xr_layers(
+                    &sess.vk_device,
+                    sess.vk_queue,
+                    sess.vk_command_buffer,
+                    &sess.xr_swapchain,
                     renderer,
-                    image_index_usize,
                     dst_image,
+                    dst_was_initialized,
                     view_count,
                 ) {
                     eprintln!("[OpenXR] copy to XR image failed: {e:?}");
+                } else if let Some(slot) =
+                    sess.swapchain_image_initialized.get_mut(image_index_usize)
+                {
+                    *slot = true;
                 }
             }
         }
@@ -908,163 +1810,4 @@ impl OpenXRSystem {
         }
     }
 
-    fn copy_offscreen_to_xr_layers(
-        sess: &mut OpenXRSessionState,
-        renderer: &VulkanoRenderer,
-        image_index: usize,
-        dst_image: ash::vk::Image,
-        view_count: usize,
-    ) -> Result<(), ash::vk::Result> {
-        let dst_was_initialized = sess
-            .swapchain_image_initialized
-            .get(image_index)
-            .copied()
-            .unwrap_or(false);
-
-        let dst_old_layout = if dst_was_initialized {
-            ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
-        } else {
-            ash::vk::ImageLayout::UNDEFINED
-        };
-
-        let dst_src_access = if dst_was_initialized {
-            ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE
-        } else {
-            ash::vk::AccessFlags::empty()
-        };
-
-        unsafe {
-            sess.vk_device.reset_command_buffer(
-                sess.vk_command_buffer,
-                ash::vk::CommandBufferResetFlags::empty(),
-            )?;
-
-            sess.vk_device.begin_command_buffer(
-                sess.vk_command_buffer,
-                &ash::vk::CommandBufferBeginInfo::default()
-                    .flags(ash::vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
-            )?;
-
-            for eye in 0..view_count {
-                let Some(src_image) = renderer.xr_offscreen_vk_image(eye) else {
-                    continue;
-                };
-
-                let src_range = ash::vk::ImageSubresourceRange::default()
-                    .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
-                    .base_mip_level(0)
-                    .level_count(1)
-                    .base_array_layer(0)
-                    .layer_count(1);
-
-                let dst_range = ash::vk::ImageSubresourceRange::default()
-                    .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
-                    .base_mip_level(0)
-                    .level_count(1)
-                    .base_array_layer(eye as u32)
-                    .layer_count(1);
-
-                // src: COLOR_ATTACHMENT_OPTIMAL -> TRANSFER_SRC_OPTIMAL
-                let barrier_src_to_copy = ash::vk::ImageMemoryBarrier::default()
-                    .old_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .new_layout(ash::vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-                    .src_access_mask(ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                    .dst_access_mask(ash::vk::AccessFlags::TRANSFER_READ)
-                    .image(src_image)
-                    .subresource_range(src_range);
-
-                // dst: UNDEFINED -> TRANSFER_DST_OPTIMAL (we overwrite whole layer)
-                let barrier_dst_to_copy = ash::vk::ImageMemoryBarrier::default()
-                    .old_layout(dst_old_layout)
-                    .new_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                    .src_access_mask(dst_src_access)
-                    .dst_access_mask(ash::vk::AccessFlags::TRANSFER_WRITE)
-                    .image(dst_image)
-                    .subresource_range(dst_range);
-
-                sess.vk_device.cmd_pipeline_barrier(
-                    sess.vk_command_buffer,
-                    ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                    ash::vk::PipelineStageFlags::TRANSFER,
-                    ash::vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    &[barrier_src_to_copy, barrier_dst_to_copy],
-                );
-
-                let extent = sess.xr_swapchain.extent();
-                let region = ash::vk::ImageCopy::default()
-                    .src_subresource(
-                        ash::vk::ImageSubresourceLayers::default()
-                            .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
-                            .mip_level(0)
-                            .base_array_layer(0)
-                            .layer_count(1),
-                    )
-                    .dst_subresource(
-                        ash::vk::ImageSubresourceLayers::default()
-                            .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
-                            .mip_level(0)
-                            .base_array_layer(eye as u32)
-                            .layer_count(1),
-                    )
-                    .extent(ash::vk::Extent3D {
-                        width: extent.width as u32,
-                        height: extent.height as u32,
-                        depth: 1,
-                    });
-
-                sess.vk_device.cmd_copy_image(
-                    sess.vk_command_buffer,
-                    src_image,
-                    ash::vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                    dst_image,
-                    ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    &[region],
-                );
-
-                // src: TRANSFER_SRC_OPTIMAL -> COLOR_ATTACHMENT_OPTIMAL (ready for next frame)
-                let barrier_src_back = ash::vk::ImageMemoryBarrier::default()
-                    .old_layout(ash::vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-                    .new_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .src_access_mask(ash::vk::AccessFlags::TRANSFER_READ)
-                    .dst_access_mask(ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                    .image(src_image)
-                    .subresource_range(src_range);
-
-                // dst: TRANSFER_DST_OPTIMAL -> COLOR_ATTACHMENT_OPTIMAL (common OpenXR expectation)
-                let barrier_dst_back = ash::vk::ImageMemoryBarrier::default()
-                    .old_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                    .new_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .src_access_mask(ash::vk::AccessFlags::TRANSFER_WRITE)
-                    .dst_access_mask(ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                    .image(dst_image)
-                    .subresource_range(dst_range);
-
-                sess.vk_device.cmd_pipeline_barrier(
-                    sess.vk_command_buffer,
-                    ash::vk::PipelineStageFlags::TRANSFER,
-                    ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                    ash::vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    &[barrier_src_back, barrier_dst_back],
-                );
-            }
-
-            sess.vk_device.end_command_buffer(sess.vk_command_buffer)?;
-
-            let command_buffers = [sess.vk_command_buffer];
-            let submit_info = ash::vk::SubmitInfo::default().command_buffers(&command_buffers);
-            sess.vk_device
-                .queue_submit(sess.vk_queue, &[submit_info], ash::vk::Fence::null())?;
-            sess.vk_device.queue_wait_idle(sess.vk_queue)?;
-        }
-
-        if let Some(slot) = sess.swapchain_image_initialized.get_mut(image_index) {
-            *slot = true;
-        }
-
-        Ok(())
-    }
 }

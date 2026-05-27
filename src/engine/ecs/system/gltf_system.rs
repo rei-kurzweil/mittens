@@ -1,9 +1,9 @@
-use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    ColorComponent, EmissiveComponent, GLTFComponent, JointComponent, MeshComponent,
-    RenderableComponent, SkinnedMeshComponent, TextureComponent, TransformComponent,
+    ColorComponent, EditorComponent, EmissiveComponent, GLTFComponent, MeshComponent,
+    OverlayComponent, RaycastableComponent, RenderableComponent, SignalRouteUpwardComponent,
+    SkinnedMeshComponent, TextureComponent, TransformComponent,
 };
+use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::engine::graphics::mesh::{CpuMesh, CpuVertex};
 use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Renderable};
@@ -239,14 +239,14 @@ impl GLTFSystem {
 
     /// Discover GLTFComponents and spawn their node/renderable hierarchy.
     ///
-    /// This runs during `SystemWorld::tick` so we have access to the CommandQueue via
-    /// `world.init_component_tree(..., queue)`.
+    /// This runs during `SystemWorld::tick` so we have access to a `SignalEmitter` via
+    /// `world.init_component_tree(..., emit)`.
     pub fn tick_with_queue(
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
         skinned_mesh: &mut crate::engine::ecs::system::SkinnedMeshSystem,
-        queue: &mut crate::engine::ecs::CommandQueue,
+        emit: &mut dyn SignalEmitter,
         _dt_sec: f32,
     ) {
         let gltf_components: Vec<ComponentId> = world
@@ -257,6 +257,18 @@ impl GLTFSystem {
         for cid in gltf_components {
             if self.spawned_components.contains(&cid) {
                 continue;
+            }
+
+            let with_visualized_transforms = world
+                .get_component_by_id_as::<GLTFComponent>(cid)
+                .map(|c| c.with_visualized_transforms)
+                .unwrap_or(false)
+                || Self::has_editor_ancestor(world, cid);
+
+            if with_visualized_transforms {
+                if let Some(c) = world.get_component_by_id_as_mut::<GLTFComponent>(cid) {
+                    c.with_visualized_transforms = true;
+                }
             }
 
             let Some(uri) = world
@@ -316,18 +328,6 @@ impl GLTFSystem {
             let mut node_index_to_component: HashMap<usize, ComponentId> = HashMap::new();
             let mut pending_skin_components: Vec<(ComponentId, usize)> = Vec::new();
 
-            // Precompute joint membership for debug markers.
-            // Map: joint node index -> list of skin indices that reference it.
-            let mut joint_node_to_skin_indices: HashMap<usize, Vec<usize>> = HashMap::new();
-            for (skin_index, skin) in loaded.skins.iter().enumerate() {
-                for &joint_node in &skin.joints {
-                    joint_node_to_skin_indices
-                        .entry(joint_node)
-                        .or_default()
-                        .push(skin_index);
-                }
-            }
-
             for node in scene.nodes() {
                 let root = self.spawn_node_recursive(
                     world,
@@ -337,10 +337,10 @@ impl GLTFSystem {
                     node,
                     &mut node_index_to_component,
                     &mut pending_skin_components,
-                    &joint_node_to_skin_indices,
+                    with_visualized_transforms,
                 );
                 if let Some(root) = root {
-                    world.init_component_tree(root, queue);
+                    world.init_component_tree(root, emit);
                 }
             }
 
@@ -478,6 +478,20 @@ impl GLTFSystem {
             cid = parent;
         }
         None
+    }
+
+    fn has_editor_ancestor(world: &World, start: ComponentId) -> bool {
+        let mut cur = Some(start);
+        while let Some(node) = cur {
+            if world
+                .get_component_by_id_as::<EditorComponent>(node)
+                .is_some()
+            {
+                return true;
+            }
+            cur = world.parent_of(node);
+        }
+        false
     }
 
     fn sanitize_key_part(s: &str) -> String {
@@ -793,7 +807,7 @@ impl GLTFSystem {
         node: gltf::Node,
         node_index_to_component: &mut HashMap<usize, ComponentId>,
         pending_skin_components: &mut Vec<(ComponentId, usize)>,
-        joint_node_to_skin_indices: &HashMap<usize, Vec<usize>>,
+        with_visualized_transforms: bool,
     ) -> Option<ComponentId> {
         let node_display_name = node
             .name()
@@ -812,18 +826,21 @@ impl GLTFSystem {
             world.add_component_boxed_named(node_display_name.clone(), Box::new(tc));
         let _ = world.add_child(parent_transform, this_transform);
 
+        // Snapshot the authored bind-pose local TRS as a sidecar component
+        // before any animation / IK / AVC system can overwrite it.  Lets
+        // consumers (e.g. AvatarControlSystem) recover the true rest pose
+        // regardless of when they run in the tick.
+        let rest_pose = crate::engine::ecs::component::BoneRestPoseComponent::new(t, r, s);
+        let rest_id = world.add_component(rest_pose);
+        let _ = world.add_child(this_transform, rest_id);
+
         node_index_to_component.insert(node.index(), this_transform);
 
-        // If this node is a joint in any skin, attach a debug marker component.
-        if let Some(skin_indices) = joint_node_to_skin_indices.get(&node.index()) {
-            let joint_comp = world.add_component_boxed_named(
-                format!("joint_marker:{}", node_display_name),
-                Box::new(JointComponent::new(node.index(), skin_indices.clone())),
-            );
-            let _ = world.add_child(this_transform, joint_comp);
-        }
+        // Note: we intentionally do not spawn per-joint marker components.
 
         let node_skin_index = node.skin().map(|s| s.index());
+
+        let mut spawned_renderable = false;
 
         if let Some(mesh) = node.mesh() {
             for (prim_index, prim) in mesh.primitives().enumerate() {
@@ -856,6 +873,8 @@ impl GLTFSystem {
 
                 let _ = world.add_child(this_transform, renderable);
                 let _ = world.add_child(renderable, mesh_ref);
+
+                spawned_renderable = true;
 
                 if let Some(skin_index) = node_skin_index {
                     if loaded.skins.get(skin_index).is_some() {
@@ -945,6 +964,53 @@ impl GLTFSystem {
             }
         }
 
+        if with_visualized_transforms && !spawned_renderable {
+            const VIZ_BOX_SCALE: f32 = 0.03;
+
+            let mut viz_tc = TransformComponent::new();
+            viz_tc.transform.scale = [VIZ_BOX_SCALE, VIZ_BOX_SCALE, VIZ_BOX_SCALE];
+            viz_tc.transform.recompute_model();
+
+            let viz_transform = world
+                .add_component_boxed_named(format!("viz:{}", node_display_name), Box::new(viz_tc));
+            let _ = world.add_child(this_transform, viz_transform);
+
+            // Treat viz transforms as interaction proxies: route UpdateTransform intents to the
+            // nearest ancestor Transform.
+            let route_up = world.add_component_boxed_named(
+                format!("route_upward:viz:{}", node_display_name),
+                Box::new(SignalRouteUpwardComponent::new(
+                    "update_transform",
+                    "transform",
+                )),
+            );
+            let _ = world.add_child(viz_transform, route_up);
+
+            // Route joint markers into the overlay pass so they're drawn on top of the
+            // skinned mesh (otherwise they'd be occluded by the body they belong to).
+            // OverlayComponent must be an ancestor of the renderable; renderable_system
+            // walks parents looking for the nearest OverlayComponent.
+            let overlay = world.add_component_boxed_named(
+                format!("viz_overlay:{}", node_display_name),
+                Box::new(OverlayComponent::new()),
+            );
+            let _ = world.add_child(viz_transform, overlay);
+
+            let viz_renderable = world.add_component_boxed_named(
+                format!("viz_box:{}", node_display_name),
+                Box::new(RenderableComponent::cube()),
+            );
+            let _ = world.add_child(overlay, viz_renderable);
+
+            let raycastable = world.add_component(RaycastableComponent::enabled());
+            let _ = world.add_child(viz_renderable, raycastable);
+
+            let color = world.add_component(ColorComponent {
+                rgba: [1.0, 1.0, 1.0, 1.0],
+            });
+            let _ = world.add_child(viz_renderable, color);
+        }
+
         // Recurse into children.
         for ch in node.children() {
             let _ = self.spawn_node_recursive(
@@ -955,7 +1021,7 @@ impl GLTFSystem {
                 ch,
                 node_index_to_component,
                 pending_skin_components,
-                joint_node_to_skin_indices,
+                with_visualized_transforms,
             );
         }
 

@@ -29,11 +29,9 @@ fn main() {
     println!("[audio-graph-example] universe created");
 
     // Minimal scene with a camera so the window opens (copied from animation-example).
-    let clear = universe
-        .world
-        .register(engine::ecs::component::BackgroundColorComponent::rgba(
-            0.07, 0.07, 0.07, 1.0,
-        ));
+    let clear = universe.world.add_component(engine::ecs::component::BackgroundColorComponent::new());
+    let clear_c = universe.world.add_component(engine::ecs::component::ColorComponent::rgba(0.07, 0.07, 0.07, 1.0));
+    let _ = universe.world.add_child(clear, clear_c);
     universe.add(clear);
 
     // Ambient light so unlit areas aren't pitch black.
@@ -41,7 +39,7 @@ fn main() {
     // (User request) 2.5x brighter.
     let ambient = universe
         .world
-        .register(engine::ecs::component::AmbientLightComponent::rgb(
+        .add_component(engine::ecs::component::AmbientLightComponent::rgb(
             0.075, 0.075, 0.075,
         ));
     universe.add(ambient);
@@ -49,14 +47,14 @@ fn main() {
     // Input-driven camera rig.
     let input = universe
         .world
-        .register(engine::ecs::component::InputComponent::new().with_speed(2.0));
-    let rig_transform = universe
-        .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(2.0, 0.0, 7.0));
-    let input_mode = universe.world.register(
+        .add_component(engine::ecs::component::InputComponent::new().with_speed(2.0));
+    let rig_transform = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(2.0, 0.0, 7.0),
+    );
+    let input_mode = universe.world.add_component(
         engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y(),
     );
-    let camera3d = universe.world.register(
+    let camera3d = universe.world.add_component(
         engine::ecs::component::Camera3DComponent::new()
             .with_far(250.0)
             .with_fov(70.0),
@@ -64,14 +62,17 @@ fn main() {
     let _ = universe.attach(input, input_mode);
     let _ = universe.attach(input, rig_transform);
     let _ = universe.attach(rig_transform, camera3d);
+
+    // Topology: I { T { C3D } } — add a small camera-attached controls hint.
+    example_util::spawn_desktop_camera_controls_hint(&mut universe, rig_transform);
     universe.add(input);
 
     // Directional light (sun-ish). Note: the renderer interprets the node's world position
     // as a direction vector (see DirectionalLightComponent docs).
-    let light_tx = universe
-        .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(0.2, 0.7, 1.0));
-    let light = universe.world.register(
+    let light_tx = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.2, 0.7, 1.0),
+    );
+    let light = universe.world.add_component(
         engine::ecs::component::DirectionalLightComponent::new()
             .with_color(1.0, 1.0, 1.0)
             .with_intensity(0.35),
@@ -82,9 +83,9 @@ fn main() {
     // --- Background clouds (occluded + lit) ---
     // Mirrors the vtuber example: use a BackgroundComponent stage so the cloud volume
     // self-occludes and is lit, but renders as background.
-    let bg_root = universe
-        .world
-        .register(engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting());
+    let bg_root = universe.world.add_component(
+        engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting(),
+    );
     universe.add(bg_root);
     let mut cloud_params = example_util::CloudRingParams::default();
     cloud_params.cloud_count = 7;
@@ -103,7 +104,7 @@ fn main() {
     if audio_enabled {
         let clock = universe
             .world
-            .register(engine::ecs::component::ClockComponent::new().with_bpm(128.0));
+            .add_component(engine::ecs::component::ClockComponent::new().with_bpm(128.0));
         universe.add(clock);
     }
 
@@ -120,7 +121,7 @@ fn main() {
         } else {
             engine::ecs::component::AudioOutputComponent::off()
         };
-        let audio_out = universe.world.register(audio_out_comp);
+        let audio_out = universe.world.add_component(audio_out_comp);
         universe.add(audio_out);
         Some(audio_out)
     } else {
@@ -134,24 +135,22 @@ fn main() {
     }
 
     // Track A: square lead.
-    let osc_a_comp = if audio_enabled {
-        let osc_a = engine::ecs::component::AudioOscillator::square()
-            .with_frequency(110.0)
-            .with_amplitude(0.12)
-            .with_enabled(false);
-        let osc_a_comp =
-            universe
-                .world
-                .register(engine::ecs::component::AudioOscillatorComponent::single(
-                    osc_a,
-                ));
-        if let Some(audio_out) = audio_out {
-            let _ = universe.attach(audio_out, osc_a_comp);
-        }
-        Some(osc_a_comp)
-    } else {
-        None
-    };
+    let osc_a_comp =
+        if audio_enabled {
+            let osc_a = engine::ecs::component::AudioOscillator::square()
+                .with_frequency(110.0)
+                .with_amplitude(0.12)
+                .with_enabled(false);
+            let osc_a_comp = universe.world.add_component(
+                engine::ecs::component::AudioOscillatorComponent::single(osc_a),
+            );
+            if let Some(audio_out) = audio_out {
+                let _ = universe.attach(audio_out, osc_a_comp);
+            }
+            Some(osc_a_comp)
+        } else {
+            None
+        };
 
     if audio_enabled {
         println!("[audio-graph-example] track A created");
@@ -168,19 +167,17 @@ fn main() {
     if let Some(osc_a_comp) = osc_a_comp {
         let gain_a = universe
             .world
-            .register(engine::ecs::component::AudioGainComponent::new(3.2));
-        let bp_a =
+            .add_component(engine::ecs::component::AudioGainComponent::new(3.2));
+        let bp_a = universe.world.add_component(
+            engine::ecs::component::AudioBandPassFilterComponent::new(120.0, 3.0, 0.40),
+        );
+        bp_a_comp = Some(bp_a);
+        let lim_a =
             universe
                 .world
-                .register(engine::ecs::component::AudioBandPassFilterComponent::new(
-                    120.0, 3.0, 0.40,
+                .add_component(engine::ecs::component::AudioLimiterComponent::new(
+                    4.0, 80.0, 0.90,
                 ));
-        bp_a_comp = Some(bp_a);
-        let lim_a = universe
-            .world
-            .register(engine::ecs::component::AudioLimiterComponent::new(
-                4.0, 80.0, 0.90,
-            ));
 
         let _ = universe.attach(osc_a_comp, gain_a);
         let _ = universe.attach(gain_a, bp_a);
@@ -199,28 +196,29 @@ fn main() {
         wrap_cols: usize,
         text: &str,
     ) {
-        let tx = universe.world.register(
+        let tx = universe.world.add_component(
             engine::ecs::component::TransformComponent::new()
                 .with_position(pos.0, pos.1, pos.2)
                 .with_scale(scale, scale, 1.0),
         );
-        let t = universe
-            .world
-            .register(engine::ecs::component::TextComponent::with_word_wrap(
-                text, wrap_cols,
-            ));
+        let t =
+            universe
+                .world
+                .add_component(engine::ecs::component::TextComponent::with_word_wrap(
+                    text, wrap_cols,
+                ));
         let _ = universe.attach(tx, t);
 
         // TextSystem looks for an immediate TextureFilteringComponent child.
         let filtering = universe
             .world
-            .register(engine::ecs::component::TextureFilteringComponent::nearest());
+            .add_component(engine::ecs::component::TextureFilteringComponent::nearest());
         let _ = universe.attach(t, filtering);
 
         // TextSystem also supports styling from immediate Emissive children.
         let emissive = universe
             .world
-            .register(engine::ecs::component::EmissiveComponent::on());
+            .add_component(engine::ecs::component::EmissiveComponent::on());
         let _ = universe.attach(t, emissive);
 
         universe.add(tx);
@@ -233,22 +231,22 @@ fn main() {
         scale: f32,
         rgba: [f32; 4],
     ) {
-        let tx = universe.world.register(
+        let tx = universe.world.add_component(
             engine::ecs::component::TransformComponent::new()
                 .with_position(pos.0, pos.1, pos.2)
                 .with_scale(scale, scale, scale),
         );
         let r = universe
             .world
-            .register(engine::ecs::component::RenderableComponent::cube());
+            .add_component(engine::ecs::component::RenderableComponent::cube());
         let c = universe
             .world
-            .register(engine::ecs::component::ColorComponent::rgba(
+            .add_component(engine::ecs::component::ColorComponent::rgba(
                 rgba[0], rgba[1], rgba[2], rgba[3],
             ));
         let e = universe
             .world
-            .register(engine::ecs::component::EmissiveComponent::on());
+            .add_component(engine::ecs::component::EmissiveComponent::on());
         let _ = universe.attach(parent, tx);
         let _ = universe.attach(tx, r);
         let _ = universe.attach(r, c);
@@ -262,17 +260,17 @@ fn main() {
         scale: f32,
         base_rgba: [f32; 4],
     ) -> engine::ecs::ComponentId {
-        let tx = universe.world.register(
+        let tx = universe.world.add_component(
             engine::ecs::component::TransformComponent::new()
                 .with_position(pos.0, pos.1, pos.2)
                 .with_scale(scale, scale, scale),
         );
         let r = universe
             .world
-            .register(engine::ecs::component::RenderableComponent::cube());
+            .add_component(engine::ecs::component::RenderableComponent::cube());
         let c = universe
             .world
-            .register(engine::ecs::component::ColorComponent::rgba(
+            .add_component(engine::ecs::component::ColorComponent::rgba(
                 base_rgba[0],
                 base_rgba[1],
                 base_rgba[2],
@@ -280,7 +278,7 @@ fn main() {
             ));
         let e = universe
             .world
-            .register(engine::ecs::component::EmissiveComponent::on());
+            .add_component(engine::ecs::component::EmissiveComponent::on());
 
         let _ = universe.attach(parent, tx);
         let _ = universe.attach(tx, r);
@@ -318,9 +316,9 @@ fn main() {
         "oscillators=1\nfrequency_hz=110.0\namplitude=0.12\nenabled=false\nlookahead=0.10s",
     );
 
-    let viz_root = universe
-        .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0));
+    let viz_root = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0),
+    );
     universe.add(viz_root);
 
     println!("[audio-graph-example] viz root added");
@@ -335,9 +333,9 @@ fn main() {
     );
 
     // Pattern roots so we can reset via one SetColor action.
-    let track_a_pattern_root = universe
-        .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0));
+    let track_a_pattern_root = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0),
+    );
     let _ = universe.attach(viz_root, track_a_pattern_root);
 
     // Labels for pattern/chain/graph sections.
@@ -415,6 +413,7 @@ fn main() {
             } => {
                 format!("Limiter atk={attack_ms:.1}ms rel={release_ms:.1}ms thr={threshold:.3}")
             }
+            AudioGraphNodeKind::ClipSource => "ClipSource".to_string(),
         }
     }
 
@@ -472,16 +471,17 @@ fn main() {
 
         // Label next to the cube.
         let label = node_label(node);
-        let tx = universe.world.register(
+        let tx = universe.world.add_component(
             engine::ecs::component::TransformComponent::new()
                 .with_position(x + 0.14, y + 0.02, z_text)
                 .with_scale(0.06, 0.06, 1.0),
         );
-        let t = universe
-            .world
-            .register(engine::ecs::component::TextComponent::with_word_wrap(
-                &label, 25,
-            ));
+        let t =
+            universe
+                .world
+                .add_component(engine::ecs::component::TextComponent::with_word_wrap(
+                    &label, 25,
+                ));
         let _ = universe.attach(parent, tx);
         let _ = universe.attach(tx, t);
 
@@ -491,12 +491,12 @@ fn main() {
 
         let filtering = universe
             .world
-            .register(engine::ecs::component::TextureFilteringComponent::nearest());
+            .add_component(engine::ecs::component::TextureFilteringComponent::nearest());
         let _ = universe.attach(t, filtering);
 
         let emissive = universe
             .world
-            .register(engine::ecs::component::EmissiveComponent::on());
+            .add_component(engine::ecs::component::EmissiveComponent::on());
         let _ = universe.attach(t, emissive);
 
         universe.add(tx);
@@ -517,28 +517,25 @@ fn main() {
             } else {
                 format!("Mix <implicit> w={weights:?}")
             };
-            let mix_tx = universe.world.register(
+            let mix_tx = universe.world.add_component(
                 engine::ecs::component::TransformComponent::new()
                     .with_position(x + 0.14, y - 0.11, z_text)
                     .with_scale(0.05, 0.05, 1.0),
             );
-            let mix_t =
-                universe
-                    .world
-                    .register(engine::ecs::component::TextComponent::with_word_wrap(
-                        &mix_label, 25,
-                    ));
+            let mix_t = universe.world.add_component(
+                engine::ecs::component::TextComponent::with_word_wrap(&mix_label, 25),
+            );
             let _ = universe.attach(parent, mix_tx);
             let _ = universe.attach(mix_tx, mix_t);
 
             let filtering = universe
                 .world
-                .register(engine::ecs::component::TextureFilteringComponent::nearest());
+                .add_component(engine::ecs::component::TextureFilteringComponent::nearest());
             let _ = universe.attach(mix_t, filtering);
 
             let emissive = universe
                 .world
-                .register(engine::ecs::component::EmissiveComponent::on());
+                .add_component(engine::ecs::component::EmissiveComponent::on());
             let _ = universe.attach(mix_t, emissive);
 
             universe.add(mix_tx);
@@ -620,7 +617,7 @@ fn main() {
     // Animation with 16 keyframes drives scheduled notes + pattern highlights.
     let anim = universe
         .world
-        .register(engine::ecs::component::AnimationComponent::new());
+        .add_component(engine::ecs::component::AnimationComponent::new());
 
     let dur_a = 0.85_f32;
     let beat_spacing = 0.38_f32;
@@ -632,7 +629,7 @@ fn main() {
         let kf_beat = i as f64;
         let kf = universe
             .world
-            .register(engine::ecs::component::KeyframeComponent::new(kf_beat));
+            .add_component(engine::ecs::component::KeyframeComponent::new(kf_beat));
 
         let _ = universe.attach(anim, kf);
 
@@ -647,12 +644,16 @@ fn main() {
 
             let act_a = universe
                 .world
-                .register(engine::ecs::component::ActionComponent::new(
-                    engine::ecs::component::Action::oscillator_schedule_music_note(
-                        vec![osc_a_comp],
-                        0.0,
-                        note_a,
-                    ),
+                .add_component(engine::ecs::component::ActionComponent::new(
+                    engine::ecs::IntentValue::AudioSchedulePlay {
+                        component_ids: vec![osc_a_comp],
+                        beat_offset: 0.0,
+                        beat_context: None,
+                        note: Some(note_a),
+                        gain: None,
+                        rate: None,
+                        duration: None,
+                    },
                 ));
 
             let _ = universe.attach(kf, act_a);
@@ -668,11 +669,11 @@ fn main() {
                 let bp_center =
                     universe
                         .world
-                        .register(engine::ecs::component::ActionComponent::new(
-                            engine::ecs::component::Action::audio_band_pass_set_center_hz(
-                                vec![bp_a_comp],
+                        .add_component(engine::ecs::component::ActionComponent::new(
+                            engine::ecs::IntentValue::AudioBandPassSetCenterHz {
+                                component_ids: vec![bp_a_comp],
                                 center_hz,
-                            ),
+                            },
                         ));
                 let _ = universe.attach(kf, bp_center);
 
@@ -681,11 +682,11 @@ fn main() {
                     let label =
                         universe
                             .world
-                            .register(engine::ecs::component::ActionComponent::new(
-                                engine::ecs::component::Action::set_text(
-                                    vec![text_id],
-                                    format!("BandPass center={center_hz:.1}Hz"),
-                                ),
+                            .add_component(engine::ecs::component::ActionComponent::new(
+                                engine::ecs::IntentValue::SetText {
+                                    component_ids: vec![text_id],
+                                    text: format!("BandPass center={center_hz:.1}Hz"),
+                                },
                             ));
                     let _ = universe.attach(kf, label);
                 }
@@ -695,8 +696,11 @@ fn main() {
         // Visualization reset per keyframe.
         let reset_a = universe
             .world
-            .register(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::set_color(vec![track_a_pattern_root], a_dark),
+            .add_component(engine::ecs::component::ActionComponent::new(
+                engine::ecs::IntentValue::SetColor {
+                    component_ids: vec![track_a_pattern_root],
+                    rgba: a_dark,
+                },
             ));
         let _ = universe.attach(kf, reset_a);
 
@@ -712,8 +716,11 @@ fn main() {
 
         let bright_a = universe
             .world
-            .register(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::set_color(vec![cube_a], a_bright),
+            .add_component(engine::ecs::component::ActionComponent::new(
+                engine::ecs::IntentValue::SetColor {
+                    component_ids: vec![cube_a],
+                    rgba: a_bright,
+                },
             ));
         let _ = universe.attach(kf, bright_a);
     }

@@ -1,6 +1,5 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
-use crate::engine::ecs::component::BackgroundComponent;
 use crate::engine::ecs::component::RaycastableComponent;
 use crate::engine::ecs::component::RenderableComponent;
 use crate::engine::ecs::system::TransformSystem;
@@ -73,55 +72,34 @@ impl BHShape for RenderableAabb {
 
 impl BvhSystem {
     pub(crate) fn renderable_is_raycastable(world: &World, renderable_cid: ComponentId) -> bool {
-        // Background layers are a hard opt-out when disabled.
-        let mut cur = renderable_cid;
-        while let Some(parent) = world.parent_of(cur) {
-            if let Some(bg) = world.get_component_by_id_as::<BackgroundComponent>(parent) {
-                if !bg.ray_casting {
-                    return false;
-                }
-                break;
-            }
-            cur = parent;
-        }
+        Self::find_raycastable_for_renderable(world, renderable_cid)
+            .is_some()
+    }
 
-        // Explicit RaycastableComponent on/above the renderable wins.
-        // Common topology is: renderable -> (raycastable, color, ...)
+    /// Return the `RaycastableComponent` governing a renderable (enabled only).
+    ///
+    /// Checks children of the renderable first (common panel topology), then walks ancestors.
+    pub(crate) fn find_raycastable_for_renderable(
+        world: &World,
+        renderable_cid: ComponentId,
+    ) -> Option<RaycastableComponent> {
         if let Some(rc) = world.children_of(renderable_cid).iter().find_map(|&ch| {
             world
                 .get_component_by_id_as::<RaycastableComponent>(ch)
                 .copied()
         }) {
-            return rc.enable;
+            return if rc.enable { Some(rc) } else { None };
         }
 
-        // If a RaycastableComponent exists in the ancestry chain (renderable parented under it),
-        // nearest wins.
         let mut cur = renderable_cid;
         while let Some(parent) = world.parent_of(cur) {
-            if let Some(rc) = world.get_component_by_id_as::<RaycastableComponent>(parent) {
-                return rc.enable;
+            if let Some(rc) = world.get_component_by_id_as::<RaycastableComponent>(parent).copied() {
+                return if rc.enable { Some(rc) } else { None };
             }
             cur = parent;
         }
 
-        // Default behavior: system default is raycastable=true, but can be overridden by a
-        // RaycastableComponent with `set_default=true`.
-        let mut best_default: Option<(ComponentId, bool)> = None;
-        for cid in world.all_components() {
-            let Some(rc) = world.get_component_by_id_as::<RaycastableComponent>(cid) else {
-                continue;
-            };
-            if !rc.set_default {
-                continue;
-            }
-            match best_default {
-                None => best_default = Some((cid, rc.enable)),
-                Some((best_id, _)) if cid < best_id => best_default = Some((cid, rc.enable)),
-                _ => {}
-            }
-        }
-        best_default.map(|(_, enable)| enable).unwrap_or(true)
+        None
     }
 
     pub fn queue_renderable_added(&mut self, component: ComponentId) {
@@ -337,6 +315,49 @@ impl BvhSystem {
         best
     }
 
+    /// Return ray/AABB hit candidates (sorted by ascending t).
+    ///
+    /// This is intended to support narrow-phase hit tests that may reject the closest AABB hit
+    /// and need to fall through to the next-best candidates.
+    pub fn raycast_renderables_candidates(
+        &self,
+        origin: [f32; 3],
+        dir: [f32; 3],
+        max_distance: f32,
+        limit: usize,
+    ) -> Vec<(ComponentId, f32)> {
+        let Some(bvh) = &self.bvh else {
+            return Vec::new();
+        };
+
+        let origin_p = Point3::new(origin[0], origin[1], origin[2]);
+        let dir_v = Vector3::new(dir[0], dir[1], dir[2]);
+        let ray = Ray::new(origin_p, dir_v);
+
+        let candidates = bvh.traverse(&ray, &self.shapes);
+
+        let mut hits: Vec<(ComponentId, f32)> = Vec::new();
+        for s in candidates {
+            let min = [s.aabb.min.x, s.aabb.min.y, s.aabb.min.z];
+            let max = [s.aabb.max.x, s.aabb.max.y, s.aabb.max.z];
+
+            let Some(t) = ray_aabb(origin, dir, min, max) else {
+                continue;
+            };
+
+            if !t.is_finite() || t < 0.0 || t > max_distance {
+                continue;
+            }
+            hits.push((s.component, t));
+        }
+
+        hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        if limit > 0 && hits.len() > limit {
+            hits.truncate(limit);
+        }
+        hits
+    }
+
     pub fn query_point(&self, point: [f32; 3]) -> Vec<ComponentId> {
         let Some(bvh) = &self.bvh else {
             return Vec::new();
@@ -448,65 +469,13 @@ impl crate::engine::ecs::system::System for BvhSystem {
     }
 }
 
-fn mat4_mul_vec4(m: TransformMatrix, v: [f32; 4]) -> [f32; 4] {
-    // Column-major mat4 * vec4.
-    [
-        m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2] + m[3][0] * v[3],
-        m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2] + m[3][1] * v[3],
-        m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2] + m[3][2] * v[3],
-        m[0][3] * v[0] + m[1][3] * v[1] + m[2][3] * v[2] + m[3][3] * v[3],
-    ]
-}
-
 fn aabb_from_world_matrix_for_mesh(
     mesh: CpuMeshHandle,
     m: TransformMatrix,
 ) -> Option<([f32; 3], [f32; 3])> {
-    let (local_pts, thickness) = match mesh {
-        CpuMeshHandle::CUBE => (
-            vec![
-                [-0.5, -0.5, -0.5],
-                [0.5, -0.5, -0.5],
-                [-0.5, 0.5, -0.5],
-                [0.5, 0.5, -0.5],
-                [-0.5, -0.5, 0.5],
-                [0.5, -0.5, 0.5],
-                [-0.5, 0.5, 0.5],
-                [0.5, 0.5, 0.5],
-            ],
-            0.0,
-        ),
-        CpuMeshHandle::QUAD_2D | CpuMeshHandle::TRIANGLE_2D => (
-            vec![
-                [-0.5, -0.5, 0.0],
-                [0.5, -0.5, 0.0],
-                [-0.5, 0.5, 0.0],
-                [0.5, 0.5, 0.0],
-            ],
-            0.01,
-        ),
-        _ => return None,
-    };
-
-    let mut min = [f32::INFINITY; 3];
-    let mut max = [f32::NEG_INFINITY; 3];
-
-    for p in local_pts {
-        let v = [p[0], p[1], p[2], 1.0];
-        let w = mat4_mul_vec4(m, v);
-        let wp = [w[0], w[1], w[2]];
-        for i in 0..3 {
-            min[i] = min[i].min(wp[i]);
-            max[i] = max[i].max(wp[i]);
-        }
-    }
-
-    if thickness > 0.0 {
-        min[2] -= thickness;
-        max[2] += thickness;
-    }
-
-    Some((min, max))
+    let local = crate::engine::graphics::bounds::mesh_local_aabb(mesh)?;
+    let world = local.transformed(m);
+    Some((world.min, world.max))
 }
 
 fn ray_aabb(

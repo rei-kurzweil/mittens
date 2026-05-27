@@ -1,5 +1,8 @@
 use cat_engine::{engine, utils};
 
+#[path = "example_util/mod.rs"]
+mod example_util;
+
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, ColorComponent,
     InputComponent, InputTransformModeComponent, OpacityComponent, PointLightComponent,
@@ -14,12 +17,12 @@ fn spawn_cube(
     color: Option<(f32, f32, f32, f32)>,
     opacity: Option<OpacityComponent>,
 ) {
-    let t = universe.world.register(
+    let t = universe.world.add_component(
         TransformComponent::new()
             .with_position(position.0, position.1, position.2)
             .with_scale(scale.0, scale.1, scale.2),
     );
-    let r = universe.world.register(RenderableComponent::cube());
+    let r = universe.world.add_component(RenderableComponent::cube());
 
     let _ = universe.attach(parent, t);
     let _ = universe.attach(t, r);
@@ -27,12 +30,12 @@ fn spawn_cube(
     if let Some((cr, cg, cb, ca)) = color {
         let c = universe
             .world
-            .register(ColorComponent::rgba(cr, cg, cb, ca));
+            .add_component(ColorComponent::rgba(cr, cg, cb, ca));
         let _ = universe.attach(r, c);
     }
 
     if let Some(o) = opacity {
-        let o = universe.world.register(o);
+        let o = universe.world.add_component(o);
         let _ = universe.attach(r, o);
     }
 }
@@ -41,26 +44,26 @@ fn spawn_text_label(universe: &mut engine::Universe, position: (f32, f32, f32), 
     // T_root { T_scale { TXT { filtering } } }
     let text_root = universe
         .world
-        .register(TransformComponent::new().with_position(position.0, position.1, position.2));
+        .add_component(TransformComponent::new().with_position(position.0, position.1, position.2));
 
     let text_scale = universe
         .world
-        .register(TransformComponent::new().with_scale(0.18, 0.18, 1.0));
+        .add_component(TransformComponent::new().with_scale(0.18, 0.18, 1.0));
     let _ = universe.attach(text_root, text_scale);
 
-    let text_c = universe.world.register(TextComponent::new(text));
+    let text_c = universe.world.add_component(TextComponent::new(text));
     let _ = universe.attach(text_scale, text_c);
 
     // Keep it crisp.
     let filtering = universe
         .world
-        .register(TextureFilteringComponent::nearest());
+        .add_component(TextureFilteringComponent::nearest());
     let _ = universe.attach(text_c, filtering);
 
     // White label.
     let color = universe
         .world
-        .register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+        .add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
     let _ = universe.attach(text_c, color);
 
     universe.add(text_root);
@@ -98,7 +101,7 @@ fn spawn_text_label_with_bg(
 
     let text_root = universe
         .world
-        .register(TransformComponent::new().with_position(position.0, position.1, position.2));
+        .add_component(TransformComponent::new().with_position(position.0, position.1, position.2));
 
     // Background quad (slightly behind the glyph quads).
     let (cols, rows) = text_block_dimensions(text);
@@ -108,44 +111,44 @@ fn spawn_text_label_with_bg(
     let bg_w = cols as f32 * text_scale + pad_x;
     let bg_h = rows as f32 * text_scale + pad_y;
 
-    let bg_t = universe.world.register(
+    let bg_t = universe.world.add_component(
         TransformComponent::new()
             .with_position(1.5, 0.0, -0.02)
             .with_scale(bg_w, bg_h, 1.0),
     );
-    let bg_r = universe.world.register(RenderableComponent::square());
+    let bg_r = universe.world.add_component(RenderableComponent::square());
     let _ = universe.attach(text_root, bg_t);
     let _ = universe.attach(bg_t, bg_r);
 
     let bg_c = universe
         .world
-        .register(ColorComponent::rgba(0.0, 0.0, 0.0, 1.0));
+        .add_component(ColorComponent::rgba(0.0, 0.0, 0.0, 1.0));
     let _ = universe.attach(bg_r, bg_c);
 
     let bg_o = universe
         .world
-        .register(OpacityComponent::new().with_opacity(bg_opacity));
+        .add_component(OpacityComponent::new().with_opacity(bg_opacity));
     let _ = universe.attach(bg_r, bg_o);
 
     let text_scale_t = universe
         .world
-        .register(TransformComponent::new().with_scale(text_scale, text_scale, 1.0));
+        .add_component(TransformComponent::new().with_scale(text_scale, text_scale, 1.0));
     let _ = universe.attach(text_root, text_scale_t);
 
-    let text_c = universe.world.register(TextComponent::new(text));
+    let text_c = universe.world.add_component(TextComponent::new(text));
     let _ = universe.attach(text_scale_t, text_c);
 
     // Keep it crisp.
     let filtering = universe
         .world
-        .register(TextureFilteringComponent::nearest());
+        .add_component(TextureFilteringComponent::nearest());
     let _ = universe.attach(text_c, filtering);
 
     // Force the label into the transparent pass so it layers correctly with the background.
     // (Pass selection currently does not consider texture alpha.)
     let color = universe
         .world
-        .register(ColorComponent::rgba(1.0, 1.0, 1.0, 0.998));
+        .add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 0.998));
     let _ = universe.attach(text_c, color);
 
     universe.add(text_root);
@@ -160,12 +163,12 @@ fn spawn_demo_spot(
 ) {
     let spot = universe
         .world
-        .register(TransformComponent::new().with_position(spot_pos.0, spot_pos.1, spot_pos.2));
+        .add_component(TransformComponent::new().with_position(spot_pos.0, spot_pos.1, spot_pos.2));
 
     // All cubes inherit this color.
     let white = universe
         .world
-        .register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+        .add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
     let _ = universe.attach(spot, white);
 
     // All cubes inherit this opacity (no per-cube OpacityComponent needed).
@@ -173,7 +176,7 @@ fn spawn_demo_spot(
     if multiple_layers {
         oc = oc.with_multiple_layers();
     }
-    let oc = universe.world.register(oc);
+    let oc = universe.world.add_component(oc);
     let _ = universe.attach(spot, oc);
 
     universe.add(spot);
@@ -229,18 +232,18 @@ fn spawn_demo_strip_pair(
     // Transparent strip (1x4 along Z).
     let transparent_root = universe
         .world
-        .register(TransformComponent::new().with_position(spot_pos.0, spot_pos.1, spot_pos.2));
+        .add_component(TransformComponent::new().with_position(spot_pos.0, spot_pos.1, spot_pos.2));
 
     let white = universe
         .world
-        .register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+        .add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
     let _ = universe.attach(transparent_root, white);
 
     let mut oc = OpacityComponent::new().with_opacity(0.50);
     if transparent_multiple_layers {
         oc = oc.with_multiple_layers();
     }
-    let oc = universe.world.register(oc);
+    let oc = universe.world.add_component(oc);
     let _ = universe.attach(transparent_root, oc);
 
     universe.add(transparent_root);
@@ -260,14 +263,14 @@ fn spawn_demo_strip_pair(
     // Opaque strip to the left, same spacing/scale.
     let opaque_root = universe
         .world
-        .register(TransformComponent::new().with_position(
+        .add_component(TransformComponent::new().with_position(
             spot_pos.0 - spacing,
             spot_pos.1,
             spot_pos.2,
         ));
     let white = universe
         .world
-        .register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+        .add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
     let _ = universe.attach(opaque_root, white);
     universe.add(opaque_root);
 
@@ -307,16 +310,16 @@ fn spawn_demo_xy_plane(
 ) {
     let spot = universe
         .world
-        .register(TransformComponent::new().with_position(spot_pos.0, spot_pos.1, spot_pos.2));
+        .add_component(TransformComponent::new().with_position(spot_pos.0, spot_pos.1, spot_pos.2));
 
     let white = universe
         .world
-        .register(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
+        .add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
     let _ = universe.attach(spot, white);
 
     let oc = universe
         .world
-        .register(OpacityComponent::new().with_opacity(opacity));
+        .add_component(OpacityComponent::new().with_opacity(opacity));
     let _ = universe.attach(spot, oc);
 
     universe.add(spot);
@@ -360,24 +363,24 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Dark brown / pink background.
-    let bg = universe
-        .world
-        .register(BackgroundColorComponent::rgba(0.22, 0.08, 0.10, 1.0));
+    let bg = universe.world.add_component(BackgroundColorComponent::new());
+    let bg_c = universe.world.add_component(ColorComponent::rgba(0.22, 0.08, 0.10, 1.0));
+    let _ = universe.world.add_child(bg, bg_c);
     universe.add(bg);
 
     // Ambient so unlit areas aren't black.
     let ambient = universe
         .world
-        .register(AmbientLightComponent::rgb(0.35, 0.35, 0.40));
+        .add_component(AmbientLightComponent::rgb(0.35, 0.35, 0.40));
     universe.add(ambient);
 
     // A bright overhead light.
-    let light_t = universe.world.register(
+    let light_t = universe.world.add_component(
         TransformComponent::new()
             .with_position(0.0, 18.0, 10.0)
             .with_scale(0.2, 0.2, 0.2),
     );
-    let light = universe.world.register(
+    let light = universe.world.add_component(
         PointLightComponent::new()
             .with_color(1.0, 1.0, 1.0)
             .with_intensity(1.6)
@@ -390,8 +393,8 @@ fn main() {
     // I { T { C3D { with_fps_rotation with_roll_axis_y } } }
     let input = universe
         .world
-        .register(InputComponent::new().with_speed(3.0));
-    let input_mode = universe.world.register(
+        .add_component(InputComponent::new().with_speed(3.0));
+    let input_mode = universe.world.add_component(
         InputTransformModeComponent::forward_z()
             .with_roll_axis_y()
             .with_fps_rotation(),
@@ -400,24 +403,27 @@ fn main() {
 
     let rig_transform = universe
         .world
-        .register(TransformComponent::new().with_position(0.0, 6.0, 20.0));
+        .add_component(TransformComponent::new().with_position(0.0, 6.0, 20.0));
     let _ = universe.attach(input, rig_transform);
 
-    let camera = universe.world.register(Camera3DComponent::new());
+    let camera = universe.world.add_component(Camera3DComponent::new());
     let _ = universe.attach(rig_transform, camera);
+
+    // Topology: I { T { C3D } } — add a small camera-attached controls hint.
+    example_util::spawn_desktop_camera_controls_hint(&mut universe, rig_transform);
 
     universe.add(input);
 
     // --- Ground ---
-    let ground = universe.world.register(
+    let ground = universe.world.add_component(
         TransformComponent::new()
             .with_position(0.0, -0.6, 0.0)
             .with_scale(60.0, 1.0, 60.0),
     );
-    let ground_r = universe.world.register(RenderableComponent::cube());
+    let ground_r = universe.world.add_component(RenderableComponent::cube());
     let ground_c = universe
         .world
-        .register(ColorComponent::rgba(0.95, 0.95, 0.95, 1.0));
+        .add_component(ColorComponent::rgba(0.95, 0.95, 0.95, 1.0));
     let _ = universe.attach(ground, ground_r);
     let _ = universe.attach(ground_r, ground_c);
     universe.add(ground);

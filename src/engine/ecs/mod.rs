@@ -1,14 +1,15 @@
 pub mod command_queue;
 pub mod component;
-pub mod component_codec;
 pub mod rx;
 pub mod system;
+pub mod world_query_adapter;
 
 #[cfg(test)]
 mod world_graph_tests;
 
 use crate::engine::graphics::{RenderAssets, VisualWorld};
 use slotmap::{SlotMap, new_key_type};
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 new_key_type! {
@@ -22,8 +23,11 @@ new_key_type! {
 pub use crate::engine::graphics::primitives::{Renderable, Transform, TransformMatrix};
 
 pub use command_queue::CommandQueue;
-pub use component_codec::ComponentCodec;
-pub use rx::{ActionSignal, EventSignal, RxWorld, Signal, SignalHandler, SignalKind, SignalValue};
+pub use world_query_adapter::WorldQueryAdapter;
+pub use rx::{
+    EventSignal, IntentSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalHandler,
+    SignalKind, SignalWhen,
+};
 pub use system::{System, SystemWorld};
 
 /// Bundle of mutable engine state passed to component mutation APIs.
@@ -58,12 +62,52 @@ impl<'a> WorldContext<'a> {
 pub struct World {
     components: SlotMap<ComponentId, crate::engine::ecs::component::ComponentNode>,
     guid_index: HashMap<uuid::Uuid, ComponentId>,
+    /// MMQ parser instance with per-instance AST cache. Behind a RefCell so
+    /// `find_component(&self, ...)` can mutate the cache without forcing
+    /// every caller to thread `&mut World`. Single-threaded — World lives
+    /// on the main thread.
+    mmq_parser: RefCell<crate::query::mmq::MmqQuerySyntax>,
 }
 
 impl World {
     /// Fast GUID -> ComponentId lookup.
     pub fn component_id_by_guid(&self, guid: uuid::Uuid) -> Option<ComponentId> {
         self.guid_index.get(&guid).copied()
+    }
+
+    /// Replace the GUID of an already-inserted component, keeping its
+    /// ComponentId stable. Used by spawn paths that restore an authored
+    /// `guid = "..."` property after `create_component` has already minted
+    /// a fresh GUID.
+    ///
+    /// Returns Err if the target id is missing, or if the new guid is
+    /// already taken by another component (would silently overwrite the
+    /// reverse index otherwise).
+    pub fn set_component_guid(
+        &mut self,
+        id: ComponentId,
+        new_guid: uuid::Uuid,
+    ) -> Result<(), String> {
+        let Some(node) = self.get_component_record(id) else {
+            return Err(format!("set_component_guid: component {id:?} missing"));
+        };
+        let old_guid = node.guid;
+        if old_guid == new_guid {
+            return Ok(());
+        }
+        if let Some(&existing) = self.guid_index.get(&new_guid) {
+            if existing != id {
+                return Err(format!(
+                    "set_component_guid: guid {new_guid} already in use by {existing:?}"
+                ));
+            }
+        }
+        self.guid_index.remove(&old_guid);
+        self.guid_index.insert(new_guid, id);
+        if let Some(node) = self.get_component_record_mut(id) {
+            node.guid = new_guid;
+        }
+        Ok(())
     }
 
     /// Add a new component to the world (no parent) and return its id.
@@ -166,7 +210,7 @@ impl World {
         self.components.get(id)
     }
 
-    /// Alias for `get_component_record` (used by ComponentCodec).
+    /// Alias for `get_component_record`.
     pub fn get_component_node(
         &self,
         id: ComponentId,
@@ -179,6 +223,16 @@ impl World {
         id: ComponentId,
     ) -> Option<&mut crate::engine::ecs::component::ComponentNode> {
         self.components.get_mut(id)
+    }
+
+    /// Returns the engine type identifier for this component (e.g. `"transform"`).
+    pub fn component_name(&self, id: ComponentId) -> Option<&str> {
+        self.get_component_record(id).map(|node| node.component_type.as_str())
+    }
+
+    /// Returns the user-assigned label for this component (empty string if unset).
+    pub fn component_label(&self, id: ComponentId) -> Option<&str> {
+        self.get_component_record(id).map(|node| node.name.as_str())
     }
 
     // --- Topology helpers (component-graph) ---
@@ -207,6 +261,35 @@ impl World {
     pub fn get_component_by_id_as_mut<T: 'static>(&mut self, c: ComponentId) -> Option<&mut T> {
         let node = self.get_component_record_mut(c)?;
         node.component.as_any_mut().downcast_mut::<T>()
+    }
+
+    /// Find the first component under `root` matching `selector`.
+    ///
+    /// `selector` is parsed as MMQ — `#name`, `Type`, `Type#name`, `[name='...']`, etc.
+    /// See `src/query/mmq/parser.rs`.
+    pub fn find_component(&self, root: ComponentId, selector: &str) -> Option<ComponentId> {
+        let matches = self.run_query(root, selector);
+        matches.into_iter().next()
+    }
+
+    /// Find all components under `root` matching `selector` (DFS pre-order).
+    pub fn find_all_components(&self, root: ComponentId, selector: &str) -> Vec<ComponentId> {
+        self.run_query(root, selector)
+    }
+
+    fn run_query(&self, root: ComponentId, selector: &str) -> Vec<ComponentId> {
+        use crate::engine::ecs::world_query_adapter::WorldQueryAdapter;
+        use crate::query::QueryEvaluator;
+        use crate::query::QuerySyntax;
+
+        if self.get_component_record(root).is_none() {
+            return Vec::new();
+        }
+        let Ok(ast) = self.mmq_parser.borrow_mut().parse(selector) else {
+            return Vec::new();
+        };
+        let adapter = WorldQueryAdapter::new(self);
+        QueryEvaluator::evaluate(&adapter, root, &ast)
     }
 
     pub fn get_parent_as<T: 'static>(&self, c: ComponentId) -> Option<(ComponentId, &T)> {
@@ -387,7 +470,7 @@ impl World {
     pub fn init_component_tree(
         &mut self,
         root: ComponentId,
-        queue: &mut crate::engine::ecs::CommandQueue,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
     ) {
         use std::collections::HashSet;
 
@@ -413,7 +496,7 @@ impl World {
             // Initialize the component (idempotent).
             if let Some(node) = self.get_component_record_mut(node_id) {
                 if !node.initialized {
-                    node.component.init(queue, node_id);
+                    node.component.init(emit, node_id);
                     node.initialized = true;
                 }
             }

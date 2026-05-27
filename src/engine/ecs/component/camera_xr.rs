@@ -33,16 +33,21 @@ impl CameraXRComponent {
     }
 
     /// Ask the CameraSystem to make this the active XR camera rig.
-    pub fn make_active_camera(&mut self, queue: &mut crate::engine::ecs::CommandQueue) {
+    pub fn make_active_camera(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter) {
         if let Some(component) = self.component_id {
-            queue.queue_make_active_camera(component);
+            emit.push_intent_now(
+                component,
+                crate::engine::ecs::IntentValue::MakeActiveCamera {
+                    component_ids: vec![component],
+                },
+            );
         }
     }
 }
 
 impl Default for CameraXRComponent {
     fn default() -> Self {
-        Self::off()
+        Self::on()
     }
 }
 
@@ -59,39 +64,21 @@ impl Component for CameraXRComponent {
         "camera_xr"
     }
 
-    fn init(&mut self, _queue: &mut crate::engine::ecs::CommandQueue, component: ComponentId) {
+    fn init(&mut self, _emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         self.component_id = Some(component);
     }
 
-    fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
-        let mut map = std::collections::HashMap::new();
-        map.insert("enabled".to_string(), serde_json::Value::Bool(self.enabled));
-        let target = match self.target {
+    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        let ctor = if self.enabled { "on" } else { "off" };
+        let target_str = match self.target {
             CameraTarget::Window => "window",
             CameraTarget::Xr => "xr",
         };
-        map.insert(
-            "target".to_string(),
-            serde_json::Value::String(target.to_string()),
-        );
-        map
-    }
-
-    fn decode(
-        &mut self,
-        data: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        if let Some(v) = data.get("enabled") {
-            self.enabled = v.as_bool().unwrap_or(false);
+        let mut ce = ce_call("CameraXR", ctor, vec![]);
+        if !matches!(self.target, CameraTarget::Xr) {
+            ce = ce.with_call("target", vec![s(target_str)]);
         }
-        if let Some(v) = data.get("target") {
-            if let Some(s) = v.as_str() {
-                self.target = match s {
-                    "window" => CameraTarget::Window,
-                    "xr" | _ => CameraTarget::Xr,
-                };
-            }
-        }
-        Ok(())
+        ce
     }
 }

@@ -1,5 +1,8 @@
 use cat_engine::{engine, utils};
 
+#[path = "example_util/mod.rs"]
+mod example_util;
+
 #[derive(Debug, Clone, Copy)]
 struct GridLayout {
     origin: (f32, f32, f32),
@@ -21,22 +24,22 @@ fn spawn_emissive_marker_cube(
     scale: f32,
     rgba: [f32; 4],
 ) {
-    let tx = universe.world.register(
+    let tx = universe.world.add_component(
         engine::ecs::component::TransformComponent::new()
             .with_position(local_pos.0, local_pos.1, local_pos.2)
             .with_scale(scale, scale, scale),
     );
     let r = universe
         .world
-        .register(engine::ecs::component::RenderableComponent::cube());
+        .add_component(engine::ecs::component::RenderableComponent::cube());
     let c = universe
         .world
-        .register(engine::ecs::component::ColorComponent::rgba(
+        .add_component(engine::ecs::component::ColorComponent::rgba(
             rgba[0], rgba[1], rgba[2], rgba[3],
         ));
     let e = universe
         .world
-        .register(engine::ecs::component::EmissiveComponent::on());
+        .add_component(engine::ecs::component::EmissiveComponent::on());
 
     let _ = universe.attach(parent, tx);
     let _ = universe.attach(tx, r);
@@ -52,20 +55,20 @@ fn spawn_detached_cube_prefab(
     scale: f32,
     rgba: [f32; 4],
 ) -> engine::ecs::ComponentId {
-    let tx = universe.world.register(
+    let tx = universe.world.add_component(
         engine::ecs::component::TransformComponent::new().with_scale(scale, scale, scale),
     );
     let r = universe
         .world
-        .register(engine::ecs::component::RenderableComponent::cube());
+        .add_component(engine::ecs::component::RenderableComponent::cube());
     let c = universe
         .world
-        .register(engine::ecs::component::ColorComponent::rgba(
+        .add_component(engine::ecs::component::ColorComponent::rgba(
             rgba[0], rgba[1], rgba[2], rgba[3],
         ));
     let e = universe
         .world
-        .register(engine::ecs::component::EmissiveComponent::on());
+        .add_component(engine::ecs::component::EmissiveComponent::on());
 
     let _ = universe.attach(tx, r);
     let _ = universe.attach(r, c);
@@ -81,24 +84,22 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Minimal scene with a camera so the window opens.
-    let clear = universe
-        .world
-        .register(engine::ecs::component::BackgroundColorComponent::rgba(
-            0.06, 0.06, 0.07, 1.0,
-        ));
+    let clear = universe.world.add_component(engine::ecs::component::BackgroundColorComponent::new());
+    let clear_c = universe.world.add_component(engine::ecs::component::ColorComponent::rgba(0.06, 0.06, 0.07, 1.0));
+    let _ = universe.world.add_child(clear, clear_c);
     universe.add(clear);
 
     // Input-driven camera rig.
     let input = universe
         .world
-        .register(engine::ecs::component::InputComponent::new().with_speed(2.0));
-    let rig_transform = universe
-        .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 9.0));
-    let input_mode = universe.world.register(
+        .add_component(engine::ecs::component::InputComponent::new().with_speed(2.0));
+    let rig_transform = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 9.0),
+    );
+    let input_mode = universe.world.add_component(
         engine::ecs::component::InputTransformModeComponent::forward_z().with_roll_axis_y(),
     );
-    let camera3d = universe.world.register(
+    let camera3d = universe.world.add_component(
         engine::ecs::component::Camera3DComponent::new()
             .with_far(250.0)
             .with_fov(70.0),
@@ -106,13 +107,16 @@ fn main() {
     let _ = universe.attach(input, input_mode);
     let _ = universe.attach(input, rig_transform);
     let _ = universe.attach(rig_transform, camera3d);
+
+    // Topology: I { T { C3D } } — add a small camera-attached controls hint.
+    example_util::spawn_desktop_camera_controls_hint(&mut universe, rig_transform);
     universe.add(input);
 
     // Light so we can see non-emissive materials.
-    let light_tx = universe
-        .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(2.0, 3.5, 6.0));
-    let light = universe.world.register(
+    let light_tx = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(2.0, 3.5, 6.0),
+    );
+    let light = universe.world.add_component(
         engine::ecs::component::PointLightComponent::new()
             .with_distance(30.0)
             .with_color(1.0, 1.0, 1.0),
@@ -123,13 +127,13 @@ fn main() {
     // ClockComponent drives the animation timeline in beats.
     let clock = universe
         .world
-        .register(engine::ecs::component::ClockComponent::new().with_bpm(140.0));
+        .add_component(engine::ecs::component::ClockComponent::new().with_bpm(140.0));
     universe.add(clock);
 
     // Root for all visualization objects.
-    let viz_root = universe
-        .world
-        .register(engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0));
+    let viz_root = universe.world.add_component(
+        engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.0),
+    );
     universe.add(viz_root);
 
     let anchor_count = 16usize;
@@ -152,15 +156,15 @@ fn main() {
     // --- Grid A: detach + re-attach (reparent) ---
     let grid_a_root = universe
         .world
-        .register(engine::ecs::component::TransformComponent::new());
+        .add_component(engine::ecs::component::TransformComponent::new());
     let _ = universe.attach(viz_root, grid_a_root);
 
     let mut anchors_a: Vec<engine::ecs::ComponentId> = Vec::with_capacity(anchor_count);
     for i in 0..anchor_count {
         let (x, y, z) = grid_anchor_local(layout_a, i);
-        let anchor = universe
-            .world
-            .register(engine::ecs::component::TransformComponent::new().with_position(x, y, z));
+        let anchor = universe.world.add_component(
+            engine::ecs::component::TransformComponent::new().with_position(x, y, z),
+        );
         let _ = universe.attach(grid_a_root, anchor);
         anchors_a.push(anchor);
         spawn_emissive_marker_cube(
@@ -181,7 +185,7 @@ fn main() {
 
     let anim_a = universe
         .world
-        .register(engine::ecs::component::AnimationComponent::new());
+        .add_component(engine::ecs::component::AnimationComponent::new());
     for i in 0..anchor_count {
         let cube = cubes_a[i % cube_pool_size];
         let parent = anchors_a[i];
@@ -194,24 +198,31 @@ fn main() {
 
         let kf_detach = universe
             .world
-            .register(engine::ecs::component::KeyframeComponent::new(beat_detach));
+            .add_component(engine::ecs::component::KeyframeComponent::new(beat_detach));
         let _ = universe.attach(anim_a, kf_detach);
-        let detach_action = universe
-            .world
-            .register(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::detach(vec![cube]),
-            ));
+        let detach_action =
+            universe
+                .world
+                .add_component(engine::ecs::component::ActionComponent::new(
+                    engine::ecs::IntentValue::Detach {
+                        component_ids: vec![cube],
+                    },
+                ));
         let _ = universe.attach(kf_detach, detach_action);
 
         let kf_attach = universe
             .world
-            .register(engine::ecs::component::KeyframeComponent::new(beat_attach));
+            .add_component(engine::ecs::component::KeyframeComponent::new(beat_attach));
         let _ = universe.attach(anim_a, kf_attach);
-        let attach_action = universe
-            .world
-            .register(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::attach(parent, cube),
-            ));
+        let attach_action =
+            universe
+                .world
+                .add_component(engine::ecs::component::ActionComponent::new(
+                    engine::ecs::IntentValue::Attach {
+                        parents: vec![parent],
+                        child: cube,
+                    },
+                ));
         let _ = universe.attach(kf_attach, attach_action);
     }
     universe.add(anim_a);
@@ -225,15 +236,15 @@ fn main() {
     // This avoids needing a pre-built pool of cube ComponentIds.
     let grid_b_root = universe
         .world
-        .register(engine::ecs::component::TransformComponent::new());
+        .add_component(engine::ecs::component::TransformComponent::new());
     let _ = universe.attach(viz_root, grid_b_root);
 
     let mut anchors_b: Vec<engine::ecs::ComponentId> = Vec::with_capacity(anchor_count);
     for i in 0..anchor_count {
         let (x, y, z) = grid_anchor_local(layout_b, i);
-        let anchor = universe
-            .world
-            .register(engine::ecs::component::TransformComponent::new().with_position(x, y, z));
+        let anchor = universe.world.add_component(
+            engine::ecs::component::TransformComponent::new().with_position(x, y, z),
+        );
         let _ = universe.attach(grid_b_root, anchor);
         anchors_b.push(anchor);
 
@@ -256,7 +267,7 @@ fn main() {
 
     let anim_b = universe
         .world
-        .register(engine::ecs::component::AnimationComponent::new());
+        .add_component(engine::ecs::component::AnimationComponent::new());
 
     // Phase 1: each beat, spawn a cube under an anchor; delete-behind by removing child(0).
     for i in 0..steps_b {
@@ -267,28 +278,35 @@ fn main() {
 
         let kf_attach = universe
             .world
-            .register(engine::ecs::component::KeyframeComponent::new(beat_attach));
+            .add_component(engine::ecs::component::KeyframeComponent::new(beat_attach));
         let _ = universe.attach(anim_b, kf_attach);
 
-        let attach_action = universe
-            .world
-            .register(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::attach_clone(parent, prefab_b),
-            ));
+        let attach_action =
+            universe
+                .world
+                .add_component(engine::ecs::component::ActionComponent::new(
+                    engine::ecs::IntentValue::AttachClone {
+                        parents: vec![parent],
+                        prefab_root: prefab_b,
+                    },
+                ));
         let _ = universe.attach(kf_attach, attach_action);
 
         if i >= window {
             let remove_parent = anchors_b[(i - window) % anchor_count];
             let kf_remove = universe
                 .world
-                .register(engine::ecs::component::KeyframeComponent::new(beat_remove));
+                .add_component(engine::ecs::component::KeyframeComponent::new(beat_remove));
             let _ = universe.attach(anim_b, kf_remove);
 
             let remove_action =
                 universe
                     .world
-                    .register(engine::ecs::component::ActionComponent::new(
-                        engine::ecs::component::Action::remove_child(remove_parent, 0),
+                    .add_component(engine::ecs::component::ActionComponent::new(
+                        engine::ecs::IntentValue::RemoveChild {
+                            parents: vec![remove_parent],
+                            index: 0,
+                        },
                     ));
             let _ = universe.attach(kf_remove, remove_action);
         }
@@ -301,14 +319,18 @@ fn main() {
 
         let kf_remove = universe
             .world
-            .register(engine::ecs::component::KeyframeComponent::new(beat_remove));
+            .add_component(engine::ecs::component::KeyframeComponent::new(beat_remove));
         let _ = universe.attach(anim_b, kf_remove);
 
-        let remove_action = universe
-            .world
-            .register(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::remove_child(remove_parent, 0),
-            ));
+        let remove_action =
+            universe
+                .world
+                .add_component(engine::ecs::component::ActionComponent::new(
+                    engine::ecs::IntentValue::RemoveChild {
+                        parents: vec![remove_parent],
+                        index: 0,
+                    },
+                ));
         let _ = universe.attach(kf_remove, remove_action);
     }
 
@@ -317,7 +339,7 @@ fn main() {
     // --- Grid C: move cubes via set_position (no topology changes) ---
     let grid_c_root = universe
         .world
-        .register(engine::ecs::component::TransformComponent::new());
+        .add_component(engine::ecs::component::TransformComponent::new());
     let _ = universe.attach(viz_root, grid_c_root);
 
     let mut anchors_c: Vec<(f32, f32, f32)> = Vec::with_capacity(anchor_count);
@@ -325,9 +347,9 @@ fn main() {
         let (x, y, z) = grid_anchor_local(layout_c, i);
         anchors_c.push((x, y, z));
 
-        let anchor = universe
-            .world
-            .register(engine::ecs::component::TransformComponent::new().with_position(x, y, z));
+        let anchor = universe.world.add_component(
+            engine::ecs::component::TransformComponent::new().with_position(x, y, z),
+        );
         let _ = universe.attach(grid_c_root, anchor);
         spawn_emissive_marker_cube(
             &mut universe,
@@ -349,20 +371,24 @@ fn main() {
 
     let anim_c = universe
         .world
-        .register(engine::ecs::component::AnimationComponent::new());
+        .add_component(engine::ecs::component::AnimationComponent::new());
     for i in 0..anchor_count {
         let kf = universe
             .world
-            .register(engine::ecs::component::KeyframeComponent::new(i as f64));
+            .add_component(engine::ecs::component::KeyframeComponent::new(i as f64));
         let _ = universe.attach(anim_c, kf);
 
         let cube = cubes_c[i % cube_pool_size];
         let (x, y, z) = anchors_c[i];
-        let setpos_action = universe
-            .world
-            .register(engine::ecs::component::ActionComponent::new(
-                engine::ecs::component::Action::set_position(vec![cube], x, y, z),
-            ));
+        let setpos_action =
+            universe
+                .world
+                .add_component(engine::ecs::component::ActionComponent::new(
+                    engine::ecs::IntentValue::SetPosition {
+                        component_ids: vec![cube],
+                        position: [x, y, z],
+                    },
+                ));
         let _ = universe.attach(kf, setpos_action);
     }
     universe.add(anim_c);

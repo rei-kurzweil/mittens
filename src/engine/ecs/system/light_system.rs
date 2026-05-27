@@ -1,4 +1,4 @@
-use crate::engine::ecs::component::AmbientLightComponent;
+use crate::engine::ecs::component::{AmbientLightComponent, ColorComponent};
 use crate::engine::ecs::component::DirectionalLightComponent;
 use crate::engine::ecs::component::PointLightComponent;
 use crate::engine::ecs::system::System;
@@ -42,6 +42,11 @@ impl LightSystem {
         }
 
         if let Some(light) = world.get_component_by_id_as::<DirectionalLightComponent>(component) {
+            let color = world
+                .children_of(component)
+                .iter()
+                .find_map(|&ch| world.get_component_by_id_as::<ColorComponent>(ch).map(|c| [c.rgba[0], c.rgba[1], c.rgba[2]]))
+                .unwrap_or(light.color);
             // Direction is encoded in the node's world position.
             visuals.upsert_point_light(
                 component,
@@ -50,7 +55,7 @@ impl LightSystem {
                     position_ws,
                     intensity: light.intensity,
                     distance: 0.0,
-                    color: light.color,
+                    color,
                 },
             );
         }
@@ -66,8 +71,15 @@ impl LightSystem {
             return;
         };
 
+        // Color driven by an immediate child ColorComponent; falls back to ambient.rgb.
+        let rgb = world
+            .children_of(component)
+            .iter()
+            .find_map(|&ch| world.get_component_by_id_as::<ColorComponent>(ch).map(|c| [c.rgba[0], c.rgba[1], c.rgba[2]]))
+            .unwrap_or(ambient.rgb);
+
         // Global state: last registered wins.
-        visuals.set_ambient_light(ambient.rgb);
+        visuals.set_ambient_light(rgb);
     }
 
     /// Called when a TransformComponent changes.
@@ -79,12 +91,12 @@ impl LightSystem {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        let mut visited_nodes = 0usize;
-        let mut updated_lights = 0usize;
+        let mut _visited_nodes = 0usize;
+        let mut _updated_lights = 0usize;
 
         let mut stack = vec![component];
         while let Some(node) = stack.pop() {
-            visited_nodes += 1;
+            _visited_nodes += 1;
             for &child in world.children_of(node) {
                 stack.push(child);
 
@@ -92,7 +104,7 @@ impl LightSystem {
                     TransformSystem::world_position(world, child).unwrap_or([0.0, 0.0, 0.0]);
 
                 if let Some(light) = world.get_component_by_id_as::<PointLightComponent>(child) {
-                    updated_lights += 1;
+                    _updated_lights += 1;
                     visuals.upsert_point_light(
                         child,
                         crate::engine::graphics::visual_world::VisualPointLight {
@@ -109,7 +121,12 @@ impl LightSystem {
                 if let Some(light) =
                     world.get_component_by_id_as::<DirectionalLightComponent>(child)
                 {
-                    updated_lights += 1;
+                    _updated_lights += 1;
+                    let color = world
+                        .children_of(child)
+                        .iter()
+                        .find_map(|&ch| world.get_component_by_id_as::<ColorComponent>(ch).map(|c| [c.rgba[0], c.rgba[1], c.rgba[2]]))
+                        .unwrap_or(light.color);
                     visuals.upsert_point_light(
                         child,
                         crate::engine::graphics::visual_world::VisualPointLight {
@@ -117,7 +134,7 @@ impl LightSystem {
                             position_ws,
                             intensity: light.intensity,
                             distance: 0.0,
-                            color: light.color,
+                            color,
                         },
                     );
                 }
