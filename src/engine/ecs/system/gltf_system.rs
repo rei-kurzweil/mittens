@@ -826,6 +826,14 @@ impl GLTFSystem {
             world.add_component_boxed_named(node_display_name.clone(), Box::new(tc));
         let _ = world.add_child(parent_transform, this_transform);
 
+        // Snapshot the authored bind-pose local TRS as a sidecar component
+        // before any animation / IK / AVC system can overwrite it.  Lets
+        // consumers (e.g. AvatarControlSystem) recover the true rest pose
+        // regardless of when they run in the tick.
+        let rest_pose = crate::engine::ecs::component::BoneRestPoseComponent::new(t, r, s);
+        let rest_id = world.add_component(rest_pose);
+        let _ = world.add_child(this_transform, rest_id);
+
         node_index_to_component.insert(node.index(), this_transform);
 
         // Note: we intentionally do not spawn per-joint marker components.

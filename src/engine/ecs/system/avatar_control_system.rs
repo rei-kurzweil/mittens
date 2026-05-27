@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::{
-    AvatarControlComponent, Camera3DComponent, CameraXRComponent, ControllerHand,
-    ControllerXRComponent, QuatTemporalFilterComponent, QuatYawFollowComponent,
+    AvatarControlComponent, BoneRestPoseComponent, Camera3DComponent, CameraXRComponent,
+    ControllerHand, ControllerXRComponent, QuatTemporalFilterComponent, QuatYawFollowComponent,
     TransformComponent, TransformForkTRSComponent, TransformMapRotationComponent,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
@@ -145,15 +145,14 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     };
     let Some(head_parent_id) = world.parent_of(head_bone_id) else { return };
 
-    // Read head_bone's REST local TRS before splicing.  The splice_head TC will be
-    // stamped with this translation so it sits at the FK rest head position; the
-    // head_bone is then re-anchored under splice_head with zero translation.
-    // This way splice_head IS the head pivot (FK-positioned by spine bending), and
-    // the spine FABRIK chain's last bone length = rest neck-to-head distance.
-    let (head_rest_t, head_rest_rot, head_rest_s) = world
-        .get_component_by_id_as::<TransformComponent>(head_bone_id)
-        .map(|t| (t.transform.translation, t.transform.rotation, t.transform.scale))
-        .unwrap_or(([0.0; 3], [0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0]));
+    // Read head_bone's true bind-pose local TRS via the `BoneRestPoseComponent`
+    // sidecar that `GLTFSystem` stamped at node-spawn time.  Falls back to the
+    // current `TransformComponent` only if no rest-pose sidecar is present
+    // (non-GLTF skeletons).  Reading the live `TransformComponent` would
+    // pick up whatever pose `AnimationSystem` wrote earlier this tick, which
+    // bakes the current animation frame into `head_rest_rot` and produces a
+    // permanently rotated visible head.
+    let (head_rest_t, head_rest_rot, head_rest_s) = read_bone_rest_pose(world, head_bone_id);
     let head_splice_id = world.add_component(
         TransformComponent::new().with_position(head_rest_t[0], head_rest_t[1], head_rest_t[2]),
     );
@@ -288,20 +287,16 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     }
 
     // Resolve neck bone (for the Phase 2 rest-pin) and cache its rest local
-    // translation.  Optional — pin is silently disabled if the bone isn't
-    // found or the user cleared `neck_bone`.
+    // translation from the `BoneRestPoseComponent` sidecar — same reasoning
+    // as the head_rest read above: the live `TransformComponent` would
+    // already carry whatever animation wrote this tick.
     let (neck_bone_id, neck_rest_t) = match neck_bone_name.as_deref() {
         Some(name) => {
             let sel = format!("#{}", name);
             match world.find_component(model_root_id, &sel) {
                 Some(nid) => {
-                    let rest = world
-                        .get_component_by_id_as::<TransformComponent>(nid)
-                        .map(|t| t.transform.translation);
-                    if rest.is_none() {
-                        println!("[AVC] neck bone '{}' resolved but has no TransformComponent — skipping pin", name);
-                    }
-                    (Some(nid), rest)
+                    let (rest_t, _, _) = read_bone_rest_pose(world, nid);
+                    (Some(nid), Some(rest_t))
                 }
                 None => {
                     println!("[AVC] neck bone '{}' not found under model_root — neck pin disabled", name);
@@ -312,8 +307,10 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         None => (None, None),
     };
 
-    // Y component of model_root.local — what SimpleHumanoidSystem keeps each
-    // tick.  Defaults to 0.0 if neither camera_bone nor avatar_height resolved.
+    // Y component of model_root.local stashed for the body-follow system's
+    // future Step 1 (head-rotation-compensated world XZ target).  Step 0
+    // doesn't use it; the body relies on the AVC-init single-shot
+    // UpdateTransform plus the parent-chain transform inheritance.
     let model_root_local_y = model_root_translation.map(|t| t[1]).unwrap_or(0.0);
 
     // Store runtime IDs (body_pipeline_id stored after pipeline creation below).
@@ -487,5 +484,26 @@ fn resolve_hand_splice(
 
 fn emit_attach(emit: &mut dyn SignalEmitter, parent: ComponentId, child: ComponentId) {
     emit.push_intent_now(parent, IntentValue::Attach { parents: vec![parent], child });
+}
+
+/// Read a bone's authored bind-pose local TRS via the `BoneRestPoseComponent`
+/// sidecar that `GLTFSystem` stamps at node-spawn time.  Falls back to the
+/// live `TransformComponent` (then to identity) for non-GLTF skeletons that
+/// never had a rest-pose snapshot attached.
+fn read_bone_rest_pose(
+    world: &World,
+    bone_id: ComponentId,
+) -> ([f32; 3], [f32; 4], [f32; 3]) {
+    if let Some(rest) = world
+        .children_of(bone_id)
+        .iter()
+        .find_map(|&c| world.get_component_by_id_as::<BoneRestPoseComponent>(c))
+    {
+        return (rest.translation, rest.rotation, rest.scale);
+    }
+    world
+        .get_component_by_id_as::<TransformComponent>(bone_id)
+        .map(|t| (t.transform.translation, t.transform.rotation, t.transform.scale))
+        .unwrap_or(([0.0; 3], [0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0]))
 }
 

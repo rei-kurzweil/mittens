@@ -106,7 +106,7 @@ ED {
                 // eye position relative to the head bone pivot (head-local
                 // frame; +Y up, +Z forward). AVC discovers it during init and
                 // reparents the T under J_Bip_C_Head.
-                // This authored offset is used to place the head pivot relative
+            // This authored offset is used to place the head pivot relative
                 // to the fixed HMD pose AND to offset the whole avatar baseline,
                 // so changing it moves body/neck together instead of crushing the
                 // upper torso with a head-only correction.

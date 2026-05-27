@@ -1,9 +1,10 @@
 //! IK-adjacent humanoid policy systems.
 //!
-//! Started as a home for the simple-humanoid body-follow heuristic that replaced
-//! the AVC spine FABRIK chain.  The original `ik_system` module remains at the
-//! parent level for chain-solver kinds (AimConstraint, TwoBoneIK, FABRIK).
+//! Houses the head-pose-sensitive body XZ translate follow module that
+//! replaced the scrapped planar-deadzone heuristic.  The original
+//! `ik_system` module remains at the parent level for chain-solver kinds
+//! (AimConstraint, TwoBoneIK, FABRIK).
 
-pub mod simple_humanoid;
+pub mod head_pose_body_xz_follow;
 
-pub use simple_humanoid::SimpleHumanoidSystem;
+pub use head_pose_body_xz_follow::HeadPoseBodyXzFollowSystem;

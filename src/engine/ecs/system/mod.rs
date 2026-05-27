@@ -61,7 +61,7 @@ pub use layout::LayoutSystem;
 pub use gesture_system::{GestureState, GestureSystem};
 pub use gizmo_system::TransformGizmoSystem;
 pub use gltf_system::GLTFSystem;
-pub use ik::SimpleHumanoidSystem;
+pub use ik::HeadPoseBodyXzFollowSystem;
 pub use ik_system::IKSystem;
 pub use input_system::InputSystem;
 pub use kinetic_response_system::KineticResponseSystem;

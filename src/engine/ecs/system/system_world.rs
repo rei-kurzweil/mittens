@@ -29,7 +29,7 @@ use crate::engine::ecs::system::TransitionSystem;
 use crate::engine::ecs::system::TransformStreamSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
-use crate::engine::ecs::system::{AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, GestureSystem, IKSystem, InspectorSystem, LayoutSystem, SimpleHumanoidSystem, TransformGizmoSystem};
+use crate::engine::ecs::system::{AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, GestureSystem, HeadPoseBodyXzFollowSystem, IKSystem, InspectorSystem, LayoutSystem, TransformGizmoSystem};
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 
@@ -66,7 +66,7 @@ pub struct SystemWorld {
     pub inspector: InspectorSystem,
     pub avatar_body_yaw: AvatarBodyYawSystem,
     pub avatar_control: AvatarControlSystem,
-    pub simple_humanoid: SimpleHumanoidSystem,
+    pub head_pose_body_xz_follow: HeadPoseBodyXzFollowSystem,
     pub ik: IKSystem,
 
     pub gesture: GestureSystem,
@@ -1676,9 +1676,11 @@ impl SystemWorld {
         // Runs after OpenXR + raycasts + gestures so avatar_driven_t.matrix_world is current.
         self.avatar_body_yaw.tick(world, queue, dt_sec);
         self.avatar_control.tick(world, queue, dt_sec);
-        // simple_humanoid owns model_root planar follow + neck rest-pin.
-        // Runs after AVC init so model_root_id / body_pipeline_id are populated.
-        self.simple_humanoid.tick(world, queue, dt_sec);
+        // head_pose_body_xz_follow owns model_root XZ translation + neck
+        // rest-pin. Runs after AVC init so model_root_id / body_pipeline_id
+        // are populated. Currently Step 0 pass-through (see
+        // docs/task/avatar-control-simple-humanoid-body-follow.md).
+        self.head_pose_body_xz_follow.tick(world, queue, dt_sec);
         self.ik.tick(world, queue, dt_sec);
         queue.flush(world, self, visuals);
         self.tick_transition_runtime(world, visuals);

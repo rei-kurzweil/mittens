@@ -144,48 +144,70 @@ calibration constant per avatar/user.
 
 ### Step 0 — pass-through smoke test (land first, throw away after)
 
-Before the head-rotation compensation goes in, the new module should first
-run as a trivial **pass-through**: each tick it just copies `driven_t`'s
-world XZ into `body_anchor_xz`. The body's Y stays at the cached avatar-
-height offset (`model_root_local_y`).
+Before the head-rotation compensation goes in, the new module ticks as a
+**no-op for body translation** — it does not write `model_root.local`
+at all. AVC init has already set `model_root.local.translation` to the
+right rest value (avatar height + any eye-offset XZ), and the body
+follows `driven_t`'s world XZ implicitly through the parent-chain
+transform inheritance (`body_pipeline` → `driven_t`) just as it did
+before this module existed.
+
+Two earlier drafts of Step 0 were abandoned, and the no-op form was
+adopted to keep the smoke test as a *pure plumbing test*:
+
+- **Draft A (read-and-overwrite):** the module read `driven_t.world.xz`
+  and wrote `model_root.local` such that `model_root.world.xz = T_h.xz`.
+  This dropped the static eye-offset XZ that AVC init had baked into
+  `model_root.local`, so the body sat visibly in front of the head on
+  setups with a non-zero `T { CXR }` wrapper or `eye_height_*` config.
+- **Draft B (re-stamp the AVC init translation):** the module wrote the
+  init-time `model_root_local_xz` / `model_root_local_y` back to
+  `model_root.local` every tick. In practice this froze the body — the
+  re-stamp `UpdateTransform` interacts badly with `transform_changed`'s
+  stream-boundary handling at `body_pipeline`, and the openxr-driven
+  propagation never managed to update `model_root.matrix_world` on the
+  same frame as the re-stamp.
+
+The no-op form sidesteps both problems and gives us a clean baseline:
+the body behaves exactly as it did before the module existed, and the
+only behavior the module adds in Step 0 is the Phase 2 neck rest-pin
+(which is independent of body translation).
 
 Why land this stub first:
 
-- it proves the new module is wired correctly into `SystemWorld`, replacing
-  the scrapped `SimpleHumanoidSystem` cleanly,
-- it proves `model_root.local.translation` is being computed correctly from
-  the parent (body_pipeline) world matrix — i.e. the inverse-parent math
-  used to convert a target world XZ back to a local TRS write is right,
-- it proves the body actually stays beneath the head when walking,
-  independent of any neck-offset calibration,
-- it isolates "is the plumbing correct?" from "is the head-rotation
-  compensation correct?". If pass-through is broken, no formula on top of
-  it can be right.
+- it proves the new module is wired correctly into `SystemWorld`,
+  replacing the scrapped `SimpleHumanoidSystem` cleanly,
+- it proves the body still sits where it used to before any of this
+  work — no visible regression from introducing the system,
+- it confirms the Phase 2 neck rest-pin works in isolation, before
+  the body-translation rule starts moving things around.
 
 Expected pass-through behavior:
 
-- when walking / leaning, the body translates 1:1 with the HMD in XZ,
+- when walking / leaning, the body translates 1:1 with the HMD in XZ
+  (via the existing parent-chain inheritance, unchanged),
 - when only rotating the head (pitch / roll / yaw in place), the body
-  *will* incorrectly translate along with the HMD's small rotation-induced
-  XZ wobble — this is the exact wrong behavior the full Phase 1 formula
-  fixes, and is expected at this step,
-- the body sits directly below the HMD in XZ and at `model_root_local_y`
-  below it in Y, with no horizontal neck stretch from the body lagging
-  behind,
+  *will* incorrectly track the HMD's small rotation-induced XZ wobble —
+  this is the exact wrong behavior the Step 1 formula fixes, and is
+  expected at this step,
+- the body sits where the old AVC init used to put it relative to the
+  head: roughly under the HMD, with whatever static eye-offset
+  compensation the avatar's camera setup provides,
 - the visible head still tracks the HMD via the head_target mount path
   (unchanged).
 
 Pass-through formula:
 
 ```text
-body_anchor_xz = (T_h).xz      // i.e. driven_t.world.translation.xz
-body_world_y   = (T_h).y + model_root_local_y
+// no body-translation write at all — model_root.local stays as AVC
+// init wrote it; the body inherits driven_t.world.xz through the
+// parent chain just like it always did.
 ```
 
-This step has no calibration constants and no tunables. If it does not
-produce a body that stays glued under the HMD while walking, the bug is in
-the model_root local-write math, not in the follow rule — fix that before
-adding compensation.
+This step has no calibration constants and no tunables. If the body
+isn't sitting under the head while walking after Step 0, the bug is in
+the pre-existing AVC init / parent-chain plumbing, not in anything this
+module adds.
 
 ### Step 1 — head-rotation compensation (the actual Phase 1 behavior)
 
@@ -227,9 +249,14 @@ head-rotation-sensitive estimate:
 - do not introduce a new transform-stream operator unless reuse pressure shows
   up after the AVC-specific version is proven.
 
-Step 1 is a one-line change on top of Step 0: replace `T_h.xz` with
-`(T_h − R_h * v_local).xz`. The model_root local-write code (the
-inverse-parent math) is identical between the two steps.
+Step 1 swaps the Step 0 re-stamp for a `driven_t`-pose-derived write.
+Each tick the system reads `T_h` (driven_t world translation), `R_h`
+(driven_t world rotation), and the parent-pipeline world matrix, then
+solves for `model_root.local.translation` such that
+`model_root.world.xz = (T_h − R_h * v_local).xz` and
+`model_root.world.y = T_h.y + model_root_local_y`. The stashed
+`model_root_local_xz` from Step 0 is no longer used at this point — the
+head-rotation-compensated formula subsumes it.
 
 ### Calibrating `v_local`
 
