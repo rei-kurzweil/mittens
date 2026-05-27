@@ -79,6 +79,14 @@ pub struct AvatarControlComponent {
     /// If `None` and `right_hand_bone` is set, topology derivation fills it in.
     pub right_lower_arm_bone: Option<String>,
 
+    /// World-space pole hint for the left elbow in the 2-bone arm IK solve.
+    /// Default `[-1, 0, -1]` (elbow out + slightly back). Per `docs/spec/ik-system.md`.
+    pub left_arm_pole_direction: [f32; 3],
+
+    /// World-space pole hint for the right elbow in the 2-bone arm IK solve.
+    /// Default `[1, 0, -1]`.
+    pub right_arm_pole_direction: [f32; 3],
+
     /// Yaw delta (radians) that triggers body rotation. Default: π/4 (45°).
     pub body_yaw_threshold: f32,
 
@@ -154,12 +162,10 @@ pub struct AvatarControlComponent {
     // Runtime IDs set by AvatarControlSystem on first tick:
     pub(crate) splice_head:          Option<ComponentId>,
     pub(crate) displaced_head:       Option<ComponentId>,
-    /// Immediate parent of the displaced left hand bone (controller's driven_t or plain TC).
-    pub(crate) splice_left_hand:     Option<ComponentId>,
-    pub(crate) displaced_left_hand:  Option<ComponentId>,
-    /// Immediate parent of the displaced right hand bone.
-    pub(crate) splice_right_hand:    Option<ComponentId>,
-    pub(crate) displaced_right_hand: Option<ComponentId>,
+    /// Cached left hand bone id (end effector of left-arm TwoBoneIK).
+    pub(crate) left_hand_bone_id:    Option<ComponentId>,
+    /// Cached right hand bone id (end effector of right-arm TwoBoneIK).
+    pub(crate) right_hand_bone_id:   Option<ComponentId>,
 
     /// ComponentId of the body pipeline root (`TransformForkTRSComponent`).
     /// Set by `try_init_splices`.
@@ -240,6 +246,18 @@ impl AvatarControlComponent {
 
     pub fn with_right_lower_arm_bone(mut self, name: impl Into<String>) -> Self {
         self.right_lower_arm_bone = Some(name.into());
+        self
+    }
+
+    /// Override the left elbow pole direction (world space).
+    pub fn with_left_arm_pole_direction(mut self, dir: [f32; 3]) -> Self {
+        self.left_arm_pole_direction = dir;
+        self
+    }
+
+    /// Override the right elbow pole direction (world space).
+    pub fn with_right_arm_pole_direction(mut self, dir: [f32; 3]) -> Self {
+        self.right_arm_pole_direction = dir;
         self
     }
 
@@ -348,6 +366,8 @@ impl Default for AvatarControlComponent {
             left_lower_arm_bone: None,
             right_upper_arm_bone: None,
             right_lower_arm_bone: None,
+            left_arm_pole_direction: [-1.0, 0.0, -1.0],
+            right_arm_pole_direction: [1.0, 0.0, -1.0],
             body_yaw_threshold: std::f32::consts::FRAC_PI_4,
             body_yaw_rate: 3.0,
             forward_plus_z: false,
@@ -359,10 +379,8 @@ impl Default for AvatarControlComponent {
             eye_height_from_head_bone: None,
             splice_head: None,
             displaced_head: None,
-            splice_left_hand: None,
-            displaced_left_hand: None,
-            splice_right_hand: None,
-            displaced_right_hand: None,
+            left_hand_bone_id: None,
+            right_hand_bone_id: None,
             body_pipeline_id: None,
             splice_camera_bone: None,
             skip_body_pipeline: false,
@@ -400,6 +418,32 @@ impl Component for AvatarControlComponent {
         }
         if let Some(b) = &self.right_hand_bone {
             c = c.with_call("right_hand_bone", vec![s(b)]);
+        }
+        if let Some(b) = &self.left_upper_arm_bone {
+            c = c.with_call("left_upper_arm_bone", vec![s(b)]);
+        }
+        if let Some(b) = &self.left_lower_arm_bone {
+            c = c.with_call("left_lower_arm_bone", vec![s(b)]);
+        }
+        if let Some(b) = &self.right_upper_arm_bone {
+            c = c.with_call("right_upper_arm_bone", vec![s(b)]);
+        }
+        if let Some(b) = &self.right_lower_arm_bone {
+            c = c.with_call("right_lower_arm_bone", vec![s(b)]);
+        }
+        if self.left_arm_pole_direction != [-1.0, 0.0, -1.0] {
+            let d = self.left_arm_pole_direction;
+            c = c.with_call(
+                "left_arm_pole_direction",
+                vec![array(vec![num(d[0] as f64), num(d[1] as f64), num(d[2] as f64)])],
+            );
+        }
+        if self.right_arm_pole_direction != [1.0, 0.0, -1.0] {
+            let d = self.right_arm_pole_direction;
+            c = c.with_call(
+                "right_arm_pole_direction",
+                vec![array(vec![num(d[0] as f64), num(d[1] as f64), num(d[2] as f64)])],
+            );
         }
         if self.forward_plus_z {
             c = c.with_call("forward_plus_z", vec![]);
