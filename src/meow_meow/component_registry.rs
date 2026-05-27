@@ -1293,9 +1293,17 @@ fn create_component(
                     target_position_offset: arg_f32_arr::<3>(args, 2)
                         .unwrap_or([0.0, 0.0, 0.0]),
                 },
-                Some("two_bone_ik") => IKSolver::TwoBoneIK {
-                    pole_direction: arg_f32_arr::<3>(args, 0)?,
-                    copy_end_rotation: arg_bool(args, 1)?,
+                Some("two_bone_ik") => {
+                    use slotmap::Key;
+                    IKSolver::TwoBoneIK {
+                        // root_joint_id and mid_joint_id are runtime-wired by
+                        // AvatarControlSystem; MMS-authored TwoBoneIK chains are
+                        // not currently supported (would need name resolution).
+                        root_joint_id: ComponentId::null(),
+                        mid_joint_id:  ComponentId::null(),
+                        pole_direction: arg_f32_arr::<3>(args, 0)?,
+                        copy_end_rotation: arg_bool(args, 1)?,
+                    }
                 },
                 Some("fabrik") => IKSolver::Fabrik {
                     max_iterations: arg_f32(args, 0)? as u32,

@@ -100,16 +100,15 @@ fn tick_chain(id: ComponentId, world: &World, emit: &mut dyn SignalEmitter) {
         return;
     }
 
-    // Root joint TC = parent of IKChainComponent.
-    let Some(root_tc) = world
+    // For AimConstraint / Fabrik, root joint TC = parent of IKChainComponent.
+    // TwoBoneIK ignores this and uses the explicit joint IDs on the variant.
+    let root_tc_opt = world
         .parent_of(id)
-        .filter(|&p| world.get_component_by_id_as::<TransformComponent>(p).is_some())
-    else {
-        return;
-    };
+        .filter(|&p| world.get_component_by_id_as::<TransformComponent>(p).is_some());
 
     match solver {
         IKSolver::AimConstraint { offset_yaw, copy_position, target_position_offset } => {
+            let Some(root_tc) = root_tc_opt else { return };
             solve_aim(
                 world,
                 emit,
@@ -121,20 +120,24 @@ fn tick_chain(id: ComponentId, world: &World, emit: &mut dyn SignalEmitter) {
                 weight,
             );
         }
-        IKSolver::TwoBoneIK { pole_direction, copy_end_rotation } => {
-            // Build the 3-node chain directly: [root, first-TC-child-of-root, end_effector_id].
-            // This avoids topology walk issues when non-TC nodes (controllers, helpers) sit
-            // between the lower-arm and the hand bone after a splice.
-            let mid_tc = world
-                .children_of(root_tc)
-                .iter()
-                .copied()
-                .find(|&ch| world.get_component_by_id_as::<TransformComponent>(ch).is_some());
-            let Some(mid_tc) = mid_tc else { return };
-            let chain = [root_tc, mid_tc, end_effector_id];
+        IKSolver::TwoBoneIK { root_joint_id, mid_joint_id, pole_direction, copy_end_rotation } => {
+            // Explicit 3-node chain — no topology discovery. Sibling helper /
+            // collider / cloth nodes under the arm bones are ignored.
+            use slotmap::Key;
+            if root_joint_id.is_null() || mid_joint_id.is_null() || end_effector_id.is_null() {
+                return;
+            }
+            if world.get_component_by_id_as::<TransformComponent>(root_joint_id).is_none()
+                || world.get_component_by_id_as::<TransformComponent>(mid_joint_id).is_none()
+                || world.get_component_by_id_as::<TransformComponent>(end_effector_id).is_none()
+            {
+                return;
+            }
+            let chain = [root_joint_id, mid_joint_id, end_effector_id];
             solve_two_bone(world, emit, &chain, target_id, pole_direction, copy_end_rotation, weight);
         }
         IKSolver::Fabrik { max_iterations, tolerance, target_position_offset } => {
+            let Some(root_tc) = root_tc_opt else { return };
             let chain = collect_tc_chain(world, root_tc, end_effector_id);
             if chain.len() < 2 {
                 return;

@@ -32,12 +32,19 @@ pub enum IKSolver {
 
     /// Closed-form 2-bone IK.
     ///
-    /// Requires exactly 2 TC joints between the root joint and `end_effector_id`.
-    /// Used for arms: UpperArm → LowerArm → Hand.
+    /// Used for arms: UpperArm → LowerArm → Hand. All three joints are referenced
+    /// by explicit `ComponentId` — the solver does NO topology discovery and is
+    /// resilient to sibling helper / collider / cloth bones under the arm joints.
+    /// The chain's `parent_of` is ignored for this solver; `end_effector_id` (the
+    /// hand) lives on `IKChainComponent`, root + mid are here on the variant.
     ///
-    /// `pole_direction`: world-space hint for the middle joint (elbow/knee).
+    /// `root_joint_id`: upper-arm TC (chain root).
+    /// `mid_joint_id`:  lower-arm TC (elbow).
+    /// `pole_direction`: world-space hint for the elbow.
     /// `copy_end_rotation`: if true, also aligns the end-effector bone to the target's rotation.
     TwoBoneIK {
+        root_joint_id: ComponentId,
+        mid_joint_id:  ComponentId,
         pole_direction: [f32; 3],
         copy_end_rotation: bool,
     },
@@ -157,7 +164,7 @@ impl Component for IKChainComponent {
                     array(nums(target_position_offset.iter().map(|&v| v as f64))),
                 ],
             ),
-            IKSolver::TwoBoneIK { pole_direction, copy_end_rotation } => (
+            IKSolver::TwoBoneIK { pole_direction, copy_end_rotation, .. } => (
                 "two_bone_ik",
                 vec![
                     array(nums(pole_direction.iter().map(|&v| v as f64))),

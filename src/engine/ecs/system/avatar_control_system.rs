@@ -394,39 +394,92 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     );
 
     // -----------------------------------------------------------------------
-    // Arm IK (TwoBoneIK).
+    // Arm IK (TwoBoneIK) with explicit joint IDs.
     //
-    // For each configured hand bone + matching controller, attach an
-    // `IKChainComponent` under the upper-arm bone with the controller's
-    // `raw_driver` as the world-space target and the hand bone as the end
-    // effector. `IKSystem` walks the UpperArm → LowerArm → Hand chain, measures
-    // bone lengths once from the rest pose, and solves closed-form each tick.
+    // For each side: resolve all three arm bones (upper + lower + hand) and
+    // hand them to the solver via `IKSolver::TwoBoneIK { root_joint_id,
+    // mid_joint_id, .. }` + `IKChainComponent::end_effector_id`. The solver
+    // does no topology discovery, so sibling cloth / collider / helper bones
+    // under the arm joints (e.g. bisket's `J_Sec_L_TopsUpperArm_*` and
+    // `J_Bip_L_UpperArm_collider_*`) are irrelevant.
     //
-    // Upper-arm resolution:
-    //   - if the user supplied `left/right_upper_arm_bone`, look it up under
-    //     model_root by name;
-    //   - otherwise walk up from the hand bone twice (Hand → LowerArm → UpperArm).
-    // See `docs/spec/ik-system.md`.
+    // Resolution per bone:
+    //   - if `*_upper_arm_bone` / `*_lower_arm_bone` set → name lookup under
+    //     model_root (skip the chain if the name is wrong — fail loudly).
+    //   - else fall back to `parent_of` walk-up from the hand bone (works for
+    //     clean VRM-style rigs with no twist bones).
     // -----------------------------------------------------------------------
-    for (hand_opt, upper_name, pole_dir) in [
-        (left,  left_upper_arm_bone.as_deref(),  left_arm_pole_direction),
-        (right, right_upper_arm_bone.as_deref(), right_arm_pole_direction),
+    for (hand_opt, upper_name, lower_name, pole_dir, side_label) in [
+        (left,  left_upper_arm_bone.as_deref(),  left_lower_arm_bone.as_deref(),
+         left_arm_pole_direction,  "left"),
+        (right, right_upper_arm_bone.as_deref(), right_lower_arm_bone.as_deref(),
+         right_arm_pole_direction, "right"),
     ] {
         let Some((_, raw_driver, hand_bone)) = hand_opt else { continue };
 
-        let upper_arm = if let Some(name) = upper_name {
-            let sel = format!("#{}", name);
-            world.find_component(model_root_id, &sel)
-        } else {
-            world.parent_of(hand_bone).and_then(|lower| world.parent_of(lower))
+        let upper_arm = match upper_name {
+            Some(name) => {
+                let sel = format!("#{}", name);
+                let res = world.find_component(model_root_id, &sel);
+                if res.is_none() {
+                    println!(
+                        "[AVC] explicit {}_upper_arm_bone \"{}\" not found under model_root — {} arm IK disabled",
+                        side_label, name, side_label
+                    );
+                }
+                res
+            }
+            None => world.parent_of(hand_bone).and_then(|lower| world.parent_of(lower)),
         };
-        let Some(upper_arm) = upper_arm else {
-            println!("[AVC] upper-arm bone not found for hand {:?} — arm IK disabled", hand_bone);
-            continue;
+        let Some(upper_arm) = upper_arm else { continue };
+
+        let lower_arm = match lower_name {
+            Some(name) => {
+                let sel = format!("#{}", name);
+                let res = world.find_component(model_root_id, &sel);
+                if res.is_none() {
+                    println!(
+                        "[AVC] explicit {}_lower_arm_bone \"{}\" not found under model_root — {} arm IK disabled",
+                        side_label, name, side_label
+                    );
+                }
+                res
+            }
+            None => world.parent_of(hand_bone),
         };
+        let Some(lower_arm) = lower_arm else { continue };
+
+        let bone_name = |id: ComponentId| -> String {
+            world.component_name(id).unwrap_or("?").to_string()
+        };
+        let upper_name_s = bone_name(upper_arm);
+        let lower_name_s = bone_name(lower_arm);
+        let hand_name_s  = bone_name(hand_bone);
+        println!(
+            "[AVC] {} arm IK: root={} (id={:?}), mid={} (id={:?}), hand={} (id={:?}), target=(id={:?})",
+            side_label,
+            upper_name_s, upper_arm,
+            lower_name_s, lower_arm,
+            hand_name_s,  hand_bone,
+            raw_driver,
+        );
+        let looks_suspicious = |n: &str| {
+            n.contains("Twist") || n.contains("Roll") || n.contains("Helper")
+                || n.contains("_collider") || n.contains("J_Sec_")
+        };
+        if looks_suspicious(&upper_name_s) || looks_suspicious(&lower_name_s) {
+            println!(
+                "[AVC] WARNING: {} arm IK resolved to a helper/cloth/collider bone — \
+                set explicit {}_upper_arm_bone(\"...\") and {}_lower_arm_bone(\"...\") \
+                in your AvatarControl block.",
+                side_label, side_label, side_label
+            );
+        }
 
         let chain = IKChainComponent::new(
             IKSolver::TwoBoneIK {
+                root_joint_id: upper_arm,
+                mid_joint_id:  lower_arm,
                 pole_direction: pole_dir,
                 copy_end_rotation: true,
             },
@@ -434,10 +487,9 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             hand_bone,
         );
         let chain_id = world.add_component(chain);
-        emit_attach(emit, upper_arm, chain_id);
+        // Parent under AVC for cleanup; the solver itself ignores the chain's parent.
+        emit_attach(emit, id, chain_id);
     }
-    let _ = left_lower_arm_bone;
-    let _ = right_lower_arm_bone;
 
     // -----------------------------------------------------------------------
     // Camera re-parenting: move discovered Camera3D/CameraXR children of AVC
