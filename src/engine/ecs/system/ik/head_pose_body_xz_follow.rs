@@ -5,12 +5,22 @@
 //! ## v0 baseline (current behavior)
 //!
 //! Each tick, the body's `model_root.local.translation` is recomputed so
-//! that `model_root.world.xz` lands at the **driver / HMD world XZ**.
-//! Y stays at the init-time `model_root_local_y` (avatar height
-//! calibration), and body yaw still comes from the yaw-follow pipeline.
+//! that `model_root.world.xz` lands at the **displaced head bone's world
+//! XZ** — i.e. the skull-base / head-pivot point the head solver itself
+//! treats as the anchor. Y stays at the init-time `model_root_local_y`
+//! (avatar height calibration), and body yaw still comes from the
+//! yaw-follow pipeline.
 //!
-//! In other words, the body tree should sit under the headset in X/Z while
-//! remaining vertically offset for avatar height.
+//! `displaced_head` is re-parented under `driven_t -> head_target` at AVC
+//! init (see `avatar_control_system.rs`), so its world transform is a pure
+//! function of the HMD pose (HMD pos rotated by -eye_offset). It is NOT a
+//! descendant of `model_root`, so writing the body translation here does
+//! not feed back into the target next tick.
+//!
+//! Targeting the HMD center instead would put the body under the eye
+//! position, leaving the neck pivot behind the body and causing the neck
+//! to stretch/lean under head rotation. See
+//! `docs/bugs/avatar-body-follow-targets-hmd-center-instead-of-head-pivot-xz.md`.
 //!
 //! ## Why we write `matrix_world` ourselves instead of `UpdateTransform`
 //!
@@ -32,7 +42,7 @@
 
 use crate::engine::ecs::component::{AvatarControlComponent, TransformComponent};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
-use crate::utils::math::{mat_to_quat, quat_rotate_vec3};
+use crate::utils::math::{mat_to_quat, quat_conjugate, quat_rotate_vec3};
 
 #[derive(Debug, Default)]
 pub struct HeadPoseBodyXzFollowSystem;
@@ -62,7 +72,7 @@ fn tick_one(avc_id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter
     let (
         model_root_id_opt,
         body_local_y,
-        body_to_head_offset,
+        head_bone_id_opt,
         neck_bone_id_opt,
         neck_rest_t_opt,
     ) = {
@@ -72,43 +82,59 @@ fn tick_one(avc_id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter
         (
             c.model_root_id,
             c.model_root_local_y,
-            c.body_to_head_offset,
+            c.displaced_head,
             c.neck_bone_id,
             c.neck_rest_translation,
         )
     };
 
     let Some(model_root_id) = model_root_id_opt else { return };
-    let Some(driven_t_id) = world.parent_of(avc_id) else { return };
+    let Some(head_bone_id) = head_bone_id_opt else { return };
 
-    // Raw driver/HMD world translation source.
-    let Some(driven_world) = world
-        .get_component_by_id_as::<TransformComponent>(driven_t_id)
+    // Target = displaced head bone world XZ (skull-base / head-pivot).
+    // `displaced_head` lives under driven_t->head_target, so this is a
+    // function of HMD pose only — no feedback from writing model_root below.
+    let Some(head_world) = world
+        .get_component_by_id_as::<TransformComponent>(head_bone_id)
         .map(|t| t.transform.matrix_world)
     else {
         return;
     };
 
-    let new_local_t = [
-        body_to_head_offset[0],
-        body_local_y + body_to_head_offset[1],
-        body_to_head_offset[2],
-    ];
-
-    // The body pipeline owns world rotation; preserve the current world basis
-    // and only retarget world translation under the raw driver.
+    // Preserve current world basis (yaw-follow owns rotation); only retarget
+    // world translation. Y stays at HMD y + body_local_y for height.
     let Some(current_world) = world
         .get_component_by_id_as::<TransformComponent>(model_root_id)
         .map(|t| t.transform.matrix_world)
     else {
         return;
     };
-    let current_rot = mat_to_quat(current_world);
-    let world_offset = quat_rotate_vec3(current_rot, new_local_t);
+
     let mut next_world = current_world;
-    next_world[3][0] = driven_world[3][0] + world_offset[0];
-    next_world[3][1] = driven_world[3][1] + world_offset[1];
-    next_world[3][2] = driven_world[3][2] + world_offset[2];
+    next_world[3][0] = head_world[3][0];
+    next_world[3][1] = head_world[3][1] + body_local_y;
+    next_world[3][2] = head_world[3][2];
+
+    // Recover the implied local translation for the cached `translation` field
+    // (model_root's parent is body_pipeline / AVC; rotation only, so invert
+    // current world rot to map world-delta back to local).
+    let current_rot = mat_to_quat(current_world);
+    let inv_rot = quat_conjugate(current_rot);
+    let world_delta = [
+        next_world[3][0] - current_world[3][0],
+        next_world[3][1] - current_world[3][1],
+        next_world[3][2] - current_world[3][2],
+    ];
+    let local_delta = quat_rotate_vec3(inv_rot, world_delta);
+    let prev_local_t = world
+        .get_component_by_id_as::<TransformComponent>(model_root_id)
+        .map(|t| t.transform.translation)
+        .unwrap_or([0.0, 0.0, 0.0]);
+    let new_local_t = [
+        prev_local_t[0] + local_delta[0],
+        prev_local_t[1] + local_delta[1],
+        prev_local_t[2] + local_delta[2],
+    ];
 
     // Write directly to model_root.transform — see the doc comment at the
     // top of the file for why we bypass `IntentValue::UpdateTransform`.

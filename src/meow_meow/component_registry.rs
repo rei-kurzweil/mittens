@@ -1910,7 +1910,6 @@ fn apply_call(
             "avatar_height"           => *avc = avc.clone().with_avatar_height(arg_f32(args, 0)?),
             "eye_height_from_head_bone" => *avc = avc.clone().with_eye_height_from_head_bone(arg_f32(args, 0)?),
             "hips_bone"                 => *avc = avc.clone().with_hips_bone(arg_str(args, 0)?),
-            "body_to_head_offset"       => *avc = avc.clone().with_body_to_head_offset(arg_f32_arr::<3>(args, 0)?),
             _ => {}
         }
         return Ok(());
