@@ -473,8 +473,8 @@ pub(crate) fn sync_bg_quad(
                 IntentValue::UpdateTransform {
                     component_ids: vec![bg_id],
                     translation: [
-                        (box_width_gu / 2.0 - padding_left_gu - 0.5) * unit_scale,
-                        (padding_top_gu - box_height_gu / 2.0 + 0.5) * unit_scale,
+                        (box_width_gu / 2.0 - padding_left_gu) * unit_scale,
+                        (padding_top_gu - box_height_gu / 2.0) * unit_scale,
                         bg_z,
                     ],
                     rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
@@ -605,12 +605,6 @@ pub(crate) fn apply_text_align(
     // (world-unit) frame.
     let (text_w_wu, text_h_wu) = TextSystem::measure(&text, 0, word_wrap, &tokens, font_size_wu);
 
-    // Half a glyph quad on each axis (wu). Glyph centers sit on column/row
-    // positions, so the leftmost glyph extends a half-glyph past the text
-    // origin; we inset by that amount so the box's left edge clears the
-    // glyph's left edge.
-    let half_glyph_wu = font_size_wu * 0.5;
-
     let content_w_wu = content_w_gu * unit_scale;
     let content_h_wu = content_h_gu * unit_scale;
 
@@ -620,19 +614,19 @@ pub(crate) fn apply_text_align(
         .unwrap_or(([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]));
 
     let x_translation = match align {
-        TextAlign::Left => half_glyph_wu,
-        TextAlign::Right => (content_w_wu - text_w_wu + half_glyph_wu).max(half_glyph_wu),
-        TextAlign::Center => ((content_w_wu - text_w_wu) * 0.5) + half_glyph_wu,
-        TextAlign::Auto => half_glyph_wu,
+        TextAlign::Left => 0.0,
+        TextAlign::Right => (content_w_wu - text_w_wu).max(0.0),
+        TextAlign::Center => ((content_w_wu - text_w_wu) * 0.5).max(0.0),
+        TextAlign::Auto => 0.0,
     };
     let y_translation = match vertical_align {
-        VerticalAlign::Top => -half_glyph_wu,
-        VerticalAlign::Middle => -(((content_h_wu - text_h_wu) * 0.5) + half_glyph_wu),
-        VerticalAlign::Bottom => -(((content_h_wu - text_h_wu) + half_glyph_wu).max(half_glyph_wu)),
+        VerticalAlign::Top => 0.0,
+        VerticalAlign::Middle => -((content_h_wu - text_h_wu) * 0.5).max(0.0),
+        VerticalAlign::Bottom => -(content_h_wu - text_h_wu).max(0.0),
         VerticalAlign::Auto if align != TextAlign::Auto => {
-            -(((content_h_wu - text_h_wu) * 0.5) + half_glyph_wu)
+            -((content_h_wu - text_h_wu) * 0.5).max(0.0)
         }
-        VerticalAlign::Auto => -half_glyph_wu,
+        VerticalAlign::Auto => 0.0,
     };
 
     emit.push_intent_now(
@@ -1001,8 +995,8 @@ mod tests {
             .get_component_by_id_as::<TransformComponent>(text_wrap)
             .expect("text_wrap transform");
 
-        assert!((text_wrap_tc.transform.translation[0] - 0.12).abs() < 1e-4);
-        assert!((text_wrap_tc.transform.translation[1] + 0.08).abs() < 1e-4);
+        assert!((text_wrap_tc.transform.translation[0] - 0.08).abs() < 1e-4);
+        assert!((text_wrap_tc.transform.translation[1] + 0.04).abs() < 1e-4);
         assert!((text_wrap_tc.transform.translation[2] - 0.05).abs() < 1e-4);
     }
 
@@ -1047,8 +1041,8 @@ mod tests {
             .get_component_by_id_as::<TransformComponent>(text_wrap)
             .expect("text_wrap transform");
 
-        assert!((text_wrap_tc.transform.translation[0] - 0.12).abs() < 1e-4);
-        assert!((text_wrap_tc.transform.translation[1] + 0.04).abs() < 1e-4);
+        assert!((text_wrap_tc.transform.translation[0] - 0.08).abs() < 1e-4);
+        assert!(text_wrap_tc.transform.translation[1].abs() < 1e-4);
         assert!((text_wrap_tc.transform.translation[2] - 0.05).abs() < 1e-4);
     }
 
@@ -1095,16 +1089,16 @@ mod tests {
 
         // Box content width = 6.875 GU = 0.55 wu under unit_scale=0.08.
         // "Save" measures to 4 columns × 0.08 wu = 0.32 wu. Center inset:
-        //   x = (0.55 - 0.32) / 2 + half_glyph_wu (0.04) = 0.155 wu
+        //   x = (0.55 - 0.32) / 2 = 0.115 wu
         // Vertical: content_h = 2.4 GU = 0.192 wu; text_h = 0.08 wu →
-        //   y = -((0.192 - 0.08) / 2 + 0.04) = -0.096 wu
-        assert!((text_wrap_tc.transform.translation[0] - 0.155).abs() < 1e-4);
-        assert!((text_wrap_tc.transform.translation[1] + 0.096).abs() < 1e-4);
+        //   y = -((0.192 - 0.08) / 2) = -0.056 wu
+        assert!((text_wrap_tc.transform.translation[0] - 0.115).abs() < 1e-4);
+        assert!((text_wrap_tc.transform.translation[1] + 0.056).abs() < 1e-4);
         assert!((text_wrap_tc.transform.translation[2] - 0.05).abs() < 1e-4);
     }
 
     #[test]
-    fn auto_aligned_text_is_inset_by_half_glyph() {
+    fn auto_aligned_text_uses_content_box_top_left_origin() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
         let mut systems = SystemWorld::default();
@@ -1141,11 +1135,10 @@ mod tests {
             .get_component_by_id_as::<TransformComponent>(text_wrap)
             .expect("text_wrap transform");
 
-        // Half-glyph (font_size_wu / 2 = 0.04 wu) inset from the content
-        // box's top-left so the leftmost / topmost glyph quad's edge sits
-        // flush with the content area.
-        assert!((text_wrap_tc.transform.translation[0] - 0.04).abs() < 1e-4);
-        assert!((text_wrap_tc.transform.translation[1] + 0.04).abs() < 1e-4);
+        // Text wrapper origin now matches the content-box top-left; glyph
+        // quads remain center-origin'd inside that wrapper.
+        assert!(text_wrap_tc.transform.translation[0].abs() < 1e-4);
+        assert!(text_wrap_tc.transform.translation[1].abs() < 1e-4);
         assert!((text_wrap_tc.transform.translation[2] - 0.05).abs() < 1e-4);
     }
 
@@ -1335,7 +1328,7 @@ mod tests {
     /// happened to work for single-line text. With three lines under a panel
     /// `unit_scale = 0.08` and `font_size = 1gu`, the rendered block is
     /// `3 * 0.08 = 0.24 wu`, the content box is `4 GU * 0.08 = 0.32 wu`, and
-    /// the inner T should sit at `y = -((0.32 - 0.24) / 2 + 0.04) = -0.08 wu`.
+    /// the inner T should sit at `y = -((0.32 - 0.24) / 2) = -0.04 wu`.
     #[test]
     fn vertical_align_middle_centers_multi_line_text_under_unit_scale() {
         let mut world = World::default();
@@ -1379,11 +1372,11 @@ mod tests {
             .get_component_by_id_as::<TransformComponent>(text_wrap)
             .expect("text_wrap transform");
 
-        // Verify y centers the rendered three-row block, not the GU-claimed
-        // single-glyph cell. content_h_wu = 0.32, text_h_wu = 3*0.08 = 0.24.
+        // Verify y centers the rendered three-row block. content_h_wu = 0.32,
+        // text_h_wu = 3*0.08 = 0.24.
         assert!(
-            (text_wrap_tc.transform.translation[1] + 0.08).abs() < 1e-4,
-            "expected y ≈ -0.08, got {}",
+            (text_wrap_tc.transform.translation[1] + 0.04).abs() < 1e-4,
+            "expected y ≈ -0.04, got {}",
             text_wrap_tc.transform.translation[1]
         );
     }

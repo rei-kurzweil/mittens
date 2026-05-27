@@ -81,7 +81,7 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         padding(0.4)
                         margin(0.3)
-                        word_wrap("break-word")
+                        word_wrap("normal")
                         background_color = text_bg_color
                     }
                     Text {
@@ -111,7 +111,7 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         padding(0.4)
                         margin(0.3)
-                        word_wrap("break-word")
+                        word_wrap("normal")
                         background_color = text_bg_color
                     }
                     Text {
@@ -141,7 +141,7 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         padding(0.4)
                         margin(0.3)
-                        word_wrap("break-word")
+                        word_wrap("normal")
                         background_color = text_bg_color
                     }
                     Text {
@@ -183,7 +183,7 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         padding(0.8)
                         margin(0.3)
-                        word_wrap("break-word")
+                        word_wrap("normal")
                         background_color = text_bg_color
                     }
                     Text {
@@ -213,7 +213,7 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         padding(0.8)
                         margin(0.3)
-                        word_wrap("break-word")
+                        word_wrap("normal")
                         background_color = text_bg_color
                     }
                     Text {
@@ -243,7 +243,7 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         padding(0.8)
                         margin(0.3)
-                        word_wrap("break-word")
+                        word_wrap("normal")
                         background_color = text_bg_color
                     }
                     Text {
@@ -286,7 +286,7 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         padding(1.2)
                         margin(0.3)
-                        word_wrap("break-word")
+                        word_wrap("normal")
                         background_color = text_bg_color
                     }
                     Text {
@@ -317,7 +317,7 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         padding(1.2)
                         margin(0.3)
-                        word_wrap("break-word")
+                        word_wrap("normal")
                         background_color = text_bg_color
                     }
                     Text {
@@ -348,7 +348,7 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         padding(1.2)
                         margin(0.3)
-                        word_wrap("break-word")
+                        word_wrap("normal")
                         background_color = text_bg_color
                     }
                     Text {

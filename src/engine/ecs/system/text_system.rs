@@ -71,7 +71,13 @@ impl WordWrapState {
     }
 
     fn cursor_pos(&self) -> (f32, f32) {
-        (self.col as f32 * self.font_size, -(self.row as f32 * self.font_size))
+        // The text wrapper origin is the top-left of the text block. Glyph
+        // quads remain center-origin'd inside that wrapper, so each glyph
+        // center sits half a cell inward from the block origin.
+        (
+            (self.col as f32 + 0.5) * self.font_size,
+            -((self.row as f32 + 0.5) * self.font_size),
+        )
     }
 
     fn advance_space(&mut self, i: usize, wrap_allowed_after: &[bool]) {
