@@ -164,13 +164,11 @@ not yet *referenced* anywhere — they're scaffolding for the next phase.
 
 ### 🔧 Remaining
 
-- [ ] **XR pipeline variants** — for each XR-bound pipeline in `VulkanoState`
-      (24 total), build a parallel `pipeline_*_xr` with
-      `view_mask = 0b11` and XR shader stages. Suggested approach: a
-      `build_xr_pipelines(device, layout, color_format, depth_format)` helper
-      that returns an `XrPipelines` struct (mirrors the window set). Cache
-      on `VulkanoState` as e.g. `xr_pipelines: Option<XrPipelines>`, built
-      lazily on first XR frame.
+- [x] **XR pipeline variants.** `XrPipelines` struct holds 24 parallel
+      pipelines, all with `view_mask = 0b11`. Built eagerly at init alongside
+      the window pipelines. Stored as `VulkanoState.xr_pipelines: XrPipelines`.
+      Uses `make_xr_ci` closure to mirror each window pipeline template with
+      XR shader stages + multiview rendering info. Compiles clean.
 - [ ] **Multiview offscreen targets** — replace `XrOffscreenTargets`
       per-eye `Vec<Image>` (l. 347) with array-typed images:
   - color: `Dim2d`, `array_layers = view_count`, `TRANSFER_SRC | COLOR_ATTACHMENT`

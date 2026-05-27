@@ -273,6 +273,43 @@ mod vulkano_backend {
         pub format: Format,
     }
 
+    /// XR multiview pipeline variants — parallel to the window pipelines on
+    /// [`VulkanoState`]. All have `PipelineRenderingCreateInfo.view_mask = 0b11`
+    /// and bind XR shader variants. Used by the (forthcoming)
+    /// `render_xr_multiview` path.
+    pub struct XrPipelines {
+        pub pipeline_toon_mesh: Arc<GraphicsPipeline>,
+        pub pipeline_toon_mesh_transparent: Arc<GraphicsPipeline>,
+        pub pipeline_toon_mesh_cutout: Arc<GraphicsPipeline>,
+        pub pipeline_toon_mesh_transparent_clipped: Arc<GraphicsPipeline>,
+        pub pipeline_toon_mesh_cutout_clipped: Arc<GraphicsPipeline>,
+
+        pub pipeline_emissive_toon_mesh: Arc<GraphicsPipeline>,
+        pub pipeline_emissive_toon_mesh_transparent: Arc<GraphicsPipeline>,
+        pub pipeline_emissive_toon_mesh_cutout: Arc<GraphicsPipeline>,
+        pub pipeline_emissive_toon_mesh_transparent_clipped: Arc<GraphicsPipeline>,
+        pub pipeline_emissive_toon_mesh_cutout_clipped: Arc<GraphicsPipeline>,
+        pub pipeline_emissive_prepass_toon_mesh: Arc<GraphicsPipeline>,
+        pub pipeline_emissive_prepass_toon_mesh_cutout: Arc<GraphicsPipeline>,
+
+        pub pipeline_skinned_toon_mesh: Arc<GraphicsPipeline>,
+        pub pipeline_skinned_toon_mesh_transparent: Arc<GraphicsPipeline>,
+        pub pipeline_skinned_toon_mesh_cutout: Arc<GraphicsPipeline>,
+
+        pub pipeline_skinned_emissive_toon_mesh: Arc<GraphicsPipeline>,
+        pub pipeline_skinned_emissive_toon_mesh_transparent: Arc<GraphicsPipeline>,
+        pub pipeline_skinned_emissive_toon_mesh_cutout: Arc<GraphicsPipeline>,
+        pub pipeline_skinned_emissive_prepass_toon_mesh: Arc<GraphicsPipeline>,
+        pub pipeline_skinned_emissive_prepass_toon_mesh_cutout: Arc<GraphicsPipeline>,
+
+        pub pipeline_stencil_incr: Arc<GraphicsPipeline>,
+        pub pipeline_stencil_decr: Arc<GraphicsPipeline>,
+        pub pipeline_overlay_clipped: Arc<GraphicsPipeline>,
+        pub pipeline_emissive_overlay_clipped: Arc<GraphicsPipeline>,
+        pub pipeline_opaque_clipped: Arc<GraphicsPipeline>,
+        pub pipeline_emissive_opaque_clipped: Arc<GraphicsPipeline>,
+    }
+
     pub struct VulkanoState {
         #[allow(dead_code)]
         pub context: VulkanoContext,
@@ -338,6 +375,13 @@ mod vulkano_backend {
         pub pipeline_opaque_clipped: Arc<GraphicsPipeline>,
         /// Opaque draw gated by stencil EQUAL. Depth write ON. For emissive materials.
         pub pipeline_emissive_opaque_clipped: Arc<GraphicsPipeline>,
+
+        /// Multiview (`view_mask = 0b11`) pipeline variants for the OpenXR
+        /// render path. Built once at init alongside the window pipelines.
+        /// Mirrors the layout of the window pipelines 1:1 — same depth/blend/
+        /// stencil state, same descriptor set layouts, different vertex shader
+        /// (`*.xr.vert`) and `view_mask` set on the rendering info.
+        pub xr_pipelines: XrPipelines,
 
         pub msaa_samples: SampleCount,
 
@@ -1020,7 +1064,7 @@ mod vulkano_backend {
             let mut pipeline_ci =
                 vulkano::pipeline::graphics::GraphicsPipelineCreateInfo::layout(layout);
             pipeline_ci.stages = stages.into();
-            pipeline_ci.vertex_input_state = Some(vertex_input_state_static);
+            pipeline_ci.vertex_input_state = Some(vertex_input_state_static.clone());
             pipeline_ci.input_assembly_state = Some(InputAssemblyState::default());
             pipeline_ci.viewport_state = Some(ViewportState::default());
             pipeline_ci.rasterization_state = Some(RasterizationState::default());
@@ -1375,12 +1419,395 @@ mod vulkano_backend {
                 }),
                 ..Default::default()
             });
-            pipeline_ci_emissive_cutout_clipped.dynamic_state = stencil_dynamic_state;
+            pipeline_ci_emissive_cutout_clipped.dynamic_state = stencil_dynamic_state.clone();
             let pipeline_emissive_toon_mesh_cutout_clipped = GraphicsPipeline::new(
                 device.clone(),
                 None,
                 pipeline_ci_emissive_cutout_clipped,
             )?;
+
+            // ====================================================================
+            // XR multiview pipeline variants.
+            //
+            // Mirrors the window pipelines above 1:1, but with:
+            //   - vertex shaders from `*.xr.vert` (index camera by `gl_ViewIndex`)
+            //   - fragment shader from `toon-mesh.xr.frag` for the lighting
+            //     fragment (struct offsets must match the larger XR UBO)
+            //   - `PipelineRenderingCreateInfo.view_mask = 0b11` to enable
+            //     multiview rasterization into a 2-layer array attachment
+            //
+            // The same descriptor set layouts apply (set 0 binding 0 is a
+            // `UniformBuffer`; the shape comes from the shader, not the layout).
+            // ====================================================================
+            let xr_vs = toon_mesh_xr_vs::load(device.clone())?;
+            let xr_fs = toon_mesh_xr_fs::load(device.clone())?;
+            let xr_skinned_vs = skinned_toon_mesh_xr_vs::load(device.clone())?;
+
+            // Stage combinations for XR:
+            //   - xr_stages: lighting (uses xr_fs because it reads ubo.ambient_light)
+            //   - xr_emissive_stages: emissive frag is window-shared (doesn't read camera UBO)
+            //   - xr_skinned_stages: skinned vs + xr lighting fs
+            //   - xr_skinned_emissive_stages: skinned vs + emissive frag
+            let xr_stages = vec![
+                PipelineShaderStageCreateInfo::new(
+                    xr_vs.entry_point("main")
+                        .ok_or("missing toon-mesh.xr.vert entry point")?,
+                ),
+                PipelineShaderStageCreateInfo::new(
+                    xr_fs.entry_point("main")
+                        .ok_or("missing toon-mesh.xr.frag entry point")?,
+                ),
+            ];
+            let xr_emissive_stages = vec![
+                PipelineShaderStageCreateInfo::new(
+                    xr_vs.entry_point("main")
+                        .ok_or("missing toon-mesh.xr.vert entry point")?,
+                ),
+                PipelineShaderStageCreateInfo::new(
+                    emissive_fs.entry_point("main")
+                        .ok_or("missing emissive-toon-mesh.frag entry point")?,
+                ),
+            ];
+            let xr_skinned_stages = vec![
+                PipelineShaderStageCreateInfo::new(
+                    xr_skinned_vs.entry_point("main")
+                        .ok_or("missing skinned-toon-mesh.xr.vert entry point")?,
+                ),
+                PipelineShaderStageCreateInfo::new(
+                    xr_fs.entry_point("main")
+                        .ok_or("missing toon-mesh.xr.frag entry point")?,
+                ),
+            ];
+            let xr_skinned_emissive_stages = vec![
+                PipelineShaderStageCreateInfo::new(
+                    xr_skinned_vs.entry_point("main")
+                        .ok_or("missing skinned-toon-mesh.xr.vert entry point")?,
+                ),
+                PipelineShaderStageCreateInfo::new(
+                    emissive_fs.entry_point("main")
+                        .ok_or("missing emissive-toon-mesh.frag entry point")?,
+                ),
+            ];
+
+            // PipelineRenderingCreateInfo with view_mask set for stereo (2 views).
+            // Same attachment formats as the window path; only the view_mask differs.
+            let mut xr_pipeline_rendering = PipelineRenderingCreateInfo::default();
+            xr_pipeline_rendering.color_attachment_formats = vec![Some(color_format)];
+            xr_pipeline_rendering.depth_attachment_format = Some(VulkanoSwapchainState::DEPTH_FORMAT);
+            xr_pipeline_rendering.stencil_attachment_format = Some(VulkanoSwapchainState::DEPTH_FORMAT);
+            xr_pipeline_rendering.view_mask = 0b11;
+
+            // Helper: clone a window pipeline_ci template, swap stages, set view_mask.
+            // We rebuild `subpass` rather than mutating it (it's wrapped in Option<...>).
+            let make_xr_ci = |template: &vulkano::pipeline::graphics::GraphicsPipelineCreateInfo,
+                              stages: &[PipelineShaderStageCreateInfo],
+                              vertex_input: VertexInputState|
+             -> vulkano::pipeline::graphics::GraphicsPipelineCreateInfo {
+                let mut ci = template.clone();
+                ci.stages = stages.to_vec().into();
+                ci.vertex_input_state = Some(vertex_input);
+                ci.subpass = Some(PipelineSubpassType::BeginRendering(xr_pipeline_rendering.clone()));
+                ci
+            };
+
+            // --- Static (non-skinned) toon-mesh XR pipelines ---
+            let xr_pipeline_toon_mesh = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                make_xr_ci(&pipeline_ci, &xr_stages, vertex_input_state_static.clone()),
+            )?;
+            let xr_pipeline_emissive_toon_mesh = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                make_xr_ci(&pipeline_ci, &xr_emissive_stages, vertex_input_state_static.clone()),
+            )?;
+            let xr_pipeline_emissive_prepass_toon_mesh = {
+                let mut ci = make_xr_ci(&pipeline_ci, &xr_emissive_stages, vertex_input_state_static.clone());
+                ci.depth_stencil_state = Some(DepthStencilState {
+                    depth: Some(DepthState {
+                        write_enable: false,
+                        compare_op: CompareOp::LessOrEqual,
+                        ..DepthState::simple()
+                    }),
+                    ..Default::default()
+                });
+                GraphicsPipeline::new(device.clone(), None, ci)?
+            };
+            let xr_pipeline_toon_mesh_transparent = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                make_xr_ci(&pipeline_ci_transparent, &xr_stages, vertex_input_state_static.clone()),
+            )?;
+            let xr_pipeline_emissive_toon_mesh_transparent = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                make_xr_ci(&pipeline_ci_transparent, &xr_emissive_stages, vertex_input_state_static.clone()),
+            )?;
+            let xr_pipeline_toon_mesh_cutout = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                make_xr_ci(&pipeline_ci_cutout, &xr_stages, vertex_input_state_static.clone()),
+            )?;
+            let xr_pipeline_emissive_toon_mesh_cutout = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                make_xr_ci(&pipeline_ci_cutout, &xr_emissive_stages, vertex_input_state_static.clone()),
+            )?;
+            let xr_pipeline_emissive_prepass_toon_mesh_cutout = {
+                let mut ci = make_xr_ci(&pipeline_ci_cutout, &xr_emissive_stages, vertex_input_state_static.clone());
+                ci.depth_stencil_state = Some(DepthStencilState {
+                    depth: Some(DepthState {
+                        write_enable: false,
+                        compare_op: CompareOp::LessOrEqual,
+                        ..DepthState::simple()
+                    }),
+                    ..Default::default()
+                });
+                GraphicsPipeline::new(device.clone(), None, ci)?
+            };
+
+            // --- Skinned toon-mesh XR pipelines ---
+            let xr_pipeline_skinned_toon_mesh = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                make_xr_ci(&pipeline_ci, &xr_skinned_stages, vertex_input_state_skinned.clone()),
+            )?;
+            let xr_pipeline_skinned_emissive_toon_mesh = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                make_xr_ci(&pipeline_ci, &xr_skinned_emissive_stages, vertex_input_state_skinned.clone()),
+            )?;
+            let xr_pipeline_skinned_emissive_prepass_toon_mesh = {
+                let mut ci = make_xr_ci(&pipeline_ci, &xr_skinned_emissive_stages, vertex_input_state_skinned.clone());
+                ci.depth_stencil_state = Some(DepthStencilState {
+                    depth: Some(DepthState {
+                        write_enable: false,
+                        compare_op: CompareOp::LessOrEqual,
+                        ..DepthState::simple()
+                    }),
+                    ..Default::default()
+                });
+                GraphicsPipeline::new(device.clone(), None, ci)?
+            };
+            let xr_pipeline_skinned_toon_mesh_transparent = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                make_xr_ci(&pipeline_ci_transparent, &xr_skinned_stages, vertex_input_state_skinned.clone()),
+            )?;
+            let xr_pipeline_skinned_emissive_toon_mesh_transparent = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                make_xr_ci(&pipeline_ci_transparent, &xr_skinned_emissive_stages, vertex_input_state_skinned.clone()),
+            )?;
+            let xr_pipeline_skinned_toon_mesh_cutout = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                make_xr_ci(&pipeline_ci_cutout, &xr_skinned_stages, vertex_input_state_skinned.clone()),
+            )?;
+            let xr_pipeline_skinned_emissive_toon_mesh_cutout = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                make_xr_ci(&pipeline_ci_cutout, &xr_skinned_emissive_stages, vertex_input_state_skinned.clone()),
+            )?;
+            let xr_pipeline_skinned_emissive_prepass_toon_mesh_cutout = {
+                let mut ci = make_xr_ci(&pipeline_ci_cutout, &xr_skinned_emissive_stages, vertex_input_state_skinned.clone());
+                ci.depth_stencil_state = Some(DepthStencilState {
+                    depth: Some(DepthState {
+                        write_enable: false,
+                        compare_op: CompareOp::LessOrEqual,
+                        ..DepthState::simple()
+                    }),
+                    ..Default::default()
+                });
+                GraphicsPipeline::new(device.clone(), None, ci)?
+            };
+
+            // --- Stencil + clipped XR pipelines (UI within XR world) ---
+            let xr_pipeline_stencil_incr = {
+                let mut ci = make_xr_ci(&pipeline_ci, &xr_stages, vertex_input_state_static.clone());
+                ci.color_blend_state = Some(ColorBlendState::with_attachment_states(
+                    1,
+                    ColorBlendAttachmentState {
+                        blend: None,
+                        color_write_enable: true,
+                        color_write_mask: ColorComponents::empty(),
+                    },
+                ));
+                ci.depth_stencil_state = Some(DepthStencilState {
+                    depth: None,
+                    stencil: Some(StencilState {
+                        front: StencilOpState { ops: stencil_ops_incr, ..Default::default() },
+                        back: StencilOpState { ops: stencil_ops_incr, ..Default::default() },
+                    }),
+                    ..Default::default()
+                });
+                ci.dynamic_state = stencil_dynamic_state.clone();
+                GraphicsPipeline::new(device.clone(), None, ci)?
+            };
+            let xr_pipeline_stencil_decr = {
+                let mut ci = make_xr_ci(&pipeline_ci, &xr_stages, vertex_input_state_static.clone());
+                ci.color_blend_state = Some(ColorBlendState::with_attachment_states(
+                    1,
+                    ColorBlendAttachmentState {
+                        blend: None,
+                        color_write_enable: true,
+                        color_write_mask: ColorComponents::empty(),
+                    },
+                ));
+                ci.depth_stencil_state = Some(DepthStencilState {
+                    depth: None,
+                    stencil: Some(StencilState {
+                        front: StencilOpState { ops: stencil_ops_decr, ..Default::default() },
+                        back: StencilOpState { ops: stencil_ops_decr, ..Default::default() },
+                    }),
+                    ..Default::default()
+                });
+                ci.dynamic_state = stencil_dynamic_state.clone();
+                GraphicsPipeline::new(device.clone(), None, ci)?
+            };
+            let xr_pipeline_overlay_clipped = {
+                let mut ci = make_xr_ci(&pipeline_ci, &xr_stages, vertex_input_state_static.clone());
+                ci.depth_stencil_state = Some(DepthStencilState {
+                    depth: Some(DepthState::simple()),
+                    stencil: Some(StencilState {
+                        front: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                        back: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                    }),
+                    ..Default::default()
+                });
+                ci.dynamic_state = stencil_dynamic_state.clone();
+                GraphicsPipeline::new(device.clone(), None, ci)?
+            };
+            let xr_pipeline_emissive_overlay_clipped = {
+                let mut ci = make_xr_ci(&pipeline_ci, &xr_emissive_stages, vertex_input_state_static.clone());
+                ci.depth_stencil_state = Some(DepthStencilState {
+                    depth: Some(DepthState::simple()),
+                    stencil: Some(StencilState {
+                        front: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                        back: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                    }),
+                    ..Default::default()
+                });
+                ci.dynamic_state = stencil_dynamic_state.clone();
+                GraphicsPipeline::new(device.clone(), None, ci)?
+            };
+            let xr_pipeline_opaque_clipped = {
+                let mut ci = make_xr_ci(&pipeline_ci, &xr_stages, vertex_input_state_static.clone());
+                ci.depth_stencil_state = Some(DepthStencilState {
+                    depth: Some(DepthState::simple()),
+                    stencil: Some(StencilState {
+                        front: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                        back: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                    }),
+                    ..Default::default()
+                });
+                ci.dynamic_state = stencil_dynamic_state.clone();
+                GraphicsPipeline::new(device.clone(), None, ci)?
+            };
+            let xr_pipeline_emissive_opaque_clipped = {
+                let mut ci = make_xr_ci(&pipeline_ci, &xr_emissive_stages, vertex_input_state_static.clone());
+                ci.depth_stencil_state = Some(DepthStencilState {
+                    depth: Some(DepthState::simple()),
+                    stencil: Some(StencilState {
+                        front: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                        back: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                    }),
+                    ..Default::default()
+                });
+                ci.dynamic_state = stencil_dynamic_state.clone();
+                GraphicsPipeline::new(device.clone(), None, ci)?
+            };
+            let xr_pipeline_toon_mesh_transparent_clipped = {
+                let mut ci = make_xr_ci(&pipeline_ci_transparent, &xr_stages, vertex_input_state_static.clone());
+                ci.depth_stencil_state = Some(DepthStencilState {
+                    depth: Some(DepthState {
+                        write_enable: false,
+                        ..DepthState::simple()
+                    }),
+                    stencil: Some(StencilState {
+                        front: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                        back: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                    }),
+                    ..Default::default()
+                });
+                ci.dynamic_state = stencil_dynamic_state.clone();
+                GraphicsPipeline::new(device.clone(), None, ci)?
+            };
+            let xr_pipeline_emissive_toon_mesh_transparent_clipped = {
+                let mut ci = make_xr_ci(&pipeline_ci_transparent, &xr_emissive_stages, vertex_input_state_static.clone());
+                ci.depth_stencil_state = Some(DepthStencilState {
+                    depth: Some(DepthState {
+                        write_enable: false,
+                        ..DepthState::simple()
+                    }),
+                    stencil: Some(StencilState {
+                        front: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                        back: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                    }),
+                    ..Default::default()
+                });
+                ci.dynamic_state = stencil_dynamic_state.clone();
+                GraphicsPipeline::new(device.clone(), None, ci)?
+            };
+            let xr_pipeline_toon_mesh_cutout_clipped = {
+                let mut ci = make_xr_ci(&pipeline_ci_cutout, &xr_stages, vertex_input_state_static.clone());
+                ci.depth_stencil_state = Some(DepthStencilState {
+                    depth: Some(DepthState::simple()),
+                    stencil: Some(StencilState {
+                        front: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                        back: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                    }),
+                    ..Default::default()
+                });
+                ci.dynamic_state = stencil_dynamic_state.clone();
+                GraphicsPipeline::new(device.clone(), None, ci)?
+            };
+            let xr_pipeline_emissive_toon_mesh_cutout_clipped = {
+                let mut ci = make_xr_ci(&pipeline_ci_cutout, &xr_emissive_stages, vertex_input_state_static.clone());
+                ci.depth_stencil_state = Some(DepthStencilState {
+                    depth: Some(DepthState::simple()),
+                    stencil: Some(StencilState {
+                        front: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                        back: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                    }),
+                    ..Default::default()
+                });
+                ci.dynamic_state = stencil_dynamic_state.clone();
+                GraphicsPipeline::new(device.clone(), None, ci)?
+            };
+
+            let xr_pipelines = XrPipelines {
+                pipeline_toon_mesh: xr_pipeline_toon_mesh,
+                pipeline_toon_mesh_transparent: xr_pipeline_toon_mesh_transparent,
+                pipeline_toon_mesh_cutout: xr_pipeline_toon_mesh_cutout,
+                pipeline_toon_mesh_transparent_clipped: xr_pipeline_toon_mesh_transparent_clipped,
+                pipeline_toon_mesh_cutout_clipped: xr_pipeline_toon_mesh_cutout_clipped,
+
+                pipeline_emissive_toon_mesh: xr_pipeline_emissive_toon_mesh,
+                pipeline_emissive_toon_mesh_transparent: xr_pipeline_emissive_toon_mesh_transparent,
+                pipeline_emissive_toon_mesh_cutout: xr_pipeline_emissive_toon_mesh_cutout,
+                pipeline_emissive_toon_mesh_transparent_clipped: xr_pipeline_emissive_toon_mesh_transparent_clipped,
+                pipeline_emissive_toon_mesh_cutout_clipped: xr_pipeline_emissive_toon_mesh_cutout_clipped,
+                pipeline_emissive_prepass_toon_mesh: xr_pipeline_emissive_prepass_toon_mesh,
+                pipeline_emissive_prepass_toon_mesh_cutout: xr_pipeline_emissive_prepass_toon_mesh_cutout,
+
+                pipeline_skinned_toon_mesh: xr_pipeline_skinned_toon_mesh,
+                pipeline_skinned_toon_mesh_transparent: xr_pipeline_skinned_toon_mesh_transparent,
+                pipeline_skinned_toon_mesh_cutout: xr_pipeline_skinned_toon_mesh_cutout,
+
+                pipeline_skinned_emissive_toon_mesh: xr_pipeline_skinned_emissive_toon_mesh,
+                pipeline_skinned_emissive_toon_mesh_transparent: xr_pipeline_skinned_emissive_toon_mesh_transparent,
+                pipeline_skinned_emissive_toon_mesh_cutout: xr_pipeline_skinned_emissive_toon_mesh_cutout,
+                pipeline_skinned_emissive_prepass_toon_mesh: xr_pipeline_skinned_emissive_prepass_toon_mesh,
+                pipeline_skinned_emissive_prepass_toon_mesh_cutout: xr_pipeline_skinned_emissive_prepass_toon_mesh_cutout,
+
+                pipeline_stencil_incr: xr_pipeline_stencil_incr,
+                pipeline_stencil_decr: xr_pipeline_stencil_decr,
+                pipeline_overlay_clipped: xr_pipeline_overlay_clipped,
+                pipeline_emissive_overlay_clipped: xr_pipeline_emissive_overlay_clipped,
+                pipeline_opaque_clipped: xr_pipeline_opaque_clipped,
+                pipeline_emissive_opaque_clipped: xr_pipeline_emissive_opaque_clipped,
+            };
 
             let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
                 device.clone(),
@@ -1472,6 +1899,8 @@ mod vulkano_backend {
                 pipeline_emissive_overlay_clipped,
                 pipeline_opaque_clipped,
                 pipeline_emissive_opaque_clipped,
+
+                xr_pipelines,
 
                 msaa_samples,
 
