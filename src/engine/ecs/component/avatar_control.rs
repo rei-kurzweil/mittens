@@ -194,6 +194,10 @@ pub struct AvatarControlComponent {
     /// once at init from `camera_bone` auto-calibration or `avatar_height`.
     pub(crate) model_root_local_y: f32,
 
+    /// Additional body-local translation offset applied on top of the
+    /// driver-aligned body placement.
+    pub body_to_head_offset: [f32; 3],
+
     /// Resolved neck bone id (under `model_root`).  `None` if not found.
     pub(crate) neck_bone_id: Option<ComponentId>,
 
@@ -335,6 +339,12 @@ impl AvatarControlComponent {
         self.head_ik_eye_height = Some(dy);
         self
     }
+
+    /// Additional translation on the body in its local transform space.
+    pub fn with_body_to_head_offset(mut self, offset: [f32; 3]) -> Self {
+        self.body_to_head_offset = offset;
+        self
+    }
 }
 
 impl Default for AvatarControlComponent {
@@ -369,6 +379,7 @@ impl Default for AvatarControlComponent {
             neck_bone: Some("J_Bip_C_Neck".to_string()),
             model_root_id: None,
             model_root_local_y: 0.0,
+            body_to_head_offset: [0.0, 0.0, 0.0],
             neck_bone_id: None,
             neck_rest_translation: None,
             component: None,
@@ -417,6 +428,16 @@ impl Component for AvatarControlComponent {
         }
         if let Some(dy) = self.head_ik_eye_height {
             c = c.with_call("head_ik_eye_height", vec![num(dy as f64)]);
+        }
+        if self.body_to_head_offset != [0.0, 0.0, 0.0] {
+            c = c.with_call(
+                "body_to_head_offset",
+                vec![array(vec![
+                    num(self.body_to_head_offset[0] as f64),
+                    num(self.body_to_head_offset[1] as f64),
+                    num(self.body_to_head_offset[2] as f64),
+                ])],
+            );
         }
         if let Some(b) = &self.hips_bone {
             c = c.with_call("hips_bone", vec![s(b)]);

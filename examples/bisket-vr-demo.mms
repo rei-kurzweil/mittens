@@ -95,7 +95,11 @@ ED {
                 camera_bone("J_Bip_C_Head")
                 left_hand_bone("J_Bip_L_Hand")
                 right_hand_bone("J_Bip_R_Hand")
+                
+                body_to_head_offset([0, -0.1, -0.1])
+                
                 initial_yaw(3.14159)
+
                 hand_rotation_smoothing(220.0)
 
                 T {

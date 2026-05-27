@@ -223,11 +223,9 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         .unwrap_or([0.0, eye_height_from_head_bone.unwrap_or(0.0), 0.0]);
 
     // Eye offset mapped from head-local into driven_t-local space.
-    // This offset is applied to BOTH:
-    //   1) model_root baseline translation (moves whole avatar), and
-    //   2) spine IK target offset (head pivot relative to HMD target).
-    // Using the same baseline offset prevents upper-body crushing from a
-    // target-only compensation.
+    // This remains the source for the head target offset. It no longer owns
+    // body/root XZ placement; steady-state body XZ is handled by
+    // HeadPoseBodyXzFollowSystem.
     let head_ik_offset_yaw = if forward_plus_z { 0.0 } else { std::f32::consts::PI };
     let root_eye_neg = [
         -eye_offset_head_local[0],
@@ -240,9 +238,9 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     let model_root_translation: Option<[f32; 3]> = if let Some(h) = avatar_height_override {
         println!("[AVC] using avatar_height_override = {}", h);
         Some([
-            root_eye_offset_driven_local[0],
+            0.0,
             -h + root_eye_offset_driven_local[1],
-            root_eye_offset_driven_local[2],
+            0.0,
         ])
     } else if let Some(cam_bone_id) = camera_bone_id {
         let cam_bone_world_y = world
@@ -259,9 +257,9 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             cam_bone_world_y, model_root_world_y, bone_local_y, -bone_local_y
         );
         Some([
-            root_eye_offset_driven_local[0],
+            0.0,
             -bone_local_y + root_eye_offset_driven_local[1],
-            root_eye_offset_driven_local[2],
+            0.0,
         ])
     } else {
         if camera_bone_name.is_some() {
