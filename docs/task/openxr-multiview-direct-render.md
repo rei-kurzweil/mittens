@@ -177,47 +177,74 @@ not yet *referenced* anywhere — they're scaffolding for the next phase.
   - all views built with `view_type = Dim2dArray`, `array_layers = 0..view_count`
   - `xr_multiview_color_vk_image()` accessor for the copy-out step
   - state lives parallel to existing `xr_offscreen` (per-eye fallback)
-- [ ] **`render_xr_multiview` entry point** in `VulkanoRenderer`. The
-      keystone. Single render with `RenderingInfo.view_mask = 0b11`,
-      `layer_count = view_count`. Fills `CameraXrUBO` with both eye matrices
-      (read from `visual_world.camera_view_for_eye(Xr, 0)` and `(Xr, 1)`).
-      Uses `xr_pipelines.pipeline_*` + the new XR camera buffer descriptor
-      binding. One bones slot (drop the per-eye doubling at
-      `vulkano_renderer.rs:2161`).
-
-      **Implementation requires touching `build_draw_batches_command_buffer`**
-      (l. 2932, ~950 lines). Recommended approach:
-
-      - Add `is_xr_multiview: bool` parameter (default false for window/per-eye)
-      - At each `self.pipeline_*` site (14 in the function), select
-        `&self.xr_pipelines.pipeline_*` instead when the flag is set. Cleanest:
-        build a local `PipelineSet { toon_mesh: &Arc<_>, ... }` once at top
-        based on the flag, reference fields below.
-      - When uploading the camera UBO, branch on the flag: window path fills
-        `CameraUBO` (scalar view/proj), XR path fills `CameraXrUBO` with both
-        eyes' matrices.
-      - `RenderingInfo`: set `view_mask = 0b11` and `layer_count = view_count`
-        when multiview is on.
-      - The function takes `eye: usize` today; for multiview, callers pass
-        `eye = 0` and the function ignores it (or rename to
-        `primary_eye_for_caches: usize`).
-- [ ] **Simplify `copy_offscreen_to_xr_layers`** — replace per-eye loop
-      with a single `vkCmdCopyImage` whose `regions[].subresource.layer_count
-      = view_count` (or one region per layer). Source is the array image.
-- [ ] **Switch OpenXR frame loop** — `openxr_system.rs:1733` per-eye loop +
-      `render_xr_eye_offscreen` call → single
-      `renderer.render_xr_multiview(visuals, extent_u, view_count as u32)`
-      call. Then one `copy_offscreen_to_xr_layers(..., view_count)`.
-- [ ] **Fallback toggle** — `Universe::xr_multiview_enabled: bool`
-      (default true). On capability miss (probe `multiview` device feature
-      at init), log warning + route to the existing per-eye path. Keep
-      `render_xr_eye_offscreen` + per-eye copy alive for one release.
-- [ ] **Verify on ALVR** — run `cargo run --release --example
-      vtuber-joints-example`. Expect noticeable smoothness improvement.
-      Flamegraph check: one `build_draw_batches_command_buffer` per frame
-      (not two), no per-eye `cmd_copy_image` in hot path.
-- [ ] **Stereo sanity** — temporarily set `view[1] = view[0]` in UBO fill;
-      both eyes should show left-eye view. Revert.
+- [x] **`render_xr_multiview` entry point.** New method on `VulkanoRenderer`.
+      Ensures multiview targets, runs `build_draw_batches_command_buffer`
+      once with `is_xr_multiview = true`, submits + waits. Exposed on the
+      outer wrapper as `VulkanoRenderer::render_xr_multiview`. Notes:
+  - `build_draw_batches_command_buffer` got an `is_xr_multiview: bool`
+    parameter. At top of fn: 8 local pipeline selectors clone the right Arc
+    (`p_toon_mesh`, `p_emissive_prepass_toon_mesh`, etc); pipeline use sites
+    swapped to those locals.
+  - Camera UBO branches inline: XR path fills `CameraXrUBO` (both eyes
+    read via `camera_view_for_eye(Xr, 0/1)`); window path keeps `CameraUBO`.
+    Buffer erased to `Subbuffer<[u8]>` via `.into_bytes()` so both branches
+    feed the same descriptor write.
+  - All 3 `RenderingInfo` constructions (main, bloom, overlay) now use
+    `xr_view_count` + `xr_view_mask` locals (0b11 / 2 in XR, 0 / 1 in window).
+  - Bones slot: multiview uses a single shared slot (no per-eye doubling).
+  - Post-processing in the multiview path is **deferred** — passed as `None`.
+    The existing `PostProcessingRenderer` assumes per-eye single-layer
+    targets; needs separate work to be multiview-aware.
+- [x] **Multiview-aware copy.** New `copy_multiview_to_xr_layers` in
+      `xr_renderer.rs`. Source = the multiview color array image
+      (via `renderer.xr_multiview_color_vk_image()`). Single multi-layer
+      `vkCmdCopyImage` region with `layer_count = view_count`. Same layout
+      barrier dance as the per-eye copy, but applied once instead of per-eye.
+- [x] **Thread multiview through `vulkano_cbb.rs` helpers.** Initial bring-up
+      had `build_draw_batches_command_buffer` multiview-aware but missed that
+      `record_opaque_draws`, `record_cutout_draws`, `record_overlay_draws`,
+      `record_transparent_single_draws`, `record_transparent_multi_draws`,
+      `record_background_draws`, `record_background_occluded_lit_draws`, and
+      `record_phase_stream_draws` all hardcoded `self.pipeline_*` (window
+      pipelines with `view_mask=0`). Binding those inside a multiview scope
+      (`view_mask=0b11`) produced a black headset image. Fix: added a `pipe!`
+      macro in `vulkano_cbb.rs` that picks from either `VulkanoState` or
+      `XrPipelines` by field name; threaded `is_xr_multiview: bool` through
+      every helper. Also widened `ClearRect.array_layers` to span both layers
+      in multiview.
+- [x] **Switch OpenXR frame loop.** `openxr_system.rs:1733` now branches on
+      `self.xr_multiview_enabled`. Multiview path: one
+      `render_xr_multiview` + one `copy_multiview_to_xr_layers`. Fallback
+      path: the original per-eye loop + per-eye copy. Layer submission
+      (l. 1769-1792) is unchanged — `image_array_index(0/1)` still references
+      the two layers, regardless of how they were written.
+- [x] **Fallback toggle.** `OpenXRSystem.xr_multiview_enabled: bool`
+      (default `true`). Flip to `false` to bisect rendering issues against
+      the proven per-eye path.
+- [x] **Verified on ALVR.** Renders correctly, stereo is correct (confirmed
+      via gl_ViewIndex tint diagnostic: left eye → red, right eye → green
+      stably). Holds 60 fps (the ALVR stream rate) steadily. GPU wall-clock
+      per frame is ~1.3ms multiview vs ~2-4ms per-eye total — multiview is
+      actually faster.
+- [ ] **Known caveat: motion ghosting.** During head rotation/translation
+      the multiview path shows a "ghost of geometry" that intensifies with
+      angular velocity, visible in each eye independently. The per-eye path
+      doesn't ghost during rotation (smooth) and only has mild jerkiness
+      during translation. Hypothesis: this is an ALVR/runtime interaction
+      with our multiview-array submission timing — both paths produce
+      identical swapchain content with identical poses, but ALVR's
+      reprojection seems to behave worse with our multiview path despite
+      it being faster wall-clock. Multiview ships behind
+      `OpenXRSystem.xr_multiview_enabled` (default `true`); flip to `false`
+      to fall back to the proven per-eye path. Investigation continues —
+      candidates: pose-prediction timing, ALVR-specific multiview quirks,
+      direct-render to swapchain (Option B) sidestepping the array image
+      altogether.
+- [ ] **Multiview post-processing** (separate task) — `PostProcessingRenderer`
+      currently assumes per-eye single-layer targets. Multiview path runs
+      with post-process disabled. To re-enable: bloom/composite passes need
+      `view_mask = 0b11` and array-typed targets, or do post-process per
+      array layer after the multiview render.
 
 ### 🚀 Direct-render follow-up (after Option A is stable)
 
@@ -239,11 +266,30 @@ not yet *referenced* anywhere — they're scaffolding for the next phase.
 
 ---
 
-## 6. Risks / open questions
+## 6. Spec quirks worth remembering
 
+- **`view_mask` is on both PipelineRenderingCreateInfo *and* RenderingInfo,
+  and they must match.** Set to `0b11` for stereo on both.
+- **When `RenderingInfo.view_mask != 0`, `layer_count` must be `1`.** The
+  layer count is implied by the bitmask. (Discovered the hard way during
+  bring-up — Vulkano's error message was clear: "view_mask is not 0, but
+  layer_count is not 1".)
+- **`vkCmdClearAttachments` in a multiview scope must use
+  `ClearRect { baseArrayLayer: 0, layerCount: 1 }`.** Multiview replicates
+  the clear across views automatically. Setting wider layer ranges is a
+  validation error.
+- **`vkCmdCopyImage` with multi-layer regions is valid per spec** but we
+  use one region per layer for robustness — the explicit form is
+  unambiguous across drivers.
+- **`view_mask != 0` requires `device_features.multiview = true`.**
+  Vulkano enforces this at pipeline build time.
+
+## 7. Risks / open questions
+
+- **Motion ghosting on ALVR** (see caveat above). Open investigation.
 - **Vulkano layout tracking on foreign images.** Worst case we drop to
-  `ash` for the begin/end-rendering on the XR path while keeping draws in
-  Vulkano. Confirm before declaring direct render done.
+  `ash` for the begin/end-rendering on the direct-render path while
+  keeping draws in Vulkano. Confirm before declaring direct render done.
 - **MSAA resolve to array** — dynamic rendering supports per-attachment
   resolve; verify the resolve view can be `2D_ARRAY` matching layer count.
 - **Per-eye culling.** Confirm `build_draw_batches_command_buffer` doesn't
@@ -254,7 +300,7 @@ not yet *referenced* anywhere — they're scaffolding for the next phase.
 
 ---
 
-## 7. References
+## 8. References
 
 - `docs/analysis/VK_KHR_multiview.md` — original investigation that proposed
   Options A/B. This task implements both.

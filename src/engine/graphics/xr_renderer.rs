@@ -251,3 +251,156 @@ pub fn copy_offscreen_to_xr_layers(
 
     Ok(())
 }
+
+/// Multiview variant of [`copy_offscreen_to_xr_layers`]. Source is a single
+/// 2D-array image (`view_count` layers) produced by `render_xr_multiview`;
+/// destination is the OpenXR swapchain image (also array-typed). One copy
+/// region covers all layers.
+pub fn copy_multiview_to_xr_layers(
+    vk_device: &ash::Device,
+    vk_queue: vk::Queue,
+    vk_command_buffer: vk::CommandBuffer,
+    xr_swapchain: &XRSwapchain,
+    renderer: &VulkanoRenderer,
+    dst_image: vk::Image,
+    dst_was_initialized: bool,
+    view_count: usize,
+) -> Result<(), vk::Result> {
+    let Some(src_image) = renderer.xr_multiview_color_vk_image() else {
+        return Ok(());
+    };
+
+    let dst_old_layout = if dst_was_initialized {
+        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+    } else {
+        vk::ImageLayout::UNDEFINED
+    };
+    let dst_src_access = if dst_was_initialized {
+        vk::AccessFlags::COLOR_ATTACHMENT_WRITE
+    } else {
+        vk::AccessFlags::empty()
+    };
+
+    let layer_count = view_count as u32;
+
+    let src_range = vk::ImageSubresourceRange::default()
+        .aspect_mask(vk::ImageAspectFlags::COLOR)
+        .base_mip_level(0)
+        .level_count(1)
+        .base_array_layer(0)
+        .layer_count(layer_count);
+
+    let dst_range = vk::ImageSubresourceRange::default()
+        .aspect_mask(vk::ImageAspectFlags::COLOR)
+        .base_mip_level(0)
+        .level_count(1)
+        .base_array_layer(0)
+        .layer_count(layer_count);
+
+    unsafe {
+        vk_device.reset_command_buffer(vk_command_buffer, vk::CommandBufferResetFlags::empty())?;
+        vk_device.begin_command_buffer(
+            vk_command_buffer,
+            &vk::CommandBufferBeginInfo::default()
+                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
+        )?;
+
+        let barrier_src_to_copy = vk::ImageMemoryBarrier::default()
+            .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
+            .image(src_image)
+            .subresource_range(src_range);
+
+        let barrier_dst_to_copy = vk::ImageMemoryBarrier::default()
+            .old_layout(dst_old_layout)
+            .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+            .src_access_mask(dst_src_access)
+            .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+            .image(dst_image)
+            .subresource_range(dst_range);
+
+        vk_device.cmd_pipeline_barrier(
+            vk_command_buffer,
+            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::DependencyFlags::empty(),
+            &[],
+            &[],
+            &[barrier_src_to_copy, barrier_dst_to_copy],
+        );
+
+        // One region per layer (explicit per-eye copy). A single multi-layer
+        // region IS valid per Vulkan spec but some drivers / validation layers
+        // are pickier about it; explicit regions are unambiguous.
+        let extent = xr_swapchain.extent();
+        let regions: Vec<vk::ImageCopy> = (0..layer_count)
+            .map(|layer| {
+                vk::ImageCopy::default()
+                    .src_subresource(
+                        vk::ImageSubresourceLayers::default()
+                            .aspect_mask(vk::ImageAspectFlags::COLOR)
+                            .mip_level(0)
+                            .base_array_layer(layer)
+                            .layer_count(1),
+                    )
+                    .dst_subresource(
+                        vk::ImageSubresourceLayers::default()
+                            .aspect_mask(vk::ImageAspectFlags::COLOR)
+                            .mip_level(0)
+                            .base_array_layer(layer)
+                            .layer_count(1),
+                    )
+                    .extent(vk::Extent3D {
+                        width: extent.width as u32,
+                        height: extent.height as u32,
+                        depth: 1,
+                    })
+            })
+            .collect();
+
+        vk_device.cmd_copy_image(
+            vk_command_buffer,
+            src_image,
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+            dst_image,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            &regions,
+        );
+
+        let barrier_src_back = vk::ImageMemoryBarrier::default()
+            .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+            .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .src_access_mask(vk::AccessFlags::TRANSFER_READ)
+            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .image(src_image)
+            .subresource_range(src_range);
+
+        let barrier_dst_back = vk::ImageMemoryBarrier::default()
+            .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+            .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .image(dst_image)
+            .subresource_range(dst_range);
+
+        vk_device.cmd_pipeline_barrier(
+            vk_command_buffer,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            vk::DependencyFlags::empty(),
+            &[],
+            &[],
+            &[barrier_src_back, barrier_dst_back],
+        );
+
+        vk_device.end_command_buffer(vk_command_buffer)?;
+        let command_buffers = [vk_command_buffer];
+        let submit_info = vk::SubmitInfo::default().command_buffers(&command_buffers);
+        vk_device.queue_submit(vk_queue, &[submit_info], vk::Fence::null())?;
+        vk_device.queue_wait_idle(vk_queue)?;
+    }
+
+    Ok(())
+}

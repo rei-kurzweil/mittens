@@ -2345,6 +2345,7 @@ mod vulkano_backend {
                 depth_view,
                 extent,
                 post_process,
+                false,
             )?;
 
             let device = self.context.device().clone();
@@ -2362,6 +2363,88 @@ mod vulkano_backend {
             let targets = self.xr_offscreen.as_ref()?;
             let img = targets.color_images.get(eye)?;
             Some(img.handle())
+        }
+
+        /// Render both XR eyes in a single multiview pass into the array-typed
+        /// `xr_multiview` color target. Replaces the per-eye
+        /// `render_xr_eye_offscreen` loop. Caller is responsible for the
+        /// subsequent copy from the multiview color array into the OpenXR
+        /// swapchain image layers (see `xr_multiview_color_vk_image`).
+        ///
+        /// Requires `device_features.multiview = true` (enabled at init).
+        pub fn render_xr_multiview(
+            &mut self,
+            visual_world: &mut VisualWorld,
+            extent: [u32; 2],
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            if !self.pending_runtime_texture_updates.is_empty() {
+                unsafe {
+                    self.context
+                        .device()
+                        .wait_idle()
+                        .map_err(|e| -> Box<dyn std::error::Error> {
+                            format!("wait_idle failed before runtime texture swap: {e}").into()
+                        })?;
+                }
+            }
+            self.apply_pending_runtime_texture_updates();
+
+            // MVP: PRIMARY_STEREO (2 views).
+            let view_count: u32 = 2;
+            self.ensure_xr_multiview_targets(view_count, extent)?;
+
+            let Some(targets) = self.xr_multiview.as_ref() else {
+                return Err("XR multiview targets missing".into());
+            };
+
+            // Post-processing in the multiview path is not yet wired (the
+            // existing PostProcessingRenderer assumes single-layer per-eye
+            // targets). Skip post-process for now.
+            let post_process: Option<PostProcessInvocation> = None;
+
+            let resolve_view = targets.color_array_view.clone();
+            let depth_view = targets.depth_array_view.clone();
+
+            let (color_attachment_view, color_resolve_view) =
+                if let Some(msaa_view) = targets.msaa_color_array_view.as_ref() {
+                    (msaa_view.clone(), Some(resolve_view.clone()))
+                } else {
+                    (resolve_view.clone(), None)
+                };
+
+            // Multiview path uses a single bones slot (palette is shared
+            // across both eyes since they're drawn in one pass). The window
+            // slot index is fine here; we don't allocate per-eye slots.
+            let window_slots = self.swapchain_state.swapchain_views.len().max(1);
+            let bones_slot = 0usize.min(window_slots - 1);
+            let bones_slots_total = window_slots;
+
+            let cb = self.build_draw_batches_command_buffer(
+                visual_world,
+                crate::engine::graphics::CameraTarget::Xr,
+                // eye = 0: both eyes are read inside the builder when
+                // `is_xr_multiview` is true; this index only gates the
+                // "first eye" cache-invalidation logic.
+                0,
+                bones_slot,
+                bones_slots_total,
+                color_attachment_view,
+                color_resolve_view,
+                depth_view,
+                extent,
+                post_process,
+                true,
+            )?;
+
+            let device = self.context.device().clone();
+            let queue = self.context.graphics_queue().clone();
+
+            sync::now(device)
+                .then_execute(queue, cb)?
+                .then_signal_fence_and_flush()?
+                .wait(None)?;
+
+            Ok(())
         }
 
         pub fn upload_texture_rgba8(
@@ -2941,11 +3024,69 @@ mod vulkano_backend {
             depth_view: Arc<ImageView>,
             extent: [u32; 2],
             post_process: Option<PostProcessInvocation>,
+            // When true: bind XR multiview pipelines, render both eyes in one
+            // pass via `view_mask`, upload `CameraXrUBO` (both eyes) instead
+            // of `CameraUBO`. Caller passes `eye = 0` since both eyes are
+            // sourced inside the function. Multiview pipelines + view_mask
+            // require `device_features.multiview = true` (enabled at init).
+            is_xr_multiview: bool,
         ) -> Result<
             Arc<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
             Box<dyn std::error::Error>,
         > {
             let queue = self.context.graphics_queue().clone();
+
+            // Multiview spec quirk: when `view_mask != 0`, `layer_count` in
+            // RenderingInfo must be 1 (the layer count is *implied* by the
+            // view_mask). For non-multiview rendering, layer_count = 1 too.
+            // So layer_count is always 1; only the view_mask varies.
+            let xr_layer_count: u32 = 1;
+            let xr_view_mask: u32 = if is_xr_multiview { 0b11 } else { 0 };
+
+            // Local pipeline selectors: pick XR variant when multiview is on,
+            // otherwise the regular window pipeline. Used in place of bare
+            // `self.pipeline_*` accesses below so that one shape of the
+            // function services both render paths.
+            let p_toon_mesh = if is_xr_multiview {
+                self.xr_pipelines.pipeline_toon_mesh.clone()
+            } else {
+                self.pipeline_toon_mesh.clone()
+            };
+            let p_emissive_prepass_toon_mesh = if is_xr_multiview {
+                self.xr_pipelines.pipeline_emissive_prepass_toon_mesh.clone()
+            } else {
+                self.pipeline_emissive_prepass_toon_mesh.clone()
+            };
+            let p_emissive_prepass_toon_mesh_cutout = if is_xr_multiview {
+                self.xr_pipelines.pipeline_emissive_prepass_toon_mesh_cutout.clone()
+            } else {
+                self.pipeline_emissive_prepass_toon_mesh_cutout.clone()
+            };
+            let p_skinned_emissive_prepass_toon_mesh = if is_xr_multiview {
+                self.xr_pipelines.pipeline_skinned_emissive_prepass_toon_mesh.clone()
+            } else {
+                self.pipeline_skinned_emissive_prepass_toon_mesh.clone()
+            };
+            let p_skinned_emissive_prepass_toon_mesh_cutout = if is_xr_multiview {
+                self.xr_pipelines.pipeline_skinned_emissive_prepass_toon_mesh_cutout.clone()
+            } else {
+                self.pipeline_skinned_emissive_prepass_toon_mesh_cutout.clone()
+            };
+            let p_emissive_toon_mesh = if is_xr_multiview {
+                self.xr_pipelines.pipeline_emissive_toon_mesh.clone()
+            } else {
+                self.pipeline_emissive_toon_mesh.clone()
+            };
+            let p_skinned_toon_mesh = if is_xr_multiview {
+                self.xr_pipelines.pipeline_skinned_toon_mesh.clone()
+            } else {
+                self.pipeline_skinned_toon_mesh.clone()
+            };
+            let p_skinned_emissive_toon_mesh = if is_xr_multiview {
+                self.xr_pipelines.pipeline_skinned_emissive_toon_mesh.clone()
+            } else {
+                self.pipeline_skinned_emissive_toon_mesh.clone()
+            };
 
             // Always rebuild draw cache cheaply.
             let draw_cache_rebuilt = visual_world.prepare_draw_cache();
@@ -3149,7 +3290,8 @@ mod vulkano_backend {
             let rendering_info_clear_color_and_depth = RenderingInfo {
                 render_area_offset: [0, 0],
                 render_area_extent: [extent[0], extent[1]],
-                layer_count: 1,
+                layer_count: xr_layer_count,
+                view_mask: xr_view_mask,
                 color_attachments: vec![Some(color_attachment_clear)],
                 depth_attachment: Some(depth_attachment_clear.clone()),
                 stencil_attachment: Some(RenderingAttachmentInfo {
@@ -3176,30 +3318,67 @@ mod vulkano_backend {
             };
 
             // Camera uniform buffer (set=0, binding=0) for foreground.
-            let camera_ubo_fg = CameraUBO {
-                view: visual_world.camera_view_for_eye(camera_target, eye),
-                proj: visual_world.camera_proj_for_eye(camera_target, eye),
-                camera2d: visual_world.camera_2d(),
-                viewport: [extent[0] as f32, extent[1] as f32],
-                _pad0: [0.0, 0.0],
+            //
+            // Window/per-eye path uses `CameraUBO` (scalar view/proj).
+            // XR multiview path uses `CameraXrUBO` (view[2]/proj[2]) so
+            // shaders can index by `gl_ViewIndex`. Same descriptor binding
+            // either way; only the buffer struct/size differs.
+            let camera_buffer_fg: Subbuffer<[u8]> = if is_xr_multiview {
+                let camera_ubo_fg = CameraXrUBO {
+                    view: [
+                        visual_world.camera_view_for_eye(camera_target, 0),
+                        visual_world.camera_view_for_eye(camera_target, 1),
+                    ],
+                    proj: [
+                        visual_world.camera_proj_for_eye(camera_target, 0),
+                        visual_world.camera_proj_for_eye(camera_target, 1),
+                    ],
+                    camera2d: visual_world.camera_2d(),
+                    viewport: [extent[0] as f32, extent[1] as f32],
+                    _pad0: [0.0, 0.0],
+                    ambient_light: visual_world.ambient_light(),
+                    _pad1: 0.0,
+                };
+                let buf: Subbuffer<CameraXrUBO> = Buffer::from_data(
+                    self.context.memory_allocator().clone(),
+                    BufferCreateInfo {
+                        usage: BufferUsage::UNIFORM_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                        ..Default::default()
+                    },
+                    camera_ubo_fg,
+                )?;
+                buf.into_bytes()
+            } else {
+                let camera_ubo_fg = CameraUBO {
+                    view: visual_world.camera_view_for_eye(camera_target, eye),
+                    proj: visual_world.camera_proj_for_eye(camera_target, eye),
+                    camera2d: visual_world.camera_2d(),
+                    viewport: [extent[0] as f32, extent[1] as f32],
+                    _pad0: [0.0, 0.0],
 
-                ambient_light: visual_world.ambient_light(),
-                _pad1: 0.0,
+                    ambient_light: visual_world.ambient_light(),
+                    _pad1: 0.0,
+                };
+                let buf: Subbuffer<CameraUBO> = Buffer::from_data(
+                    self.context.memory_allocator().clone(),
+                    BufferCreateInfo {
+                        usage: BufferUsage::UNIFORM_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                        ..Default::default()
+                    },
+                    camera_ubo_fg,
+                )?;
+                buf.into_bytes()
             };
-
-            let camera_buffer_fg: Subbuffer<CameraUBO> = Buffer::from_data(
-                self.context.memory_allocator().clone(),
-                BufferCreateInfo {
-                    usage: BufferUsage::UNIFORM_BUFFER,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                    ..Default::default()
-                },
-                camera_ubo_fg,
-            )?;
 
             // Lights storage buffer (set=0, binding=1).
             let mut lights_ssbo = LightsSSBO::default();
@@ -3262,33 +3441,70 @@ mod vulkano_backend {
             let global_set_bg: Option<Arc<DescriptorSet>> = if !any_background {
                 None
             } else {
-                let mut view_bg = visual_world.camera_view_for_eye(camera_target, eye);
-                view_bg[3] = [0.0, 0.0, 0.0, 1.0];
+                // Same XR-vs-window UBO split as the foreground camera buffer
+                // above. Background variant zeroes the view translation column
+                // so backgrounds behave like a skybox.
+                let camera_buffer_bg: Subbuffer<[u8]> = if is_xr_multiview {
+                    let mut v0 = visual_world.camera_view_for_eye(camera_target, 0);
+                    let mut v1 = visual_world.camera_view_for_eye(camera_target, 1);
+                    v0[3] = [0.0, 0.0, 0.0, 1.0];
+                    v1[3] = [0.0, 0.0, 0.0, 1.0];
+                    let camera_ubo_bg = CameraXrUBO {
+                        view: [v0, v1],
+                        proj: [
+                            visual_world.camera_proj_for_eye(camera_target, 0),
+                            visual_world.camera_proj_for_eye(camera_target, 1),
+                        ],
+                        camera2d: visual_world.camera_2d(),
+                        viewport: [extent[0] as f32, extent[1] as f32],
+                        _pad0: [0.0, 0.0],
+                        ambient_light: visual_world.ambient_light(),
+                        _pad1: 0.0,
+                    };
+                    let buf: Subbuffer<CameraXrUBO> = Buffer::from_data(
+                        self.context.memory_allocator().clone(),
+                        BufferCreateInfo {
+                            usage: BufferUsage::UNIFORM_BUFFER,
+                            ..Default::default()
+                        },
+                        AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                            ..Default::default()
+                        },
+                        camera_ubo_bg,
+                    )?;
+                    buf.into_bytes()
+                } else {
+                    let mut view_bg = visual_world.camera_view_for_eye(camera_target, eye);
+                    view_bg[3] = [0.0, 0.0, 0.0, 1.0];
 
-                let camera_ubo_bg = CameraUBO {
-                    view: view_bg,
-                    proj: visual_world.camera_proj_for_eye(camera_target, eye),
-                    camera2d: visual_world.camera_2d(),
-                    viewport: [extent[0] as f32, extent[1] as f32],
-                    _pad0: [0.0, 0.0],
+                    let camera_ubo_bg = CameraUBO {
+                        view: view_bg,
+                        proj: visual_world.camera_proj_for_eye(camera_target, eye),
+                        camera2d: visual_world.camera_2d(),
+                        viewport: [extent[0] as f32, extent[1] as f32],
+                        _pad0: [0.0, 0.0],
 
-                    ambient_light: visual_world.ambient_light(),
-                    _pad1: 0.0,
+                        ambient_light: visual_world.ambient_light(),
+                        _pad1: 0.0,
+                    };
+
+                    let buf: Subbuffer<CameraUBO> = Buffer::from_data(
+                        self.context.memory_allocator().clone(),
+                        BufferCreateInfo {
+                            usage: BufferUsage::UNIFORM_BUFFER,
+                            ..Default::default()
+                        },
+                        AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                            ..Default::default()
+                        },
+                        camera_ubo_bg,
+                    )?;
+                    buf.into_bytes()
                 };
-
-                let camera_buffer_bg: Subbuffer<CameraUBO> = Buffer::from_data(
-                    self.context.memory_allocator().clone(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::UNIFORM_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                    camera_ubo_bg,
-                )?;
 
                 let set = DescriptorSet::new(
                     self.descriptor_set_allocator.clone(),
@@ -3464,6 +3680,7 @@ mod vulkano_backend {
                             &rig_set,
                             background_instance_buffer,
                             background_instance_count,
+                            is_xr_multiview,
                         )?;
                     }
 
@@ -3477,15 +3694,19 @@ mod vulkano_backend {
                             &rig_set,
                             background_occluded_lit_instance_buffer,
                             background_occluded_lit_instance_count,
+                            is_xr_multiview,
                         )?;
                     }
                 }
 
                 // Foreground phase: clear depth so background doesn't occlude.
                 // NOTE: `clear_attachments` requires a bound graphics pipeline.
-                cbb.bind_pipeline_graphics(self.pipeline_toon_mesh.clone())?;
+                cbb.bind_pipeline_graphics(p_toon_mesh.clone())?;
                 cbb.clear_attachments(
                     smallvec::smallvec![ClearAttachment::Depth(1.0)],
+                    // Vulkan spec: with multiview enabled, ClearRect must
+                    // have baseArrayLayer=0 / layerCount=1; multiview replicates
+                    // the clear across the views selected by view_mask.
                     smallvec::smallvec![ClearRect {
                         offset: [0, 0],
                         extent: [extent[0], extent[1]],
@@ -3501,6 +3722,7 @@ mod vulkano_backend {
                 &rig_set,
                 &instance_buffer,
                 instance_count,
+                is_xr_multiview,
             )?;
 
             if let Some(cutout_instance_buffer) = cutout_instance_buffer.as_ref() {
@@ -3511,6 +3733,7 @@ mod vulkano_backend {
                     &rig_set,
                     cutout_instance_buffer,
                     cutout_instance_count,
+                    is_xr_multiview,
                 )?;
             }
 
@@ -3520,6 +3743,7 @@ mod vulkano_backend {
                 &global_set_fg,
                 &rig_set,
                 eye,
+                is_xr_multiview,
             )?;
 
             self.record_transparent_multi_draws(
@@ -3529,6 +3753,7 @@ mod vulkano_backend {
                 &rig_set,
                 camera_target,
                 eye,
+                is_xr_multiview,
             )?;
 
             // Overlay phase: when post-process is disabled, clear depth here so overlay draws on
@@ -3537,9 +3762,12 @@ mod vulkano_backend {
             if overlay_instance_count > 0 && !defer_overlay_until_before_final_composite
             {
                 // NOTE: `clear_attachments` requires a bound graphics pipeline.
-                cbb.bind_pipeline_graphics(self.pipeline_toon_mesh.clone())?;
+                cbb.bind_pipeline_graphics(p_toon_mesh.clone())?;
                 cbb.clear_attachments(
                     smallvec::smallvec![ClearAttachment::Depth(1.0)],
+                    // Vulkan spec: with multiview enabled, ClearRect must
+                    // have baseArrayLayer=0 / layerCount=1; multiview replicates
+                    // the clear across the views selected by view_mask.
                     smallvec::smallvec![ClearRect {
                         offset: [0, 0],
                         extent: [extent[0], extent[1]],
@@ -3555,6 +3783,7 @@ mod vulkano_backend {
                         &rig_set,
                         overlay_instance_buffer,
                         overlay_instance_count,
+                        is_xr_multiview,
                     )?;
                 }
             }
@@ -3607,7 +3836,8 @@ mod vulkano_backend {
                         cbb.begin_rendering(RenderingInfo {
                             render_area_offset: [0, 0],
                             render_area_extent: [extent[0], extent[1]],
-                            layer_count: 1,
+                            layer_count: xr_layer_count,
+                            view_mask: xr_view_mask,
                             color_attachments: vec![Some(bloom_attachment)],
                             depth_attachment: Some(RenderingAttachmentInfo {
                                 load_op: AttachmentLoadOp::Load,
@@ -3643,10 +3873,10 @@ mod vulkano_backend {
                                 emissive_instance_buffer,
                                 emissive_instance_count,
                                 visual_world.emissive_draw_batches(),
-                                self.pipeline_emissive_prepass_toon_mesh.clone(),
-                                self.pipeline_emissive_prepass_toon_mesh.clone(),
-                                self.pipeline_skinned_emissive_prepass_toon_mesh.clone(),
-                                self.pipeline_skinned_emissive_prepass_toon_mesh.clone(),
+                                p_emissive_prepass_toon_mesh.clone(),
+                                p_emissive_prepass_toon_mesh.clone(),
+                                p_skinned_emissive_prepass_toon_mesh.clone(),
+                                p_skinned_emissive_prepass_toon_mesh.clone(),
                             )?;
                         }
 
@@ -3660,10 +3890,10 @@ mod vulkano_backend {
                                 emissive_cutout_instance_buffer,
                                 emissive_cutout_instance_count,
                                 visual_world.emissive_cutout_batches(),
-                                self.pipeline_emissive_prepass_toon_mesh_cutout.clone(),
-                                self.pipeline_emissive_prepass_toon_mesh_cutout.clone(),
-                                self.pipeline_skinned_emissive_prepass_toon_mesh_cutout.clone(),
-                                self.pipeline_skinned_emissive_prepass_toon_mesh_cutout.clone(),
+                                p_emissive_prepass_toon_mesh_cutout.clone(),
+                                p_emissive_prepass_toon_mesh_cutout.clone(),
+                                p_skinned_emissive_prepass_toon_mesh_cutout.clone(),
+                                p_skinned_emissive_prepass_toon_mesh_cutout.clone(),
                             )?;
                         }
 
@@ -3714,7 +3944,8 @@ mod vulkano_backend {
                     cbb.begin_rendering(RenderingInfo {
                         render_area_offset: [0, 0],
                         render_area_extent: [extent[0], extent[1]],
-                        layer_count: 1,
+                        layer_count: xr_layer_count,
+                        view_mask: xr_view_mask,
                         color_attachments: vec![Some({
                             let mut color_attachment_load = RenderingAttachmentInfo {
                                 load_op: AttachmentLoadOp::Load,
@@ -3762,6 +3993,7 @@ mod vulkano_backend {
                             &rig_set,
                             overlay_instance_buffer,
                             overlay_instance_count,
+                            is_xr_multiview,
                         )?;
                     }
                     cbb.end_rendering()?;
@@ -4002,6 +4234,7 @@ mod vulkano_backend {
                 depth_view,
                 extent,
                 post_process,
+                false,
             )?;
 
             // Ensure we never render into a swapchain image (and its paired depth attachment)
@@ -4421,6 +4654,25 @@ impl VulkanoRenderer {
 
     pub fn xr_offscreen_vk_image(&self, eye: usize) -> Option<ash::vk::Image> {
         self.vulkano.as_ref()?.xr_offscreen_vk_image(eye)
+    }
+
+    /// Multiview render: draws both eyes in one pass into a shared array image.
+    /// Caller then copies the array's layers into the OpenXR swapchain.
+    pub fn render_xr_multiview(
+        &mut self,
+        visual_world: &mut VisualWorld,
+        extent: [u32; 2],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(vulkano) = self.vulkano.as_mut() else {
+            return Err("VulkanoRenderer not initialized (call init_for_window first)".into());
+        };
+        vulkano.render_xr_multiview(visual_world, extent)
+    }
+
+    /// Raw VkImage handle of the multiview color array image. Source for the
+    /// copy into the OpenXR swapchain image.
+    pub fn xr_multiview_color_vk_image(&self) -> Option<ash::vk::Image> {
+        self.vulkano.as_ref()?.xr_multiview_color_vk_image()
     }
 
     /// Returns raw Vulkan handles suitable for `openxr::Instance::create_session::<openxr::Vulkan>()`.

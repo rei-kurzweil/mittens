@@ -34,6 +34,12 @@ pub struct OpenXRSystem {
     input_xr_components: HashSet<ComponentId>,
     controller_components: HashSet<ComponentId>,
 
+    /// When true, render both eyes in a single multiview pass
+    /// (`render_xr_multiview` + `copy_multiview_to_xr_layers`). When false,
+    /// fall back to the per-eye loop (`render_xr_eye_offscreen` ×N +
+    /// `copy_offscreen_to_xr_layers`). Default true; set to false via
+    /// `set_multiview_enabled(false)` to bisect issues.
+    pub xr_multiview_enabled: bool,
 }
 
 struct OpenXRState {
@@ -142,6 +148,7 @@ impl Default for OpenXRSystem {
             input_xr_components: HashSet::new(),
             controller_components: HashSet::new(),
 
+            xr_multiview_enabled: true,
         }
     }
 }
@@ -1729,7 +1736,33 @@ impl OpenXRSystem {
                 {
                     *slot = true;
                 }
+            } else if self.xr_multiview_enabled {
+                // Multiview path: single render pass into a 2D-array color
+                // image, then one multi-layer copy into the XR swapchain.
+                // Halves CPU command-buffer + draw-call work compared to the
+                // per-eye loop below.
+                if let Err(e) = renderer.render_xr_multiview(visuals, extent_u) {
+                    eprintln!("[OpenXR] render_xr_multiview failed: {e}");
+                }
+
+                if let Err(e) = xr_renderer::copy_multiview_to_xr_layers(
+                    &sess.vk_device,
+                    sess.vk_queue,
+                    sess.vk_command_buffer,
+                    &sess.xr_swapchain,
+                    renderer,
+                    dst_image,
+                    dst_was_initialized,
+                    view_count,
+                ) {
+                    eprintln!("[OpenXR] copy multiview to XR image failed: {e:?}");
+                } else if let Some(slot) =
+                    sess.swapchain_image_initialized.get_mut(image_index_usize)
+                {
+                    *slot = true;
+                }
             } else {
+                // Fallback per-eye path (toggle `xr_multiview_enabled = false`).
                 for eye in 0..view_count.min(views.len()) {
                     if let Err(e) = renderer.render_xr_eye_offscreen(visuals, eye, extent_u) {
                         eprintln!("[OpenXR] render_xr_eye_offscreen failed: {e}");

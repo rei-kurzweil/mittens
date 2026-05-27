@@ -1,4 +1,5 @@
 #version 450
+#extension GL_EXT_multiview : require
 
 // XR multiview variant of toon-mesh.frag.
 // Identical lighting logic — only the camera UBO struct differs so that

@@ -1,5 +1,18 @@
 use super::*;
 
+/// Pick a pipeline from either the window or XR multiview set, by field
+/// name. Both `VulkanoState` and `XrPipelines` share the same `pipeline_*`
+/// field naming so a single token can address either.
+macro_rules! pipe {
+    ($self:expr, $xr:expr, $name:ident) => {
+        if $xr {
+            $self.xr_pipelines.$name.clone()
+        } else {
+            $self.$name.clone()
+        }
+    };
+}
+
 impl VulkanoState {
     fn is_skinned_material(material: crate::engine::graphics::MaterialHandle) -> bool {
         matches!(
@@ -129,6 +142,7 @@ impl VulkanoState {
         rig_set: &Arc<DescriptorSet>,
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
+        is_xr_multiview: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if instance_count == 0 {
             return Ok(());
@@ -142,10 +156,10 @@ impl VulkanoState {
             instance_count,
             visual_world.background_batches(),
             // Plain background: no depth write.
-            self.pipeline_toon_mesh_transparent.clone(),
-            self.pipeline_emissive_toon_mesh_transparent.clone(),
-            self.pipeline_skinned_toon_mesh_transparent.clone(),
-            self.pipeline_skinned_emissive_toon_mesh_transparent.clone(),
+            pipe!(self, is_xr_multiview, pipeline_toon_mesh_transparent),
+            pipe!(self, is_xr_multiview, pipeline_emissive_toon_mesh_transparent),
+            pipe!(self, is_xr_multiview, pipeline_skinned_toon_mesh_transparent),
+            pipe!(self, is_xr_multiview, pipeline_skinned_emissive_toon_mesh_transparent),
         )
     }
 
@@ -157,6 +171,7 @@ impl VulkanoState {
         rig_set: &Arc<DescriptorSet>,
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
+        is_xr_multiview: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if instance_count == 0 {
             return Ok(());
@@ -170,10 +185,10 @@ impl VulkanoState {
             instance_count,
             visual_world.background_occluded_lit_batches(),
             // Occluded+lit background: depth write ON for self-occlusion.
-            self.pipeline_toon_mesh.clone(),
-            self.pipeline_emissive_toon_mesh.clone(),
-            self.pipeline_skinned_toon_mesh.clone(),
-            self.pipeline_skinned_emissive_toon_mesh.clone(),
+            pipe!(self, is_xr_multiview, pipeline_toon_mesh),
+            pipe!(self, is_xr_multiview, pipeline_emissive_toon_mesh),
+            pipe!(self, is_xr_multiview, pipeline_skinned_toon_mesh),
+            pipe!(self, is_xr_multiview, pipeline_skinned_emissive_toon_mesh),
         )
     }
 
@@ -203,6 +218,7 @@ impl VulkanoState {
         pipeline_skinned_emissive: Arc<GraphicsPipeline>,
         pipeline_clipped: Arc<GraphicsPipeline>,
         pipeline_emissive_clipped: Arc<GraphicsPipeline>,
+        is_xr_multiview: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use crate::engine::graphics::visual_world::RenderOp;
         use vulkano::pipeline::graphics::depth_stencil::StencilFaces;
@@ -237,7 +253,7 @@ impl VulkanoState {
                     else {
                         continue;
                     };
-                    let pipeline = self.pipeline_stencil_incr.clone();
+                    let pipeline = pipe!(self, is_xr_multiview, pipeline_stencil_incr);
                     cbb.bind_pipeline_graphics(pipeline.clone())?;
                     cbb.bind_descriptor_sets(
                         PipelineBindPoint::Graphics,
@@ -357,7 +373,7 @@ impl VulkanoState {
                     else {
                         continue;
                     };
-                    let pipeline = self.pipeline_stencil_decr.clone();
+                    let pipeline = pipe!(self, is_xr_multiview, pipeline_stencil_decr);
                     cbb.bind_pipeline_graphics(pipeline.clone())?;
                     cbb.bind_descriptor_sets(
                         PipelineBindPoint::Graphics,
@@ -385,6 +401,7 @@ impl VulkanoState {
         rig_set: &Arc<DescriptorSet>,
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
+        is_xr_multiview: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if instance_count == 0 {
             return Ok(());
@@ -399,12 +416,13 @@ impl VulkanoState {
             instance_buffer,
             ops,
             stream_instances,
-            self.pipeline_toon_mesh.clone(),
-            self.pipeline_emissive_toon_mesh.clone(),
-            self.pipeline_skinned_toon_mesh.clone(),
-            self.pipeline_skinned_emissive_toon_mesh.clone(),
-            self.pipeline_opaque_clipped.clone(),
-            self.pipeline_emissive_opaque_clipped.clone(),
+            pipe!(self, is_xr_multiview, pipeline_toon_mesh),
+            pipe!(self, is_xr_multiview, pipeline_emissive_toon_mesh),
+            pipe!(self, is_xr_multiview, pipeline_skinned_toon_mesh),
+            pipe!(self, is_xr_multiview, pipeline_skinned_emissive_toon_mesh),
+            pipe!(self, is_xr_multiview, pipeline_opaque_clipped),
+            pipe!(self, is_xr_multiview, pipeline_emissive_opaque_clipped),
+            is_xr_multiview,
         )
     }
 
@@ -416,6 +434,7 @@ impl VulkanoState {
         rig_set: &Arc<DescriptorSet>,
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
+        is_xr_multiview: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if instance_count == 0 {
             return Ok(());
@@ -430,12 +449,13 @@ impl VulkanoState {
             instance_buffer,
             ops,
             stream_instances,
-            self.pipeline_toon_mesh_cutout.clone(),
-            self.pipeline_emissive_toon_mesh_cutout.clone(),
-            self.pipeline_skinned_toon_mesh_cutout.clone(),
-            self.pipeline_skinned_emissive_toon_mesh_cutout.clone(),
-            self.pipeline_toon_mesh_cutout_clipped.clone(),
-            self.pipeline_emissive_toon_mesh_cutout_clipped.clone(),
+            pipe!(self, is_xr_multiview, pipeline_toon_mesh_cutout),
+            pipe!(self, is_xr_multiview, pipeline_emissive_toon_mesh_cutout),
+            pipe!(self, is_xr_multiview, pipeline_skinned_toon_mesh_cutout),
+            pipe!(self, is_xr_multiview, pipeline_skinned_emissive_toon_mesh_cutout),
+            pipe!(self, is_xr_multiview, pipeline_toon_mesh_cutout_clipped),
+            pipe!(self, is_xr_multiview, pipeline_emissive_toon_mesh_cutout_clipped),
+            is_xr_multiview,
         )
     }
 
@@ -447,6 +467,7 @@ impl VulkanoState {
         rig_set: &Arc<DescriptorSet>,
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
+        is_xr_multiview: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if instance_count == 0 {
             return Ok(());
@@ -463,12 +484,13 @@ impl VulkanoState {
             instance_buffer,
             ops,
             stream_instances,
-            self.pipeline_toon_mesh.clone(),
-            self.pipeline_emissive_toon_mesh.clone(),
-            self.pipeline_skinned_toon_mesh.clone(),
-            self.pipeline_skinned_emissive_toon_mesh.clone(),
-            self.pipeline_overlay_clipped.clone(),
-            self.pipeline_emissive_overlay_clipped.clone(),
+            pipe!(self, is_xr_multiview, pipeline_toon_mesh),
+            pipe!(self, is_xr_multiview, pipeline_emissive_toon_mesh),
+            pipe!(self, is_xr_multiview, pipeline_skinned_toon_mesh),
+            pipe!(self, is_xr_multiview, pipeline_skinned_emissive_toon_mesh),
+            pipe!(self, is_xr_multiview, pipeline_overlay_clipped),
+            pipe!(self, is_xr_multiview, pipeline_emissive_overlay_clipped),
+            is_xr_multiview,
         )
     }
 
@@ -479,6 +501,7 @@ impl VulkanoState {
         global_set: &Arc<DescriptorSet>,
         rig_set: &Arc<DescriptorSet>,
         _eye: usize,
+        is_xr_multiview: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let (ops, stream_instances) = visual_world.transparent_single_stream();
         let transparent_single_instance_count = stream_instances.len();
@@ -501,12 +524,13 @@ impl VulkanoState {
             &transparent_single_instance_buffer,
             ops,
             stream_instances,
-            self.pipeline_toon_mesh_transparent.clone(),
-            self.pipeline_emissive_toon_mesh_transparent.clone(),
-            self.pipeline_skinned_toon_mesh_transparent.clone(),
-            self.pipeline_skinned_emissive_toon_mesh_transparent.clone(),
-            self.pipeline_toon_mesh_transparent_clipped.clone(),
-            self.pipeline_emissive_toon_mesh_transparent_clipped.clone(),
+            pipe!(self, is_xr_multiview, pipeline_toon_mesh_transparent),
+            pipe!(self, is_xr_multiview, pipeline_emissive_toon_mesh_transparent),
+            pipe!(self, is_xr_multiview, pipeline_skinned_toon_mesh_transparent),
+            pipe!(self, is_xr_multiview, pipeline_skinned_emissive_toon_mesh_transparent),
+            pipe!(self, is_xr_multiview, pipeline_toon_mesh_transparent_clipped),
+            pipe!(self, is_xr_multiview, pipeline_emissive_toon_mesh_transparent_clipped),
+            is_xr_multiview,
         )
     }
 
@@ -518,6 +542,7 @@ impl VulkanoState {
         rig_set: &Arc<DescriptorSet>,
         camera_target: crate::engine::graphics::CameraTarget,
         eye: usize,
+        is_xr_multiview: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // --- Transparent pass (multi-layer, sorted) ---
         visual_world.prepare_transparent_multi_draw_cache_for_eye(camera_target, eye);
@@ -561,10 +586,10 @@ impl VulkanoState {
 
                 let pipeline = self.pipeline_for_material(
                     batch.material,
-                    self.pipeline_toon_mesh_transparent.clone(),
-                    self.pipeline_emissive_toon_mesh_transparent.clone(),
-                    self.pipeline_skinned_toon_mesh_transparent.clone(),
-                    self.pipeline_skinned_emissive_toon_mesh_transparent.clone(),
+                    pipe!(self, is_xr_multiview, pipeline_toon_mesh_transparent),
+                    pipe!(self, is_xr_multiview, pipeline_emissive_toon_mesh_transparent),
+                    pipe!(self, is_xr_multiview, pipeline_skinned_toon_mesh_transparent),
+                    pipe!(self, is_xr_multiview, pipeline_skinned_emissive_toon_mesh_transparent),
                 );
 
                 cbb.bind_pipeline_graphics(pipeline.clone())?;
