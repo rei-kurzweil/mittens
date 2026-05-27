@@ -227,21 +227,15 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // body/root XZ placement; steady-state body XZ is handled by
     // HeadPoseBodyXzFollowSystem.
     let head_ik_offset_yaw = if forward_plus_z { 0.0 } else { std::f32::consts::PI };
-    let root_eye_neg = [
-        -eye_offset_head_local[0],
-        -eye_offset_head_local[1],
-        -eye_offset_head_local[2],
-    ];
-    let root_eye_offset_driven_local =
-        quat_rotate_vec3(quat_rotation_y(head_ik_offset_yaw), root_eye_neg);
 
+    // Body Y is anchored to `displaced_head.world.y` (which already has
+    // -eye_offset.y baked in via the head_target chain) in
+    // HeadPoseBodyXzFollowSystem, so model_root.y must NOT also include an
+    // eye-offset term — that would subtract it twice and stretch the
+    // rest-pose neck by `eye_offset.y`.
     let model_root_translation: Option<[f32; 3]> = if let Some(h) = avatar_height_override {
         println!("[AVC] using avatar_height_override = {}", h);
-        Some([
-            0.0,
-            -h + root_eye_offset_driven_local[1],
-            0.0,
-        ])
+        Some([0.0, -h, 0.0])
     } else if let Some(cam_bone_id) = camera_bone_id {
         let cam_bone_world_y = world
             .get_component_by_id_as::<TransformComponent>(cam_bone_id)
@@ -256,11 +250,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             "[AVC] camera_bone found: cam_bone_world_y={:.4} model_root_world_y={:.4} bone_local_y={:.4} → model_root.y={:.4}",
             cam_bone_world_y, model_root_world_y, bone_local_y, -bone_local_y
         );
-        Some([
-            0.0,
-            -bone_local_y + root_eye_offset_driven_local[1],
-            0.0,
-        ])
+        Some([0.0, -bone_local_y, 0.0])
     } else {
         if camera_bone_name.is_some() {
             println!("[AVC] camera_bone not found and no avatar_height_override — model_root.y unchanged");
