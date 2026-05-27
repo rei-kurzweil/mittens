@@ -169,18 +169,38 @@ not yet *referenced* anywhere — they're scaffolding for the next phase.
       the window pipelines. Stored as `VulkanoState.xr_pipelines: XrPipelines`.
       Uses `make_xr_ci` closure to mirror each window pipeline template with
       XR shader stages + multiview rendering info. Compiles clean.
-- [ ] **Multiview offscreen targets** — replace `XrOffscreenTargets`
-      per-eye `Vec<Image>` (l. 347) with array-typed images:
+- [x] **Multiview offscreen targets.** `XrMultiviewTargets` struct +
+      `ensure_xr_multiview_targets(view_count, extent)` method. Builds:
   - color: `Dim2d`, `array_layers = view_count`, `TRANSFER_SRC | COLOR_ATTACHMENT`
   - depth: `Dim2d`, `array_layers = view_count`, `DEPTH_STENCIL_ATTACHMENT`
   - if MSAA: MSAA color array + resolve target = single-sample color array
-  - `ImageView` with `view_type = Dim2dArray`, `array_layers = 0..view_count`
-- [ ] **`render_xr_multiview` entry point** in `VulkanoRenderer`. Single
-      render with `RenderingInfo.view_mask = 0b11`,
+  - all views built with `view_type = Dim2dArray`, `array_layers = 0..view_count`
+  - `xr_multiview_color_vk_image()` accessor for the copy-out step
+  - state lives parallel to existing `xr_offscreen` (per-eye fallback)
+- [ ] **`render_xr_multiview` entry point** in `VulkanoRenderer`. The
+      keystone. Single render with `RenderingInfo.view_mask = 0b11`,
       `layer_count = view_count`. Fills `CameraXrUBO` with both eye matrices
-      (read both from `visual_world.camera_view_for_eye(Xr, 0/1)`). Uses XR
-      pipelines + XR camera descriptor set. One bones slot (drop the
-      per-eye doubling).
+      (read from `visual_world.camera_view_for_eye(Xr, 0)` and `(Xr, 1)`).
+      Uses `xr_pipelines.pipeline_*` + the new XR camera buffer descriptor
+      binding. One bones slot (drop the per-eye doubling at
+      `vulkano_renderer.rs:2161`).
+
+      **Implementation requires touching `build_draw_batches_command_buffer`**
+      (l. 2932, ~950 lines). Recommended approach:
+
+      - Add `is_xr_multiview: bool` parameter (default false for window/per-eye)
+      - At each `self.pipeline_*` site (14 in the function), select
+        `&self.xr_pipelines.pipeline_*` instead when the flag is set. Cleanest:
+        build a local `PipelineSet { toon_mesh: &Arc<_>, ... }` once at top
+        based on the flag, reference fields below.
+      - When uploading the camera UBO, branch on the flag: window path fills
+        `CameraUBO` (scalar view/proj), XR path fills `CameraXrUBO` with both
+        eyes' matrices.
+      - `RenderingInfo`: set `view_mask = 0b11` and `layer_count = view_count`
+        when multiview is on.
+      - The function takes `eye: usize` today; for multiview, callers pass
+        `eye = 0` and the function ignores it (or rename to
+        `primary_eye_for_caches: usize`).
 - [ ] **Simplify `copy_offscreen_to_xr_layers`** — replace per-eye loop
       with a single `vkCmdCopyImage` whose `regions[].subresource.layer_count
       = view_count` (or one region per layer). Source is the array image.

@@ -421,6 +421,9 @@ mod vulkano_backend {
         cached_bones_capacity: usize,
 
         xr_offscreen: Option<XrOffscreenTargets>,
+        /// Single array-image targets for the multiview render path. Populated
+        /// the first frame `render_xr_multiview` runs.
+        xr_multiview: Option<XrMultiviewTargets>,
 
         pub window_resized: bool,
         pub recreate_swapchain: bool,
@@ -435,6 +438,32 @@ mod vulkano_backend {
         color_views: Vec<Arc<ImageView>>,
         /// Combined depth+stencil views (same view used for both attachments).
         depth_views: Vec<Arc<ImageView>>,
+    }
+
+    /// XR multiview offscreen targets: single set of *array* images with
+    /// `array_layers = view_count`. The renderer rasterizes both eyes in one
+    /// pass via `view_mask = 0b11`; layer N receives eye N's output.
+    ///
+    /// Replaces the per-eye `XrOffscreenTargets` for the multiview render path.
+    /// The copy-out step then takes one array→array image copy instead of two
+    /// per-eye copies.
+    struct XrMultiviewTargets {
+        extent: [u32; 2],
+        view_count: u32,
+        color_format: Format,
+        /// Single-sampled resolve/copy-source. `array_layers = view_count`.
+        /// Used as the resolve target when MSAA is on, and as the direct color
+        /// attachment otherwise. Source for `cmd_copy_image` into the OpenXR
+        /// swapchain.
+        color_image: Arc<vulkano::image::Image>,
+        /// `view_type = Dim2dArray`, layers 0..view_count.
+        color_array_view: Arc<ImageView>,
+        /// Multisampled color attachment, present only when MSAA is enabled.
+        /// Resolves into `color_array_view`.
+        msaa_color_array_view: Option<Arc<ImageView>>,
+        /// Combined depth+stencil array view (same view used for both
+        /// attachments).
+        depth_array_view: Arc<ImageView>,
     }
 
     struct WindowRuntimeDebugTargets {
@@ -1927,6 +1956,7 @@ mod vulkano_backend {
                 cached_bones_capacity: 0,
 
                 xr_offscreen: None,
+                xr_multiview: None,
 
                 window_resized: false,
                 recreate_swapchain: false,
@@ -2059,6 +2089,151 @@ mod vulkano_backend {
             });
 
             Ok(())
+        }
+
+        /// Allocate (or reuse) array-image offscreen targets for the multiview
+        /// render path. One color array image (resolve target), optional MSAA
+        /// color array, and a depth array — each with `array_layers = view_count`.
+        fn ensure_xr_multiview_targets(
+            &mut self,
+            view_count: u32,
+            extent: [u32; 2],
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let color_format = self.swapchain_state.swapchain.image_format();
+
+            let needs_recreate = self.xr_multiview.as_ref().is_none_or(|t| {
+                t.extent != extent
+                    || t.view_count != view_count
+                    || t.color_format != color_format
+                    || (self.msaa_samples == SampleCount::Sample1)
+                        != t.msaa_color_array_view.is_none()
+            });
+
+            if !needs_recreate {
+                return Ok(());
+            }
+
+            let memory_allocator = self.context.memory_allocator().clone();
+
+            // Resolve/copy-source array image (single-sampled).
+            let color_image = vulkano::image::Image::new(
+                memory_allocator.clone(),
+                vulkano::image::ImageCreateInfo {
+                    image_type: vulkano::image::ImageType::Dim2d,
+                    format: color_format,
+                    extent: [extent[0], extent[1], 1],
+                    array_layers: view_count,
+                    samples: SampleCount::Sample1,
+                    usage: vulkano::image::ImageUsage::COLOR_ATTACHMENT
+                        | vulkano::image::ImageUsage::TRANSFER_SRC,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                    ..Default::default()
+                },
+            )?;
+
+            let color_array_view = ImageView::new(
+                color_image.clone(),
+                ImageViewCreateInfo {
+                    view_type: vulkano::image::view::ImageViewType::Dim2dArray,
+                    subresource_range: ImageSubresourceRange {
+                        aspects: ImageAspects::COLOR,
+                        mip_levels: 0..1,
+                        array_layers: 0..view_count,
+                    },
+                    ..ImageViewCreateInfo::from_image(&color_image)
+                },
+            )
+            .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
+
+            // Optional MSAA color array attachment — resolves into `color_array_view`.
+            let msaa_color_array_view = if self.msaa_samples != SampleCount::Sample1 {
+                let msaa_image = vulkano::image::Image::new(
+                    memory_allocator.clone(),
+                    vulkano::image::ImageCreateInfo {
+                        image_type: vulkano::image::ImageType::Dim2d,
+                        format: color_format,
+                        extent: [extent[0], extent[1], 1],
+                        array_layers: view_count,
+                        samples: self.msaa_samples,
+                        usage: vulkano::image::ImageUsage::COLOR_ATTACHMENT
+                            | vulkano::image::ImageUsage::TRANSIENT_ATTACHMENT,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                        ..Default::default()
+                    },
+                )?;
+                let view = ImageView::new(
+                    msaa_image.clone(),
+                    ImageViewCreateInfo {
+                        view_type: vulkano::image::view::ImageViewType::Dim2dArray,
+                        subresource_range: ImageSubresourceRange {
+                            aspects: ImageAspects::COLOR,
+                            mip_levels: 0..1,
+                            array_layers: 0..view_count,
+                        },
+                        ..ImageViewCreateInfo::from_image(&msaa_image)
+                    },
+                )
+                .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
+                Some(view)
+            } else {
+                None
+            };
+
+            // Depth+stencil array image.
+            let depth_image = vulkano::image::Image::new(
+                memory_allocator.clone(),
+                vulkano::image::ImageCreateInfo {
+                    image_type: vulkano::image::ImageType::Dim2d,
+                    format: VulkanoSwapchainState::DEPTH_FORMAT,
+                    extent: [extent[0], extent[1], 1],
+                    array_layers: view_count,
+                    samples: self.msaa_samples,
+                    usage: vulkano::image::ImageUsage::DEPTH_STENCIL_ATTACHMENT,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                    ..Default::default()
+                },
+            )?;
+
+            let depth_array_view = ImageView::new(
+                depth_image.clone(),
+                ImageViewCreateInfo {
+                    view_type: vulkano::image::view::ImageViewType::Dim2dArray,
+                    subresource_range: ImageSubresourceRange {
+                        aspects: ImageAspects::DEPTH | ImageAspects::STENCIL,
+                        mip_levels: 0..1,
+                        array_layers: 0..view_count,
+                    },
+                    ..ImageViewCreateInfo::from_image(&depth_image)
+                },
+            )
+            .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
+
+            self.xr_multiview = Some(XrMultiviewTargets {
+                extent,
+                view_count,
+                color_format,
+                color_image,
+                color_array_view,
+                msaa_color_array_view,
+                depth_array_view,
+            });
+
+            Ok(())
+        }
+
+        /// Raw `vk::Image` handle of the multiview color array image, for the
+        /// final copy into the OpenXR swapchain.
+        pub fn xr_multiview_color_vk_image(&self) -> Option<ash::vk::Image> {
+            Some(self.xr_multiview.as_ref()?.color_image.handle())
         }
 
         pub fn render_xr_eye_offscreen(
