@@ -137,6 +137,30 @@ mod vulkano_backend {
         }
     }
 
+    // XR multiview shader variants. Same logic as the window shaders, but the
+    // camera UBO has `view[2]` / `proj[2]` and `gl_Position` is indexed by
+    // `gl_ViewIndex`. Built when the OpenXR session is active.
+    mod toon_mesh_xr_vs {
+        vulkano_shaders::shader! {
+            ty: "vertex",
+            path: "assets/shaders/toon-mesh.xr.vert",
+        }
+    }
+
+    mod toon_mesh_xr_fs {
+        vulkano_shaders::shader! {
+            ty: "fragment",
+            path: "assets/shaders/toon-mesh.xr.frag",
+        }
+    }
+
+    mod skinned_toon_mesh_xr_vs {
+        vulkano_shaders::shader! {
+            ty: "vertex",
+            path: "assets/shaders/skinned-toon-mesh.xr.vert",
+        }
+    }
+
     #[derive(BufferContents, Clone, Copy, Debug, Default)]
     #[repr(C, align(16))]
     pub struct CameraUBO {
@@ -149,6 +173,21 @@ mod vulkano_backend {
         pub _pad0: [f32; 2],
 
         // Linear RGB ambient light in 0..1.
+        pub ambient_light: [f32; 3],
+        pub _pad1: f32,
+    }
+
+    /// Camera UBO for the OpenXR multiview render path. `view`/`proj` are
+    /// per-view arrays; shaders index them by `gl_ViewIndex`. Layout mirrors
+    /// `CameraXrUBO` in `*.xr.vert` / `*.xr.frag` shaders.
+    #[derive(BufferContents, Clone, Copy, Debug, Default)]
+    #[repr(C, align(16))]
+    pub struct CameraXrUBO {
+        pub view: [[[f32; 4]; 4]; 2],
+        pub proj: [[[f32; 4]; 4]; 2],
+        pub camera2d: [[f32; 4]; 3],
+        pub viewport: [f32; 2],
+        pub _pad0: [f32; 2],
         pub ambient_light: [f32; 3],
         pub _pad1: f32,
     }
@@ -482,6 +521,11 @@ mod vulkano_backend {
                 // On Vulkan 1.2 this is provided via VK_KHR_dynamic_rendering.
                 config.device_extensions.khr_dynamic_rendering = true;
                 config.device_features.dynamic_rendering = true;
+
+                // Multiview: render both XR eyes in one pass via VK_KHR_multiview
+                // (core in 1.1). Required by `view_mask` on PipelineRenderingCreateInfo
+                // and RenderingInfo for the direct-render OpenXR path.
+                config.device_features.multiview = true;
 
                 if let Some((instance_exts, device_exts)) = xr_required {
                     let mut enabled_instance_exts = config.instance_create_info.enabled_extensions;
