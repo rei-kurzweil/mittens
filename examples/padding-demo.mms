@@ -33,9 +33,9 @@ I {
     }
 }
 
-let text_bg_color = [0.7, 0.7, 0.7, 1.0]
-let item_bg_color = [1.0, 0.7, 0.8, 1.0]
-let container_bg_color = [1.0, 1.0, 1.0,1.0]
+let text_bg_color = [0.9, 0.9, 0.9, 1.0]
+let item_bg_color = [1.0, 0.6, 0.7, 1.0]
+let container_bg_color = [1.0, 0.7, 0.8, 1.0]
 
 let icon_color = C.rgba(1.0, 0.1, 0.4, 1.0)
 let icon_color_2 = C.rgba(1.0, 0.7, 0.2, 1.0)
@@ -74,7 +74,7 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         padding(0.4)
                         margin(0.3)
                     }
-                    R.circle2d() { icon_color }
+                    R.circle2d() { EM.on() icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -104,7 +104,7 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         padding(0.4)
                         margin(0.3)
                     }
-                    R.triangle() { icon_color }
+                    R.triangle() { EM.on() icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -134,7 +134,7 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         padding(0.4)
                         margin(0.3)
                     }
-                    R.square() { icon_color }
+                    R.square() { EM.on() icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -175,8 +175,10 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         padding(0.8)
                         margin(0.3)
+                        text_align("center")
+                        vertical_align("middle")
                     }
-                    R.circle2d() { icon_color }
+                    R.circle2d() { EM.on() icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -206,7 +208,7 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         padding(0.8)
                         margin(0.3)
                     }
-                    R.triangle() { icon_color }
+                    R.triangle() { EM.on() icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -235,8 +237,10 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         display("inline-block")
                         padding(0.8)
                         margin(0.3)
+                        text_align("center")
+                        vertical_align("middle")
                     }
-                    R.square() { icon_color }
+                    R.square() { EM.on() icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -278,6 +282,8 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         padding(1.2)
                         margin(0.3)
                         background_color = icon_background_color
+                        text_align("center")
+                        vertical_align("middle")
                     }
                     R.circle2d() { icon_color_2 }
                 }
@@ -309,6 +315,8 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         padding(1.2)
                         margin(0.3)
                         background_color = icon_background_color
+                        text_align("center")
+                        vertical_align("middle")
                     }
                     R.triangle() { icon_color_2 }
                 }
@@ -340,8 +348,10 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         padding(1.2)
                         margin(0.3)
                         background_color = icon_background_color
+                        text_align("center")
+                        vertical_align("middle")
                     }
-                    R.square() { icon_color }
+                    R.square() { EM.on() icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -422,15 +432,31 @@ on(grow_btn, "Click", fn(e) {
 
 // ── Lighting ────────────────────────────────────────────────────────
 AL {
-    C.rgba(0.32, 0.32, 0.34, 1.0)
+    C.rgba(0.22, 0.22, 0.22, 1.0)
 }
-T.position(2.0, 3.0, 2.0) {
+T.position(2.0, 3.0, 22.0) {
     DL {
         intensity(0.85)
-        C.rgba(1.0, 0.96, 0.92, 1.0)
+        C.rgba(1.0, 1.0, 1.0, 1.0)
     }
 }
 
 BGC {
-    C.rgba(0.9, 0.9, 0.9, 1.0)
+    C.rgba(0.6, 0.8, 1.0, 1.0)
+}
+
+
+// ground plane
+T.position(0.0, -1.3, 0.0).rotation(-1.5708, 0.0, 0.0).scale(400.0, 400.0, 1.0) {
+    R.plane() {
+        C.rgba(0.7, 1.0, 0.3, 1.0)
+    }
+}
+
+T.position(0, 25, 0) {
+        PL {
+            intensity(0.9)
+            distance(250.0)
+            C.rgba(1.0, 1.0, 1.0, 1.0)
+        }
 }
