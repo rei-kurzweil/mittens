@@ -23,7 +23,7 @@ let SELECTED_ROW_BG = [1.00, 0.88, 0.20, 0.96]
 fn world_panel_row(row_name, label, bg) {
     let row = T {
         name = row_name
-        Raycastable.enabled()
+        Raycastable.click_only()
         Style {
             display("block")
             width(100%)

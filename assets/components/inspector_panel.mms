@@ -14,7 +14,6 @@ let INSPECTOR_PANEL_CONTENT_HEIGHT_GU = 54.0
 let TITLE_BAR_HEIGHT_GU = 3.0
 let TITLE_CONTENT_GAP_GU = 0.5
 let INSPECTOR_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + INSPECTOR_PANEL_CONTENT_HEIGHT_GU
-let TEXT_SCALE = 0.08
 let TITLE_LABEL_PADDING_X_GU = 0.25
 
 fn inspector_panel_row(label) {
@@ -65,49 +64,50 @@ export fn inspector_panel_content(items) {
 export fn inspector_panel(title, items) {
     let root = T {
         name = "inspector_panel_root"
+        Style {
+            display("block")
+            width(INSPECTOR_PANEL_WIDTH_GU)
+            height(INSPECTOR_PANEL_TOTAL_HEIGHT_GU)
+        }
 
-        LayoutRoot {
-            name = "panel_layout_root"
-            available_width(INSPECTOR_PANEL_WIDTH_GU)
-            available_height(INSPECTOR_PANEL_TOTAL_HEIGHT_GU)
-            unit_scale(TEXT_SCALE)
+        T {
+            name = "title_bar"
+            Style {
+                display("block")
+                height(TITLE_BAR_HEIGHT_GU)
+                margin_bottom(TITLE_CONTENT_GAP_GU)
+                background_color = [0.18, 0.78, 0.22, 0.95]
+            }
 
             T {
-                name = "title_bar"
+                name = "title_label_wrap"
                 Style {
+                    display("block")
+                    width(100%)
                     height(TITLE_BAR_HEIGHT_GU)
-                    margin_bottom(TITLE_CONTENT_GAP_GU)
-                    background_color = [0.18, 0.78, 0.22, 0.95]
+                    padding_xy(0.0, TITLE_LABEL_PADDING_X_GU)
+                    font_size(1)
+                    color = [0.90, 1.00, 0.92, 1.0]
                 }
-
-                T {
-                    name = "title_label_wrap"
-                    Style {
-                        width(100%)
-                        height(TITLE_BAR_HEIGHT_GU)
-                        padding_xy(0.0, TITLE_LABEL_PADDING_X_GU)
-                        font_size(1)
-                        color = [0.90, 1.00, 0.92, 1.0]
-                    }
-                    T.position(0.0, 0.0, 0.015) {
-                        Text {
-                            name = "title_label"
-                            title
-                        }
+                T.position(0.0, 0.0, 0.015) {
+                    Text {
+                        name = "title_label"
+                        title
                     }
                 }
             }
+        }
 
-            T {
-                name = "content_slot"
-                Style {
-                    height(INSPECTOR_PANEL_CONTENT_HEIGHT_GU)
-                    overflow("scroll")
-                    background_color = [0.96, 0.92, 0.18, 0.80]
-                }
-
-                inspector_panel_content(items)
+        T {
+            name = "content_slot"
+            Style {
+                display("block")
+                height(INSPECTOR_PANEL_CONTENT_HEIGHT_GU)
+                overflow("scroll")
+                background_color = [0.96, 0.92, 0.18, 0.80]
             }
+
+            inspector_panel_content(items)
         }
     }
 

@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
+use crate::engine::ecs::component::EditorComponent;
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::system::editor_system::select_editor_target;
@@ -60,18 +60,20 @@ enum WorldPanelRowKind {
 #[derive(Debug)]
 pub(crate) struct InspectorSystemStopgapMmsAdapter {
     reconciler: InspectorSystemStopgapMmsReconciler,
-    installed_editor_roots: HashSet<ComponentId>,
-    selected_components: Arc<Mutex<HashMap<ComponentId, Option<ComponentId>>>>,
-    runtime_ui_roots: Arc<Mutex<HashMap<ComponentId, ComponentId>>>,
+    panel_handler_installed: bool,
+    panel_layout_spawned: bool,
+    selected_component: Arc<Mutex<Option<ComponentId>>>,
+    runtime_ui_root: Arc<Mutex<Option<ComponentId>>>,
 }
 
 impl Default for InspectorSystemStopgapMmsAdapter {
     fn default() -> Self {
         Self {
             reconciler: InspectorSystemStopgapMmsReconciler,
-            installed_editor_roots: HashSet::new(),
-            selected_components: Arc::new(Mutex::new(HashMap::new())),
-            runtime_ui_roots: Arc::new(Mutex::new(HashMap::new())),
+            panel_handler_installed: false,
+            panel_layout_spawned: false,
+            selected_component: Arc::new(Mutex::new(None)),
+            runtime_ui_root: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -89,14 +91,7 @@ impl InspectorSystemStopgapMmsAdapter {
         world_panel_pos: (f32, f32, f32),
         inspector_panel_pos: (f32, f32, f32),
     ) {
-        {
-            let mut selected_components = self.selected_components.lock().expect("selected component mutex poisoned");
-            selected_components
-                .entry(editor_root)
-                .or_insert(None);
-        }
-
-        let runtime_ui_root = self.get_or_create_runtime_ui_root(world, editor_root);
+        let runtime_ui_root = self.get_or_create_runtime_ui_root(world);
 
         println!(
             "[InspectorSystem][debug] setup_panels_for_editor editor_root={editor_root:?} runtime_ui_root={runtime_ui_root:?} world_panel_pos={:?} inspector_panel_pos={:?}",
@@ -111,6 +106,7 @@ impl InspectorSystemStopgapMmsAdapter {
             .reconcile_panel_layout(
             world,
             emit,
+            &mut self.panel_layout_spawned,
             runtime_ui_root,
             world_panel_pos,
             inspector_panel_pos,
@@ -120,29 +116,19 @@ impl InspectorSystemStopgapMmsAdapter {
 
         self.refresh_world_panels(world, emit);
 
-        self.install_scoped_handlers_for_editor(rx, editor_root);
+        self.install_shared_panel_handlers(rx, runtime_ui_root);
     }
 
-    fn install_scoped_handlers_for_editor(&mut self, rx: &mut RxWorld, editor_root: ComponentId) {
-        if self.installed_editor_roots.contains(&editor_root) {
+    fn install_shared_panel_handlers(&mut self, rx: &mut RxWorld, panel_query_root: ComponentId) {
+        if self.panel_handler_installed {
             return;
         }
-        self.installed_editor_roots.insert(editor_root);
+        self.panel_handler_installed = true;
 
-        let selected_components = Arc::clone(&self.selected_components);
-        let runtime_ui_roots = Arc::clone(&self.runtime_ui_roots);
+        let selected_component = Arc::clone(&self.selected_component);
 
-        rx.add_handler_closure(SignalKind::Click, editor_root, move |world, emit, signal| {
+        rx.add_handler_closure(SignalKind::Click, panel_query_root, move |world, emit, signal| {
             let Some(EventSignal::Click { renderable, .. }) = signal.event.as_ref() else {
-                return;
-            };
-
-            let Some(panel_query_root) = runtime_ui_roots
-                .lock()
-                .expect("runtime ui roots mutex poisoned")
-                .get(&editor_root)
-                .copied()
-            else {
                 return;
             };
 
@@ -186,9 +172,13 @@ impl InspectorSystemStopgapMmsAdapter {
                 return;
             };
 
+            let Some(editor_root) = nearest_editor_ancestor(world, target_component) else {
+                return;
+            };
+
             {
-                let mut selected = selected_components.lock().expect("selected component mutex poisoned");
-                selected.insert(editor_root, Some(target_component));
+                let mut selected = selected_component.lock().expect("selected component mutex poisoned");
+                *selected = Some(target_component);
             }
 
             if let Some(target_transform) = nearest_transform_ancestor(world, target_component) {
@@ -224,10 +214,10 @@ impl InspectorSystemStopgapMmsAdapter {
         });
     }
 
-    fn get_or_create_runtime_ui_root(&self, world: &mut World, editor_root: ComponentId) -> ComponentId {
+    fn get_or_create_runtime_ui_root(&self, world: &mut World) -> ComponentId {
         {
-            let runtime_ui_roots = self.runtime_ui_roots.lock().expect("runtime ui roots mutex poisoned");
-            if let Some(root) = runtime_ui_roots.get(&editor_root).copied() {
+            let runtime_ui_root = self.runtime_ui_root.lock().expect("runtime ui root mutex poisoned");
+            if let Some(root) = *runtime_ui_root {
                 return root;
             }
         }
@@ -237,46 +227,52 @@ impl InspectorSystemStopgapMmsAdapter {
             Box::new(TransformComponent::new()),
         );
 
-        self.runtime_ui_roots
+        *self.runtime_ui_root
             .lock()
-            .expect("runtime ui roots mutex poisoned")
-            .insert(editor_root, runtime_ui_root);
+            .expect("runtime ui root mutex poisoned") = Some(runtime_ui_root);
 
         println!(
-            "[InspectorSystem][debug] created runtime ui root editor_root={editor_root:?} runtime_ui_root={runtime_ui_root:?}"
+            "[InspectorSystem][debug] created runtime ui root runtime_ui_root={runtime_ui_root:?}"
         );
 
         runtime_ui_root
     }
 
     fn refresh_world_panels(&self, world: &mut World, emit: &mut dyn SignalEmitter) {
-        let runtime_ui_roots: Vec<(ComponentId, ComponentId)> = self
-            .runtime_ui_roots
+        let Some(panel_query_root) = *self
+            .runtime_ui_root
             .lock()
-            .expect("runtime ui roots mutex poisoned")
-            .iter()
-            .map(|(&editor_root, &panel_query_root)| (editor_root, panel_query_root))
-            .collect();
+            .expect("runtime ui root mutex poisoned")
+        else {
+            return;
+        };
 
-        let selected_components = self
-            .selected_components
+        let Some(content_slot) = world.find_component(panel_query_root, WORLD_CONTENT_SLOT_SELECTOR) else {
+            return;
+        };
+
+        let selected_component = *self
+            .selected_component
             .lock()
             .expect("selected component mutex poisoned");
+        let model = build_world_panel_model(world, selected_component);
+        rerender_world_panel_content(
+            world,
+            emit,
+            panel_query_root,
+            content_slot,
+            &model.rows,
+            model.selected_index,
+        );
 
-        for (editor_root, panel_query_root) in runtime_ui_roots {
-            let Some(content_slot) = world.find_component(panel_query_root, WORLD_CONTENT_SLOT_SELECTOR) else {
-                continue;
-            };
-
-            let selected_component = selected_components.get(&editor_root).copied().flatten();
-            let model = build_world_panel_model(world, selected_component);
-            rerender_world_panel_content(
+        if let Some(inspector_content_slot) = world.find_component(panel_query_root, INSPECTOR_CONTENT_SLOT_SELECTOR) {
+            let inspector_model = build_inspector_panel_model(selected_component.and_then(|component_id| selected_component_mms(world, component_id)));
+            rerender_inspector_panel_content(
                 world,
                 emit,
                 panel_query_root,
-                content_slot,
-                &model.rows,
-                model.selected_index,
+                inspector_content_slot,
+                &inspector_model.items,
             );
         }
     }
@@ -287,6 +283,7 @@ impl InspectorSystemStopgapMmsReconciler {
         &self,
         world: &mut World,
         emit: &mut dyn SignalEmitter,
+        panel_layout_spawned: &mut bool,
         panel_query_root: ComponentId,
         world_panel_pos: (f32, f32, f32),
         inspector_panel_pos: (f32, f32, f32),
@@ -300,12 +297,22 @@ impl InspectorSystemStopgapMmsReconciler {
             "[InspectorSystem][debug] reconcile_panel_layout panel_query_root={panel_query_root:?} existing_world_panel={existing_world_panel:?} existing_inspector_panel={existing_inspector_panel:?}"
         );
 
+        if *panel_layout_spawned {
+            println!(
+                "[InspectorSystem][debug] panel layout already spawned for panel_query_root={panel_query_root:?}; skipping duplicate spawn"
+            );
+            return;
+        }
+
         if existing_world_panel.is_some() && existing_inspector_panel.is_some() {
             println!(
                 "[InspectorSystem][debug] panel layout already present for panel_query_root={panel_query_root:?}; skipping spawn"
             );
+            *panel_layout_spawned = true;
             return;
         }
+
+        *panel_layout_spawned = true;
 
         self.spawn_panel_layout(
             world,
@@ -795,6 +802,20 @@ fn world_panel_item_label(world: &World, component_id: ComponentId) -> String {
         .unwrap_or_else(|| format!("component_{:?}", component_id))
 }
 
+fn nearest_editor_ancestor(world: &World, start: ComponentId) -> Option<ComponentId> {
+    let mut current = Some(start);
+    while let Some(component_id) = current {
+        if world
+            .get_component_by_id_as::<EditorComponent>(component_id)
+            .is_some()
+        {
+            return Some(component_id);
+        }
+        current = world.parent_of(component_id);
+    }
+    None
+}
+
 fn editor_chunk_label(world: &World, editor_root: ComponentId) -> String {
     if let Some(label) = world.component_label(editor_root) {
         if !label.is_empty() {
@@ -998,7 +1019,7 @@ fn rust_world_panel_row_ce(
             if interactive {
                 children.push(CeChild::Spawn(MaterializedCE {
                     component_type: "Raycastable".to_string(),
-                    ctor_method: Some("enabled".to_string()),
+                    ctor_method: Some("click_only".to_string()),
                     ctor_args: Vec::new(),
                     calls: Vec::new(),
                     named: Vec::new(),
