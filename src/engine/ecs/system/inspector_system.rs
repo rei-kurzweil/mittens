@@ -46,6 +46,31 @@ mod tests {
             .unwrap_or_else(|| panic!("expected root named {name}"))
     }
 
+    fn find_named_roots(world: &World, name: &str) -> Vec<crate::engine::ecs::ComponentId> {
+        let mut roots: Vec<_> = world
+            .all_components()
+            .filter(|&component_id| {
+                world.parent_of(component_id).is_none()
+                    && world.component_label(component_id).is_some_and(|label| label == name)
+            })
+            .collect();
+        roots.sort_by_key(|component_id| format!("{:?}", component_id));
+        roots
+    }
+
+    fn row_text(world: &World, root: crate::engine::ecs::ComponentId, row_selector: &str) -> String {
+        let row = world
+            .find_component(root, row_selector)
+            .unwrap_or_else(|| panic!("expected row {row_selector}"));
+        let text_id = world
+            .find_component(row, "Text")
+            .unwrap_or_else(|| panic!("expected Text under {row_selector}"));
+        world
+            .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(text_id)
+            .map(|text| text.text.clone())
+            .expect("expected text component")
+    }
+
     #[test]
     fn setup_panels_for_editor_spawns_world_panel_under_root_runtime_ui_transform() {
         let mut world = World::default();
@@ -55,10 +80,12 @@ mod tests {
         let mut inspector = InspectorSystem::new();
 
         let editor_root = world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
-        let _scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
         let camera_root = world.add_component_boxed_named("camera_root", Box::new(TransformComponent::new()));
 
-        assert!(world.parent_of(scene_root).is_none());
+        let _ = world.add_child(editor_root, scene_root);
+
+        assert_eq!(world.parent_of(scene_root), Some(editor_root));
         assert!(world.parent_of(camera_root).is_none());
 
         inspector.setup_panels_for_editor(
@@ -101,6 +128,8 @@ mod tests {
         assert!(world.find_component(runtime_ui_root, "#panel_status_value").is_some());
         assert!(world.find_component(runtime_ui_root, "#rows_mount").is_some());
         assert!(world.find_component(runtime_ui_root, "#item_0").is_some());
+        assert_eq!(row_text(&world, runtime_ui_root, "#item_0"), "Editor#editor_root");
+        assert_eq!(row_text(&world, runtime_ui_root, "#item_1"), "scene_root");
     }
 
     #[test]
@@ -113,8 +142,9 @@ mod tests {
 
         let editor_root = world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
         let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_root);
 
-        assert!(world.parent_of(scene_root).is_none());
+        assert_eq!(world.parent_of(scene_root), Some(editor_root));
 
         inspector.setup_panels_for_editor(
             &mut systems.rx,
@@ -129,8 +159,8 @@ mod tests {
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let item_0 = world
-            .find_component(runtime_ui_root, "#item_0")
-            .expect("expected item_0 row under runtime ui root");
+            .find_component(runtime_ui_root, "#item_1")
+            .expect("expected scene row under runtime ui root");
 
         systems.rx.push_event(
             item_0,
@@ -168,6 +198,7 @@ mod tests {
         let editor_root = world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
         let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
         let child_transform = world.add_component_boxed_named("child_transform", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_root);
         let _ = world.add_child(scene_root, child_transform);
 
         inspector.setup_panels_for_editor(
@@ -183,7 +214,7 @@ mod tests {
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
 
-        assert!(world.find_component(runtime_ui_root, "#item_1").is_some());
+        assert_eq!(row_text(&world, runtime_ui_root, "#item_2"), "  child_transform");
     }
 
     #[test]
@@ -196,6 +227,7 @@ mod tests {
 
         let editor_root = world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
         let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_root);
 
         inspector.setup_panels_for_editor(
             &mut systems.rx,
@@ -210,8 +242,8 @@ mod tests {
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let item_0 = world
-            .find_component(runtime_ui_root, "#item_0")
-            .expect("expected root row under runtime ui root");
+            .find_component(runtime_ui_root, "#item_1")
+            .expect("expected scene row under runtime ui root");
 
         systems.rx.push_event(
             item_0,
@@ -246,5 +278,52 @@ mod tests {
             })
             .expect("expected inspector panel text after selection");
         assert!(inspector_row_text.contains("name = \"scene_root\""));
+    }
+
+    #[test]
+    fn setup_panels_for_editor_groups_rows_by_editor_tree() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let mut inspector = InspectorSystem::new();
+
+        let editor_root = world.add_component_boxed_named("alpha", Box::new(EditorComponent::new()));
+        let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let other_editor_root = world.add_component_boxed_named("beta", Box::new(EditorComponent::new()));
+        let other_scene_root = world.add_component_boxed_named("other_scene", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_root);
+        let _ = world.add_child(other_editor_root, other_scene_root);
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (-0.7, 1.6, -1.2),
+        );
+        systems.process_commands(&mut world, &mut visuals, &mut emit);
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &mut emit,
+            other_editor_root,
+            (-0.7, 1.6, -1.2),
+            (-0.7, 1.6, -1.2),
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &mut emit);
+
+        let runtime_ui_roots = find_named_roots(&world, "editor_runtime_ui_root");
+        assert_eq!(runtime_ui_roots.len(), 2);
+
+        for runtime_ui_root in runtime_ui_roots {
+            assert_eq!(row_text(&world, runtime_ui_root, "#item_0"), "Editor#alpha");
+            assert_eq!(row_text(&world, runtime_ui_root, "#item_1"), "scene_root");
+            assert_eq!(row_text(&world, runtime_ui_root, "#item_3"), "Editor#beta");
+            assert_eq!(row_text(&world, runtime_ui_root, "#item_4"), "other_scene");
+        }
     }
 }

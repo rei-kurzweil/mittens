@@ -37,16 +37,24 @@ const PANEL_LAYOUT_GAP_GU: f64 = 2.0;
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct WorldPanelModel {
     title: String,
-    items: Vec<String>,
+    rows: Vec<WorldPanelRow>,
     selected_index: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct WorldPanelItem {
-    component_id: ComponentId,
+struct WorldPanelRow {
+    target_component: Option<ComponentId>,
     label: String,
-    depth: usize,
-    has_children: bool,
+    display_label: String,
+    kind: WorldPanelRowKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorldPanelRowKind {
+    Spacer,
+    EditorHeader,
+    Info,
+    Component,
 }
 
 #[derive(Debug)]
@@ -96,20 +104,21 @@ impl InspectorSystemStopgapMmsAdapter {
             inspector_panel_pos,
         );
 
-        let model = build_world_panel_model(world, editor_root, runtime_ui_root, None);
+        let model = build_world_panel_model(world, None);
         let inspector_model = build_inspector_panel_model(None);
 
         self.reconciler
             .reconcile_panel_layout(
             world,
             emit,
-            editor_root,
             runtime_ui_root,
             world_panel_pos,
             inspector_panel_pos,
             &model,
             &inspector_model,
         );
+
+        self.refresh_world_panels(world, emit);
 
         self.install_scoped_handlers_for_editor(rx, editor_root);
     }
@@ -169,31 +178,34 @@ impl InspectorSystemStopgapMmsAdapter {
                 return;
             };
 
-            let visible_items = fully_expanded_world_panel_items(world, &[editor_root, panel_query_root]);
-            let Some(row) = visible_items.get(row_index).cloned() else {
+            let visible_rows = build_world_panel_rows(world);
+            let Some(row) = visible_rows.get(row_index).cloned() else {
+                return;
+            };
+            let Some(target_component) = row.target_component else {
                 return;
             };
 
             {
                 let mut selected = selected_components.lock().expect("selected component mutex poisoned");
-                selected.insert(editor_root, Some(row.component_id));
+                selected.insert(editor_root, Some(target_component));
             }
 
-            if let Some(target_transform) = nearest_transform_ancestor(world, row.component_id) {
+            if let Some(target_transform) = nearest_transform_ancestor(world, target_component) {
                 select_editor_target(world, emit, editor_root, target_transform, true);
             }
 
-            let world_panel_model = build_world_panel_model(world, editor_root, panel_query_root, Some(row.component_id));
+            let world_panel_model = build_world_panel_model(world, Some(target_component));
             rerender_world_panel_content(
                 world,
                 emit,
                 panel_query_root,
                 content_slot,
-                &world_panel_model.items,
+                &world_panel_model.rows,
                 world_panel_model.selected_index,
             );
 
-            let inspector_model = build_inspector_panel_model(selected_component_mms(world, row.component_id));
+            let inspector_model = build_inspector_panel_model(selected_component_mms(world, target_component));
             rerender_inspector_panel_content(
                 world,
                 emit,
@@ -236,6 +248,38 @@ impl InspectorSystemStopgapMmsAdapter {
 
         runtime_ui_root
     }
+
+    fn refresh_world_panels(&self, world: &mut World, emit: &mut dyn SignalEmitter) {
+        let runtime_ui_roots: Vec<(ComponentId, ComponentId)> = self
+            .runtime_ui_roots
+            .lock()
+            .expect("runtime ui roots mutex poisoned")
+            .iter()
+            .map(|(&editor_root, &panel_query_root)| (editor_root, panel_query_root))
+            .collect();
+
+        let selected_components = self
+            .selected_components
+            .lock()
+            .expect("selected component mutex poisoned");
+
+        for (editor_root, panel_query_root) in runtime_ui_roots {
+            let Some(content_slot) = world.find_component(panel_query_root, WORLD_CONTENT_SLOT_SELECTOR) else {
+                continue;
+            };
+
+            let selected_component = selected_components.get(&editor_root).copied().flatten();
+            let model = build_world_panel_model(world, selected_component);
+            rerender_world_panel_content(
+                world,
+                emit,
+                panel_query_root,
+                content_slot,
+                &model.rows,
+                model.selected_index,
+            );
+        }
+    }
 }
 
 impl InspectorSystemStopgapMmsReconciler {
@@ -243,7 +287,6 @@ impl InspectorSystemStopgapMmsReconciler {
         &self,
         world: &mut World,
         emit: &mut dyn SignalEmitter,
-        editor_root: ComponentId,
         panel_query_root: ComponentId,
         world_panel_pos: (f32, f32, f32),
         inspector_panel_pos: (f32, f32, f32),
@@ -254,12 +297,12 @@ impl InspectorSystemStopgapMmsReconciler {
         let existing_inspector_panel = self.find_world_panel_node(world, panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR);
 
         println!(
-            "[InspectorSystem][debug] reconcile_panel_layout editor_root={editor_root:?} panel_query_root={panel_query_root:?} existing_world_panel={existing_world_panel:?} existing_inspector_panel={existing_inspector_panel:?}"
+            "[InspectorSystem][debug] reconcile_panel_layout panel_query_root={panel_query_root:?} existing_world_panel={existing_world_panel:?} existing_inspector_panel={existing_inspector_panel:?}"
         );
 
         if existing_world_panel.is_some() && existing_inspector_panel.is_some() {
             println!(
-                "[InspectorSystem][debug] panel layout already present for editor_root={editor_root:?}; skipping spawn"
+                "[InspectorSystem][debug] panel layout already present for panel_query_root={panel_query_root:?}; skipping spawn"
             );
             return;
         }
@@ -307,7 +350,7 @@ impl InspectorSystemStopgapMmsReconciler {
             "world_panel",
             vec![
                 Value::String(model.title.clone()),
-                Value::Array(model.items.iter().cloned().map(Value::String).collect()),
+                Value::Array(Vec::new()),
             ],
             "world panel",
         ) {
@@ -414,6 +457,17 @@ impl InspectorSystemStopgapMmsReconciler {
             },
         );
 
+        if let Some(content_slot) = world.find_component(panel_mount_root, WORLD_CONTENT_SLOT_SELECTOR) {
+            rerender_world_panel_content(
+                world,
+                emit,
+                panel_mount_root,
+                content_slot,
+                &model.rows,
+                model.selected_index,
+            );
+        }
+
         println!(
             "[InspectorSystem][debug] queued attach panel_mount_root={panel_mount_root:?} -> panel_query_root={panel_query_root:?}"
         );
@@ -442,26 +496,19 @@ fn panel_click_status(world: &World, editor_root: ComponentId, renderable: Compo
 
 fn build_world_panel_model(
     world: &World,
-    editor_root: ComponentId,
-    runtime_ui_root: ComponentId,
     selected_component: Option<ComponentId>,
 ) -> WorldPanelModel {
-    let visible_items = fully_expanded_world_panel_items(world, &[editor_root, runtime_ui_root]);
-    let items: Vec<String> = visible_items
-        .iter()
-        .map(|item| format!("{}{}", "  ".repeat(item.depth), item.label))
-        .collect();
-    let items = if items.is_empty() { vec!["<empty>".to_string()] } else { items };
+    let rows = build_world_panel_rows(world);
     let selected_index = selected_component.and_then(|selected| {
-        visible_items
+        rows
             .iter()
-            .position(|item| item.component_id == selected)
+            .position(|row| row.target_component == Some(selected))
             .map(|index| index as i64)
     });
 
     WorldPanelModel {
         title: "World".to_string(),
-        items,
+        rows,
         selected_index,
     }
 }
@@ -473,37 +520,65 @@ fn build_inspector_panel_model(serialized_mms: Option<String>) -> InspectorPanel
     }
 }
 
-fn fully_expanded_world_panel_items(world: &World, excluded_roots: &[ComponentId]) -> Vec<WorldPanelItem> {
-    let mut roots: Vec<ComponentId> = world
+fn build_world_panel_rows(world: &World) -> Vec<WorldPanelRow> {
+    let mut editor_roots: Vec<ComponentId> = world
         .all_components()
-        .filter(|&component_id| {
-            world.parent_of(component_id).is_none() && !excluded_roots.contains(&component_id)
-        })
+        .filter(|&component_id| world.get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(component_id).is_some())
         .collect();
-    roots.sort_by_key(|component_id| format!("{:?}", component_id));
+    editor_roots.sort_by_key(|component_id| component_id_short(*component_id));
 
     let mut out = Vec::new();
-    for root in roots {
-        push_fully_expanded_world_panel_items(world, root, 0, &mut out);
+    for (editor_index, editor_root) in editor_roots.into_iter().enumerate() {
+        if editor_index > 0 {
+            out.push(WorldPanelRow {
+                target_component: None,
+                label: String::new(),
+                display_label: String::new(),
+                kind: WorldPanelRowKind::Spacer,
+            });
+        }
+
+        let header_label = editor_chunk_label(world, editor_root);
+        out.push(WorldPanelRow {
+            target_component: None,
+            label: header_label.clone(),
+            display_label: header_label,
+            kind: WorldPanelRowKind::EditorHeader,
+        });
+
+        for &child in world.children_of(editor_root) {
+            push_editor_world_panel_rows(world, child, 0, &mut out);
+        }
     }
+
+    if out.is_empty() {
+        out.push(WorldPanelRow {
+            target_component: None,
+            label: "<empty>".to_string(),
+            display_label: "<empty>".to_string(),
+            kind: WorldPanelRowKind::Info,
+        });
+    }
+
     out
 }
 
-fn push_fully_expanded_world_panel_items(
+fn push_editor_world_panel_rows(
     world: &World,
     component_id: ComponentId,
     depth: usize,
-    out: &mut Vec<WorldPanelItem>,
+    out: &mut Vec<WorldPanelRow>,
 ) {
-    out.push(WorldPanelItem {
-        component_id,
-        label: world_panel_item_label(world, component_id),
-        depth,
-        has_children: !world.children_of(component_id).is_empty(),
+    let label = world_panel_item_label(world, component_id);
+    out.push(WorldPanelRow {
+        target_component: Some(component_id),
+        display_label: format!("{}{}", "  ".repeat(depth), label),
+        label,
+        kind: WorldPanelRowKind::Component,
     });
 
     for &child in world.children_of(component_id) {
-        push_fully_expanded_world_panel_items(world, child, depth + 1, out);
+        push_editor_world_panel_rows(world, child, depth + 1, out);
     }
 }
 
@@ -589,41 +664,10 @@ fn rerender_world_panel_content(
     emit: &mut dyn SignalEmitter,
     panel_query_root: ComponentId,
     content_slot: ComponentId,
-    items: &[String],
+    rows: &[WorldPanelRow],
     selected_index: Option<i64>,
 ) {
-    let module = match MeowMeowRunner::load_module_file(world_panel_content_asset_path()) {
-        Ok(module) => module,
-        Err(error) => {
-            eprintln!("[InspectorSystemStopgapMmsAdapter] world panel content module load error: {error}");
-            return;
-        }
-    };
-
-    let content_value = match MeowMeowRunner::call_mms_module_fn(
-        &module,
-        "world_panel_content_selected",
-        vec![
-            Value::Array(items.iter().cloned().map(Value::String).collect()),
-            Value::Number(selected_index.unwrap_or(-1) as f64),
-        ],
-        None,
-        Some(world),
-        Some(emit),
-    ) {
-        Ok(value) => value,
-        Err(error) => {
-            eprintln!("[InspectorSystemStopgapMmsAdapter] world panel content export call error: {error}");
-            return;
-        }
-    };
-
-    let Value::ComponentExpr(content_root) = content_value else {
-        eprintln!(
-            "[InspectorSystemStopgapMmsAdapter] world panel content export did not return a component tree"
-        );
-        return;
-    };
+    let content_root = rust_world_panel_content_ce(rows, selected_index);
 
     if let Some(existing_content_root) = world.find_component(panel_query_root, WORLD_PANEL_CONTENT_ROOT_SELECTOR) {
         emit.push_intent_now(
@@ -634,7 +678,7 @@ fn rerender_world_panel_content(
         );
     }
 
-    let spawned_content_root = match spawn_tree_uninitialized(content_root.as_ref(), world, emit) {
+    let spawned_content_root = match spawn_tree_uninitialized(&content_root, world, emit) {
         Ok(component_id) => component_id,
         Err(error) => {
             eprintln!("[InspectorSystemStopgapMmsAdapter] world panel content spawn error: {error}");
@@ -751,16 +795,29 @@ fn world_panel_item_label(world: &World, component_id: ComponentId) -> String {
         .unwrap_or_else(|| format!("component_{:?}", component_id))
 }
 
+fn editor_chunk_label(world: &World, editor_root: ComponentId) -> String {
+    if let Some(label) = world.component_label(editor_root) {
+        if !label.is_empty() {
+            return format!("Editor#{label}");
+        }
+    }
+
+    format!("Editor {{ id={} }}", component_id_short(editor_root))
+}
+
+fn component_id_short(component_id: ComponentId) -> String {
+    format!("{:?}", component_id)
+        .trim_start_matches("ComponentId(")
+        .trim_end_matches(')')
+        .to_string()
+}
+
 fn world_panel_asset_path() -> &'static str {
     concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/world_panel.mms")
 }
 
 fn world_panel_status_asset_path() -> &'static str {
     concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/world_panel_status.mms")
-}
-
-fn world_panel_content_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/world_panel_content.mms")
 }
 
 fn inspector_panel_asset_path() -> &'static str {
@@ -858,5 +915,155 @@ fn panel_shell_ce(
             }),
             CeChild::Spawn(panel_root),
         ],
+    }
+}
+
+fn rust_world_panel_content_ce(
+    rows: &[WorldPanelRow],
+    selected_index: Option<i64>,
+) -> MaterializedCE {
+    let row_children: Vec<CeChild> = rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            CeChild::Spawn(rust_world_panel_row_ce(
+                &format!("{ITEM_PREFIX}{index}"),
+                row,
+                selected_index == Some(index as i64),
+            ))
+        })
+        .collect();
+
+    MaterializedCE {
+        component_type: "T".to_string(),
+        ctor_method: None,
+        ctor_args: Vec::new(),
+        calls: Vec::new(),
+        named: vec![("name".to_string(), Value::String("world_panel_content_root".to_string()))],
+        positionals: Vec::new(),
+        children: vec![
+            CeChild::Spawn(style_ce(vec![
+                ("display", vec![Value::String("block".to_string())]),
+                ("width", vec![Value::Number(100.0)]),
+            ])),
+            CeChild::Spawn(MaterializedCE {
+                component_type: "T".to_string(),
+                ctor_method: None,
+                ctor_args: Vec::new(),
+                calls: Vec::new(),
+                named: vec![("name".to_string(), Value::String("rows_mount".to_string()))],
+                positionals: Vec::new(),
+                children: {
+                    let mut children = vec![CeChild::Spawn(style_ce(vec![
+                        ("display", vec![Value::String("block".to_string())]),
+                        ("width", vec![Value::Number(100.0)]),
+                    ]))];
+                    children.extend(row_children);
+                    children
+                },
+            }),
+        ],
+    }
+}
+
+fn rust_world_panel_row_ce(
+    row_name: &str,
+    row: &WorldPanelRow,
+    selected: bool,
+) -> MaterializedCE {
+    match row.kind {
+        WorldPanelRowKind::Spacer => MaterializedCE {
+            component_type: "T".to_string(),
+            ctor_method: None,
+            ctor_args: Vec::new(),
+            calls: Vec::new(),
+            named: vec![("name".to_string(), Value::String(row_name.to_string()))],
+            positionals: Vec::new(),
+            children: vec![CeChild::Spawn(style_ce(vec![
+                ("display", vec![Value::String("block".to_string())]),
+                ("width", vec![Value::Number(100.0)]),
+                ("height", vec![Value::Number(0.8)]),
+            ]))],
+        },
+        WorldPanelRowKind::EditorHeader | WorldPanelRowKind::Info | WorldPanelRowKind::Component => {
+            let (background_rgba, text_rgba, interactive) = match row.kind {
+                WorldPanelRowKind::EditorHeader => ([0.18, 0.78, 0.22, 0.95], [0.0, 0.0, 0.0, 1.0], false),
+                WorldPanelRowKind::Info => ([0.85, 0.85, 0.85, 1.0], [0.0, 0.0, 0.0, 1.0], false),
+                WorldPanelRowKind::Component if selected => ([1.00, 0.88, 0.20, 0.96], [0.06, 0.09, 0.08, 1.0], true),
+                WorldPanelRowKind::Component => ([0.92, 0.97, 0.92, 1.0], [0.06, 0.09, 0.08, 1.0], true),
+                WorldPanelRowKind::Spacer => unreachable!(),
+            };
+
+            let mut children = Vec::new();
+            if interactive {
+                children.push(CeChild::Spawn(MaterializedCE {
+                    component_type: "Raycastable".to_string(),
+                    ctor_method: Some("enabled".to_string()),
+                    ctor_args: Vec::new(),
+                    calls: Vec::new(),
+                    named: Vec::new(),
+                    positionals: Vec::new(),
+                    children: Vec::new(),
+                }));
+            }
+            children.push(CeChild::Spawn(style_ce(vec![
+                ("display", vec![Value::String("block".to_string())]),
+                ("width", vec![Value::Number(100.0)]),
+                ("margin_xy", vec![Value::Number(0.25), Value::Number(0.20)]),
+                ("padding_xy", vec![Value::Number(0.55), Value::Number(0.45)]),
+                ("font_size", vec![Value::Number(1.0)]),
+                ("background_color", vec![Value::Array(background_rgba.into_iter().map(Value::Number).collect())]),
+            ])));
+            children.push(CeChild::Spawn(MaterializedCE {
+                component_type: "T".to_string(),
+                ctor_method: Some("position".to_string()),
+                ctor_args: vec![Value::Number(0.0), Value::Number(0.0), Value::Number(0.0)],
+                calls: Vec::new(),
+                named: Vec::new(),
+                positionals: Vec::new(),
+                children: vec![CeChild::Spawn(MaterializedCE {
+                    component_type: "Text".to_string(),
+                    ctor_method: None,
+                    ctor_args: Vec::new(),
+                    calls: Vec::new(),
+                    named: Vec::new(),
+                    positionals: vec![Value::String(row.display_label.clone())],
+                    children: vec![CeChild::Spawn(MaterializedCE {
+                        component_type: "Color".to_string(),
+                        ctor_method: Some("rgba".to_string()),
+                        ctor_args: text_rgba.into_iter().map(Value::Number).collect(),
+                        calls: Vec::new(),
+                        named: Vec::new(),
+                        positionals: Vec::new(),
+                        children: Vec::new(),
+                    })],
+                })],
+            }));
+
+            MaterializedCE {
+                component_type: "T".to_string(),
+                ctor_method: None,
+                ctor_args: Vec::new(),
+                calls: Vec::new(),
+                named: vec![("name".to_string(), Value::String(row_name.to_string()))],
+                positionals: Vec::new(),
+                children,
+            }
+        }
+    }
+}
+
+fn style_ce(calls: Vec<(&str, Vec<Value>)>) -> MaterializedCE {
+    MaterializedCE {
+        component_type: "Style".to_string(),
+        ctor_method: None,
+        ctor_args: Vec::new(),
+        calls: calls
+            .into_iter()
+            .map(|(method, args)| (method.to_string(), args))
+            .collect(),
+        named: Vec::new(),
+        positionals: Vec::new(),
+        children: Vec::new(),
     }
 }

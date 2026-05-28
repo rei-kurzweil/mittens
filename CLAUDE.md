@@ -27,6 +27,14 @@ cargo build --release
 cargo run --release --example simple-demo
 cargo run --release --example vtuber-joints-example
 
+# Note: Running GUI examples over SSH (Wayland/X11)
+# If windowing fails with 'NotImplemented' or similar error when connected via SSH,
+# ensure the environment variables are set to target the local display:
+# Wayland: WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/$(id -u) cargo run --release --example ...
+# X11: DISPLAY=:0 cargo run --release --example ...
+# (You may need to run 'xhost +local:root' on the host machine first).
+# ALWAYS use --release for max performance (IK/animation systems depend on it).
+
 # Profiling (requires cargo install cargo-flamegraph + system perf)
 CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS="-C debuginfo=1 -C force-frame-pointers=yes" \
   cargo flamegraph --release --example vtuber-joints-example

@@ -33,22 +33,30 @@ However, the user noted that **"once we compensate for the y translation on the 
 
 ## Verification Checklist
 
+### Preparation
+- [x] Clear 'clutter' in `examples/vtuber-desktop.mms` to verify height.
+- [x] Update agent instructions (`CLAUDE.md`, `.github/copilot-instructions.md`) with SSH/Wayland GUI guidance.
+
 ### Desktop (Test Fallback)
-- [ ] `examples/vtuber-desktop.mms`: Remove `camera_bone("J_Bip_C_Head")` and verify avatar is correctly grounded (head on shoulders).
-- [ ] `examples/vtuber-desktop-first-person.mms`: Remove `camera_bone("J_Bip_C_Head")` and verify camera is still re-parented to head via fallback.
+- [x] `examples/vtuber-desktop.mms`: Removed explicit `camera_bone` and verified grounding (head on shoulders).
+- [x] `examples/vtuber-desktop-first-person.mms`: Removed explicit `camera_bone` and verified fallback re-parenting.
+- [x] `examples/bisket-bones-and-ik.mms`: Removed explicit `camera_bone` and verified fallback.
 
 ### VR/XR (Verify No Regressions)
 - [ ] `examples/vr-input.mms` / `examples/vr-input.rs`
 - [ ] `examples/bisket-vr-demo.mms` / `examples/bisket-vr-demo.rs`
 - [ ] `examples/bisket-vr-debug.mms` / `examples/bisket-vr-debug.rs`
-- [ ] `examples/bisket-bones-and-ik.mms`
 
 ## Implementation Steps
 ...
-
 1.  **Modify `AvatarControlSystem`**:
-    - If `avc.camera_bone` is `None`, use `avc.head_bone` as the selector for height measurement.
-    - Perform the `UpdateTransform` on `model_root` as usual.
+    - [x] If `avc.camera_bone` is `None`, use `avc.head_bone` as the selector for height measurement.
+    - [x] Perform the `UpdateTransform` on `model_root` as usual.
+    - [x] Update diagnostic logging.
+
+2.  **Verify Examples**:
+    - [x] Run `vtuber-desktop` (confirmed head on shoulders).
+    - [x] Run `vtuber-desktop-first-person` (confirmed camera re-parented).
 
 2.  **Verify `vtuber-desktop.mms`**:
     - With the fix, the head should be on the shoulders.
