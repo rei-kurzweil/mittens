@@ -22,7 +22,7 @@ impl InspectorSystem {
         _inspector_panel_pos: (f32, f32, f32),
     ) {
         self.stopgap_mms
-            .setup_panels_for_editor(rx, world, emit, editor_root, world_panel_pos);
+            .setup_panels_for_editor(rx, world, emit, editor_root, world_panel_pos, _inspector_panel_pos);
     }
 }
 
@@ -45,7 +45,7 @@ mod tests {
         let mut inspector = InspectorSystem::new();
 
         let editor_root = world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
-        let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+    let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
         let camera_root = world.add_component_boxed_named("camera_root", Box::new(TransformComponent::new()));
 
         assert!(world.parent_of(scene_root).is_none());
@@ -63,12 +63,15 @@ mod tests {
         systems.process_commands(&mut world, &mut visuals, &mut emit);
 
         let panel_mount = world
-            .find_component(editor_root, "#editor_world_panel_mount")
-            .expect("expected world panel mount under editor root");
+            .find_component(editor_root, "#editor_panel_layout_mount")
+            .expect("expected panel layout mount under editor root");
         let panel_root = world
             .find_component(editor_root, "#world_panel_root")
             .expect("expected world panel root under editor root");
         assert_eq!(world.parent_of(panel_mount), Some(editor_root));
+        assert!(world.find_component(editor_root, "#editor_panel_layout_root").is_some());
+        assert!(world.find_component(editor_root, "#editor_world_panel_shell").is_some());
+        assert!(world.find_component(editor_root, "#editor_inspector_panel_shell").is_some());
         let panel_selectable = world
             .parent_of(panel_root)
             .expect("expected selectable-off ancestor above world panel root");
@@ -82,6 +85,7 @@ mod tests {
         assert!(world
             .get_component_by_id_as::<OverlayComponent>(panel_overlay)
             .is_some());
+        assert!(world.find_component(editor_root, "#inspector_panel_root").is_some());
         assert!(world.find_component(editor_root, "#panel_status_value").is_some());
         assert!(world.find_component(editor_root, "#rows_mount").is_some());
         assert!(world.find_component(editor_root, "#item_0").is_some());
@@ -96,7 +100,7 @@ mod tests {
         let mut inspector = InspectorSystem::new();
 
         let editor_root = world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
-        let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let _scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
 
         assert!(world.parent_of(scene_root).is_none());
 
@@ -137,6 +141,94 @@ mod tests {
             )
             .map(|text| text.text.clone())
             .expect("expected panel status to remain a text component");
-        assert_eq!(status_text, "selected item_0");
+        assert_eq!(status_text, "selected scene_root");
+    }
+
+    #[test]
+    fn setup_panels_for_editor_renders_children_fully_expanded_by_default() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let mut inspector = InspectorSystem::new();
+
+        let editor_root = world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let child_transform = world.add_component_boxed_named("child_transform", Box::new(TransformComponent::new()));
+        let _ = world.add_child(scene_root, child_transform);
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (-0.7, 1.6, -1.2),
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &mut emit);
+
+        assert!(world.find_component(editor_root, "#item_1").is_some());
+    }
+
+    #[test]
+    fn setup_panels_for_editor_click_updates_inspector_with_selected_component_mms() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let mut inspector = InspectorSystem::new();
+
+        let editor_root = world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (1.9, 1.6, -1.2),
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &mut emit);
+
+        let item_0 = world
+            .find_component(editor_root, "#item_0")
+            .expect("expected root row under editor root");
+
+        systems.rx.push_event(
+            item_0,
+            EventSignal::Click {
+                raycaster: item_0,
+                renderable: item_0,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+
+        let _ = systems.process_signals(&mut world, &mut visuals, &mut emit, 100_000);
+
+        let panel_status_value = world
+            .find_component(editor_root, "#panel_status_value")
+            .expect("expected panel status text under editor root after selection");
+
+        let status_text = world
+            .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(
+                panel_status_value,
+            )
+            .map(|text| text.text.clone())
+            .expect("expected panel status to remain a text component");
+        assert_eq!(status_text, "selected scene_root");
+
+        let inspector_row_text = world
+            .find_component(editor_root, "#inspector_panel_content_root Text")
+            .and_then(|text_id| {
+                world
+                    .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(text_id)
+                    .map(|text| text.text.clone())
+            })
+            .expect("expected inspector panel text after selection");
+        assert!(inspector_row_text.contains("name = \"scene_root\""));
     }
 }

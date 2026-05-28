@@ -755,12 +755,22 @@ impl SystemWorld {
             return;
         };
 
+        println!(
+            "[InspectorSystem][debug] register_editor editor_root={component:?} spawn_panels={} world_panel_pos={:?} inspector_panel_pos={:?}",
+            spawn_panels,
+            world_panel_pos,
+            inspector_panel_pos,
+        );
+
         self.editor
             .materialize_editor_raycastables(world, emit, component);
         self.editor
             .install_scoped_handlers_for_editor(&mut self.rx, component);
 
         if spawn_panels {
+            println!(
+                "[InspectorSystem][debug] setup_panels_for_editor editor_root={component:?}"
+            );
             self.inspector.setup_panels_for_editor(
                 &mut self.rx,
                 world,

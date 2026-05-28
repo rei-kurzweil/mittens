@@ -17,6 +17,8 @@
 // target refs, but that is spec work only for now.
 
 let TEXT_SCALE = 0.08
+let DEFAULT_ROW_BG = [0.92, 0.97, 0.92, 1.0]
+let SELECTED_ROW_BG = [1.00, 0.88, 0.20, 0.96]
 
 fn world_panel_row(row_name, label, bg) {
     let row = T {
@@ -40,7 +42,7 @@ fn world_panel_row(row_name, label, bg) {
     return row
 }
 
-export fn world_panel_content(items) {
+export fn world_panel_content_selected(items, selected_index) {
     let root = T {
         name = "world_panel_content_root"
         Style {
@@ -58,11 +60,19 @@ export fn world_panel_content(items) {
             let idx = 0
             for item in items {
                 let row_name = "item_" + idx
-                world_panel_row(row_name, item, [0.92, 0.97, 0.92, 1.0])
+                let bg = DEFAULT_ROW_BG
+                if idx == selected_index {
+                    bg = SELECTED_ROW_BG
+                }
+                world_panel_row(row_name, item, bg)
                 idx = idx + 1
             }
         }
     }
 
     return root
+}
+
+export fn world_panel_content(items) {
+    return world_panel_content_selected(items, -1)
 }

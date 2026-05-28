@@ -64,6 +64,20 @@ ED {
     T.position(0.0, 2.15, -7.2).scale(8.8, 3.6, 0.24) {
         R.cube() { C.rgba(0.11, 0.10, 0.14, 1.0) }
     }
+
+    T.position(2.0, 0, 1.0) {    
+        T.position(-0.9, -0.44, -1.0).scale(0.50, 0.50, 0.50) {
+            R.cube() { C.rgba(1.0, 0.88, 0.15, 1.0) }
+        }
+
+        T.position(0.0, -0.44, -0.7).scale(0.50, 0.50, 0.50) {
+            R.cube() { C.rgba(1.0, 0.35, 0.78, 1.0) }
+        }
+
+        T.position(0.9, -0.44, -1.1).scale(0.50, 0.50, 0.50) {
+            R.cube() { C.rgba(0.10, 0.95, 1.0, 1.0) }
+        }
+    }
 }
 
 // --- Background sun ---
@@ -141,11 +155,11 @@ ED {
 // any IK/splice transforms touch them.
 InputXR.on() {
     T {
-        T.position(0.0, 1.85, 0.6) {
-            RendererStats {
-                camera_target(Xr)
-            }
-        }
+        // T.position(0.0, 1.85, 0.6) {
+        //     RendererStats {
+        //         camera_target(Xr)
+        //     }
+        // }
 
         CTLXR.new(true, Left, Aim) {
             T.scale(0.06, 0.06, 0.12) {
@@ -198,7 +212,7 @@ I.speed(1.0) {
         fps_rotation()
         
     }
-    T.position(0.0, 1.4, -3.5).rotation(0.0, 3.14159, 0.0) {
+    T.position(3.0, 1.2, 3.5).rotation(0.0, 0.5, 0.0) {
         C3D {}
         Pointer {}
     }

@@ -20,9 +20,12 @@ let TITLE_LABEL_PADDING_X_GU = 0.25
 fn inspector_panel_row(label) {
     let row = T.position(0.0, 0.0, 0.1) {
         Style {
+            display("block")
+            width(100%)
             margin_xy(0.25, 0.20)
             padding_xy(0.55, 0.45)
             font_size(1)
+            word_wrap("normal")
             background_color = [0.92, 0.92, 0.92, 0.80]
         }
         T.position(0.0, 0.0, 0.015) {
@@ -34,6 +37,29 @@ fn inspector_panel_row(label) {
         }
     }
     return row
+}
+
+export fn inspector_panel_content(items) {
+    let root = T {
+        name = "inspector_panel_content_root"
+        Style {
+            display("block")
+            width(100%)
+        }
+
+        T {
+            name = "rows_mount"
+            Style {
+                width(100%)
+            }
+
+            for item in items {
+                inspector_panel_row(item)
+            }
+        }
+    }
+
+    return root
 }
 
 export fn inspector_panel(title, items) {
@@ -80,16 +106,7 @@ export fn inspector_panel(title, items) {
                     background_color = [0.96, 0.92, 0.18, 0.80]
                 }
 
-                T {
-                    name = "rows_mount"
-                    Style {
-                        width(100%)
-                    }
-
-                    for item in items {
-                        inspector_panel_row(item)
-                    }
-                }
+                inspector_panel_content(items)
             }
         }
     }
