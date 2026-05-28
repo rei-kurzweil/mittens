@@ -180,10 +180,11 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     //
     // Any Camera3D or CameraXR direct children of AVC are re-parented under the
     // camera bone so they inherit its world transform each tick.
-    let camera_bone_id: Option<ComponentId> = camera_bone_name.as_deref().and_then(|name| {
+    let actual_camera_bone_name = camera_bone_name.as_deref().or(Some(&head_bone_name));
+    let camera_bone_id: Option<ComponentId> = actual_camera_bone_name.and_then(|name| {
         let sel = format!("#{}", name);
         let found = world.find_component(model_root_id, &sel);
-        if found.is_none() {
+        if found.is_none() && camera_bone_name.is_some() {
             println!("[AVC] camera_bone '{}' not found under model_root {:?}", name, model_root_id);
         }
         found
@@ -256,8 +257,8 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         );
         Some([0.0, -bone_local_y, 0.0])
     } else {
-        if camera_bone_name.is_some() {
-            println!("[AVC] camera_bone not found and no avatar_height_override — model_root.y unchanged");
+        if camera_bone_name.is_some() || actual_camera_bone_name.is_some() {
+            println!("[AVC] camera_bone (or fallback) not found and no avatar_height_override — model_root.y unchanged");
         }
         None
     };

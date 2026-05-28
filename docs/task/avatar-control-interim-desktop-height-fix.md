@@ -31,7 +31,20 @@ To make the avatar appear at world `y=0`, the user must either:
 
 However, the user noted that **"once we compensate for the y translation on the model root, the change sticks"**. This suggests that simply ensuring the calibration happens (via the `camera_bone` default) is the primary blocker.
 
+## Verification Checklist
+
+### Desktop (Test Fallback)
+- [ ] `examples/vtuber-desktop.mms`: Remove `camera_bone("J_Bip_C_Head")` and verify avatar is correctly grounded (head on shoulders).
+- [ ] `examples/vtuber-desktop-first-person.mms`: Remove `camera_bone("J_Bip_C_Head")` and verify camera is still re-parented to head via fallback.
+
+### VR/XR (Verify No Regressions)
+- [ ] `examples/vr-input.mms` / `examples/vr-input.rs`
+- [ ] `examples/bisket-vr-demo.mms` / `examples/bisket-vr-demo.rs`
+- [ ] `examples/bisket-vr-debug.mms` / `examples/bisket-vr-debug.rs`
+- [ ] `examples/bisket-bones-and-ik.mms`
+
 ## Implementation Steps
+...
 
 1.  **Modify `AvatarControlSystem`**:
     - If `avc.camera_bone` is `None`, use `avc.head_bone` as the selector for height measurement.

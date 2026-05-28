@@ -48,7 +48,6 @@ ED {
         T {
             AVC {
                 head_bone("J_Bip_C_Head")
-                camera_bone("J_Bip_C_Head") // Re-parent C3D here
                 forward_plus_z()
                 initial_yaw(0.0)
 
