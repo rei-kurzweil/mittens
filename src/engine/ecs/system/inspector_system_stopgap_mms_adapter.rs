@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
+use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
@@ -11,6 +12,7 @@ use crate::meow_meow::unparser::unparse_component;
 
 const PANEL_LAYOUT_MOUNT_NAME: &str = "editor_panel_layout_mount";
 const PANEL_LAYOUT_ROOT_NAME: &str = "editor_panel_layout_root";
+const EDITOR_RUNTIME_UI_ROOT_NAME: &str = "editor_runtime_ui_root";
 const WORLD_PANEL_SHELL_NAME: &str = "editor_world_panel_shell";
 const INSPECTOR_PANEL_SHELL_NAME: &str = "editor_inspector_panel_shell";
 const WORLD_PANEL_ROOT_SELECTOR: &str = "#world_panel_root";
@@ -52,6 +54,7 @@ pub(crate) struct InspectorSystemStopgapMmsAdapter {
     reconciler: InspectorSystemStopgapMmsReconciler,
     installed_editor_roots: HashSet<ComponentId>,
     selected_components: Arc<Mutex<HashMap<ComponentId, Option<ComponentId>>>>,
+    runtime_ui_roots: Arc<Mutex<HashMap<ComponentId, ComponentId>>>,
 }
 
 impl Default for InspectorSystemStopgapMmsAdapter {
@@ -60,6 +63,7 @@ impl Default for InspectorSystemStopgapMmsAdapter {
             reconciler: InspectorSystemStopgapMmsReconciler,
             installed_editor_roots: HashSet::new(),
             selected_components: Arc::new(Mutex::new(HashMap::new())),
+            runtime_ui_roots: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -84,13 +88,15 @@ impl InspectorSystemStopgapMmsAdapter {
                 .or_insert(None);
         }
 
+        let runtime_ui_root = self.get_or_create_runtime_ui_root(world, editor_root);
+
         println!(
-            "[InspectorSystem][debug] setup_panels_for_editor editor_root={editor_root:?} world_panel_pos={:?} inspector_panel_pos={:?}",
+            "[InspectorSystem][debug] setup_panels_for_editor editor_root={editor_root:?} runtime_ui_root={runtime_ui_root:?} world_panel_pos={:?} inspector_panel_pos={:?}",
             world_panel_pos,
             inspector_panel_pos,
         );
 
-        let model = build_world_panel_model(world, editor_root, None);
+        let model = build_world_panel_model(world, editor_root, runtime_ui_root, None);
         let inspector_model = build_inspector_panel_model(None);
 
         self.reconciler
@@ -98,6 +104,7 @@ impl InspectorSystemStopgapMmsAdapter {
             world,
             emit,
             editor_root,
+            runtime_ui_root,
             world_panel_pos,
             inspector_panel_pos,
             &model,
@@ -114,33 +121,43 @@ impl InspectorSystemStopgapMmsAdapter {
         self.installed_editor_roots.insert(editor_root);
 
         let selected_components = Arc::clone(&self.selected_components);
+        let runtime_ui_roots = Arc::clone(&self.runtime_ui_roots);
 
         rx.add_handler_closure(SignalKind::Click, editor_root, move |world, emit, signal| {
             let Some(EventSignal::Click { renderable, .. }) = signal.event.as_ref() else {
                 return;
             };
 
-            let Some(panel_root) = world.find_component(editor_root, WORLD_PANEL_ROOT_SELECTOR) else {
+            let Some(panel_query_root) = runtime_ui_roots
+                .lock()
+                .expect("runtime ui roots mutex poisoned")
+                .get(&editor_root)
+                .copied()
+            else {
+                return;
+            };
+
+            let Some(panel_root) = world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR) else {
                 return;
             };
             if !is_descendant_or_self(world, panel_root, *renderable) {
                 return;
             }
 
-            let Some(status_wrap) = world.find_component(editor_root, PANEL_STATUS_WRAP_SELECTOR) else {
+            let Some(status_wrap) = world.find_component(panel_query_root, PANEL_STATUS_WRAP_SELECTOR) else {
                 return;
             };
 
-            let Some(content_slot) = world.find_component(editor_root, WORLD_CONTENT_SLOT_SELECTOR) else {
+            let Some(content_slot) = world.find_component(panel_query_root, WORLD_CONTENT_SLOT_SELECTOR) else {
                 return;
             };
-            let Some(inspector_content_slot) = world.find_component(editor_root, INSPECTOR_CONTENT_SLOT_SELECTOR) else {
+            let Some(inspector_content_slot) = world.find_component(panel_query_root, INSPECTOR_CONTENT_SLOT_SELECTOR) else {
                 return;
             };
 
-            if let Some(status_text) = panel_click_status(world, editor_root, *renderable) {
-                if panel_status_text(world, editor_root).as_deref() != Some(status_text.as_str()) {
-                    rerender_world_panel_status(world, emit, editor_root, status_wrap, &status_text);
+            if let Some(status_text) = panel_click_status(world, panel_query_root, *renderable) {
+                if panel_status_text(world, panel_query_root).as_deref() != Some(status_text.as_str()) {
+                    rerender_world_panel_status(world, emit, panel_query_root, status_wrap, &status_text);
                 }
                 return;
             }
@@ -152,7 +169,7 @@ impl InspectorSystemStopgapMmsAdapter {
                 return;
             };
 
-            let visible_items = fully_expanded_world_panel_items(world, editor_root);
+            let visible_items = fully_expanded_world_panel_items(world, &[editor_root, panel_query_root]);
             let Some(row) = visible_items.get(row_index).cloned() else {
                 return;
             };
@@ -166,11 +183,11 @@ impl InspectorSystemStopgapMmsAdapter {
                 select_editor_target(world, emit, editor_root, target_transform, true);
             }
 
-            let world_panel_model = build_world_panel_model(world, editor_root, Some(row.component_id));
+            let world_panel_model = build_world_panel_model(world, editor_root, panel_query_root, Some(row.component_id));
             rerender_world_panel_content(
                 world,
                 emit,
-                editor_root,
+                panel_query_root,
                 content_slot,
                 &world_panel_model.items,
                 world_panel_model.selected_index,
@@ -180,19 +197,44 @@ impl InspectorSystemStopgapMmsAdapter {
             rerender_inspector_panel_content(
                 world,
                 emit,
-                editor_root,
+                panel_query_root,
                 inspector_content_slot,
                 &inspector_model.items,
             );
 
             let status_text = format!("selected {}", row.label);
 
-            if panel_status_text(world, editor_root).as_deref() == Some(status_text.as_str()) {
+            if panel_status_text(world, panel_query_root).as_deref() == Some(status_text.as_str()) {
                 return;
             }
 
-            rerender_world_panel_status(world, emit, editor_root, status_wrap, &status_text);
+            rerender_world_panel_status(world, emit, panel_query_root, status_wrap, &status_text);
         });
+    }
+
+    fn get_or_create_runtime_ui_root(&self, world: &mut World, editor_root: ComponentId) -> ComponentId {
+        {
+            let runtime_ui_roots = self.runtime_ui_roots.lock().expect("runtime ui roots mutex poisoned");
+            if let Some(root) = runtime_ui_roots.get(&editor_root).copied() {
+                return root;
+            }
+        }
+
+        let runtime_ui_root = world.add_component_boxed_named(
+            EDITOR_RUNTIME_UI_ROOT_NAME,
+            Box::new(TransformComponent::new()),
+        );
+
+        self.runtime_ui_roots
+            .lock()
+            .expect("runtime ui roots mutex poisoned")
+            .insert(editor_root, runtime_ui_root);
+
+        println!(
+            "[InspectorSystem][debug] created runtime ui root editor_root={editor_root:?} runtime_ui_root={runtime_ui_root:?}"
+        );
+
+        runtime_ui_root
     }
 }
 
@@ -202,16 +244,17 @@ impl InspectorSystemStopgapMmsReconciler {
         world: &mut World,
         emit: &mut dyn SignalEmitter,
         editor_root: ComponentId,
+        panel_query_root: ComponentId,
         world_panel_pos: (f32, f32, f32),
         inspector_panel_pos: (f32, f32, f32),
         model: &WorldPanelModel,
         inspector_model: &InspectorPanelModel,
     ) {
-        let existing_world_panel = self.find_world_panel_node(world, editor_root, WORLD_PANEL_ROOT_SELECTOR);
-        let existing_inspector_panel = self.find_world_panel_node(world, editor_root, INSPECTOR_PANEL_ROOT_SELECTOR);
+        let existing_world_panel = self.find_world_panel_node(world, panel_query_root, WORLD_PANEL_ROOT_SELECTOR);
+        let existing_inspector_panel = self.find_world_panel_node(world, panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR);
 
         println!(
-            "[InspectorSystem][debug] reconcile_panel_layout editor_root={editor_root:?} existing_world_panel={existing_world_panel:?} existing_inspector_panel={existing_inspector_panel:?}"
+            "[InspectorSystem][debug] reconcile_panel_layout editor_root={editor_root:?} panel_query_root={panel_query_root:?} existing_world_panel={existing_world_panel:?} existing_inspector_panel={existing_inspector_panel:?}"
         );
 
         if existing_world_panel.is_some() && existing_inspector_panel.is_some() {
@@ -224,7 +267,7 @@ impl InspectorSystemStopgapMmsReconciler {
         self.spawn_panel_layout(
             world,
             emit,
-            editor_root,
+            panel_query_root,
             world_panel_pos,
             inspector_panel_pos,
             model,
@@ -235,24 +278,24 @@ impl InspectorSystemStopgapMmsReconciler {
     fn find_world_panel_node(
         &self,
         world: &World,
-        editor_root: ComponentId,
+        panel_query_root: ComponentId,
         selector: &str,
     ) -> Option<ComponentId> {
-        world.find_component(editor_root, selector)
+        world.find_component(panel_query_root, selector)
     }
 
     fn spawn_panel_layout(
         &self,
         world: &mut World,
         emit: &mut dyn SignalEmitter,
-        editor_root: ComponentId,
+        panel_query_root: ComponentId,
         world_panel_pos: (f32, f32, f32),
         inspector_panel_pos: (f32, f32, f32),
         model: &WorldPanelModel,
         inspector_model: &InspectorPanelModel,
     ) {
         println!(
-            "[InspectorSystem][debug] spawn_panel_layout editor_root={editor_root:?} world_panel_pos={:?} inspector_panel_pos={:?}",
+            "[InspectorSystem][debug] spawn_panel_layout panel_query_root={panel_query_root:?} world_panel_pos={:?} inspector_panel_pos={:?}",
             world_panel_pos,
             inspector_panel_pos,
         );
@@ -366,13 +409,13 @@ impl InspectorSystemStopgapMmsReconciler {
         emit.push_intent_now(
             panel_mount_root,
             IntentValue::Attach {
-                parents: vec![editor_root],
+                parents: vec![panel_query_root],
                 child: panel_mount_root,
             },
         );
 
         println!(
-            "[InspectorSystem][debug] queued attach panel_mount_root={panel_mount_root:?} -> editor_root={editor_root:?}"
+            "[InspectorSystem][debug] queued attach panel_mount_root={panel_mount_root:?} -> panel_query_root={panel_query_root:?}"
         );
     }
 }
@@ -400,9 +443,10 @@ fn panel_click_status(world: &World, editor_root: ComponentId, renderable: Compo
 fn build_world_panel_model(
     world: &World,
     editor_root: ComponentId,
+    runtime_ui_root: ComponentId,
     selected_component: Option<ComponentId>,
 ) -> WorldPanelModel {
-    let visible_items = fully_expanded_world_panel_items(world, editor_root);
+    let visible_items = fully_expanded_world_panel_items(world, &[editor_root, runtime_ui_root]);
     let items: Vec<String> = visible_items
         .iter()
         .map(|item| format!("{}{}", "  ".repeat(item.depth), item.label))
@@ -429,10 +473,12 @@ fn build_inspector_panel_model(serialized_mms: Option<String>) -> InspectorPanel
     }
 }
 
-fn fully_expanded_world_panel_items(world: &World, editor_root: ComponentId) -> Vec<WorldPanelItem> {
+fn fully_expanded_world_panel_items(world: &World, excluded_roots: &[ComponentId]) -> Vec<WorldPanelItem> {
     let mut roots: Vec<ComponentId> = world
         .all_components()
-        .filter(|&component_id| world.parent_of(component_id).is_none() && component_id != editor_root)
+        .filter(|&component_id| {
+            world.parent_of(component_id).is_none() && !excluded_roots.contains(&component_id)
+        })
         .collect();
     roots.sort_by_key(|component_id| format!("{:?}", component_id));
 
@@ -465,9 +511,9 @@ fn parse_item_index(row_name: &str) -> Option<usize> {
     row_name.strip_prefix(ITEM_PREFIX)?.parse().ok()
 }
 
-fn panel_status_text(world: &World, editor_root: ComponentId) -> Option<String> {
+fn panel_status_text(world: &World, panel_query_root: ComponentId) -> Option<String> {
     world
-        .find_component(editor_root, PANEL_STATUS_VALUE_SELECTOR)
+        .find_component(panel_query_root, PANEL_STATUS_VALUE_SELECTOR)
         .and_then(|status_id| {
             world
                 .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(status_id)
@@ -478,7 +524,7 @@ fn panel_status_text(world: &World, editor_root: ComponentId) -> Option<String> 
 fn rerender_world_panel_status(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
-    editor_root: ComponentId,
+    panel_query_root: ComponentId,
     status_wrap: ComponentId,
     label: &str,
 ) {
@@ -512,7 +558,7 @@ fn rerender_world_panel_status(
         return;
     };
 
-    if let Some(existing_status_root) = world.find_component(editor_root, PANEL_STATUS_ROOT_SELECTOR) {
+    if let Some(existing_status_root) = world.find_component(panel_query_root, PANEL_STATUS_ROOT_SELECTOR) {
         emit.push_intent_now(
             existing_status_root,
             IntentValue::RemoveSubtree {
@@ -541,7 +587,7 @@ fn rerender_world_panel_status(
 fn rerender_world_panel_content(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
-    editor_root: ComponentId,
+    panel_query_root: ComponentId,
     content_slot: ComponentId,
     items: &[String],
     selected_index: Option<i64>,
@@ -579,7 +625,7 @@ fn rerender_world_panel_content(
         return;
     };
 
-    if let Some(existing_content_root) = world.find_component(editor_root, WORLD_PANEL_CONTENT_ROOT_SELECTOR) {
+    if let Some(existing_content_root) = world.find_component(panel_query_root, WORLD_PANEL_CONTENT_ROOT_SELECTOR) {
         emit.push_intent_now(
             existing_content_root,
             IntentValue::RemoveSubtree {
@@ -608,7 +654,7 @@ fn rerender_world_panel_content(
 fn rerender_inspector_panel_content(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
-    editor_root: ComponentId,
+    panel_query_root: ComponentId,
     content_slot: ComponentId,
     items: &[String],
 ) {
@@ -642,7 +688,7 @@ fn rerender_inspector_panel_content(
         return;
     };
 
-    if let Some(existing_content_root) = world.find_component(editor_root, INSPECTOR_PANEL_CONTENT_ROOT_SELECTOR) {
+    if let Some(existing_content_root) = world.find_component(panel_query_root, INSPECTOR_PANEL_CONTENT_ROOT_SELECTOR) {
         emit.push_intent_now(
             existing_content_root,
             IntentValue::RemoveSubtree {

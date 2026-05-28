@@ -158,7 +158,7 @@ ED {
 //                       │                └── GLTF { EM }
 //                       └── [sys] splice_head  (TC injected above J_Bip_C_Head)
 //                                   └── IKChain { AimConstraint }
-ED {
+// ED {
     I.speed(1.5) {
         InputTransformMode.forward_z() {
             fps_rotation()
@@ -168,7 +168,7 @@ ED {
             AVC {
                 head_bone("J_Bip_C_Head")
                 camera_bone("J_Bip_C_Head")
-                
+
                 initial_yaw(0.0)
                 body_yaw_threshold(3.14 / 7.5)
 
@@ -178,4 +178,4 @@ ED {
             }
         }
     }
-}
+// }

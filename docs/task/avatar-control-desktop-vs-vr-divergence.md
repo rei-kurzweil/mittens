@@ -20,50 +20,58 @@ While correct for VR (where the HMD is the world anchor), this causes
 - The body follow logic moves the model root to sit under the head at `y=0`.
 - Result: Feet at 0, Head at 0.
 
-## Target design
+## Target design: PoseDriverHandler Strategy
 
-AVC should detect whether it is being driven by an `InputXRComponent` (VR) or
-an `InputComponent` (Desktop) and diverge its behavior.
+Instead of scattered conditional logic, AVC will delegate its driver-specific behavior to an internal strategy. This encapsulates how the system applies the pose driver to the avatar's hierarchy.
 
-### 1. Eye-Driven Mode (VR/XR)
+### AvatarControlPoseDriverHandler Lifecycle
+Each handler implements two primary lifecycle methods:
+
+1.  **`handle_init(world, avc, emit)`**:
+    - Performed once when the system discovers the AVC needs initialization.
+    - Handles **Hierarchy Topology**: How the `head_bone` is integrated (Splice vs In-place).
+    - Installs **IK Constraints / Transform Streams**: Configures the head `AimConstraint`, body pipeline, etc.
+    
+2.  **`handle_pose(world, avc, emit, dt)`**:
+    - Performed every tick.
+    - Figures out how to manipulate all the transforms it owns based on the pose driver's current state.
+    - For VR: Implements the head-rotation-compensated body follow rule.
+    - For Desktop: Ensures the head and body stay synchronized with the local driver's translation.
+
+---
+
+### 1. Eye-Driven Handler (VR/XR)
 - **Driver:** `InputXRComponent`
-- **Head Splicing:** Rigid (re-parent head bone to driver child `head_target`).
-- **Head Constraint:** `AimConstraint { copy_position: true }` (or managed by FABRIK).
-- **Body Follow:** `HeadPoseBodyXzFollowSystem` enabled.
+- **`handle_init`**: **Rigid Splice**. Re-parents the `head_bone` to a child of the pose driver (`head_target`). Configures `AimConstraint` with `copy_position: true`.
+- **`handle_pose`**: Executes the `HeadPoseBodyXzFollowSystem` rule (`HMD - R_h * v_local`) to translate the body under the head.
 
-### 2. Body-Driven Mode (Desktop)
+### 2. Body-Driven Handler (Desktop)
 - **Driver:** `InputComponent`
-- **Head Splicing:** Soft (head bone stays in armature).
-- **Head Constraint:** `AimConstraint { copy_position: false }`. Rotation only.
-- **Body Follow:** `HeadPoseBodyXzFollowSystem` disabled.
-- **Topological Integrity:** Head inherits translation from body; body inherits
-  translation from `Input` driver via standard parenting.
+- **`handle_init`**: **Soft/In-place Splice**. Keeps `head_bone` as a child of the neck. Injects `splice_head` in-place. Configures `AimConstraint` with `copy_position: false`.
+- **`handle_pose`**: Likely a no-op or simple sync. The body inherits translation from the `Input` driver (locomotion) via standard parenting; the head inherits from the body.
+
+---
 
 ## Implementation Steps
 
-### Phase 1 — Driver Identification
-- Add `is_xr: bool` (and optionally `is_initialized: bool`) to
-  `AvatarControlComponent`.
-- In `AvatarControlSystem::try_init_splices`, check for `InputXRComponent` vs
-  `InputComponent` ancestors of the `driven_t` (AVC's parent).
-- Store the result in `is_xr`.
+### Phase 1 — Driver Identification & Handler Selection
+- Add `driver_kind: AvatarDriverKind` to `AvatarControlComponent`.
+- Enum `AvatarDriverKind { VR, Desktop }`.
+- In `AvatarControlSystem::try_init_splices`, identify the driver type by ancestor lookup.
 
-### Phase 2 — Conditional Head Splicing
-- In `try_init_splices`, if `!is_xr`:
-    - Do NOT re-parent the `head_bone`.
-    - Inject `splice_head` as the parent of `head_bone` *in-place* (keep its
-      parent as the neck).
-    - Configure the `IKChain { AimConstraint }` with `copy_position: false`.
-    - Ensure `driven_t` still serves as the rotation target.
+### Phase 2 — Conditional Hierarchy Setup
+- Update `try_init_splices` to use the `driver_kind` to decide:
+    - Whether to emit an `Attach` intent moving the head to `head_target`.
+    - How to configure the `AimConstraint` (copy position or not).
 
-### Phase 3 — Conditional Body Follow
-- Update `HeadPoseBodyXzFollowSystem::tick_one` to early-return if `!avc.is_xr`.
-- This ensures the avatar stays at its grounded height on desktop.
+### Phase 3 — Conditional Tick Logic
+- Update `HeadPoseBodyXzFollowSystem::tick_one` to short-circuit if `driver_kind == Desktop`.
+- Ensure `QuatYawFollow` (in the body pipeline) still runs for both.
 
 ### Phase 4 — Example Verification
 - Verify `examples/vtuber-desktop.mms` works without `camera_bone` calibration.
-- Verify `examples/vtuber-desktop-first-person.mms` allows the camera to be
-  carried by the avatar's head.
+- Verify `examples/vtuber-desktop-first-person.mms` allows the camera to be carried by the avatar's head.
+- Verify `bisket-vr-demo.mms` still works correctly in VR.
 
 ## Acceptance Criteria
 
