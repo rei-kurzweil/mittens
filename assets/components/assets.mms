@@ -16,6 +16,7 @@ export fn assets(title, items) {
                 height(6.0)
                 background_color = [0.15, 0.15, 0.15, 1.0]
                 font_size(1.5)
+                margin_xy(0.5, 0.5)
             }
             T.position(2.0, 1.8, 0.0) {
                 Text {

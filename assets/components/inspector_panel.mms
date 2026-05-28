@@ -68,6 +68,7 @@ export fn inspector_panel(title, items) {
             display("block")
             width(INSPECTOR_PANEL_WIDTH_GU)
             height(INSPECTOR_PANEL_TOTAL_HEIGHT_GU)
+            margin_xy(0.5, 0.5)
         }
 
         T {

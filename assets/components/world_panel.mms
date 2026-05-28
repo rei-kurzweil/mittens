@@ -62,6 +62,7 @@ export fn world_panel(title, items) {
             display("block")
             width(WORLD_PANEL_WIDTH_GU)
             height(WORLD_PANEL_TOTAL_HEIGHT_GU)
+            margin_xy(0.5, 0.5)
         }
 
         T {
