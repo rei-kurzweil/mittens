@@ -42,7 +42,7 @@ use crate::engine::ecs::component::{
     RaycastableShapeComponent, RaycastableShapeType, IKChainComponent, IKSolver,
     TransformGizmoComponent, TransformGizmoTranslateComponent, TransformGizmoRotateComponent,
     TransformGizmoScaleComponent, TransformGizmoAxis,
-    KineticResponseComponent,
+    KineticResponseComponent, SerializeComponent,
 };
 use crate::engine::ecs::component::style::VerticalAlign;
 use crate::engine::graphics::bounds::Aabb;
@@ -259,6 +259,198 @@ fn resolve_type_name(raw: &str) -> String {
 /// - REPL `dump` and scene save: subtree → CE → unparser → text.
 pub fn subtree_to_ce_ast(world: &World, root: ComponentId) -> Result<ComponentExpression, String> {
     subtree_to_ce_ast_limited(world, root, usize::MAX)
+}
+
+pub fn filtered_world_to_ce_ast(
+    world: &World,
+) -> Result<Vec<ComponentExpression>, String> {
+    let roots: Vec<ComponentId> = world
+        .all_components()
+        .filter(|&cid| world.parent_of(cid).is_none())
+        .collect();
+    filtered_roots_to_ce_ast(world, &roots)
+}
+
+pub fn filtered_world_root_ids(world: &World) -> Vec<ComponentId> {
+    let roots: Vec<ComponentId> = world
+        .all_components()
+        .filter(|&cid| world.parent_of(cid).is_none())
+        .collect();
+    filtered_root_ids_for_roots(world, &roots)
+}
+
+pub fn filtered_roots_to_ce_ast(
+    world: &World,
+    roots: &[ComponentId],
+) -> Result<Vec<ComponentExpression>, String> {
+    let mut referenced_guids: std::collections::HashSet<uuid::Uuid> =
+        std::collections::HashSet::new();
+    for &root in roots {
+        collect_referenced_guids_filtered(world, root, FilteredSaveState::default(), &mut referenced_guids);
+    }
+
+    let mut out = Vec::new();
+    for &root in roots {
+        out.extend(filtered_ce_ast_inner(
+            world,
+            root,
+            &referenced_guids,
+            FilteredSaveState::default(),
+        )?);
+    }
+    Ok(out)
+}
+
+pub fn filtered_root_ids_for_roots(world: &World, roots: &[ComponentId]) -> Vec<ComponentId> {
+    let mut out = Vec::new();
+    for &root in roots {
+        collect_filtered_root_ids(world, root, FilteredSaveState::default(), &mut out);
+    }
+    out
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct FilteredSaveState {
+    default_excluded: bool,
+}
+
+fn serialize_override(world: &World, node: ComponentId) -> Option<bool> {
+    world
+        .get_component_by_id_as::<SerializeComponent>(node)
+        .map(|serialize| serialize.enabled)
+}
+
+fn filtered_save_visibility(
+    world: &World,
+    node: ComponentId,
+    state: FilteredSaveState,
+) -> (bool, FilteredSaveState) {
+    let override_enabled = serialize_override(world, node);
+    let visible = override_enabled.unwrap_or(!state.default_excluded);
+    let child_default_excluded = match override_enabled {
+        Some(true) => false,
+        Some(false) => true,
+        None => state.default_excluded,
+    } || world.get_component_by_id_as::<GLTFComponent>(node).is_some();
+    (
+        visible,
+        FilteredSaveState {
+            default_excluded: child_default_excluded,
+        },
+    )
+}
+
+fn collect_filtered_root_ids(
+    world: &World,
+    node: ComponentId,
+    state: FilteredSaveState,
+    out: &mut Vec<ComponentId>,
+) {
+    let (visible, child_state) = filtered_save_visibility(world, node, state);
+    if visible {
+        out.push(node);
+        return;
+    }
+
+    let children: Vec<ComponentId> = world.children_of(node).to_vec();
+    for child in children {
+        collect_filtered_root_ids(world, child, child_state, out);
+    }
+}
+
+fn collect_referenced_guids_filtered(
+    world: &World,
+    node: ComponentId,
+    state: FilteredSaveState,
+    out: &mut std::collections::HashSet<uuid::Uuid>,
+) {
+    use crate::engine::ecs::component::{
+        ActionComponent, ComponentRef, IKChainComponent, TransformParentComponent,
+    };
+
+    let (visible, child_state) = filtered_save_visibility(world, node, state);
+    if visible {
+        if let Some(action) = world.get_component_by_id_as::<ActionComponent>(node) {
+            for src in &action.target_sources {
+                if let ComponentRef::Guid(u) = src {
+                    out.insert(*u);
+                }
+            }
+        }
+        if let Some(ik) = world.get_component_by_id_as::<IKChainComponent>(node) {
+            for src in [&ik.target_source, &ik.end_effector_source]
+                .iter()
+                .copied()
+                .flatten()
+            {
+                if let ComponentRef::Guid(u) = src {
+                    out.insert(*u);
+                }
+            }
+        }
+        if let Some(tp) = world.get_component_by_id_as::<TransformParentComponent>(node) {
+            for src in [&tp.target_source, &tp.root_source].iter().copied().flatten() {
+                if let ComponentRef::Guid(u) = src {
+                    out.insert(*u);
+                }
+            }
+        }
+    }
+
+    let children: Vec<ComponentId> = world.children_of(node).to_vec();
+    for child in children {
+        collect_referenced_guids_filtered(world, child, child_state, out);
+    }
+}
+
+fn filtered_ce_ast_inner(
+    world: &World,
+    root: ComponentId,
+    referenced_guids: &std::collections::HashSet<uuid::Uuid>,
+    state: FilteredSaveState,
+) -> Result<Vec<ComponentExpression>, String> {
+    let node = world
+        .get_component_record(root)
+        .ok_or_else(|| format!("filtered_ce_ast_inner: missing component {root:?}"))?;
+    let (visible, child_state) = filtered_save_visibility(world, root, state);
+
+    let mut child_components = Vec::new();
+    for &child_id in &node.children {
+        child_components.extend(filtered_ce_ast_inner(
+            world,
+            child_id,
+            referenced_guids,
+            child_state,
+        )?);
+    }
+
+    if !visible {
+        return Ok(child_components);
+    }
+
+    let mut ce = node.component.to_mms_ast(world);
+
+    if !node.name.is_empty() {
+        ce.body.statements.push(Statement::Reassign {
+            name: crate::meow_meow::ast::Ident("name".to_string()),
+            value: Expression::String(node.name.clone()),
+        });
+    }
+
+    if referenced_guids.contains(&node.guid) {
+        ce.body.statements.push(Statement::Reassign {
+            name: crate::meow_meow::ast::Ident("guid".to_string()),
+            value: Expression::String(node.guid.to_string()),
+        });
+    }
+
+    for child_ce in child_components {
+        ce.body
+            .statements
+            .push(Statement::Expression(Expression::Component(child_ce)));
+    }
+
+    Ok(vec![ce])
 }
 
 pub fn subtree_to_ce_ast_limited(
@@ -953,6 +1145,10 @@ fn create_component(
         "Selectable" => match ctor {
             Some("off") => add!(SelectableComponent::off()),
             _ => add!(SelectableComponent::on()),
+        },
+        "Serialize" => match ctor {
+            Some("off") => add!(SerializeComponent::off()),
+            _ => add!(SerializeComponent::on()),
         },
         "Scrolling" => match ctor {
             Some("new") => add!(ScrollingComponent::new(arg_f32(args, 0)?, arg_f32(args, 1)?)),

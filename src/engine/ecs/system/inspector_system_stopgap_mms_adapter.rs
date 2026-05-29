@@ -1,13 +1,14 @@
 use std::sync::{Arc, Mutex};
+use std::path::{Path, PathBuf};
 
 use crate::engine::ecs::component::{
     ColorComponent, Display, EdgeInsets, LayoutComponent, Overflow, RaycastableComponent,
-    SizeDimension, StyleComponent, TextComponent,
+    SerializeComponent, SizeDimension, StyleComponent, TextComponent,
 };
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
-use crate::meow_meow::component_registry::spawn_tree_uninitialized;
+use crate::meow_meow::component_registry::{filtered_root_ids_for_roots, filtered_roots_to_ce_ast, filtered_world_root_ids, spawn_tree, spawn_tree_uninitialized};
 use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
 use crate::meow_meow::runner::MeowMeowRunner;
 
@@ -34,6 +35,9 @@ const WORLD_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
 const INSPECTOR_PANEL_WIDTH_GU: f64 = 22.0;
 const INSPECTOR_PANEL_TOTAL_HEIGHT_GU: f64 = 57.5;
 const PANEL_LAYOUT_GAP_GU: f64 = 2.0;
+
+#[cfg(test)]
+static WORLD_PANEL_SCENE_PATH_OVERRIDE: Mutex<Option<PathBuf>> = Mutex::new(None);
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct WorldPanelModel {
     title: String,
@@ -150,9 +154,37 @@ impl InspectorSystemStopgapMmsAdapter {
             let Some(content_slot) = world.find_component(world_panel_root, PANEL_CONTENT_SLOT_SELECTOR) else {
                 return;
             };
-            if let Some(status_text) = panel_click_status(world, panel_query_root, *renderable) {
+            if let Some(status_text) = handle_panel_button_click(world, emit, *renderable) {
                 if panel_status_text(world, panel_query_root).as_deref() != Some(status_text.as_str()) {
                     rerender_world_panel_status(world, emit, panel_query_root, status_wrap, &status_text);
+                }
+
+                let mut selected = selected_component.lock().expect("selected component mutex poisoned");
+                if selected.is_some_and(|component_id| world.get_component_record(component_id).is_none()) {
+                    *selected = None;
+                }
+
+                let world_model = build_world_panel_model(world, *selected);
+                rerender_world_panel_content(
+                    world,
+                    emit,
+                    panel_query_root,
+                    content_slot,
+                    &world_model.rows,
+                    world_model.selected_index,
+                );
+
+                if let Some(inspector_panel_root) = world.find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR) {
+                    if let Some(inspector_content_slot) = world.find_component(inspector_panel_root, PANEL_CONTENT_SLOT_SELECTOR) {
+                        let inspector_model = build_inspector_panel_model(world, *selected);
+                        rerender_inspector_panel_content(
+                            world,
+                            emit,
+                            panel_query_root,
+                            inspector_content_slot,
+                            &inspector_model.rows,
+                        );
+                    }
                 }
                 return;
             }
@@ -226,6 +258,11 @@ impl InspectorSystemStopgapMmsAdapter {
             EDITOR_RUNTIME_UI_ROOT_NAME,
             Box::new(TransformComponent::new()),
         );
+        let runtime_ui_serialize = world.add_component_boxed_named(
+            "editor_runtime_ui_serialize",
+            Box::new(SerializeComponent::off()),
+        );
+        let _ = world.add_child(runtime_ui_root, runtime_ui_serialize);
 
         *self.runtime_ui_root
             .lock()
@@ -510,18 +547,145 @@ enum InspectorPanelRowKind {
     Component,
 }
 
-fn panel_click_status(world: &World, editor_root: ComponentId, renderable: ComponentId) -> Option<String> {
-    let save_button = world.find_component(editor_root, SAVE_BUTTON_SELECTOR);
+fn handle_panel_button_click(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    renderable: ComponentId,
+) -> Option<String> {
+    let scene_path = world_panel_scene_path();
+    let runtime_ui_root = find_named_root(world, EDITOR_RUNTIME_UI_ROOT_NAME)?;
+
+    let save_button = world.find_component(runtime_ui_root, SAVE_BUTTON_SELECTOR);
     if save_button.is_some_and(|button| is_descendant_or_self(world, button, renderable)) {
-        return Some("save requested".to_string());
+        return Some(match save_world_panel_scene_to_path(world, &scene_path) {
+            Ok(saved_roots) => format!("saved {saved_roots} roots to {}", scene_path.display()),
+            Err(error) => format!("save failed: {error}"),
+        });
     }
 
-    let load_button = world.find_component(editor_root, LOAD_BUTTON_SELECTOR);
+    let load_button = world.find_component(runtime_ui_root, LOAD_BUTTON_SELECTOR);
     if load_button.is_some_and(|button| is_descendant_or_self(world, button, renderable)) {
-        return Some("load requested".to_string());
+        return Some(match load_world_panel_scene_from_path(world, emit, &scene_path) {
+            Ok(loaded_roots) => format!("loaded {loaded_roots} roots from {}", scene_path.display()),
+            Err(error) => format!("load failed: {error}"),
+        });
     }
 
     None
+}
+
+fn find_named_root(world: &World, name: &str) -> Option<ComponentId> {
+    world.all_components().find(|&component_id| {
+        world.parent_of(component_id).is_none()
+            && world.component_label(component_id).is_some_and(|label| label == name)
+    })
+}
+
+fn world_panel_scene_path() -> PathBuf {
+    #[cfg(test)]
+    {
+        if let Some(path) = WORLD_PANEL_SCENE_PATH_OVERRIDE
+            .lock()
+            .expect("world panel scene path override mutex poisoned")
+            .clone()
+        {
+            return path;
+        }
+    }
+
+    PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/data/world.mms"))
+}
+
+#[cfg(test)]
+pub(crate) fn set_world_panel_scene_path_for_tests(path: Option<PathBuf>) {
+    *WORLD_PANEL_SCENE_PATH_OVERRIDE
+        .lock()
+        .expect("world panel scene path override mutex poisoned") = path;
+}
+
+fn save_world_panel_scene_to_path(world: &World, path: &Path) -> Result<usize, String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
+    }
+
+    let world_roots: Vec<ComponentId> = world
+        .all_components()
+        .filter(|&cid| world.parent_of(cid).is_none())
+        .collect();
+    let serializable_roots = filtered_root_ids_for_roots(world, &world_roots);
+    if serializable_roots.is_empty() {
+        return Err("no serializable roots found".to_string());
+    }
+
+    let mut out = String::new();
+    let total = serializable_roots.len();
+    println!(
+        "[WorldPanel] serializing {} root components to {}",
+        total,
+        path.display()
+    );
+    for (index, &root_id) in serializable_roots.iter().enumerate() {
+        println!(
+            "[WorldPanel] serializing root components [{}/{}]: {}",
+            index + 1,
+            total,
+            world_panel_root_label(world, root_id)
+        );
+        let mut components = filtered_roots_to_ce_ast(world, &[root_id])?;
+        let component = components
+            .pop()
+            .ok_or_else(|| format!("missing serialized root for {:?}", root_id))?;
+        out.push_str(&crate::meow_meow::unparser::unparse_component(&component));
+        out.push_str("\n\n");
+    }
+    println!("[WorldPanel] finished serializing {} root components", total);
+
+    std::fs::write(path, out)
+        .map_err(|error| format!("cannot write {}: {error}", path.display()))?;
+
+    Ok(total)
+}
+
+fn world_panel_root_label(world: &World, component_id: ComponentId) -> String {
+    if let Some(label) = world.component_label(component_id) {
+        if !label.is_empty() {
+            return format!("#{label}");
+        }
+    }
+
+    if let Some(name) = world.component_name(component_id) {
+        return format!("{}({:?})", name, component_id);
+    }
+
+    format!("{:?}", component_id)
+}
+
+fn load_world_panel_scene_from_path(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    path: &Path,
+) -> Result<usize, String> {
+    let source = std::fs::read_to_string(path)
+        .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+
+    let removable_roots = filtered_world_root_ids(world);
+    for root in removable_roots {
+        world
+            .remove_component_subtree(root)
+            .map_err(|error| format!("remove_component_subtree failed: {error}"))?;
+    }
+
+    let Some(path_str) = path.to_str() else {
+        return Err(format!("non-utf8 path: {}", path.display()));
+    };
+    let module = MeowMeowRunner::load_module_source(&source, Some(path_str))?;
+    let mut loaded_roots = 0;
+    for component in &module.sequence {
+        spawn_tree(component, None, world, emit)?;
+        loaded_roots += 1;
+    }
+    Ok(loaded_roots)
 }
 
 fn build_world_panel_model(

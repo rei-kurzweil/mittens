@@ -30,9 +30,17 @@ impl InspectorSystem {
 mod tests {
     use super::InspectorSystem;
     use crate::engine::ecs::command_queue::CommandQueue;
-    use crate::engine::ecs::component::{EditorComponent, OverlayComponent, TransformComponent};
+    use crate::engine::ecs::component::{
+        EditorComponent, GLTFComponent, OverlayComponent, SerializeComponent, TransformComponent,
+    };
     use crate::engine::ecs::{EventSignal, SystemWorld, World};
     use crate::engine::graphics::VisualWorld;
+    use crate::engine::ecs::system::inspector_system_stopgap_mms_adapter::set_world_panel_scene_path_for_tests;
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static WORLD_PANEL_SCENE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn find_named_root(world: &World, name: &str) -> crate::engine::ecs::ComponentId {
         world
@@ -63,6 +71,14 @@ mod tests {
             .iter()
             .filter(|&&child| world.component_label(child).is_some_and(|label| label == name))
             .count()
+    }
+
+    fn unique_test_scene_path() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("cat_engine_world_panel_{nanos}.mms"))
     }
 
     #[test]
@@ -354,5 +370,122 @@ mod tests {
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         assert_eq!(count_named_children(&world, runtime_ui_root, "editor_panel_layout_mount"), 1);
+    }
+
+    #[test]
+    fn world_panel_save_and_load_buttons_round_trip_filtered_scene_file() {
+        let _guard = WORLD_PANEL_SCENE_TEST_LOCK.lock().expect("world panel scene test lock poisoned");
+        let scene_path = unique_test_scene_path();
+        set_world_panel_scene_path_for_tests(Some(scene_path.clone()));
+
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let mut inspector = InspectorSystem::new();
+
+        let editor_root = world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let gltf_root = world.add_component_boxed_named(
+            "avatar_gltf",
+            Box::new(GLTFComponent::new("assets/models/cat/cat.glb")),
+        );
+        let hidden_gltf_child = world.add_component_boxed_named("hidden_joint", Box::new(TransformComponent::new()));
+        let visible_gltf_child = world.add_component_boxed_named("visible_joint", Box::new(TransformComponent::new()));
+        let visible_gltf_child_serialize = world.add_component_boxed_named(
+            "visible_joint_serialize",
+            Box::new(SerializeComponent::on()),
+        );
+
+        let _ = world.add_child(editor_root, scene_root);
+        let _ = world.add_child(scene_root, gltf_root);
+        let _ = world.add_child(gltf_root, hidden_gltf_child);
+        let _ = world.add_child(gltf_root, visible_gltf_child);
+        let _ = world.add_child(visible_gltf_child, visible_gltf_child_serialize);
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (-0.7, 1.6, -1.2),
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &mut emit);
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        let save_button = world
+            .find_component(runtime_ui_root, "#save_button")
+            .expect("expected save button");
+
+        systems.rx.push_event(
+            save_button,
+            EventSignal::Click {
+                raycaster: save_button,
+                renderable: save_button,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+
+        let _ = systems.process_signals(&mut world, &mut visuals, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &mut emit);
+
+        let saved = std::fs::read_to_string(&scene_path).expect("expected saved world panel scene file");
+        assert!(saved.contains("scene_root"));
+        assert!(saved.contains("GLTF.new(\"assets/models/cat/cat.glb\")"));
+        assert!(saved.contains("visible_joint"));
+        assert!(!saved.contains("hidden_joint"));
+        assert!(!saved.contains("editor_runtime_ui_root"));
+
+        world
+            .remove_component_subtree(editor_root)
+            .expect("expected editor subtree removal to succeed");
+
+        let load_button = world
+            .find_component(runtime_ui_root, "#load_button")
+            .expect("expected load button");
+        systems.rx.push_event(
+            load_button,
+            EventSignal::Click {
+                raycaster: load_button,
+                renderable: load_button,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+
+        let _ = systems.process_signals(&mut world, &mut visuals, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &mut emit);
+
+        let reloaded_editor_root = world
+            .all_components()
+            .find(|&component_id| {
+                world.parent_of(component_id).is_none()
+                    && world.get_component_by_id_as::<EditorComponent>(component_id).is_some()
+            })
+            .expect("expected reloaded editor root");
+        let reloaded_scene_root = world
+            .find_component(reloaded_editor_root, "#scene_root")
+            .expect("expected scene root after load");
+        let reloaded_gltf_root = world
+            .find_component(reloaded_scene_root, "#avatar_gltf")
+            .expect("expected gltf root after load");
+        assert!(world.find_component(reloaded_gltf_root, "#visible_joint").is_some());
+        assert!(world.find_component(reloaded_gltf_root, "#hidden_joint").is_none());
+        assert!(world.find_component(runtime_ui_root, "#world_panel_root").is_some());
+
+        let panel_status_value = world
+            .find_component(runtime_ui_root, "#panel_status_value")
+            .expect("expected panel status text after load");
+        let status_text = world
+            .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(panel_status_value)
+            .map(|text| text.text.clone())
+            .expect("expected panel status text component");
+        assert!(status_text.contains("loaded 1 roots"));
+
+        let _ = std::fs::remove_file(&scene_path);
+        set_world_panel_scene_path_for_tests(None);
     }
 }
