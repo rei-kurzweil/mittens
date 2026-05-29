@@ -322,6 +322,20 @@ impl World {
 
     /// Attach `child` under `parent`.
     ///
+    /// This is a lower-level graph mutation API.
+    ///
+    /// It updates only the parent/child links in the world graph. It does not
+    /// emit `ParentChanged`, does not refresh topology-dependent systems, and
+    /// does not route through runtime helpers like routers/scroll ownership.
+    ///
+    /// Prefer `IntentValue::Attach` or `Universe::attach(...)` when attaching a
+    /// subtree into an already-live parent and you expect normal runtime side
+    /// effects.
+    ///
+    /// `add_child(...)` is appropriate for offline subtree assembly before init,
+    /// tests, and internal structural building where the caller intentionally
+    /// manages any needed follow-up work.
+    ///
     /// Safety rules:
     /// - Both ids must exist.
     /// - `child` is detached from its current parent first.

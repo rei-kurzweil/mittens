@@ -2,6 +2,12 @@
 
 Date: 2026-04-25
 
+Status note: routed late-attach into layout-owned scrolling is now working again, but the
+general engine rule for when topology mutation should automatically mark the nearest layout
+ancestor dirty is still unresolved. This is a near-future priority, but we are intentionally
+not landing a broad solution yet until the invalidation rule is clearer and does not create
+unnecessary relayout churn from layout-owned helper topology.
+
 This is the current handoff/task checklist for layout-owned backgrounds, clipping, and scrolling.
 
 It is meant to be readable by a fresh agent with no prior context.
@@ -91,8 +97,13 @@ It is meant to be readable by a fresh agent with no prior context.
 ### Still pending
 
 - [ ] decide and land the final world-drag → scroll-local conversion in `ScrollingSystem`
-- [ ] automatically mark affected layout roots dirty when layout-relevant children are attached
-  after initial layout
+- [ ] decide the efficient rule for when topology mutation should mark the nearest layout root dirty
+  - this now looks like an authored/external-child invalidation problem, not a blanket
+    "every attach under a layout subtree" rule
+  - avoid relayout churn from layout-owned helper attaches such as `__bg`, `__scroll`,
+    `__scroll_track`, stencil helpers, router helpers, and similar internal nodes
+  - treat this as a near-future engine priority; do not paper over it piecemeal unless needed
+    for a focused bugfix
 - [ ] runtime add-item buttons in `router` and `diy-panel` examples
 
 ---
@@ -463,6 +474,11 @@ Effect:
   - layout also directly relocates currently attached authored children during its own pass
   - the router is therefore most important for later direct attaches after the helper topology
     already exists
+  - current open design question:
+    - late authored/external attaches can require relayout, but layout-owned/internal helper
+      attaches should not automatically dirty layout
+    - we still need the right low-complexity invalidation boundary for that distinction
+    - this should be solved centrally in the engine, not rediscovered in each panel/runtime site
 - `__bg` is intentionally separate from `__scroll`
   - `__bg` is the viewport/input/clip helper
   - `__scroll` is the content/runtime helper

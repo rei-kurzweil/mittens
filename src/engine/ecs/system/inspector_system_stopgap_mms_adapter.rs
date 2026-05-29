@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::{
-    ColorComponent, Display, EdgeInsets, Overflow, RaycastableComponent, SizeDimension,
-    StyleComponent, TextComponent,
+    ColorComponent, Display, EdgeInsets, LayoutComponent, Overflow, RaycastableComponent,
+    SizeDimension, StyleComponent, TextComponent,
 };
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::rx::RxWorld;
@@ -694,6 +694,8 @@ fn rerender_world_panel_status(
             child: spawned_status_root,
         },
     );
+
+    mark_nearest_layout_dirty(world, status_wrap);
 }
 
 fn rerender_world_panel_content(
@@ -718,8 +720,14 @@ fn rerender_world_panel_content(
     }
 
     let spawned_content_root = spawn_world_panel_content_tree(world, emit, rows, selected_index);
-    let _ = world.add_child(content_slot, spawned_content_root);
-    world.init_component_tree(spawned_content_root, emit);
+    emit.push_intent_now(
+        spawned_content_root,
+        IntentValue::Attach {
+            parents: vec![content_slot],
+            child: spawned_content_root,
+        },
+    );
+    mark_nearest_layout_dirty(world, content_slot);
 }
 
 fn update_world_panel_row_selection(
@@ -788,8 +796,25 @@ fn rerender_inspector_panel_content(
     }
 
     let spawned_content_root = spawn_inspector_panel_content_tree(world, emit, rows);
-    let _ = world.add_child(content_slot, spawned_content_root);
-    world.init_component_tree(spawned_content_root, emit);
+    emit.push_intent_now(
+        spawned_content_root,
+        IntentValue::Attach {
+            parents: vec![content_slot],
+            child: spawned_content_root,
+        },
+    );
+    mark_nearest_layout_dirty(world, content_slot);
+}
+
+fn mark_nearest_layout_dirty(world: &mut World, start: ComponentId) {
+    let mut current = Some(start);
+    while let Some(component_id) = current {
+        if let Some(layout) = world.get_component_by_id_as_mut::<LayoutComponent>(component_id) {
+            layout.mark_dirty();
+            return;
+        }
+        current = world.parent_of(component_id);
+    }
 }
 
 fn clicked_named_ancestor(world: &World, node: ComponentId, prefix: &str) -> Option<String> {
