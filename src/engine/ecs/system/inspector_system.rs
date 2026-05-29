@@ -206,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn setup_panels_for_editor_click_updates_inspector_with_selected_component_mms() {
+    fn setup_panels_for_editor_click_updates_inspector_with_selected_component_rows() {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
@@ -215,7 +215,9 @@ mod tests {
 
         let editor_root = world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
         let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let child_transform = world.add_component_boxed_named("child_transform", Box::new(TransformComponent::new()));
         let _ = world.add_child(editor_root, scene_root);
+        let _ = world.add_child(scene_root, child_transform);
 
         inspector.setup_panels_for_editor(
             &mut systems.rx,
@@ -257,15 +259,20 @@ mod tests {
             .expect("expected panel status to remain a text component");
         assert_eq!(status_text, "selected scene_root");
 
-        let inspector_row_text = world
-            .find_component(runtime_ui_root, "#inspector_panel_content_root Text")
-            .and_then(|text_id| {
-                world
-                    .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(text_id)
-                    .map(|text| text.text.clone())
-            })
-            .expect("expected inspector panel text after selection");
-        assert!(inspector_row_text.contains("name = \"scene_root\""));
+        let world_panel_root = world
+            .find_component(runtime_ui_root, "#world_panel_root")
+            .expect("expected world panel root");
+        let inspector_panel_root = world
+            .find_component(runtime_ui_root, "#inspector_panel_root")
+            .expect("expected inspector panel root");
+
+        assert!(world.find_component(world_panel_root, "#item_1").is_some());
+        assert!(world.find_component(world_panel_root, "#inspector_item_0").is_none());
+        assert!(world.find_component(inspector_panel_root, "#inspector_item_0").is_some());
+        assert!(world.find_component(inspector_panel_root, "#item_1").is_none());
+
+        assert_eq!(row_text(&world, runtime_ui_root, "#inspector_item_0"), "scene_root");
+        assert_eq!(row_text(&world, runtime_ui_root, "#inspector_item_1"), "  child_transform");
     }
 
     #[test]

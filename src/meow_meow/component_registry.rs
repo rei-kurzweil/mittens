@@ -258,20 +258,30 @@ fn resolve_type_name(raw: &str) -> String {
 /// - `attach_clone` intent: subtree → CE → MaterializedCE → spawn_tree (clone).
 /// - REPL `dump` and scene save: subtree → CE → unparser → text.
 pub fn subtree_to_ce_ast(world: &World, root: ComponentId) -> Result<ComponentExpression, String> {
+    subtree_to_ce_ast_limited(world, root, usize::MAX)
+}
+
+pub fn subtree_to_ce_ast_limited(
+    world: &World,
+    root: ComponentId,
+    max_depth: usize,
+) -> Result<ComponentExpression, String> {
     // First pass: collect every GUID referenced by any ActionComponent in
     // the subtree via `ComponentRef::Guid`. These are the targets that
     // need their GUID preserved across save/load so the dumped
     // `@uuid:<g>` selector still resolves on reload.
     let mut referenced_guids: std::collections::HashSet<uuid::Uuid> =
         std::collections::HashSet::new();
-    collect_referenced_guids(world, root, &mut referenced_guids);
+    collect_referenced_guids_limited(world, root, 0, max_depth, &mut referenced_guids);
 
-    subtree_to_ce_ast_inner(world, root, &referenced_guids)
+    subtree_to_ce_ast_inner_limited(world, root, &referenced_guids, 0, max_depth)
 }
 
-fn collect_referenced_guids(
+fn collect_referenced_guids_limited(
     world: &World,
     node: ComponentId,
+    depth: usize,
+    max_depth: usize,
     out: &mut std::collections::HashSet<uuid::Uuid>,
 ) {
     use crate::engine::ecs::component::{
@@ -302,15 +312,20 @@ fn collect_referenced_guids(
         .get_component_record(node)
         .map(|n| n.children.clone())
         .unwrap_or_default();
+    if depth >= max_depth {
+        return;
+    }
     for child in children {
-        collect_referenced_guids(world, child, out);
+        collect_referenced_guids_limited(world, child, depth + 1, max_depth, out);
     }
 }
 
-fn subtree_to_ce_ast_inner(
+fn subtree_to_ce_ast_inner_limited(
     world: &World,
     root: ComponentId,
     referenced_guids: &std::collections::HashSet<uuid::Uuid>,
+    depth: usize,
+    max_depth: usize,
 ) -> Result<ComponentExpression, String> {
     let node = world
         .get_component_record(root)
@@ -341,8 +356,17 @@ fn subtree_to_ce_ast_inner(
     }
 
     let children: Vec<ComponentId> = node.children.clone();
+    if depth >= max_depth {
+        return Ok(ce);
+    }
     for child_id in children {
-        let child_ce = subtree_to_ce_ast_inner(world, child_id, referenced_guids)?;
+        let child_ce = subtree_to_ce_ast_inner_limited(
+            world,
+            child_id,
+            referenced_guids,
+            depth + 1,
+            max_depth,
+        )?;
         ce.body
             .statements
             .push(Statement::Expression(Expression::Component(child_ce)));

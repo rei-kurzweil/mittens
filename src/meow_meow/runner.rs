@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use crate::engine::ecs::{IntentValue, RxWorld, SignalEmitter, World};
+use crate::engine::ecs::{ComponentId, IntentValue, RxWorld, SignalEmitter, World};
 use crate::meow_meow::evaluator::{
     eval_mms_fn, eval_module_source, EvalRequest, EvalResponse, HostCallKind, HostValue,
     MeowMeowEvaluator,
@@ -110,6 +110,62 @@ impl MeowMeowRunner {
             ));
         }
         eval_mms_fn(export, args, channels, world_host, emit)
+    }
+
+    pub fn materialize_mms_module_component(
+        module: &LoadedMmsModule,
+        name: &str,
+        args: Vec<Value>,
+        world_host: Option<&mut World>,
+        emit: Option<&mut dyn SignalEmitter>,
+    ) -> Result<MaterializedCE, String> {
+        let value = Self::call_mms_module_fn(module, name, args, None, world_host, emit)?;
+        let Value::ComponentExpr(component_expr) = value else {
+            return Err(format!(
+                "materialize_mms_module_component: export '{}' did not return a component tree",
+                name
+            ));
+        };
+        Ok(*component_expr)
+    }
+
+    pub fn materialize_mms_module_component_from_file(
+        path: &str,
+        name: &str,
+        args: Vec<Value>,
+        world_host: Option<&mut World>,
+        emit: Option<&mut dyn SignalEmitter>,
+    ) -> Result<MaterializedCE, String> {
+        let module = Self::load_module_file(path)?;
+        Self::materialize_mms_module_component(&module, name, args, world_host, emit)
+    }
+
+    pub fn spawn_mms_module_component_uninitialized(
+        module: &LoadedMmsModule,
+        name: &str,
+        args: Vec<Value>,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+    ) -> Result<ComponentId, String> {
+        let component_expr = Self::materialize_mms_module_component(
+            module,
+            name,
+            args,
+            Some(world),
+            Some(emit),
+        )?;
+        crate::meow_meow::component_registry::spawn_tree_uninitialized(&component_expr, world, emit)
+    }
+
+    pub fn spawn_mms_module_component_uninitialized_from_file(
+        path: &str,
+        name: &str,
+        args: Vec<Value>,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+    ) -> Result<ComponentId, String> {
+        let module = Self::load_module_file(path)?;
+        Self::spawn_mms_module_component_uninitialized(&module, name, args, world, emit)
     }
 
     /// Evaluate `source` with live world access.
