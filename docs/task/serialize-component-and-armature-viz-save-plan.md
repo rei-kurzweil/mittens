@@ -6,9 +6,50 @@ Status note: the authored `TransformPipeline` / `TransformPipelineOutput` wrappe
 
 This task captures the current serialization direction after the recent merge work.
 
+Current status update: 2026-05-29
+
+- A filtered world save path now exists for the world panel save/load flow.
+- A raw exact subtree dump path still exists separately.
+- `SerializeComponent` plus MMS `Serialize.on()` / `Serialize.off()` now exist.
+- Filtered save currently uses nearest-ancestor visibility, where the nearest ancestor with an immediate `Serialize` child wins.
+- The editor runtime UI root is intentionally excluded by attaching `Serialize.off()` under `editor_runtime_ui_root`.
+- Several runtime helper roots now attach `Serialize.off()` by default:
+  - world-panel runtime UI root
+  - text glyph roots and text-shadow glyph roots
+  - AvatarControl body `TransformForkTRS`
+  - AvatarControl-spawned arm `IKChain`
+  - layout-owned `__bg` background quads
+
+However, the current state is still incomplete and has at least one confirmed bad save artifact:
+
+- in `assets/data/world.mms`, a root `BackgroundColor { Color ... overlay { ... cube ... } }` is still being emitted even though the authored root was only:
+
+```text
+BGC {
+  C.rgba(1.0, 0.65, 0.75, 1.0)
+}
+```
+
+That means some runtime-owned helper topology is still attaching under the `BackgroundColor` branch and surviving filtered save. This is a real bug in current save behavior and should be treated as unresolved.
+
+There was also a semantic correction during investigation:
+
+- `GLTF` itself should be serialized by default because it is authored content.
+- only the runtime nodes spawned by `GLTFSystem` should be excluded by default.
+- the intended rule is:
+  - authored `GLTF { ... }` remains serializable
+  - the nodes realized at runtime from that glTF are wrapped with `Serialize.off()` by default
+  - if there is an explicit authored `Serialize.on()` as a direct child of `GLTF`, then those spawned runtime nodes should be allowed back into filtered save
+
+This direct-child `Serialize.on()` rule is the current target semantics. If implementation details disagree with this, the implementation is wrong and should be changed to match the rule above.
+
 Related task:
 
 - [transform-parent-component-ref-routing.md](transform-parent-component-ref-routing.md)
+
+Related bug:
+
+- [../bugs/world-panel-save-freezes-ui-and-degrades-scene-performance.md](../bugs/world-panel-save-freezes-ui-and-degrades-scene-performance.md)
 
 The main save/export goal is:
 
@@ -210,6 +251,13 @@ Desired authored vocabulary:
 - `Serialize.off()` excludes a subtree from filtered scene/world save
 - `Serialize.on()` re-includes a subtree inside an excluded ancestor subtree
 
+Clarification from current investigation:
+
+- the component that remains authored is still serialized unless an exclusion rule hides it
+- for `GLTF`, the authored `GLTFComponent` is not itself the thing to exclude
+- instead, the runtime-expanded node tree produced by `GLTFSystem` is the thing that should default to `Serialize.off()`
+- the opt-in escape hatch for saving realized glTF runtime nodes is an explicit authored direct child: `GLTF { Serialize.on() ... }`
+
 This matches existing MMS naming patterns better than inventing a one-off serializer-only API.
 
 ### Why keep two paths
@@ -281,6 +329,22 @@ The important scope rule is:
 - editor helper wrappers
 - separate armature visualization helper roots
 
+Status:
+
+- partially implemented
+- currently covered helper roots include panel runtime UI, text glyph roots, AVC body pipeline, AVC arm IK chains, and layout-owned `__bg`
+- still incomplete because at least one runtime-owned subtree is still leaking into filtered save under `BackgroundColor`
+
+### Stage 4.1 — fix currently confirmed leaking runtime helpers
+
+Known confirmed issues from current `world.mms` output:
+
+- root `BackgroundColor` is still picking up runtime helper descendants (`overlay` + `Renderable.cube`) that were not authored there
+- this indicates at least one runtime helper path is still missing `Serialize.off()` or is attaching at the wrong boundary
+- examples like `bisket-vr-demo` should be used as the regression surface for this work
+
+This should be completed before treating the save-filter work as stable.
+
 ### Stage 5 — add `Serialize.on()` support for inner re-inclusion
 
 - this is not required for the first pass if no current topology needs a hole punched back into an excluded tree
@@ -303,6 +367,8 @@ The serialization task is complete when:
 - filtered save can exclude helper trees via `Serialize.off()`
 - filtered save can later support `Serialize.on()` re-inclusion without redesigning the traversal model
 - editor/runtime helper trees are excluded by composition rather than by a brittle list of save-time name checks
+- authored `GLTF` components remain serializable while their runtime-expanded descendants are excluded by default unless direct-child `Serialize.on()` explicitly opts them back in
+- filtered save no longer produces the known bad `BackgroundColor { ... overlay { cube } }` root artifact when the authored scene only provided `BackgroundColor` plus `Color`
 
 ---
 
@@ -316,3 +382,5 @@ The serialization task is complete when:
 4. Should transform-pipeline authoring boilerplate reduction be designed in the same pass, or explicitly deferred to a separate task after the new routing/input capability exists?
 5. Should `Serialize.on()` be implemented immediately, or only after a real use case exists?
 6. Which existing user-facing commands should map to filtered scene/world save versus raw exact dump?
+7. What exact runtime subtree is currently attaching under root `BackgroundColor` and why is it still surviving filtered save?
+8. Should there be a dedicated regression test that asserts a plain authored `BackgroundColor { Color ... }` round-trips without any extra helper descendants?
