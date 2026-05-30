@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod component_registry;
 pub mod evaluator;
+pub mod lowering;
 pub mod object;
 pub mod parser;
 pub mod runner;
@@ -15,6 +16,7 @@ pub use ast::{
     Span, Statement, UnaryOpKind,
 };
 pub use evaluator::*;
+pub use lowering::*;
 pub use runner::*;
 pub use object::*;
 pub use parser::*;
