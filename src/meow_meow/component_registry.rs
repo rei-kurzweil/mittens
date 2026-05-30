@@ -286,17 +286,12 @@ pub fn filtered_roots_to_ce_ast(
     let mut referenced_guids: std::collections::HashSet<uuid::Uuid> =
         std::collections::HashSet::new();
     for &root in roots {
-        collect_referenced_guids_filtered(world, root, FilteredSaveState::default(), &mut referenced_guids);
+        collect_referenced_guids_filtered(world, root, &mut referenced_guids);
     }
 
     let mut out = Vec::new();
     for &root in roots {
-        out.extend(filtered_ce_ast_inner(
-            world,
-            root,
-            &referenced_guids,
-            FilteredSaveState::default(),
-        )?);
+        out.extend(filtered_ce_ast_inner(world, root, &referenced_guids)?);
     }
     Ok(out)
 }
@@ -304,49 +299,40 @@ pub fn filtered_roots_to_ce_ast(
 pub fn filtered_root_ids_for_roots(world: &World, roots: &[ComponentId]) -> Vec<ComponentId> {
     let mut out = Vec::new();
     for &root in roots {
-        collect_filtered_root_ids(world, root, FilteredSaveState::default(), &mut out);
+        collect_filtered_root_ids(world, root, &mut out);
     }
     out
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-struct FilteredSaveState {
-    default_excluded: bool,
+fn immediate_child_serialize_override(world: &World, node: ComponentId) -> Option<bool> {
+    world.children_of(node).iter().find_map(|&child| {
+        world
+            .get_component_by_id_as::<SerializeComponent>(child)
+            .map(|serialize| serialize.enabled)
+    })
 }
 
-fn serialize_override(world: &World, node: ComponentId) -> Option<bool> {
-    world
-        .get_component_by_id_as::<SerializeComponent>(node)
-        .map(|serialize| serialize.enabled)
+fn nearest_serialize_override(world: &World, node: ComponentId) -> Option<bool> {
+    let mut current = Some(node);
+    while let Some(component_id) = current {
+        if let Some(enabled) = immediate_child_serialize_override(world, component_id) {
+            return Some(enabled);
+        }
+        current = world.parent_of(component_id);
+    }
+    None
 }
 
-fn filtered_save_visibility(
-    world: &World,
-    node: ComponentId,
-    state: FilteredSaveState,
-) -> (bool, FilteredSaveState) {
-    let override_enabled = serialize_override(world, node);
-    let visible = override_enabled.unwrap_or(!state.default_excluded);
-    let child_default_excluded = match override_enabled {
-        Some(true) => false,
-        Some(false) => true,
-        None => state.default_excluded,
-    } || world.get_component_by_id_as::<GLTFComponent>(node).is_some();
-    (
-        visible,
-        FilteredSaveState {
-            default_excluded: child_default_excluded,
-        },
-    )
+fn filtered_save_visibility(world: &World, node: ComponentId) -> bool {
+    nearest_serialize_override(world, node).unwrap_or(true)
 }
 
 fn collect_filtered_root_ids(
     world: &World,
     node: ComponentId,
-    state: FilteredSaveState,
     out: &mut Vec<ComponentId>,
 ) {
-    let (visible, child_state) = filtered_save_visibility(world, node, state);
+    let visible = filtered_save_visibility(world, node);
     if visible {
         out.push(node);
         return;
@@ -354,21 +340,20 @@ fn collect_filtered_root_ids(
 
     let children: Vec<ComponentId> = world.children_of(node).to_vec();
     for child in children {
-        collect_filtered_root_ids(world, child, child_state, out);
+        collect_filtered_root_ids(world, child, out);
     }
 }
 
 fn collect_referenced_guids_filtered(
     world: &World,
     node: ComponentId,
-    state: FilteredSaveState,
     out: &mut std::collections::HashSet<uuid::Uuid>,
 ) {
     use crate::engine::ecs::component::{
         ActionComponent, ComponentRef, IKChainComponent, TransformParentComponent,
     };
 
-    let (visible, child_state) = filtered_save_visibility(world, node, state);
+    let visible = filtered_save_visibility(world, node);
     if visible {
         if let Some(action) = world.get_component_by_id_as::<ActionComponent>(node) {
             for src in &action.target_sources {
@@ -399,7 +384,7 @@ fn collect_referenced_guids_filtered(
 
     let children: Vec<ComponentId> = world.children_of(node).to_vec();
     for child in children {
-        collect_referenced_guids_filtered(world, child, child_state, out);
+        collect_referenced_guids_filtered(world, child, out);
     }
 }
 
@@ -407,21 +392,15 @@ fn filtered_ce_ast_inner(
     world: &World,
     root: ComponentId,
     referenced_guids: &std::collections::HashSet<uuid::Uuid>,
-    state: FilteredSaveState,
 ) -> Result<Vec<ComponentExpression>, String> {
     let node = world
         .get_component_record(root)
         .ok_or_else(|| format!("filtered_ce_ast_inner: missing component {root:?}"))?;
-    let (visible, child_state) = filtered_save_visibility(world, root, state);
+    let visible = filtered_save_visibility(world, root);
 
     let mut child_components = Vec::new();
     for &child_id in &node.children {
-        child_components.extend(filtered_ce_ast_inner(
-            world,
-            child_id,
-            referenced_guids,
-            child_state,
-        )?);
+        child_components.extend(filtered_ce_ast_inner(world, child_id, referenced_guids)?);
     }
 
     if !visible {

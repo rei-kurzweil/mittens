@@ -390,18 +390,14 @@ mod tests {
             "avatar_gltf",
             Box::new(GLTFComponent::new("assets/models/cat/cat.glb")),
         );
-        let hidden_gltf_child = world.add_component_boxed_named("hidden_joint", Box::new(TransformComponent::new()));
-        let visible_gltf_child = world.add_component_boxed_named("visible_joint", Box::new(TransformComponent::new()));
-        let visible_gltf_child_serialize = world.add_component_boxed_named(
-            "visible_joint_serialize",
+        let gltf_serialize = world.add_component_boxed_named(
+            "avatar_gltf_serialize",
             Box::new(SerializeComponent::on()),
         );
 
         let _ = world.add_child(editor_root, scene_root);
         let _ = world.add_child(scene_root, gltf_root);
-        let _ = world.add_child(gltf_root, hidden_gltf_child);
-        let _ = world.add_child(gltf_root, visible_gltf_child);
-        let _ = world.add_child(visible_gltf_child, visible_gltf_child_serialize);
+        let _ = world.add_child(gltf_root, gltf_serialize);
 
         inspector.setup_panels_for_editor(
             &mut systems.rx,
@@ -435,8 +431,7 @@ mod tests {
         let saved = std::fs::read_to_string(&scene_path).expect("expected saved world panel scene file");
         assert!(saved.contains("scene_root"));
         assert!(saved.contains("GLTF.new(\"assets/models/cat/cat.glb\")"));
-        assert!(saved.contains("visible_joint"));
-        assert!(!saved.contains("hidden_joint"));
+        assert!(saved.contains("avatar_gltf_serialize"));
         assert!(!saved.contains("editor_runtime_ui_root"));
 
         world
@@ -472,8 +467,7 @@ mod tests {
         let reloaded_gltf_root = world
             .find_component(reloaded_scene_root, "#avatar_gltf")
             .expect("expected gltf root after load");
-        assert!(world.find_component(reloaded_gltf_root, "#visible_joint").is_some());
-        assert!(world.find_component(reloaded_gltf_root, "#hidden_joint").is_none());
+        assert!(world.find_component(reloaded_gltf_root, "Serialize").is_some());
         assert!(world.find_component(runtime_ui_root, "#world_panel_root").is_some());
 
         let panel_status_value = world

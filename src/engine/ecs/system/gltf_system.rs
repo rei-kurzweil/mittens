@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::{
     ColorComponent, EditorComponent, EmissiveComponent, GLTFComponent, MeshComponent,
     OverlayComponent, RaycastableComponent, RenderableComponent, SignalRouteUpwardComponent,
-    SkinnedMeshComponent, TextureComponent, TransformComponent,
+    SerializeComponent, SkinnedMeshComponent, TextureComponent, TransformComponent,
 };
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::engine::graphics::mesh::{CpuMesh, CpuVertex};
@@ -264,6 +264,15 @@ impl GLTFSystem {
                 .map(|c| c.with_visualized_transforms)
                 .unwrap_or(false)
                 || Self::has_editor_ancestor(world, cid);
+            let serialize_spawned_nodes = world
+                .children_of(cid)
+                .iter()
+                .find_map(|&child| {
+                    world
+                        .get_component_by_id_as::<SerializeComponent>(child)
+                        .map(|serialize| serialize.enabled)
+                })
+                .unwrap_or(false);
 
             if with_visualized_transforms {
                 if let Some(c) = world.get_component_by_id_as_mut::<GLTFComponent>(cid) {
@@ -338,6 +347,7 @@ impl GLTFSystem {
                     &mut node_index_to_component,
                     &mut pending_skin_components,
                     with_visualized_transforms,
+                    serialize_spawned_nodes,
                 );
                 if let Some(root) = root {
                     world.init_component_tree(root, emit);
@@ -808,6 +818,7 @@ impl GLTFSystem {
         node_index_to_component: &mut HashMap<usize, ComponentId>,
         pending_skin_components: &mut Vec<(ComponentId, usize)>,
         with_visualized_transforms: bool,
+        serialize_spawned_nodes: bool,
     ) -> Option<ComponentId> {
         let node_display_name = node
             .name()
@@ -825,6 +836,10 @@ impl GLTFSystem {
         let this_transform =
             world.add_component_boxed_named(node_display_name.clone(), Box::new(tc));
         let _ = world.add_child(parent_transform, this_transform);
+        if !serialize_spawned_nodes {
+            let serialize_off = world.add_component(SerializeComponent::off());
+            let _ = world.add_child(this_transform, serialize_off);
+        }
 
         // Snapshot the authored bind-pose local TRS as a sidecar component
         // before any animation / IK / AVC system can overwrite it.  Lets
@@ -1022,6 +1037,7 @@ impl GLTFSystem {
                 node_index_to_component,
                 pending_skin_components,
                 with_visualized_transforms,
+                serialize_spawned_nodes,
             );
         }
 

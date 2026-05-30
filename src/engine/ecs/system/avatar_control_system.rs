@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::{
     AvatarControlComponent, BoneRestPoseComponent, Camera3DComponent, CameraXRComponent,
     ControllerHand, ControllerXRComponent, IKChainComponent, IKSolver, QuatYawFollowComponent,
-    TransformComponent, TransformForkTRSComponent, TransformMapRotationComponent,
+    SerializeComponent, TransformComponent, TransformForkTRSComponent, TransformMapRotationComponent,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::utils::math::{quat_rotate_vec3, quat_rotation_y};
@@ -331,6 +331,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // -----------------------------------------------------------------------
     if !skip_body_pipeline {
         let body_pipeline_id  = world.add_component(TransformForkTRSComponent::new());
+        let body_pipeline_serialize_id = world.add_component(SerializeComponent::off());
         let map_rot_id        = world.add_component(TransformMapRotationComponent::new());
         let yaw_follow_id     = world.add_component(
             QuatYawFollowComponent::new(body_yaw_threshold, body_yaw_rate)
@@ -338,6 +339,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
                 .with_forward_plus_z_if(forward_plus_z),
         );
 
+        let _ = world.set_parent(body_pipeline_serialize_id, Some(body_pipeline_id));
         let _ = world.set_parent(map_rot_id, Some(body_pipeline_id));
         let _ = world.set_parent(yaw_follow_id, Some(map_rot_id));
 

@@ -2,7 +2,7 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     ColorComponent, EmissiveComponent, OpacityComponent, RaycastableComponent, RenderableComponent,
-    TextComponent, TextShadowComponent, TextureComponent,
+    SerializeComponent, TextComponent, TextShadowComponent, TextureComponent,
     TextureFilteringComponent, TransformComponent, TransparentCutoutComponent, UVComponent,
 };
 use crate::engine::ecs::{EventSignal, IntentValue};
@@ -353,6 +353,8 @@ impl TextSystem {
             let t = TransformComponent::new().with_position(x, y, 0.0).with_scale(font_size, font_size, 1.0);
             let t_id = world.add_component(t);
             let _ = world.add_child(component, t_id);
+            let t_serialize = world.add_component(SerializeComponent::off());
+            let _ = world.add_child(t_id, t_serialize);
 
             let glyph_uvs = uvs_for_glyph(ch);
             let (r_id, uv_id, tex_id) = Self::spawn_glyph_quad(
@@ -374,6 +376,8 @@ impl TextSystem {
                         .with_scale(scale, scale, 1.0);
                     let ot_id = world.add_component(ot);
                     let _ = world.add_child(t_id, ot_id);
+                    let ot_serialize = world.add_component(SerializeComponent::off());
+                    let _ = world.add_child(ot_id, ot_serialize);
 
                     // Shadow quad: no raycasting by default.
                     let _ = Self::spawn_glyph_quad(
@@ -547,7 +551,7 @@ fn uvs_for_glyph(ch: char) -> Vec<[f32; 2]> {
 #[cfg(test)]
 mod tests {
     use super::TextSystem;
-    use crate::engine::ecs::component::TextComponent;
+    use crate::engine::ecs::component::{SerializeComponent, TextComponent};
     use crate::engine::ecs::World;
     use crate::engine::graphics::VisualWorld;
 
@@ -566,6 +570,27 @@ mod tests {
             .expect("glyph transform");
         assert!((glyph_t.transform.scale[0] - 0.25).abs() < 1e-6);
         assert!((glyph_t.transform.scale[1] - 0.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn register_text_marks_spawned_glyph_roots_serialize_off() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let text_id = world.add_component(TextComponent::new("A"));
+        let mut text_system = TextSystem::default();
+
+        let spawned = text_system.register_text(&mut world, &mut visuals, text_id);
+        assert_eq!(spawned.len(), 1);
+
+        let serialize_marker = world
+            .children_of(spawned[0].transform)
+            .iter()
+            .find(|&&child| world.get_component_by_id_as::<SerializeComponent>(child).is_some())
+            .copied()
+            .expect("expected serialize marker on glyph root");
+        assert!(world
+            .get_component_by_id_as::<SerializeComponent>(serialize_marker)
+            .is_some_and(|serialize| !serialize.enabled));
     }
 
     #[test]
