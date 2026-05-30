@@ -67,6 +67,7 @@ impl SignalPipelineProcessor {
             | IntentValue::SetText { component_ids, .. }
             | IntentValue::SetPosition { component_ids, .. }
             | IntentValue::SetLayoutAvailableWidth { component_ids, .. }
+            | IntentValue::SetLayoutAvailableHeight { component_ids, .. }
             | IntentValue::SetLayoutInspect { component_ids, .. }
             | IntentValue::Detach { component_ids }
             | IntentValue::RemoveSubtree { component_ids }
@@ -105,6 +106,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterTexture { component_ids }
             | IntentValue::RegisterTextureFiltering { component_ids }
             | IntentValue::RegisterText { component_ids }
+            | IntentValue::RegisterTextInput { component_ids }
             | IntentValue::RegisterCollision { component_ids }
             | IntentValue::RemoveCollision { component_ids }
             | IntentValue::RegisterKineticResponse { component_ids }
@@ -146,6 +148,12 @@ impl SignalPipelineProcessor {
             | IntentValue::RemoveChild { .. }
             | IntentValue::RemoveChildren { .. }
             | IntentValue::UpdateTransformWorld { .. }
+            | IntentValue::TextInputSetFocus { .. }
+            | IntentValue::TextInputClearFocus
+            | IntentValue::TextInputInsertText { .. }
+            | IntentValue::TextInputBackspace
+            | IntentValue::TextInputDeleteForward
+            | IntentValue::TextInputMoveCaret { .. }
             | IntentValue::RegisterSignalRouteUpward { .. }
             | IntentValue::RemoveSignalRouteUpward { .. }
             | IntentValue::SpawnComponentTree { .. } => None,
@@ -158,6 +166,7 @@ impl SignalPipelineProcessor {
             | IntentValue::SetText { component_ids, .. }
             | IntentValue::SetPosition { component_ids, .. }
             | IntentValue::SetLayoutAvailableWidth { component_ids, .. }
+            | IntentValue::SetLayoutAvailableHeight { component_ids, .. }
             | IntentValue::SetLayoutInspect { component_ids, .. }
             | IntentValue::Detach { component_ids }
             | IntentValue::RemoveSubtree { component_ids }
@@ -196,6 +205,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterTexture { component_ids }
             | IntentValue::RegisterTextureFiltering { component_ids }
             | IntentValue::RegisterText { component_ids }
+            | IntentValue::RegisterTextInput { component_ids }
             | IntentValue::RegisterCollision { component_ids }
             | IntentValue::RemoveCollision { component_ids }
             | IntentValue::RegisterKineticResponse { component_ids }
@@ -240,6 +250,12 @@ impl SignalPipelineProcessor {
             | IntentValue::RemoveChildren { .. } => None,
 
             IntentValue::UpdateTransformWorld { .. } => None,
+            IntentValue::TextInputSetFocus { .. } => None,
+            IntentValue::TextInputClearFocus => None,
+            IntentValue::TextInputInsertText { .. } => None,
+            IntentValue::TextInputBackspace => None,
+            IntentValue::TextInputDeleteForward => None,
+            IntentValue::TextInputMoveCaret { .. } => None,
             IntentValue::SpawnComponentTree { .. } => None,
         }
     }

@@ -1523,7 +1523,7 @@ mod tests {
         let _ = world.add_child(row, row_style);
         let _ = world.add_child(row, text);
 
-        let measured = super::super::measure::measure_item(&world, row, 20.0, 0.08);
+        let measured = super::super::measure::measure_item(&world, row, 20.0, None, 0.08);
         assert!(
             (measured.content_height_gu - 1.0).abs() < 1e-4,
             "expected content_height_gu = 1.0 (one row per GU), got {}",

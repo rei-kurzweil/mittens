@@ -4,6 +4,7 @@ use crate::engine::ecs::component::{BoundsComponent, ColorComponent, HtmlElement
 use crate::engine::ecs::component::style::{Display, SizeDimension, WordWrapMode};
 use crate::engine::ecs::system::text_system::TextSystem;
 use crate::engine::graphics::bounds::Aabb;
+use crate::engine::graphics::primitives::TransformMatrix;
 
 /// Measured size of a single layout item after Pass 1.
 ///
@@ -43,6 +44,82 @@ pub(crate) struct MeasuredItem {
     pub display: Option<Display>,
 }
 
+fn mat4_identity() -> TransformMatrix {
+    [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+}
+
+fn mat4_mul(a: TransformMatrix, b: TransformMatrix) -> TransformMatrix {
+    let mut out = [[0.0f32; 4]; 4];
+    for c in 0..4 {
+        for r in 0..4 {
+            out[c][r] =
+                a[0][r] * b[c][0] + a[1][r] * b[c][1] + a[2][r] * b[c][2] + a[3][r] * b[c][3];
+        }
+    }
+    out
+}
+
+fn len3(column: [f32; 4]) -> f32 {
+    (column[0] * column[0] + column[1] * column[1] + column[2] * column[2]).sqrt()
+}
+
+fn layout_root_world_axis_scales(world: &World, layout_id: ComponentId) -> (f32, f32) {
+    let mut chain: Vec<TransformMatrix> = Vec::new();
+    let mut cur = Some(layout_id);
+
+    while let Some(node) = cur {
+        if let Some(tc) = world.get_component_by_id_as::<TransformComponent>(node) {
+            chain.push(tc.transform.model);
+        }
+        cur = world.parent_of(node);
+    }
+
+    chain.reverse();
+
+    let mut world_model = mat4_identity();
+    for model in chain {
+        world_model = mat4_mul(world_model, model);
+    }
+
+    (len3(world_model[0]).max(1e-6), len3(world_model[1]).max(1e-6))
+}
+
+fn resolve_layout_root_length_gu(length: SizeDimension, unit_scale: f32, axis_world_scale: f32) -> f32 {
+    match length {
+        SizeDimension::GlyphUnits(v) => v,
+        SizeDimension::WorldUnits(v) => {
+            let denom = unit_scale.abs().max(f32::EPSILON) * axis_world_scale.max(1e-6);
+            v / denom
+        }
+        SizeDimension::Auto | SizeDimension::Percent(_) => {
+            debug_assert!(false, "LayoutRoot sizes only support gu or wu units");
+            0.0
+        }
+    }
+}
+
+pub(crate) fn layout_root_available_bounds(
+    world: &World,
+    layout_id: ComponentId,
+) -> (f32, Option<f32>, f32) {
+    let Some(lc) = world.get_component_by_id_as::<LayoutComponent>(layout_id) else {
+        return (0.0, None, 1.0);
+    };
+
+    let (world_scale_x, world_scale_y) = layout_root_world_axis_scales(world, layout_id);
+    let avail_w = resolve_layout_root_length_gu(lc.authored_available_width, lc.unit_scale, world_scale_x);
+    let avail_h = lc
+        .authored_available_height
+        .map(|height| resolve_layout_root_length_gu(height, lc.unit_scale, world_scale_y));
+
+    (avail_w, avail_h, lc.unit_scale)
+}
+
 /// Pass 1 — measure a single TC layout item.
 ///
 /// Reads the [`StyleComponent`] from among `tc_id`'s ECS children and computes
@@ -52,7 +129,13 @@ pub(crate) struct MeasuredItem {
 /// used to convert `SizeDimension::WorldUnits(_)` values back to glyph units
 /// for the GU-internal layout math, and to convert the renderer's wu glyph
 /// scale back into GU for text intrinsic sizing.
-pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32, unit_scale: f32) -> MeasuredItem {
+pub(crate) fn measure_item(
+    world: &World,
+    tc_id: ComponentId,
+    avail_w_gu: f32,
+    avail_h_gu: Option<f32>,
+    unit_scale: f32,
+) -> MeasuredItem {
     // Copy style fields out before the borrow ends.
     let children: Vec<ComponentId> = world.children_of(tc_id).to_vec();
     let style = children.iter().find_map(|&child| {
@@ -168,9 +251,14 @@ pub fn measure_item(world: &World, tc_id: ComponentId, avail_w_gu: f32, unit_sca
         (SizeDimension::GlyphUnits(h), BoxSizing::ContentBox) => {
             (h, h + padding_v)
         }
-        // Percent height with unknown container height falls back to 0.0 (matches
-        // CSS conservative behavior for percent heights with auto parents).
-        (SizeDimension::Percent(_), _) => (0.0, padding_v),
+        (SizeDimension::Percent(p), BoxSizing::BorderBox) => {
+            let box_h = avail_h_gu.map(|h| h * p / 100.0).unwrap_or(0.0);
+            ((box_h - padding_v).max(0.0), box_h)
+        }
+        (SizeDimension::Percent(p), BoxSizing::ContentBox) => {
+            let content_h = avail_h_gu.map(|h| h * p / 100.0).unwrap_or(0.0);
+            (content_h, content_h + padding_v)
+        }
         (SizeDimension::Auto, _) if is_block || is_inline_block => {
             let c = intrinsic_block_height(world, tc_id, content_width_gu, unit_scale);
             (c, padding_v + c)
@@ -206,7 +294,7 @@ pub(crate) fn measure_container_items(
     world: &World,
     container_id: ComponentId,
     avail_w_gu: f32,
-    _avail_h_gu: Option<f32>,
+    avail_h_gu: Option<f32>,
     unit_scale: f32,
 ) -> Vec<MeasuredItem> {
     let children: Vec<ComponentId> = world.children_of(container_id).to_vec();
@@ -220,7 +308,7 @@ pub(crate) fn measure_container_items(
                     .unwrap_or(false)
                 && is_layout_item(world, child)
         })
-        .map(|child| measure_item(world, child, avail_w_gu, unit_scale))
+        .map(|child| measure_item(world, child, avail_w_gu, avail_h_gu, unit_scale))
         .collect()
 }
 
@@ -239,13 +327,7 @@ pub(crate) fn measure_items(
     world: &World,
     layout_id: ComponentId,
 ) -> (Vec<MeasuredItem>, f32, Option<f32>, f32) {
-    let (avail_w, avail_h, unit_scale) = {
-        let lc = match world.get_component_by_id_as::<LayoutComponent>(layout_id) {
-            Some(l) => l,
-            None => return (Vec::new(), 0.0, None, 1.0),
-        };
-        (lc.available_width, lc.available_height, lc.unit_scale)
-    };
+    let (avail_w, avail_h, unit_scale) = layout_root_available_bounds(world, layout_id);
 
     let items = measure_container_items(world, layout_id, avail_w, avail_h, unit_scale);
 
@@ -893,8 +975,67 @@ mod tests {
         let _ = world.add_child(row, color);
         let _ = world.add_child(color, text);
 
-        let measured = measure_item(&world, container, 29.5, 1.0);
+        let measured = measure_item(&world, container, 29.5, None, 1.0);
         assert_eq!(measured.content_height_gu, 0.0);
+    }
+
+    #[test]
+    fn percent_height_uses_known_container_height() {
+        let mut world = World::default();
+
+        let row = world.add_component_boxed_named("row", Box::new(TransformComponent::new()));
+        let row_style = world.add_component_boxed_named(
+            "row_style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.height = SizeDimension::Percent(25.0);
+                s
+            }),
+        );
+
+        let _ = world.add_child(row, row_style);
+
+        let measured = measure_item(&world, row, 20.0, Some(24.0), 1.0);
+        assert_eq!(measured.content_height_gu, 6.0);
+        assert_eq!(measured.box_height_gu, 6.0);
+    }
+
+    #[test]
+    fn layoutroot_world_units_resolve_against_ancestor_transform_scale() {
+        let mut world = World::default();
+
+        let panel = world.add_component_boxed_named(
+            "panel",
+            Box::new(TransformComponent::new().with_scale(0.1, 0.1, 0.1)),
+        );
+        let root = world.add_component(LayoutComponent::new(80.0).with_unit_scale(1.0));
+        world
+            .get_component_by_id_as_mut::<LayoutComponent>(root)
+            .unwrap()
+            .set_available_width_dimension(SizeDimension::WorldUnits(1.0));
+        world
+            .get_component_by_id_as_mut::<LayoutComponent>(root)
+            .unwrap()
+            .set_available_height_dimension(SizeDimension::WorldUnits(2.851));
+        let row = world.add_component_boxed_named("row", Box::new(TransformComponent::new()));
+        let row_style = world.add_component_boxed_named(
+            "row_style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.height = SizeDimension::Percent(25.0);
+                s
+            }),
+        );
+
+        let _ = world.add_child(panel, root);
+        let _ = world.add_child(root, row);
+        let _ = world.add_child(row, row_style);
+
+        let (items, avail_w, avail_h, _) = measure_items(&world, root);
+        assert!((avail_w - 10.0).abs() < 1e-4, "expected 1wu / 0.1scale => 10gu, got {avail_w}");
+        assert!((avail_h.unwrap_or_default() - 28.51).abs() < 1e-3, "expected 2.851wu / 0.1scale => 28.51gu, got {:?}", avail_h);
+        assert_eq!(items.len(), 1);
+        assert!((items[0].content_height_gu - 7.1275).abs() < 1e-3, "expected 25% of 28.51gu, got {}", items[0].content_height_gu);
     }
 
     #[test]
@@ -917,7 +1058,7 @@ mod tests {
         let _ = world.add_child(row, color);
         let _ = world.add_child(color, text);
 
-        let measured = measure_item(&world, row, 12.0, 1.0);
+        let measured = measure_item(&world, row, 12.0, None, 1.0);
         assert_eq!(measured.content_height_gu, 1.0);
     }
 
@@ -989,7 +1130,7 @@ mod tests {
         let _ = world.add_child(row, color);
         let _ = world.add_child(color, text);
 
-        let measured = measure_item(&world, container, 4.0, 1.0);
+        let measured = measure_item(&world, container, 4.0, None, 1.0);
         assert!(measured.content_height_gu > 1.0, "wrapped descendant layout text should increase intrinsic height");
     }
 
@@ -1011,7 +1152,7 @@ mod tests {
         let _ = world.add_child(tc, style);
         let _ = world.add_child(tc, text);
 
-        let measured = measure_item(&world, tc, 40.0, 1.0);
+        let measured = measure_item(&world, tc, 40.0, None, 1.0);
         assert_eq!(measured.content_width_gu, 3.0);
     }
 
@@ -1033,7 +1174,7 @@ mod tests {
         let _ = world.add_child(tc, style);
         let _ = world.add_child(tc, text);
 
-        let measured = measure_item(&world, tc, 40.0, 1.0);
+        let measured = measure_item(&world, tc, 40.0, None, 1.0);
         assert_eq!(measured.content_width_gu, 40.0);
     }
 
@@ -1056,7 +1197,7 @@ mod tests {
         let _ = world.add_child(tc, style);
         let _ = world.add_child(tc, text);
 
-        let measured = measure_item(&world, tc, 40.0, 1.0);
+        let measured = measure_item(&world, tc, 40.0, None, 1.0);
         assert_eq!(measured.content_width_gu, 12.0);
     }
 
@@ -1180,7 +1321,7 @@ mod tests {
         }));
         let _ = world.add_child(tc, style);
 
-        let measured = measure_item(&world, tc, 40.0, 1.0);
+        let measured = measure_item(&world, tc, 40.0, None, 1.0);
         assert_eq!(measured.content_width_gu, 20.0, "content stays at width(20) under content-box");
         assert_eq!(measured.box_width_gu, 24.0, "outer box = content + 2*padding");
     }
@@ -1199,7 +1340,7 @@ mod tests {
         }));
         let _ = world.add_child(tc, style);
 
-        let measured = measure_item(&world, tc, 40.0, 1.0);
+        let measured = measure_item(&world, tc, 40.0, None, 1.0);
         assert_eq!(measured.box_width_gu, 20.0, "outer box stays at width(20)");
         assert_eq!(measured.content_width_gu, 16.0, "content shrinks for padding");
     }
@@ -1312,7 +1453,7 @@ mod tests {
         }));
         let _ = world.add_child(tc, style);
 
-        let measured = measure_item(&world, tc, 40.0, 1.0);
+        let measured = measure_item(&world, tc, 40.0, None, 1.0);
         assert_eq!(measured.content_width_gu, 20.0);
     }
 
@@ -1382,7 +1523,7 @@ mod tests {
         }));
         let _ = world.add_child(tc, style);
 
-        let measured = measure_item(&world, tc, 40.0, 1.0);
+        let measured = measure_item(&world, tc, 40.0, None, 1.0);
         assert_eq!(measured.padding_left_gu, 4.0);
         assert_eq!(measured.padding_right_gu, 4.0);
         assert_eq!(measured.padding_top_gu, 4.0);
@@ -1403,7 +1544,7 @@ mod tests {
             s
         }));
         let _ = world.add_child(tc, style);
-        let measured = measure_item(&world, tc, 40.0, 1.0);
+        let measured = measure_item(&world, tc, 40.0, None, 1.0);
         assert_eq!(measured.content_width_gu, 20.0);
     }
 }

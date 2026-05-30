@@ -1,6 +1,13 @@
+use crate::engine::ecs::component::style::SizeDimension;
 use crate::engine::ecs::component::AnimationState;
 use crate::engine::ecs::{ComponentId, World};
 use std::sync::mpsc::Sender;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextInputCaretDirection {
+    Left,
+    Right,
+}
 
 /// Signal envelope.
 ///
@@ -152,6 +159,17 @@ pub enum EventSignal {
         content_height: f32,
     },
 
+    TextInputFocusChanged {
+        old: Option<ComponentId>,
+        new: Option<ComponentId>,
+    },
+
+    TextInputChanged {
+        component_id: ComponentId,
+        text: String,
+        caret: usize,
+    },
+
 }
 
 impl EventSignal {
@@ -167,6 +185,8 @@ impl EventSignal {
             EventSignal::Click { .. } => SignalKind::Click,
             EventSignal::SelectionChanged { .. } => SignalKind::SelectionChanged,
             EventSignal::Scrolling { .. } => SignalKind::Scrolling,
+            EventSignal::TextInputFocusChanged { .. } => SignalKind::TextInputFocusChanged,
+            EventSignal::TextInputChanged { .. } => SignalKind::TextInputChanged,
         }
     }
 }
@@ -233,7 +253,11 @@ pub enum IntentValue {
     },
     SetLayoutAvailableWidth {
         component_ids: Vec<ComponentId>,
-        width: f32,
+        width: SizeDimension,
+    },
+    SetLayoutAvailableHeight {
+        component_ids: Vec<ComponentId>,
+        height: SizeDimension,
     },
     SetLayoutInspect {
         component_ids: Vec<ComponentId>,
@@ -417,6 +441,23 @@ pub enum IntentValue {
     RegisterText {
         component_ids: Vec<ComponentId>,
     },
+    RegisterTextInput {
+        component_ids: Vec<ComponentId>,
+    },
+
+    TextInputSetFocus {
+        component_id: ComponentId,
+    },
+    TextInputClearFocus,
+    TextInputInsertText {
+        text: String,
+    },
+    TextInputBackspace,
+    TextInputDeleteForward,
+    TextInputMoveCaret {
+        direction: TextInputCaretDirection,
+        amount: usize,
+    },
 
     RegisterCollision {
         component_ids: Vec<ComponentId>,
@@ -552,6 +593,7 @@ impl IntentValue {
             IntentValue::SetText { .. } => "set_text",
             IntentValue::SetPosition { .. } => "set_position",
             IntentValue::SetLayoutAvailableWidth { .. } => "set_layout_available_width",
+            IntentValue::SetLayoutAvailableHeight { .. } => "set_layout_available_height",
             IntentValue::SetLayoutInspect { .. } => "set_layout_inspect",
 
             IntentValue::Attach { .. } => "attach",
@@ -606,6 +648,13 @@ impl IntentValue {
             IntentValue::RegisterTextureFiltering { .. } => "register_texture_filtering",
 
             IntentValue::RegisterText { .. } => "register_text",
+            IntentValue::RegisterTextInput { .. } => "register_text_input",
+            IntentValue::TextInputSetFocus { .. } => "text_input_set_focus",
+            IntentValue::TextInputClearFocus => "text_input_clear_focus",
+            IntentValue::TextInputInsertText { .. } => "text_input_insert_text",
+            IntentValue::TextInputBackspace => "text_input_backspace",
+            IntentValue::TextInputDeleteForward => "text_input_delete_forward",
+            IntentValue::TextInputMoveCaret { .. } => "text_input_move_caret",
 
             IntentValue::RegisterCollision { .. } => "register_collision",
             IntentValue::RemoveCollision { .. } => "remove_collision",
@@ -667,6 +716,8 @@ pub enum SignalKind {
     Click,
     SelectionChanged,
     Scrolling,
+    TextInputFocusChanged,
+    TextInputChanged,
 }
 
 /// Optional timing metadata on the signal envelope.

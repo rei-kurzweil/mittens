@@ -1137,32 +1137,84 @@ fn eval_method_call(
             if matches!(component_type.as_str(), "layout" | "LayoutRoot" | "LayoutComponent")
                 && method == "available_width"
             {
-                use crate::engine::ecs::component::LayoutComponent;
+                use crate::engine::ecs::system::layout::measure::layout_root_available_bounds;
                 let Some(world) = ctx.host_world else {
                     return Err("available_width(): no host world".into());
                 };
                 let world = unsafe { &mut *world };
-                let w = world
-                    .get_component_by_id_as::<LayoutComponent>(id)
-                    .map(|lo| lo.available_width as f64)
-                    .ok_or_else(|| "available_width(): not a LayoutComponent".to_string())?;
+                let (w, _, _) = layout_root_available_bounds(world, id);
+                if world.get_component_by_id_as::<crate::engine::ecs::component::LayoutComponent>(id).is_none() {
+                    return Err("available_width(): not a LayoutComponent".into());
+                }
+                let w = w as f64;
                 return Ok(Value::Number(w));
+            }
+
+            if matches!(component_type.as_str(), "layout" | "LayoutRoot" | "LayoutComponent")
+                && method == "available_height"
+            {
+                use crate::engine::ecs::system::layout::measure::layout_root_available_bounds;
+                let Some(world) = ctx.host_world else {
+                    return Err("available_height(): no host world".into());
+                };
+                let world = unsafe { &mut *world };
+                if world.get_component_by_id_as::<crate::engine::ecs::component::LayoutComponent>(id).is_none() {
+                    return Err("available_height(): not a LayoutComponent".into());
+                }
+                let (_, h, _) = layout_root_available_bounds(world, id);
+                let h = h
+                    .map(|value| value as f64)
+                    .ok_or_else(|| "available_height(): height is unset".to_string())?;
+                return Ok(Value::Number(h));
             }
 
             // Layout mutation: layout.set_available_width(N).
             if matches!(component_type.as_str(), "layout" | "LayoutRoot" | "LayoutComponent")
                 && method == "set_available_width"
             {
+                use crate::engine::ecs::component::style::SizeDimension;
+                use crate::meow_meow::token::Unit;
+
                 let width = match args.first() {
-                    Some(Value::Number(n)) => *n as f32,
-                    Some(other) => return Err(format!(
-                        "set_available_width: expected number argument, got {:?}", other
+                    Some(Value::Number(n)) => SizeDimension::GlyphUnits(*n as f32),
+                    Some(Value::Dimension { value, unit: Unit::GlyphUnits }) => SizeDimension::GlyphUnits(*value as f32),
+                    Some(Value::Dimension { value, unit: Unit::WorldUnits }) => SizeDimension::WorldUnits(*value as f32),
+                    Some(Value::Dimension { unit, .. }) => return Err(format!(
+                        "set_available_width: expected gu or wu dimension, got {:?}", unit
                     )),
-                    None => return Err("set_available_width: missing number argument".into()),
+                    Some(other) => return Err(format!(
+                        "set_available_width: expected number or dimension argument, got {:?}", other
+                    )),
+                    None => return Err("set_available_width: missing number or dimension argument".into()),
                 };
                 ctx.emits.push(IntentValue::SetLayoutAvailableWidth {
                     component_ids: vec![id],
                     width,
+                });
+                return Ok(Value::Null);
+            }
+
+            if matches!(component_type.as_str(), "layout" | "LayoutRoot" | "LayoutComponent")
+                && method == "set_available_height"
+            {
+                use crate::engine::ecs::component::style::SizeDimension;
+                use crate::meow_meow::token::Unit;
+
+                let height = match args.first() {
+                    Some(Value::Number(n)) => SizeDimension::GlyphUnits(*n as f32),
+                    Some(Value::Dimension { value, unit: Unit::GlyphUnits }) => SizeDimension::GlyphUnits(*value as f32),
+                    Some(Value::Dimension { value, unit: Unit::WorldUnits }) => SizeDimension::WorldUnits(*value as f32),
+                    Some(Value::Dimension { unit, .. }) => return Err(format!(
+                        "set_available_height: expected gu or wu dimension, got {:?}", unit
+                    )),
+                    Some(other) => return Err(format!(
+                        "set_available_height: expected number or dimension argument, got {:?}", other
+                    )),
+                    None => return Err("set_available_height: missing number or dimension argument".into()),
+                };
+                ctx.emits.push(IntentValue::SetLayoutAvailableHeight {
+                    component_ids: vec![id],
+                    height,
                 });
                 return Ok(Value::Null);
             }

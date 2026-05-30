@@ -26,7 +26,7 @@ use crate::engine::ecs::component::{
     TextureComponent, UVComponent,
     TransitionComponent, TransitionEasing, TransitionReplacePolicy,
     QuatTemporalFilterComponent, RaycastableComponent, RenderableComponent,
-    RendererSettingsComponent, RendererStatsComponent, TextComponent, TextShadowComponent,
+    RendererSettingsComponent, RendererStatsComponent, TextComponent, TextInputComponent, TextShadowComponent,
     StencilClipComponent, TextureFilteringComponent, TransformComponent, TransformDropComponent,
     TransformParentComponent,
     TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
@@ -862,6 +862,15 @@ fn arg_size_dimension(args: &[Value], i: usize) -> Result<SizeDimension, String>
     }
 }
 
+fn arg_layout_length(args: &[Value], i: usize) -> Result<SizeDimension, String> {
+    match arg_size_dimension(args, i)? {
+        SizeDimension::GlyphUnits(v) => Ok(SizeDimension::GlyphUnits(v)),
+        SizeDimension::WorldUnits(v) => Ok(SizeDimension::WorldUnits(v)),
+        SizeDimension::Percent(_) => Err("expected gu or wu length for LayoutRoot size, got percent".into()),
+        SizeDimension::Auto => Err("expected gu or wu length for LayoutRoot size, got auto".into()),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Component creation
 // ---------------------------------------------------------------------------
@@ -1093,6 +1102,7 @@ fn create_component(
             Ok(id)
         }
         "Text" => add!(TextComponent::new("")),
+        "TextInput" => add!(TextInputComponent::new("")),
         "TextShadow" => {
             let id = world.add_component(TextShadowComponent::new());
             if let Some(method) = ctor {
@@ -1158,8 +1168,11 @@ fn create_component(
         }
         "Style" => add!(StyleComponent::new()),
         "LayoutRoot" => {
-            let w = if !args.is_empty() { arg_f32(args, 0)? } else { 80.0 };
-            add!(LayoutComponent::new(w))
+            let mut layout = LayoutComponent::new(80.0);
+            if !args.is_empty() {
+                layout.set_available_width_dimension(arg_layout_length(args, 0)?);
+            }
+            add!(layout)
         }
         "Raycastable" => match ctor {
             Some("disabled") => add!(RaycastableComponent::disabled()),
@@ -1630,14 +1643,19 @@ fn apply_call(
     if let Some(l) = world.get_component_by_id_as_mut::<LayoutComponent>(id) {
         match method {
             "width" | "available_width" => {
-                l.available_width = arg_f32(args, 0)?;
-                l.dirty = true;
+                l.set_available_width_dimension(arg_layout_length(args, 0)?);
             }
             "height" | "available_height" => {
-                l.available_height = Some(arg_f32(args, 0)?);
-                l.dirty = true;
+                l.set_available_height_dimension(arg_layout_length(args, 0)?);
             }
-            "unit_scale" => l.unit_scale = arg_f32(args, 0)?,
+            "unit_scale" => l.set_unit_scale(arg_f32(args, 0)?),
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(text_input) = world.get_component_by_id_as_mut::<TextInputComponent>(id) {
+        match method {
+            "read_only" => text_input.read_only = arg_bool(args, 0)?,
             _ => {}
         }
         return Ok(());
@@ -2353,6 +2371,10 @@ fn apply_positional(world: &mut World, id: ComponentId, val: &Value) -> Result<(
     if let Value::String(s) = val {
         if let Some(t) = world.get_component_by_id_as_mut::<TextComponent>(id) {
             t.text = s.clone();
+            return Ok(());
+        }
+        if let Some(ti) = world.get_component_by_id_as_mut::<TextInputComponent>(id) {
+            ti.set_text(s.clone());
             return Ok(());
         }
     }

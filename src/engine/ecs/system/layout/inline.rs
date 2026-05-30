@@ -55,7 +55,13 @@ pub(crate) fn layout_items(
         // (text wrap, child layout) is computed at the final width.
         let item: MeasuredItem = if original.is_auto_width {
             let remaining = (avail_w_gu - cursor_x_gu).max(0.0);
-            super::measure::measure_item(world, original.tc_id, remaining, unit_scale)
+            super::measure::measure_item(
+                world,
+                original.tc_id,
+                remaining,
+                Some(original.content_height_gu),
+                unit_scale,
+            )
         } else {
             original.clone()
         };

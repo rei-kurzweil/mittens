@@ -6,7 +6,16 @@
 use std::collections::HashSet;
 
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::keyboard::Key;
+use winit::keyboard::{Key, NamedKey};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextInputFrameEvent {
+    InsertText(String),
+    Backspace,
+    DeleteForward,
+    MoveCaretLeft,
+    MoveCaretRight,
+}
 
 /// Snapshot of user input.
 ///
@@ -40,6 +49,8 @@ pub struct InputState {
 
     /// Accumulated wheel delta since last `begin_frame`.
     pub wheel_delta: (f32, f32),
+
+    text_input_events: Vec<TextInputFrameEvent>,
 }
 
 impl InputState {
@@ -74,6 +85,7 @@ impl InputState {
         self.mouse_pressed.clear();
         self.mouse_released.clear();
         self.wheel_delta = (0.0, 0.0);
+        self.text_input_events.clear();
     }
 
     #[inline]
@@ -126,6 +138,11 @@ impl InputState {
         } else {
             (0.0, 0.0)
         }
+    }
+
+    #[inline]
+    pub fn text_input_events(&self) -> &[TextInputFrameEvent] {
+        &self.text_input_events
     }
 }
 
@@ -188,6 +205,35 @@ impl UserInput {
                         self.state.keys_down.insert(key.clone());
                         if !was_down {
                             self.state.keys_pressed.insert(key);
+                        }
+                        match &event.logical_key {
+                            Key::Named(NamedKey::Backspace) => {
+                                self.state.text_input_events.push(TextInputFrameEvent::Backspace);
+                            }
+                            Key::Named(NamedKey::Delete) => {
+                                self.state
+                                    .text_input_events
+                                    .push(TextInputFrameEvent::DeleteForward);
+                            }
+                            Key::Named(NamedKey::ArrowLeft) => {
+                                self.state
+                                    .text_input_events
+                                    .push(TextInputFrameEvent::MoveCaretLeft);
+                            }
+                            Key::Named(NamedKey::ArrowRight) => {
+                                self.state
+                                    .text_input_events
+                                    .push(TextInputFrameEvent::MoveCaretRight);
+                            }
+                            _ => {}
+                        }
+                        if let Some(text) = event.text.as_ref() {
+                            let filtered: String = text.chars().filter(|c| !c.is_control()).collect();
+                            if !filtered.is_empty() {
+                                self.state
+                                    .text_input_events
+                                    .push(TextInputFrameEvent::InsertText(filtered));
+                            }
                         }
                     }
                     ElementState::Released => {

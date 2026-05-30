@@ -504,6 +504,51 @@ fn mms_layoutroot_available_width_and_percent_style_width_reach_live_components(
 }
 
 #[test]
+fn mms_layoutroot_available_size_accepts_gu_and_wu_independent_of_unit_scale_order() {
+    let src = r##"
+        LayoutRoot {
+            name = "gu_root"
+            available_width(34gu)
+            available_height(24gu)
+        }
+
+        LayoutRoot {
+            name = "wu_after"
+            available_width(4.0380833wu)
+            available_height(2.851wu)
+            unit_scale(2.851 / 24.0)
+        }
+
+        LayoutRoot {
+            name = "wu_before"
+            unit_scale(2.851 / 24.0)
+            available_width(4.0380833wu)
+            available_height(2.851wu)
+        }
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    for root_name in ["gu_root", "wu_after", "wu_before"] {
+        let root = world
+            .all_components()
+            .find(|&id| world.component_label(id) == Some(root_name))
+            .unwrap_or_else(|| panic!("missing root {root_name}"));
+        let layout = world
+            .get_component_by_id_as::<LayoutComponent>(root)
+            .expect("layout component on root");
+
+        assert!((layout.available_width - 34.0).abs() < 1e-4, "wrong width for {root_name}");
+        assert!((layout.available_height.unwrap_or_default() - 24.0).abs() < 1e-4, "wrong height for {root_name}");
+    }
+}
+
+#[test]
 fn handler_registered_inside_function_body_fires() {
     // Regression for: function-call EvalContext used to hard-code
     // `channels: None` / `host_world: None`, so `on(...)` inside a

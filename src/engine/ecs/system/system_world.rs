@@ -24,6 +24,7 @@ use crate::engine::ecs::system::ScrollingSystem;
 use crate::engine::ecs::system::SkinnedMeshSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TextSystem;
+use crate::engine::ecs::system::TextInputSystem;
 use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::TransitionSystem;
 use crate::engine::ecs::system::TransformStreamSystem;
@@ -85,6 +86,7 @@ pub struct SystemWorld {
     pub light: LightSystem,
 
     pub text: TextSystem,
+    pub text_input: TextInputSystem,
     pub render_to_texture: RenderToTextureSystem,
     pub texture: TextureSystem,
 }
@@ -302,7 +304,8 @@ impl SystemWorld {
 
         // Component lifecycle: remove any scoped handlers rooted in the deleted subtree.
         // Global handlers are unaffected.
-        let _ = self.rx.remove_all_scoped_handlers_for_scopes(nodes);
+        let _ = self.rx.remove_all_scoped_handlers_for_scopes(nodes.clone());
+        self.text_input.clear_focus_if_removed(&nodes);
     }
 
     pub fn new() -> Self {
@@ -738,6 +741,15 @@ impl SystemWorld {
 
     pub fn register_normal_vis(&mut self, world: &World, component: ComponentId) {
         self.renderable.register_normal_vis(world, component);
+    }
+
+    pub fn register_text_input(
+        &mut self,
+        world: &mut World,
+        component: ComponentId,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+    ) {
+        self.text_input.register_text_input(world, emit, component);
     }
 
     pub fn register_editor(
@@ -1584,6 +1596,7 @@ impl SystemWorld {
         self.rx.begin_frame();
         self.gesture.install_handlers(&mut self.rx);
         self.gesture.begin_frame();
+        self.text_input.install_handlers(&mut self.rx);
 
         // Process input first - it may queue commands
         self.input.process_input(world, input, queue, dt_sec);
@@ -1676,6 +1689,10 @@ impl SystemWorld {
             .tick_with_queue(world, input, queue, &mut self.rx);
 
         // Execute/dispatch gizmo-produced signals immediately (if any).
+        let _ = self.process_signals(world, visuals, queue, 100_000);
+
+        // Bridge buffered platform text input after gesture-driven focus changes have landed.
+        self.text_input.tick_with_queue(world, input, queue);
         let _ = self.process_signals(world, visuals, queue, 100_000);
 
         // Apply gizmo transform updates immediately so visuals reflect the drag this frame.

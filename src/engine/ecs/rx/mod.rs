@@ -10,6 +10,6 @@ pub use mutation_executor::RxMutationExecutor;
 pub use rx_world::RxWorld;
 pub use signal::{
     EventSignal, IntentSignal, IntentValue, Signal, SignalEmitter, SignalHandler, SignalKind,
-    SignalWhen,
+    SignalWhen, TextInputCaretDirection,
 };
 pub use signal_pipeline_processor::SignalPipelineProcessor;

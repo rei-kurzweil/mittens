@@ -250,6 +250,11 @@ impl RxMutationExecutor {
                     systems.register_text(world, visuals, component, emit);
                 }
             }
+            IntentValue::RegisterTextInput { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_text_input(world, component, emit);
+                }
+            }
             IntentValue::SetText {
                 component_ids,
                 text,
@@ -271,8 +276,17 @@ impl RxMutationExecutor {
                 let width = *width;
                 for &cid in component_ids.iter() {
                     if let Some(lo) = world.get_component_by_id_as_mut::<LayoutComponent>(cid) {
-                        lo.available_width = width;
-                        lo.dirty = true;
+                        lo.set_available_width_dimension(width);
+                    }
+                }
+            }
+
+            IntentValue::SetLayoutAvailableHeight { component_ids, height } => {
+                use crate::engine::ecs::component::LayoutComponent;
+                let height = *height;
+                for &cid in component_ids.iter() {
+                    if let Some(lo) = world.get_component_by_id_as_mut::<LayoutComponent>(cid) {
+                        lo.set_available_height_dimension(height);
                     }
                 }
             }
@@ -288,6 +302,15 @@ impl RxMutationExecutor {
                         }
                     }
                 }
+            }
+
+            IntentValue::TextInputSetFocus { .. }
+            | IntentValue::TextInputClearFocus
+            | IntentValue::TextInputInsertText { .. }
+            | IntentValue::TextInputBackspace
+            | IntentValue::TextInputDeleteForward
+            | IntentValue::TextInputMoveCaret { .. } => {
+                systems.text_input.execute_intent(world, emit, env);
             }
 
             IntentValue::RegisterCollision { component_ids } => {
