@@ -224,6 +224,16 @@ impl MeowMeowParser {
         let mut lhs = self.parse_prefix()?;
 
         loop {
+            if self.try_consume(&TokenKind::LBracket) {
+                let index = self.parse_expression()?;
+                self.consume(&TokenKind::RBracket)?;
+                lhs = Expression::Index {
+                    base: Box::new(lhs),
+                    index: Box::new(index),
+                };
+                continue;
+            }
+
             let Some((l_bp, r_bp, op)) = self.peek_infix_op() else { break };
             if l_bp < min_bp {
                 break;

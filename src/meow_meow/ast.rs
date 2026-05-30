@@ -33,6 +33,7 @@ pub enum Expression {
     Null,
     Identifier(Ident),
     Array(Vec<Expression>),
+    Index { base: Box<Expression>, index: Box<Expression> },
     Call(CallExpression),
     Component(ComponentExpression),
     BinaryOp { op: BinOpKind, lhs: Box<Expression>, rhs: Box<Expression> },

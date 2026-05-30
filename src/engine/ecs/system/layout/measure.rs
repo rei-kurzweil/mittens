@@ -117,7 +117,43 @@ pub(crate) fn layout_root_available_bounds(
         .authored_available_height
         .map(|height| resolve_layout_root_length_gu(height, lc.unit_scale, world_scale_y));
 
+    if trace_layout_id(world, layout_id) {
+        println!(
+            "[layout-trace] root={} id={:?} authored_w={:?} authored_h={:?} unit_scale={} ancestor_scale=({:.6},{:.6}) avail_gu=({:.6},{}) local_wu=({:.6},{}) final_wu=({:.6},{})",
+            trace_label(world, layout_id),
+            layout_id,
+            lc.authored_available_width,
+            lc.authored_available_height,
+            lc.unit_scale,
+            world_scale_x,
+            world_scale_y,
+            avail_w,
+            fmt_opt(avail_h),
+            avail_w * lc.unit_scale,
+            fmt_opt(avail_h.map(|h| h * lc.unit_scale)),
+            avail_w * lc.unit_scale * world_scale_x,
+            fmt_opt(avail_h.map(|h| h * lc.unit_scale * world_scale_y)),
+        );
+    }
+
     (avail_w, avail_h, lc.unit_scale)
+}
+
+pub(crate) fn layout_root_axis_scales(world: &World, layout_id: ComponentId) -> (f32, f32) {
+    layout_root_world_axis_scales(world, layout_id)
+}
+
+pub(crate) fn trace_layout_id(world: &World, id: ComponentId) -> bool {
+    let Some(label) = world.component_label(id) else { return false; };
+    label == "text_input_demo" || label.starts_with("row_")
+}
+
+pub(crate) fn trace_label(world: &World, id: ComponentId) -> String {
+    world.component_label(id).unwrap_or("<unnamed>").to_string()
+}
+
+pub(crate) fn fmt_opt(value: Option<f32>) -> String {
+    value.map(|v| format!("{v:.6}")).unwrap_or_else(|| "None".to_string())
 }
 
 /// Pass 1 — measure a single TC layout item.
@@ -268,6 +304,34 @@ pub(crate) fn measure_item(
         (SizeDimension::WorldUnits(_), _) => (0.0, padding_v),
     };
     let margin_box_height_gu = margin_top_gu + box_height_gu + margin_bottom_gu;
+
+    if trace_layout_id(world, tc_id) {
+        println!(
+            "[layout-trace] measure item={} id={:?} avail_gu=({:.6},{}) style_size=({:?},{:?}) padding_gu=({:.6},{:.6},{:.6},{:.6}) margin_gu=({:.6},{:.6},{:.6},{:.6}) content_gu=({:.6},{:.6}) box_gu=({:.6},{:.6}) margin_box_gu=({:.6},{:.6}) local_wu=({:.6},{:.6})",
+            trace_label(world, tc_id),
+            tc_id,
+            avail_w_gu,
+            fmt_opt(avail_h_gu),
+            width,
+            height,
+            padding_top_gu,
+            padding_right_gu,
+            padding_bottom_gu,
+            padding_left_gu,
+            margin_top_gu,
+            margin_right_gu,
+            margin_bottom_gu,
+            margin_left_gu,
+            content_width_gu,
+            content_height_gu,
+            box_width_gu,
+            box_height_gu,
+            margin_box_width_gu,
+            margin_box_height_gu,
+            box_width_gu * unit_scale,
+            box_height_gu * unit_scale,
+        );
+    }
 
     MeasuredItem {
         tc_id,

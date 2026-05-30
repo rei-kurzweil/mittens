@@ -761,6 +761,23 @@ fn eval_expr(
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Value::Array(vals))
         }
+        Expression::Index { base, index } => {
+            let base = eval_expr(base, ctx)?;
+            let index = eval_expr(index, ctx)?;
+            let Value::Array(items) = base else {
+                return Err(format!("index: expected array, got {:?}", base));
+            };
+            let Value::Number(n) = index else {
+                return Err(format!("index: expected numeric index, got {:?}", index));
+            };
+            if n.fract() != 0.0 || n < 0.0 {
+                return Err(format!("index: expected non-negative integer, got {n}"));
+            }
+            items
+                .get(n as usize)
+                .cloned()
+                .ok_or_else(|| format!("index: {n} out of bounds for array of {}", items.len()))
+        }
         Expression::Identifier(id) => {
             // Look up in scope chain; fall back to bare identifier value (for enum-like flags).
             match ctx.object_world.lookup(&id.0) {
@@ -1410,6 +1427,9 @@ fn eval_binop(
     match op {
         BinOpKind::Add => match (l, r) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
+            (Value::Dimension { value: a, unit: au }, Value::Dimension { value: b, unit: bu }) => {
+                dimension_add(a, au, b, bu)
+            }
             (Value::String(a), Value::String(b)) => Ok(Value::String(a + &b)),
             (Value::String(a), r) => Ok(Value::String(a + &value_display(&r))),
             (l, Value::String(b)) => Ok(Value::String(value_display(&l) + &b)),
@@ -1417,10 +1437,15 @@ fn eval_binop(
         },
         BinOpKind::Sub => match (l, r) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a - b)),
+            (Value::Dimension { value: a, unit: au }, Value::Dimension { value: b, unit: bu }) => {
+                dimension_sub(a, au, b, bu)
+            }
             (l, r) => Err(format!("type error: cannot subtract {:?} from {:?}", r, l)),
         },
         BinOpKind::Mul => match (l, r) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a * b)),
+            (Value::Dimension { value, unit }, Value::Number(n))
+            | (Value::Number(n), Value::Dimension { value, unit }) => dimension_scale(value, unit, n),
             (l, r) => Err(format!("type error: cannot multiply {:?} and {:?}", l, r)),
         },
         BinOpKind::Div => match (l, r) {
@@ -1429,6 +1454,12 @@ fn eval_binop(
                     return Err("division by zero".to_string());
                 }
                 Ok(Value::Number(a / b))
+            }
+            (Value::Dimension { value, unit }, Value::Number(n)) => {
+                if n == 0.0 {
+                    return Err("division by zero".to_string());
+                }
+                dimension_scale(value, unit, 1.0 / n)
             }
             (l, r) => Err(format!("type error: cannot divide {:?} by {:?}", l, r)),
         },
@@ -1456,10 +1487,51 @@ fn eval_unaryop(
     match op {
         UnaryOpKind::Neg => match val {
             Value::Number(n) => Ok(Value::Number(-n)),
+            Value::Dimension { value, unit } => Ok(Value::Dimension { value: -value, unit }),
             v => Err(format!("type error: cannot negate {:?}", v)),
         },
         UnaryOpKind::Not => Ok(Value::Bool(!is_truthy(&val))),
     }
+}
+
+fn dimension_add(
+    lhs: f64,
+    lhs_unit: crate::meow_meow::token::Unit,
+    rhs: f64,
+    rhs_unit: crate::meow_meow::token::Unit,
+) -> Result<Value, String> {
+    use crate::meow_meow::token::Unit;
+    if lhs_unit != rhs_unit {
+        return Err(format!(
+            "type error: cannot add dimensions with different units {:?} and {:?}",
+            lhs_unit, rhs_unit
+        ));
+    }
+    if lhs_unit == Unit::Percent {
+        return Err("type error: percent arithmetic requires a layout boundary".into());
+    }
+    Ok(Value::Dimension { value: lhs + rhs, unit: lhs_unit })
+}
+
+fn dimension_sub(
+    lhs: f64,
+    lhs_unit: crate::meow_meow::token::Unit,
+    rhs: f64,
+    rhs_unit: crate::meow_meow::token::Unit,
+) -> Result<Value, String> {
+    dimension_add(lhs, lhs_unit, -rhs, rhs_unit)
+}
+
+fn dimension_scale(
+    value: f64,
+    unit: crate::meow_meow::token::Unit,
+    scale: f64,
+) -> Result<Value, String> {
+    use crate::meow_meow::token::Unit;
+    if unit == Unit::Percent {
+        return Err("type error: percent arithmetic requires a layout boundary".into());
+    }
+    Ok(Value::Dimension { value: value * scale, unit })
 }
 
 // ---------------------------------------------------------------------------

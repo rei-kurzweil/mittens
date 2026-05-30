@@ -633,6 +633,23 @@ fn expression_to_value(e: &Expression) -> Result<Value, String> {
                 .collect::<Result<_, _>>()?;
             Ok(Value::Array(vals))
         }
+        Expression::Index { base, index } => {
+            let base = expression_to_value(base)?;
+            let index = expression_to_value(index)?;
+            let Value::Array(items) = base else {
+                return Err(format!("index: expected array, got {:?}", base));
+            };
+            let Value::Number(n) = index else {
+                return Err(format!("index: expected numeric index, got {:?}", index));
+            };
+            if n.fract() != 0.0 || n < 0.0 {
+                return Err(format!("index: expected non-negative integer, got {n}"));
+            }
+            items
+                .get(n as usize)
+                .cloned()
+                .ok_or_else(|| format!("index: {n} out of bounds for array of {}", items.len()))
+        }
         Expression::UnaryOp { op: UnaryOpKind::Neg, operand } => {
             match expression_to_value(operand)? {
                 Value::Number(n) => Ok(Value::Number(-n)),
@@ -683,6 +700,16 @@ fn val_as_f32(v: &Value) -> Result<f32, String> {
     match v {
         Value::Number(n) => Ok(*n as f32),
         other => Err(format!("expected number, got {other:?}")),
+    }
+}
+
+fn val_as_world_f32(v: &Value) -> Result<f32, String> {
+    use crate::meow_meow::token::Unit;
+    match v {
+        Value::Number(n) => Ok(*n as f32),
+        Value::Dimension { value, unit: Unit::WorldUnits } => Ok(*value as f32),
+        Value::Dimension { unit, .. } => Err(format!("expected number or wu dimension, got {:?}", unit)),
+        other => Err(format!("expected number or wu dimension, got {other:?}")),
     }
 }
 
@@ -737,6 +764,7 @@ fn arg(args: &[Value], i: usize) -> Result<&Value, String> {
 }
 
 fn arg_f32(args: &[Value], i: usize) -> Result<f32, String> { val_as_f32(arg(args, i)?) }
+fn arg_world_f32(args: &[Value], i: usize) -> Result<f32, String> { val_as_world_f32(arg(args, i)?) }
 fn arg_bool(args: &[Value], i: usize) -> Result<bool, String> { val_as_bool(arg(args, i)?) }
 fn arg_str(args: &[Value], i: usize) -> Result<&str, String> { val_as_str(arg(args, i)?) }
 fn arg_f32_arr<const N: usize>(args: &[Value], i: usize) -> Result<[f32; N], String> { val_as_f32_array(arg(args, i)?) }
@@ -1630,8 +1658,8 @@ fn apply_call(
     // Transform builders
     if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(id) {
         match method {
-            "position" => *t = t.clone().with_position(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?),
-            "scale"    => *t = t.clone().with_scale(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?),
+            "position" => *t = t.clone().with_position(arg_world_f32(args, 0)?, arg_world_f32(args, 1)?, arg_world_f32(args, 2)?),
+            "scale"    => *t = t.clone().with_scale(arg_world_f32(args, 0)?, arg_world_f32(args, 1)?, arg_world_f32(args, 2)?),
             "rotation" | "rotation_euler" => *t = t.clone().with_rotation_euler(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?),
             "rotation_quat" => *t = t.clone().with_rotation_quat([
                 arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?, arg_f32(args, 3)?,
@@ -2392,8 +2420,8 @@ fn apply_transform_builder(
     args: &[Value],
 ) -> Result<TransformComponent, String> {
     match method {
-        "position"       => Ok(c.with_position(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?)),
-        "scale"          => Ok(c.with_scale(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?)),
+        "position"       => Ok(c.with_position(arg_world_f32(args, 0)?, arg_world_f32(args, 1)?, arg_world_f32(args, 2)?)),
+        "scale"          => Ok(c.with_scale(arg_world_f32(args, 0)?, arg_world_f32(args, 1)?, arg_world_f32(args, 2)?)),
         "rotation" | "rotation_euler" => Ok(c.with_rotation_euler(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?)),
         // Lossless quaternion form — used by `to_mms_ast` so saved/cloned
         // transforms reproduce exactly, including arbitrary axis rotations.
@@ -2406,4 +2434,3 @@ fn apply_transform_builder(
         }
     }
 }
-

@@ -25,7 +25,8 @@ use crate::engine::ecs::component::style::Display;
 pub fn layout(world: &mut World, emit: &mut dyn SignalEmitter, layout_id: ComponentId) {
     let (items, avail_w_gu, _avail_h_gu, unit_scale) = measure_items(world, layout_id);
     let viz = super::block::layout_root_has_inspect(world, layout_id);
-    layout_items(world, emit, &items, avail_w_gu, unit_scale, 0, viz);
+    let axis_scales = super::measure::layout_root_axis_scales(world, layout_id);
+    layout_items(world, emit, &items, avail_w_gu, unit_scale, axis_scales, 0, viz);
 }
 
 /// Inline-formatting-context layout over a pre-measured item list.
@@ -40,6 +41,7 @@ pub(crate) fn layout_items(
     items: &[MeasuredItem],
     avail_w_gu: f32,
     unit_scale: f32,
+    axis_scales: (f32, f32),
     depth: i32,
     viz: bool,
 ) {
@@ -83,16 +85,36 @@ pub(crate) fn layout_items(
             .unwrap_or([1.0, 1.0, 1.0]);
 
         let composed_z = resolved_z;
+        let translation = [
+            content_origin_x_gu * unit_scale,
+            -(content_origin_y_gu * unit_scale),
+            composed_z,
+        ];
+
+        if super::measure::trace_layout_id(world, item.tc_id) {
+            println!(
+                "[layout-trace] place-inline item={} id={:?} cursor_gu=({:.6},{:.6}) content_origin_gu=({:.6},{:.6}) local_translation=({:.6},{:.6},{:.6}) final_delta_wu=({:.6},{:.6}) item_box_final_wu=({:.6},{:.6})",
+                super::measure::trace_label(world, item.tc_id),
+                item.tc_id,
+                cursor_x_gu,
+                cursor_y_gu,
+                content_origin_x_gu,
+                content_origin_y_gu,
+                translation[0],
+                translation[1],
+                translation[2],
+                translation[0] * axis_scales.0,
+                translation[1] * axis_scales.1,
+                item.box_width_gu * unit_scale * axis_scales.0,
+                item.box_height_gu * unit_scale * axis_scales.1,
+            );
+        }
 
         emit.push_intent_now(
             item.tc_id,
             IntentValue::UpdateTransform {
                 component_ids: vec![item.tc_id],
-                translation: [
-                    content_origin_x_gu * unit_scale,
-                    -(content_origin_y_gu * unit_scale),
-                    composed_z,
-                ],
+                translation,
                 rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
                 scale: tc_scale,
             },
@@ -141,7 +163,7 @@ pub(crate) fn layout_items(
                 depth
             };
             if all_inline_block {
-                layout_items(world, emit, &nested_items, item.content_width_gu, unit_scale, child_depth, viz);
+                layout_items(world, emit, &nested_items, item.content_width_gu, unit_scale, axis_scales, child_depth, viz);
             } else {
                 super::block::layout_items_for(world, emit, &nested_items, unit_scale, child_depth, viz);
             }

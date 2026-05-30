@@ -52,8 +52,9 @@ pub fn layout(
 ) {
     let (items, _avail_w, _avail_h, unit_scale) = measure_items(world, layout_id);
     let viz = layout_root_has_inspect(world, layout_id);
+    let axis_scales = super::measure::layout_root_axis_scales(world, layout_id);
 
-    layout_items(world, emit, &items, unit_scale, 0, viz);
+    layout_items(world, emit, &items, unit_scale, axis_scales, 0, viz);
 }
 
 /// Public-to-the-layout-module entry so `inline::layout_items` can recurse
@@ -66,7 +67,7 @@ pub(crate) fn layout_items_for(
     depth: i32,
     viz: bool,
 ) {
-    layout_items(world, emit, items, unit_scale, depth, viz);
+    layout_items(world, emit, items, unit_scale, (1.0, 1.0), depth, viz);
 }
 
 /// `depth` is the *layer* depth from the LayoutRoot (0 at root). Sibling items
@@ -81,6 +82,7 @@ fn layout_items(
     emit: &mut dyn SignalEmitter,
     items: &[MeasuredItem],
     unit_scale: f32,
+    axis_scales: (f32, f32),
     depth: i32,
     viz: bool,
 ) {
@@ -105,16 +107,35 @@ fn layout_items(
             .unwrap_or([1.0, 1.0, 1.0]);
 
         let composed_z = resolved_z;
+        let translation = [
+              content_origin_x_gu * unit_scale,
+            -(content_origin_y_gu * unit_scale),
+                                composed_z,
+        ];
+
+        if super::measure::trace_layout_id(world, item.tc_id) {
+            println!(
+                "[layout-trace] place item={} id={:?} cursor_gu={:.6} content_origin_gu=({:.6},{:.6}) local_translation=({:.6},{:.6},{:.6}) final_delta_wu=({:.6},{:.6}) item_box_final_wu=({:.6},{:.6})",
+                super::measure::trace_label(world, item.tc_id),
+                item.tc_id,
+                cursor_gu,
+                content_origin_x_gu,
+                content_origin_y_gu,
+                translation[0],
+                translation[1],
+                translation[2],
+                translation[0] * axis_scales.0,
+                translation[1] * axis_scales.1,
+                item.box_width_gu * unit_scale * axis_scales.0,
+                item.box_height_gu * unit_scale * axis_scales.1,
+            );
+        }
 
         emit.push_intent_now(
             item.tc_id,
             IntentValue::UpdateTransform {
                 component_ids: vec![item.tc_id],
-                translation: [
-                      content_origin_x_gu * unit_scale,
-                    -(content_origin_y_gu * unit_scale),
-                                        composed_z,
-                ],
+                translation,
                 rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
                 scale: tc_scale,
             },
@@ -168,11 +189,12 @@ fn layout_items(
                     &nested_items,
                     item.content_width_gu,
                     unit_scale,
+                    axis_scales,
                     child_depth,
                     viz,
                 );
             } else {
-                layout_items(world, emit, &nested_items, unit_scale, child_depth, viz);
+                layout_items(world, emit, &nested_items, unit_scale, axis_scales, child_depth, viz);
             }
         }
 

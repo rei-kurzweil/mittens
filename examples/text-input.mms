@@ -12,7 +12,7 @@ I {
 
 let meme_dimensions = [2.85188wu, 4wu]
 
-let bg_quad = T.position(0.0, 1.7, -0.3).scale(meme_dimensions[0], meme_dimensions[1], 1.0) {
+let bg_quad = T.scale(meme_dimensions[0], meme_dimensions[1], 1.0) {
     R.square() {
         C.rgba(1.0, 1.0, 1.0, 1.0)
         Texture.with_uri("assets/images/expanding-brain.png")
@@ -20,14 +20,14 @@ let bg_quad = T.position(0.0, 1.7, -0.3).scale(meme_dimensions[0], meme_dimensio
     }
 }
 
-let panel = T.position(-meme_dimensions[0] / 2.0, -meme_dimensions[1] / 2.0, 0.0).scale(0.10, 0.10, 0.10) {
+let panel = T.position(-meme_dimensions[0] / 2.0, meme_dimensions[1] / 2.0, 0.0).scale(0.10, 0.10, 0.10) {
     LayoutRoot {
         name = "text_input_demo"
         available_width(meme_dimensions[0])
         available_height(meme_dimensions[1])
         T {
             name = "row_1"
-            Style {
+            Style {s
                 height(25%)
                 margin_bottom(0.8)
                 padding(0.35)
@@ -41,7 +41,8 @@ let panel = T.position(-meme_dimensions[0] / 2.0, -meme_dimensions[1] / 2.0, 0.0
                     width(50%)
                     padding_xy(0.75, 0.65)
                     color = [0.07, 0.08, 0.10, 1.0]
-                    word_wrap("break-word")
+                    font_size(2.0)
+                    
                 }
                 TextInput {
                     "eating meat"
@@ -65,7 +66,8 @@ let panel = T.position(-meme_dimensions[0] / 2.0, -meme_dimensions[1] / 2.0, 0.0
                     width(50%)
                     padding_xy(0.75, 0.65)
                     color = [0.0, 0.0, 0.0, 1.0]
-                    word_wrap("break-word")
+                    font_size(1.25)
+                    
                 }
                 TextInput {
                     "being a vegetarian"
@@ -89,7 +91,7 @@ let panel = T.position(-meme_dimensions[0] / 2.0, -meme_dimensions[1] / 2.0, 0.0
                     width(50%)
                     padding_xy(0.75, 0.65)
                     color = [0.0, 0.0, 0.0, 1.0]
-                    word_wrap("break-word")
+                    font_size(2.0)
                 }
                 TextInput {
                     "being vegan"
@@ -112,7 +114,7 @@ let panel = T.position(-meme_dimensions[0] / 2.0, -meme_dimensions[1] / 2.0, 0.0
                     width(50%)
                     padding_xy(0.75, 0.65)
                     color = [0.0, 0.0, 0.0, 1.0]
-                    word_wrap("break-word")
+                    font_size(1.5)
                 }
                 TextInput {
                     "letting animals eat you"
@@ -122,8 +124,11 @@ let panel = T.position(-meme_dimensions[0] / 2.0, -meme_dimensions[1] / 2.0, 0.0
     }
 }
 
-bg_quad
-panel
+// meme anchor 
+T.position(0.0, 2.0, -0.3) {
+    bg_quad
+    panel
+}
 
 T.position(0.0, 4.2, 1.6) {
     PL {
@@ -142,7 +147,7 @@ BGC {
 }
 
 // ground plane
-T.position(0.0, 0.0, 0.0).rotation(-1.5708, 0.0, 0.0).scale(400.0, 400.0, 1.0) {
+T.position(0.0, 0.0, 0.0).rotation(-1.5708, 0.0, 0.0).scale(400.0, 400.0, 0.01) {
     R.square() {
         C.rgba(0.85, 0.85, 0.85, 1.0)
         EM.on()

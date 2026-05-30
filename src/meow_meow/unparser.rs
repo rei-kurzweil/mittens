@@ -213,6 +213,12 @@ impl<'a> Printer<'a> {
                 }
                 self.out.push(']');
             }
+            Expression::Index { base, index } => {
+                self.atom(base);
+                self.out.push('[');
+                self.expression(index);
+                self.out.push(']');
+            }
             Expression::Call(c) => self.call(c),
             Expression::Component(c) => self.component(c),
             Expression::BinaryOp { op, lhs, rhs } => self.binop(op, lhs, rhs),
@@ -237,6 +243,7 @@ impl<'a> Printer<'a> {
         match e {
             Expression::BinaryOp { .. }
             | Expression::UnaryOp { .. }
+            | Expression::Index { .. }
             | Expression::Function { .. } => {
                 self.out.push('(');
                 self.expression(e);

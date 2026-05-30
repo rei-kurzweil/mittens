@@ -181,6 +181,10 @@ fn qd_expr(expr: &mut Expression) {
             qd_expr(rhs);
         }
         Expression::UnaryOp { operand, .. } => qd_expr(operand),
+        Expression::Index { base, index } => {
+            qd_expr(base);
+            qd_expr(index);
+        }
         Expression::Call(call) => {
             for arg in call.args.iter_mut() {
                 qd_expr(arg);
