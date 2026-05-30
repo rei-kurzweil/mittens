@@ -490,6 +490,8 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             hand_bone,
         );
         let chain_id = world.add_component(chain);
+        let chain_serialize_id = world.add_component(SerializeComponent::off());
+        let _ = world.set_parent(chain_serialize_id, Some(chain_id));
         // Parent under AVC for cleanup; the solver itself ignores the chain's parent.
         emit_attach(emit, id, chain_id);
     }

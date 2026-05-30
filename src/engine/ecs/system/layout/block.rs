@@ -22,7 +22,7 @@ use crate::engine::ecs::component::{
     ColorComponent, InspectLayoutComponent, OpacityComponent, Overflow, RenderableComponent,
     RouterComponent, ScrollingComponent, StencilClipComponent,
     RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType,
-    StyleComponent, TextComponent, TransformComponent,
+    SerializeComponent, StyleComponent, TextComponent, TransformComponent,
 };
 use crate::engine::ecs::system::ScrollingSystem;
 use super::box_model_viz::sync_box_model_viz;
@@ -827,6 +827,9 @@ fn spawn_bg_quad(
     let bg_id = world.add_component_boxed_named("__bg", Box::new(TransformComponent::new()));
     let _ = world.add_child(parent_tc_id, bg_id);
 
+    let serialize_id = world.add_component(SerializeComponent::off());
+    let _ = world.add_child(bg_id, serialize_id);
+
     let color_id = world.add_component(ColorComponent { rgba });
     let _ = world.add_child(bg_id, color_id);
 
@@ -844,7 +847,7 @@ fn spawn_bg_quad(
 
 #[cfg(test)]
 mod tests {
-    use crate::engine::ecs::component::{ColorComponent, LayoutComponent, StencilClipComponent, StyleComponent, TextComponent, TransformComponent};
+    use crate::engine::ecs::component::{ColorComponent, LayoutComponent, SerializeComponent, StencilClipComponent, StyleComponent, TextComponent, TransformComponent};
     use crate::engine::ecs::component::style::{EdgeInsets, SizeDimension};
     use crate::engine::ecs::{CommandQueue, SystemWorld, World};
     use crate::engine::graphics::VisualWorld;
@@ -899,6 +902,50 @@ mod tests {
 
         assert_eq!(item_tc.transform.translation, [0.75, -0.75, 0.0]);
         assert!(world.children_of(item).iter().any(|&child| world.component_label(child) == Some("__bg")));
+    }
+
+    #[test]
+    fn block_layout_marks_owned_background_quad_serialize_off() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut layout_system = LayoutSystem::new();
+
+        let root = world.add_component(LayoutComponent::new(20.0).with_height(8.0));
+        let item = world.add_component_boxed_named("item", Box::new(TransformComponent::new()));
+        let item_style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.width = SizeDimension::GlyphUnits(6.0);
+            style.height = SizeDimension::GlyphUnits(2.0);
+            style.background_color = Some([0.2, 0.3, 0.4, 1.0]);
+            style
+        });
+
+        let _ = world.add_child(root, item);
+        let _ = world.add_child(item, item_style);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let bg = world
+            .children_of(item)
+            .iter()
+            .copied()
+            .find(|&child| world.component_label(child) == Some("__bg"))
+            .expect("expected layout-owned __bg child");
+        let serialize = world
+            .children_of(bg)
+            .iter()
+            .copied()
+            .find(|&child| world.get_component_by_id_as::<SerializeComponent>(child).is_some())
+            .expect("expected serialize marker on __bg");
+        assert!(world
+            .get_component_by_id_as::<SerializeComponent>(serialize)
+            .is_some_and(|marker| !marker.enabled));
     }
 
     #[test]
