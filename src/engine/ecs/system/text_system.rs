@@ -455,6 +455,41 @@ impl TextSystem {
         state.max_col = state.max_col.max(state.col);
         (state.max_col as f32 * font_size, (state.row + 1) as f32 * font_size)
     }
+
+    pub fn caret_local_position(
+        text: &str,
+        caret: usize,
+        wrap_at: usize,
+        word_wrap: bool,
+        word_wrap_tokens: &[String],
+        font_size: f32,
+    ) -> (f32, f32) {
+        let chars: Vec<char> = text.chars().collect();
+        let wrap_allowed_after = compute_wrap_allowed_after(&chars, word_wrap_tokens);
+        let word_run_len = compute_word_run_len(&wrap_allowed_after);
+        let mut state = WordWrapState::new(wrap_at, word_wrap, font_size);
+        let caret = caret.min(chars.len());
+
+        for (i, ch) in chars.iter().copied().enumerate().take(caret) {
+            if ch == '\n' {
+                state.newline();
+                continue;
+            }
+            state.apply_wrap_if_needed();
+            if ch == ' ' {
+                state.advance_space(i, &wrap_allowed_after);
+                continue;
+            }
+            if ch == '\t' {
+                state.advance_tab(i, &wrap_allowed_after);
+                continue;
+            }
+            state.apply_word_wrap_lookahead(word_run_len.get(i).copied().unwrap_or(1));
+            state.advance_glyph(i, &wrap_allowed_after);
+        }
+
+        state.cursor_pos()
+    }
 }
 
 fn compute_wrap_allowed_after(chars: &[char], tokens: &[String]) -> Vec<bool> {

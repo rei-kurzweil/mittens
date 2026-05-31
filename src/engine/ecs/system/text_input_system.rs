@@ -1,5 +1,9 @@
-use crate::engine::ecs::component::{TextComponent, TextInputComponent, TransformComponent};
+use crate::engine::ecs::component::{
+    ColorComponent, OpacityComponent, RaycastableComponent, RenderableComponent,
+    SerializeComponent, TextComponent, TextInputComponent, TransformComponent,
+};
 use crate::engine::ecs::rx::TextInputCaretDirection;
+use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalKind, World,
 };
@@ -13,6 +17,12 @@ pub struct TextInputSystem {
 
 const OWNED_TEXT_INPUT_CONTENT_LABEL: &str = "__text_input_content";
 const OWNED_TEXT_INPUT_TEXT_LABEL: &str = "__text_input_text";
+const OWNED_TEXT_INPUT_CARET_BG_LABEL: &str = "__text_input_caret_bg";
+const OWNED_TEXT_INPUT_CARET_BG_OPACITY_LABEL: &str = "__text_input_caret_bg_opacity";
+const CARET_BG_RGBA: [f32; 4] = [1.0, 0.86, 0.24, 1.0];
+const CARET_BG_OPACITY_FOCUSED: f32 = 0.8;
+const CARET_BG_OPACITY_HIDDEN: f32 = 0.0;
+const CARET_BG_Z: f32 = -0.01;
 
 impl TextInputSystem {
     pub fn new() -> Self {
@@ -56,6 +66,9 @@ impl TextInputSystem {
 
         let target = ensure_text_target(world, emit, component)
             .or_else(|| resolve_text_target(world, component));
+
+        let _ = ensure_caret_bg(world, emit, component, target);
+        sync_caret_bg(world, emit, component, target);
 
         if let Some(target) = target {
             emit.push_intent_now(
@@ -181,7 +194,7 @@ impl TextInputSystem {
                 });
             }
             IntentValue::TextInputMoveCaret { direction, amount } => {
-                self.move_caret(world, env.scope, *direction, *amount);
+                self.move_caret(world, emit, env.scope, *direction, *amount);
             }
             _ => {}
         }
@@ -206,6 +219,10 @@ impl TextInputSystem {
             {
                 input.focused = true;
             }
+            let target = ensure_text_target(world, emit, component_id)
+                .or_else(|| resolve_text_target(world, component_id));
+            let _ = ensure_caret_bg(world, emit, component_id, target);
+            sync_caret_bg(world, emit, component_id, target);
             return;
         }
 
@@ -214,12 +231,19 @@ impl TextInputSystem {
             {
                 old_input.focused = false;
             }
+            let old_target = resolve_text_target(world, old_id);
+            sync_caret_bg(world, emit, old_id, old_target);
         }
         if let Some(new_input) = world.get_component_by_id_as_mut::<TextInputComponent>(component_id)
         {
             new_input.focused = true;
         }
         self.focused = Some(component_id);
+
+        let target = ensure_text_target(world, emit, component_id)
+            .or_else(|| resolve_text_target(world, component_id));
+        let _ = ensure_caret_bg(world, emit, component_id, target);
+        sync_caret_bg(world, emit, component_id, target);
 
         emit.push_event(
             component_id,
@@ -243,6 +267,8 @@ impl TextInputSystem {
         if let Some(old_input) = world.get_component_by_id_as_mut::<TextInputComponent>(old_id) {
             old_input.focused = false;
         }
+        let old_target = resolve_text_target(world, old_id);
+        sync_caret_bg(world, emit, old_id, old_target);
         emit.push_event(
             scope,
             EventSignal::TextInputFocusChanged {
@@ -255,6 +281,7 @@ impl TextInputSystem {
     fn move_caret(
         &mut self,
         world: &mut World,
+        emit: &mut dyn SignalEmitter,
         scope: ComponentId,
         direction: TextInputCaretDirection,
         amount: usize,
@@ -271,6 +298,8 @@ impl TextInputSystem {
                 }
             }
         }
+        let target = resolve_text_target(world, focused);
+        sync_caret_bg(world, emit, focused, target);
     }
 
     fn apply_text_edit(
@@ -297,7 +326,8 @@ impl TextInputSystem {
             return;
         }
 
-        if let Some(target) = resolve_text_target(world, focused) {
+        let target = resolve_text_target(world, focused);
+        if let Some(target) = target {
             emit.push_intent_now(
                 focused,
                 IntentValue::SetText {
@@ -306,6 +336,7 @@ impl TextInputSystem {
                 },
             );
         }
+        sync_caret_bg(world, emit, focused, target);
         emit.push_event(
             focused,
             EventSignal::TextInputChanged {
@@ -321,6 +352,70 @@ fn resolve_text_target(world: &World, root: ComponentId) -> Option<ComponentId> 
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
         if node != root && world.get_component_by_id_as::<TextComponent>(node).is_some() {
+            return Some(node);
+        }
+        for &child in world.children_of(node).iter().rev() {
+            stack.push(child);
+        }
+    }
+    None
+}
+
+fn sync_caret_bg(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    root: ComponentId,
+    text_target: Option<ComponentId>,
+) {
+    let Some((caret_bg, opacity_id, x, y, visible)) = caret_bg_sync_state(world, root, text_target)
+    else {
+        return;
+    };
+
+    if let Some(transform) = world.get_component_by_id_as_mut::<TransformComponent>(caret_bg) {
+        transform.set_position(emit, x, y, CARET_BG_Z);
+    }
+
+    if let Some(opacity) = world.get_component_by_id_as_mut::<OpacityComponent>(opacity_id) {
+        opacity.opacity = if visible {
+            CARET_BG_OPACITY_FOCUSED
+        } else {
+            CARET_BG_OPACITY_HIDDEN
+        };
+        emit.push_intent_now(
+            opacity_id,
+            IntentValue::RegisterOpacity {
+                component_ids: vec![opacity_id],
+            },
+        );
+    }
+}
+
+fn caret_bg_sync_state(
+    world: &World,
+    root: ComponentId,
+    text_target: Option<ComponentId>,
+) -> Option<(ComponentId, ComponentId, f32, f32, bool)> {
+    let input = world.get_component_by_id_as::<TextInputComponent>(root)?;
+    let text_target = text_target?;
+    let caret_bg = resolve_named_descendant(world, root, OWNED_TEXT_INPUT_CARET_BG_LABEL)?;
+    let opacity_id = resolve_named_descendant(world, caret_bg, OWNED_TEXT_INPUT_CARET_BG_OPACITY_LABEL)?;
+    let text = world.get_component_by_id_as::<TextComponent>(text_target)?;
+    let (x, y) = TextSystem::caret_local_position(
+        &input.text,
+        input.caret,
+        text.wrap_at,
+        text.word_wrap,
+        &text.word_wrap_tokens,
+        text.font_size,
+    );
+    Some((caret_bg, opacity_id, x, y, input.focused))
+}
+
+fn resolve_named_descendant(world: &World, root: ComponentId, label: &str) -> Option<ComponentId> {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        if node != root && world.component_label(node) == Some(label) {
             return Some(node);
         }
         for &child in world.children_of(node).iter().rev() {
@@ -347,12 +442,57 @@ fn ensure_text_target(
         OWNED_TEXT_INPUT_TEXT_LABEL,
         Box::new(TextComponent::new("")),
     );
+    let raycastable = world.add_component_boxed_named(
+        "__text_input_raycastable",
+        Box::new(RaycastableComponent::enabled()),
+    );
 
     let _ = world.add_child(root, content);
     let _ = world.add_child(content, text);
+    let _ = world.add_child(text, raycastable);
     world.init_component_tree(content, emit);
 
     Some(text)
+}
+
+fn ensure_caret_bg(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    root: ComponentId,
+    text_target: Option<ComponentId>,
+) -> Option<ComponentId> {
+    if let Some(existing) = resolve_named_descendant(world, root, OWNED_TEXT_INPUT_CARET_BG_LABEL) {
+        return Some(existing);
+    }
+
+    let host = text_target.and_then(|text_target| world.parent_of(text_target)).unwrap_or(root);
+    let bg = world.add_component_boxed_named(
+        OWNED_TEXT_INPUT_CARET_BG_LABEL,
+        Box::new(
+            TransformComponent::new()
+                .with_position(0.5, -0.5, CARET_BG_Z)
+                .with_scale(1.0, 1.0, 1.0),
+        ),
+    );
+    let _ = world.add_child(host, bg);
+
+    let serialize = world.add_component(SerializeComponent::off());
+    let _ = world.add_child(bg, serialize);
+
+    let color = world.add_component(ColorComponent { rgba: CARET_BG_RGBA });
+    let _ = world.add_child(bg, color);
+
+    let renderable = world.add_component(RenderableComponent::square());
+    let _ = world.add_child(color, renderable);
+
+    let opacity = world.add_component_boxed_named(
+        OWNED_TEXT_INPUT_CARET_BG_OPACITY_LABEL,
+        Box::new(OpacityComponent::new().with_opacity(CARET_BG_OPACITY_HIDDEN)),
+    );
+    let _ = world.add_child(renderable, opacity);
+
+    world.init_component_tree(bg, emit);
+    Some(bg)
 }
 
 fn nearest_text_input_ancestor(world: &World, start: ComponentId) -> Option<ComponentId> {
@@ -387,7 +527,7 @@ fn char_to_byte_index(text: &str, char_index: usize) -> usize {
 mod tests {
     use super::*;
     use crate::engine::ecs::CommandQueue;
-    use crate::engine::ecs::component::TransformComponent;
+    use crate::engine::ecs::component::{OpacityComponent, TransformComponent};
     use crate::engine::ecs::system::SystemWorld;
     use crate::engine::graphics::VisualWorld;
 
@@ -425,5 +565,37 @@ mod tests {
             .get_component_by_id_as::<TextComponent>(resolve_text_target(&world, input).expect("spawned backing text"))
             .expect("text component");
         assert_eq!(text_state.text, "hi!");
+
+        let text_target = resolve_text_target(&world, input).expect("spawned backing text");
+        let has_raycastable = world.children_of(text_target).iter().copied().any(|child| {
+            world
+                .get_component_by_id_as::<RaycastableComponent>(child)
+                .is_some_and(|raycastable| raycastable.enable)
+        });
+        assert!(has_raycastable, "text input backing text should be raycastable");
+
+        let caret_bg = resolve_named_descendant(&world, input, OWNED_TEXT_INPUT_CARET_BG_LABEL)
+            .expect("text input caret background");
+        let caret_bg_transform = world
+            .get_component_by_id_as::<TransformComponent>(caret_bg)
+            .expect("caret bg transform");
+        assert_eq!(caret_bg_transform.transform.translation, [3.5, -0.5, CARET_BG_Z]);
+
+        let caret_bg_opacity = resolve_named_descendant(&world, caret_bg, OWNED_TEXT_INPUT_CARET_BG_OPACITY_LABEL)
+            .expect("caret bg opacity");
+        let caret_bg_opacity = world
+            .get_component_by_id_as::<OpacityComponent>(caret_bg_opacity)
+            .expect("caret bg opacity component");
+        assert!((caret_bg_opacity.opacity - CARET_BG_OPACITY_FOCUSED).abs() < 1e-6);
+
+        queue.push_intent_now(input, IntentValue::TextInputClearFocus);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        let caret_bg_opacity = resolve_named_descendant(&world, caret_bg, OWNED_TEXT_INPUT_CARET_BG_OPACITY_LABEL)
+            .expect("caret bg opacity after clear");
+        let caret_bg_opacity = world
+            .get_component_by_id_as::<OpacityComponent>(caret_bg_opacity)
+            .expect("caret bg opacity component after clear");
+        assert!(caret_bg_opacity.opacity.abs() < 1e-6);
     }
 }

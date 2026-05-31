@@ -27,7 +27,7 @@ let panel = T.position(-meme_dimensions[0] / 2.0, meme_dimensions[1] / 2.0, 0.0)
         available_height(meme_dimensions[1])
         T {
             name = "row_1"
-            Style {s
+            Style {
                 height(25%)
                 margin_bottom(0.8)
                 padding(0.35)
@@ -124,11 +124,13 @@ let panel = T.position(-meme_dimensions[0] / 2.0, meme_dimensions[1] / 2.0, 0.0)
     }
 }
 
+
 // meme anchor 
 T.position(0.0, 2.0, -0.3) {
     bg_quad
     panel
 }
+
 
 T.position(0.0, 4.2, 1.6) {
     PL {
