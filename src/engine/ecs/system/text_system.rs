@@ -144,6 +144,15 @@ fn compute_word_run_len(wrap_allowed_after: &[bool]) -> Vec<usize> {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub enum TextLayoutEvent {
+    BeforeChar {
+        index: usize,
+        ch: char,
+        state: WordWrapState,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct SpawnedGlyph {
     pub transform: ComponentId,
     pub renderable: ComponentId,
@@ -237,32 +246,60 @@ impl TextSystem {
         (r_id, uv_id, tex_id)
     }
 
-    fn handle_word_wrap_for(
-        ch: char,
-        i: usize,
-        wrap_allowed_after: &[bool],
-        state: &mut WordWrapState,
-    ) -> bool {
-        if ch == '\n' {
-            state.newline();
-            return false;
+    fn walk_text_layout<F>(
+        text: &str,
+        wrap_at: usize,
+        word_wrap: bool,
+        word_wrap_tokens: &[String],
+        font_size: f32,
+        mut callback: F,
+    ) -> WordWrapState
+    where
+        F: FnMut(TextLayoutEvent) -> bool,
+    {
+        let chars: Vec<char> = text.chars().collect();
+        let wrap_allowed_after = compute_wrap_allowed_after(&chars, word_wrap_tokens);
+        let word_run_len = compute_word_run_len(&wrap_allowed_after);
+        let mut state = WordWrapState::new(wrap_at, word_wrap, font_size);
+
+        for (i, ch) in chars.iter().copied().enumerate() {
+            if ch == '\n' {
+                if !callback(TextLayoutEvent::BeforeChar { index: i, ch, state }) {
+                    break;
+                }
+                state.newline();
+                continue;
+            }
+
+            state.apply_wrap_if_needed();
+
+            if ch == ' ' {
+                if !callback(TextLayoutEvent::BeforeChar { index: i, ch, state }) {
+                    break;
+                }
+                state.advance_space(i, &wrap_allowed_after);
+                continue;
+            }
+
+            if ch == '\t' {
+                if !callback(TextLayoutEvent::BeforeChar { index: i, ch, state }) {
+                    break;
+                }
+                state.advance_tab(i, &wrap_allowed_after);
+                continue;
+            }
+
+            state.apply_word_wrap_lookahead(word_run_len.get(i).copied().unwrap_or(1));
+
+            if !callback(TextLayoutEvent::BeforeChar { index: i, ch, state }) {
+                break;
+            }
+
+            state.advance_glyph(i, &wrap_allowed_after);
         }
 
-        state.apply_wrap_if_needed();
-
-        // Huge perf win for code/text: don't spawn quads for whitespace.
-        // Still advance the cursor so words separate visually.
-        if ch == ' ' {
-            state.advance_space(i, wrap_allowed_after);
-            return false;
-        }
-
-        if ch == '\t' {
-            state.advance_tab(i, wrap_allowed_after);
-            return false;
-        }
-
-        true
+        state.max_col = state.max_col.max(state.col);
+        state
     }
 
     pub fn register_text(
@@ -351,91 +388,89 @@ impl TextSystem {
 
         let mut spawned = Vec::new();
 
-        let chars: Vec<char> = text.chars().collect();
-        let wrap_allowed_after: Vec<bool> = compute_wrap_allowed_after(&chars, &word_wrap_tokens);
-        let word_run_len = compute_word_run_len(&wrap_allowed_after);
-
-        let mut wrap_state = WordWrapState::new(wrap_at, word_wrap, font_size);
-
-        for (i, ch) in chars.iter().copied().enumerate() {
-            if !Self::handle_word_wrap_for(ch, i, &wrap_allowed_after, &mut wrap_state) {
-                continue;
-            }
-            wrap_state.apply_word_wrap_lookahead(word_run_len.get(i).copied().unwrap_or(1));
-
-            let (x, y) = wrap_state.cursor_pos();
-            let t = TransformComponent::new().with_position(x, y, 0.0).with_scale(font_size, font_size, 1.0);
-            let t_id = world.add_component(t);
-            let _ = world.add_child(component, t_id);
-            let t_serialize = world.add_component(SerializeComponent::off());
-            let _ = world.add_child(t_id, t_serialize);
-
-            let glyph_uvs = uvs_for_glyph(ch);
-            let (r_id, uv_id, tex_id) = Self::spawn_glyph_quad(
-                world,
-                t_id,
-                glyph_uvs.clone(),
-                &inherited_font_texture_uri,
-                inherited_filtering,
-                inherited_emissive,
-                inherited_raycastable,
-                None,
-            );
-
-            if let Some(text_input_root) = text_input_root {
-                let hit = world.add_component(TextInputGlyphHitComponent {
-                    text_input_root,
-                    text_target: component,
-                    char_index: i,
-                });
-                let _ = world.add_child(r_id, hit);
-            }
-
-            if let Some(shadow) = shadow {
-                let z_back = -shadow.offset[2].abs();
-                let mut spawn_shadow = |scale: f32, z: f32| {
-                    let ot = TransformComponent::new()
-                        .with_position(shadow.offset[0], shadow.offset[1], z)
-                        .with_scale(scale, scale, 1.0);
-                    let ot_id = world.add_component(ot);
-                    let _ = world.add_child(t_id, ot_id);
-                    let ot_serialize = world.add_component(SerializeComponent::off());
-                    let _ = world.add_child(ot_id, ot_serialize);
-
-                    // Shadow quad: no raycasting by default.
-                    let _ = Self::spawn_glyph_quad(
-                        world,
-                        ot_id,
-                        glyph_uvs.clone(),
-                        &inherited_font_texture_uri,
-                        inherited_filtering,
-                        inherited_emissive,
-                        None,
-                        Some(shadow.rgba),
-                    );
-                };
-
-                // If the shadow is expanded (>1.0), spawn two shadow glyphs.
-                if shadow.scale > 1.0 {
-                    spawn_shadow(1.0 / (shadow.scale * 1.3), z_back);
-                    spawn_shadow(shadow.scale, z_back * 2.0);
-                } else {
-                    spawn_shadow(shadow.scale, z_back);
+        let _ = Self::walk_text_layout(
+            &text,
+            wrap_at,
+            word_wrap,
+            &word_wrap_tokens,
+            font_size,
+            |event| {
+                let TextLayoutEvent::BeforeChar { index: i, ch, state } = event;
+                if ch == ' ' || ch == '\t' || ch == '\n' {
+                    return true;
                 }
-            }
 
-            spawned.push(SpawnedGlyph {
-                transform: t_id,
-                renderable: r_id,
-                uv: uv_id,
-                texture: tex_id,
-            });
+                let (x, y) = state.cursor_pos();
+                let t = TransformComponent::new().with_position(x, y, 0.0).with_scale(font_size, font_size, 1.0);
+                let t_id = world.add_component(t);
+                let _ = world.add_child(component, t_id);
+                let t_serialize = world.add_component(SerializeComponent::off());
+                let _ = world.add_child(t_id, t_serialize);
 
-            wrap_state.advance_glyph(i, &wrap_allowed_after);
-        }
+                let glyph_uvs = uvs_for_glyph(ch);
+                let (r_id, uv_id, tex_id) = Self::spawn_glyph_quad(
+                    world,
+                    t_id,
+                    glyph_uvs.clone(),
+                    &inherited_font_texture_uri,
+                    inherited_filtering,
+                    inherited_emissive,
+                    inherited_raycastable,
+                    None,
+                );
 
-        // Finalize max_col to include the last (non-wrapped) line.
-        wrap_state.max_col = wrap_state.max_col.max(wrap_state.col);
+                if let Some(text_input_root) = text_input_root {
+                    let hit = world.add_component(TextInputGlyphHitComponent {
+                        text_input_root,
+                        text_target: component,
+                        char_index: i,
+                    });
+                    let _ = world.add_child(r_id, hit);
+                }
+
+                if let Some(shadow) = shadow {
+                    let z_back = -shadow.offset[2].abs();
+                    let mut spawn_shadow = |scale: f32, z: f32| {
+                        let ot = TransformComponent::new()
+                            .with_position(shadow.offset[0], shadow.offset[1], z)
+                            .with_scale(scale, scale, 1.0);
+                        let ot_id = world.add_component(ot);
+                        let _ = world.add_child(t_id, ot_id);
+                        let ot_serialize = world.add_component(SerializeComponent::off());
+                        let _ = world.add_child(ot_id, ot_serialize);
+
+                        // Shadow quad: no raycasting by default.
+                        let _ = Self::spawn_glyph_quad(
+                            world,
+                            ot_id,
+                            glyph_uvs.clone(),
+                            &inherited_font_texture_uri,
+                            inherited_filtering,
+                            inherited_emissive,
+                            None,
+                            Some(shadow.rgba),
+                        );
+                    };
+
+                    // If the shadow is expanded (>1.0), spawn two shadow glyphs.
+                    if shadow.scale > 1.0 {
+                        spawn_shadow(1.0 / (shadow.scale * 1.3), z_back);
+                        spawn_shadow(shadow.scale, z_back * 2.0);
+                    } else {
+                        spawn_shadow(shadow.scale, z_back);
+                    }
+                }
+
+                spawned.push(SpawnedGlyph {
+                    transform: t_id,
+                    renderable: r_id,
+                    uv: uv_id,
+                    texture: tex_id,
+                });
+
+                true
+            },
+        );
 
         spawned
     }
@@ -452,30 +487,15 @@ impl TextSystem {
         word_wrap_tokens: &[String],
         font_size: f32,
     ) -> (f32, f32) {
-        let chars: Vec<char> = text.chars().collect();
-        let wrap_allowed_after = compute_wrap_allowed_after(&chars, word_wrap_tokens);
-        let word_run_len = compute_word_run_len(&wrap_allowed_after);
-        let mut state = WordWrapState::new(wrap_at, word_wrap, font_size);
+        let state = Self::walk_text_layout(
+            text,
+            wrap_at,
+            word_wrap,
+            word_wrap_tokens,
+            font_size,
+            |_| true,
+        );
 
-        for (i, ch) in chars.iter().copied().enumerate() {
-            if ch == '\n' {
-                state.newline();
-                continue;
-            }
-            state.apply_wrap_if_needed();
-            if ch == ' ' {
-                state.advance_space(i, &wrap_allowed_after);
-                continue;
-            }
-            if ch == '\t' {
-                state.advance_tab(i, &wrap_allowed_after);
-                continue;
-            }
-            state.apply_word_wrap_lookahead(word_run_len.get(i).copied().unwrap_or(1));
-            state.advance_glyph(i, &wrap_allowed_after);
-        }
-
-        state.max_col = state.max_col.max(state.col);
         (state.max_col as f32 * font_size, (state.row + 1) as f32 * font_size)
     }
 
@@ -487,43 +507,25 @@ impl TextSystem {
         word_wrap_tokens: &[String],
         font_size: f32,
     ) -> (f32, f32) {
-        let chars: Vec<char> = text.chars().collect();
-        let wrap_allowed_after = compute_wrap_allowed_after(&chars, word_wrap_tokens);
-        let word_run_len = compute_word_run_len(&wrap_allowed_after);
-        let mut state = WordWrapState::new(wrap_at, word_wrap, font_size);
-        let index = index.min(chars.len());
-
-        for (i, ch) in chars.iter().copied().enumerate().take(index) {
-            if ch == '\n' {
-                state.newline();
-                continue;
-            }
-            state.apply_wrap_if_needed();
-            if ch == ' ' {
-                state.advance_space(i, &wrap_allowed_after);
-                continue;
-            }
-            if ch == '\t' {
-                state.advance_tab(i, &wrap_allowed_after);
-                continue;
-            }
-            state.apply_word_wrap_lookahead(word_run_len.get(i).copied().unwrap_or(1));
-            state.advance_glyph(i, &wrap_allowed_after);
-        }
-
-        if index < chars.len() {
-            let ch = chars[index];
-            if ch != '\n' {
-                state.apply_wrap_if_needed();
-                if ch != ' ' && ch != '\t' {
-                    state.apply_word_wrap_lookahead(
-                        word_run_len.get(index).copied().unwrap_or(1),
-                    );
+        let mut result = None;
+        let state = Self::walk_text_layout(
+            text,
+            wrap_at,
+            word_wrap,
+            word_wrap_tokens,
+            font_size,
+            |event| {
+                match event {
+                    TextLayoutEvent::BeforeChar { index: i, state, .. } if i == index => {
+                        result = Some(state.cursor_pos());
+                        false
+                    }
+                    _ => true,
                 }
-            }
-        }
+            },
+        );
 
-        state.cursor_pos()
+        result.unwrap_or_else(|| state.cursor_pos())
     }
 
     pub fn caret_local_position(
