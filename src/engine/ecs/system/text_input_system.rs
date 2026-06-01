@@ -1,6 +1,7 @@
 use crate::engine::ecs::component::{
     ColorComponent, OpacityComponent, RaycastableComponent, RenderableComponent,
-    SerializeComponent, TextComponent, TextInputComponent, TransformComponent,
+    SerializeComponent, TextComponent, TextInputComponent, TextInputGlyphHitComponent,
+    TransformComponent,
 };
 use crate::engine::ecs::rx::TextInputCaretDirection;
 use crate::engine::ecs::system::TextSystem;
@@ -40,6 +41,28 @@ impl TextInputSystem {
                 return;
             };
 
+            // 1. Try glyph hit metadata first for caret placement.
+            let glyph_hit = world.children_of(*renderable).iter().copied().find_map(|child| {
+                world.get_component_by_id_as::<TextInputGlyphHitComponent>(child).copied()
+            });
+
+            if let Some(hit) = glyph_hit {
+                emit.push_intent_now(
+                    hit.text_input_root,
+                    IntentValue::TextInputSetFocus {
+                        component_id: hit.text_input_root,
+                    },
+                );
+                emit.push_intent_now(
+                    hit.text_input_root,
+                    IntentValue::TextInputMoveCaretTo {
+                        index: hit.char_index,
+                    },
+                );
+                return;
+            }
+
+            // 2. Fallback to general text input focus.
             if let Some(component_id) = nearest_text_input_ancestor(world, *renderable) {
                 emit.push_intent_now(
                     component_id,
@@ -196,6 +219,9 @@ impl TextInputSystem {
             IntentValue::TextInputMoveCaret { direction, amount } => {
                 self.move_caret(world, emit, env.scope, *direction, *amount);
             }
+            IntentValue::TextInputMoveCaretTo { index } => {
+                self.move_caret_to(world, emit, env.scope, *index);
+            }
             _ => {}
         }
     }
@@ -297,6 +323,24 @@ impl TextInputSystem {
                     input.caret = (input.caret + amount).min(char_count)
                 }
             }
+        }
+        let target = resolve_text_target(world, focused);
+        sync_caret_bg(world, emit, focused, target);
+    }
+
+    fn move_caret_to(
+        &mut self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        scope: ComponentId,
+        index: usize,
+    ) {
+        let Some(focused) = self.focused.filter(|focused| *focused == scope) else {
+            return;
+        };
+        if let Some(input) = world.get_component_by_id_as_mut::<TextInputComponent>(focused) {
+            let char_count = input.text.chars().count();
+            input.caret = index.min(char_count);
         }
         let target = resolve_text_target(world, focused);
         sync_caret_bg(world, emit, focused, target);
@@ -597,5 +641,80 @@ mod tests {
             .get_component_by_id_as::<OpacityComponent>(caret_bg_opacity)
             .expect("caret bg opacity component after clear");
         assert!(caret_bg_opacity.opacity.abs() < 1e-6);
-    }
-}
+        }
+
+        #[test]
+        fn text_input_glyph_click_moves_caret() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+
+        // 1. Setup TextInput with "hello"
+        let root = world.add_component(TransformComponent::new());
+        let input = world.add_component(TextInputComponent::new("hello"));
+        let _ = world.add_child(root, input);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        // 2. Identify the 'e' glyph (index 1)
+        let text_target = resolve_text_target(&world, input).expect("backing text");
+        let mut e_glyph_renderable = None;
+        for &t_id in world.children_of(text_target) {
+            for &r_id in world.children_of(t_id) {
+                if world.get_component_by_id_as::<RenderableComponent>(r_id).is_some() {
+                    let hit = world.children_of(r_id).iter().copied().find_map(|child| {
+                        world.get_component_by_id_as::<TextInputGlyphHitComponent>(child)
+                    });
+                    if let Some(hit) = hit {
+                        if hit.char_index == 1 {
+                            e_glyph_renderable = Some(r_id);
+                            break;
+                        }
+                    }
+                }
+            }
+            if e_glyph_renderable.is_some() {
+                break;
+            }
+        }
+
+        let e_glyph = e_glyph_renderable.expect("found 'e' glyph at index 1");
+
+        // 3. Simulate click on 'e' glyph
+        // Handlers must be installed for the click to trigger intents.
+        systems.text_input.install_handlers(&mut systems.rx);
+
+        queue.push_event(
+            input,
+            EventSignal::Click {
+                raycaster: input, // doesn't matter for this test
+                renderable: e_glyph,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: Some((0.0, 0.0)),
+            },
+        );
+
+        // process_commands will run the global click handler, which pushes intents,
+        // then it will execute those intents.
+        systems.process_commands(&mut world, &mut visuals, &mut queue);
+
+        // 4. Verify caret moved to 1
+        let input_state = world
+            .get_component_by_id_as::<TextInputComponent>(input)
+            .expect("text input component");
+        assert_eq!(input_state.caret, 1, "Caret should have moved to clicked glyph index 1");
+        assert!(input_state.focused, "TextInput should be focused after click");
+
+        // 5. Verify caret background updated position
+        let caret_bg = resolve_named_descendant(&world, input, OWNED_TEXT_INPUT_CARET_BG_LABEL)
+            .expect("text input caret background");
+        let caret_bg_transform = world
+            .get_component_by_id_as::<TransformComponent>(caret_bg)
+            .expect("caret bg transform");
+        // 'e' is at index 1. In monospace 1.0 font size, cursor for index 1 is at x=1.0.
+        // TextSystem::caret_local_position("hello", 1, ...) returns (1.0, 0.0) -> centered at (1.5, -0.5)
+        assert_eq!(caret_bg_transform.transform.translation, [1.5, -0.5, CARET_BG_Z]);
+        }
+        }

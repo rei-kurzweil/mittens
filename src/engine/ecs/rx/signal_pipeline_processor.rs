@@ -154,6 +154,7 @@ impl SignalPipelineProcessor {
             | IntentValue::TextInputBackspace
             | IntentValue::TextInputDeleteForward
             | IntentValue::TextInputMoveCaret { .. }
+            | IntentValue::TextInputMoveCaretTo { .. }
             | IntentValue::RegisterSignalRouteUpward { .. }
             | IntentValue::RemoveSignalRouteUpward { .. }
             | IntentValue::SpawnComponentTree { .. } => None,
@@ -256,6 +257,7 @@ impl SignalPipelineProcessor {
             IntentValue::TextInputBackspace => None,
             IntentValue::TextInputDeleteForward => None,
             IntentValue::TextInputMoveCaret { .. } => None,
+            IntentValue::TextInputMoveCaretTo { .. } => None,
             IntentValue::SpawnComponentTree { .. } => None,
         }
     }

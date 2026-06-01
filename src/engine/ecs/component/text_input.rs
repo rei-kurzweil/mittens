@@ -109,3 +109,26 @@ impl Component for TextInputComponent {
         node
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct TextInputGlyphHitComponent {
+    pub text_input_root: ComponentId,
+    pub text_target: ComponentId,
+    pub char_index: usize,
+}
+
+impl Component for TextInputGlyphHitComponent {
+    fn name(&self) -> &'static str {
+        "text_input_glyph_hit"
+    }
+
+    fn set_id(&mut self, _id: ComponentId) {}
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}

@@ -2,7 +2,8 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     ColorComponent, EmissiveComponent, OpacityComponent, RaycastableComponent, RenderableComponent,
-    SerializeComponent, TextComponent, TextShadowComponent, TextureComponent,
+    SerializeComponent, TextComponent, TextInputComponent, TextInputGlyphHitComponent,
+    TextShadowComponent, TextureComponent,
     TextureFilteringComponent, TransformComponent, TransparentCutoutComponent, UVComponent,
 };
 use crate::engine::ecs::{EventSignal, IntentValue};
@@ -335,6 +336,19 @@ impl TextSystem {
             text_comp.mark_built();
         }
 
+        let text_input_root = {
+            let mut cur = world.parent_of(component);
+            let mut found = None;
+            while let Some(node) = cur {
+                if world.get_component_by_id_as::<TextInputComponent>(node).is_some() {
+                    found = Some(node);
+                    break;
+                }
+                cur = world.parent_of(node);
+            }
+            found
+        };
+
         let mut spawned = Vec::new();
 
         let chars: Vec<char> = text.chars().collect();
@@ -367,6 +381,15 @@ impl TextSystem {
                 inherited_raycastable,
                 None,
             );
+
+            if let Some(text_input_root) = text_input_root {
+                let hit = world.add_component(TextInputGlyphHitComponent {
+                    text_input_root,
+                    text_target: component,
+                    char_index: i,
+                });
+                let _ = world.add_child(r_id, hit);
+            }
 
             if let Some(shadow) = shadow {
                 let z_back = -shadow.offset[2].abs();

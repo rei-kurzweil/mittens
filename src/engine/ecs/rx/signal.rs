@@ -458,6 +458,9 @@ pub enum IntentValue {
         direction: TextInputCaretDirection,
         amount: usize,
     },
+    TextInputMoveCaretTo {
+        index: usize,
+    },
 
     RegisterCollision {
         component_ids: Vec<ComponentId>,
@@ -655,6 +658,7 @@ impl IntentValue {
             IntentValue::TextInputBackspace => "text_input_backspace",
             IntentValue::TextInputDeleteForward => "text_input_delete_forward",
             IntentValue::TextInputMoveCaret { .. } => "text_input_move_caret",
+            IntentValue::TextInputMoveCaretTo { .. } => "text_input_move_caret_to",
 
             IntentValue::RegisterCollision { .. } => "register_collision",
             IntentValue::RemoveCollision { .. } => "remove_collision",

@@ -168,7 +168,7 @@ pub use style::{
     Overflow, Position, SizeDimension, StyleComponent, StylePatch, TextAlign, WordWrapMode,
 };
 pub use text::TextComponent;
-pub use text_input::TextInputComponent;
+pub use text_input::{TextInputComponent, TextInputGlyphHitComponent};
 pub use text_shadow::TextShadowComponent;
 pub use texture::{CatEngineTextureFormat, TextureComponent};
 pub use texture_filtering::TextureFilteringComponent;

@@ -309,7 +309,9 @@ impl RxMutationExecutor {
             | IntentValue::TextInputInsertText { .. }
             | IntentValue::TextInputBackspace
             | IntentValue::TextInputDeleteForward
-            | IntentValue::TextInputMoveCaret { .. } => {
+            | IntentValue::TextInputMoveCaret { .. }
+            | IntentValue::TextInputMoveCaretTo { .. } => {
+
                 systems.text_input.execute_intent(world, emit, env);
             }
 
