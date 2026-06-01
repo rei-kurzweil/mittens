@@ -30,7 +30,7 @@ use crate::engine::ecs::system::TransitionSystem;
 use crate::engine::ecs::system::TransformStreamSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
-use crate::engine::ecs::system::{AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, GestureSystem, HeadPoseBodyXzFollowSystem, IKSystem, InspectorSystem, LayoutSystem, TransformGizmoSystem};
+use crate::engine::ecs::system::{AssetsSystem, AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, GestureSystem, HeadPoseBodyXzFollowSystem, IKSystem, InspectorSystem, LayoutSystem, TransformGizmoSystem};
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 
@@ -65,6 +65,7 @@ pub struct SystemWorld {
 
     pub editor: EditorSystem,
     pub inspector: InspectorSystem,
+    pub assets: AssetsSystem,
     pub avatar_body_yaw: AvatarBodyYawSystem,
     pub avatar_control: AvatarControlSystem,
     pub head_pose_body_xz_follow: HeadPoseBodyXzFollowSystem,
