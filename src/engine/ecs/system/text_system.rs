@@ -144,7 +144,7 @@ fn compute_word_run_len(wrap_allowed_after: &[bool]) -> Vec<usize> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum TextLayoutEvent {
+enum TextLayoutEvent {
     BeforeChar {
         index: usize,
         ch: char,
@@ -388,6 +388,7 @@ impl TextSystem {
 
         let mut spawned = Vec::new();
 
+        let is_text_input = text_input_root.is_some();
         let _ = Self::walk_text_layout(
             &text,
             wrap_at,
@@ -396,7 +397,52 @@ impl TextSystem {
             font_size,
             |event| {
                 let TextLayoutEvent::BeforeChar { index: i, ch, state } = event;
-                if ch == ' ' || ch == '\t' || ch == '\n' {
+
+                if ch == ' ' || ch == '\t' {
+                    if !is_text_input {
+                        return true;
+                    }
+
+                    let (x, y) = state.cursor_pos();
+                    let width = if ch == '\t' {
+                        font_size * WordWrapState::TAB_WIDTH as f32
+                    } else {
+                        font_size
+                    };
+
+                    let t = TransformComponent::new()
+                        .with_position(x, y, 0.0)
+                        .with_scale(width, font_size, 1.0);
+                    let t_id = world.add_component(t);
+                    let _ = world.add_child(component, t_id);
+                    let t_serialize = world.add_component(SerializeComponent::off());
+                    let _ = world.add_child(t_id, t_serialize);
+
+                    let color = world.add_component(ColorComponent { rgba: [0.0, 0.0, 0.0, 0.0] });
+                    let _ = world.add_child(t_id, color);
+
+                    let r_id = world.add_component(RenderableComponent::square());
+                    let _ = world.add_child(color, r_id);
+
+                    if let Some(rc) = inherited_raycastable {
+                        let rc_id = world.add_component(rc);
+                        let _ = world.add_child(r_id, rc_id);
+                    }
+
+                    let opacity = world.add_component(OpacityComponent::new().with_opacity(0.0));
+                    let _ = world.add_child(r_id, opacity);
+
+                    let hit = world.add_component(TextInputGlyphHitComponent {
+                        text_input_root: text_input_root.unwrap(),
+                        text_target: component,
+                        char_index: i,
+                    });
+                    let _ = world.add_child(r_id, hit);
+
+                    return true;
+                }
+
+                if ch == '\n' {
                     return true;
                 }
 
@@ -634,9 +680,27 @@ fn uvs_for_glyph(ch: char) -> Vec<[f32; 2]> {
 #[cfg(test)]
 mod tests {
     use super::TextSystem;
-    use crate::engine::ecs::component::{SerializeComponent, TextComponent};
+    use crate::engine::ecs::component::{
+        SerializeComponent,
+        TextComponent,
+        TextInputGlyphHitComponent,
+        TransformComponent,
+        TextureComponent,
+    };
     use crate::engine::ecs::World;
     use crate::engine::graphics::VisualWorld;
+
+    fn collect_descendants(world: &World, root: crate::engine::ecs::ComponentId) -> Vec<crate::engine::ecs::ComponentId> {
+        let mut stack = vec![root];
+        let mut out = Vec::new();
+        while let Some(node) = stack.pop() {
+            for child in world.children_of(node).iter().copied() {
+                out.push(child);
+                stack.push(child);
+            }
+        }
+        out
+    }
 
     #[test]
     fn register_text_scales_spawned_glyphs_by_font_size() {
@@ -709,5 +773,64 @@ mod tests {
         let pos = TextSystem::layout_position_for_index(text, 6, 6, true, &[], 1.0);
 
         assert_eq!(pos, (0.5, -1.5));
+    }
+
+    #[test]
+    fn register_text_spawns_text_input_whitespace_helpers() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let root = world.add_component(TransformComponent::new());
+        let text_input = world.add_component(crate::engine::ecs::component::TextInputComponent::new("a b"));
+        let text = world.add_component(TextComponent::new("a b"));
+        let _ = world.add_child(root, text_input);
+        let _ = world.add_child(text_input, text);
+        let rc = world.add_component(crate::engine::ecs::component::RaycastableComponent::enabled());
+        let _ = world.add_child(text, rc);
+
+        let mut text_system = TextSystem::default();
+        let spawned = text_system.register_text(&mut world, &mut visuals, text);
+        assert_eq!(spawned.len(), 2);
+
+        let mut whitespace_hit_count = 0;
+        for descendant in collect_descendants(&world, text) {
+            if world.get_component_by_id_as::<TextInputGlyphHitComponent>(descendant).is_some() {
+                let has_texture = world.children_of(descendant).iter().copied().any(|grand| {
+                    world.get_component_by_id_as::<TextureComponent>(grand).is_some()
+                });
+                if !has_texture {
+                    whitespace_hit_count += 1;
+                }
+            }
+        }
+
+        assert!(whitespace_hit_count >= 1, "expected at least one whitespace helper hit quad");
+    }
+
+    #[test]
+    fn register_text_does_not_spawn_whitespace_helpers_for_plain_text() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let root = world.add_component(TransformComponent::new());
+        let text = world.add_component(TextComponent::new("a b"));
+        let _ = world.add_child(root, text);
+        let rc = world.add_component(crate::engine::ecs::component::RaycastableComponent::enabled());
+        let _ = world.add_child(text, rc);
+
+        let mut text_system = TextSystem::default();
+        let _ = text_system.register_text(&mut world, &mut visuals, text);
+
+        let mut whitespace_hit_found = false;
+        for descendant in collect_descendants(&world, text) {
+            if world.get_component_by_id_as::<TextInputGlyphHitComponent>(descendant).is_some() {
+                let has_texture = world.children_of(descendant).iter().copied().any(|grand| {
+                    world.get_component_by_id_as::<TextureComponent>(grand).is_some()
+                });
+                if !has_texture {
+                    whitespace_hit_found = true;
+                }
+            }
+        }
+
+        assert!(!whitespace_hit_found, "plain text should not spawn whitespace hit helpers");
     }
 }
