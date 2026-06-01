@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
-use crate::meow_meow::object::{MaterializedCE, Value};
+use crate::meow_meow::component_registry::spawn_tree_uninitialized;
+use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
 use crate::meow_meow::runner::{LoadedMmsModule, MeowMeowRunner};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -31,14 +32,14 @@ pub enum AssetSource {
 }
 
 #[derive(Debug, Default)]
-pub struct AssetsSystem {
+pub struct AssetSystem {
     modules: HashMap<AssetModuleId, AssetModule>,
     module_paths: HashMap<PathBuf, AssetModuleId>,
     pub items: Vec<AssetItem>,
     next_module_id: u32,
 }
 
-impl AssetsSystem {
+impl AssetSystem {
     pub fn new() -> Self {
         Self::default()
     }
@@ -109,7 +110,7 @@ impl AssetsSystem {
             .and_then(|module| module.named_export(&item.export_name))
     }
 
-    pub fn materialize_asset_component_expr(
+    fn materialize_asset_component_expr(
         &self,
         item: &AssetItem,
         args: Vec<Value>,
@@ -121,6 +122,16 @@ impl AssetsSystem {
         })?;
 
         MeowMeowRunner::materialize_mms_module_component(module, &item.export_name, args, world_host, emit)
+    }
+
+    pub fn spawn_asset_component(
+        &self,
+        item: &AssetItem,
+        args: Vec<Value>,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+    ) -> Result<ComponentId, String> {
+        self.spawn_asset_component_uninitialized(item, args, world, emit)
     }
 
     pub fn spawn_asset_component_uninitialized(
@@ -143,12 +154,69 @@ impl AssetsSystem {
             emit,
         )
     }
+
+    fn assets_panel_asset_path() -> &'static str {
+        concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/assets.mms")
+    }
+
+    pub fn spawn_assets_panel(
+        &self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        parent: ComponentId,
+        position: (f32, f32, f32),
+    ) -> Result<ComponentId, String> {
+        if self.items.is_empty() {
+            return Err("no asset items available".to_string());
+        }
+
+        let item_values: Vec<Value> = self
+            .items
+            .iter()
+            .map(|item| Value::String(item.title.clone()))
+            .collect();
+
+        let panel_root = MeowMeowRunner::materialize_mms_module_component_from_file(
+            Self::assets_panel_asset_path(),
+            "assets",
+            vec![Value::String("Assets".to_string()), Value::Array(item_values)],
+            Some(world),
+            Some(emit),
+        )?;
+
+        let wrapper = MaterializedCE {
+            component_type: "T".to_string(),
+            ctor_method: Some("position".to_string()),
+            ctor_args: vec![
+                Value::Number(position.0 as f64),
+                Value::Number(position.1 as f64),
+                Value::Number(position.2 as f64),
+            ],
+            calls: Vec::new(),
+            named: vec![(
+                "name".to_string(),
+                Value::String("assets_panel_shell".to_string()),
+            )],
+            positionals: Vec::new(),
+            children: vec![CeChild::Spawn(panel_root)],
+        };
+
+        let component_id = spawn_tree_uninitialized(&wrapper, world, emit)?;
+        emit.push_intent_now(
+            component_id,
+            crate::engine::ecs::IntentValue::Attach {
+                parents: vec![parent],
+                child: component_id,
+            },
+        );
+        Ok(component_id)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ecs::{EventSignal, IntentSignal, World};
+    use crate::engine::ecs::World;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -177,7 +245,7 @@ mod tests {
         )
         .expect("write asset file");
 
-        let mut system = AssetsSystem::new();
+        let mut system = AssetSystem::new();
         system.scan_assets_dir(&tmp_dir).expect("scan assets dir");
 
         assert_eq!(system.items.len(), 1);
@@ -200,7 +268,7 @@ mod tests {
         )
         .expect("write asset file");
 
-        let mut system = AssetsSystem::new();
+        let mut system = AssetSystem::new();
         system.load_module(asset_path.clone()).expect("load module");
 
         let item = &system.items[0];

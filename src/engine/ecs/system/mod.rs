@@ -46,7 +46,7 @@ pub mod texture_system;
 pub mod transition_system;
 pub mod transform_stream_system;
 pub mod transform_system;
-pub mod assets_system;
+pub mod asset_system;
 
 pub use animation_system::AnimationSystem;
 pub use audio_system::AudioSystem;
@@ -86,7 +86,7 @@ pub use texture_system::TextureSystem;
 pub use transition_system::TransitionSystem;
 pub use transform_stream_system::TransformStreamSystem;
 pub use transform_system::TransformSystem;
-pub use assets_system::AssetsSystem;
+pub use asset_system::AssetSystem;
 
 use super::World;
 use crate::engine::graphics::VisualWorld;

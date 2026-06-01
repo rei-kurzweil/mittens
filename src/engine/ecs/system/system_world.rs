@@ -30,9 +30,10 @@ use crate::engine::ecs::system::TransitionSystem;
 use crate::engine::ecs::system::TransformStreamSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
-use crate::engine::ecs::system::{AssetsSystem, AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, GestureSystem, HeadPoseBodyXzFollowSystem, IKSystem, InspectorSystem, LayoutSystem, TransformGizmoSystem};
+use crate::engine::ecs::system::{AssetSystem, AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, GestureSystem, HeadPoseBodyXzFollowSystem, IKSystem, InspectorSystem, LayoutSystem, TransformGizmoSystem};
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
+use std::path::Path;
 
 /// System world that holds and runs all registered systems.
 #[derive(Debug, Default)]
@@ -65,7 +66,7 @@ pub struct SystemWorld {
 
     pub editor: EditorSystem,
     pub inspector: InspectorSystem,
-    pub assets: AssetsSystem,
+    pub asset_system: AssetSystem,
     pub avatar_body_yaw: AvatarBodyYawSystem,
     pub avatar_control: AvatarControlSystem,
     pub head_pose_body_xz_follow: HeadPoseBodyXzFollowSystem,
@@ -310,7 +311,12 @@ impl SystemWorld {
     }
 
     pub fn new() -> Self {
-        Self::default()
+        let mut systems = Self::default();
+        let asset_dir = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/"));
+        if let Err(error) = systems.asset_system.scan_assets_dir(asset_dir) {
+            eprintln!("[SystemWorld] failed to scan assets dir: {error}");
+        }
+        systems
     }
 
     pub fn queue_repl_command(&mut self, command: String) {
