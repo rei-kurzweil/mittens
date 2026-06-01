@@ -61,6 +61,17 @@ By contrast, `caret_local_position(...)` is too narrowly named and leaves room f
 
 The shared helper should likely reuse or be built on top of the existing `WordWrapState` / `compute_wrap_allowed_after(...)` / `compute_word_run_len(...)` machinery.
 
+The key bug to close is that a caret positioned before a wrapped glyph must still evaluate the wrap decision for that glyph, even though the glyph itself is not advanced yet.
+
+A practical helper shape is:
+
+- compute `chars`, `wrap_allowed_after`, and `word_run_len`
+- walk the text prefix up to `index`
+- if `index` is before a visible glyph, apply the same pre-glyph wrap logic used by `register_text(...)` for that character
+- then return the current cursor position
+
+That ensures the caret slot state is driven by the same wrap/newline logic as glyph layout.
+
 Potential outputs:
 
 - text-local `(x, y)` coordinates

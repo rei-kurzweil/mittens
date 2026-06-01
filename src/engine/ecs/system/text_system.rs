@@ -479,9 +479,9 @@ impl TextSystem {
         (state.max_col as f32 * font_size, (state.row + 1) as f32 * font_size)
     }
 
-    pub fn caret_local_position(
+    pub fn layout_position_for_index(
         text: &str,
-        caret: usize,
+        index: usize,
         wrap_at: usize,
         word_wrap: bool,
         word_wrap_tokens: &[String],
@@ -491,9 +491,9 @@ impl TextSystem {
         let wrap_allowed_after = compute_wrap_allowed_after(&chars, word_wrap_tokens);
         let word_run_len = compute_word_run_len(&wrap_allowed_after);
         let mut state = WordWrapState::new(wrap_at, word_wrap, font_size);
-        let caret = caret.min(chars.len());
+        let index = index.min(chars.len());
 
-        for (i, ch) in chars.iter().copied().enumerate().take(caret) {
+        for (i, ch) in chars.iter().copied().enumerate().take(index) {
             if ch == '\n' {
                 state.newline();
                 continue;
@@ -511,7 +511,30 @@ impl TextSystem {
             state.advance_glyph(i, &wrap_allowed_after);
         }
 
+        if index < chars.len() {
+            let ch = chars[index];
+            if ch != '\n' {
+                state.apply_wrap_if_needed();
+                if ch != ' ' && ch != '\t' {
+                    state.apply_word_wrap_lookahead(
+                        word_run_len.get(index).copied().unwrap_or(1),
+                    );
+                }
+            }
+        }
+
         state.cursor_pos()
+    }
+
+    pub fn caret_local_position(
+        text: &str,
+        caret: usize,
+        wrap_at: usize,
+        word_wrap: bool,
+        word_wrap_tokens: &[String],
+        font_size: f32,
+    ) -> (f32, f32) {
+        Self::layout_position_for_index(text, caret, wrap_at, word_wrap, word_wrap_tokens, font_size)
     }
 }
 
@@ -660,5 +683,29 @@ mod tests {
         assert!((w_large - 4.0).abs() < 1e-6);
         assert!((h_small - 0.5).abs() < 1e-6);
         assert!((h_large - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn layout_position_for_index_matches_caret_local_position() {
+        let text = "hello world";
+        let pos = TextSystem::layout_position_for_index(text, 4, 6, true, &[], 1.0);
+        let caret = TextSystem::caret_local_position(text, 4, 6, true, &[], 1.0);
+        assert_eq!(pos, caret);
+    }
+
+    #[test]
+    fn layout_position_for_index_wraps_to_second_line_after_wrapped_word() {
+        let text = "hello world";
+        let pos = TextSystem::layout_position_for_index(text, 7, 6, true, &[], 1.0);
+
+        assert_eq!(pos, (1.5, -1.5));
+    }
+
+    #[test]
+    fn layout_position_for_index_wraps_to_second_line_before_wrapped_word() {
+        let text = "hello world";
+        let pos = TextSystem::layout_position_for_index(text, 6, 6, true, &[], 1.0);
+
+        assert_eq!(pos, (0.5, -1.5));
     }
 }
