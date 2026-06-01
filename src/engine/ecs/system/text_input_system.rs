@@ -411,13 +411,14 @@ fn sync_caret_bg(
     root: ComponentId,
     text_target: Option<ComponentId>,
 ) {
-    let Some((caret_bg, opacity_id, x, y, visible)) = caret_bg_sync_state(world, root, text_target)
+    let Some((caret_bg, opacity_id, x, y, font_size, visible)) = caret_bg_sync_state(world, root, text_target)
     else {
         return;
     };
 
     if let Some(transform) = world.get_component_by_id_as_mut::<TransformComponent>(caret_bg) {
         transform.set_position(emit, x, y, CARET_BG_Z);
+        transform.set_scale(emit, font_size, font_size, 1.0);
     }
 
     if let Some(opacity) = world.get_component_by_id_as_mut::<OpacityComponent>(opacity_id) {
@@ -439,7 +440,7 @@ fn caret_bg_sync_state(
     world: &World,
     root: ComponentId,
     text_target: Option<ComponentId>,
-) -> Option<(ComponentId, ComponentId, f32, f32, bool)> {
+) -> Option<(ComponentId, ComponentId, f32, f32, f32, bool)> {
     let input = world.get_component_by_id_as::<TextInputComponent>(root)?;
     let text_target = text_target?;
     let caret_bg = resolve_named_descendant(world, root, OWNED_TEXT_INPUT_CARET_BG_LABEL)?;
@@ -453,7 +454,7 @@ fn caret_bg_sync_state(
         &text.word_wrap_tokens,
         text.font_size,
     );
-    Some((caret_bg, opacity_id, x, y, input.focused))
+    Some((caret_bg, opacity_id, x, y, text.font_size, input.focused))
 }
 
 fn resolve_named_descendant(world: &World, root: ComponentId, label: &str) -> Option<ComponentId> {
