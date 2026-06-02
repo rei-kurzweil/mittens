@@ -8,7 +8,7 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
-use crate::meow_meow::component_registry::{filtered_root_ids_for_roots, filtered_roots_to_ce_ast, filtered_world_root_ids, spawn_tree, spawn_tree_uninitialized};
+use crate::meow_meow::component_registry::{filtered_root_ids_for_roots, filtered_roots_to_ce_ast, filtered_world_root_ids, spawn_tree};
 use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
 use crate::meow_meow::runner::MeowMeowRunner;
 
@@ -488,7 +488,7 @@ impl InspectorSystemStopgapMmsReconciler {
             children: vec![CeChild::Spawn(overlay_ce)],
         };
 
-        let panel_mount_root = match spawn_tree_uninitialized(&mount_ce, world, emit) {
+        let panel_mount_root = match spawn_tree(&mount_ce, None, world, emit) {
             Ok(component_id) => component_id,
             Err(error) => {
                 eprintln!("[InspectorSystemStopgapMmsAdapter] panel layout spawn error: {error}");
