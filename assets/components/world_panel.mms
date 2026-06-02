@@ -70,11 +70,18 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
             Style {
                 display("block")
                 height(PATH_BAR_HEIGHT_GU)
+                width(100%)
+
                 margin_bottom(GAP_GU)
                 padding_xy(0.25, 0.45)
+                
                 vertical_align("middle")
+                word_wrap("normal")
+                word_wrap_tokens(["/"])  
+
                 background_color([0.2, 0.01, 0.18, 0.8])
                 background_z(-0.01)
+                
             }
             T.position(0.0, 0.0, 0.0) {
                 TextInput {
