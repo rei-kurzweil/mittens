@@ -76,9 +76,11 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
                 background_color([0.2, 0.01, 0.18, 0.8])
                 background_z(-0.01)
             }
-            TextInput {
-                name = "path_input"
-                working_file_path
+            T.position(0.0, 0.0, 0.0) {
+                TextInput {
+                    name = "path_input"
+                    working_file_path
+                }
             }
         }
 
