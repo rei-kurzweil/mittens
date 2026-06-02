@@ -42,7 +42,7 @@ fn world_panel_row(row_name, label, bg) {
     return row
 }
 
-export fn world_panel_content_selected(items, selected_index) {
+export fn world_panel_content_selected(items, selected_index, item_background_color) {
     let root = T {
         name = "world_panel_content_root"
         Style {
@@ -60,7 +60,7 @@ export fn world_panel_content_selected(items, selected_index) {
             let idx = 0
             for item in items {
                 let row_name = "item_" + idx
-                let bg = DEFAULT_ROW_BG
+                let bg = item_background_color
                 if idx == selected_index {
                     bg = SELECTED_ROW_BG
                 }
@@ -73,6 +73,6 @@ export fn world_panel_content_selected(items, selected_index) {
     return root
 }
 
-export fn world_panel_content(items) {
-    return world_panel_content_selected(items, -1)
+export fn world_panel_content(items, item_background_color) {
+    return world_panel_content_selected(items, -1, item_background_color)
 }

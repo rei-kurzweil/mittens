@@ -407,6 +407,82 @@ impl InspectorSystemStopgapMmsReconciler {
             inspector_panel_pos,
         );
 
+        let world_panel_title_color = Value::Array(vec![
+            Value::Number(0.90),
+            Value::Number(1.00),
+            Value::Number(0.92),
+            Value::Number(1.0),
+        ]);
+        let world_panel_bg = Value::Array(vec![
+            Value::Number(0.18),
+            Value::Number(0.78),
+            Value::Number(0.22),
+            Value::Number(0.95),
+        ]);
+        let world_panel_item_bg = Value::Array(vec![
+            Value::Number(0.92),
+            Value::Number(0.97),
+            Value::Number(0.92),
+            Value::Number(1.0),
+        ]);
+
+        let inspector_panel_title_color = Value::Array(vec![
+            Value::Number(0.90),
+            Value::Number(1.00),
+            Value::Number(0.92),
+            Value::Number(1.0),
+        ]);
+        let inspector_panel_bg = Value::Array(vec![
+            Value::Number(0.18),
+            Value::Number(0.78),
+            Value::Number(0.22),
+            Value::Number(0.95),
+        ]);
+        let inspector_panel_item_bg = Value::Array(vec![
+            Value::Number(0.92),
+            Value::Number(0.92),
+            Value::Number(0.92),
+            Value::Number(0.80),
+        ]);
+
+        let asset_panel_title_color = Value::Array(vec![
+            Value::Number(1.0),
+            Value::Number(1.0),
+            Value::Number(1.0),
+            Value::Number(1.0),
+        ]);
+        let asset_panel_bg = Value::Array(vec![
+            Value::Number(0.15),
+            Value::Number(0.15),
+            Value::Number(0.15),
+            Value::Number(1.0),
+        ]);
+        let asset_panel_item_bg = Value::Array(vec![
+            Value::Number(0.25),
+            Value::Number(0.25),
+            Value::Number(0.25),
+            Value::Number(1.0),
+        ]);
+
+        let paint_panel_title_color = Value::Array(vec![
+            Value::Number(0.90),
+            Value::Number(0.90),
+            Value::Number(0.90),
+            Value::Number(1.0),
+        ]);
+        let paint_panel_bg = Value::Array(vec![
+            Value::Number(0.12),
+            Value::Number(0.12),
+            Value::Number(0.12),
+            Value::Number(0.95),
+        ]);
+        let paint_panel_item_bg = Value::Array(vec![
+            Value::Number(0.22),
+            Value::Number(0.22),
+            Value::Number(0.22),
+            Value::Number(1.0),
+        ]);
+
         let world_panel = match build_panel_component_expr(
             world,
             emit,
@@ -415,6 +491,9 @@ impl InspectorSystemStopgapMmsReconciler {
             vec![
                 Value::String(model.title.clone()),
                 Value::Array(Vec::new()),
+                world_panel_title_color.clone(),
+                world_panel_bg.clone(),
+                world_panel_item_bg.clone(),
             ],
             "world panel",
         ) {
@@ -430,6 +509,9 @@ impl InspectorSystemStopgapMmsReconciler {
             vec![
                 Value::String(inspector_model.title.clone()),
                 Value::Array(Vec::new()),
+                inspector_panel_title_color.clone(),
+                inspector_panel_bg.clone(),
+                inspector_panel_item_bg.clone(),
             ],
             "inspector panel",
         ) {
@@ -445,6 +527,9 @@ impl InspectorSystemStopgapMmsReconciler {
             vec![
                 Value::String("Assets".to_string()),
                 Value::Array(Vec::new()),
+                asset_panel_title_color.clone(),
+                asset_panel_bg.clone(),
+                asset_panel_item_bg.clone(),
             ],
             "asset panel",
         ) {
@@ -452,7 +537,22 @@ impl InspectorSystemStopgapMmsReconciler {
             None => return,
         };
 
-        let paint_panel = build_placeholder_panel_component_expr("paint_panel_root", "Paint");
+        let paint_panel = match build_panel_component_expr(
+            world,
+            emit,
+            paint_panel_asset_path(),
+            "paint_panel",
+            vec![
+                Value::String("Paint".to_string()),
+                paint_panel_title_color.clone(),
+                paint_panel_bg.clone(),
+                paint_panel_item_bg.clone(),
+            ],
+            "paint panel",
+        ) {
+            Some(panel) => panel,
+            None => return,
+        };
 
         let _ = inspector_panel_pos;
         let anchor_pos = world_panel_pos;
@@ -551,6 +651,19 @@ impl InspectorSystemStopgapMmsReconciler {
                 return;
             }
         };
+
+        if let Some(world_panel_root) = world.find_component(panel_mount_root, WORLD_PANEL_ROOT_SELECTOR) {
+            debug_panel_root(world, world_panel_root, "world_panel");
+        }
+        if let Some(inspector_panel_root) = world.find_component(panel_mount_root, INSPECTOR_PANEL_ROOT_SELECTOR) {
+            debug_panel_root(world, inspector_panel_root, "inspector_panel");
+        }
+        if let Some(asset_panel_root) = world.find_component(panel_mount_root, "#assets") {
+            debug_panel_root(world, asset_panel_root, "asset_panel");
+        }
+        if let Some(paint_panel_root) = world.find_component(panel_mount_root, "#paint_panel_root") {
+            debug_panel_root(world, paint_panel_root, "paint_panel");
+        }
 
         println!(
             "[InspectorSystem][debug] spawned panel mount root={panel_mount_root:?} name={} anchor_pos={:?}",
@@ -1196,6 +1309,83 @@ fn panel_shell_ce(
             CeChild::Spawn(panel_root),
         ],
     }
+}
+
+fn debug_style_details(world: &World, root: ComponentId, selector: &str, label: &str) {
+    let node = match world.find_component(root, selector) {
+        Some(node) => node,
+        None => {
+            println!("[InspectorSystem][trace] {} {} missing", label, selector);
+            return;
+        }
+    };
+
+    let style_children: Vec<_> = world
+        .children_of(node)
+        .iter()
+        .filter(|&&child| world.get_component_by_id_as::<StyleComponent>(child).is_some())
+        .copied()
+        .collect();
+
+    println!("[InspectorSystem][trace] {} {} child_count={}", label, selector, world.children_of(node).len());
+    for &child in world.children_of(node) {
+        println!(
+            "[InspectorSystem][trace] {} {} child={:?} type={:?} label={:?}",
+            label,
+            selector,
+            child,
+            world.component_name(child),
+            world.component_label(child),
+        );
+    }
+
+    if style_children.is_empty() {
+        println!("[InspectorSystem][trace] {} {} has no Style child", label, selector);
+        return;
+    }
+
+    for style_id in style_children {
+        if let Some(style) = world.get_component_by_id_as::<StyleComponent>(style_id) {
+            println!(
+                "[InspectorSystem][trace] {} {} style={:?} display={:?} background_color={:?} height={:?} width={:?} font_size={:?}",
+                label,
+                selector,
+                style_id,
+                style.display,
+                style.background_color,
+                style.height,
+                style.width,
+                style.font_size,
+            );
+        }
+    }
+}
+
+fn debug_panel_root(world: &World, root: ComponentId, kind: &str) {
+    let title_label = world.find_component(root, "#title_label").is_some();
+    let text_count = world.find_all_components(root, "Text").len();
+    let style_count = world.find_all_components(root, "Style").len();
+    let content_slot = world.find_component(root, "#content_slot").is_some();
+    let rows_mount = world.find_component(root, "#rows_mount").is_some();
+    let assets_content = world.find_component(root, "#assets_content_area").is_some();
+    let paint_title_bar = world.find_component(root, "paint_panel_title_bar").is_some();
+    println!(
+        "[InspectorSystem][trace] {} root={:?} title_label={} content_slot={} rows_mount={} assets_content={} paint_title_bar={} text_count={} style_count={}",
+        kind,
+        root,
+        title_label,
+        content_slot,
+        rows_mount,
+        assets_content,
+        paint_title_bar,
+        text_count,
+        style_count,
+    );
+    debug_style_details(world, root, "#content_slot", kind);
+    debug_style_details(world, root, "title_bar", kind);
+    debug_style_details(world, root, "#title_label", kind);
+    debug_style_details(world, root, "#assets_content_area", kind);
+    debug_style_details(world, root, "paint_panel_title_bar", kind);
 }
 
 fn spawn_world_panel_content_tree(

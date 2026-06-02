@@ -16,7 +16,7 @@ let TITLE_CONTENT_GAP_GU = 0.5
 let INSPECTOR_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + INSPECTOR_PANEL_CONTENT_HEIGHT_GU
 let TITLE_LABEL_PADDING_X_GU = 0.25
 
-fn inspector_panel_row(label) {
+fn inspector_panel_row(label, item_background_color) {
     let row = T.position(0.0, 0.0, 0.1) {
         Style {
             display("block")
@@ -25,7 +25,7 @@ fn inspector_panel_row(label) {
             padding_xy(0.55, 0.45)
             font_size(1)
             word_wrap("normal")
-            background_color = [0.92, 0.92, 0.92, 0.80]
+            background_color = item_background_color
         }
         T.position(0.0, 0.0, 0.015) {
             Text {
@@ -38,7 +38,7 @@ fn inspector_panel_row(label) {
     return row
 }
 
-export fn inspector_panel_content(items) {
+export fn inspector_panel_content(items, item_background_color) {
     let root = T {
         name = "inspector_panel_content_root"
         Style {
@@ -53,7 +53,7 @@ export fn inspector_panel_content(items) {
             }
 
             for item in items {
-                inspector_panel_row(item)
+                inspector_panel_row(item, item_background_color)
             }
         }
     }
@@ -61,7 +61,7 @@ export fn inspector_panel_content(items) {
     return root
 }
 
-export fn inspector_panel(title, items) {
+export fn inspector_panel(title, items, title_color, panel_background_color, item_background_color) {
     let root = T {
         name = "inspector_panel_root"
         Style {
@@ -69,6 +69,7 @@ export fn inspector_panel(title, items) {
             width(INSPECTOR_PANEL_WIDTH_GU)
             height(INSPECTOR_PANEL_TOTAL_HEIGHT_GU)
             margin_xy(0.5, 0.5)
+            background_color(panel_background_color)
         }
 
         T {
@@ -77,7 +78,7 @@ export fn inspector_panel(title, items) {
                 display("block")
                 height(TITLE_BAR_HEIGHT_GU)
                 margin_bottom(TITLE_CONTENT_GAP_GU)
-                background_color = [0.18, 0.78, 0.22, 0.95]
+                background_color(panel_background_color)
             }
 
             T {
@@ -88,7 +89,7 @@ export fn inspector_panel(title, items) {
                     height(TITLE_BAR_HEIGHT_GU)
                     padding_xy(0.0, TITLE_LABEL_PADDING_X_GU)
                     font_size(1)
-                    color = [0.90, 1.00, 0.92, 1.0]
+                    color = title_color
                 }
                 T.position(0.0, 0.0, 0.015) {
                     Text {
@@ -105,10 +106,10 @@ export fn inspector_panel(title, items) {
                 display("block")
                 height(INSPECTOR_PANEL_CONTENT_HEIGHT_GU)
                 overflow("scroll")
-                background_color = [0.96, 0.92, 0.18, 0.80]
+                background_color([0.96, 0.92, 0.18, 0.80])
             }
 
-            inspector_panel_content(items)
+            inspector_panel_content(items, item_background_color)
         }
     }
 

@@ -1,6 +1,6 @@
 // asset_item.mms — individual asset item factory (=^･ω･^=)
 
-export fn asset_item(name) {
+export fn asset_item(name, item_background_color) {
     return T {
         name = "asset_item"
         Style {
@@ -8,7 +8,7 @@ export fn asset_item(name) {
             width(18.0)
             height(20.0)
             margin(1.0)
-            background_color = [0.25, 0.25, 0.25, 1.0]
+            background_color(item_background_color)
             font_size(1.0)
         }
         // Text label positioned inside the item

@@ -187,7 +187,13 @@ impl AssetSystem {
         let panel_root = MeowMeowRunner::spawn_mms_module_component_from_file(
             Self::assets_panel_asset_path(),
             "assets",
-            vec![Value::String(panel_title), Value::Array(vec![])],
+            vec![
+                Value::String(panel_title),
+                Value::Array(Vec::new()),
+                Value::Array(vec![Value::Number(1.0), Value::Number(1.0), Value::Number(1.0), Value::Number(1.0)]),
+                Value::Array(vec![Value::Number(0.15), Value::Number(0.15), Value::Number(0.15), Value::Number(1.0)]),
+                Value::Array(vec![Value::Number(0.25), Value::Number(0.25), Value::Number(0.25), Value::Number(1.0)]),
+            ],
             None,
             world,
             emit,

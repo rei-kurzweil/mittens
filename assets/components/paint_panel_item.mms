@@ -1,6 +1,6 @@
 // assets/components/paint_panel_item.mms — individual paint tool item factory (=^･ω･^=)
 
-export fn paint_panel_item(label, icon_factory) {
+export fn paint_panel_item(label, item_background_color, title_color) {
     return T {
         name = "paint_panel_item"
         Raycastable.enabled()
@@ -9,11 +9,11 @@ export fn paint_panel_item(label, icon_factory) {
             width(7.0)
             height(7.5)
             margin(0.4)
-            background_color = [0.22, 0.22, 0.22, 1.0]
+            background_color(item_background_color)
             text_align("center")
             vertical_align("middle")
         }
-        // Container to stack text and icon
+        // Container to stack text and label
         T {
             Style {
                 display("block")
@@ -25,21 +25,13 @@ export fn paint_panel_item(label, icon_factory) {
                     margin_bottom(0.2)
                     margin_top(0.5)
                 }
-                Text {
-                    label
-                    Style { font_size(0.6) }
-                    C.rgba(0.9, 0.9, 0.9, 1.0)
+                T {
+                    Style {
+                        font_size(1)
+                        color = title_color
+                    }
+                    Text { label }
                 }
-            }
-            T {
-                Style {
-                    display("block")
-                    // Center the icon in the block
-                    text_align("center")
-                    vertical_align("middle")
-                }
-                // Call the factory to get the icon component
-                icon_factory()
             }
         }
     }

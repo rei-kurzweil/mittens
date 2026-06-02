@@ -1,15 +1,8 @@
 // assets/components/paint_panel.mms — paint tools panel factory (=^･ω･^=)
 
 import { paint_panel_item } from "./paint_panel_item.mms"
-import { 
-    pencil_icon, 
-    line_icon, 
-    spray_can_icon, 
-    fill_icon, 
-    erase_icon 
-} from "./icons.mms"
 
-export fn paint_panel() {
+export fn paint_panel(title, title_color, panel_background_color, item_background_color) {
     return LayoutRoot {
         name = "paint_panel_layout_root"
         available_width(41.0)
@@ -22,14 +15,31 @@ export fn paint_panel() {
                 width(100%)
                 height(100%)
                 padding(0.5)
-                background_color = [0.12, 0.12, 0.12, 0.95]
+                background_color(panel_background_color)
             }
-            
-            paint_panel_item("Free Draw", pencil_icon)
-            paint_panel_item("Line", line_icon)
-            paint_panel_item("Spray Can", spray_can_icon)
-            paint_panel_item("Fill", fill_icon)
-            paint_panel_item("Erase", erase_icon)
+
+            T {
+                name = "paint_panel_title_bar"
+                Style {
+                    display("block")
+                    height(2.5)
+                    margin_bottom(0.4)
+                    padding_xy(0.2, 0.3)
+                    font_size(1)
+                    color = title_color
+                    text_align("left")
+                    vertical_align("middle")
+                }
+                T.position(0.0, 0.0, 0.0) {
+                    Text { title }
+                }
+            }
+
+            paint_panel_item("Free Draw", item_background_color, title_color)
+            paint_panel_item("Line", item_background_color, title_color)
+            paint_panel_item("Spray Can", item_background_color, title_color)
+            paint_panel_item("Fill", item_background_color, title_color)
+            paint_panel_item("Erase", item_background_color, title_color)
         }
     }
 }

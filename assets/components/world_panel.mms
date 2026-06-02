@@ -40,7 +40,7 @@ fn panel_button(node_name, label) {
             text_align("center")
             vertical_align("middle")
             font_size(1)
-            background_color = [0.10, 0.55, 0.18, 1.0]
+            background_color([0.10, 0.55, 0.18, 1.0])
             color = [0.75, 1.00, 0.45, 1.0]
         }
         T.position(0.0, 0.0, 0.0) {
@@ -50,10 +50,10 @@ fn panel_button(node_name, label) {
     return root
 }
 
-export fn world_panel(title, items) {
+export fn world_panel(title, items, title_color, panel_background_color, item_background_color) {
     let save_button = panel_button("save_button", "Save")
     let load_button = panel_button("load_button", "Load")
-    let content = world_panel_content(items)
+    let content = world_panel_content(items, item_background_color)
     let status = world_panel_status("idle")
 
     let panel = T {
@@ -75,7 +75,7 @@ export fn world_panel(title, items) {
                 text_align("left")
                 vertical_align("middle")
                 font_size(1)
-                background_color = [0.08, 0.24, 0.11, 0.92]
+                background_color([0.08, 0.24, 0.11, 0.92])
                 color = [0.92, 1.00, 0.92, 1.0]
             }
             status
@@ -86,7 +86,7 @@ export fn world_panel(title, items) {
             Style {
                 display("block")
                 margin_bottom(TITLE_CONTENT_GAP_GU)
-                background_color = [0.18, 0.78, 0.22, 0.95]
+                background_color(panel_background_color)
             }
 
             T {
@@ -99,7 +99,7 @@ export fn world_panel(title, items) {
                     text_align("left")
                     vertical_align("middle")
                     font_size(1)
-                    color = [0.90, 1.00, 0.92, 1.0]
+                    color = title_color
                 }
                 T.position(0.0, 0.0, 0.0) {
                     Text {
@@ -119,7 +119,7 @@ export fn world_panel(title, items) {
                 display("block")
                 height(WORLD_PANEL_CONTENT_HEIGHT_GU)
                 overflow("scroll")
-                background_color = [0.96, 0.92, 0.18, 0.80]
+                background_color([0.96, 0.92, 0.18, 0.80])
             }
             content
         }
