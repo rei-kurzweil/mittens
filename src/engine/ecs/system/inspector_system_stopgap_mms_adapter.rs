@@ -27,6 +27,7 @@ const INSPECTOR_PANEL_CONTENT_ROOT_SELECTOR: &str = "#inspector_panel_content_ro
 const PANEL_STATUS_ROOT_SELECTOR: &str = "#panel_status_root";
 const PANEL_STATUS_WRAP_SELECTOR: &str = "#save_status_wrap";
 const PANEL_STATUS_VALUE_SELECTOR: &str = "#panel_status_value";
+const PANEL_PATH_INPUT_SELECTOR: &str = "#path_input";
 const SAVE_BUTTON_SELECTOR: &str = "#save_button";
 const LOAD_BUTTON_SELECTOR: &str = "#load_button";
 const ITEM_PREFIX: &str = "item_";
@@ -74,6 +75,7 @@ pub(crate) struct InspectorSystemStopgapMmsAdapter {
     panel_layout_spawned: bool,
     selected_component: Arc<Mutex<Option<ComponentId>>>,
     runtime_ui_root: Arc<Mutex<Option<ComponentId>>>,
+    working_file_path: Arc<Mutex<PathBuf>>,
 }
 
 impl Default for InspectorSystemStopgapMmsAdapter {
@@ -84,6 +86,7 @@ impl Default for InspectorSystemStopgapMmsAdapter {
             panel_layout_spawned: false,
             selected_component: Arc::new(Mutex::new(None)),
             runtime_ui_root: Arc::new(Mutex::new(None)),
+            working_file_path: Arc::new(Mutex::new(PathBuf::from("assets/world/default.mms"))),
         }
     }
 }
@@ -112,17 +115,21 @@ impl InspectorSystemStopgapMmsAdapter {
         let model = build_world_panel_model(world, None);
         let inspector_model = build_inspector_panel_model(world, None);
 
-        self.reconciler
-            .reconcile_panel_layout(
-            world,
-            emit,
-            &mut self.panel_layout_spawned,
-            runtime_ui_root,
-            world_panel_pos,
-            inspector_panel_pos,
-            &model,
-            &inspector_model,
-        );
+        {
+            let working_file_path = self.working_file_path.lock().expect("working file path mutex poisoned");
+            self.reconciler
+                .reconcile_panel_layout(
+                world,
+                emit,
+                &mut self.panel_layout_spawned,
+                runtime_ui_root,
+                world_panel_pos,
+                inspector_panel_pos,
+                &model,
+                &inspector_model,
+                &working_file_path,
+            );
+        }
 
         self.refresh_world_panels(world, emit);
 
@@ -136,7 +143,29 @@ impl InspectorSystemStopgapMmsAdapter {
         self.panel_handler_installed = true;
 
         let selected_component = Arc::clone(&self.selected_component);
+        let working_file_path_mutex = Arc::clone(&self.working_file_path);
 
+        let input_changed_path_mutex = Arc::clone(&working_file_path_mutex);
+        rx.add_handler_closure(
+            SignalKind::TextInputChanged,
+            panel_query_root,
+            move |world, _emit, signal| {
+                let Some(EventSignal::TextInputChanged { component_id, text, .. }) = signal.event.as_ref() else {
+                    return;
+                };
+
+                if let Some(target) = world.find_component(panel_query_root, PANEL_PATH_INPUT_SELECTOR) {
+                    if target == *component_id {
+                        let mut path = input_changed_path_mutex
+                            .lock()
+                            .expect("working file path mutex poisoned");
+                        *path = PathBuf::from(text);
+                    }
+                }
+            },
+        );
+
+        let click_path_mutex = Arc::clone(&working_file_path_mutex);
         rx.add_handler_closure(SignalKind::Click, panel_query_root, move |world, emit, signal| {
             let Some(EventSignal::Click { renderable, .. }) = signal.event.as_ref() else {
                 return;
@@ -160,7 +189,12 @@ impl InspectorSystemStopgapMmsAdapter {
             let Some(content_slot) = world.find_component(world_panel_root, PANEL_CONTENT_SLOT_SELECTOR) else {
                 return;
             };
-            if let Some(status_text) = handle_panel_button_click(world, emit, *renderable) {
+
+            let working_file_path = click_path_mutex
+                .lock()
+                .expect("working file path mutex poisoned");
+
+            if let Some(status_text) = handle_panel_button_click(world, emit, *renderable, &working_file_path) {
                 if panel_status_text(world, panel_query_root).as_deref() != Some(status_text.as_str()) {
                     rerender_world_panel_status(world, emit, panel_query_root, status_wrap, &status_text);
                 }
@@ -346,6 +380,7 @@ impl InspectorSystemStopgapMmsReconciler {
         inspector_panel_pos: (f32, f32, f32),
         model: &WorldPanelModel,
         inspector_model: &InspectorPanelModel,
+        working_file_path: &Path,
     ) {
         let existing_world_panel = self.find_world_panel_node(world, panel_query_root, WORLD_PANEL_ROOT_SELECTOR);
         let existing_inspector_panel = self.find_world_panel_node(world, panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR);
@@ -379,6 +414,7 @@ impl InspectorSystemStopgapMmsReconciler {
             inspector_panel_pos,
             model,
             inspector_model,
+            working_file_path,
         );
     }
 
@@ -400,6 +436,7 @@ impl InspectorSystemStopgapMmsReconciler {
         inspector_panel_pos: (f32, f32, f32),
         model: &WorldPanelModel,
         inspector_model: &InspectorPanelModel,
+        working_file_path: &Path,
     ) {
         println!(
             "[InspectorSystem][debug] spawn_panel_layout panel_query_root={panel_query_root:?} world_panel_pos={:?} inspector_panel_pos={:?}",
@@ -453,6 +490,8 @@ impl InspectorSystemStopgapMmsReconciler {
         let paint_panel_bg = world_panel_bg.clone();
         let paint_panel_item_bg = world_panel_item_bg.clone();
 
+        let working_file_path_str = working_file_path.to_string_lossy().to_string();
+
         let world_panel = match build_panel_component_expr(
             world,
             emit,
@@ -464,6 +503,7 @@ impl InspectorSystemStopgapMmsReconciler {
                 world_panel_title_color.clone(),
                 world_panel_bg.clone(),
                 world_panel_item_bg.clone(),
+                Value::String(working_file_path_str),
             ],
             "world panel",
         ) {
@@ -690,22 +730,22 @@ fn handle_panel_button_click(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     renderable: ComponentId,
+    working_file_path: &Path,
 ) -> Option<String> {
-    let scene_path = world_panel_scene_path();
     let runtime_ui_root = find_named_root(world, EDITOR_RUNTIME_UI_ROOT_NAME)?;
 
     let save_button = world.find_component(runtime_ui_root, SAVE_BUTTON_SELECTOR);
     if save_button.is_some_and(|button| is_descendant_or_self(world, button, renderable)) {
-        return Some(match save_world_panel_scene_to_path(world, &scene_path) {
-            Ok(saved_roots) => format!("saved {saved_roots} roots to {}", scene_path.display()),
+        return Some(match save_world_panel_scene_to_path(world, working_file_path) {
+            Ok(saved_roots) => format!("saved {saved_roots} roots to {}", working_file_path.display()),
             Err(error) => format!("save failed: {error}"),
         });
     }
 
     let load_button = world.find_component(runtime_ui_root, LOAD_BUTTON_SELECTOR);
     if load_button.is_some_and(|button| is_descendant_or_self(world, button, renderable)) {
-        return Some(match load_world_panel_scene_from_path(world, emit, &scene_path) {
-            Ok(loaded_roots) => format!("loaded {loaded_roots} roots from {}", scene_path.display()),
+        return Some(match load_world_panel_scene_from_path(world, emit, working_file_path) {
+            Ok(loaded_roots) => format!("loaded {loaded_roots} roots from {}", working_file_path.display()),
             Err(error) => format!("load failed: {error}"),
         });
     }
@@ -997,7 +1037,6 @@ fn rerender_world_panel_status(
             child: spawned_status_root,
         },
     );
-
     mark_nearest_layout_dirty(world, status_wrap);
 }
 
