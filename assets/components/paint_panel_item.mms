@@ -10,6 +10,7 @@ export fn paint_panel_item(label, item_background_color, title_color) {
             height(7.5)
             margin(0.4)
             background_color(item_background_color)
+            background_z(-0.01)
             text_align("center")
             vertical_align("middle")
         }

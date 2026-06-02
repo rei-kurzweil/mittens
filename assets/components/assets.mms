@@ -11,6 +11,7 @@ export fn assets(title, items, title_color, panel_background_color, item_backgro
 
         Style {
             background_color(panel_background_color)
+            background_z(-0.01)
         }
 
         // Title Bar (Block by default)
@@ -19,6 +20,7 @@ export fn assets(title, items, title_color, panel_background_color, item_backgro
             Style {
                 height(6.0)
                 background_color(panel_background_color)
+                background_z(-0.01)
                 font_size(1)
                 margin_xy(0.5, 0.5)
             }

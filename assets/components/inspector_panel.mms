@@ -17,7 +17,8 @@ let INSPECTOR_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU
 let TITLE_LABEL_PADDING_X_GU = 0.25
 
 fn inspector_panel_row(label, item_background_color) {
-    let row = T.position(0.0, 0.0, 0.1) {
+    let row = T {
+        name = "inspector_panel_row"
         Style {
             display("block")
             width(100%)
@@ -26,8 +27,13 @@ fn inspector_panel_row(label, item_background_color) {
             font_size(1)
             word_wrap("normal")
             background_color = item_background_color
+            background_z(-0.01)
         }
-        T.position(0.0, 0.0, 0.015) {
+        T {
+            Style {
+                display("block")
+                width(100%)
+            }
             Text {
                 label
                 C.rgba(0.0, 0.0, 0.0, 1.0)
@@ -69,7 +75,6 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
             width(INSPECTOR_PANEL_WIDTH_GU)
             height(INSPECTOR_PANEL_TOTAL_HEIGHT_GU)
             margin_xy(0.5, 0.5)
-            background_color(panel_background_color)
         }
 
         T {
@@ -79,6 +84,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                 height(TITLE_BAR_HEIGHT_GU)
                 margin_bottom(TITLE_CONTENT_GAP_GU)
                 background_color(panel_background_color)
+                background_z(-0.01)
             }
 
             T {
@@ -107,6 +113,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                 height(INSPECTOR_PANEL_CONTENT_HEIGHT_GU)
                 overflow("scroll")
                 background_color([0.96, 0.92, 0.18, 0.80])
+                background_z(-0.01)
             }
 
             inspector_panel_content(items, item_background_color)

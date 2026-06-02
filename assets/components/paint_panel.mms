@@ -16,6 +16,7 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
                 height(100%)
                 padding(0.5)
                 background_color(panel_background_color)
+                background_z(-0.01)
             }
 
             T {
@@ -29,6 +30,7 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
                     color = title_color
                     text_align("left")
                     vertical_align("middle")
+                    background_z(-0.01)
                 }
                 T.position(0.0, 0.0, 0.0) {
                     Text { title }

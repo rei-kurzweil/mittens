@@ -76,6 +76,7 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
                 vertical_align("middle")
                 font_size(1)
                 background_color([0.08, 0.24, 0.11, 0.92])
+                background_z(-0.01)
                 color = [0.92, 1.00, 0.92, 1.0]
             }
             status
@@ -87,6 +88,7 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
                 display("block")
                 margin_bottom(TITLE_CONTENT_GAP_GU)
                 background_color(panel_background_color)
+                background_z(-0.01)
             }
 
             T {
@@ -120,6 +122,7 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
                 height(WORLD_PANEL_CONTENT_HEIGHT_GU)
                 overflow("scroll")
                 background_color([0.96, 0.92, 0.18, 0.80])
+                background_z(-0.01)
             }
             content
         }

@@ -9,6 +9,7 @@ export fn asset_item(name, item_background_color) {
             height(20.0)
             margin(1.0)
             background_color(item_background_color)
+            background_z(-0.01)
             font_size(1.0)
         }
         // Text label positioned inside the item
