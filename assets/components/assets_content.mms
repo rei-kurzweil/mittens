@@ -6,11 +6,8 @@ export fn assets_content(items, item_background_color) {
     return T {
         name = "assets_content_area"
         Style {
-            height(74.0)
-            overflow("scroll")
-            background_color([0.1, 0.1, 0.1, 1.0])
-            background_z(-0.01)
             width(100%)
+            padding_xy(0.25, 0.25)
         }
 
         for item in items {

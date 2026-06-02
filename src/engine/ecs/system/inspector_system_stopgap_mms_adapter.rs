@@ -35,11 +35,11 @@ const PANEL_LAYOUT_TEXT_SCALE: f64 = 0.08;
 const WORLD_PANEL_WIDTH_GU: f64 = 29.5;
 const WORLD_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
 const INSPECTOR_PANEL_WIDTH_GU: f64 = 22.0;
-const INSPECTOR_PANEL_TOTAL_HEIGHT_GU: f64 = 57.5;
+const INSPECTOR_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
 const ASSET_PANEL_WIDTH_GU: f64 = 30.0;
-const ASSET_PANEL_TOTAL_HEIGHT_GU: f64 = 57.5;
+const ASSET_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
 const PAINT_PANEL_WIDTH_GU: f64 = 41.0;
-const PAINT_PANEL_TOTAL_HEIGHT_GU: f64 = 57.5;
+const PAINT_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
 const PANEL_LAYOUT_GAP_GU: f64 = 2.0;
 
 #[cfg(test)]
@@ -445,43 +445,13 @@ impl InspectorSystemStopgapMmsReconciler {
             Value::Number(0.80),
         ]);
 
-        let asset_panel_title_color = Value::Array(vec![
-            Value::Number(1.0),
-            Value::Number(1.0),
-            Value::Number(1.0),
-            Value::Number(1.0),
-        ]);
-        let asset_panel_bg = Value::Array(vec![
-            Value::Number(0.15),
-            Value::Number(0.15),
-            Value::Number(0.15),
-            Value::Number(1.0),
-        ]);
-        let asset_panel_item_bg = Value::Array(vec![
-            Value::Number(0.25),
-            Value::Number(0.25),
-            Value::Number(0.25),
-            Value::Number(1.0),
-        ]);
+        let asset_panel_title_color = world_panel_title_color.clone();
+        let asset_panel_bg = world_panel_bg.clone();
+        let asset_panel_item_bg = world_panel_item_bg.clone();
 
-        let paint_panel_title_color = Value::Array(vec![
-            Value::Number(0.90),
-            Value::Number(0.90),
-            Value::Number(0.90),
-            Value::Number(1.0),
-        ]);
-        let paint_panel_bg = Value::Array(vec![
-            Value::Number(0.12),
-            Value::Number(0.12),
-            Value::Number(0.12),
-            Value::Number(0.95),
-        ]);
-        let paint_panel_item_bg = Value::Array(vec![
-            Value::Number(0.22),
-            Value::Number(0.22),
-            Value::Number(0.22),
-            Value::Number(1.0),
-        ]);
+        let paint_panel_title_color = world_panel_title_color.clone();
+        let paint_panel_bg = world_panel_bg.clone();
+        let paint_panel_item_bg = world_panel_item_bg.clone();
 
         let world_panel = match build_panel_component_expr(
             world,

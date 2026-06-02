@@ -372,7 +372,7 @@ pub struct StyleComponent {
     /// `None` (default) means layout derives the background Z from the item's
     /// resolved stacking layer: `resolved_z - 0.5 * LAYER_DISTANCE`. `Some(z)`
     /// pins the background to an absolute local Z, overriding the half-step
-    /// rule. See `docs/draft/layout-stacking-z-index.md`.
+    /// rule. See `docs/spec/layout-stacking-z-index.md`.
     pub background_z: Option<f32>,
 
     // ── Foreground (text) color ──────────────────────────────────────────

@@ -22,7 +22,7 @@ const DEFAULT_PANEL_WIDTH_CHARS: usize = 40;
 /// `T.position(_, _, 0.05)` to keep text above generated backgrounds: layout
 /// stamps `resolved_z = layer_index * LAYER_DISTANCE` onto each styled item TC
 /// and places its `__bg` quad at `resolved_z - 0.5 * LAYER_DISTANCE`.
-/// See `docs/draft/layout-stacking-z-index.md`.
+/// See `docs/spec/layout-stacking-z-index.md`.
 pub(crate) const LAYER_DISTANCE: f32 = 0.05;
 
 /// Local-Z lift applied by layout to the first non-styled TC descendant of a

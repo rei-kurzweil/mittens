@@ -1,8 +1,8 @@
-# layout stacking and `z_index` for styled nodes (draft)
+# Layout Stacking and `z_index` for Styled Nodes
 
-Status: **draft / not implemented**.
+Status: **Implemented**.
 
-This draft defines a layout-owned stacking model for styled layout items so UI
+This document defines the layout-owned stacking model for styled layout items so UI
 authors do not need to hand-author tiny local Z offsets like
 `T.position(0, 0, -0.05)` just to get backgrounds and successive rows to layer
 correctly.

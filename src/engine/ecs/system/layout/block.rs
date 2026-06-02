@@ -102,7 +102,7 @@ fn layout_items(
         // layer-resolved value each pass; composing with the prior TC translation
         // would drift on re-layout because we'd read back our own write as
         // "authored". Per-item Z bias is left to `Style.z_index` (currently inert
-        // — see `docs/draft/layout-stacking-z-index.md`).
+        // — see `docs/spec/layout-stacking-z-index.md`).
         let tc_scale = world
             .get_component_by_id_as::<TransformComponent>(item.tc_id)
             .map(|tc| tc.transform.scale)
