@@ -95,6 +95,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                     height(TITLE_BAR_HEIGHT_GU)
                     padding_xy(0.0, TITLE_LABEL_PADDING_X_GU)
                     font_size(1)
+                    vertical_align("middle")
                     color = title_color
                 }
                 T.position(0.0, 0.0, 0.015) {

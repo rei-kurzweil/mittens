@@ -20,9 +20,10 @@ impl InspectorSystem {
         editor_root: ComponentId,
         world_panel_pos: (f32, f32, f32),
         _inspector_panel_pos: (f32, f32, f32),
+        asset_system: &crate::engine::ecs::system::AssetSystem,
     ) {
         self.stopgap_mms
-            .setup_panels_for_editor(rx, world, emit, editor_root, world_panel_pos, _inspector_panel_pos);
+            .setup_panels_for_editor(rx, world, emit, editor_root, world_panel_pos, _inspector_panel_pos, asset_system);
     }
 }
 
@@ -105,6 +106,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            &systems.asset_system,
         );
 
         systems.process_commands(&mut world, &mut visuals, &mut emit);
@@ -167,6 +169,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            &systems.asset_system,
         );
 
         systems.process_commands(&mut world, &mut visuals, &mut emit);
@@ -222,6 +225,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            &systems.asset_system,
         );
 
         systems.process_commands(&mut world, &mut visuals, &mut emit);
@@ -252,6 +256,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (1.9, 1.6, -1.2),
+            &systems.asset_system,
         );
 
         systems.process_commands(&mut world, &mut visuals, &mut emit);
@@ -323,6 +328,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            &systems.asset_system,
         );
         systems.process_commands(&mut world, &mut visuals, &mut emit);
 
@@ -333,6 +339,7 @@ mod tests {
             other_editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            &systems.asset_system,
         );
 
         systems.process_commands(&mut world, &mut visuals, &mut emit);
@@ -366,6 +373,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            &systems.asset_system,
         );
         inspector.setup_panels_for_editor(
             &mut systems.rx,
@@ -374,6 +382,7 @@ mod tests {
             other_editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            &systems.asset_system,
         );
 
         systems.process_commands(&mut world, &mut visuals, &mut emit);
@@ -416,6 +425,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            &systems.asset_system,
         );
 
         systems.process_commands(&mut world, &mut visuals, &mut emit);

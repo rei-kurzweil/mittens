@@ -86,7 +86,7 @@ impl Default for InspectorSystemStopgapMmsAdapter {
             panel_layout_spawned: false,
             selected_component: Arc::new(Mutex::new(None)),
             runtime_ui_root: Arc::new(Mutex::new(None)),
-            working_file_path: Arc::new(Mutex::new(PathBuf::from("assets/world/default.mms"))),
+            working_file_path: Arc::new(Mutex::new(world_panel_scene_path())),
         }
     }
 }
@@ -103,6 +103,7 @@ impl InspectorSystemStopgapMmsAdapter {
         editor_root: ComponentId,
         world_panel_pos: (f32, f32, f32),
         inspector_panel_pos: (f32, f32, f32),
+        asset_system: &crate::engine::ecs::system::AssetSystem,
     ) {
         let runtime_ui_root = self.get_or_create_runtime_ui_root(world);
 
@@ -128,6 +129,7 @@ impl InspectorSystemStopgapMmsAdapter {
                 &model,
                 &inspector_model,
                 &working_file_path,
+                asset_system,
             );
         }
 
@@ -381,6 +383,7 @@ impl InspectorSystemStopgapMmsReconciler {
         model: &WorldPanelModel,
         inspector_model: &InspectorPanelModel,
         working_file_path: &Path,
+        asset_system: &crate::engine::ecs::system::AssetSystem,
     ) {
         let existing_world_panel = self.find_world_panel_node(world, panel_query_root, WORLD_PANEL_ROOT_SELECTOR);
         let existing_inspector_panel = self.find_world_panel_node(world, panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR);
@@ -415,6 +418,7 @@ impl InspectorSystemStopgapMmsReconciler {
             model,
             inspector_model,
             working_file_path,
+            asset_system,
         );
     }
 
@@ -437,6 +441,7 @@ impl InspectorSystemStopgapMmsReconciler {
         model: &WorldPanelModel,
         inspector_model: &InspectorPanelModel,
         working_file_path: &Path,
+        asset_system: &crate::engine::ecs::system::AssetSystem,
     ) {
         println!(
             "[InspectorSystem][debug] spawn_panel_layout panel_query_root={panel_query_root:?} world_panel_pos={:?} inspector_panel_pos={:?}",
@@ -670,6 +675,16 @@ impl InspectorSystemStopgapMmsReconciler {
         }
         if let Some(asset_panel_root) = world.find_component(panel_mount_root, "#assets") {
             debug_panel_root(world, asset_panel_root, "asset_panel");
+
+            if let Some(content_slot) = world.find_component(asset_panel_root, PANEL_CONTENT_SLOT_SELECTOR) {
+                if let Some(content_area) = world.find_component(content_slot, "#assets_content_area") {
+                    for (index, item) in asset_system.items.iter().enumerate() {
+                        if let Ok(item_root) = asset_system.build_asset_item_shell(world, emit, item, index) {
+                            let _ = world.add_child(content_area, item_root);
+                        }
+                    }
+                }
+            }
         }
         if let Some(paint_panel_root) = world.find_component(panel_mount_root, "#paint_panel_root") {
             debug_panel_root(world, paint_panel_root, "paint_panel");

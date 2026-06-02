@@ -2,10 +2,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::engine::ecs::{
-    component::{TransformComponent, TextComponent, StyleComponent},
+    component::TransformComponent,
     ComponentId, SignalEmitter, World,
 };
-use crate::engine::ecs::component::style::{Display, EdgeInsets, SizeDimension};
 use crate::meow_meow::object::{MaterializedCE, Value};
 use crate::meow_meow::runner::{LoadedMmsModule, MeowMeowRunner};
 
@@ -115,20 +114,6 @@ impl AssetSystem {
             .and_then(|module| module.named_export(&item.export_name))
     }
 
-    fn materialize_asset_component_expr(
-        &self,
-        item: &AssetItem,
-        args: Vec<Value>,
-        world_host: Option<&mut World>,
-        emit: Option<&mut dyn SignalEmitter>,
-    ) -> Result<MaterializedCE, String> {
-        let module = self.get_item_module(item).ok_or_else(|| {
-            format!("asset module not loaded for item '{}::{}'", item.title, item.export_name)
-        })?;
-
-        MeowMeowRunner::materialize_mms_module_component(module, &item.export_name, args, world_host, emit)
-    }
-
     pub fn spawn_asset_component(
         &self,
         item: &AssetItem,
@@ -175,10 +160,6 @@ impl AssetSystem {
         parent: ComponentId,
         position: (f32, f32, f32),
     ) -> Result<ComponentId, String> {
-        if self.items.is_empty() {
-            return Err("no asset items available".to_string());
-        }
-
         let panel_title = match self.asset_dir.as_ref() {
             Some(path) => format!("Assets: {}", path.display()),
             None => "Assets".to_string(),
@@ -190,9 +171,9 @@ impl AssetSystem {
             vec![
                 Value::String(panel_title),
                 Value::Array(Vec::new()),
-                Value::Array(vec![Value::Number(1.0), Value::Number(1.0), Value::Number(1.0), Value::Number(1.0)]),
-                Value::Array(vec![Value::Number(0.15), Value::Number(0.15), Value::Number(0.15), Value::Number(1.0)]),
-                Value::Array(vec![Value::Number(0.25), Value::Number(0.25), Value::Number(0.25), Value::Number(1.0)]),
+                Value::Array(vec![Value::Number(0.90), Value::Number(1.00), Value::Number(0.92), Value::Number(1.0)]),
+                Value::Array(vec![Value::Number(0.18), Value::Number(0.78), Value::Number(0.22), Value::Number(0.95)]),
+                Value::Array(vec![Value::Number(0.92), Value::Number(0.97), Value::Number(0.92), Value::Number(1.0)]),
             ],
             None,
             world,
@@ -208,11 +189,8 @@ impl AssetSystem {
             .add_child(wrapper, panel_root)
             .map_err(|e| format!("attach assets panel child failed: {e}"))?;
 
-        let selection_root = world
-            .find_component(panel_root, "#assets_selection")
-            .ok_or_else(|| "assets panel missing Selection root".to_string())?;
         let content_root = world
-            .find_component(selection_root, "#assets_content_area")
+            .find_component(panel_root, "#assets_content_area")
             .ok_or_else(|| "assets panel missing content area".to_string())?;
 
         for (index, item) in self.items.iter().enumerate() {
@@ -234,46 +212,43 @@ impl AssetSystem {
         Ok(wrapper)
     }
 
-    fn build_asset_item_shell(
+    pub fn build_asset_item_shell(
         &self,
         world: &mut World,
         emit: &mut dyn SignalEmitter,
         item: &AssetItem,
         _index: usize,
     ) -> Result<ComponentId, String> {
-        let item_root = world.add_component_boxed_named(
+        let asset_item_path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/asset_item.mms");
+        
+        let item_root = MeowMeowRunner::spawn_mms_module_component_from_file(
+            asset_item_path,
             "asset_item",
-            Box::new(TransformComponent::new()),
+            vec![
+                Value::String(item.title.clone()),
+                Value::Array(vec![Value::Number(0.92), Value::Number(0.97), Value::Number(0.92), Value::Number(1.0)]),
+            ],
+            None,
+            world,
+            emit,
+        )?;
+
+        // Spawn the preview
+        let preview_root = self.spawn_asset_component_uninitialized(item, vec![], world, emit)?;
+        
+        // Wrap preview in a transform to scale/position it
+        // The tile is 18x20. We want the preview in the upper part.
+        let preview_shell = world.add_component_boxed_named(
+            "asset_preview_shell",
+            Box::new(TransformComponent::new()
+                .with_position(9.0, 7.0, 0.05) // Center horizontally (18/2), slightly up (20/2 - offset)
+                .with_scale(4.0, 4.0, 4.0)    // Scale it up so it's visible in GU space
+            ),
         );
+        
+        world.add_child(preview_shell, preview_root).map_err(|e| format!("attach preview failed: {e}"))?;
+        world.add_child(item_root, preview_shell).map_err(|e| format!("attach preview shell failed: {e}"))?;
 
-        let mut style = StyleComponent::new();
-        style.display = Some(Display::InlineBlock);
-        style.width = SizeDimension::GlyphUnits(18.0);
-        style.height = SizeDimension::GlyphUnits(20.0);
-        style.margin = EdgeInsets::all(1.0);
-        style.background_color = Some([0.25, 0.25, 0.25, 1.0]);
-        style.font_size = SizeDimension::GlyphUnits(1.0);
-        style.color = Some([0.9, 0.9, 0.9, 1.0]);
-
-        let style_id = world.add_component_boxed(Box::new(style));
-        world
-            .add_child(item_root, style_id)
-            .map_err(|e| format!("attach asset item style failed: {e}"))?;
-
-        let label_root = world.add_component_boxed_named(
-            "asset_item_label",
-            Box::new(TransformComponent::new().with_position(1.0, 1.0, 0.0)),
-        );
-        world
-            .add_child(item_root, label_root)
-            .map_err(|e| format!("attach asset item label failed: {e}"))?;
-
-        let text_id = world.add_component_boxed(Box::new(TextComponent::new(item.title.clone())));
-        world
-            .add_child(label_root, text_id)
-            .map_err(|e| format!("attach asset item text failed: {e}"))?;
-
-        let _preview_root = self.spawn_asset_component(item, vec![], world, emit)?;
         Ok(item_root)
     }
 }

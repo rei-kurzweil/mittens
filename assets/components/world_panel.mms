@@ -72,6 +72,7 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
                 height(PATH_BAR_HEIGHT_GU)
                 margin_bottom(GAP_GU)
                 padding_xy(0.25, 0.45)
+                vertical_align("middle")
                 background_color([0.2, 0.01, 0.18, 0.8])
                 background_z(-0.01)
             }

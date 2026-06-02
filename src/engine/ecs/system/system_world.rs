@@ -798,6 +798,7 @@ impl SystemWorld {
                 component,
                 world_panel_pos,
                 inspector_panel_pos,
+                &self.asset_system,
             );
         }
     }

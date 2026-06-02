@@ -16,7 +16,7 @@ export fn asset_item(name, item_background_color) {
         T.position(1.0, 1.0, 0.0) {
             Text {
                 name
-                C.rgba(0.9, 0.9, 0.9, 1.0)
+                C.rgba(0.0, 0.0, 0.0, 1.0)
             }
         }
     }
