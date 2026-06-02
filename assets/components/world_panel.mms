@@ -122,7 +122,7 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
                 height(WORLD_PANEL_CONTENT_HEIGHT_GU)
                 overflow("scroll")
                 background_color([0.96, 0.92, 0.18, 0.80])
-                background_z(-0.01)
+                background_z(-0.001)
             }
             content
         }

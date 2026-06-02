@@ -145,7 +145,10 @@ pub(crate) fn layout_root_axis_scales(world: &World, layout_id: ComponentId) -> 
 
 pub(crate) fn trace_layout_id(world: &World, id: ComponentId) -> bool {
     let Some(label) = world.component_label(id) else { return false; };
-    label == "text_input_demo" || label.starts_with("row_")
+    label == "text_input_demo"
+        || label.starts_with("row_")
+        || label == "content_slot"
+        || label == "item_0"
 }
 
 pub(crate) fn trace_label(world: &World, id: ComponentId) -> String {

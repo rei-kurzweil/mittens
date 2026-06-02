@@ -26,7 +26,7 @@ pub fn layout(world: &mut World, emit: &mut dyn SignalEmitter, layout_id: Compon
     let (items, avail_w_gu, _avail_h_gu, unit_scale) = measure_items(world, layout_id);
     let viz = super::block::layout_root_has_inspect(world, layout_id);
     let axis_scales = super::measure::layout_root_axis_scales(world, layout_id);
-    layout_items(world, emit, &items, avail_w_gu, unit_scale, axis_scales, 0, viz);
+    layout_items(world, emit, &items, avail_w_gu, unit_scale, axis_scales, 0, 0, viz);
 }
 
 /// Inline-formatting-context layout over a pre-measured item list.
@@ -43,12 +43,13 @@ pub(crate) fn layout_items(
     unit_scale: f32,
     axis_scales: (f32, f32),
     depth: i32,
+    parent_depth: i32,
     viz: bool,
 ) {
     let mut cursor_x_gu: f32 = 0.0;
     let mut cursor_y_gu: f32 = 0.0;
     let mut line_height_gu: f32 = 0.0;
-    let resolved_z = depth as f32 * super::LAYER_DISTANCE;
+    let resolved_z = (depth - parent_depth) as f32 * super::LAYER_DISTANCE;
 
     for original in items {
         // Auto-width inline-block items consume the remaining inline-axis budget
@@ -163,9 +164,9 @@ pub(crate) fn layout_items(
                 depth
             };
             if all_inline_block {
-                layout_items(world, emit, &nested_items, item.content_width_gu, unit_scale, axis_scales, child_depth, viz);
+                layout_items(world, emit, &nested_items, item.content_width_gu, unit_scale, axis_scales, child_depth, depth, viz);
             } else {
-                super::block::layout_items_for(world, emit, &nested_items, unit_scale, child_depth, viz);
+                super::block::layout_items_for(world, emit, &nested_items, unit_scale, child_depth, depth, viz);
             }
         }
 

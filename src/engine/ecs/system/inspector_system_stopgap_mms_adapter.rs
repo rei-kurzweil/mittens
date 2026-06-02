@@ -1472,6 +1472,7 @@ fn spawn_world_panel_row_tree(
                     style.padding = EdgeInsets::axes(0.55, 0.45);
                     style.font_size = SizeDimension::GlyphUnits(1.0);
                     style.background_color = Some(background_rgba);
+                    style.background_z = Some(0.001);
                     style.color = Some(text_rgba);
                     style.overflow = Overflow::Visible;
                     style
@@ -1481,7 +1482,7 @@ fn spawn_world_panel_row_tree(
 
             let text_root = world.add_component_boxed_named(
                 format!("{row_name}_text_root"),
-                Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.02)),
+                Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.005)),
             );
             let text = world.add_component_boxed_named(
                 format!("{row_name}_text"),
@@ -1551,6 +1552,7 @@ fn spawn_inspector_panel_row_tree(
             style.padding = EdgeInsets::axes(0.55, 0.45);
             style.font_size = SizeDimension::GlyphUnits(1.0);
             style.background_color = Some(background_rgba);
+            style.background_z = Some(0.001);
             style.color = Some(text_rgba);
             style.overflow = Overflow::Visible;
             style
@@ -1560,7 +1562,7 @@ fn spawn_inspector_panel_row_tree(
 
     let text_root = world.add_component_boxed_named(
         format!("{row_name}_text_root"),
-        Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.02)),
+        Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.005)),
     );
     let text = world.add_component_boxed_named(
         format!("{row_name}_text"),

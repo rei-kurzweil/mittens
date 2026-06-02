@@ -54,7 +54,7 @@ pub fn layout(
     let viz = layout_root_has_inspect(world, layout_id);
     let axis_scales = super::measure::layout_root_axis_scales(world, layout_id);
 
-    layout_items(world, emit, &items, unit_scale, axis_scales, 0, viz);
+    layout_items(world, emit, &items, unit_scale, axis_scales, 0, 0, viz);
 }
 
 /// Public-to-the-layout-module entry so `inline::layout_items` can recurse
@@ -65,9 +65,10 @@ pub(crate) fn layout_items_for(
     items: &[MeasuredItem],
     unit_scale: f32,
     depth: i32,
+    parent_depth: i32,
     viz: bool,
 ) {
-    layout_items(world, emit, items, unit_scale, (1.0, 1.0), depth, viz);
+    layout_items(world, emit, items, unit_scale, (1.0, 1.0), depth, parent_depth, viz);
 }
 
 /// `depth` is the *layer* depth from the LayoutRoot (0 at root). Sibling items
@@ -84,11 +85,12 @@ fn layout_items(
     unit_scale: f32,
     axis_scales: (f32, f32),
     depth: i32,
+    parent_depth: i32,
     viz: bool,
 ) {
 
     let mut cursor_gu = 0.0_f32;
-    let resolved_z = depth as f32 * super::LAYER_DISTANCE;
+    let resolved_z = (depth - parent_depth) as f32 * super::LAYER_DISTANCE;
 
     for item in items {
         cursor_gu += item.margin_top_gu;
@@ -191,10 +193,11 @@ fn layout_items(
                     unit_scale,
                     axis_scales,
                     child_depth,
+                    depth,
                     viz,
                 );
             } else {
-                layout_items(world, emit, &nested_items, unit_scale, axis_scales, child_depth, viz);
+                layout_items(world, emit, &nested_items, unit_scale, axis_scales, child_depth, depth, viz);
             }
         }
 
@@ -474,11 +477,25 @@ pub(crate) fn sync_bg_quad(
     let default_bg_z = -0.5 * super::LAYER_DISTANCE;
 
     let (needs_clip, needs_scroll_drag_surface, bg_spec) = match bg_style {
-        Some((rgba, bg_z_override, overflow)) => (
-            matches!(overflow, Overflow::Hidden | Overflow::Scroll),
-            matches!(overflow, Overflow::Scroll),
-            Some((rgba, bg_z_override.unwrap_or(default_bg_z))),
-        ),
+        Some((rgba, bg_z_override, overflow)) => {
+            if let Some(label) = world.component_label(tc_id) {
+                if label == "content_slot" || label == "item_0" {
+                    println!(
+                        "[layout-trace] bg item={} tc_id={:?} background_color={:?} background_z_override={:?} default_bg_z={:.6}",
+                        label,
+                        tc_id,
+                        rgba,
+                        bg_z_override,
+                        default_bg_z,
+                    );
+                }
+            }
+            (
+                matches!(overflow, Overflow::Hidden | Overflow::Scroll),
+                matches!(overflow, Overflow::Scroll),
+                Some((rgba, bg_z_override.unwrap_or(default_bg_z))),
+            )
+        }
         None => (false, false, None),
     };
 
