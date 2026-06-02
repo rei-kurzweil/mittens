@@ -1479,7 +1479,6 @@ fn spawn_world_panel_row_tree(
                     style.width = SizeDimension::Percent(100.0);
                     style.margin = EdgeInsets::axes(0.25, 0.20);
                     style.padding = EdgeInsets::axes(0.55, 0.45);
-                    style.font_size = SizeDimension::GlyphUnits(1.0);
                     style.background_color = Some(background_rgba);
                     style.background_z = Some(0.001);
                     style.color = Some(text_rgba);
@@ -1559,7 +1558,6 @@ fn spawn_inspector_panel_row_tree(
             style.width = SizeDimension::Percent(100.0);
             style.margin = EdgeInsets::axes(0.25, 0.20);
             style.padding = EdgeInsets::axes(0.55, 0.45);
-            style.font_size = SizeDimension::GlyphUnits(1.0);
             style.background_color = Some(background_rgba);
             style.background_z = Some(0.001);
             style.color = Some(text_rgba);

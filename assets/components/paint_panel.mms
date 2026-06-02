@@ -25,8 +25,8 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
                 height(TITLE_BAR_HEIGHT_GU)
                 margin_bottom(TITLE_CONTENT_GAP_GU)
                 padding_xy(0.5, 0.5)
-                font_size(1)
                 color = title_color
+                background_color(panel_background_color)
                 text_align("left")
                 vertical_align("middle")
                 background_z(-0.01)

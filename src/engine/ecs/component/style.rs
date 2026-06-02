@@ -424,7 +424,7 @@ impl Default for StyleComponent {
             bottom: None,
             left: None,
             line_height: 1.0,
-            font_size: SizeDimension::Auto,
+            font_size: SizeDimension::GlyphUnits(1.0),
             text_align: TextAlign::Auto,
             vertical_align: VerticalAlign::Auto,
             overflow: Overflow::Visible,

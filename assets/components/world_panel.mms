@@ -40,7 +40,6 @@ fn panel_button(node_name, label) {
             padding_xy(0.0, 0.45)
             text_align("center")
             vertical_align("middle")
-            font_size(1)
             background_color([0.10, 0.55, 0.18, 1.0])
             color = [0.75, 1.00, 0.45, 1.0]
         }
@@ -73,7 +72,7 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
                 height(PATH_BAR_HEIGHT_GU)
                 margin_bottom(GAP_GU)
                 padding_xy(0.25, 0.45)
-                background_color([0.1, 0.1, 0.1, 0.9])
+                background_color([0.2, 0.01, 0.18, 0.8])
                 background_z(-0.01)
             }
             TextInput {
@@ -101,7 +100,6 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
                     padding_xy(0.25, TITLE_LABEL_PADDING_X_GU)
                     text_align("left")
                     vertical_align("middle")
-                    font_size(1)
                     color = title_color
                 }
                 T.position(0.0, 0.0, 0.0) {
@@ -137,7 +135,6 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
                 padding_xy(0.25, 0.45)
                 text_align("left")
                 vertical_align("middle")
-                font_size(1)
                 background_color([0.08, 0.24, 0.11, 0.92])
                 background_z(-0.01)
                 color = [0.92, 1.00, 0.92, 1.0]

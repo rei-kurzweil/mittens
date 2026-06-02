@@ -28,7 +28,6 @@ export fn paint_panel_item(label, item_background_color, title_color) {
                 }
                 T {
                     Style {
-                        font_size(1)
                         color = title_color
                     }
                     Text { label }
