@@ -121,9 +121,17 @@ mod tests {
         assert!(world.find_component(runtime_ui_root, "#editor_panel_layout_root").is_some());
         assert!(world.find_component(runtime_ui_root, "#editor_world_panel_shell").is_some());
         assert!(world.find_component(runtime_ui_root, "#editor_inspector_panel_shell").is_some());
-        let panel_overlay = world
+        assert!(world.find_component(runtime_ui_root, "#editor_asset_panel_shell").is_some());
+        assert!(world.find_component(runtime_ui_root, "#editor_paint_panel_shell").is_some());
+        let panel_shell = world
             .parent_of(panel_root)
-            .expect("expected overlay ancestor above world panel root");
+            .expect("expected panel shell above world panel root");
+        let panel_shared_layout = world
+            .parent_of(panel_shell)
+            .expect("expected shared layout root above world panel shell");
+        let panel_overlay = world
+            .parent_of(panel_shared_layout)
+            .expect("expected overlay ancestor above shared layout root");
         assert_eq!(world.parent_of(panel_overlay), Some(panel_mount));
         assert!(world
             .get_component_by_id_as::<OverlayComponent>(panel_overlay)
@@ -131,9 +139,11 @@ mod tests {
         assert!(world.find_component(runtime_ui_root, "#inspector_panel_root").is_some());
         assert!(world.find_component(runtime_ui_root, "#panel_status_value").is_some());
         assert!(world.find_component(runtime_ui_root, "#rows_mount").is_some());
-        assert!(world.find_component(runtime_ui_root, "#item_0").is_some());
-        assert_eq!(row_text(&world, runtime_ui_root, "#item_0"), "Editor#editor_root");
-        assert_eq!(row_text(&world, runtime_ui_root, "#item_1"), "scene_root");
+        let item0 = world.find_component(panel_root, "#item_0").expect("expected item_0 under panel_root");
+        println!("item0={:?} type={:?} name={:?}", item0, world.get_component_record(item0).map(|r| r.component_type.clone()), world.component_label(item0));
+        println!("item0 text descendants={:?}", world.find_all_components(item0, "Text"));
+        assert_eq!(row_text(&world, panel_root, "#item_0"), "Editor#editor_root");
+        assert_eq!(row_text(&world, panel_root, "#item_1"), "scene_root");
     }
 
     #[test]

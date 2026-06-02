@@ -47,6 +47,7 @@ pub mod transition_system;
 pub mod transform_stream_system;
 pub mod transform_system;
 pub mod asset_system;
+pub mod selection_system;
 
 pub use animation_system::AnimationSystem;
 pub use audio_system::AudioSystem;
@@ -87,6 +88,7 @@ pub use transition_system::TransitionSystem;
 pub use transform_stream_system::TransformStreamSystem;
 pub use transform_system::TransformSystem;
 pub use asset_system::AssetSystem;
+pub use selection_system::SelectionSystem;
 
 use super::World;
 use crate::engine::graphics::VisualWorld;

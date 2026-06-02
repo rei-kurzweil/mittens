@@ -27,6 +27,9 @@ export fn assets(title, items) {
         }
 
         // Content Area
-        assets_content(items)
+        Selection {
+            name = "assets_selection"
+            assets_content(items)
+        }
     }
 }

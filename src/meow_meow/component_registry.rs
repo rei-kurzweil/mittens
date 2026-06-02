@@ -20,7 +20,7 @@ use crate::engine::ecs::component::{
     LightQuantizationComponent, OpacityComponent, OpenXRComponent, OverlayComponent,
     PointLightComponent, PointerComponent, TransparentCutoutComponent,
     RouterComponent,
-    RenderGraphComponent, ScrollingComponent, SelectableComponent,
+    RenderGraphComponent, ScrollingComponent, SelectableComponent, SelectionComponent,
     StyleComponent, AlignItems, BoxSizing, Display, EdgeInsets, FlexDirection, FlexWrap,
     JustifyContent, Overflow, Position, SizeDimension, TextAlign, WordWrapMode,
     TextureComponent, UVComponent,
@@ -1163,6 +1163,7 @@ fn create_component(
             Some("off") => add!(SelectableComponent::off()),
             _ => add!(SelectableComponent::on()),
         },
+        "Selection" => add!(SelectionComponent::new()),
         "Serialize" => match ctor {
             Some("off") => add!(SerializeComponent::off()),
             _ => add!(SerializeComponent::on()),

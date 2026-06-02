@@ -17,6 +17,8 @@ const PANEL_LAYOUT_ROOT_NAME: &str = "editor_panel_layout_root";
 const EDITOR_RUNTIME_UI_ROOT_NAME: &str = "editor_runtime_ui_root";
 const WORLD_PANEL_SHELL_NAME: &str = "editor_world_panel_shell";
 const INSPECTOR_PANEL_SHELL_NAME: &str = "editor_inspector_panel_shell";
+const ASSET_PANEL_SHELL_NAME: &str = "editor_asset_panel_shell";
+const PAINT_PANEL_SHELL_NAME: &str = "editor_paint_panel_shell";
 const WORLD_PANEL_ROOT_SELECTOR: &str = "#world_panel_root";
 const WORLD_PANEL_CONTENT_ROOT_SELECTOR: &str = "#world_panel_content_root";
 const PANEL_CONTENT_SLOT_SELECTOR: &str = "#content_slot";
@@ -34,6 +36,10 @@ const WORLD_PANEL_WIDTH_GU: f64 = 29.5;
 const WORLD_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
 const INSPECTOR_PANEL_WIDTH_GU: f64 = 22.0;
 const INSPECTOR_PANEL_TOTAL_HEIGHT_GU: f64 = 57.5;
+const ASSET_PANEL_WIDTH_GU: f64 = 30.0;
+const ASSET_PANEL_TOTAL_HEIGHT_GU: f64 = 57.5;
+const PAINT_PANEL_WIDTH_GU: f64 = 41.0;
+const PAINT_PANEL_TOTAL_HEIGHT_GU: f64 = 57.5;
 const PANEL_LAYOUT_GAP_GU: f64 = 2.0;
 
 #[cfg(test)]
@@ -227,6 +233,11 @@ impl InspectorSystemStopgapMmsAdapter {
                 update_world_panel_row_selection(world, emit, panel_query_root, index, false);
             }
             update_world_panel_row_selection(world, emit, panel_query_root, row_index, true);
+
+            if let Some(target_label) = world.component_label(target_component) {
+                let status_text = format!("selected {target_label}");
+                rerender_world_panel_status(world, emit, panel_query_root, status_wrap, &status_text);
+            }
 
             if let Some(inspector_panel_root) = world.find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR) {
                 if let Some(inspector_content_slot) = world.find_component(inspector_panel_root, PANEL_CONTENT_SLOT_SELECTOR) {
@@ -426,11 +437,37 @@ impl InspectorSystemStopgapMmsReconciler {
             None => return,
         };
 
+        let asset_panel = match build_panel_component_expr(
+            world,
+            emit,
+            asset_panel_asset_path(),
+            "assets",
+            vec![
+                Value::String("Assets".to_string()),
+                Value::Array(Vec::new()),
+            ],
+            "asset panel",
+        ) {
+            Some(panel) => panel,
+            None => return,
+        };
+
+        let paint_panel = build_placeholder_panel_component_expr("paint_panel_root", "Paint");
+
         let _ = inspector_panel_pos;
         let anchor_pos = world_panel_pos;
 
-        let total_width_gu = WORLD_PANEL_WIDTH_GU + PANEL_LAYOUT_GAP_GU + INSPECTOR_PANEL_WIDTH_GU;
-        let total_height_gu = WORLD_PANEL_TOTAL_HEIGHT_GU.max(INSPECTOR_PANEL_TOTAL_HEIGHT_GU);
+        let total_width_gu = WORLD_PANEL_WIDTH_GU
+            + PANEL_LAYOUT_GAP_GU
+            + INSPECTOR_PANEL_WIDTH_GU
+            + PANEL_LAYOUT_GAP_GU
+            + ASSET_PANEL_WIDTH_GU
+            + PANEL_LAYOUT_GAP_GU
+            + PAINT_PANEL_WIDTH_GU;
+        let total_height_gu = WORLD_PANEL_TOTAL_HEIGHT_GU
+            .max(INSPECTOR_PANEL_TOTAL_HEIGHT_GU)
+            .max(ASSET_PANEL_TOTAL_HEIGHT_GU)
+            .max(PAINT_PANEL_TOTAL_HEIGHT_GU);
 
         let world_shell = panel_shell_ce(
             WORLD_PANEL_SHELL_NAME,
@@ -446,6 +483,20 @@ impl InspectorSystemStopgapMmsReconciler {
             PANEL_LAYOUT_GAP_GU,
             inspector_panel,
         );
+        let asset_shell = panel_shell_ce(
+            ASSET_PANEL_SHELL_NAME,
+            ASSET_PANEL_WIDTH_GU,
+            ASSET_PANEL_TOTAL_HEIGHT_GU,
+            PANEL_LAYOUT_GAP_GU,
+            asset_panel,
+        );
+        let paint_shell = panel_shell_ce(
+            PAINT_PANEL_SHELL_NAME,
+            PAINT_PANEL_WIDTH_GU,
+            PAINT_PANEL_TOTAL_HEIGHT_GU,
+            PANEL_LAYOUT_GAP_GU,
+            paint_panel,
+        );
 
         let shared_layout_root = MaterializedCE {
             component_type: "LayoutRoot".to_string(),
@@ -458,7 +509,12 @@ impl InspectorSystemStopgapMmsReconciler {
             ],
             named: vec![("name".to_string(), Value::String(PANEL_LAYOUT_ROOT_NAME.to_string()))],
             positionals: Vec::new(),
-            children: vec![CeChild::Spawn(world_shell), CeChild::Spawn(inspector_shell)],
+            children: vec![
+                CeChild::Spawn(world_shell),
+                CeChild::Spawn(inspector_shell),
+                CeChild::Spawn(asset_shell),
+                CeChild::Spawn(paint_shell),
+            ],
         };
 
         let overlay_ce = MaterializedCE {
@@ -1043,8 +1099,46 @@ fn world_panel_status_asset_path() -> &'static str {
     concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/world_panel_status.mms")
 }
 
+fn asset_panel_asset_path() -> &'static str {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/assets.mms")
+}
+
+fn paint_panel_asset_path() -> &'static str {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/paint_panel.mms")
+}
+
 fn inspector_panel_asset_path() -> &'static str {
     concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/inspector_panel.mms")
+}
+
+fn build_placeholder_panel_component_expr(title_name: &'static str, title: &str) -> MaterializedCE {
+    MaterializedCE {
+        component_type: "T".to_string(),
+        ctor_method: None,
+        ctor_args: Vec::new(),
+        calls: Vec::new(),
+        named: vec![("name".to_string(), Value::String(title_name.to_string()))],
+        positionals: Vec::new(),
+        children: vec![
+            CeChild::Spawn(MaterializedCE {
+                component_type: "T".to_string(),
+                ctor_method: None,
+                ctor_args: Vec::new(),
+                calls: Vec::new(),
+                named: vec![("name".to_string(), Value::String(format!("{title_name}_title")))],
+                positionals: Vec::new(),
+                children: vec![CeChild::Spawn(MaterializedCE {
+                    component_type: "Text".to_string(),
+                    ctor_method: None,
+                    ctor_args: Vec::new(),
+                    calls: Vec::new(),
+                    named: vec![("name".to_string(), Value::String(format!("{title_name}_label")))],
+                    positionals: vec![Value::String(title.to_string())],
+                    children: Vec::new(),
+                })],
+            }),
+        ],
+    }
 }
 
 fn build_panel_component_expr(

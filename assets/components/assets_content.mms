@@ -9,18 +9,11 @@ export fn assets_content(items) {
             height(74.0)
             overflow("scroll")
             background_color = [0.1, 0.1, 0.1, 1.0]
+            width(100%)
         }
-        
-        // Wrap items in a container that takes full width
-        T {
-            name = "items_container"
-            Style {
-                width(100%)
-            }
-            
-            for item in items {
-                asset_item(item)
-            }
+
+        for item in items {
+            asset_item(item)
         }
     }
 }

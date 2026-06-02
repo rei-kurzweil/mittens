@@ -1,7 +1,11 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::engine::ecs::{component::TransformComponent, ComponentId, SignalEmitter, World};
+use crate::engine::ecs::{
+    component::{TransformComponent, TextComponent, StyleComponent},
+    ComponentId, SignalEmitter, World,
+};
+use crate::engine::ecs::component::style::{Display, EdgeInsets, SizeDimension};
 use crate::meow_meow::object::{MaterializedCE, Value};
 use crate::meow_meow::runner::{LoadedMmsModule, MeowMeowRunner};
 
@@ -36,6 +40,7 @@ pub struct AssetSystem {
     module_paths: HashMap<PathBuf, AssetModuleId>,
     pub items: Vec<AssetItem>,
     next_module_id: u32,
+    asset_dir: Option<PathBuf>,
 }
 
 impl AssetSystem {
@@ -44,6 +49,7 @@ impl AssetSystem {
     }
 
     pub fn scan_assets_dir(&mut self, path: &Path) -> Result<(), String> {
+        self.asset_dir = Some(path.to_path_buf());
         let entries = std::fs::read_dir(path).map_err(|e| format!("cannot read assets dir '{}': {e}", path.display()))?;
 
         for entry in entries {
@@ -173,16 +179,15 @@ impl AssetSystem {
             return Err("no asset items available".to_string());
         }
 
-        let item_values: Vec<Value> = self
-            .items
-            .iter()
-            .map(|item| Value::String(item.title.clone()))
-            .collect();
+        let panel_title = match self.asset_dir.as_ref() {
+            Some(path) => format!("Assets: {}", path.display()),
+            None => "Assets".to_string(),
+        };
 
         let panel_root = MeowMeowRunner::spawn_mms_module_component_from_file(
             Self::assets_panel_asset_path(),
             "assets",
-            vec![Value::String("Assets".to_string()), Value::Array(item_values)],
+            vec![Value::String(panel_title), Value::Array(vec![])],
             None,
             world,
             emit,
@@ -196,6 +201,21 @@ impl AssetSystem {
         world
             .add_child(wrapper, panel_root)
             .map_err(|e| format!("attach assets panel child failed: {e}"))?;
+
+        let selection_root = world
+            .find_component(panel_root, "#assets_selection")
+            .ok_or_else(|| "assets panel missing Selection root".to_string())?;
+        let content_root = world
+            .find_component(selection_root, "#assets_content_area")
+            .ok_or_else(|| "assets panel missing content area".to_string())?;
+
+        for (index, item) in self.items.iter().enumerate() {
+            let item_root = self.build_asset_item_shell(world, emit, item, index)?;
+            world
+                .add_child(content_root, item_root)
+                .map_err(|e| format!("attach asset item failed: {e}"))?;
+        }
+
         world.init_component_tree(wrapper, emit);
 
         emit.push_intent_now(
@@ -207,11 +227,55 @@ impl AssetSystem {
         );
         Ok(wrapper)
     }
+
+    fn build_asset_item_shell(
+        &self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        item: &AssetItem,
+        _index: usize,
+    ) -> Result<ComponentId, String> {
+        let item_root = world.add_component_boxed_named(
+            "asset_item",
+            Box::new(TransformComponent::new()),
+        );
+
+        let mut style = StyleComponent::new();
+        style.display = Some(Display::InlineBlock);
+        style.width = SizeDimension::GlyphUnits(18.0);
+        style.height = SizeDimension::GlyphUnits(20.0);
+        style.margin = EdgeInsets::all(1.0);
+        style.background_color = Some([0.25, 0.25, 0.25, 1.0]);
+        style.font_size = SizeDimension::GlyphUnits(1.0);
+        style.color = Some([0.9, 0.9, 0.9, 1.0]);
+
+        let style_id = world.add_component_boxed(Box::new(style));
+        world
+            .add_child(item_root, style_id)
+            .map_err(|e| format!("attach asset item style failed: {e}"))?;
+
+        let label_root = world.add_component_boxed_named(
+            "asset_item_label",
+            Box::new(TransformComponent::new().with_position(1.0, 1.0, 0.0)),
+        );
+        world
+            .add_child(item_root, label_root)
+            .map_err(|e| format!("attach asset item label failed: {e}"))?;
+
+        let text_id = world.add_component_boxed(Box::new(TextComponent::new(item.title.clone())));
+        world
+            .add_child(label_root, text_id)
+            .map_err(|e| format!("attach asset item text failed: {e}"))?;
+
+        let _preview_root = self.spawn_asset_component(item, vec![], world, emit)?;
+        Ok(item_root)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::World;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -275,5 +339,68 @@ mod tests {
 
         assert_eq!(expr.component_type, "T");
         assert_eq!(expr.children.len(), 0);
+    }
+
+    #[test]
+    fn spawn_assets_panel_shows_assets_dir_in_title() {
+        let tmp_dir = temp_asset_directory();
+        let asset_path = tmp_dir.join("test_asset.mms");
+        std::fs::write(
+            &asset_path,
+            r#"
+                export fn example() {
+                    let root = T {}
+                    return root
+                }
+            "#,
+        )
+        .expect("write asset file");
+
+        let mut system = AssetSystem::new();
+        system.scan_assets_dir(&tmp_dir).expect("scan assets dir");
+
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let parent = world.add_component_boxed_named("parent", Box::new(TransformComponent::new()));
+
+        let wrapper = system
+            .spawn_assets_panel(&mut world, &mut emit, parent, (0.0, 0.0, 0.0))
+            .expect("spawn assets panel");
+
+        let title_bar = world
+            .find_component(wrapper, "#title_bar")
+            .expect("expected title bar component");
+
+        let title_position_transform = world
+            .children_of(title_bar)
+            .iter()
+            .copied()
+            .find(|&child| {
+                world
+                    .get_component_record(child)
+                    .map(|node| node.component_type == "transform")
+                    .unwrap_or(false)
+            })
+            .expect("expected title position transform child");
+
+        let title_text = world
+            .children_of(title_position_transform)
+            .iter()
+            .copied()
+            .find(|&child| {
+                world
+                    .get_component_record(child)
+                    .map(|node| node.component_type == "text")
+                    .unwrap_or(false)
+            })
+            .expect("expected title text component");
+
+        let text_value = world
+            .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(title_text)
+            .expect("expected text component")
+            .text
+            .clone();
+
+        assert_eq!(text_value, format!("Assets: {}", tmp_dir.display()));
     }
 }

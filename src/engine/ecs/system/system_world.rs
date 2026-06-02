@@ -30,7 +30,7 @@ use crate::engine::ecs::system::TransitionSystem;
 use crate::engine::ecs::system::TransformStreamSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
-use crate::engine::ecs::system::{AssetSystem, AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, GestureSystem, HeadPoseBodyXzFollowSystem, IKSystem, InspectorSystem, LayoutSystem, TransformGizmoSystem};
+use crate::engine::ecs::system::{AssetSystem, AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, GestureSystem, HeadPoseBodyXzFollowSystem, IKSystem, InspectorSystem, LayoutSystem, SelectionSystem, TransformGizmoSystem};
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 use std::path::Path;
@@ -66,6 +66,7 @@ pub struct SystemWorld {
 
     pub editor: EditorSystem,
     pub inspector: InspectorSystem,
+    pub selection: SelectionSystem,
     pub asset_system: AssetSystem,
     pub avatar_body_yaw: AvatarBodyYawSystem,
     pub avatar_control: AvatarControlSystem,
@@ -1604,6 +1605,7 @@ impl SystemWorld {
         self.gesture.install_handlers(&mut self.rx);
         self.gesture.begin_frame();
         self.text_input.install_handlers(&mut self.rx);
+        self.selection.install_handlers(&mut self.rx);
 
         // Process input first - it may queue commands
         self.input.process_input(world, input, queue, dt_sec);

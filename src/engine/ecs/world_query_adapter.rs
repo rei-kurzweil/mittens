@@ -26,7 +26,9 @@ impl<'w> QueryTreeAdapter for WorldQueryAdapter<'w> {
     }
 
     fn matches_type(&self, node: Self::NodeId, type_name: &str) -> bool {
-        self.world.component_name(node).map_or(false, |t| t == type_name)
+        self.world
+            .component_name(node)
+            .map_or(false, |t| t.eq_ignore_ascii_case(type_name))
     }
 
     fn matches_name(&self, node: Self::NodeId, name: &str) -> bool {
