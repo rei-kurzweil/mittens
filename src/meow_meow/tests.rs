@@ -904,6 +904,34 @@ fn call_mms_module_fn_invokes_exported_factory_function() {
 }
 
 #[test]
+fn spawn_mms_module_component_initialises_live_root() {
+    let tmp_dir = std::env::temp_dir().join(format!("mms_spawn_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    std::fs::create_dir_all(&tmp_dir).expect("create temp dir");
+    let path = tmp_dir.join("test_asset.mms");
+    std::fs::write(
+        &path,
+        r#"
+            export fn example() {
+                let root = T {}
+                return root
+            }
+        "#,
+    )
+    .expect("write asset file");
+
+    let module = MeowMeowRunner::load_module_file(path.to_str().unwrap()).expect("load module");
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let root_id = MeowMeowRunner::spawn_mms_module_component(&module, "example", vec![], None, &mut world, &mut emit)
+        .expect("spawn module component");
+
+    assert!(world.component_name(root_id).is_some());
+    assert!(world.is_initialized(root_id));
+}
+
+#[test]
 fn eval_world_panel_content_rows_are_queryable_by_index_name() {
     let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = workspace_root.join("target/_mms_test_world_panel_content_names.mms");

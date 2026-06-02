@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::engine::ecs::{ComponentId, SignalEmitter, World};
-use crate::meow_meow::component_registry::spawn_tree_uninitialized;
-use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
+use crate::engine::ecs::{component::TransformComponent, ComponentId, SignalEmitter, World};
+use crate::meow_meow::object::{MaterializedCE, Value};
 use crate::meow_meow::runner::{LoadedMmsModule, MeowMeowRunner};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -131,7 +130,11 @@ impl AssetSystem {
         world: &mut World,
         emit: &mut dyn SignalEmitter,
     ) -> Result<ComponentId, String> {
-        self.spawn_asset_component_uninitialized(item, args, world, emit)
+        let module = self.modules.get(&item.module_id).ok_or_else(|| {
+            format!("asset module not loaded for item '{}::{}'", item.title, item.export_name)
+        })?;
+
+        MeowMeowRunner::spawn_mms_module_component(&module.module, &item.export_name, args, None, world, emit)
     }
 
     pub fn spawn_asset_component_uninitialized(
@@ -176,40 +179,33 @@ impl AssetSystem {
             .map(|item| Value::String(item.title.clone()))
             .collect();
 
-        let panel_root = MeowMeowRunner::materialize_mms_module_component_from_file(
+        let panel_root = MeowMeowRunner::spawn_mms_module_component_from_file(
             Self::assets_panel_asset_path(),
             "assets",
             vec![Value::String("Assets".to_string()), Value::Array(item_values)],
-            Some(world),
-            Some(emit),
+            None,
+            world,
+            emit,
         )?;
 
-        let wrapper = MaterializedCE {
-            component_type: "T".to_string(),
-            ctor_method: Some("position".to_string()),
-            ctor_args: vec![
-                Value::Number(position.0 as f64),
-                Value::Number(position.1 as f64),
-                Value::Number(position.2 as f64),
-            ],
-            calls: Vec::new(),
-            named: vec![(
-                "name".to_string(),
-                Value::String("assets_panel_shell".to_string()),
-            )],
-            positionals: Vec::new(),
-            children: vec![CeChild::Spawn(panel_root)],
-        };
+        let wrapper = world.add_component_boxed_named(
+            "assets_panel_shell",
+            Box::new(TransformComponent::new().with_position(position.0, position.1, position.2)),
+        );
 
-        let component_id = spawn_tree_uninitialized(&wrapper, world, emit)?;
+        world
+            .add_child(wrapper, panel_root)
+            .map_err(|e| format!("attach assets panel child failed: {e}"))?;
+        world.init_component_tree(wrapper, emit);
+
         emit.push_intent_now(
-            component_id,
+            wrapper,
             crate::engine::ecs::IntentValue::Attach {
                 parents: vec![parent],
-                child: component_id,
+                child: wrapper,
             },
         );
-        Ok(component_id)
+        Ok(wrapper)
     }
 }
 

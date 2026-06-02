@@ -168,6 +168,30 @@ impl MeowMeowRunner {
         Self::spawn_mms_module_component_uninitialized(&module, name, args, world, emit)
     }
 
+    pub fn spawn_mms_module_component(
+        module: &LoadedMmsModule,
+        name: &str,
+        args: Vec<Value>,
+        parent: Option<ComponentId>,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+    ) -> Result<ComponentId, String> {
+        let component_expr = Self::materialize_mms_module_component(module, name, args, Some(world), Some(emit))?;
+        crate::meow_meow::component_registry::spawn_tree(&component_expr, parent, world, emit)
+    }
+
+    pub fn spawn_mms_module_component_from_file(
+        path: &str,
+        name: &str,
+        args: Vec<Value>,
+        parent: Option<ComponentId>,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+    ) -> Result<ComponentId, String> {
+        let module = Self::load_module_file(path)?;
+        Self::spawn_mms_module_component(&module, name, args, parent, world, emit)
+    }
+
     /// Evaluate `source` with live world access.
     ///
     /// Handles two HostCall kinds during evaluation:
