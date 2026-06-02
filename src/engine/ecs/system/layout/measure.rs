@@ -1,7 +1,10 @@
-use crate::engine::ecs::World;
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::{BoundsComponent, ColorComponent, HtmlElementComponent, LayoutComponent, RenderableComponent, StyleComponent, TextComponent, TransformComponent};
+use crate::engine::ecs::World;
 use crate::engine::ecs::component::style::{Display, SizeDimension, WordWrapMode};
+use crate::engine::ecs::component::{
+    BoundsComponent, ColorComponent, HtmlElementComponent, LayoutComponent, RenderableComponent,
+    StyleComponent, TextComponent, TransformComponent,
+};
 use crate::engine::ecs::system::text_system::TextSystem;
 use crate::engine::graphics::bounds::Aabb;
 use crate::engine::graphics::primitives::TransformMatrix;
@@ -17,28 +20,28 @@ pub(crate) struct MeasuredItem {
     pub tc_id: ComponentId,
 
     // ── Vertical ─────────────────────────────────────────────────────────
-    pub content_height_gu:    f32,
-    pub padding_top_gu:       f32,
-    pub padding_bottom_gu:    f32,
-    pub margin_top_gu:        f32,
-    pub margin_bottom_gu:     f32,
+    pub content_height_gu: f32,
+    pub padding_top_gu: f32,
+    pub padding_bottom_gu: f32,
+    pub margin_top_gu: f32,
+    pub margin_bottom_gu: f32,
     /// padding_top + content_height + padding_bottom
-    pub box_height_gu:        f32,
+    pub box_height_gu: f32,
     /// margin_top + box_height + margin_bottom
     pub margin_box_height_gu: f32,
 
     // ── Horizontal ───────────────────────────────────────────────────────
-    pub content_width_gu:     f32,
-    pub padding_left_gu:      f32,
-    pub padding_right_gu:     f32,
-    pub margin_left_gu:       f32,
-    pub margin_right_gu:      f32,
+    pub content_width_gu: f32,
+    pub padding_left_gu: f32,
+    pub padding_right_gu: f32,
+    pub margin_left_gu: f32,
+    pub margin_right_gu: f32,
     /// padding_left + content_width + padding_right
-    pub box_width_gu:         f32,
+    pub box_width_gu: f32,
     /// margin_left + box_width + margin_right
-    pub margin_box_width_gu:  f32,
+    pub margin_box_width_gu: f32,
     /// true → width: Auto; item stretches to fill container inline axis
-    pub is_auto_width:        bool,
+    pub is_auto_width: bool,
     /// Resolved `display` (style override → HtmlElement UA default → `None`).
     /// `None` is treated as `Block` by the block formatting context.
     pub display: Option<Display>,
@@ -86,10 +89,17 @@ fn layout_root_world_axis_scales(world: &World, layout_id: ComponentId) -> (f32,
         world_model = mat4_mul(world_model, model);
     }
 
-    (len3(world_model[0]).max(1e-6), len3(world_model[1]).max(1e-6))
+    (
+        len3(world_model[0]).max(1e-6),
+        len3(world_model[1]).max(1e-6),
+    )
 }
 
-fn resolve_layout_root_length_gu(length: SizeDimension, unit_scale: f32, axis_world_scale: f32) -> f32 {
+fn resolve_layout_root_length_gu(
+    length: SizeDimension,
+    unit_scale: f32,
+    axis_world_scale: f32,
+) -> f32 {
     match length {
         SizeDimension::GlyphUnits(v) => v,
         SizeDimension::WorldUnits(v) => {
@@ -112,7 +122,8 @@ pub(crate) fn layout_root_available_bounds(
     };
 
     let (world_scale_x, world_scale_y) = layout_root_world_axis_scales(world, layout_id);
-    let avail_w = resolve_layout_root_length_gu(lc.authored_available_width, lc.unit_scale, world_scale_x);
+    let avail_w =
+        resolve_layout_root_length_gu(lc.authored_available_width, lc.unit_scale, world_scale_x);
     let avail_h = lc
         .authored_available_height
         .map(|height| resolve_layout_root_length_gu(height, lc.unit_scale, world_scale_y));
@@ -144,11 +155,23 @@ pub(crate) fn layout_root_axis_scales(world: &World, layout_id: ComponentId) -> 
 }
 
 pub(crate) fn trace_layout_id(world: &World, id: ComponentId) -> bool {
-    let Some(label) = world.component_label(id) else { return false; };
-    label == "text_input_demo"
-        || label.starts_with("row_")
-        || label == "content_slot"
-        || label == "item_0"
+    if let Some(label) = world.component_label(id) {
+        if label == "text_input_demo"
+            || label.starts_with("row_")
+            || label == "content_slot"
+            || label == "assets_content_area"
+            || label == "asset_item"
+            || label == "asset_item_root"
+            || label.starts_with("item_")
+        {
+            return true;
+        }
+    }
+    // Deep trace children of traced containers
+    if let Some(parent) = world.parent_of(id) {
+        return trace_layout_id(world, parent);
+    }
+    false
 }
 
 pub(crate) fn trace_label(world: &World, id: ComponentId) -> String {
@@ -156,7 +179,9 @@ pub(crate) fn trace_label(world: &World, id: ComponentId) -> String {
 }
 
 pub(crate) fn fmt_opt(value: Option<f32>) -> String {
-    value.map(|v| format!("{v:.6}")).unwrap_or_else(|| "None".to_string())
+    value
+        .map(|v| format!("{v:.6}"))
+        .unwrap_or_else(|| "None".to_string())
 }
 
 /// Pass 1 — measure a single TC layout item.
@@ -178,16 +203,28 @@ pub(crate) fn measure_item(
     // Copy style fields out before the borrow ends.
     let children: Vec<ComponentId> = world.children_of(tc_id).to_vec();
     let style = children.iter().find_map(|&child| {
-        world.get_component_by_id_as::<StyleComponent>(child).map(|s| {
-            (s.padding, s.margin, s.height, s.width, s.display, s.flex_grow, s.box_sizing)
-        })
+        world
+            .get_component_by_id_as::<StyleComponent>(child)
+            .map(|s| {
+                (
+                    s.padding,
+                    s.margin,
+                    s.height,
+                    s.width,
+                    s.display,
+                    s.flex_grow,
+                    s.box_sizing,
+                )
+            })
     });
 
-    let (padding, margin, height, width, style_display, _flex_grow, box_sizing) = style.unwrap_or_default();
+    let (padding, margin, height, width, style_display, _flex_grow, box_sizing) =
+        style.unwrap_or_default();
 
     // Resolve display: StyleComponent.display overrides HtmlElementComponent UA default.
     let ua_display = children.iter().find_map(|&child| {
-        world.get_component_by_id_as::<HtmlElementComponent>(child)
+        world
+            .get_component_by_id_as::<HtmlElementComponent>(child)
             .and_then(|el| el.element_type.default_display())
     });
     let display = style_display.or(ua_display);
@@ -199,9 +236,9 @@ pub(crate) fn measure_item(
     let padding = padding.resolve(avail_w_gu, unit_scale);
 
     // ── Horizontal ───────────────────────────────────────────────────────
-    let margin_left_gu   = margin.left;
-    let margin_right_gu  = margin.right;
-    let padding_left_gu  = padding.left;
+    let margin_left_gu = margin.left;
+    let margin_right_gu = margin.right;
+    let padding_left_gu = padding.left;
     let padding_right_gu = padding.right;
 
     // Box-sizing: border-box (cat-engine default).
@@ -222,7 +259,10 @@ pub(crate) fn measure_item(
         .flatten();
 
     let is_auto_width = matches!(width, SizeDimension::Auto)
-        && matches!(display, None | Some(Display::Block | Display::InlineBlock | Display::Inline));
+        && matches!(
+            display,
+            None | Some(Display::Block | Display::InlineBlock | Display::Inline)
+        );
     let padding_h = padding_left_gu + padding_right_gu;
     // Resolve a `WorldUnits(_)` width / height to glyph units once at the top
     // of the match so the rest stays unit-agnostic.
@@ -269,9 +309,9 @@ pub(crate) fn measure_item(
     let margin_box_width_gu = margin_left_gu + box_width_gu + margin_right_gu;
 
     // ── Vertical ─────────────────────────────────────────────────────────
-    let margin_top_gu    = margin.top;
+    let margin_top_gu = margin.top;
     let margin_bottom_gu = margin.bottom;
-    let padding_top_gu   = padding.top;
+    let padding_top_gu = padding.top;
     let padding_bottom_gu = padding.bottom;
 
     let is_inline_block = matches!(display, Some(Display::InlineBlock | Display::Inline));
@@ -284,12 +324,8 @@ pub(crate) fn measure_item(
         other => other,
     };
     let (content_height_gu, box_height_gu) = match (height_gu, box_sizing) {
-        (SizeDimension::GlyphUnits(h), BoxSizing::BorderBox) => {
-            ((h - padding_v).max(0.0), h)
-        }
-        (SizeDimension::GlyphUnits(h), BoxSizing::ContentBox) => {
-            (h, h + padding_v)
-        }
+        (SizeDimension::GlyphUnits(h), BoxSizing::BorderBox) => ((h - padding_v).max(0.0), h),
+        (SizeDimension::GlyphUnits(h), BoxSizing::ContentBox) => (h, h + padding_v),
         (SizeDimension::Percent(p), BoxSizing::BorderBox) => {
             let box_h = avail_h_gu.map(|h| h * p / 100.0).unwrap_or(0.0);
             ((box_h - padding_v).max(0.0), box_h)
@@ -365,10 +401,31 @@ pub(crate) fn measure_container_items(
     unit_scale: f32,
 ) -> Vec<MeasuredItem> {
     let children: Vec<ComponentId> = world.children_of(container_id).to_vec();
+    if trace_layout_id(world, container_id) {
+        println!(
+            "[layout-trace] measure_container_items container={} id={:?} children_count={}",
+            trace_label(world, container_id),
+            container_id,
+            children.len()
+        );
+        for &child in &children {
+            let label = world.component_label(child).unwrap_or("");
+            let has_tc = world
+                .get_component_by_id_as::<TransformComponent>(child)
+                .is_some();
+            let is_layout = is_layout_item(world, child);
+            println!(
+                "[layout-trace]   - child={:?} label={:?} has_tc={} is_layout={}",
+                child, label, has_tc, is_layout
+            );
+        }
+    }
     children
         .into_iter()
         .filter(|&child| {
-            world.get_component_by_id_as::<TransformComponent>(child).is_some()
+            world
+                .get_component_by_id_as::<TransformComponent>(child)
+                .is_some()
                 && !world
                     .component_label(child)
                     .map(|label| label.starts_with("__"))
@@ -380,10 +437,20 @@ pub(crate) fn measure_container_items(
 }
 
 pub(crate) fn is_layout_item(world: &World, tc_id: ComponentId) -> bool {
-    world.children_of(tc_id).iter().any(|&child| {
-        world.get_component_by_id_as::<StyleComponent>(child).is_some()
-            || world.get_component_by_id_as::<HtmlElementComponent>(child).is_some()
-    })
+    let mut has_layout = false;
+    for &child in world.children_of(tc_id) {
+        if world
+            .get_component_by_id_as::<StyleComponent>(child)
+            .is_some()
+            || world
+                .get_component_by_id_as::<HtmlElementComponent>(child)
+                .is_some()
+        {
+            has_layout = true;
+            break;
+        }
+    }
+    has_layout
 }
 
 /// Pass 1 — measure all TC children of a [`LayoutComponent`] root.
@@ -449,17 +516,25 @@ pub(crate) fn find_text_id_in_local_content_subtree(
     root: ComponentId,
 ) -> Option<ComponentId> {
     fn visit(world: &World, node: ComponentId, root: ComponentId) -> Option<ComponentId> {
-        if world.get_component_by_id_as::<TextComponent>(node).is_some() {
+        if world
+            .get_component_by_id_as::<TextComponent>(node)
+            .is_some()
+        {
             return Some(node);
         }
 
         if node != root {
-            if world.get_component_by_id_as::<LayoutComponent>(node).is_some() {
+            if world
+                .get_component_by_id_as::<LayoutComponent>(node)
+                .is_some()
+            {
                 return None;
             }
             let is_boundary = world.children_of(node).iter().any(|&ch| {
                 world.get_component_by_id_as::<StyleComponent>(ch).is_some()
-                    || world.get_component_by_id_as::<HtmlElementComponent>(ch).is_some()
+                    || world
+                        .get_component_by_id_as::<HtmlElementComponent>(ch)
+                        .is_some()
             });
             if is_boundary {
                 return None;
@@ -506,12 +581,17 @@ fn find_text_in_local_content_subtree(
         }
 
         if node != root {
-            if world.get_component_by_id_as::<LayoutComponent>(node).is_some() {
+            if world
+                .get_component_by_id_as::<LayoutComponent>(node)
+                .is_some()
+            {
                 return None;
             }
             let is_boundary = world.children_of(node).iter().any(|&ch| {
                 world.get_component_by_id_as::<StyleComponent>(ch).is_some()
-                    || world.get_component_by_id_as::<HtmlElementComponent>(ch).is_some()
+                    || world
+                        .get_component_by_id_as::<HtmlElementComponent>(ch)
+                        .is_some()
             });
             if is_boundary {
                 return None;
@@ -535,7 +615,11 @@ fn find_text_in_local_content_subtree(
 /// scope, or a degenerate root) returns the input unchanged so callers can
 /// reuse this in non-layout contexts without special-casing.
 fn wu_to_gu(value_wu: f32, unit_scale: f32) -> f32 {
-    if unit_scale.abs() > f32::EPSILON { value_wu / unit_scale } else { value_wu }
+    if unit_scale.abs() > f32::EPSILON {
+        value_wu / unit_scale
+    } else {
+        value_wu
+    }
 }
 
 /// Resolve `Style.font_size` (a `SizeDimension`) to a **world-unit** glyph
@@ -544,13 +628,11 @@ fn wu_to_gu(value_wu: f32, unit_scale: f32) -> f32 {
 /// (which means "fall through to the descendant `TextComponent`'s authored
 /// value"). Negative / zero values are also treated as "unset" — they would
 /// produce invisible glyphs and almost always indicate a missed override.
-fn resolved_style_font_size_wu(
-    world: &World,
-    tc_id: ComponentId,
-    unit_scale: f32,
-) -> Option<f32> {
+fn resolved_style_font_size_wu(world: &World, tc_id: ComponentId, unit_scale: f32) -> Option<f32> {
     let style_size = world.children_of(tc_id).iter().find_map(|&child| {
-        world.get_component_by_id_as::<StyleComponent>(child).map(|s| s.font_size)
+        world
+            .get_component_by_id_as::<StyleComponent>(child)
+            .map(|s| s.font_size)
     })?;
     let wu = match style_size {
         SizeDimension::Auto => return None,
@@ -600,7 +682,11 @@ fn text_intrinsic_height(
             effective_font_size_wu,
             unit_scale,
         );
-        if existing_wrap_at == 0 { container_cols } else { container_cols.min(existing_wrap_at) }
+        if existing_wrap_at == 0 {
+            container_cols
+        } else {
+            container_cols.min(existing_wrap_at)
+        }
     } else if existing_wrap_at == 0 {
         // No container width and no author cap — measure unwrapped.
         usize::MAX
@@ -608,8 +694,13 @@ fn text_intrinsic_height(
         existing_wrap_at
     };
 
-    let (_width_wu, height_wu) =
-        TextSystem::measure(&text, wrap_at.max(1), word_wrap, &tokens, effective_font_size_wu);
+    let (_width_wu, height_wu) = TextSystem::measure(
+        &text,
+        wrap_at.max(1),
+        word_wrap,
+        &tokens,
+        effective_font_size_wu,
+    );
     wu_to_gu(height_wu, unit_scale)
 }
 
@@ -638,7 +729,14 @@ pub(crate) fn apply_text_wrap_for_item(
 
     let (cur_wrap_at, authored_wrap_at, cur_word_wrap, cur_tokens, cur_text, cur_font_size_wu) =
         match world.get_component_by_id_as::<TextComponent>(text_id) {
-            Some(tc) => (tc.wrap_at, tc.authored_wrap_at, tc.word_wrap, tc.word_wrap_tokens.clone(), tc.text.clone(), tc.font_size),
+            Some(tc) => (
+                tc.wrap_at,
+                tc.authored_wrap_at,
+                tc.word_wrap,
+                tc.word_wrap_tokens.clone(),
+                tc.text.clone(),
+                tc.font_size,
+            ),
             None => return,
         };
     let container_cols =
@@ -660,16 +758,13 @@ pub(crate) fn apply_text_wrap_for_item(
     //   `break-word` — break anywhere if needed to prevent overflow (hard
     //                  wrap at `wrap_at`; TextComponent `word_wrap = false`).
     let new_word_wrap = match style_word_wrap {
-        Some(WordWrapMode::Normal)    => true,
+        Some(WordWrapMode::Normal) => true,
         Some(WordWrapMode::BreakWord) => false,
-        None                          => cur_word_wrap,
+        None => cur_word_wrap,
     };
     let new_tokens = style_tokens.unwrap_or_else(|| cur_tokens.clone());
 
-    if new_wrap_at == cur_wrap_at
-        && new_word_wrap == cur_word_wrap
-        && new_tokens == cur_tokens
-    {
+    if new_wrap_at == cur_wrap_at && new_word_wrap == cur_word_wrap && new_tokens == cur_tokens {
         return;
     }
 
@@ -704,10 +799,11 @@ pub(crate) fn apply_text_font_size_for_item(
         return;
     };
 
-    let (cur_font_size, authored_font_size, cur_text) = match world.get_component_by_id_as::<TextComponent>(text_id) {
-        Some(tc) => (tc.font_size, tc.authored_font_size, tc.text.clone()),
-        None => return,
-    };
+    let (cur_font_size, authored_font_size, cur_text) =
+        match world.get_component_by_id_as::<TextComponent>(text_id) {
+            Some(tc) => (tc.font_size, tc.authored_font_size, tc.text.clone()),
+            None => return,
+        };
 
     let new_font_size = style_font_size_wu.unwrap_or(authored_font_size);
 
@@ -731,7 +827,10 @@ pub(crate) fn apply_text_font_size_for_item(
 fn find_text_component_in_subtree(world: &World, root: ComponentId) -> Option<ComponentId> {
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
-        if world.get_component_by_id_as::<TextComponent>(node).is_some() {
+        if world
+            .get_component_by_id_as::<TextComponent>(node)
+            .is_some()
+        {
             return Some(node);
         }
         for &child in world.children_of(node) {
@@ -758,11 +857,15 @@ pub(crate) fn apply_text_color_for_item(
     emit: &mut dyn crate::engine::ecs::SignalEmitter,
     tc_id: ComponentId,
 ) {
-    let style_color = world.children_of(tc_id).iter().find_map(|&child| {
-        world
-            .get_component_by_id_as::<StyleComponent>(child)
-            .map(|s| s.color)
-    }).flatten();
+    let style_color = world
+        .children_of(tc_id)
+        .iter()
+        .find_map(|&child| {
+            world
+                .get_component_by_id_as::<StyleComponent>(child)
+                .map(|s| s.color)
+        })
+        .flatten();
 
     let existing = world.children_of(tc_id).iter().copied().find(|&ch| {
         world.component_label(ch) == Some(OWNED_TEXT_COLOR_LABEL)
@@ -772,7 +875,9 @@ pub(crate) fn apply_text_color_for_item(
     match (style_color, existing) {
         (Some(rgba), Some(id)) => {
             // Update if rgba changed; re-register so the renderable picks it up.
-            let cur = world.get_component_by_id_as::<ColorComponent>(id).map(|c| c.rgba);
+            let cur = world
+                .get_component_by_id_as::<ColorComponent>(id)
+                .map(|c| c.rgba);
             if cur != Some(rgba) {
                 if let Some(c) = world.get_component_by_id_as_mut::<ColorComponent>(id) {
                     c.rgba = rgba;
@@ -802,7 +907,9 @@ pub(crate) fn apply_text_color_for_item(
         (None, Some(id)) => {
             emit.push_intent_now(
                 id,
-                crate::engine::ecs::IntentValue::RemoveSubtree { component_ids: vec![id] },
+                crate::engine::ecs::IntentValue::RemoveSubtree {
+                    component_ids: vec![id],
+                },
             );
         }
         (None, None) => {}
@@ -830,7 +937,10 @@ fn read_text_wrap_style(
 /// renderable children, not those belonging to descendant TCs.
 pub(crate) fn find_renderable_local_bounds(world: &World, root: ComponentId) -> Option<Aabb> {
     fn visit(world: &World, node: ComponentId, root: ComponentId, acc: &mut Option<Aabb>) {
-        if world.get_component_by_id_as::<RenderableComponent>(node).is_some() {
+        if world
+            .get_component_by_id_as::<RenderableComponent>(node)
+            .is_some()
+        {
             // Look for an attached BoundsComponent among this renderable's children.
             for &c in world.children_of(node) {
                 if let Some(b) = world.get_component_by_id_as::<BoundsComponent>(c) {
@@ -842,7 +952,11 @@ pub(crate) fn find_renderable_local_bounds(world: &World, root: ComponentId) -> 
                 }
             }
         }
-        if node != root && world.get_component_by_id_as::<TransformComponent>(node).is_some() {
+        if node != root
+            && world
+                .get_component_by_id_as::<TransformComponent>(node)
+                .is_some()
+        {
             return;
         }
         for &child in world.children_of(node) {
@@ -872,7 +986,12 @@ pub(crate) fn intrinsic_block_width(
         // CSS-aligned: inline-block shrinks to fit its content; block fills
         // the available inline budget so text wraps inside it.
         if is_inline_block {
-            return Some(text_intrinsic_width(world, tc_id, avail_content_w_gu, unit_scale));
+            return Some(text_intrinsic_width(
+                world,
+                tc_id,
+                avail_content_w_gu,
+                unit_scale,
+            ));
         }
         return None;
     }
@@ -921,7 +1040,11 @@ fn text_intrinsic_width(
     // unbreakable token). Without this cap, the box claims a width wider than
     // its containing block and downstream measurements (wrap_at on glyph
     // rebuild, sibling line-break decisions) inherit the inflated value.
-    if avail_content_w_gu > 0.0 { measured_gu.min(avail_content_w_gu) } else { measured_gu }
+    if avail_content_w_gu > 0.0 {
+        measured_gu.min(avail_content_w_gu)
+    } else {
+        measured_gu
+    }
 }
 
 fn intrinsic_block_height(
@@ -962,7 +1085,10 @@ fn intrinsic_block_height(
             total_h += line_h;
             return total_h;
         }
-        return child_items.iter().map(|item| item.margin_box_height_gu).sum();
+        return child_items
+            .iter()
+            .map(|item| item.margin_box_height_gu)
+            .sum();
     }
 
     descendant_layout_intrinsic_height(world, tc_id).unwrap_or(0.0)
@@ -973,7 +1099,10 @@ fn descendant_layout_intrinsic_height(world: &World, root: ComponentId) -> Optio
     let mut found_height = false;
 
     for &child in world.children_of(root) {
-        if world.get_component_by_id_as::<LayoutComponent>(child).is_some() {
+        if world
+            .get_component_by_id_as::<LayoutComponent>(child)
+            .is_some()
+        {
             let (items, _, _, _) = measure_items(world, child);
             let layout_height: f32 = items.iter().map(|item| item.margin_box_height_gu).sum();
             if layout_height > 0.0 {
@@ -996,7 +1125,15 @@ fn descendant_layout_intrinsic_height(world: &World, root: ComponentId) -> Optio
 
 use crate::engine::ecs::component::style::{BoxSizing, EdgeInsets};
 
-type StyleTuple = (EdgeInsets, EdgeInsets, SizeDimension, SizeDimension, Option<Display>, f32, BoxSizing);
+type StyleTuple = (
+    EdgeInsets,
+    EdgeInsets,
+    SizeDimension,
+    SizeDimension,
+    Option<Display>,
+    f32,
+    BoxSizing,
+);
 
 trait StyleDefault {
     fn unwrap_or_default(self) -> StyleTuple;
@@ -1019,21 +1156,28 @@ impl StyleDefault for Option<StyleTuple> {
 #[cfg(test)]
 mod tests {
     use super::{measure_container_items, measure_item, measure_items};
-    use crate::engine::ecs::component::{ColorComponent, LayoutComponent, StyleComponent, TextComponent, TransformComponent};
-    use crate::engine::ecs::component::style::{Display, SizeDimension};
     use crate::engine::ecs::World;
+    use crate::engine::ecs::component::style::{Display, SizeDimension};
+    use crate::engine::ecs::component::{
+        ColorComponent, LayoutComponent, StyleComponent, TextComponent, TransformComponent,
+    };
 
     #[test]
     fn auto_height_container_does_not_measure_text_behind_nested_transforms() {
         let mut world = World::default();
 
-        let container = world.add_component_boxed_named("content_slot", Box::new(TransformComponent::new()));
-        let style = world.add_component_boxed_named("content_style", Box::new(StyleComponent::new()));
-        let panel = world.add_component_boxed_named("world_panel", Box::new(LayoutComponent::new(10.0)));
-        let rows_track = world.add_component_boxed_named("rows_track", Box::new(TransformComponent::new()));
+        let container =
+            world.add_component_boxed_named("content_slot", Box::new(TransformComponent::new()));
+        let style =
+            world.add_component_boxed_named("content_style", Box::new(StyleComponent::new()));
+        let panel =
+            world.add_component_boxed_named("world_panel", Box::new(LayoutComponent::new(10.0)));
+        let rows_track =
+            world.add_component_boxed_named("rows_track", Box::new(TransformComponent::new()));
         let row = world.add_component_boxed_named("row", Box::new(TransformComponent::new()));
         let color = world.add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
-        let text = world.add_component_boxed_named("row_text", Box::new(TextComponent::new("hello")));
+        let text =
+            world.add_component_boxed_named("row_text", Box::new(TextComponent::new("hello")));
 
         let _ = world.add_child(container, style);
         let _ = world.add_child(container, panel);
@@ -1099,10 +1243,21 @@ mod tests {
         let _ = world.add_child(row, row_style);
 
         let (items, avail_w, avail_h, _) = measure_items(&world, root);
-        assert!((avail_w - 10.0).abs() < 1e-4, "expected 1wu / 0.1scale => 10gu, got {avail_w}");
-        assert!((avail_h.unwrap_or_default() - 28.51).abs() < 1e-3, "expected 2.851wu / 0.1scale => 28.51gu, got {:?}", avail_h);
+        assert!(
+            (avail_w - 10.0).abs() < 1e-4,
+            "expected 1wu / 0.1scale => 10gu, got {avail_w}"
+        );
+        assert!(
+            (avail_h.unwrap_or_default() - 28.51).abs() < 1e-3,
+            "expected 2.851wu / 0.1scale => 28.51gu, got {:?}",
+            avail_h
+        );
         assert_eq!(items.len(), 1);
-        assert!((items[0].content_height_gu - 7.1275).abs() < 1e-3, "expected 25% of 28.51gu, got {}", items[0].content_height_gu);
+        assert!(
+            (items[0].content_height_gu - 7.1275).abs() < 1e-3,
+            "expected 25% of 28.51gu, got {}",
+            items[0].content_height_gu
+        );
     }
 
     #[test]
@@ -1119,7 +1274,8 @@ mod tests {
             }),
         );
         let color = world.add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
-        let text = world.add_component_boxed_named("row_text", Box::new(TextComponent::new("hello")));
+        let text =
+            world.add_component_boxed_named("row_text", Box::new(TextComponent::new("hello")));
 
         let _ = world.add_child(row, row_style);
         let _ = world.add_child(row, color);
@@ -1135,8 +1291,10 @@ mod tests {
 
         let root = world.add_component(LayoutComponent::new(20.0).with_height(12.0));
 
-        let container = world.add_component_boxed_named("content_slot", Box::new(TransformComponent::new()));
-        let container_style = world.add_component_boxed_named("content_style", Box::new(StyleComponent::new()));
+        let container =
+            world.add_component_boxed_named("content_slot", Box::new(TransformComponent::new()));
+        let container_style =
+            world.add_component_boxed_named("content_style", Box::new(StyleComponent::new()));
 
         let child = world.add_component_boxed_named("child", Box::new(TransformComponent::new()));
         let child_style = world.add_component_boxed_named(
@@ -1148,7 +1306,8 @@ mod tests {
             }),
         );
 
-        let sibling = world.add_component_boxed_named("sibling", Box::new(TransformComponent::new()));
+        let sibling =
+            world.add_component_boxed_named("sibling", Box::new(TransformComponent::new()));
         let sibling_style = world.add_component_boxed_named(
             "sibling_style",
             Box::new({
@@ -1176,16 +1335,30 @@ mod tests {
     fn block_auto_height_uses_descendant_layout_text_height_with_wrap() {
         let mut world = World::default();
 
-        let container = world.add_component_boxed_named("content_slot", Box::new(TransformComponent::new()));
-        let container_style = world.add_component_boxed_named("content_style", Box::new(StyleComponent::new()));
-        let panel = world.add_component_boxed_named("world_panel", Box::new(ColorComponent::rgba(0.0, 0.0, 0.0, 0.0)));
-        let scroll = world.add_component_boxed_named("world_panel_scroll", Box::new(ColorComponent::rgba(0.0, 0.0, 0.0, 0.0)));
-        let rows_track = world.add_component_boxed_named("rows_track", Box::new(TransformComponent::new()));
-        let rows_layout = world.add_component_boxed_named("rows_layout", Box::new(LayoutComponent::new(4.0)));
+        let container =
+            world.add_component_boxed_named("content_slot", Box::new(TransformComponent::new()));
+        let container_style =
+            world.add_component_boxed_named("content_style", Box::new(StyleComponent::new()));
+        let panel = world.add_component_boxed_named(
+            "world_panel",
+            Box::new(ColorComponent::rgba(0.0, 0.0, 0.0, 0.0)),
+        );
+        let scroll = world.add_component_boxed_named(
+            "world_panel_scroll",
+            Box::new(ColorComponent::rgba(0.0, 0.0, 0.0, 0.0)),
+        );
+        let rows_track =
+            world.add_component_boxed_named("rows_track", Box::new(TransformComponent::new()));
+        let rows_layout =
+            world.add_component_boxed_named("rows_layout", Box::new(LayoutComponent::new(4.0)));
         let row = world.add_component_boxed_named("row", Box::new(TransformComponent::new()));
-        let row_style = world.add_component_boxed_named("row_style", Box::new(StyleComponent::new()));
+        let row_style =
+            world.add_component_boxed_named("row_style", Box::new(StyleComponent::new()));
         let color = world.add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
-        let text = world.add_component_boxed_named("row_text", Box::new(TextComponent::new("hello world hello world")));
+        let text = world.add_component_boxed_named(
+            "row_text",
+            Box::new(TextComponent::new("hello world hello world")),
+        );
 
         let _ = world.add_child(container, container_style);
         let _ = world.add_child(container, panel);
@@ -1198,7 +1371,10 @@ mod tests {
         let _ = world.add_child(color, text);
 
         let measured = measure_item(&world, container, 4.0, None, 1.0);
-        assert!(measured.content_height_gu > 1.0, "wrapped descendant layout text should increase intrinsic height");
+        assert!(
+            measured.content_height_gu > 1.0,
+            "wrapped descendant layout text should increase intrinsic height"
+        );
     }
 
     #[test]
@@ -1270,10 +1446,10 @@ mod tests {
 
     #[test]
     fn text_wrap_relaxes_when_container_grows_back() {
-        use crate::engine::ecs::SignalEmitter;
-        use crate::engine::ecs::ComponentId;
-        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
         use super::apply_text_wrap_for_item;
+        use crate::engine::ecs::ComponentId;
+        use crate::engine::ecs::SignalEmitter;
+        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
 
         struct NullEmit;
         impl SignalEmitter for NullEmit {
@@ -1285,7 +1461,10 @@ mod tests {
         let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));
         let text = world.add_component_boxed_named(
             "txt",
-            Box::new(TextComponent::with_word_wrap("the quick brown fox jumps over the lazy dog", 60)),
+            Box::new(TextComponent::with_word_wrap(
+                "the quick brown fox jumps over the lazy dog",
+                60,
+            )),
         );
         let _ = world.add_child(tc, text);
 
@@ -1293,22 +1472,41 @@ mod tests {
 
         // 1st pass: narrow container forces wrap_at down.
         apply_text_wrap_for_item(&mut world, &mut emit, tc, 10.0, 1.0);
-        let narrow = world.get_component_by_id_as::<TextComponent>(text).unwrap().wrap_at;
-        assert!(narrow < 60, "narrow container should reduce wrap_at, got {}", narrow);
+        let narrow = world
+            .get_component_by_id_as::<TextComponent>(text)
+            .unwrap()
+            .wrap_at;
+        assert!(
+            narrow < 60,
+            "narrow container should reduce wrap_at, got {}",
+            narrow
+        );
 
         // 2nd pass: container grows back; wrap_at must widen toward the authored cap.
         apply_text_wrap_for_item(&mut world, &mut emit, tc, 80.0, 1.0);
-        let wide = world.get_component_by_id_as::<TextComponent>(text).unwrap().wrap_at;
-        assert!(wide > narrow, "wide container should re-widen wrap_at, got {} (was {})", wide, narrow);
-        assert!(wide <= 60, "wrap_at must never exceed authored cap (60), got {}", wide);
+        let wide = world
+            .get_component_by_id_as::<TextComponent>(text)
+            .unwrap()
+            .wrap_at;
+        assert!(
+            wide > narrow,
+            "wide container should re-widen wrap_at, got {} (was {})",
+            wide,
+            narrow
+        );
+        assert!(
+            wide <= 60,
+            "wrap_at must never exceed authored cap (60), got {}",
+            wide
+        );
     }
 
     #[test]
     fn style_font_size_overrides_descendant_text_font_size() {
-        use crate::engine::ecs::SignalEmitter;
-        use crate::engine::ecs::ComponentId;
-        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
         use super::apply_text_font_size_for_item;
+        use crate::engine::ecs::ComponentId;
+        use crate::engine::ecs::SignalEmitter;
+        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
 
         struct NullEmit;
         impl SignalEmitter for NullEmit {
@@ -1318,30 +1516,42 @@ mod tests {
 
         let mut world = World::default();
         let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));
-        let style = world.add_component_boxed_named("style", Box::new({
-            let mut s = StyleComponent::new();
-            s.font_size = SizeDimension::WorldUnits(0.25);
-            s
-        }));
-        let text = world.add_component_boxed_named("txt", Box::new(TextComponent::new("hello").with_font_size(1.0)));
+        let style = world.add_component_boxed_named(
+            "style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.font_size = SizeDimension::WorldUnits(0.25);
+                s
+            }),
+        );
+        let text = world.add_component_boxed_named(
+            "txt",
+            Box::new(TextComponent::new("hello").with_font_size(1.0)),
+        );
         let _ = world.add_child(tc, style);
         let _ = world.add_child(tc, text);
 
         let mut emit = NullEmit;
         apply_text_font_size_for_item(&mut world, &mut emit, tc, 1.0);
 
-        let effective = world.get_component_by_id_as::<TextComponent>(text).unwrap().font_size;
-        let authored = world.get_component_by_id_as::<TextComponent>(text).unwrap().authored_font_size;
+        let effective = world
+            .get_component_by_id_as::<TextComponent>(text)
+            .unwrap()
+            .font_size;
+        let authored = world
+            .get_component_by_id_as::<TextComponent>(text)
+            .unwrap()
+            .authored_font_size;
         assert!((effective - 0.25).abs() < 1e-6);
         assert!((authored - 1.0).abs() < 1e-6);
     }
 
     #[test]
     fn apply_text_wrap_descends_through_plain_transform_wrapper() {
-        use crate::engine::ecs::SignalEmitter;
-        use crate::engine::ecs::ComponentId;
-        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
         use super::apply_text_wrap_for_item;
+        use crate::engine::ecs::ComponentId;
+        use crate::engine::ecs::SignalEmitter;
+        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
 
         struct NullEmit;
         impl SignalEmitter for NullEmit {
@@ -1351,16 +1561,21 @@ mod tests {
 
         let mut world = World::default();
         let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));
-        let style = world.add_component_boxed_named("style", Box::new({
-            let mut s = StyleComponent::new();
-            s.display = Some(Display::InlineBlock);
-            s.width = SizeDimension::GlyphUnits(8.0);
-            s
-        }));
+        let style = world.add_component_boxed_named(
+            "style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.display = Some(Display::InlineBlock);
+                s.width = SizeDimension::GlyphUnits(8.0);
+                s
+            }),
+        );
         let inner = world.add_component_boxed_named("inner", Box::new(TransformComponent::new()));
         let text = world.add_component_boxed_named(
             "txt",
-            Box::new(TextComponent::with_word_wrap("inline 1.6 inline 1.6", 60).with_font_size(1.6)),
+            Box::new(
+                TextComponent::with_word_wrap("inline 1.6 inline 1.6", 60).with_font_size(1.6),
+            ),
         );
         let _ = world.add_child(tc, style);
         let _ = world.add_child(tc, inner);
@@ -1369,8 +1584,14 @@ mod tests {
         let mut emit = NullEmit;
         apply_text_wrap_for_item(&mut world, &mut emit, tc, 8.0, 1.0);
 
-        let wrap_at = world.get_component_by_id_as::<TextComponent>(text).unwrap().wrap_at;
-        assert!(wrap_at < 60, "expected wrap_at to narrow through inner transform wrapper, got {wrap_at}");
+        let wrap_at = world
+            .get_component_by_id_as::<TextComponent>(text)
+            .unwrap()
+            .wrap_at;
+        assert!(
+            wrap_at < 60,
+            "expected wrap_at to narrow through inner transform wrapper, got {wrap_at}"
+        );
     }
 
     #[test]
@@ -1378,19 +1599,28 @@ mod tests {
         use crate::engine::ecs::component::style::{BoxSizing, EdgeInsets};
         let mut world = World::default();
         let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));
-        let style = world.add_component_boxed_named("style", Box::new({
-            let mut s = StyleComponent::new();
-            s.display = Some(Display::Block);
-            s.box_sizing = BoxSizing::ContentBox;
-            s.width = SizeDimension::GlyphUnits(20.0);
-            s.padding = EdgeInsets::all(2.0);
-            s
-        }));
+        let style = world.add_component_boxed_named(
+            "style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.display = Some(Display::Block);
+                s.box_sizing = BoxSizing::ContentBox;
+                s.width = SizeDimension::GlyphUnits(20.0);
+                s.padding = EdgeInsets::all(2.0);
+                s
+            }),
+        );
         let _ = world.add_child(tc, style);
 
         let measured = measure_item(&world, tc, 40.0, None, 1.0);
-        assert_eq!(measured.content_width_gu, 20.0, "content stays at width(20) under content-box");
-        assert_eq!(measured.box_width_gu, 24.0, "outer box = content + 2*padding");
+        assert_eq!(
+            measured.content_width_gu, 20.0,
+            "content stays at width(20) under content-box"
+        );
+        assert_eq!(
+            measured.box_width_gu, 24.0,
+            "outer box = content + 2*padding"
+        );
     }
 
     #[test]
@@ -1398,18 +1628,24 @@ mod tests {
         use crate::engine::ecs::component::style::EdgeInsets;
         let mut world = World::default();
         let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));
-        let style = world.add_component_boxed_named("style", Box::new({
-            let mut s = StyleComponent::new();
-            s.display = Some(Display::Block);
-            s.width = SizeDimension::GlyphUnits(20.0);
-            s.padding = EdgeInsets::all(2.0);
-            s
-        }));
+        let style = world.add_component_boxed_named(
+            "style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.display = Some(Display::Block);
+                s.width = SizeDimension::GlyphUnits(20.0);
+                s.padding = EdgeInsets::all(2.0);
+                s
+            }),
+        );
         let _ = world.add_child(tc, style);
 
         let measured = measure_item(&world, tc, 40.0, None, 1.0);
         assert_eq!(measured.box_width_gu, 20.0, "outer box stays at width(20)");
-        assert_eq!(measured.content_width_gu, 16.0, "content shrinks for padding");
+        assert_eq!(
+            measured.content_width_gu, 16.0,
+            "content shrinks for padding"
+        );
     }
 
     #[test]
@@ -1443,11 +1679,13 @@ mod tests {
         assert_eq!(items.len(), 2);
         // box widths must sum to exactly 80gu so the inline cursor lays them
         // side-by-side without wrapping.
-        assert!((items[0].margin_box_width_gu + items[1].margin_box_width_gu - 80.0).abs() < 1e-4,
+        assert!(
+            (items[0].margin_box_width_gu + items[1].margin_box_width_gu - 80.0).abs() < 1e-4,
             "got {} + {} = {}, expected 80",
             items[0].margin_box_width_gu,
             items[1].margin_box_width_gu,
-            items[0].margin_box_width_gu + items[1].margin_box_width_gu);
+            items[0].margin_box_width_gu + items[1].margin_box_width_gu
+        );
         assert!((items[0].margin_box_width_gu - 20.0).abs() < 1e-4);
         assert!((items[1].margin_box_width_gu - 60.0).abs() < 1e-4);
     }
@@ -1505,19 +1743,26 @@ mod tests {
             (narrow_items[2].margin_box_width_gu - wide_items[2].margin_box_width_gu).abs() < 1e-4,
             "load button should keep its authored width when already within the narrow root budget"
         );
-        assert!(narrow_items.iter().all(|item| item.margin_box_width_gu <= narrow_avail + 1e-4));
+        assert!(
+            narrow_items
+                .iter()
+                .all(|item| item.margin_box_width_gu <= narrow_avail + 1e-4)
+        );
     }
 
     #[test]
     fn width_percent_resolves_against_available_content_width() {
         let mut world = World::default();
         let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));
-        let style = world.add_component_boxed_named("style", Box::new({
-            let mut s = StyleComponent::new();
-            s.display = Some(Display::Block);
-            s.width = SizeDimension::Percent(50.0);
-            s
-        }));
+        let style = world.add_component_boxed_named(
+            "style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.display = Some(Display::Block);
+                s.width = SizeDimension::Percent(50.0);
+                s
+            }),
+        );
         let _ = world.add_child(tc, style);
 
         let measured = measure_item(&world, tc, 40.0, None, 1.0);
@@ -1531,21 +1776,28 @@ mod tests {
         let root = world.add_component(LayoutComponent::new(10.0));
 
         let panel = world.add_component_boxed_named("panel", Box::new(TransformComponent::new()));
-        let panel_style = world.add_component_boxed_named("panel_style", Box::new({
-            let mut s = StyleComponent::new();
-            s.display = Some(Display::Block);
-            s.width = SizeDimension::Percent(100.0);
-            s.padding = crate::engine::ecs::component::style::EdgeInsets::all(0.8);
-            s
-        }));
+        let panel_style = world.add_component_boxed_named(
+            "panel_style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.display = Some(Display::Block);
+                s.width = SizeDimension::Percent(100.0);
+                s.padding = crate::engine::ecs::component::style::EdgeInsets::all(0.8);
+                s
+            }),
+        );
         let _ = world.add_child(panel, panel_style);
 
-        let section = world.add_component_boxed_named("section", Box::new(TransformComponent::new()));
-        let section_style = world.add_component_boxed_named("section_style", Box::new({
-            let mut s = StyleComponent::new();
-            s.display = Some(Display::Block);
-            s
-        }));
+        let section =
+            world.add_component_boxed_named("section", Box::new(TransformComponent::new()));
+        let section_style = world.add_component_boxed_named(
+            "section_style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.display = Some(Display::Block);
+                s
+            }),
+        );
         let _ = world.add_child(section, section_style);
         let _ = world.add_child(panel, section);
         let _ = world.add_child(root, panel);
@@ -1571,7 +1823,8 @@ mod tests {
         assert!((narrow_items[0].box_width_gu - 6.0).abs() < 1e-4);
         assert!((narrow_items[0].content_width_gu - 4.4).abs() < 1e-4);
 
-        let narrow_nested = measure_container_items(&world, panel, narrow_items[0].content_width_gu, None, 1.0);
+        let narrow_nested =
+            measure_container_items(&world, panel, narrow_items[0].content_width_gu, None, 1.0);
         assert_eq!(narrow_nested.len(), 1);
         assert!((narrow_nested[0].box_width_gu - 4.4).abs() < 1e-4);
     }
@@ -1581,13 +1834,16 @@ mod tests {
         use crate::engine::ecs::component::style::EdgeInsets;
         let mut world = World::default();
         let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));
-        let style = world.add_component_boxed_named("style", Box::new({
-            let mut s = StyleComponent::new();
-            s.display = Some(Display::Block);
-            s.width = SizeDimension::GlyphUnits(20.0);
-            s.padding = EdgeInsets::all_dim(SizeDimension::Percent(10.0));
-            s
-        }));
+        let style = world.add_component_boxed_named(
+            "style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.display = Some(Display::Block);
+                s.width = SizeDimension::GlyphUnits(20.0);
+                s.padding = EdgeInsets::all_dim(SizeDimension::Percent(10.0));
+                s
+            }),
+        );
         let _ = world.add_child(tc, style);
 
         let measured = measure_item(&world, tc, 40.0, None, 1.0);
@@ -1604,12 +1860,15 @@ mod tests {
         // The Style setter writes that into `width` unchanged.
         let mut world = World::default();
         let tc = world.add_component_boxed_named("tc", Box::new(TransformComponent::new()));
-        let style = world.add_component_boxed_named("style", Box::new({
-            let mut s = StyleComponent::new();
-            s.display = Some(Display::Block);
-            s.width = SizeDimension::GlyphUnits(20.0);
-            s
-        }));
+        let style = world.add_component_boxed_named(
+            "style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.display = Some(Display::Block);
+                s.width = SizeDimension::GlyphUnits(20.0);
+                s
+            }),
+        );
         let _ = world.add_child(tc, style);
         let measured = measure_item(&world, tc, 40.0, None, 1.0);
         assert_eq!(measured.content_width_gu, 20.0);

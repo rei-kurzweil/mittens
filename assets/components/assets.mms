@@ -48,10 +48,7 @@ export fn assets(title, items, title_color, panel_background_color, item_backgro
                 background_color([0.96, 0.92, 0.18, 0.80]) 
                 background_z(-0.001)
             }
-            Selection {
-                name = "assets_selection"
-                assets_content(items, item_background_color)
-            }
+            assets_content(items, item_background_color)
         }
     }
 }

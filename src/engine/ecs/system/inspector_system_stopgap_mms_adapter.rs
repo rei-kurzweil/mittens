@@ -1,14 +1,16 @@
-use std::sync::{Arc, Mutex};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
+use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::component::{
     ColorComponent, Display, EdgeInsets, LayoutComponent, Overflow, RaycastableComponent,
     SerializeComponent, SizeDimension, StyleComponent, TextComponent,
 };
-use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
-use crate::meow_meow::component_registry::{filtered_root_ids_for_roots, filtered_roots_to_ce_ast, filtered_world_root_ids, spawn_tree};
+use crate::meow_meow::component_registry::{
+    filtered_root_ids_for_roots, filtered_roots_to_ce_ast, filtered_world_root_ids, spawn_tree,
+};
 use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
 use crate::meow_meow::runner::MeowMeowRunner;
 
@@ -109,17 +111,18 @@ impl InspectorSystemStopgapMmsAdapter {
 
         println!(
             "[InspectorSystem][debug] setup_panels_for_editor editor_root={editor_root:?} runtime_ui_root={runtime_ui_root:?} world_panel_pos={:?} inspector_panel_pos={:?}",
-            world_panel_pos,
-            inspector_panel_pos,
+            world_panel_pos, inspector_panel_pos,
         );
 
         let model = build_world_panel_model(world, None);
         let inspector_model = build_inspector_panel_model(world, None);
 
         {
-            let working_file_path = self.working_file_path.lock().expect("working file path mutex poisoned");
-            self.reconciler
-                .reconcile_panel_layout(
+            let working_file_path = self
+                .working_file_path
+                .lock()
+                .expect("working file path mutex poisoned");
+            self.reconciler.reconcile_panel_layout(
                 world,
                 emit,
                 &mut self.panel_layout_spawned,
@@ -152,11 +155,16 @@ impl InspectorSystemStopgapMmsAdapter {
             SignalKind::TextInputChanged,
             panel_query_root,
             move |world, _emit, signal| {
-                let Some(EventSignal::TextInputChanged { component_id, text, .. }) = signal.event.as_ref() else {
+                let Some(EventSignal::TextInputChanged {
+                    component_id, text, ..
+                }) = signal.event.as_ref()
+                else {
                     return;
                 };
 
-                if let Some(target) = world.find_component(panel_query_root, PANEL_PATH_INPUT_SELECTOR) {
+                if let Some(target) =
+                    world.find_component(panel_query_root, PANEL_PATH_INPUT_SELECTOR)
+                {
                     if target == *component_id {
                         let mut path = input_changed_path_mutex
                             .lock()
@@ -295,7 +303,10 @@ impl InspectorSystemStopgapMmsAdapter {
 
     fn get_or_create_runtime_ui_root(&self, world: &mut World) -> ComponentId {
         {
-            let runtime_ui_root = self.runtime_ui_root.lock().expect("runtime ui root mutex poisoned");
+            let runtime_ui_root = self
+                .runtime_ui_root
+                .lock()
+                .expect("runtime ui root mutex poisoned");
             if let Some(root) = *runtime_ui_root {
                 return root;
             }
@@ -311,7 +322,8 @@ impl InspectorSystemStopgapMmsAdapter {
         );
         let _ = world.add_child(runtime_ui_root, runtime_ui_serialize);
 
-        *self.runtime_ui_root
+        *self
+            .runtime_ui_root
             .lock()
             .expect("runtime ui root mutex poisoned") = Some(runtime_ui_root);
 
@@ -331,10 +343,14 @@ impl InspectorSystemStopgapMmsAdapter {
             return;
         };
 
-        let Some(world_panel_root) = world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR) else {
+        let Some(world_panel_root) =
+            world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR)
+        else {
             return;
         };
-        let Some(content_slot) = world.find_component(world_panel_root, PANEL_CONTENT_SLOT_SELECTOR) else {
+        let Some(content_slot) =
+            world.find_component(world_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
+        else {
             return;
         };
 
@@ -352,10 +368,14 @@ impl InspectorSystemStopgapMmsAdapter {
             model.selected_index,
         );
 
-        let Some(inspector_panel_root) = world.find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR) else {
+        let Some(inspector_panel_root) =
+            world.find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR)
+        else {
             return;
         };
-        let Some(inspector_content_slot) = world.find_component(inspector_panel_root, PANEL_CONTENT_SLOT_SELECTOR) else {
+        let Some(inspector_content_slot) =
+            world.find_component(inspector_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
+        else {
             return;
         };
 
@@ -367,7 +387,6 @@ impl InspectorSystemStopgapMmsAdapter {
             inspector_content_slot,
             &inspector_model.rows,
         );
-
     }
 }
 
@@ -385,8 +404,10 @@ impl InspectorSystemStopgapMmsReconciler {
         working_file_path: &Path,
         asset_system: &crate::engine::ecs::system::AssetSystem,
     ) {
-        let existing_world_panel = self.find_world_panel_node(world, panel_query_root, WORLD_PANEL_ROOT_SELECTOR);
-        let existing_inspector_panel = self.find_world_panel_node(world, panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR);
+        let existing_world_panel =
+            self.find_world_panel_node(world, panel_query_root, WORLD_PANEL_ROOT_SELECTOR);
+        let existing_inspector_panel =
+            self.find_world_panel_node(world, panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR);
 
         println!(
             "[InspectorSystem][debug] reconcile_panel_layout panel_query_root={panel_query_root:?} existing_world_panel={existing_world_panel:?} existing_inspector_panel={existing_inspector_panel:?}"
@@ -445,8 +466,7 @@ impl InspectorSystemStopgapMmsReconciler {
     ) {
         println!(
             "[InspectorSystem][debug] spawn_panel_layout panel_query_root={panel_query_root:?} world_panel_pos={:?} inspector_panel_pos={:?}",
-            world_panel_pos,
-            inspector_panel_pos,
+            world_panel_pos, inspector_panel_pos,
         );
 
         let world_panel_title_color = Value::Array(vec![
@@ -534,6 +554,8 @@ impl InspectorSystemStopgapMmsReconciler {
             None => return,
         };
 
+        let asset_items_val = Value::Array(Vec::new());
+
         let asset_panel = match build_panel_component_expr(
             world,
             emit,
@@ -541,7 +563,7 @@ impl InspectorSystemStopgapMmsReconciler {
             "assets",
             vec![
                 Value::String("Assets".to_string()),
-                Value::Array(Vec::new()),
+                asset_items_val,
                 asset_panel_title_color.clone(),
                 asset_panel_bg.clone(),
                 asset_panel_item_bg.clone(),
@@ -618,11 +640,23 @@ impl InspectorSystemStopgapMmsReconciler {
             ctor_method: None,
             ctor_args: Vec::new(),
             calls: vec![
-                ("available_width".to_string(), vec![Value::Number(total_width_gu)]),
-                ("available_height".to_string(), vec![Value::Number(total_height_gu)]),
-                ("unit_scale".to_string(), vec![Value::Number(PANEL_LAYOUT_TEXT_SCALE)]),
+                (
+                    "available_width".to_string(),
+                    vec![Value::Number(total_width_gu)],
+                ),
+                (
+                    "available_height".to_string(),
+                    vec![Value::Number(total_height_gu)],
+                ),
+                (
+                    "unit_scale".to_string(),
+                    vec![Value::Number(PANEL_LAYOUT_TEXT_SCALE)],
+                ),
             ],
-            named: vec![("name".to_string(), Value::String(PANEL_LAYOUT_ROOT_NAME.to_string()))],
+            named: vec![(
+                "name".to_string(),
+                Value::String(PANEL_LAYOUT_ROOT_NAME.to_string()),
+            )],
             positionals: Vec::new(),
             children: vec![
                 CeChild::Spawn(world_shell),
@@ -667,33 +701,95 @@ impl InspectorSystemStopgapMmsReconciler {
             }
         };
 
-        if let Some(world_panel_root) = world.find_component(panel_mount_root, WORLD_PANEL_ROOT_SELECTOR) {
-            debug_panel_root(world, world_panel_root, "world_panel");
-        }
-        if let Some(inspector_panel_root) = world.find_component(panel_mount_root, INSPECTOR_PANEL_ROOT_SELECTOR) {
-            debug_panel_root(world, inspector_panel_root, "inspector_panel");
-        }
-        if let Some(asset_panel_root) = world.find_component(panel_mount_root, "#assets") {
-            debug_panel_root(world, asset_panel_root, "asset_panel");
+        if let Some(world_panel_root) =
+            world.find_component(panel_mount_root, WORLD_PANEL_ROOT_SELECTOR)
+        {}
+        if let Some(inspector_panel_root) =
+            world.find_component(panel_mount_root, INSPECTOR_PANEL_ROOT_SELECTOR)
+        {}
+        if let Some(asset_panel_root) = world.find_component(panel_mount_root, "#assets_root") {
+            if let Some(content_slot) =
+                world.find_component(asset_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
+            {
+                if let Some(content_area) =
+                    world.find_component(content_slot, "#assets_content_area")
+                {
+                    let items_already_there = world.children_of(content_area).len();
+                    if items_already_there <= 1 {
+                        // Only style is there
+                        println!(
+                            "[InspectorSystem][debug] populating asset panel with {} items into content_area={:?}",
+                            asset_system.items.len(),
+                            content_area
+                        );
 
-            if let Some(content_slot) = world.find_component(asset_panel_root, PANEL_CONTENT_SLOT_SELECTOR) {
-                if let Some(content_area) = world.find_component(content_slot, "#assets_content_area") {
-                    for (index, item) in asset_system.items.iter().enumerate() {
-                        if let Ok(item_root) = asset_system.build_asset_item_shell(world, emit, item, index) {
-                            let _ = world.add_child(content_area, item_root);
+                        let mut last_module_id = None;
+                        for (index, item) in asset_system.items.iter().enumerate() {
+                            if last_module_id != Some(item.module_id) {
+                                last_module_id = Some(item.module_id);
+                                if let Some(module_name) =
+                                    asset_system.get_module_name(item.module_id)
+                                {
+                                    match asset_system.build_asset_module_header(
+                                        world,
+                                        emit,
+                                        &module_name,
+                                    ) {
+                                        Ok(header_root) => {
+                                            world.init_component_tree(header_root, emit);
+                                            emit.push_intent_now(
+                                                header_root,
+                                                IntentValue::Attach {
+                                                    parents: vec![content_area],
+                                                    child: header_root,
+                                                },
+                                            );
+                                        }
+                                        Err(e) => {
+                                            eprintln!(
+                                                "[InspectorSystem][error] failed to build asset header for {}: {}",
+                                                module_name, e
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+
+                            match asset_system.build_asset_item_shell(world, emit, item, index) {
+                                Ok(item_root) => {
+                                    println!(
+                                        "[InspectorSystem][debug] attaching asset item title={:?} export={:?} root={:?} to content_area={:?}",
+                                        item.title, item.export_name, item_root, content_area
+                                    );
+                                    world.init_component_tree(item_root, emit);
+                                    emit.push_intent_now(
+                                        item_root,
+                                        IntentValue::Attach {
+                                            parents: vec![content_area],
+                                            child: item_root,
+                                        },
+                                    );
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "[InspectorSystem][error] failed to build asset item {}: {}",
+                                        item.export_name, e
+                                    );
+                                }
+                            }
                         }
+                        mark_nearest_layout_dirty(world, content_area);
                     }
                 }
             }
         }
-        if let Some(paint_panel_root) = world.find_component(panel_mount_root, "#paint_panel_root") {
-            debug_panel_root(world, paint_panel_root, "paint_panel");
+        if let Some(paint_panel_root) = world.find_component(panel_mount_root, "#paint_panel_root")
+        {
         }
 
         println!(
             "[InspectorSystem][debug] spawned panel mount root={panel_mount_root:?} name={} anchor_pos={:?}",
-            PANEL_LAYOUT_MOUNT_NAME,
-            anchor_pos,
+            PANEL_LAYOUT_MOUNT_NAME, anchor_pos,
         );
 
         emit.push_intent_now(
@@ -704,21 +800,32 @@ impl InspectorSystemStopgapMmsReconciler {
             },
         );
 
-        if let Some(world_panel_root) = world.find_component(panel_mount_root, WORLD_PANEL_ROOT_SELECTOR) {
-            if let Some(content_slot) = world.find_component(world_panel_root, PANEL_CONTENT_SLOT_SELECTOR) {
-            rerender_world_panel_content(
-                world,
-                emit,
-                panel_mount_root,
-                content_slot,
-                &model.rows,
-                model.selected_index,
-            );
+        if let Some(world_panel_root) =
+            world.find_component(panel_mount_root, WORLD_PANEL_ROOT_SELECTOR)
+        {
+            if let Some(content_slot) =
+                world.find_component(world_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
+            {
+                rerender_world_panel_content(
+                    world,
+                    emit,
+                    panel_mount_root,
+                    content_slot,
+                    &model.rows,
+                    model.selected_index,
+                );
             }
         }
 
         println!(
             "[InspectorSystem][debug] queued attach panel_mount_root={panel_mount_root:?} -> panel_query_root={panel_query_root:?}"
+        );
+        emit.push_intent_now(
+            panel_mount_root,
+            IntentValue::Attach {
+                parents: vec![panel_query_root],
+                child: panel_mount_root,
+            },
         );
     }
 }
@@ -751,18 +858,28 @@ fn handle_panel_button_click(
 
     let save_button = world.find_component(runtime_ui_root, SAVE_BUTTON_SELECTOR);
     if save_button.is_some_and(|button| is_descendant_or_self(world, button, renderable)) {
-        return Some(match save_world_panel_scene_to_path(world, working_file_path) {
-            Ok(saved_roots) => format!("saved {saved_roots} roots to {}", working_file_path.display()),
-            Err(error) => format!("save failed: {error}"),
-        });
+        return Some(
+            match save_world_panel_scene_to_path(world, working_file_path) {
+                Ok(saved_roots) => format!(
+                    "saved {saved_roots} roots to {}",
+                    working_file_path.display()
+                ),
+                Err(error) => format!("save failed: {error}"),
+            },
+        );
     }
 
     let load_button = world.find_component(runtime_ui_root, LOAD_BUTTON_SELECTOR);
     if load_button.is_some_and(|button| is_descendant_or_self(world, button, renderable)) {
-        return Some(match load_world_panel_scene_from_path(world, emit, working_file_path) {
-            Ok(loaded_roots) => format!("loaded {loaded_roots} roots from {}", working_file_path.display()),
-            Err(error) => format!("load failed: {error}"),
-        });
+        return Some(
+            match load_world_panel_scene_from_path(world, emit, working_file_path) {
+                Ok(loaded_roots) => format!(
+                    "loaded {loaded_roots} roots from {}",
+                    working_file_path.display()
+                ),
+                Err(error) => format!("load failed: {error}"),
+            },
+        );
     }
 
     None
@@ -771,7 +888,9 @@ fn handle_panel_button_click(
 fn find_named_root(world: &World, name: &str) -> Option<ComponentId> {
     world.all_components().find(|&component_id| {
         world.parent_of(component_id).is_none()
-            && world.component_label(component_id).is_some_and(|label| label == name)
+            && world
+                .component_label(component_id)
+                .is_some_and(|label| label == name)
     })
 }
 
@@ -787,7 +906,10 @@ fn world_panel_scene_path() -> PathBuf {
         }
     }
 
-    PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/data/world.mms"))
+    PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/data/world.mms"
+    ))
 }
 
 #[cfg(test)]
@@ -833,7 +955,10 @@ fn save_world_panel_scene_to_path(world: &World, path: &Path) -> Result<usize, S
         out.push_str(&crate::meow_meow::unparser::unparse_component(&component));
         out.push_str("\n\n");
     }
-    println!("[WorldPanel] finished serializing {} root components", total);
+    println!(
+        "[WorldPanel] finished serializing {} root components",
+        total
+    );
 
     std::fs::write(path, out)
         .map_err(|error| format!("cannot write {}: {error}", path.display()))?;
@@ -888,8 +1013,7 @@ fn build_world_panel_model(
 ) -> WorldPanelModel {
     let rows = build_world_panel_rows(world);
     let selected_index = selected_component.and_then(|selected| {
-        rows
-            .iter()
+        rows.iter()
             .position(|row| row.target_component == Some(selected))
             .map(|index| index as i64)
     });
@@ -901,7 +1025,10 @@ fn build_world_panel_model(
     }
 }
 
-fn build_inspector_panel_model(world: &World, selected_component: Option<ComponentId>) -> InspectorPanelModel {
+fn build_inspector_panel_model(
+    world: &World,
+    selected_component: Option<ComponentId>,
+) -> InspectorPanelModel {
     let rows = selected_component
         .map(|component_id| build_inspector_panel_rows(world, component_id))
         .unwrap_or_else(|| {
@@ -930,7 +1057,11 @@ fn push_inspector_panel_rows(
     out: &mut Vec<InspectorPanelRow>,
 ) {
     out.push(InspectorPanelRow {
-        display_label: format!("{}{}", "  ".repeat(depth), world_panel_item_label(world, component_id)),
+        display_label: format!(
+            "{}{}",
+            "  ".repeat(depth),
+            world_panel_item_label(world, component_id)
+        ),
         kind: InspectorPanelRowKind::Component,
     });
 
@@ -942,7 +1073,13 @@ fn push_inspector_panel_rows(
 fn build_world_panel_rows(world: &World) -> Vec<WorldPanelRow> {
     let mut editor_roots: Vec<ComponentId> = world
         .all_components()
-        .filter(|&component_id| world.get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(component_id).is_some())
+        .filter(|&component_id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(
+                    component_id,
+                )
+                .is_some()
+        })
         .collect();
     editor_roots.sort_by_key(|component_id| component_id_short(*component_id));
 
@@ -1022,7 +1159,9 @@ fn rerender_world_panel_status(
     status_wrap: ComponentId,
     label: &str,
 ) {
-    if let Some(existing_status_root) = world.find_component(panel_query_root, PANEL_STATUS_ROOT_SELECTOR) {
+    if let Some(existing_status_root) =
+        world.find_component(panel_query_root, PANEL_STATUS_ROOT_SELECTOR)
+    {
         emit.push_intent_now(
             existing_status_root,
             IntentValue::RemoveSubtree {
@@ -1031,19 +1170,22 @@ fn rerender_world_panel_status(
         );
     }
 
-    let spawned_status_root = match MeowMeowRunner::spawn_mms_module_component_uninitialized_from_file(
-        world_panel_status_asset_path(),
-        "world_panel_status",
-        vec![Value::String(label.to_string())],
-        world,
-        emit,
-    ) {
-        Ok(component_id) => component_id,
-        Err(error) => {
-            eprintln!("[InspectorSystemStopgapMmsAdapter] world panel status spawn error: {error}");
-            return;
-        }
-    };
+    let spawned_status_root =
+        match MeowMeowRunner::spawn_mms_module_component_uninitialized_from_file(
+            world_panel_status_asset_path(),
+            "world_panel_status",
+            vec![Value::String(label.to_string())],
+            world,
+            emit,
+        ) {
+            Ok(component_id) => component_id,
+            Err(error) => {
+                eprintln!(
+                    "[InspectorSystemStopgapMmsAdapter] world panel status spawn error: {error}"
+                );
+                return;
+            }
+        };
 
     emit.push_intent_now(
         spawned_status_root,
@@ -1063,11 +1205,14 @@ fn rerender_world_panel_content(
     rows: &[WorldPanelRow],
     selected_index: Option<i64>,
 ) {
-    let Some(world_panel_root) = world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR) else {
+    let Some(world_panel_root) = world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR)
+    else {
         return;
     };
 
-    if let Some(existing_content_root) = world.find_component(world_panel_root, WORLD_PANEL_CONTENT_ROOT_SELECTOR) {
+    if let Some(existing_content_root) =
+        world.find_component(world_panel_root, WORLD_PANEL_CONTENT_ROOT_SELECTOR)
+    {
         emit.push_intent_now(
             existing_content_root,
             IntentValue::RemoveSubtree {
@@ -1094,10 +1239,13 @@ fn update_world_panel_row_selection(
     row_index: usize,
     selected: bool,
 ) {
-    let Some(world_panel_root) = world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR) else {
+    let Some(world_panel_root) = world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR)
+    else {
         return;
     };
-    let Some(row_id) = world.find_component(world_panel_root, &format!("#{ITEM_PREFIX}{row_index}")) else {
+    let Some(row_id) =
+        world.find_component(world_panel_root, &format!("#{ITEM_PREFIX}{row_index}"))
+    else {
         return;
     };
 
@@ -1139,11 +1287,15 @@ fn rerender_inspector_panel_content(
     content_slot: ComponentId,
     rows: &[InspectorPanelRow],
 ) {
-    let Some(inspector_panel_root) = world.find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR) else {
+    let Some(inspector_panel_root) =
+        world.find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR)
+    else {
         return;
     };
 
-    if let Some(existing_content_root) = world.find_component(inspector_panel_root, INSPECTOR_PANEL_CONTENT_ROOT_SELECTOR) {
+    if let Some(existing_content_root) =
+        world.find_component(inspector_panel_root, INSPECTOR_PANEL_CONTENT_ROOT_SELECTOR)
+    {
         emit.push_intent_now(
             existing_content_root,
             IntentValue::RemoveSubtree {
@@ -1229,11 +1381,17 @@ fn component_id_short(component_id: ComponentId) -> String {
 }
 
 fn world_panel_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/world_panel.mms")
+    concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/components/world_panel.mms"
+    )
 }
 
 fn world_panel_status_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/world_panel_status.mms")
+    concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/components/world_panel_status.mms"
+    )
 }
 
 fn asset_panel_asset_path() -> &'static str {
@@ -1241,11 +1399,17 @@ fn asset_panel_asset_path() -> &'static str {
 }
 
 fn paint_panel_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/paint_panel.mms")
+    concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/components/paint_panel.mms"
+    )
 }
 
 fn inspector_panel_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/inspector_panel.mms")
+    concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/components/inspector_panel.mms"
+    )
 }
 
 fn build_placeholder_panel_component_expr(title_name: &'static str, title: &str) -> MaterializedCE {
@@ -1256,25 +1420,29 @@ fn build_placeholder_panel_component_expr(title_name: &'static str, title: &str)
         calls: Vec::new(),
         named: vec![("name".to_string(), Value::String(title_name.to_string()))],
         positionals: Vec::new(),
-        children: vec![
-            CeChild::Spawn(MaterializedCE {
-                component_type: "T".to_string(),
+        children: vec![CeChild::Spawn(MaterializedCE {
+            component_type: "T".to_string(),
+            ctor_method: None,
+            ctor_args: Vec::new(),
+            calls: Vec::new(),
+            named: vec![(
+                "name".to_string(),
+                Value::String(format!("{title_name}_title")),
+            )],
+            positionals: Vec::new(),
+            children: vec![CeChild::Spawn(MaterializedCE {
+                component_type: "Text".to_string(),
                 ctor_method: None,
                 ctor_args: Vec::new(),
                 calls: Vec::new(),
-                named: vec![("name".to_string(), Value::String(format!("{title_name}_title")))],
-                positionals: Vec::new(),
-                children: vec![CeChild::Spawn(MaterializedCE {
-                    component_type: "Text".to_string(),
-                    ctor_method: None,
-                    ctor_args: Vec::new(),
-                    calls: Vec::new(),
-                    named: vec![("name".to_string(), Value::String(format!("{title_name}_label")))],
-                    positionals: vec![Value::String(title.to_string())],
-                    children: Vec::new(),
-                })],
-            }),
-        ],
+                named: vec![(
+                    "name".to_string(),
+                    Value::String(format!("{title_name}_label")),
+                )],
+                positionals: vec![Value::String(title.to_string())],
+                children: Vec::new(),
+            })],
+        })],
     }
 }
 
@@ -1321,10 +1489,16 @@ fn panel_shell_ce(
                 ctor_method: None,
                 ctor_args: Vec::new(),
                 calls: vec![
-                    ("display".to_string(), vec![Value::String("inline-block".to_string())]),
+                    (
+                        "display".to_string(),
+                        vec![Value::String("inline-block".to_string())],
+                    ),
                     ("width".to_string(), vec![Value::Number(width_gu)]),
                     ("height".to_string(), vec![Value::Number(height_gu)]),
-                    ("margin_left".to_string(), vec![Value::Number(margin_left_gu)]),
+                    (
+                        "margin_left".to_string(),
+                        vec![Value::Number(margin_left_gu)],
+                    ),
                 ],
                 named: Vec::new(),
                 positionals: Vec::new(),
@@ -1347,11 +1521,20 @@ fn debug_style_details(world: &World, root: ComponentId, selector: &str, label: 
     let style_children: Vec<_> = world
         .children_of(node)
         .iter()
-        .filter(|&&child| world.get_component_by_id_as::<StyleComponent>(child).is_some())
+        .filter(|&&child| {
+            world
+                .get_component_by_id_as::<StyleComponent>(child)
+                .is_some()
+        })
         .copied()
         .collect();
 
-    println!("[InspectorSystem][trace] {} {} child_count={}", label, selector, world.children_of(node).len());
+    println!(
+        "[InspectorSystem][trace] {} {} child_count={}",
+        label,
+        selector,
+        world.children_of(node).len()
+    );
     for &child in world.children_of(node) {
         println!(
             "[InspectorSystem][trace] {} {} child={:?} type={:?} label={:?}",
@@ -1364,7 +1547,10 @@ fn debug_style_details(world: &World, root: ComponentId, selector: &str, label: 
     }
 
     if style_children.is_empty() {
-        println!("[InspectorSystem][trace] {} {} has no Style child", label, selector);
+        println!(
+            "[InspectorSystem][trace] {} {} has no Style child",
+            label, selector
+        );
         return;
     }
 
@@ -1392,7 +1578,9 @@ fn debug_panel_root(world: &World, root: ComponentId, kind: &str) {
     let content_slot = world.find_component(root, "#content_slot").is_some();
     let rows_mount = world.find_component(root, "#rows_mount").is_some();
     let assets_content = world.find_component(root, "#assets_content_area").is_some();
-    let paint_title_bar = world.find_component(root, "paint_panel_title_bar").is_some();
+    let paint_title_bar = world
+        .find_component(root, "paint_panel_title_bar")
+        .is_some();
     println!(
         "[InspectorSystem][trace] {} root={:?} title_label={} content_slot={} rows_mount={} assets_content={} paint_title_bar={} text_count={} style_count={}",
         kind,
@@ -1446,10 +1634,8 @@ fn spawn_world_panel_row_tree(
 ) -> ComponentId {
     match row.kind {
         WorldPanelRowKind::Spacer => {
-            let row_root = world.add_component_boxed_named(
-                row_name,
-                Box::new(TransformComponent::new()),
-            );
+            let row_root =
+                world.add_component_boxed_named(row_name, Box::new(TransformComponent::new()));
             let style = world.add_component_boxed_named(
                 format!("{row_name}_style"),
                 Box::new({
@@ -1464,19 +1650,25 @@ fn spawn_world_panel_row_tree(
             let _ = world.add_child(row_root, style);
             row_root
         }
-        WorldPanelRowKind::EditorHeader | WorldPanelRowKind::Info | WorldPanelRowKind::Component => {
+        WorldPanelRowKind::EditorHeader
+        | WorldPanelRowKind::Info
+        | WorldPanelRowKind::Component => {
             let (background_rgba, text_rgba, interactive) = match row.kind {
-                WorldPanelRowKind::EditorHeader => ([0.18, 0.78, 0.22, 0.95], [0.0, 0.0, 0.0, 1.0], false),
+                WorldPanelRowKind::EditorHeader => {
+                    ([0.18, 0.78, 0.22, 0.95], [0.0, 0.0, 0.0, 1.0], false)
+                }
                 WorldPanelRowKind::Info => ([0.85, 0.85, 0.85, 1.0], [0.0, 0.0, 0.0, 1.0], false),
-                WorldPanelRowKind::Component if selected => ([1.00, 0.88, 0.20, 0.96], [0.06, 0.09, 0.08, 1.0], true),
-                WorldPanelRowKind::Component => ([0.92, 0.97, 0.92, 1.0], [0.06, 0.09, 0.08, 1.0], true),
+                WorldPanelRowKind::Component if selected => {
+                    ([1.00, 0.88, 0.20, 0.96], [0.06, 0.09, 0.08, 1.0], true)
+                }
+                WorldPanelRowKind::Component => {
+                    ([0.92, 0.97, 0.92, 1.0], [0.06, 0.09, 0.08, 1.0], true)
+                }
                 WorldPanelRowKind::Spacer => unreachable!(),
             };
 
-            let row_root = world.add_component_boxed_named(
-                row_name,
-                Box::new(TransformComponent::new()),
-            );
+            let row_root =
+                world.add_component_boxed_named(row_name, Box::new(TransformComponent::new()));
 
             if interactive {
                 let raycastable = world.add_component_boxed_named(
@@ -1543,11 +1735,8 @@ fn spawn_inspector_panel_content_tree(
     let _ = world.add_child(content_root, rows_mount);
 
     for (index, row) in rows.iter().enumerate() {
-        let row_root = spawn_inspector_panel_row_tree(
-            world,
-            &format!("{INSPECTOR_ITEM_PREFIX}{index}"),
-            row,
-        );
+        let row_root =
+            spawn_inspector_panel_row_tree(world, &format!("{INSPECTOR_ITEM_PREFIX}{index}"), row);
         let _ = world.add_child(rows_mount, row_root);
     }
 

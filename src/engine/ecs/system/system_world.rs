@@ -4,8 +4,8 @@ use crate::engine::ecs::RxWorld;
 use crate::engine::ecs::SignalKind;
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::CameraSystem;
-use crate::engine::ecs::system::ClockSystem;
 use crate::engine::ecs::system::ClippingSystem;
+use crate::engine::ecs::system::ClockSystem;
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::InputSystem;
@@ -23,14 +23,18 @@ use crate::engine::ecs::system::RouterSystem;
 use crate::engine::ecs::system::ScrollingSystem;
 use crate::engine::ecs::system::SkinnedMeshSystem;
 use crate::engine::ecs::system::System;
-use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextInputSystem;
+use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextureSystem;
-use crate::engine::ecs::system::TransitionSystem;
 use crate::engine::ecs::system::TransformStreamSystem;
 use crate::engine::ecs::system::TransformSystem;
+use crate::engine::ecs::system::TransitionSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
-use crate::engine::ecs::system::{AssetSystem, AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, GestureSystem, HeadPoseBodyXzFollowSystem, IKSystem, InspectorSystem, LayoutSystem, SelectionSystem, TransformGizmoSystem};
+use crate::engine::ecs::system::{
+    AssetSystem, AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, GestureSystem,
+    HeadPoseBodyXzFollowSystem, IKSystem, InspectorSystem, LayoutSystem, SelectionSystem,
+    TransformGizmoSystem,
+};
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 use std::path::Path;
@@ -103,7 +107,9 @@ mod tests {
         ColorComponent, RenderableComponent, StencilClipComponent, TransformComponent,
     };
     use crate::engine::graphics::primitives::{MeshHandle, TextureHandle};
-    use crate::engine::graphics::{CpuMesh, MeshUploader, RenderAssets, TextureUploader, VisualWorld};
+    use crate::engine::graphics::{
+        CpuMesh, MeshUploader, RenderAssets, TextureUploader, VisualWorld,
+    };
 
     #[derive(Default)]
     struct TestUploader {
@@ -112,7 +118,10 @@ mod tests {
     }
 
     impl MeshUploader for TestUploader {
-        fn upload_mesh(&mut self, _mesh: &CpuMesh) -> Result<MeshHandle, Box<dyn std::error::Error>> {
+        fn upload_mesh(
+            &mut self,
+            _mesh: &CpuMesh,
+        ) -> Result<MeshHandle, Box<dyn std::error::Error>> {
             let handle = MeshHandle(self.next_mesh);
             self.next_mesh += 1;
             Ok(handle)
@@ -155,7 +164,8 @@ mod tests {
 
         let root = world.add_component(TransformComponent::new());
 
-        let clip_scope = world.add_component_boxed_named("clip_scope", Box::new(TransformComponent::new()));
+        let clip_scope =
+            world.add_component_boxed_named("clip_scope", Box::new(TransformComponent::new()));
         let clip_bg = world.add_component_boxed_named("__bg", Box::new(TransformComponent::new()));
         let clip_bg_color = world.add_component(ColorComponent::rgba(0.0, 0.0, 0.0, 0.0));
         let clip_bg_renderable = world.add_component(RenderableComponent::square());
@@ -164,7 +174,8 @@ mod tests {
             Box::new(StencilClipComponent::new()),
         );
 
-        let content_t = world.add_component_boxed_named("content", Box::new(TransformComponent::new()));
+        let content_t =
+            world.add_component_boxed_named("content", Box::new(TransformComponent::new()));
         let content_color = world.add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
         let content_renderable = world.add_component(RenderableComponent::square());
 
@@ -181,14 +192,18 @@ mod tests {
         world.init_component_tree(root, &mut queue);
         systems.process_commands(&mut world, &mut visuals, &mut queue);
 
-        assert!(world
-            .get_component_by_id_as::<RenderableComponent>(clip_bg_renderable)
-            .and_then(|r| r.get_handle())
-            .is_none());
-        assert!(world
-            .get_component_by_id_as::<RenderableComponent>(content_renderable)
-            .and_then(|r| r.get_handle())
-            .is_none());
+        assert!(
+            world
+                .get_component_by_id_as::<RenderableComponent>(clip_bg_renderable)
+                .and_then(|r| r.get_handle())
+                .is_none()
+        );
+        assert!(
+            world
+                .get_component_by_id_as::<RenderableComponent>(content_renderable)
+                .and_then(|r| r.get_handle())
+                .is_none()
+        );
 
         systems.prepare_render(
             &mut world,
@@ -208,7 +223,9 @@ mod tests {
             .expect("content renderable handle");
 
         let clip_instance = visuals.instance(clip_handle).expect("clip visual instance");
-        let content_instance = visuals.instance(content_handle).expect("content visual instance");
+        let content_instance = visuals
+            .instance(content_handle)
+            .expect("content visual instance");
 
         assert!(clip_instance.is_stencil_clip);
         assert_eq!(clip_instance.stencil_ref, 0);
@@ -218,7 +235,6 @@ mod tests {
 }
 
 impl SystemWorld {
-
     pub(crate) fn remove_subtree_immediate(
         &mut self,
         world: &mut World,
@@ -248,7 +264,10 @@ impl SystemWorld {
             {
                 self.rx.remove_pipelines_from_operator(n);
             }
-            if world.get_component_by_id_as::<StencilClipComponent>(n).is_some() {
+            if world
+                .get_component_by_id_as::<StencilClipComponent>(n)
+                .is_some()
+            {
                 self.clipping
                     .unregister_stencil_clip_for_subtree_node(world, visuals, n);
             }
@@ -313,7 +332,7 @@ impl SystemWorld {
 
     pub fn new() -> Self {
         let mut systems = Self::default();
-        let asset_dir = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/"));
+        let asset_dir = Path::new("assets/components/");
         if let Err(error) = systems.asset_system.scan_assets_dir(asset_dir) {
             eprintln!("[SystemWorld] failed to scan assets dir: {error}");
         }
@@ -777,9 +796,7 @@ impl SystemWorld {
 
         println!(
             "[InspectorSystem][debug] register_editor editor_root={component:?} spawn_panels={} world_panel_pos={:?} inspector_panel_pos={:?}",
-            spawn_panels,
-            world_panel_pos,
-            inspector_panel_pos,
+            spawn_panels, world_panel_pos, inspector_panel_pos,
         );
 
         self.editor
@@ -788,9 +805,7 @@ impl SystemWorld {
             .install_scoped_handlers_for_editor(&mut self.rx, component);
 
         if spawn_panels {
-            println!(
-                "[InspectorSystem][debug] setup_panels_for_editor editor_root={component:?}"
-            );
+            println!("[InspectorSystem][debug] setup_panels_for_editor editor_root={component:?}");
             self.inspector.setup_panels_for_editor(
                 &mut self.rx,
                 world,
@@ -809,7 +824,8 @@ impl SystemWorld {
         emit: &mut dyn crate::engine::ecs::SignalEmitter,
         component: ComponentId,
     ) {
-        self.scrolling.deferred_register(&mut self.rx, world, emit, component);
+        self.scrolling
+            .deferred_register(&mut self.rx, world, emit, component);
     }
 
     pub fn register_router(
@@ -856,7 +872,8 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.clipping.register_stencil_clip(world, visuals, component);
+        self.clipping
+            .register_stencil_clip(world, visuals, component);
     }
 
     /// Unregister a StencilClipComponent: clear `is_stencil_clip` on the associated VisualInstance.
@@ -975,22 +992,24 @@ impl SystemWorld {
                 let mut emissive_pass = crate::engine::graphics::EmissivePassConfig::default();
 
                 for &grandchild in world.children_of(child) {
-                    if let Some(texture) = world.get_component_by_id_as::<
-                        crate::engine::ecs::component::TextureComponent,
-                    >(grandchild) {
+                    if let Some(texture) = world
+                        .get_component_by_id_as::<crate::engine::ecs::component::TextureComponent>(
+                            grandchild,
+                        )
+                    {
                         if emissive_pass.output_texture.is_none() {
-                            emissive_pass.output_texture = Some(
-                                texture
-                                    .render_image
-                                    .clone()
-                                    .unwrap_or_else(|| "render_graph.emissive_pass.output".to_string()),
-                            );
+                            emissive_pass.output_texture =
+                                Some(texture.render_image.clone().unwrap_or_else(|| {
+                                    "render_graph.emissive_pass.output".to_string()
+                                }));
                         }
                     }
 
-                    if let Some(blur_pass) = world.get_component_by_id_as::<
-                        crate::engine::ecs::component::BlurPassComponent,
-                    >(grandchild) {
+                    if let Some(blur_pass) = world
+                        .get_component_by_id_as::<crate::engine::ecs::component::BlurPassComponent>(
+                            grandchild,
+                        )
+                    {
                         if blur_pass.enabled {
                             config.blur_pass = Some(crate::engine::graphics::BlurPassConfig {
                                 enabled: true,
@@ -1005,8 +1024,8 @@ impl SystemWorld {
                 continue;
             }
 
-            let Some(bloom) =
-                world.get_component_by_id_as::<crate::engine::ecs::component::BloomComponent>(child)
+            let Some(bloom) = world
+                .get_component_by_id_as::<crate::engine::ecs::component::BloomComponent>(child)
             else {
                 continue;
             };
@@ -1356,8 +1375,9 @@ impl SystemWorld {
         self.gltf
             .flush_imports(render_assets, &mut self.texture, uploader);
 
-        let flushed_renderables = self.renderable
-            .flush_pending(world, visuals, render_assets, uploader, queue);
+        let flushed_renderables =
+            self.renderable
+                .flush_pending(world, visuals, render_assets, uploader, queue);
         if flushed_renderables {
             self.clipping.resync_after_renderable_flush(world, visuals);
         }
@@ -1775,7 +1795,9 @@ fn attach_bounds_for_renderable(world: &mut World, renderable_id: ComponentId) {
         Some(r) => r.renderable.base_mesh,
         None => return,
     };
-    let Some(local) = mesh_local_aabb(mesh) else { return };
+    let Some(local) = mesh_local_aabb(mesh) else {
+        return;
+    };
 
     let already = world
         .children_of(renderable_id)

@@ -59,7 +59,7 @@ T.position(0.15, -0.45, 1.0) {
 
 // --- Floor + back wall so the room has visual reference ---
 ED {
-    T.position(0.0, -0.78, -0.4).scale(12.0, 0.18, 9.5) {
+    T.position(0.0, -1.65, -0.4).scale(120.0, 0.1, 95) {
         R.cube() { C.rgba(0.18, 0.18, 0.22, 1.0) }
     }
     T.position(0.0, 2.15, -7.2).scale(8.8, 3.6, 0.24) {

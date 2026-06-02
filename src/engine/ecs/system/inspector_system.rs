@@ -22,8 +22,15 @@ impl InspectorSystem {
         _inspector_panel_pos: (f32, f32, f32),
         asset_system: &crate::engine::ecs::system::AssetSystem,
     ) {
-        self.stopgap_mms
-            .setup_panels_for_editor(rx, world, emit, editor_root, world_panel_pos, _inspector_panel_pos, asset_system);
+        self.stopgap_mms.setup_panels_for_editor(
+            rx,
+            world,
+            emit,
+            editor_root,
+            world_panel_pos,
+            _inspector_panel_pos,
+            asset_system,
+        );
     }
 }
 
@@ -34,9 +41,9 @@ mod tests {
     use crate::engine::ecs::component::{
         EditorComponent, GLTFComponent, OverlayComponent, SerializeComponent, TransformComponent,
     };
+    use crate::engine::ecs::system::inspector_system_stopgap_mms_adapter::set_world_panel_scene_path_for_tests;
     use crate::engine::ecs::{EventSignal, SystemWorld, World};
     use crate::engine::graphics::VisualWorld;
-    use crate::engine::ecs::system::inspector_system_stopgap_mms_adapter::set_world_panel_scene_path_for_tests;
     use std::path::PathBuf;
     use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -48,12 +55,18 @@ mod tests {
             .all_components()
             .find(|&component_id| {
                 world.parent_of(component_id).is_none()
-                    && world.component_label(component_id).is_some_and(|label| label == name)
+                    && world
+                        .component_label(component_id)
+                        .is_some_and(|label| label == name)
             })
             .unwrap_or_else(|| panic!("expected root named {name}"))
     }
 
-    fn row_text(world: &World, root: crate::engine::ecs::ComponentId, row_selector: &str) -> String {
+    fn row_text(
+        world: &World,
+        root: crate::engine::ecs::ComponentId,
+        row_selector: &str,
+    ) -> String {
         let row = world
             .find_component(root, row_selector)
             .unwrap_or_else(|| panic!("expected row {row_selector}"));
@@ -66,11 +79,19 @@ mod tests {
             .expect("expected text component")
     }
 
-    fn count_named_children(world: &World, root: crate::engine::ecs::ComponentId, name: &str) -> usize {
+    fn count_named_children(
+        world: &World,
+        root: crate::engine::ecs::ComponentId,
+        name: &str,
+    ) -> usize {
         world
             .children_of(root)
             .iter()
-            .filter(|&&child| world.component_label(child).is_some_and(|label| label == name))
+            .filter(|&&child| {
+                world
+                    .component_label(child)
+                    .is_some_and(|label| label == name)
+            })
             .count()
     }
 
@@ -87,12 +108,15 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let mut systems = SystemWorld::default();
+        let mut systems = SystemWorld::new();
         let mut inspector = InspectorSystem::new();
 
-        let editor_root = world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
-        let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
-        let camera_root = world.add_component_boxed_named("camera_root", Box::new(TransformComponent::new()));
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let camera_root =
+            world.add_component_boxed_named("camera_root", Box::new(TransformComponent::new()));
 
         let _ = world.add_child(editor_root, scene_root);
 
@@ -120,11 +144,31 @@ mod tests {
             .expect("expected world panel root under runtime ui root");
         assert_eq!(world.parent_of(runtime_ui_root), None);
         assert_eq!(world.parent_of(panel_mount), Some(runtime_ui_root));
-        assert!(world.find_component(runtime_ui_root, "#editor_panel_layout_root").is_some());
-        assert!(world.find_component(runtime_ui_root, "#editor_world_panel_shell").is_some());
-        assert!(world.find_component(runtime_ui_root, "#editor_inspector_panel_shell").is_some());
-        assert!(world.find_component(runtime_ui_root, "#editor_asset_panel_shell").is_some());
-        assert!(world.find_component(runtime_ui_root, "#editor_paint_panel_shell").is_some());
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#editor_panel_layout_root")
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#editor_world_panel_shell")
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#editor_inspector_panel_shell")
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#editor_asset_panel_shell")
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#editor_paint_panel_shell")
+                .is_some()
+        );
         let panel_shell = world
             .parent_of(panel_root)
             .expect("expected panel shell above world panel root");
@@ -135,16 +179,45 @@ mod tests {
             .parent_of(panel_shared_layout)
             .expect("expected overlay ancestor above shared layout root");
         assert_eq!(world.parent_of(panel_overlay), Some(panel_mount));
-        assert!(world
-            .get_component_by_id_as::<OverlayComponent>(panel_overlay)
-            .is_some());
-        assert!(world.find_component(runtime_ui_root, "#inspector_panel_root").is_some());
-        assert!(world.find_component(runtime_ui_root, "#panel_status_value").is_some());
-        assert!(world.find_component(runtime_ui_root, "#rows_mount").is_some());
-        let item0 = world.find_component(panel_root, "#item_0").expect("expected item_0 under panel_root");
-        println!("item0={:?} type={:?} name={:?}", item0, world.get_component_record(item0).map(|r| r.component_type.clone()), world.component_label(item0));
-        println!("item0 text descendants={:?}", world.find_all_components(item0, "Text"));
-        assert_eq!(row_text(&world, panel_root, "#item_0"), "Editor#editor_root");
+        assert!(
+            world
+                .get_component_by_id_as::<OverlayComponent>(panel_overlay)
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#inspector_panel_root")
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#panel_status_value")
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#rows_mount")
+                .is_some()
+        );
+        let item0 = world
+            .find_component(panel_root, "#item_0")
+            .expect("expected item_0 under panel_root");
+        println!(
+            "item0={:?} type={:?} name={:?}",
+            item0,
+            world
+                .get_component_record(item0)
+                .map(|r| r.component_type.clone()),
+            world.component_label(item0)
+        );
+        println!(
+            "item0 text descendants={:?}",
+            world.find_all_components(item0, "Text")
+        );
+        assert_eq!(
+            row_text(&world, panel_root, "#item_0"),
+            "Editor#editor_root"
+        );
         assert_eq!(row_text(&world, panel_root, "#item_1"), "scene_root");
     }
 
@@ -153,11 +226,13 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let mut systems = SystemWorld::default();
+        let mut systems = SystemWorld::new();
         let mut inspector = InspectorSystem::new();
 
-        let editor_root = world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
-        let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
         let _ = world.add_child(editor_root, scene_root);
 
         assert_eq!(world.parent_of(scene_root), Some(editor_root));
@@ -209,12 +284,15 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let mut systems = SystemWorld::default();
+        let mut systems = SystemWorld::new();
         let mut inspector = InspectorSystem::new();
 
-        let editor_root = world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
-        let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
-        let child_transform = world.add_component_boxed_named("child_transform", Box::new(TransformComponent::new()));
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let child_transform =
+            world.add_component_boxed_named("child_transform", Box::new(TransformComponent::new()));
         let _ = world.add_child(editor_root, scene_root);
         let _ = world.add_child(scene_root, child_transform);
 
@@ -232,7 +310,10 @@ mod tests {
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
 
-        assert_eq!(row_text(&world, runtime_ui_root, "#item_2"), "  child_transform");
+        assert_eq!(
+            row_text(&world, runtime_ui_root, "#item_2"),
+            "  child_transform"
+        );
     }
 
     #[test]
@@ -240,12 +321,15 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let mut systems = SystemWorld::default();
+        let mut systems = SystemWorld::new();
         let mut inspector = InspectorSystem::new();
 
-        let editor_root = world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
-        let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
-        let child_transform = world.add_component_boxed_named("child_transform", Box::new(TransformComponent::new()));
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let child_transform =
+            world.add_component_boxed_named("child_transform", Box::new(TransformComponent::new()));
         let _ = world.add_child(editor_root, scene_root);
         let _ = world.add_child(scene_root, child_transform);
 
@@ -298,12 +382,30 @@ mod tests {
             .expect("expected inspector panel root");
 
         assert!(world.find_component(world_panel_root, "#item_1").is_some());
-        assert!(world.find_component(world_panel_root, "#inspector_item_0").is_none());
-        assert!(world.find_component(inspector_panel_root, "#inspector_item_0").is_some());
-        assert!(world.find_component(inspector_panel_root, "#item_1").is_none());
+        assert!(
+            world
+                .find_component(world_panel_root, "#inspector_item_0")
+                .is_none()
+        );
+        assert!(
+            world
+                .find_component(inspector_panel_root, "#inspector_item_0")
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(inspector_panel_root, "#item_1")
+                .is_none()
+        );
 
-        assert_eq!(row_text(&world, runtime_ui_root, "#inspector_item_0"), "scene_root");
-        assert_eq!(row_text(&world, runtime_ui_root, "#inspector_item_1"), "  child_transform");
+        assert_eq!(
+            row_text(&world, runtime_ui_root, "#inspector_item_0"),
+            "scene_root"
+        );
+        assert_eq!(
+            row_text(&world, runtime_ui_root, "#inspector_item_1"),
+            "  child_transform"
+        );
     }
 
     #[test]
@@ -311,13 +413,17 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let mut systems = SystemWorld::default();
+        let mut systems = SystemWorld::new();
         let mut inspector = InspectorSystem::new();
 
-        let editor_root = world.add_component_boxed_named("alpha", Box::new(EditorComponent::new()));
-        let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
-        let other_editor_root = world.add_component_boxed_named("beta", Box::new(EditorComponent::new()));
-        let other_scene_root = world.add_component_boxed_named("other_scene", Box::new(TransformComponent::new()));
+        let editor_root =
+            world.add_component_boxed_named("alpha", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let other_editor_root =
+            world.add_component_boxed_named("beta", Box::new(EditorComponent::new()));
+        let other_scene_root =
+            world.add_component_boxed_named("other_scene", Box::new(TransformComponent::new()));
         let _ = world.add_child(editor_root, scene_root);
         let _ = world.add_child(other_editor_root, other_scene_root);
 
@@ -356,13 +462,17 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let mut systems = SystemWorld::default();
+        let mut systems = SystemWorld::new();
         let mut inspector = InspectorSystem::new();
 
-        let editor_root = world.add_component_boxed_named("alpha", Box::new(EditorComponent::new()));
-        let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
-        let other_editor_root = world.add_component_boxed_named("beta", Box::new(EditorComponent::new()));
-        let other_scene_root = world.add_component_boxed_named("other_scene", Box::new(TransformComponent::new()));
+        let editor_root =
+            world.add_component_boxed_named("alpha", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let other_editor_root =
+            world.add_component_boxed_named("beta", Box::new(EditorComponent::new()));
+        let other_scene_root =
+            world.add_component_boxed_named("other_scene", Box::new(TransformComponent::new()));
         let _ = world.add_child(editor_root, scene_root);
         let _ = world.add_child(other_editor_root, other_scene_root);
 
@@ -388,31 +498,36 @@ mod tests {
         systems.process_commands(&mut world, &mut visuals, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
-        assert_eq!(count_named_children(&world, runtime_ui_root, "editor_panel_layout_mount"), 1);
+        assert_eq!(
+            count_named_children(&world, runtime_ui_root, "editor_panel_layout_mount"),
+            1
+        );
     }
 
     #[test]
     fn world_panel_save_and_load_buttons_round_trip_filtered_scene_file() {
-        let _guard = WORLD_PANEL_SCENE_TEST_LOCK.lock().expect("world panel scene test lock poisoned");
+        let _guard = WORLD_PANEL_SCENE_TEST_LOCK
+            .lock()
+            .expect("world panel scene test lock poisoned");
         let scene_path = unique_test_scene_path();
         set_world_panel_scene_path_for_tests(Some(scene_path.clone()));
 
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let mut systems = SystemWorld::default();
+        let mut systems = SystemWorld::new();
         let mut inspector = InspectorSystem::new();
 
-        let editor_root = world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
-        let scene_root = world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
         let gltf_root = world.add_component_boxed_named(
             "avatar_gltf",
             Box::new(GLTFComponent::new("assets/models/cat/cat.glb")),
         );
-        let gltf_serialize = world.add_component_boxed_named(
-            "avatar_gltf_serialize",
-            Box::new(SerializeComponent::on()),
-        );
+        let gltf_serialize = world
+            .add_component_boxed_named("avatar_gltf_serialize", Box::new(SerializeComponent::on()));
 
         let _ = world.add_child(editor_root, scene_root);
         let _ = world.add_child(scene_root, gltf_root);
@@ -448,7 +563,8 @@ mod tests {
         let _ = systems.process_signals(&mut world, &mut visuals, &mut emit, 100_000);
         systems.process_commands(&mut world, &mut visuals, &mut emit);
 
-        let saved = std::fs::read_to_string(&scene_path).expect("expected saved world panel scene file");
+        let saved =
+            std::fs::read_to_string(&scene_path).expect("expected saved world panel scene file");
         assert!(saved.contains("scene_root"));
         assert!(saved.contains("GLTF.new(\"assets/models/cat/cat.glb\")"));
         assert!(saved.contains("avatar_gltf_serialize"));
@@ -478,7 +594,9 @@ mod tests {
             .all_components()
             .find(|&component_id| {
                 world.parent_of(component_id).is_none()
-                    && world.get_component_by_id_as::<EditorComponent>(component_id).is_some()
+                    && world
+                        .get_component_by_id_as::<EditorComponent>(component_id)
+                        .is_some()
             })
             .expect("expected reloaded editor root");
         let reloaded_scene_root = world
@@ -487,14 +605,24 @@ mod tests {
         let reloaded_gltf_root = world
             .find_component(reloaded_scene_root, "#avatar_gltf")
             .expect("expected gltf root after load");
-        assert!(world.find_component(reloaded_gltf_root, "Serialize").is_some());
-        assert!(world.find_component(runtime_ui_root, "#world_panel_root").is_some());
+        assert!(
+            world
+                .find_component(reloaded_gltf_root, "Serialize")
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#world_panel_root")
+                .is_some()
+        );
 
         let panel_status_value = world
             .find_component(runtime_ui_root, "#panel_status_value")
             .expect("expected panel status text after load");
         let status_text = world
-            .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(panel_status_value)
+            .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(
+                panel_status_value,
+            )
             .map(|text| text.text.clone())
             .expect("expected panel status text component");
         assert!(status_text.contains("loaded 1 roots"));
