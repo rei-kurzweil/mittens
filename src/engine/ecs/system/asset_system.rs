@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use std::collections::HashSet;
+
+use crate::engine::ecs::component::{LayoutComponent, StyleComponent, TransformComponent};
 use crate::engine::ecs::system::bounds_system::BoundsSystem;
-use crate::engine::ecs::{component::TransformComponent, ComponentId, SignalEmitter, World};
+use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::meow_meow::object::Value;
 use crate::meow_meow::runner::{LoadedMmsModule, MeowMeowRunner};
 
@@ -305,6 +308,58 @@ impl AssetSystem {
         Ok(wrapper)
     }
 
+    /// Check if a subtree contains styled elements (`StyleComponent`) without a
+    /// `LayoutComponent` ancestor — meaning it needs a layout root to resolve properly.
+    fn subtree_needs_layout_root(world: &World, root: ComponentId) -> bool {
+        let mut stack = vec![root];
+        let mut visited = HashSet::new();
+
+        while let Some(node) = stack.pop() {
+            if !visited.insert(node) {
+                continue;
+            }
+
+            if world.get_component_by_id_as::<StyleComponent>(node).is_some() {
+                let mut has_layout = false;
+                let mut current = world.parent_of(node);
+                while let Some(ancestor) = current {
+                    if world.get_component_by_id_as::<LayoutComponent>(ancestor).is_some() {
+                        has_layout = true;
+                        break;
+                    }
+                    current = world.parent_of(ancestor);
+                }
+                if !has_layout {
+                    return true;
+                }
+            }
+
+            for &child in world.children_of(node) {
+                stack.push(child);
+            }
+        }
+
+        false
+    }
+
+    /// If `root`'s subtree contains styled elements that need layout resolution,
+    /// create a `LayoutComponent` and return its id. Returns `None` if no layout root is needed.
+    pub fn ensure_layout_root_if_needed(
+        world: &mut World,
+        root: ComponentId,
+    ) -> Option<ComponentId> {
+        if !Self::subtree_needs_layout_root(world, root) {
+            return None;
+        }
+
+        let layout_root = world.add_component_boxed_named(
+            "preview_layout_root",
+            Box::new(LayoutComponent::new(20.0)),
+        );
+
+        Some(layout_root)
+    }
+
     pub fn build_asset_item_shell(
         &self,
         world: &mut World,
@@ -412,6 +467,22 @@ impl AssetSystem {
                 world
                     .add_child(preview_shell, preview_root)
                     .map_err(|e| format!("attach preview failed: {e}"))?;
+
+                // Insert a layout root between preview_shell and preview_root
+                // if the preview subtree contains styled elements needing layout resolution.
+                // The layout system's measure_container_items only walks direct children
+                // of the LayoutComponent, so the styled element must be a direct child
+                // of the layout root — NOT buried behind a plain TransformComponent.
+                if let Some(layout_root) = Self::ensure_layout_root_if_needed(world, preview_root)
+                {
+                    world
+                        .add_child(layout_root, preview_root)
+                        .map_err(|e| format!("reparent preview under layout root failed: {e}"))?;
+                    world
+                        .add_child(preview_shell, layout_root)
+                        .map_err(|e| format!("attach layout root to shell failed: {e}"))?;
+                }
+
                 world
                     .add_child(preview_slot, preview_shell)
                     .map_err(|e| format!("attach preview shell failed: {e}"))?;

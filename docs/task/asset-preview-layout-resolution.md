@@ -36,11 +36,12 @@ The `LayoutRootComponent` has to stay attached to the preview subtree permanentl
    New hierarchy:
    ```
    preview_slot  (styled, from asset_item.mms)
-     └── layout_root  (LayoutRootComponent)    ── stays permanently
-           └── preview_root   (the spawned asset)
+     └── preview_shell  (transform, offset + scale)
+           └── layout_root  (LayoutComponent)    ── stays permanently
+                 └── preview_root   (the spawned asset)
    ```
 
-   The `asset_preview_shell` transform (offset + scale) stays on `preview_slot` or is folded into a transform on the `layout_root` itself — the key change is that `preview_root` is parented directly to the layout root so its styled children resolve properly.
+   The layout root must be parented **below** `preview_shell` and **above** `preview_root`. The layout system's `measure_container_items` only walks **direct children** of the `LayoutComponent` that pass `is_layout_item` (have a `TransformComponent` + a `StyleComponent` child). If `preview_shell` (a plain transform with no `StyleComponent` child) were between the layout root and the styled content, layout would never descend to the actual styled elements.
 
 2. **Extend `BoundsSystem::calculate_subtree_local_bounds`** to handle `TextComponent`-only subtrees by estimating bounds from the font metrics (glyph cell dimensions) of the text. This gives a fallback AABB even when no `RenderableComponent` exists, enabling proper auto-scaling and centering.
 
