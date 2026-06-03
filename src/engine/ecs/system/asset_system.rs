@@ -222,7 +222,7 @@ impl AssetSystem {
     }
 
     fn assets_panel_asset_path() -> &'static str {
-        concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/assets.mms")
+        concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
     }
 
     pub fn spawn_assets_panel(
@@ -240,7 +240,7 @@ impl AssetSystem {
 
         let panel_root = MeowMeowRunner::spawn_mms_module_component_from_file(
             Self::assets_panel_asset_path(),
-            "assets",
+            "asset_panel",
             vec![
                 Value::String(panel_title),
                 Value::Array(Vec::new()),

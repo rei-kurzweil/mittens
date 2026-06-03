@@ -843,8 +843,8 @@ fn eval_panel_component_factories_from_assets() {
     std::fs::write(
         &user_path,
         r#"
-import { world_panel } from "../assets/components/world_panel.mms"
-import { inspector_panel } from "../assets/components/inspector_panel.mms"
+import { world_panel } from "../assets/components/panels.mms"
+import { inspector_panel } from "../assets/components/panels.mms"
 
 let world_items = ["Root", "Camera", "Light"]
 let inspector_items = ["Transform {}", "Style {}"]
@@ -865,7 +865,7 @@ inspector_panel("Inspector", inspector_items)
 #[test]
 fn load_module_file_exposes_named_exports_as_evaluated_values() {
     let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let module_path = workspace_root.join("assets/components/world_panel.mms");
+    let module_path = workspace_root.join("assets/components/panels.mms");
 
     let module = MeowMeowRunner::load_module_file(module_path.to_str().unwrap())
         .expect("expected module to load");
@@ -874,12 +874,20 @@ fn load_module_file_exposes_named_exports_as_evaluated_values() {
         module.named_export("world_panel"),
         Some(Value::Function { .. })
     ));
+    assert!(matches!(
+        module.named_export("inspector_panel"),
+        Some(Value::Function { .. })
+    ));
+    assert!(matches!(
+        module.named_export("paint_panel"),
+        Some(Value::Function { .. })
+    ));
 }
 
 #[test]
 fn call_mms_module_fn_invokes_exported_factory_function() {
     let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let module_path = workspace_root.join("assets/components/world_panel.mms");
+    let module_path = workspace_root.join("assets/components/panels.mms");
 
     let module = MeowMeowRunner::load_module_file(module_path.to_str().unwrap())
         .expect("expected module to load");
@@ -936,7 +944,7 @@ fn eval_world_panel_content_rows_are_queryable_by_index_name() {
     let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = workspace_root.join("target/_mms_test_world_panel_content_names.mms");
     let source = r##"
-import { world_panel_content } from "../assets/components/world_panel_content.mms"
+import { world_panel_content } from "../assets/components/panel_items.mms"
 
 let root = world_panel_content(["Root", "Camera", "Light"])
 let rows_mount = root.query("#rows_mount")

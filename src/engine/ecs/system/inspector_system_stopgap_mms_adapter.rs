@@ -565,7 +565,7 @@ impl InspectorSystemStopgapMmsReconciler {
             world,
             emit,
             asset_panel_asset_path(),
-            "assets",
+            "asset_panel",
             vec![
                 Value::String("Assets".to_string()),
                 asset_items_val,
@@ -1388,32 +1388,32 @@ fn component_id_short(component_id: ComponentId) -> String {
 fn world_panel_asset_path() -> &'static str {
     concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/world_panel.mms"
+        "/assets/components/panels.mms"
     )
 }
 
 fn world_panel_status_asset_path() -> &'static str {
     concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/world_panel_status.mms"
+        "/assets/components/panel_items.mms"
     )
 }
 
 fn asset_panel_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/assets.mms")
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
 }
 
 fn paint_panel_asset_path() -> &'static str {
     concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/paint_panel.mms"
+        "/assets/components/panels.mms"
     )
 }
 
 fn inspector_panel_asset_path() -> &'static str {
     concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/inspector_panel.mms"
+        "/assets/components/panels.mms"
     )
 }
 
