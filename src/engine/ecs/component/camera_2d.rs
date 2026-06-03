@@ -1,5 +1,5 @@
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::ComponentId;
 use crate::engine::graphics::CameraTarget;
 
 /// 2D camera component.
@@ -68,7 +68,10 @@ impl Component for Camera2DComponent {
         );
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let target = match self.target {
             CameraTarget::Window => "window",

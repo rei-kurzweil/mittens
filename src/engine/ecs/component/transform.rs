@@ -187,7 +187,10 @@ impl Component for TransformComponent {
         );
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let t = &self.transform;
         // Emit position, rotation_quat (lossless), scale — matches the
@@ -197,10 +200,7 @@ impl Component for TransformComponent {
             "position",
             nums(t.translation.iter().map(|&v| v as f64)),
         )
-        .with_call(
-            "rotation_quat",
-            nums(t.rotation.iter().map(|&v| v as f64)),
-        )
+        .with_call("rotation_quat", nums(t.rotation.iter().map(|&v| v as f64)))
         .with_call("scale", nums(t.scale.iter().map(|&v| v as f64)))
     }
 }

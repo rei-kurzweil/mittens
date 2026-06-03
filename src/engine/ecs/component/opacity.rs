@@ -1,5 +1,5 @@
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::ComponentId;
 
 /// Per-instance opacity multiplier for a renderable.
 ///
@@ -77,7 +77,10 @@ impl Component for OpacityComponent {
         );
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let mut ce = ce_call("Opacity", "opacity", vec![num(self.opacity as f64)]);
         if self.multiple_layers {

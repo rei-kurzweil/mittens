@@ -1,5 +1,5 @@
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::ComponentId;
 
 /// Per-instance color for a renderable.
 ///
@@ -54,7 +54,10 @@ impl Component for ColorComponent {
         );
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce_call("Color", "rgba", nums(self.rgba.iter().map(|&v| v as f64)))
     }

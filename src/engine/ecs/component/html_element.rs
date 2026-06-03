@@ -1,5 +1,5 @@
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::ComponentId;
 
 /// The structural/semantic role of a layout node, analogous to the HTML element type.
 ///
@@ -7,12 +7,28 @@ use crate::engine::ecs::component::Component;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ElementType {
     // Block-level (default display: block)
-    Div, P,
-    H1, H2, H3, H4, H5, H6,
-    Article, Section, Header, Footer, Main, Nav, Aside,
+    Div,
+    P,
+    H1,
+    H2,
+    H3,
+    H4,
+    H5,
+    H6,
+    Article,
+    Section,
+    Header,
+    Footer,
+    Main,
+    Nav,
+    Aside,
 
     // Inline (default display: inline)
-    Span, A, Strong, Em, Code,
+    Span,
+    A,
+    Strong,
+    Em,
+    Code,
 
     // Special
     /// Block + also acts as a LayoutComponent root content node.
@@ -21,10 +37,18 @@ pub enum ElementType {
     Img,
 
     // Table (phase 2)
-    Table, Thead, Tbody, Tr, Th, Td,
+    Table,
+    Thead,
+    Tbody,
+    Tr,
+    Th,
+    Td,
 
     // Form (phase 3)
-    Input, Button, Textarea, Select,
+    Input,
+    Button,
+    Textarea,
+    Select,
 
     /// Generic — no implied display; `StyleComponent` must set `display` explicitly.
     #[default]
@@ -65,9 +89,9 @@ impl ElementType {
             ElementType::Thead | ElementType::Tbody | ElementType::Tr => Some(Display::Block),
             ElementType::Th | ElementType::Td => Some(Display::Block),
 
-            ElementType::Input
-            | ElementType::Button
-            | ElementType::Select => Some(Display::InlineBlock),
+            ElementType::Input | ElementType::Button | ElementType::Select => {
+                Some(Display::InlineBlock)
+            }
             ElementType::Textarea => Some(Display::Block),
 
             ElementType::Img => Some(Display::InlineBlock),
@@ -93,25 +117,49 @@ pub struct HtmlElementComponent {
 
 impl HtmlElementComponent {
     pub fn new(element_type: ElementType) -> Self {
-        Self { element_type, component: None }
+        Self {
+            element_type,
+            component: None,
+        }
     }
 
-    pub fn div() -> Self { Self::new(ElementType::Div) }
-    pub fn span() -> Self { Self::new(ElementType::Span) }
-    pub fn body() -> Self { Self::new(ElementType::Body) }
-    pub fn header() -> Self { Self::new(ElementType::Header) }
-    pub fn p() -> Self { Self::new(ElementType::P) }
+    pub fn div() -> Self {
+        Self::new(ElementType::Div)
+    }
+    pub fn span() -> Self {
+        Self::new(ElementType::Span)
+    }
+    pub fn body() -> Self {
+        Self::new(ElementType::Body)
+    }
+    pub fn header() -> Self {
+        Self::new(ElementType::Header)
+    }
+    pub fn p() -> Self {
+        Self::new(ElementType::P)
+    }
 }
 
 impl Component for HtmlElementComponent {
-    fn name(&self) -> &'static str { "html_element" }
+    fn name(&self) -> &'static str {
+        "html_element"
+    }
 
-    fn set_id(&mut self, id: ComponentId) { self.component = Some(id); }
+    fn set_id(&mut self, id: ComponentId) {
+        self.component = Some(id);
+    }
 
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let ctor = match self.element_type {
             ElementType::Div => "div",

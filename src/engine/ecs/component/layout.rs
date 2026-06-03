@@ -1,6 +1,6 @@
-use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::Component;
 use crate::engine::ecs::component::style::SizeDimension;
+use crate::engine::ecs::component::Component;
+use crate::engine::ecs::ComponentId;
 
 /// The viewport of a self-contained layout subtree — analogous to the browser's
 /// initial containing block.
@@ -72,7 +72,11 @@ impl LayoutComponent {
         match length {
             SizeDimension::GlyphUnits(v) => v,
             SizeDimension::WorldUnits(v) => {
-                if unit_scale.abs() > f32::EPSILON { v / unit_scale } else { v }
+                if unit_scale.abs() > f32::EPSILON {
+                    v / unit_scale
+                } else {
+                    v
+                }
             }
             SizeDimension::Auto | SizeDimension::Percent(_) => {
                 debug_assert!(false, "LayoutRoot sizes only support gu or wu units");
@@ -82,7 +86,8 @@ impl LayoutComponent {
     }
 
     fn refresh_available_bounds(&mut self) {
-        self.available_width = Self::resolve_layout_length_gu(self.authored_available_width, self.unit_scale);
+        self.available_width =
+            Self::resolve_layout_length_gu(self.authored_available_width, self.unit_scale);
         self.available_height = self
             .authored_available_height
             .map(|height| Self::resolve_layout_length_gu(height, self.unit_scale));
@@ -132,14 +137,25 @@ impl LayoutComponent {
 }
 
 impl Component for LayoutComponent {
-    fn name(&self) -> &'static str { "layout" }
+    fn name(&self) -> &'static str {
+        "layout"
+    }
 
-    fn set_id(&mut self, id: ComponentId) { self.component = Some(id); }
+    fn set_id(&mut self, id: ComponentId) {
+        self.component = Some(id);
+    }
 
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         use crate::meow_meow::ast::Expression;
         use crate::meow_meow::token::Unit;
@@ -153,7 +169,11 @@ impl Component for LayoutComponent {
             }
         }
 
-        let mut ce = ce_call("LayoutRoot", "width", vec![layout_dim_expr(self.authored_available_width)]);
+        let mut ce = ce_call(
+            "LayoutRoot",
+            "width",
+            vec![layout_dim_expr(self.authored_available_width)],
+        );
         if let Some(h) = self.authored_available_height {
             ce = ce.with_call("height", vec![layout_dim_expr(h)]);
         }

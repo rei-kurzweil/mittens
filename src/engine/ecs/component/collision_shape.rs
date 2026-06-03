@@ -1,5 +1,5 @@
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::ComponentId;
 
 use crate::engine::ecs::system::model::collision_types::CollisionShape;
 
@@ -47,7 +47,10 @@ impl Component for CollisionShapeComponent {
         self
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         match self.shape {
             CollisionShape::Cube { half_extents } => ce_call(

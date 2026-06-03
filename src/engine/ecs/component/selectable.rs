@@ -1,5 +1,5 @@
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::ComponentId;
 
 /// Selection opt-out marker.
 ///
@@ -16,11 +16,17 @@ pub struct SelectableComponent {
 
 impl SelectableComponent {
     pub fn on() -> Self {
-        Self { enabled: true, component: None }
+        Self {
+            enabled: true,
+            component: None,
+        }
     }
 
     pub fn off() -> Self {
-        Self { enabled: false, component: None }
+        Self {
+            enabled: false,
+            component: None,
+        }
     }
 }
 
@@ -47,7 +53,10 @@ impl Component for SelectableComponent {
         self
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let ctor = if self.enabled { "on" } else { "off" };
         ce_call("Selectable", ctor, vec![])

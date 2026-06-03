@@ -1,5 +1,5 @@
-use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter};
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter};
 
 /// Declares a renderable-backed stencil clip boundary.
 ///
@@ -56,18 +56,25 @@ impl Component for StencilClipComponent {
     fn init(&mut self, emit: &mut dyn SignalEmitter, component: ComponentId) {
         emit.push_intent_now(
             component,
-            IntentValue::RegisterStencilClip { component_ids: vec![component] },
+            IntentValue::RegisterStencilClip {
+                component_ids: vec![component],
+            },
         );
     }
 
     fn cleanup(&mut self, emit: &mut dyn SignalEmitter, component: ComponentId) {
         emit.push_intent_now(
             component,
-            IntentValue::UnregisterStencilClip { component_ids: vec![component] },
+            IntentValue::UnregisterStencilClip {
+                component_ids: vec![component],
+            },
         );
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         if self.stencil_ref == 0 {
             ce("StencilClip")

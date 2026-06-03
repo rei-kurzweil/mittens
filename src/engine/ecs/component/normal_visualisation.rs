@@ -1,5 +1,5 @@
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::ComponentId;
 
 /// Debug component: visualises vertex normals of the parent `RenderableComponent`.
 ///
@@ -87,7 +87,10 @@ impl Component for NormalVisualisationComponent {
         }
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce_call("NormalVis", "thickness", vec![num(self.thickness as f64)])
     }

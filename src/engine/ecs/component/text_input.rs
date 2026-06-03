@@ -1,5 +1,5 @@
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::{IntentValue, SignalEmitter};
 
 #[derive(Debug, Clone)]
@@ -69,7 +69,10 @@ impl Component for TextInputComponent {
 
     fn encode(&self) -> std::collections::HashMap<String, serde_json::Value> {
         let mut out = std::collections::HashMap::new();
-        out.insert("text".to_string(), serde_json::Value::String(self.text.clone()));
+        out.insert(
+            "text".to_string(),
+            serde_json::Value::String(self.text.clone()),
+        );
         if self.read_only {
             out.insert("read_only".to_string(), serde_json::Value::Bool(true));
         }

@@ -45,7 +45,10 @@ impl Component for TransformGizmoTranslateComponent {
         self
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce_call("TransformGizmoTranslate", axis_ctor(self.axis), vec![])
     }
@@ -86,7 +89,10 @@ impl Component for TransformGizmoRotateComponent {
         self
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce_call("TransformGizmoRotate", axis_ctor(self.axis), vec![])
     }
@@ -119,7 +125,10 @@ impl Component for TransformGizmoScaleComponent {
         self
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce_call("TransformGizmoScale", axis_ctor(self.axis), vec![])
     }
@@ -210,7 +219,10 @@ impl Component for TransformGizmoComponent {
         self
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce("TransformGizmo").with_call("scale", vec![num(self.scale as f64)])
     }

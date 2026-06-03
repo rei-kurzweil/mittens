@@ -80,14 +80,14 @@ impl Component for PointLightComponent {
         self
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce("PointLight")
             .with_call("intensity", vec![num(self.intensity as f64)])
             .with_call("distance", vec![num(self.distance as f64)])
-            .with_call(
-                "color",
-                nums(self.color.iter().map(|&v| v as f64)),
-            )
+            .with_call("color", nums(self.color.iter().map(|&v| v as f64)))
     }
 }

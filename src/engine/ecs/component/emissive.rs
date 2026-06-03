@@ -1,5 +1,5 @@
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::ComponentId;
 
 #[derive(Debug, Clone, Copy)]
 pub struct EmissiveComponent {
@@ -54,7 +54,10 @@ impl Component for EmissiveComponent {
         );
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let ctor = if self.intensity == 0.0 { "off" } else { "on" };
         let mut ce = ce_call("Emissive", ctor, vec![]);

@@ -48,7 +48,10 @@ pub struct RaycastableComponent {
 
 impl RaycastableComponent {
     pub fn new(enable: bool) -> Self {
-        Self { enable, pointer_events: PointerEvents::All }
+        Self {
+            enable,
+            pointer_events: PointerEvents::All,
+        }
     }
 
     pub fn enabled() -> Self {
@@ -61,12 +64,18 @@ impl RaycastableComponent {
 
     /// Captures drag events only; click falls through to hits behind this object.
     pub fn drag_only() -> Self {
-        Self { enable: true, pointer_events: PointerEvents::DragOnly }
+        Self {
+            enable: true,
+            pointer_events: PointerEvents::DragOnly,
+        }
     }
 
     /// Captures click events only; drag falls through to hits behind this object.
     pub fn click_only() -> Self {
-        Self { enable: true, pointer_events: PointerEvents::ClickOnly }
+        Self {
+            enable: true,
+            pointer_events: PointerEvents::ClickOnly,
+        }
     }
 }
 
@@ -83,7 +92,10 @@ impl Component for RaycastableComponent {
         "raycastable"
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let ctor = match (self.enable, self.pointer_events) {
             (false, _) => "disabled",

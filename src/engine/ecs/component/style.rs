@@ -1,5 +1,5 @@
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::ComponentId;
 
 /// CSS `display` property values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -180,21 +180,41 @@ impl EdgeInsets {
 
     pub fn all(v: f32) -> Self {
         let sd = SizeDimension::GlyphUnits(v);
-        Self { top: sd, right: sd, bottom: sd, left: sd }
+        Self {
+            top: sd,
+            right: sd,
+            bottom: sd,
+            left: sd,
+        }
     }
 
     pub fn all_dim(sd: SizeDimension) -> Self {
-        Self { top: sd, right: sd, bottom: sd, left: sd }
+        Self {
+            top: sd,
+            right: sd,
+            bottom: sd,
+            left: sd,
+        }
     }
 
     pub fn axes(vertical: f32, horizontal: f32) -> Self {
         let v = SizeDimension::GlyphUnits(vertical);
         let h = SizeDimension::GlyphUnits(horizontal);
-        Self { top: v, right: h, bottom: v, left: h }
+        Self {
+            top: v,
+            right: h,
+            bottom: v,
+            left: h,
+        }
     }
 
     pub fn axes_dim(vertical: SizeDimension, horizontal: SizeDimension) -> Self {
-        Self { top: vertical, right: horizontal, bottom: vertical, left: horizontal }
+        Self {
+            top: vertical,
+            right: horizontal,
+            bottom: vertical,
+            left: horizontal,
+        }
     }
 
     /// Resolve all sides to glyph units against the inline-axis container width.
@@ -221,9 +241,18 @@ pub struct ResolvedInsets {
 }
 
 impl ResolvedInsets {
-    pub const ZERO: Self = Self { top: 0.0, right: 0.0, bottom: 0.0, left: 0.0 };
-    pub fn horizontal(&self) -> f32 { self.left + self.right }
-    pub fn vertical(&self) -> f32 { self.top + self.bottom }
+    pub const ZERO: Self = Self {
+        top: 0.0,
+        right: 0.0,
+        bottom: 0.0,
+        left: 0.0,
+    };
+    pub fn horizontal(&self) -> f32 {
+        self.left + self.right
+    }
+    pub fn vertical(&self) -> f32 {
+        self.top + self.bottom
+    }
 }
 
 /// Resolve a `SizeDimension` to **glyph units** against a known container
@@ -238,7 +267,11 @@ pub fn resolve_size_inline(sd: SizeDimension, container_w_gu: f32, unit_scale: f
     match sd {
         SizeDimension::GlyphUnits(v) => v,
         SizeDimension::WorldUnits(v) => {
-            if unit_scale.abs() > f32::EPSILON { v / unit_scale } else { v }
+            if unit_scale.abs() > f32::EPSILON {
+                v / unit_scale
+            } else {
+                v
+            }
         }
         SizeDimension::Percent(p) => container_w_gu * p / 100.0,
         SizeDimension::Auto => 0.0,
@@ -251,39 +284,39 @@ pub fn resolve_size_inline(sd: SizeDimension, container_w_gu: f32, unit_scale: f
 /// `StyleComponent` without replacing the whole struct.
 #[derive(Debug, Clone, Default)]
 pub struct StylePatch {
-    pub display:          Option<Option<Display>>,
-    pub width:            Option<SizeDimension>,
-    pub height:           Option<SizeDimension>,
-    pub min_width:        Option<Option<f32>>,
-    pub max_width:        Option<Option<f32>>,
-    pub min_height:       Option<Option<f32>>,
-    pub max_height:       Option<Option<f32>>,
-    pub margin:           Option<EdgeInsets>,
-    pub padding:          Option<EdgeInsets>,
-    pub box_sizing:       Option<BoxSizing>,
-    pub flex_direction:   Option<FlexDirection>,
-    pub justify_content:  Option<JustifyContent>,
-    pub align_items:      Option<AlignItems>,
-    pub flex_wrap:        Option<FlexWrap>,
-    pub row_gap:          Option<f32>,
-    pub column_gap:       Option<f32>,
-    pub flex_grow:        Option<f32>,
-    pub flex_shrink:      Option<f32>,
-    pub flex_basis:       Option<SizeDimension>,
-    pub position:         Option<Position>,
-    pub top:              Option<Option<SizeDimension>>,
-    pub right:            Option<Option<SizeDimension>>,
-    pub bottom:           Option<Option<SizeDimension>>,
-    pub left:             Option<Option<SizeDimension>>,
-    pub line_height:      Option<f32>,
-    pub font_size:        Option<SizeDimension>,
-    pub vertical_align:   Option<VerticalAlign>,
-    pub overflow:         Option<Overflow>,
-    pub z_index:          Option<Option<i32>>,
+    pub display: Option<Option<Display>>,
+    pub width: Option<SizeDimension>,
+    pub height: Option<SizeDimension>,
+    pub min_width: Option<Option<f32>>,
+    pub max_width: Option<Option<f32>>,
+    pub min_height: Option<Option<f32>>,
+    pub max_height: Option<Option<f32>>,
+    pub margin: Option<EdgeInsets>,
+    pub padding: Option<EdgeInsets>,
+    pub box_sizing: Option<BoxSizing>,
+    pub flex_direction: Option<FlexDirection>,
+    pub justify_content: Option<JustifyContent>,
+    pub align_items: Option<AlignItems>,
+    pub flex_wrap: Option<FlexWrap>,
+    pub row_gap: Option<f32>,
+    pub column_gap: Option<f32>,
+    pub flex_grow: Option<f32>,
+    pub flex_shrink: Option<f32>,
+    pub flex_basis: Option<SizeDimension>,
+    pub position: Option<Position>,
+    pub top: Option<Option<SizeDimension>>,
+    pub right: Option<Option<SizeDimension>>,
+    pub bottom: Option<Option<SizeDimension>>,
+    pub left: Option<Option<SizeDimension>>,
+    pub line_height: Option<f32>,
+    pub font_size: Option<SizeDimension>,
+    pub vertical_align: Option<VerticalAlign>,
+    pub overflow: Option<Overflow>,
+    pub z_index: Option<Option<i32>>,
     pub background_color: Option<Option<[f32; 4]>>,
-    pub background_z:     Option<Option<f32>>,
-    pub color:            Option<Option<[f32; 4]>>,
-    pub word_wrap:        Option<Option<WordWrapMode>>,
+    pub background_z: Option<Option<f32>>,
+    pub color: Option<Option<[f32; 4]>>,
+    pub word_wrap: Option<Option<WordWrapMode>>,
     pub word_wrap_tokens: Option<Option<Vec<String>>>,
 }
 
@@ -307,38 +340,38 @@ pub struct StyleComponent {
     pub display: Option<Display>,
 
     // ── Sizing ───────────────────────────────────────────────────────────
-    pub width:      SizeDimension,
-    pub height:     SizeDimension,
-    pub min_width:  Option<f32>,
-    pub max_width:  Option<f32>,
+    pub width: SizeDimension,
+    pub height: SizeDimension,
+    pub min_width: Option<f32>,
+    pub max_width: Option<f32>,
     pub min_height: Option<f32>,
     pub max_height: Option<f32>,
 
     // ── Box model ────────────────────────────────────────────────────────
-    pub margin:  EdgeInsets,
+    pub margin: EdgeInsets,
     pub padding: EdgeInsets,
     /// `box-sizing`. Default: [`BoxSizing::BorderBox`] (cat-engine default).
     pub box_sizing: BoxSizing,
 
     // ── Flex container ───────────────────────────────────────────────────
-    pub flex_direction:  FlexDirection,
+    pub flex_direction: FlexDirection,
     pub justify_content: JustifyContent,
-    pub align_items:     AlignItems,
-    pub flex_wrap:       FlexWrap,
-    pub row_gap:         f32,
-    pub column_gap:      f32,
+    pub align_items: AlignItems,
+    pub flex_wrap: FlexWrap,
+    pub row_gap: f32,
+    pub column_gap: f32,
 
     // ── Flex item ────────────────────────────────────────────────────────
-    pub flex_grow:   f32,
+    pub flex_grow: f32,
     pub flex_shrink: f32,
-    pub flex_basis:  SizeDimension,
+    pub flex_basis: SizeDimension,
 
     // ── Position ─────────────────────────────────────────────────────────
     pub position: Position,
-    pub top:    Option<SizeDimension>,
-    pub right:  Option<SizeDimension>,
+    pub top: Option<SizeDimension>,
+    pub right: Option<SizeDimension>,
     pub bottom: Option<SizeDimension>,
-    pub left:   Option<SizeDimension>,
+    pub left: Option<SizeDimension>,
 
     // ── Text / typography ────────────────────────────────────────────────
     /// Line height in glyph units. Default: 1.0.
@@ -444,56 +477,137 @@ impl Default for StyleComponent {
 }
 
 impl StyleComponent {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Apply a `StylePatch`, updating only fields where the patch has `Some(...)`.
     pub fn apply_patch(&mut self, patch: StylePatch) {
-        if let Some(v) = patch.display          { self.display = v; }
-        if let Some(v) = patch.width            { self.width = v; }
-        if let Some(v) = patch.height           { self.height = v; }
-        if let Some(v) = patch.min_width        { self.min_width = v; }
-        if let Some(v) = patch.max_width        { self.max_width = v; }
-        if let Some(v) = patch.min_height       { self.min_height = v; }
-        if let Some(v) = patch.max_height       { self.max_height = v; }
-        if let Some(v) = patch.margin           { self.margin = v; }
-        if let Some(v) = patch.padding          { self.padding = v; }
-        if let Some(v) = patch.box_sizing       { self.box_sizing = v; }
-        if let Some(v) = patch.flex_direction   { self.flex_direction = v; }
-        if let Some(v) = patch.justify_content  { self.justify_content = v; }
-        if let Some(v) = patch.align_items      { self.align_items = v; }
-        if let Some(v) = patch.flex_wrap        { self.flex_wrap = v; }
-        if let Some(v) = patch.row_gap          { self.row_gap = v; }
-        if let Some(v) = patch.column_gap       { self.column_gap = v; }
-        if let Some(v) = patch.flex_grow        { self.flex_grow = v; }
-        if let Some(v) = patch.flex_shrink      { self.flex_shrink = v; }
-        if let Some(v) = patch.flex_basis       { self.flex_basis = v; }
-        if let Some(v) = patch.position         { self.position = v; }
-        if let Some(v) = patch.top              { self.top = v; }
-        if let Some(v) = patch.right            { self.right = v; }
-        if let Some(v) = patch.bottom           { self.bottom = v; }
-        if let Some(v) = patch.left             { self.left = v; }
-        if let Some(v) = patch.line_height      { self.line_height = v; }
-        if let Some(v) = patch.font_size        { self.font_size = v; }
-        if let Some(v) = patch.vertical_align   { self.vertical_align = v; }
-        if let Some(v) = patch.overflow         { self.overflow = v; }
-        if let Some(v) = patch.z_index          { self.z_index = v; }
-        if let Some(v) = patch.background_color { self.background_color = v; }
-        if let Some(v) = patch.background_z     { self.background_z = v; }
-        if let Some(v) = patch.color            { self.color = v; }
-        if let Some(v) = patch.word_wrap        { self.word_wrap = v; }
-        if let Some(v) = patch.word_wrap_tokens { self.word_wrap_tokens = v; }
+        if let Some(v) = patch.display {
+            self.display = v;
+        }
+        if let Some(v) = patch.width {
+            self.width = v;
+        }
+        if let Some(v) = patch.height {
+            self.height = v;
+        }
+        if let Some(v) = patch.min_width {
+            self.min_width = v;
+        }
+        if let Some(v) = patch.max_width {
+            self.max_width = v;
+        }
+        if let Some(v) = patch.min_height {
+            self.min_height = v;
+        }
+        if let Some(v) = patch.max_height {
+            self.max_height = v;
+        }
+        if let Some(v) = patch.margin {
+            self.margin = v;
+        }
+        if let Some(v) = patch.padding {
+            self.padding = v;
+        }
+        if let Some(v) = patch.box_sizing {
+            self.box_sizing = v;
+        }
+        if let Some(v) = patch.flex_direction {
+            self.flex_direction = v;
+        }
+        if let Some(v) = patch.justify_content {
+            self.justify_content = v;
+        }
+        if let Some(v) = patch.align_items {
+            self.align_items = v;
+        }
+        if let Some(v) = patch.flex_wrap {
+            self.flex_wrap = v;
+        }
+        if let Some(v) = patch.row_gap {
+            self.row_gap = v;
+        }
+        if let Some(v) = patch.column_gap {
+            self.column_gap = v;
+        }
+        if let Some(v) = patch.flex_grow {
+            self.flex_grow = v;
+        }
+        if let Some(v) = patch.flex_shrink {
+            self.flex_shrink = v;
+        }
+        if let Some(v) = patch.flex_basis {
+            self.flex_basis = v;
+        }
+        if let Some(v) = patch.position {
+            self.position = v;
+        }
+        if let Some(v) = patch.top {
+            self.top = v;
+        }
+        if let Some(v) = patch.right {
+            self.right = v;
+        }
+        if let Some(v) = patch.bottom {
+            self.bottom = v;
+        }
+        if let Some(v) = patch.left {
+            self.left = v;
+        }
+        if let Some(v) = patch.line_height {
+            self.line_height = v;
+        }
+        if let Some(v) = patch.font_size {
+            self.font_size = v;
+        }
+        if let Some(v) = patch.vertical_align {
+            self.vertical_align = v;
+        }
+        if let Some(v) = patch.overflow {
+            self.overflow = v;
+        }
+        if let Some(v) = patch.z_index {
+            self.z_index = v;
+        }
+        if let Some(v) = patch.background_color {
+            self.background_color = v;
+        }
+        if let Some(v) = patch.background_z {
+            self.background_z = v;
+        }
+        if let Some(v) = patch.color {
+            self.color = v;
+        }
+        if let Some(v) = patch.word_wrap {
+            self.word_wrap = v;
+        }
+        if let Some(v) = patch.word_wrap_tokens {
+            self.word_wrap_tokens = v;
+        }
     }
 }
 
 impl Component for StyleComponent {
-    fn name(&self) -> &'static str { "style" }
+    fn name(&self) -> &'static str {
+        "style"
+    }
 
-    fn set_id(&mut self, id: ComponentId) { self.component = Some(id); }
+    fn set_id(&mut self, id: ComponentId) {
+        self.component = Some(id);
+    }
 
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         // Style is highly complex (50+ fields); for now we emit an empty
         // `Style {}` so attach_clone/save produce something parseable.

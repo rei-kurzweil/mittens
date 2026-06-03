@@ -1,7 +1,7 @@
+use crate::engine::ecs::component::Component;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::IntentValue;
 use crate::engine::ecs::SignalEmitter;
-use crate::engine::ecs::component::Component;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransformGizmoCoordSpace {
@@ -147,7 +147,10 @@ impl Component for EditorComponent {
         );
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let translation = match self.transform_gizmo_translation_space {
             TransformGizmoCoordSpace::Local => "local",
@@ -160,6 +163,5 @@ impl Component for EditorComponent {
         ce("Editor")
             .with_call("translation_space", vec![s(translation)])
             .with_call("rotation_space", vec![s(rotation)])
-
     }
 }

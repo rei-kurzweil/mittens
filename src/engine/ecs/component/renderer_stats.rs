@@ -1,5 +1,5 @@
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::ComponentId;
 use crate::engine::graphics::CameraTarget;
 
 #[derive(Debug, Clone)]
@@ -136,7 +136,10 @@ impl Component for RendererStatsComponent {
         self
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let target_str = match self.target {
             CameraTarget::Window => "Window",
@@ -145,7 +148,10 @@ impl Component for RendererStatsComponent {
         ce("RendererStats")
             .with_call("enabled", vec![b(self.enabled)])
             .with_call("camera_target", vec![s(target_str)])
-            .with_call("update_interval_sec", vec![num(self.update_interval_sec as f64)])
+            .with_call(
+                "update_interval_sec",
+                vec![num(self.update_interval_sec as f64)],
+            )
             .with_call("smoothing", vec![num(self.smoothing as f64)])
             .with_call(
                 "color",

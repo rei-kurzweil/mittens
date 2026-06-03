@@ -272,8 +272,7 @@ impl MusicNoteComponent {
         let ctx_id = find_music_context_ancestor(world, self_id)?;
         let voice = self.voice_name.clone();
         let resolved = {
-            let ctx = world
-                .get_component_by_id_as_mut::<super::MusicContextComponent>(ctx_id)?;
+            let ctx = world.get_component_by_id_as_mut::<super::MusicContextComponent>(ctx_id)?;
             // Defer the lookup: cache check is cheap, but ref resolution
             // needs `&World`, which we already borrowed mutably above.
             let cached = match &voice {
@@ -296,17 +295,12 @@ impl MusicNoteComponent {
         }
         // Cold path: ask the context to resolve + cache. Re-borrow.
         let resolved = {
-            let ctx = world
-                .get_component_by_id_as_mut::<super::MusicContextComponent>(ctx_id)?;
+            let ctx = world.get_component_by_id_as_mut::<super::MusicContextComponent>(ctx_id)?;
             // SAFETY of borrow: lookup_voice needs &World too. We grab voice
             // entries by clone, drop the mut borrow, then read-only world.
             let entry = match &voice {
                 None => ctx.voices.first().cloned(),
-                Some(n) => ctx
-                    .voices
-                    .iter()
-                    .find(|(vn, _)| vn == n)
-                    .cloned(),
+                Some(n) => ctx.voices.iter().find(|(vn, _)| vn == n).cloned(),
             };
             entry
         };
@@ -380,11 +374,7 @@ impl Component for MusicNoteComponent {
         self
     }
 
-    fn init(
-        &mut self,
-        emit: &mut dyn crate::engine::ecs::SignalEmitter,
-        component: ComponentId,
-    ) {
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         if !self.play_on_attach {
             return;
         }
@@ -410,7 +400,10 @@ impl Component for MusicNoteComponent {
         );
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let pitch = self.note.pitch_name();
         let mut c = ce_call(

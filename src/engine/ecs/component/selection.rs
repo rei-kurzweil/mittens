@@ -1,33 +1,113 @@
-use crate::engine::ecs::{ComponentId, component::Component};
+use crate::engine::ecs::{component::Component, ComponentId};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionMode {
+    Single,
+    Multiple,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectionEntry {
+    pub index: Option<usize>,
+    pub item: Option<String>,
+    pub component: ComponentId,
+}
 
 #[derive(Debug, Clone)]
 pub struct SelectionComponent {
+    pub mode: SelectionMode,
     pub selected_index: Option<usize>,
     pub selected_item: Option<String>,
     pub selected_component: Option<ComponentId>,
+    pub selected_entries: Vec<SelectionEntry>,
     component: Option<ComponentId>,
 }
 
 impl SelectionComponent {
     pub fn new() -> Self {
         Self {
+            mode: SelectionMode::Single,
             selected_index: None,
             selected_item: None,
             selected_component: None,
+            selected_entries: Vec::new(),
             component: None,
         }
+    }
+
+    pub fn multiple() -> Self {
+        Self {
+            mode: SelectionMode::Multiple,
+            ..Self::new()
+        }
+    }
+
+    pub fn is_multiple(&self) -> bool {
+        matches!(self.mode, SelectionMode::Multiple)
     }
 
     pub fn clear(&mut self) {
         self.selected_index = None;
         self.selected_item = None;
         self.selected_component = None;
+        self.selected_entries.clear();
     }
 
     pub fn select(&mut self, index: usize, item: String, component: ComponentId) {
-        self.selected_index = Some(index);
-        self.selected_item = Some(item);
-        self.selected_component = Some(component);
+        self.select_entry(SelectionEntry {
+            index: Some(index),
+            item: Some(item),
+            component,
+        });
+    }
+
+    pub fn select_entry(&mut self, entry: SelectionEntry) {
+        self.selected_index = entry.index;
+        self.selected_item = entry.item.clone();
+        self.selected_component = Some(entry.component);
+        self.selected_entries.clear();
+        self.selected_entries.push(entry);
+    }
+
+    pub fn contains(&self, component: ComponentId) -> bool {
+        self.selected_entries
+            .iter()
+            .any(|entry| entry.component == component)
+    }
+
+    pub fn toggle_entry(&mut self, entry: SelectionEntry) -> bool {
+        if !self.is_multiple() {
+            self.select_entry(entry);
+            return true;
+        }
+
+        if let Some(index) = self
+            .selected_entries
+            .iter()
+            .position(|selected| selected.component == entry.component)
+        {
+            self.selected_entries.remove(index);
+            self.sync_primary_from_entries();
+            return false;
+        }
+
+        self.selected_entries.push(entry.clone());
+        self.selected_index = entry.index;
+        self.selected_item = entry.item;
+        self.selected_component = Some(entry.component);
+        true
+    }
+
+    fn sync_primary_from_entries(&mut self) {
+        if let Some(entry) = self.selected_entries.last().cloned() {
+            self.selected_index = entry.index;
+            self.selected_item = entry.item;
+            self.selected_component = Some(entry.component);
+        } else {
+            self.selected_index = None;
+            self.selected_item = None;
+            self.selected_component = None;
+        }
     }
 }
 
@@ -48,8 +128,14 @@ impl Component for SelectionComponent {
         self
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
-        ce_call("Selection", "", vec![])
+        match self.mode {
+            SelectionMode::Single => ce_call("Selection", "", vec![]),
+            SelectionMode::Multiple => ce_call("Selection", "multiple", vec![]),
+        }
     }
 }

@@ -1,5 +1,5 @@
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::ComponentId;
 use crate::engine::graphics::mesh::MeshFactory;
 use crate::engine::graphics::primitives::{
     CpuMeshHandle, InstanceHandle, MaterialHandle, Renderable,
@@ -154,7 +154,10 @@ impl Component for RenderableComponent {
         );
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         // Map known shared primitive handles back to the constructor that
         // produces them. Custom dynamic meshes (registered with
@@ -174,5 +177,4 @@ impl Component for RenderableComponent {
             None => ce("Renderable"),
         }
     }
-
 }

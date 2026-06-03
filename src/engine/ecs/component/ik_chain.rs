@@ -1,5 +1,5 @@
+use crate::engine::ecs::component::{Component, ComponentRef};
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::{ComponentRef, Component};
 
 /// Solver configuration for an `IKChainComponent`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -44,7 +44,7 @@ pub enum IKSolver {
     /// `copy_end_rotation`: if true, also aligns the end-effector bone to the target's rotation.
     TwoBoneIK {
         root_joint_id: ComponentId,
-        mid_joint_id:  ComponentId,
+        mid_joint_id: ComponentId,
         pole_direction: [f32; 3],
         copy_end_rotation: bool,
     },
@@ -152,11 +152,18 @@ impl Component for IKChainComponent {
         self
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         use crate::meow_meow::ast::Expression;
         let solver_call = match self.solver {
-            IKSolver::AimConstraint { offset_yaw, copy_position, target_position_offset } => (
+            IKSolver::AimConstraint {
+                offset_yaw,
+                copy_position,
+                target_position_offset,
+            } => (
                 "aim_constraint",
                 vec![
                     num(offset_yaw as f64),
@@ -164,14 +171,22 @@ impl Component for IKChainComponent {
                     array(nums(target_position_offset.iter().map(|&v| v as f64))),
                 ],
             ),
-            IKSolver::TwoBoneIK { pole_direction, copy_end_rotation, .. } => (
+            IKSolver::TwoBoneIK {
+                pole_direction,
+                copy_end_rotation,
+                ..
+            } => (
                 "two_bone_ik",
                 vec![
                     array(nums(pole_direction.iter().map(|&v| v as f64))),
                     b(copy_end_rotation),
                 ],
             ),
-            IKSolver::Fabrik { max_iterations, tolerance, target_position_offset } => (
+            IKSolver::Fabrik {
+                max_iterations,
+                tolerance,
+                target_position_offset,
+            } => (
                 "fabrik",
                 vec![
                     num(max_iterations as f64),

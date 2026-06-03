@@ -152,11 +152,7 @@ impl Component for AudioClipComponent {
         self
     }
 
-    fn init(
-        &mut self,
-        emit: &mut dyn crate::engine::ecs::SignalEmitter,
-        component: ComponentId,
-    ) {
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         // Phase 5: request a decode via the AudioSystem. The decode
         // worker resolves missing files / unsupported codecs and reports
         // back through the engine's completion channel, which updates
@@ -169,9 +165,18 @@ impl Component for AudioClipComponent {
         );
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
-        let ctor = match self.uri.rsplit('.').next().map(str::to_ascii_lowercase).as_deref() {
+        let ctor = match self
+            .uri
+            .rsplit('.')
+            .next()
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
             Some("wav") => "wav",
             Some("opus") => "opus",
             Some("ogg") => "ogg",

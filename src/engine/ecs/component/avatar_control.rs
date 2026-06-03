@@ -1,5 +1,5 @@
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::ComponentId;
 
 /// Coordinates all pose drivers for a humanoid avatar.
 ///
@@ -160,12 +160,12 @@ pub struct AvatarControlComponent {
     pub head_ik_eye_height: Option<f32>,
 
     // Runtime IDs set by AvatarControlSystem on first tick:
-    pub(crate) splice_head:          Option<ComponentId>,
-    pub(crate) displaced_head:       Option<ComponentId>,
+    pub(crate) splice_head: Option<ComponentId>,
+    pub(crate) displaced_head: Option<ComponentId>,
     /// Cached left hand bone id (end effector of left-arm TwoBoneIK).
-    pub(crate) left_hand_bone_id:    Option<ComponentId>,
+    pub(crate) left_hand_bone_id: Option<ComponentId>,
     /// Cached right hand bone id (end effector of right-arm TwoBoneIK).
-    pub(crate) right_hand_bone_id:   Option<ComponentId>,
+    pub(crate) right_hand_bone_id: Option<ComponentId>,
 
     /// ComponentId of the body pipeline root (`TransformForkTRSComponent`).
     /// Set by `try_init_splices`.
@@ -184,7 +184,6 @@ pub struct AvatarControlComponent {
     // Head-pose-sensitive body XZ translate follow (see
     // `docs/task/avatar-control-simple-humanoid-body-follow.md`, Phase 1).
     // ---------------------------------------------------------------------
-
     /// Name of the neck bone used by the Phase 2 rest-pin.  When set and
     /// the bone is found under `model_root`, the body-follow system records
     /// its rest local translation at init and restores it each tick if any
@@ -353,7 +352,6 @@ impl AvatarControlComponent {
         self.head_ik_eye_height = Some(dy);
         self
     }
-
 }
 
 impl Default for AvatarControlComponent {
@@ -404,14 +402,24 @@ impl Component for AvatarControlComponent {
         self.component = Some(id);
     }
 
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let mut c = ce("AvatarControl")
             .with_call("head_bone", vec![s(&self.head_bone)])
-            .with_call("body_yaw_threshold", vec![num(self.body_yaw_threshold as f64)])
+            .with_call(
+                "body_yaw_threshold",
+                vec![num(self.body_yaw_threshold as f64)],
+            )
             .with_call("body_yaw_rate", vec![num(self.body_yaw_rate as f64)]);
         if let Some(b) = &self.left_hand_bone {
             c = c.with_call("left_hand_bone", vec![s(b)]);
@@ -435,14 +443,22 @@ impl Component for AvatarControlComponent {
             let d = self.left_arm_pole_direction;
             c = c.with_call(
                 "left_arm_pole_direction",
-                vec![array(vec![num(d[0] as f64), num(d[1] as f64), num(d[2] as f64)])],
+                vec![array(vec![
+                    num(d[0] as f64),
+                    num(d[1] as f64),
+                    num(d[2] as f64),
+                ])],
             );
         }
         if self.right_arm_pole_direction != [1.0, 0.0, -1.0] {
             let d = self.right_arm_pole_direction;
             c = c.with_call(
                 "right_arm_pole_direction",
-                vec![array(vec![num(d[0] as f64), num(d[1] as f64), num(d[2] as f64)])],
+                vec![array(vec![
+                    num(d[0] as f64),
+                    num(d[1] as f64),
+                    num(d[2] as f64),
+                ])],
             );
         }
         if self.forward_plus_z {

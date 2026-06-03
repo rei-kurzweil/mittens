@@ -133,7 +133,11 @@ pub fn apply_resolved_targets(signal: &mut IntentValue, ids: &[ComponentId]) {
             component_ids.copy_from_slice(take(n));
         }
 
-        Attach { parents, child } | AttachClone { parents, prefab_root: child } => {
+        Attach { parents, child }
+        | AttachClone {
+            parents,
+            prefab_root: child,
+        } => {
             let n = parents.len();
             parents.copy_from_slice(take(n));
             *child = take(1)[0];
@@ -145,7 +149,11 @@ pub fn apply_resolved_targets(signal: &mut IntentValue, ids: &[ComponentId]) {
 
         _ => {}
     }
-    debug_assert_eq!(cursor, ids.len(), "slot count mismatch in apply_resolved_targets");
+    debug_assert_eq!(
+        cursor,
+        ids.len(),
+        "slot count mismatch in apply_resolved_targets"
+    );
 }
 
 impl Component for ActionComponent {
@@ -197,9 +205,7 @@ impl Component for ActionComponent {
 
         match &self.signal {
             IntentValue::Noop => ce_call("Action", "noop", vec![]),
-            IntentValue::Print { message } => {
-                ce_call("Action", "print", vec![s(message)])
-            }
+            IntentValue::Print { message } => ce_call("Action", "print", vec![s(message)]),
             IntentValue::SetColor { rgba, .. } => ce_call(
                 "Action",
                 "set_color",
@@ -223,21 +229,17 @@ impl Component for ActionComponent {
             ),
             IntentValue::Attach { .. } => {
                 // target_sources convention: [parents..., child].
-                let (parents, child) =
-                    self.target_sources.split_at(self.target_sources.len().saturating_sub(1));
-                let child_expr = child
-                    .first()
-                    .map(target_expr)
-                    .unwrap_or_else(|| s(""));
+                let (parents, child) = self
+                    .target_sources
+                    .split_at(self.target_sources.len().saturating_sub(1));
+                let child_expr = child.first().map(target_expr).unwrap_or_else(|| s(""));
                 ce_call("Action", "attach", vec![targets_expr(parents), child_expr])
             }
             IntentValue::AttachClone { .. } => {
-                let (parents, prefab) =
-                    self.target_sources.split_at(self.target_sources.len().saturating_sub(1));
-                let prefab_expr = prefab
-                    .first()
-                    .map(target_expr)
-                    .unwrap_or_else(|| s(""));
+                let (parents, prefab) = self
+                    .target_sources
+                    .split_at(self.target_sources.len().saturating_sub(1));
+                let prefab_expr = prefab.first().map(target_expr).unwrap_or_else(|| s(""));
                 ce_call(
                     "Action",
                     "attach_clone",
@@ -288,9 +290,7 @@ impl Component for ActionComponent {
             _ => ce_call("Action", "noop", vec![]),
         }
     }
-
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -338,4 +338,3 @@ mod tests {
         assert_eq!(signal_target_slot_count(&iv), 0);
     }
 }
-

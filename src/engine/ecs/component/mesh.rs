@@ -1,5 +1,5 @@
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::ComponentId;
 
 /// Select a mesh for a Renderable by string key.
 ///
@@ -7,8 +7,7 @@ use crate::engine::ecs::component::Component;
 /// The key can refer to imported meshes (e.g. "{gltf}:{mesh}:{prim}") registered in `RenderAssets`.
 #[derive(Debug, Clone)]
 pub struct MeshComponent {
-    pub 
-    key: String,
+    pub key: String,
 }
 
 impl MeshComponent {
@@ -34,7 +33,10 @@ impl Component for MeshComponent {
         // No-op: RenderableSystem resolves this opportunistically during flush.
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce_call("Mesh", "new", vec![s(&self.key)])
     }

@@ -1,5 +1,5 @@
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::ComponentId;
 
 /// Global ambient light.
 ///
@@ -55,8 +55,15 @@ impl Component for AmbientLightComponent {
         );
     }
 
-    fn to_mms_ast(&self, _world: &crate::engine::ecs::World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
-        ce_call("AmbientLight", "rgb", nums(self.rgb.iter().map(|&v| v as f64)))
+        ce_call(
+            "AmbientLight",
+            "rgb",
+            nums(self.rgb.iter().map(|&v| v as f64)),
+        )
     }
 }
