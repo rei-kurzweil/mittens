@@ -33,6 +33,7 @@ export fn asset_item(label, item_background_color) {
                 display("block")
                 width(8.5)
                 text_align("center")
+                word_wrap("break-all")
             }
             Text {
                 label

@@ -112,6 +112,7 @@ mod tests {
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::new();
         let mut inspector = InspectorSystem::new();
+        let render_assets = crate::engine::graphics::RenderAssets::new();
 
         let editor_root =
             world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
@@ -128,6 +129,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
+            &render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -135,7 +137,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let panel_mount = world

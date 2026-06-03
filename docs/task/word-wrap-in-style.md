@@ -55,9 +55,10 @@ method` block (around line 785):
 
 ```rust
 "word_wrap" => st.word_wrap = match arg_str(args, 0)? {
-    "normal"                    => Some(WordWrapMode::Normal),
-    "break_word" | "break-word" => Some(WordWrapMode::BreakWord),
-    _                           => None,
+    "normal"                       => Some(WordWrapMode::Normal),
+    "break_word" | "break-word"    => Some(WordWrapMode::BreakWord),
+    "break_all" | "break-all"      => Some(WordWrapMode::BreakAll),
+    _                              => None,
 },
 "word_wrap_tokens" => {
     st.word_wrap_tokens = Some(/* parse list of strings from args */);

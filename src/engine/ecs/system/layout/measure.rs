@@ -735,11 +735,11 @@ pub(crate) fn apply_text_wrap_for_item(
     //   `normal`     — only break at whitespace/token boundaries; long words
     //                  overflow rather than being split (TextComponent
     //                  `word_wrap = true`).
-    //   `break-word` — break anywhere if needed to prevent overflow (hard
-    //                  wrap at `wrap_at`; TextComponent `word_wrap = false`).
+    //   `break-word` / `break-all` — break anywhere if needed to prevent overflow
+    //                  (hard wrap at `wrap_at`; TextComponent `word_wrap = false`).
     let new_word_wrap = match style_word_wrap {
         Some(WordWrapMode::Normal) => true,
-        Some(WordWrapMode::BreakWord) => false,
+        Some(WordWrapMode::BreakWord) | Some(WordWrapMode::BreakAll) => false,
         None => cur_word_wrap,
     };
     let new_tokens = style_tokens.unwrap_or_else(|| cur_tokens.clone());

@@ -2382,6 +2382,7 @@ fn apply_call(
                 st.word_wrap = match arg_str(args, 0)? {
                     "normal"                       => Some(WordWrapMode::Normal),
                     "break_word" | "break-word"    => Some(WordWrapMode::BreakWord),
+                    "break_all" | "break-all"      => Some(WordWrapMode::BreakAll),
                     _                              => None,
                 };
             }

@@ -76,9 +76,13 @@ pub enum WordWrapMode {
     /// than being split mid-word. Maps to `TextComponent::word_wrap = true`.
     Normal,
     /// CSS `overflow-wrap: break-word` — break words at arbitrary points if
-    /// needed to keep the line inside `wrap_at`. Maps to
-    /// `TextComponent::word_wrap = false` (hard column wrap).
+    /// needed to keep the line inside `wrap_at`.
+    ///
+    /// NOTE: Currently behaves identically to `BreakAll` (hard character wrap).
     BreakWord,
+    /// CSS `word-break: break-all` — break words at arbitrary points.
+    /// Maps to `TextComponent::word_wrap = false` (hard column wrap).
+    BreakAll,
 }
 
 /// CSS `text-align` values.
