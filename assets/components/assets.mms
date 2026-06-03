@@ -2,7 +2,7 @@
 
 import { assets_content } from "./assets_content.mms"
 
-let ASSET_PANEL_WIDTH_GU = 30.0
+let ASSET_PANEL_WIDTH_GU = 39.0
 let TITLE_BAR_HEIGHT_GU = 3.0
 let TITLE_CONTENT_GAP_GU = 0.5
 let ASSET_PANEL_CONTENT_HEIGHT_GU = 57.0 

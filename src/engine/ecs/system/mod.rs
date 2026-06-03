@@ -46,6 +46,7 @@ pub mod texture_system;
 pub mod transition_system;
 pub mod transform_stream_system;
 pub mod transform_system;
+pub mod bounds_system;
 pub mod asset_system;
 pub mod selection_system;
 

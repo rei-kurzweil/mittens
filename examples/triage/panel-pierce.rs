@@ -90,10 +90,7 @@ fn main() {
         universe.command_queue.push_intent_now(scope, intent);
     }
 
-    universe.systems.process_commands(
-        &mut universe.world,
-        &mut universe.visuals,
-        &mut universe.command_queue,
+    universe.systems.process_commands(&mut universe.world, &mut universe.visuals, &universe.render_assets, &mut universe.command_queue,
     );
 
     let panel_scroll = find_named(&universe.world, "panel_scroll");

@@ -35,6 +35,7 @@ use crate::engine::ecs::system::{
     HeadPoseBodyXzFollowSystem, IKSystem, InspectorSystem, LayoutSystem, SelectionSystem,
     TransformGizmoSystem,
 };
+use crate::engine::ecs::system::bounds_system::BoundsSystem;
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 use std::path::Path;
@@ -80,6 +81,7 @@ pub struct SystemWorld {
     pub gesture: GestureSystem,
     pub transform_gizmo: TransformGizmoSystem,
 
+    pub bounds: BoundsSystem,
     pub layout: LayoutSystem,
 
     pub gltf: GLTFSystem,
@@ -362,6 +364,7 @@ impl SystemWorld {
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
+        render_assets: &crate::engine::graphics::RenderAssets,
         queue: &mut crate::engine::ecs::CommandQueue,
         max_signals: usize,
     ) -> usize {
@@ -426,7 +429,7 @@ impl SystemWorld {
                         // borrowing `self.rx` while also mutably borrowing `self`.
                         intent_executor.execute(world, queue, &env);
                     } else {
-                        mutation_executor.execute(self, world, visuals, queue, &env);
+                        mutation_executor.execute(self, world, visuals, render_assets, queue, &env);
                     }
                 }
                 if !leftover.is_empty() {
@@ -782,7 +785,8 @@ impl SystemWorld {
     pub fn register_editor(
         &mut self,
         world: &mut World,
-        _visuals: &mut VisualWorld,
+        visuals: &mut VisualWorld,
+        render_assets: &crate::engine::graphics::RenderAssets,
         component: ComponentId,
         emit: &mut dyn crate::engine::ecs::SignalEmitter,
     ) {
@@ -809,6 +813,7 @@ impl SystemWorld {
             self.inspector.setup_panels_for_editor(
                 &mut self.rx,
                 world,
+                render_assets,
                 emit,
                 component,
                 world_panel_pos,
@@ -1613,6 +1618,7 @@ impl SystemWorld {
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
+        render_assets: &crate::engine::graphics::RenderAssets,
         input: &InputState,
         queue: &mut crate::engine::ecs::CommandQueue,
         dt_sec: f32,
@@ -1637,7 +1643,7 @@ impl SystemWorld {
 
         // Flush queued registrations/transform updates *before* systems that need current
         // world matrices / acceleration structures (e.g. raycasting).
-        queue.flush(world, self, visuals);
+        queue.flush(world, self, visuals, render_assets);
 
         // Audio clock takeover: once audio output is active, use it as the ClockDriver.
         if let Some(driver) = self.audio.driver() {
@@ -1657,8 +1663,8 @@ impl SystemWorld {
             .tick_with_beat(world, self.clock.beat_now(), self.clock.bpm(), &mut self.rx);
 
         // Execute/dispatch any signals emitted by AnimationSystem before downstream systems run.
-        let _ = self.process_signals(world, visuals, queue, 100_000);
-        queue.flush(world, self, visuals);
+        let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
+        queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
 
         self.transform_stream.tick(world, visuals, input, dt_sec);
@@ -1687,7 +1693,7 @@ impl SystemWorld {
             queue,
             &self.collision,
         );
-        queue.flush(world, self, visuals);
+        queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
 
         // Physics may have moved renderables; refit BVH so raycasts see the resolved state.
@@ -1699,34 +1705,34 @@ impl SystemWorld {
         self.openxr
             .tick_with_queue(world, visuals, input, queue, dt_sec);
         // Controller pose updates should be visible to raycasting/gestures this frame.
-        queue.flush(world, self, visuals);
+        queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
 
         self.raycast
             .tick_with_queue(world, visuals, input, &mut self.rx, &self.bvh, dt_sec);
 
         // Execute/dispatch any signals produced by raycast immediately (e.g. RayIntersected).
-        let _ = self.process_signals(world, visuals, queue, 100_000);
+        let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
 
         // Gestures interpret ray hits + input into drag events.
         self.gesture.tick_with_rx(visuals, input, &mut self.rx);
 
         // Execute/dispatch gesture-produced signals immediately (e.g. DragStart/DragMove/DragEnd).
-        let _ = self.process_signals(world, visuals, queue, 100_000);
+        let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
 
         // Gizmos consume drag events and apply transform changes.
         self.transform_gizmo
             .tick_with_queue(world, input, queue, &mut self.rx);
 
         // Execute/dispatch gizmo-produced signals immediately (if any).
-        let _ = self.process_signals(world, visuals, queue, 100_000);
+        let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
 
         // Bridge buffered platform text input after gesture-driven focus changes have landed.
         self.text_input.tick_with_queue(world, input, queue);
-        let _ = self.process_signals(world, visuals, queue, 100_000);
+        let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
 
         // Apply gizmo transform updates immediately so visuals reflect the drag this frame.
-        queue.flush(world, self, visuals);
+        queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
 
         // Avatar body yaw: smoothly rotate body to follow head when yaw diverges.
@@ -1739,13 +1745,13 @@ impl SystemWorld {
         // docs/task/avatar-control-simple-humanoid-body-follow.md).
         self.head_pose_body_xz_follow.tick(world, queue, dt_sec);
         self.ik.tick(world, queue, dt_sec);
-        queue.flush(world, self, visuals);
+        queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
 
         // Flex-column position pass: emit UpdateTransform for dirty LayoutComponent subtrees.
         // Runs after transforms are propagated so initial world matrices are valid.
         self.layout.tick(world, queue);
-        queue.flush(world, self, visuals);
+        queue.flush(world, self, visuals, render_assets);
 
         self.renderable.tick(world, visuals, input, dt_sec);
 
@@ -1762,17 +1768,18 @@ impl SystemWorld {
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
+        render_assets: &crate::engine::graphics::RenderAssets,
         commands: &mut crate::engine::ecs::CommandQueue,
     ) {
-        commands.flush(world, self, visuals);
+        commands.flush(world, self, visuals, render_assets);
 
         // Drain-point: ensure any remaining undispatched signals get handled.
         // This covers signals emitted after the last explicit dispatch point.
-        let _ = self.process_signals(world, visuals, commands, 100_000);
+        let _ = self.process_signals(world, visuals, render_assets, commands, 100_000);
 
         // Signal handlers may have queued commands (e.g. register_color). Apply them now so
         // the effects are visible this frame.
-        commands.flush(world, self, visuals);
+        commands.flush(world, self, visuals, render_assets);
 
         // Batch audio graph rebuild work once after all mutations for this frame.
         self.audio.rebuild_dirty_audio_graphs(world);

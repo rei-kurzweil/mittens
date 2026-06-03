@@ -6,7 +6,7 @@ use crate::engine::ecs::component::{
     StyleComponent, TextComponent, TransformComponent,
 };
 use crate::engine::ecs::system::text_system::TextSystem;
-use crate::engine::graphics::bounds::Aabb;
+use crate::engine::graphics::bounds::{mat4_identity, mat4_mul, Aabb};
 use crate::engine::graphics::primitives::TransformMatrix;
 
 /// Measured size of a single layout item after Pass 1.
@@ -45,26 +45,6 @@ pub(crate) struct MeasuredItem {
     /// Resolved `display` (style override → HtmlElement UA default → `None`).
     /// `None` is treated as `Block` by the block formatting context.
     pub display: Option<Display>,
-}
-
-fn mat4_identity() -> TransformMatrix {
-    [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
-}
-
-fn mat4_mul(a: TransformMatrix, b: TransformMatrix) -> TransformMatrix {
-    let mut out = [[0.0f32; 4]; 4];
-    for c in 0..4 {
-        for r in 0..4 {
-            out[c][r] =
-                a[0][r] * b[c][0] + a[1][r] * b[c][1] + a[2][r] * b[c][2] + a[3][r] * b[c][3];
-        }
-    }
-    out
 }
 
 fn len3(column: [f32; 4]) -> f32 {

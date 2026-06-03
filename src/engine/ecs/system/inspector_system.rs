@@ -16,6 +16,7 @@ impl InspectorSystem {
         &mut self,
         rx: &mut RxWorld,
         world: &mut World,
+        render_assets: &crate::engine::graphics::RenderAssets,
         emit: &mut dyn SignalEmitter,
         editor_root: ComponentId,
         world_panel_pos: (f32, f32, f32),
@@ -25,6 +26,7 @@ impl InspectorSystem {
         self.stopgap_mms.setup_panels_for_editor(
             rx,
             world,
+            render_assets,
             emit,
             editor_root,
             world_panel_pos,

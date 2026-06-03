@@ -69,8 +69,12 @@ impl Universe {
     fn drain_pending_signals(&mut self) {
         // Universe helpers are synchronous convenience APIs.
         // They emit intents and then drain them immediately so the caller sees the effect.
-        self.systems
-            .process_commands(&mut self.world, &mut self.visuals, &mut self.command_queue);
+        self.systems.process_commands(
+            &mut self.world,
+            &mut self.visuals,
+            &self.render_assets,
+            &mut self.command_queue,
+        );
     }
 
     // --- Query helpers (read-only World access) ---
@@ -372,14 +376,19 @@ impl Universe {
         self.systems.tick(
             &mut self.world,
             &mut self.visuals,
+            &self.render_assets,
             input,
             &mut self.command_queue,
             dt_sec,
         );
 
         // Process commands after tick so any commands queued during tick are processed in the same frame
-        self.systems
-            .process_commands(&mut self.world, &mut self.visuals, &mut self.command_queue);
+        self.systems.process_commands(
+            &mut self.world,
+            &mut self.visuals,
+            &self.render_assets,
+            &mut self.command_queue,
+        );
 
         // Editor systems may enqueue REPL navigation commands during this update.
         // Sync once more so the REPL reflects the just-applied world topology.

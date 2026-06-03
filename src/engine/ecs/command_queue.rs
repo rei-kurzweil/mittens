@@ -52,9 +52,10 @@ impl CommandQueue {
         world: &mut crate::engine::ecs::World,
         systems: &mut crate::engine::ecs::system::SystemWorld,
         visuals: &mut crate::engine::graphics::VisualWorld,
+        render_assets: &crate::engine::graphics::RenderAssets,
     ) {
         // Execute + dispatch any newly-pushed signals.
-        let _ = systems.process_signals(world, visuals, self, 100_000);
+        let _ = systems.process_signals(world, visuals, render_assets, self, 100_000);
     }
 }
 

@@ -88,6 +88,38 @@ impl Aabb {
         }
         Self { min, max }
     }
+
+    pub fn center(&self) -> [f32; 3] {
+        [
+            (self.min[0] + self.max[0]) * 0.5,
+            (self.min[1] + self.max[1]) * 0.5,
+            (self.min[2] + self.max[2]) * 0.5,
+        ]
+    }
+
+    pub fn max_dimension(&self) -> f32 {
+        self.width().max(self.height()).max(self.depth())
+    }
+}
+
+pub fn mat4_identity() -> TransformMatrix {
+    [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+}
+
+pub fn mat4_mul(a: TransformMatrix, b: TransformMatrix) -> TransformMatrix {
+    let mut out = [[0.0f32; 4]; 4];
+    for c in 0..4 {
+        for r in 0..4 {
+            out[c][r] =
+                a[0][r] * b[c][0] + a[1][r] * b[c][1] + a[2][r] * b[c][2] + a[3][r] * b[c][3];
+        }
+    }
+    out
 }
 
 fn mul_mat4_vec4(m: TransformMatrix, v: [f32; 4]) -> [f32; 4] {

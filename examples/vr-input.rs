@@ -397,6 +397,7 @@ fn main() {
     universe.systems.process_commands(
         &mut universe.world,
         &mut universe.visuals,
+        &universe.render_assets,
         &mut universe.command_queue,
     );
 
@@ -414,6 +415,7 @@ fn main() {
     universe.systems.process_commands(
         &mut universe.world,
         &mut universe.visuals,
+        &universe.render_assets,
         &mut universe.command_queue,
     );
 

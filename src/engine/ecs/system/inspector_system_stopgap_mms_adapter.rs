@@ -101,6 +101,7 @@ impl InspectorSystemStopgapMmsAdapter {
         &mut self,
         rx: &mut RxWorld,
         world: &mut World,
+        render_assets: &crate::engine::graphics::RenderAssets,
         emit: &mut dyn SignalEmitter,
         editor_root: ComponentId,
         world_panel_pos: (f32, f32, f32),
@@ -124,6 +125,7 @@ impl InspectorSystemStopgapMmsAdapter {
                 .expect("working file path mutex poisoned");
             self.reconciler.reconcile_panel_layout(
                 world,
+                render_assets,
                 emit,
                 &mut self.panel_layout_spawned,
                 runtime_ui_root,
@@ -394,6 +396,7 @@ impl InspectorSystemStopgapMmsReconciler {
     fn reconcile_panel_layout(
         &self,
         world: &mut World,
+        render_assets: &crate::engine::graphics::RenderAssets,
         emit: &mut dyn SignalEmitter,
         panel_layout_spawned: &mut bool,
         panel_query_root: ComponentId,
@@ -432,6 +435,7 @@ impl InspectorSystemStopgapMmsReconciler {
 
         self.spawn_panel_layout(
             world,
+            render_assets,
             emit,
             panel_query_root,
             world_panel_pos,
@@ -455,6 +459,7 @@ impl InspectorSystemStopgapMmsReconciler {
     fn spawn_panel_layout(
         &self,
         world: &mut World,
+        render_assets: &crate::engine::graphics::RenderAssets,
         emit: &mut dyn SignalEmitter,
         panel_query_root: ComponentId,
         world_panel_pos: (f32, f32, f32),
@@ -755,7 +760,7 @@ impl InspectorSystemStopgapMmsReconciler {
                                 }
                             }
 
-                            match asset_system.build_asset_item_shell(world, emit, item, index) {
+                            match asset_system.build_asset_item_shell(world, render_assets, emit, item, index) {
                                 Ok(item_root) => {
                                     println!(
                                         "[InspectorSystem][debug] attaching asset item title={:?} export={:?} root={:?} to content_area={:?}",

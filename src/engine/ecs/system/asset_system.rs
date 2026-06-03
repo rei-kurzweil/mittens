@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::engine::ecs::system::bounds_system::BoundsSystem;
 use crate::engine::ecs::{component::TransformComponent, ComponentId, SignalEmitter, World};
 use crate::meow_meow::object::Value;
 use crate::meow_meow::runner::{LoadedMmsModule, MeowMeowRunner};
@@ -195,6 +196,7 @@ impl AssetSystem {
         item: &AssetItem,
         args: Vec<Value>,
         world: &mut World,
+        render_assets: &crate::engine::graphics::RenderAssets,
         emit: &mut dyn SignalEmitter,
     ) -> Result<ComponentId, String> {
         let module = self.modules.get(&item.module_id).ok_or_else(|| {
@@ -220,6 +222,7 @@ impl AssetSystem {
     pub fn spawn_assets_panel(
         &self,
         world: &mut World,
+        render_assets: &crate::engine::graphics::RenderAssets,
         emit: &mut dyn SignalEmitter,
         parent: ComponentId,
         position: (f32, f32, f32),
@@ -241,13 +244,13 @@ impl AssetSystem {
                     Value::Number(0.92),
                     Value::Number(1.0),
                 ]),
-                Value::Array(vec![
+                Value::Array(vec! [
                     Value::Number(0.18),
                     Value::Number(0.78),
                     Value::Number(0.22),
                     Value::Number(0.95),
                 ]),
-                Value::Array(vec![
+                Value::Array(vec! [
                     Value::Number(0.92),
                     Value::Number(0.97),
                     Value::Number(0.92),
@@ -284,7 +287,7 @@ impl AssetSystem {
                 }
             }
 
-            let item_root = self.build_asset_item_shell(world, emit, item, index)?;
+            let item_root = self.build_asset_item_shell(world, render_assets, emit, item, index)?;
             world
                 .add_child(content_root, item_root)
                 .map_err(|e| format!("attach asset item failed: {e}"))?;
@@ -305,6 +308,7 @@ impl AssetSystem {
     pub fn build_asset_item_shell(
         &self,
         world: &mut World,
+        render_assets: &crate::engine::graphics::RenderAssets,
         emit: &mut dyn SignalEmitter,
         item: &AssetItem,
         _index: usize,
@@ -360,16 +364,45 @@ impl AssetSystem {
             }
         }
 
-        match self.spawn_asset_component_uninitialized(item, args, world, emit) {
+        match self.spawn_asset_component_uninitialized(item, args, world, render_assets, emit) {
             Ok(preview_root) => {
-                // Wrap preview in a transform to scale/position it.
-                // The tile is 8x5.
+                // Find the preview slot inside the spawned item shell.
+                // We use a named slot to avoid manual coordinate math in Rust
+                // that might diverge from the MMS layout.
+                let preview_slot = world
+                    .find_component(item_root, "#preview_slot")
+                    .unwrap_or(item_root);
+
+                // Calculate the aggregate bounds of the spawned asset so we can
+                // auto-scale it to fit the tile.
+                let bounds = BoundsSystem::calculate_subtree_local_bounds(world, render_assets, preview_root);
+                let scale: f32;
+                let offset: [f32; 3];
+
+                if let Some(b) = bounds {
+                    // Previews are still way too big, let's scale them down much more aggressively.
+                    // The user specifically asked for "exactly.. 0.2 by 0.2 by 0.2 units max"
+                    let target_max_gu = 0.2_f32;
+                    let current_max_gu = b.max_dimension().max(1e-6);
+                    scale = target_max_gu / current_max_gu;
+
+                    let center = b.center();
+                    // offset = -center * scale
+                    offset = [-center[0] * scale, -center[1] * scale, -center[2] * scale];
+                } else {
+                    // Fallback for assets with no renderables or unknown bounds (e.g. logic modules, or GLTF loading)
+                    // If we don't know the bounds, assume it might be a 1m object and scale accordingly.
+                    scale = 0.5; // Aggressive reduction for safety
+                    offset = [0.0, 0.0, 0.0];
+                }
+
+                // Wrap preview in a transform to scale/center it.
                 let preview_shell = world.add_component_boxed_named(
                     "asset_preview_shell",
                     Box::new(
                         TransformComponent::new()
-                            .with_position(4.0, 2.0, 0.05)
-                            .with_scale(0.15, 0.15, 0.15),
+                            .with_position(offset[0], offset[1], offset[2])
+                            .with_scale(scale, scale, scale),
                     ),
                 );
 
@@ -377,7 +410,7 @@ impl AssetSystem {
                     .add_child(preview_shell, preview_root)
                     .map_err(|e| format!("attach preview failed: {e}"))?;
                 world
-                    .add_child(item_root, preview_shell)
+                    .add_child(preview_slot, preview_shell)
                     .map_err(|e| format!("attach preview shell failed: {e}"))?;
             }
             Err(e) => {

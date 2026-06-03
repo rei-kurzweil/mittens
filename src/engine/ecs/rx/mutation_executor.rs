@@ -20,6 +20,7 @@ impl RxMutationExecutor {
         systems: &mut SystemWorld,
         world: &mut World,
         visuals: &mut VisualWorld,
+        render_assets: &crate::engine::graphics::RenderAssets,
         emit: &mut dyn SignalEmitter,
         env: &Signal,
     ) {
@@ -473,7 +474,7 @@ impl RxMutationExecutor {
 
             IntentValue::RegisterEditor { component_ids } => {
                 for &component in component_ids.iter() {
-                    systems.register_editor(world, visuals, component, emit);
+                    systems.register_editor(world, visuals, render_assets, component, emit);
                 }
             }
 

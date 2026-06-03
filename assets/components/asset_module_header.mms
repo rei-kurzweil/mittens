@@ -4,7 +4,7 @@ export fn asset_module_header(module_name) {
     return T {
         name = "asset_module_header"
         Style {
-            display("block")
+            display("inline-block")
             width(100%)
             height(2.5)
             margin_top(1.0)
