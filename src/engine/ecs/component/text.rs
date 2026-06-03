@@ -38,12 +38,26 @@ pub struct TextComponent {
 
     /// If true, wrap only at whitespace boundaries (avoid breaking words).
     /// When false, wraps strictly by character count.
+    ///
+    /// The layout pass may override this when the containing styled TC has
+    /// a `word_wrap` style — see [`Self::authored_word_wrap`] for the
+    /// authored/default value.
     pub word_wrap: bool,
+
+    /// Author-provided word-wrap mode. Preserved when layout applies or removes
+    /// a style-driven override so the effective `word_wrap` can be restored.
+    pub authored_word_wrap: bool,
 
     /// Tokens after which wrapping is allowed when `word_wrap == true`.
     ///
     /// This always includes whitespace tokens (space + tab) by default.
+    /// The layout pass may override this when the containing styled TC has
+    /// a `word_wrap_tokens` style — see [`Self::authored_word_wrap_tokens`].
     pub word_wrap_tokens: Vec<String>,
+
+    /// Author-provided word-wrap tokens. Preserved alongside
+    /// [`Self::authored_word_wrap`] for the same reason.
+    pub authored_word_wrap_tokens: Vec<String>,
 
     built: bool,
     component: Option<ComponentId>,
@@ -70,7 +84,12 @@ impl TextComponent {
             // column cap) keeps the legacy hard-wrap behavior because callers
             // using it generally want strict column control.
             word_wrap: true,
+            authored_word_wrap: true,
             word_wrap_tokens: Self::DEFAULT_WORD_WRAP_TOKENS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            authored_word_wrap_tokens: Self::DEFAULT_WORD_WRAP_TOKENS
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -87,7 +106,12 @@ impl TextComponent {
             wrap_at,
             authored_wrap_at: wrap_at,
             word_wrap: false,
+            authored_word_wrap: false,
             word_wrap_tokens: Self::DEFAULT_WORD_WRAP_TOKENS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            authored_word_wrap_tokens: Self::DEFAULT_WORD_WRAP_TOKENS
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -108,7 +132,12 @@ impl TextComponent {
             wrap_at,
             authored_wrap_at: wrap_at,
             word_wrap: true,
+            authored_word_wrap: true,
             word_wrap_tokens: Self::DEFAULT_WORD_WRAP_TOKENS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            authored_word_wrap_tokens: Self::DEFAULT_WORD_WRAP_TOKENS
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
@@ -143,7 +172,9 @@ impl TextComponent {
             wrap_at,
             authored_wrap_at: wrap_at,
             word_wrap: true,
-            word_wrap_tokens: all_tokens,
+            authored_word_wrap: true,
+            word_wrap_tokens: all_tokens.clone(),
+            authored_word_wrap_tokens: all_tokens,
             built: false,
             component: None,
         }

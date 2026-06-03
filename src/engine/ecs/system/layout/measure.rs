@@ -720,13 +720,15 @@ pub(crate) fn apply_text_wrap_for_item(
     // No cascade today — only this TC's own StyleComponent is consulted.
     let (style_word_wrap, style_tokens) = read_text_wrap_style(world, tc_id);
 
-    let (cur_wrap_at, authored_wrap_at, cur_word_wrap, cur_tokens, cur_text, cur_font_size_wu) =
+    let (cur_wrap_at, authored_wrap_at, cur_word_wrap, authored_word_wrap, cur_tokens, authored_word_wrap_tokens, cur_text, cur_font_size_wu) =
         match world.get_component_by_id_as::<TextComponent>(text_id) {
             Some(tc) => (
                 tc.wrap_at,
                 tc.authored_wrap_at,
                 tc.word_wrap,
+                tc.authored_word_wrap,
                 tc.word_wrap_tokens.clone(),
+                tc.authored_word_wrap_tokens.clone(),
                 tc.text.clone(),
                 tc.font_size,
             ),
@@ -753,9 +755,9 @@ pub(crate) fn apply_text_wrap_for_item(
     let new_word_wrap = match style_word_wrap {
         Some(WordWrapMode::Normal) => true,
         Some(WordWrapMode::BreakWord) | Some(WordWrapMode::BreakAll) => false,
-        None => cur_word_wrap,
+        None => authored_word_wrap,
     };
-    let new_tokens = style_tokens.unwrap_or_else(|| cur_tokens.clone());
+    let new_tokens = style_tokens.unwrap_or(authored_word_wrap_tokens);
 
     if new_wrap_at == cur_wrap_at && new_word_wrap == cur_word_wrap && new_tokens == cur_tokens {
         return;
