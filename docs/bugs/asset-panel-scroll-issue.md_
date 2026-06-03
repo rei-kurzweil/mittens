@@ -1,0 +1,32 @@
+ 1. Raycastable.enable = false only helps if it happens before renderables enter the BVH. In this path it appears to happen before
+     init_component_tree, so that part is probably fine.
+
+  2. The scroll viewport should still receive drag through the layout-owned #__bg on content_slot; overflow("scroll") adds a DragOnly
+     raycastable there.
+
+  3. The more suspicious areas are:
+      - asset items/previews are late-attached and may not be getting routed into __scroll_track
+      - the nearest LayoutComponent may not be marked dirty after preview-bearing items are attached
+      - ScrollingComponent.content_height may be stale or equal to viewport_height, giving max_scroll = 0
+      - the BVH may not be refit/rebuilt after the scroll drag surface or content-slot transforms change
+
+  4. One concrete code smell: build_asset_item_shell does:
+      - add_child(preview_shell, preview_root)
+      - then, if preview_needs_layout, reparents preview_root under preview_layout_root
+      - then attaches preview_layout_root under preview_shell
+
+     add_child reparents cleanly, so it probably does not duplicate parentage, but the first attach is unnecessary and could make this
+     flow harder to reason about.
+
+  Next thing I’d inspect/runtime-log:
+
+  - find the Assets panel content_slot
+  - find its __scroll
+  - check ScrollingComponent { viewport_height, content_height, max_scroll, track, drag_scope }
+  - confirm asset content is under __scroll_track
+  - confirm the drag scope is the content-slot #__bg renderable
+  - confirm DragMove logs from ScrollingSystem fire when dragging beside previews
+
+  If max_scroll is 0, this is layout/measurement/dirtying. If no DragMove log fires, this is hit/raycast/drag-scope.
+
+

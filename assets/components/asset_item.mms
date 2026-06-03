@@ -10,7 +10,7 @@ export fn asset_item(label, item_background_color) {
             margin(0.5)
             background_color(item_background_color)
             background_z(0.001)
-            font_size(0.6)
+            font_size(0.6gu)
             word_wrap("break-all")
         }
 

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::cell::RefCell;
 use std::collections::HashSet;
 
-use crate::engine::ecs::component::{LayoutComponent, StyleComponent, TransformComponent};
+use crate::engine::ecs::component::{LayoutComponent, RaycastableComponent, StyleComponent, TransformComponent};
 use crate::engine::ecs::system::bounds_system::BoundsSystem;
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::meow_meow::object::Value;
@@ -101,12 +101,11 @@ impl AssetSystem {
                     "[AssetSystem][debug]   found export function: {} (params: {:?})",
                     name, params
                 );
-                let title = if file_stem == name {
-                    name.clone()
-                } else if name.starts_with(file_stem) && name.chars().nth(file_stem.len()) == Some('_') {
-                    name.clone()
+
+                let title = if name == "main" || name == file_stem {
+                    file_stem.to_string()
                 } else {
-                    format!("{}::{}", file_stem, name)
+                    format!("{}: {}", file_stem, name)
                 };
 
                 self.items.push(AssetItem {
@@ -302,6 +301,17 @@ impl AssetSystem {
 
         world.init_component_tree(wrapper, emit);
 
+        // Dirty the nearest ancestor LayoutComponent so the layout system
+        // re-measures the content area now that all items are attached.
+        let mut cur = world.parent_of(content_root);
+        while let Some(ancestor) = cur {
+            if let Some(lc) = world.get_component_by_id_as_mut::<LayoutComponent>(ancestor) {
+                lc.dirty = true;
+                break;
+            }
+            cur = world.parent_of(ancestor);
+        }
+
         emit.push_intent_now(
             wrapper,
             crate::engine::ecs::IntentValue::Attach {
@@ -362,6 +372,25 @@ impl AssetSystem {
         );
 
         Some(layout_root)
+    }
+
+    /// Walk the subtree rooted at `root` and set every `RaycastableComponent`
+    /// to disabled, so preview content doesn't steal pointer events from the
+    /// assets panel's scroll container.
+    fn disable_raycast_in_subtree(world: &mut World, root: ComponentId) {
+        let mut stack = vec![root];
+        let mut visited = HashSet::new();
+        while let Some(node) = stack.pop() {
+            if !visited.insert(node) {
+                continue;
+            }
+            if let Some(rc) = world.get_component_by_id_as_mut::<RaycastableComponent>(node) {
+                rc.enable = false;
+            }
+            for &child in world.children_of(node) {
+                stack.push(child);
+            }
+        }
     }
 
     pub fn build_asset_item_shell(
@@ -425,83 +454,64 @@ impl AssetSystem {
 
         match self.spawn_asset_component_uninitialized(item, args, world, render_assets, emit) {
             Ok(preview_root) => {
-                // Find the preview slot inside the spawned item shell.
-                // We use a named slot to avoid manual coordinate math in Rust
-                // that might diverge from the MMS layout.
-                let preview_slot = world
-                    .find_component(item_root, "#preview_slot")
-                    .unwrap_or(item_root);
+                // Disable raycasting on all preview content so it doesn't steal
+                // pointer events from the assets panel's scroll container.
+                Self::disable_raycast_in_subtree(world, preview_root);
 
-                // Check if this preview subtree has styled content that needs layout
-                // resolution (as opposed to raw geometry like icons).
-                let preview_needs_layout =
-                    Self::subtree_needs_layout_root(world, preview_root);
-
-                // Create the preview shell transform (default/identity for now;
-                // we'll set the real scale/offset below).
-                let preview_shell = world.add_component_boxed_named(
-                    "asset_preview_shell",
-                    Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.05)),
-                );
-
-                // Calculate the aggregate bounds of the spawned asset so we can
-                // auto-scale it to fit the tile.
-                let bounds = BoundsSystem::calculate_subtree_local_bounds(world, render_assets, preview_root);
-
-                if let Some(b) = bounds {
-                    let target_max_gu = 0.2_f32;
-                    let current_max_gu = b.max_dimension().max(1e-6);
-                    let s = target_max_gu / current_max_gu;
-                    let center = b.center();
-                    emit.push_intent_now(
-                        preview_shell,
-                        crate::engine::ecs::IntentValue::UpdateTransform {
-                            component_ids: vec![preview_shell],
-                            translation: [-center[0] * s, -center[1] * s, -center[2] * s + 0.05],
-                            rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
-                            scale: [s, s, s],
-                        },
-                    );
-                } else if preview_needs_layout {
-                    // Styled transforms have no RenderableComponent at spawn time.
-                    // Leave identity transform; layout will generate background quads
-                    // on the next tick, and remeasure_pending_previews will compute
-                    // the real scale/offset after that.
-                    self.pending_remeasure.borrow_mut().push((preview_shell, preview_root));
+                // TEMP: skip preview rendering for items from panel modules
+                // to isolate the scrolling issue.
+                let is_panel = self
+                    .get_module_name(item.module_id)
+                    .map(|name| name.contains("panel"))
+                    .unwrap_or(false);
+                if is_panel {
+                    // panel module item — skip preview rendering
                 } else {
-                    emit.push_intent_now(
-                        preview_shell,
-                        crate::engine::ecs::IntentValue::UpdateTransform {
-                            component_ids: vec![preview_shell],
-                            translation: [0.0, 0.0, 0.05],
-                            rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
-                            scale: [0.5, 0.5, 0.5],
-                        },
+                    // Geometry-based preview (icons, meshes, etc.)
+                    let preview_slot = world
+                        .find_component(item_root, "#preview_slot")
+                        .unwrap_or(item_root);
+
+                    let preview_shell = world.add_component_boxed_named(
+                        "asset_preview_shell",
+                        Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.05)),
                     );
-                }
 
-                world
-                    .add_child(preview_shell, preview_root)
-                    .map_err(|e| format!("attach preview failed: {e}"))?;
-
-                // Insert a layout root between preview_shell and preview_root
-                // if the preview subtree contains styled elements needing layout resolution.
-                if preview_needs_layout {
-                    let layout_root = world.add_component_boxed_named(
-                        "preview_layout_root",
-                        Box::new(LayoutComponent::new(20.0)),
+                    let bounds = BoundsSystem::calculate_subtree_local_bounds(
+                        world, render_assets, preview_root,
                     );
-                    world
-                        .add_child(layout_root, preview_root)
-                        .map_err(|e| format!("reparent preview under layout root failed: {e}"))?;
-                    world
-                        .add_child(preview_shell, layout_root)
-                        .map_err(|e| format!("attach layout root to shell failed: {e}"))?;
-                }
 
-                world
-                    .add_child(preview_slot, preview_shell)
-                    .map_err(|e| format!("attach preview shell failed: {e}"))?;
+                    if let Some(b) = bounds {
+                        let s = 0.2_f32 / b.max_dimension().max(1e-6);
+                        let center = b.center();
+                        emit.push_intent_now(
+                            preview_shell,
+                            crate::engine::ecs::IntentValue::UpdateTransform {
+                                component_ids: vec![preview_shell],
+                                translation: [-center[0] * s, -center[1] * s, -center[2] * s + 0.05],
+                                rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                                scale: [s, s, s],
+                            },
+                        );
+                    } else {
+                        emit.push_intent_now(
+                            preview_shell,
+                            crate::engine::ecs::IntentValue::UpdateTransform {
+                                component_ids: vec![preview_shell],
+                                translation: [0.0, 0.0, 0.05],
+                                rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                                scale: [0.5, 0.5, 0.5],
+                            },
+                        );
+                    }
+
+                    world
+                        .add_child(preview_shell, preview_root)
+                        .map_err(|e| format!("attach preview failed: {e}"))?;
+                    world
+                        .add_child(preview_slot, preview_shell)
+                        .map_err(|e| format!("attach preview shell failed: {e}"))?;
+                }
             }
             Err(e) => {
                 eprintln!(
