@@ -640,13 +640,26 @@ fn text_intrinsic_height(
     content_width_gu: f32,
     unit_scale: f32,
 ) -> f32 {
-    let Some((text, existing_wrap_at, word_wrap, tokens, text_font_size_wu)) =
+    let Some((text, existing_wrap_at, mut word_wrap, mut tokens, text_font_size_wu)) =
         find_text_in_local_content_subtree(world, tc_id)
     else {
         return 0.0;
     };
     let effective_font_size_wu =
         resolved_style_font_size_wu(world, tc_id, unit_scale).unwrap_or(text_font_size_wu);
+
+    // Apply StyleComponent word_wrap override before measuring, the same way
+    // apply_text_wrap_for_item does. This ensures the layout measurement
+    // matches the renderer's wrapping behavior.
+    let (style_word_wrap, style_tokens) = read_text_wrap_style(world, tc_id);
+    match style_word_wrap {
+        Some(WordWrapMode::Normal) => word_wrap = true,
+        Some(WordWrapMode::BreakWord) | Some(WordWrapMode::BreakAll) => word_wrap = false,
+        None => {}
+    }
+    if let Some(t) = style_tokens {
+        tokens = t;
+    }
 
     // Derive wrap_at from available width if the content area is known and wider
     // than a single character; otherwise fall back to the TextComponent's own wrap_at.

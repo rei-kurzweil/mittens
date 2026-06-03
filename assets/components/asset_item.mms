@@ -6,7 +6,6 @@ export fn asset_item(label, item_background_color) {
         Style {
             display("inline-block")
             width(8.5)
-            height(6.5)
             margin(0.5)
             background_color(item_background_color)
             background_z(0.001)
