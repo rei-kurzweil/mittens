@@ -1753,6 +1753,10 @@ impl SystemWorld {
         self.layout.tick(world, queue);
         queue.flush(world, self, visuals, render_assets);
 
+        // Remeasure any pending preview shells whose styled content now has
+        // layout-generated background quads (RenderableComponents) available.
+        self.asset_system.remeasure_pending_previews(world, render_assets, queue);
+
         self.renderable.tick(world, visuals, input, dt_sec);
 
         self.renderer_stats

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use std::cell::RefCell;
 use std::collections::HashSet;
 
 use crate::engine::ecs::component::{LayoutComponent, StyleComponent, TransformComponent};
@@ -47,6 +48,9 @@ pub struct AssetSystem {
     pub items: Vec<AssetItem>,
     next_module_id: u32,
     asset_dir: Option<PathBuf>,
+    /// Preview shells whose styled content needs remeasurement after layout resolves.
+    /// Each entry is `(preview_shell_id, preview_root_id)`.
+    pending_remeasure: RefCell<Vec<(ComponentId, ComponentId)>>,
 }
 
 impl AssetSystem {
@@ -433,38 +437,48 @@ impl AssetSystem {
                 let preview_needs_layout =
                     Self::subtree_needs_layout_root(world, preview_root);
 
+                // Create the preview shell transform (default/identity for now;
+                // we'll set the real scale/offset below).
+                let preview_shell = world.add_component_boxed_named(
+                    "asset_preview_shell",
+                    Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.05)),
+                );
+
                 // Calculate the aggregate bounds of the spawned asset so we can
                 // auto-scale it to fit the tile.
                 let bounds = BoundsSystem::calculate_subtree_local_bounds(world, render_assets, preview_root);
-                let scale: f32;
-                let offset: [f32; 3];
 
                 if let Some(b) = bounds {
                     let target_max_gu = 0.2_f32;
                     let current_max_gu = b.max_dimension().max(1e-6);
-                    scale = target_max_gu / current_max_gu;
-
+                    let s = target_max_gu / current_max_gu;
                     let center = b.center();
-                    offset = [-center[0] * scale, -center[1] * scale, -center[2] * scale];
+                    emit.push_intent_now(
+                        preview_shell,
+                        crate::engine::ecs::IntentValue::UpdateTransform {
+                            component_ids: vec![preview_shell],
+                            translation: [-center[0] * s, -center[1] * s, -center[2] * s + 0.05],
+                            rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                            scale: [s, s, s],
+                        },
+                    );
                 } else if preview_needs_layout {
-                    // Styled transforms (buttons, panels, etc.) have no RenderableComponent
-                    // of their own — they get their visual size from layout. Glyph-unit
-                    // dimensions are huge in world space, so scale way down.
-                    scale = 0.05;
-                    offset = [0.0, 0.0, 0.0];
+                    // Styled transforms have no RenderableComponent at spawn time.
+                    // Leave identity transform; layout will generate background quads
+                    // on the next tick, and remeasure_pending_previews will compute
+                    // the real scale/offset after that.
+                    self.pending_remeasure.borrow_mut().push((preview_shell, preview_root));
                 } else {
-                    scale = 0.5;
-                    offset = [0.0, 0.0, 0.0];
+                    emit.push_intent_now(
+                        preview_shell,
+                        crate::engine::ecs::IntentValue::UpdateTransform {
+                            component_ids: vec![preview_shell],
+                            translation: [0.0, 0.0, 0.05],
+                            rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                            scale: [0.5, 0.5, 0.5],
+                        },
+                    );
                 }
-
-                let preview_shell = world.add_component_boxed_named(
-                    "asset_preview_shell",
-                    Box::new(
-                        TransformComponent::new()
-                            .with_position(offset[0], offset[1], offset[2] + 0.05)
-                            .with_scale(scale, scale, scale),
-                    ),
-                );
 
                 world
                     .add_child(preview_shell, preview_root)
@@ -498,6 +512,47 @@ impl AssetSystem {
         }
 
         Ok(item_root)
+    }
+
+    /// After layout has ticked, remeasure any pending preview subtrees that
+    /// were spawned with styled content but no `RenderableComponent` bounds.
+    /// Layout-generated background quads now exist, so bounds should return
+    /// real AABBs that we can use to compute proper scale/offset.
+    pub fn remeasure_pending_previews(
+        &mut self,
+        world: &mut World,
+        render_assets: &crate::engine::graphics::RenderAssets,
+        emit: &mut dyn SignalEmitter,
+    ) {
+        let pending = self.pending_remeasure.replace(Vec::new());
+        for (preview_shell, preview_root) in pending {
+            let bounds =
+                BoundsSystem::calculate_subtree_local_bounds(world, render_assets, preview_root);
+
+            if let Some(b) = bounds {
+                // Scale so the preview is 0.2 units wide, preserving aspect ratio.
+                let target_width_gu = 0.2_f32;
+                let current_width = b.width().max(1e-6);
+                let s = target_width_gu / current_width;
+                let center = b.center();
+
+                emit.push_intent_now(
+                    preview_shell,
+                    crate::engine::ecs::IntentValue::UpdateTransform {
+                        component_ids: vec![preview_shell],
+                        translation: [-center[0] * s, -center[1] * s, -center[2] * s + 0.05],
+                        rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                        scale: [s, s, s],
+                    },
+                );
+            } else {
+                // Still no bounds — unlikely but possible. Log and leave as-is.
+                eprintln!(
+                    "[AssetSystem] remeasure: still no bounds for preview shell {:?}",
+                    preview_shell,
+                );
+            }
+        }
     }
 }
 
