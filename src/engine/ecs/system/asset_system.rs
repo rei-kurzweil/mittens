@@ -428,6 +428,11 @@ impl AssetSystem {
                     .find_component(item_root, "#preview_slot")
                     .unwrap_or(item_root);
 
+                // Check if this preview subtree has styled content that needs layout
+                // resolution (as opposed to raw geometry like icons).
+                let preview_needs_layout =
+                    Self::subtree_needs_layout_root(world, preview_root);
+
                 // Calculate the aggregate bounds of the spawned asset so we can
                 // auto-scale it to fit the tile.
                 let bounds = BoundsSystem::calculate_subtree_local_bounds(world, render_assets, preview_root);
@@ -435,26 +440,23 @@ impl AssetSystem {
                 let offset: [f32; 3];
 
                 if let Some(b) = bounds {
-                    // Previews are still way too big, let's scale them down much more aggressively.
-                    // The user specifically asked for "exactly.. 0.2 by 0.2 by 0.2 units max"
                     let target_max_gu = 0.2_f32;
                     let current_max_gu = b.max_dimension().max(1e-6);
                     scale = target_max_gu / current_max_gu;
 
                     let center = b.center();
-                    // offset = -center * scale
                     offset = [-center[0] * scale, -center[1] * scale, -center[2] * scale];
+                } else if preview_needs_layout {
+                    // Styled transforms (buttons, panels, etc.) have no RenderableComponent
+                    // of their own — they get their visual size from layout. Glyph-unit
+                    // dimensions are huge in world space, so scale way down.
+                    scale = 0.05;
+                    offset = [0.0, 0.0, 0.0];
                 } else {
-                    // Fallback for assets with no renderables or unknown bounds (e.g. logic modules, or GLTF loading)
-                    // If we don't know the bounds, assume it might be a 1m object and scale accordingly.
-                    scale = 0.5; // Aggressive reduction for safety
+                    scale = 0.5;
                     offset = [0.0, 0.0, 0.0];
                 }
 
-                // We center the asset mesh around its own local origin.
-                // The `preview_slot` in `asset_item.mms` uses `Style { text_align("center"), vertical_align("middle") }`
-                // which the `LayoutSystem` (specifically in `block.rs`) now uses to center the immediate child's 
-                // origin within the slot's content box.
                 let preview_shell = world.add_component_boxed_named(
                     "asset_preview_shell",
                     Box::new(
@@ -470,11 +472,11 @@ impl AssetSystem {
 
                 // Insert a layout root between preview_shell and preview_root
                 // if the preview subtree contains styled elements needing layout resolution.
-                // The layout system's measure_container_items only walks direct children
-                // of the LayoutComponent, so the styled element must be a direct child
-                // of the layout root — NOT buried behind a plain TransformComponent.
-                if let Some(layout_root) = Self::ensure_layout_root_if_needed(world, preview_root)
-                {
+                if preview_needs_layout {
+                    let layout_root = world.add_component_boxed_named(
+                        "preview_layout_root",
+                        Box::new(LayoutComponent::new(20.0)),
+                    );
                     world
                         .add_child(layout_root, preview_root)
                         .map_err(|e| format!("reparent preview under layout root failed: {e}"))?;
