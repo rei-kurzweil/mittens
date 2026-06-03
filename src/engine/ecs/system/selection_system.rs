@@ -35,6 +35,13 @@ fn nearest_selection_ancestor(world: &World, start: ComponentId) -> Option<Compo
         if world.get_component_by_id_as::<SelectionComponent>(node).is_some() {
             return Some(node);
         }
+        // Also check if any child of this node is a SelectionComponent.
+        // This allows adding a Selection component to a container T node.
+        for &child in world.children_of(node) {
+            if world.get_component_by_id_as::<SelectionComponent>(child).is_some() {
+                return Some(child);
+            }
+        }
         current = world.parent_of(node);
     }
     None
@@ -44,8 +51,12 @@ fn selection_visual_child(world: &World, selection_root: ComponentId) -> Compone
     let children = world.children_of(selection_root);
     if children.len() == 1 {
         children[0]
-    } else {
+    } else if children.len() > 1 {
         selection_root
+    } else {
+        // If Selection has no children, it's likely a marker component on a container.
+        // Return the parent so we can look at the container's children.
+        world.parent_of(selection_root).unwrap_or(selection_root)
     }
 }
 
@@ -57,20 +68,28 @@ fn find_selected_subtree_under_selection(
     let content_root = selection_visual_child(world, selection_root);
     let mut current = Some(start);
     while let Some(node) = current {
-        if world.parent_of(node) == Some(content_root) {
-            return Some(node);
+        let parent = world.parent_of(node);
+        if parent == Some(content_root) {
+            // Found it inside the content root.
+            // Ensure this node is not the Selection component itself.
+            if node != selection_root {
+                return Some(node);
+            }
         }
-        current = world.parent_of(node);
+        current = parent;
     }
     None
 }
 
 fn find_descendant_by_type(world: &World, root: ComponentId, component_type: &str) -> Option<ComponentId> {
-    for &child in world.children_of(root) {
-        let node = world.get_component_record(child)?;
+    // Check root itself first
+    if let Some(node) = world.get_component_record(root) {
         if node.component_type == component_type {
-            return Some(child);
+            return Some(root);
         }
+    }
+    // Then check children recursively
+    for &child in world.children_of(root) {
         if let Some(found) = find_descendant_by_type(world, child, component_type) {
             return Some(found);
         }
@@ -94,9 +113,12 @@ fn find_selected_item_index(
     let mut index = 0;
     for &child in world.children_of(content_root) {
         if let Some(record) = world.get_component_record(child) {
-            if record.component_type == "style" {
+            if record.component_type == "style" || record.component_type == "selection" {
                 continue;
             }
+        }
+        if child == selection_root {
+            continue;
         }
         if child == item_id {
             return Some(index);
@@ -106,7 +128,79 @@ fn find_selected_item_index(
     None
 }
 
-fn set_asset_item_selected_color(world: &World, emit: &mut dyn SignalEmitter, item_id: ComponentId, selected: bool) {
+fn add_selection_highlight(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    item_id: ComponentId,
+) {
+    use crate::engine::ecs::component::style::{Position, SizeDimension};
+    use crate::engine::ecs::component::{EmissiveComponent, StyleComponent};
+
+    // Remove existing highlight if any
+    remove_selection_highlight(world, emit, item_id);
+
+    let mut style = StyleComponent::default();
+    style.position = Position::Absolute;
+    // Slightly bigger than the bounding box
+    style.top = Some(SizeDimension::GlyphUnits(-0.2));
+    style.left = Some(SizeDimension::GlyphUnits(-0.2));
+    style.right = Some(SizeDimension::GlyphUnits(-0.2));
+    style.bottom = Some(SizeDimension::GlyphUnits(-0.2));
+    style.background_color = Some([1.0, 0.84, 0.0, 1.0]); // Gold
+    style.background_z = Some(-0.02); // Slightly behind the item
+
+    // Use a T node for the highlight so it can have its own transform+style
+    let highlight_id = world.add_component_boxed_named(
+        "selection_highlight",
+        Box::new(crate::engine::ecs::component::TransformComponent::new()),
+    );
+    let style_id = world.add_component_boxed(Box::new(style));
+    let emissive_id = world.add_component_boxed(Box::new(EmissiveComponent::new(3.0)));
+
+    // Attach components to highlight node
+    emit.push_intent_now(
+        highlight_id,
+        IntentValue::Attach {
+            parents: vec![highlight_id],
+            child: style_id,
+        },
+    );
+    emit.push_intent_now(
+        highlight_id,
+        IntentValue::Attach {
+            parents: vec![highlight_id],
+            child: emissive_id,
+        },
+    );
+
+    // Attach highlight node to item
+    emit.push_intent_now(
+        item_id,
+        IntentValue::Attach {
+            parents: vec![item_id],
+            child: highlight_id,
+        },
+    );
+
+    world.init_component_tree(highlight_id, emit);
+}
+
+fn remove_selection_highlight(world: &World, emit: &mut dyn SignalEmitter, item_id: ComponentId) {
+    for &child in world.children_of(item_id) {
+        if let Some(record) = world.get_component_record(child) {
+            if record.name == "selection_highlight" {
+                emit.push_intent_now(child, IntentValue::RemoveSubtree { component_ids: vec![child] });
+            }
+        }
+    }
+}
+
+fn set_asset_item_selected_color(
+    world: &World,
+    emit: &mut dyn SignalEmitter,
+    item_id: ComponentId,
+    selected: bool,
+) {
     if let Some(color_id) = find_descendant_by_type(world, item_id, "color") {
         let rgba = if selected {
             [0.33, 0.55, 0.95, 1.0]
@@ -129,24 +223,23 @@ fn handle_selection_click(
     selection_root: ComponentId,
     renderable: ComponentId,
 ) {
-    let Some(item_id) = find_selected_subtree_under_selection(world, selection_root, renderable) else {
+    let Some(item_id) = find_selected_subtree_under_selection(world, selection_root, renderable)
+    else {
         return;
     };
-    let selected_text = match find_selected_item_text(world, item_id) {
-        Some(text) => text,
-        None => return,
-    };
+    let selected_text = find_selected_item_text(world, item_id);
     let selected_index = find_selected_item_index(world, selection_root, item_id);
 
     let old_selection = {
-        let selection = match world.get_component_by_id_as_mut::<SelectionComponent>(selection_root) {
-            Some(selection) => selection,
-            None => return,
-        };
+        let selection =
+            match world.get_component_by_id_as_mut::<SelectionComponent>(selection_root) {
+                Some(selection) => selection,
+                None => return,
+            };
 
         let old_selected = selection.selected_component;
         selection.selected_index = selected_index;
-        selection.selected_item = Some(selected_text);
+        selection.selected_item = selected_text;
         selection.selected_component = Some(item_id);
         old_selected
     };
@@ -154,10 +247,12 @@ fn handle_selection_click(
     if let Some(old_id) = old_selection {
         if old_id != item_id {
             set_asset_item_selected_color(world, emit, old_id, false);
+            remove_selection_highlight(world, emit, old_id);
         }
     }
 
     set_asset_item_selected_color(world, emit, item_id, true);
+    add_selection_highlight(world, emit, item_id);
 }
 
 #[cfg(test)]

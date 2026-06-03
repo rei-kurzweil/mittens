@@ -6,6 +6,9 @@ export fn assets_content(items, item_background_color) {
     return T {
         name = "assets_content_area"
         id = "assets_content_area"
+        Selection {
+            id = "assets_selection"
+        }
         Style {
             display("block")
             width(100%)
@@ -13,7 +16,7 @@ export fn assets_content(items, item_background_color) {
             background_color([0.2, 0.4, 0.6, 0.1]) // Subtle debug blue
         }
 
-        // Items are attached manually by InspectorSystemStopgapMmsAdapter
-        // to avoid conflicts between the internal loop and manual item building.
+        // Items are attached manually to "assets_content_area"
+        // by InspectorSystemStopgapMmsAdapter.
     }
 }

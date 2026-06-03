@@ -706,26 +706,34 @@ impl InspectorSystemStopgapMmsReconciler {
             }
         };
 
-        if let Some(world_panel_root) =
+        // Add SelectionComponent to the LayoutRoot so we can select individual panels.
+        if let Some(layout_root_id) = world.find_component(panel_mount_root, &format!("#{PANEL_LAYOUT_ROOT_NAME}")) {
+            use crate::engine::ecs::component::SelectionComponent;
+            let selection = world.add_component_boxed(Box::new(SelectionComponent::new()));
+            emit.push_intent_now(layout_root_id, IntentValue::Attach { parents: vec![layout_root_id], child: selection });
+            world.init_component_tree(selection, emit);
+        }
+
+        if let Some(_world_panel_root) =
             world.find_component(panel_mount_root, WORLD_PANEL_ROOT_SELECTOR)
         {}
-        if let Some(inspector_panel_root) =
+        if let Some(_inspector_panel_root) =
             world.find_component(panel_mount_root, INSPECTOR_PANEL_ROOT_SELECTOR)
         {}
         if let Some(asset_panel_root) = world.find_component(panel_mount_root, "#assets_root") {
-            if let Some(content_slot) =
+            if let Some(_content_slot) =
                 world.find_component(asset_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
             {
-                if let Some(content_area) =
-                    world.find_component(content_slot, "#assets_content_area")
+                if let Some(selection_root) =
+                    world.find_component(asset_panel_root, "#assets_content_area")
                 {
-                    let items_already_there = world.children_of(content_area).len();
-                    if items_already_there <= 1 {
-                        // Only style is there
+                    let items_already_there = world.children_of(selection_root).len();
+                    if items_already_there <= 2 {
+                        // Only style/Selection markers are there
                         println!(
-                            "[InspectorSystem][debug] populating asset panel with {} items into content_area={:?}",
+                            "[InspectorSystem][debug] populating asset panel with {} items into selection_root={:?}",
                             asset_system.items.len(),
-                            content_area
+                            selection_root
                         );
 
                         let mut last_module_id = None;
@@ -745,7 +753,7 @@ impl InspectorSystemStopgapMmsReconciler {
                                             emit.push_intent_now(
                                                 header_root,
                                                 IntentValue::Attach {
-                                                    parents: vec![content_area],
+                                                    parents: vec![selection_root],
                                                     child: header_root,
                                                 },
                                             );
@@ -760,17 +768,23 @@ impl InspectorSystemStopgapMmsReconciler {
                                 }
                             }
 
-                            match asset_system.build_asset_item_shell(world, render_assets, emit, item, index) {
+                            match asset_system.build_asset_item_shell(
+                                world,
+                                render_assets,
+                                emit,
+                                item,
+                                index,
+                            ) {
                                 Ok(item_root) => {
                                     println!(
-                                        "[InspectorSystem][debug] attaching asset item title={:?} export={:?} root={:?} to content_area={:?}",
-                                        item.title, item.export_name, item_root, content_area
+                                        "[InspectorSystem][debug] attaching asset item title={:?} export={:?} root={:?} to selection_root={:?}",
+                                        item.title, item.export_name, item_root, selection_root
                                     );
                                     world.init_component_tree(item_root, emit);
                                     emit.push_intent_now(
                                         item_root,
                                         IntentValue::Attach {
-                                            parents: vec![content_area],
+                                            parents: vec![selection_root],
                                             child: item_root,
                                         },
                                     );
@@ -783,12 +797,12 @@ impl InspectorSystemStopgapMmsReconciler {
                                 }
                             }
                         }
-                        mark_nearest_layout_dirty(world, content_area);
+                        mark_nearest_layout_dirty(world, selection_root);
                     }
                 }
             }
         }
-        if let Some(paint_panel_root) = world.find_component(panel_mount_root, "#paint_panel_root")
+        if let Some(_paint_panel_root) = world.find_component(panel_mount_root, "#paint_panel_root")
         {
         }
 
@@ -1489,6 +1503,15 @@ fn panel_shell_ce(
         named: vec![("name".to_string(), Value::String(shell_name.to_string()))],
         positionals: Vec::new(),
         children: vec![
+            CeChild::Spawn(MaterializedCE {
+                component_type: "Raycastable".to_string(),
+                ctor_method: Some("enabled".to_string()),
+                ctor_args: Vec::new(),
+                calls: Vec::new(),
+                named: Vec::new(),
+                positionals: Vec::new(),
+                children: Vec::new(),
+            }),
             CeChild::Spawn(MaterializedCE {
                 component_type: "Style".to_string(),
                 ctor_method: None,

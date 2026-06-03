@@ -51,6 +51,7 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
 
         T {
             name = "content_slot"
+            Selection {}
             Style {
                 display("block")
                 height(PAINT_PANEL_CONTENT_HEIGHT_GU)
