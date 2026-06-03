@@ -9,9 +9,8 @@ export fn assets_content(items, item_background_color) {
         Style {
             display("block")
             width(100%)
-            height(100%)
             padding_xy(0.25, 0.25)
-            background_color([0.2, 0.4, 0.6, 0.3]) // Debug blue
+            background_color([0.2, 0.4, 0.6, 0.1]) // Subtle debug blue
         }
 
         // Items are attached manually by InspectorSystemStopgapMmsAdapter

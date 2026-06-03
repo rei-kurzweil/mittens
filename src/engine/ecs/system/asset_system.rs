@@ -93,10 +93,18 @@ impl AssetSystem {
                     "[AssetSystem][debug]   found export function: {} (params: {:?})",
                     name, params
                 );
+                let title = if file_stem == name {
+                    name.clone()
+                } else if name.starts_with(file_stem) && name.chars().nth(file_stem.len()) == Some('_') {
+                    name.clone()
+                } else {
+                    format!("{}::{}", file_stem, name)
+                };
+
                 self.items.push(AssetItem {
                     module_id,
                     export_name: name.clone(),
-                    title: format!("{}::{}", file_stem, name),
+                    title,
                     description: None,
                     category: None,
                     param_names: params.clone(),
@@ -355,13 +363,13 @@ impl AssetSystem {
         match self.spawn_asset_component_uninitialized(item, args, world, emit) {
             Ok(preview_root) => {
                 // Wrap preview in a transform to scale/position it.
-                // The tile is 18x20. Keep the preview in the upper part so the label remains visible.
+                // The tile is 8x5.
                 let preview_shell = world.add_component_boxed_named(
                     "asset_preview_shell",
                     Box::new(
                         TransformComponent::new()
-                            .with_position(9.0, 7.0, 0.05)
-                            .with_scale(4.0, 4.0, 4.0),
+                            .with_position(4.0, 2.0, 0.05)
+                            .with_scale(0.15, 0.15, 0.15),
                     ),
                 );
 

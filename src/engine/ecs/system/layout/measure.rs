@@ -795,7 +795,7 @@ pub(crate) fn apply_text_font_size_for_item(
     // reference here and is treated as `Auto`.
     let style_font_size_wu = resolved_style_font_size_wu(world, tc_id, unit_scale);
 
-    let Some(text_id) = find_text_component_in_subtree(world, tc_id) else {
+    let Some(text_id) = find_text_id_in_local_content_subtree(world, tc_id) else {
         return;
     };
 
@@ -822,22 +822,6 @@ pub(crate) fn apply_text_font_size_for_item(
             text: cur_text,
         },
     );
-}
-
-fn find_text_component_in_subtree(world: &World, root: ComponentId) -> Option<ComponentId> {
-    let mut stack = vec![root];
-    while let Some(node) = stack.pop() {
-        if world
-            .get_component_by_id_as::<TextComponent>(node)
-            .is_some()
-        {
-            return Some(node);
-        }
-        for &child in world.children_of(node) {
-            stack.push(child);
-        }
-    }
-    None
 }
 
 /// Layout-owned `ColorComponent` child label. Spawned/maintained by
