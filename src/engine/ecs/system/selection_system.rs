@@ -30,13 +30,19 @@ impl SelectionSystem {
 }
 
 fn nearest_selection_ancestor(world: &World, start: ComponentId) -> Option<ComponentId> {
+    // Pass 1: check ancestors themselves (SelectionComponent on the node itself).
+    // This handles the parent pattern (Selection wraps selectable items).
     let mut current = Some(start);
     while let Some(node) = current {
         if world.get_component_by_id_as::<SelectionComponent>(node).is_some() {
             return Some(node);
         }
-        // Also check if any child of this node is a SelectionComponent.
-        // This allows adding a Selection component to a container T node.
+        current = world.parent_of(node);
+    }
+    // Pass 2: check children of each ancestor (SelectionComponent as a sibling).
+    // This handles the sibling pattern (Selection alongside items).
+    let mut current = Some(start);
+    while let Some(node) = current {
         for &child in world.children_of(node) {
             if world.get_component_by_id_as::<SelectionComponent>(child).is_some() {
                 return Some(child);
@@ -147,7 +153,7 @@ fn add_selection_highlight(
     style.right = Some(SizeDimension::GlyphUnits(-0.2));
     style.bottom = Some(SizeDimension::GlyphUnits(-0.2));
     style.background_color = Some([1.0, 0.84, 0.0, 1.0]); // Gold
-    style.background_z = Some(-0.02); // Slightly behind the item
+    style.background_z = Some(-0.005); // In front of item background
 
     // Use a T node for the highlight so it can have its own transform+style
     let highlight_id = world.add_component_boxed_named(
@@ -203,7 +209,7 @@ fn set_asset_item_selected_color(
 ) {
     if let Some(color_id) = find_descendant_by_type(world, item_id, "color") {
         let rgba = if selected {
-            [0.33, 0.55, 0.95, 1.0]
+            [1.0, 0.84, 0.0, 1.0]
         } else {
             [0.25, 0.25, 0.25, 1.0]
         };
@@ -261,7 +267,7 @@ mod tests {
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::system::SystemWorld;
     use crate::engine::ecs::{EventSignal, World};
-    use crate::engine::graphics::VisualWorld;
+    use crate::engine::graphics::{RenderAssets, VisualWorld};
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -294,6 +300,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
+        let render_assets = crate::engine::graphics::RenderAssets::new();
 
         systems.asset_system
             .scan_assets_dir(&tmp_dir)
@@ -304,7 +311,7 @@ mod tests {
         let parent = world.add_component_boxed_named("parent", Box::new(crate::engine::ecs::component::TransformComponent::new()));
         let wrapper = systems
             .asset_system
-            .spawn_assets_panel(&mut world, &mut emit, parent, (0.0, 0.0, 0.0))
+            .spawn_assets_panel(&mut world, &render_assets, &mut emit, parent, (0.0, 0.0, 0.0))
             .expect("spawn assets panel");
 
         let selection_root = world
@@ -338,7 +345,7 @@ mod tests {
             },
         );
 
-        let _ = systems.process_signals(&mut world, &mut visuals, &mut emit, 100_000);
+        let _ = systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
