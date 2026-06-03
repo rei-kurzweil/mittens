@@ -21,9 +21,29 @@ impl SelectionSystem {
             let Some(EventSignal::Click { renderable, .. }) = signal.event.as_ref() else {
                 return;
             };
+            if let Some(rec) = world.get_component_record(*renderable) {
+                println!("[selection] CLICK name={:?} type={} id={:?}", rec.name, rec.component_type, renderable);
+            }
+            // Log parent chain for this renderable
+            let mut cur = Some(*renderable);
+            let mut depth = 0;
+            while let Some(node) = cur {
+                if let Some(rec) = world.get_component_record(node) {
+                    let pid = world.parent_of(node);
+                    let pinfo = pid.and_then(|p| world.get_component_record(p));
+                    println!("[chain {}] name={:?} type={} id={:?} parent={:?}/{}", depth, rec.name, rec.component_type, node, pinfo.map(|r| &*r.name), pinfo.map_or("?", |r| &*r.component_type));
+                }
+                cur = world.parent_of(node);
+                depth += 1;
+                if depth > 20 { break; }
+            }
             let Some(selection_root) = nearest_selection_ancestor(world, *renderable) else {
+                println!("[selection] no selection ancestor for {:?}", renderable);
                 return;
             };
+            if let Some(rec) = world.get_component_record(selection_root) {
+                println!("[selection] selection_root name={:?} type={} id={:?}", rec.name, rec.component_type, selection_root);
+            }
             handle_selection_click(world, emit, selection_root, *renderable);
         });
     }
@@ -75,11 +95,38 @@ fn find_selected_subtree_under_selection(
     let mut current = Some(start);
     while let Some(node) = current {
         let parent = world.parent_of(node);
+        // Direct child of content_root
         if parent == Some(content_root) {
-            // Found it inside the content root.
-            // Ensure this node is not the Selection component itself.
             if node != selection_root {
+                // Skip scrolling wrappers themselves (they'll be walked past)
+                if let Some(rec) = world.get_component_record(node) {
+                    if rec.component_type == "scrolling" {
+                        current = parent;
+                        continue;
+                    }
+                }
                 return Some(node);
+            }
+        }
+        // Nested inside a scrolling wrapper: check if parent is
+        // a scroll-track/intermediate under a scroller under content_root
+        if let Some(p) = parent {
+            if let Some(gp) = world.parent_of(p) {
+                if let Some(ggp) = world.parent_of(gp) {
+                    if ggp == content_root {
+                        if let Some(rec) = world.get_component_record(gp) {
+                            if rec.component_type == "scrolling" {
+                                // node is an item inside the scroll area
+                                // Skip __scroll_track itself
+                                if let Some(nyan) = world.get_component_record(node) {
+                                    if nyan.name != "__scroll_track" {
+                                        return Some(node);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         current = parent;
@@ -116,8 +163,17 @@ fn find_selected_item_index(
     item_id: ComponentId,
 ) -> Option<usize> {
     let content_root = selection_visual_child(world, selection_root);
+    // Item may be inside a scroll wrapper under content_root.
+    // Walk up: if grandparent is "scrolling", iterate the parent (__scroll_track).
+    let container = world.parent_of(item_id).and_then(|p| {
+        world.parent_of(p).and_then(|gp| {
+            world.get_component_record(gp)
+                .filter(|r| r.component_type == "scrolling")
+                .map(|_| p)
+        })
+    }).unwrap_or(content_root);
     let mut index = 0;
-    for &child in world.children_of(content_root) {
+    for &child in world.children_of(container) {
         if let Some(record) = world.get_component_record(child) {
             if record.component_type == "style" || record.component_type == "selection" {
                 continue;
@@ -231,10 +287,17 @@ fn handle_selection_click(
 ) {
     let Some(item_id) = find_selected_subtree_under_selection(world, selection_root, renderable)
     else {
+        if let Some(rec) = world.get_component_record(renderable) {
+            println!("[selection] no subtree found under selection for renderable name={:?} type={}", rec.name, rec.component_type);
+        }
         return;
     };
+    if let Some(rec) = world.get_component_record(item_id) {
+        println!("[selection] selected item name={:?} type={} id={:?}", rec.name, rec.component_type, item_id);
+    }
     let selected_text = find_selected_item_text(world, item_id);
     let selected_index = find_selected_item_index(world, selection_root, item_id);
+    println!("[selection] text={:?} index={:?}", selected_text, selected_index);
 
     let old_selection = {
         let selection =
