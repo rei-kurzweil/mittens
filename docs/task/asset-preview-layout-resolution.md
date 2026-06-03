@@ -46,6 +46,20 @@ The `LayoutRootComponent` has to stay attached to the preview subtree permanentl
 
 3. **Alternatively**: run a layout measure pass on the preview before computing bounds, since with a `LayoutRootComponent` present the styled transforms will have resolved sizes. The bounds walk can then use those resolved sizes.
 
+## Detecting whether a preview needs layout
+
+Not every asset needs a `LayoutRootComponent` wrapper — only those whose spawned subtree contains **styled transforms** (`StyleComponent`) without an existing `LayoutComponent` ancestor.
+
+Detection strategy: walk the spawned preview subtree and check:
+
+1. Does any node carry a `StyleComponent` (i.e. `world.get_component_by_id_as::<StyleComponent>(node)` returns `Some`)?
+2. If yes, does it already have an ancestor with `LayoutComponent`?
+   - Walk up `world.parent_of(node)` until `None` or a `LayoutComponent` is found.
+   - If no `LayoutComponent` is found, this subtree needs one.
+   - Cache the result to avoid re-walking for every node in the same tree.
+
+This check goes in `build_asset_item_shell()` between spawning the preview and attaching it under the `preview_slot`. If the preview needs layout, insert the `LayoutComponent` as the attachment point. If not, attach directly to `preview_slot` as before (keeping the fast path for geometry-only assets like icons).
+
 ## Affected files
 
 - `src/engine/ecs/system/asset_system.rs` — `build_asset_item_shell()` (lines 308–428): fallback behavior for bounds = None
