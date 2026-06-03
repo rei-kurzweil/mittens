@@ -3,6 +3,7 @@
 export fn asset_item(label, item_background_color) {
     return T {
         name = "asset_item"
+        Option {}
         Style {
             display("inline-block")
             width(8.5)

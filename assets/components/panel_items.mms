@@ -8,6 +8,7 @@
 export fn paint_panel_item(label, item_background_color, title_color) {
     return T {
         name = "paint_panel_item"
+        Option {}
         Raycastable.enabled()
         Style {
             display("inline-block")

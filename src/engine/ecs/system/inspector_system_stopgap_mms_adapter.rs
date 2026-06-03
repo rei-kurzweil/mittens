@@ -16,6 +16,7 @@ use crate::meow_meow::runner::MeowMeowRunner;
 
 const PANEL_LAYOUT_MOUNT_NAME: &str = "editor_panel_layout_mount";
 const PANEL_LAYOUT_ROOT_NAME: &str = "editor_panel_layout_root";
+const PANEL_LAYOUT_SELECTION_NAME: &str = "editor_panel_layout_selection";
 const EDITOR_RUNTIME_UI_ROOT_NAME: &str = "editor_runtime_ui_root";
 const WORLD_PANEL_SHELL_NAME: &str = "editor_world_panel_shell";
 const INSPECTOR_PANEL_SHELL_NAME: &str = "editor_inspector_panel_shell";
@@ -707,10 +708,21 @@ impl InspectorSystemStopgapMmsReconciler {
         };
 
         // Add SelectionComponent to the LayoutRoot so we can select individual panels.
-        if let Some(layout_root_id) = world.find_component(panel_mount_root, &format!("#{PANEL_LAYOUT_ROOT_NAME}")) {
+        if let Some(layout_root_id) =
+            world.find_component(panel_mount_root, &format!("#{PANEL_LAYOUT_ROOT_NAME}"))
+        {
             use crate::engine::ecs::component::SelectionComponent;
-            let selection = world.add_component_boxed(Box::new(SelectionComponent::new()));
-            emit.push_intent_now(layout_root_id, IntentValue::Attach { parents: vec![layout_root_id], child: selection });
+            let selection = world.add_component_boxed_named(
+                PANEL_LAYOUT_SELECTION_NAME,
+                Box::new(SelectionComponent::new()),
+            );
+            emit.push_intent_now(
+                layout_root_id,
+                IntentValue::Attach {
+                    parents: vec![layout_root_id],
+                    child: selection,
+                },
+            );
             world.init_component_tree(selection, emit);
         }
 
@@ -1400,10 +1412,7 @@ fn component_id_short(component_id: ComponentId) -> String {
 }
 
 fn world_panel_asset_path() -> &'static str {
-    concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/panels.mms"
-    )
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
 }
 
 fn world_panel_status_asset_path() -> &'static str {
@@ -1418,17 +1427,11 @@ fn asset_panel_asset_path() -> &'static str {
 }
 
 fn paint_panel_asset_path() -> &'static str {
-    concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/panels.mms"
-    )
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
 }
 
 fn inspector_panel_asset_path() -> &'static str {
-    concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/panels.mms"
-    )
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
 }
 
 fn build_placeholder_panel_component_expr(title_name: &'static str, title: &str) -> MaterializedCE {
@@ -1503,6 +1506,15 @@ fn panel_shell_ce(
         named: vec![("name".to_string(), Value::String(shell_name.to_string()))],
         positionals: Vec::new(),
         children: vec![
+            CeChild::Spawn(MaterializedCE {
+                component_type: "Option".to_string(),
+                ctor_method: None,
+                ctor_args: Vec::new(),
+                calls: Vec::new(),
+                named: Vec::new(),
+                positionals: Vec::new(),
+                children: Vec::new(),
+            }),
             CeChild::Spawn(MaterializedCE {
                 component_type: "Raycastable".to_string(),
                 ctor_method: Some("enabled".to_string()),

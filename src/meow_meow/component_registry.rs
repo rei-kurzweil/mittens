@@ -34,7 +34,7 @@ use crate::engine::ecs::component::{
     TransformGizmoTranslateComponent, TransformMapRotationComponent, TransformMapScaleComponent,
     TransformMapTranslationComponent, TransformMergeTRSComponent, TransformParentComponent,
     TransformSampleAncestorComponent, TransitionComponent, TransitionEasing,
-    TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
+    TransitionReplacePolicy, TransparentCutoutComponent, UVComponent, OptionComponent,
     Vector3TemporalFilterComponent, WordWrapMode,
 };
 use crate::engine::ecs::SignalEmitter;
@@ -1231,6 +1231,7 @@ fn create_component(
             Some("multiple") => add!(SelectionComponent::multiple()),
             _ => add!(SelectionComponent::new()),
         },
+        "Option" => add!(OptionComponent::new()),
         "Serialize" => match ctor {
             Some("off") => add!(SerializeComponent::off()),
             _ => add!(SerializeComponent::on()),

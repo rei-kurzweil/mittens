@@ -51,7 +51,6 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
 
         T {
             name = "content_slot"
-            Selection {}
             Style {
                 display("block")
                 height(PAINT_PANEL_CONTENT_HEIGHT_GU)
@@ -61,11 +60,23 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
                 padding(0.5)
             }
 
-            paint_panel_item("Free Draw", item_background_color, title_color)
-            paint_panel_item("Line", item_background_color, title_color)
-            paint_panel_item("Spray Can", item_background_color, title_color)
-            paint_panel_item("Fill", item_background_color, title_color)
-            paint_panel_item("Erase", item_background_color, title_color)
+            T {
+                name = "paint_tool_options_wrap"
+                id = "paint_tool_options_wrap"
+                Selection {
+                    id = "paint_tool_selection"
+                }
+                Style {
+                    display("block")
+                    width(100%)
+                }
+
+                paint_panel_item("Free Draw", item_background_color, title_color)
+                paint_panel_item("Line", item_background_color, title_color)
+                paint_panel_item("Spray Can", item_background_color, title_color)
+                paint_panel_item("Fill", item_background_color, title_color)
+                paint_panel_item("Erase", item_background_color, title_color)
+            }
         }
     }
 }
