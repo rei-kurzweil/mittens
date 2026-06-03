@@ -623,7 +623,7 @@ pub(crate) fn apply_text_align(
         return;
     }
 
-    let Some(inner_tc) = find_text_bearing_direct_child(world, tc_id) else {
+    let Some(inner_tc) = find_alignable_direct_child(world, tc_id) else {
         return;
     };
 
@@ -631,18 +631,12 @@ pub(crate) fn apply_text_align(
     // post-wrap shape (callers of layout run `apply_text_wrap_for_item` later,
     // but glyphs build with the authored wrap_at and we want the natural-
     // wrap width here — i.e. no wrap — to drive alignment math).
-    let (text, word_wrap, tokens, font_size_wu) = match find_text_descriptor(world, inner_tc) {
-        Some(t) => t,
-        None => return,
+    let (text_w_wu, text_h_wu) = match find_text_descriptor(world, inner_tc) {
+        Some((text, word_wrap, tokens, font_size_wu)) => {
+            TextSystem::measure(&text, 0, word_wrap, &tokens, font_size_wu)
+        }
+        None => (0.0, 0.0), // Non-text children are treated as 0-sized anchors at their origin
     };
-    // `TextSystem::measure` returns dimensions in **world units** because the
-    // renderer scales glyph quads by `font_size_wu` in the inner TC's local
-    // frame (and we keep that frame at scale 1.0). Layout math here mixes that
-    // with `content_w_gu` / `content_h_gu` (glyph units) — so we convert the
-    // GU values up to wu before the centering math, then leave the result in
-    // wu since the emitted transform translation is in the styled TC's
-    // (world-unit) frame.
-    let (text_w_wu, text_h_wu) = TextSystem::measure(&text, 0, word_wrap, &tokens, font_size_wu);
 
     let content_w_wu = content_w_gu * unit_scale;
     let content_h_wu = content_h_gu * unit_scale;
@@ -679,15 +673,12 @@ pub(crate) fn apply_text_align(
     );
 }
 
-fn find_text_bearing_direct_child(world: &World, tc_id: ComponentId) -> Option<ComponentId> {
+fn find_alignable_direct_child(world: &World, tc_id: ComponentId) -> Option<ComponentId> {
     for &child in world.children_of(tc_id) {
         if world.component_label(child).map(|l| l.starts_with("__")).unwrap_or(false) {
             continue;
         }
-        if world.get_component_by_id_as::<TransformComponent>(child).is_none() {
-            continue;
-        }
-        if subtree_has_text(world, child) {
+        if world.get_component_by_id_as::<TransformComponent>(child).is_some() {
             return Some(child);
         }
     }

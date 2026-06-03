@@ -18,11 +18,22 @@ export fn asset_item(label, item_background_color) {
         T {
             name = "preview_slot"
             id = "preview_slot"
-            T.position(4.25, 3.5, 0.05) { }
+            Style {
+                display("block")
+                width(8.5)
+                height(5.0)
+                text_align("center")
+                vertical_align("middle")
+            }
         }
 
-        // Text label positioned inside the item (at the bottom now)
-        T.position(0.2, 0.2, 0.005) {
+        // Text label positioned inside the item
+        T {
+            Style {
+                display("block")
+                width(8.5)
+                text_align("center")
+            }
             Text {
                 label
                 C.rgba(0.0, 0.0, 0.0, 1.0)

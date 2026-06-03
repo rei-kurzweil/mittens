@@ -396,12 +396,15 @@ impl AssetSystem {
                     offset = [0.0, 0.0, 0.0];
                 }
 
-                // Wrap preview in a transform to scale/center it.
+                // We center the asset mesh around its own local origin.
+                // The `preview_slot` in `asset_item.mms` uses `Style { text_align("center"), vertical_align("middle") }`
+                // which the `LayoutSystem` (specifically in `block.rs`) now uses to center the immediate child's 
+                // origin within the slot's content box.
                 let preview_shell = world.add_component_boxed_named(
                     "asset_preview_shell",
                     Box::new(
                         TransformComponent::new()
-                            .with_position(offset[0], offset[1], offset[2])
+                            .with_position(offset[0], offset[1], offset[2] + 0.05)
                             .with_scale(scale, scale, scale),
                     ),
                 );
