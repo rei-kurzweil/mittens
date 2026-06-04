@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::component::{
     ColorComponent, Display, EdgeInsets, LayoutComponent, OptionComponent, Overflow,
-    RaycastableComponent, SelectionComponent, SelectionMode, SerializeComponent, SizeDimension,
-    StyleComponent, TextComponent,
+    RaycastableComponent, SelectionComponent, SelectionEntry, SelectionMode, SerializeComponent,
+    SizeDimension, StyleComponent, TextComponent,
 };
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
@@ -27,9 +27,11 @@ const WORLD_PANEL_ROOT_SELECTOR: &str = "#world_panel_root";
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 const WORLD_PANEL_CONTENT_ROOT_SELECTOR: &str = "#world_panel_content_root";
 const WORLD_PANEL_SELECTION_NAME: &str = "world_panel_selection";
+const INSPECTOR_PANEL_SELECTION_NAME: &str = "inspector_panel_selection";
 const PANEL_CONTENT_SLOT_SELECTOR: &str = "#content_slot";
 const INSPECTOR_PANEL_ROOT_SELECTOR: &str = "#inspector_panel_root";
 const INSPECTOR_PANEL_CONTENT_ROOT_SELECTOR: &str = "#inspector_panel_content_root";
+const INSPECTOR_PANEL_SELECTION_SELECTOR: &str = "#inspector_panel_selection";
 const PANEL_STATUS_ROOT_SELECTOR: &str = "#panel_status_root";
 const PANEL_STATUS_WRAP_SELECTOR: &str = "#save_status_wrap";
 const PANEL_STATUS_VALUE_SELECTOR: &str = "#panel_status_value";
@@ -356,6 +358,51 @@ impl InspectorSystemStopgapMmsAdapter {
                 );
 
                 rerender_panel_status(world, emit, paint_panel_root, status_wrap, &status_text);
+            },
+        );
+
+        rx.add_handler_closure(
+            SignalKind::SelectionChanged,
+            panel_query_root,
+            move |world, emit, signal| {
+                let Some(EventSignal::SelectionChanged { selection_root, .. }) =
+                    signal.event.as_ref()
+                else {
+                    return;
+                };
+
+                let Some(expected_selection_root) =
+                    world.find_component(panel_query_root, INSPECTOR_PANEL_SELECTION_SELECTOR)
+                else {
+                    return;
+                };
+                if *selection_root != expected_selection_root {
+                    return;
+                }
+
+                let Some(panel_layout_selection) = world
+                    .find_component(panel_query_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
+                else {
+                    return;
+                };
+                let Some(inspector_shell) = world
+                    .find_component(panel_query_root, &format!("#{INSPECTOR_PANEL_SHELL_NAME}"))
+                else {
+                    return;
+                };
+
+                emit.push_intent_now(
+                    panel_layout_selection,
+                    IntentValue::SelectionSet {
+                        component_ids: vec![panel_layout_selection],
+                        entries: vec![SelectionEntry {
+                            index: None,
+                            item: Some(INSPECTOR_PANEL_SHELL_NAME.to_string()),
+                            component: inspector_shell,
+                        }],
+                        primary: Some(inspector_shell),
+                    },
+                );
             },
         );
     }
@@ -793,6 +840,16 @@ impl InspectorSystemStopgapMmsReconciler {
         {
             if let Some(selection) =
                 world.get_component_by_id_as_mut::<SelectionComponent>(paint_tool_selection)
+            {
+                selection.mode = SelectionMode::Single;
+                selection.clear();
+            }
+        }
+        if let Some(inspector_panel_selection) =
+            world.find_component(panel_mount_root, INSPECTOR_PANEL_SELECTION_SELECTOR)
+        {
+            if let Some(selection) =
+                world.get_component_by_id_as_mut::<SelectionComponent>(inspector_panel_selection)
             {
                 selection.mode = SelectionMode::Single;
                 selection.clear();
@@ -1808,6 +1865,11 @@ fn spawn_inspector_panel_content_tree(
     );
     let rows_mount = spawn_block_container(world, "rows_mount");
     let _ = world.add_child(content_root, rows_mount);
+    let selection = world.add_component_boxed_named(
+        INSPECTOR_PANEL_SELECTION_NAME,
+        Box::new(SelectionComponent::new()),
+    );
+    let _ = world.add_child(rows_mount, selection);
 
     for (index, row) in rows.iter().enumerate() {
         let row_root =
@@ -1829,6 +1891,18 @@ fn spawn_inspector_panel_row_tree(
     };
 
     let row_root = world.add_component_boxed_named(row_name, Box::new(TransformComponent::new()));
+    if matches!(row.kind, InspectorPanelRowKind::Component) {
+        let option = world.add_component_boxed_named(
+            format!("{row_name}_option"),
+            Box::new(OptionComponent::new()),
+        );
+        let _ = world.add_child(row_root, option);
+        let raycastable = world.add_component_boxed_named(
+            format!("{row_name}_raycastable"),
+            Box::new(RaycastableComponent::click_only()),
+        );
+        let _ = world.add_child(row_root, raycastable);
+    }
     let style = world.add_component_boxed_named(
         format!("{row_name}_style"),
         Box::new({

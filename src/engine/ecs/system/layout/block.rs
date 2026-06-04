@@ -588,13 +588,11 @@ pub(crate) fn sync_bg_quad(
     let default_bg_z = -0.5 * super::LAYER_DISTANCE;
 
     let (needs_clip, needs_scroll_drag_surface, bg_spec) = match bg_style {
-        Some((rgba, bg_z_override, overflow)) => {
-            (
-                matches!(overflow, Overflow::Hidden | Overflow::Scroll),
-                matches!(overflow, Overflow::Scroll),
-                Some((rgba, bg_z_override.unwrap_or(default_bg_z))),
-            )
-        }
+        Some((rgba, bg_z_override, overflow)) => (
+            matches!(overflow, Overflow::Hidden | Overflow::Scroll),
+            matches!(overflow, Overflow::Scroll),
+            Some((rgba, bg_z_override.unwrap_or(default_bg_z))),
+        ),
         None => (false, false, None),
     };
 

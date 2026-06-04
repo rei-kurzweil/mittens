@@ -1214,6 +1214,121 @@ mod tests {
     }
 
     #[test]
+    fn inspector_panel_row_selection_uses_selection_and_option_components() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let render_assets = RenderAssets::new();
+        let asset_system = crate::engine::ecs::system::AssetSystem::new();
+
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let scene_child =
+            world.add_component_boxed_named("scene_child", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_root);
+        let _ = world.add_child(scene_root, scene_child);
+
+        systems.inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (-0.7, 1.6, -1.2),
+            &asset_system,
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        let world_panel_root = world
+            .find_component(runtime_ui_root, "#world_panel_root")
+            .expect("expected world panel root");
+        let world_row = world
+            .find_component(world_panel_root, "#item_1")
+            .expect("expected first selectable world row");
+
+        systems.rx.push_event(
+            world_row,
+            EventSignal::Click {
+                raycaster: world_row,
+                renderable: world_row,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let inspector_panel_root = world
+            .find_component(runtime_ui_root, "#inspector_panel_root")
+            .expect("expected inspector panel root");
+        let inspector_selection = world
+            .find_component(inspector_panel_root, "#inspector_panel_selection")
+            .expect("expected inspector panel selection");
+        let inspector_shell = world
+            .find_component(runtime_ui_root, "#editor_inspector_panel_shell")
+            .expect("expected inspector panel shell");
+        let panel_layout_selection = world
+            .find_component(runtime_ui_root, "#editor_panel_layout_selection")
+            .expect("expected panel layout selection");
+        let inspector_row = world
+            .find_component(inspector_panel_root, "#inspector_item_1")
+            .expect("expected first selectable inspector row");
+
+        assert!(
+            world
+                .get_component_by_id_as::<SelectionComponent>(inspector_selection)
+                .is_some(),
+            "expected Selection on inspector rows mount"
+        );
+        assert!(
+            world
+                .get_component_by_id_as::<OptionComponent>(inspector_row)
+                .is_some()
+                || world.children_of(inspector_row).iter().any(|&child| world
+                    .get_component_by_id_as::<OptionComponent>(child)
+                    .is_some()),
+            "expected Option on selectable inspector row"
+        );
+
+        systems.rx.push_event(
+            inspector_row,
+            EventSignal::Click {
+                raycaster: inspector_row,
+                renderable: inspector_row,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let selection = world
+            .get_component_by_id_as::<SelectionComponent>(inspector_selection)
+            .expect("expected inspector selection component");
+        assert_eq!(selection.selected_component, Some(inspector_row));
+        assert_eq!(selection.selected_index, Some(1));
+        assert_eq!(selection.selected_entries.len(), 1);
+
+        let panel_selection = world
+            .get_component_by_id_as::<SelectionComponent>(panel_layout_selection)
+            .expect("expected panel layout selection component");
+        assert_eq!(panel_selection.selected_component, Some(inspector_shell));
+        assert_eq!(panel_selection.selected_entries.len(), 1);
+    }
+
+    #[test]
     fn styled_option_selection_mutates_background_and_restores_previous_style() {
         let mut world = World::default();
         let mut emit = CommandQueue::new();

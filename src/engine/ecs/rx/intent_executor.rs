@@ -61,8 +61,8 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
         AudioLowPassFilterComponent, AudioOscillatorComponent, ColorComponent, MusicNoteComponent,
         RayCastComponent, TransformComponent,
     };
-    use crate::engine::ecs::system::audio_system::AudioOp;
     use crate::engine::ecs::system::MusicSystem;
+    use crate::engine::ecs::system::audio_system::AudioOp;
     use crate::engine::ecs::{ComponentId, EventSignal, IntentValue};
 
     let beat_now = 0.0;
@@ -779,8 +779,8 @@ fn collect_transform_targets(world: &World, target: ComponentId, out: &mut Vec<C
 }
 
 fn emit_topology_transform_refresh(world: &World, emit: &mut dyn SignalEmitter, cid: ComponentId) {
-    use crate::engine::ecs::component::TransformComponent;
     use crate::engine::ecs::IntentValue;
+    use crate::engine::ecs::component::TransformComponent;
 
     // If this node is a TransformComponent, refreshing it updates cached world matrices
     // for its whole subtree.
