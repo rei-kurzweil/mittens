@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::component::{
     ColorComponent, Display, EdgeInsets, LayoutComponent, OptionComponent, Overflow,
-    RaycastableComponent, SelectionComponent, SerializeComponent, SizeDimension, StyleComponent,
-    TextComponent,
+    RaycastableComponent, SelectionComponent, SelectionMode, SerializeComponent, SizeDimension,
+    StyleComponent, TextComponent,
 };
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
@@ -24,6 +24,7 @@ const INSPECTOR_PANEL_SHELL_NAME: &str = "editor_inspector_panel_shell";
 const ASSET_PANEL_SHELL_NAME: &str = "editor_asset_panel_shell";
 const PAINT_PANEL_SHELL_NAME: &str = "editor_paint_panel_shell";
 const WORLD_PANEL_ROOT_SELECTOR: &str = "#world_panel_root";
+const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 const WORLD_PANEL_CONTENT_ROOT_SELECTOR: &str = "#world_panel_content_root";
 const WORLD_PANEL_SELECTION_NAME: &str = "world_panel_selection";
 const PANEL_CONTENT_SLOT_SELECTOR: &str = "#content_slot";
@@ -32,6 +33,8 @@ const INSPECTOR_PANEL_CONTENT_ROOT_SELECTOR: &str = "#inspector_panel_content_ro
 const PANEL_STATUS_ROOT_SELECTOR: &str = "#panel_status_root";
 const PANEL_STATUS_WRAP_SELECTOR: &str = "#save_status_wrap";
 const PANEL_STATUS_VALUE_SELECTOR: &str = "#panel_status_value";
+const PAINT_STATUS_WRAP_SELECTOR: &str = "#paint_status_wrap";
+const PAINT_TOOL_SELECTION_SELECTOR: &str = "#paint_tool_selection";
 const PANEL_PATH_INPUT_SELECTOR: &str = "#path_input";
 const SAVE_BUTTON_SELECTOR: &str = "#save_button";
 const LOAD_BUTTON_SELECTOR: &str = "#load_button";
@@ -210,8 +213,8 @@ impl InspectorSystemStopgapMmsAdapter {
                 .expect("working file path mutex poisoned");
 
             if let Some(status_text) = handle_panel_button_click(world, emit, *renderable, &working_file_path) {
-                if panel_status_text(world, panel_query_root).as_deref() != Some(status_text.as_str()) {
-                    rerender_world_panel_status(world, emit, panel_query_root, status_wrap, &status_text);
+                if panel_status_text(world, world_panel_root).as_deref() != Some(status_text.as_str()) {
+                    rerender_world_panel_status(world, emit, world_panel_root, status_wrap, &status_text);
                 }
 
                 let mut selected = selected_component.lock().expect("selected component mutex poisoned");
@@ -271,7 +274,7 @@ impl InspectorSystemStopgapMmsAdapter {
 
             if let Some(target_label) = world.component_label(target_component) {
                 let status_text = format!("selected {target_label}");
-                rerender_world_panel_status(world, emit, panel_query_root, status_wrap, &status_text);
+                rerender_world_panel_status(world, emit, world_panel_root, status_wrap, &status_text);
             }
 
             if let Some(inspector_panel_root) = world.find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR) {
@@ -290,6 +293,95 @@ impl InspectorSystemStopgapMmsAdapter {
             let _ = content_slot;
             return;
         });
+
+        rx.add_handler_closure(
+            SignalKind::SelectionChanged,
+            panel_query_root,
+            move |world, emit, signal| {
+                let Some(EventSignal::SelectionChanged {
+                    selection_root,
+                    mode,
+                    selected_entries,
+                    selected_component,
+                }) = signal.event.as_ref()
+                else {
+                    return;
+                };
+
+                let Some(expected_selection_root) =
+                    world.find_component(panel_query_root, PAINT_TOOL_SELECTION_SELECTOR)
+                else {
+                    println!(
+                        "[paint-selection-debug] missing expected paint selection root under {:?}",
+                        panel_query_root
+                    );
+                    return;
+                };
+                println!(
+                    "[paint-selection-debug] selection_changed actual_root={:?} actual_label={:?} expected_root={:?} expected_label={:?} selected_component={:?} entries={}",
+                    selection_root,
+                    world.component_label(*selection_root),
+                    expected_selection_root,
+                    world.component_label(expected_selection_root),
+                    selected_component,
+                    selected_entries.len(),
+                );
+                if *selection_root != expected_selection_root {
+                    println!(
+                        "[paint-selection-debug] ignoring selection change because root does not match paint selection"
+                    );
+                    return;
+                }
+
+                let Some(paint_panel_root) =
+                    world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
+                else {
+                    println!(
+                        "[paint-selection-debug] missing paint panel root under {:?}",
+                        panel_query_root
+                    );
+                    return;
+                };
+                let Some(status_wrap) =
+                    world.find_component(paint_panel_root, PAINT_STATUS_WRAP_SELECTOR)
+                else {
+                    println!(
+                        "[paint-selection-debug] missing paint status wrap under {:?}",
+                        paint_panel_root
+                    );
+                    return;
+                };
+
+                let entry_labels: Vec<String> = selected_entries
+                    .iter()
+                    .map(|entry| {
+                        entry
+                            .item
+                            .clone()
+                            .unwrap_or_else(|| component_id_short(entry.component))
+                    })
+                    .collect();
+
+                let selected_label = selected_entries
+                    .iter()
+                    .find(|entry| Some(entry.component) == *selected_component)
+                    .and_then(|entry| entry.item.clone())
+                    .or_else(|| {
+                        selected_component.map(|component_id| component_id_short(component_id))
+                    })
+                    .unwrap_or_else(|| "none".to_string());
+
+                let status_text = format!(
+                    "paint selection changed: selected={} | multi={} | count={} | entries=[{}]",
+                    selected_label,
+                    matches!(mode, SelectionMode::Multiple),
+                    selected_entries.len(),
+                    entry_labels.join(", ")
+                );
+
+                rerender_panel_status(world, emit, paint_panel_root, status_wrap, &status_text);
+            },
+        );
     }
 
     fn get_or_create_runtime_ui_root(&self, world: &mut World) -> ComponentId {
@@ -720,6 +812,16 @@ impl InspectorSystemStopgapMmsReconciler {
         if let Some(_inspector_panel_root) =
             world.find_component(panel_mount_root, INSPECTOR_PANEL_ROOT_SELECTOR)
         {}
+        if let Some(paint_tool_selection) =
+            world.find_component(panel_mount_root, "#paint_tool_selection")
+        {
+            if let Some(selection) =
+                world.get_component_by_id_as_mut::<SelectionComponent>(paint_tool_selection)
+            {
+                selection.mode = SelectionMode::Single;
+                selection.clear();
+            }
+        }
         if let Some(asset_panel_root) = world.find_component(panel_mount_root, "#assets_root") {
             if let Some(_content_slot) =
                 world.find_component(asset_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
@@ -1161,9 +1263,9 @@ fn parse_item_index(row_name: &str) -> Option<usize> {
     row_name.strip_prefix(ITEM_PREFIX)?.parse().ok()
 }
 
-fn panel_status_text(world: &World, panel_query_root: ComponentId) -> Option<String> {
+fn panel_status_text(world: &World, panel_root: ComponentId) -> Option<String> {
     world
-        .find_component(panel_query_root, PANEL_STATUS_VALUE_SELECTOR)
+        .find_component(panel_root, PANEL_STATUS_VALUE_SELECTOR)
         .and_then(|status_id| {
             world
                 .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(status_id)
@@ -1174,12 +1276,21 @@ fn panel_status_text(world: &World, panel_query_root: ComponentId) -> Option<Str
 fn rerender_world_panel_status(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
-    panel_query_root: ComponentId,
+    world_panel_root: ComponentId,
     status_wrap: ComponentId,
     label: &str,
 ) {
-    if let Some(existing_status_root) =
-        world.find_component(panel_query_root, PANEL_STATUS_ROOT_SELECTOR)
+    rerender_panel_status(world, emit, world_panel_root, status_wrap, label);
+}
+
+fn rerender_panel_status(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_root: ComponentId,
+    status_wrap: ComponentId,
+    label: &str,
+) {
+    if let Some(existing_status_root) = world.find_component(panel_root, PANEL_STATUS_ROOT_SELECTOR)
     {
         emit.push_intent_now(
             existing_status_root,
@@ -1199,9 +1310,7 @@ fn rerender_world_panel_status(
         ) {
             Ok(component_id) => component_id,
             Err(error) => {
-                eprintln!(
-                    "[InspectorSystemStopgapMmsAdapter] world panel status spawn error: {error}"
-                );
+                eprintln!("[InspectorSystemStopgapMmsAdapter] panel status spawn error: {error}");
                 return;
             }
         };

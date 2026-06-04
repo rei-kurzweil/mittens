@@ -180,13 +180,31 @@ fn resolve_selection_click(
     while let Some(node) = current {
         if option_marker_on_node(world, node).is_some() {
             let selection_root = nearest_enclosing_selection(world, node)?;
+            println!(
+                "[selection-debug] resolve renderable={:?} option_owner={:?} option_label={:?} selection_root={:?} selection_label={:?}",
+                renderable,
+                node,
+                world.component_label(node),
+                selection_root,
+                world.component_label(selection_root),
+            );
             return Some((selection_root, node));
         }
         if selection_marker_on_node(world, node).is_some() {
+            println!(
+                "[selection-debug] resolve renderable={:?} stopped_at_selection_boundary node={:?} label={:?}",
+                renderable,
+                node,
+                world.component_label(node),
+            );
             return None;
         }
         current = world.parent_of(node);
     }
+    println!(
+        "[selection-debug] resolve renderable={:?} no_selection_match",
+        renderable
+    );
     None
 }
 
@@ -286,13 +304,7 @@ fn set_styled_selection(
                 "selection_style_state",
                 Box::new(SelectionStyleStateComponent::new(original_background_color)),
             );
-            emit.push_intent_now(
-                item_id,
-                IntentValue::Attach {
-                    parents: vec![item_id],
-                    child: state_id,
-                },
-            );
+            let _ = world.add_child(item_id, state_id);
             world.init_component_tree(state_id, emit);
         }
         if let Some(style) = world.get_component_by_id_as_mut::<StyleComponent>(style_id) {
@@ -388,34 +400,10 @@ fn ensure_selection_overlay(world: &mut World, emit: &mut dyn SignalEmitter, ite
                 SELECTED_HIGHLIGHT_EMISSIVE,
             )));
 
-            emit.push_intent_now(
-                highlight,
-                IntentValue::Attach {
-                    parents: vec![highlight],
-                    child: color,
-                },
-            );
-            emit.push_intent_now(
-                highlight,
-                IntentValue::Attach {
-                    parents: vec![highlight],
-                    child: renderable,
-                },
-            );
-            emit.push_intent_now(
-                highlight,
-                IntentValue::Attach {
-                    parents: vec![highlight],
-                    child: emissive,
-                },
-            );
-            emit.push_intent_now(
-                item_id,
-                IntentValue::Attach {
-                    parents: vec![item_id],
-                    child: highlight,
-                },
-            );
+            let _ = world.add_child(highlight, color);
+            let _ = world.add_child(highlight, renderable);
+            let _ = world.add_child(highlight, emissive);
+            let _ = world.add_child(item_id, highlight);
             world.init_component_tree(highlight, emit);
             highlight
         });

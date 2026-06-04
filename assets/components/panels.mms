@@ -23,10 +23,14 @@ let TITLE_LABEL_PADDING_X_GU = 0.25
 // ── paint_panel ───────────────────────────────────────────────────────────────
 
 let PAINT_PANEL_WIDTH_GU = 41.0
-let PAINT_PANEL_CONTENT_HEIGHT_GU = 28.5
-let PAINT_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + PAINT_PANEL_CONTENT_HEIGHT_GU
+let PAINT_PANEL_STATUS_BAR_HEIGHT_GU = 6.0
+let PAINT_PANEL_CONTENT_STATUS_GAP_GU = 0.5
+let PAINT_PANEL_CONTENT_HEIGHT_GU = 22.0
+let PAINT_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + PAINT_PANEL_CONTENT_HEIGHT_GU + PAINT_PANEL_CONTENT_STATUS_GAP_GU + PAINT_PANEL_STATUS_BAR_HEIGHT_GU
 
 export fn paint_panel(title, title_color, panel_background_color, item_background_color) {
+    let status = world_panel_status("paint status: idle")
+
     return T {
         name = "paint_panel_root"
         Style {
@@ -59,6 +63,7 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
             Style {
                 display("block")
                 height(PAINT_PANEL_CONTENT_HEIGHT_GU)
+                margin_bottom(PAINT_PANEL_CONTENT_STATUS_GAP_GU)
                 overflow("scroll")
                 background_color([0.96, 0.92, 0.18, 0.80])
                 background_z(-0.001)
@@ -67,9 +72,8 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
 
             T {
                 name = "paint_tool_options_wrap"
-                id = "paint_tool_options_wrap"
                 Selection {
-                    id = "paint_tool_selection"
+                    name = "paint_tool_selection"
                 }
                 Style {
                     display("block")
@@ -82,6 +86,22 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
                 paint_panel_item("Fill", fill_icon(), item_background_color, title_color)
                 paint_panel_item("Erase", erase_icon(), item_background_color, title_color)
             }
+        }
+
+        T {
+            name = "paint_status_wrap"
+            Style {
+                display("block")
+                height(PAINT_PANEL_STATUS_BAR_HEIGHT_GU)
+                width(100%)
+                padding_xy(0.25, 0.45)
+                text_align("left")
+                vertical_align("middle")
+                word_wrap("normal")
+                background_color([0.08, 0.24, 0.11, 0.92])
+                background_z(-0.01)
+            }
+            status
         }
     }
 }

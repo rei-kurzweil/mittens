@@ -33,6 +33,15 @@ Editor.translation_space("world").rotation_space("local") {
                 Color.rgba(0.18000000715255737, 0.18000000715255737, 0.2199999988079071, 1.0)
                 Bounds.aabb([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5])
             }
+        }
+    }
+    Raycastable.enabled() {
+        name = "editor_auto_raycastable"
+        Transform.position(0.0, 2.1500000953674316, -19.026203155517578).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(8.800000190734863, 3.5999999046325684, 0.23999999463558197) {
+            Renderable.cube() {
+                Color.rgba(0.10999999940395355, 0.10000000149011612, 0.14000000059604645, 1.0)
+                Bounds.aabb([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5])
+            }
             TransformGizmo.scale(0.5) {
                 name = "editor_transform_gizmo"
                 transform_fork_trs {
@@ -250,15 +259,6 @@ Editor.translation_space("world").rotation_space("local") {
     }
     Raycastable.enabled() {
         name = "editor_auto_raycastable"
-        Transform.position(0.0, 2.1500000953674316, -7.199999809265137).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(8.800000190734863, 3.5999999046325684, 0.23999999463558197) {
-            Renderable.cube() {
-                Color.rgba(0.10999999940395355, 0.10000000149011612, 0.14000000059604645, 1.0)
-                Bounds.aabb([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5])
-            }
-        }
-    }
-    Raycastable.enabled() {
-        name = "editor_auto_raycastable"
         Transform.position(2.0, 0.0, 1.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
             Transform.position(-0.8999999761581421, -0.4399999976158142, -1.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(0.5, 0.5, 0.5) {
                 Renderable.cube() {
@@ -376,7 +376,7 @@ InputXR.on() {
 
 Input.speed(1.0) {
     InputTransformMode.forward_z().roll_axis_y().fps_rotation()
-    Transform.position(4.670165538787842, 2.171893358230591, -0.010866411030292511).rotation_quat(-0.026172060519456863, 0.4514082670211792, 0.01324716117233038, 0.8918352127075195).scale(1.0, 1.0, 1.0) {
+    Transform.position(3.0, 1.2000000476837158, 3.5).rotation_quat(-0.1064513623714447, -0.027149943634867668, -0.002907761372625828, 0.9939429759979248).scale(1.0, 1.0, 1.0) {
         Camera3D.target("window").fov(60.0).near(0.10000000149011612).far(150.0)
         Pointer {
             Raycast.event_driven().max_distance(200.0)
@@ -398,9 +398,306 @@ Transform.position(1.0, -1.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 
     DirectionalLight.intensity(0.800000011920929).color(1.0, 0.6000000238418579, 0.15000000596046448)
 }
 
-Emissive.on().intensity(2.0)
+Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+    name = "paint_panel_root"
+    Style {}
+    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+        name = "title_bar"
+        Style {}
+        Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+            Text {
+                "Preview"
+            }
+        }
+    }
+    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+        name = "content_slot"
+        Style {}
+        Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+            name = "paint_tool_options_wrap"
+            Selection.()
+            Style {}
+            Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                name = "paint_panel_item"
+                Option.()
+                Raycastable.disabled()
+                Style {}
+                Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                    Style {}
+                    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                        Style {}
+                        FitBounds.renderable_only().to_container()
+                    }
+                    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                        Style {}
+                        Text {
+                            "Free Draw"
+                        }
+                    }
+                }
+            }
+            Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                name = "paint_panel_item"
+                Option.()
+                Raycastable.disabled()
+                Style {}
+                Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                    Style {}
+                    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                        Style {}
+                        FitBounds.renderable_only().to_container()
+                    }
+                    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                        Style {}
+                        Text {
+                            "Line"
+                        }
+                    }
+                }
+            }
+            Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                name = "paint_panel_item"
+                Option.()
+                Raycastable.disabled()
+                Style {}
+                Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                    Style {}
+                    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                        Style {}
+                        FitBounds.renderable_only().to_container()
+                    }
+                    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                        Style {}
+                        Text {
+                            "Spray Can"
+                        }
+                    }
+                }
+            }
+            Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                name = "paint_panel_item"
+                Option.()
+                Raycastable.disabled()
+                Style {}
+                Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                    Style {}
+                    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                        Style {}
+                        FitBounds.renderable_only().to_container()
+                    }
+                    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                        Style {}
+                        Text {
+                            "Fill"
+                        }
+                    }
+                }
+            }
+            Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                name = "paint_panel_item"
+                Option.()
+                Raycastable.disabled()
+                Style {}
+                Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                    Style {}
+                    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                        Style {}
+                        FitBounds.renderable_only().to_container()
+                    }
+                    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                        Style {}
+                        Text {
+                            "Erase"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
-Style {
-    name = "selection_highlight"
+Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+    name = "world_panel_root"
+    Style {}
+    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+        name = "path_input_wrap"
+        Style {}
+        Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+            TextInput {
+                "assets/world/default.mms"
+                name = "path_input"
+            }
+        }
+    }
+    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+        name = "title_bar"
+        Style {}
+        Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+            name = "title_label_wrap"
+            Style {}
+            Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                Text {
+                    "Preview"
+                    name = "title_label"
+                }
+            }
+        }
+        Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+            name = "save_button"
+            Raycastable.disabled()
+            Style {}
+            Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                Text {
+                    "Save"
+                }
+            }
+        }
+        Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+            name = "load_button"
+            Raycastable.disabled()
+            Style {}
+            Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                Text {
+                    "Load"
+                }
+            }
+        }
+    }
+    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+        name = "content_slot"
+        Style {}
+        Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+            name = "world_panel_content_root"
+            Style {}
+            Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                name = "rows_mount"
+                Style {}
+            }
+        }
+    }
+    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+        name = "save_status_wrap"
+        Style {}
+        Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+            name = "panel_status_root"
+            Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                Text {
+                    "idle"
+                    name = "panel_status_value"
+                }
+            }
+        }
+    }
+}
+
+Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+    name = "inspector_panel_root"
+    Style {}
+    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+        name = "title_bar"
+        Style {}
+        Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+            name = "title_label_wrap"
+            Style {}
+            Transform.position(0.0, 0.0, 0.014999999664723873).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                Text {
+                    "Preview"
+                    name = "title_label"
+                }
+            }
+        }
+    }
+    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+        name = "content_slot"
+        Style {}
+        Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+            name = "inspector_panel_content_root"
+            Style {}
+            Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+                name = "rows_mount"
+                Style {}
+            }
+        }
+    }
+}
+
+Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+    name = "assets_root"
+    Style {}
+    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+        name = "title_bar"
+        Style {}
+        Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+            Text {
+                "Preview"
+            }
+        }
+    }
+    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+        name = "content_slot"
+        Style {}
+        Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+            name = "assets_content_area"
+            Selection.()
+            Style {}
+        }
+    }
+}
+
+Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+    name = "world_panel_content_root"
+    Style {}
+    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+        name = "rows_mount"
+        Style {}
+    }
+}
+
+Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+    name = "inspector_panel_content_root"
+    Style {}
+    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+        name = "rows_mount"
+        Style {}
+    }
+}
+
+Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+    name = "world_panel_content_root"
+    Style {}
+    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+        name = "rows_mount"
+        Style {}
+    }
+}
+
+Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+    name = "paint_panel_item"
+    Option.()
+    Raycastable.disabled()
+    Style {}
+    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+        Style {}
+        Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+            Style {}
+            FitBounds.renderable_only().to_container()
+        }
+        Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+            Style {}
+            Text {
+                "Preview"
+            }
+        }
+    }
+}
+
+Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+    name = "panel_status_root"
+    Transform.position(0.0, 0.0, 0.0).rotation_quat(0.0, 0.0, 0.0, 1.0).scale(1.0, 1.0, 1.0) {
+        Text {
+            "Preview"
+            name = "panel_status_value"
+        }
+    }
 }
 
