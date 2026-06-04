@@ -3,8 +3,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::component::{
-    ColorComponent, Display, EdgeInsets, LayoutComponent, Overflow, RaycastableComponent,
-    SerializeComponent, SizeDimension, StyleComponent, TextComponent,
+    ColorComponent, Display, EdgeInsets, LayoutComponent, OptionComponent, Overflow,
+    RaycastableComponent, SelectionComponent, SerializeComponent, SizeDimension, StyleComponent,
+    TextComponent,
 };
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
@@ -24,6 +25,7 @@ const ASSET_PANEL_SHELL_NAME: &str = "editor_asset_panel_shell";
 const PAINT_PANEL_SHELL_NAME: &str = "editor_paint_panel_shell";
 const WORLD_PANEL_ROOT_SELECTOR: &str = "#world_panel_root";
 const WORLD_PANEL_CONTENT_ROOT_SELECTOR: &str = "#world_panel_content_root";
+const WORLD_PANEL_SELECTION_NAME: &str = "world_panel_selection";
 const PANEL_CONTENT_SLOT_SELECTOR: &str = "#content_slot";
 const INSPECTOR_PANEL_ROOT_SELECTOR: &str = "#inspector_panel_root";
 const INSPECTOR_PANEL_CONTENT_ROOT_SELECTOR: &str = "#inspector_panel_content_root";
@@ -262,24 +264,10 @@ impl InspectorSystemStopgapMmsAdapter {
                 world.component_label(target_component).filter(|label| !label.is_empty())
             );
 
-            let previous_selected = *selected_component
-                .lock()
-                .expect("selected component mutex poisoned");
             {
                 let mut selected = selected_component.lock().expect("selected component mutex poisoned");
                 *selected = Some(target_component);
             }
-
-            let previous_index = previous_selected.and_then(|selected| {
-                visible_rows
-                    .iter()
-                    .position(|visible_row| visible_row.target_component == Some(selected))
-            });
-
-            if let Some(index) = previous_index {
-                update_world_panel_row_selection(world, emit, panel_query_root, index, false);
-            }
-            update_world_panel_row_selection(world, emit, panel_query_root, row_index, true);
 
             if let Some(target_label) = world.component_label(target_component) {
                 let status_text = format!("selected {target_label}");
@@ -1263,54 +1251,6 @@ fn rerender_world_panel_content(
     mark_nearest_layout_dirty(world, content_slot);
 }
 
-fn update_world_panel_row_selection(
-    world: &mut World,
-    emit: &mut dyn SignalEmitter,
-    panel_query_root: ComponentId,
-    row_index: usize,
-    selected: bool,
-) {
-    let Some(world_panel_root) = world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR)
-    else {
-        return;
-    };
-    let Some(row_id) =
-        world.find_component(world_panel_root, &format!("#{ITEM_PREFIX}{row_index}"))
-    else {
-        return;
-    };
-
-    let (background_rgba, text_rgba) = if selected {
-        ([1.00, 0.88, 0.20, 0.96], [0.06, 0.09, 0.08, 1.0])
-    } else {
-        ([0.92, 0.97, 0.92, 1.0], [0.06, 0.09, 0.08, 1.0])
-    };
-
-    if let Some(bg_id) = world.find_component(row_id, "#__bg") {
-        if let Some(bg_color_id) = world.find_component(bg_id, "Color") {
-            emit.push_intent_now(
-                bg_color_id,
-                IntentValue::SetColor {
-                    component_ids: vec![bg_color_id],
-                    rgba: background_rgba,
-                },
-            );
-        }
-    }
-
-    if let Some(text_id) = world.find_component(row_id, "Text") {
-        if let Some(text_color_id) = world.find_component(text_id, "Color") {
-            emit.push_intent_now(
-                text_color_id,
-                IntentValue::SetColor {
-                    component_ids: vec![text_color_id],
-                    rgba: text_rgba,
-                },
-            );
-        }
-    }
-}
-
 fn rerender_inspector_panel_content(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
@@ -1652,6 +1592,11 @@ fn spawn_world_panel_content_tree(
     );
     let rows_mount = spawn_block_container(world, "rows_mount");
     let _ = world.add_child(content_root, rows_mount);
+    let selection = world.add_component_boxed_named(
+        WORLD_PANEL_SELECTION_NAME,
+        Box::new(SelectionComponent::new()),
+    );
+    let _ = world.add_child(rows_mount, selection);
 
     for (index, row) in rows.iter().enumerate() {
         let row_root = spawn_world_panel_row_tree(
@@ -1711,6 +1656,11 @@ fn spawn_world_panel_row_tree(
                 world.add_component_boxed_named(row_name, Box::new(TransformComponent::new()));
 
             if interactive {
+                let option = world.add_component_boxed_named(
+                    format!("{row_name}_option"),
+                    Box::new(OptionComponent::new()),
+                );
+                let _ = world.add_child(row_root, option);
                 let raycastable = world.add_component_boxed_named(
                     format!("{row_name}_raycastable"),
                     Box::new(RaycastableComponent::click_only()),

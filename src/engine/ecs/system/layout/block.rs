@@ -507,6 +507,20 @@ pub(crate) fn sync_bg_quad(
                 None => spawn_bg_quad(world, emit, tc_id, rgba.unwrap_or([0.0, 0.0, 0.0, 0.0])),
             };
 
+            if let Some(color_rgba) = rgba {
+                if let Some(color_id) = world.children_of(bg_id).iter().copied().find(|&child| {
+                    world.get_component_by_id_as::<ColorComponent>(child).is_some()
+                }) {
+                    emit.push_intent_now(
+                        color_id,
+                        IntentValue::SetColor {
+                            component_ids: vec![color_id],
+                            rgba: color_rgba,
+                        },
+                    );
+                }
+            }
+
             emit.push_intent_now(
                 bg_id,
                 IntentValue::UpdateTransform {
@@ -880,7 +894,7 @@ mod tests {
     use crate::engine::ecs::component::{ColorComponent, LayoutComponent, SerializeComponent, StencilClipComponent, StyleComponent, TextComponent, TransformComponent};
     use crate::engine::ecs::component::style::{EdgeInsets, SizeDimension};
     use crate::engine::ecs::{CommandQueue, SystemWorld, World};
-    use crate::engine::graphics::VisualWorld;
+    use crate::engine::graphics::{RenderAssets, VisualWorld};
     use crate::engine::ecs::system::layout::LayoutSystem;
 
     #[test]
@@ -976,6 +990,60 @@ mod tests {
         assert!(world
             .get_component_by_id_as::<SerializeComponent>(serialize)
             .is_some_and(|marker| !marker.enabled));
+    }
+
+    #[test]
+    fn block_layout_updates_existing_background_quad_color_when_style_changes() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut layout_system = LayoutSystem::new();
+        let render_assets = RenderAssets::new();
+
+        let root = world.add_component(LayoutComponent::new(20.0).with_height(8.0));
+        let item = world.add_component_boxed_named("item", Box::new(TransformComponent::new()));
+        let item_style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.width = SizeDimension::GlyphUnits(6.0);
+            style.height = SizeDimension::GlyphUnits(2.0);
+            style.background_color = Some([0.2, 0.3, 0.4, 1.0]);
+            style
+        });
+
+        let _ = world.add_child(root, item);
+        let _ = world.add_child(item, item_style);
+
+        world.init_component_tree(root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+
+        let bg = world
+            .children_of(item)
+            .iter()
+            .copied()
+            .find(|&child| world.component_label(child) == Some("__bg"))
+            .expect("expected layout-owned __bg child");
+        let color_id = world
+            .children_of(bg)
+            .iter()
+            .copied()
+            .find(|&child| world.get_component_by_id_as::<ColorComponent>(child).is_some())
+            .expect("expected color child on __bg");
+
+        if let Some(style) = world.get_component_by_id_as_mut::<StyleComponent>(item_style) {
+            style.background_color = Some([0.9, 0.8, 0.2, 1.0]);
+        }
+
+        layout_system.tick(&mut world, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+
+        assert_eq!(
+            world.get_component_by_id_as::<ColorComponent>(color_id).expect("bg color").rgba,
+            [0.9, 0.8, 0.2, 1.0]
+        );
     }
 
     #[test]
