@@ -7,23 +7,38 @@ Open bug / investigation.
 ## Symptom
 
 When a panel is in front of a selectable editor object, clicking the panel does not
-shift panel focus and the clicked panel element does not respond either.
+consistently resolve as a panel-shell click.
 
-This shows up as a "dead click" on the panel: neither the foreground UI nor the
-background editor object produces the expected panel-focus or panel-item-selection result.
+Inner UI controls can still be interactive even when scene geometry overlaps the panel,
+but panel-focus behavior differs by panel and control type:
+
+- `world_panel`: clicking the `TextInput` still focuses the panel and places/selects the
+  clicked glyph, even with a ground plane / prism / wall behind the panel
+- `paint_panel`: clicking an inner `Select` / option still selects that option, but does
+  not also focus/select the outer panel when scene geometry is behind it
+- `assets` and `inspector`: these currently have no clickable inner UI elements, so they
+  can only be selected when the clicked part of the panel does not have scene geometry
+  behind it
 
 ## Repro
 
 - Use an editor scene with one or more editor panels visible.
 - Place a selectable scene object behind a panel so its projected screen area overlaps a
-  clickable part of the panel.
+  clickable part of the panel. A ground plane, prism, or wall behind the panel is enough.
 
 Steps to reproduce:
 1. Run an editor scene with the world / assets / paint panels visible.
 2. Move the camera or panel placement so a selectable editor object is directly behind a
    panel click target.
-3. Click the overlapping part of the panel.
-4. Observe that panel focus does not change and the panel control/item does not respond.
+3. Click the `world_panel` `TextInput` where scene geometry overlaps the panel.
+4. Observe that the text input still takes focus on that panel and selects the clicked
+   glyph.
+5. Click a `paint_panel` option where scene geometry overlaps the panel.
+6. Observe that the option is selected, but the Paint panel itself does not become the
+   selected/focused panel.
+7. Click the overlapping shell area of the `assets` or `inspector` panel.
+8. Observe that those panels only select correctly when there is no object behind the
+   clicked part of the panel.
 
 ## Expected behavior
 
@@ -31,13 +46,24 @@ The foreground panel should win hit resolution and receive the click.
 
 - Panel focus should shift to the containing panel when appropriate.
 - Nested panel controls or selection items should still respond normally.
+- If an inner interactive control is clicked, that interaction should not depend on
+  whether selectable scene geometry is behind the panel.
+- If panel focus is supposed to accompany an inner interaction, that should also work
+  consistently regardless of overlapped scene geometry.
 - Selectable scene objects behind the panel should not interfere with the UI click.
 
 ## Actual behavior
 
-If a selectable editor object is behind the panel, the click path appears to fail before
-the panel selection / panel control handler can claim it. The panel does not focus, and
-the clicked UI element does not react.
+The behavior is not a pure dead click. Inner UI interaction can still succeed, but outer
+panel selection/focus becomes inconsistent when overlapping scene geometry exists behind
+the panel.
+
+- `world_panel` `TextInput` works through the overlap: the panel becomes focused and the
+  clicked glyph is selected
+- `paint_panel` inner option selection works through the overlap, but the outer panel does
+  not also become selected/focused
+- `assets` and `inspector` currently expose only shell-level click behavior, so in
+  overlapping regions they effectively cannot be selected via the panel surface
 
 ## Likely investigation targets
 
@@ -52,10 +78,15 @@ the clicked UI element does not react.
   routing for the same click.
 - `src/engine/ecs/system/selection_system.rs`
   Confirm that once a UI renderable descendant is clicked, nested `Selection` / `Option`
-  resolution still reaches the panel or panel item option root.
+  resolution still reaches the panel or panel item option root, and confirm why
+  `world_panel` `TextInput` can focus the panel while `paint_panel` option clicks do not.
 - `src/engine/ecs/system/layout/block.rs`
   Confirm layout-owned `__bg` hit surfaces are present and raycastable for the relevant
   panel shells / items.
+- `src/engine/ecs/system/text_input_system.rs`
+  Check whether text-input focus is using a different routing or focus path than panel
+  shell / option selection, since `world_panel` text input remains interactive through the
+  overlap.
 
 ## Questions to answer
 
@@ -63,8 +94,10 @@ the clicked UI element does not react.
   geometry?
 - Does the click event reach the panel renderable at all, or is it being replaced by a
   selectable scene object before `SelectionSystem` sees it?
-- Are there cases where the UI renderable is hit first, but later editor-selection logic
-  suppresses panel focus changes?
+- Why does `world_panel` text-input focus survive the overlap while `paint_panel` option
+  clicks do not also promote/focus the panel?
+- Are there cases where the UI renderable is hit first, the inner control handles the
+  click, and later editor-selection logic suppresses or skips panel focus changes?
 - Should foreground UI clicks explicitly short-circuit editor scene selection when the hit
   is inside a panel subtree?
 
@@ -72,4 +105,3 @@ the clicked UI element does not react.
 
 - `docs/bugs/panel-layout-selection-interaction.md`
 - `docs/bugs/vtuber-desktop-scrolling-interference.md`
-
