@@ -108,25 +108,6 @@ pub(crate) fn layout_root_available_bounds(
         .authored_available_height
         .map(|height| resolve_layout_root_length_gu(height, lc.unit_scale, world_scale_y));
 
-    if trace_layout_id(world, layout_id) {
-        println!(
-            "[layout-trace] root={} id={:?} authored_w={:?} authored_h={:?} unit_scale={} ancestor_scale=({:.6},{:.6}) avail_gu=({:.6},{}) local_wu=({:.6},{}) final_wu=({:.6},{})",
-            trace_label(world, layout_id),
-            layout_id,
-            lc.authored_available_width,
-            lc.authored_available_height,
-            lc.unit_scale,
-            world_scale_x,
-            world_scale_y,
-            avail_w,
-            fmt_opt(avail_h),
-            avail_w * lc.unit_scale,
-            fmt_opt(avail_h.map(|h| h * lc.unit_scale)),
-            avail_w * lc.unit_scale * world_scale_x,
-            fmt_opt(avail_h.map(|h| h * lc.unit_scale * world_scale_y)),
-        );
-    }
-
     (avail_w, avail_h, lc.unit_scale)
 }
 
@@ -324,34 +305,6 @@ pub(crate) fn measure_item(
     };
     let margin_box_height_gu = margin_top_gu + box_height_gu + margin_bottom_gu;
 
-    if trace_layout_id(world, tc_id) {
-        println!(
-            "[layout-trace] measure item={} id={:?} avail_gu=({:.6},{}) style_size=({:?},{:?}) padding_gu=({:.6},{:.6},{:.6},{:.6}) margin_gu=({:.6},{:.6},{:.6},{:.6}) content_gu=({:.6},{:.6}) box_gu=({:.6},{:.6}) margin_box_gu=({:.6},{:.6}) local_wu=({:.6},{:.6})",
-            trace_label(world, tc_id),
-            tc_id,
-            avail_w_gu,
-            fmt_opt(avail_h_gu),
-            width,
-            height,
-            padding_top_gu,
-            padding_right_gu,
-            padding_bottom_gu,
-            padding_left_gu,
-            margin_top_gu,
-            margin_right_gu,
-            margin_bottom_gu,
-            margin_left_gu,
-            content_width_gu,
-            content_height_gu,
-            box_width_gu,
-            box_height_gu,
-            margin_box_width_gu,
-            margin_box_height_gu,
-            box_width_gu * unit_scale,
-            box_height_gu * unit_scale,
-        );
-    }
-
     MeasuredItem {
         tc_id,
         content_height_gu,
@@ -381,25 +334,6 @@ pub(crate) fn measure_container_items(
     unit_scale: f32,
 ) -> Vec<MeasuredItem> {
     let children: Vec<ComponentId> = world.children_of(container_id).to_vec();
-    if trace_layout_id(world, container_id) {
-        println!(
-            "[layout-trace] measure_container_items container={} id={:?} children_count={}",
-            trace_label(world, container_id),
-            container_id,
-            children.len()
-        );
-        for &child in &children {
-            let label = world.component_label(child).unwrap_or("");
-            let has_tc = world
-                .get_component_by_id_as::<TransformComponent>(child)
-                .is_some();
-            let is_layout = is_layout_item(world, child);
-            println!(
-                "[layout-trace]   - child={:?} label={:?} has_tc={} is_layout={}",
-                child, label, has_tc, is_layout
-            );
-        }
-    }
     children
         .into_iter()
         .filter(|&child| {

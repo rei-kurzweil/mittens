@@ -311,44 +311,20 @@ impl InspectorSystemStopgapMmsAdapter {
                 let Some(expected_selection_root) =
                     world.find_component(panel_query_root, PAINT_TOOL_SELECTION_SELECTOR)
                 else {
-                    println!(
-                        "[paint-selection-debug] missing expected paint selection root under {:?}",
-                        panel_query_root
-                    );
                     return;
                 };
-                println!(
-                    "[paint-selection-debug] selection_changed actual_root={:?} actual_label={:?} expected_root={:?} expected_label={:?} selected_component={:?} entries={}",
-                    selection_root,
-                    world.component_label(*selection_root),
-                    expected_selection_root,
-                    world.component_label(expected_selection_root),
-                    selected_component,
-                    selected_entries.len(),
-                );
                 if *selection_root != expected_selection_root {
-                    println!(
-                        "[paint-selection-debug] ignoring selection change because root does not match paint selection"
-                    );
                     return;
                 }
 
                 let Some(paint_panel_root) =
                     world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
                 else {
-                    println!(
-                        "[paint-selection-debug] missing paint panel root under {:?}",
-                        panel_query_root
-                    );
                     return;
                 };
                 let Some(status_wrap) =
                     world.find_component(paint_panel_root, PAINT_STATUS_WRAP_SELECTOR)
                 else {
-                    println!(
-                        "[paint-selection-debug] missing paint status wrap under {:?}",
-                        paint_panel_root
-                    );
                     return;
                 };
 

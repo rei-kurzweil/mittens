@@ -74,52 +74,10 @@ impl SelectionSystem {
             let Some(EventSignal::Click { renderable, .. }) = signal.event.as_ref() else {
                 return;
             };
-            if let Some(rec) = world.get_component_record(*renderable) {
-                println!(
-                    "[selection] CLICK name={:?} type={} id={:?}",
-                    rec.name, rec.component_type, renderable
-                );
-            }
-            // Log parent chain for this renderable
-            let mut cur = Some(*renderable);
-            let mut depth = 0;
-            while let Some(node) = cur {
-                if let Some(rec) = world.get_component_record(node) {
-                    let pid = world.parent_of(node);
-                    let pinfo = pid.and_then(|p| world.get_component_record(p));
-                    println!(
-                        "[chain {}] name={:?} type={} id={:?} parent={:?}/{}",
-                        depth,
-                        rec.name,
-                        rec.component_type,
-                        node,
-                        pinfo.map(|r| &*r.name),
-                        pinfo.map_or("?", |r| &*r.component_type)
-                    );
-                }
-                cur = world.parent_of(node);
-                depth += 1;
-                if depth > 20 {
-                    break;
-                }
-            }
             let Some((selection_root, option_owner)) = resolve_selection_click(world, *renderable)
             else {
-                println!("[selection] no option/selection match for {:?}", renderable);
                 return;
             };
-            if let Some(rec) = world.get_component_record(selection_root) {
-                println!(
-                    "[selection] selection_root name={:?} type={} id={:?}",
-                    rec.name, rec.component_type, selection_root
-                );
-            }
-            if let Some(rec) = world.get_component_record(option_owner) {
-                println!(
-                    "[selection] option_owner name={:?} type={} id={:?}",
-                    rec.name, rec.component_type, option_owner
-                );
-            }
             handle_selection_click(world, emit, selection_root, option_owner);
         });
     }
@@ -180,31 +138,13 @@ fn resolve_selection_click(
     while let Some(node) = current {
         if option_marker_on_node(world, node).is_some() {
             let selection_root = nearest_enclosing_selection(world, node)?;
-            println!(
-                "[selection-debug] resolve renderable={:?} option_owner={:?} option_label={:?} selection_root={:?} selection_label={:?}",
-                renderable,
-                node,
-                world.component_label(node),
-                selection_root,
-                world.component_label(selection_root),
-            );
             return Some((selection_root, node));
         }
         if selection_marker_on_node(world, node).is_some() {
-            println!(
-                "[selection-debug] resolve renderable={:?} stopped_at_selection_boundary node={:?} label={:?}",
-                renderable,
-                node,
-                world.component_label(node),
-            );
             return None;
         }
         current = world.parent_of(node);
     }
-    println!(
-        "[selection-debug] resolve renderable={:?} no_selection_match",
-        renderable
-    );
     None
 }
 

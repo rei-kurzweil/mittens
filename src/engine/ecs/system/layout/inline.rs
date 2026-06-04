@@ -105,25 +105,6 @@ pub(crate) fn layout_items(
             composed_z,
         ];
 
-        if super::measure::trace_layout_id(world, item.tc_id) {
-            println!(
-                "[layout-trace] place-inline item={} id={:?} cursor_gu=({:.6},{:.6}) content_origin_gu=({:.6},{:.6}) local_translation=({:.6},{:.6},{:.6}) final_delta_wu=({:.6},{:.6}) item_box_final_wu=({:.6},{:.6})",
-                super::measure::trace_label(world, item.tc_id),
-                item.tc_id,
-                cursor_x_gu,
-                cursor_y_gu,
-                content_origin_x_gu,
-                content_origin_y_gu,
-                translation[0],
-                translation[1],
-                translation[2],
-                translation[0] * axis_scales.0,
-                translation[1] * axis_scales.1,
-                item.box_width_gu * unit_scale * axis_scales.0,
-                item.box_height_gu * unit_scale * axis_scales.1,
-            );
-        }
-
         emit.push_intent_now(
             item.tc_id,
             IntentValue::UpdateTransform {

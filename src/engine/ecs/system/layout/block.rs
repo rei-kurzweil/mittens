@@ -125,24 +125,6 @@ fn layout_items(
             composed_z,
         ];
 
-        if super::measure::trace_layout_id(world, item.tc_id) {
-            println!(
-                "[layout-trace] place item={} id={:?} cursor_gu={:.6} content_origin_gu=({:.6},{:.6}) local_translation=({:.6},{:.6},{:.6}) final_delta_wu=({:.6},{:.6}) item_box_final_wu=({:.6},{:.6})",
-                super::measure::trace_label(world, item.tc_id),
-                item.tc_id,
-                cursor_gu,
-                content_origin_x_gu,
-                content_origin_y_gu,
-                translation[0],
-                translation[1],
-                translation[2],
-                translation[0] * axis_scales.0,
-                translation[1] * axis_scales.1,
-                item.box_width_gu * unit_scale * axis_scales.0,
-                item.box_height_gu * unit_scale * axis_scales.1,
-            );
-        }
-
         emit.push_intent_now(
             item.tc_id,
             IntentValue::UpdateTransform {
@@ -607,14 +589,6 @@ pub(crate) fn sync_bg_quad(
 
     let (needs_clip, needs_scroll_drag_surface, bg_spec) = match bg_style {
         Some((rgba, bg_z_override, overflow)) => {
-            if let Some(label) = world.component_label(tc_id) {
-                if label == "content_slot" || label == "item_0" {
-                    println!(
-                        "[layout-trace] bg item={} tc_id={:?} background_color={:?} background_z_override={:?} default_bg_z={:.6}",
-                        label, tc_id, rgba, bg_z_override, default_bg_z,
-                    );
-                }
-            }
             (
                 matches!(overflow, Overflow::Hidden | Overflow::Scroll),
                 matches!(overflow, Overflow::Scroll),
