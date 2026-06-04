@@ -611,6 +611,32 @@ mod tests {
         (item, renderable, style_id)
     }
 
+    fn fit_bounds_content_scale(world: &World, item_id: ComponentId) -> [f32; 3] {
+        let fit = world
+            .children_of(item_id)
+            .iter()
+            .copied()
+            .find(|&child| {
+                world
+                    .get_component_by_id_as::<crate::engine::ecs::component::FitBoundsComponent>(
+                        child,
+                    )
+                    .is_some()
+            })
+            .expect("expected fit_bounds child");
+        let content = world
+            .children_of(fit)
+            .iter()
+            .copied()
+            .find(|&child| world.component_label(child) == Some("__fit_bounds_content"))
+            .expect("expected fit_bounds content transform");
+        world
+            .get_component_by_id_as::<TransformComponent>(content)
+            .expect("expected fit_bounds content transform component")
+            .transform
+            .scale
+    }
+
     #[test]
     fn selection_system_click_updates_selection_state() {
         let tmp_dir = temp_asset_directory();
@@ -943,6 +969,16 @@ mod tests {
         let first = items[0];
         let second = items[1];
 
+        systems.layout.tick(&mut world, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.fit_bounds.tick(&mut world, &render_assets, &mut emit);
+
+        let first_scale_before = fit_bounds_content_scale(&world, first);
+        assert!(
+            first_scale_before[0] > 1.0,
+            "expected FitBounds to expand first icon before selection"
+        );
+
         systems.rx.push_event(
             first,
             EventSignal::Click {
@@ -956,11 +992,16 @@ mod tests {
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
 
+        systems.layout.tick(&mut world, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.fit_bounds.tick(&mut world, &render_assets, &mut emit);
+
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
             .expect("expected selection component");
         assert_eq!(selection.selected_component, Some(first));
         assert_eq!(selection.selected_entries.len(), 1);
+        assert_eq!(fit_bounds_content_scale(&world, first), first_scale_before);
 
         systems.rx.push_event(
             second,
@@ -975,11 +1016,16 @@ mod tests {
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
 
+        systems.layout.tick(&mut world, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.fit_bounds.tick(&mut world, &render_assets, &mut emit);
+
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
             .expect("expected selection component");
         assert_eq!(selection.selected_component, Some(second));
         assert_eq!(selection.selected_entries.len(), 1);
+        assert_eq!(fit_bounds_content_scale(&world, first), first_scale_before);
     }
 
     #[test]

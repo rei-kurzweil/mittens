@@ -3,10 +3,6 @@
 export fn pencil_icon() {
     return T {
         name = "pencil_icon"
-        Style {
-            width(2.0)
-            height(2.0)
-        }
         // Simplified pencil: a tilted rectangle
         T.position(0.0, 0.0, 0.0) {
             T.rotation(0.0, 0.0, 0.785) { // 45 degrees
@@ -23,10 +19,6 @@ export fn pencil_icon() {
 export fn line_icon() {
     return T {
         name = "line_icon"
-        Style {
-            width(2.0)
-            height(2.0)
-        }
         T.position(0.0, 0.0, 0.0) {
             T.rotation(0.0, 0.0, 0.785) {
                 T.scale(0.1, 1.8, 0.1) {
@@ -42,10 +34,6 @@ export fn line_icon() {
 export fn spray_can_icon() {
     return T {
         name = "spray_can_icon"
-        Style {
-            width(2.0)
-            height(2.0)
-        }
         // Body
         T.scale(0.8, 1.2, 0.1) {
             R.cube() { C.rgba(0.7, 0.2, 0.2, 1.0) }
@@ -62,10 +50,6 @@ export fn spray_can_icon() {
 export fn fill_icon() {
     return T {
         name = "fill_icon"
-        Style {
-            width(2.0)
-            height(2.0)
-        }
         // Tilted bucket-ish shape
         T.rotation(0.0, 0.0, -0.4) {
             T.scale(1.2, 1.0, 0.1) {
@@ -78,10 +62,6 @@ export fn fill_icon() {
 export fn erase_icon() {
     return T {
         name = "erase_icon"
-        Style {
-            width(2.0)
-            height(2.0)
-        }
         T.scale(1.2, 0.6, 0.1) {
             R.cube() { C.rgba(0.9, 0.4, 0.6, 1.0) }
         }

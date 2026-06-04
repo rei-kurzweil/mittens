@@ -45,7 +45,7 @@ export fn paint_panel_item(label, icon, item_background_color, title_color) {
                     display("block")
                     width(100%)
                     padding_xy(0.2, 0.0)
-                    color = title_color
+                    color = [0,0,0,1]
                     word_wrap("normal")
                 }
                 Text { label }
