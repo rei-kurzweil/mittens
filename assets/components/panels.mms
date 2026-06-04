@@ -8,6 +8,11 @@ import { world_panel_content } from "./panel_items.mms"
 import { world_panel_status } from "./panel_items.mms"
 import { inspector_panel_content } from "./panel_items.mms"
 import { assets_content } from "./assets_content.mms"
+import { pencil_icon } from "./icons.mms"
+import { line_icon } from "./icons.mms"
+import { spray_can_icon } from "./icons.mms"
+import { fill_icon } from "./icons.mms"
+import { erase_icon } from "./icons.mms"
 
 // ── Shared constants ──────────────────────────────────────────────────────────
 
@@ -18,7 +23,7 @@ let TITLE_LABEL_PADDING_X_GU = 0.25
 // ── paint_panel ───────────────────────────────────────────────────────────────
 
 let PAINT_PANEL_WIDTH_GU = 41.0
-let PAINT_PANEL_CONTENT_HEIGHT_GU = 57.0
+let PAINT_PANEL_CONTENT_HEIGHT_GU = 28.5
 let PAINT_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + PAINT_PANEL_CONTENT_HEIGHT_GU
 
 export fn paint_panel(title, title_color, panel_background_color, item_background_color) {
@@ -71,11 +76,11 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
                     width(100%)
                 }
 
-                paint_panel_item("Free Draw", item_background_color, title_color)
-                paint_panel_item("Line", item_background_color, title_color)
-                paint_panel_item("Spray Can", item_background_color, title_color)
-                paint_panel_item("Fill", item_background_color, title_color)
-                paint_panel_item("Erase", item_background_color, title_color)
+                paint_panel_item("Free Draw", pencil_icon(), item_background_color, title_color)
+                paint_panel_item("Line", line_icon(), item_background_color, title_color)
+                paint_panel_item("Spray Can", spray_can_icon(), item_background_color, title_color)
+                paint_panel_item("Fill", fill_icon(), item_background_color, title_color)
+                paint_panel_item("Erase", erase_icon(), item_background_color, title_color)
             }
         }
     }

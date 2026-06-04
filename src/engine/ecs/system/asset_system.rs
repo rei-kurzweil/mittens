@@ -393,6 +393,12 @@ impl AssetSystem {
         }
     }
 
+    fn remove_preview_placeholder(world: &mut World, item_root: ComponentId) {
+        if let Some(placeholder) = world.find_component(item_root, "#preview_placeholder") {
+            let _ = world.remove_component_subtree(placeholder);
+        }
+    }
+
     pub fn build_asset_item_shell(
         &self,
         world: &mut World,
@@ -511,6 +517,7 @@ impl AssetSystem {
                     world
                         .add_child(preview_slot, preview_shell)
                         .map_err(|e| format!("attach preview shell failed: {e}"))?;
+                    Self::remove_preview_placeholder(world, item_root);
                 }
             }
             Err(e) => {

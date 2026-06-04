@@ -5,7 +5,7 @@
 
 // ── paint_panel_item ──────────────────────────────────────────────────────────
 
-export fn paint_panel_item(label, item_background_color, title_color) {
+export fn paint_panel_item(label, icon, item_background_color, title_color) {
     return T {
         name = "paint_panel_item"
         Option {}
@@ -28,15 +28,23 @@ export fn paint_panel_item(label, item_background_color, title_color) {
             T {
                 Style {
                     display("block")
-                    margin_bottom(0.2)
-                    margin_top(0.5)
+                    height(4.0)
+                    margin_top(0.4)
+                    margin_bottom(0.3)
+                    text_align("center")
+                    vertical_align("middle")
                 }
-                T {
-                    Style {
-                        color = title_color
-                    }
-                    Text { label }
+                icon
+            }
+            T {
+                Style {
+                    display("block")
+                    width(100%)
+                    padding_xy(0.2, 0.0)
+                    color = title_color
+                    word_wrap("normal")
                 }
+                Text { label }
             }
         }
     }

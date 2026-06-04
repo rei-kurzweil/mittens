@@ -25,6 +25,26 @@ export fn asset_item(label, item_background_color) {
                 text_align("center")
                 vertical_align("middle")
             }
+
+            T {
+                name = "preview_placeholder"
+                id = "preview_placeholder"
+                Style {
+                    display("block")
+                    width(100%)
+                    height(100%)
+                    padding_xy(0.25, 0.25)
+                    background_color([0.96, 0.96, 0.96, 0.92])
+                    color = [0.18, 0.18, 0.18, 1.0]
+                    text_align("center")
+                    vertical_align("middle")
+                    word_wrap("normal")
+                    background_z(-0.002)
+                }
+                T.position(0.0, 0.0, 0.0) {
+                    Text { "Preview unavailable" }
+                }
+            }
         }
 
         // Text label positioned inside the item

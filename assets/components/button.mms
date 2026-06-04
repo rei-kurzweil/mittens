@@ -26,7 +26,7 @@ export fn button(label) {
             text_align("center")
             vertical_align("middle")
             font_size(0.08wu)
-            background_color = [0.30, 0.45, 0.90, 1.0]
+            background_color = [0.88, 0.18, 0.18, 1.0]
         }
         T.position(0.0, 0.0, 0.05) {
             Text { label }
