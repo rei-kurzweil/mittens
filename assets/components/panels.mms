@@ -42,6 +42,7 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
 
         T {
             name = "title_bar"
+            Raycastable.enabled()
             Style {
                 display("block")
                 height(TITLE_BAR_HEIGHT_GU)
@@ -60,6 +61,7 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
 
         T {
             name = "content_slot"
+            Raycastable.enabled()
             Style {
                 display("block")
                 height(PAINT_PANEL_CONTENT_HEIGHT_GU)
@@ -90,6 +92,7 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
 
         T {
             name = "paint_status_wrap"
+            Raycastable.enabled()
             Style {
                 display("block")
                 height(PAINT_PANEL_STATUS_BAR_HEIGHT_GU)
@@ -163,6 +166,7 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
 
         T {
             name = "path_input_wrap"
+            Raycastable.enabled()
             Style {
                 display("block")
                 height(PATH_BAR_HEIGHT_GU)
@@ -185,6 +189,7 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
 
         T {
             name = "title_bar"
+            Raycastable.enabled()
             Style {
                 display("block")
                 height(TITLE_BAR_HEIGHT_GU)
@@ -218,6 +223,7 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
 
         T {
             name = "content_slot"
+            Raycastable.enabled()
             Style {
                 display("block")
                 height(WORLD_PANEL_CONTENT_HEIGHT_GU)
@@ -231,6 +237,7 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
 
         T {
             name = "save_status_wrap"
+            Raycastable.enabled()
             Style {
                 display("block")
                 height(STATUS_BAR_HEIGHT_GU)
@@ -266,6 +273,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
 
         T {
             name = "title_bar"
+            Raycastable.enabled()
             Style {
                 display("block")
                 height(TITLE_BAR_HEIGHT_GU)
@@ -296,6 +304,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
 
         T {
             name = "content_slot"
+            Raycastable.enabled()
             Style {
                 display("block")
                 height(INSPECTOR_PANEL_CONTENT_HEIGHT_GU)
@@ -329,6 +338,7 @@ export fn asset_panel(title, items, title_color, panel_background_color, item_ba
 
         T {
             name = "title_bar"
+            Raycastable.enabled()
             Style {
                 display("block")
                 height(TITLE_BAR_HEIGHT_GU)
@@ -348,6 +358,7 @@ export fn asset_panel(title, items, title_color, panel_background_color, item_ba
 
         T {
             name = "content_slot"
+            Raycastable.enabled()
             Style {
                 display("block")
                 height(ASSET_PANEL_CONTENT_HEIGHT_GU)

@@ -371,6 +371,51 @@ impl InspectorSystemStopgapMmsAdapter {
                     return;
                 };
 
+                let Some(expected_selection_root) = world
+                    .find_component(panel_query_root, &format!("#{WORLD_PANEL_SELECTION_NAME}"))
+                else {
+                    return;
+                };
+                if *selection_root != expected_selection_root {
+                    return;
+                }
+
+                let Some(panel_layout_selection) = world
+                    .find_component(panel_query_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
+                else {
+                    return;
+                };
+                let Some(world_shell) =
+                    world.find_component(panel_query_root, &format!("#{WORLD_PANEL_SHELL_NAME}"))
+                else {
+                    return;
+                };
+
+                emit.push_intent_now(
+                    panel_layout_selection,
+                    IntentValue::SelectionSet {
+                        component_ids: vec![panel_layout_selection],
+                        entries: vec![SelectionEntry {
+                            index: None,
+                            item: Some(WORLD_PANEL_SHELL_NAME.to_string()),
+                            component: world_shell,
+                        }],
+                        primary: Some(world_shell),
+                    },
+                );
+            },
+        );
+
+        rx.add_handler_closure(
+            SignalKind::SelectionChanged,
+            panel_query_root,
+            move |world, emit, signal| {
+                let Some(EventSignal::SelectionChanged { selection_root, .. }) =
+                    signal.event.as_ref()
+                else {
+                    return;
+                };
+
                 let Some(expected_selection_root) =
                     world.find_component(panel_query_root, INSPECTOR_PANEL_SELECTION_SELECTOR)
                 else {
@@ -401,6 +446,51 @@ impl InspectorSystemStopgapMmsAdapter {
                             component: inspector_shell,
                         }],
                         primary: Some(inspector_shell),
+                    },
+                );
+            },
+        );
+
+        rx.add_handler_closure(
+            SignalKind::SelectionChanged,
+            panel_query_root,
+            move |world, emit, signal| {
+                let Some(EventSignal::SelectionChanged { selection_root, .. }) =
+                    signal.event.as_ref()
+                else {
+                    return;
+                };
+
+                let Some(expected_selection_root) =
+                    world.find_component(panel_query_root, PAINT_TOOL_SELECTION_SELECTOR)
+                else {
+                    return;
+                };
+                if *selection_root != expected_selection_root {
+                    return;
+                }
+
+                let Some(panel_layout_selection) = world
+                    .find_component(panel_query_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
+                else {
+                    return;
+                };
+                let Some(paint_shell) =
+                    world.find_component(panel_query_root, &format!("#{PAINT_PANEL_SHELL_NAME}"))
+                else {
+                    return;
+                };
+
+                emit.push_intent_now(
+                    panel_layout_selection,
+                    IntentValue::SelectionSet {
+                        component_ids: vec![panel_layout_selection],
+                        entries: vec![SelectionEntry {
+                            index: None,
+                            item: Some(PAINT_PANEL_SHELL_NAME.to_string()),
+                            component: paint_shell,
+                        }],
+                        primary: Some(paint_shell),
                     },
                 );
             },
