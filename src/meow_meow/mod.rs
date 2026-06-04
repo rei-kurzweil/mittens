@@ -11,15 +11,14 @@ pub mod transform;
 pub mod unparser;
 
 pub use ast::{
-    AssignmentStatement, BinOpKind, BlockStatement, CallExpression,
-    ComponentExpression, ConstructorCall, Expression, Ident, IfStatement, ReturnStatement,
-    Span, Statement, UnaryOpKind,
+    AssignmentStatement, BinOpKind, BlockStatement, CallExpression, ComponentExpression,
+    ConstructorCall, Expression, Ident, IfStatement, ReturnStatement, Span, Statement, UnaryOpKind,
 };
 pub use evaluator::*;
 pub use lowering::*;
-pub use runner::*;
 pub use object::*;
 pub use parser::*;
+pub use runner::*;
 pub use token::*;
 pub use tokenizer::*;
 

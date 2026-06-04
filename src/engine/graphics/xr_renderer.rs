@@ -37,7 +37,8 @@ pub fn clear_xr_swapchain_image(
 
         vk_device.begin_command_buffer(
             vk_command_buffer,
-            &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
+            &vk::CommandBufferBeginInfo::default()
+                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
         )?;
 
         let range = vk::ImageSubresourceRange::default()
@@ -131,7 +132,8 @@ pub fn copy_offscreen_to_xr_layers(
 
         vk_device.begin_command_buffer(
             vk_command_buffer,
-            &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
+            &vk::CommandBufferBeginInfo::default()
+                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
         )?;
 
         for eye in 0..view_count {

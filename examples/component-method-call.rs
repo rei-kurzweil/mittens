@@ -31,7 +31,9 @@ fn main() {
     }
 
     for intent in output.intents {
-        universe.command_queue.push_intent_now(engine::ecs::ComponentId::default(), intent);
+        universe
+            .command_queue
+            .push_intent_now(engine::ecs::ComponentId::default(), intent);
     }
 
     universe.systems.process_commands(

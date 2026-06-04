@@ -12,9 +12,10 @@ fn spawn_runtime_text(
         TransformComponent,
     };
 
-    let root = universe
-        .world
-        .add_component_boxed_named(label, Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.2)));
+    let root = universe.world.add_component_boxed_named(
+        label,
+        Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.2)),
+    );
     let style = universe.world.add_component_boxed_named(
         format!("{label}_style"),
         Box::new({
@@ -57,7 +58,9 @@ fn collect_container_items(
         .iter()
         .copied()
         .filter(|&child| {
-            world.get_component_by_id_as::<TransformComponent>(child).is_some()
+            world
+                .get_component_by_id_as::<TransformComponent>(child)
+                .is_some()
                 && !world
                     .component_label(child)
                     .map(|label| label.starts_with("__"))
@@ -110,20 +113,24 @@ fn spawn_container_item_debug_clones(
             .to_string();
         println!(
             "[diy-panel-debug] item={} label={:?} matrix_world={:?}",
-            index,
-            item_label,
-            matrix_world,
+            index, item_label, matrix_world,
         );
 
         // Subtree → MMS AST → MaterializedCE → fresh spawn.
         // Same path attach_clone uses; gives the clone fresh GUIDs and
         // routes everything through the standard component registry.
         let Ok(ce_ast) = subtree_to_ce_ast(&universe.world, item) else {
-            println!("[diy-panel-debug] skip {:?}: failed to encode subtree", item);
+            println!(
+                "[diy-panel-debug] skip {:?}: failed to encode subtree",
+                item
+            );
             continue;
         };
         let Ok(materialized) = ce_ast_to_materialized(&ce_ast) else {
-            println!("[diy-panel-debug] skip {:?}: failed to materialize CE", item);
+            println!(
+                "[diy-panel-debug] skip {:?}: failed to materialize CE",
+                item
+            );
             continue;
         };
         let Ok(clone_root) = spawn_tree(
@@ -138,7 +145,8 @@ fn spawn_container_item_debug_clones(
 
         universe.add(clone_root);
 
-        let (mut clone_translation, clone_rotation, clone_scale) = decompose_world_trs(matrix_world);
+        let (mut clone_translation, clone_rotation, clone_scale) =
+            decompose_world_trs(matrix_world);
         clone_translation[0] += DEBUG_CLONE_WORLD_OFFSET[0];
         clone_translation[1] += DEBUG_CLONE_WORLD_OFFSET[1];
         clone_translation[2] += DEBUG_CLONE_WORLD_OFFSET[2];
@@ -160,10 +168,7 @@ fn spawn_container_item_debug_clones(
         };
         println!(
             "[diy-panel-debug] cloned item={} label={:?} clone_root={:?} offset_translation={:?}",
-            index,
-            label,
-            clone_root,
-            clone_translation,
+            index, label, clone_root, clone_translation,
         );
     }
 }
@@ -176,7 +181,10 @@ fn main() {
     for error in &output.errors {
         eprintln!("[mms] {error}");
     }
-    println!("[mms] {} intent(s) from diy-panel.mms", output.intents.len());
+    println!(
+        "[mms] {} intent(s) from diy-panel.mms",
+        output.intents.len()
+    );
 
     if !output.errors.is_empty() {
         std::process::exit(1);
@@ -250,10 +258,7 @@ fn main() {
         .iter()
         .copied()
         .find(|&child| {
-            universe
-                .world
-                .component_label(child)
-                == Some("__scroll")
+            universe.world.component_label(child) == Some("__scroll")
                 && universe
                     .world
                     .get_component_by_id_as::<engine::ecs::component::ScrollingComponent>(child)
@@ -269,7 +274,9 @@ fn main() {
     assert_eq!(universe.parent_of(authored_child), Some(track));
     assert_eq!(universe.parent_of(late_child), Some(track));
 
-    println!("[diy-panel] init-time routing verified, then layout-owned scrolling moved content into __scroll_track");
+    println!(
+        "[diy-panel] init-time routing verified, then layout-owned scrolling moved content into __scroll_track"
+    );
 
     engine::Windowing::run_app(universe).expect("Windowing failed");
 }

@@ -15,27 +15,28 @@ use crate::engine::ecs::component::{
     Camera2DComponent, Camera3DComponent, CameraXRComponent, ClockComponent, CollisionComponent,
     CollisionShape, CollisionShapeComponent, ColorComponent, ControllerHand, ControllerPoseKind,
     ControllerXRComponent, DirectionalLightComponent, Display, EdgeInsets, EditorComponent,
-    ElementType, EmissiveComponent, EmissivePassComponent, FlexDirection, FlexWrap, GLTFComponent,
-    GestureCoordTypeComponent, GravityComponent, HtmlElementComponent, IKChainComponent, IKSolver,
-    InputComponent, InputTransformModeComponent, InputXRComponent, InspectLayoutComponent,
-    JustifyContent, KeyframeComponent, KineticResponseComponent, LayoutComponent,
-    LightQuantizationComponent, MeshComponent, MusicContextComponent, MusicNote,
-    MusicNoteComponent, NormalVisualisationComponent, OpacityComponent, OpenXRComponent,
-    OscillatorType, Overflow, OverlayComponent, PointLightComponent, PointerComponent,
-    PointerEvents, Position, QuatTemporalFilterComponent, QuatYawFollowComponent, RayCastComponent,
-    RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RenderGraphComponent,
-    RenderableComponent, RendererSettingsComponent, RendererStatsComponent, RouterComponent,
-    ScrollingComponent, SelectableComponent, SelectionComponent, SerializeComponent,
-    SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent, StencilClipComponent,
-    StyleComponent, TextAlign, TextComponent, TextInputComponent, TextShadowComponent,
-    TextureComponent, TextureFilteringComponent, TransformComponent, TransformDropComponent,
-    TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
-    TransformGizmoCoordSpace, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
-    TransformGizmoTranslateComponent, TransformMapRotationComponent, TransformMapScaleComponent,
-    TransformMapTranslationComponent, TransformMergeTRSComponent, TransformParentComponent,
-    TransformSampleAncestorComponent, TransitionComponent, TransitionEasing,
-    TransitionReplacePolicy, TransparentCutoutComponent, UVComponent, OptionComponent,
-    Vector3TemporalFilterComponent, WordWrapMode,
+    ElementType, EmissiveComponent, EmissivePassComponent, FitBoundsComponent, FitBoundsMode,
+    FlexDirection, FlexWrap, GLTFComponent, GestureCoordTypeComponent, GravityComponent,
+    HtmlElementComponent, IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent,
+    InputXRComponent, InspectLayoutComponent, JustifyContent, KeyframeComponent,
+    KineticResponseComponent, LayoutComponent, LightQuantizationComponent, MeshComponent,
+    MusicContextComponent, MusicNote, MusicNoteComponent, NormalVisualisationComponent,
+    OpacityComponent, OpenXRComponent, OptionComponent, OscillatorType, Overflow, OverlayComponent,
+    PointLightComponent, PointerComponent, PointerEvents, Position, QuatTemporalFilterComponent,
+    QuatYawFollowComponent, RayCastComponent, RaycastableComponent, RaycastableShapeComponent,
+    RaycastableShapeType, RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
+    RendererStatsComponent, RouterComponent, ScrollingComponent, SelectableComponent,
+    SelectionComponent, SerializeComponent, SignalRouteUpwardComponent, SizeDimension,
+    SkinnedMeshComponent, StencilClipComponent, StyleComponent, TextAlign, TextComponent,
+    TextInputComponent, TextShadowComponent, TextureComponent, TextureFilteringComponent,
+    TransformComponent, TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis,
+    TransformGizmoComponent, TransformGizmoCoordSpace, TransformGizmoRotateComponent,
+    TransformGizmoScaleComponent, TransformGizmoTranslateComponent, TransformMapRotationComponent,
+    TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
+    TransformParentComponent, TransformSampleAncestorComponent, TransitionComponent,
+    TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
+    Vector3TemporalFilterComponent, WordWrapMode, FIT_BOUNDS_CONTENT_NAME,
+    FIT_BOUNDS_TRANSFORM_NAME,
 };
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::{ComponentId, World};
@@ -60,6 +61,9 @@ pub fn spawn_tree(
     emit: &mut dyn SignalEmitter,
 ) -> Result<ComponentId, String> {
     let type_name = resolve_type_name(&ce.component_type);
+    if type_name == "FitBounds" {
+        return spawn_fit_bounds_tree(ce, parent, world, emit, true);
+    }
     let id = create_component(world, &type_name, ce.ctor_method.as_deref(), &ce.ctor_args)?;
 
     // Extra ctor calls + body builder calls (already evaluated).
@@ -157,6 +161,9 @@ pub fn spawn_tree_uninitialized(
     emit: &mut dyn SignalEmitter,
 ) -> Result<ComponentId, String> {
     let type_name = resolve_type_name(&ce.component_type);
+    if type_name == "FitBounds" {
+        return spawn_fit_bounds_tree(ce, None, world, emit, false);
+    }
     let id = create_component(world, &type_name, ce.ctor_method.as_deref(), &ce.ctor_args)?;
 
     for (method, args) in &ce.calls {
@@ -221,6 +228,103 @@ pub fn spawn_tree_uninitialized(
                 }
             }
         }
+    }
+
+    Ok(id)
+}
+
+fn spawn_fit_bounds_tree(
+    ce: &MaterializedCE,
+    parent: Option<ComponentId>,
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    initialize_if_attached: bool,
+) -> Result<ComponentId, String> {
+    let id = create_component(world, "FitBounds", ce.ctor_method.as_deref(), &ce.ctor_args)?;
+
+    for (method, args) in &ce.calls {
+        apply_call(world, id, method, args)?;
+    }
+
+    for (prop, val) in &ce.named {
+        match prop.as_str() {
+            "name" => {
+                if let Some(node) = world.get_component_record_mut(id) {
+                    node.name = val_as_str(val).unwrap_or("").to_string();
+                }
+            }
+            "guid" => apply_guid_named_prop(world, id, val)?,
+            "class" => {
+                if let Some(node) = world.get_component_record_mut(id) {
+                    match val {
+                        Value::String(s) => {
+                            node.classes = s.split_whitespace().map(str::to_string).collect();
+                        }
+                        Value::Array(arr) => {
+                            node.classes = arr
+                                .iter()
+                                .filter_map(|v| {
+                                    if let Value::String(s) = v {
+                                        Some(s.clone())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => apply_named_assignment(world, id, prop, val)?,
+        }
+    }
+
+    for val in &ce.positionals {
+        apply_positional(world, id, val)?;
+    }
+
+    if let Some(p) = parent {
+        if let Err(e) = world.add_child(p, id) {
+            return Err(format!("attach failed: {e}"));
+        }
+    }
+
+    let fit_transform_id = world.add_component_boxed_named(
+        FIT_BOUNDS_TRANSFORM_NAME,
+        Box::new(TransformComponent::new()),
+    );
+    let content_root_id = world
+        .add_component_boxed_named(FIT_BOUNDS_CONTENT_NAME, Box::new(TransformComponent::new()));
+
+    world
+        .add_child(id, fit_transform_id)
+        .map_err(|e| format!("attach fit_bounds transform failed: {e}"))?;
+    world
+        .add_child(fit_transform_id, content_root_id)
+        .map_err(|e| format!("attach fit_bounds content failed: {e}"))?;
+
+    for child in &ce.children {
+        match child {
+            CeChild::Spawn(child_ce) => {
+                spawn_tree(child_ce, Some(content_root_id), world, emit)?;
+            }
+            CeChild::Attach(existing_id) => {
+                world
+                    .add_child(content_root_id, *existing_id)
+                    .map_err(|e| {
+                        format!(
+                            "attach existing fit_bounds child {:?} failed: {e}",
+                            existing_id
+                        )
+                    })?;
+            }
+        }
+    }
+
+    let parent_initialised = parent.map(|p| world.is_initialized(p)).unwrap_or(false);
+    if initialize_if_attached && (parent.is_none() || parent_initialised) {
+        world.init_component_tree(id, emit);
     }
 
     Ok(id)
@@ -977,6 +1081,13 @@ fn create_component(
             let mut c = TransformComponent::new();
             if let Some(method) = ctor {
                 c = apply_transform_builder(c, method, args)?;
+            }
+            add!(c)
+        }
+        "FitBounds" => {
+            let mut c = FitBoundsComponent::new();
+            if let Some(method) = ctor {
+                apply_fit_bounds_ctor(&mut c, method, args)?;
             }
             add!(c)
         }
@@ -1747,6 +1858,16 @@ fn apply_call(
     method: &str,
     args: &[Value],
 ) -> Result<(), String> {
+    if let Some(fit_bounds) = world.get_component_by_id_as_mut::<FitBoundsComponent>(id) {
+        match method {
+            "renderable_only" => fit_bounds.mode = FitBoundsMode::RenderableOnly,
+            "layout_aware" => fit_bounds.mode = FitBoundsMode::LayoutAware,
+            "to" => fit_bounds.target_bounds = val_as_f32_array::<6>(&Value::Array(args.to_vec()))?,
+            _ => {}
+        }
+        return Ok(());
+    }
+
     // Transform builders
     if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(id) {
         match method {
@@ -2398,10 +2519,12 @@ fn apply_call(
             "resolve_targets" => {
                 let mode = match arg_str(args, 0)? {
                     "on_attach" => ResolveTargetsMode::OnAttach,
-                    "on_play"   => ResolveTargetsMode::OnPlay,
-                    other => return Err(format!(
-                        "Animation.resolve_targets: expected 'on_attach' or 'on_play', got {other:?}"
-                    )),
+                    "on_play" => ResolveTargetsMode::OnPlay,
+                    other => {
+                        return Err(format!(
+                            "Animation.resolve_targets: expected 'on_attach' or 'on_play', got {other:?}"
+                        ));
+                    }
                 };
                 *anim = anim.clone().with_resolve_targets(mode);
             }
@@ -2601,4 +2724,20 @@ fn apply_transform_builder(
             Ok(c)
         }
     }
+}
+
+fn apply_fit_bounds_ctor(
+    c: &mut FitBoundsComponent,
+    method: &str,
+    args: &[Value],
+) -> Result<(), String> {
+    match method {
+        "renderable_only" => c.mode = FitBoundsMode::RenderableOnly,
+        "layout_aware" => c.mode = FitBoundsMode::LayoutAware,
+        "to" => c.target_bounds = val_as_f32_array::<6>(&Value::Array(args.to_vec()))?,
+        other => {
+            println!("[registry] unknown FitBounds builder: '{other}'");
+        }
+    }
+    Ok(())
 }

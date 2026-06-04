@@ -1,11 +1,11 @@
-use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::World;
 use crate::engine::ecs::component::style::{Display, SizeDimension, WordWrapMode};
 use crate::engine::ecs::component::{
     BoundsComponent, ColorComponent, HtmlElementComponent, LayoutComponent, RenderableComponent,
     StyleComponent, TextComponent, TransformComponent,
 };
 use crate::engine::ecs::system::text_system::TextSystem;
+use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::World;
 use crate::engine::graphics::bounds::{mat4_identity, mat4_mul, Aabb};
 use crate::engine::graphics::primitives::TransformMatrix;
 
@@ -720,20 +720,28 @@ pub(crate) fn apply_text_wrap_for_item(
     // No cascade today — only this TC's own StyleComponent is consulted.
     let (style_word_wrap, style_tokens) = read_text_wrap_style(world, tc_id);
 
-    let (cur_wrap_at, authored_wrap_at, cur_word_wrap, authored_word_wrap, cur_tokens, authored_word_wrap_tokens, cur_text, cur_font_size_wu) =
-        match world.get_component_by_id_as::<TextComponent>(text_id) {
-            Some(tc) => (
-                tc.wrap_at,
-                tc.authored_wrap_at,
-                tc.word_wrap,
-                tc.authored_word_wrap,
-                tc.word_wrap_tokens.clone(),
-                tc.authored_word_wrap_tokens.clone(),
-                tc.text.clone(),
-                tc.font_size,
-            ),
-            None => return,
-        };
+    let (
+        cur_wrap_at,
+        authored_wrap_at,
+        cur_word_wrap,
+        authored_word_wrap,
+        cur_tokens,
+        authored_word_wrap_tokens,
+        cur_text,
+        cur_font_size_wu,
+    ) = match world.get_component_by_id_as::<TextComponent>(text_id) {
+        Some(tc) => (
+            tc.wrap_at,
+            tc.authored_wrap_at,
+            tc.word_wrap,
+            tc.authored_word_wrap,
+            tc.word_wrap_tokens.clone(),
+            tc.authored_word_wrap_tokens.clone(),
+            tc.text.clone(),
+            tc.font_size,
+        ),
+        None => return,
+    };
     let container_cols =
         container_cols_for_width_and_font_size(content_width_gu, cur_font_size_wu, unit_scale);
 
@@ -1135,11 +1143,11 @@ impl StyleDefault for Option<StyleTuple> {
 #[cfg(test)]
 mod tests {
     use super::{measure_container_items, measure_item, measure_items};
-    use crate::engine::ecs::World;
     use crate::engine::ecs::component::style::{Display, SizeDimension};
     use crate::engine::ecs::component::{
         ColorComponent, LayoutComponent, StyleComponent, TextComponent, TransformComponent,
     };
+    use crate::engine::ecs::World;
 
     #[test]
     fn auto_height_container_does_not_measure_text_behind_nested_transforms() {
@@ -1426,9 +1434,9 @@ mod tests {
     #[test]
     fn text_wrap_relaxes_when_container_grows_back() {
         use super::apply_text_wrap_for_item;
+        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
         use crate::engine::ecs::ComponentId;
         use crate::engine::ecs::SignalEmitter;
-        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
 
         struct NullEmit;
         impl SignalEmitter for NullEmit {
@@ -1483,9 +1491,9 @@ mod tests {
     #[test]
     fn style_font_size_overrides_descendant_text_font_size() {
         use super::apply_text_font_size_for_item;
+        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
         use crate::engine::ecs::ComponentId;
         use crate::engine::ecs::SignalEmitter;
-        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
 
         struct NullEmit;
         impl SignalEmitter for NullEmit {
@@ -1528,9 +1536,9 @@ mod tests {
     #[test]
     fn apply_text_wrap_descends_through_plain_transform_wrapper() {
         use super::apply_text_wrap_for_item;
+        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
         use crate::engine::ecs::ComponentId;
         use crate::engine::ecs::SignalEmitter;
-        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
 
         struct NullEmit;
         impl SignalEmitter for NullEmit {
@@ -1722,11 +1730,9 @@ mod tests {
             (narrow_items[2].margin_box_width_gu - wide_items[2].margin_box_width_gu).abs() < 1e-4,
             "load button should keep its authored width when already within the narrow root budget"
         );
-        assert!(
-            narrow_items
-                .iter()
-                .all(|item| item.margin_box_width_gu <= narrow_avail + 1e-4)
-        );
+        assert!(narrow_items
+            .iter()
+            .all(|item| item.margin_box_width_gu <= narrow_avail + 1e-4));
     }
 
     #[test]

@@ -24,8 +24,14 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Dark-ish background clear color so the effect reads.
-    let clear = universe.world.add_component(engine::ecs::component::BackgroundColorComponent::new());
-    let clear_c = universe.world.add_component(engine::ecs::component::ColorComponent::rgba(0.01, 0.01, 0.02, 1.0));
+    let clear = universe
+        .world
+        .add_component(engine::ecs::component::BackgroundColorComponent::new());
+    let clear_c = universe
+        .world
+        .add_component(engine::ecs::component::ColorComponent::rgba(
+            0.01, 0.01, 0.02, 1.0,
+        ));
     let _ = universe.world.add_child(clear, clear_c);
     universe.add(clear);
 

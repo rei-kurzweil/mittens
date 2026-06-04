@@ -5,7 +5,11 @@
 /// Use WASD/RF/QE + right-drag to navigate.
 ///
 ///   cargo run --example mms-loops
-use cat_engine::{engine, engine::ecs::{IntentValue, SignalEmitter}, meow_meow, utils};
+use cat_engine::{
+    engine,
+    engine::ecs::{IntentValue, SignalEmitter},
+    meow_meow, utils,
+};
 
 #[path = "example_util/mod.rs"]
 mod example_util;

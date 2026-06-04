@@ -6,12 +6,12 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
+use crate::engine::graphics::xr_renderer;
 use crate::engine::graphics::CameraData;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::VulkanoRenderer;
 use crate::engine::graphics::XRSwapchain;
 use crate::engine::graphics::XrVulkanGraphics;
-use crate::engine::graphics::xr_renderer;
 use crate::engine::user_input::InputState;
 use crate::utils::math;
 
@@ -33,7 +33,6 @@ pub struct OpenXRSystem {
 
     input_xr_components: HashSet<ComponentId>,
     controller_components: HashSet<ComponentId>,
-
 }
 
 struct OpenXRState {
@@ -141,7 +140,6 @@ impl Default for OpenXRSystem {
 
             input_xr_components: HashSet::new(),
             controller_components: HashSet::new(),
-
         }
     }
 }
@@ -360,7 +358,10 @@ impl OpenXRSystem {
     fn input_xr_ancestor(world: &World, cid: ComponentId) -> Option<ComponentId> {
         let mut cur = cid;
         loop {
-            if world.get_component_by_id_as::<InputXRComponent>(cur).is_some() {
+            if world
+                .get_component_by_id_as::<InputXRComponent>(cur)
+                .is_some()
+            {
                 return Some(cur);
             }
             let Some(parent) = world.parent_of(cur) else {
@@ -1392,7 +1393,6 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             [0.0, 0.0, (z_near * z_far) * nf, 0.0],
         ]
     }
-
 }
 
 impl System for OpenXRSystem {
@@ -1485,14 +1485,12 @@ impl OpenXRSystem {
         let mut right_root_for_debug: Option<(openxr::Posef, openxr::HandJointEXT)> = None;
 
         if let Some(hand_tracking) = sess.hand_tracking.as_ref() {
-            let left_joints = sess.reference_space.locate_hand_joints(
-                &hand_tracking.left,
-                frame_state.predicted_display_time,
-            );
-            let right_joints = sess.reference_space.locate_hand_joints(
-                &hand_tracking.right,
-                frame_state.predicted_display_time,
-            );
+            let left_joints = sess
+                .reference_space
+                .locate_hand_joints(&hand_tracking.left, frame_state.predicted_display_time);
+            let right_joints = sess
+                .reference_space
+                .locate_hand_joints(&hand_tracking.right, frame_state.predicted_display_time);
 
             match left_joints {
                 Ok(Some(joints)) => {
@@ -1809,5 +1807,4 @@ impl OpenXRSystem {
             eprintln!("[OpenXR] end_frame failed: {e:?}");
         }
     }
-
 }

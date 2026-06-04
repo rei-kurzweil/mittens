@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use slotmap::Key;
 
@@ -9,8 +9,8 @@ use crate::engine::ecs::component::AudioBufferSizeComponent;
 use crate::engine::ecs::component::AudioOscillator;
 use crate::engine::ecs::component::AudioOscillatorComponent;
 use crate::engine::ecs::component::AudioOutputComponent;
-use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::clock_system::ClockDriver;
+use crate::engine::ecs::system::System;
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
@@ -18,14 +18,14 @@ use crate::engine::user_input::InputState;
 use crate::engine::ecs::system::audio_system_fundsp::AudioClockState;
 use crate::engine::ecs::system::audio_system_fundsp::AudioQueueItem;
 use crate::engine::ecs::system::audio_system_fundsp::AudioRtLocalState;
-use crate::engine::ecs::system::audio_system_fundsp::MAX_AUDIO_GRAPH_CHILDREN_PER_NODE;
-use crate::engine::ecs::system::audio_system_fundsp::MAX_AUDIO_GRAPH_NODES;
-use crate::engine::ecs::system::audio_system_fundsp::MAX_OSCS_PER_COMPONENT;
 use crate::engine::ecs::system::audio_system_fundsp::RtAudioGraph;
 use crate::engine::ecs::system::audio_system_fundsp::RtAudioGraphChild;
 use crate::engine::ecs::system::audio_system_fundsp::RtAudioGraphNode;
 use crate::engine::ecs::system::audio_system_fundsp::ScheduledGraphOp;
 use crate::engine::ecs::system::audio_system_fundsp::SynthRtState;
+use crate::engine::ecs::system::audio_system_fundsp::MAX_AUDIO_GRAPH_CHILDREN_PER_NODE;
+use crate::engine::ecs::system::audio_system_fundsp::MAX_AUDIO_GRAPH_NODES;
+use crate::engine::ecs::system::audio_system_fundsp::MAX_OSCS_PER_COMPONENT;
 use crate::engine::ecs::system::audio_system_fundsp::{
     RtAudioGraphNodeKind, RtAudioGraphNodeState,
 };
@@ -336,8 +336,8 @@ impl AudioSystem {
                 .clamp(0.0, u16::MAX as f32) as u16
         }
 
-        use crate::engine::ecs::system::audio_system_fundsp::AUDIO_QUEUE_CAP;
         use crate::engine::ecs::system::audio_system_fundsp::render_buffer;
+        use crate::engine::ecs::system::audio_system_fundsp::AUDIO_QUEUE_CAP;
 
         // Create a queue for GUI-thread -> audio-thread messages.
         let (tx, rx) = rtrb::RingBuffer::<AudioQueueItem>::new(AUDIO_QUEUE_CAP);
@@ -345,12 +345,10 @@ impl AudioSystem {
 
         // Record the engine's chosen playback format so the decode worker
         // resamples / remixes incoming PCM to match this stream.
-        self.playback_format = Some(
-            super::audio_sample_format_convert::PlaybackFormat {
-                sample_rate: sample_rate_hz,
-                channels: channels as u16,
-            },
-        );
+        self.playback_format = Some(super::audio_sample_format_convert::PlaybackFormat {
+            sample_rate: sample_rate_hz,
+            channels: channels as u16,
+        });
 
         // Seed realtime thread with the most recent oscillator snapshots we know about.
         if let Some(tx) = self.audio_tx.as_mut() {
@@ -909,16 +907,14 @@ impl AudioSystem {
         // `AudioClipComponent::instance_of`), so this is just a
         // straight read.
         let (uri, start_beat, stop_beat) = {
-            let Some(clip) = world.get_component_by_id_as::<AudioClipComponent>(component)
-            else {
+            let Some(clip) = world.get_component_by_id_as::<AudioClipComponent>(component) else {
                 return;
             };
             (clip.uri.clone(), clip.start_beat, clip.stop_beat)
         };
 
         if uri.is_empty() {
-            if let Some(c) = world.get_component_by_id_as_mut::<AudioClipComponent>(component)
-            {
+            if let Some(c) = world.get_component_by_id_as_mut::<AudioClipComponent>(component) {
                 c.load_state = AudioClipLoadState::Failed("clip has no uri".into());
             }
             return;
@@ -951,12 +947,8 @@ impl AudioSystem {
         // Dedup decode: only one LoadClipRequest per asset_key.
         let needs_decode = !self.asset_states.contains_key(&asset_key);
         if needs_decode {
-            self.asset_states.insert(
-                asset_key,
-                AssetDecodeState::Pending {
-                    uri: uri.clone(),
-                },
-            );
+            self.asset_states
+                .insert(asset_key, AssetDecodeState::Pending { uri: uri.clone() });
             if let Some(handle) = self.decode_thread.as_ref() {
                 let _ = handle.tx.send(LoadClipRequest {
                     clip_id: asset_key,
@@ -970,16 +962,12 @@ impl AudioSystem {
         // already resolved; otherwise subscribe for the next completion.
         match self.asset_states.get(&asset_key).cloned() {
             Some(AssetDecodeState::Loaded { .. }) => {
-                if let Some(c) =
-                    world.get_component_by_id_as_mut::<AudioClipComponent>(component)
-                {
+                if let Some(c) = world.get_component_by_id_as_mut::<AudioClipComponent>(component) {
                     c.load_state = AudioClipLoadState::Loaded;
                 }
             }
             Some(AssetDecodeState::Failed { reason, .. }) => {
-                if let Some(c) =
-                    world.get_component_by_id_as_mut::<AudioClipComponent>(component)
-                {
+                if let Some(c) = world.get_component_by_id_as_mut::<AudioClipComponent>(component) {
                     c.load_state = AudioClipLoadState::Failed(reason);
                 }
             }

@@ -8,7 +8,10 @@ fn main() {
     for error in &output.errors {
         eprintln!("[mms] {error}");
     }
-    println!("[mms] {} intent(s) from ui-layout.mms", output.intents.len());
+    println!(
+        "[mms] {} intent(s) from ui-layout.mms",
+        output.intents.len()
+    );
 
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);

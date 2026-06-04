@@ -18,7 +18,10 @@ fn main() {
     for error in &output.errors {
         eprintln!("[mms] {error}");
     }
-    println!("[mms] {} intent(s) from font-size.mms", output.intents.len());
+    println!(
+        "[mms] {} intent(s) from font-size.mms",
+        output.intents.len()
+    );
 
     for intent in output.intents {
         universe

@@ -17,7 +17,10 @@ fn main() {
     for error in &output.errors {
         eprintln!("[mms] error: {error}");
     }
-    println!("[mms] {} intent(s) from mms-functions.mms", output.intents.len());
+    println!(
+        "[mms] {} intent(s) from mms-functions.mms",
+        output.intents.len()
+    );
 
     assert!(
         output.errors.is_empty(),

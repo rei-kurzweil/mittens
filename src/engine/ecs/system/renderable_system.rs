@@ -1,4 +1,3 @@
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::BackgroundColorComponent;
 use crate::engine::ecs::component::OverlayComponent;
 use crate::engine::ecs::component::{
@@ -6,10 +5,11 @@ use crate::engine::ecs::component::{
     MeshComponent, OpacityComponent, RenderableComponent, RendererSettingsComponent,
     TransparentCutoutComponent, UVComponent,
 };
+use crate::engine::ecs::ComponentId;
 
-use crate::engine::ecs::World;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
+use crate::engine::ecs::World;
 use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Transform};
 use crate::engine::graphics::{GpuRenderable, VisualWorld};
 use crate::engine::graphics::{MeshUploader, RenderAssets};
@@ -128,16 +128,15 @@ fn clone_mesh_with_uv_overrides(
 }
 
 impl RenderableSystem {
-    fn material_with_emissive(
-        material: MaterialHandle,
-        emissive_intensity: f32,
-    ) -> MaterialHandle {
+    fn material_with_emissive(material: MaterialHandle, emissive_intensity: f32) -> MaterialHandle {
         let is_emissive = emissive_intensity > 0.0;
         match (material, is_emissive) {
             (MaterialHandle::TOON_MESH, true) => MaterialHandle::EMISSIVE_TOON_MESH,
             (MaterialHandle::SKINNED_TOON_MESH, true) => MaterialHandle::SKINNED_EMISSIVE_TOON_MESH,
             (MaterialHandle::EMISSIVE_TOON_MESH, false) => MaterialHandle::TOON_MESH,
-            (MaterialHandle::SKINNED_EMISSIVE_TOON_MESH, false) => MaterialHandle::SKINNED_TOON_MESH,
+            (MaterialHandle::SKINNED_EMISSIVE_TOON_MESH, false) => {
+                MaterialHandle::SKINNED_TOON_MESH
+            }
             _ => material,
         }
     }
@@ -829,7 +828,10 @@ impl RenderableSystem {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        if world.get_component_by_id_as::<BackgroundColorComponent>(component).is_none() {
+        if world
+            .get_component_by_id_as::<BackgroundColorComponent>(component)
+            .is_none()
+        {
             return;
         }
 
@@ -838,7 +840,9 @@ impl RenderableSystem {
             .children_of(component)
             .iter()
             .find_map(|&ch| {
-                world.get_component_by_id_as::<ColorComponent>(ch).map(|c| c.rgba)
+                world
+                    .get_component_by_id_as::<ColorComponent>(ch)
+                    .map(|c| c.rgba)
             })
             .unwrap_or(DEFAULT);
 
@@ -1254,9 +1258,7 @@ impl RenderableSystem {
         let pending = std::mem::take(&mut self.pending_normal_vis);
         for (nv_id, _renderable_id, base_mesh, thickness) in pending {
             // Skip if already spawned (double-init guard).
-            if let Some(nv) =
-                world.get_component_by_id_as::<NormalVisualisationComponent>(nv_id)
-            {
+            if let Some(nv) = world.get_component_by_id_as::<NormalVisualisationComponent>(nv_id) {
                 if !nv.spawned_roots.is_empty() {
                     continue;
                 }
@@ -1304,8 +1306,7 @@ impl RenderableSystem {
                     CpuMeshHandle::CUBE,
                     MaterialHandle::TOON_MESH,
                 )));
-                let c_id =
-                    world.add_component(ColorComponent::rgba(0.0, 1.0, 1.0, 1.0));
+                let c_id = world.add_component(ColorComponent::rgba(0.0, 1.0, 1.0, 1.0));
                 let e_id = world.add_component(EmissiveComponent::on());
 
                 let _ = world.add_child(nv_id, t_id);
@@ -1347,8 +1348,11 @@ impl System for RenderableSystem {
 #[cfg(test)]
 mod tests {
     use super::RenderableSystem;
+    use crate::engine::ecs::component::{
+        EmissiveComponent, RenderableComponent, TextComponent, TransformComponent,
+        TransparentCutoutComponent,
+    };
     use crate::engine::ecs::World;
-    use crate::engine::ecs::component::{EmissiveComponent, RenderableComponent, TextComponent, TransformComponent, TransparentCutoutComponent};
     use crate::engine::graphics::VisualWorld;
 
     #[test]
@@ -1362,7 +1366,10 @@ mod tests {
         let _ = world.add_child(text, glyph_t);
         let _ = world.add_child(glyph_t, glyph_r);
 
-        assert_eq!(RenderableSystem::inherited_cutout_for_renderable(&world, glyph_r), None);
+        assert_eq!(
+            RenderableSystem::inherited_cutout_for_renderable(&world, glyph_r),
+            None
+        );
 
         let cutout = world.add_component(TransparentCutoutComponent::new());
         let _ = world.add_child(text, cutout);

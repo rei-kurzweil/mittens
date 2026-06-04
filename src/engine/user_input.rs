@@ -208,7 +208,9 @@ impl UserInput {
                         }
                         match &event.logical_key {
                             Key::Named(NamedKey::Backspace) => {
-                                self.state.text_input_events.push(TextInputFrameEvent::Backspace);
+                                self.state
+                                    .text_input_events
+                                    .push(TextInputFrameEvent::Backspace);
                             }
                             Key::Named(NamedKey::Delete) => {
                                 self.state
@@ -228,7 +230,8 @@ impl UserInput {
                             _ => {}
                         }
                         if let Some(text) = event.text.as_ref() {
-                            let filtered: String = text.chars().filter(|c| !c.is_control()).collect();
+                            let filtered: String =
+                                text.chars().filter(|c| !c.is_control()).collect();
                             if !filtered.is_empty() {
                                 self.state
                                     .text_input_events

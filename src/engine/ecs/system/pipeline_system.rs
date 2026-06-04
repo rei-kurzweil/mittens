@@ -1,8 +1,8 @@
-use crate::engine::ecs::RxWorld;
 use crate::engine::ecs::component::SignalRouteUpwardComponent;
 use crate::engine::ecs::rx::signal_pipeline::{
     SignalPipeline, SignalPipelineOp, SignalRouteUpward,
 };
+use crate::engine::ecs::RxWorld;
 use crate::engine::ecs::{ComponentId, World};
 
 /// Maintains RxWorld-owned intent routing pipelines based on operator components.

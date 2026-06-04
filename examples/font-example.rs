@@ -3,9 +3,8 @@ use cat_engine::{engine, utils};
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, BackgroundComponent, Camera3DComponent,
     CameraXRComponent, ColorComponent, InputComponent, InputTransformModeComponent,
-    InputXRComponent, PointerComponent, RaycastableComponent, TextComponent,
-    TextShadowComponent, TextureComponent, TextureFilteringComponent, TransformComponent,
-    TransparentCutoutComponent,
+    InputXRComponent, PointerComponent, RaycastableComponent, TextComponent, TextShadowComponent,
+    TextureComponent, TextureFilteringComponent, TransformComponent, TransparentCutoutComponent,
 };
 
 #[path = "example_util/mod.rs"]
@@ -18,8 +17,12 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Dark background so the font texture pops.
-    let background = universe.world.add_component(BackgroundColorComponent::new());
-    let background_c = universe.world.add_component(ColorComponent::rgba(0.20, 0.2, 0.20, 1.0));
+    let background = universe
+        .world
+        .add_component(BackgroundColorComponent::new());
+    let background_c = universe
+        .world
+        .add_component(ColorComponent::rgba(0.20, 0.2, 0.20, 1.0));
     let _ = universe.world.add_child(background, background_c);
     universe.add(background);
 

@@ -57,8 +57,8 @@ impl RxIntentExecutor {
 fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &Signal) {
     use crate::engine::ecs::component::{
         AudioBandPassFilterComponent, AudioClipComponent, AudioClipLoadState,
-        AudioLowPassFilterComponent, AudioOscillatorComponent, ColorComponent,
-        MusicNoteComponent, RayCastComponent, TransformComponent,
+        AudioLowPassFilterComponent, AudioOscillatorComponent, ColorComponent, MusicNoteComponent,
+        RayCastComponent, TransformComponent,
     };
     use crate::engine::ecs::system::MusicSystem;
     use crate::engine::ecs::system::audio_system::AudioOp;
@@ -198,15 +198,14 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     return;
                 }
             };
-            let materialized = match crate::meow_meow::component_registry::ce_ast_to_materialized(
-                &ce_ast,
-            ) {
-                Ok(m) => m,
-                Err(e) => {
-                    println!("[IntentExecutor] attach_clone materialize failed: {e}");
-                    return;
-                }
-            };
+            let materialized =
+                match crate::meow_meow::component_registry::ce_ast_to_materialized(&ce_ast) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        println!("[IntentExecutor] attach_clone materialize failed: {e}");
+                        return;
+                    }
+                };
 
             for &parent in parents.iter() {
                 let new_root = match crate::meow_meow::component_registry::spawn_tree(
@@ -546,7 +545,9 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
 
             // Per-source semantics (oscillator path): set pitch from note (if any),
             // gate on, set gain, gate off after duration. See docs/spec/audio-sources.md §4.
-            let frequency_hz = note.as_ref().map(|n| MusicSystem::frequency_hz_for_note(*n));
+            let frequency_hz = note
+                .as_ref()
+                .map(|n| MusicSystem::frequency_hz_for_note(*n));
 
             let velocity_gain = gain.or_else(|| note.as_ref().map(|n| n.velocity()));
             let final_gain = velocity_gain.map(|g| if g.is_finite() { g.max(0.0) } else { 1.0 });
@@ -560,15 +561,16 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 // MusicNoteComponent: full resolution chain (cache →
                 // target_source → context voice). See §6.6.
                 let mut resolved_via_note: Option<ComponentId> = None;
-                if world.get_component_by_id_as::<MusicNoteComponent>(t).is_some() {
+                if world
+                    .get_component_by_id_as::<MusicNoteComponent>(t)
+                    .is_some()
+                {
                     let mut taken: MusicNoteComponent = world
                         .get_component_by_id_as::<MusicNoteComponent>(t)
                         .cloned()
                         .unwrap();
                     resolved_via_note = taken.resolve_target(world);
-                    if let Some(slot) =
-                        world.get_component_by_id_as_mut::<MusicNoteComponent>(t)
-                    {
+                    if let Some(slot) = world.get_component_by_id_as_mut::<MusicNoteComponent>(t) {
                         slot.target_resolved = taken.target_resolved;
                     }
                 }
@@ -582,9 +584,7 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 // Cache the ancestor-walk result back into the
                 // MusicNoteComponent so subsequent fires skip the walk.
                 if let Some(&found) = source_cids[before..].first() {
-                    if let Some(mn) =
-                        world.get_component_by_id_as_mut::<MusicNoteComponent>(t)
-                    {
+                    if let Some(mn) = world.get_component_by_id_as_mut::<MusicNoteComponent>(t) {
                         if mn.target_resolved.is_none() {
                             mn.target_resolved = Some(found);
                         }
@@ -597,7 +597,10 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
             for src_cid in source_cids {
                 // Dispatch by source kind. Oscillator → gate+pitch+gain schedule;
                 // Clip → cursor reset (stub log in phase 4).
-                if world.get_component_by_id_as::<AudioOscillatorComponent>(src_cid).is_some() {
+                if world
+                    .get_component_by_id_as::<AudioOscillatorComponent>(src_cid)
+                    .is_some()
+                {
                     emit.push_intent_now(
                         src_cid,
                         IntentValue::ScheduleAudioOscillatorEnabled {
@@ -840,8 +843,12 @@ fn collect_color_targets(world: &World, target: ComponentId, out: &mut Vec<Compo
 
 fn is_audio_source(world: &World, id: ComponentId) -> bool {
     use crate::engine::ecs::component::{AudioClipComponent, AudioOscillatorComponent};
-    world.get_component_by_id_as::<AudioOscillatorComponent>(id).is_some()
-        || world.get_component_by_id_as::<AudioClipComponent>(id).is_some()
+    world
+        .get_component_by_id_as::<AudioOscillatorComponent>(id)
+        .is_some()
+        || world
+            .get_component_by_id_as::<AudioClipComponent>(id)
+            .is_some()
 }
 
 /// Collect ids of `AudioSource`s reachable from `target`.

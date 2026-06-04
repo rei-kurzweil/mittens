@@ -1,3 +1,19 @@
+use super::box_model_viz::sync_box_model_viz;
+use super::measure::{
+    apply_text_color_for_item, apply_text_font_size_for_item, apply_text_wrap_for_item,
+    measure_container_items, measure_items, MeasuredItem,
+};
+use crate::engine::ecs::component::style::VerticalAlign;
+use crate::engine::ecs::component::style::{Display, SizeDimension, TextAlign};
+use crate::engine::ecs::component::{
+    ColorComponent, InspectLayoutComponent, OpacityComponent, Overflow, RaycastableComponent,
+    RaycastableShapeComponent, RaycastableShapeType, RenderableComponent, RouterComponent,
+    ScrollingComponent, SerializeComponent, StencilClipComponent, StyleComponent, TextComponent,
+    TransformComponent,
+};
+use crate::engine::ecs::system::text_system::TextSystem;
+use crate::engine::ecs::system::ScrollingSystem;
+use crate::engine::ecs::ComponentId;
 /// Block formatting context layout — Pass 2.
 ///
 /// Children stack top-to-bottom with a vertical cursor.
@@ -16,25 +32,14 @@
 /// the layout root is being scaled by an outer transform (`unit_scale = 1.0`) or
 /// by `unit_scale` itself (e.g. inspector panels with `unit_scale = TEXT_SCALE`).
 use crate::engine::ecs::World;
-use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::{IntentValue, SignalEmitter};
-use crate::engine::ecs::component::{
-    ColorComponent, InspectLayoutComponent, OpacityComponent, Overflow, RenderableComponent,
-    RouterComponent, ScrollingComponent, StencilClipComponent,
-    RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType,
-    SerializeComponent, StyleComponent, TextComponent, TransformComponent,
-};
-use crate::engine::ecs::system::ScrollingSystem;
-use super::box_model_viz::sync_box_model_viz;
-use super::measure::{apply_text_color_for_item, apply_text_font_size_for_item, apply_text_wrap_for_item, measure_container_items, measure_items, MeasuredItem};
-use crate::engine::ecs::component::style::{Display, SizeDimension, TextAlign};
-use crate::engine::ecs::component::style::VerticalAlign;
-use crate::engine::ecs::system::text_system::TextSystem;
 
 const OWNED_CLIPPED_CONTENT_LABEL: &str = "__clip_content";
 const OWNED_LAYOUT_STENCIL_CLIP_LABEL: &str = "__layout_stencil_clip";
 const OWNED_LAYOUT_OVERFLOW_ROUTER_LABEL: &str = "__layout_overflow_router";
 const OWNED_SCROLL_WRAPPER_LABEL: &str = "__scroll";
+const OWNED_SCROLL_ROUTER_LABEL: &str = "__scroll_router";
+const OWNED_SCROLL_TRACK_LABEL: &str = "__scroll_track";
 const OWNED_SCROLL_DRAG_RAYCASTABLE_LABEL: &str = "__scroll_drag_raycastable";
 const OWNED_SCROLL_DRAG_SHAPE_LABEL: &str = "__scroll_drag_shape";
 const OWNED_BG_RAYCASTABLE_LABEL: &str = "__bg_raycastable";
@@ -45,11 +50,7 @@ const OWNED_BG_RAYCASTABLE_SHAPE_LABEL: &str = "__bg_raycastable_shape";
 /// Calls `measure_items` (Pass 1) then walks the results with a vertical cursor,
 /// emits `UpdateTransform` for each TC child, and manages background quads for
 /// items with `Style { background_color }`.
-pub fn layout(
-    world: &mut World,
-    emit: &mut dyn SignalEmitter,
-    layout_id: ComponentId,
-) {
+pub fn layout(world: &mut World, emit: &mut dyn SignalEmitter, layout_id: ComponentId) {
     let (items, _avail_w, _avail_h, unit_scale) = measure_items(world, layout_id);
     let viz = layout_root_has_inspect(world, layout_id);
     let axis_scales = super::measure::layout_root_axis_scales(world, layout_id);
@@ -68,7 +69,16 @@ pub(crate) fn layout_items_for(
     parent_depth: i32,
     viz: bool,
 ) {
-    layout_items(world, emit, items, unit_scale, (1.0, 1.0), depth, parent_depth, viz);
+    layout_items(
+        world,
+        emit,
+        items,
+        unit_scale,
+        (1.0, 1.0),
+        depth,
+        parent_depth,
+        viz,
+    );
 }
 
 /// `depth` is the *layer* depth from the LayoutRoot (0 at root). Sibling items
@@ -88,7 +98,6 @@ fn layout_items(
     parent_depth: i32,
     viz: bool,
 ) {
-
     let mut cursor_gu = 0.0_f32;
     let resolved_z = (depth - parent_depth) as f32 * super::LAYER_DISTANCE;
 
@@ -110,9 +119,9 @@ fn layout_items(
 
         let composed_z = resolved_z;
         let translation = [
-              content_origin_x_gu * unit_scale,
+            content_origin_x_gu * unit_scale,
             -(content_origin_y_gu * unit_scale),
-                                composed_z,
+            composed_z,
         ];
 
         if super::measure::trace_layout_id(world, item.tc_id) {
@@ -150,10 +159,26 @@ fn layout_items(
         apply_text_color_for_item(world, emit, item.tc_id);
 
         // ── Background quad / overflow helper topology ───────────────────
-        sync_bg_quad(world, emit, item.tc_id, item.padding_left_gu, item.padding_top_gu, item.box_width_gu, item.box_height_gu, unit_scale);
+        sync_bg_quad(
+            world,
+            emit,
+            item.tc_id,
+            item.padding_left_gu,
+            item.padding_top_gu,
+            item.box_width_gu,
+            item.box_height_gu,
+            unit_scale,
+        );
         sync_auto_text_lift(world, emit, item.tc_id);
         sync_box_model_viz(world, emit, item, unit_scale, viz);
-        apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu, unit_scale);
+        apply_text_align(
+            world,
+            emit,
+            item.tc_id,
+            item.content_width_gu,
+            item.content_height_gu,
+            unit_scale,
+        );
         let content_root = sync_overflow_topology(world, emit, item.tc_id, item.content_height_gu);
 
         let nested_items = measure_container_items(
@@ -164,7 +189,13 @@ fn layout_items(
             unit_scale,
         );
         if let Some(scroll_id) = immediate_owned_scroll_wrapper(world, item.tc_id) {
-            sync_scrolling_metrics(world, emit, scroll_id, item.content_height_gu, &nested_items);
+            sync_scrolling_metrics(
+                world,
+                emit,
+                scroll_id,
+                item.content_height_gu,
+                &nested_items,
+            );
         }
         if !nested_items.is_empty() {
             // Switch formatting context per subtree: when every nested item
@@ -197,7 +228,16 @@ fn layout_items(
                     viz,
                 );
             } else {
-                layout_items(world, emit, &nested_items, unit_scale, axis_scales, child_depth, depth, viz);
+                layout_items(
+                    world,
+                    emit,
+                    &nested_items,
+                    unit_scale,
+                    axis_scales,
+                    child_depth,
+                    depth,
+                    viz,
+                );
             }
         }
 
@@ -225,7 +265,9 @@ pub(crate) fn sync_auto_text_lift(
         .iter()
         .copied()
         .filter(|&child| {
-            world.get_component_by_id_as::<TransformComponent>(child).is_some()
+            world
+                .get_component_by_id_as::<TransformComponent>(child)
+                .is_some()
                 && !world
                     .component_label(child)
                     .map(|label| label.starts_with("__"))
@@ -235,7 +277,9 @@ pub(crate) fn sync_auto_text_lift(
         .collect();
 
     for child in candidates {
-        let Some(tc) = world.get_component_by_id_as::<TransformComponent>(child) else { continue; };
+        let Some(tc) = world.get_component_by_id_as::<TransformComponent>(child) else {
+            continue;
+        };
         if tc.transform.translation[2] != 0.0 {
             continue;
         }
@@ -265,9 +309,9 @@ pub(crate) fn sync_auto_text_lift(
 /// push their children onto a deeper layer.
 pub(crate) fn item_owns_layer(world: &World, tc_id: ComponentId) -> bool {
     world.children_of(tc_id).iter().any(|&ch| {
-        world.get_component_by_id_as::<StyleComponent>(ch)
-            .map(|s| s.background_color.is_some()
-                || !matches!(s.overflow, Overflow::Visible))
+        world
+            .get_component_by_id_as::<StyleComponent>(ch)
+            .map(|s| s.background_color.is_some() || !matches!(s.overflow, Overflow::Visible))
             .unwrap_or(false)
     })
 }
@@ -278,39 +322,108 @@ pub(crate) fn layout_root_has_inspect(world: &World, layout_id: ComponentId) -> 
         .get_component_by_id_as::<LayoutComponent>(layout_id)
         .map(|l| l.inspect)
         .unwrap_or(false);
-    flag
-        || world.children_of(layout_id).iter().any(|&ch| {
-            world.get_component_by_id_as::<InspectLayoutComponent>(ch).is_some()
-        })
+    flag || world.children_of(layout_id).iter().any(|&ch| {
+        world
+            .get_component_by_id_as::<InspectLayoutComponent>(ch)
+            .is_some()
+    })
 }
 
 fn style_overflow(world: &World, tc_id: ComponentId) -> Overflow {
-    world.children_of(tc_id).iter().find_map(|&child| {
-        world
-            .get_component_by_id_as::<StyleComponent>(child)
-            .map(|style| style.overflow)
-    }).unwrap_or(Overflow::Visible)
+    world
+        .children_of(tc_id)
+        .iter()
+        .find_map(|&child| {
+            world
+                .get_component_by_id_as::<StyleComponent>(child)
+                .map(|style| style.overflow)
+        })
+        .unwrap_or(Overflow::Visible)
 }
 
 fn immediate_owned_layout_router(world: &World, owner: ComponentId) -> Option<ComponentId> {
     world.children_of(owner).iter().copied().find(|&child| {
         world.component_label(child) == Some(OWNED_LAYOUT_OVERFLOW_ROUTER_LABEL)
-            && world.get_component_by_id_as::<RouterComponent>(child).is_some()
+            && world
+                .get_component_by_id_as::<RouterComponent>(child)
+                .is_some()
     })
 }
 
 fn immediate_owned_clipped_content(world: &World, owner: ComponentId) -> Option<ComponentId> {
     world.children_of(owner).iter().copied().find(|&child| {
         world.component_label(child) == Some(OWNED_CLIPPED_CONTENT_LABEL)
-            && world.get_component_by_id_as::<TransformComponent>(child).is_some()
+            && world
+                .get_component_by_id_as::<TransformComponent>(child)
+                .is_some()
     })
 }
 
 fn immediate_owned_scroll_wrapper(world: &World, owner: ComponentId) -> Option<ComponentId> {
     world.children_of(owner).iter().copied().find(|&child| {
         world.component_label(child) == Some(OWNED_SCROLL_WRAPPER_LABEL)
-            && world.get_component_by_id_as::<ScrollingComponent>(child).is_some()
+            && world
+                .get_component_by_id_as::<ScrollingComponent>(child)
+                .is_some()
     })
+}
+
+fn immediate_owned_scroll_track(world: &World, scroll_id: ComponentId) -> Option<ComponentId> {
+    world.children_of(scroll_id).iter().copied().find(|&child| {
+        world.component_label(child) == Some(OWNED_SCROLL_TRACK_LABEL)
+            && world
+                .get_component_by_id_as::<TransformComponent>(child)
+                .is_some()
+    })
+}
+
+fn immediate_owned_scroll_router(world: &World, scroll_id: ComponentId) -> Option<ComponentId> {
+    world.children_of(scroll_id).iter().copied().find(|&child| {
+        world.component_label(child) == Some(OWNED_SCROLL_ROUTER_LABEL)
+            && world
+                .get_component_by_id_as::<RouterComponent>(child)
+                .is_some()
+    })
+}
+
+fn ensure_scroll_track(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    scroll_id: ComponentId,
+) -> ComponentId {
+    let track_id = if let Some(track_id) = immediate_owned_scroll_track(world, scroll_id) {
+        track_id
+    } else {
+        let track_id = world.add_component_boxed_named(
+            OWNED_SCROLL_TRACK_LABEL,
+            Box::new(TransformComponent::new()),
+        );
+        let _ = world.add_child(scroll_id, track_id);
+        world.init_component_tree(track_id, emit);
+        track_id
+    };
+
+    if immediate_owned_scroll_router(world, scroll_id).is_none() {
+        let router_id = world.add_component_boxed_named(
+            OWNED_SCROLL_ROUTER_LABEL,
+            Box::new(RouterComponent::new().with_target_name(OWNED_SCROLL_TRACK_LABEL)),
+        );
+        let _ = world.add_child(scroll_id, router_id);
+        world.init_component_tree(router_id, emit);
+    }
+
+    let base_pos = world
+        .get_component_by_id_as::<TransformComponent>(track_id)
+        .map(|tc| tc.transform.translation)
+        .unwrap_or([0.0, 0.0, 0.0]);
+
+    if let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(scroll_id) {
+        if sc.track != Some(track_id) {
+            sc.set_track(track_id, base_pos);
+        }
+    }
+
+    track_id
 }
 
 fn ensure_overflow_router(
@@ -360,15 +473,20 @@ fn ensure_scroll_wrapper(
             sc.content_height = sc.content_height.max(viewport_height.max(0.0));
             let _ = sc.clamp_to_content();
         }
+        let _ = ensure_scroll_track(world, emit, scroll_id);
         return scroll_id;
     }
 
     let scroll_id = world.add_component_boxed_named(
         OWNED_SCROLL_WRAPPER_LABEL,
-        Box::new(ScrollingComponent::new(viewport_height.max(0.0), viewport_height.max(0.0))),
+        Box::new(ScrollingComponent::new(
+            viewport_height.max(0.0),
+            viewport_height.max(0.0),
+        )),
     );
     let _ = world.add_child(owner, scroll_id);
     world.init_component_tree(scroll_id, emit);
+    let _ = ensure_scroll_track(world, emit, scroll_id);
     scroll_id
 }
 
@@ -378,7 +496,9 @@ fn authored_overflow_children(world: &World, owner: ComponentId) -> Vec<Componen
         .iter()
         .copied()
         .filter(|&child| {
-            world.get_component_by_id_as::<TransformComponent>(child).is_some()
+            world
+                .get_component_by_id_as::<TransformComponent>(child)
+                .is_some()
                 && !world
                     .component_label(child)
                     .map(|label| label.starts_with("__"))
@@ -394,9 +514,12 @@ fn relocate_authored_children(world: &mut World, owner: ComponentId, target: Com
 }
 
 fn scroll_content_root(world: &World, scroll_id: ComponentId) -> ComponentId {
-    world
-        .get_component_by_id_as::<ScrollingComponent>(scroll_id)
-        .and_then(|sc| sc.track)
+    immediate_owned_scroll_track(world, scroll_id)
+        .or_else(|| {
+            world
+                .get_component_by_id_as::<ScrollingComponent>(scroll_id)
+                .and_then(|sc| sc.track)
+        })
         .unwrap_or(scroll_id)
 }
 
@@ -436,8 +559,9 @@ pub(crate) fn sync_overflow_topology(
         Overflow::Scroll => {
             let scroll_id = ensure_scroll_wrapper(world, emit, tc_id, viewport_height);
             ensure_overflow_router(world, emit, tc_id, OWNED_SCROLL_WRAPPER_LABEL);
-            relocate_authored_children(world, tc_id, scroll_id);
-            scroll_content_root(world, scroll_id)
+            let content_root = scroll_content_root(world, scroll_id);
+            relocate_authored_children(world, tc_id, content_root);
+            content_root
         }
         _ => tc_id,
     }
@@ -462,11 +586,13 @@ pub(crate) fn sync_bg_quad(
     let children: Vec<ComponentId> = world.children_of(tc_id).to_vec();
 
     let bg_style = children.iter().find_map(|&ch| {
-        world.get_component_by_id_as::<StyleComponent>(ch)
+        world
+            .get_component_by_id_as::<StyleComponent>(ch)
             .map(|s| (s.background_color, s.background_z, s.overflow))
     });
 
-    let existing_bg = children.iter()
+    let existing_bg = children
+        .iter()
         .find(|&&ch| world.component_label(ch) == Some("__bg"))
         .copied();
 
@@ -482,11 +608,7 @@ pub(crate) fn sync_bg_quad(
                 if label == "content_slot" || label == "item_0" {
                     println!(
                         "[layout-trace] bg item={} tc_id={:?} background_color={:?} background_z_override={:?} default_bg_z={:.6}",
-                        label,
-                        tc_id,
-                        rgba,
-                        bg_z_override,
-                        default_bg_z,
+                        label, tc_id, rgba, bg_z_override, default_bg_z,
                     );
                 }
             }
@@ -509,7 +631,9 @@ pub(crate) fn sync_bg_quad(
 
             if let Some(color_rgba) = rgba {
                 if let Some(color_id) = world.children_of(bg_id).iter().copied().find(|&child| {
-                    world.get_component_by_id_as::<ColorComponent>(child).is_some()
+                    world
+                        .get_component_by_id_as::<ColorComponent>(child)
+                        .is_some()
                 }) {
                     emit.push_intent_now(
                         color_id,
@@ -549,16 +673,27 @@ pub(crate) fn sync_bg_quad(
         sync_bg_author_raycastable(world, emit, bg_id, None);
         emit.push_intent_now(
             bg_id,
-            IntentValue::RemoveSubtree { component_ids: vec![bg_id] },
+            IntentValue::RemoveSubtree {
+                component_ids: vec![bg_id],
+            },
         );
     }
 }
 
-fn immediate_owned_layout_stencil_clip(world: &World, scope_root: ComponentId) -> Option<ComponentId> {
-    world.children_of(scope_root).iter().copied().find(|&child| {
-        world.component_label(child) == Some(OWNED_LAYOUT_STENCIL_CLIP_LABEL)
-            && world.get_component_by_id_as::<StencilClipComponent>(child).is_some()
-    })
+fn immediate_owned_layout_stencil_clip(
+    world: &World,
+    scope_root: ComponentId,
+) -> Option<ComponentId> {
+    world
+        .children_of(scope_root)
+        .iter()
+        .copied()
+        .find(|&child| {
+            world.component_label(child) == Some(OWNED_LAYOUT_STENCIL_CLIP_LABEL)
+                && world
+                    .get_component_by_id_as::<StencilClipComponent>(child)
+                    .is_some()
+        })
 }
 
 /// Attach or detach the layout-owned `StencilClipComponent` as a sibling of `__bg`.
@@ -580,7 +715,9 @@ fn sync_stencil_clip(
     } else if let Some(clip_id) = immediate_owned_layout_stencil_clip(world, scope_root) {
         emit.push_intent_now(
             clip_id,
-            IntentValue::RemoveSubtree { component_ids: vec![clip_id] },
+            IntentValue::RemoveSubtree {
+                component_ids: vec![clip_id],
+            },
         );
     }
 }
@@ -588,7 +725,10 @@ fn sync_stencil_clip(
 fn subtree_first_renderable(world: &World, root: ComponentId) -> Option<ComponentId> {
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
-        if world.get_component_by_id_as::<RenderableComponent>(node).is_some() {
+        if world
+            .get_component_by_id_as::<RenderableComponent>(node)
+            .is_some()
+        {
             return Some(node);
         }
         for &child in world.children_of(node).iter().rev() {
@@ -618,10 +758,18 @@ pub(crate) fn apply_text_align(
 ) {
     let style = world.children_of(tc_id).iter().find_map(|&ch| {
         world.get_component_by_id_as::<StyleComponent>(ch).map(|s| {
-            (s.text_align, s.vertical_align, s.font_size, s.word_wrap, s.word_wrap_tokens.clone())
+            (
+                s.text_align,
+                s.vertical_align,
+                s.font_size,
+                s.word_wrap,
+                s.word_wrap_tokens.clone(),
+            )
         })
     });
-    let Some((align, vertical_align, style_font_size, _style_wrap, _style_tokens)) = style else { return; };
+    let Some((align, vertical_align, style_font_size, _style_wrap, _style_tokens)) = style else {
+        return;
+    };
 
     // No alignment intent → leave the author's inner-T transform alone. This
     // preserves the "decorative descendant text" pattern (e.g. a title-bar T
@@ -689,10 +837,17 @@ pub(crate) fn apply_text_align(
 
 fn find_alignable_direct_child(world: &World, tc_id: ComponentId) -> Option<ComponentId> {
     for &child in world.children_of(tc_id) {
-        if world.component_label(child).map(|l| l.starts_with("__")).unwrap_or(false) {
+        if world
+            .component_label(child)
+            .map(|l| l.starts_with("__"))
+            .unwrap_or(false)
+        {
             continue;
         }
-        if world.get_component_by_id_as::<TransformComponent>(child).is_some() {
+        if world
+            .get_component_by_id_as::<TransformComponent>(child)
+            .is_some()
+        {
             return Some(child);
         }
     }
@@ -702,12 +857,19 @@ fn find_alignable_direct_child(world: &World, tc_id: ComponentId) -> Option<Comp
 fn subtree_has_text(world: &World, root: ComponentId) -> bool {
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
-        if world.get_component_by_id_as::<TextComponent>(node).is_some() {
+        if world
+            .get_component_by_id_as::<TextComponent>(node)
+            .is_some()
+        {
             return true;
         }
         for &child in world.children_of(node) {
             // Don't descend into another styled layout item.
-            if world.get_component_by_id_as::<StyleComponent>(child).is_some() && child != root {
+            if world
+                .get_component_by_id_as::<StyleComponent>(child)
+                .is_some()
+                && child != root
+            {
                 continue;
             }
             stack.push(child);
@@ -716,11 +878,19 @@ fn subtree_has_text(world: &World, root: ComponentId) -> bool {
     false
 }
 
-fn find_text_descriptor(world: &World, root: ComponentId) -> Option<(String, bool, Vec<String>, f32)> {
+fn find_text_descriptor(
+    world: &World,
+    root: ComponentId,
+) -> Option<(String, bool, Vec<String>, f32)> {
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
         if let Some(t) = world.get_component_by_id_as::<TextComponent>(node) {
-            return Some((t.text.clone(), t.word_wrap, t.word_wrap_tokens.clone(), t.font_size));
+            return Some((
+                t.text.clone(),
+                t.word_wrap,
+                t.word_wrap_tokens.clone(),
+                t.font_size,
+            ));
         }
         for &child in world.children_of(node) {
             stack.push(child);
@@ -735,10 +905,16 @@ fn find_text_descriptor(world: &World, root: ComponentId) -> Option<(String, boo
 /// renderable so raycast pairing finds it.
 fn find_author_raycastable(world: &World, tc_id: ComponentId) -> Option<RaycastableComponent> {
     world.children_of(tc_id).iter().copied().find_map(|child| {
-        if world.component_label(child).map(|l| l.starts_with("__")).unwrap_or(false) {
+        if world
+            .component_label(child)
+            .map(|l| l.starts_with("__"))
+            .unwrap_or(false)
+        {
             return None;
         }
-        world.get_component_by_id_as::<RaycastableComponent>(child).copied()
+        world
+            .get_component_by_id_as::<RaycastableComponent>(child)
+            .copied()
     })
 }
 
@@ -756,14 +932,26 @@ fn sync_bg_author_raycastable(
         return;
     };
 
-    let existing_raycastable = world.children_of(renderable_id).iter().copied().find(|&child| {
-        world.component_label(child) == Some(OWNED_BG_RAYCASTABLE_LABEL)
-            && world.get_component_by_id_as::<RaycastableComponent>(child).is_some()
-    });
-    let existing_shape = world.children_of(renderable_id).iter().copied().find(|&child| {
-        world.component_label(child) == Some(OWNED_BG_RAYCASTABLE_SHAPE_LABEL)
-            && world.get_component_by_id_as::<RaycastableShapeComponent>(child).is_some()
-    });
+    let existing_raycastable = world
+        .children_of(renderable_id)
+        .iter()
+        .copied()
+        .find(|&child| {
+            world.component_label(child) == Some(OWNED_BG_RAYCASTABLE_LABEL)
+                && world
+                    .get_component_by_id_as::<RaycastableComponent>(child)
+                    .is_some()
+        });
+    let existing_shape = world
+        .children_of(renderable_id)
+        .iter()
+        .copied()
+        .find(|&child| {
+            world.component_label(child) == Some(OWNED_BG_RAYCASTABLE_SHAPE_LABEL)
+                && world
+                    .get_component_by_id_as::<RaycastableShapeComponent>(child)
+                    .is_some()
+        });
 
     match author {
         Some(rc) if rc.enable => {
@@ -772,10 +960,8 @@ fn sync_bg_author_raycastable(
                     *c = rc;
                 }
             } else {
-                let rc_id = world.add_component_boxed_named(
-                    OWNED_BG_RAYCASTABLE_LABEL,
-                    Box::new(rc),
-                );
+                let rc_id =
+                    world.add_component_boxed_named(OWNED_BG_RAYCASTABLE_LABEL, Box::new(rc));
                 let _ = world.add_child(renderable_id, rc_id);
                 world.init_component_tree(rc_id, emit);
             }
@@ -793,13 +979,17 @@ fn sync_bg_author_raycastable(
             if let Some(rc_id) = existing_raycastable {
                 emit.push_intent_now(
                     rc_id,
-                    IntentValue::RemoveSubtree { component_ids: vec![rc_id] },
+                    IntentValue::RemoveSubtree {
+                        component_ids: vec![rc_id],
+                    },
                 );
             }
             if let Some(shape_id) = existing_shape {
                 emit.push_intent_now(
                     shape_id,
-                    IntentValue::RemoveSubtree { component_ids: vec![shape_id] },
+                    IntentValue::RemoveSubtree {
+                        component_ids: vec![shape_id],
+                    },
                 );
             }
         }
@@ -816,14 +1006,26 @@ fn sync_scroll_drag_surface(
         return;
     };
 
-    let existing_raycastable = world.children_of(renderable_id).iter().copied().find(|&child| {
-        world.component_label(child) == Some(OWNED_SCROLL_DRAG_RAYCASTABLE_LABEL)
-            && world.get_component_by_id_as::<RaycastableComponent>(child).is_some()
-    });
-    let existing_shape = world.children_of(renderable_id).iter().copied().find(|&child| {
-        world.component_label(child) == Some(OWNED_SCROLL_DRAG_SHAPE_LABEL)
-            && world.get_component_by_id_as::<RaycastableShapeComponent>(child).is_some()
-    });
+    let existing_raycastable = world
+        .children_of(renderable_id)
+        .iter()
+        .copied()
+        .find(|&child| {
+            world.component_label(child) == Some(OWNED_SCROLL_DRAG_RAYCASTABLE_LABEL)
+                && world
+                    .get_component_by_id_as::<RaycastableComponent>(child)
+                    .is_some()
+        });
+    let existing_shape = world
+        .children_of(renderable_id)
+        .iter()
+        .copied()
+        .find(|&child| {
+            world.component_label(child) == Some(OWNED_SCROLL_DRAG_SHAPE_LABEL)
+                && world
+                    .get_component_by_id_as::<RaycastableShapeComponent>(child)
+                    .is_some()
+        });
 
     if needs_scroll_drag_surface {
         if existing_raycastable.is_none() {
@@ -847,14 +1049,18 @@ fn sync_scroll_drag_surface(
         if let Some(rc_id) = existing_raycastable {
             emit.push_intent_now(
                 rc_id,
-                IntentValue::RemoveSubtree { component_ids: vec![rc_id] },
+                IntentValue::RemoveSubtree {
+                    component_ids: vec![rc_id],
+                },
             );
         }
 
         if let Some(shape_id) = existing_shape {
             emit.push_intent_now(
                 shape_id,
-                IntentValue::RemoveSubtree { component_ids: vec![shape_id] },
+                IntentValue::RemoveSubtree {
+                    component_ids: vec![shape_id],
+                },
             );
         }
     }
@@ -891,11 +1097,14 @@ fn spawn_bg_quad(
 
 #[cfg(test)]
 mod tests {
-    use crate::engine::ecs::component::{ColorComponent, LayoutComponent, SerializeComponent, StencilClipComponent, StyleComponent, TextComponent, TransformComponent};
     use crate::engine::ecs::component::style::{EdgeInsets, SizeDimension};
+    use crate::engine::ecs::component::{
+        ColorComponent, LayoutComponent, SerializeComponent, StencilClipComponent, StyleComponent,
+        TextComponent, TransformComponent,
+    };
+    use crate::engine::ecs::system::layout::LayoutSystem;
     use crate::engine::ecs::{CommandQueue, SystemWorld, World};
     use crate::engine::graphics::{RenderAssets, VisualWorld};
-    use crate::engine::ecs::system::layout::LayoutSystem;
 
     #[test]
     fn block_layout_recurses_into_styled_container_children() {
@@ -907,7 +1116,8 @@ mod tests {
 
         let root = world.add_component(LayoutComponent::new(20.0).with_height(12.0));
 
-        let container = world.add_component_boxed_named("container", Box::new(TransformComponent::new()));
+        let container =
+            world.add_component_boxed_named("container", Box::new(TransformComponent::new()));
         let container_style = world.add_component({
             let mut style = StyleComponent::new();
             style.height = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(6.0);
@@ -945,7 +1155,10 @@ mod tests {
             .expect("item transform");
 
         assert_eq!(item_tc.transform.translation, [0.75, -0.75, 0.0]);
-        assert!(world.children_of(item).iter().any(|&child| world.component_label(child) == Some("__bg")));
+        assert!(world
+            .children_of(item)
+            .iter()
+            .any(|&child| world.component_label(child) == Some("__bg")));
     }
 
     #[test]
@@ -985,7 +1198,11 @@ mod tests {
             .children_of(bg)
             .iter()
             .copied()
-            .find(|&child| world.get_component_by_id_as::<SerializeComponent>(child).is_some())
+            .find(|&child| {
+                world
+                    .get_component_by_id_as::<SerializeComponent>(child)
+                    .is_some()
+            })
             .expect("expected serialize marker on __bg");
         assert!(world
             .get_component_by_id_as::<SerializeComponent>(serialize)
@@ -1030,7 +1247,11 @@ mod tests {
             .children_of(bg)
             .iter()
             .copied()
-            .find(|&child| world.get_component_by_id_as::<ColorComponent>(child).is_some())
+            .find(|&child| {
+                world
+                    .get_component_by_id_as::<ColorComponent>(child)
+                    .is_some()
+            })
             .expect("expected color child on __bg");
 
         if let Some(style) = world.get_component_by_id_as_mut::<StyleComponent>(item_style) {
@@ -1041,7 +1262,10 @@ mod tests {
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         assert_eq!(
-            world.get_component_by_id_as::<ColorComponent>(color_id).expect("bg color").rgba,
+            world
+                .get_component_by_id_as::<ColorComponent>(color_id)
+                .expect("bg color")
+                .rgba,
             [0.9, 0.8, 0.2, 1.0]
         );
     }
@@ -1056,7 +1280,8 @@ mod tests {
 
         let root = world.add_component(LayoutComponent::new(20.0).with_height(8.0));
 
-        let header_slot = world.add_component_boxed_named("header_slot", Box::new(TransformComponent::new()));
+        let header_slot =
+            world.add_component_boxed_named("header_slot", Box::new(TransformComponent::new()));
         let header_style = world.add_component({
             let mut style = StyleComponent::new();
             style.height = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(2.0);
@@ -1065,11 +1290,19 @@ mod tests {
 
         let title_bar = world.add_component_boxed_named(
             "panel_titlebar_t",
-            Box::new(TransformComponent::new().with_position(10.0, -1.0, 0.005).with_scale(20.0, 2.0, 1.0)),
+            Box::new(
+                TransformComponent::new()
+                    .with_position(10.0, -1.0, 0.005)
+                    .with_scale(20.0, 2.0, 1.0),
+            ),
         );
         let title_label = world.add_component_boxed_named(
             "panel_titlebar_label_t",
-            Box::new(TransformComponent::new().with_position(0.02, -0.04, 0.01).with_scale(0.08, 0.08, 0.08)),
+            Box::new(
+                TransformComponent::new()
+                    .with_position(0.02, -0.04, 0.01)
+                    .with_scale(0.08, 0.08, 0.08),
+            ),
         );
         let title_text = world.add_component(TextComponent::new("World"));
         let title_color = world.add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
@@ -1296,7 +1529,8 @@ mod tests {
         let mut layout_system = LayoutSystem::new();
 
         let root = world.add_component(LayoutComponent::new(20.0).with_height(8.0));
-        let item = world.add_component_boxed_named("scroll_item", Box::new(TransformComponent::new()));
+        let item =
+            world.add_component_boxed_named("scroll_item", Box::new(TransformComponent::new()));
         let style = world.add_component({
             let mut style = StyleComponent::new();
             style.height = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(4.0);
@@ -1314,10 +1548,16 @@ mod tests {
         layout_system.tick(&mut world, &mut queue);
         systems.process_commands(&mut world, &mut visuals, &mut queue);
 
-        let bg = world.children_of(item).iter().copied().find(|&child| world.component_label(child) == Some("__bg"));
+        let bg = world
+            .children_of(item)
+            .iter()
+            .copied()
+            .find(|&child| world.component_label(child) == Some("__bg"));
         let clip = world.children_of(item).iter().copied().find(|&child| {
             world.component_label(child) == Some(super::OWNED_LAYOUT_STENCIL_CLIP_LABEL)
-                && world.get_component_by_id_as::<StencilClipComponent>(child).is_some()
+                && world
+                    .get_component_by_id_as::<StencilClipComponent>(child)
+                    .is_some()
         });
 
         assert!(bg.is_some(), "expected layout-owned __bg child");
@@ -1335,7 +1575,8 @@ mod tests {
 
         let root = world.add_component(LayoutComponent::new(9.5).with_height(12.0));
 
-        let title_bar = world.add_component_boxed_named("title_bar", Box::new(TransformComponent::new()));
+        let title_bar =
+            world.add_component_boxed_named("title_bar", Box::new(TransformComponent::new()));
         let title_bar_style = world.add_component({
             let mut style = StyleComponent::new();
             style.height = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(3.0);
@@ -1343,19 +1584,21 @@ mod tests {
             style
         });
 
-        let make_inline_box = |world: &mut World, name: &'static str, width_gu: f32, color: [f32; 4]| {
-            let tc = world.add_component_boxed_named(name, Box::new(TransformComponent::new()));
-            let style = world.add_component({
-                let mut s = StyleComponent::new();
-                s.display = Some(crate::engine::ecs::component::style::Display::InlineBlock);
-                s.width = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(width_gu);
-                s.height = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(3.0);
-                s.background_color = Some(color);
-                s
-            });
-            let _ = world.add_child(tc, style);
-            tc
-        };
+        let make_inline_box =
+            |world: &mut World, name: &'static str, width_gu: f32, color: [f32; 4]| {
+                let tc = world.add_component_boxed_named(name, Box::new(TransformComponent::new()));
+                let style = world.add_component({
+                    let mut s = StyleComponent::new();
+                    s.display = Some(crate::engine::ecs::component::style::Display::InlineBlock);
+                    s.width =
+                        crate::engine::ecs::component::style::SizeDimension::GlyphUnits(width_gu);
+                    s.height = crate::engine::ecs::component::style::SizeDimension::GlyphUnits(3.0);
+                    s.background_color = Some(color);
+                    s
+                });
+                let _ = world.add_child(tc, style);
+                tc
+            };
 
         let title = make_inline_box(&mut world, "title", 14.5, [0.9, 0.2, 0.2, 1.0]);
         let save = make_inline_box(&mut world, "save", 6.875, [0.2, 0.9, 0.2, 1.0]);
@@ -1374,9 +1617,11 @@ mod tests {
         systems.process_commands(&mut world, &mut visuals, &mut queue);
 
         let child_bg = |world: &World, owner| {
-            world.children_of(owner).iter().copied().find(|&child| {
-                world.component_label(child) == Some("__bg")
-            })
+            world
+                .children_of(owner)
+                .iter()
+                .copied()
+                .find(|&child| world.component_label(child) == Some("__bg"))
         };
 
         let title_bg = child_bg(&world, title).expect("title bg");
@@ -1439,8 +1684,12 @@ mod tests {
             s.overflow = crate::engine::ecs::component::Overflow::Hidden;
             s
         });
-        let text_wrapper = world.add_component_boxed_named("text_wrapper", Box::new(TransformComponent::new()));
-        let text = world.add_component_boxed_named("text", Box::new(TextComponent::new("inline 1.6 inline 1.6")));
+        let text_wrapper =
+            world.add_component_boxed_named("text_wrapper", Box::new(TransformComponent::new()));
+        let text = world.add_component_boxed_named(
+            "text",
+            Box::new(TextComponent::new("inline 1.6 inline 1.6")),
+        );
 
         let _ = world.add_child(row, chip);
         let _ = world.add_child(chip, chip_style);
@@ -1455,16 +1704,30 @@ mod tests {
 
         let clipped = world.children_of(chip).iter().copied().find(|&child| {
             world.component_label(child) == Some(super::OWNED_CLIPPED_CONTENT_LABEL)
-                && world.get_component_by_id_as::<TransformComponent>(child).is_some()
+                && world
+                    .get_component_by_id_as::<TransformComponent>(child)
+                    .is_some()
         });
         let clip = world.children_of(chip).iter().copied().find(|&child| {
             world.component_label(child) == Some(super::OWNED_LAYOUT_STENCIL_CLIP_LABEL)
-                && world.get_component_by_id_as::<StencilClipComponent>(child).is_some()
+                && world
+                    .get_component_by_id_as::<StencilClipComponent>(child)
+                    .is_some()
         });
 
-        assert!(clipped.is_some(), "expected inline overflow-hidden item to get clipped content root");
-        assert!(clip.is_some(), "expected inline overflow-hidden item to get stencil clip sibling");
-        assert_eq!(world.parent_of(text_wrapper), clipped, "authored inline content should move under clipped content root");
+        assert!(
+            clipped.is_some(),
+            "expected inline overflow-hidden item to get clipped content root"
+        );
+        assert!(
+            clip.is_some(),
+            "expected inline overflow-hidden item to get stencil clip sibling"
+        );
+        assert_eq!(
+            world.parent_of(text_wrapper),
+            clipped,
+            "authored inline content should move under clipped content root"
+        );
     }
 
     /// Multi-line text under `vertical_align: middle` and `unit_scale != 1.0`
@@ -1499,10 +1762,7 @@ mod tests {
             "text_wrap",
             Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.05)),
         );
-        let text = world.add_component_boxed_named(
-            "text",
-            Box::new(TextComponent::new("a\nb\nc")),
-        );
+        let text = world.add_component_boxed_named("text", Box::new(TextComponent::new("a\nb\nc")));
         let _ = world.add_child(root, box_tc);
         let _ = world.add_child(box_tc, box_style);
         let _ = world.add_child(box_tc, text_wrap);
@@ -1560,7 +1820,10 @@ mod tests {
             .get_component_by_id_as::<TextComponent>(text)
             .expect("text component")
             .font_size;
-        assert!((stamped - 0.08).abs() < 1e-6, "GlyphUnits(1.0) under unit_scale=0.08 should stamp 0.08 wu, got {stamped}");
+        assert!(
+            (stamped - 0.08).abs() < 1e-6,
+            "GlyphUnits(1.0) under unit_scale=0.08 should stamp 0.08 wu, got {stamped}"
+        );
     }
 
     /// `Style.font_size` may also be authored in world units. The wu value
@@ -1596,7 +1859,10 @@ mod tests {
             .get_component_by_id_as::<TextComponent>(text)
             .expect("text component")
             .font_size;
-        assert!((stamped - 0.12).abs() < 1e-6, "WorldUnits(0.12) should stamp 0.12 wu directly, got {stamped}");
+        assert!(
+            (stamped - 0.12).abs() < 1e-6,
+            "WorldUnits(0.12) should stamp 0.12 wu directly, got {stamped}"
+        );
     }
 
     /// Regression for the `world_panel_content` row bug: an auto-height styled

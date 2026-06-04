@@ -1,6 +1,9 @@
 #![allow(dead_code)]
 
-use cat_engine::engine::{self, ecs::component::{ColorComponent, TransparentCutoutComponent}};
+use cat_engine::engine::{
+    self,
+    ecs::component::{ColorComponent, TransparentCutoutComponent},
+};
 
 /// Standard MMS demo scene rig: dark-blue background and navigable camera.
 ///
@@ -14,13 +17,17 @@ pub fn spawn_mms_demo_rig(
     cam_pos: [f32; 3],
 ) -> engine::ecs::ComponentId {
     use engine::ecs::component::{
-        BackgroundColorComponent, Camera3DComponent, InputComponent,
-        InputTransformModeComponent, TransformComponent,
+        BackgroundColorComponent, Camera3DComponent, InputComponent, InputTransformModeComponent,
+        TransformComponent,
     };
 
     // Dark blue clear colour.
-    let bg_color = universe.world.add_component(BackgroundColorComponent::new());
-    let bg_color_c = universe.world.add_component(ColorComponent::rgba(0.02, 0.03, 0.10, 1.0));
+    let bg_color = universe
+        .world
+        .add_component(BackgroundColorComponent::new());
+    let bg_color_c = universe
+        .world
+        .add_component(ColorComponent::rgba(0.02, 0.03, 0.10, 1.0));
     let _ = universe.world.add_child(bg_color, bg_color_c);
     universe.add(bg_color);
 
@@ -33,9 +40,9 @@ pub fn spawn_mms_demo_rig(
         .add_component(InputTransformModeComponent::forward_z().with_roll_axis_y());
     let _ = universe.attach(input, input_mode);
 
-    let cam_transform = universe.world.add_component(
-        TransformComponent::new().with_position(cam_pos[0], cam_pos[1], cam_pos[2]),
-    );
+    let cam_transform = universe
+        .world
+        .add_component(TransformComponent::new().with_position(cam_pos[0], cam_pos[1], cam_pos[2]));
     let _ = universe.attach(input, cam_transform);
 
     let camera = universe.world.add_component(Camera3DComponent::new());
@@ -245,7 +252,9 @@ pub fn spawn_desktop_camera_controls_hint(
         .world
         .add_component(TextureFilteringComponent::nearest_magnification());
 
-    let cutout = universe.world.add_component(TransparentCutoutComponent::new());
+    let cutout = universe
+        .world
+        .add_component(TransparentCutoutComponent::new());
     let _ = universe.attach(text, cutout);
 
     let _ = universe.attach(editor_root, text);

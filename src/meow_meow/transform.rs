@@ -200,9 +200,18 @@ fn qd_expr(expr: &mut Expression) {
     }
 
     // Now rewrite this node if it's a query/dispatch expression.
-    if let Expression::BinaryOp { op: BinOpKind::Query, lhs, rhs } = expr {
+    if let Expression::BinaryOp {
+        op: BinOpKind::Query,
+        lhs,
+        rhs,
+    } = expr
+    {
         let callee = if let Expression::String(sel) = lhs.as_ref() {
-            if selector_is_single(sel) { "query" } else { "query_all" }
+            if selector_is_single(sel) {
+                "query"
+            } else {
+                "query_all"
+            }
         } else {
             "query_all" // computed selector — conservative fallback
         };

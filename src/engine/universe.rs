@@ -2,8 +2,8 @@ use crate::engine::ecs::SignalEmitter;
 use crate::engine::user_input::InputState;
 use crate::engine::{ecs, graphics};
 use std::collections::HashSet;
-use std::sync::mpsc;
 use std::sync::Arc;
+use std::sync::mpsc;
 use winit::window::Window;
 
 pub struct Universe {

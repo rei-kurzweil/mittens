@@ -7,8 +7,8 @@ pub mod mmq;
 use std::sync::Arc;
 
 pub use ast::{
-    AttributeSelector, Combinator, CompoundSelector, QueryAst, SelectorSegment,
-    SelectorSequence, SimpleSelector,
+    AttributeSelector, Combinator, CompoundSelector, QueryAst, SelectorSegment, SelectorSequence,
+    SimpleSelector,
 };
 pub use error::QueryParseError;
 pub use evaluator::{QueryEvaluator, QueryTreeAdapter};

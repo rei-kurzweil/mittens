@@ -32,7 +32,9 @@ impl<'w> QueryTreeAdapter for WorldQueryAdapter<'w> {
     }
 
     fn matches_name(&self, node: Self::NodeId, name: &str) -> bool {
-        self.world.component_label(node).map_or(false, |n| n == name)
+        self.world
+            .component_label(node)
+            .map_or(false, |n| n == name)
     }
 
     fn matches_guid(&self, node: Self::NodeId, guid: &str) -> bool {

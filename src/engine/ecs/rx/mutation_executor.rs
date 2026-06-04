@@ -1,4 +1,6 @@
-use crate::engine::ecs::component::{AnimationState, RenderableComponent, TextComponent, TransformComponent};
+use crate::engine::ecs::component::{
+    AnimationState, RenderableComponent, TextComponent, TransformComponent,
+};
 use crate::engine::ecs::system::SystemWorld;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, Signal, SignalEmitter, World};
 use crate::engine::graphics::VisualWorld;
@@ -272,7 +274,10 @@ impl RxMutationExecutor {
                 }
             }
 
-            IntentValue::SetLayoutAvailableWidth { component_ids, width } => {
+            IntentValue::SetLayoutAvailableWidth {
+                component_ids,
+                width,
+            } => {
                 use crate::engine::ecs::component::LayoutComponent;
                 let width = *width;
                 for &cid in component_ids.iter() {
@@ -282,7 +287,10 @@ impl RxMutationExecutor {
                 }
             }
 
-            IntentValue::SetLayoutAvailableHeight { component_ids, height } => {
+            IntentValue::SetLayoutAvailableHeight {
+                component_ids,
+                height,
+            } => {
                 use crate::engine::ecs::component::LayoutComponent;
                 let height = *height;
                 for &cid in component_ids.iter() {
@@ -292,7 +300,10 @@ impl RxMutationExecutor {
                 }
             }
 
-            IntentValue::SetLayoutInspect { component_ids, enabled } => {
+            IntentValue::SetLayoutInspect {
+                component_ids,
+                enabled,
+            } => {
                 use crate::engine::ecs::component::LayoutComponent;
                 let enabled = *enabled;
                 for &cid in component_ids.iter() {
@@ -312,7 +323,6 @@ impl RxMutationExecutor {
             | IntentValue::TextInputDeleteForward
             | IntentValue::TextInputMoveCaret { .. }
             | IntentValue::TextInputMoveCaretTo { .. } => {
-
                 systems.text_input.execute_intent(world, emit, env);
             }
 
@@ -412,7 +422,10 @@ impl RxMutationExecutor {
                     systems.register_animation(world, visuals, component);
                 }
             }
-            IntentValue::SetAnimationState { component_ids, state } => {
+            IntentValue::SetAnimationState {
+                component_ids,
+                state,
+            } => {
                 let state: AnimationState = state.clone();
                 for &component in component_ids.iter() {
                     systems.set_animation_state(component, state.clone());

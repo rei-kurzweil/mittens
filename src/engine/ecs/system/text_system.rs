@@ -1,11 +1,11 @@
-use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     ColorComponent, EmissiveComponent, OpacityComponent, RaycastableComponent, RenderableComponent,
     SerializeComponent, TextComponent, TextInputComponent, TextInputGlyphHitComponent,
-    TextShadowComponent, TextureComponent,
-    TextureFilteringComponent, TransformComponent, TransparentCutoutComponent, UVComponent,
+    TextShadowComponent, TextureComponent, TextureFilteringComponent, TransformComponent,
+    TransparentCutoutComponent, UVComponent,
 };
+use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::World;
 use crate::engine::ecs::{EventSignal, IntentValue};
 use crate::engine::graphics::TextureFiltering;
 use crate::engine::graphics::VisualWorld;
@@ -234,7 +234,11 @@ impl TextSystem {
         let mut state = WordWrapState::new(wrap_at, word_wrap, font_size);
         for (i, ch) in chars.iter().copied().enumerate() {
             if ch == '\n' {
-                if !callback(TextLayoutEvent::BeforeChar { index: i, ch, state }) {
+                if !callback(TextLayoutEvent::BeforeChar {
+                    index: i,
+                    ch,
+                    state,
+                }) {
                     break;
                 }
                 state.newline();
@@ -242,21 +246,33 @@ impl TextSystem {
             }
             state.apply_wrap_if_needed();
             if ch == ' ' {
-                if !callback(TextLayoutEvent::BeforeChar { index: i, ch, state }) {
+                if !callback(TextLayoutEvent::BeforeChar {
+                    index: i,
+                    ch,
+                    state,
+                }) {
                     break;
                 }
                 state.advance_space(i, &wrap_allowed_after);
                 continue;
             }
             if ch == '\t' {
-                if !callback(TextLayoutEvent::BeforeChar { index: i, ch, state }) {
+                if !callback(TextLayoutEvent::BeforeChar {
+                    index: i,
+                    ch,
+                    state,
+                }) {
                     break;
                 }
                 state.advance_tab(i, &wrap_allowed_after);
                 continue;
             }
             state.apply_word_wrap_lookahead(word_run_len.get(i).copied().unwrap_or(1));
-            if !callback(TextLayoutEvent::BeforeChar { index: i, ch, state }) {
+            if !callback(TextLayoutEvent::BeforeChar {
+                index: i,
+                ch,
+                state,
+            }) {
                 break;
             }
             state.advance_glyph(i, &wrap_allowed_after);
@@ -331,7 +347,10 @@ impl TextSystem {
             let mut cur = world.parent_of(component);
             let mut found = None;
             while let Some(node) = cur {
-                if world.get_component_by_id_as::<TextInputComponent>(node).is_some() {
+                if world
+                    .get_component_by_id_as::<TextInputComponent>(node)
+                    .is_some()
+                {
                     found = Some(node);
                     break;
                 }
@@ -348,7 +367,11 @@ impl TextSystem {
             &word_wrap_tokens,
             font_size,
             |event| {
-                let TextLayoutEvent::BeforeChar { index: i, ch, state } = event;
+                let TextLayoutEvent::BeforeChar {
+                    index: i,
+                    ch,
+                    state,
+                } = event;
                 if ch == ' ' || ch == '\t' {
                     if !is_text_input {
                         return true;
@@ -366,7 +389,9 @@ impl TextSystem {
                     let _ = world.add_child(component, t_id);
                     let t_serialize = world.add_component(SerializeComponent::off());
                     let _ = world.add_child(t_id, t_serialize);
-                    let color = world.add_component(ColorComponent { rgba: [0.0, 0.0, 0.0, 0.0] });
+                    let color = world.add_component(ColorComponent {
+                        rgba: [0.0, 0.0, 0.0, 0.0],
+                    });
                     let _ = world.add_child(t_id, color);
                     let r_id = world.add_component(RenderableComponent::square());
                     let _ = world.add_child(color, r_id);
@@ -388,7 +413,9 @@ impl TextSystem {
                     return true;
                 }
                 let (x, y) = state.cursor_pos();
-                let t = TransformComponent::new().with_position(x, y, 0.0).with_scale(font_size, font_size, 1.0);
+                let t = TransformComponent::new()
+                    .with_position(x, y, 0.0)
+                    .with_scale(font_size, font_size, 1.0);
                 let t_id = world.add_component(t);
                 let _ = world.add_child(component, t_id);
                 let t_serialize = world.add_component(SerializeComponent::off());
@@ -473,7 +500,10 @@ impl TextSystem {
             font_size,
             |_| true,
         );
-        (state.max_col as f32 * font_size, (state.row + 1) as f32 * font_size)
+        (
+            state.max_col as f32 * font_size,
+            (state.row + 1) as f32 * font_size,
+        )
     }
     pub fn layout_position_for_index(
         text: &str,
@@ -490,14 +520,14 @@ impl TextSystem {
             word_wrap,
             word_wrap_tokens,
             font_size,
-            |event| {
-                match event {
-                    TextLayoutEvent::BeforeChar { index: i, state, .. } if i == index => {
-                        result = Some(state.cursor_pos());
-                        false
-                    }
-                    _ => true,
+            |event| match event {
+                TextLayoutEvent::BeforeChar {
+                    index: i, state, ..
+                } if i == index => {
+                    result = Some(state.cursor_pos());
+                    false
                 }
+                _ => true,
             },
         );
         result.unwrap_or_else(|| state.cursor_pos())
@@ -510,7 +540,14 @@ impl TextSystem {
         word_wrap_tokens: &[String],
         font_size: f32,
     ) -> (f32, f32) {
-        Self::layout_position_for_index(text, caret, wrap_at, word_wrap, word_wrap_tokens, font_size)
+        Self::layout_position_for_index(
+            text,
+            caret,
+            wrap_at,
+            word_wrap,
+            word_wrap_tokens,
+            font_size,
+        )
     }
 }
 fn compute_wrap_allowed_after(chars: &[char], tokens: &[String]) -> Vec<bool> {
@@ -594,15 +631,15 @@ fn uvs_for_glyph(ch: char) -> Vec<[f32; 2]> {
 mod tests {
     use super::TextSystem;
     use crate::engine::ecs::component::{
-        SerializeComponent,
-        TextComponent,
-        TextInputGlyphHitComponent,
+        SerializeComponent, TextComponent, TextInputGlyphHitComponent, TextureComponent,
         TransformComponent,
-        TextureComponent,
     };
     use crate::engine::ecs::World;
     use crate::engine::graphics::VisualWorld;
-    fn collect_descendants(world: &World, root: crate::engine::ecs::ComponentId) -> Vec<crate::engine::ecs::ComponentId> {
+    fn collect_descendants(
+        world: &World,
+        root: crate::engine::ecs::ComponentId,
+    ) -> Vec<crate::engine::ecs::ComponentId> {
         let mut stack = vec![root];
         let mut out = Vec::new();
         while let Some(node) = stack.pop() {
@@ -621,7 +658,9 @@ mod tests {
         let spawned = text_system.register_text(&mut world, &mut visuals, text_id);
         assert_eq!(spawned.len(), 1);
         let glyph_t = world
-            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(spawned[0].transform)
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(
+                spawned[0].transform,
+            )
             .expect("glyph transform");
         assert!((glyph_t.transform.scale[0] - 0.25).abs() < 1e-6);
         assert!((glyph_t.transform.scale[1] - 0.25).abs() < 1e-6);
@@ -636,7 +675,11 @@ mod tests {
         let serialize_marker = world
             .children_of(spawned[0].transform)
             .iter()
-            .find(|&&child| world.get_component_by_id_as::<SerializeComponent>(child).is_some())
+            .find(|&&child| {
+                world
+                    .get_component_by_id_as::<SerializeComponent>(child)
+                    .is_some()
+            })
             .copied()
             .expect("expected serialize marker on glyph root");
         assert!(world
@@ -671,27 +714,38 @@ mod tests {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
         let root = world.add_component(TransformComponent::new());
-        let text_input = world.add_component(crate::engine::ecs::component::TextInputComponent::new("a b"));
+        let text_input = world.add_component(
+            crate::engine::ecs::component::TextInputComponent::new("a b"),
+        );
         let text = world.add_component(TextComponent::new("a b"));
         let _ = world.add_child(root, text_input);
         let _ = world.add_child(text_input, text);
-        let rc = world.add_component(crate::engine::ecs::component::RaycastableComponent::enabled());
+        let rc =
+            world.add_component(crate::engine::ecs::component::RaycastableComponent::enabled());
         let _ = world.add_child(text, rc);
         let mut text_system = TextSystem::default();
         let spawned = text_system.register_text(&mut world, &mut visuals, text);
         assert_eq!(spawned.len(), 2);
         let mut whitespace_hit_count = 0;
         for descendant in collect_descendants(&world, text) {
-            if world.get_component_by_id_as::<TextInputGlyphHitComponent>(descendant).is_some() {
+            if world
+                .get_component_by_id_as::<TextInputGlyphHitComponent>(descendant)
+                .is_some()
+            {
                 let has_texture = world.children_of(descendant).iter().copied().any(|grand| {
-                    world.get_component_by_id_as::<TextureComponent>(grand).is_some()
+                    world
+                        .get_component_by_id_as::<TextureComponent>(grand)
+                        .is_some()
                 });
                 if !has_texture {
                     whitespace_hit_count += 1;
                 }
             }
         }
-        assert!(whitespace_hit_count >= 1, "expected at least one whitespace helper hit quad");
+        assert!(
+            whitespace_hit_count >= 1,
+            "expected at least one whitespace helper hit quad"
+        );
     }
     fn register_text_does_not_spawn_whitespace_helpers_for_plain_text() {
         let mut world = World::default();
@@ -699,21 +753,30 @@ mod tests {
         let root = world.add_component(TransformComponent::new());
         let text = world.add_component(TextComponent::new("a b"));
         let _ = world.add_child(root, text);
-        let rc = world.add_component(crate::engine::ecs::component::RaycastableComponent::enabled());
+        let rc =
+            world.add_component(crate::engine::ecs::component::RaycastableComponent::enabled());
         let _ = world.add_child(text, rc);
         let mut text_system = TextSystem::default();
         let _ = text_system.register_text(&mut world, &mut visuals, text);
         let mut whitespace_hit_found = false;
         for descendant in collect_descendants(&world, text) {
-            if world.get_component_by_id_as::<TextInputGlyphHitComponent>(descendant).is_some() {
+            if world
+                .get_component_by_id_as::<TextInputGlyphHitComponent>(descendant)
+                .is_some()
+            {
                 let has_texture = world.children_of(descendant).iter().copied().any(|grand| {
-                    world.get_component_by_id_as::<TextureComponent>(grand).is_some()
+                    world
+                        .get_component_by_id_as::<TextureComponent>(grand)
+                        .is_some()
                 });
                 if !has_texture {
                     whitespace_hit_found = true;
                 }
             }
         }
-        assert!(!whitespace_hit_found, "plain text should not spawn whitespace hit helpers");
+        assert!(
+            !whitespace_hit_found,
+            "plain text should not spawn whitespace hit helpers"
+        );
     }
 }

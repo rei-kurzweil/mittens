@@ -18,7 +18,10 @@ fn main() {
         output.errors,
     );
 
-    println!("[mms] {} intent(s) from camera-constraint.mms", output.intents.len());
+    println!(
+        "[mms] {} intent(s) from camera-constraint.mms",
+        output.intents.len()
+    );
 
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);

@@ -3,8 +3,8 @@ use std::time::{Duration, Instant};
 
 use crate::engine::ecs::{ComponentId, IntentValue, RxWorld, SignalEmitter, World};
 use crate::meow_meow::evaluator::{
-    eval_mms_fn, eval_module_source, EvalRequest, EvalResponse, HostCallKind, HostValue,
-    MeowMeowEvaluator,
+    EvalRequest, EvalResponse, HostCallKind, HostValue, MeowMeowEvaluator, eval_mms_fn,
+    eval_module_source,
 };
 use crate::meow_meow::object::{MaterializedCE, Value};
 
@@ -63,7 +63,9 @@ impl MeowMeowRunner {
             Ok(source) => Self::eval_impl(&source, Some(path), timeout),
             Err(e) => {
                 let mut output = EvalOutput::default();
-                output.errors.push(format!("cannot read file '{}': {}", path, e));
+                output
+                    .errors
+                    .push(format!("cannot read file '{}': {}", path, e));
                 output
             }
         }
@@ -147,13 +149,8 @@ impl MeowMeowRunner {
         world: &mut World,
         emit: &mut dyn SignalEmitter,
     ) -> Result<ComponentId, String> {
-        let component_expr = Self::materialize_mms_module_component(
-            module,
-            name,
-            args,
-            Some(world),
-            Some(emit),
-        )?;
+        let component_expr =
+            Self::materialize_mms_module_component(module, name, args, Some(world), Some(emit))?;
         crate::meow_meow::component_registry::spawn_tree_uninitialized(&component_expr, world, emit)
     }
 
@@ -176,7 +173,8 @@ impl MeowMeowRunner {
         world: &mut World,
         emit: &mut dyn SignalEmitter,
     ) -> Result<ComponentId, String> {
-        let component_expr = Self::materialize_mms_module_component(module, name, args, Some(world), Some(emit))?;
+        let component_expr =
+            Self::materialize_mms_module_component(module, name, args, Some(world), Some(emit))?;
         crate::meow_meow::component_registry::spawn_tree(&component_expr, parent, world, emit)
     }
 
@@ -273,7 +271,11 @@ impl MeowMeowRunner {
                             world.init_component_tree(child, emit);
                             HostValue::Null
                         }
-                        HostCallKind::Query { selector, scope, multiple } => {
+                        HostCallKind::Query {
+                            selector,
+                            scope,
+                            multiple,
+                        } => {
                             let roots: Vec<crate::engine::ecs::ComponentId> = match scope {
                                 Some(id) => vec![id],
                                 None => world
@@ -311,7 +313,11 @@ impl MeowMeowRunner {
                                 }
                             }
                         }
-                        HostCallKind::RegisterHandler { scope, signal_kind, handler } => {
+                        HostCallKind::RegisterHandler {
+                            scope,
+                            signal_kind,
+                            handler,
+                        } => {
                             rx.add_handler_closure(
                                 signal_kind,
                                 scope,
@@ -329,7 +335,11 @@ impl MeowMeowRunner {
                             );
                             HostValue::Null
                         }
-                        HostCallKind::AudioClipInstance { source, start_beat, stop_beat } => {
+                        HostCallKind::AudioClipInstance {
+                            source,
+                            start_beat,
+                            stop_beat,
+                        } => {
                             use crate::engine::ecs::component::AudioClipComponent;
                             match world.get_component_by_id_as::<AudioClipComponent>(source) {
                                 Some(src) => {
@@ -353,11 +363,15 @@ impl MeowMeowRunner {
                             }
                         }
                     };
-                    let _ = handle.requests.push(EvalRequest::HostCallResult { id, value: reply });
+                    let _ = handle
+                        .requests
+                        .push(EvalRequest::HostCallResult { id, value: reply });
                 }
                 Err(rtrb::PopError::Empty) => {
                     if Instant::now() > deadline {
-                        output.errors.push("MeowMeowRunner: timed out waiting for evaluator".into());
+                        output
+                            .errors
+                            .push("MeowMeowRunner: timed out waiting for evaluator".into());
                         break;
                     }
                     std::thread::yield_now();
@@ -403,7 +417,9 @@ impl MeowMeowRunner {
                 }
                 Err(rtrb::PopError::Empty) => {
                     if Instant::now() > deadline {
-                        output.errors.push("MeowMeowRunner: timed out waiting for evaluator".into());
+                        output
+                            .errors
+                            .push("MeowMeowRunner: timed out waiting for evaluator".into());
                         break;
                     }
                     std::thread::yield_now();

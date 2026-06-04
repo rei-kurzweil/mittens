@@ -1,15 +1,15 @@
-use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::World;
 use crate::engine::ecs::component::RaycastableComponent;
 use crate::engine::ecs::component::RenderableComponent;
 use crate::engine::ecs::system::TransformSystem;
-use crate::engine::graphics::VisualWorld;
+use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::World;
 use crate::engine::graphics::primitives::{CpuMeshHandle, TransformMatrix};
+use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
-use bvh::aabb::{AABB, Bounded};
+use bvh::aabb::{Bounded, AABB};
 use bvh::bounding_hierarchy::BHShape;
-use bvh::bvh::BVH;
 use bvh::bvh::BVHNode;
+use bvh::bvh::BVH;
 use bvh::ray::Ray;
 use bvh::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
@@ -72,8 +72,7 @@ impl BHShape for RenderableAabb {
 
 impl BvhSystem {
     pub(crate) fn renderable_is_raycastable(world: &World, renderable_cid: ComponentId) -> bool {
-        Self::find_raycastable_for_renderable(world, renderable_cid)
-            .is_some()
+        Self::find_raycastable_for_renderable(world, renderable_cid).is_some()
     }
 
     /// Return the `RaycastableComponent` governing a renderable (enabled only).
@@ -93,7 +92,10 @@ impl BvhSystem {
 
         let mut cur = renderable_cid;
         while let Some(parent) = world.parent_of(cur) {
-            if let Some(rc) = world.get_component_by_id_as::<RaycastableComponent>(parent).copied() {
+            if let Some(rc) = world
+                .get_component_by_id_as::<RaycastableComponent>(parent)
+                .copied()
+            {
                 return if rc.enable { Some(rc) } else { None };
             }
             cur = parent;

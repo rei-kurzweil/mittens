@@ -77,7 +77,10 @@ impl<'a> MeowMeowTokenizer<'a> {
                 self.idx += 1;
                 TokenKind::Semicolon
             }
-            b'+' => { self.idx += 1; TokenKind::Plus }
+            b'+' => {
+                self.idx += 1;
+                TokenKind::Plus
+            }
             b'-' => {
                 self.idx += 1;
                 if self.idx < self.bytes.len() && self.bytes[self.idx] == b'>' {
@@ -87,9 +90,18 @@ impl<'a> MeowMeowTokenizer<'a> {
                     TokenKind::Minus
                 }
             }
-            b'*' => { self.idx += 1; TokenKind::Star }
-            b'/' => { self.idx += 1; TokenKind::Slash }
-            b'%' => { self.idx += 1; TokenKind::Percent }
+            b'*' => {
+                self.idx += 1;
+                TokenKind::Star
+            }
+            b'/' => {
+                self.idx += 1;
+                TokenKind::Slash
+            }
+            b'%' => {
+                self.idx += 1;
+                TokenKind::Percent
+            }
             b'=' => {
                 self.idx += 1;
                 if self.idx < self.bytes.len() && self.bytes[self.idx] == b'=' {
@@ -172,16 +184,16 @@ impl<'a> MeowMeowTokenizer<'a> {
                         "true" => TokenKind::True,
                         "false" => TokenKind::False,
                         "null" => TokenKind::Null,
-                        "fn"       => TokenKind::Fn,
-                        "for"      => TokenKind::For,
-                        "while"    => TokenKind::While,
-                        "in"       => TokenKind::In,
-                        "break"    => TokenKind::Break,
+                        "fn" => TokenKind::Fn,
+                        "for" => TokenKind::For,
+                        "while" => TokenKind::While,
+                        "in" => TokenKind::In,
+                        "break" => TokenKind::Break,
                         "continue" => TokenKind::Continue,
-                        "export"   => TokenKind::Export,
-                        "import"   => TokenKind::Import,
-                        "from"     => TokenKind::From,
-                        "as"       => TokenKind::As,
+                        "export" => TokenKind::Export,
+                        "import" => TokenKind::Import,
+                        "from" => TokenKind::From,
+                        "as" => TokenKind::As,
                         _ => TokenKind::Ident(ident),
                     }
                 } else {
@@ -351,8 +363,8 @@ impl<'a> MeowMeowTokenizer<'a> {
             return None;
         }
         let unit = match &self.input[start..end] {
-            "gu"  => Unit::GlyphUnits,
-            "wu"  => Unit::WorldUnits,
+            "gu" => Unit::GlyphUnits,
+            "wu" => Unit::WorldUnits,
             "deg" => Unit::Degrees,
             "rad" => Unit::Radians,
             _ => return None,
@@ -374,7 +386,10 @@ impl<'a> MeowMeowTokenizer<'a> {
             return "<eof>".to_string();
         }
         let s = &self.input[self.idx..];
-        s.chars().next().map(|c| c.to_string()).unwrap_or("<invalid>".to_string())
+        s.chars()
+            .next()
+            .map(|c| c.to_string())
+            .unwrap_or("<invalid>".to_string())
     }
 }
 

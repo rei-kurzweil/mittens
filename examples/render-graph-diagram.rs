@@ -27,7 +27,10 @@ fn main() {
         eprintln!("[mms] error: {error}");
     }
     if !output.errors.is_empty() {
-        eprintln!("[mms] {} error(s) — scene may be incomplete", output.errors.len());
+        eprintln!(
+            "[mms] {} error(s) — scene may be incomplete",
+            output.errors.len()
+        );
     }
 
     println!("[mms] {} intent(s) emitted:", output.intents.len());

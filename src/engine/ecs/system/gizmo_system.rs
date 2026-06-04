@@ -1,16 +1,15 @@
 use crate::engine::ecs::component::{
     GestureCoordType, GestureCoordTypeComponent, SignalRouteUpwardComponent, TransformComponent,
-    TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis,
-    TransformGizmoComponent, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
-    TransformGizmoTranslateComponent, TransformMapRotationComponent,
-    TransformMapScaleComponent, TransformMapTranslationComponent,
+    TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
+    TransformGizmoRotateComponent, TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
+    TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
 };
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
 };
 use crate::engine::user_input::InputState;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Copy)]
 enum TransformGizmoOp {
@@ -96,7 +95,13 @@ impl TransformGizmoSystem {
 
         let name = world
             .get_component_record(target_transform)
-            .map(|n| if n.name.is_empty() { n.component_type.clone() } else { format!("{}: {}", n.component_type, n.name) })
+            .map(|n| {
+                if n.name.is_empty() {
+                    n.component_type.clone()
+                } else {
+                    format!("{}: {}", n.component_type, n.name)
+                }
+            })
             .unwrap_or_else(|| "<missing>".to_string());
 
         println!(
@@ -153,7 +158,13 @@ impl TransformGizmoSystem {
 
         let name = world
             .get_component_record(target_transform)
-            .map(|n| if n.name.is_empty() { n.component_type.clone() } else { format!("{}: {}", n.component_type, n.name) })
+            .map(|n| {
+                if n.name.is_empty() {
+                    n.component_type.clone()
+                } else {
+                    format!("{}: {}", n.component_type, n.name)
+                }
+            })
             .unwrap_or_else(|| "<missing>".to_string());
 
         println!(
@@ -420,11 +431,23 @@ impl TransformGizmoSystem {
                 if orig != routed {
                     let orig_name = world
                         .get_component_record(orig)
-                        .map(|n| if n.name.is_empty() { n.component_type.clone() } else { format!("{}: {}", n.component_type, n.name) })
+                        .map(|n| {
+                            if n.name.is_empty() {
+                                n.component_type.clone()
+                            } else {
+                                format!("{}: {}", n.component_type, n.name)
+                            }
+                        })
                         .unwrap_or_else(|| "<missing>".to_string());
                     let routed_name = world
                         .get_component_record(routed)
-                        .map(|n| if n.name.is_empty() { n.component_type.clone() } else { format!("{}: {}", n.component_type, n.name) })
+                        .map(|n| {
+                            if n.name.is_empty() {
+                                n.component_type.clone()
+                            } else {
+                                format!("{}: {}", n.component_type, n.name)
+                            }
+                        })
                         .unwrap_or_else(|| "<missing>".to_string());
                     println!(
                         "[TransformGizmoSystem] routed target_transform {:?} '{}' -> {:?} '{}'",

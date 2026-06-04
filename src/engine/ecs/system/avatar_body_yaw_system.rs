@@ -25,17 +25,18 @@ impl AvatarBodyYawSystem {
     }
 }
 
-fn tick_one(
-    id: ComponentId,
-    world: &mut World,
-    emit: &mut dyn SignalEmitter,
-    dt_sec: f32,
-) {
+fn tick_one(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter, dt_sec: f32) {
     let (hmd_id, threshold, rate, body_yaw, forward_plus_z) = {
         let Some(c) = world.get_component_by_id_as::<AvatarBodyYawComponent>(id) else {
             return;
         };
-        (c.hmd_driven_transform, c.threshold, c.rate, c.body_yaw, c.forward_plus_z)
+        (
+            c.hmd_driven_transform,
+            c.threshold,
+            c.rate,
+            c.body_yaw,
+            c.forward_plus_z,
+        )
     };
 
     let Some(hmd_id) = hmd_id else { return };
@@ -54,7 +55,11 @@ fn tick_one(
 
     let target = hmd_yaw - delta.signum() * threshold;
     let step = rate * dt_sec;
-    let new_body_yaw = lerp_angle(body_yaw, target, step.min(delta.abs()) / delta.abs().max(1e-9));
+    let new_body_yaw = lerp_angle(
+        body_yaw,
+        target,
+        step.min(delta.abs()) / delta.abs().max(1e-9),
+    );
 
     if (new_body_yaw - body_yaw).abs() < 1e-6 {
         return;
@@ -65,11 +70,11 @@ fn tick_one(
     }
 
     // Find the TransformComponent child (model_root).
-    let model_root = world
-        .children_of(id)
-        .iter()
-        .copied()
-        .find(|&ch| world.get_component_by_id_as::<TransformComponent>(ch).is_some());
+    let model_root = world.children_of(id).iter().copied().find(|&ch| {
+        world
+            .get_component_by_id_as::<TransformComponent>(ch)
+            .is_some()
+    });
     let Some(model_root) = model_root else { return };
 
     let (translation, scale) = {

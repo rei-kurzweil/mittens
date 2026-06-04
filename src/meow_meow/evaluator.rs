@@ -3,15 +3,15 @@ use std::thread::{self, JoinHandle};
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
-use crate::engine::ecs::component::AnimationState;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::IntentValue;
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::SignalKind;
 use crate::engine::ecs::World;
+use crate::engine::ecs::component::AnimationState;
 use crate::meow_meow::ast::{
-    BinOpKind, CallExpression, ComponentExpression, ElseBranch,
-    Expression, IfStatement, ImportItem, Statement, UnaryOpKind,
+    BinOpKind, CallExpression, ComponentExpression, ElseBranch, Expression, IfStatement,
+    ImportItem, Statement, UnaryOpKind,
 };
 use crate::meow_meow::object::{CeChild, FrameKind, MaterializedCE, ObjectWorld, Value};
 use crate::meow_meow::parser::{MeowMeowParser, ParseError};
@@ -27,12 +27,20 @@ use crate::meow_meow::transform::{EmitLiftTransform, QueryDesugarTransform};
 pub enum EvalRequest {
     /// Parse and evaluate a script. Emitted `SpawnComponentTree` intents come back
     /// as `EvalResponse::Intent` messages.
-    EvalScript { source: String, source_path: Option<String> },
+    EvalScript {
+        source: String,
+        source_path: Option<String>,
+    },
     /// Parse only — returns a debug AST string (used in tests / tooling).
-    ParseScript { source: String },
+    ParseScript {
+        source: String,
+    },
     /// Reply to a pending `EvalResponse::HostCall`. The `id` must match the
     /// correlation id from the HostCall that is being answered.
-    HostCallResult { id: u32, value: HostValue },
+    HostCallResult {
+        id: u32,
+        value: HostValue,
+    },
     Shutdown,
 }
 
@@ -41,14 +49,21 @@ pub enum EvalResponse {
     /// A `SpawnComponentTree` (or other) intent ready to be pushed into the engine.
     Intent(IntentValue),
     /// Parse-only debug output (from `ParseScript`).
-    ParsedOk { debug_ast: String },
-    Error { message: String },
+    ParsedOk {
+        debug_ast: String,
+    },
+    Error {
+        message: String,
+    },
     ShutdownAck,
     /// The evaluator needs the host to perform a side-effecting operation and
     /// return a result before evaluation can continue. The host must push a
     /// matching `EvalRequest::HostCallResult { id, value }` to unblock the
     /// evaluator thread.
-    HostCall { id: u32, kind: HostCallKind },
+    HostCall {
+        id: u32,
+        kind: HostCallKind,
+    },
 }
 
 /// Operations the evaluator can request from the host.
@@ -161,7 +176,10 @@ fn evaluator_thread(requests: Consumer<EvalRequest>, responses: Producer<EvalRes
         }
 
         match ch.requests.pop() {
-            Ok(EvalRequest::EvalScript { source, source_path }) => {
+            Ok(EvalRequest::EvalScript {
+                source,
+                source_path,
+            }) => {
                 eval_script(&source, source_path.as_deref(), &mut ch);
             }
             Ok(EvalRequest::ParseScript { source }) => {
@@ -200,12 +218,21 @@ fn host_call(
     responses: &mut Producer<EvalResponse>,
     shutdown_requested: &mut bool,
 ) -> Option<HostValue> {
-    while responses.push(EvalResponse::HostCall { id, kind: kind.clone() }).is_err() {
+    while responses
+        .push(EvalResponse::HostCall {
+            id,
+            kind: kind.clone(),
+        })
+        .is_err()
+    {
         std::thread::yield_now();
     }
     loop {
         match requests.pop() {
-            Ok(EvalRequest::HostCallResult { id: reply_id, value }) if reply_id == id => {
+            Ok(EvalRequest::HostCallResult {
+                id: reply_id,
+                value,
+            }) if reply_id == id => {
                 return match value {
                     HostValue::Null => None,
                     v => Some(v),
@@ -232,7 +259,6 @@ fn host_call(
 // ---------------------------------------------------------------------------
 // Script evaluation
 // ---------------------------------------------------------------------------
-
 
 /// Shared mutable context threaded through evaluation.
 ///
@@ -347,7 +373,11 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
     }
 
     for intent in emits {
-        while ch.responses.push(EvalResponse::Intent(intent.clone())).is_err() {
+        while ch
+            .responses
+            .push(EvalResponse::Intent(intent.clone()))
+            .is_err()
+        {
             std::thread::yield_now();
         }
     }
@@ -404,10 +434,7 @@ enum StmtEffect {
 ///
 /// Frame management is the *caller*'s responsibility: this function does not
 /// push or pop. Function calls, loops, if-bodies, etc. wrap the call.
-fn eval_block_stmts(
-    stmts: &[Statement],
-    ctx: &mut EvalContext<'_>,
-) -> Result<StmtEffect, String> {
+fn eval_block_stmts(stmts: &[Statement], ctx: &mut EvalContext<'_>) -> Result<StmtEffect, String> {
     for stmt in stmts {
         let effect = eval_stmt(stmt, ctx)?;
         flush_live_statement_emits(ctx);
@@ -421,10 +448,7 @@ fn eval_block_stmts(
     Ok(StmtEffect::None)
 }
 
-fn eval_stmt(
-    stmt: &Statement,
-    ctx: &mut EvalContext<'_>,
-) -> Result<StmtEffect, String> {
+fn eval_stmt(stmt: &Statement, ctx: &mut EvalContext<'_>) -> Result<StmtEffect, String> {
     match stmt {
         Statement::Assignment(a) => {
             let val = eval_expr(&a.value, ctx)?;
@@ -469,7 +493,11 @@ fn eval_stmt(
         }
         Statement::Break => Ok(StmtEffect::Break),
         Statement::Continue => Ok(StmtEffect::Continue),
-        Statement::ForIn { binding, iterable, body } => {
+        Statement::ForIn {
+            binding,
+            iterable,
+            body,
+        } => {
             let items = match eval_expr(iterable, ctx)? {
                 Value::Array(a) => a,
                 other => return Err(format!("for/in: expected array, got {:?}", other)),
@@ -541,10 +569,8 @@ fn eval_stmt(
                         let ce = sequence.get(*index).ok_or_else(|| {
                             format!("import: index {} out of range in '{}'", index, path)
                         })?;
-                        ctx.object_world.bind(
-                            alias.0.clone(),
-                            Value::ComponentExpr(Box::new(ce.clone())),
-                        );
+                        ctx.object_world
+                            .bind(alias.0.clone(), Value::ComponentExpr(Box::new(ce.clone())));
                     }
                 }
             }
@@ -553,10 +579,7 @@ fn eval_stmt(
     }
 }
 
-fn maybe_register_live_component_value(
-    val: Value,
-    ctx: &mut EvalContext<'_>,
-) -> Value {
+fn maybe_register_live_component_value(val: Value, ctx: &mut EvalContext<'_>) -> Value {
     // In live mode, binding or reassigning a CE should produce a live handle
     // rather than leave a dead ComponentExpr in scope.
     match (val, ctx.channels.as_mut()) {
@@ -571,10 +594,7 @@ fn maybe_register_live_component_value(
     }
 }
 
-fn eval_expr_stmt(
-    expr: &Expression,
-    ctx: &mut EvalContext<'_>,
-) -> Result<(), String> {
+fn eval_expr_stmt(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<(), String> {
     // Special case: emit(expr) — produced by EmitLiftTransform or written explicitly.
     if let Expression::Call(call) = expr {
         if matches!(call.callee.as_ref(), Expression::Identifier(id) if id.0 == "emit") {
@@ -592,10 +612,16 @@ fn eval_expr_stmt(
                 && !ctx.object_world.has(&callee_id.0)
                 && !is_builtin_fn(&callee_id.0)
             {
-                let args: Vec<Value> = call.args.iter()
+                let args: Vec<Value> = call
+                    .args
+                    .iter()
                     .map(|a| eval_expr(a, ctx))
                     .collect::<Result<_, _>>()?;
-                ctx.ce_builder.as_mut().unwrap().calls.push((callee_id.0.clone(), args));
+                ctx.ce_builder
+                    .as_mut()
+                    .unwrap()
+                    .calls
+                    .push((callee_id.0.clone(), args));
                 return Ok(());
             }
         }
@@ -608,14 +634,21 @@ fn eval_expr_stmt(
             // String positionals captured in CE body.
             Value::String(_) => ctx.ce_builder.as_mut().unwrap().positionals.push(val),
             // Fresh CE children captured in CE body.
-            Value::ComponentExpr(ce) => ctx.ce_builder.as_mut().unwrap()
-                .children.push(CeChild::Spawn(*ce)),
+            Value::ComponentExpr(ce) => ctx
+                .ce_builder
+                .as_mut()
+                .unwrap()
+                .children
+                .push(CeChild::Spawn(*ce)),
             // Reference to a previously Registered live component — splice
             // the detached subtree as a child of the parent CE rather than
             // discarding the value or re-spawning it.
             Value::ComponentObject { id, .. } => {
-                ctx.ce_builder.as_mut().unwrap()
-                    .children.push(CeChild::Attach(id));
+                ctx.ce_builder
+                    .as_mut()
+                    .unwrap()
+                    .children
+                    .push(CeChild::Attach(id));
             }
             // Other values inside a CE body are discarded (no-op expression statements).
             _ => {}
@@ -629,13 +662,19 @@ fn eval_expr_stmt(
 fn push_component_emit(val: Value, ctx: &mut EvalContext<'_>) {
     match val {
         Value::ComponentExpr(ce) => {
-            ctx.emits.push(IntentValue::SpawnComponentTree { root: ce, parent: None });
+            ctx.emits.push(IntentValue::SpawnComponentTree {
+                root: ce,
+                parent: None,
+            });
         }
         // Bare top-level reference to a previously Registered ComponentObject —
         // attach as a world root and run the deferred init walk.
         Value::ComponentObject { id, .. } => {
             if let Some(ch) = ctx.channels.as_mut() {
-                ch.call(HostCallKind::Attach { parent: None, child: id });
+                ch.call(HostCallKind::Attach {
+                    parent: None,
+                    child: id,
+                });
             }
         }
         _ => {}
@@ -649,10 +688,7 @@ fn is_builtin_fn(name: &str) -> bool {
     )
 }
 
-fn eval_if(
-    if_stmt: &IfStatement,
-    ctx: &mut EvalContext<'_>,
-) -> Result<StmtEffect, String> {
+fn eval_if(if_stmt: &IfStatement, ctx: &mut EvalContext<'_>) -> Result<StmtEffect, String> {
     let cond = eval_expr(&if_stmt.condition, ctx)?;
     let branch = if is_truthy(&cond) {
         Some(&if_stmt.then_branch)
@@ -696,7 +732,9 @@ fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value,
     let mut ctor_args: Vec<Value> = vec![];
     let mut extra_ctor_calls: Vec<(String, Vec<Value>)> = vec![];
     for (i, ctor) in ce.constructors.iter().enumerate() {
-        let args: Vec<Value> = ctor.args.iter()
+        let args: Vec<Value> = ctor
+            .args
+            .iter()
             .map(|a| eval_expr(a, ctx))
             .collect::<Result<_, _>>()?;
         if i == 0 {
@@ -744,15 +782,15 @@ fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value,
     Ok(Value::ComponentExpr(Box::new(mce)))
 }
 
-fn eval_expr(
-    expr: &Expression,
-    ctx: &mut EvalContext<'_>,
-) -> Result<Value, String> {
+fn eval_expr(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<Value, String> {
     match expr {
         Expression::Null => Ok(Value::Null),
         Expression::Bool(b) => Ok(Value::Bool(*b)),
         Expression::Number(n) => Ok(Value::Number(*n)),
-        Expression::Dimension(n, unit) => Ok(Value::Dimension { value: *n, unit: *unit }),
+        Expression::Dimension(n, unit) => Ok(Value::Dimension {
+            value: *n,
+            unit: *unit,
+        }),
         Expression::String(s) => Ok(Value::String(s.clone())),
         Expression::Array(items) => {
             let vals = items
@@ -797,18 +835,27 @@ fn eval_expr(
     }
 }
 
-fn eval_call(
-    call: &CallExpression,
-    ctx: &mut EvalContext<'_>,
-) -> Result<Value, String> {
+fn eval_call(call: &CallExpression, ctx: &mut EvalContext<'_>) -> Result<Value, String> {
     // Method call: `obj.method(args)` — callee is BinaryOp(Dot, lhs, rhs).
-    if let Expression::BinaryOp { op: BinOpKind::Dot, lhs, rhs } = call.callee.as_ref() {
+    if let Expression::BinaryOp {
+        op: BinOpKind::Dot,
+        lhs,
+        rhs,
+    } = call.callee.as_ref()
+    {
         let receiver = eval_expr(lhs, ctx)?;
         let method_name = match rhs.as_ref() {
             Expression::Identifier(id) => id.0.clone(),
-            other => return Err(format!("method call: RHS of '.' must be an identifier, got {:?}", other)),
+            other => {
+                return Err(format!(
+                    "method call: RHS of '.' must be an identifier, got {:?}",
+                    other
+                ));
+            }
         };
-        let args: Vec<Value> = call.args.iter()
+        let args: Vec<Value> = call
+            .args
+            .iter()
             .map(|a| eval_expr(a, ctx))
             .collect::<Result<_, _>>()?;
         return eval_method_call(receiver, &method_name, args, ctx);
@@ -821,7 +868,11 @@ fn eval_call(
 
     // Built-in: print(value)
     if callee_name == "print" {
-        let arg = call.args.first().map(|a| eval_expr(a, ctx)).transpose()?
+        let arg = call
+            .args
+            .first()
+            .map(|a| eval_expr(a, ctx))
+            .transpose()?
             .unwrap_or(Value::Null);
         println!("[mms] {}", value_display(&arg));
         return Ok(Value::Null);
@@ -829,10 +880,18 @@ fn eval_call(
 
     // Built-in: assert(cond, msg)
     if callee_name == "assert" {
-        let cond = call.args.first().map(|a| eval_expr(a, ctx)).transpose()?
+        let cond = call
+            .args
+            .first()
+            .map(|a| eval_expr(a, ctx))
+            .transpose()?
             .unwrap_or(Value::Null);
         if !is_truthy(&cond) {
-            let msg = call.args.get(1).map(|a| eval_expr(a, ctx)).transpose()?
+            let msg = call
+                .args
+                .get(1)
+                .map(|a| eval_expr(a, ctx))
+                .transpose()?
                 .unwrap_or(Value::String("assertion failed".into()));
             return Err(format!("assert: {}", value_display(&msg)));
         }
@@ -862,21 +921,29 @@ fn eval_call(
     //           query_all(selector) / query_all(selector, handler)
     if callee_name == "query" || callee_name == "query_all" {
         let multiple = callee_name == "query_all";
-        let args: Vec<Value> = call.args.iter()
+        let args: Vec<Value> = call
+            .args
+            .iter()
             .map(|a| eval_expr(a, ctx))
             .collect::<Result<_, _>>()?;
         let selector = match args.first() {
             Some(Value::String(s)) => s.clone(),
-            other => return Err(format!(
-                "{}(): arg 0 must be a string selector, got {:?}", callee_name, other
-            )),
+            other => {
+                return Err(format!(
+                    "{}(): arg 0 must be a string selector, got {:?}",
+                    callee_name, other
+                ));
+            }
         };
         let handler = match args.get(1) {
             Some(f @ Value::Function { .. }) => Some(f.clone()),
             None => None,
-            other => return Err(format!(
-                "{}(): arg 1 (optional) must be a function, got {:?}", callee_name, other
-            )),
+            other => {
+                return Err(format!(
+                    "{}(): arg 1 (optional) must be a function, got {:?}",
+                    callee_name, other
+                ));
+            }
         };
         let result = run_world_query(selector, None, multiple, ctx)?;
         return dispatch_query_result(result, handler, multiple, ctx);
@@ -884,23 +951,39 @@ fn eval_call(
 
     // Built-in: on(component_object, "SignalKind", fn(event) { ... })
     if callee_name == "on" {
-        let args: Vec<Value> = call.args.iter()
+        let args: Vec<Value> = call
+            .args
+            .iter()
             .map(|a| eval_expr(a, ctx))
             .collect::<Result<_, _>>()?;
         let scope = match args.get(0) {
             Some(Value::ComponentObject { id, .. }) => *id,
-            other => return Err(format!("on(): arg 0 must be a ComponentObject, got {:?}", other)),
+            other => {
+                return Err(format!(
+                    "on(): arg 0 must be a ComponentObject, got {:?}",
+                    other
+                ));
+            }
         };
         let signal_kind = match args.get(1) {
             Some(Value::String(s)) => parse_signal_kind(s)?,
-            other => return Err(format!("on(): arg 1 must be a signal kind string, got {:?}", other)),
+            other => {
+                return Err(format!(
+                    "on(): arg 1 must be a signal kind string, got {:?}",
+                    other
+                ));
+            }
         };
         let handler = match args.get(2) {
             Some(f @ Value::Function { .. }) => f.clone(),
             other => return Err(format!("on(): arg 2 must be a function, got {:?}", other)),
         };
         if let Some(ch) = ctx.channels.as_mut() {
-            ch.call(HostCallKind::RegisterHandler { scope, signal_kind, handler });
+            ch.call(HostCallKind::RegisterHandler {
+                scope,
+                signal_kind,
+                handler,
+            });
         }
         return Ok(Value::Null);
     }
@@ -911,7 +994,11 @@ fn eval_call(
     };
 
     match callee_val {
-        Value::Function { params, body, captured_env } => {
+        Value::Function {
+            params,
+            body,
+            captured_env,
+        } => {
             let args: Vec<Value> = call
                 .args
                 .iter()
@@ -959,7 +1046,11 @@ fn run_world_query(
     ctx: &mut EvalContext<'_>,
 ) -> Result<Vec<Value>, String> {
     if let Some(ch) = ctx.channels.as_mut() {
-        let reply = ch.call(HostCallKind::Query { selector, scope, multiple });
+        let reply = ch.call(HostCallKind::Query {
+            selector,
+            scope,
+            multiple,
+        });
         let out = match reply {
             None => Vec::new(),
             Some(HostValue::Component { id, component_type }) => {
@@ -970,9 +1061,7 @@ fn run_world_query(
                 .map(|(id, component_type)| Value::ComponentObject { id, component_type })
                 .collect(),
             Some(other) => {
-                return Err(format!(
-                    "query: unexpected HostValue reply: {:?}", other
-                ));
+                return Err(format!("query: unexpected HostValue reply: {:?}", other));
             }
         };
         return Ok(out);
@@ -1006,10 +1095,12 @@ fn run_world_query(
         all_ids
             .into_iter()
             .filter_map(|id| {
-                world.component_name(id).map(|component_type| Value::ComponentObject {
-                    id,
-                    component_type: component_type.to_string(),
-                })
+                world
+                    .component_name(id)
+                    .map(|component_type| Value::ComponentObject {
+                        id,
+                        component_type: component_type.to_string(),
+                    })
             })
             .collect()
     } else {
@@ -1065,7 +1156,12 @@ fn eval_user_fn(
     args: Vec<Value>,
     ctx: &mut EvalContext<'_>,
 ) -> Result<Value, String> {
-    let Value::Function { params, body, captured_env } = handler else {
+    let Value::Function {
+        params,
+        body,
+        captured_env,
+    } = handler
+    else {
         return Err(format!("expected function, got {:?}", handler));
     };
     ctx.object_world.push_function_frame(captured_env.clone());
@@ -1101,23 +1197,32 @@ fn eval_method_call(
     ctx: &mut EvalContext<'_>,
 ) -> Result<Value, String> {
     match receiver {
-        Value::ComponentObject { id, ref component_type } => {
+        Value::ComponentObject {
+            id,
+            ref component_type,
+        } => {
             // Subtree query — `comp.query("sel")` / `comp.query_all("sel")`.
             // Also accepts an optional handler arg (same shape as the free builtins).
             if method == "query" || method == "query_all" {
                 let multiple = method == "query_all";
                 let selector = match args.first() {
                     Some(Value::String(s)) => s.clone(),
-                    other => return Err(format!(
-                        "{}(): arg 0 must be a string selector, got {:?}", method, other
-                    )),
+                    other => {
+                        return Err(format!(
+                            "{}(): arg 0 must be a string selector, got {:?}",
+                            method, other
+                        ));
+                    }
                 };
                 let handler = match args.get(1) {
                     Some(f @ Value::Function { .. }) => Some(f.clone()),
                     None => None,
-                    other => return Err(format!(
-                        "{}(): arg 1 (optional) must be a function, got {:?}", method, other
-                    )),
+                    other => {
+                        return Err(format!(
+                            "{}(): arg 1 (optional) must be a function, got {:?}",
+                            method, other
+                        ));
+                    }
                 };
                 let result = run_world_query(selector, Some(id), multiple, ctx)?;
                 return dispatch_query_result(result, handler, multiple, ctx);
@@ -1129,17 +1234,26 @@ fn eval_method_call(
                     if matches!(
                         component_type.as_str(),
                         "A" | "Animation" | "AnimationComponent" | "animation"
-                    ) => Some(AnimationState::Playing),
+                    ) =>
+                {
+                    Some(AnimationState::Playing)
+                }
                 "loop_anim"
                     if matches!(
                         component_type.as_str(),
                         "A" | "Animation" | "AnimationComponent" | "animation"
-                    ) => Some(AnimationState::Looping),
+                    ) =>
+                {
+                    Some(AnimationState::Looping)
+                }
                 "pause"
                     if matches!(
                         component_type.as_str(),
                         "A" | "Animation" | "AnimationComponent" | "animation"
-                    ) => Some(AnimationState::Paused),
+                    ) =>
+                {
+                    Some(AnimationState::Paused)
+                }
                 _ => None,
             };
             if let Some(state) = anim_state {
@@ -1151,8 +1265,10 @@ fn eval_method_call(
             }
 
             // Layout getter: layout.available_width() → current width as Number.
-            if matches!(component_type.as_str(), "layout" | "LayoutRoot" | "LayoutComponent")
-                && method == "available_width"
+            if matches!(
+                component_type.as_str(),
+                "layout" | "LayoutRoot" | "LayoutComponent"
+            ) && method == "available_width"
             {
                 use crate::engine::ecs::system::layout::measure::layout_root_available_bounds;
                 let Some(world) = ctx.host_world else {
@@ -1160,22 +1276,30 @@ fn eval_method_call(
                 };
                 let world = unsafe { &mut *world };
                 let (w, _, _) = layout_root_available_bounds(world, id);
-                if world.get_component_by_id_as::<crate::engine::ecs::component::LayoutComponent>(id).is_none() {
+                if world
+                    .get_component_by_id_as::<crate::engine::ecs::component::LayoutComponent>(id)
+                    .is_none()
+                {
                     return Err("available_width(): not a LayoutComponent".into());
                 }
                 let w = w as f64;
                 return Ok(Value::Number(w));
             }
 
-            if matches!(component_type.as_str(), "layout" | "LayoutRoot" | "LayoutComponent")
-                && method == "available_height"
+            if matches!(
+                component_type.as_str(),
+                "layout" | "LayoutRoot" | "LayoutComponent"
+            ) && method == "available_height"
             {
                 use crate::engine::ecs::system::layout::measure::layout_root_available_bounds;
                 let Some(world) = ctx.host_world else {
                     return Err("available_height(): no host world".into());
                 };
                 let world = unsafe { &mut *world };
-                if world.get_component_by_id_as::<crate::engine::ecs::component::LayoutComponent>(id).is_none() {
+                if world
+                    .get_component_by_id_as::<crate::engine::ecs::component::LayoutComponent>(id)
+                    .is_none()
+                {
                     return Err("available_height(): not a LayoutComponent".into());
                 }
                 let (_, h, _) = layout_root_available_bounds(world, id);
@@ -1186,23 +1310,41 @@ fn eval_method_call(
             }
 
             // Layout mutation: layout.set_available_width(N).
-            if matches!(component_type.as_str(), "layout" | "LayoutRoot" | "LayoutComponent")
-                && method == "set_available_width"
+            if matches!(
+                component_type.as_str(),
+                "layout" | "LayoutRoot" | "LayoutComponent"
+            ) && method == "set_available_width"
             {
                 use crate::engine::ecs::component::style::SizeDimension;
                 use crate::meow_meow::token::Unit;
 
                 let width = match args.first() {
                     Some(Value::Number(n)) => SizeDimension::GlyphUnits(*n as f32),
-                    Some(Value::Dimension { value, unit: Unit::GlyphUnits }) => SizeDimension::GlyphUnits(*value as f32),
-                    Some(Value::Dimension { value, unit: Unit::WorldUnits }) => SizeDimension::WorldUnits(*value as f32),
-                    Some(Value::Dimension { unit, .. }) => return Err(format!(
-                        "set_available_width: expected gu or wu dimension, got {:?}", unit
-                    )),
-                    Some(other) => return Err(format!(
-                        "set_available_width: expected number or dimension argument, got {:?}", other
-                    )),
-                    None => return Err("set_available_width: missing number or dimension argument".into()),
+                    Some(Value::Dimension {
+                        value,
+                        unit: Unit::GlyphUnits,
+                    }) => SizeDimension::GlyphUnits(*value as f32),
+                    Some(Value::Dimension {
+                        value,
+                        unit: Unit::WorldUnits,
+                    }) => SizeDimension::WorldUnits(*value as f32),
+                    Some(Value::Dimension { unit, .. }) => {
+                        return Err(format!(
+                            "set_available_width: expected gu or wu dimension, got {:?}",
+                            unit
+                        ));
+                    }
+                    Some(other) => {
+                        return Err(format!(
+                            "set_available_width: expected number or dimension argument, got {:?}",
+                            other
+                        ));
+                    }
+                    None => {
+                        return Err(
+                            "set_available_width: missing number or dimension argument".into()
+                        );
+                    }
                 };
                 ctx.emits.push(IntentValue::SetLayoutAvailableWidth {
                     component_ids: vec![id],
@@ -1211,23 +1353,41 @@ fn eval_method_call(
                 return Ok(Value::Null);
             }
 
-            if matches!(component_type.as_str(), "layout" | "LayoutRoot" | "LayoutComponent")
-                && method == "set_available_height"
+            if matches!(
+                component_type.as_str(),
+                "layout" | "LayoutRoot" | "LayoutComponent"
+            ) && method == "set_available_height"
             {
                 use crate::engine::ecs::component::style::SizeDimension;
                 use crate::meow_meow::token::Unit;
 
                 let height = match args.first() {
                     Some(Value::Number(n)) => SizeDimension::GlyphUnits(*n as f32),
-                    Some(Value::Dimension { value, unit: Unit::GlyphUnits }) => SizeDimension::GlyphUnits(*value as f32),
-                    Some(Value::Dimension { value, unit: Unit::WorldUnits }) => SizeDimension::WorldUnits(*value as f32),
-                    Some(Value::Dimension { unit, .. }) => return Err(format!(
-                        "set_available_height: expected gu or wu dimension, got {:?}", unit
-                    )),
-                    Some(other) => return Err(format!(
-                        "set_available_height: expected number or dimension argument, got {:?}", other
-                    )),
-                    None => return Err("set_available_height: missing number or dimension argument".into()),
+                    Some(Value::Dimension {
+                        value,
+                        unit: Unit::GlyphUnits,
+                    }) => SizeDimension::GlyphUnits(*value as f32),
+                    Some(Value::Dimension {
+                        value,
+                        unit: Unit::WorldUnits,
+                    }) => SizeDimension::WorldUnits(*value as f32),
+                    Some(Value::Dimension { unit, .. }) => {
+                        return Err(format!(
+                            "set_available_height: expected gu or wu dimension, got {:?}",
+                            unit
+                        ));
+                    }
+                    Some(other) => {
+                        return Err(format!(
+                            "set_available_height: expected number or dimension argument, got {:?}",
+                            other
+                        ));
+                    }
+                    None => {
+                        return Err(
+                            "set_available_height: missing number or dimension argument".into()
+                        );
+                    }
                 };
                 ctx.emits.push(IntentValue::SetLayoutAvailableHeight {
                     component_ids: vec![id],
@@ -1237,17 +1397,24 @@ fn eval_method_call(
             }
 
             // Layout viz toggle: layout.set_inspect(bool) / .enable_inspect() / .disable_inspect().
-            if matches!(component_type.as_str(), "layout" | "LayoutRoot" | "LayoutComponent")
-                && matches!(method, "set_inspect" | "enable_inspect" | "disable_inspect")
+            if matches!(
+                component_type.as_str(),
+                "layout" | "LayoutRoot" | "LayoutComponent"
+            ) && matches!(method, "set_inspect" | "enable_inspect" | "disable_inspect")
             {
                 let enabled = match (method, args.first()) {
                     ("enable_inspect", _) => true,
                     ("disable_inspect", _) => false,
                     ("set_inspect", Some(Value::Bool(b))) => *b,
-                    ("set_inspect", Some(other)) => return Err(format!(
-                        "set_inspect: expected bool argument, got {:?}", other
-                    )),
-                    ("set_inspect", None) => return Err("set_inspect: missing bool argument".into()),
+                    ("set_inspect", Some(other)) => {
+                        return Err(format!(
+                            "set_inspect: expected bool argument, got {:?}",
+                            other
+                        ));
+                    }
+                    ("set_inspect", None) => {
+                        return Err("set_inspect: missing bool argument".into());
+                    }
                     _ => unreachable!(),
                 };
                 ctx.emits.push(IntentValue::SetLayoutInspect {
@@ -1261,14 +1428,16 @@ fn eval_method_call(
             if matches!(
                 component_type.as_str(),
                 "Text" | "TXT" | "TextComponent" | "text"
-            )
-                && method == "set_text"
+            ) && method == "set_text"
             {
                 let text = match args.first() {
                     Some(Value::String(s)) => s.clone(),
-                    Some(other) => return Err(format!(
-                        "set_text: expected string argument, got {:?}", other
-                    )),
+                    Some(other) => {
+                        return Err(format!(
+                            "set_text: expected string argument, got {:?}",
+                            other
+                        ));
+                    }
                     None => return Err("set_text: missing string argument".into()),
                 };
                 ctx.emits.push(IntentValue::SetText {
@@ -1281,14 +1450,16 @@ fn eval_method_call(
             if matches!(
                 component_type.as_str(),
                 "Text" | "TXT" | "TextComponent" | "text"
-            )
-                && method == "set_font_size"
+            ) && method == "set_font_size"
             {
                 let font_size = match args.first() {
                     Some(Value::Number(n)) => *n as f32,
-                    Some(other) => return Err(format!(
-                        "set_font_size: expected number argument, got {:?}", other
-                    )),
+                    Some(other) => {
+                        return Err(format!(
+                            "set_font_size: expected number argument, got {:?}",
+                            other
+                        ));
+                    }
                     None => return Err("set_font_size: missing number argument".into()),
                 };
                 let Some(world) = ctx.host_world else {
@@ -1299,7 +1470,9 @@ fn eval_method_call(
                     .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(id)
                     .map(|t| t.text.clone())
                     .ok_or_else(|| "set_font_size(): not a TextComponent".to_string())?;
-                if let Some(t) = world.get_component_by_id_as_mut::<crate::engine::ecs::component::TextComponent>(id) {
+                if let Some(t) = world
+                    .get_component_by_id_as_mut::<crate::engine::ecs::component::TextComponent>(id)
+                {
                     t.set_font_size(font_size);
                 }
                 ctx.emits.push(IntentValue::SetText {
@@ -1323,18 +1496,22 @@ fn eval_method_call(
                 let start_beat = match args.first() {
                     Some(Value::Number(n)) => Some(*n),
                     Some(Value::Null) | None => None,
-                    Some(other) => return Err(format!(
-                        "instance(): start_beat must be a number, got {:?}",
-                        other
-                    )),
+                    Some(other) => {
+                        return Err(format!(
+                            "instance(): start_beat must be a number, got {:?}",
+                            other
+                        ));
+                    }
                 };
                 let stop_beat = match args.get(1) {
                     Some(Value::Number(n)) => Some(*n),
                     Some(Value::Null) | None => None,
-                    Some(other) => return Err(format!(
-                        "instance(): stop_beat must be a number, got {:?}",
-                        other
-                    )),
+                    Some(other) => {
+                        return Err(format!(
+                            "instance(): stop_beat must be a number, got {:?}",
+                            other
+                        ));
+                    }
                 };
 
                 let Some(ch) = ctx.channels.as_mut() else {
@@ -1354,9 +1531,15 @@ fn eval_method_call(
                 });
             }
 
-            Err(format!("no method '{}' on component type '{}'", method, component_type))
+            Err(format!(
+                "no method '{}' on component type '{}'",
+                method, component_type
+            ))
         }
-        other => Err(format!("method call '{}': receiver is not a ComponentObject, got {:?}", method, other)),
+        other => Err(format!(
+            "method call '{}': receiver is not a ComponentObject, got {:?}",
+            method, other
+        )),
     }
 }
 
@@ -1387,13 +1570,19 @@ fn eval_binop(
         BinOpKind::Query => {
             // QueryDesugarTransform rewrites all `->` nodes into query()/query_all() calls
             // before eval runs. This arm is only reached if the transform missed one.
-            return Err("query operator '->' was not desugared by QueryDesugarTransform".to_string());
+            return Err(
+                "query operator '->' was not desugared by QueryDesugarTransform".to_string(),
+            );
         }
         BinOpKind::Pipe => {
             let lhs_val = eval_expr(lhs, ctx)?;
             let rhs_val = eval_expr(rhs, ctx)?;
             match rhs_val {
-                Value::Function { params, body, captured_env } => {
+                Value::Function {
+                    params,
+                    body,
+                    captured_env,
+                } => {
                     ctx.object_world.push_function_frame(captured_env);
                     if let Some(param) = params.first() {
                         ctx.object_world.bind(param.clone(), lhs_val);
@@ -1445,7 +1634,9 @@ fn eval_binop(
         BinOpKind::Mul => match (l, r) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a * b)),
             (Value::Dimension { value, unit }, Value::Number(n))
-            | (Value::Number(n), Value::Dimension { value, unit }) => dimension_scale(value, unit, n),
+            | (Value::Number(n), Value::Dimension { value, unit }) => {
+                dimension_scale(value, unit, n)
+            }
             (l, r) => Err(format!("type error: cannot multiply {:?} and {:?}", l, r)),
         },
         BinOpKind::Div => match (l, r) {
@@ -1467,13 +1658,15 @@ fn eval_binop(
             (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a % b)),
             (l, r) => Err(format!("type error: cannot rem {:?} by {:?}", l, r)),
         },
-        BinOpKind::Eq    => Ok(Value::Bool(values_equal(&l, &r))),
+        BinOpKind::Eq => Ok(Value::Bool(values_equal(&l, &r))),
         BinOpKind::NotEq => Ok(Value::Bool(!values_equal(&l, &r))),
-        BinOpKind::Lt    => num_cmp(l, r, |a, b| a < b),
-        BinOpKind::Gt    => num_cmp(l, r, |a, b| a > b),
-        BinOpKind::LtEq  => num_cmp(l, r, |a, b| a <= b),
-        BinOpKind::GtEq  => num_cmp(l, r, |a, b| a >= b),
-        BinOpKind::And | BinOpKind::Or | BinOpKind::Pipe | BinOpKind::Query => unreachable!("handled above"),
+        BinOpKind::Lt => num_cmp(l, r, |a, b| a < b),
+        BinOpKind::Gt => num_cmp(l, r, |a, b| a > b),
+        BinOpKind::LtEq => num_cmp(l, r, |a, b| a <= b),
+        BinOpKind::GtEq => num_cmp(l, r, |a, b| a >= b),
+        BinOpKind::And | BinOpKind::Or | BinOpKind::Pipe | BinOpKind::Query => {
+            unreachable!("handled above")
+        }
         BinOpKind::Dot => Err("'.' must be used as part of a method call: obj.method(args)".into()),
     }
 }
@@ -1487,7 +1680,10 @@ fn eval_unaryop(
     match op {
         UnaryOpKind::Neg => match val {
             Value::Number(n) => Ok(Value::Number(-n)),
-            Value::Dimension { value, unit } => Ok(Value::Dimension { value: -value, unit }),
+            Value::Dimension { value, unit } => Ok(Value::Dimension {
+                value: -value,
+                unit,
+            }),
             v => Err(format!("type error: cannot negate {:?}", v)),
         },
         UnaryOpKind::Not => Ok(Value::Bool(!is_truthy(&val))),
@@ -1510,7 +1706,10 @@ fn dimension_add(
     if lhs_unit == Unit::Percent {
         return Err("type error: percent arithmetic requires a layout boundary".into());
     }
-    Ok(Value::Dimension { value: lhs + rhs, unit: lhs_unit })
+    Ok(Value::Dimension {
+        value: lhs + rhs,
+        unit: lhs_unit,
+    })
 }
 
 fn dimension_sub(
@@ -1531,7 +1730,10 @@ fn dimension_scale(
     if unit == Unit::Percent {
         return Err("type error: percent arithmetic requires a layout boundary".into());
     }
-    Ok(Value::Dimension { value: value * scale, unit })
+    Ok(Value::Dimension {
+        value: value * scale,
+        unit,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1550,7 +1752,10 @@ fn value_display(val: &Value) -> String {
             }
         }
         Value::String(s) => s.clone(),
-        Value::Array(arr) => format!("[{}]", arr.iter().map(value_display).collect::<Vec<_>>().join(", ")),
+        Value::Array(arr) => format!(
+            "[{}]",
+            arr.iter().map(value_display).collect::<Vec<_>>().join(", ")
+        ),
         Value::Function { .. } => "<fn>".into(),
         Value::ComponentObject { id, component_type } => format!("<{}:{:?}>", component_type, id),
         Value::ComponentExpr(_) => "<ce>".into(),
@@ -1580,8 +1785,8 @@ fn is_truthy(val: &Value) -> bool {
 
 fn values_equal(a: &Value, b: &Value) -> bool {
     match (a, b) {
-        (Value::Null, Value::Null)           => true,
-        (Value::Bool(a), Value::Bool(b))     => a == b,
+        (Value::Null, Value::Null) => true,
+        (Value::Bool(a), Value::Bool(b)) => a == b,
         (Value::Number(a), Value::Number(b)) => a == b,
         (Value::String(a), Value::String(b)) => a == b,
         _ => false,
@@ -1597,15 +1802,15 @@ fn num_cmp(l: Value, r: Value, f: impl Fn(f64, f64) -> bool) -> Result<Value, St
 
 fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
     match s {
-        "Click"            => Ok(SignalKind::Click),
-        "DragStart"        => Ok(SignalKind::DragStart),
-        "DragMove"         => Ok(SignalKind::DragMove),
-        "DragEnd"          => Ok(SignalKind::DragEnd),
-        "RayIntersected"   => Ok(SignalKind::RayIntersected),
-        "ParentChanged"    => Ok(SignalKind::ParentChanged),
+        "Click" => Ok(SignalKind::Click),
+        "DragStart" => Ok(SignalKind::DragStart),
+        "DragMove" => Ok(SignalKind::DragMove),
+        "DragEnd" => Ok(SignalKind::DragEnd),
+        "RayIntersected" => Ok(SignalKind::RayIntersected),
+        "ParentChanged" => Ok(SignalKind::ParentChanged),
         "CollisionStarted" => Ok(SignalKind::CollisionStarted),
-        "CollisionEnded"   => Ok(SignalKind::CollisionEnded),
-        "Scrolling"        => Ok(SignalKind::Scrolling),
+        "CollisionEnded" => Ok(SignalKind::CollisionEnded),
+        "Scrolling" => Ok(SignalKind::Scrolling),
         other => Err(format!("unknown signal kind: '{}'", other)),
     }
 }
@@ -1624,7 +1829,12 @@ pub(crate) fn eval_mms_fn(
     world_host: Option<&mut World>,
     emit: Option<&mut dyn SignalEmitter>,
 ) -> Result<Value, String> {
-    let Value::Function { params, body, captured_env } = fn_val else {
+    let Value::Function {
+        params,
+        body,
+        captured_env,
+    } = fn_val
+    else {
         return Err(format!("eval_mms_fn: expected Function, got {:?}", fn_val));
     };
     let mut emits: Vec<IntentValue> = Vec::new();
@@ -1729,10 +1939,7 @@ fn byte_offset_to_line_col(source: &str, offset: usize) -> (usize, usize) {
 }
 
 fn format_source_context(source: &str, line: usize, col: usize) -> String {
-    let line_text = source
-        .lines()
-        .nth(line.saturating_sub(1))
-        .unwrap_or("");
+    let line_text = source.lines().nth(line.saturating_sub(1)).unwrap_or("");
     let caret_pad = " ".repeat(col.saturating_sub(1));
     format!("\n  {line_text}\n  {caret_pad}^")
 }

@@ -228,13 +228,21 @@ impl TextureSystem {
                                 let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
                                 let p2 = manifest_dir.join(raw_path);
                                 tried.push(p2.clone());
-                                if p2.exists() { Some(p2) } else { None }
+                                if p2.exists() {
+                                    Some(p2)
+                                } else {
+                                    None
+                                }
                             }
                         } else {
                             let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
                             let p2 = manifest_dir.join(raw_path);
                             tried.push(p2.clone());
-                            if p2.exists() { Some(p2) } else { None }
+                            if p2.exists() {
+                                Some(p2)
+                            } else {
+                                None
+                            }
                         }
                     };
 

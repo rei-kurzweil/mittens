@@ -77,11 +77,7 @@ impl RenderToTextureSystem {
         self.producer_requests_by_selector.values()
     }
 
-    pub fn flush_pending(
-        &mut self,
-        visuals: &mut VisualWorld,
-        uploader: &mut dyn TextureUploader,
-    ) {
+    pub fn flush_pending(&mut self, visuals: &mut VisualWorld, uploader: &mut dyn TextureUploader) {
         visuals.set_stencil_clip_debug_requested(
             self.producer_requests_by_selector
                 .contains_key(INTERNAL_RENDERER_STENCIL_CLIP_DEBUG_SELECTOR),

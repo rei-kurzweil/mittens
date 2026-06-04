@@ -100,7 +100,11 @@ pub fn quat_rotation_y(yaw: f32) -> [f32; 4] {
 /// Ensures shortest-path by negating `b` if the dot product is negative.
 pub fn quat_nlerp(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
     let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
-    let b = if dot < 0.0 { [-b[0], -b[1], -b[2], -b[3]] } else { b };
+    let b = if dot < 0.0 {
+        [-b[0], -b[1], -b[2], -b[3]]
+    } else {
+        b
+    };
     quat_normalize([
         a[0] + (b[0] - a[0]) * t,
         a[1] + (b[1] - a[1]) * t,
@@ -113,7 +117,11 @@ pub fn quat_nlerp(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
 pub fn shortest_arc_quat(from: [f32; 3], to: [f32; 3]) -> [f32; 4] {
     let d = vec3_dot(from, to);
     if d < -0.9999 {
-        let perp = if from[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
+        let perp = if from[0].abs() < 0.9 {
+            [1.0, 0.0, 0.0]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
         let axis = vec3_normalize(vec3_cross(from, perp));
         return [axis[0], axis[1], axis[2], 0.0];
     }
@@ -131,9 +139,15 @@ pub fn mat_to_quat(m: [[f32; 4]; 4]) -> [f32; 4] {
     let s0 = col_len(m, 0).recip();
     let s1 = col_len(m, 1).recip();
     let s2 = col_len(m, 2).recip();
-    let r00 = m[0][0] * s0; let r10 = m[0][1] * s0; let r20 = m[0][2] * s0;
-    let r01 = m[1][0] * s1; let r11 = m[1][1] * s1; let r21 = m[1][2] * s1;
-    let r02 = m[2][0] * s2; let r12 = m[2][1] * s2; let r22 = m[2][2] * s2;
+    let r00 = m[0][0] * s0;
+    let r10 = m[0][1] * s0;
+    let r20 = m[0][2] * s0;
+    let r01 = m[1][0] * s1;
+    let r11 = m[1][1] * s1;
+    let r21 = m[1][2] * s1;
+    let r02 = m[2][0] * s2;
+    let r12 = m[2][1] * s2;
+    let r22 = m[2][2] * s2;
     let trace = r00 + r11 + r22;
     if trace > 0.0 {
         let s = 0.5 / (trace + 1.0).sqrt();

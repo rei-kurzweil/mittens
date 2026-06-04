@@ -1,28 +1,30 @@
 use std::time::{Duration, Instant};
 
 use crate::engine;
-use crate::meow_meow::ast::{
-    AssignmentStatement, Expression, ImportItem, Statement,
-};
+use crate::engine::ecs::component::style::SizeDimension;
+use crate::engine::ecs::component::{LayoutComponent, StyleComponent, TransformComponent};
+use crate::engine::ecs::{CommandQueue, ComponentId, EventSignal, RxWorld, Signal, World};
+use crate::meow_meow::ast::{AssignmentStatement, Expression, ImportItem, Statement};
 use crate::meow_meow::evaluator::{EvalRequest, EvalResponse, MeowMeowEvaluator};
 use crate::meow_meow::object::Value;
 use crate::meow_meow::parser::MeowMeowParser;
 use crate::meow_meow::runner::MeowMeowRunner;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;
-use crate::engine::ecs::{CommandQueue, ComponentId, EventSignal, RxWorld, Signal, World};
-use crate::engine::ecs::component::{LayoutComponent, StyleComponent, TransformComponent};
-use crate::engine::ecs::component::style::SizeDimension;
 use crate::meow_meow::unparser::unparse_program;
 
 fn parse(src: &str) -> Vec<Statement> {
     let tokens = MeowMeowTokenizer::new(src).tokenize().expect("tokenize ok");
-    MeowMeowParser::new(tokens).parse_program().expect("parse ok")
+    MeowMeowParser::new(tokens)
+        .parse_program()
+        .expect("parse ok")
 }
 
 /// Helper: extract a `ComponentExpression` from a `Statement::Expression(Expression::Component(_))`.
 macro_rules! as_component {
     ($stmt:expr) => {{
-        let Statement::Expression(Expression::Component(c)) = $stmt else { panic!("expected component expression statement") };
+        let Statement::Expression(Expression::Component(c)) = $stmt else {
+            panic!("expected component expression statement")
+        };
         c
     }};
 }
@@ -71,7 +73,9 @@ fn parse_named_assignment_in_body() {
     let prog = parse(r#"T { name = "root" }"#);
     let c = as_component!(&prog[0]);
     assert_eq!(c.body.statements.len(), 1);
-    let Statement::Reassign { name, value } = &c.body.statements[0] else { panic!("expected Reassign") };
+    let Statement::Reassign { name, value } = &c.body.statements[0] else {
+        panic!("expected Reassign")
+    };
     assert_eq!(name.0, "name");
     assert!(matches!(value, Expression::String(s) if s == "root"));
 }
@@ -81,8 +85,12 @@ fn parse_call_in_body() {
     let prog = parse("BG { with_occlusion_and_lighting() }");
     let c = as_component!(&prog[0]);
     assert_eq!(c.body.statements.len(), 1);
-    let Statement::Expression(Expression::Call(call)) = &c.body.statements[0] else { panic!("expected Call") };
-    let Expression::Identifier(callee_id) = call.callee.as_ref() else { panic!("expected Identifier callee") };
+    let Statement::Expression(Expression::Call(call)) = &c.body.statements[0] else {
+        panic!("expected Call")
+    };
+    let Expression::Identifier(callee_id) = call.callee.as_ref() else {
+        panic!("expected Identifier callee")
+    };
     assert_eq!(callee_id.0, "with_occlusion_and_lighting");
     assert!(call.args.is_empty());
 }
@@ -92,7 +100,9 @@ fn parse_positional_string() {
     let prog = parse(r#"TXT { "hello" }"#);
     let c = as_component!(&prog[0]);
     assert_eq!(c.body.statements.len(), 1);
-    let Statement::Expression(Expression::String(s)) = &c.body.statements[0] else { panic!("expected string expr") };
+    let Statement::Expression(Expression::String(s)) = &c.body.statements[0] else {
+        panic!("expected string expr")
+    };
     assert_eq!(s, "hello");
 }
 
@@ -101,7 +111,9 @@ fn parse_positional_ident_flag() {
     let prog = parse("R { QUAD_2D }");
     let c = as_component!(&prog[0]);
     assert_eq!(c.body.statements.len(), 1);
-    let Statement::Expression(Expression::Identifier(id)) = &c.body.statements[0] else { panic!("expected ident expr") };
+    let Statement::Expression(Expression::Identifier(id)) = &c.body.statements[0] else {
+        panic!("expected ident expr")
+    };
     assert_eq!(id.0, "QUAD_2D");
 }
 
@@ -109,16 +121,22 @@ fn parse_positional_ident_flag() {
 fn parse_named_assignment_array() {
     let prog = parse("T { rotation = [0.0, 0.0, 3.14] }");
     let c = as_component!(&prog[0]);
-    let Statement::Reassign { name, value } = &c.body.statements[0] else { panic!("expected Reassign") };
+    let Statement::Reassign { name, value } = &c.body.statements[0] else {
+        panic!("expected Reassign")
+    };
     assert_eq!(name.0, "rotation");
-    let Expression::Array(items) = value else { panic!() };
+    let Expression::Array(items) = value else {
+        panic!()
+    };
     assert_eq!(items.len(), 3);
 }
 
 #[test]
 fn parse_else_if_chain() {
     let prog = parse("if false { T {} } else if true { R {} } else { C {} }");
-    let Statement::If(if_stmt) = &prog[0] else { panic!("expected if statement") };
+    let Statement::If(if_stmt) = &prog[0] else {
+        panic!("expected if statement")
+    };
     let else_if = match if_stmt.else_branch.as_ref() {
         Some(crate::meow_meow::ast::ElseBranch::If(next_if)) => next_if,
         _ => panic!("expected else-if branch"),
@@ -147,9 +165,18 @@ fn parse_body_ordering_preserved() {
     let prog = parse("T { call() C {} IDENT }");
     let c = as_component!(&prog[0]);
     assert_eq!(c.body.statements.len(), 3);
-    assert!(matches!(&c.body.statements[0], Statement::Expression(Expression::Call(_))));
-    assert!(matches!(&c.body.statements[1], Statement::Expression(Expression::Component(_))));
-    assert!(matches!(&c.body.statements[2], Statement::Expression(Expression::Identifier(_))));
+    assert!(matches!(
+        &c.body.statements[0],
+        Statement::Expression(Expression::Call(_))
+    ));
+    assert!(matches!(
+        &c.body.statements[1],
+        Statement::Expression(Expression::Component(_))
+    ));
+    assert!(matches!(
+        &c.body.statements[2],
+        Statement::Expression(Expression::Identifier(_))
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +237,10 @@ CTLXR.new(true, Left, Aim) {
     assert_eq!(map_rot.body.statements.len(), 1);
     let filter = as_component!(&map_rot.body.statements[0]);
     assert_eq!(filter.component_type.0, "QuatTemporalFilter");
-    assert_eq!(filter.constructors.first().unwrap().method.0, "with_smoothing_factor");
+    assert_eq!(
+        filter.constructors.first().unwrap().method.0,
+        "with_smoothing_factor"
+    );
 
     // downstream T → R.cube → C.rgba
     let out_t = as_component!(&fork.body.statements[3]);
@@ -243,7 +273,9 @@ fn parse_multiple_roots() {
 fn parse_let_binding() {
     let prog = parse("let x = 42");
     assert_eq!(prog.len(), 1);
-    let Statement::Assignment(a) = &prog[0] else { panic!() };
+    let Statement::Assignment(a) = &prog[0] else {
+        panic!()
+    };
     assert_eq!(a.name.0, "x");
     assert!(matches!(a.value, Expression::Number(n) if n == 42.0));
 }
@@ -251,7 +283,9 @@ fn parse_let_binding() {
 #[test]
 fn parse_array_index_expression() {
     let prog = parse("let x = dims[0]");
-    let Statement::Assignment(a) = &prog[0] else { panic!() };
+    let Statement::Assignment(a) = &prog[0] else {
+        panic!()
+    };
     assert!(matches!(a.value, Expression::Index { .. }));
 }
 
@@ -261,7 +295,9 @@ fn parse_array_index_expression() {
 
 #[test]
 fn parse_error_unterminated_body() {
-    let tokens = MeowMeowTokenizer::new("T {").tokenize().expect("tokenize ok");
+    let tokens = MeowMeowTokenizer::new("T {")
+        .tokenize()
+        .expect("tokenize ok");
     let err = MeowMeowParser::new(tokens).parse_program().unwrap_err();
     assert!(err.message.contains("Unterminated"));
 }
@@ -325,7 +361,14 @@ fn evaluator_thread_parses_and_responds() {
 fn parse_for_in_array_literal() {
     let prog = parse("for x in [1, 2, 3] { T {} }");
     assert_eq!(prog.len(), 1);
-    let Statement::ForIn { binding, iterable, body } = &prog[0] else { panic!() };
+    let Statement::ForIn {
+        binding,
+        iterable,
+        body,
+    } = &prog[0]
+    else {
+        panic!()
+    };
     assert_eq!(binding.0, "x");
     assert!(matches!(iterable, Expression::Array(_)));
     assert_eq!(body.statements.len(), 1);
@@ -335,10 +378,19 @@ fn parse_for_in_array_literal() {
 fn parse_for_in_range_call() {
     let prog = parse("for i in range(10) { T {} }");
     assert_eq!(prog.len(), 1);
-    let Statement::ForIn { binding, iterable, .. } = &prog[0] else { panic!() };
+    let Statement::ForIn {
+        binding, iterable, ..
+    } = &prog[0]
+    else {
+        panic!()
+    };
     assert_eq!(binding.0, "i");
-    let Expression::Call(call) = iterable else { panic!() };
-    let Expression::Identifier(callee_id) = call.callee.as_ref() else { panic!("expected Identifier callee") };
+    let Expression::Call(call) = iterable else {
+        panic!()
+    };
+    let Expression::Identifier(callee_id) = call.callee.as_ref() else {
+        panic!("expected Identifier callee")
+    };
     assert_eq!(callee_id.0, "range");
     assert_eq!(call.args.len(), 1);
 }
@@ -346,7 +398,9 @@ fn parse_for_in_range_call() {
 #[test]
 fn parse_break_and_continue() {
     let prog = parse("for i in range(5) { break; continue }");
-    let Statement::ForIn { body, .. } = &prog[0] else { panic!() };
+    let Statement::ForIn { body, .. } = &prog[0] else {
+        panic!()
+    };
     assert!(matches!(body.statements[0], Statement::Break));
     assert!(matches!(body.statements[1], Statement::Continue));
 }
@@ -382,7 +436,17 @@ fn live_eval_emitted_tree_is_queryable_by_next_statement() {
 
     let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
-    assert!(world.find_component(world.all_components().find(|&id| world.parent_of(id).is_none()).unwrap(), "#btn_a").is_some());
+    assert!(
+        world
+            .find_component(
+                world
+                    .all_components()
+                    .find(|&id| world.parent_of(id).is_none())
+                    .unwrap(),
+                "#btn_a"
+            )
+            .is_some()
+    );
 }
 
 #[test]
@@ -500,9 +564,16 @@ fn mms_layoutroot_available_width_and_percent_style_width_reach_live_components(
     let panel = world
         .find_component(root, "#panel")
         .expect("panel transform");
-    let style_id = world.children_of(panel).iter().copied().find(|&child| {
-        world.get_component_by_id_as::<StyleComponent>(child).is_some()
-    }).expect("panel style");
+    let style_id = world
+        .children_of(panel)
+        .iter()
+        .copied()
+        .find(|&child| {
+            world
+                .get_component_by_id_as::<StyleComponent>(child)
+                .is_some()
+        })
+        .expect("panel style");
     let style = world
         .get_component_by_id_as::<StyleComponent>(style_id)
         .expect("style component");
@@ -549,8 +620,14 @@ fn mms_dimension_arrays_feed_transform_and_layout_boundaries() {
         .find(|&id| world.component_label(id) == Some("layout"))
         .and_then(|id| world.get_component_by_id_as::<LayoutComponent>(id))
         .expect("layout component");
-    assert_eq!(layout.authored_available_width, SizeDimension::WorldUnits(2.85188));
-    assert_eq!(layout.authored_available_height, Some(SizeDimension::WorldUnits(4.0)));
+    assert_eq!(
+        layout.authored_available_width,
+        SizeDimension::WorldUnits(2.85188)
+    );
+    assert_eq!(
+        layout.authored_available_height,
+        Some(SizeDimension::WorldUnits(4.0))
+    );
 }
 
 #[test]
@@ -593,8 +670,14 @@ fn mms_layoutroot_available_size_accepts_gu_and_wu_independent_of_unit_scale_ord
             .get_component_by_id_as::<LayoutComponent>(root)
             .expect("layout component on root");
 
-        assert!((layout.available_width - 34.0).abs() < 1e-4, "wrong width for {root_name}");
-        assert!((layout.available_height.unwrap_or_default() - 24.0).abs() < 1e-4, "wrong height for {root_name}");
+        assert!(
+            (layout.available_width - 34.0).abs() < 1e-4,
+            "wrong width for {root_name}"
+        );
+        assert!(
+            (layout.available_height.unwrap_or_default() - 24.0).abs() < 1e-4,
+            "wrong height for {root_name}"
+        );
     }
 }
 
@@ -736,7 +819,8 @@ fn eval_for_binding_accessible_in_body() {
 #[test]
 fn eval_return_propagates_through_for() {
     // return inside a for loop inside a function exits the function, not just the loop
-    let out = eval(r#"
+    let out = eval(
+        r#"
         fn f() {
             for i in range(10) {
                 T {}
@@ -744,7 +828,8 @@ fn eval_return_propagates_through_for() {
             }
         }
         f()
-    "#);
+    "#,
+    );
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.intents.len(), 1);
 }
@@ -757,7 +842,9 @@ fn eval_return_propagates_through_for() {
 fn parse_export_let() {
     let prog = parse("export let pi = 3.14");
     assert_eq!(prog.len(), 1);
-    let Statement::Assignment(AssignmentStatement { name, exported, .. }) = &prog[0] else { panic!() };
+    let Statement::Assignment(AssignmentStatement { name, exported, .. }) = &prog[0] else {
+        panic!()
+    };
     assert_eq!(name.0, "pi");
     assert!(*exported);
 }
@@ -766,7 +853,9 @@ fn parse_export_let() {
 fn parse_export_fn() {
     let prog = parse("export fn lerp(a, b, t) { return a + (b - a) * t }");
     assert_eq!(prog.len(), 1);
-    let Statement::Assignment(AssignmentStatement { name, exported, .. }) = &prog[0] else { panic!() };
+    let Statement::Assignment(AssignmentStatement { name, exported, .. }) = &prog[0] else {
+        panic!()
+    };
     assert_eq!(name.0, "lerp");
     assert!(*exported);
 }
@@ -775,7 +864,9 @@ fn parse_export_fn() {
 fn parse_import_named() {
     let prog = parse(r#"import { pi, lerp } from "math.mms""#);
     assert_eq!(prog.len(), 1);
-    let Statement::Import { items, path } = &prog[0] else { panic!() };
+    let Statement::Import { items, path } = &prog[0] else {
+        panic!()
+    };
     assert_eq!(path, "math.mms");
     assert_eq!(items.len(), 2);
     assert!(matches!(&items[0], ImportItem::Named(id) if id.0 == "pi"));
@@ -786,9 +877,15 @@ fn parse_import_named() {
 fn parse_import_alias() {
     let prog = parse(r#"import { pi as PI, 0 as cube } from "parts.mms""#);
     assert_eq!(prog.len(), 1);
-    let Statement::Import { items, .. } = &prog[0] else { panic!() };
-    assert!(matches!(&items[0], ImportItem::NamedAlias { name, alias } if name.0 == "pi" && alias.0 == "PI"));
-    assert!(matches!(&items[1], ImportItem::PositionalAlias { index: 0, alias } if alias.0 == "cube"));
+    let Statement::Import { items, .. } = &prog[0] else {
+        panic!()
+    };
+    assert!(
+        matches!(&items[0], ImportItem::NamedAlias { name, alias } if name.0 == "pi" && alias.0 == "PI")
+    );
+    assert!(
+        matches!(&items[1], ImportItem::PositionalAlias { index: 0, alias } if alias.0 == "cube")
+    );
 }
 
 #[test]
@@ -798,14 +895,22 @@ fn eval_export_and_import_via_files() {
     let lib_path = tmp.join("_mms_test_lib.mms");
     let user_path = tmp.join("_mms_test_user.mms");
 
-    std::fs::write(&lib_path, r#"
+    std::fs::write(
+        &lib_path,
+        r#"
 export let count = 3.0
 export fn make_row(n) {
     for i in range(n) { T {} }
 }
-"#).unwrap();
+"#,
+    )
+    .unwrap();
 
-    std::fs::write(&user_path, "import { count, make_row } from \"_mms_test_lib.mms\"\nmake_row(count)\n").unwrap();
+    std::fs::write(
+        &user_path,
+        "import { count, make_row } from \"_mms_test_lib.mms\"\nmake_row(count)\n",
+    )
+    .unwrap();
 
     let out = MeowMeowRunner::eval_file(user_path.to_str().unwrap());
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
@@ -825,7 +930,11 @@ fn eval_import_positional_ce() {
     let user_path = tmp.join("_mms_test_ce_user.mms");
 
     std::fs::write(&lib_path, "T.position(1.0, 0.0, 0.0) {}").unwrap();
-    std::fs::write(&user_path, "import { 0 as my_t } from \"_mms_test_ce_lib.mms\"\nmy_t\n").unwrap();
+    std::fs::write(
+        &user_path,
+        "import { 0 as my_t } from \"_mms_test_ce_lib.mms\"\nmy_t\n",
+    )
+    .unwrap();
 
     let out = MeowMeowRunner::eval_file(user_path.to_str().unwrap());
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
@@ -913,7 +1022,13 @@ fn call_mms_module_fn_invokes_exported_factory_function() {
 
 #[test]
 fn spawn_mms_module_component_initialises_live_root() {
-    let tmp_dir = std::env::temp_dir().join(format!("mms_spawn_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    let tmp_dir = std::env::temp_dir().join(format!(
+        "mms_spawn_test_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
     std::fs::create_dir_all(&tmp_dir).expect("create temp dir");
     let path = tmp_dir.join("test_asset.mms");
     std::fs::write(
@@ -932,8 +1047,15 @@ fn spawn_mms_module_component_initialises_live_root() {
     let mut rx = RxWorld::default();
     let mut emit = CommandQueue::new();
 
-    let root_id = MeowMeowRunner::spawn_mms_module_component(&module, "example", vec![], None, &mut world, &mut emit)
-        .expect("spawn module component");
+    let root_id = MeowMeowRunner::spawn_mms_module_component(
+        &module,
+        "example",
+        vec![],
+        None,
+        &mut world,
+        &mut emit,
+    )
+    .expect("spawn module component");
 
     assert!(world.component_name(root_id).is_some());
     assert!(world.is_initialized(root_id));
@@ -981,7 +1103,9 @@ fn parse_reassign() {
     let prog = parse("let x = 1\nx = 2");
     assert_eq!(prog.len(), 2);
     assert!(matches!(&prog[0], Statement::Assignment(_)));
-    let Statement::Reassign { name, .. } = &prog[1] else { panic!("expected Reassign") };
+    let Statement::Reassign { name, .. } = &prog[1] else {
+        panic!("expected Reassign")
+    };
     assert_eq!(name.0, "x");
 }
 
@@ -1000,8 +1124,15 @@ fn eval_reassign_basic() {
 #[test]
 fn eval_reassign_undefined_errors() {
     let out = MeowMeowRunner::eval("x = 5");
-    assert!(!out.errors.is_empty(), "expected an error for undefined reassignment");
-    assert!(out.errors[0].contains("not defined"), "got: {}", out.errors[0]);
+    assert!(
+        !out.errors.is_empty(),
+        "expected an error for undefined reassignment"
+    );
+    assert!(
+        out.errors[0].contains("not defined"),
+        "got: {}",
+        out.errors[0]
+    );
 }
 
 #[test]
@@ -1019,9 +1150,17 @@ fn eval_if_reassign_propagates_to_outer_scope() {
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.intents.len(), 1);
     // Verify the CE position used the updated y (second arg of the constructor call).
-    let engine::ecs::IntentValue::SpawnComponentTree { root, .. } = &out.intents[0] else { panic!() };
-    assert_eq!(root.ctor_method.as_deref(), Some("position"), "expected position ctor");
-    let Value::Number(y_val) = &root.ctor_args[1] else { panic!("expected number arg at index 1") };
+    let engine::ecs::IntentValue::SpawnComponentTree { root, .. } = &out.intents[0] else {
+        panic!()
+    };
+    assert_eq!(
+        root.ctor_method.as_deref(),
+        Some("position"),
+        "expected position ctor"
+    );
+    let Value::Number(y_val) = &root.ctor_args[1] else {
+        panic!("expected number arg at index 1")
+    };
     assert!((*y_val - 99.0).abs() < 1e-6, "expected y=99.0, got {y_val}");
 }
 
@@ -1047,13 +1186,15 @@ fn eval_for_accumulator_propagates_after_loop_exit() {
     //
     // Pre-refactor: `loop_env = env.clone()` sandboxes the loop; sum stays 0;
     // the `if sum == 6` branch never fires; intents.len() == 0.
-    let out = eval(r#"
+    let out = eval(
+        r#"
         let sum = 0
         for i in [1, 2, 3] {
             sum = sum + i
         }
         if sum == 6 { T {} }
-    "#);
+    "#,
+    );
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(
         out.intents.len(),
@@ -1070,7 +1211,9 @@ fn eval_for_accumulator_propagates_after_loop_exit() {
 fn parse_while_loop() {
     let prog = parse("while true { T {} }");
     assert_eq!(prog.len(), 1);
-    let Statement::While { condition, body } = &prog[0] else { panic!("expected While") };
+    let Statement::While { condition, body } = &prog[0] else {
+        panic!("expected While")
+    };
     assert!(matches!(condition, Expression::Bool(true)));
     assert_eq!(body.statements.len(), 1);
 }
@@ -1078,27 +1221,31 @@ fn parse_while_loop() {
 #[test]
 fn eval_while_counts_up_to_limit() {
     // Emit one T per iteration; stop when i reaches 4.
-    let out = eval(r#"
+    let out = eval(
+        r#"
         let i = 0
         while i < 4 {
             T {}
             i = i + 1
         }
-    "#);
+    "#,
+    );
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.intents.len(), 4);
 }
 
 #[test]
 fn eval_while_break_exits_early() {
-    let out = eval(r#"
+    let out = eval(
+        r#"
         let i = 0
         while true {
             if i == 3 { break }
             T {}
             i = i + 1
         }
-    "#);
+    "#,
+    );
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.intents.len(), 3);
 }
@@ -1107,7 +1254,8 @@ fn eval_while_break_exits_early() {
 fn eval_while_continue_skips_body_tail() {
     // Only emit T when i is even; continue skips the emit on odd iterations.
     // i goes 0..5 → 0,2,4 emit → 3 intents
-    let out = eval(r#"
+    let out = eval(
+        r#"
         let i = 0
         while i < 5 {
             i = i + 1
@@ -1115,7 +1263,8 @@ fn eval_while_continue_skips_body_tail() {
             if i == 4 { continue }
             T {}
         }
-    "#);
+    "#,
+    );
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.intents.len(), 3);
 }
@@ -1173,7 +1322,8 @@ fn body_if_else_picks_else_branch() {
 
 #[test]
 fn body_else_if_picks_first_matching_branch() {
-    let out = eval("T { if false { R.cube() {} } else if true { R.sphere() {} } else { R.cone() {} } }");
+    let out =
+        eval("T { if false { R.cube() {} } else if true { R.sphere() {} } else { R.cone() {} } }");
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.intents.len(), 1);
 }
@@ -1204,9 +1354,7 @@ fn body_for_with_if_inside() {
 
 use crate::engine::ecs::component::Component as ComponentTrait;
 
-fn roundtrip_component<C: ComponentTrait + 'static>(
-    original: C,
-) -> (World, ComponentId) {
+fn roundtrip_component<C: ComponentTrait + 'static>(original: C) -> (World, ComponentId) {
     // Round-trip helper assumes the component encodes losslessly without
     // needing live world context (no ComponentId refs). Use an empty world
     // as a stand-in.
@@ -1220,10 +1368,9 @@ fn roundtrip_component<C: ComponentTrait + 'static>(
         .expect("materialize");
     let mut world = World::default();
     let mut emit = CommandQueue::new();
-    let id = crate::meow_meow::component_registry::spawn_tree_uninitialized(
-        &mat, &mut world, &mut emit,
-    )
-    .expect("spawn");
+    let id =
+        crate::meow_meow::component_registry::spawn_tree_uninitialized(&mat, &mut world, &mut emit)
+            .expect("spawn");
     (world, id)
 }
 
@@ -1237,7 +1384,11 @@ fn roundtrip_opacity() {
     let got = world
         .get_component_by_id_as::<OpacityComponent>(id)
         .expect("Opacity downcast");
-    assert!((got.opacity - 0.42).abs() < 1e-6, "opacity: {}", got.opacity);
+    assert!(
+        (got.opacity - 0.42).abs() < 1e-6,
+        "opacity: {}",
+        got.opacity
+    );
     assert!(got.multiple_layers);
 }
 
@@ -1246,7 +1397,10 @@ fn roundtrip_opacity_default_multiple_layers_omitted() {
     use crate::engine::ecs::component::OpacityComponent;
     // multiple_layers=false should not emit the toggle call.
     let original = OpacityComponent::new().with_opacity(0.75);
-    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(&original, &World::default()));
+    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(
+        &original,
+        &World::default(),
+    ));
     assert!(
         !text.contains("multiple_layers"),
         "expected `multiple_layers` not emitted when false: {text}"
@@ -1286,7 +1440,11 @@ fn roundtrip_emissive_custom_intensity() {
     let got = world
         .get_component_by_id_as::<EmissiveComponent>(id)
         .unwrap();
-    assert!((got.intensity - 2.5).abs() < 1e-6, "intensity: {}", got.intensity);
+    assert!(
+        (got.intensity - 2.5).abs() < 1e-6,
+        "intensity: {}",
+        got.intensity
+    );
 }
 
 #[test]
@@ -1349,7 +1507,10 @@ fn roundtrip_gltf() {
 fn roundtrip_gltf_no_visualized_transforms_omits_call() {
     use crate::engine::ecs::component::GLTFComponent;
     let original = GLTFComponent::new("models/cat.glb");
-    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(&original, &World::default()));
+    let text = crate::meow_meow::unparser::unparse_component(&ComponentTrait::to_mms_ast(
+        &original,
+        &World::default(),
+    ));
     assert!(
         !text.contains("with_visualized_transforms"),
         "expected `with_visualized_transforms` omitted when false: {text}"
@@ -1362,10 +1523,12 @@ fn roundtrip_gltf_no_visualized_transforms_omits_call() {
 
 #[test]
 fn roundtrip_texture_with_uri() {
-    use crate::engine::ecs::component::{TextureComponent, CatEngineTextureFormat};
     use crate::engine::ecs::component::texture::TextureSource;
+    use crate::engine::ecs::component::{CatEngineTextureFormat, TextureComponent};
     let (world, id) = roundtrip_component(TextureComponent::with_uri("textures/cat.png"));
-    let got = world.get_component_by_id_as::<TextureComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<TextureComponent>(id)
+        .unwrap();
     match &got.source {
         TextureSource::Uri(u) => assert_eq!(u, "textures/cat.png"),
         _ => panic!("expected URI source"),
@@ -1376,9 +1539,11 @@ fn roundtrip_texture_with_uri() {
 
 #[test]
 fn roundtrip_texture_from_dds() {
-    use crate::engine::ecs::component::{TextureComponent, CatEngineTextureFormat};
+    use crate::engine::ecs::component::{CatEngineTextureFormat, TextureComponent};
     let (world, id) = roundtrip_component(TextureComponent::from_dds("textures/cat.dds"));
-    let got = world.get_component_by_id_as::<TextureComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<TextureComponent>(id)
+        .unwrap();
     assert_eq!(got.format, CatEngineTextureFormat::DdsBc7);
 }
 
@@ -1386,7 +1551,9 @@ fn roundtrip_texture_from_dds() {
 fn roundtrip_texture_render_image() {
     use crate::engine::ecs::component::TextureComponent;
     let (world, id) = roundtrip_component(TextureComponent::render_image("#main"));
-    let got = world.get_component_by_id_as::<TextureComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<TextureComponent>(id)
+        .unwrap();
     assert_eq!(got.render_image.as_deref(), Some("#main"));
 }
 
@@ -1399,7 +1566,9 @@ fn roundtrip_camera_3d() {
         .with_near(0.5)
         .with_far(200.0);
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<Camera3DComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<Camera3DComponent>(id)
+        .unwrap();
     assert!((got.fov_y_degrees - 75.0).abs() < 1e-6);
     assert!((got.z_near - 0.5).abs() < 1e-6);
     assert!((got.z_far - 200.0).abs() < 1e-6);
@@ -1413,7 +1582,9 @@ fn roundtrip_camera_2d() {
     let mut original = Camera2DComponent::new();
     original.target = CameraTarget::Xr;
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<Camera2DComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<Camera2DComponent>(id)
+        .unwrap();
     assert!(matches!(got.target, CameraTarget::Xr));
 }
 
@@ -1421,7 +1592,9 @@ fn roundtrip_camera_2d() {
 fn roundtrip_camera_xr_off() {
     use crate::engine::ecs::component::CameraXRComponent;
     let (world, id) = roundtrip_component(CameraXRComponent::off());
-    let got = world.get_component_by_id_as::<CameraXRComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<CameraXRComponent>(id)
+        .unwrap();
     assert!(!got.enabled);
 }
 
@@ -1435,11 +1608,15 @@ fn roundtrip_openxr_off() {
 
 #[test]
 fn roundtrip_controller_xr() {
-    use crate::engine::ecs::component::{ControllerXRComponent, ControllerHand, ControllerPoseKind};
+    use crate::engine::ecs::component::{
+        ControllerHand, ControllerPoseKind, ControllerXRComponent,
+    };
     let original =
         ControllerXRComponent::new(true, ControllerHand::Right, ControllerPoseKind::Grip);
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<ControllerXRComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<ControllerXRComponent>(id)
+        .unwrap();
     assert!(got.enabled);
     assert_eq!(got.hand, ControllerHand::Right);
     assert_eq!(got.pose, ControllerPoseKind::Grip);
@@ -1449,7 +1626,9 @@ fn roundtrip_controller_xr() {
 fn roundtrip_input_xr_off() {
     use crate::engine::ecs::component::InputXRComponent;
     let (world, id) = roundtrip_component(InputXRComponent::off());
-    let got = world.get_component_by_id_as::<InputXRComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<InputXRComponent>(id)
+        .unwrap();
     assert!(!got.enabled);
 }
 
@@ -1458,7 +1637,9 @@ fn roundtrip_animation_paused() {
     use crate::engine::ecs::component::{AnimationComponent, AnimationState};
     let (world, id) =
         roundtrip_component(AnimationComponent::new().with_state(AnimationState::Paused));
-    let got = world.get_component_by_id_as::<AnimationComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<AnimationComponent>(id)
+        .unwrap();
     assert_eq!(got.state, AnimationState::Paused);
 }
 
@@ -1468,7 +1649,9 @@ fn roundtrip_animation_resolve_targets_on_play() {
     let (world, id) = roundtrip_component(
         AnimationComponent::new().with_resolve_targets(ResolveTargetsMode::OnPlay),
     );
-    let got = world.get_component_by_id_as::<AnimationComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<AnimationComponent>(id)
+        .unwrap();
     assert_eq!(got.resolve_targets, ResolveTargetsMode::OnPlay);
 }
 
@@ -1495,21 +1678,18 @@ fn roundtrip_subtree(source_world: &World, root: ComponentId) -> (World, Compone
         .expect("materialize");
     let mut world = World::default();
     let mut emit = CommandQueue::new();
-    let id = crate::meow_meow::component_registry::spawn_tree_uninitialized(
-        &mat,
-        &mut world,
-        &mut emit,
-    )
-    .expect("spawn");
+    let id =
+        crate::meow_meow::component_registry::spawn_tree_uninitialized(&mat, &mut world, &mut emit)
+            .expect("spawn");
     (world, id)
 }
 
 #[test]
 fn roundtrip_action_query_selector_preserved_verbatim() {
+    use crate::engine::ecs::IntentValue;
     use crate::engine::ecs::component::{
         ActionComponent, ComponentRef, KeyframeComponent, TransformComponent,
     };
-    use crate::engine::ecs::IntentValue;
     use slotmap::Key;
 
     let mut w = World::default();
@@ -1543,10 +1723,10 @@ fn roundtrip_action_query_selector_preserved_verbatim() {
 
 #[test]
 fn roundtrip_action_handle_becomes_guid_and_target_keeps_guid() {
+    use crate::engine::ecs::IntentValue;
     use crate::engine::ecs::component::{
         ActionComponent, ComponentRef, KeyframeComponent, TransformComponent,
     };
-    use crate::engine::ecs::IntentValue;
     use slotmap::Key;
 
     let mut w = World::default();
@@ -1592,10 +1772,10 @@ fn roundtrip_action_handle_becomes_guid_and_target_keeps_guid() {
 
 #[test]
 fn roundtrip_action_named_and_guid_referenced_target_emits_both() {
+    use crate::engine::ecs::IntentValue;
     use crate::engine::ecs::component::{
         ActionComponent, ComponentRef, KeyframeComponent, TransformComponent,
     };
-    use crate::engine::ecs::IntentValue;
     use slotmap::Key;
 
     let mut w = World::default();
@@ -1623,7 +1803,10 @@ fn roundtrip_action_named_and_guid_referenced_target_emits_both() {
     let ce = crate::meow_meow::component_registry::subtree_to_ce_ast(&w, root)
         .expect("subtree_to_ce_ast");
     let text = crate::meow_meow::unparser::unparse_component(&ce);
-    assert!(text.contains("name = \"hero\""), "expected name emit: {text}");
+    assert!(
+        text.contains("name = \"hero\""),
+        "expected name emit: {text}"
+    );
     assert!(
         text.contains(&format!("guid = \"{target_guid}\"")),
         "expected guid emit: {text}"
@@ -1651,8 +1834,8 @@ fn roundtrip_action_named_and_guid_referenced_target_emits_both() {
 
 #[test]
 fn roundtrip_action_unreferenced_component_does_not_get_guid_emit() {
-    use crate::engine::ecs::component::{ActionComponent, TransformComponent};
     use crate::engine::ecs::IntentValue;
+    use crate::engine::ecs::component::{ActionComponent, TransformComponent};
 
     let mut w = World::default();
     let root = w.add_component(TransformComponent::new());
@@ -1689,7 +1872,10 @@ fn roundtrip_ikchain_target_and_end_effector_via_selectors() {
     let ee = w.add_component_boxed_named("end_effector", Box::new(TransformComponent::new()));
     w.add_child(root, ee).unwrap();
     let mut ik = IKChainComponent::new(
-        IKSolver::TwoBoneIK { pole_direction: [0.0, 1.0, 0.0], copy_end_rotation: false },
+        IKSolver::TwoBoneIK {
+            pole_direction: [0.0, 1.0, 0.0],
+            copy_end_rotation: false,
+        },
         target,
         ee,
     );
@@ -1714,13 +1900,18 @@ fn roundtrip_ikchain_target_and_end_effector_via_selectors() {
     }
     // Registry should have resolved them too since the named targets
     // exist in the same subtree.
-    assert_ne!(new_ik.target_id, ee, "target_id should not have been mis-resolved");
+    assert_ne!(
+        new_ik.target_id, ee,
+        "target_id should not have been mis-resolved"
+    );
     assert!(
         new_world.get_component_record(new_ik.target_id).is_some(),
         "target_id should resolve to a live component"
     );
     assert!(
-        new_world.get_component_record(new_ik.end_effector_id).is_some(),
+        new_world
+            .get_component_record(new_ik.end_effector_id)
+            .is_some(),
         "end_effector_id should resolve to a live component"
     );
 }
@@ -1742,13 +1933,9 @@ fn roundtrip_ikchain_guid_handle_preserves_target_guid() {
     let target_guid = w.get_component_record(target).unwrap().guid;
     let ee_guid = w.get_component_record(ee).unwrap().guid;
 
-    let ik = IKChainComponent::new(
-        IKSolver::AimConstraint { offset_yaw: 0.0 },
-        target,
-        ee,
-    )
-    .with_target_source(ComponentRef::Guid(target_guid))
-    .with_end_effector_source(ComponentRef::Guid(ee_guid));
+    let ik = IKChainComponent::new(IKSolver::AimConstraint { offset_yaw: 0.0 }, target, ee)
+        .with_target_source(ComponentRef::Guid(target_guid))
+        .with_end_effector_source(ComponentRef::Guid(ee_guid));
     let ik_id = w.add_component(ik);
     w.add_child(root, ik_id).unwrap();
 
@@ -1764,7 +1951,10 @@ fn roundtrip_ikchain_guid_handle_preserves_target_guid() {
 }
 
 /// DFS lookup of the first component of type `C` under `root`.
-fn find_first<C: ComponentTrait + 'static>(world: &World, root: ComponentId) -> Option<ComponentId> {
+fn find_first<C: ComponentTrait + 'static>(
+    world: &World,
+    root: ComponentId,
+) -> Option<ComponentId> {
     if world.get_component_by_id_as::<C>(root).is_some() {
         return Some(root);
     }
@@ -1799,7 +1989,9 @@ fn roundtrip_animation_default_omits_resolve_targets_in_text() {
 fn roundtrip_keyframe() {
     use crate::engine::ecs::component::KeyframeComponent;
     let (world, id) = roundtrip_component(KeyframeComponent::new(4.25));
-    let got = world.get_component_by_id_as::<KeyframeComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<KeyframeComponent>(id)
+        .unwrap();
     assert!((got.beat - 4.25).abs() < 1e-9);
 }
 
@@ -1813,12 +2005,14 @@ fn roundtrip_input_speed() {
 
 #[test]
 fn roundtrip_input_transform_mode() {
-    use crate::engine::ecs::component::{InputTransformModeComponent, ForwardAxis, RollAxis};
+    use crate::engine::ecs::component::{ForwardAxis, InputTransformModeComponent, RollAxis};
     let original = InputTransformModeComponent::forward_y()
         .with_roll_axis_y()
         .with_fps_rotation();
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<InputTransformModeComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<InputTransformModeComponent>(id)
+        .unwrap();
     assert_eq!(got.forward_axis, ForwardAxis::Y);
     assert_eq!(got.roll_axis, RollAxis::Y);
     assert!(got.fps_rotation);
@@ -1832,8 +2026,14 @@ fn roundtrip_editor() {
         .with_transform_gizmo_rotation_space(TransformGizmoCoordSpace::World);
     let (world, id) = roundtrip_component(original);
     let got = world.get_component_by_id_as::<EditorComponent>(id).unwrap();
-    assert_eq!(got.transform_gizmo_translation_space, TransformGizmoCoordSpace::Local);
-    assert_eq!(got.transform_gizmo_rotation_space, TransformGizmoCoordSpace::World);
+    assert_eq!(
+        got.transform_gizmo_translation_space,
+        TransformGizmoCoordSpace::Local
+    );
+    assert_eq!(
+        got.transform_gizmo_rotation_space,
+        TransformGizmoCoordSpace::World
+    );
 }
 
 #[test]
@@ -1843,7 +2043,9 @@ fn roundtrip_background() {
         .with_occlusion_and_lighting()
         .with_ray_casting();
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<BackgroundComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<BackgroundComponent>(id)
+        .unwrap();
     assert!(got.occlusion_and_lighting);
     assert!(got.ray_casting);
 }
@@ -1856,9 +2058,11 @@ fn roundtrip_background_color() {
 
 #[test]
 fn roundtrip_raycastable_drag_only() {
-    use crate::engine::ecs::component::{RaycastableComponent, PointerEvents};
+    use crate::engine::ecs::component::{PointerEvents, RaycastableComponent};
     let (world, id) = roundtrip_component(RaycastableComponent::drag_only());
-    let got = world.get_component_by_id_as::<RaycastableComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<RaycastableComponent>(id)
+        .unwrap();
     assert!(got.enable);
     assert_eq!(got.pointer_events, PointerEvents::DragOnly);
 }
@@ -1867,19 +2071,23 @@ fn roundtrip_raycastable_drag_only() {
 fn roundtrip_raycastable_disabled() {
     use crate::engine::ecs::component::RaycastableComponent;
     let (world, id) = roundtrip_component(RaycastableComponent::disabled());
-    let got = world.get_component_by_id_as::<RaycastableComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<RaycastableComponent>(id)
+        .unwrap();
     assert!(!got.enable);
 }
 
 #[test]
 fn roundtrip_raycastable_pass_through() {
-    use crate::engine::ecs::component::{RaycastableComponent, PointerEvents};
+    use crate::engine::ecs::component::{PointerEvents, RaycastableComponent};
     let original = RaycastableComponent {
         enable: true,
         pointer_events: PointerEvents::PassThrough,
     };
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<RaycastableComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<RaycastableComponent>(id)
+        .unwrap();
     assert!(got.enable);
     assert_eq!(got.pointer_events, PointerEvents::PassThrough);
 }
@@ -1888,15 +2096,19 @@ fn roundtrip_raycastable_pass_through() {
 fn roundtrip_selectable_off() {
     use crate::engine::ecs::component::SelectableComponent;
     let (world, id) = roundtrip_component(SelectableComponent::off());
-    let got = world.get_component_by_id_as::<SelectableComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<SelectableComponent>(id)
+        .unwrap();
     assert!(!got.enabled);
 }
 
 #[test]
 fn roundtrip_html_element_h1() {
-    use crate::engine::ecs::component::{HtmlElementComponent, ElementType};
+    use crate::engine::ecs::component::{ElementType, HtmlElementComponent};
     let (world, id) = roundtrip_component(HtmlElementComponent::new(ElementType::H1));
-    let got = world.get_component_by_id_as::<HtmlElementComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<HtmlElementComponent>(id)
+        .unwrap();
     assert_eq!(got.element_type, ElementType::H1);
 }
 
@@ -1906,7 +2118,9 @@ fn roundtrip_html_element_h1() {
 fn roundtrip_transparent_cutout_disabled() {
     use crate::engine::ecs::component::TransparentCutoutComponent;
     let (world, id) = roundtrip_component(TransparentCutoutComponent::new().with_enabled(false));
-    let got = world.get_component_by_id_as::<TransparentCutoutComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<TransparentCutoutComponent>(id)
+        .unwrap();
     assert!(!got.enabled);
 }
 
@@ -1915,7 +2129,9 @@ fn roundtrip_texture_filtering_nearest() {
     use crate::engine::ecs::component::TextureFilteringComponent;
     use crate::engine::graphics::TextureFiltering;
     let (world, id) = roundtrip_component(TextureFilteringComponent::nearest());
-    let got = world.get_component_by_id_as::<TextureFilteringComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<TextureFilteringComponent>(id)
+        .unwrap();
     assert_eq!(got.filtering, TextureFiltering::Nearest);
 }
 
@@ -1953,7 +2169,9 @@ fn roundtrip_blur_pass() {
         .with_radius_ndc(0.25)
         .with_half_res(true);
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<BlurPassComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<BlurPassComponent>(id)
+        .unwrap();
     assert!(!got.enabled);
     assert!((got.radius_ndc - 0.25).abs() < 1e-6);
     assert!(got.half_res);
@@ -1963,7 +2181,9 @@ fn roundtrip_blur_pass() {
 fn roundtrip_render_graph_off() {
     use crate::engine::ecs::component::RenderGraphComponent;
     let (world, id) = roundtrip_component(RenderGraphComponent::off());
-    let got = world.get_component_by_id_as::<RenderGraphComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<RenderGraphComponent>(id)
+        .unwrap();
     assert!(!got.enabled);
 }
 
@@ -1971,7 +2191,9 @@ fn roundtrip_render_graph_off() {
 fn roundtrip_light_quantization() {
     use crate::engine::ecs::component::LightQuantizationComponent;
     let (world, id) = roundtrip_component(LightQuantizationComponent::steps(5.0));
-    let got = world.get_component_by_id_as::<LightQuantizationComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<LightQuantizationComponent>(id)
+        .unwrap();
     assert!((got.quant_steps - 5.0).abs() < 1e-6);
 }
 
@@ -1979,7 +2201,9 @@ fn roundtrip_light_quantization() {
 fn roundtrip_normal_visualisation() {
     use crate::engine::ecs::component::NormalVisualisationComponent;
     let (world, id) = roundtrip_component(NormalVisualisationComponent::new().with_thickness(0.05));
-    let got = world.get_component_by_id_as::<NormalVisualisationComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<NormalVisualisationComponent>(id)
+        .unwrap();
     assert!((got.thickness - 0.05).abs() < 1e-6);
 }
 
@@ -2001,7 +2225,9 @@ fn roundtrip_uv() {
 fn roundtrip_scrolling() {
     use crate::engine::ecs::component::ScrollingComponent;
     let (world, id) = roundtrip_component(ScrollingComponent::new(2.0, 8.0));
-    let got = world.get_component_by_id_as::<ScrollingComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<ScrollingComponent>(id)
+        .unwrap();
     assert!((got.viewport_height - 2.0).abs() < 1e-6);
     assert!((got.content_height - 8.0).abs() < 1e-6);
 }
@@ -2028,7 +2254,9 @@ fn roundtrip_router() {
 
 #[test]
 fn roundtrip_transition() {
-    use crate::engine::ecs::component::{TransitionComponent, TransitionEasing, TransitionReplacePolicy};
+    use crate::engine::ecs::component::{
+        TransitionComponent, TransitionEasing, TransitionReplacePolicy,
+    };
     let original = TransitionComponent::new()
         .enabled(true)
         .with_duration_beats(2.0)
@@ -2036,7 +2264,9 @@ fn roundtrip_transition() {
         .with_easing(TransitionEasing::EaseInOutCubic)
         .with_replace(TransitionReplacePolicy::AllowParallel);
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<TransitionComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<TransitionComponent>(id)
+        .unwrap();
     assert!(got.enabled);
     assert!((got.duration_beats - 2.0).abs() < 1e-9);
     assert!(!got.capture_from_current);
@@ -2052,7 +2282,9 @@ fn roundtrip_text_shadow() {
         .with_scale(1.5)
         .with_offset([0.25, -0.5, 0.001]);
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<TextShadowComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<TextShadowComponent>(id)
+        .unwrap();
     assert!((got.rgba[0] - 0.1).abs() < 1e-6);
     assert!((got.rgba[3] - 0.5).abs() < 1e-6);
     assert!((got.scale - 1.5).abs() < 1e-6);
@@ -2066,7 +2298,9 @@ fn roundtrip_renderer_settings_msaa_off() {
     use crate::engine::ecs::component::RendererSettingsComponent;
     let original = RendererSettingsComponent::msaa_off().with_window_size(1920, 1080);
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<RendererSettingsComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<RendererSettingsComponent>(id)
+        .unwrap();
     assert!(!got.msaa4x);
     assert_eq!(got.window_size, Some([1920, 1080]));
 }
@@ -2079,7 +2313,9 @@ fn roundtrip_stencil_clip() {
     let mut original = StencilClipComponent::new();
     original.stencil_ref = 3;
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<StencilClipComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<StencilClipComponent>(id)
+        .unwrap();
     assert_eq!(got.stencil_ref, 3);
 }
 
@@ -2087,7 +2323,10 @@ fn roundtrip_stencil_clip() {
 fn roundtrip_bounds() {
     use crate::engine::ecs::component::BoundsComponent;
     use crate::engine::graphics::bounds::Aabb;
-    let original = BoundsComponent::new(Aabb { min: [-1.0, -2.0, -3.0], max: [1.0, 2.0, 3.0] });
+    let original = BoundsComponent::new(Aabb {
+        min: [-1.0, -2.0, -3.0],
+        max: [1.0, 2.0, 3.0],
+    });
     let (world, id) = roundtrip_component(original);
     let got = world.get_component_by_id_as::<BoundsComponent>(id).unwrap();
     assert_eq!(got.local.min, [-1.0, -2.0, -3.0]);
@@ -2104,18 +2343,22 @@ fn roundtrip_mesh() {
 
 #[test]
 fn roundtrip_gesture_coord_type() {
-    use crate::engine::ecs::component::{GestureCoordTypeComponent, GestureCoordType};
+    use crate::engine::ecs::component::{GestureCoordType, GestureCoordTypeComponent};
     let (world, id) = roundtrip_component(GestureCoordTypeComponent::screen_space_1d_slider());
-    let got = world.get_component_by_id_as::<GestureCoordTypeComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<GestureCoordTypeComponent>(id)
+        .unwrap();
     assert_eq!(got.coord_type, GestureCoordType::ScreenSpace1DSlider);
 }
 
 #[test]
 fn roundtrip_collision_shape_cube() {
-    use crate::engine::ecs::component::{CollisionShapeComponent, CollisionShape};
+    use crate::engine::ecs::component::{CollisionShape, CollisionShapeComponent};
     let original = CollisionShapeComponent::new(CollisionShape::cube_half_extents([2.0, 3.0, 4.0]));
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<CollisionShapeComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<CollisionShapeComponent>(id)
+        .unwrap();
     match got.shape {
         CollisionShape::Cube { half_extents } => assert_eq!(half_extents, [2.0, 3.0, 4.0]),
         _ => panic!("expected Cube"),
@@ -2124,10 +2367,12 @@ fn roundtrip_collision_shape_cube() {
 
 #[test]
 fn roundtrip_collision_shape_sphere() {
-    use crate::engine::ecs::component::{CollisionShapeComponent, CollisionShape};
+    use crate::engine::ecs::component::{CollisionShape, CollisionShapeComponent};
     let original = CollisionShapeComponent::new(CollisionShape::sphere_radius(1.5));
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<CollisionShapeComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<CollisionShapeComponent>(id)
+        .unwrap();
     match got.shape {
         CollisionShape::Sphere { radius } => assert!((radius - 1.5).abs() < 1e-6),
         _ => panic!("expected Sphere"),
@@ -2138,7 +2383,9 @@ fn roundtrip_collision_shape_sphere() {
 fn roundtrip_raycastable_shape() {
     use crate::engine::ecs::component::{RaycastableShapeComponent, RaycastableShapeType};
     let (world, id) = roundtrip_component(RaycastableShapeComponent::cone());
-    let got = world.get_component_by_id_as::<RaycastableShapeComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<RaycastableShapeComponent>(id)
+        .unwrap();
     assert_eq!(got.shape, RaycastableShapeType::Cone);
 }
 
@@ -2146,7 +2393,9 @@ fn roundtrip_raycastable_shape() {
 fn roundtrip_collision() {
     use crate::engine::ecs::component::{CollisionComponent, CollisionMode};
     let (world, id) = roundtrip_component(CollisionComponent::KINEMATIC());
-    let got = world.get_component_by_id_as::<CollisionComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<CollisionComponent>(id)
+        .unwrap();
     assert_eq!(got.mode, CollisionMode::Kinematic);
 }
 
@@ -2154,7 +2403,9 @@ fn roundtrip_collision() {
 fn roundtrip_gravity() {
     use crate::engine::ecs::component::GravityComponent;
     let (world, id) = roundtrip_component(GravityComponent::new().with_coefficient(0.5));
-    let got = world.get_component_by_id_as::<GravityComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<GravityComponent>(id)
+        .unwrap();
     assert!(got.enabled);
     assert!((got.coefficient - 0.5).abs() < 1e-6);
 }
@@ -2163,7 +2414,9 @@ fn roundtrip_gravity() {
 fn roundtrip_pointer_disabled() {
     use crate::engine::ecs::component::PointerComponent;
     let (world, id) = roundtrip_component(PointerComponent::disabled());
-    let got = world.get_component_by_id_as::<PointerComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<PointerComponent>(id)
+        .unwrap();
     assert!(!got.enabled);
 }
 
@@ -2171,7 +2424,9 @@ fn roundtrip_pointer_disabled() {
 fn roundtrip_skinned_mesh() {
     use crate::engine::ecs::component::SkinnedMeshComponent;
     let (world, id) = roundtrip_component(SkinnedMeshComponent::new(7));
-    let got = world.get_component_by_id_as::<SkinnedMeshComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<SkinnedMeshComponent>(id)
+        .unwrap();
     assert_eq!(got.skin_index, 7);
 }
 
@@ -2179,7 +2434,9 @@ fn roundtrip_skinned_mesh() {
 fn roundtrip_transform_sample_ancestor() {
     use crate::engine::ecs::component::TransformSampleAncestorComponent;
     let (world, id) = roundtrip_component(TransformSampleAncestorComponent::new().with_skip(3));
-    let got = world.get_component_by_id_as::<TransformSampleAncestorComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<TransformSampleAncestorComponent>(id)
+        .unwrap();
     assert_eq!(got.skip, 3);
 }
 
@@ -2190,7 +2447,9 @@ fn roundtrip_transform_parent() {
         .with_target_source(ComponentRef::Query("#hero".to_string()))
         .with_root_source(ComponentRef::Query("#scene".to_string()));
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<TransformParentComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<TransformParentComponent>(id)
+        .unwrap();
     match got.target_source.as_ref() {
         Some(ComponentRef::Query(s)) => assert_eq!(s, "#hero"),
         other => panic!("unexpected target_source: {other:?}"),
@@ -2204,16 +2463,22 @@ fn roundtrip_transform_parent() {
 #[test]
 fn roundtrip_quat_temporal_filter() {
     use crate::engine::ecs::component::QuatTemporalFilterComponent;
-    let (world, id) = roundtrip_component(QuatTemporalFilterComponent::new().with_smoothing_factor(220.0));
-    let got = world.get_component_by_id_as::<QuatTemporalFilterComponent>(id).unwrap();
+    let (world, id) =
+        roundtrip_component(QuatTemporalFilterComponent::new().with_smoothing_factor(220.0));
+    let got = world
+        .get_component_by_id_as::<QuatTemporalFilterComponent>(id)
+        .unwrap();
     assert!((got.smoothing_factor - 220.0).abs() < 1e-6);
 }
 
 #[test]
 fn roundtrip_vector3_temporal_filter() {
     use crate::engine::ecs::component::Vector3TemporalFilterComponent;
-    let (world, id) = roundtrip_component(Vector3TemporalFilterComponent::new().with_smoothing_factor(15.0));
-    let got = world.get_component_by_id_as::<Vector3TemporalFilterComponent>(id).unwrap();
+    let (world, id) =
+        roundtrip_component(Vector3TemporalFilterComponent::new().with_smoothing_factor(15.0));
+    let got = world
+        .get_component_by_id_as::<Vector3TemporalFilterComponent>(id)
+        .unwrap();
     assert!((got.smoothing_factor - 15.0).abs() < 1e-6);
 }
 
@@ -2224,7 +2489,9 @@ fn roundtrip_quat_yaw_follow() {
         .with_forward_plus_z()
         .with_initial_yaw(std::f32::consts::PI);
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<QuatYawFollowComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<QuatYawFollowComponent>(id)
+        .unwrap();
     assert!((got.threshold - 0.5).abs() < 1e-6);
     assert!((got.rate - 2.0).abs() < 1e-6);
     assert!(got.forward_plus_z);
@@ -2236,7 +2503,9 @@ fn roundtrip_signal_route_upward() {
     use crate::engine::ecs::component::SignalRouteUpwardComponent;
     let original = SignalRouteUpwardComponent::new("UpdateTransform", "transform_pipeline");
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<SignalRouteUpwardComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<SignalRouteUpwardComponent>(id)
+        .unwrap();
     assert_eq!(got.intent_kind, "UpdateTransform");
     assert_eq!(got.parent_type, "transform_pipeline");
 }
@@ -2249,7 +2518,9 @@ fn roundtrip_avatar_body_yaw() {
         .with_rate(2.0)
         .with_forward_plus_z();
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<AvatarBodyYawComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<AvatarBodyYawComponent>(id)
+        .unwrap();
     assert!((got.threshold - 0.5).abs() < 1e-6);
     assert!((got.rate - 2.0).abs() < 1e-6);
     assert!(got.forward_plus_z);
@@ -2260,7 +2531,9 @@ fn roundtrip_raycast() {
     use crate::engine::ecs::component::{RayCastComponent, RayCastMode};
     let original = RayCastComponent::continuous().with_max_distance(75.0);
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<RayCastComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<RayCastComponent>(id)
+        .unwrap();
     assert_eq!(got.mode, RayCastMode::Continuous);
     assert!((got.max_distance - 75.0).abs() < 1e-6);
 }
@@ -2277,7 +2550,9 @@ fn roundtrip_avatar_control() {
         .with_camera_bone("J_Bip_C_Head")
         .with_avatar_height(1.7);
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<AvatarControlComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<AvatarControlComponent>(id)
+        .unwrap();
     assert_eq!(got.head_bone, "J_Bip_C_Neck");
     assert_eq!(got.left_hand_bone.as_deref(), Some("J_Bip_L_Hand"));
     assert_eq!(got.right_hand_bone.as_deref(), Some("J_Bip_R_Hand"));
@@ -2292,7 +2567,9 @@ fn roundtrip_music_note_c5() {
     use crate::engine::ecs::component::{MusicNote, MusicNoteComponent};
     let note = MusicNote::c(5, 0.25).with_velocity(0.8);
     let (world, id) = roundtrip_component(MusicNoteComponent::new(note));
-    let got = world.get_component_by_id_as::<MusicNoteComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<MusicNoteComponent>(id)
+        .unwrap();
     assert_eq!(got.note.pitch_name(), "c");
     assert_eq!(got.note.octave(), 5);
     assert!((got.note.duration_beats() - 0.25).abs() < 1e-6);
@@ -2303,17 +2580,22 @@ fn roundtrip_music_note_c5() {
 #[cfg(any())]
 #[test]
 fn roundtrip_ik_chain_aim() {
+    use crate::engine::ecs::ComponentId;
     use crate::engine::ecs::component::{IKChainComponent, IKSolver};
     use slotmap::Key;
-    use crate::engine::ecs::ComponentId;
     let sentinel = ComponentId::null();
     let original = IKChainComponent::new(
-        IKSolver::AimConstraint { offset_yaw: std::f32::consts::PI },
+        IKSolver::AimConstraint {
+            offset_yaw: std::f32::consts::PI,
+        },
         sentinel,
         sentinel,
-    ).with_weight(0.5);
+    )
+    .with_weight(0.5);
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<IKChainComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<IKChainComponent>(id)
+        .unwrap();
     match got.solver {
         IKSolver::AimConstraint { offset_yaw } => {
             assert!((offset_yaw - std::f32::consts::PI).abs() < 1e-6);
@@ -2325,9 +2607,12 @@ fn roundtrip_ik_chain_aim() {
 
 #[test]
 fn roundtrip_transform_gizmo_translate() {
-    use crate::engine::ecs::component::{TransformGizmoTranslateComponent, TransformGizmoAxis};
-    let (world, id) = roundtrip_component(TransformGizmoTranslateComponent::new(TransformGizmoAxis::Y));
-    let got = world.get_component_by_id_as::<TransformGizmoTranslateComponent>(id).unwrap();
+    use crate::engine::ecs::component::{TransformGizmoAxis, TransformGizmoTranslateComponent};
+    let (world, id) =
+        roundtrip_component(TransformGizmoTranslateComponent::new(TransformGizmoAxis::Y));
+    let got = world
+        .get_component_by_id_as::<TransformGizmoTranslateComponent>(id)
+        .unwrap();
     assert_eq!(got.axis, TransformGizmoAxis::Y);
 }
 
@@ -2335,7 +2620,9 @@ fn roundtrip_transform_gizmo_translate() {
 fn roundtrip_transform_gizmo() {
     use crate::engine::ecs::component::TransformGizmoComponent;
     let (world, id) = roundtrip_component(TransformGizmoComponent::new().with_scale(0.5));
-    let got = world.get_component_by_id_as::<TransformGizmoComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<TransformGizmoComponent>(id)
+        .unwrap();
     assert!((got.scale - 0.5).abs() < 1e-6);
 }
 
@@ -2351,7 +2638,9 @@ fn roundtrip_renderer_stats() {
     original.color = [0.5, 0.6, 0.7, 1.0];
     original.emissive = false;
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<RendererStatsComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<RendererStatsComponent>(id)
+        .unwrap();
     assert!(!got.enabled);
     assert!(matches!(got.target, CameraTarget::Xr));
     assert!((got.update_interval_sec - 0.5).abs() < 1e-6);
@@ -2368,7 +2657,9 @@ fn roundtrip_kinetic_response() {
         .with_friction(0.5)
         .with_friction_y(0.25);
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<KineticResponseComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<KineticResponseComponent>(id)
+        .unwrap();
     assert_eq!(got.mode, KineticResponseMode::Push);
     assert!((got.push_strength - 8.0).abs() < 1e-6);
     assert!((got.friction - 0.5).abs() < 1e-6);

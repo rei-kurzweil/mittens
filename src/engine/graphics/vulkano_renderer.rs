@@ -1,10 +1,10 @@
 use crate::engine::graphics::MeshUploader;
+use crate::engine::graphics::MsaaMode;
 use crate::engine::graphics::TextureUploader;
 use crate::engine::graphics::mesh::CpuMesh;
 use crate::engine::graphics::primitives::MeshHandle;
 use crate::engine::graphics::primitives::TextureHandle;
 use crate::engine::graphics::visual_world::VisualWorld;
-use crate::engine::graphics::MsaaMode;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -15,6 +15,7 @@ mod vulkano_backend {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use crate::engine::ecs::system::render_to_texture_system::INTERNAL_RENDERER_STENCIL_CLIP_DEBUG_SELECTOR;
+    use crate::engine::graphics::MsaaMode;
     use crate::engine::graphics::mesh::{CpuMesh, CpuVertex};
     use crate::engine::graphics::pipeline_descriptor_set_layouts::PipelineDescriptorSetLayouts;
     use crate::engine::graphics::post_processing::{
@@ -23,14 +24,12 @@ mod vulkano_backend {
     use crate::engine::graphics::primitives::MeshHandle;
     use crate::engine::graphics::primitives::TextureHandle;
     use crate::engine::graphics::visual_world::{TextureFiltering, VisualWorld};
-    use crate::engine::graphics::MsaaMode;
     use crate::engine::graphics::vulkano_swapchain::VulkanoSwapchainState;
     use crate::engine::graphics::vulkano_texture_upload;
     use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
     use vulkano::command_buffer::{
         AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo, CopyImageInfo,
-        PrimaryCommandBufferAbstract,
-        allocator::StandardCommandBufferAllocator,
+        PrimaryCommandBufferAbstract, allocator::StandardCommandBufferAllocator,
     };
     use vulkano::command_buffer::{
         ClearAttachment, ClearRect, RenderingAttachmentInfo, RenderingAttachmentResolveInfo,
@@ -40,15 +39,20 @@ mod vulkano_backend {
     use vulkano::descriptor_set::{DescriptorSet, WriteDescriptorSet};
     use vulkano::format::ClearValue;
     use vulkano::image::view::{ImageView, ImageViewCreateInfo};
-    use vulkano::image::{Image, ImageAspects, ImageCreateInfo, ImageSubresourceRange, ImageType, ImageUsage, SampleCount, SampleCounts};
-    use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
+    use vulkano::image::{
+        Image, ImageAspects, ImageCreateInfo, ImageSubresourceRange, ImageType, ImageUsage,
+        SampleCount, SampleCounts,
+    };
+    use vulkano::memory::allocator::{
+        AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator,
+    };
     use vulkano::pipeline::graphics::color_blend::{
         AttachmentBlend, BlendFactor, BlendOp, ColorBlendAttachmentState, ColorBlendState,
         ColorComponents,
     };
     use vulkano::pipeline::graphics::depth_stencil::{
-        CompareOp, DepthState, DepthStencilState,
-        StencilOp, StencilOps, StencilOpState, StencilState,
+        CompareOp, DepthState, DepthStencilState, StencilOp, StencilOpState, StencilOps,
+        StencilState,
     };
     use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
     use vulkano::pipeline::graphics::multisample::MultisampleState;
@@ -1014,7 +1018,8 @@ mod vulkano_backend {
             let mut pipeline_rendering = PipelineRenderingCreateInfo::default();
             pipeline_rendering.color_attachment_formats = vec![Some(color_format)];
             pipeline_rendering.depth_attachment_format = Some(VulkanoSwapchainState::DEPTH_FORMAT);
-            pipeline_rendering.stencil_attachment_format = Some(VulkanoSwapchainState::DEPTH_FORMAT);
+            pipeline_rendering.stencil_attachment_format =
+                Some(VulkanoSwapchainState::DEPTH_FORMAT);
 
             pipeline_ci.subpass = Some(PipelineSubpassType::BeginRendering(pipeline_rendering));
 
@@ -1035,11 +1040,8 @@ mod vulkano_backend {
                 }),
                 ..Default::default()
             });
-            let pipeline_emissive_prepass_toon_mesh = GraphicsPipeline::new(
-                device.clone(),
-                None,
-                pipeline_ci_emissive_prepass,
-            )?;
+            let pipeline_emissive_prepass_toon_mesh =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_emissive_prepass)?;
 
             // Transparent variant: depth test ON, depth write OFF.
             let mut pipeline_ci_transparent = pipeline_ci.clone();
@@ -1096,11 +1098,8 @@ mod vulkano_backend {
                 }),
                 ..Default::default()
             });
-            let pipeline_emissive_prepass_toon_mesh_cutout = GraphicsPipeline::new(
-                device.clone(),
-                None,
-                pipeline_ci_emissive_prepass_cutout,
-            )?;
+            let pipeline_emissive_prepass_toon_mesh_cutout =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_emissive_prepass_cutout)?;
 
             // Skinned variants: same state, different vertex shader.
             let mut pipeline_ci_skinned = pipeline_ci.clone();
@@ -1111,12 +1110,10 @@ mod vulkano_backend {
 
             let mut pipeline_ci_skinned_emissive = pipeline_ci.clone();
             pipeline_ci_skinned_emissive.stages = skinned_emissive_stages.clone().into();
-            pipeline_ci_skinned_emissive.vertex_input_state = Some(vertex_input_state_skinned.clone());
-            let pipeline_skinned_emissive_toon_mesh = GraphicsPipeline::new(
-                device.clone(),
-                None,
-                pipeline_ci_skinned_emissive.clone(),
-            )?;
+            pipeline_ci_skinned_emissive.vertex_input_state =
+                Some(vertex_input_state_skinned.clone());
+            let pipeline_skinned_emissive_toon_mesh =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_skinned_emissive.clone())?;
 
             let mut pipeline_ci_skinned_emissive_prepass = pipeline_ci_skinned_emissive.clone();
             pipeline_ci_skinned_emissive_prepass.depth_stencil_state = Some(DepthStencilState {
@@ -1127,11 +1124,8 @@ mod vulkano_backend {
                 }),
                 ..Default::default()
             });
-            let pipeline_skinned_emissive_prepass_toon_mesh = GraphicsPipeline::new(
-                device.clone(),
-                None,
-                pipeline_ci_skinned_emissive_prepass,
-            )?;
+            let pipeline_skinned_emissive_prepass_toon_mesh =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_skinned_emissive_prepass)?;
 
             let mut pipeline_ci_skinned_transparent = pipeline_ci_transparent.clone();
             pipeline_ci_skinned_transparent.stages = skinned_stages.clone().into();
@@ -1153,15 +1147,20 @@ mod vulkano_backend {
 
             let mut pipeline_ci_skinned_cutout = pipeline_ci_cutout.clone();
             pipeline_ci_skinned_cutout.stages = skinned_stages.into();
-            pipeline_ci_skinned_cutout.vertex_input_state = Some(vertex_input_state_skinned.clone());
+            pipeline_ci_skinned_cutout.vertex_input_state =
+                Some(vertex_input_state_skinned.clone());
             let pipeline_skinned_toon_mesh_cutout =
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci_skinned_cutout)?;
 
             let mut pipeline_ci_skinned_emissive_cutout = pipeline_ci_cutout.clone();
             pipeline_ci_skinned_emissive_cutout.stages = skinned_emissive_stages.clone().into();
-            pipeline_ci_skinned_emissive_cutout.vertex_input_state = Some(vertex_input_state_skinned.clone());
-            let pipeline_skinned_emissive_toon_mesh_cutout =
-                GraphicsPipeline::new(device.clone(), None, pipeline_ci_skinned_emissive_cutout.clone())?;
+            pipeline_ci_skinned_emissive_cutout.vertex_input_state =
+                Some(vertex_input_state_skinned.clone());
+            let pipeline_skinned_emissive_toon_mesh_cutout = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                pipeline_ci_skinned_emissive_cutout.clone(),
+            )?;
 
             let mut pipeline_ci_skinned_emissive_prepass_cutout =
                 pipeline_ci_skinned_emissive_cutout.clone();
@@ -1216,8 +1215,14 @@ mod vulkano_backend {
             pipeline_ci_stencil_incr.depth_stencil_state = Some(DepthStencilState {
                 depth: None,
                 stencil: Some(StencilState {
-                    front: StencilOpState { ops: stencil_ops_incr, ..Default::default() },
-                    back: StencilOpState { ops: stencil_ops_incr, ..Default::default() },
+                    front: StencilOpState {
+                        ops: stencil_ops_incr,
+                        ..Default::default()
+                    },
+                    back: StencilOpState {
+                        ops: stencil_ops_incr,
+                        ..Default::default()
+                    },
                 }),
                 ..Default::default()
             });
@@ -1230,8 +1235,14 @@ mod vulkano_backend {
             pipeline_ci_stencil_decr.depth_stencil_state = Some(DepthStencilState {
                 depth: None,
                 stencil: Some(StencilState {
-                    front: StencilOpState { ops: stencil_ops_decr, ..Default::default() },
-                    back: StencilOpState { ops: stencil_ops_decr, ..Default::default() },
+                    front: StencilOpState {
+                        ops: stencil_ops_decr,
+                        ..Default::default()
+                    },
+                    back: StencilOpState {
+                        ops: stencil_ops_decr,
+                        ..Default::default()
+                    },
                 }),
                 ..Default::default()
             });
@@ -1243,8 +1254,14 @@ mod vulkano_backend {
             let clipped_depth_stencil = DepthStencilState {
                 depth: Some(DepthState::simple()),
                 stencil: Some(StencilState {
-                    front: StencilOpState { ops: stencil_ops_test, ..Default::default() },
-                    back: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                    front: StencilOpState {
+                        ops: stencil_ops_test,
+                        ..Default::default()
+                    },
+                    back: StencilOpState {
+                        ops: stencil_ops_test,
+                        ..Default::default()
+                    },
                 }),
                 ..Default::default()
             };
@@ -1282,8 +1299,14 @@ mod vulkano_backend {
                     ..DepthState::simple()
                 }),
                 stencil: Some(StencilState {
-                    front: StencilOpState { ops: stencil_ops_test, ..Default::default() },
-                    back: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                    front: StencilOpState {
+                        ops: stencil_ops_test,
+                        ..Default::default()
+                    },
+                    back: StencilOpState {
+                        ops: stencil_ops_test,
+                        ..Default::default()
+                    },
                 }),
                 ..Default::default()
             };
@@ -1292,11 +1315,8 @@ mod vulkano_backend {
             pipeline_ci_transparent_clipped.depth_stencil_state =
                 Some(transparent_clipped_depth_stencil.clone());
             pipeline_ci_transparent_clipped.dynamic_state = stencil_dynamic_state.clone();
-            let pipeline_toon_mesh_transparent_clipped = GraphicsPipeline::new(
-                device.clone(),
-                None,
-                pipeline_ci_transparent_clipped,
-            )?;
+            let pipeline_toon_mesh_transparent_clipped =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_transparent_clipped)?;
 
             let mut pipeline_ci_emissive_transparent_clipped =
                 pipeline_ci_emissive_transparent.clone();
@@ -1313,8 +1333,14 @@ mod vulkano_backend {
             pipeline_ci_cutout_clipped.depth_stencil_state = Some(DepthStencilState {
                 depth: Some(DepthState::simple()),
                 stencil: Some(StencilState {
-                    front: StencilOpState { ops: stencil_ops_test, ..Default::default() },
-                    back: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                    front: StencilOpState {
+                        ops: stencil_ops_test,
+                        ..Default::default()
+                    },
+                    back: StencilOpState {
+                        ops: stencil_ops_test,
+                        ..Default::default()
+                    },
                 }),
                 ..Default::default()
             });
@@ -1326,17 +1352,20 @@ mod vulkano_backend {
             pipeline_ci_emissive_cutout_clipped.depth_stencil_state = Some(DepthStencilState {
                 depth: Some(DepthState::simple()),
                 stencil: Some(StencilState {
-                    front: StencilOpState { ops: stencil_ops_test, ..Default::default() },
-                    back: StencilOpState { ops: stencil_ops_test, ..Default::default() },
+                    front: StencilOpState {
+                        ops: stencil_ops_test,
+                        ..Default::default()
+                    },
+                    back: StencilOpState {
+                        ops: stencil_ops_test,
+                        ..Default::default()
+                    },
                 }),
                 ..Default::default()
             });
             pipeline_ci_emissive_cutout_clipped.dynamic_state = stencil_dynamic_state;
-            let pipeline_emissive_toon_mesh_cutout_clipped = GraphicsPipeline::new(
-                device.clone(),
-                None,
-                pipeline_ci_emissive_cutout_clipped,
-            )?;
+            let pipeline_emissive_toon_mesh_cutout_clipped =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_emissive_cutout_clipped)?;
 
             let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
                 device.clone(),
@@ -1596,12 +1625,11 @@ mod vulkano_backend {
         ) -> Result<(), Box<dyn std::error::Error>> {
             if !self.pending_runtime_texture_updates.is_empty() {
                 unsafe {
-                    self.context
-                        .device()
-                        .wait_idle()
-                        .map_err(|e| -> Box<dyn std::error::Error> {
+                    self.context.device().wait_idle().map_err(
+                        |e| -> Box<dyn std::error::Error> {
                             format!("wait_idle failed before runtime texture swap: {e}").into()
-                        })?;
+                        },
+                    )?;
                 }
             }
             self.apply_pending_runtime_texture_updates();
@@ -1648,39 +1676,40 @@ mod vulkano_backend {
                 None
             };
 
-            let (color_attachment_view, color_resolve_view, depth_view) = if let Some(post) = post_process.as_ref() {
-                (
-                    post.targets
-                        .main_msaa_color
-                        .clone()
-                        .unwrap_or_else(|| post.targets.main_color.clone()),
-                    if post.targets.main_msaa_color.is_some() {
-                        Some(post.targets.main_color.clone())
-                    } else {
-                        None
-                    },
-                    post.targets.depth.clone(),
-                )
-            } else if self.msaa_samples != SampleCount::Sample1 {
-                let msaa_view = targets
-                    .msaa_color_views
-                    .get(eye)
-                    .ok_or("XR MSAA color eye out of range")?
-                    .clone();
-                let depth_view = targets
-                    .depth_views
-                    .get(eye)
-                    .ok_or("XR depth eye out of range")?
-                    .clone();
-                (msaa_view, Some(resolve_view.clone()), depth_view)
-            } else {
-                let depth_view = targets
-                    .depth_views
-                    .get(eye)
-                    .ok_or("XR depth eye out of range")?
-                    .clone();
-                (resolve_view.clone(), None, depth_view)
-            };
+            let (color_attachment_view, color_resolve_view, depth_view) =
+                if let Some(post) = post_process.as_ref() {
+                    (
+                        post.targets
+                            .main_msaa_color
+                            .clone()
+                            .unwrap_or_else(|| post.targets.main_color.clone()),
+                        if post.targets.main_msaa_color.is_some() {
+                            Some(post.targets.main_color.clone())
+                        } else {
+                            None
+                        },
+                        post.targets.depth.clone(),
+                    )
+                } else if self.msaa_samples != SampleCount::Sample1 {
+                    let msaa_view = targets
+                        .msaa_color_views
+                        .get(eye)
+                        .ok_or("XR MSAA color eye out of range")?
+                        .clone();
+                    let depth_view = targets
+                        .depth_views
+                        .get(eye)
+                        .ok_or("XR depth eye out of range")?
+                        .clone();
+                    (msaa_view, Some(resolve_view.clone()), depth_view)
+                } else {
+                    let depth_view = targets
+                        .depth_views
+                        .get(eye)
+                        .ok_or("XR depth eye out of range")?
+                        .clone();
+                    (resolve_view.clone(), None, depth_view)
+                };
 
             let window_slots = self.swapchain_state.swapchain_views.len().max(1);
             let bones_slots_total = window_slots + view_count;
@@ -1854,14 +1883,18 @@ mod vulkano_backend {
             extent: [u32; 2],
             color_format: Format,
         ) -> Result<(), Box<dyn std::error::Error>> {
-            let needs_recreate = self.window_runtime_debug_targets.as_ref().is_none_or(|targets| {
-                targets.extent != extent
-                    || targets.color_format != color_format
-                    || targets.color_views.len() != frame_count
-                    || (self.msaa_samples == SampleCount::Sample1) != targets.msaa_color_views.is_empty()
-                    || (self.msaa_samples != SampleCount::Sample1
-                        && targets.msaa_color_views.len() != frame_count)
-            });
+            let needs_recreate = self
+                .window_runtime_debug_targets
+                .as_ref()
+                .is_none_or(|targets| {
+                    targets.extent != extent
+                        || targets.color_format != color_format
+                        || targets.color_views.len() != frame_count
+                        || (self.msaa_samples == SampleCount::Sample1)
+                            != targets.msaa_color_views.is_empty()
+                        || (self.msaa_samples != SampleCount::Sample1
+                            && targets.msaa_color_views.len() != frame_count)
+                });
 
             if !needs_recreate {
                 return Ok(());
@@ -1970,7 +2003,9 @@ mod vulkano_backend {
                     i_model_c1: m[1],
                     i_model_c2: m[2],
                     i_model_c3: m[3],
-                    i_color: Self::hsv_debug_color_for_stencil_ref(inst.stencil_ref.saturating_add(1)),
+                    i_color: Self::hsv_debug_color_for_stencil_ref(
+                        inst.stencil_ref.saturating_add(1),
+                    ),
                     i_emissive: 1.0,
                     i_opacity: 1.0,
                     i_bones_base: inst.bones_base,
@@ -2886,8 +2921,7 @@ mod vulkano_backend {
             // Overlay phase: when post-process is disabled, clear depth here so overlay draws on
             // top of the scene immediately. When post-process is enabled, defer overlay until
             // after emissive extraction so opaque/cutout depth can occlude the emissive pass.
-            if overlay_instance_count > 0 && !defer_overlay_until_before_final_composite
-            {
+            if overlay_instance_count > 0 && !defer_overlay_until_before_final_composite {
                 // NOTE: `clear_attachments` requires a bound graphics pipeline.
                 cbb.bind_pipeline_graphics(self.pipeline_toon_mesh.clone())?;
                 cbb.clear_attachments(
@@ -2914,7 +2948,6 @@ mod vulkano_backend {
             cbb.end_rendering()?;
 
             if let Some(post_process) = post_process {
-
                 let bloom_radius_pixels = post_process
                     .config
                     .effective_blur_radius_pixels(post_process.targets.bloom_extent[0]);
@@ -2933,8 +2966,8 @@ mod vulkano_backend {
                     post_process.targets.bloom_b.clone(),
                     bloom_radius_pixels,
                 ) {
-                    let has_emissive_content = emissive_instance_count > 0
-                        || emissive_cutout_instance_count > 0;
+                    let has_emissive_content =
+                        emissive_instance_count > 0 || emissive_cutout_instance_count > 0;
 
                     if has_emissive_content {
                         let mut bloom_attachment = RenderingAttachmentInfo {
@@ -2951,8 +2984,9 @@ mod vulkano_backend {
                         };
 
                         if post_process.targets.bloom_source_msaa.is_some() {
-                            bloom_attachment.resolve_info =
-                                Some(RenderingAttachmentResolveInfo::image_view(bloom_source.clone()));
+                            bloom_attachment.resolve_info = Some(
+                                RenderingAttachmentResolveInfo::image_view(bloom_source.clone()),
+                            );
                             bloom_attachment.store_op = AttachmentStoreOp::DontCare;
                         }
 
@@ -2964,7 +2998,9 @@ mod vulkano_backend {
                             depth_attachment: Some(RenderingAttachmentInfo {
                                 load_op: AttachmentLoadOp::Load,
                                 store_op: AttachmentStoreOp::DontCare,
-                                ..RenderingAttachmentInfo::image_view(post_process.targets.depth.clone())
+                                ..RenderingAttachmentInfo::image_view(
+                                    post_process.targets.depth.clone(),
+                                )
                             }),
                             ..Default::default()
                         })?;
@@ -3014,8 +3050,10 @@ mod vulkano_backend {
                                 visual_world.emissive_cutout_batches(),
                                 self.pipeline_emissive_prepass_toon_mesh_cutout.clone(),
                                 self.pipeline_emissive_prepass_toon_mesh_cutout.clone(),
-                                self.pipeline_skinned_emissive_prepass_toon_mesh_cutout.clone(),
-                                self.pipeline_skinned_emissive_prepass_toon_mesh_cutout.clone(),
+                                self.pipeline_skinned_emissive_prepass_toon_mesh_cutout
+                                    .clone(),
+                                self.pipeline_skinned_emissive_prepass_toon_mesh_cutout
+                                    .clone(),
                             )?;
                         }
 
@@ -3074,9 +3112,8 @@ mod vulkano_backend {
                                 ..RenderingAttachmentInfo::image_view(color_attachment_view.clone())
                             };
                             if let Some(resolve_view) = color_resolve_view.clone() {
-                                color_attachment_load.resolve_info = Some(
-                                    RenderingAttachmentResolveInfo::image_view(resolve_view),
-                                );
+                                color_attachment_load.resolve_info =
+                                    Some(RenderingAttachmentResolveInfo::image_view(resolve_view));
                                 color_attachment_load.store_op = AttachmentStoreOp::DontCare;
                             }
                             color_attachment_load
@@ -3168,7 +3205,9 @@ mod vulkano_backend {
                     store_op: AttachmentStoreOp::Store,
                     clear_value: Some(ClearValue::from([1.0, 0.0, 1.0, 1.0])),
                     ..RenderingAttachmentInfo::image_view(
-                        debug_msaa_view.clone().unwrap_or_else(|| debug_view.clone()),
+                        debug_msaa_view
+                            .clone()
+                            .unwrap_or_else(|| debug_view.clone()),
                     )
                 };
                 if debug_msaa_view.is_some() {
@@ -3243,12 +3282,11 @@ mod vulkano_backend {
             self.recreate_swapchain_if_needed()?;
             if !self.pending_runtime_texture_updates.is_empty() {
                 unsafe {
-                    self.context
-                        .device()
-                        .wait_idle()
-                        .map_err(|e| -> Box<dyn std::error::Error> {
+                    self.context.device().wait_idle().map_err(
+                        |e| -> Box<dyn std::error::Error> {
                             format!("wait_idle failed before runtime texture swap: {e}").into()
-                        })?;
+                        },
+                    )?;
                 }
             }
             self.apply_pending_runtime_texture_updates();
@@ -3316,32 +3354,33 @@ mod vulkano_backend {
                 None
             };
 
-            let (color_attachment_view, color_resolve_view, depth_view) = if let Some(post) = post_process.as_ref() {
-                (
-                    post.targets
-                        .main_msaa_color
-                        .clone()
-                        .unwrap_or_else(|| post.targets.main_color.clone()),
-                    if post.targets.main_msaa_color.is_some() {
-                        Some(post.targets.main_color.clone())
-                    } else {
-                        None
-                    },
-                    post.targets.depth.clone(),
-                )
-            } else if self.swapchain_state.msaa_samples != SampleCount::Sample1 {
-                (
-                    self.swapchain_state.msaa_color_views[image_i as usize].clone(),
-                    Some(resolve_view.clone()),
-                    self.swapchain_state.depth_views[image_i as usize].clone(),
-                )
-            } else {
-                (
-                    resolve_view.clone(),
-                    None,
-                    self.swapchain_state.depth_views[image_i as usize].clone(),
-                )
-            };
+            let (color_attachment_view, color_resolve_view, depth_view) =
+                if let Some(post) = post_process.as_ref() {
+                    (
+                        post.targets
+                            .main_msaa_color
+                            .clone()
+                            .unwrap_or_else(|| post.targets.main_color.clone()),
+                        if post.targets.main_msaa_color.is_some() {
+                            Some(post.targets.main_color.clone())
+                        } else {
+                            None
+                        },
+                        post.targets.depth.clone(),
+                    )
+                } else if self.swapchain_state.msaa_samples != SampleCount::Sample1 {
+                    (
+                        self.swapchain_state.msaa_color_views[image_i as usize].clone(),
+                        Some(resolve_view.clone()),
+                        self.swapchain_state.depth_views[image_i as usize].clone(),
+                    )
+                } else {
+                    (
+                        resolve_view.clone(),
+                        None,
+                        self.swapchain_state.depth_views[image_i as usize].clone(),
+                    )
+                };
 
             let cb = self.build_draw_batches_command_buffer(
                 visual_world,

@@ -239,7 +239,10 @@ mod tests {
         let tree = build_tree();
         let ast = QueryAst {
             selector_groups: vec![SelectorSequence {
-                segments: vec![type_seg("A", None), type_seg("C", Some(Combinator::Descendant))],
+                segments: vec![
+                    type_seg("A", None),
+                    type_seg("C", Some(Combinator::Descendant)),
+                ],
             }],
         };
         let mut matches = QueryEvaluator::evaluate(&tree, 0, &ast);

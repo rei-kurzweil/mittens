@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::engine::ecs::component::{
-    ActionComponent, ComponentRef, AnimationComponent, AnimationState, KeyframeComponent,
-    MusicNoteComponent, ResolveTargetsMode,
     action::{apply_resolved_targets, signal_target_slot_count},
+    ActionComponent, AnimationComponent, AnimationState, ComponentRef, KeyframeComponent,
+    MusicNoteComponent, ResolveTargetsMode,
 };
-use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::animation_system_evaluator::AnimationEvaluator;
+use crate::engine::ecs::system::System;
 use crate::engine::ecs::{ComponentId, IntentValue, RxWorld, SignalEmitter, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
@@ -88,7 +88,10 @@ fn resolve_action_targets(world: &mut World, action_id: ComponentId) -> Result<(
         if action.resolved {
             return Ok(());
         }
-        (action.target_sources.clone(), signal_target_slot_count(&action.signal))
+        (
+            action.target_sources.clone(),
+            signal_target_slot_count(&action.signal),
+        )
     };
 
     if sources.len() != expected_slots {
@@ -120,7 +123,9 @@ fn resolve_action_targets(world: &mut World, action_id: ComponentId) -> Result<(
     }
 
     let Some(action) = world.get_component_by_id_as_mut::<ActionComponent>(action_id) else {
-        return Err(format!("resolve: action {action_id:?} vanished during resolve"));
+        return Err(format!(
+            "resolve: action {action_id:?} vanished during resolve"
+        ));
     };
     apply_resolved_targets(&mut action.signal, &resolved);
     action.resolved = true;
@@ -265,7 +270,9 @@ impl AnimationSystem {
                             .iter()
                             .copied()
                             .filter(|&cid| {
-                                world.get_component_by_id_as::<ActionComponent>(cid).is_some()
+                                world
+                                    .get_component_by_id_as::<ActionComponent>(cid)
+                                    .is_some()
                             })
                             .collect::<Vec<_>>()
                     })

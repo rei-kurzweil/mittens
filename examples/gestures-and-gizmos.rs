@@ -14,8 +14,7 @@ fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Scene {
     use engine::ecs::component::{
         BackgroundColorComponent, BackgroundComponent, Camera3DComponent, ColorComponent,
         DirectionalLightComponent, InputComponent, InputTransformModeComponent, PointerComponent,
-        RaycastableComponent, RenderableComponent, TransformComponent,
-        TransformGizmoComponent,
+        RaycastableComponent, RenderableComponent, TransformComponent, TransformGizmoComponent,
     };
     use engine::graphics::BuiltinMeshType;
     use engine::graphics::primitives::{MaterialHandle, Renderable};
@@ -27,8 +26,12 @@ fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Scene {
         .get_mesh(BuiltinMeshType::Tetrahedron);
 
     // BackgroundColor { C.rgba }
-    let bg_color = universe.world.add_component(BackgroundColorComponent::new());
-    let bg_color_c = universe.world.add_component(ColorComponent::rgba(0.90, 0.90, 0.90, 1.0));
+    let bg_color = universe
+        .world
+        .add_component(BackgroundColorComponent::new());
+    let bg_color_c = universe
+        .world
+        .add_component(ColorComponent::rgba(0.90, 0.90, 0.90, 1.0));
     let _ = universe.world.add_child(bg_color, bg_color_c);
     universe.add(bg_color);
 

@@ -18,8 +18,8 @@
 //! Run with `cargo run --release --example bisket-vr-debug`.  No
 //! windowing loop — exits after printing the report.
 
-use cat_engine::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use cat_engine::engine::ecs::component::{AvatarControlComponent, TransformComponent};
+use cat_engine::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use cat_engine::engine::user_input::InputState;
 use cat_engine::utils::math::{quat_from_axis_angle, quat_rotate_vec3};
 use cat_engine::{engine, meow_meow, utils};
@@ -35,9 +35,9 @@ const SPINE_BONES: &[&str] = &[
 ];
 
 // Tolerances (metres) for invariant checks.
-const BONE_LENGTH_TOL: f32 = 0.005;        // 5 mm
-const SPLICE_TARGET_TOL: f32 = 0.010;      // 1 cm
-const MONOTONIC_Y_TOL: f32 = 0.005;        // 5 mm
+const BONE_LENGTH_TOL: f32 = 0.005; // 5 mm
+const SPLICE_TARGET_TOL: f32 = 0.010; // 1 cm
+const MONOTONIC_Y_TOL: f32 = 0.005; // 5 mm
 
 // Frames ticked per pose to let IK + transform propagation settle.
 const SETTLE_TICKS_PER_POSE: usize = 8;
@@ -101,7 +101,10 @@ fn main() {
     // the T-wrapped camera out from under itself (over to the head bone), so
     // querying `children_of(avc)` post-init returns no camera wrapper.
     let head_target_offset_world = head_target_offset_in_target_local(&universe.world, avc_id);
-    println!("[debug] head_target_offset (target-local) = {:?}", head_target_offset_world);
+    println!(
+        "[debug] head_target_offset (target-local) = {:?}",
+        head_target_offset_world
+    );
 
     // Settle a few frames so AVC init splices fire and FABRIK chain wires up.
     let input = InputState::default();
@@ -122,14 +125,17 @@ fn main() {
     let mut avc_bones: Vec<ComponentId> = Vec::with_capacity(SPINE_BONES.len());
     for name in SPINE_BONES {
         let all = find_components_by_name(&universe.world, name);
-        let (under_avc, not_under_avc): (Vec<_>, Vec<_>) =
-            all.into_iter().partition(|&id| is_descendant_of(&universe.world, id, avc_id));
-        let avc = under_avc.first().copied().unwrap_or_else(|| {
-            panic!("bone {} not found under AVC subtree", name)
-        });
-        let r = not_under_avc.first().copied().unwrap_or_else(|| {
-            panic!("bone {} not found outside AVC subtree", name)
-        });
+        let (under_avc, not_under_avc): (Vec<_>, Vec<_>) = all
+            .into_iter()
+            .partition(|&id| is_descendant_of(&universe.world, id, avc_id));
+        let avc = under_avc
+            .first()
+            .copied()
+            .unwrap_or_else(|| panic!("bone {} not found under AVC subtree", name));
+        let r = not_under_avc
+            .first()
+            .copied()
+            .unwrap_or_else(|| panic!("bone {} not found outside AVC subtree", name));
         ref_bones.push(r);
         avc_bones.push(avc);
     }
@@ -140,7 +146,10 @@ fn main() {
 
     // splice_head: the runtime-created TC injected between neck and head_bone.
     // It's the parent of head_bone in the AVC subtree.
-    let avc_head_bone = avc_bones[SPINE_BONES.iter().position(|n| *n == "J_Bip_C_Head").unwrap()];
+    let avc_head_bone = avc_bones[SPINE_BONES
+        .iter()
+        .position(|n| *n == "J_Bip_C_Head")
+        .unwrap()];
     let splice_head = universe
         .world
         .parent_of(avc_head_bone)
@@ -199,7 +208,10 @@ fn main() {
     ];
 
     // --- Sample baseline (ref) bone positions once at rest.  They never change. ---
-    let ref_y_z: Vec<[f32; 2]> = ref_bones.iter().map(|&id| world_yz(&universe.world, id)).collect();
+    let ref_y_z: Vec<[f32; 2]> = ref_bones
+        .iter()
+        .map(|&id| world_yz(&universe.world, id))
+        .collect();
 
     // --- Run each pose ---
     for pose in &poses {
@@ -276,17 +288,29 @@ fn main() {
         let mut bone_length_ok = true;
         for i in 0..ref_seg_lens.len() {
             let drift = (avc_seg_lens[i] - ref_seg_lens[i]).abs();
-            let tag = if drift <= BONE_LENGTH_TOL { "ok" } else { "FAIL" };
-            if drift > BONE_LENGTH_TOL { bone_length_ok = false; }
+            let tag = if drift <= BONE_LENGTH_TOL {
+                "ok"
+            } else {
+                "FAIL"
+            };
+            if drift > BONE_LENGTH_TOL {
+                bone_length_ok = false;
+            }
             println!(
                 "  bone_length  {:<14}→{:<14}  ref={:.4}  avc={:.4}  drift={:+.4}  {}",
-                SPINE_BONES[i], SPINE_BONES[i + 1],
-                ref_seg_lens[i], avc_seg_lens[i],
-                avc_seg_lens[i] - ref_seg_lens[i], tag,
+                SPINE_BONES[i],
+                SPINE_BONES[i + 1],
+                ref_seg_lens[i],
+                avc_seg_lens[i],
+                avc_seg_lens[i] - ref_seg_lens[i],
+                tag,
             );
         }
         if bone_length_ok {
-            println!("  → all spine bone-lengths preserved within {:.0}mm", BONE_LENGTH_TOL * 1000.0);
+            println!(
+                "  → all spine bone-lengths preserved within {:.0}mm",
+                BONE_LENGTH_TOL * 1000.0
+            );
         }
 
         // (2) Monotonic Y hips → neck (no kinks/folding in spine).  Head is
@@ -296,16 +320,24 @@ fn main() {
         let mut mono_ok = true;
         let mut prev_y = f32::NEG_INFINITY;
         for (i, name) in SPINE_BONES.iter().enumerate() {
-            if *name == "J_Bip_C_Head" { break; }
+            if *name == "J_Bip_C_Head" {
+                break;
+            }
             let y = avc_pos[i][1];
             if y + MONOTONIC_Y_TOL < prev_y {
-                println!("  monotonic_y  FAIL at {}: y={:+.3} drops below prev {:+.3}", name, y, prev_y);
+                println!(
+                    "  monotonic_y  FAIL at {}: y={:+.3} drops below prev {:+.3}",
+                    name, y, prev_y
+                );
                 mono_ok = false;
             }
             prev_y = y;
         }
         if mono_ok {
-            println!("  monotonic_y  ok (hips → neck all non-decreasing within {:.0}mm)", MONOTONIC_Y_TOL * 1000.0);
+            println!(
+                "  monotonic_y  ok (hips → neck all non-decreasing within {:.0}mm)",
+                MONOTONIC_Y_TOL * 1000.0
+            );
         }
 
         // (3) Body sits directly UNDER head: hips world XZ ≈ splice_head XZ.
@@ -316,7 +348,10 @@ fn main() {
         // shifts back by R(driven_rot) * head_target_offset.xz — matching
         // where the head pivot lands.  If these diverge, the avatar will
         // visibly lean forward/back at the hips.
-        let hips_idx = SPINE_BONES.iter().position(|n| *n == "J_Bip_C_Hips").unwrap();
+        let hips_idx = SPINE_BONES
+            .iter()
+            .position(|n| *n == "J_Bip_C_Hips")
+            .unwrap();
         let hips_xz = [avc_pos[hips_idx][0], avc_pos[hips_idx][2]];
         let dx = hips_xz[0] - splice_pos[0];
         let dz = hips_xz[1] - splice_pos[2];
@@ -326,7 +361,11 @@ fn main() {
         // for the rest HMD orientation, while head moves around its pivot as
         // the HMD rotates.  That drift is anatomical, not a bug.
         const HIPS_UNDER_HEAD_TOL: f32 = 0.050;
-        let xz_tag = if xz_drift <= HIPS_UNDER_HEAD_TOL { "ok" } else { "FAIL" };
+        let xz_tag = if xz_drift <= HIPS_UNDER_HEAD_TOL {
+            "ok"
+        } else {
+            "FAIL"
+        };
         println!(
             "  hips_under_head  splice_xz=[{:+.3},{:+.3}]  hips_xz=[{:+.3},{:+.3}]  drift={:.4}m  {}",
             splice_pos[0], splice_pos[2], hips_xz[0], hips_xz[1], xz_drift, xz_tag,
@@ -342,12 +381,21 @@ fn main() {
             ]
         };
         let splice_drift = vec3_dist(splice_pos, predicted_splice_world);
-        let splice_tag = if splice_drift <= SPLICE_TARGET_TOL { "ok" } else { "FAIL" };
+        let splice_tag = if splice_drift <= SPLICE_TARGET_TOL {
+            "ok"
+        } else {
+            "FAIL"
+        };
         println!(
             "  splice_head  expected=[{:+.3},{:+.3},{:+.3}]  actual=[{:+.3},{:+.3},{:+.3}]  drift={:.4}m  {}",
-            predicted_splice_world[0], predicted_splice_world[1], predicted_splice_world[2],
-            splice_pos[0], splice_pos[1], splice_pos[2],
-            splice_drift, splice_tag,
+            predicted_splice_world[0],
+            predicted_splice_world[1],
+            predicted_splice_world[2],
+            splice_pos[0],
+            splice_pos[1],
+            splice_pos[2],
+            splice_drift,
+            splice_tag,
         );
     }
 
@@ -394,8 +442,12 @@ fn find_components_by_name(world: &World, name: &str) -> Vec<ComponentId> {
 fn is_descendant_of(world: &World, child: ComponentId, ancestor: ComponentId) -> bool {
     let mut cur = child;
     for _ in 0..64 {
-        let Some(p) = world.parent_of(cur) else { return false };
-        if p == ancestor { return true; }
+        let Some(p) = world.parent_of(cur) else {
+            return false;
+        };
+        if p == ancestor {
+            return true;
+        }
         cur = p;
     }
     false
@@ -450,8 +502,12 @@ fn head_target_offset_in_target_local(world: &World, avc_id: ComponentId) -> [f3
     // Find first T-wrapped camera child (matches the AVC discovery logic).
     let mut eye_offset = [0.0, 0.0, 0.0];
     for &ch in world.children_of(avc_id) {
-        let is_t = world.get_component_by_id_as::<TransformComponent>(ch).is_some();
-        if !is_t { continue; }
+        let is_t = world
+            .get_component_by_id_as::<TransformComponent>(ch)
+            .is_some();
+        if !is_t {
+            continue;
+        }
         let wraps_cam = world.children_of(ch).iter().any(|&gc| {
             world
                 .get_component_by_id_as::<cat_engine::engine::ecs::component::Camera3DComponent>(gc)
@@ -469,7 +525,14 @@ fn head_target_offset_in_target_local(world: &World, avc_id: ComponentId) -> [f3
             break;
         }
     }
-    let offset_yaw = if avc.forward_plus_z { 0.0 } else { std::f32::consts::PI };
+    let offset_yaw = if avc.forward_plus_z {
+        0.0
+    } else {
+        std::f32::consts::PI
+    };
     let neg_eye = [-eye_offset[0], -eye_offset[1], -eye_offset[2]];
-    quat_rotate_vec3(cat_engine::utils::math::quat_rotation_y(offset_yaw), neg_eye)
+    quat_rotate_vec3(
+        cat_engine::utils::math::quat_rotation_y(offset_yaw),
+        neg_eye,
+    )
 }

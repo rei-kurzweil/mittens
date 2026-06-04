@@ -1,5 +1,5 @@
-use crate::engine::ecs::component::{RouterComponent, ScrollingComponent, TransformComponent};
 use crate::engine::ecs::component::{RenderableComponent, StencilClipComponent};
+use crate::engine::ecs::component::{RouterComponent, ScrollingComponent, TransformComponent};
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
 use crate::engine::graphics::primitives::TransformMatrix;
@@ -36,17 +36,29 @@ impl ScrollingSystem {
     }
 
     fn immediate_owned_track(world: &World, scroll_component: ComponentId) -> Option<ComponentId> {
-        world.children_of(scroll_component).iter().copied().find(|&child| {
-            world.component_label(child) == Some(Self::OWNED_TRACK_LABEL)
-                && world.get_component_by_id_as::<TransformComponent>(child).is_some()
-        })
+        world
+            .children_of(scroll_component)
+            .iter()
+            .copied()
+            .find(|&child| {
+                world.component_label(child) == Some(Self::OWNED_TRACK_LABEL)
+                    && world
+                        .get_component_by_id_as::<TransformComponent>(child)
+                        .is_some()
+            })
     }
 
     fn immediate_owned_router(world: &World, scroll_component: ComponentId) -> Option<ComponentId> {
-        world.children_of(scroll_component).iter().copied().find(|&child| {
-            world.component_label(child) == Some(Self::OWNED_ROUTER_LABEL)
-                && world.get_component_by_id_as::<RouterComponent>(child).is_some()
-        })
+        world
+            .children_of(scroll_component)
+            .iter()
+            .copied()
+            .find(|&child| {
+                world.component_label(child) == Some(Self::OWNED_ROUTER_LABEL)
+                    && world
+                        .get_component_by_id_as::<RouterComponent>(child)
+                        .is_some()
+            })
     }
 
     fn ensure_owned_router_and_track(
@@ -83,37 +95,30 @@ impl ScrollingSystem {
         drag_scope: ComponentId,
         scroll_component: ComponentId,
     ) {
-        rx.add_handler_closure(
-            SignalKind::DragMove,
-            drag_scope,
-            move |world, emit, env| {
-                let Some(EventSignal::DragMove { delta_world, .. }) = env.event.as_ref() else {
-                    return;
-                };
+        rx.add_handler_closure(SignalKind::DragMove, drag_scope, move |world, emit, env| {
+            let Some(EventSignal::DragMove { delta_world, .. }) = env.event.as_ref() else {
+                return;
+            };
 
-                let Some(scroll_state) = Self::apply_world_drag(
-                    world,
-                    emit,
-                    scroll_component,
-                    *delta_world,
-                ) else {
-                    return;
-                };
+            let Some(scroll_state) =
+                Self::apply_world_drag(world, emit, scroll_component, *delta_world)
+            else {
+                return;
+            };
 
-                emit.push_event(
+            emit.push_event(
+                scroll_component,
+                EventSignal::Scrolling {
                     scroll_component,
-                    EventSignal::Scrolling {
-                        scroll_component,
-                        drag_scope,
-                        delta_world: *delta_world,
-                        scroll_offset: scroll_state.0,
-                        max_scroll: scroll_state.1,
-                        viewport_height: scroll_state.2,
-                        content_height: scroll_state.3,
-                    },
-                );
-            },
-        );
+                    drag_scope,
+                    delta_world: *delta_world,
+                    scroll_offset: scroll_state.0,
+                    max_scroll: scroll_state.1,
+                    viewport_height: scroll_state.2,
+                    content_height: scroll_state.3,
+                },
+            );
+        });
     }
 
     fn parent_transform_world_matrix(
@@ -166,7 +171,8 @@ impl ScrollingSystem {
         let delta_local_y = Self::scroll_local_drag_delta_y(world, scroll_component, delta_world);
 
         let scroll_state = {
-            let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(scroll_component) else {
+            let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(scroll_component)
+            else {
                 return None;
             };
             let prev_offset = sc.scroll_offset;
@@ -228,7 +234,9 @@ impl ScrollingSystem {
                 .get_component_by_id_as::<TransformComponent>(track_id)
                 .map(|tc| tc.transform.translation)
                 .unwrap_or([0.0, 0.0, 0.0]);
-            if let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(scroll_component) {
+            if let Some(sc) =
+                world.get_component_by_id_as_mut::<ScrollingComponent>(scroll_component)
+            {
                 if sc.track.is_none() {
                     sc.set_track(track_id, base_pos);
                 }
@@ -243,7 +251,9 @@ impl ScrollingSystem {
                 .unwrap_or(false);
 
             if should_install {
-                if let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(scroll_component) {
+                if let Some(sc) =
+                    world.get_component_by_id_as_mut::<ScrollingComponent>(scroll_component)
+                {
                     sc.set_drag_scope(scope);
                 }
                 Self::install_drag_forwarding(rx, scope, scroll_component);
@@ -254,7 +264,10 @@ impl ScrollingSystem {
     fn nearest_ancestor_transform(world: &World, start: ComponentId) -> Option<ComponentId> {
         let mut cursor = world.parent_of(start);
         while let Some(node) = cursor {
-            if world.get_component_by_id_as::<TransformComponent>(node).is_some() {
+            if world
+                .get_component_by_id_as::<TransformComponent>(node)
+                .is_some()
+            {
                 return Some(node);
             }
             cursor = world.parent_of(node);
@@ -265,7 +278,10 @@ impl ScrollingSystem {
     fn subtree_first_renderable(world: &World, root: ComponentId) -> Option<ComponentId> {
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
-            if world.get_component_by_id_as::<RenderableComponent>(node).is_some() {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(node)
+                .is_some()
+            {
                 return Some(node);
             }
             for &child in world.children_of(node).iter().rev() {
@@ -279,7 +295,9 @@ impl ScrollingSystem {
         let parent = world.parent_of(start)?;
         let bg = world.children_of(parent).iter().copied().find(|&child| {
             world.component_label(child) == Some(Self::LAYOUT_BG_LABEL)
-                && world.get_component_by_id_as::<TransformComponent>(child).is_some()
+                && world
+                    .get_component_by_id_as::<TransformComponent>(child)
+                    .is_some()
         })?;
         Self::subtree_first_renderable(world, bg)
     }
@@ -287,7 +305,10 @@ impl ScrollingSystem {
     fn nearest_ancestor_clip_scope(world: &World, start: ComponentId) -> Option<ComponentId> {
         let mut cursor = world.parent_of(start);
         while let Some(node) = cursor {
-            if world.get_component_by_id_as::<StencilClipComponent>(node).is_some() {
+            if world
+                .get_component_by_id_as::<StencilClipComponent>(node)
+                .is_some()
+            {
                 return Some(Self::stencil_drag_scope_root(world, node).unwrap_or(node));
             }
             cursor = world.parent_of(node);
@@ -299,7 +320,10 @@ impl ScrollingSystem {
     fn nearest_ancestor_renderable(world: &World, start: ComponentId) -> Option<ComponentId> {
         let mut cursor = world.parent_of(start);
         while let Some(node) = cursor {
-            if world.get_component_by_id_as::<RenderableComponent>(node).is_some() {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(node)
+                .is_some()
+            {
                 return Some(node);
             }
             cursor = world.parent_of(node);
@@ -330,7 +354,8 @@ impl ScrollingSystem {
         content_height: f32,
     ) {
         {
-            let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(scroll_component) else {
+            let Some(sc) = world.get_component_by_id_as_mut::<ScrollingComponent>(scroll_component)
+            else {
                 return;
             };
             let _ = sc.set_content_height(content_height);
@@ -345,14 +370,16 @@ impl ScrollingSystem {
         scroll_component: ComponentId,
     ) {
         let (track_id, translation, rotation, scale) = {
-            let Some(sc) = world.get_component_by_id_as::<ScrollingComponent>(scroll_component) else {
+            let Some(sc) = world.get_component_by_id_as::<ScrollingComponent>(scroll_component)
+            else {
                 return;
             };
             let Some(track_id) = sc.track else {
                 return;
             };
             let translation = sc.track_translation();
-            let Some(track_tc) = world.get_component_by_id_as::<TransformComponent>(track_id) else {
+            let Some(track_tc) = world.get_component_by_id_as::<TransformComponent>(track_id)
+            else {
                 return;
             };
             (
@@ -378,12 +405,14 @@ impl ScrollingSystem {
 #[cfg(test)]
 mod tests {
     use super::ScrollingSystem;
+    use crate::engine::ecs::component::{
+        RenderableComponent, ScrollingComponent, TransformComponent,
+    };
     use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::IntentValue;
     use crate::engine::ecs::SignalEmitter;
     use crate::engine::ecs::SystemWorld;
     use crate::engine::ecs::World;
-    use crate::engine::ecs::component::{RenderableComponent, ScrollingComponent, TransformComponent};
     use crate::engine::graphics::VisualWorld;
 
     #[test]
@@ -418,7 +447,8 @@ mod tests {
         let mut systems = SystemWorld::default();
 
         let scrolling = world.add_component(ScrollingComponent::new(1.0, 10.0));
-        let explicit_track = world.add_component(TransformComponent::new().with_position(3.0, 4.0, 5.0));
+        let explicit_track =
+            world.add_component(TransformComponent::new().with_position(3.0, 4.0, 5.0));
         let child = world.add_component(TransformComponent::new());
         let _ = world.add_child(scrolling, explicit_track);
         let _ = world.add_child(explicit_track, child);
@@ -514,16 +544,16 @@ mod tests {
         world.init_component_tree(parent, &mut queue);
         systems.process_commands(&mut world, &mut visuals, &mut queue);
 
-        let delta_local_y = ScrollingSystem::scroll_local_drag_delta_y(&world, scrolling, [0.0, 2.0, 0.0]);
-        assert!((delta_local_y - 1.0).abs() < 1e-5, "expected world delta to divide by parent Y scale");
+        let delta_local_y =
+            ScrollingSystem::scroll_local_drag_delta_y(&world, scrolling, [0.0, 2.0, 0.0]);
+        assert!(
+            (delta_local_y - 1.0).abs() < 1e-5,
+            "expected world delta to divide by parent Y scale"
+        );
 
-        let scroll_state = ScrollingSystem::apply_world_drag(
-            &mut world,
-            &mut queue,
-            scrolling,
-            [0.0, 2.0, 0.0],
-        )
-        .expect("scroll should move");
+        let scroll_state =
+            ScrollingSystem::apply_world_drag(&mut world, &mut queue, scrolling, [0.0, 2.0, 0.0])
+                .expect("scroll should move");
         systems.process_commands(&mut world, &mut visuals, &mut queue);
 
         let sc = world

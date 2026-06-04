@@ -3,7 +3,9 @@ use std::sync::Arc;
 use vulkano::Validated;
 use vulkano::format::Format;
 use vulkano::image::view::{ImageView, ImageViewCreateInfo};
-use vulkano::image::{Image, ImageAspects, ImageCreateInfo, ImageSubresourceRange, ImageType, ImageUsage, SampleCount};
+use vulkano::image::{
+    Image, ImageAspects, ImageCreateInfo, ImageSubresourceRange, ImageType, ImageUsage, SampleCount,
+};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter};
 use vulkano::swapchain::{Surface, Swapchain, SwapchainCreateInfo};
 use vulkano_util::context::VulkanoContext;
@@ -147,8 +149,12 @@ impl VulkanoSwapchainState {
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
 
         let extent = self.swapchain.image_extent();
-        self.depth_views =
-            Self::create_depth_stencil_views(context, &self.swapchain_views, extent, self.msaa_samples)?;
+        self.depth_views = Self::create_depth_stencil_views(
+            context,
+            &self.swapchain_views,
+            extent,
+            self.msaa_samples,
+        )?;
         self.msaa_color_views = Self::create_msaa_color_views(
             context,
             &self.swapchain_views,

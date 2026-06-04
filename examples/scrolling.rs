@@ -46,11 +46,16 @@ fn spawn_scroll_item(
     );
     let panel = universe.world.add_component_boxed_named(
         format!("{label}_panel"),
-        Box::new(TransformComponent::new().with_position(2.3, -0.45, 0.0).with_scale(4.6, 0.9, 1.0)),
+        Box::new(
+            TransformComponent::new()
+                .with_position(2.3, -0.45, 0.0)
+                .with_scale(4.6, 0.9, 1.0),
+        ),
     );
-    let panel_renderable = universe
-        .world
-        .add_component_boxed_named(format!("{label}_renderable"), Box::new(RenderableComponent::square()));
+    let panel_renderable = universe.world.add_component_boxed_named(
+        format!("{label}_renderable"),
+        Box::new(RenderableComponent::square()),
+    );
     let panel_color = universe.world.add_component(ColorComponent::rgba(
         panel_rgba[0],
         panel_rgba[1],
@@ -60,11 +65,16 @@ fn spawn_scroll_item(
 
     let text_anchor = universe.world.add_component_boxed_named(
         format!("{label}_text_anchor"),
-        Box::new(TransformComponent::new().with_position(0.35, -0.38, 0.02).with_scale(0.11, 0.11, 0.11)),
+        Box::new(
+            TransformComponent::new()
+                .with_position(0.35, -0.38, 0.02)
+                .with_scale(0.11, 0.11, 0.11),
+        ),
     );
-    let text = universe
-        .world
-        .add_component_boxed_named(format!("{label}_text"), Box::new(TextComponent::new(label.clone())));
+    let text = universe.world.add_component_boxed_named(
+        format!("{label}_text"),
+        Box::new(TextComponent::new(label.clone())),
+    );
     let text_color = universe.world.add_component(ColorComponent::rgba(
         text_rgba[0],
         text_rgba[1],
@@ -79,7 +89,9 @@ fn spawn_scroll_item(
     let _ = universe.world.add_child(text_anchor, text);
     let _ = universe.world.add_child(text, text_color);
 
-    universe.attach(scrolling, root).expect("attach scroll item");
+    universe
+        .attach(scrolling, root)
+        .expect("attach scroll item");
     root
 }
 
@@ -110,7 +122,10 @@ fn main() {
     for error in &output.errors {
         eprintln!("[mms] {error}");
     }
-    println!("[mms] {} intent(s) from scrolling.mms", output.intents.len());
+    println!(
+        "[mms] {} intent(s) from scrolling.mms",
+        output.intents.len()
+    );
 
     if !output.errors.is_empty() {
         std::process::exit(1);

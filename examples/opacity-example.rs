@@ -363,8 +363,12 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Dark brown / pink background.
-    let bg = universe.world.add_component(BackgroundColorComponent::new());
-    let bg_c = universe.world.add_component(ColorComponent::rgba(0.22, 0.08, 0.10, 1.0));
+    let bg = universe
+        .world
+        .add_component(BackgroundColorComponent::new());
+    let bg_c = universe
+        .world
+        .add_component(ColorComponent::rgba(0.22, 0.08, 0.10, 1.0));
     let _ = universe.world.add_child(bg, bg_c);
     universe.add(bg);
 

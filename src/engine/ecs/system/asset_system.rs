@@ -4,8 +4,10 @@ use std::path::{Path, PathBuf};
 use std::cell::RefCell;
 use std::collections::HashSet;
 
-use crate::engine::ecs::component::{LayoutComponent, RaycastableComponent, StyleComponent, TransformComponent};
-use crate::engine::ecs::system::bounds_system::BoundsSystem;
+use crate::engine::ecs::component::{
+    LayoutComponent, RaycastableComponent, StyleComponent, TransformComponent,
+};
+use crate::engine::ecs::system::bounds_system::{BoundsSystem, RenderableBoundsMeasure};
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::meow_meow::object::Value;
 use crate::meow_meow::runner::{LoadedMmsModule, MeowMeowRunner};
@@ -250,13 +252,13 @@ impl AssetSystem {
                     Value::Number(0.92),
                     Value::Number(1.0),
                 ]),
-                Value::Array(vec! [
+                Value::Array(vec![
                     Value::Number(0.18),
                     Value::Number(0.78),
                     Value::Number(0.22),
                     Value::Number(0.95),
                 ]),
-                Value::Array(vec! [
+                Value::Array(vec![
                     Value::Number(0.92),
                     Value::Number(0.97),
                     Value::Number(0.92),
@@ -333,11 +335,17 @@ impl AssetSystem {
                 continue;
             }
 
-            if world.get_component_by_id_as::<StyleComponent>(node).is_some() {
+            if world
+                .get_component_by_id_as::<StyleComponent>(node)
+                .is_some()
+            {
                 let mut has_layout = false;
                 let mut current = world.parent_of(node);
                 while let Some(ancestor) = current {
-                    if world.get_component_by_id_as::<LayoutComponent>(ancestor).is_some() {
+                    if world
+                        .get_component_by_id_as::<LayoutComponent>(ancestor)
+                        .is_some()
+                    {
                         has_layout = true;
                         break;
                     }
@@ -366,10 +374,8 @@ impl AssetSystem {
             return None;
         }
 
-        let layout_root = world.add_component_boxed_named(
-            "preview_layout_root",
-            Box::new(LayoutComponent::new(20.0)),
-        );
+        let layout_root = world
+            .add_component_boxed_named("preview_layout_root", Box::new(LayoutComponent::new(20.0)));
 
         Some(layout_root)
     }
@@ -483,18 +489,24 @@ impl AssetSystem {
                         Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.05)),
                     );
 
-                    let bounds = BoundsSystem::calculate_subtree_local_bounds(
-                        world, render_assets, preview_root,
+                    let bounds = BoundsSystem::measure_renderable_subtree_bounds(
+                        world,
+                        render_assets,
+                        preview_root,
                     );
 
-                    if let Some(b) = bounds {
+                    if let RenderableBoundsMeasure::Measured(b) = bounds {
                         let s = 0.2_f32 / b.max_dimension().max(1e-6);
                         let center = b.center();
                         emit.push_intent_now(
                             preview_shell,
                             crate::engine::ecs::IntentValue::UpdateTransform {
                                 component_ids: vec![preview_shell],
-                                translation: [-center[0] * s, -center[1] * s, -center[2] * s + 0.05],
+                                translation: [
+                                    -center[0] * s,
+                                    -center[1] * s,
+                                    -center[2] * s + 0.05,
+                                ],
                                 rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
                                 scale: [s, s, s],
                             },

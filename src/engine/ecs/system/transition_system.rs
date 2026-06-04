@@ -1,4 +1,6 @@
-use crate::engine::ecs::component::{TransitionComponent, TransitionEasing, TransitionReplacePolicy};
+use crate::engine::ecs::component::{
+    TransitionComponent, TransitionEasing, TransitionReplacePolicy,
+};
 use crate::engine::ecs::ComponentId;
 use crate::engine::graphics::primitives::Transform;
 use crate::engine::graphics::VisualWorld;
@@ -48,7 +50,8 @@ impl TransitionSystem {
 
         match transition.replace {
             TransitionReplacePolicy::ReplaceSameTarget | TransitionReplacePolicy::AllowParallel => {
-                self.active_transforms.retain(|active| active.component != component);
+                self.active_transforms
+                    .retain(|active| active.component != component);
             }
         }
 
@@ -66,7 +69,8 @@ impl TransitionSystem {
     }
 
     pub fn cancel_transform_transitions(&mut self, component: ComponentId) {
-        self.active_transforms.retain(|active| active.component != component);
+        self.active_transforms
+            .retain(|active| active.component != component);
     }
 
     pub fn sample_transform_updates(&mut self, beat_now: f64) -> Vec<TransformTransitionUpdate> {
@@ -89,7 +93,11 @@ impl TransitionSystem {
             active.last_sampled_beat = Some(beat_now);
             updates.push(TransformTransitionUpdate {
                 component: active.component,
-                transform: if raw_progress >= 1.0 { active.to } else { transform },
+                transform: if raw_progress >= 1.0 {
+                    active.to
+                } else {
+                    transform
+                },
             });
 
             if raw_progress >= 1.0 {
@@ -125,7 +133,11 @@ fn apply_easing(easing: TransitionEasing, t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
     match easing {
         TransitionEasing::Step => {
-            if t >= 1.0 { 1.0 } else { 0.0 }
+            if t >= 1.0 {
+                1.0
+            } else {
+                0.0
+            }
         }
         TransitionEasing::Linear => t,
         TransitionEasing::EaseInQuad => t * t,
@@ -190,7 +202,12 @@ fn normalize_quat(q: [f32; 4]) -> [f32; 4] {
         [0.0, 0.0, 0.0, 1.0]
     } else {
         let inv_len = len2.sqrt().recip();
-        [q[0] * inv_len, q[1] * inv_len, q[2] * inv_len, q[3] * inv_len]
+        [
+            q[0] * inv_len,
+            q[1] * inv_len,
+            q[2] * inv_len,
+            q[3] * inv_len,
+        ]
     }
 }
 
@@ -206,7 +223,8 @@ mod tests {
     #[test]
     fn transform_transition_reaches_exact_final_value() {
         let mut world = World::default();
-        let component = world.add_component(crate::engine::ecs::component::TransformComponent::new());
+        let component =
+            world.add_component(crate::engine::ecs::component::TransformComponent::new());
 
         let mut system = TransitionSystem::new();
         let from = Transform::default();
@@ -241,7 +259,8 @@ mod tests {
     #[test]
     fn transform_transition_dedupes_same_beat_sampling() {
         let mut world = World::default();
-        let component = world.add_component(crate::engine::ecs::component::TransformComponent::new());
+        let component =
+            world.add_component(crate::engine::ecs::component::TransformComponent::new());
 
         let mut system = TransitionSystem::new();
         let from = Transform::default();
@@ -264,7 +283,8 @@ mod tests {
     #[test]
     fn replace_same_target_keeps_only_latest_transition() {
         let mut world = World::default();
-        let component = world.add_component(crate::engine::ecs::component::TransformComponent::new());
+        let component =
+            world.add_component(crate::engine::ecs::component::TransformComponent::new());
 
         let mut system = TransitionSystem::new();
         let from = Transform::default();
@@ -306,7 +326,8 @@ mod tests {
         let mut world = World::default();
         let mut systems = SystemWorld::default();
         let mut visuals = VisualWorld::default();
-        let component = world.add_component(crate::engine::ecs::component::TransformComponent::new());
+        let component =
+            world.add_component(crate::engine::ecs::component::TransformComponent::new());
 
         let mut target = Transform::default();
         target.translation = [3.0, 4.0, 5.0];
@@ -326,7 +347,8 @@ mod tests {
         let mut world = World::default();
         let mut systems = SystemWorld::default();
         let mut visuals = VisualWorld::default();
-        let component = world.add_component(crate::engine::ecs::component::TransformComponent::new());
+        let component =
+            world.add_component(crate::engine::ecs::component::TransformComponent::new());
         let transition = world.add_component(
             TransitionComponent::new()
                 .with_duration_beats(1.0)

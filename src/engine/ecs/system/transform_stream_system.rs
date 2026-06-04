@@ -7,8 +7,8 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::{ComponentId, World};
-use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::TransformMatrix;
+use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 use crate::utils::math;
 use std::collections::{HashMap, VecDeque};
@@ -23,22 +23,30 @@ pub enum TransformPipelineInput {
 pub enum TransformPipelineVec3Op {
     Pass,
     Drop,
-    TemporalSmooth { smoothing_factor: f32 },
+    TemporalSmooth {
+        smoothing_factor: f32,
+    },
     /// Replace this channel's value with the world translation of an ancestor
     /// TransformComponent. `skip` counts TransformComponent ancestors upward from the
     /// pipeline owner: 0 = the driven T directly above the pipeline, 1 = the next T above
     /// that (e.g. the armature bone above an InputXR splice), etc.
-    SampleAncestorTranslation { skip: usize },
+    SampleAncestorTranslation {
+        skip: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TransformPipelineQuatOp {
     Pass,
     Drop,
-    TemporalFilter { smoothing_factor: f32 },
+    TemporalFilter {
+        smoothing_factor: f32,
+    },
     /// Replace this channel's value with the world rotation of an ancestor
     /// TransformComponent. Same `skip` semantics as `SampleAncestorTranslation`.
-    SampleAncestorRotation { skip: usize },
+    SampleAncestorRotation {
+        skip: usize,
+    },
     /// Project the rotation onto the Y-rotation subspace: `normalize([0, q.y, 0, q.w])`.
     /// Strips pitch and roll, keeping only the Y-axis component. Convention-independent.
     ExtractYaw,
@@ -46,7 +54,12 @@ pub enum TransformPipelineQuatOp {
     /// the specified forward convention, then advances a running `body_yaw` toward the
     /// extracted head yaw when the delta exceeds `threshold`, at `rate` rad/s.
     /// Outputs a pure-Y quaternion for `body_yaw`.
-    YawFollow { threshold: f32, rate: f32, initial_yaw: f32, forward_plus_z: bool },
+    YawFollow {
+        threshold: f32,
+        rate: f32,
+        initial_yaw: f32,
+        forward_plus_z: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -115,8 +128,12 @@ impl TransformStreamSystem {
     }
 
     pub fn is_transform_stream_boundary(&self, world: &World, cid: ComponentId) -> bool {
-        world.get_component_by_id_as::<TransformForkTRSComponent>(cid).is_some()
-            || world.get_component_by_id_as::<TransformParentComponent>(cid).is_some()
+        world
+            .get_component_by_id_as::<TransformForkTRSComponent>(cid)
+            .is_some()
+            || world
+                .get_component_by_id_as::<TransformParentComponent>(cid)
+                .is_some()
     }
 
     pub fn parse_component_tree(
@@ -124,11 +141,16 @@ impl TransformStreamSystem {
         world: &World,
         root: ComponentId,
     ) -> Option<TransformPipelinePlan> {
-        if world.get_component_by_id_as::<TransformForkTRSComponent>(root).is_some() {
+        if world
+            .get_component_by_id_as::<TransformForkTRSComponent>(root)
+            .is_some()
+        {
             return Some(TransformPipelinePlan {
                 owner_component: Some(root),
                 input: TransformPipelineInput::ParentWorld,
-                stages: vec![TransformPipelineStage::ForkTrs(self.parse_fork_trs(world, root))],
+                stages: vec![TransformPipelineStage::ForkTrs(
+                    self.parse_fork_trs(world, root),
+                )],
             });
         }
         None
@@ -148,7 +170,10 @@ impl TransformStreamSystem {
             return Some((world_matrix, outputs));
         }
 
-        if world.get_component_by_id_as::<TransformParentComponent>(root).is_some() {
+        if world
+            .get_component_by_id_as::<TransformParentComponent>(root)
+            .is_some()
+        {
             return Some((rebased_world, world.children_of(root).to_vec()));
         }
 
@@ -193,10 +218,18 @@ impl TransformStreamSystem {
             .iter()
             .copied()
             .filter(|&child| {
-                world.get_component_by_id_as::<TransformMapTranslationComponent>(child).is_none()
-                    && world.get_component_by_id_as::<TransformMapRotationComponent>(child).is_none()
-                    && world.get_component_by_id_as::<TransformMapScaleComponent>(child).is_none()
-                    && world.get_component_by_id_as::<TransformMergeTRSComponent>(child).is_none()
+                world
+                    .get_component_by_id_as::<TransformMapTranslationComponent>(child)
+                    .is_none()
+                    && world
+                        .get_component_by_id_as::<TransformMapRotationComponent>(child)
+                        .is_none()
+                    && world
+                        .get_component_by_id_as::<TransformMapScaleComponent>(child)
+                        .is_none()
+                    && world
+                        .get_component_by_id_as::<TransformMergeTRSComponent>(child)
+                        .is_none()
             })
             .collect()
     }
@@ -268,15 +301,21 @@ impl TransformStreamSystem {
     fn parse_vec3_ops(&self, world: &World, node: ComponentId) -> Vec<TransformPipelineVec3Op> {
         let mut ops = Vec::new();
         for &child in world.children_of(node) {
-            if world.get_component_by_id_as::<TransformDropComponent>(child).is_some() {
+            if world
+                .get_component_by_id_as::<TransformDropComponent>(child)
+                .is_some()
+            {
                 ops.push(TransformPipelineVec3Op::Drop);
                 continue;
             }
-            if let Some(s) = world.get_component_by_id_as::<TransformSampleAncestorComponent>(child) {
+            if let Some(s) = world.get_component_by_id_as::<TransformSampleAncestorComponent>(child)
+            {
                 ops.push(TransformPipelineVec3Op::SampleAncestorTranslation { skip: s.skip });
                 continue;
             }
-            if let Some(filter) = world.get_component_by_id_as::<Vector3TemporalFilterComponent>(child) {
+            if let Some(filter) =
+                world.get_component_by_id_as::<Vector3TemporalFilterComponent>(child)
+            {
                 ops.push(TransformPipelineVec3Op::TemporalSmooth {
                     smoothing_factor: filter.smoothing_factor,
                 });
@@ -291,21 +330,29 @@ impl TransformStreamSystem {
     fn parse_quat_ops(&self, world: &World, node: ComponentId) -> Vec<TransformPipelineQuatOp> {
         let mut ops = Vec::new();
         for &child in world.children_of(node) {
-            if world.get_component_by_id_as::<TransformDropComponent>(child).is_some() {
+            if world
+                .get_component_by_id_as::<TransformDropComponent>(child)
+                .is_some()
+            {
                 ops.push(TransformPipelineQuatOp::Drop);
                 continue;
             }
-            if let Some(s) = world.get_component_by_id_as::<TransformSampleAncestorComponent>(child) {
+            if let Some(s) = world.get_component_by_id_as::<TransformSampleAncestorComponent>(child)
+            {
                 ops.push(TransformPipelineQuatOp::SampleAncestorRotation { skip: s.skip });
                 continue;
             }
-            if let Some(filter) = world.get_component_by_id_as::<QuatTemporalFilterComponent>(child) {
+            if let Some(filter) = world.get_component_by_id_as::<QuatTemporalFilterComponent>(child)
+            {
                 ops.push(TransformPipelineQuatOp::TemporalFilter {
                     smoothing_factor: filter.smoothing_factor,
                 });
                 continue;
             }
-            if world.get_component_by_id_as::<QuatExtractYawComponent>(child).is_some() {
+            if world
+                .get_component_by_id_as::<QuatExtractYawComponent>(child)
+                .is_some()
+            {
                 ops.push(TransformPipelineQuatOp::ExtractYaw);
                 continue;
             }
@@ -334,7 +381,14 @@ impl TransformStreamSystem {
         let mut channels = Self::decompose_matrix(input_world);
         for (stage_index, stage) in pipeline.stages.iter().enumerate() {
             let mut stage_path = vec![stage_index];
-            channels = self.evaluate_stage(pipeline.owner_component, stage, channels, &mut stage_path, world, dt_sec);
+            channels = self.evaluate_stage(
+                pipeline.owner_component,
+                stage,
+                channels,
+                &mut stage_path,
+                world,
+                dt_sec,
+            );
         }
         Self::recompose_matrix(channels)
     }
@@ -401,7 +455,11 @@ impl TransformStreamSystem {
 
     /// Walk ancestor TransformComponents from `owner` upward. Returns the world matrix of the
     /// `skip`-th TransformComponent found (0 = first / nearest ancestor, 1 = second, etc.).
-    fn sample_ancestor_world(world: &World, owner: ComponentId, skip: usize) -> Option<TransformMatrix> {
+    fn sample_ancestor_world(
+        world: &World,
+        owner: ComponentId,
+        skip: usize,
+    ) -> Option<TransformMatrix> {
         let mut found = 0usize;
         let mut cur = owner;
         while let Some(parent) = world.parent_of(cur) {
@@ -431,12 +489,10 @@ impl TransformStreamSystem {
             current = match *op {
                 TransformPipelineVec3Op::Pass => current,
                 TransformPipelineVec3Op::Drop => dropped_value,
-                TransformPipelineVec3Op::SampleAncestorTranslation { skip } => {
-                    owner_component
-                        .and_then(|owner| Self::sample_ancestor_world(world, owner, skip))
-                        .map(|m| [m[3][0], m[3][1], m[3][2]])
-                        .unwrap_or(current)
-                }
+                TransformPipelineVec3Op::SampleAncestorTranslation { skip } => owner_component
+                    .and_then(|owner| Self::sample_ancestor_world(world, owner, skip))
+                    .map(|m| [m[3][0], m[3][1], m[3][2]])
+                    .unwrap_or(current),
                 TransformPipelineVec3Op::TemporalSmooth { smoothing_factor } => {
                     let mut full_path = stage_path.to_vec();
                     full_path.push(op_index);
@@ -479,19 +535,22 @@ impl TransformStreamSystem {
             current = match *op {
                 TransformPipelineQuatOp::Pass => current,
                 TransformPipelineQuatOp::Drop => dropped_value,
-                TransformPipelineQuatOp::SampleAncestorRotation { skip } => {
-                    owner_component
-                        .and_then(|owner| Self::sample_ancestor_world(world, owner, skip))
-                        .map(|m| Self::decompose_matrix(m).rotation_quat_xyzw)
-                        .unwrap_or(current)
-                }
+                TransformPipelineQuatOp::SampleAncestorRotation { skip } => owner_component
+                    .and_then(|owner| Self::sample_ancestor_world(world, owner, skip))
+                    .map(|m| Self::decompose_matrix(m).rotation_quat_xyzw)
+                    .unwrap_or(current),
                 TransformPipelineQuatOp::ExtractYaw => {
                     // Project onto Y-rotation subspace: normalize([0, q.y, 0, q.w])
                     let (qy, qw) = (current[1], current[3]);
                     let len = (qy * qy + qw * qw).sqrt().max(1e-8);
                     [0.0, qy / len, 0.0, qw / len]
                 }
-                TransformPipelineQuatOp::YawFollow { threshold, rate, initial_yaw, forward_plus_z } => {
+                TransformPipelineQuatOp::YawFollow {
+                    threshold,
+                    rate,
+                    initial_yaw,
+                    forward_plus_z,
+                } => {
                     let mut full_path = stage_path.to_vec();
                     full_path.push(op_index);
                     let key = TransformPipelineStageKey {
@@ -499,13 +558,21 @@ impl TransformStreamSystem {
                         stage_path: full_path,
                     };
                     let head_yaw = Self::extract_yaw_from_quat(current, forward_plus_z);
-                    let body_yaw = self.yaw_follow_state.get(&key).copied().unwrap_or(initial_yaw);
+                    let body_yaw = self
+                        .yaw_follow_state
+                        .get(&key)
+                        .copied()
+                        .unwrap_or(initial_yaw);
                     let new_body_yaw = if let Some(dt) = dt_sec {
                         let delta = Self::signed_yaw_diff(head_yaw, body_yaw);
                         if delta.abs() > threshold {
                             let target = head_yaw - delta.signum() * threshold;
                             let step = rate * dt;
-                            Self::lerp_angle(body_yaw, target, step.min(delta.abs()) / delta.abs().max(1e-9))
+                            Self::lerp_angle(
+                                body_yaw,
+                                target,
+                                step.min(delta.abs()) / delta.abs().max(1e-9),
+                            )
                         } else {
                             body_yaw
                         }
@@ -548,8 +615,7 @@ impl TransformStreamSystem {
                     if Self::debug_quat_filter_enabled() {
                         let window_len = Self::debug_quat_filter_window_len();
                         let raw_step_deg = Self::quat_angle_degrees(previous_input, current);
-                        let filtered_step_deg =
-                            Self::quat_angle_degrees(previous_output, filtered);
+                        let filtered_step_deg = Self::quat_angle_degrees(previous_output, filtered);
                         let lag_deg = Self::quat_angle_degrees(filtered, current);
 
                         Self::push_rolling_sample(
@@ -617,8 +683,12 @@ impl TransformStreamSystem {
     fn signed_yaw_diff(a: f32, b: f32) -> f32 {
         let pi = std::f32::consts::PI;
         let mut d = (a - b) % (2.0 * pi);
-        if d > pi { d -= 2.0 * pi; }
-        if d < -pi { d += 2.0 * pi; }
+        if d > pi {
+            d -= 2.0 * pi;
+        }
+        if d < -pi {
+            d += 2.0 * pi;
+        }
         d
     }
 
@@ -676,11 +746,7 @@ impl TransformStreamSystem {
         out
     }
 
-    fn orthonormalize_basis(
-        b0: [f32; 3],
-        b1: [f32; 3],
-        b2: [f32; 3],
-    ) -> [[f32; 3]; 3] {
+    fn orthonormalize_basis(b0: [f32; 3], b1: [f32; 3], b2: [f32; 3]) -> [[f32; 3]; 3] {
         let x = math::vec3_normalize(b0);
         let y_proj = math::vec3_sub(b1, math::vec3_scale(x, math::vec3_dot(b1, x)));
         let mut y = math::vec3_normalize(y_proj);
@@ -825,7 +891,8 @@ mod tests {
     use super::*;
     use crate::engine::ecs::component::{
         QuatTemporalFilterComponent, TransformForkTRSComponent, TransformMapRotationComponent,
-        TransformMapScaleComponent, TransformMapTranslationComponent, Vector3TemporalFilterComponent,
+        TransformMapScaleComponent, TransformMapTranslationComponent,
+        Vector3TemporalFilterComponent,
     };
     use crate::engine::ecs::World;
 
@@ -848,9 +915,8 @@ mod tests {
         let mut world = World::default();
         let fork = world.add_component(TransformForkTRSComponent::new());
         let map_translation = world.add_component(TransformMapTranslationComponent::new());
-        let vec_filter = world.add_component(
-            Vector3TemporalFilterComponent::new().with_smoothing_factor(12.0),
-        );
+        let vec_filter =
+            world.add_component(Vector3TemporalFilterComponent::new().with_smoothing_factor(12.0));
         let map_rotation = world.add_component(TransformMapRotationComponent::new());
         let quat_filter =
             world.add_component(QuatTemporalFilterComponent::new().with_smoothing_factor(18.0));
@@ -861,7 +927,9 @@ mod tests {
         world.set_parent(quat_filter, Some(map_rotation)).unwrap();
 
         let parser = TransformStreamSystem::new();
-        let block = parser.parse_component_tree(&world, fork).expect("pipeline block");
+        let block = parser
+            .parse_component_tree(&world, fork)
+            .expect("pipeline block");
         assert_eq!(block.owner_component, Some(fork));
         assert_eq!(block.stages.len(), 1);
         let stage = match &block.stages[0] {
@@ -891,7 +959,9 @@ mod tests {
         world.set_parent(map_scale, Some(fork)).unwrap();
 
         let parser = TransformStreamSystem::new();
-        let block = parser.parse_component_tree(&world, fork).expect("pipeline block");
+        let block = parser
+            .parse_component_tree(&world, fork)
+            .expect("pipeline block");
         let stage = match &block.stages[0] {
             TransformPipelineStage::ForkTrs(stage) => stage,
         };
@@ -913,7 +983,9 @@ mod tests {
         world.set_parent(quat_filter, Some(map_rotation)).unwrap();
 
         let parser = TransformStreamSystem::new();
-        let block = parser.parse_component_tree(&world, fork).expect("fork root block");
+        let block = parser
+            .parse_component_tree(&world, fork)
+            .expect("fork root block");
         assert_eq!(block.owner_component, Some(fork));
         assert_eq!(block.stages.len(), 1);
         let stage = match &block.stages[0] {

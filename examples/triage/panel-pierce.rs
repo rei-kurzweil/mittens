@@ -35,9 +35,10 @@ fn spawn_row(
                 .with_scale(4.6, 0.9, 1.0),
         ),
     );
-    let panel_renderable = universe
-        .world
-        .add_component_boxed_named(format!("{label}_rend"), Box::new(RenderableComponent::square()));
+    let panel_renderable = universe.world.add_component_boxed_named(
+        format!("{label}_rend"),
+        Box::new(RenderableComponent::square()),
+    );
     let panel_color = universe
         .world
         .add_component(ColorComponent::rgba(0.98, 0.94, 0.78, 1.0));
@@ -50,9 +51,10 @@ fn spawn_row(
                 .with_scale(0.11, 0.11, 0.11),
         ),
     );
-    let text = universe
-        .world
-        .add_component_boxed_named(format!("{label}_text"), Box::new(TextComponent::new(label.clone())));
+    let text = universe.world.add_component_boxed_named(
+        format!("{label}_text"),
+        Box::new(TextComponent::new(label.clone())),
+    );
     let text_color = universe
         .world
         .add_component(ColorComponent::rgba(0.20, 0.16, 0.08, 1.0));
@@ -76,7 +78,10 @@ fn main() {
     for error in &output.errors {
         eprintln!("[mms] {error}");
     }
-    println!("[mms] {} intent(s) from panel-pierce.mms", output.intents.len());
+    println!(
+        "[mms] {} intent(s) from panel-pierce.mms",
+        output.intents.len()
+    );
 
     if !output.errors.is_empty() {
         std::process::exit(1);
@@ -90,7 +95,11 @@ fn main() {
         universe.command_queue.push_intent_now(scope, intent);
     }
 
-    universe.systems.process_commands(&mut universe.world, &mut universe.visuals, &universe.render_assets, &mut universe.command_queue,
+    universe.systems.process_commands(
+        &mut universe.world,
+        &mut universe.visuals,
+        &universe.render_assets,
+        &mut universe.command_queue,
     );
 
     let panel_scroll = find_named(&universe.world, "panel_scroll");

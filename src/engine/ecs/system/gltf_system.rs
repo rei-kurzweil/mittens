@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::{
     ColorComponent, EditorComponent, EmissiveComponent, GLTFComponent, MeshComponent,
-    OverlayComponent, RaycastableComponent, RenderableComponent, SignalRouteUpwardComponent,
-    SerializeComponent, SkinnedMeshComponent, TextureComponent, TransformComponent,
+    OverlayComponent, RaycastableComponent, RenderableComponent, SerializeComponent,
+    SignalRouteUpwardComponent, SkinnedMeshComponent, TextureComponent, TransformComponent,
 };
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::engine::graphics::mesh::{CpuMesh, CpuVertex};

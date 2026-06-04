@@ -1,16 +1,15 @@
-use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    ControllerXRComponent, InputComponent, InputXRComponent,
-    RayCastComponent, RayCastMode, RaycastableShapeComponent, RaycastableShapeType,
-    RenderableComponent,
+    ControllerXRComponent, InputComponent, InputXRComponent, RayCastComponent, RayCastMode,
+    RaycastableShapeComponent, RaycastableShapeType, RenderableComponent,
 };
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
+use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::World;
 use crate::engine::ecs::{EventSignal, RxWorld};
-use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::{CpuMeshHandle, TransformMatrix};
+use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 use crate::utils::math;
 use std::collections::{HashMap, HashSet};
@@ -495,10 +494,7 @@ impl RayCastSystem {
         ];
 
         let dir = Self::vec3_normalize(Self::vec3_sub(far, near));
-        Some(CursorRay {
-            origin: near,
-            dir,
-        })
+        Some(CursorRay { origin: near, dir })
     }
 
     fn mat4_mul_vec3_dir(m: TransformMatrix, v: [f32; 3]) -> [f32; 3] {
@@ -567,7 +563,9 @@ impl RayCastSystem {
                 .get_component_by_id_as::<crate::engine::ecs::component::Camera3DComponent>(node)
                 .is_some()
                 || world
-                    .get_component_by_id_as::<crate::engine::ecs::component::Camera2DComponent>(node)
+                    .get_component_by_id_as::<crate::engine::ecs::component::Camera2DComponent>(
+                        node,
+                    )
                     .is_some()
             {
                 has_desktop_camera = true;
@@ -590,10 +588,16 @@ impl RayCastSystem {
         (has_desktop_camera, has_xr_camera)
     }
 
-    fn pointer_topology_context(world: &World, raycaster_cid: ComponentId) -> PointerTopologyContext {
-        let has_desktop_input_driver = Self::has_ancestor_component::<InputComponent>(world, raycaster_cid);
-        let has_xr_input_driver = Self::has_ancestor_component::<InputXRComponent>(world, raycaster_cid);
-        let has_controller_driver = Self::has_ancestor_component::<ControllerXRComponent>(world, raycaster_cid);
+    fn pointer_topology_context(
+        world: &World,
+        raycaster_cid: ComponentId,
+    ) -> PointerTopologyContext {
+        let has_desktop_input_driver =
+            Self::has_ancestor_component::<InputComponent>(world, raycaster_cid);
+        let has_xr_input_driver =
+            Self::has_ancestor_component::<InputXRComponent>(world, raycaster_cid);
+        let has_controller_driver =
+            Self::has_ancestor_component::<ControllerXRComponent>(world, raycaster_cid);
 
         let Some(tcid) = Self::nearest_ancestor_transform(world, raycaster_cid) else {
             return PointerTopologyContext {

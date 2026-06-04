@@ -58,7 +58,10 @@ pub enum Value {
     /// `20gu`, `30deg`). Produced by `Expression::Dimension`. Consumers
     /// such as the Style setters use this to disambiguate `Percent` vs
     /// `GlyphUnits` at the boundary between MMS values and engine types.
-    Dimension { value: f64, unit: crate::meow_meow::token::Unit },
+    Dimension {
+        value: f64,
+        unit: crate::meow_meow::token::Unit,
+    },
     String(String),
     Array(Vec<Value>),
 
@@ -66,7 +69,10 @@ pub enum Value {
     /// `ComponentId` and the MMS component type name (e.g. `"Anim"`, `"T"`).
     /// Produced when `let x = CE` is evaluated with a live reply channel
     /// (`eval_with_world`). The `component_type` drives method dispatch.
-    ComponentObject { id: ComponentId, component_type: String },
+    ComponentObject {
+        id: ComponentId,
+        component_type: String,
+    },
 
     /// Heap-allocated MMS object (map / record / instance).
     Object(ObjectId),
@@ -123,7 +129,10 @@ impl Heap {
 
     pub fn alloc(&mut self, object: Object) -> ObjectId {
         let id = ObjectId(
-            self.objects.len().try_into().expect("too many heap objects"),
+            self.objects
+                .len()
+                .try_into()
+                .expect("too many heap objects"),
         );
         self.objects.push(object);
         id
@@ -171,10 +180,16 @@ struct Frame {
 
 impl Frame {
     fn new(kind: FrameKind) -> Self {
-        Self { kind_or_root: Some(kind), bindings: HashMap::new() }
+        Self {
+            kind_or_root: Some(kind),
+            bindings: HashMap::new(),
+        }
     }
     fn root() -> Self {
-        Self { kind_or_root: None, bindings: HashMap::new() }
+        Self {
+            kind_or_root: None,
+            bindings: HashMap::new(),
+        }
     }
     fn is_function_barrier(&self) -> bool {
         matches!(self.kind_or_root, Some(FrameKind::Function))

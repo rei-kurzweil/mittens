@@ -25,8 +25,9 @@ struct ClickCubeState {
     click_count: u32,
 }
 
-static CLICK_CUBES: OnceLock<Mutex<std::collections::HashMap<engine::ecs::ComponentId, ClickCubeState>>> =
-    OnceLock::new();
+static CLICK_CUBES: OnceLock<
+    Mutex<std::collections::HashMap<engine::ecs::ComponentId, ClickCubeState>>,
+> = OnceLock::new();
 
 fn click_cube_colors() -> &'static [[f32; 4]] {
     &[
@@ -43,7 +44,10 @@ fn on_click_cube(
     emit: &mut dyn engine::ecs::SignalEmitter,
     env: &engine::ecs::Signal,
 ) {
-    if !matches!(env.event.as_ref(), Some(engine::ecs::EventSignal::Click { .. })) {
+    if !matches!(
+        env.event.as_ref(),
+        Some(engine::ecs::EventSignal::Click { .. })
+    ) {
         return;
     }
 
@@ -60,7 +64,9 @@ fn on_click_cube(
         cur = world.parent_of(id);
     }
     let Some(root) = found_root else { return };
-    let Some(state) = guard.get_mut(&root) else { return };
+    let Some(state) = guard.get_mut(&root) else {
+        return;
+    };
 
     state.click_count += 1;
     let colors = click_cube_colors();
@@ -109,7 +115,13 @@ fn spawn_click_cube(
         .get_or_init(|| Mutex::new(Default::default()))
         .lock()
         .unwrap()
-        .insert(root, ClickCubeState { color_node, click_count: 0 });
+        .insert(
+            root,
+            ClickCubeState {
+                color_node,
+                click_count: 0,
+            },
+        );
 
     universe.add_signal_handler(engine::ecs::SignalKind::Click, root, on_click_cube);
 
@@ -198,8 +210,9 @@ struct BothCubeState {
     click_count: u32,
 }
 
-static BOTH_CUBES: OnceLock<Mutex<std::collections::HashMap<engine::ecs::ComponentId, BothCubeState>>> =
-    OnceLock::new();
+static BOTH_CUBES: OnceLock<
+    Mutex<std::collections::HashMap<engine::ecs::ComponentId, BothCubeState>>,
+> = OnceLock::new();
 
 fn on_both_cube(
     world: &mut engine::ecs::World,
@@ -225,7 +238,9 @@ fn on_both_cube(
                 cur = world.parent_of(id);
             }
             let Some(root) = found_root else { return };
-            let Some(state) = guard.get_mut(&root) else { return };
+            let Some(state) = guard.get_mut(&root) else {
+                return;
+            };
 
             state.click_count += 1;
             let colors = click_cube_colors();
@@ -273,7 +288,13 @@ fn spawn_both_cube(
         .get_or_init(|| Mutex::new(Default::default()))
         .lock()
         .unwrap()
-        .insert(root, BothCubeState { color_node, click_count: 0 });
+        .insert(
+            root,
+            BothCubeState {
+                color_node,
+                click_count: 0,
+            },
+        );
 
     universe.add_signal_handler(engine::ecs::SignalKind::DragMove, r, on_both_cube);
     universe.add_signal_handler(engine::ecs::SignalKind::Click, r, on_both_cube);
@@ -292,8 +313,8 @@ fn spawn_label(
     text: &str,
 ) {
     use engine::ecs::component::{
-        ColorComponent, EmissiveComponent,
-        TextComponent, TextureFilteringComponent, TransformComponent, TransparentCutoutComponent,
+        ColorComponent, EmissiveComponent, TextComponent, TextureFilteringComponent,
+        TransformComponent, TransparentCutoutComponent,
     };
 
     let root = universe.world.add_component(
@@ -309,7 +330,9 @@ fn spawn_label(
     let filtering = universe
         .world
         .add_component(TextureFilteringComponent::nearest_magnification());
-    let cutout = universe.world.add_component(TransparentCutoutComponent::new());
+    let cutout = universe
+        .world
+        .add_component(TransparentCutoutComponent::new());
 
     let _ = universe.attach(parent, root);
     let _ = universe.attach(root, txt);
@@ -336,7 +359,9 @@ fn main() {
     };
 
     // Background.
-    let bg = universe.world.add_component(BackgroundColorComponent::new());
+    let bg = universe
+        .world
+        .add_component(BackgroundColorComponent::new());
     let bg_c = universe
         .world
         .add_component(ColorComponent::rgba(0.12, 0.12, 0.16, 1.0));
@@ -352,7 +377,9 @@ fn main() {
     let sun_t = universe
         .world
         .add_component(TransformComponent::new().with_position(2.0, 4.0, 3.0));
-    let sun = universe.world.add_component(DirectionalLightComponent::new());
+    let sun = universe
+        .world
+        .add_component(DirectionalLightComponent::new());
     let _ = universe.attach(sun_t, sun);
     universe.add(sun_t);
 
@@ -383,9 +410,7 @@ fn main() {
     universe.add(input);
 
     // Scene root for all interactive objects.
-    let scene = universe
-        .world
-        .add_component(TransformComponent::new());
+    let scene = universe.world.add_component(TransformComponent::new());
     universe.add(scene);
 
     // --- LEFT: click-only cubes ---
@@ -398,7 +423,12 @@ fn main() {
         spawn_click_cube(&mut universe, click_group, [0.0, *dy, 0.0]);
         let _ = i;
     }
-    spawn_label(&mut universe, click_group, [-0.25, -1.05, 0.0], "click\ncycles color");
+    spawn_label(
+        &mut universe,
+        click_group,
+        [-0.25, -1.05, 0.0],
+        "click\ncycles color",
+    );
 
     // --- MID: drag-only cube ---
     let drag_cube_root = universe
@@ -406,8 +436,18 @@ fn main() {
         .add_component(TransformComponent::new().with_position(0.0, 0.0, 0.0));
     let _ = universe.attach(scene, drag_cube_root);
 
-    spawn_drag_cube(&mut universe, drag_cube_root, [0.0, 0.0, 0.0], [0.35, 0.85, 0.55, 1.0]);
-    spawn_label(&mut universe, drag_cube_root, [-0.25, -0.80, 0.0], "drag\nto move");
+    spawn_drag_cube(
+        &mut universe,
+        drag_cube_root,
+        [0.0, 0.0, 0.0],
+        [0.35, 0.85, 0.55, 1.0],
+    );
+    spawn_label(
+        &mut universe,
+        drag_cube_root,
+        [-0.25, -0.80, 0.0],
+        "drag\nto move",
+    );
 
     // --- RIGHT: drag + click cube ---
     let both_root = universe
@@ -416,7 +456,12 @@ fn main() {
     let _ = universe.attach(scene, both_root);
 
     spawn_both_cube(&mut universe, both_root, [0.0, 0.0, 0.0]);
-    spawn_label(&mut universe, both_root, [-0.30, -0.80, 0.0], "drag to move\nclick for color");
+    spawn_label(
+        &mut universe,
+        both_root,
+        [-0.30, -0.80, 0.0],
+        "drag to move\nclick for color",
+    );
 
     universe.systems.process_commands(
         &mut universe.world,

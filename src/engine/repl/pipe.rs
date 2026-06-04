@@ -61,9 +61,7 @@ fn stage_grep(world: &ecs::World, input: Vec<PipeValue>, pattern: &str) -> Vec<P
         fn ce_matches(ce: &ComponentExpression, needle: &str) -> bool {
             // Match against the unparsed MMS text — covers type name,
             // builder names, literal args, and nested children.
-            unparse_component(ce)
-                .to_ascii_lowercase()
-                .contains(needle)
+            unparse_component(ce).to_ascii_lowercase().contains(needle)
         }
 
         fn collect_matching(
@@ -117,8 +115,7 @@ fn stage_grep(world: &ecs::World, input: Vec<PipeValue>, pattern: &str) -> Vec<P
 
         let mut matches: Vec<(String, String)> = Vec::new();
         for (k, v) in &meta {
-            if k.to_ascii_lowercase().contains(&needle)
-                || v.to_ascii_lowercase().contains(&needle)
+            if k.to_ascii_lowercase().contains(&needle) || v.to_ascii_lowercase().contains(&needle)
             {
                 matches.push((k.clone(), v.clone()));
             }

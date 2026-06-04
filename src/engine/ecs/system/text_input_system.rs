@@ -42,9 +42,15 @@ impl TextInputSystem {
             };
 
             // 1. Try glyph hit metadata first for caret placement.
-            let glyph_hit = world.children_of(*renderable).iter().copied().find_map(|child| {
-                world.get_component_by_id_as::<TextInputGlyphHitComponent>(child).copied()
-            });
+            let glyph_hit = world
+                .children_of(*renderable)
+                .iter()
+                .copied()
+                .find_map(|child| {
+                    world
+                        .get_component_by_id_as::<TextInputGlyphHitComponent>(child)
+                        .copied()
+                });
 
             if let Some(hit) = glyph_hit {
                 emit.push_intent_now(
@@ -156,7 +162,10 @@ impl TextInputSystem {
     }
 
     pub fn clear_focus_if_removed(&mut self, removed_nodes: &[ComponentId]) {
-        if self.focused.is_some_and(|focused| removed_nodes.contains(&focused)) {
+        if self
+            .focused
+            .is_some_and(|focused| removed_nodes.contains(&focused))
+        {
             self.focused = None;
         }
     }
@@ -241,7 +250,8 @@ impl TextInputSystem {
 
         let old = self.focused;
         if old == Some(component_id) {
-            if let Some(input) = world.get_component_by_id_as_mut::<TextInputComponent>(component_id)
+            if let Some(input) =
+                world.get_component_by_id_as_mut::<TextInputComponent>(component_id)
             {
                 input.focused = true;
             }
@@ -260,7 +270,8 @@ impl TextInputSystem {
             let old_target = resolve_text_target(world, old_id);
             sync_caret_bg(world, emit, old_id, old_target);
         }
-        if let Some(new_input) = world.get_component_by_id_as_mut::<TextInputComponent>(component_id)
+        if let Some(new_input) =
+            world.get_component_by_id_as_mut::<TextInputComponent>(component_id)
         {
             new_input.focused = true;
         }
@@ -280,12 +291,7 @@ impl TextInputSystem {
         );
     }
 
-    fn clear_focus(
-        &mut self,
-        world: &mut World,
-        emit: &mut dyn SignalEmitter,
-        scope: ComponentId,
-    ) {
+    fn clear_focus(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, scope: ComponentId) {
         let old = self.focused.take();
         let Some(old_id) = old else {
             return;
@@ -358,7 +364,8 @@ impl TextInputSystem {
         };
 
         let (changed, text, caret) = {
-            let Some(input) = world.get_component_by_id_as_mut::<TextInputComponent>(focused) else {
+            let Some(input) = world.get_component_by_id_as_mut::<TextInputComponent>(focused)
+            else {
                 return;
             };
             let changed = edit(input);
@@ -395,7 +402,11 @@ impl TextInputSystem {
 fn resolve_text_target(world: &World, root: ComponentId) -> Option<ComponentId> {
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
-        if node != root && world.get_component_by_id_as::<TextComponent>(node).is_some() {
+        if node != root
+            && world
+                .get_component_by_id_as::<TextComponent>(node)
+                .is_some()
+        {
             return Some(node);
         }
         for &child in world.children_of(node).iter().rev() {
@@ -411,7 +422,8 @@ fn sync_caret_bg(
     root: ComponentId,
     text_target: Option<ComponentId>,
 ) {
-    let Some((caret_bg, opacity_id, x, y, font_size, visible)) = caret_bg_sync_state(world, root, text_target)
+    let Some((caret_bg, opacity_id, x, y, font_size, visible)) =
+        caret_bg_sync_state(world, root, text_target)
     else {
         return;
     };
@@ -444,7 +456,8 @@ fn caret_bg_sync_state(
     let input = world.get_component_by_id_as::<TextInputComponent>(root)?;
     let text_target = text_target?;
     let caret_bg = resolve_named_descendant(world, root, OWNED_TEXT_INPUT_CARET_BG_LABEL)?;
-    let opacity_id = resolve_named_descendant(world, caret_bg, OWNED_TEXT_INPUT_CARET_BG_OPACITY_LABEL)?;
+    let opacity_id =
+        resolve_named_descendant(world, caret_bg, OWNED_TEXT_INPUT_CARET_BG_OPACITY_LABEL)?;
     let text = world.get_component_by_id_as::<TextComponent>(text_target)?;
     let (x, y) = TextSystem::caret_local_position(
         &input.text,
@@ -510,7 +523,9 @@ fn ensure_caret_bg(
         return Some(existing);
     }
 
-    let host = text_target.and_then(|text_target| world.parent_of(text_target)).unwrap_or(root);
+    let host = text_target
+        .and_then(|text_target| world.parent_of(text_target))
+        .unwrap_or(root);
     let bg = world.add_component_boxed_named(
         OWNED_TEXT_INPUT_CARET_BG_LABEL,
         Box::new(
@@ -524,7 +539,9 @@ fn ensure_caret_bg(
     let serialize = world.add_component(SerializeComponent::off());
     let _ = world.add_child(bg, serialize);
 
-    let color = world.add_component(ColorComponent { rgba: CARET_BG_RGBA });
+    let color = world.add_component(ColorComponent {
+        rgba: CARET_BG_RGBA,
+    });
     let _ = world.add_child(bg, color);
 
     let renderable = world.add_component(RenderableComponent::square());
@@ -571,9 +588,9 @@ fn char_to_byte_index(text: &str, char_index: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::component::{OpacityComponent, TransformComponent};
     use crate::engine::ecs::system::SystemWorld;
+    use crate::engine::ecs::CommandQueue;
     use crate::engine::graphics::VisualWorld;
 
     #[test]
@@ -591,7 +608,12 @@ mod tests {
         world.init_component_tree(root, &mut queue);
         systems.process_commands(&mut world, &mut visuals, &mut queue);
 
-        queue.push_intent_now(input, IntentValue::TextInputSetFocus { component_id: input });
+        queue.push_intent_now(
+            input,
+            IntentValue::TextInputSetFocus {
+                component_id: input,
+            },
+        );
         queue.push_intent_now(
             input,
             IntentValue::TextInputInsertText {
@@ -607,7 +629,9 @@ mod tests {
         assert_eq!(input_state.caret, 3);
 
         let text_state = world
-            .get_component_by_id_as::<TextComponent>(resolve_text_target(&world, input).expect("spawned backing text"))
+            .get_component_by_id_as::<TextComponent>(
+                resolve_text_target(&world, input).expect("spawned backing text"),
+            )
             .expect("text component");
         assert_eq!(text_state.text, "hi!");
 
@@ -617,17 +641,24 @@ mod tests {
                 .get_component_by_id_as::<RaycastableComponent>(child)
                 .is_some_and(|raycastable| raycastable.enable)
         });
-        assert!(has_raycastable, "text input backing text should be raycastable");
+        assert!(
+            has_raycastable,
+            "text input backing text should be raycastable"
+        );
 
         let caret_bg = resolve_named_descendant(&world, input, OWNED_TEXT_INPUT_CARET_BG_LABEL)
             .expect("text input caret background");
         let caret_bg_transform = world
             .get_component_by_id_as::<TransformComponent>(caret_bg)
             .expect("caret bg transform");
-        assert_eq!(caret_bg_transform.transform.translation, [3.5, -0.5, CARET_BG_Z]);
+        assert_eq!(
+            caret_bg_transform.transform.translation,
+            [3.5, -0.5, CARET_BG_Z]
+        );
 
-        let caret_bg_opacity = resolve_named_descendant(&world, caret_bg, OWNED_TEXT_INPUT_CARET_BG_OPACITY_LABEL)
-            .expect("caret bg opacity");
+        let caret_bg_opacity =
+            resolve_named_descendant(&world, caret_bg, OWNED_TEXT_INPUT_CARET_BG_OPACITY_LABEL)
+                .expect("caret bg opacity");
         let caret_bg_opacity = world
             .get_component_by_id_as::<OpacityComponent>(caret_bg_opacity)
             .expect("caret bg opacity component");
@@ -636,16 +667,17 @@ mod tests {
         queue.push_intent_now(input, IntentValue::TextInputClearFocus);
         systems.process_commands(&mut world, &mut visuals, &mut queue);
 
-        let caret_bg_opacity = resolve_named_descendant(&world, caret_bg, OWNED_TEXT_INPUT_CARET_BG_OPACITY_LABEL)
-            .expect("caret bg opacity after clear");
+        let caret_bg_opacity =
+            resolve_named_descendant(&world, caret_bg, OWNED_TEXT_INPUT_CARET_BG_OPACITY_LABEL)
+                .expect("caret bg opacity after clear");
         let caret_bg_opacity = world
             .get_component_by_id_as::<OpacityComponent>(caret_bg_opacity)
             .expect("caret bg opacity component after clear");
         assert!(caret_bg_opacity.opacity.abs() < 1e-6);
-        }
+    }
 
-        #[test]
-        fn text_input_glyph_click_moves_caret() {
+    #[test]
+    fn text_input_glyph_click_moves_caret() {
         let mut world = World::default();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
@@ -664,7 +696,10 @@ mod tests {
         let mut e_glyph_renderable = None;
         for &t_id in world.children_of(text_target) {
             for &r_id in world.children_of(t_id) {
-                if world.get_component_by_id_as::<RenderableComponent>(r_id).is_some() {
+                if world
+                    .get_component_by_id_as::<RenderableComponent>(r_id)
+                    .is_some()
+                {
                     let hit = world.children_of(r_id).iter().copied().find_map(|child| {
                         world.get_component_by_id_as::<TextInputGlyphHitComponent>(child)
                     });
@@ -705,8 +740,14 @@ mod tests {
         let input_state = world
             .get_component_by_id_as::<TextInputComponent>(input)
             .expect("text input component");
-        assert_eq!(input_state.caret, 1, "Caret should have moved to clicked glyph index 1");
-        assert!(input_state.focused, "TextInput should be focused after click");
+        assert_eq!(
+            input_state.caret, 1,
+            "Caret should have moved to clicked glyph index 1"
+        );
+        assert!(
+            input_state.focused,
+            "TextInput should be focused after click"
+        );
 
         // 5. Verify caret background updated position
         let caret_bg = resolve_named_descendant(&world, input, OWNED_TEXT_INPUT_CARET_BG_LABEL)
@@ -716,6 +757,9 @@ mod tests {
             .expect("caret bg transform");
         // 'e' is at index 1. In monospace 1.0 font size, cursor for index 1 is at x=1.0.
         // TextSystem::caret_local_position("hello", 1, ...) returns (1.0, 0.0) -> centered at (1.5, -0.5)
-        assert_eq!(caret_bg_transform.transform.translation, [1.5, -0.5, CARET_BG_Z]);
-        }
-        }
+        assert_eq!(
+            caret_bg_transform.transform.translation,
+            [1.5, -0.5, CARET_BG_Z]
+        );
+    }
+}

@@ -32,6 +32,7 @@ pub mod directional_light;
 pub mod editor;
 pub mod emissive;
 pub mod emissive_pass;
+pub mod fit_bounds;
 pub mod gesture_coord_type;
 pub mod gizmo;
 pub mod gltf;
@@ -50,8 +51,8 @@ pub mod mesh;
 pub mod music_context;
 pub mod music_note;
 pub mod normal_visualisation;
-pub mod option;
 pub mod opacity;
+pub mod option;
 pub mod overlay;
 pub mod render_graph;
 pub mod router;
@@ -127,6 +128,9 @@ pub use editor::EditorComponent;
 pub use editor::TransformGizmoCoordSpace;
 pub use emissive::EmissiveComponent;
 pub use emissive_pass::EmissivePassComponent;
+pub use fit_bounds::{
+    FitBoundsComponent, FitBoundsMode, FIT_BOUNDS_CONTENT_NAME, FIT_BOUNDS_TRANSFORM_NAME,
+};
 pub use gesture_coord_type::{GestureCoordType, GestureCoordTypeComponent};
 pub use gizmo::{
     TransformGizmoAxis, TransformGizmoComponent, TransformGizmoRotateComponent,
@@ -147,9 +151,9 @@ pub use music_context::MusicContextComponent;
 pub(crate) use music_note::NotePitch;
 pub use music_note::{MusicNote, MusicNoteComponent};
 pub use normal_visualisation::NormalVisualisationComponent;
-pub use option::OptionComponent;
 pub use opacity::OpacityComponent;
 pub use openxr::OpenXRComponent;
+pub use option::OptionComponent;
 pub use overlay::OverlayComponent;
 pub use point_light::PointLightComponent;
 pub use pointer::PointerComponent;

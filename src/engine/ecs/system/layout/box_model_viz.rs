@@ -1,5 +1,7 @@
+use crate::engine::ecs::component::{
+    ColorComponent, OpacityComponent, OverlayComponent, RenderableComponent, TransformComponent,
+};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
-use crate::engine::ecs::component::{ColorComponent, OpacityComponent, OverlayComponent, RenderableComponent, TransformComponent};
 
 use super::measure::MeasuredItem;
 
@@ -166,28 +168,44 @@ fn remove_box_model_viz(world: &mut World, emit: &mut dyn SignalEmitter, owner: 
     if let Some(viz_root) = immediate_owned_viz_root(world, owner) {
         emit.push_intent_now(
             viz_root,
-            IntentValue::RemoveSubtree { component_ids: vec![viz_root] },
+            IntentValue::RemoveSubtree {
+                component_ids: vec![viz_root],
+            },
         );
     }
 }
 
-fn ensure_viz_root(world: &mut World, emit: &mut dyn SignalEmitter, owner: ComponentId) -> ComponentId {
+fn ensure_viz_root(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    owner: ComponentId,
+) -> ComponentId {
     if let Some(viz_root) = immediate_owned_viz_root(world, owner) {
         return viz_root;
     }
 
-    let viz_root = world.add_component_boxed_named(OWNED_BOX_MODEL_VIZ_ROOT, Box::new(TransformComponent::new()));
+    let viz_root = world.add_component_boxed_named(
+        OWNED_BOX_MODEL_VIZ_ROOT,
+        Box::new(TransformComponent::new()),
+    );
     let _ = world.add_child(owner, viz_root);
     world.init_component_tree(viz_root, emit);
     viz_root
 }
 
-fn ensure_overlay_root(world: &mut World, emit: &mut dyn SignalEmitter, viz_root: ComponentId) -> ComponentId {
+fn ensure_overlay_root(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    viz_root: ComponentId,
+) -> ComponentId {
     if let Some(overlay_root) = immediate_owned_overlay_root(world, viz_root) {
         return overlay_root;
     }
 
-    let overlay_root = world.add_component_boxed_named(OWNED_BOX_MODEL_VIZ_OVERLAY, Box::new(OverlayComponent::new()));
+    let overlay_root = world.add_component_boxed_named(
+        OWNED_BOX_MODEL_VIZ_OVERLAY,
+        Box::new(OverlayComponent::new()),
+    );
     let _ = world.add_child(viz_root, overlay_root);
     world.init_component_tree(overlay_root, emit);
     overlay_root
@@ -196,21 +214,27 @@ fn ensure_overlay_root(world: &mut World, emit: &mut dyn SignalEmitter, viz_root
 fn immediate_owned_viz_root(world: &World, owner: ComponentId) -> Option<ComponentId> {
     world.children_of(owner).iter().copied().find(|&child| {
         world.component_label(child) == Some(OWNED_BOX_MODEL_VIZ_ROOT)
-            && world.get_component_by_id_as::<TransformComponent>(child).is_some()
+            && world
+                .get_component_by_id_as::<TransformComponent>(child)
+                .is_some()
     })
 }
 
 fn immediate_owned_overlay_root(world: &World, owner: ComponentId) -> Option<ComponentId> {
     world.children_of(owner).iter().copied().find(|&child| {
         world.component_label(child) == Some(OWNED_BOX_MODEL_VIZ_OVERLAY)
-            && world.get_component_by_id_as::<OverlayComponent>(child).is_some()
+            && world
+                .get_component_by_id_as::<OverlayComponent>(child)
+                .is_some()
     })
 }
 
 fn immediate_owned_viz_quad(world: &World, owner: ComponentId, label: &str) -> Option<ComponentId> {
     world.children_of(owner).iter().copied().find(|&child| {
         world.component_label(child) == Some(label)
-            && world.get_component_by_id_as::<TransformComponent>(child).is_some()
+            && world
+                .get_component_by_id_as::<TransformComponent>(child)
+                .is_some()
     })
 }
 
@@ -354,7 +378,9 @@ fn remove_owned_viz_quad(
     if let Some(existing) = immediate_owned_viz_quad(world, owner, label) {
         emit.push_intent_now(
             existing,
-            IntentValue::RemoveSubtree { component_ids: vec![existing] },
+            IntentValue::RemoveSubtree {
+                component_ids: vec![existing],
+            },
         );
     }
 }

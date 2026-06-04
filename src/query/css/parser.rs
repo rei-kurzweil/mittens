@@ -121,7 +121,8 @@ impl<'a> Parser<'a> {
                     simple_selectors.push(SimpleSelector::Class(ident));
                 }
                 Some('[') => {
-                    simple_selectors.push(SimpleSelector::Attribute(self.parse_attribute_selector()?));
+                    simple_selectors
+                        .push(SimpleSelector::Attribute(self.parse_attribute_selector()?));
                 }
                 Some(ch) if is_ident_start(ch) => {
                     let ident = self.parse_identifier()?;
@@ -161,13 +162,17 @@ impl<'a> Parser<'a> {
     fn parse_attribute_value(&mut self) -> Result<String, QueryParseError> {
         match self.peek_char() {
             Some('\'') | Some('"') => self.parse_quoted_string(),
-            Some(ch) if is_ident_start(ch) || ch.is_ascii_digit() => self.parse_identifier_or_number(),
+            Some(ch) if is_ident_start(ch) || ch.is_ascii_digit() => {
+                self.parse_identifier_or_number()
+            }
             _ => Err(self.err("expected attribute value")),
         }
     }
 
     fn parse_quoted_string(&mut self) -> Result<String, QueryParseError> {
-        let quote = self.bump_char().ok_or_else(|| self.err("expected string quote"))?;
+        let quote = self
+            .bump_char()
+            .ok_or_else(|| self.err("expected string quote"))?;
         let start = self.pos;
         while let Some(ch) = self.peek_char() {
             if ch == quote {
@@ -263,8 +268,8 @@ fn is_ident_continue(ch: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::CssQuerySyntax;
-    use crate::query::ast::{Combinator, SimpleSelector};
     use crate::query::QuerySyntax;
+    use crate::query::ast::{Combinator, SimpleSelector};
 
     #[test]
     fn parses_name_attribute_selector() {

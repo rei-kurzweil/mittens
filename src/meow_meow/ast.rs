@@ -33,19 +33,42 @@ pub enum Expression {
     Null,
     Identifier(Ident),
     Array(Vec<Expression>),
-    Index { base: Box<Expression>, index: Box<Expression> },
+    Index {
+        base: Box<Expression>,
+        index: Box<Expression>,
+    },
     Call(CallExpression),
     Component(ComponentExpression),
-    BinaryOp { op: BinOpKind, lhs: Box<Expression>, rhs: Box<Expression> },
-    UnaryOp { op: UnaryOpKind, operand: Box<Expression> },
-    Function { params: Vec<Ident>, body: BlockStatement },
+    BinaryOp {
+        op: BinOpKind,
+        lhs: Box<Expression>,
+        rhs: Box<Expression>,
+    },
+    UnaryOp {
+        op: UnaryOpKind,
+        operand: Box<Expression>,
+    },
+    Function {
+        params: Vec<Ident>,
+        body: BlockStatement,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinOpKind {
-    Add, Sub, Mul, Div, Rem,
-    Eq, NotEq, Lt, Gt, LtEq, GtEq,
-    And, Or,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    Eq,
+    NotEq,
+    Lt,
+    Gt,
+    LtEq,
+    GtEq,
+    And,
+    Or,
     Pipe,  // |> forward pipe (function application)
     Query, // -> component query / dispatch
     Dot,   // obj.method(args) — method receiver
@@ -118,16 +141,29 @@ pub enum Statement {
     /// It does NOT propagate outward to enclosing scopes — that requires a scope chain
     /// (deferred). Inside a `for` loop body the loop's accumulated env is used, so
     /// accumulator patterns (`sum = sum + i`) work correctly within the loop.
-    Reassign { name: Ident, value: Expression },
+    Reassign {
+        name: Ident,
+        value: Expression,
+    },
     Return(ReturnStatement),
     If(IfStatement),
     Block(BlockStatement),
     Expression(Expression),
-    ForIn { binding: Ident, iterable: Expression, body: BlockStatement },
-    While { condition: Expression, body: BlockStatement },
+    ForIn {
+        binding: Ident,
+        iterable: Expression,
+        body: BlockStatement,
+    },
+    While {
+        condition: Expression,
+        body: BlockStatement,
+    },
     Break,
     Continue,
-    Import { items: Vec<ImportItem>, path: String },
+    Import {
+        items: Vec<ImportItem>,
+        path: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

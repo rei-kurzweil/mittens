@@ -1,10 +1,10 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::Transform;
 use crate::engine::graphics::GpuRenderable;
+use crate::engine::graphics::MsaaMode;
 use crate::engine::graphics::post_processing::PostProcessingConfig;
 use crate::engine::graphics::primitives::InstanceHandle;
 use crate::engine::graphics::primitives::TransformMatrix;
-use crate::engine::graphics::MsaaMode;
 use crate::engine::graphics::{Skin, SkinId};
 use slotmap::{Key, SlotMap};
 use std::collections::HashMap;
@@ -76,10 +76,7 @@ pub enum RenderOp {
     DrawBatch(DrawBatch),
     /// Write stencil DECR to close a clip region.
     /// Render `instance_index`'s mesh with `pipeline_stencil_decr`, stencil reference = `ref_value`.
-    ExitClip {
-        instance_index: u32,
-        ref_value: u8,
-    },
+    ExitClip { instance_index: u32, ref_value: u8 },
 }
 
 pub struct VisualWorld {
@@ -590,7 +587,9 @@ impl VisualWorld {
 mod tests {
     use super::{RenderOp, VisualWorld};
     use crate::engine::ecs::ComponentId;
-    use crate::engine::graphics::primitives::{GpuRenderable, MaterialHandle, MeshHandle, Transform};
+    use crate::engine::graphics::primitives::{
+        GpuRenderable, MaterialHandle, MeshHandle, Transform,
+    };
     use slotmap::KeyData;
 
     fn cid(n: u64) -> ComponentId {
@@ -645,7 +644,11 @@ mod tests {
         assert_eq!(instance_indices.len(), 2);
 
         match ops[0] {
-            RenderOp::EnterClip { parent_ref, new_ref, .. } => {
+            RenderOp::EnterClip {
+                parent_ref,
+                new_ref,
+                ..
+            } => {
                 assert_eq!(parent_ref, 0);
                 assert_eq!(new_ref, 1);
             }
@@ -752,7 +755,11 @@ mod tests {
         assert_eq!(instance_indices.len(), 4);
 
         match ops[0] {
-            RenderOp::EnterClip { parent_ref, new_ref, .. } => {
+            RenderOp::EnterClip {
+                parent_ref,
+                new_ref,
+                ..
+            } => {
                 assert_eq!(parent_ref, 0);
                 assert_eq!(new_ref, 1);
             }
@@ -775,7 +782,11 @@ mod tests {
             other => panic!("expected outer content DrawBatch, got {other:?}"),
         }
         match ops[3] {
-            RenderOp::EnterClip { parent_ref, new_ref, .. } => {
+            RenderOp::EnterClip {
+                parent_ref,
+                new_ref,
+                ..
+            } => {
                 assert_eq!(parent_ref, 1);
                 assert_eq!(new_ref, 2);
             }
@@ -851,7 +862,11 @@ mod tests {
         assert_eq!(instance_indices.len(), 2);
 
         match ops[0] {
-            RenderOp::EnterClip { parent_ref, new_ref, .. } => {
+            RenderOp::EnterClip {
+                parent_ref,
+                new_ref,
+                ..
+            } => {
                 assert_eq!(parent_ref, 0);
                 assert_eq!(new_ref, 1);
             }
@@ -923,7 +938,11 @@ mod tests {
         assert_eq!(instance_indices.len(), 2);
 
         match ops[0] {
-            RenderOp::EnterClip { parent_ref, new_ref, .. } => {
+            RenderOp::EnterClip {
+                parent_ref,
+                new_ref,
+                ..
+            } => {
                 assert_eq!(parent_ref, 0);
                 assert_eq!(new_ref, 1);
             }
@@ -995,7 +1014,11 @@ mod tests {
         assert_eq!(instance_indices, &[0, 1]);
 
         match ops[0] {
-            RenderOp::EnterClip { parent_ref, new_ref, .. } => {
+            RenderOp::EnterClip {
+                parent_ref,
+                new_ref,
+                ..
+            } => {
                 assert_eq!(parent_ref, 0);
                 assert_eq!(new_ref, 1);
             }
@@ -1059,7 +1082,11 @@ mod tests {
         assert_eq!(instance_indices, &[0, 1]);
 
         match ops[0] {
-            RenderOp::EnterClip { parent_ref, new_ref, .. } => {
+            RenderOp::EnterClip {
+                parent_ref,
+                new_ref,
+                ..
+            } => {
                 assert_eq!(parent_ref, 0);
                 assert_eq!(new_ref, 1);
             }
@@ -1429,15 +1456,17 @@ impl VisualWorld {
 
     pub fn xr_frame_fps(&self) -> Option<f32> {
         let dt = self.xr_frame_dt_sec?;
-        if dt > 0.0 {
-            Some(1.0 / dt)
-        } else {
-            None
-        }
+        if dt > 0.0 { Some(1.0 / dt) } else { None }
     }
 
     pub fn set_xr_frame_dt_sec(&mut self, dt_sec: Option<f32>) {
-        self.xr_frame_dt_sec = dt_sec.and_then(|dt| if dt.is_finite() { Some(dt.max(0.0)) } else { None });
+        self.xr_frame_dt_sec = dt_sec.and_then(|dt| {
+            if dt.is_finite() {
+                Some(dt.max(0.0))
+            } else {
+                None
+            }
+        });
     }
 
     pub fn ambient_light(&self) -> [f32; 3] {
@@ -1863,7 +1892,8 @@ impl VisualWorld {
                 self.transparent_single_draw_order.push(i as u32);
             }
         }
-        self.stencil_clip_order.sort_by_key(|&i| self.instances[i as usize].stencil_ref);
+        self.stencil_clip_order
+            .sort_by_key(|&i| self.instances[i as usize].stencil_ref);
 
         // Background pass: batch aggressively (order does not depend on view).
         // NOTE: Background instances are excluded from the normal opaque/transparent lists.
@@ -1935,12 +1965,10 @@ impl VisualWorld {
             &mut self.opaque_stream_instances,
         );
 
-        self.emissive_draw_order.extend(
-            self.draw_order
-                .iter()
-                .copied()
-                .filter(|&i| Self::is_emissive_material(self.instances[i as usize].renderable.material)),
-        );
+        self.emissive_draw_order
+            .extend(self.draw_order.iter().copied().filter(|&i| {
+                Self::is_emissive_material(self.instances[i as usize].renderable.material)
+            }));
         let emissive_draw_order = &self.emissive_draw_order;
         Self::build_draw_batches_for_order(
             instances,
@@ -1972,12 +2000,10 @@ impl VisualWorld {
             &mut self.cutout_stream_instances,
         );
 
-        self.emissive_cutout_order.extend(
-            self.cutout_order
-                .iter()
-                .copied()
-                .filter(|&i| Self::is_emissive_material(self.instances[i as usize].renderable.material)),
-        );
+        self.emissive_cutout_order
+            .extend(self.cutout_order.iter().copied().filter(|&i| {
+                Self::is_emissive_material(self.instances[i as usize].renderable.material)
+            }));
         let emissive_cutout_order = &self.emissive_cutout_order;
         Self::build_draw_batches_for_order(
             instances,

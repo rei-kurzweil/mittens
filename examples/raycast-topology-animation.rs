@@ -115,8 +115,14 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Background.
-    let bg_color = universe.world.add_component(engine::ecs::component::BackgroundColorComponent::new());
-    let bg_color_c = universe.world.add_component(engine::ecs::component::ColorComponent::rgba(0.1, 0.1, 0.1, 1.0));
+    let bg_color = universe
+        .world
+        .add_component(engine::ecs::component::BackgroundColorComponent::new());
+    let bg_color_c = universe
+        .world
+        .add_component(engine::ecs::component::ColorComponent::rgba(
+            0.1, 0.1, 0.1, 1.0,
+        ));
     let _ = universe.world.add_child(bg_color, bg_color_c);
     universe.add(bg_color);
 

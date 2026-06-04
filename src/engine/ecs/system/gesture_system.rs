@@ -55,7 +55,18 @@ pub struct GestureSystem {
 
     /// All ray hits this frame, sorted front-to-back by t.
     /// Each entry: (t, raycaster, renderable, origin, dir, pointer_events).
-    ray_hits_sorted: Arc<Mutex<Vec<(f32, ComponentId, ComponentId, [f32; 3], [f32; 3], PointerEvents)>>>,
+    ray_hits_sorted: Arc<
+        Mutex<
+            Vec<(
+                f32,
+                ComponentId,
+                ComponentId,
+                [f32; 3],
+                [f32; 3],
+                PointerEvents,
+            )>,
+        >,
+    >,
     immediate_handlers_installed: bool,
 }
 
@@ -216,9 +227,19 @@ impl GestureSystem {
     /// This is mouse-only for now: left button + cursor ray.
     pub fn tick_with_rx(&mut self, visuals: &VisualWorld, input: &InputState, rx: &mut RxWorld) {
         // Immediate-mode: hits accumulated by handler as raycasts are emitted, sorted front-to-back.
-        let hits: Vec<(f32, ComponentId, ComponentId, [f32; 3], [f32; 3], PointerEvents)> =
-            self.ray_hits_sorted.lock().ok().map(|g| g.clone()).unwrap_or_default();
-
+        let hits: Vec<(
+            f32,
+            ComponentId,
+            ComponentId,
+            [f32; 3],
+            [f32; 3],
+            PointerEvents,
+        )> = self
+            .ray_hits_sorted
+            .lock()
+            .ok()
+            .map(|g| g.clone())
+            .unwrap_or_default();
 
         // Start drag.
         if input.mouse_pressed.contains(&MouseButton::Left) {
@@ -300,8 +321,7 @@ impl GestureSystem {
                                 origin[2] + dir[2] * t,
                             ];
                             if let Some(prev) = self.state.last_hit_point {
-                                let delta =
-                                    [cur[0] - prev[0], cur[1] - prev[1], cur[2] - prev[2]];
+                                let delta = [cur[0] - prev[0], cur[1] - prev[1], cur[2] - prev[2]];
                                 if delta[0] != 0.0 || delta[1] != 0.0 || delta[2] != 0.0 {
                                     let screen_pos_px = input.cursor_pos;
                                     let screen_delta_px =
@@ -400,10 +420,7 @@ impl GestureSystem {
                     );
 
                     // Emit Click if the pointer didn't travel far.
-                    let is_click = match (
-                        self.state.drag_start_screen_pos,
-                        input.cursor_pos,
-                    ) {
+                    let is_click = match (self.state.drag_start_screen_pos, input.cursor_pos) {
                         (Some((sx, sy)), Some((ex, ey))) => {
                             let dx = ex - sx;
                             let dy = ey - sy;

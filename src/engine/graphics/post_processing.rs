@@ -2,30 +2,29 @@ use std::collections::{BTreeMap, HashMap};
 use std::mem::size_of;
 use std::sync::Arc;
 
+use crate::engine::graphics::vulkano_swapchain::VulkanoSwapchainState;
 use vulkano::buffer::BufferContents;
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, PrimaryAutoCommandBuffer, RenderingAttachmentInfo, RenderingInfo,
 };
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::descriptor_set::layout::{
-    DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo,
-    DescriptorType,
+    DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo, DescriptorType,
 };
 use vulkano::descriptor_set::{DescriptorSet, WriteDescriptorSet};
 use vulkano::device::Device;
 use vulkano::format::{ClearValue, Format};
 use vulkano::image::sampler::{Filter, Sampler, SamplerAddressMode, SamplerCreateInfo};
 use vulkano::image::view::{ImageView, ImageViewCreateInfo};
-use vulkano::image::{Image, ImageAspects, ImageCreateInfo, ImageSubresourceRange, ImageType, ImageUsage, SampleCount};
-use crate::engine::graphics::vulkano_swapchain::VulkanoSwapchainState;
+use vulkano::image::{
+    Image, ImageAspects, ImageCreateInfo, ImageSubresourceRange, ImageType, ImageUsage, SampleCount,
+};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
 use vulkano::pipeline::graphics::color_blend::{ColorBlendAttachmentState, ColorBlendState};
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
 use vulkano::pipeline::graphics::multisample::MultisampleState;
 use vulkano::pipeline::graphics::rasterization::RasterizationState;
-use vulkano::pipeline::graphics::subpass::{
-    PipelineRenderingCreateInfo, PipelineSubpassType,
-};
+use vulkano::pipeline::graphics::subpass::{PipelineRenderingCreateInfo, PipelineSubpassType};
 use vulkano::pipeline::graphics::vertex_input::VertexInputState;
 use vulkano::pipeline::graphics::viewport::{Scissor, Viewport, ViewportState};
 use vulkano::pipeline::layout::{PipelineLayout, PipelineLayoutCreateInfo, PushConstantRange};
@@ -238,12 +237,14 @@ impl PostProcessingRenderer {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut bindings = BTreeMap::new();
 
-        let mut src0 = DescriptorSetLayoutBinding::descriptor_type(DescriptorType::CombinedImageSampler);
+        let mut src0 =
+            DescriptorSetLayoutBinding::descriptor_type(DescriptorType::CombinedImageSampler);
         src0.descriptor_count = 1;
         src0.stages = ShaderStages::FRAGMENT;
         bindings.insert(0, src0);
 
-        let mut src1 = DescriptorSetLayoutBinding::descriptor_type(DescriptorType::CombinedImageSampler);
+        let mut src1 =
+            DescriptorSetLayoutBinding::descriptor_type(DescriptorType::CombinedImageSampler);
         src1.descriptor_count = 1;
         src1.stages = ShaderStages::FRAGMENT;
         bindings.insert(1, src1);
@@ -508,7 +509,8 @@ impl PostProcessingRenderer {
             } else {
                 None
             };
-            let depth = Self::create_depth_view(self.memory_allocator.clone(), extent, msaa_samples)?;
+            let depth =
+                Self::create_depth_view(self.memory_allocator.clone(), extent, msaa_samples)?;
 
             let (bloom_source_msaa, bloom_source, bloom_a, bloom_b) = if config.bloom.is_some() {
                 (
@@ -528,21 +530,27 @@ impl PostProcessingRenderer {
                         color_format,
                         extent,
                         SampleCount::Sample1,
-                        ImageUsage::COLOR_ATTACHMENT | ImageUsage::SAMPLED | ImageUsage::TRANSFER_SRC,
+                        ImageUsage::COLOR_ATTACHMENT
+                            | ImageUsage::SAMPLED
+                            | ImageUsage::TRANSFER_SRC,
                     )?),
                     Some(Self::create_color_view(
                         self.memory_allocator.clone(),
                         color_format,
                         bloom_extent,
                         SampleCount::Sample1,
-                        ImageUsage::COLOR_ATTACHMENT | ImageUsage::SAMPLED | ImageUsage::TRANSFER_SRC,
+                        ImageUsage::COLOR_ATTACHMENT
+                            | ImageUsage::SAMPLED
+                            | ImageUsage::TRANSFER_SRC,
                     )?),
                     Some(Self::create_color_view(
                         self.memory_allocator.clone(),
                         color_format,
                         bloom_extent,
                         SampleCount::Sample1,
-                        ImageUsage::COLOR_ATTACHMENT | ImageUsage::SAMPLED | ImageUsage::TRANSFER_SRC,
+                        ImageUsage::COLOR_ATTACHMENT
+                            | ImageUsage::SAMPLED
+                            | ImageUsage::TRANSFER_SRC,
                     )?),
                 )
             } else {

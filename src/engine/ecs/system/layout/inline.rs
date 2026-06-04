@@ -1,3 +1,4 @@
+use crate::engine::ecs::component::TransformComponent;
 /// Inline formatting context layout.
 ///
 /// Handles `display: InlineBlock` items in a horizontal cursor with line wrap.
@@ -9,12 +10,14 @@
 /// here today. Mixing inline-block and block items in the same container falls
 /// through to block layout (handled by the dispatcher in `mod.rs`).
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::{IntentValue, SignalEmitter, World};
 
-use super::box_model_viz::sync_box_model_viz;
 use super::block::apply_text_align;
-use super::measure::{apply_text_color_for_item, apply_text_font_size_for_item, apply_text_wrap_for_item, measure_container_items, measure_items, MeasuredItem};
+use super::box_model_viz::sync_box_model_viz;
+use super::measure::{
+    apply_text_color_for_item, apply_text_font_size_for_item, apply_text_wrap_for_item,
+    measure_container_items, measure_items, MeasuredItem,
+};
 use crate::engine::ecs::component::style::Display;
 
 /// Run an inline formatting context layout pass for `layout_id`.
@@ -26,7 +29,17 @@ pub fn layout(world: &mut World, emit: &mut dyn SignalEmitter, layout_id: Compon
     let (items, avail_w_gu, _avail_h_gu, unit_scale) = measure_items(world, layout_id);
     let viz = super::block::layout_root_has_inspect(world, layout_id);
     let axis_scales = super::measure::layout_root_axis_scales(world, layout_id);
-    layout_items(world, emit, &items, avail_w_gu, unit_scale, axis_scales, 0, 0, viz);
+    layout_items(
+        world,
+        emit,
+        &items,
+        avail_w_gu,
+        unit_scale,
+        axis_scales,
+        0,
+        0,
+        viz,
+    );
 }
 
 /// Inline-formatting-context layout over a pre-measured item list.
@@ -140,20 +153,23 @@ pub(crate) fn layout_items(
         );
         super::block::sync_auto_text_lift(world, emit, item.tc_id);
         sync_box_model_viz(world, emit, item, unit_scale, viz);
-        apply_text_align(world, emit, item.tc_id, item.content_width_gu, item.content_height_gu, unit_scale);
-        let content_root = super::block::sync_overflow_topology(world, emit, item.tc_id, item.content_height_gu);
+        apply_text_align(
+            world,
+            emit,
+            item.tc_id,
+            item.content_width_gu,
+            item.content_height_gu,
+            unit_scale,
+        );
+        let content_root =
+            super::block::sync_overflow_topology(world, emit, item.tc_id, item.content_height_gu);
 
         // Recurse into the item's own children using whichever formatting
         // context their `display` modes call for. Inline-block items can
         // host either inline children (more text/icons) or block children
         // (a stacked sub-tree); both must be honored.
-        let nested_items = measure_container_items(
-            world,
-            content_root,
-            item.content_width_gu,
-            None,
-            unit_scale,
-        );
+        let nested_items =
+            measure_container_items(world, content_root, item.content_width_gu, None, unit_scale);
         if !nested_items.is_empty() {
             let all_inline_block = nested_items
                 .iter()
@@ -164,9 +180,27 @@ pub(crate) fn layout_items(
                 depth
             };
             if all_inline_block {
-                layout_items(world, emit, &nested_items, item.content_width_gu, unit_scale, axis_scales, child_depth, depth, viz);
+                layout_items(
+                    world,
+                    emit,
+                    &nested_items,
+                    item.content_width_gu,
+                    unit_scale,
+                    axis_scales,
+                    child_depth,
+                    depth,
+                    viz,
+                );
             } else {
-                super::block::layout_items_for(world, emit, &nested_items, unit_scale, child_depth, depth, viz);
+                super::block::layout_items_for(
+                    world,
+                    emit,
+                    &nested_items,
+                    unit_scale,
+                    child_depth,
+                    depth,
+                    viz,
+                );
             }
         }
 

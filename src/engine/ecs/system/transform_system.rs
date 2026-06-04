@@ -1,5 +1,3 @@
-use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     Camera2DComponent, Camera3DComponent, CollisionComponent, RenderableComponent,
     TransformComponent, TransformParentComponent,
@@ -7,8 +5,10 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformStreamSystem;
-use crate::engine::graphics::VisualWorld;
+use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::World;
 use crate::engine::graphics::primitives::TransformMatrix;
+use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 
 /// System responsible for
@@ -58,12 +58,18 @@ impl TransformSystem {
     }
 
     fn nearest_transform_self_or_ancestor(world: &World, cid: ComponentId) -> Option<ComponentId> {
-        if world.get_component_by_id_as::<TransformComponent>(cid).is_some() {
+        if world
+            .get_component_by_id_as::<TransformComponent>(cid)
+            .is_some()
+        {
             return Some(cid);
         }
         let mut cur = cid;
         while let Some(parent) = world.parent_of(cur) {
-            if world.get_component_by_id_as::<TransformComponent>(parent).is_some() {
+            if world
+                .get_component_by_id_as::<TransformComponent>(parent)
+                .is_some()
+            {
                 return Some(parent);
             }
             cur = parent;
@@ -83,11 +89,8 @@ impl TransformSystem {
     ) {
         let mut stack: Vec<(ComponentId, TransformMatrix)> = vec![(root_node, inherited_world)];
         while let Some((node, current_world)) = stack.pop() {
-            let stream_evaluated = transform_stream_system.evaluate_stream_node(
-                world,
-                node,
-                current_world,
-            );
+            let stream_evaluated =
+                transform_stream_system.evaluate_stream_node(world, node, current_world);
             let (current_world, stream_output_roots) = match stream_evaluated {
                 Some((processed_world, outputs)) => (processed_world, Some(outputs)),
                 None => (current_world, None),
@@ -160,7 +163,11 @@ impl TransformSystem {
     ) {
         let dependents: Vec<ComponentId> = world
             .all_components()
-            .filter(|&cid| world.get_component_by_id_as::<TransformParentComponent>(cid).is_some())
+            .filter(|&cid| {
+                world
+                    .get_component_by_id_as::<TransformParentComponent>(cid)
+                    .is_some()
+            })
             .filter(|&cid| !Self::is_descendant_of(world, cid, changed_component))
             .filter(|&cid| {
                 world
@@ -194,7 +201,11 @@ impl TransformSystem {
                 .children_of(dependent)
                 .iter()
                 .copied()
-                .filter(|&cid| world.get_component_by_id_as::<TransformComponent>(cid).is_some())
+                .filter(|&cid| {
+                    world
+                        .get_component_by_id_as::<TransformComponent>(cid)
+                        .is_some()
+                })
                 .collect();
             for root in child_transform_roots {
                 light_system.transform_changed(world, visuals, root);
@@ -258,7 +269,10 @@ impl TransformSystem {
         let mut stream_boundary = false; // true → transform_chain[0] is stream-operator-managed
         let mut cur = component;
         'chain: loop {
-            if world.get_component_by_id_as::<TransformComponent>(cur).is_some() {
+            if world
+                .get_component_by_id_as::<TransformComponent>(cur)
+                .is_some()
+            {
                 transform_chain.push(cur);
                 // Check whether this TC sits directly under a transform-stream boundary node
                 // (i.e., any non-TC node on the path to the next TC ancestor changes the
@@ -269,13 +283,18 @@ impl TransformSystem {
                         stream_boundary = true;
                         break 'chain;
                     }
-                    if world.get_component_by_id_as::<TransformComponent>(p).is_some() {
+                    if world
+                        .get_component_by_id_as::<TransformComponent>(p)
+                        .is_some()
+                    {
                         break; // reached next TC ancestor without finding a stream boundary
                     }
                     probe = p;
                 }
             }
-            let Some(parent) = world.parent_of(cur) else { break };
+            let Some(parent) = world.parent_of(cur) else {
+                break;
+            };
             cur = parent;
         }
         transform_chain.reverse();
@@ -364,11 +383,10 @@ mod tests {
 
         let source = world.add_component(TransformComponent::new().with_position(1.0, 0.0, 0.0));
         let dependent_root = world.add_component(TransformComponent::new());
-        let transform_parent = world.add_component(
-            TransformParentComponent::new().with_target_source(
+        let transform_parent =
+            world.add_component(TransformParentComponent::new().with_target_source(
                 crate::engine::ecs::component::ComponentRef::Query("#source".to_string()),
-            ),
-        );
+            ));
         let child = world.add_component(TransformComponent::new().with_position(0.0, 2.0, 0.0));
 
         world.get_component_record_mut(source).unwrap().name = "source".to_string();

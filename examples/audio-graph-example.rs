@@ -29,8 +29,14 @@ fn main() {
     println!("[audio-graph-example] universe created");
 
     // Minimal scene with a camera so the window opens (copied from animation-example).
-    let clear = universe.world.add_component(engine::ecs::component::BackgroundColorComponent::new());
-    let clear_c = universe.world.add_component(engine::ecs::component::ColorComponent::rgba(0.07, 0.07, 0.07, 1.0));
+    let clear = universe
+        .world
+        .add_component(engine::ecs::component::BackgroundColorComponent::new());
+    let clear_c = universe
+        .world
+        .add_component(engine::ecs::component::ColorComponent::rgba(
+            0.07, 0.07, 0.07, 1.0,
+        ));
     let _ = universe.world.add_child(clear, clear_c);
     universe.add(clear);
 

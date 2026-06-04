@@ -62,7 +62,11 @@ impl BoneMappingSystem {
             Self::tc_ancestor_at_distance(world, lower_arm, min_bone_length)?
         };
 
-        Some(ResolvedArmChain { upper_arm, lower_arm, hand })
+        Some(ResolvedArmChain {
+            upper_arm,
+            lower_arm,
+            hand,
+        })
     }
 
     /// Resolve a spine chain from head bone up to (optionally named) hips bone.
@@ -87,16 +91,26 @@ impl BoneMappingSystem {
             let parent = Self::tc_ancestor_at_distance(world, cur, min_bone_length)?;
             up.push(parent);
             // Stop if we hit the named hips.
-            if Some(parent) == hips_id { break; }
+            if Some(parent) == hips_id {
+                break;
+            }
             // Or stop if we've stepped above model_root.
-            if parent == model_root { break; }
+            if parent == model_root {
+                break;
+            }
             cur = parent;
         }
-        if up.len() < 2 { return None; }
+        if up.len() < 2 {
+            return None;
+        }
         up.reverse();
         let hips = *up.first().unwrap();
         let head = *up.last().unwrap();
-        Some(ResolvedSpineChain { hips, head, chain: up })
+        Some(ResolvedSpineChain {
+            hips,
+            head,
+            chain: up,
+        })
     }
 
     /// Walk upward from `start`, returning the nearest TC ancestor whose world position
@@ -115,7 +129,10 @@ impl BoneMappingSystem {
         for _ in 0..32 {
             let parent = world.parent_of(cur)?;
             // Parent must be a TC to count as an arm joint.
-            if world.get_component_by_id_as::<TransformComponent>(parent).is_none() {
+            if world
+                .get_component_by_id_as::<TransformComponent>(parent)
+                .is_none()
+            {
                 return None;
             }
             if let Some(min_d) = min_dist {
@@ -144,7 +161,10 @@ impl BoneMappingSystem {
         let mut cur = start;
         for _ in 0..32 {
             let parent = world.parent_of(cur)?;
-            if world.get_component_by_id_as::<TransformComponent>(parent).is_none() {
+            if world
+                .get_component_by_id_as::<TransformComponent>(parent)
+                .is_none()
+            {
                 return None;
             }
             let tc_child_count = world
@@ -177,4 +197,3 @@ fn tc_world_pos(world: &World, id: ComponentId) -> Option<[f32; 3]> {
             [m[3][0], m[3][1], m[3][2]]
         })
 }
-

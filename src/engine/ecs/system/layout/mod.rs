@@ -1,14 +1,14 @@
-pub mod measure;
 pub mod block;
 pub mod box_model_viz;
 pub mod flex;
 pub mod inline;
+pub mod measure;
 
-use crate::engine::ecs::World;
-use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::LayoutComponent;
 use crate::engine::ecs::component::style::Display;
+use crate::engine::ecs::component::LayoutComponent;
+use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::SignalEmitter;
+use crate::engine::ecs::World;
 use measure::measure_container_items;
 
 /// Approximate average character width in glyph-local units (pre-transform).
@@ -78,7 +78,10 @@ impl LayoutSystem {
     /// `StyleComponent.display` (Flex, Block, etc.) to select the algorithm.
     fn run_layout(world: &mut World, emit: &mut dyn SignalEmitter, layout_id: ComponentId) {
         // Guard: skip if the LayoutComponent is gone.
-        if world.get_component_by_id_as::<LayoutComponent>(layout_id).is_none() {
+        if world
+            .get_component_by_id_as::<LayoutComponent>(layout_id)
+            .is_none()
+        {
             return;
         }
 
@@ -86,7 +89,8 @@ impl LayoutSystem {
         // If every item is inline-block, run inline layout (horizontal cursor + wrap).
         // Otherwise default to block layout. Mixed containers stay on block — true
         // CSS-style inline-context-with-mixed-children is deferred until needed.
-        let (avail_w, avail_h, unit_scale) = measure::layout_root_available_bounds(world, layout_id);
+        let (avail_w, avail_h, unit_scale) =
+            measure::layout_root_available_bounds(world, layout_id);
         let items = measure_container_items(world, layout_id, avail_w, avail_h, unit_scale);
         // `Display::Inline` falls through to inline-block treatment until
         // true inline flow (line boxes, baseline alignment, mid-run wrap)

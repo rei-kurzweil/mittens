@@ -1,9 +1,9 @@
 use crate::engine::ecs::component::{IKChainComponent, IKSolver, TransformComponent};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::utils::math::{
-    mat_to_quat, quat_conjugate, quat_mul, quat_nlerp, quat_rotate_vec3, quat_rotation_y,
-    shortest_arc_quat, quat_to_axis_angle, quat_from_axis_angle,  vec3_add, vec3_cross, vec3_dot, vec3_len, vec3_normalize, vec3_scale,
-    vec3_sub, vec3_lerp,
+    mat_to_quat, quat_conjugate, quat_from_axis_angle, quat_mul, quat_nlerp, quat_rotate_vec3,
+    quat_rotation_y, quat_to_axis_angle, shortest_arc_quat, vec3_add, vec3_cross, vec3_dot,
+    vec3_len, vec3_lerp, vec3_normalize, vec3_scale, vec3_sub,
 };
 
 #[derive(Debug, Default)]
@@ -17,7 +17,11 @@ impl IKSystem {
     pub fn tick(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, _dt_sec: f32) {
         let ids: Vec<ComponentId> = world
             .all_components()
-            .filter(|&id| world.get_component_by_id_as::<IKChainComponent>(id).is_some())
+            .filter(|&id| {
+                world
+                    .get_component_by_id_as::<IKChainComponent>(id)
+                    .is_some()
+            })
             .collect();
         for id in ids {
             // Lazy resolution of `target_source` / `end_effector_source` into
@@ -93,7 +97,9 @@ fn resolve_ik_chain_refs(world: &mut World, id: ComponentId) {
 
 fn tick_chain(id: ComponentId, world: &World, emit: &mut dyn SignalEmitter) {
     let (solver, target_id, end_effector_id, weight) = {
-        let Some(c) = world.get_component_by_id_as::<IKChainComponent>(id) else { return };
+        let Some(c) = world.get_component_by_id_as::<IKChainComponent>(id) else {
+            return;
+        };
         (c.solver, c.target_id, c.end_effector_id, c.weight)
     };
     if weight <= 0.0 {
@@ -102,12 +108,18 @@ fn tick_chain(id: ComponentId, world: &World, emit: &mut dyn SignalEmitter) {
 
     // For AimConstraint / Fabrik, root joint TC = parent of IKChainComponent.
     // TwoBoneIK ignores this and uses the explicit joint IDs on the variant.
-    let root_tc_opt = world
-        .parent_of(id)
-        .filter(|&p| world.get_component_by_id_as::<TransformComponent>(p).is_some());
+    let root_tc_opt = world.parent_of(id).filter(|&p| {
+        world
+            .get_component_by_id_as::<TransformComponent>(p)
+            .is_some()
+    });
 
     match solver {
-        IKSolver::AimConstraint { offset_yaw, copy_position, target_position_offset } => {
+        IKSolver::AimConstraint {
+            offset_yaw,
+            copy_position,
+            target_position_offset,
+        } => {
             let Some(root_tc) = root_tc_opt else { return };
             solve_aim(
                 world,
@@ -120,23 +132,46 @@ fn tick_chain(id: ComponentId, world: &World, emit: &mut dyn SignalEmitter) {
                 weight,
             );
         }
-        IKSolver::TwoBoneIK { root_joint_id, mid_joint_id, pole_direction, copy_end_rotation } => {
+        IKSolver::TwoBoneIK {
+            root_joint_id,
+            mid_joint_id,
+            pole_direction,
+            copy_end_rotation,
+        } => {
             // Explicit 3-node chain — no topology discovery. Sibling helper /
             // collider / cloth nodes under the arm bones are ignored.
             use slotmap::Key;
             if root_joint_id.is_null() || mid_joint_id.is_null() || end_effector_id.is_null() {
                 return;
             }
-            if world.get_component_by_id_as::<TransformComponent>(root_joint_id).is_none()
-                || world.get_component_by_id_as::<TransformComponent>(mid_joint_id).is_none()
-                || world.get_component_by_id_as::<TransformComponent>(end_effector_id).is_none()
+            if world
+                .get_component_by_id_as::<TransformComponent>(root_joint_id)
+                .is_none()
+                || world
+                    .get_component_by_id_as::<TransformComponent>(mid_joint_id)
+                    .is_none()
+                || world
+                    .get_component_by_id_as::<TransformComponent>(end_effector_id)
+                    .is_none()
             {
                 return;
             }
             let chain = [root_joint_id, mid_joint_id, end_effector_id];
-            solve_two_bone(world, emit, &chain, target_id, pole_direction, copy_end_rotation, weight);
+            solve_two_bone(
+                world,
+                emit,
+                &chain,
+                target_id,
+                pole_direction,
+                copy_end_rotation,
+                weight,
+            );
         }
-        IKSolver::Fabrik { max_iterations, tolerance, target_position_offset } => {
+        IKSolver::Fabrik {
+            max_iterations,
+            tolerance,
+            target_position_offset,
+        } => {
             let Some(root_tc) = root_tc_opt else { return };
             let chain = collect_tc_chain(world, root_tc, end_effector_id);
             if chain.len() < 2 {
@@ -174,8 +209,13 @@ fn collect_tc_chain(world: &World, root: ComponentId, end_id: ComponentId) -> Ve
     let mut up: Vec<ComponentId> = vec![end_id];
     let mut cur = end_id;
     for _ in 0..32 {
-        let Some(parent) = world.parent_of(cur) else { return Vec::new() };
-        if world.get_component_by_id_as::<TransformComponent>(parent).is_none() {
+        let Some(parent) = world.parent_of(cur) else {
+            return Vec::new();
+        };
+        if world
+            .get_component_by_id_as::<TransformComponent>(parent)
+            .is_none()
+        {
             return Vec::new();
         }
         up.push(parent);
@@ -214,8 +254,7 @@ fn solve_aim(
     // For an HMD target with offset = (0, -eye_height, 0), this drops the bone target
     // down along the HMD's local Y so the eye mesh (above the bone pivot) lines up
     // with the HMD position.
-    let target_local_offset_world =
-        quat_rotate_vec3(target_world_rot, target_position_offset);
+    let target_local_offset_world = quat_rotate_vec3(target_world_rot, target_position_offset);
     let target_world_pos = [
         target_tc.transform.matrix_world[3][0] + target_local_offset_world[0],
         target_tc.transform.matrix_world[3][1] + target_local_offset_world[1],
@@ -255,7 +294,11 @@ fn solve_aim(
         // Invert parent world matrix to get local position from target world position.
         // Closed-form inverse of an affine TRS matrix: local_pos = R^T * (target_pos - parent_pos) / parent_scale.
         // Easier: use the inverse-transpose of the 3x3 rotation+scale block, then translate.
-        let parent_pos = [parent_world_mat[3][0], parent_world_mat[3][1], parent_world_mat[3][2]];
+        let parent_pos = [
+            parent_world_mat[3][0],
+            parent_world_mat[3][1],
+            parent_world_mat[3][2],
+        ];
         let delta = [
             target_world_pos[0] - parent_pos[0],
             target_world_pos[1] - parent_pos[1],
@@ -311,12 +354,12 @@ fn solve_two_bone(
 
     // FK world positions — bone lengths are measured here each tick.
     let root_pos = tc_world_pos(world, root_tc);
-    let mid_pos  = tc_world_pos(world, mid_tc);
-    let end_pos  = tc_world_pos(world, end_tc);
+    let mid_pos = tc_world_pos(world, mid_tc);
+    let end_pos = tc_world_pos(world, end_tc);
     let target_pos = tc_world_pos(world, target_id);
 
     let root_world_rot = tc_world_rot(world, root_tc);
-    let mid_world_rot  = tc_world_rot(world, mid_tc);
+    let mid_world_rot = tc_world_rot(world, mid_tc);
 
     let upper_len = vec3_len(vec3_sub(mid_pos, root_pos)).max(1e-6);
     let lower_len = vec3_len(vec3_sub(end_pos, mid_pos)).max(1e-6);
@@ -347,7 +390,11 @@ fn solve_two_bone(
     let plane_normal = if vec3_len(cross_tp) > 1e-6 {
         vec3_normalize(cross_tp)
     } else {
-        let fallback = if reach_dir[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
+        let fallback = if reach_dir[0].abs() < 0.9 {
+            [1.0, 0.0, 0.0]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
         vec3_normalize(vec3_cross(to_target, fallback))
     };
     let perp = vec3_normalize(vec3_cross(plane_normal, reach_dir));
@@ -531,21 +578,18 @@ fn solve_fabrik(
             .get_component_by_id_as::<TransformComponent>(id)
             .and_then(|_| Some(()))
             .is_some()
-            && world
-                .children_of(id)
-                .iter()
-                .any(|&child| {
-                    // Head is typically a direct child of neck (or wrapped in splice).
-                    let is_head = world
-                        .get_component_by_id_as::<TransformComponent>(child)
-                        .and_then(|_| {
-                            // Just check if it's the next bone in the chain
-                            chain.iter().find(|&&c| c == child).map(|_| ())
-                        })
-                        .is_some();
-                    is_head
-                })
-        });
+            && world.children_of(id).iter().any(|&child| {
+                // Head is typically a direct child of neck (or wrapped in splice).
+                let is_head = world
+                    .get_component_by_id_as::<TransformComponent>(child)
+                    .and_then(|_| {
+                        // Just check if it's the next bone in the chain
+                        chain.iter().find(|&&c| c == child).map(|_| ())
+                    })
+                    .is_some();
+                is_head
+            })
+    });
 
     for i in 0..n - 1 {
         let tc = chain[i];
@@ -555,11 +599,19 @@ fn solve_fabrik(
             let from = tc_world_pos(world, tc);
             let to = tc_world_pos(world, chain[i + 1]);
             let d = vec3_sub(to, from);
-            if vec3_len(d) > 1e-6 { vec3_normalize(d) } else { [0.0, 0.0, 1.0] }
+            if vec3_len(d) > 1e-6 {
+                vec3_normalize(d)
+            } else {
+                [0.0, 0.0, 1.0]
+            }
         };
         let desired_fwd = {
             let d = vec3_sub(positions[i + 1], positions[i]);
-            if vec3_len(d) > 1e-6 { vec3_normalize(d) } else { cur_fwd }
+            if vec3_len(d) > 1e-6 {
+                vec3_normalize(d)
+            } else {
+                cur_fwd
+            }
         };
 
         // If this is the neck bone, constrain its rotation to be minimal (keep it
@@ -637,8 +689,8 @@ fn tc_world_rot(world: &World, id: ComponentId) -> [f32; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::component::{ComponentRef, IKChainComponent, IKSolver};
+    use crate::engine::ecs::CommandQueue;
 
     // Temporarily gated: see docs/bugs/ik-solver-api-drift-breaks-tests.md.
     #[cfg(any())]
@@ -651,7 +703,10 @@ mod tests {
         // selector strings.
         let ik_id = w.add_component(
             IKChainComponent::new(
-                IKSolver::TwoBoneIK { pole_direction: [0.0, 1.0, 0.0], copy_end_rotation: false },
+                IKSolver::TwoBoneIK {
+                    pole_direction: [0.0, 1.0, 0.0],
+                    copy_end_rotation: false,
+                },
                 ComponentId::null(),
                 ComponentId::null(),
             )
@@ -660,14 +715,8 @@ mod tests {
         );
 
         // Now spawn the targets the IKChain refers to.
-        let hand = w.add_component_boxed_named(
-            "hand",
-            Box::new(TransformComponent::new()),
-        );
-        let elbow = w.add_component_boxed_named(
-            "elbow",
-            Box::new(TransformComponent::new()),
-        );
+        let hand = w.add_component_boxed_named("hand", Box::new(TransformComponent::new()));
+        let elbow = w.add_component_boxed_named("elbow", Box::new(TransformComponent::new()));
 
         // Sanity: nothing resolved yet.
         {
@@ -691,14 +740,15 @@ mod tests {
         let mut w = World::default();
         let pre_target = w.add_component(TransformComponent::new());
         let pre_ee = w.add_component(TransformComponent::new());
-        let unrelated = w.add_component_boxed_named(
-            "hand",
-            Box::new(TransformComponent::new()),
-        );
+        let unrelated = w.add_component_boxed_named("hand", Box::new(TransformComponent::new()));
 
         let ik_id = w.add_component(
             IKChainComponent::new(
-                IKSolver::AimConstraint { offset_yaw: 0.0, copy_position: false, target_position_offset: [0.0, 0.0, 0.0] },
+                IKSolver::AimConstraint {
+                    offset_yaw: 0.0,
+                    copy_position: false,
+                    target_position_offset: [0.0, 0.0, 0.0],
+                },
                 pre_target,
                 pre_ee,
             )

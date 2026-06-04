@@ -1,7 +1,8 @@
 use crate::engine::ecs::component::{
     AvatarControlComponent, BoneRestPoseComponent, Camera3DComponent, CameraXRComponent,
     ControllerHand, ControllerXRComponent, IKChainComponent, IKSolver, QuatYawFollowComponent,
-    SerializeComponent, TransformComponent, TransformForkTRSComponent, TransformMapRotationComponent,
+    SerializeComponent, TransformComponent, TransformForkTRSComponent,
+    TransformMapRotationComponent,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::utils::math::{quat_rotate_vec3, quat_rotation_y};
@@ -76,15 +77,27 @@ fn tick_one(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter, _d
 /// Body pipeline created here reads `driven_t`'s world matrix, strips pitch/roll via `YawFollow`,
 /// and writes the result to `model_root` (which is re-parented under the pipeline output).
 fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter) {
-    let (head_bone_name, left_hand_bone, right_hand_bone,
-         left_upper_arm_bone, left_lower_arm_bone,
-         right_upper_arm_bone, right_lower_arm_bone,
-         left_arm_pole_direction, right_arm_pole_direction,
-         body_yaw_threshold, body_yaw_rate, forward_plus_z,
-         initial_body_yaw, skip_body_pipeline,
-         camera_bone_name, avatar_height_override, eye_height_from_head_bone,
-         head_ik_eye_height,
-         neck_bone_name) = {
+    let (
+        head_bone_name,
+        left_hand_bone,
+        right_hand_bone,
+        left_upper_arm_bone,
+        left_lower_arm_bone,
+        right_upper_arm_bone,
+        right_lower_arm_bone,
+        left_arm_pole_direction,
+        right_arm_pole_direction,
+        body_yaw_threshold,
+        body_yaw_rate,
+        forward_plus_z,
+        initial_body_yaw,
+        skip_body_pipeline,
+        camera_bone_name,
+        avatar_height_override,
+        eye_height_from_head_bone,
+        head_ik_eye_height,
+        neck_bone_name,
+    ) = {
         let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
             return;
         };
@@ -112,46 +125,41 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     };
 
     // Find model_root: first TransformComponent child of AvatarControlComponent.
-    let Some(model_root_id) = world
-        .children_of(id)
-        .iter()
-        .copied()
-        .find(|&ch| world.get_component_by_id_as::<TransformComponent>(ch).is_some())
-    else {
+    let Some(model_root_id) = world.children_of(id).iter().copied().find(|&ch| {
+        world
+            .get_component_by_id_as::<TransformComponent>(ch)
+            .is_some()
+    }) else {
         return;
     };
 
     // Discover hand controllers by topology: direct ControllerXRComponent children.
-    let left_ctrl = world
-        .children_of(id)
-        .iter()
-        .copied()
-        .find(|&ch| {
-            world
-                .get_component_by_id_as::<ControllerXRComponent>(ch)
-                .map(|c| c.hand == ControllerHand::Left)
-                .unwrap_or(false)
-        });
-    let right_ctrl = world
-        .children_of(id)
-        .iter()
-        .copied()
-        .find(|&ch| {
-            world
-                .get_component_by_id_as::<ControllerXRComponent>(ch)
-                .map(|c| c.hand == ControllerHand::Right)
-                .unwrap_or(false)
-        });
+    let left_ctrl = world.children_of(id).iter().copied().find(|&ch| {
+        world
+            .get_component_by_id_as::<ControllerXRComponent>(ch)
+            .map(|c| c.hand == ControllerHand::Left)
+            .unwrap_or(false)
+    });
+    let right_ctrl = world.children_of(id).iter().copied().find(|&ch| {
+        world
+            .get_component_by_id_as::<ControllerXRComponent>(ch)
+            .map(|c| c.hand == ControllerHand::Right)
+            .unwrap_or(false)
+    });
 
     // driven_t is the parent of AVC — needed as IK target for the head AimConstraint.
-    let Some(driven_t_id) = world.parent_of(id) else { return };
+    let Some(driven_t_id) = world.parent_of(id) else {
+        return;
+    };
 
     // Head bone is required — retry next tick if GLTF hasn't spawned yet.
     let head_selector = format!("#{}", head_bone_name);
     let Some(head_bone_id) = world.find_component(model_root_id, &head_selector) else {
         return;
     };
-    let Some(head_parent_id) = world.parent_of(head_bone_id) else { return };
+    let Some(head_parent_id) = world.parent_of(head_bone_id) else {
+        return;
+    };
 
     // Read head_bone's true bind-pose local TRS via the `BoneRestPoseComponent`
     // sidecar that `GLTFSystem` stamped at node-spawn time.  Falls back to the
@@ -161,14 +169,16 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // bakes the current animation frame into `head_rest_rot` and produces a
     // permanently rotated visible head.
     let (head_rest_t, head_rest_rot, head_rest_s) = read_bone_rest_pose(world, head_bone_id);
-    let head_splice_id = world.add_component(
-        TransformComponent::new().with_position(head_rest_t[0], head_rest_t[1], head_rest_t[2]),
-    );
+    let head_splice_id = world.add_component(TransformComponent::new().with_position(
+        head_rest_t[0],
+        head_rest_t[1],
+        head_rest_t[2],
+    ));
 
     // Resolve hand bones + controller drivers for 2-bone arm IK.
     // The hand bone stays in the armature; IKSystem rotates UpperArm + LowerArm
     // each tick so the hand reaches `raw_driver` (the controller's world pose).
-    let left  = resolve_hand_splice(world, model_root_id, left_hand_bone.as_deref(),  left_ctrl);
+    let left = resolve_hand_splice(world, model_root_id, left_hand_bone.as_deref(), left_ctrl);
     let right = resolve_hand_splice(world, model_root_id, right_hand_bone.as_deref(), right_ctrl);
 
     // --- Camera bone: auto-calibrate model_root.y + discover camera children ---
@@ -185,7 +195,10 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         let sel = format!("#{}", name);
         let found = world.find_component(model_root_id, &sel);
         if found.is_none() && camera_bone_name.is_some() {
-            println!("[AVC] camera_bone '{}' not found under model_root {:?}", name, model_root_id);
+            println!(
+                "[AVC] camera_bone '{}' not found under model_root {:?}",
+                name, model_root_id
+            );
         }
         found
     });
@@ -198,20 +211,34 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         .iter()
         .copied()
         .filter_map(|ch| {
-            let is_c3d = world.get_component_by_id_as::<Camera3DComponent>(ch).is_some();
-            let is_cxr = world.get_component_by_id_as::<CameraXRComponent>(ch).is_some();
+            let is_c3d = world
+                .get_component_by_id_as::<Camera3DComponent>(ch)
+                .is_some();
+            let is_cxr = world
+                .get_component_by_id_as::<CameraXRComponent>(ch)
+                .is_some();
             if is_c3d || is_cxr {
-                println!("[AVC] found bare camera child {:?} — re-parent to camera_bone (no eye offset)", ch);
+                println!(
+                    "[AVC] found bare camera child {:?} — re-parent to camera_bone (no eye offset)",
+                    ch
+                );
                 return Some((ch, [0.0, 0.0, 0.0]));
             }
             if let Some(tc) = world.get_component_by_id_as::<TransformComponent>(ch) {
                 let wraps_cam = world.children_of(ch).iter().any(|&gc| {
-                    world.get_component_by_id_as::<Camera3DComponent>(gc).is_some()
-                        || world.get_component_by_id_as::<CameraXRComponent>(gc).is_some()
+                    world
+                        .get_component_by_id_as::<Camera3DComponent>(gc)
+                        .is_some()
+                        || world
+                            .get_component_by_id_as::<CameraXRComponent>(gc)
+                            .is_some()
                 });
                 if wraps_cam {
                     let eye_offset = tc.transform.translation;
-                    println!("[AVC] found T-wrapped camera child {:?} — eye_offset = {:?}", ch, eye_offset);
+                    println!(
+                        "[AVC] found T-wrapped camera child {:?} — eye_offset = {:?}",
+                        ch, eye_offset
+                    );
                     return Some((ch, eye_offset));
                 }
             }
@@ -219,7 +246,9 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         })
         .collect();
     if camera_children.is_empty() && camera_bone_id.is_some() {
-        println!("[AVC] WARNING: camera_bone set but no Camera3D/CameraXR direct children of AVC found");
+        println!(
+            "[AVC] WARNING: camera_bone set but no Camera3D/CameraXR direct children of AVC found"
+        );
     }
     let eye_offset_head_local: [f32; 3] = camera_children
         .iter()
@@ -231,7 +260,11 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // This remains the source for the head target offset. It no longer owns
     // body/root XZ placement; steady-state body XZ is handled by
     // HeadPoseBodyXzFollowSystem.
-    let head_ik_offset_yaw = if forward_plus_z { 0.0 } else { std::f32::consts::PI };
+    let head_ik_offset_yaw = if forward_plus_z {
+        0.0
+    } else {
+        std::f32::consts::PI
+    };
 
     // Body Y is anchored to `displaced_head.world.y` (which already has
     // -eye_offset.y baked in via the head_target chain) in
@@ -258,7 +291,9 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         Some([0.0, -bone_local_y, 0.0])
     } else {
         if camera_bone_name.is_some() || actual_camera_bone_name.is_some() {
-            println!("[AVC] camera_bone (or fallback) not found and no avatar_height_override — model_root.y unchanged");
+            println!(
+                "[AVC] camera_bone (or fallback) not found and no avatar_height_override — model_root.y unchanged"
+            );
         }
         None
     };
@@ -292,7 +327,10 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
                     (Some(nid), Some(rest_t))
                 }
                 None => {
-                    println!("[AVC] neck bone '{}' not found under model_root — neck pin disabled", name);
+                    println!(
+                        "[AVC] neck bone '{}' not found under model_root — neck pin disabled",
+                        name
+                    );
                     (None, None)
                 }
             }
@@ -308,15 +346,19 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
 
     // Store runtime IDs (body_pipeline_id stored after pipeline creation below).
     if let Some(c) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
-        c.splice_head       = Some(head_splice_id);
-        c.displaced_head    = Some(head_bone_id);
+        c.splice_head = Some(head_splice_id);
+        c.displaced_head = Some(head_bone_id);
         c.splice_camera_bone = camera_bone_id;
-        c.model_root_id     = Some(model_root_id);
+        c.model_root_id = Some(model_root_id);
         c.model_root_local_y = model_root_local_y;
-        c.neck_bone_id      = neck_bone_id;
+        c.neck_bone_id = neck_bone_id;
         c.neck_rest_translation = neck_rest_t;
-        if let Some((_, _, bone)) = left  { c.left_hand_bone_id  = Some(bone); }
-        if let Some((_, _, bone)) = right { c.right_hand_bone_id = Some(bone); }
+        if let Some((_, _, bone)) = left {
+            c.left_hand_bone_id = Some(bone);
+        }
+        if let Some((_, _, bone)) = right {
+            c.right_hand_bone_id = Some(bone);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -330,10 +372,10 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     //           model_root  ← re-parented here
     // -----------------------------------------------------------------------
     if !skip_body_pipeline {
-        let body_pipeline_id  = world.add_component(TransformForkTRSComponent::new());
+        let body_pipeline_id = world.add_component(TransformForkTRSComponent::new());
         let body_pipeline_serialize_id = world.add_component(SerializeComponent::off());
-        let map_rot_id        = world.add_component(TransformMapRotationComponent::new());
-        let yaw_follow_id     = world.add_component(
+        let map_rot_id = world.add_component(TransformMapRotationComponent::new());
+        let yaw_follow_id = world.add_component(
             QuatYawFollowComponent::new(body_yaw_threshold, body_yaw_rate)
                 .with_initial_yaw(initial_body_yaw)
                 .with_forward_plus_z_if(forward_plus_z),
@@ -413,12 +455,24 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     //     clean VRM-style rigs with no twist bones).
     // -----------------------------------------------------------------------
     for (hand_opt, upper_name, lower_name, pole_dir, side_label) in [
-        (left,  left_upper_arm_bone.as_deref(),  left_lower_arm_bone.as_deref(),
-         left_arm_pole_direction,  "left"),
-        (right, right_upper_arm_bone.as_deref(), right_lower_arm_bone.as_deref(),
-         right_arm_pole_direction, "right"),
+        (
+            left,
+            left_upper_arm_bone.as_deref(),
+            left_lower_arm_bone.as_deref(),
+            left_arm_pole_direction,
+            "left",
+        ),
+        (
+            right,
+            right_upper_arm_bone.as_deref(),
+            right_lower_arm_bone.as_deref(),
+            right_arm_pole_direction,
+            "right",
+        ),
     ] {
-        let Some((_, raw_driver, hand_bone)) = hand_opt else { continue };
+        let Some((_, raw_driver, hand_bone)) = hand_opt else {
+            continue;
+        };
 
         let upper_arm = match upper_name {
             Some(name) => {
@@ -432,7 +486,9 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
                 }
                 res
             }
-            None => world.parent_of(hand_bone).and_then(|lower| world.parent_of(lower)),
+            None => world
+                .parent_of(hand_bone)
+                .and_then(|lower| world.parent_of(lower)),
         };
         let Some(upper_arm) = upper_arm else { continue };
 
@@ -452,23 +508,28 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         };
         let Some(lower_arm) = lower_arm else { continue };
 
-        let bone_name = |id: ComponentId| -> String {
-            world.component_name(id).unwrap_or("?").to_string()
-        };
+        let bone_name =
+            |id: ComponentId| -> String { world.component_name(id).unwrap_or("?").to_string() };
         let upper_name_s = bone_name(upper_arm);
         let lower_name_s = bone_name(lower_arm);
-        let hand_name_s  = bone_name(hand_bone);
+        let hand_name_s = bone_name(hand_bone);
         println!(
             "[AVC] {} arm IK: root={} (id={:?}), mid={} (id={:?}), hand={} (id={:?}), target=(id={:?})",
             side_label,
-            upper_name_s, upper_arm,
-            lower_name_s, lower_arm,
-            hand_name_s,  hand_bone,
+            upper_name_s,
+            upper_arm,
+            lower_name_s,
+            lower_arm,
+            hand_name_s,
+            hand_bone,
             raw_driver,
         );
         let looks_suspicious = |n: &str| {
-            n.contains("Twist") || n.contains("Roll") || n.contains("Helper")
-                || n.contains("_collider") || n.contains("J_Sec_")
+            n.contains("Twist")
+                || n.contains("Roll")
+                || n.contains("Helper")
+                || n.contains("_collider")
+                || n.contains("J_Sec_")
         };
         if looks_suspicious(&upper_name_s) || looks_suspicious(&lower_name_s) {
             println!(
@@ -482,7 +543,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         let chain = IKChainComponent::new(
             IKSolver::TwoBoneIK {
                 root_joint_id: upper_arm,
-                mid_joint_id:  lower_arm,
+                mid_joint_id: lower_arm,
                 pole_direction: pole_dir,
                 copy_end_rotation: true,
             },
@@ -502,11 +563,16 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // -----------------------------------------------------------------------
     if let Some(cam_bone_id) = camera_bone_id {
         for &(cam, _eye_offset) in &camera_children {
-            println!("[AVC] re-parenting camera {:?} under camera_bone {:?}", cam, cam_bone_id);
+            println!(
+                "[AVC] re-parenting camera {:?} under camera_bone {:?}",
+                cam, cam_bone_id
+            );
             emit_attach(emit, cam_bone_id, cam);
         }
     } else if !camera_children.is_empty() {
-        println!("[AVC] WARNING: camera children found but camera_bone not resolved — no re-parenting");
+        println!(
+            "[AVC] WARNING: camera children found but camera_bone not resolved — no re-parenting"
+        );
     }
 }
 
@@ -530,7 +596,11 @@ fn resolve_hand_splice(
             .children_of(ctrl)
             .iter()
             .copied()
-            .find(|&ch| world.get_component_by_id_as::<TransformComponent>(ch).is_some())
+            .find(|&ch| {
+                world
+                    .get_component_by_id_as::<TransformComponent>(ch)
+                    .is_some()
+            })
             .unwrap_or_else(|| world.add_component(TransformComponent::new()))
     } else {
         world.add_component(TransformComponent::new())
@@ -540,17 +610,20 @@ fn resolve_hand_splice(
 }
 
 fn emit_attach(emit: &mut dyn SignalEmitter, parent: ComponentId, child: ComponentId) {
-    emit.push_intent_now(parent, IntentValue::Attach { parents: vec![parent], child });
+    emit.push_intent_now(
+        parent,
+        IntentValue::Attach {
+            parents: vec![parent],
+            child,
+        },
+    );
 }
 
 /// Read a bone's authored bind-pose local TRS via the `BoneRestPoseComponent`
 /// sidecar that `GLTFSystem` stamps at node-spawn time.  Falls back to the
 /// live `TransformComponent` (then to identity) for non-GLTF skeletons that
 /// never had a rest-pose snapshot attached.
-fn read_bone_rest_pose(
-    world: &World,
-    bone_id: ComponentId,
-) -> ([f32; 3], [f32; 4], [f32; 3]) {
+fn read_bone_rest_pose(world: &World, bone_id: ComponentId) -> ([f32; 3], [f32; 4], [f32; 3]) {
     if let Some(rest) = world
         .children_of(bone_id)
         .iter()
@@ -560,7 +633,12 @@ fn read_bone_rest_pose(
     }
     world
         .get_component_by_id_as::<TransformComponent>(bone_id)
-        .map(|t| (t.transform.translation, t.transform.rotation, t.transform.scale))
+        .map(|t| {
+            (
+                t.transform.translation,
+                t.transform.rotation,
+                t.transform.scale,
+            )
+        })
         .unwrap_or(([0.0; 3], [0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0]))
 }
-

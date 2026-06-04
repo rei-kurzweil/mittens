@@ -10,8 +10,14 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     // Minimal scene with a camera so the window opens.
-    let clear = universe.world.add_component(engine::ecs::component::BackgroundColorComponent::new());
-    let clear_c = universe.world.add_component(engine::ecs::component::ColorComponent::rgba(0.08, 0.08, 0.08, 1.0));
+    let clear = universe
+        .world
+        .add_component(engine::ecs::component::BackgroundColorComponent::new());
+    let clear_c = universe
+        .world
+        .add_component(engine::ecs::component::ColorComponent::rgba(
+            0.08, 0.08, 0.08, 1.0,
+        ));
     let _ = universe.world.add_child(clear, clear_c);
     universe.add(clear);
 
@@ -266,7 +272,9 @@ fn main() {
                     component_ids: vec![osc_drum_comp],
                     beat_offset: 0.0,
                     beat_context: None,
-                    note: Some(engine::ecs::component::MusicNote::c(0, kick_dur).with_velocity(0.9)),
+                    note: Some(
+                        engine::ecs::component::MusicNote::c(0, kick_dur).with_velocity(0.9),
+                    ),
                     gain: None,
                     rate: None,
                     duration: None,
@@ -280,7 +288,9 @@ fn main() {
                     component_ids: vec![osc_noise_comp],
                     beat_offset: 0.5,
                     beat_context: None,
-                    note: Some(engine::ecs::component::MusicNote::c(9, noise_dur).with_velocity(0.25)),
+                    note: Some(
+                        engine::ecs::component::MusicNote::c(9, noise_dur).with_velocity(0.25),
+                    ),
                     gain: None,
                     rate: None,
                     duration: None,

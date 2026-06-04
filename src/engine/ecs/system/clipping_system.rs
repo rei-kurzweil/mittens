@@ -1,6 +1,6 @@
+use crate::engine::ecs::component::RenderableComponent;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
-use crate::engine::ecs::component::RenderableComponent;
 use crate::engine::graphics::VisualWorld;
 use std::collections::HashSet;
 
@@ -68,11 +68,7 @@ impl ClippingSystem {
         }
     }
 
-    pub fn resync_after_renderable_flush(
-        &mut self,
-        world: &World,
-        visuals: &mut VisualWorld,
-    ) {
+    pub fn resync_after_renderable_flush(&mut self, world: &World, visuals: &mut VisualWorld) {
         let stencil_clips: Vec<ComponentId> = self.active_stencil_clips(world).collect();
 
         for stencil_clip in stencil_clips {
@@ -92,7 +88,8 @@ impl ClippingSystem {
         visuals: &mut VisualWorld,
         renderable_component: ComponentId,
     ) {
-        let Some(renderable) = world.get_component_by_id_as::<RenderableComponent>(renderable_component)
+        let Some(renderable) =
+            world.get_component_by_id_as::<RenderableComponent>(renderable_component)
         else {
             return;
         };
@@ -112,11 +109,14 @@ impl ClippingSystem {
         world: &World,
         renderable_component: ComponentId,
     ) -> Option<ComponentId> {
-        self.active_stencil_clips.iter().copied().find(|&clip_component| {
-            world.get_component_record(clip_component).is_some()
-                && Self::find_stencil_clip_renderable_component(world, clip_component)
-                    == Some(renderable_component)
-        })
+        self.active_stencil_clips
+            .iter()
+            .copied()
+            .find(|&clip_component| {
+                world.get_component_record(clip_component).is_some()
+                    && Self::find_stencil_clip_renderable_component(world, clip_component)
+                        == Some(renderable_component)
+            })
     }
 
     fn sync_stencil_refs_in_subtree(
@@ -127,7 +127,10 @@ impl ClippingSystem {
     ) {
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
-            if world.get_component_by_id_as::<RenderableComponent>(node).is_some() {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(node)
+                .is_some()
+            {
                 self.sync_renderable_stencil_ref(world, visuals, node);
             }
             for &child in world.children_of(node) {
@@ -136,7 +139,10 @@ impl ClippingSystem {
         }
     }
 
-    fn active_stencil_clips<'a>(&'a mut self, world: &World) -> impl Iterator<Item = ComponentId> + 'a {
+    fn active_stencil_clips<'a>(
+        &'a mut self,
+        world: &World,
+    ) -> impl Iterator<Item = ComponentId> + 'a {
         self.active_stencil_clips
             .retain(|&component| world.get_component_record(component).is_some());
         self.active_stencil_clips.iter().copied()
@@ -148,7 +154,9 @@ impl ClippingSystem {
         let mut depth: u8 = 0;
         let mut cursor = Some(renderable_component);
         while let Some(node) = cursor {
-            if world.get_component_by_id_as::<StencilClipComponent>(node).is_some()
+            if world
+                .get_component_by_id_as::<StencilClipComponent>(node)
+                .is_some()
                 || Self::is_layout_clip_scope_root(world, node)
             {
                 depth = depth.saturating_add(1);
@@ -171,7 +179,9 @@ impl ClippingSystem {
         };
 
         while let Some(node) = cursor {
-            if world.get_component_by_id_as::<StencilClipComponent>(node).is_some()
+            if world
+                .get_component_by_id_as::<StencilClipComponent>(node)
+                .is_some()
                 || Self::is_layout_clip_scope_root(world, node)
             {
                 depth = depth.saturating_add(1);
@@ -185,18 +195,26 @@ impl ClippingSystem {
     fn is_layout_owned_stencil_clip(world: &World, component: ComponentId) -> bool {
         world.component_label(component) == Some(OWNED_LAYOUT_STENCIL_CLIP_LABEL)
             && world
-                .get_component_by_id_as::<crate::engine::ecs::component::StencilClipComponent>(component)
+                .get_component_by_id_as::<crate::engine::ecs::component::StencilClipComponent>(
+                    component,
+                )
                 .is_some()
     }
 
-    fn immediate_owned_layout_stencil_clip(world: &World, scope_root: ComponentId) -> Option<ComponentId> {
-        world.children_of(scope_root).iter().copied().find(|&child| {
-            Self::is_layout_owned_stencil_clip(world, child)
-        })
+    fn immediate_owned_layout_stencil_clip(
+        world: &World,
+        scope_root: ComponentId,
+    ) -> Option<ComponentId> {
+        world
+            .children_of(scope_root)
+            .iter()
+            .copied()
+            .find(|&child| Self::is_layout_owned_stencil_clip(world, child))
     }
 
     fn layout_bg_node(world: &World, scope_root: ComponentId) -> Option<ComponentId> {
-        world.children_of(scope_root)
+        world
+            .children_of(scope_root)
             .iter()
             .copied()
             .find(|&child| world.component_label(child) == Some("__bg"))
@@ -205,7 +223,10 @@ impl ClippingSystem {
     fn subtree_first_renderable(world: &World, root: ComponentId) -> Option<ComponentId> {
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
-            if world.get_component_by_id_as::<RenderableComponent>(node).is_some() {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(node)
+                .is_some()
+            {
                 return Some(node);
             }
             for &child in world.children_of(node).iter().rev() {
@@ -236,7 +257,10 @@ impl ClippingSystem {
     ) -> Option<ComponentId> {
         let mut cursor = world.parent_of(component);
         while let Some(cid) = cursor {
-            if world.get_component_by_id_as::<RenderableComponent>(cid).is_some() {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(cid)
+                .is_some()
+            {
                 return Some(cid);
             }
             cursor = world.parent_of(cid);

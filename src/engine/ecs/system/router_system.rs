@@ -36,24 +36,20 @@ impl RouterSystem {
         }
 
         if self.observed_owners.insert(owner) {
-            rx.add_handler_closure(
-                SignalKind::ParentChanged,
-                owner,
-                move |world, emit, env| {
-                    let Some(EventSignal::ParentChanged {
-                        child, new_parent, ..
-                    }) = env.event.as_ref()
-                    else {
-                        return;
-                    };
+            rx.add_handler_closure(SignalKind::ParentChanged, owner, move |world, emit, env| {
+                let Some(EventSignal::ParentChanged {
+                    child, new_parent, ..
+                }) = env.event.as_ref()
+                else {
+                    return;
+                };
 
-                    if *new_parent != Some(owner) {
-                        return;
-                    }
+                if *new_parent != Some(owner) {
+                    return;
+                }
 
-                    Self::route_external_child(world, emit, owner, *child);
-                },
-            );
+                Self::route_external_child(world, emit, owner, *child);
+            });
         }
 
         Self::reroute_owner_children(world, emit, owner);
@@ -67,11 +63,7 @@ impl RouterSystem {
         })
     }
 
-    fn reroute_owner_children(
-        world: &mut World,
-        emit: &mut dyn SignalEmitter,
-        owner: ComponentId,
-    ) {
+    fn reroute_owner_children(world: &mut World, emit: &mut dyn SignalEmitter, owner: ComponentId) {
         let children: Vec<ComponentId> = world.children_of(owner).to_vec();
         for child in children {
             Self::route_external_child(world, emit, owner, child);
@@ -142,7 +134,10 @@ impl RouterSystem {
         if router.ignored_components.contains(&child) {
             return false;
         }
-        if world.get_component_by_id_as::<TransformComponent>(child).is_none() {
+        if world
+            .get_component_by_id_as::<TransformComponent>(child)
+            .is_none()
+        {
             return false;
         }
         if world
@@ -225,9 +220,12 @@ mod tests {
                     .with_ignored_names(["toolbar"]),
             ),
         );
-        let toolbar = world.add_component_boxed_named("toolbar", Box::new(TransformComponent::new()));
-        let container = world.add_component_boxed_named("container", Box::new(TransformComponent::new()));
-        let authored = world.add_component_boxed_named("authored", Box::new(TransformComponent::new()));
+        let toolbar =
+            world.add_component_boxed_named("toolbar", Box::new(TransformComponent::new()));
+        let container =
+            world.add_component_boxed_named("container", Box::new(TransformComponent::new()));
+        let authored =
+            world.add_component_boxed_named("authored", Box::new(TransformComponent::new()));
 
         let _ = world.add_child(owner, router);
         let _ = world.add_child(owner, toolbar);
@@ -253,7 +251,8 @@ mod tests {
             "router",
             Box::new(RouterComponent::new().with_target_name("container")),
         );
-        let container = world.add_component_boxed_named("container", Box::new(TransformComponent::new()));
+        let container =
+            world.add_component_boxed_named("container", Box::new(TransformComponent::new()));
 
         let _ = world.add_child(owner, router);
         let _ = world.add_child(owner, container);
@@ -287,9 +286,11 @@ mod tests {
             "router",
             Box::new(RouterComponent::new().with_target_name("container")),
         );
-        let container = world.add_component_boxed_named("container", Box::new(TransformComponent::new()));
+        let container =
+            world.add_component_boxed_named("container", Box::new(TransformComponent::new()));
         let style = world.add_component(StyleComponent::new());
-        let authored = world.add_component_boxed_named("authored", Box::new(TransformComponent::new()));
+        let authored =
+            world.add_component_boxed_named("authored", Box::new(TransformComponent::new()));
 
         let _ = world.add_child(owner, router);
         let _ = world.add_child(owner, container);

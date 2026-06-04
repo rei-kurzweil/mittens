@@ -1,10 +1,10 @@
+use crate::engine::ecs::component::{
+    ColorComponent, EmissiveComponent, RendererStatsComponent, TextComponent,
+};
 use crate::engine::ecs::CommandQueue;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::World;
-use crate::engine::ecs::component::{
-    ColorComponent, EmissiveComponent, RendererStatsComponent, TextComponent,
-};
 use crate::engine::graphics::{CameraTarget, VisualWorld};
 
 #[derive(Debug, Default)]
@@ -29,7 +29,8 @@ impl RendererStatsSystem {
 
         for stats_id in stats_ids {
             let (should_update, config, subtree_ids) = {
-                let Some(stats) = world.get_component_by_id_as_mut::<RendererStatsComponent>(stats_id)
+                let Some(stats) =
+                    world.get_component_by_id_as_mut::<RendererStatsComponent>(stats_id)
                 else {
                     continue;
                 };
@@ -60,7 +61,8 @@ impl RendererStatsSystem {
             };
 
             let smoothed = {
-                let Some(stats) = world.get_component_by_id_as_mut::<RendererStatsComponent>(stats_id)
+                let Some(stats) =
+                    world.get_component_by_id_as_mut::<RendererStatsComponent>(stats_id)
                 else {
                     continue;
                 };
@@ -77,7 +79,8 @@ impl RendererStatsSystem {
                 ensure_stats_text_subtree(world, queue, stats_id, config, subtree_ids);
 
             {
-                if let Some(stats) = world.get_component_by_id_as_mut::<RendererStatsComponent>(stats_id)
+                if let Some(stats) =
+                    world.get_component_by_id_as_mut::<RendererStatsComponent>(stats_id)
                 {
                     updated_ids.write_back(stats);
                     stats.reset_update_timer();
@@ -171,7 +174,9 @@ fn ensure_stats_text_subtree(
 
     // Styling: immediate children of TextComponent.
     let has_color = match ids.text_color {
-        Some(cid) => world.get_component_by_id_as::<ColorComponent>(cid).is_some(),
+        Some(cid) => world
+            .get_component_by_id_as::<ColorComponent>(cid)
+            .is_some(),
         None => false,
     };
     if !has_color {
@@ -186,7 +191,9 @@ fn ensure_stats_text_subtree(
     }
 
     let has_emissive = match ids.text_emissive {
-        Some(cid) => world.get_component_by_id_as::<EmissiveComponent>(cid).is_some(),
+        Some(cid) => world
+            .get_component_by_id_as::<EmissiveComponent>(cid)
+            .is_some(),
         None => false,
     };
     if !has_emissive {

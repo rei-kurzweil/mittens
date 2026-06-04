@@ -1,5 +1,5 @@
-use crate::engine::ecs::component::style::SizeDimension;
 use crate::engine::ecs::component::AnimationState;
+use crate::engine::ecs::component::style::SizeDimension;
 use crate::engine::ecs::{ComponentId, World};
 use std::sync::mpsc::Sender;
 
@@ -169,7 +169,6 @@ pub enum EventSignal {
         text: String,
         caret: usize,
     },
-
 }
 
 impl EventSignal {

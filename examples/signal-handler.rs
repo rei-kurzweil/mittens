@@ -32,7 +32,9 @@ fn main() {
     // Any bare CE emissions from the script (not let-bound) are in output.intents.
     // Our script only uses let-bindings so this is empty, but handle it anyway.
     for intent in output.intents {
-        universe.command_queue.push_intent_now(engine::ecs::ComponentId::default(), intent);
+        universe
+            .command_queue
+            .push_intent_now(engine::ecs::ComponentId::default(), intent);
     }
 
     universe.systems.process_commands(

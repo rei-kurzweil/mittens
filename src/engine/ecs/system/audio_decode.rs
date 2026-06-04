@@ -64,16 +64,21 @@ pub fn decode_audio_file(path: impl AsRef<Path>) -> Result<DecodedAudio, DecodeE
     }
 
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
         .map_err(|e| DecodeError::ProbeFailed(e.to_string()))?;
 
     let mut format = probed.format;
     let track = format.default_track().ok_or(DecodeError::NoTrack)?;
     let track_id = track.id;
     let codec_params = track.codec_params.clone();
-    let sample_rate = codec_params.sample_rate.ok_or_else(|| {
-        DecodeError::Unsupported("missing sample_rate".into())
-    })?;
+    let sample_rate = codec_params
+        .sample_rate
+        .ok_or_else(|| DecodeError::Unsupported("missing sample_rate".into()))?;
     let channels = codec_params
         .channels
         .map(|c| c.count() as u16)

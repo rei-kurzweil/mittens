@@ -9,9 +9,9 @@ use cat_engine::engine::ecs::component::{
     TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
     TransformMapTranslationComponent,
 };
+use cat_engine::engine::graphics::BuiltinMeshType;
 use cat_engine::engine::graphics::CameraTarget;
 use cat_engine::engine::graphics::primitives::{MaterialHandle, Renderable};
-use cat_engine::engine::graphics::BuiltinMeshType;
 use cat_engine::{engine, utils};
 
 #[path = "example_util/mod.rs"]
@@ -59,10 +59,10 @@ fn parse_options() -> Result<VrInputOptions, String> {
     Ok(options)
 }
 
-
-
 fn spawn_sun_background(universe: &mut engine::Universe) {
-    let bg_root = universe.world.add_component(engine::ecs::component::BackgroundComponent::new());
+    let bg_root = universe
+        .world
+        .add_component(engine::ecs::component::BackgroundComponent::new());
     universe.add(bg_root);
 
     let circle_mesh = universe.render_assets.get_mesh(BuiltinMeshType::Circle2D);
@@ -75,7 +75,10 @@ fn spawn_sun_background(universe: &mut engine::Universe) {
     );
     let sun_r = universe
         .world
-        .add_component(RenderableComponent::new(Renderable::new(circle_mesh, MaterialHandle::TOON_MESH)));
+        .add_component(RenderableComponent::new(Renderable::new(
+            circle_mesh,
+            MaterialHandle::TOON_MESH,
+        )));
     let sun_color = universe
         .world
         .add_component(ColorComponent::rgba(1.0, 0.85, 0.15, 1.0));
@@ -94,7 +97,10 @@ fn spawn_sun_background(universe: &mut engine::Universe) {
     );
     let highlight_r = universe
         .world
-        .add_component(RenderableComponent::new(Renderable::new(circle_mesh, MaterialHandle::TOON_MESH)));
+        .add_component(RenderableComponent::new(Renderable::new(
+            circle_mesh,
+            MaterialHandle::TOON_MESH,
+        )));
     let highlight_color = universe
         .world
         .add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
@@ -139,7 +145,9 @@ fn spawn_controller_cube(
         return controller_marker;
     }
 
-    let fork = universe.world.add_component(TransformForkTRSComponent::new());
+    let fork = universe
+        .world
+        .add_component(TransformForkTRSComponent::new());
     let _ = universe.attach(controller_t, fork);
 
     let map_translation = universe
@@ -156,7 +164,9 @@ fn spawn_controller_cube(
     );
     let _ = universe.attach(map_rotation, rotation_filter);
 
-    let map_scale = universe.world.add_component(TransformMapScaleComponent::new());
+    let map_scale = universe
+        .world
+        .add_component(TransformMapScaleComponent::new());
     let _ = universe.attach(fork, map_scale);
 
     let filtered_t = universe.world.add_component(TransformComponent::new());
@@ -219,8 +229,12 @@ fn main() {
     universe.add(render_graph);
 
     // Sky base.
-    let background = universe.world.add_component(BackgroundColorComponent::new());
-    let background_c = universe.world.add_component(ColorComponent::rgba(0.62, 0.80, 1.00, 1.0));
+    let background = universe
+        .world
+        .add_component(BackgroundColorComponent::new());
+    let background_c = universe
+        .world
+        .add_component(ColorComponent::rgba(0.62, 0.80, 1.00, 1.0));
     let _ = universe.world.add_child(background, background_c);
     universe.add(background);
 
@@ -275,9 +289,9 @@ fn main() {
     let renderer_stats = universe
         .world
         .add_component(RendererStatsComponent::new().with_camera_target(CameraTarget::Xr));
-    let render_stats_rig = universe.world.add_component(
-        TransformComponent::new().with_position(0.0, 1.85, 0.6),
-    );
+    let render_stats_rig = universe
+        .world
+        .add_component(TransformComponent::new().with_position(0.0, 1.85, 0.6));
     let _ = universe.attach(render_stats_rig, renderer_stats);
     let _ = universe.attach(xr_rig, render_stats_rig);
 
@@ -342,7 +356,9 @@ fn main() {
     // AvatarControlSystem discovers them by topology. Each needs a TransformComponent
     // child (driven_t) that OpenXRSystem writes each tick.
     let left_grip = universe.world.add_component(ControllerXRComponent::new(
-        true, ControllerHand::Left, ControllerPoseKind::Grip,
+        true,
+        ControllerHand::Left,
+        ControllerPoseKind::Grip,
     ));
     let left_grip_t = universe.world.add_component(TransformComponent::new());
     let _ = universe.attach(left_grip, left_grip_t);
@@ -351,7 +367,9 @@ fn main() {
     let _ = universe.attach(avatar_control, left_grip);
 
     let right_grip = universe.world.add_component(ControllerXRComponent::new(
-        true, ControllerHand::Right, ControllerPoseKind::Grip,
+        true,
+        ControllerHand::Right,
+        ControllerPoseKind::Grip,
     ));
     let right_grip_t = universe.world.add_component(TransformComponent::new());
     let _ = universe.attach(right_grip, right_grip_t);
@@ -421,25 +439,27 @@ fn main() {
 
     // Bone markers for editor inspection.
     let marker_joints: &[(&str, (f32, f32, f32, f32))] = &[
-        ("[name='J_Bip_C_Head']",      (0.85, 0.20, 0.85, 0.9)),
-        ("[name='J_Bip_C_Neck']",      (0.20, 0.85, 0.85, 0.9)),
-        ("[name='J_Bip_C_UpperChest']",(0.20, 0.20, 0.85, 0.9)),
-        ("[name='J_Bip_L_UpperArm']",  (0.85, 0.85, 0.20, 0.9)),
-        ("[name='J_Bip_R_UpperArm']",  (0.85, 0.60, 0.20, 0.9)),
+        ("[name='J_Bip_C_Head']", (0.85, 0.20, 0.85, 0.9)),
+        ("[name='J_Bip_C_Neck']", (0.20, 0.85, 0.85, 0.9)),
+        ("[name='J_Bip_C_UpperChest']", (0.20, 0.20, 0.85, 0.9)),
+        ("[name='J_Bip_L_UpperArm']", (0.85, 0.85, 0.20, 0.9)),
+        ("[name='J_Bip_R_UpperArm']", (0.85, 0.60, 0.20, 0.9)),
     ];
 
     for &(selector, color) in marker_joints {
         let Some(bone) = universe.find_component(model_root, selector) else {
             continue;
         };
-        let marker_t = universe.world.add_component(
-            TransformComponent::new().with_scale(0.025, 0.025, 0.025),
-        );
+        let marker_t = universe
+            .world
+            .add_component(TransformComponent::new().with_scale(0.025, 0.025, 0.025));
         let marker_r = universe.world.add_component(RenderableComponent::cube());
         let marker_c = universe
             .world
             .add_component(ColorComponent::rgba(color.0, color.1, color.2, color.3));
-        let marker_rcast = universe.world.add_component(RaycastableComponent::enabled());
+        let marker_rcast = universe
+            .world
+            .add_component(RaycastableComponent::enabled());
         let _ = universe.world.add_child(marker_r, marker_c);
         let _ = universe.world.add_child(marker_r, marker_rcast);
         let _ = universe.world.add_child(marker_t, marker_r);

@@ -1,6 +1,6 @@
-use crate::engine::ecs::component::{AmbientLightComponent, ColorComponent};
 use crate::engine::ecs::component::DirectionalLightComponent;
 use crate::engine::ecs::component::PointLightComponent;
+use crate::engine::ecs::component::{AmbientLightComponent, ColorComponent};
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::{ComponentId, World};
@@ -45,7 +45,11 @@ impl LightSystem {
             let color = world
                 .children_of(component)
                 .iter()
-                .find_map(|&ch| world.get_component_by_id_as::<ColorComponent>(ch).map(|c| [c.rgba[0], c.rgba[1], c.rgba[2]]))
+                .find_map(|&ch| {
+                    world
+                        .get_component_by_id_as::<ColorComponent>(ch)
+                        .map(|c| [c.rgba[0], c.rgba[1], c.rgba[2]])
+                })
                 .unwrap_or(light.color);
             // Direction is encoded in the node's world position.
             visuals.upsert_point_light(
@@ -75,7 +79,11 @@ impl LightSystem {
         let rgb = world
             .children_of(component)
             .iter()
-            .find_map(|&ch| world.get_component_by_id_as::<ColorComponent>(ch).map(|c| [c.rgba[0], c.rgba[1], c.rgba[2]]))
+            .find_map(|&ch| {
+                world
+                    .get_component_by_id_as::<ColorComponent>(ch)
+                    .map(|c| [c.rgba[0], c.rgba[1], c.rgba[2]])
+            })
             .unwrap_or(ambient.rgb);
 
         // Global state: last registered wins.
@@ -125,7 +133,11 @@ impl LightSystem {
                     let color = world
                         .children_of(child)
                         .iter()
-                        .find_map(|&ch| world.get_component_by_id_as::<ColorComponent>(ch).map(|c| [c.rgba[0], c.rgba[1], c.rgba[2]]))
+                        .find_map(|&ch| {
+                            world
+                                .get_component_by_id_as::<ColorComponent>(ch)
+                                .map(|c| [c.rgba[0], c.rgba[1], c.rgba[2]])
+                        })
                         .unwrap_or(light.color);
                     visuals.upsert_point_light(
                         child,

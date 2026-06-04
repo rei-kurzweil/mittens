@@ -1,9 +1,9 @@
 use cat_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, CameraXRComponent,
-    ClockComponent, ColorComponent, DirectionalLightComponent, EditorComponent,
-    EmissiveComponent, GLTFComponent, InputComponent, InputTransformModeComponent,
-    InputXRComponent, MeshComponent, PointerComponent, RaycastableComponent,
-    RenderableComponent, SkinnedMeshComponent, TransformComponent,
+    ClockComponent, ColorComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent,
+    GLTFComponent, InputComponent, InputTransformModeComponent, InputXRComponent, MeshComponent,
+    PointerComponent, RaycastableComponent, RenderableComponent, SkinnedMeshComponent,
+    TransformComponent,
 };
 use cat_engine::{engine, utils};
 use std::collections::{HashMap, HashSet};
@@ -24,8 +24,12 @@ fn main() {
     universe.add(clock);
 
     // Light pink background.
-    let background = universe.world.add_component(BackgroundColorComponent::new());
-    let background_c = universe.world.add_component(ColorComponent::rgba(1.0, 0.82, 0.90, 1.0));
+    let background = universe
+        .world
+        .add_component(BackgroundColorComponent::new());
+    let background_c = universe
+        .world
+        .add_component(ColorComponent::rgba(1.0, 0.82, 0.90, 1.0));
     let _ = universe.world.add_child(background, background_c);
     universe.add(background);
 
@@ -100,9 +104,7 @@ fn main() {
     let model = universe.world.add_component(GLTFComponent::new(model_uri));
 
     // emissive for pc-rei
-    let emissive = universe
-        .world
-        .add_component(EmissiveComponent::on());
+    let emissive = universe.world.add_component(EmissiveComponent::on());
     let _ = universe.attach(model, emissive);
 
     let xr_input = universe.world.add_component(InputXRComponent::on());

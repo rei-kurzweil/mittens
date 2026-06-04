@@ -7,8 +7,8 @@
 //! Phase 5 ships full-buffer messages only (short clips). Streaming for
 //! long BGM lands when needed — same protocol, smaller chunks.
 
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread::JoinHandle;
 
 use super::audio_decode::{decode_audio_file, DecodeError};
@@ -97,6 +97,7 @@ fn decode_and_convert(
     target: PlaybackFormat,
 ) -> Result<(Arc<Vec<f32>>, u16, u32), String> {
     let decoded = decode_audio_file(uri).map_err(|e: DecodeError| e.to_string())?;
-    let converted = convert_sample_format(decoded, target).map_err(|e: ConvertError| e.to_string())?;
+    let converted =
+        convert_sample_format(decoded, target).map_err(|e: ConvertError| e.to_string())?;
     Ok((converted.samples, converted.channels, converted.sample_rate))
 }

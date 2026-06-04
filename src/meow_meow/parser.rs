@@ -1,7 +1,7 @@
 use crate::meow_meow::ast::{
-    AssignmentStatement, BinOpKind, BlockStatement, CallExpression,
-    ComponentExpression, ConstructorCall, ElseBranch, Expression, Ident, IfStatement, ImportItem,
-    ReturnStatement, Span, Statement, UnaryOpKind,
+    AssignmentStatement, BinOpKind, BlockStatement, CallExpression, ComponentExpression,
+    ConstructorCall, ElseBranch, Expression, Ident, IfStatement, ImportItem, ReturnStatement, Span,
+    Statement, UnaryOpKind,
 };
 use crate::meow_meow::token::{Token, TokenKind};
 
@@ -41,7 +41,11 @@ impl MeowMeowParser {
                 self.consume(&TokenKind::Eq)?;
                 let value = self.parse_expression()?;
                 self.try_consume(&TokenKind::Semicolon);
-                Ok(Statement::Assignment(AssignmentStatement { name, value, exported: false }))
+                Ok(Statement::Assignment(AssignmentStatement {
+                    name,
+                    value,
+                    exported: false,
+                }))
             }
             TokenKind::Fn => {
                 self.bump(); // consume `fn`
@@ -50,7 +54,11 @@ impl MeowMeowParser {
                     let name = self.expect_ident()?;
                     let func = self.parse_fn_body()?;
                     self.try_consume(&TokenKind::Semicolon);
-                    Ok(Statement::Assignment(AssignmentStatement { name, value: func, exported: false }))
+                    Ok(Statement::Assignment(AssignmentStatement {
+                        name,
+                        value: func,
+                        exported: false,
+                    }))
                 } else {
                     // anonymous fn in statement position — unusual but valid
                     let func = self.parse_fn_body()?;
@@ -68,14 +76,22 @@ impl MeowMeowParser {
                         self.consume(&TokenKind::Eq)?;
                         let value = self.parse_expression()?;
                         self.try_consume(&TokenKind::Semicolon);
-                        Ok(Statement::Assignment(AssignmentStatement { name, value, exported }))
+                        Ok(Statement::Assignment(AssignmentStatement {
+                            name,
+                            value,
+                            exported,
+                        }))
                     }
                     TokenKind::Fn => {
                         self.bump();
                         let name = self.expect_ident()?;
                         let func = self.parse_fn_body()?;
                         self.try_consume(&TokenKind::Semicolon);
-                        Ok(Statement::Assignment(AssignmentStatement { name, value: func, exported }))
+                        Ok(Statement::Assignment(AssignmentStatement {
+                            name,
+                            value: func,
+                            exported,
+                        }))
                     }
                     _ => Err(self.err("Expected 'let' or 'fn' after 'export'")),
                 }
@@ -103,7 +119,9 @@ impl MeowMeowParser {
                                     items.push(ImportItem::Named(name));
                                 }
                             }
-                            _ => return Err(self.err("Expected identifier or number in import list")),
+                            _ => {
+                                return Err(self.err("Expected identifier or number in import list"));
+                            }
                         }
                         if !self.try_consume(&TokenKind::Comma) {
                             break;
@@ -116,7 +134,10 @@ impl MeowMeowParser {
                 }
                 self.consume(&TokenKind::From)?;
                 let path = match self.peek_kind().clone() {
-                    TokenKind::String(s) => { self.bump(); s }
+                    TokenKind::String(s) => {
+                        self.bump();
+                        s
+                    }
                     _ => return Err(self.err("Expected string path after 'from'")),
                 };
                 self.try_consume(&TokenKind::Semicolon);
@@ -132,16 +153,18 @@ impl MeowMeowParser {
                 self.try_consume(&TokenKind::Semicolon);
                 Ok(Statement::Return(ReturnStatement { value: Some(value) }))
             }
-            TokenKind::If => {
-                Ok(Statement::If(self.parse_if_statement()?))
-            }
+            TokenKind::If => Ok(Statement::If(self.parse_if_statement()?)),
             TokenKind::For => {
                 self.consume(&TokenKind::For)?;
                 let binding = self.expect_ident()?;
                 self.consume(&TokenKind::In)?;
                 let iterable = self.parse_expression()?;
                 let body = self.parse_block_statement()?;
-                Ok(Statement::ForIn { binding, iterable, body })
+                Ok(Statement::ForIn {
+                    binding,
+                    iterable,
+                    body,
+                })
             }
             TokenKind::While => {
                 self.consume(&TokenKind::While)?;
@@ -164,7 +187,9 @@ impl MeowMeowParser {
                 // `ident = expr` reassignment — two-token lookahead to avoid
                 // consuming the start of a comparison expression like `x == y`.
                 if matches!(self.peek_kind(), TokenKind::Ident(_))
-                    && self.tokens.get(self.pos + 1)
+                    && self
+                        .tokens
+                        .get(self.pos + 1)
                         .map(|t| matches!(t.kind, TokenKind::Eq))
                         .unwrap_or(false)
                 {
@@ -210,7 +235,11 @@ impl MeowMeowParser {
         } else {
             None
         };
-        Ok(IfStatement { condition, then_branch, else_branch })
+        Ok(IfStatement {
+            condition,
+            then_branch,
+            else_branch,
+        })
     }
 
     /// Pratt parser entry point.
@@ -234,7 +263,9 @@ impl MeowMeowParser {
                 continue;
             }
 
-            let Some((l_bp, r_bp, op)) = self.peek_infix_op() else { break };
+            let Some((l_bp, r_bp, op)) = self.peek_infix_op() else {
+                break;
+            };
             if l_bp < min_bp {
                 break;
             }
@@ -254,22 +285,22 @@ impl MeowMeowParser {
     /// Left-associative: l_bp == r_bp - 1.
     fn peek_infix_op(&self) -> Option<(u8, u8, BinOpKind)> {
         match self.peek_kind() {
-            TokenKind::Arrow    => Some((0,  1,  BinOpKind::Query)),
-            TokenKind::PipeGt   => Some((2,  3,  BinOpKind::Pipe)),
-            TokenKind::PipePipe => Some((4,  5,  BinOpKind::Or)),
-            TokenKind::AmpAmp   => Some((6,  7,  BinOpKind::And)),
-            TokenKind::EqEq     => Some((8,  9,  BinOpKind::Eq)),
-            TokenKind::BangEq   => Some((8,  9,  BinOpKind::NotEq)),
-            TokenKind::Lt       => Some((10, 11, BinOpKind::Lt)),
-            TokenKind::Gt       => Some((10, 11, BinOpKind::Gt)),
-            TokenKind::LtEq     => Some((10, 11, BinOpKind::LtEq)),
-            TokenKind::GtEq     => Some((10, 11, BinOpKind::GtEq)),
-            TokenKind::Plus     => Some((12, 13, BinOpKind::Add)),
-            TokenKind::Minus    => Some((12, 13, BinOpKind::Sub)),
-            TokenKind::Star     => Some((14, 15, BinOpKind::Mul)),
-            TokenKind::Slash    => Some((14, 15, BinOpKind::Div)),
-            TokenKind::Percent  => Some((14, 15, BinOpKind::Rem)),
-            _                   => None,
+            TokenKind::Arrow => Some((0, 1, BinOpKind::Query)),
+            TokenKind::PipeGt => Some((2, 3, BinOpKind::Pipe)),
+            TokenKind::PipePipe => Some((4, 5, BinOpKind::Or)),
+            TokenKind::AmpAmp => Some((6, 7, BinOpKind::And)),
+            TokenKind::EqEq => Some((8, 9, BinOpKind::Eq)),
+            TokenKind::BangEq => Some((8, 9, BinOpKind::NotEq)),
+            TokenKind::Lt => Some((10, 11, BinOpKind::Lt)),
+            TokenKind::Gt => Some((10, 11, BinOpKind::Gt)),
+            TokenKind::LtEq => Some((10, 11, BinOpKind::LtEq)),
+            TokenKind::GtEq => Some((10, 11, BinOpKind::GtEq)),
+            TokenKind::Plus => Some((12, 13, BinOpKind::Add)),
+            TokenKind::Minus => Some((12, 13, BinOpKind::Sub)),
+            TokenKind::Star => Some((14, 15, BinOpKind::Mul)),
+            TokenKind::Slash => Some((14, 15, BinOpKind::Div)),
+            TokenKind::Percent => Some((14, 15, BinOpKind::Rem)),
+            _ => None,
         }
     }
 
@@ -280,13 +311,19 @@ impl MeowMeowParser {
             TokenKind::Minus => {
                 self.bump();
                 let operand = self.parse_expr_bp(17)?;
-                Ok(Expression::UnaryOp { op: UnaryOpKind::Neg, operand: Box::new(operand) })
+                Ok(Expression::UnaryOp {
+                    op: UnaryOpKind::Neg,
+                    operand: Box::new(operand),
+                })
             }
             // Logical not
             TokenKind::Bang => {
                 self.bump();
                 let operand = self.parse_expr_bp(17)?;
-                Ok(Expression::UnaryOp { op: UnaryOpKind::Not, operand: Box::new(operand) })
+                Ok(Expression::UnaryOp {
+                    op: UnaryOpKind::Not,
+                    operand: Box::new(operand),
+                })
             }
             // Grouped expression
             TokenKind::LParen => {
@@ -322,9 +359,18 @@ impl MeowMeowParser {
                     unreachable!()
                 }
             }
-            TokenKind::True  => { self.bump(); Ok(Expression::Bool(true)) }
-            TokenKind::False => { self.bump(); Ok(Expression::Bool(false)) }
-            TokenKind::Null  => { self.bump(); Ok(Expression::Null) }
+            TokenKind::True => {
+                self.bump();
+                Ok(Expression::Bool(true))
+            }
+            TokenKind::False => {
+                self.bump();
+                Ok(Expression::Bool(false))
+            }
+            TokenKind::Null => {
+                self.bump();
+                Ok(Expression::Null)
+            }
             TokenKind::LBracket => self.parse_array(),
             TokenKind::Ident(_) => self.parse_ident_leading_expression(),
             _ => Err(self.err("Unexpected token in expression")),
@@ -381,7 +427,12 @@ impl MeowMeowParser {
     /// - `ident`                                                    → bare Identifier
     fn parse_ident_leading_expression(&mut self) -> Result<Expression, ParseError> {
         let ident = self.expect_ident()?;
-        let is_component_type = ident.0.chars().next().map(|c| c.is_uppercase()).unwrap_or(false);
+        let is_component_type = ident
+            .0
+            .chars()
+            .next()
+            .map(|c| c.is_uppercase())
+            .unwrap_or(false);
 
         if self.try_consume(&TokenKind::Dot) {
             let method = self.expect_ident()?;
@@ -395,7 +446,10 @@ impl MeowMeowParser {
                     let chained = self.expect_ident()?;
                     self.consume(&TokenKind::LParen)?;
                     let chained_args = self.parse_call_args()?;
-                    constructors.push(ConstructorCall { method: chained, args: chained_args });
+                    constructors.push(ConstructorCall {
+                        method: chained,
+                        args: chained_args,
+                    });
                 }
                 let body = if matches!(self.peek_kind(), TokenKind::LBrace) {
                     self.parse_block_statement()?
@@ -430,7 +484,12 @@ impl MeowMeowParser {
         // `ident { body }` → component expression, no constructor.
         // Convention: component type names always start uppercase; lowercase = variable.
         // This prevents `if flag { ... }` from consuming `flag {` as a component expression.
-        let is_component_type = ident.0.chars().next().map(|c| c.is_uppercase()).unwrap_or(false);
+        let is_component_type = ident
+            .0
+            .chars()
+            .next()
+            .map(|c| c.is_uppercase())
+            .unwrap_or(false);
         if is_component_type && matches!(self.peek_kind(), TokenKind::LBrace) {
             let body = self.parse_block_statement()?;
             return Ok(Expression::Component(ComponentExpression {
@@ -497,7 +556,10 @@ impl MeowMeowParser {
     }
 
     fn peek_kind(&self) -> &TokenKind {
-        self.tokens.get(self.pos).map(|t| &t.kind).unwrap_or(&TokenKind::Eof)
+        self.tokens
+            .get(self.pos)
+            .map(|t| &t.kind)
+            .unwrap_or(&TokenKind::Eof)
     }
 
     fn is_eof(&self) -> bool {
@@ -505,9 +567,15 @@ impl MeowMeowParser {
     }
 
     fn err(&self, message: &str) -> ParseError {
-        let span = self.tokens.get(self.pos)
+        let span = self
+            .tokens
+            .get(self.pos)
             .map(|t| t.span.clone())
             .unwrap_or(Span::new(0, 0));
-        ParseError { message: message.to_string(), token_index: self.pos, span }
+        ParseError {
+            message: message.to_string(),
+            token_index: self.pos,
+            span,
+        }
     }
 }

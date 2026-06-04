@@ -23,12 +23,12 @@ new_key_type! {
 pub use crate::engine::graphics::primitives::{Renderable, Transform, TransformMatrix};
 
 pub use command_queue::CommandQueue;
-pub use world_query_adapter::WorldQueryAdapter;
 pub use rx::{
     EventSignal, IntentSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalHandler,
     SignalKind, SignalWhen,
 };
 pub use system::{System, SystemWorld};
+pub use world_query_adapter::WorldQueryAdapter;
 
 /// Bundle of mutable engine state passed to component mutation APIs.
 ///
@@ -227,7 +227,8 @@ impl World {
 
     /// Returns the engine type identifier for this component (e.g. `"transform"`).
     pub fn component_name(&self, id: ComponentId) -> Option<&str> {
-        self.get_component_record(id).map(|node| node.component_type.as_str())
+        self.get_component_record(id)
+            .map(|node| node.component_type.as_str())
     }
 
     /// Returns the user-assigned label for this component (empty string if unset).

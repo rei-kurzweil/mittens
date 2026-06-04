@@ -69,13 +69,7 @@ impl HeadPoseBodyXzFollowSystem {
 }
 
 fn tick_one(avc_id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter) {
-    let (
-        model_root_id_opt,
-        body_local_y,
-        head_bone_id_opt,
-        neck_bone_id_opt,
-        neck_rest_t_opt,
-    ) = {
+    let (model_root_id_opt, body_local_y, head_bone_id_opt, neck_bone_id_opt, neck_rest_t_opt) = {
         let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(avc_id) else {
             return;
         };
@@ -88,8 +82,12 @@ fn tick_one(avc_id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter
         )
     };
 
-    let Some(model_root_id) = model_root_id_opt else { return };
-    let Some(head_bone_id) = head_bone_id_opt else { return };
+    let Some(model_root_id) = model_root_id_opt else {
+        return;
+    };
+    let Some(head_bone_id) = head_bone_id_opt else {
+        return;
+    };
 
     // Target = displaced head bone world XZ (skull-base / head-pivot).
     // `displaced_head` lives under driven_t->head_target, so this is a
@@ -177,4 +175,3 @@ fn tick_one(avc_id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter
         }
     }
 }
-

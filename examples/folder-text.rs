@@ -167,8 +167,14 @@ fn main() {
     let bg_r = 0.25;
     let bg_g = 0.25;
     let bg_b = 0.25;
-    let background = universe.world.add_component(engine::ecs::component::BackgroundColorComponent::new());
-    let background_c = universe.world.add_component(engine::ecs::component::ColorComponent::rgba(bg_r, bg_g, bg_b, 1.00));
+    let background = universe
+        .world
+        .add_component(engine::ecs::component::BackgroundColorComponent::new());
+    let background_c = universe
+        .world
+        .add_component(engine::ecs::component::ColorComponent::rgba(
+            bg_r, bg_g, bg_b, 1.00,
+        ));
     let _ = universe.world.add_child(background, background_c);
     universe.add(background);
 

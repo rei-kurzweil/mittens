@@ -5,7 +5,10 @@ fn spawn_runtime_text(
     owner: engine::ecs::ComponentId,
     label: &str,
 ) {
-    use engine::ecs::component::{ColorComponent, EdgeInsets, SizeDimension, StyleComponent, TextComponent, TransformComponent};
+    use engine::ecs::component::{
+        ColorComponent, EdgeInsets, SizeDimension, StyleComponent, TextComponent,
+        TransformComponent,
+    };
 
     let root = universe
         .world

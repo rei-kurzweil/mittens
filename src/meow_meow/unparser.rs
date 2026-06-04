@@ -11,9 +11,9 @@
 // of the AST after a re-parse is the invariant.
 
 use crate::meow_meow::ast::{
-    AssignmentStatement, BinOpKind, BlockStatement, CallExpression,
-    ComponentExpression, ConstructorCall, ElseBranch, Expression, Ident, IfStatement, ImportItem,
-    ReturnStatement, Statement, UnaryOpKind,
+    AssignmentStatement, BinOpKind, BlockStatement, CallExpression, ComponentExpression,
+    ConstructorCall, ElseBranch, Expression, Ident, IfStatement, ImportItem, ReturnStatement,
+    Statement, UnaryOpKind,
 };
 use crate::meow_meow::token::Unit;
 
@@ -21,7 +21,10 @@ const INDENT_STEP: usize = 4;
 
 pub fn unparse_program(stmts: &[Statement]) -> String {
     let mut out = String::new();
-    let mut p = Printer { out: &mut out, indent: 0 };
+    let mut p = Printer {
+        out: &mut out,
+        indent: 0,
+    };
     for (i, s) in stmts.iter().enumerate() {
         if i > 0 {
             p.out.push('\n');
@@ -35,14 +38,20 @@ pub fn unparse_program(stmts: &[Statement]) -> String {
 
 pub fn unparse_expression(e: &Expression) -> String {
     let mut out = String::new();
-    let mut p = Printer { out: &mut out, indent: 0 };
+    let mut p = Printer {
+        out: &mut out,
+        indent: 0,
+    };
     p.expression(e);
     out
 }
 
 pub fn unparse_component(ce: &ComponentExpression) -> String {
     let mut out = String::new();
-    let mut p = Printer { out: &mut out, indent: 0 };
+    let mut p = Printer {
+        out: &mut out,
+        indent: 0,
+    };
     p.component(ce);
     out
 }
@@ -79,7 +88,11 @@ impl<'a> Printer<'a> {
             Statement::If(i) => self.if_stmt(i),
             Statement::Block(b) => self.block(b),
             Statement::Expression(e) => self.expression(e),
-            Statement::ForIn { binding, iterable, body } => {
+            Statement::ForIn {
+                binding,
+                iterable,
+                body,
+            } => {
                 self.out.push_str("for ");
                 self.out.push_str(&binding.0);
                 self.out.push_str(" in ");
@@ -255,7 +268,12 @@ impl<'a> Printer<'a> {
 
     fn call(&mut self, c: &CallExpression) {
         // Method-call form: callee is `lhs . method_ident`.
-        if let Expression::BinaryOp { op: BinOpKind::Dot, lhs, rhs } = &*c.callee {
+        if let Expression::BinaryOp {
+            op: BinOpKind::Dot,
+            lhs,
+            rhs,
+        } = &*c.callee
+        {
             if let Expression::Identifier(Ident(method)) = &**rhs {
                 self.atom(lhs);
                 self.out.push('.');

@@ -70,15 +70,13 @@ fn deg(rad: f32) -> f32 {
     rad * (180.0 / std::f32::consts::PI)
 }
 
-fn on_dump_click(
-    world: &mut World,
-    _emit: &mut dyn SignalEmitter,
-    env: &Signal,
-) {
+fn on_dump_click(world: &mut World, _emit: &mut dyn SignalEmitter, env: &Signal) {
     if !matches!(env.event.as_ref(), Some(EventSignal::Click { .. })) {
         return;
     }
-    let Some(targets) = DUMP_TARGETS.get() else { return };
+    let Some(targets) = DUMP_TARGETS.get() else {
+        return;
+    };
 
     let driven_p = world_pos(world, targets.driven_t);
     let driven_q = world_rot_quat(world, targets.driven_t);
@@ -110,7 +108,8 @@ fn on_dump_click(
     let mut cam_rel_report = String::from("camera_wrapper: <none>");
     if let Some(cam_t) = targets.camera_wrapper_t {
         let cam_p = world_pos(world, cam_t);
-        let expected_cam_world_off = quat_rotate_vec3(head_q, targets.authored_eye_offset_head_local);
+        let expected_cam_world_off =
+            quat_rotate_vec3(head_q, targets.authored_eye_offset_head_local);
         let expected_cam = [
             head_p[0] + expected_cam_world_off[0],
             head_p[1] + expected_cam_world_off[1],
@@ -123,9 +122,15 @@ fn on_dump_click(
         ];
         cam_rel_report = format!(
             "camera_wrapper  pos=[{:+.3},{:+.3},{:+.3}]  expected_from_head=[{:+.3},{:+.3},{:+.3}]  err=[{:+.3},{:+.3},{:+.3}] |err|={:.4}m",
-            cam_p[0], cam_p[1], cam_p[2],
-            expected_cam[0], expected_cam[1], expected_cam[2],
-            cam_err[0], cam_err[1], cam_err[2],
+            cam_p[0],
+            cam_p[1],
+            cam_p[2],
+            expected_cam[0],
+            expected_cam[1],
+            expected_cam[2],
+            cam_err[0],
+            cam_err[1],
+            cam_err[2],
             v3_len(cam_err)
         );
     }
@@ -145,27 +150,39 @@ fn on_dump_click(
     println!("\n================ BONE DUMP (click) ================");
     println!(
         "driven_t  pos=[{:+.3},{:+.3},{:+.3}]  rot_xyzw=[{:+.3},{:+.3},{:+.3},{:+.3}]",
-        driven_p[0], driven_p[1], driven_p[2],
-        driven_q[0], driven_q[1], driven_q[2], driven_q[3],
+        driven_p[0], driven_p[1], driven_p[2], driven_q[0], driven_q[1], driven_q[2], driven_q[3],
     );
     println!(
         "splice_head  pos=[{:+.3},{:+.3},{:+.3}]  expected=[{:+.3},{:+.3},{:+.3}]  err=[{:+.3},{:+.3},{:+.3}] |err|={:.4}m",
-        splice_p[0], splice_p[1], splice_p[2],
-        expected_splice[0], expected_splice[1], expected_splice[2],
-        splice_err[0], splice_err[1], splice_err[2],
+        splice_p[0],
+        splice_p[1],
+        splice_p[2],
+        expected_splice[0],
+        expected_splice[1],
+        expected_splice[2],
+        splice_err[0],
+        splice_err[1],
+        splice_err[2],
         v3_len(splice_err),
     );
     println!("{}", cam_rel_report);
     println!("{}", torso_report);
-    println!("\n  {:<22}  {:>7}  {:>7}  {:>7}     {:>+7}  {:>+7}  {:>+7}",
-             "bone", "x", "y", "z", "Δx_to_drv", "Δy_to_drv", "Δz_to_drv");
+    println!(
+        "\n  {:<22}  {:>7}  {:>7}  {:>7}     {:>+7}  {:>+7}  {:>+7}",
+        "bone", "x", "y", "z", "Δx_to_drv", "Δy_to_drv", "Δz_to_drv"
+    );
     let mut prev_pos: Option<[f32; 3]> = None;
     for (i, (label, bone_id)) in targets.bones.iter().enumerate() {
         let p = world_pos(world, *bone_id);
         println!(
             "  {:<22}  {:>+7.3}  {:>+7.3}  {:>+7.3}     {:>+7.3}  {:>+7.3}  {:>+7.3}",
-            label, p[0], p[1], p[2],
-            p[0] - driven_p[0], p[1] - driven_p[1], p[2] - driven_p[2],
+            label,
+            p[0],
+            p[1],
+            p[2],
+            p[0] - driven_p[0],
+            p[1] - driven_p[1],
+            p[2] - driven_p[2],
         );
         // Segment length to previous bone (only meaningful within a chain —
         // spine bones are contiguous; arm bones are split per side, so we
@@ -173,11 +190,13 @@ fn on_dump_click(
         if let Some(prev) = prev_pos {
             let is_spine = label.starts_with("J_Bip_C_");
             let prev_was_spine = targets.bones[i - 1].0.starts_with("J_Bip_C_");
-            let is_left_arm_step = label.starts_with("J_Bip_L_") && targets.bones[i - 1].0.starts_with("J_Bip_L_");
-            let is_right_arm_step = label.starts_with("J_Bip_R_") && targets.bones[i - 1].0.starts_with("J_Bip_R_");
+            let is_left_arm_step =
+                label.starts_with("J_Bip_L_") && targets.bones[i - 1].0.starts_with("J_Bip_L_");
+            let is_right_arm_step =
+                label.starts_with("J_Bip_R_") && targets.bones[i - 1].0.starts_with("J_Bip_R_");
             if (is_spine && prev_was_spine) || is_left_arm_step || is_right_arm_step {
-                let d = [(p[0]-prev[0]), (p[1]-prev[1]), (p[2]-prev[2])];
-                let len = (d[0]*d[0] + d[1]*d[1] + d[2]*d[2]).sqrt();
+                let d = [(p[0] - prev[0]), (p[1] - prev[1]), (p[2] - prev[2])];
+                let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
                 println!("    └─ segment from prev: len={:.4}m", len);
             }
         }
@@ -194,7 +213,10 @@ fn main() {
     for error in &output.errors {
         eprintln!("[mms] {error}");
     }
-    println!("[mms] {} intent(s) from bisket-vr-demo.mms", output.intents.len());
+    println!(
+        "[mms] {} intent(s) from bisket-vr-demo.mms",
+        output.intents.len()
+    );
 
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
@@ -234,11 +256,11 @@ fn main() {
     // visibly track the bone's world pose. Useful for debugging where each
     // bone actually sits relative to the XR camera and the overlay cube.
     let marker_joints: &[(&str, (f32, f32, f32, f32))] = &[
-        ("[name='J_Bip_C_Head']",      (0.85, 0.20, 0.85, 0.9)),
-        ("[name='J_Bip_C_Neck']",      (0.20, 0.85, 0.85, 0.9)),
-        ("[name='J_Bip_C_UpperChest']",(0.20, 0.20, 0.85, 0.9)),
-        ("[name='J_Sec_Hair1_08']",    (1.00, 0.00, 0.00, 1.0)),
-        ("[name='J_Sec_Hair2_08']",    (1.00, 0.40, 0.40, 1.0)),
+        ("[name='J_Bip_C_Head']", (0.85, 0.20, 0.85, 0.9)),
+        ("[name='J_Bip_C_Neck']", (0.20, 0.85, 0.85, 0.9)),
+        ("[name='J_Bip_C_UpperChest']", (0.20, 0.20, 0.85, 0.9)),
+        ("[name='J_Sec_Hair1_08']", (1.00, 0.00, 0.00, 1.0)),
+        ("[name='J_Sec_Hair2_08']", (1.00, 0.40, 0.40, 1.0)),
     ];
 
     // Find any global root to start the descendant search from. Scanning all
@@ -269,7 +291,9 @@ fn main() {
         let marker_c = universe
             .world
             .add_component(ColorComponent::rgba(color.0, color.1, color.2, color.3));
-        let marker_rcast = universe.world.add_component(RaycastableComponent::enabled());
+        let marker_rcast = universe
+            .world
+            .add_component(RaycastableComponent::enabled());
         let marker_em = universe.world.add_component(EmissiveComponent::on());
         let _ = universe.world.add_child(marker_r, marker_c);
         let _ = universe.world.add_child(marker_r, marker_em);
@@ -290,14 +314,23 @@ fn main() {
     {
         // Resolve AVC + driven_t for the dump.
         let avc_id_opt = universe.world.all_components().find(|&id| {
-            universe.world.get_component_by_id_as::<AvatarControlComponent>(id).is_some()
+            universe
+                .world
+                .get_component_by_id_as::<AvatarControlComponent>(id)
+                .is_some()
         });
         if let Some(avc_id) = avc_id_opt {
             let driven_t = universe.world.parent_of(avc_id).unwrap_or(avc_id);
             let head_ik_offset_yaw = universe
                 .world
                 .get_component_by_id_as::<AvatarControlComponent>(avc_id)
-                .map(|c| if c.forward_plus_z { 0.0 } else { std::f32::consts::PI })
+                .map(|c| {
+                    if c.forward_plus_z {
+                        0.0
+                    } else {
+                        std::f32::consts::PI
+                    }
+                })
                 .unwrap_or(std::f32::consts::PI);
 
             // Find each bone under any root (model_root is unique per avatar here).
@@ -336,13 +369,19 @@ fn main() {
                     .is_some()
             });
             let camera_wrapper_t = cxr_id.and_then(|cid| {
-                universe
-                    .world
-                    .parent_of(cid)
-                    .filter(|&p| universe.world.get_component_by_id_as::<TransformComponent>(p).is_some())
+                universe.world.parent_of(cid).filter(|&p| {
+                    universe
+                        .world
+                        .get_component_by_id_as::<TransformComponent>(p)
+                        .is_some()
+                })
             });
             let authored_eye_offset_head_local = camera_wrapper_t
-                .and_then(|t| universe.world.get_component_by_id_as::<TransformComponent>(t))
+                .and_then(|t| {
+                    universe
+                        .world
+                        .get_component_by_id_as::<TransformComponent>(t)
+                })
                 .map(|t| t.transform.translation)
                 .unwrap_or([0.0, 0.0, 0.0]);
 
@@ -365,9 +404,13 @@ fn main() {
                     .with_scale(0.06, 0.06, 0.06),
             );
             let btn_r = universe.world.add_component(RenderableComponent::cube());
-            let btn_c = universe.world.add_component(ColorComponent::rgba(0.95, 0.20, 0.40, 1.0));
+            let btn_c = universe
+                .world
+                .add_component(ColorComponent::rgba(0.95, 0.20, 0.40, 1.0));
             let btn_em = universe.world.add_component(EmissiveComponent::on());
-            let btn_rcast = universe.world.add_component(RaycastableComponent::enabled());
+            let btn_rcast = universe
+                .world
+                .add_component(RaycastableComponent::enabled());
             let btn_ov = universe.world.add_component(OverlayComponent::new());
             let _ = universe.world.add_child(btn_r, btn_c);
             let _ = universe.world.add_child(btn_r, btn_em);
@@ -376,16 +419,25 @@ fn main() {
             let _ = universe.world.add_child(btn_ov, btn_t);
 
             // Attach to a stable scene root (the first global root we found).
-            let scene_root = roots.iter().copied().find(|&r| {
-                universe.world.get_component_by_id_as::<TransformComponent>(r).is_some()
-                    || universe.world.children_of(r).len() > 0
-            }).unwrap_or_else(|| roots[0]);
+            let scene_root = roots
+                .iter()
+                .copied()
+                .find(|&r| {
+                    universe
+                        .world
+                        .get_component_by_id_as::<TransformComponent>(r)
+                        .is_some()
+                        || universe.world.children_of(r).len() > 0
+                })
+                .unwrap_or_else(|| roots[0]);
             let _ = universe.attach(scene_root, btn_ov);
 
             // Wire Click handler.  Scope = the renderable (where the raycast hits).
             universe.add_signal_handler(SignalKind::Click, btn_r, on_dump_click);
 
-            println!("[dump] button spawned at [0.35, 1.05, -0.35] — click in VR or with desktop pointer to dump bones");
+            println!(
+                "[dump] button spawned at [0.35, 1.05, -0.35] — click in VR or with desktop pointer to dump bones"
+            );
         } else {
             eprintln!("[dump] AvatarControlComponent not found — skipping dump button");
         }

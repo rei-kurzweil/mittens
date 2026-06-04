@@ -44,9 +44,7 @@ pub fn convert_sample_format(
     target: PlaybackFormat,
 ) -> Result<ConvertedAudio, ConvertError> {
     if target.sample_rate == 0 || target.channels == 0 {
-        return Err(ConvertError::InvalidTarget(format!(
-            "{target:?}"
-        )));
+        return Err(ConvertError::InvalidTarget(format!("{target:?}")));
     }
     if decoded.samples.is_empty() {
         return Err(ConvertError::EmptyInput);

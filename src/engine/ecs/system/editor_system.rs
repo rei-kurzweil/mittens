@@ -28,35 +28,39 @@ impl EditorSystem {
         }
         self.installed_editor_roots.insert(editor_root);
 
-        rx.add_handler_closure(SignalKind::DragStart, editor_root, move |world, emit, env| {
-            let Some(EventSignal::DragStart { renderable, .. }) = env.event.as_ref() else {
-                return;
-            };
+        rx.add_handler_closure(
+            SignalKind::DragStart,
+            editor_root,
+            move |world, emit, env| {
+                let Some(EventSignal::DragStart { renderable, .. }) = env.event.as_ref() else {
+                    return;
+                };
 
-            let renderable = renderable.clone();
+                let renderable = renderable.clone();
 
-            // If editors are nested, only the *nearest* editor root should handle the event.
-            if nearest_editor_ancestor(world, renderable) != Some(editor_root) {
-                return;
-            }
+                // If editors are nested, only the *nearest* editor root should handle the event.
+                if nearest_editor_ancestor(world, renderable) != Some(editor_root) {
+                    return;
+                }
 
-            // Ignore clicks inside a SelectableComponent::off() subtree (panel UI etc.).
-            if has_selectable_off_ancestor(world, renderable) {
-                return;
-            }
+                // Ignore clicks inside a SelectableComponent::off() subtree (panel UI etc.).
+                if has_selectable_off_ancestor(world, renderable) {
+                    return;
+                }
 
-            // Ignore clicks on transform gizmo handles themselves.
-            if has_transform_gizmo_ancestor(world, renderable) {
-                return;
-            }
+                // Ignore clicks on transform gizmo handles themselves.
+                if has_transform_gizmo_ancestor(world, renderable) {
+                    return;
+                }
 
-            // Resolve the clicked target's nearest TransformComponent.
-            let Some(target_transform) = nearest_transform_ancestor(world, renderable) else {
-                return;
-            };
+                // Resolve the clicked target's nearest TransformComponent.
+                let Some(target_transform) = nearest_transform_ancestor(world, renderable) else {
+                    return;
+                };
 
-            select_editor_target(world, emit, editor_root, target_transform, true);
-        });
+                select_editor_target(world, emit, editor_root, target_transform, true);
+            },
+        );
     }
 
     /// Materialize editor-default pickability by wrapping each current immediate child of the
@@ -112,7 +116,10 @@ fn subtree_root_has_selectable_off(world: &World, node: ComponentId) -> bool {
 fn subtree_contains_gltf(world: &World, root: ComponentId) -> bool {
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
-        if world.get_component_by_id_as::<GLTFComponent>(node).is_some() {
+        if world
+            .get_component_by_id_as::<GLTFComponent>(node)
+            .is_some()
+        {
             return true;
         }
 

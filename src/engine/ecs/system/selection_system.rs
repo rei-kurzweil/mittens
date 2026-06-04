@@ -140,13 +140,17 @@ fn selection_marker_on_node(world: &World, node: ComponentId) -> Option<Componen
 }
 
 fn option_marker_on_node(world: &World, node: ComponentId) -> Option<ComponentId> {
-    if world.get_component_by_id_as::<OptionComponent>(node).is_some() {
+    if world
+        .get_component_by_id_as::<OptionComponent>(node)
+        .is_some()
+    {
         return Some(node);
     }
-    world.children_of(node)
-        .iter()
-        .copied()
-        .find(|&child| world.get_component_by_id_as::<OptionComponent>(child).is_some())
+    world.children_of(node).iter().copied().find(|&child| {
+        world
+            .get_component_by_id_as::<OptionComponent>(child)
+            .is_some()
+    })
 }
 
 fn selection_scope_owner(world: &World, selection_root: ComponentId) -> ComponentId {
@@ -168,7 +172,10 @@ fn nearest_enclosing_selection(world: &World, start: ComponentId) -> Option<Comp
     None
 }
 
-fn resolve_selection_click(world: &World, renderable: ComponentId) -> Option<(ComponentId, ComponentId)> {
+fn resolve_selection_click(
+    world: &World,
+    renderable: ComponentId,
+) -> Option<(ComponentId, ComponentId)> {
     let mut current = Some(renderable);
     while let Some(node) = current {
         if option_marker_on_node(world, node).is_some() {
@@ -210,7 +217,11 @@ fn find_selected_item_text(world: &World, item_id: ComponentId) -> Option<String
         .map(|text| text.text.clone())
 }
 
-fn find_selected_item_index(world: &World, selection_root: ComponentId, item_id: ComponentId) -> Option<usize> {
+fn find_selected_item_index(
+    world: &World,
+    selection_root: ComponentId,
+    item_id: ComponentId,
+) -> Option<usize> {
     let scope_owner = selection_scope_owner(world, selection_root);
     let mut index = 0usize;
     for &child in world.children_of(scope_owner) {
@@ -226,7 +237,9 @@ fn find_selected_item_index(world: &World, selection_root: ComponentId, item_id:
 
 fn immediate_style_child(world: &World, root: ComponentId) -> Option<ComponentId> {
     world.children_of(root).iter().copied().find(|&child| {
-        world.get_component_by_id_as::<StyleComponent>(child).is_some()
+        world
+            .get_component_by_id_as::<StyleComponent>(child)
+            .is_some()
     })
 }
 
@@ -253,7 +266,12 @@ fn mark_nearest_layout_dirty(world: &mut World, start: ComponentId) {
     }
 }
 
-fn set_styled_selection(world: &mut World, emit: &mut dyn SignalEmitter, item_id: ComponentId, selected: bool) -> bool {
+fn set_styled_selection(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    item_id: ComponentId,
+    selected: bool,
+) -> bool {
     let Some(style_id) = styled_option_target(world, item_id) else {
         return false;
     };
@@ -284,11 +302,12 @@ fn set_styled_selection(world: &mut World, emit: &mut dyn SignalEmitter, item_id
         return true;
     }
 
-    let original_background_color = selection_style_state_child(world, item_id).and_then(|state_id| {
-        world
-            .get_component_by_id_as::<SelectionStyleStateComponent>(state_id)
-            .map(|state| state.original_background_color)
-    });
+    let original_background_color =
+        selection_style_state_child(world, item_id).and_then(|state_id| {
+            world
+                .get_component_by_id_as::<SelectionStyleStateComponent>(state_id)
+                .map(|state| state.original_background_color)
+        });
     if let Some(style) = world.get_component_by_id_as_mut::<StyleComponent>(style_id) {
         style.background_color = original_background_color.unwrap_or(None);
     }
@@ -305,7 +324,12 @@ fn set_styled_selection(world: &mut World, emit: &mut dyn SignalEmitter, item_id
 }
 
 fn subtree_local_bounds(world: &World, root: ComponentId) -> Option<Aabb> {
-    fn visit(world: &World, node: ComponentId, parent_to_root: [[f32; 4]; 4], acc: &mut Option<Aabb>) {
+    fn visit(
+        world: &World,
+        node: ComponentId,
+        parent_to_root: [[f32; 4]; 4],
+        acc: &mut Option<Aabb>,
+    ) {
         let mut local_to_root = parent_to_root;
         if let Some(tc) = world.get_component_by_id_as::<TransformComponent>(node) {
             local_to_root = mat4_mul(parent_to_root, tc.transform.model);
@@ -360,8 +384,9 @@ fn ensure_selection_overlay(world: &mut World, emit: &mut dyn SignalEmitter, ite
                 SELECTED_HIGHLIGHT_RGBA[3],
             )));
             let renderable = world.add_component_boxed(Box::new(RenderableComponent::square()));
-            let emissive =
-                world.add_component_boxed(Box::new(EmissiveComponent::new(SELECTED_HIGHLIGHT_EMISSIVE)));
+            let emissive = world.add_component_boxed(Box::new(EmissiveComponent::new(
+                SELECTED_HIGHLIGHT_EMISSIVE,
+            )));
 
             emit.push_intent_now(
                 highlight,
@@ -400,7 +425,11 @@ fn ensure_selection_overlay(world: &mut World, emit: &mut dyn SignalEmitter, ite
         highlight_id,
         IntentValue::UpdateTransform {
             component_ids: vec![highlight_id],
-            translation: [center[0], center[1], bounds.max[2] + OVERLAY_HIGHLIGHT_Z_OFFSET],
+            translation: [
+                center[0],
+                center[1],
+                bounds.max[2] + OVERLAY_HIGHLIGHT_Z_OFFSET,
+            ],
             rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
             scale: [
                 bounds.width().max(0.001),
@@ -434,7 +463,11 @@ fn add_selection_highlight(world: &mut World, emit: &mut dyn SignalEmitter, item
     ensure_selection_overlay(world, emit, item_id);
 }
 
-fn remove_selection_highlight(world: &mut World, emit: &mut dyn SignalEmitter, item_id: ComponentId) {
+fn remove_selection_highlight(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    item_id: ComponentId,
+) {
     if set_styled_selection(world, emit, item_id, false) {
         remove_selection_overlay(world, emit, item_id);
         return;
@@ -1003,11 +1036,12 @@ mod tests {
             "expected Selection on world panel rows mount"
         );
         assert!(
-            world.get_component_by_id_as::<OptionComponent>(first_row).is_some()
-                || world
-                    .children_of(first_row)
-                    .iter()
-                    .any(|&child| world.get_component_by_id_as::<OptionComponent>(child).is_some()),
+            world
+                .get_component_by_id_as::<OptionComponent>(first_row)
+                .is_some()
+                || world.children_of(first_row).iter().any(|&child| world
+                    .get_component_by_id_as::<OptionComponent>(child)
+                    .is_some()),
             "expected Option on selectable world panel row"
         );
 
@@ -1092,13 +1126,16 @@ mod tests {
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
 
         assert_eq!(
-            world.get_component_by_id_as::<StyleComponent>(first_style)
+            world
+                .get_component_by_id_as::<StyleComponent>(first_style)
                 .expect("first style")
                 .background_color,
             Some(SELECTED_HIGHLIGHT_RGBA)
         );
         assert!(
-            world.find_component(first, "[name='selection_style_state']").is_some(),
+            world
+                .find_component(first, "[name='selection_style_state']")
+                .is_some(),
             "expected cached style state helper on first selection"
         );
         assert!(
@@ -1127,19 +1164,23 @@ mod tests {
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
 
         assert_eq!(
-            world.get_component_by_id_as::<StyleComponent>(first_style)
+            world
+                .get_component_by_id_as::<StyleComponent>(first_style)
                 .expect("first style")
                 .background_color,
             None
         );
         assert_eq!(
-            world.get_component_by_id_as::<StyleComponent>(second_style)
+            world
+                .get_component_by_id_as::<StyleComponent>(second_style)
                 .expect("second style")
                 .background_color,
             Some(SELECTED_HIGHLIGHT_RGBA)
         );
         assert!(
-            world.find_component(first, "[name='selection_style_state']").is_none(),
+            world
+                .find_component(first, "[name='selection_style_state']")
+                .is_none(),
             "expected old styled selection cache to be removed on deselect"
         );
     }
@@ -1178,7 +1219,13 @@ mod tests {
         let transform = world
             .get_component_by_id_as::<TransformComponent>(highlight)
             .expect("highlight transform");
-        assert_eq!(transform.transform.translation, [0.0, 0.0, OVERLAY_HIGHLIGHT_Z_OFFSET]);
-        assert_eq!(transform.transform.scale, [1.0, 1.0, OVERLAY_HIGHLIGHT_Z_THICKNESS]);
+        assert_eq!(
+            transform.transform.translation,
+            [0.0, 0.0, OVERLAY_HIGHLIGHT_Z_OFFSET]
+        );
+        assert_eq!(
+            transform.transform.scale,
+            [1.0, 1.0, OVERLAY_HIGHLIGHT_Z_THICKNESS]
+        );
     }
 }
