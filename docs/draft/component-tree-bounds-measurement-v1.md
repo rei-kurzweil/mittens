@@ -154,39 +154,77 @@ Two named methods keep call sites honest:
 - if you want pure measurement, use the pure method
 - if you want layout-assisted measurement, opt in explicitly
 
-## Fit-to-box helpers
+## Declarative API
 
-The measurement methods should not also decide preview scaling policy.
-That logic should sit beside them as a separate helper.
+The low-level measurement split should stay in `BoundsSystem`, but MMS
+authoring should expose one declarative wrapper: `FitBounds`.
 
-Suggested helper:
+Preferred shape:
 
-```rust
-pub struct FitBox {
-    pub max_width: f32,
-    pub max_height: f32,
-    pub max_depth: Option<f32>,
-    pub z_offset: f32,
+```mms
+FitBounds.to([-0.5, -0.5, -0.5, 0.5, 0.5, 0.5]) {
+    pencil_icon()
 }
-
-pub struct UniformFitTransform {
-    pub translation: [f32; 3],
-    pub scale: [f32; 3],
-}
-
-pub fn fit_aabb_uniform(aabb: &Aabb, fit_box: FitBox) -> UniformFitTransform
 ```
+
+Preferred extensible direction:
+
+```mms
+FitBounds.renderable_only().to([-0.5, -0.5, -0.5, 0.5, 0.5, 0.5]) {
+    pencil_icon()
+}
+
+FitBounds.layout_aware().to([-0.5, -0.5, -0.5, 0.5, 0.5, 0.5]) {
+    styled_button("Save")
+}
+```
+
+`to([min_x, min_y, min_z, max_x, max_y, max_z])` defines the target local
+`Aabb` that the child subtree should fit inside.
 
 Rules:
 
 - always use uniform scale
 - never distort aspect ratio
-- center the subtree using `aabb.center()`
-- default UI-preview policy should fit against width/height and choose the
-  smaller scale
-- depth should be opt-in for flat UI content
+- translate from measured bounds center to target box center
+- fit the measured subtree inside the target box rather than scaling the box
+  itself
 
-This keeps `BoundsSystem` responsible for measurement, not presentation.
+This wrapper is intentionally declarative and modeful. It is not a special
+case of `T.scale(...)`, and it is not just a one-off transform helper. The
+author is declaring "fit this subtree into these bounds," while the engine
+chooses the measurement path based on the selected mode.
+
+## Low-level mapping
+
+`FitBounds` is the MMS-facing facade over the two low-level measurement
+paths.
+
+- `FitBounds.renderable_only()` maps to
+  `measure_renderable_subtree_bounds(...)`
+- `FitBounds.layout_aware()` maps to
+  `measure_layout_aware_subtree_bounds(...)`
+
+The important separation is:
+
+- low-level Rust keeps two honest methods with different contracts
+- MMS exposes one user-facing concept with explicit modes
+
+V1 implementation priority should be `FitBounds.renderable_only()`. That
+path covers icon/geometry trees and stays aligned with the pure
+renderable-only API.
+
+## Why `FitBounds`
+
+`FitBounds` names the user intent: fit child content into a target box.
+
+`ScaleBounds` was considered and rejected because it sounds like scaling the
+box itself, not fitting content into it. The mechanism may involve scaling,
+but the declarative concern is fitting.
+
+Keeping one wrapper name also avoids proliferating MMS surface area. Authors
+learn one concept and then opt into broader behavior with modes only when
+needed.
 
 ## Caller guidance
 
@@ -214,6 +252,14 @@ Paint-panel icon sizing is a good example of the narrow path:
 
 That is exactly the kind of caller V1 should support first.
 
+In MMS terms, that same case should be representable as:
+
+```mms
+FitBounds.renderable_only().to([-0.5, -0.5, -0.1, 0.5, 0.5, 0.1]) {
+    pencil_icon()
+}
+```
+
 ## Failure semantics
 
 The API should distinguish these outcomes:
@@ -229,6 +275,60 @@ That means:
 - no hard-coded `0.5` scale from the measurement method
 - no auto-created placeholder transforms
 - no hidden side effects in the pure method
+
+For `FitBounds.renderable_only()`, this means the declarative layer should
+also preserve the narrow method's honesty:
+
+- if bounds are available, compute the uniform fit transform
+- if bounds are unavailable, produce no measured fit
+- do not invent a fallback scale
+- do not imply hidden layout simulation or world mutation
+
+Any placeholder rendering, deferred loading state, or fallback presentation
+belongs to the caller or presentation layer.
+
+For `FitBounds.layout_aware()`, broader behavior is acceptable because the
+mode makes that tradeoff explicit. It may require a layout root and may only
+complete after a layout tick. That mode is intentionally broader than the V1
+implementation scope.
+
+## Examples
+
+### Renderable icon subtree
+
+```mms
+FitBounds.to([-0.5, -0.5, -0.1, 0.5, 0.5, 0.1]) {
+    pencil_icon()
+}
+```
+
+This is the primary V1 case. The subtree already has renderable geometry, so
+the engine can measure existing bounds and apply a centered uniform fit.
+
+### Future layout-aware styled subtree
+
+```mms
+FitBounds.layout_aware().to([-1.0, -0.4, -0.1, 1.0, 0.4, 0.1]) {
+    styled_button("Save")
+}
+```
+
+This is intentionally not hidden behind the default path. A styled button or
+panel may need layout participation before meaningful bounds exist, so the
+author opts into the broader measurement contract explicitly.
+
+## Why one wrapper with modes
+
+- declarative authoring stays simple
+- low-level engine semantics stay explicit
+- avoids proliferating wrapper names
+- preserves honest measurement contracts
+
+This keeps the API surface aligned across layers:
+
+- engine code sees the real measurement split
+- MMS authors see one fitting concept
+- layout-aware behavior is opt-in instead of ambient
 
 ## Interaction with existing code
 
