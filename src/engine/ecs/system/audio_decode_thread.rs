@@ -7,12 +7,12 @@
 //! Phase 5 ships full-buffer messages only (short clips). Streaming for
 //! long BGM lands when needed — same protocol, smaller chunks.
 
-use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread::JoinHandle;
 
-use super::audio_decode::{decode_audio_file, DecodeError};
-use super::audio_sample_format_convert::{convert_sample_format, ConvertError, PlaybackFormat};
+use super::audio_decode::{DecodeError, decode_audio_file};
+use super::audio_sample_format_convert::{ConvertError, PlaybackFormat, convert_sample_format};
 
 /// Request from main → decode thread.
 #[derive(Debug)]

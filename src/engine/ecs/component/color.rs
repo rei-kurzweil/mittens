@@ -1,5 +1,5 @@
-use crate::engine::ecs::component::Component;
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::component::Component;
 
 /// Per-instance color for a renderable.
 ///

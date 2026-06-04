@@ -1,5 +1,5 @@
-use crate::engine::ecs::component::Component;
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::component::Component;
 use crate::engine::graphics::bounds::Aabb;
 
 /// Layout-owned local boxes for a styled layout item.
@@ -40,7 +40,7 @@ impl Component for LayoutBoundsComponent {
         &self,
         _world: &crate::engine::ecs::World,
     ) -> crate::meow_meow::ast::ComponentExpression {
-        use crate::engine::ecs::component::ce_helpers::{array, ce_call, num, CeBuilder};
+        use crate::engine::ecs::component::ce_helpers::{CeBuilder, array, ce_call, num};
 
         let content = vec![
             array(

@@ -4,11 +4,11 @@ pub mod flex;
 pub mod inline;
 pub mod measure;
 
-use crate::engine::ecs::component::style::Display;
-use crate::engine::ecs::component::LayoutComponent;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::World;
+use crate::engine::ecs::component::LayoutComponent;
+use crate::engine::ecs::component::style::Display;
 use measure::measure_container_items;
 
 /// Approximate average character width in glyph-local units (pre-transform).

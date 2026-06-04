@@ -52,7 +52,7 @@ impl Component for FitBoundsComponent {
         &self,
         _world: &crate::engine::ecs::World,
     ) -> crate::meow_meow::ast::ComponentExpression {
-        use crate::engine::ecs::component::ce_helpers::{array, ce_call, num, CeBuilder};
+        use crate::engine::ecs::component::ce_helpers::{CeBuilder, array, ce_call, num};
 
         let mut expr = match self.mode {
             FitBoundsMode::RenderableOnly => ce_call("FitBounds", "renderable_only", vec![]),

@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use slotmap::Key;
 
@@ -9,8 +9,8 @@ use crate::engine::ecs::component::AudioBufferSizeComponent;
 use crate::engine::ecs::component::AudioOscillator;
 use crate::engine::ecs::component::AudioOscillatorComponent;
 use crate::engine::ecs::component::AudioOutputComponent;
-use crate::engine::ecs::system::clock_system::ClockDriver;
 use crate::engine::ecs::system::System;
+use crate::engine::ecs::system::clock_system::ClockDriver;
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
@@ -18,14 +18,14 @@ use crate::engine::user_input::InputState;
 use crate::engine::ecs::system::audio_system_fundsp::AudioClockState;
 use crate::engine::ecs::system::audio_system_fundsp::AudioQueueItem;
 use crate::engine::ecs::system::audio_system_fundsp::AudioRtLocalState;
+use crate::engine::ecs::system::audio_system_fundsp::MAX_AUDIO_GRAPH_CHILDREN_PER_NODE;
+use crate::engine::ecs::system::audio_system_fundsp::MAX_AUDIO_GRAPH_NODES;
+use crate::engine::ecs::system::audio_system_fundsp::MAX_OSCS_PER_COMPONENT;
 use crate::engine::ecs::system::audio_system_fundsp::RtAudioGraph;
 use crate::engine::ecs::system::audio_system_fundsp::RtAudioGraphChild;
 use crate::engine::ecs::system::audio_system_fundsp::RtAudioGraphNode;
 use crate::engine::ecs::system::audio_system_fundsp::ScheduledGraphOp;
 use crate::engine::ecs::system::audio_system_fundsp::SynthRtState;
-use crate::engine::ecs::system::audio_system_fundsp::MAX_AUDIO_GRAPH_CHILDREN_PER_NODE;
-use crate::engine::ecs::system::audio_system_fundsp::MAX_AUDIO_GRAPH_NODES;
-use crate::engine::ecs::system::audio_system_fundsp::MAX_OSCS_PER_COMPONENT;
 use crate::engine::ecs::system::audio_system_fundsp::{
     RtAudioGraphNodeKind, RtAudioGraphNodeState,
 };
@@ -336,8 +336,8 @@ impl AudioSystem {
                 .clamp(0.0, u16::MAX as f32) as u16
         }
 
-        use crate::engine::ecs::system::audio_system_fundsp::render_buffer;
         use crate::engine::ecs::system::audio_system_fundsp::AUDIO_QUEUE_CAP;
+        use crate::engine::ecs::system::audio_system_fundsp::render_buffer;
 
         // Create a queue for GUI-thread -> audio-thread messages.
         let (tx, rx) = rtrb::RingBuffer::<AudioQueueItem>::new(AUDIO_QUEUE_CAP);
@@ -896,7 +896,7 @@ impl AudioSystem {
     /// one decoded buffer on the RT side. Each component still gets its
     /// own `RtClipInstance` voice via `RegisterClipInstance`.
     pub fn register_audio_clip(&mut self, world: &mut World, component: ComponentId) {
-        use super::audio_decode_thread::{spawn_decode_thread, LoadClipRequest};
+        use super::audio_decode_thread::{LoadClipRequest, spawn_decode_thread};
         use super::audio_sample_format_convert::PlaybackFormat;
         use crate::engine::ecs::component::{AudioClipComponent, AudioClipLoadState};
         use slotmap::Key;

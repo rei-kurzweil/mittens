@@ -1,3 +1,4 @@
+use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::component::style::VerticalAlign;
 /// Component registry: maps MMS type names to engine component constructors.
 ///
@@ -25,23 +26,22 @@ use crate::engine::ecs::component::{
     OptionComponent, OscillatorType, Overflow, OverlayComponent, PointLightComponent,
     PointerComponent, PointerEvents, Position, QuatTemporalFilterComponent, QuatYawFollowComponent,
     RayCastComponent, RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType,
-    RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
-    RendererStatsComponent, RouterComponent, ScrollingComponent, SelectableComponent,
-    SelectionComponent, SerializeComponent, SignalRouteUpwardComponent, SizeDimension,
-    SkinnedMeshComponent, StencilClipComponent, StyleComponent, TextAlign, TextComponent,
-    TextInputComponent, TextShadowComponent, TextureComponent, TextureFilteringComponent,
-    TransformComponent, TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis,
-    TransformGizmoComponent, TransformGizmoCoordSpace, TransformGizmoRotateComponent,
-    TransformGizmoScaleComponent, TransformGizmoTranslateComponent, TransformMapRotationComponent,
-    TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
-    TransformParentComponent, TransformSampleAncestorComponent, TransitionComponent,
-    TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
+    RenderGraphComponent, RenderableComponent, RendererSettingsComponent, RendererStatsComponent,
+    RouterComponent, ScrollingComponent, SelectableComponent, SelectionComponent,
+    SerializeComponent, SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent,
+    StencilClipComponent, StyleComponent, TextAlign, TextComponent, TextInputComponent,
+    TextShadowComponent, TextureComponent, TextureFilteringComponent, TransformComponent,
+    TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
+    TransformGizmoCoordSpace, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
+    TransformGizmoTranslateComponent, TransformMapRotationComponent, TransformMapScaleComponent,
+    TransformMapTranslationComponent, TransformMergeTRSComponent, TransformParentComponent,
+    TransformSampleAncestorComponent, TransitionComponent, TransitionEasing,
+    TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
     Vector3TemporalFilterComponent, WordWrapMode,
 };
-use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::{ComponentId, World};
-use crate::engine::graphics::bounds::Aabb;
 use crate::engine::graphics::CameraTarget;
+use crate::engine::graphics::bounds::Aabb;
 use crate::meow_meow::ast::{
     BlockStatement, ComponentExpression, Expression, Ident, Statement, UnaryOpKind,
 };
@@ -1166,8 +1166,10 @@ fn create_component(
             _ => Err("ControllerXR requires .new(enabled, hand, pose)".into()),
         },
         "TransformParent" => match ctor {
-            Some("target") => add!(TransformParentComponent::new()
-                .with_target_source(arg_component_ref(world, args, 0)?)),
+            Some("target") => add!(
+                TransformParentComponent::new()
+                    .with_target_source(arg_component_ref(world, args, 0)?)
+            ),
             _ => add!(TransformParentComponent::new()),
         },
         "TransformForkTRS" => add!(TransformForkTRSComponent::new()),

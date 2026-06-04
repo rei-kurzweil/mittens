@@ -1,7 +1,7 @@
-use crate::engine::ecs::component::Component;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::IntentValue;
 use crate::engine::ecs::SignalEmitter;
+use crate::engine::ecs::component::Component;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransformGizmoCoordSpace {

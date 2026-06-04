@@ -283,11 +283,7 @@ impl MusicNoteComponent {
                     .position(|(vn, _)| vn == n)
                     .and_then(|i| ctx.voices_resolved.get(i).copied().flatten()),
             };
-            if cached.is_some() {
-                cached
-            } else {
-                None
-            }
+            if cached.is_some() { cached } else { None }
         };
         if let Some(r) = resolved {
             self.target_resolved = Some(r);

@@ -1,9 +1,9 @@
+use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::{
     TransitionComponent, TransitionEasing, TransitionReplacePolicy,
 };
-use crate::engine::ecs::ComponentId;
-use crate::engine::graphics::primitives::Transform;
 use crate::engine::graphics::VisualWorld;
+use crate::engine::graphics::primitives::Transform;
 use crate::engine::user_input::InputState;
 
 use super::System;
@@ -214,11 +214,11 @@ fn normalize_quat(q: [f32; 4]) -> [f32; 4] {
 #[cfg(test)]
 mod tests {
     use super::TransitionSystem;
+    use crate::engine::ecs::World;
     use crate::engine::ecs::component::{TransitionComponent, TransitionEasing};
     use crate::engine::ecs::system::SystemWorld;
-    use crate::engine::ecs::World;
-    use crate::engine::graphics::primitives::Transform;
     use crate::engine::graphics::VisualWorld;
+    use crate::engine::graphics::primitives::Transform;
 
     #[test]
     fn transform_transition_reaches_exact_final_value() {

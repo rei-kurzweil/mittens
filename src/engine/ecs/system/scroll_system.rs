@@ -405,14 +405,14 @@ impl ScrollingSystem {
 #[cfg(test)]
 mod tests {
     use super::ScrollingSystem;
-    use crate::engine::ecs::component::{
-        RenderableComponent, ScrollingComponent, TransformComponent,
-    };
     use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::IntentValue;
     use crate::engine::ecs::SignalEmitter;
     use crate::engine::ecs::SystemWorld;
     use crate::engine::ecs::World;
+    use crate::engine::ecs::component::{
+        RenderableComponent, ScrollingComponent, TransformComponent,
+    };
     use crate::engine::graphics::VisualWorld;
 
     #[test]

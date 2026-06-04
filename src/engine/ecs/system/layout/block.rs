@@ -1,18 +1,8 @@
 use super::box_model_viz::sync_box_model_viz;
 use super::measure::{
-    apply_text_color_for_item, apply_text_font_size_for_item, apply_text_wrap_for_item,
-    measure_container_items, measure_items, MeasuredItem,
+    MeasuredItem, apply_text_color_for_item, apply_text_font_size_for_item,
+    apply_text_wrap_for_item, measure_container_items, measure_items,
 };
-use crate::engine::ecs::component::style::VerticalAlign;
-use crate::engine::ecs::component::style::{Display, SizeDimension, TextAlign};
-use crate::engine::ecs::component::{
-    ColorComponent, InspectLayoutComponent, LayoutBoundsComponent, OpacityComponent, Overflow,
-    RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RenderableComponent,
-    RouterComponent, ScrollingComponent, SerializeComponent, StencilClipComponent,
-    StyleComponent, TextComponent, TransformComponent,
-};
-use crate::engine::ecs::system::text_system::TextSystem;
-use crate::engine::ecs::system::ScrollingSystem;
 use crate::engine::ecs::ComponentId;
 /// Block formatting context layout — Pass 2.
 ///
@@ -32,6 +22,16 @@ use crate::engine::ecs::ComponentId;
 /// the layout root is being scaled by an outer transform (`unit_scale = 1.0`) or
 /// by `unit_scale` itself (e.g. inspector panels with `unit_scale = TEXT_SCALE`).
 use crate::engine::ecs::World;
+use crate::engine::ecs::component::style::VerticalAlign;
+use crate::engine::ecs::component::style::{Display, SizeDimension, TextAlign};
+use crate::engine::ecs::component::{
+    ColorComponent, InspectLayoutComponent, LayoutBoundsComponent, OpacityComponent, Overflow,
+    RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RenderableComponent,
+    RouterComponent, ScrollingComponent, SerializeComponent, StencilClipComponent, StyleComponent,
+    TextComponent, TransformComponent,
+};
+use crate::engine::ecs::system::ScrollingSystem;
+use crate::engine::ecs::system::text_system::TextSystem;
 use crate::engine::ecs::{IntentValue, SignalEmitter};
 
 const OWNED_CLIPPED_CONTENT_LABEL: &str = "__clip_content";
@@ -1206,10 +1206,12 @@ mod tests {
             .expect("item transform");
 
         assert_eq!(item_tc.transform.translation, [0.75, -0.75, 0.0]);
-        assert!(world
-            .children_of(item)
-            .iter()
-            .any(|&child| world.component_label(child) == Some("__bg")));
+        assert!(
+            world
+                .children_of(item)
+                .iter()
+                .any(|&child| world.component_label(child) == Some("__bg"))
+        );
     }
 
     #[test]
@@ -1255,9 +1257,11 @@ mod tests {
                     .is_some()
             })
             .expect("expected serialize marker on __bg");
-        assert!(world
-            .get_component_by_id_as::<SerializeComponent>(serialize)
-            .is_some_and(|marker| !marker.enabled));
+        assert!(
+            world
+                .get_component_by_id_as::<SerializeComponent>(serialize)
+                .is_some_and(|marker| !marker.enabled)
+        );
     }
 
     #[test]

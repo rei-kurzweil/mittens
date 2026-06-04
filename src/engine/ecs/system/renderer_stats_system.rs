@@ -1,10 +1,10 @@
-use crate::engine::ecs::component::{
-    ColorComponent, EmissiveComponent, RendererStatsComponent, TextComponent,
-};
 use crate::engine::ecs::CommandQueue;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::World;
+use crate::engine::ecs::component::{
+    ColorComponent, EmissiveComponent, RendererStatsComponent, TextComponent,
+};
 use crate::engine::graphics::{CameraTarget, VisualWorld};
 
 #[derive(Debug, Default)]

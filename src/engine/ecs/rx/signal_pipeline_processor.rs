@@ -1,5 +1,5 @@
-use crate::engine::ecs::RxWorld;
 use crate::engine::ecs::rx::signal_pipeline::SignalPipelineOp;
+use crate::engine::ecs::RxWorld;
 use crate::engine::ecs::{ComponentId, IntentValue, Signal, World};
 
 /// Pre-execution processor for intent signals.
@@ -69,6 +69,7 @@ impl SignalPipelineProcessor {
             | IntentValue::SetLayoutAvailableWidth { component_ids, .. }
             | IntentValue::SetLayoutAvailableHeight { component_ids, .. }
             | IntentValue::SetLayoutInspect { component_ids, .. }
+            | IntentValue::SelectionSet { component_ids, .. }
             | IntentValue::Detach { component_ids }
             | IntentValue::RemoveSubtree { component_ids }
             | IntentValue::AudioGraphRebuild { component_ids }
@@ -169,6 +170,7 @@ impl SignalPipelineProcessor {
             | IntentValue::SetLayoutAvailableWidth { component_ids, .. }
             | IntentValue::SetLayoutAvailableHeight { component_ids, .. }
             | IntentValue::SetLayoutInspect { component_ids, .. }
+            | IntentValue::SelectionSet { component_ids, .. }
             | IntentValue::Detach { component_ids }
             | IntentValue::RemoveSubtree { component_ids }
             | IntentValue::AudioGraphRebuild { component_ids }

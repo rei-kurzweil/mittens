@@ -588,9 +588,9 @@ impl AssetSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::ecs::World;
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::component::TextComponent;
-    use crate::engine::ecs::World;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 

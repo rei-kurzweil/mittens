@@ -148,21 +148,31 @@ mod tests {
             .expect("expected world panel root under runtime ui root");
         assert_eq!(world.parent_of(runtime_ui_root), None);
         assert_eq!(world.parent_of(panel_mount), Some(runtime_ui_root));
-        assert!(world
-            .find_component(runtime_ui_root, "#editor_panel_layout_root")
-            .is_some());
-        assert!(world
-            .find_component(runtime_ui_root, "#editor_world_panel_shell")
-            .is_some());
-        assert!(world
-            .find_component(runtime_ui_root, "#editor_inspector_panel_shell")
-            .is_some());
-        assert!(world
-            .find_component(runtime_ui_root, "#editor_asset_panel_shell")
-            .is_some());
-        assert!(world
-            .find_component(runtime_ui_root, "#editor_paint_panel_shell")
-            .is_some());
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#editor_panel_layout_root")
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#editor_world_panel_shell")
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#editor_inspector_panel_shell")
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#editor_asset_panel_shell")
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#editor_paint_panel_shell")
+                .is_some()
+        );
         let panel_shell = world
             .parent_of(panel_root)
             .expect("expected panel shell above world panel root");
@@ -173,18 +183,26 @@ mod tests {
             .parent_of(panel_shared_layout)
             .expect("expected overlay ancestor above shared layout root");
         assert_eq!(world.parent_of(panel_overlay), Some(panel_mount));
-        assert!(world
-            .get_component_by_id_as::<OverlayComponent>(panel_overlay)
-            .is_some());
-        assert!(world
-            .find_component(runtime_ui_root, "#inspector_panel_root")
-            .is_some());
-        assert!(world
-            .find_component(runtime_ui_root, "#panel_status_value")
-            .is_some());
-        assert!(world
-            .find_component(runtime_ui_root, "#rows_mount")
-            .is_some());
+        assert!(
+            world
+                .get_component_by_id_as::<OverlayComponent>(panel_overlay)
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#inspector_panel_root")
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#panel_status_value")
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#rows_mount")
+                .is_some()
+        );
         let item0 = world
             .find_component(panel_root, "#item_0")
             .expect("expected item_0 under panel_root");
@@ -368,15 +386,21 @@ mod tests {
             .expect("expected inspector panel root");
 
         assert!(world.find_component(world_panel_root, "#item_1").is_some());
-        assert!(world
-            .find_component(world_panel_root, "#inspector_item_0")
-            .is_none());
-        assert!(world
-            .find_component(inspector_panel_root, "#inspector_item_0")
-            .is_some());
-        assert!(world
-            .find_component(inspector_panel_root, "#item_1")
-            .is_none());
+        assert!(
+            world
+                .find_component(world_panel_root, "#inspector_item_0")
+                .is_none()
+        );
+        assert!(
+            world
+                .find_component(inspector_panel_root, "#inspector_item_0")
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(inspector_panel_root, "#item_1")
+                .is_none()
+        );
 
         assert_eq!(
             row_text(&world, runtime_ui_root, "#inspector_item_0"),
@@ -585,12 +609,16 @@ mod tests {
         let reloaded_gltf_root = world
             .find_component(reloaded_scene_root, "#avatar_gltf")
             .expect("expected gltf root after load");
-        assert!(world
-            .find_component(reloaded_gltf_root, "Serialize")
-            .is_some());
-        assert!(world
-            .find_component(runtime_ui_root, "#world_panel_root")
-            .is_some());
+        assert!(
+            world
+                .find_component(reloaded_gltf_root, "Serialize")
+                .is_some()
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#world_panel_root")
+                .is_some()
+        );
 
         let panel_status_value = world
             .find_component(runtime_ui_root, "#panel_status_value")

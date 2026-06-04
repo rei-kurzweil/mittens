@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::engine::ecs::component::{
-    action::{apply_resolved_targets, signal_target_slot_count},
     ActionComponent, AnimationComponent, AnimationState, ComponentRef, KeyframeComponent,
     MusicNoteComponent, ResolveTargetsMode,
+    action::{apply_resolved_targets, signal_target_slot_count},
 };
-use crate::engine::ecs::system::animation_system_evaluator::AnimationEvaluator;
 use crate::engine::ecs::system::System;
+use crate::engine::ecs::system::animation_system_evaluator::AnimationEvaluator;
 use crate::engine::ecs::{ComponentId, IntentValue, RxWorld, SignalEmitter, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;

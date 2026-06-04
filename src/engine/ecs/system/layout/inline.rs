@@ -1,4 +1,3 @@
-use crate::engine::ecs::component::TransformComponent;
 /// Inline formatting context layout.
 ///
 /// Handles `display: InlineBlock` items in a horizontal cursor with line wrap.
@@ -10,13 +9,14 @@ use crate::engine::ecs::component::TransformComponent;
 /// here today. Mixing inline-block and block items in the same container falls
 /// through to block layout (handled by the dispatcher in `mod.rs`).
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::{IntentValue, SignalEmitter, World};
 
 use super::block::apply_text_align;
 use super::box_model_viz::sync_box_model_viz;
 use super::measure::{
-    apply_text_color_for_item, apply_text_font_size_for_item, apply_text_wrap_for_item,
-    measure_container_items, measure_items, MeasuredItem,
+    MeasuredItem, apply_text_color_for_item, apply_text_font_size_for_item,
+    apply_text_wrap_for_item, measure_container_items, measure_items,
 };
 use crate::engine::ecs::component::style::Display;
 

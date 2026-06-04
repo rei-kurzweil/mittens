@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::engine::ecs::component::ClockComponent;
-use crate::engine::ecs::system::System;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
+use crate::engine::ecs::component::ClockComponent;
+use crate::engine::ecs::system::System;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 

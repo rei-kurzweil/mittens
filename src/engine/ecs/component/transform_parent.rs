@@ -76,7 +76,7 @@ impl Component for TransformParentComponent {
         &self,
         _world: &crate::engine::ecs::World,
     ) -> crate::meow_meow::ast::ComponentExpression {
-        use crate::engine::ecs::component::ce_helpers::{ce, ce_call, CeBuilder};
+        use crate::engine::ecs::component::ce_helpers::{CeBuilder, ce, ce_call};
         use crate::meow_meow::ast::Expression;
 
         fn target_expr(t: &ComponentRef) -> Expression {

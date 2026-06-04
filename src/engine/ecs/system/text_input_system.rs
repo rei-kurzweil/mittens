@@ -588,9 +588,9 @@ fn char_to_byte_index(text: &str, char_index: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::component::{OpacityComponent, TransformComponent};
     use crate::engine::ecs::system::SystemWorld;
-    use crate::engine::ecs::CommandQueue;
     use crate::engine::graphics::VisualWorld;
 
     #[test]

@@ -1,11 +1,11 @@
+use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     ColorComponent, EmissiveComponent, OpacityComponent, RaycastableComponent, RenderableComponent,
     SerializeComponent, TextComponent, TextInputComponent, TextInputGlyphHitComponent,
     TextShadowComponent, TextureComponent, TextureFilteringComponent, TransformComponent,
     TransparentCutoutComponent, UVComponent,
 };
-use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::World;
 use crate::engine::ecs::{EventSignal, IntentValue};
 use crate::engine::graphics::TextureFiltering;
 use crate::engine::graphics::VisualWorld;
@@ -630,11 +630,11 @@ fn uvs_for_glyph(ch: char) -> Vec<[f32; 2]> {
 #[cfg(test)]
 mod tests {
     use super::TextSystem;
+    use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
         SerializeComponent, TextComponent, TextInputGlyphHitComponent, TextureComponent,
         TransformComponent,
     };
-    use crate::engine::ecs::World;
     use crate::engine::graphics::VisualWorld;
     fn collect_descendants(
         world: &World,
@@ -682,9 +682,11 @@ mod tests {
             })
             .copied()
             .expect("expected serialize marker on glyph root");
-        assert!(world
-            .get_component_by_id_as::<SerializeComponent>(serialize_marker)
-            .is_some_and(|serialize| !serialize.enabled));
+        assert!(
+            world
+                .get_component_by_id_as::<SerializeComponent>(serialize_marker)
+                .is_some_and(|serialize| !serialize.enabled)
+        );
     }
     fn measure_font_size_scales_text_advance_and_height() {
         let (w_small, h_small) = TextSystem::measure("AB", 0, true, &[], 0.5);

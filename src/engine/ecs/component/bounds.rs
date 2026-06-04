@@ -1,5 +1,5 @@
-use crate::engine::ecs::component::Component;
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::component::Component;
 use crate::engine::graphics::bounds::Aabb;
 
 /// Cached local-space AABB for a sibling `RenderableComponent`.

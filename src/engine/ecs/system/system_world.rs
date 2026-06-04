@@ -1,5 +1,7 @@
 use super::World;
-use crate::engine::ecs::system::bounds_system::BoundsSystem;
+use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::RxWorld;
+use crate::engine::ecs::SignalKind;
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::CameraSystem;
 use crate::engine::ecs::system::ClippingSystem;
@@ -27,15 +29,13 @@ use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::TransformStreamSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::TransitionSystem;
+use crate::engine::ecs::system::bounds_system::BoundsSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
 use crate::engine::ecs::system::{
     AssetSystem, AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, FitBoundsSystem,
     GestureSystem, HeadPoseBodyXzFollowSystem, IKSystem, InspectorSystem, LayoutSystem,
     SelectionSystem, TransformGizmoSystem,
 };
-use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::RxWorld;
-use crate::engine::ecs::SignalKind;
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 use std::path::Path;
@@ -104,11 +104,11 @@ pub struct SystemWorld {
 #[cfg(test)]
 mod tests {
     use super::SystemWorld;
+    use crate::engine::ecs::CommandQueue;
+    use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
         ColorComponent, RenderableComponent, StencilClipComponent, TransformComponent,
     };
-    use crate::engine::ecs::CommandQueue;
-    use crate::engine::ecs::World;
     use crate::engine::graphics::primitives::{MeshHandle, TextureHandle};
     use crate::engine::graphics::{
         CpuMesh, MeshUploader, RenderAssets, TextureUploader, VisualWorld,
@@ -195,14 +195,18 @@ mod tests {
         world.init_component_tree(root, &mut queue);
         systems.process_commands(&mut world, &mut visuals, &mut queue);
 
-        assert!(world
-            .get_component_by_id_as::<RenderableComponent>(clip_bg_renderable)
-            .and_then(|r| r.get_handle())
-            .is_none());
-        assert!(world
-            .get_component_by_id_as::<RenderableComponent>(content_renderable)
-            .and_then(|r| r.get_handle())
-            .is_none());
+        assert!(
+            world
+                .get_component_by_id_as::<RenderableComponent>(clip_bg_renderable)
+                .and_then(|r| r.get_handle())
+                .is_none()
+        );
+        assert!(
+            world
+                .get_component_by_id_as::<RenderableComponent>(content_renderable)
+                .and_then(|r| r.get_handle())
+                .is_none()
+        );
 
         systems.prepare_render(
             &mut world,

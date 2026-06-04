@@ -1,5 +1,5 @@
-use crate::engine::ecs::component::Component;
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::component::Component;
 
 /// CSS `display` property values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -689,8 +689,8 @@ fn tc_world_rot(world: &World, id: ComponentId) -> [f32; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ecs::component::{ComponentRef, IKChainComponent, IKSolver};
     use crate::engine::ecs::CommandQueue;
+    use crate::engine::ecs::component::{ComponentRef, IKChainComponent, IKSolver};
 
     // Temporarily gated: see docs/bugs/ik-solver-api-drift-breaks-tests.md.
     #[cfg(any())]

@@ -3,12 +3,12 @@ use std::thread::{self, JoinHandle};
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
+use crate::engine::ecs::component::AnimationState;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::IntentValue;
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::SignalKind;
 use crate::engine::ecs::World;
-use crate::engine::ecs::component::AnimationState;
 use crate::meow_meow::ast::{
     BinOpKind, CallExpression, ComponentExpression, ElseBranch, Expression, IfStatement,
     ImportItem, Statement, UnaryOpKind,
@@ -1810,6 +1810,10 @@ fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
         "ParentChanged" => Ok(SignalKind::ParentChanged),
         "CollisionStarted" => Ok(SignalKind::CollisionStarted),
         "CollisionEnded" => Ok(SignalKind::CollisionEnded),
+        "SelectionChanged" => Ok(SignalKind::SelectionChanged),
+        "SelectionAdded" => Ok(SignalKind::SelectionAdded),
+        "SelectionRemoved" => Ok(SignalKind::SelectionRemoved),
+        "SelectionCleared" => Ok(SignalKind::SelectionCleared),
         "Scrolling" => Ok(SignalKind::Scrolling),
         other => Err(format!("unknown signal kind: '{}'", other)),
     }

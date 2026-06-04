@@ -1,5 +1,5 @@
-use crate::engine::ecs::component::AnimationState;
 use crate::engine::ecs::component::style::SizeDimension;
+use crate::engine::ecs::component::{AnimationState, SelectionEntry, SelectionMode};
 use crate::engine::ecs::{ComponentId, World};
 use std::sync::mpsc::Sender;
 
@@ -139,11 +139,28 @@ pub enum EventSignal {
         screen_pos_px: Option<(f32, f32)>,
     },
 
-    /// The editor selection changed (emitted by EditorSystem on DragStart).
+    /// A selection scope changed.
     SelectionChanged {
-        editor_root: ComponentId,
-        selected: Option<ComponentId>,
+        selection_root: ComponentId,
+        mode: SelectionMode,
+        selected_entries: Vec<SelectionEntry>,
+        selected_component: Option<ComponentId>,
     },
+
+    /// An entry was added to a selection scope.
+    SelectionAdded {
+        selection_root: ComponentId,
+        entry: SelectionEntry,
+    },
+
+    /// An entry was removed from a selection scope.
+    SelectionRemoved {
+        selection_root: ComponentId,
+        entry: SelectionEntry,
+    },
+
+    /// A selection scope was cleared.
+    SelectionCleared { selection_root: ComponentId },
 
     /// A scrolling component consumed drag motion and updated its offset.
     ///
@@ -183,6 +200,9 @@ impl EventSignal {
             EventSignal::DragEnd { .. } => SignalKind::DragEnd,
             EventSignal::Click { .. } => SignalKind::Click,
             EventSignal::SelectionChanged { .. } => SignalKind::SelectionChanged,
+            EventSignal::SelectionAdded { .. } => SignalKind::SelectionAdded,
+            EventSignal::SelectionRemoved { .. } => SignalKind::SelectionRemoved,
+            EventSignal::SelectionCleared { .. } => SignalKind::SelectionCleared,
             EventSignal::Scrolling { .. } => SignalKind::Scrolling,
             EventSignal::TextInputFocusChanged { .. } => SignalKind::TextInputFocusChanged,
             EventSignal::TextInputChanged { .. } => SignalKind::TextInputChanged,
@@ -261,6 +281,11 @@ pub enum IntentValue {
     SetLayoutInspect {
         component_ids: Vec<ComponentId>,
         enabled: bool,
+    },
+    SelectionSet {
+        component_ids: Vec<ComponentId>,
+        entries: Vec<SelectionEntry>,
+        primary: Option<ComponentId>,
     },
 
     Attach {
@@ -597,6 +622,7 @@ impl IntentValue {
             IntentValue::SetLayoutAvailableWidth { .. } => "set_layout_available_width",
             IntentValue::SetLayoutAvailableHeight { .. } => "set_layout_available_height",
             IntentValue::SetLayoutInspect { .. } => "set_layout_inspect",
+            IntentValue::SelectionSet { .. } => "selection_set",
 
             IntentValue::Attach { .. } => "attach",
             IntentValue::QueryFindComponent { .. } => "query_find_component",
@@ -718,6 +744,9 @@ pub enum SignalKind {
     DragEnd,
     Click,
     SelectionChanged,
+    SelectionAdded,
+    SelectionRemoved,
+    SelectionCleared,
     Scrolling,
     TextInputFocusChanged,
     TextInputChanged,

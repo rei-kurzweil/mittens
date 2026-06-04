@@ -158,8 +158,14 @@ pub(crate) fn select_editor_target(
     emit.push_event(
         editor_root,
         EventSignal::SelectionChanged {
-            editor_root,
-            selected: Some(target_transform),
+            selection_root: editor_root,
+            mode: crate::engine::ecs::component::SelectionMode::Single,
+            selected_entries: vec![crate::engine::ecs::component::SelectionEntry {
+                index: None,
+                item: None,
+                component: target_transform,
+            }],
+            selected_component: Some(target_transform),
         },
     );
 

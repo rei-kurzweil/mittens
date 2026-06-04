@@ -1,5 +1,5 @@
-use crate::engine::ecs::component::Component;
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::component::Component;
 
 /// Sits between the avatar body pipeline root and `model_root`.
 /// Tracks head yaw and smoothly rotates the body to follow when the

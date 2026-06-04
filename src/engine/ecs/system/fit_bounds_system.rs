@@ -4,8 +4,8 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::system::bounds_system::{BoundsSystem, UniformFitTransform};
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
-use crate::engine::graphics::bounds::Aabb;
 use crate::engine::graphics::RenderAssets;
+use crate::engine::graphics::bounds::Aabb;
 
 const OWNED_FIT_CONTENT_LABEL: &str = "__fit_bounds_content";
 
@@ -56,7 +56,9 @@ impl FitBoundsSystem {
                 render_assets,
                 fit_transform_id,
             )
-            .and_then(|aabb| BoundsSystem::fit_aabb_uniform(&aabb, aabb_to_bounds_array(target_bounds)));
+            .and_then(|aabb| {
+                BoundsSystem::fit_aabb_uniform(&aabb, aabb_to_bounds_array(target_bounds))
+            });
 
             apply_fit_transform(world, fit_transform_id, transform);
         }
@@ -77,19 +79,30 @@ fn resolve_target_bounds(
 ) -> Option<Aabb> {
     match fit.target {
         FitBoundsTarget::ExplicitBounds => Some(Aabb {
-            min: [fit.target_bounds[0], fit.target_bounds[1], fit.target_bounds[2]],
-            max: [fit.target_bounds[3], fit.target_bounds[4], fit.target_bounds[5]],
+            min: [
+                fit.target_bounds[0],
+                fit.target_bounds[1],
+                fit.target_bounds[2],
+            ],
+            max: [
+                fit.target_bounds[3],
+                fit.target_bounds[4],
+                fit.target_bounds[5],
+            ],
         }),
         FitBoundsTarget::ParentPaddingBox => parent_padding_box(world, host_transform_id),
     }
 }
 
 fn parent_padding_box(world: &World, host_transform_id: ComponentId) -> Option<Aabb> {
-    world.children_of(host_transform_id).iter().find_map(|&child| {
-        world
-            .get_component_by_id_as::<LayoutBoundsComponent>(child)
-            .map(|bounds| bounds.padding_local)
-    })
+    world
+        .children_of(host_transform_id)
+        .iter()
+        .find_map(|&child| {
+            world
+                .get_component_by_id_as::<LayoutBoundsComponent>(child)
+                .map(|bounds| bounds.padding_local)
+        })
 }
 
 fn ensure_fit_content_transform(
@@ -129,7 +142,11 @@ fn ensure_fit_content_transform(
     fit_transform_id
 }
 
-fn reparent_fit_body_children(world: &mut World, fit_node: ComponentId, fit_transform_id: ComponentId) {
+fn reparent_fit_body_children(
+    world: &mut World,
+    fit_node: ComponentId,
+    fit_transform_id: ComponentId,
+) {
     let children: Vec<ComponentId> = world.children_of(fit_node).to_vec();
     for child in children {
         if child == fit_transform_id {
@@ -140,7 +157,10 @@ fn reparent_fit_body_children(world: &mut World, fit_node: ComponentId, fit_tran
 }
 
 fn fit_body_is_empty(world: &World, fit_node: ComponentId, fit_transform_id: ComponentId) -> bool {
-    world.children_of(fit_node).iter().all(|&child| child == fit_transform_id)
+    world
+        .children_of(fit_node)
+        .iter()
+        .all(|&child| child == fit_transform_id)
         && world.children_of(fit_transform_id).iter().all(|&child| {
             world
                 .get_component_by_id_as::<SerializeComponent>(child)
@@ -159,7 +179,10 @@ fn reparent_legacy_host_children(
         if child == fit_node {
             continue;
         }
-        if world.component_label(child).is_some_and(|label| label.starts_with("__")) {
+        if world
+            .component_label(child)
+            .is_some_and(|label| label.starts_with("__"))
+        {
             continue;
         }
         if world
@@ -215,11 +238,11 @@ fn apply_fit_transform(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::component::{
         ColorComponent, Display, EdgeInsets, LayoutComponent, RenderableComponent, SizeDimension,
         StyleComponent,
     };
-    use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::system::layout::LayoutSystem;
 
     #[test]
@@ -240,10 +263,16 @@ mod tests {
         let icon_color = world.add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
         let icon_renderable = world.add_component(RenderableComponent::cube());
 
-        world.add_child(fit_root, fit).expect("attach fit component");
+        world
+            .add_child(fit_root, fit)
+            .expect("attach fit component");
         world.add_child(fit, icon_root).expect("attach icon root");
-        world.add_child(icon_root, icon_shape).expect("attach icon shape");
-        world.add_child(icon_shape, icon_color).expect("attach icon color");
+        world
+            .add_child(icon_root, icon_shape)
+            .expect("attach icon shape");
+        world
+            .add_child(icon_shape, icon_color)
+            .expect("attach icon color");
         world
             .add_child(icon_color, icon_renderable)
             .expect("attach icon renderable");

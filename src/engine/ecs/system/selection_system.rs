@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::{
     BoundsComponent, ColorComponent, Component, EmissiveComponent, LayoutComponent,
-    OptionComponent, RenderableComponent, SelectionComponent, SelectionEntry, StyleComponent,
-    TextComponent, TransformComponent,
+    OptionComponent, RenderableComponent, SelectionComponent, SelectionEntry, SelectionMode,
+    StyleComponent, TextComponent, TransformComponent,
 };
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
@@ -475,6 +475,162 @@ fn remove_selection_highlight(
     remove_selection_overlay(world, emit, item_id);
 }
 
+pub fn emit_selection_events(
+    emit: &mut dyn SignalEmitter,
+    selection_root: ComponentId,
+    mode: SelectionMode,
+    old_entries: &[SelectionEntry],
+    old_selected_component: Option<ComponentId>,
+    new_entries: Vec<SelectionEntry>,
+    new_selected_component: Option<ComponentId>,
+) {
+    for entry in new_entries.iter() {
+        if !old_entries
+            .iter()
+            .any(|old_entry| old_entry.component == entry.component)
+        {
+            emit.push_event(
+                selection_root,
+                EventSignal::SelectionAdded {
+                    selection_root,
+                    entry: entry.clone(),
+                },
+            );
+        }
+    }
+
+    for entry in old_entries.iter() {
+        if !new_entries
+            .iter()
+            .any(|new_entry| new_entry.component == entry.component)
+        {
+            emit.push_event(
+                selection_root,
+                EventSignal::SelectionRemoved {
+                    selection_root,
+                    entry: entry.clone(),
+                },
+            );
+        }
+    }
+
+    if !old_entries.is_empty() && new_entries.is_empty() {
+        emit.push_event(
+            selection_root,
+            EventSignal::SelectionCleared { selection_root },
+        );
+    }
+
+    if old_entries != new_entries || old_selected_component != new_selected_component {
+        emit.push_event(
+            selection_root,
+            EventSignal::SelectionChanged {
+                selection_root,
+                mode,
+                selected_entries: new_entries,
+                selected_component: new_selected_component,
+            },
+        );
+    }
+}
+
+pub fn apply_selection_set(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    selection_root: ComponentId,
+    entries: Vec<SelectionEntry>,
+    primary: Option<ComponentId>,
+) {
+    let (mode, old_entries, old_selected_component, new_entries, new_selected_component) = {
+        let selection = match world.get_component_by_id_as_mut::<SelectionComponent>(selection_root)
+        {
+            Some(selection) => selection,
+            None => return,
+        };
+
+        let old_entries = selection.selected_entries.clone();
+        let old_selected_component = selection.selected_component;
+        let mut new_entries = entries;
+        if matches!(selection.mode, SelectionMode::Single) && new_entries.len() > 1 {
+            new_entries.truncate(1);
+        }
+
+        selection.selected_entries = new_entries.clone();
+        if let Some(primary_component) = primary {
+            if let Some(entry) = selection
+                .selected_entries
+                .iter()
+                .find(|entry| entry.component == primary_component)
+                .cloned()
+            {
+                selection.selected_index = entry.index;
+                selection.selected_item = entry.item;
+                selection.selected_component = Some(entry.component);
+            } else if let Some(entry) = selection.selected_entries.last().cloned() {
+                selection.selected_index = entry.index;
+                selection.selected_item = entry.item;
+                selection.selected_component = Some(entry.component);
+            } else {
+                selection.selected_index = None;
+                selection.selected_item = None;
+                selection.selected_component = None;
+            }
+        } else if let Some(entry) = selection.selected_entries.last().cloned() {
+            selection.selected_index = entry.index;
+            selection.selected_item = entry.item;
+            selection.selected_component = Some(entry.component);
+        } else {
+            selection.selected_index = None;
+            selection.selected_item = None;
+            selection.selected_component = None;
+        }
+
+        (
+            selection.mode,
+            old_entries,
+            old_selected_component,
+            selection.selected_entries.clone(),
+            selection.selected_component,
+        )
+    };
+
+    for entry in old_entries.iter() {
+        if !new_entries
+            .iter()
+            .any(|new_entry| new_entry.component == entry.component)
+        {
+            remove_selection_highlight(world, emit, entry.component);
+        }
+    }
+
+    for entry in new_entries.iter() {
+        if !old_entries
+            .iter()
+            .any(|old_entry| old_entry.component == entry.component)
+        {
+            add_selection_highlight(world, emit, entry.component);
+        }
+    }
+
+    if matches!(mode, SelectionMode::Single) {
+        if let Some(selected_component) = new_selected_component {
+            if old_selected_component != Some(selected_component) {
+                add_selection_highlight(world, emit, selected_component);
+            }
+        }
+    }
+
+    emit_selection_events(
+        emit,
+        selection_root,
+        mode,
+        &old_entries,
+        old_selected_component,
+        new_entries,
+        new_selected_component,
+    );
+}
+
 fn handle_selection_click(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
@@ -500,41 +656,31 @@ fn handle_selection_click(
         component: item_id,
     };
 
-    let (was_selected, is_multiple, old_selection, is_selected_now) = {
-        let selection = match world.get_component_by_id_as_mut::<SelectionComponent>(selection_root)
-        {
+    let (next_entries, next_primary) = {
+        let selection = match world.get_component_by_id_as::<SelectionComponent>(selection_root) {
             Some(selection) => selection,
             None => return,
         };
 
-        let was_selected = selection.contains(item_id);
-        let is_multiple = selection.is_multiple();
-        let old_selected = selection.selected_component;
-        let is_selected_now = if is_multiple {
-            selection.toggle_entry(entry)
+        if selection.is_multiple() {
+            let mut next_entries = selection.selected_entries.clone();
+            if let Some(index) = next_entries
+                .iter()
+                .position(|selected| selected.component == item_id)
+            {
+                next_entries.remove(index);
+                let next_primary = next_entries.last().map(|entry| entry.component);
+                (next_entries, next_primary)
+            } else {
+                next_entries.push(entry.clone());
+                (next_entries, Some(entry.component))
+            }
         } else {
-            selection.select_entry(entry);
-            true
-        };
-        (was_selected, is_multiple, old_selected, is_selected_now)
+            (vec![entry.clone()], Some(entry.component))
+        }
     };
 
-    if !is_multiple {
-        if let Some(old_id) = old_selection {
-            if old_id != item_id {
-                remove_selection_highlight(world, emit, old_id);
-            }
-        }
-
-        add_selection_highlight(world, emit, item_id);
-        return;
-    }
-
-    if was_selected && !is_selected_now {
-        remove_selection_highlight(world, emit, item_id);
-    } else if is_selected_now {
-        add_selection_highlight(world, emit, item_id);
-    }
+    apply_selection_set(world, emit, selection_root, next_entries, next_primary);
 }
 
 #[cfg(test)]
@@ -545,9 +691,10 @@ mod tests {
         EditorComponent, OptionComponent, SelectionMode, TransformComponent,
     };
     use crate::engine::ecs::system::SystemWorld;
-    use crate::engine::ecs::{EventSignal, World};
+    use crate::engine::ecs::{EventSignal, IntentValue, SignalKind, World};
     use crate::engine::graphics::{RenderAssets, VisualWorld};
     use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_asset_directory() -> PathBuf {
@@ -971,7 +1118,9 @@ mod tests {
 
         systems.layout.tick(&mut world, &mut emit);
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
-        systems.fit_bounds.tick(&mut world, &render_assets, &mut emit);
+        systems
+            .fit_bounds
+            .tick(&mut world, &render_assets, &mut emit);
 
         let first_scale_before = fit_bounds_content_scale(&world, first);
         assert!(
@@ -994,7 +1143,9 @@ mod tests {
 
         systems.layout.tick(&mut world, &mut emit);
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
-        systems.fit_bounds.tick(&mut world, &render_assets, &mut emit);
+        systems
+            .fit_bounds
+            .tick(&mut world, &render_assets, &mut emit);
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1018,7 +1169,9 @@ mod tests {
 
         systems.layout.tick(&mut world, &mut emit);
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
-        systems.fit_bounds.tick(&mut world, &render_assets, &mut emit);
+        systems
+            .fit_bounds
+            .tick(&mut world, &render_assets, &mut emit);
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1272,6 +1425,133 @@ mod tests {
         assert_eq!(
             transform.transform.scale,
             [1.0, 1.0, OVERLAY_HIGHLIGHT_Z_THICKNESS]
+        );
+    }
+
+    #[test]
+    fn selection_set_intent_updates_selection_state() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let render_assets = RenderAssets::new();
+
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let root = world.add_component_boxed_named("root", Box::new(TransformComponent::new()));
+        let selection_root = world.add_component_boxed(Box::new(SelectionComponent::multiple()));
+        let _ = world.add_child(root, selection_root);
+
+        let (first, _, _) = spawn_test_option_item(&mut world, root, "first_item", false);
+        let (second, _, _) = spawn_test_option_item(&mut world, root, "second_item", false);
+
+        systems.rx.push_intent_now(
+            selection_root,
+            IntentValue::SelectionSet {
+                component_ids: vec![selection_root],
+                entries: vec![
+                    SelectionEntry {
+                        index: Some(0),
+                        item: Some("first_item".to_string()),
+                        component: first,
+                    },
+                    SelectionEntry {
+                        index: Some(1),
+                        item: Some("second_item".to_string()),
+                        component: second,
+                    },
+                ],
+                primary: Some(second),
+            },
+        );
+
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+
+        let selection = world
+            .get_component_by_id_as::<SelectionComponent>(selection_root)
+            .expect("expected selection component");
+        assert_eq!(selection.selected_entries.len(), 2);
+        assert_eq!(selection.selected_component, Some(second));
+        assert!(selection.contains(first));
+        assert!(selection.contains(second));
+    }
+
+    #[test]
+    fn selection_click_emits_selection_events() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let render_assets = RenderAssets::new();
+
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let seen_changed = Arc::clone(&seen);
+        systems.rx.add_global_handler_closure(
+            SignalKind::SelectionChanged,
+            move |_world, _emit, signal| {
+                if let Some(EventSignal::SelectionChanged {
+                    selection_root,
+                    selected_component,
+                    ..
+                }) = signal.event.as_ref()
+                {
+                    seen_changed
+                        .lock()
+                        .expect("selection events mutex poisoned")
+                        .push(format!("{selection_root:?}:{selected_component:?}"));
+                }
+            },
+        );
+
+        let seen_added = Arc::clone(&seen);
+        systems.rx.add_global_handler_closure(
+            SignalKind::SelectionAdded,
+            move |_world, _emit, signal| {
+                if let Some(EventSignal::SelectionAdded {
+                    selection_root,
+                    entry,
+                }) = signal.event.as_ref()
+                {
+                    seen_added
+                        .lock()
+                        .expect("selection events mutex poisoned")
+                        .push(format!("{selection_root:?}:+{:?}", entry.component));
+                }
+            },
+        );
+
+        let root = world.add_component_boxed_named("root", Box::new(TransformComponent::new()));
+        let selection_root = world.add_component_boxed(Box::new(SelectionComponent::new()));
+        let _ = world.add_child(root, selection_root);
+
+        let (first, first_hit, _) = spawn_test_option_item(&mut world, root, "first_item", false);
+
+        systems.rx.push_event(
+            first_hit,
+            EventSignal::Click {
+                raycaster: first_hit,
+                renderable: first_hit,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+
+        let seen = seen.lock().expect("selection events mutex poisoned");
+        assert!(
+            seen.iter()
+                .any(|value| value.contains(&format!("+{first:?}"))),
+            "expected selection-added event"
+        );
+        assert!(
+            seen.iter()
+                .any(|value| value.contains(&format!("Some({first:?})"))),
+            "expected selection-changed event"
         );
     }
 }

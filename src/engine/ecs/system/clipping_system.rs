@@ -1,6 +1,6 @@
-use crate::engine::ecs::component::RenderableComponent;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
+use crate::engine::ecs::component::RenderableComponent;
 use crate::engine::graphics::VisualWorld;
 use std::collections::HashSet;
 

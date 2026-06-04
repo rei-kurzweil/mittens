@@ -1,12 +1,12 @@
+use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::World;
 use crate::engine::ecs::component::style::{Display, SizeDimension, WordWrapMode};
 use crate::engine::ecs::component::{
     BoundsComponent, ColorComponent, HtmlElementComponent, LayoutComponent, RenderableComponent,
     StyleComponent, TextComponent, TransformComponent,
 };
 use crate::engine::ecs::system::text_system::TextSystem;
-use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::World;
-use crate::engine::graphics::bounds::{mat4_identity, mat4_mul, Aabb};
+use crate::engine::graphics::bounds::{Aabb, mat4_identity, mat4_mul};
 use crate::engine::graphics::primitives::TransformMatrix;
 
 /// Measured size of a single layout item after Pass 1.
@@ -1143,11 +1143,11 @@ impl StyleDefault for Option<StyleTuple> {
 #[cfg(test)]
 mod tests {
     use super::{measure_container_items, measure_item, measure_items};
+    use crate::engine::ecs::World;
     use crate::engine::ecs::component::style::{Display, SizeDimension};
     use crate::engine::ecs::component::{
         ColorComponent, LayoutComponent, StyleComponent, TextComponent, TransformComponent,
     };
-    use crate::engine::ecs::World;
 
     #[test]
     fn auto_height_container_does_not_measure_text_behind_nested_transforms() {
@@ -1434,9 +1434,9 @@ mod tests {
     #[test]
     fn text_wrap_relaxes_when_container_grows_back() {
         use super::apply_text_wrap_for_item;
-        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
         use crate::engine::ecs::ComponentId;
         use crate::engine::ecs::SignalEmitter;
+        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
 
         struct NullEmit;
         impl SignalEmitter for NullEmit {
@@ -1491,9 +1491,9 @@ mod tests {
     #[test]
     fn style_font_size_overrides_descendant_text_font_size() {
         use super::apply_text_font_size_for_item;
-        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
         use crate::engine::ecs::ComponentId;
         use crate::engine::ecs::SignalEmitter;
+        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
 
         struct NullEmit;
         impl SignalEmitter for NullEmit {
@@ -1536,9 +1536,9 @@ mod tests {
     #[test]
     fn apply_text_wrap_descends_through_plain_transform_wrapper() {
         use super::apply_text_wrap_for_item;
-        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
         use crate::engine::ecs::ComponentId;
         use crate::engine::ecs::SignalEmitter;
+        use crate::engine::ecs::rx::{EventSignal, IntentSignal};
 
         struct NullEmit;
         impl SignalEmitter for NullEmit {
@@ -1730,9 +1730,11 @@ mod tests {
             (narrow_items[2].margin_box_width_gu - wide_items[2].margin_box_width_gu).abs() < 1e-4,
             "load button should keep its authored width when already within the narrow root budget"
         );
-        assert!(narrow_items
-            .iter()
-            .all(|item| item.margin_box_width_gu <= narrow_avail + 1e-4));
+        assert!(
+            narrow_items
+                .iter()
+                .all(|item| item.margin_box_width_gu <= narrow_avail + 1e-4)
+        );
     }
 
     #[test]

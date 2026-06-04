@@ -1,6 +1,6 @@
-use crate::engine::ecs::component::style::SizeDimension;
-use crate::engine::ecs::component::Component;
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::component::Component;
+use crate::engine::ecs::component::style::SizeDimension;
 
 /// The viewport of a self-contained layout subtree — analogous to the browser's
 /// initial containing block.

@@ -1,5 +1,5 @@
-use crate::engine::ecs::component::{Component, ComponentRef};
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::component::{Component, ComponentRef};
 
 /// Solver configuration for an `IKChainComponent`.
 #[derive(Debug, Clone, Copy, PartialEq)]

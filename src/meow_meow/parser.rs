@@ -120,7 +120,9 @@ impl MeowMeowParser {
                                 }
                             }
                             _ => {
-                                return Err(self.err("Expected identifier or number in import list"));
+                                return Err(
+                                    self.err("Expected identifier or number in import list")
+                                );
                             }
                         }
                         if !self.try_consume(&TokenKind::Comma) {

@@ -1,4 +1,4 @@
-use crate::engine::ecs::{component::Component, ComponentId};
+use crate::engine::ecs::{ComponentId, component::Component};
 
 #[derive(Debug, Clone, Default)]
 pub struct OptionComponent {

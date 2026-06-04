@@ -1,3 +1,5 @@
+use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     Camera2DComponent, Camera3DComponent, CollisionComponent, RenderableComponent,
     TransformComponent, TransformParentComponent,
@@ -5,10 +7,8 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformStreamSystem;
-use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::World;
-use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::graphics::VisualWorld;
+use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::user_input::InputState;
 
 /// System responsible for
@@ -364,11 +364,11 @@ impl TransformSystem {
 #[cfg(test)]
 mod tests {
     use super::TransformSystem;
+    use crate::engine::ecs::World;
     use crate::engine::ecs::component::{TransformComponent, TransformParentComponent};
     use crate::engine::ecs::system::{
         CameraSystem, CollisionSystem, LightSystem, TransformStreamSystem,
     };
-    use crate::engine::ecs::World;
     use crate::engine::graphics::VisualWorld;
 
     #[test]

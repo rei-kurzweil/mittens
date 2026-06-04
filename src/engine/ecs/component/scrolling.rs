@@ -1,5 +1,5 @@
-use crate::engine::ecs::component::Component;
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::component::Component;
 use crate::engine::ecs::{IntentValue, SignalEmitter};
 
 /// Generic scroll state for moving a content track inside a clipped viewport.
