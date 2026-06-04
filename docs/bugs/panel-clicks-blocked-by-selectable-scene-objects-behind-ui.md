@@ -65,11 +65,23 @@ the panel.
 - `assets` and `inspector` currently expose only shell-level click behavior, so in
   overlapping regions they effectively cannot be selected via the panel surface
 
+Additional observation:
+
+- this does not look limited to a bad ground-box BVH shape or oversized bounds
+- moving the background wall farther away still lets it absorb the ray hit and/or click
+  that the panel should have received, as long as the wall remains behind that panel in
+  screen space
+- the interference stops when the object is no longer behind the panel's clicked region
+
 ## Likely investigation targets
 
 - `src/engine/ecs/system/raycast_system.rs`
   Check front-to-back hit ordering for overlay/layout-owned UI renderables versus scene
   objects behind them.
+- `src/engine/ecs/system/bvh_system.rs`
+  Verify scene-object BVH bounds are sane, but treat this as secondary unless inspection
+  shows obviously incorrect extents; current repro suggests the larger issue is not just a
+  single mis-sized ground-box volume.
 - `src/engine/ecs/system/gesture_system.rs`
   Check which hit becomes the emitted `Click` target and whether editor-selectable scene
   objects are stealing or invalidating the click path.
@@ -92,6 +104,8 @@ the panel.
 
 - Is the raycast result choosing the topmost visual hit correctly when UI overlaps scene
   geometry?
+- Is the wrong target being chosen because of hit ordering / routing, even when the object
+  behind the panel is moved farther back in world space?
 - Does the click event reach the panel renderable at all, or is it being replaced by a
   selectable scene object before `SelectionSystem` sees it?
 - Why does `world_panel` text-input focus survive the overlap while `paint_panel` option
