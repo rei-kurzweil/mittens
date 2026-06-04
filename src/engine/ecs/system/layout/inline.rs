@@ -134,6 +134,8 @@ pub(crate) fn layout_items(
             },
         );
 
+        super::block::sync_layout_bounds(world, emit, item, unit_scale);
+
         apply_text_font_size_for_item(world, emit, item.tc_id, unit_scale);
         apply_text_wrap_for_item(world, emit, item.tc_id, item.content_width_gu, unit_scale);
         apply_text_color_for_item(world, emit, item.tc_id);

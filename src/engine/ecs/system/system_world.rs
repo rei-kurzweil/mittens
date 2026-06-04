@@ -1750,7 +1750,7 @@ impl SystemWorld {
         self.layout.tick(world, queue);
         queue.flush(world, self, visuals, render_assets);
 
-        self.fit_bounds.tick(world, render_assets);
+        self.fit_bounds.tick(world, render_assets, queue);
 
         // Remeasure any pending preview shells whose styled content now has
         // layout-generated background quads (RenderableComponents) available.

@@ -34,7 +34,11 @@ export fn paint_panel_item(label, icon, item_background_color, title_color) {
                     text_align("center")
                     vertical_align("middle")
                 }
-                icon
+                FitBounds.to_container() {
+                    T {
+                        icon
+                    }
+                }
             }
             T {
                 Style {

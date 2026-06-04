@@ -1,17 +1,21 @@
 use super::Component;
 
-pub const FIT_BOUNDS_TRANSFORM_NAME: &str = "__fit_bounds_transform";
-pub const FIT_BOUNDS_CONTENT_NAME: &str = "__fit_bounds_content";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FitBoundsMode {
     RenderableOnly,
     LayoutAware,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FitBoundsTarget {
+    ExplicitBounds,
+    ParentPaddingBox,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct FitBoundsComponent {
     pub mode: FitBoundsMode,
+    pub target: FitBoundsTarget,
     pub target_bounds: [f32; 6],
 }
 
@@ -19,6 +23,7 @@ impl FitBoundsComponent {
     pub fn new() -> Self {
         Self {
             mode: FitBoundsMode::RenderableOnly,
+            target: FitBoundsTarget::ExplicitBounds,
             target_bounds: [-0.5, -0.5, -0.5, 0.5, 0.5, 0.5],
         }
     }
@@ -49,18 +54,24 @@ impl Component for FitBoundsComponent {
     ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::{array, ce_call, num, CeBuilder};
 
-        let target = vec![array(
-            self.target_bounds
-                .iter()
-                .map(|&value| num(value as f64))
-                .collect(),
-        )];
+        let mut expr = match self.mode {
+            FitBoundsMode::RenderableOnly => ce_call("FitBounds", "renderable_only", vec![]),
+            FitBoundsMode::LayoutAware => ce_call("FitBounds", "layout_aware", vec![]),
+        };
 
-        match self.mode {
-            FitBoundsMode::RenderableOnly => ce_call("FitBounds", "to", target),
-            FitBoundsMode::LayoutAware => {
-                ce_call("FitBounds", "layout_aware", vec![]).with_call("to", target)
-            }
-        }
+        expr = match self.target {
+            FitBoundsTarget::ExplicitBounds => expr.with_call(
+                "to",
+                vec![array(
+                    self.target_bounds
+                        .iter()
+                        .map(|&value| num(value as f64))
+                        .collect(),
+                )],
+            ),
+            FitBoundsTarget::ParentPaddingBox => expr.with_call("to_container", vec![]),
+        };
+
+        expr
     }
 }

@@ -16,15 +16,16 @@ use crate::engine::ecs::component::{
     CollisionShape, CollisionShapeComponent, ColorComponent, ControllerHand, ControllerPoseKind,
     ControllerXRComponent, DirectionalLightComponent, Display, EdgeInsets, EditorComponent,
     ElementType, EmissiveComponent, EmissivePassComponent, FitBoundsComponent, FitBoundsMode,
-    FlexDirection, FlexWrap, GLTFComponent, GestureCoordTypeComponent, GravityComponent,
-    HtmlElementComponent, IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent,
-    InputXRComponent, InspectLayoutComponent, JustifyContent, KeyframeComponent,
-    KineticResponseComponent, LayoutComponent, LightQuantizationComponent, MeshComponent,
-    MusicContextComponent, MusicNote, MusicNoteComponent, NormalVisualisationComponent,
-    OpacityComponent, OpenXRComponent, OptionComponent, OscillatorType, Overflow, OverlayComponent,
-    PointLightComponent, PointerComponent, PointerEvents, Position, QuatTemporalFilterComponent,
-    QuatYawFollowComponent, RayCastComponent, RaycastableComponent, RaycastableShapeComponent,
-    RaycastableShapeType, RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
+    FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent, GestureCoordTypeComponent,
+    GravityComponent, HtmlElementComponent, IKChainComponent, IKSolver, InputComponent,
+    InputTransformModeComponent, InputXRComponent, InspectLayoutComponent, JustifyContent,
+    KeyframeComponent, KineticResponseComponent, LayoutBoundsComponent, LayoutComponent,
+    LightQuantizationComponent, MeshComponent, MusicContextComponent, MusicNote,
+    MusicNoteComponent, NormalVisualisationComponent, OpacityComponent, OpenXRComponent,
+    OptionComponent, OscillatorType, Overflow, OverlayComponent, PointLightComponent,
+    PointerComponent, PointerEvents, Position, QuatTemporalFilterComponent, QuatYawFollowComponent,
+    RayCastComponent, RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType,
+    RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
     RendererStatsComponent, RouterComponent, ScrollingComponent, SelectableComponent,
     SelectionComponent, SerializeComponent, SignalRouteUpwardComponent, SizeDimension,
     SkinnedMeshComponent, StencilClipComponent, StyleComponent, TextAlign, TextComponent,
@@ -35,8 +36,7 @@ use crate::engine::ecs::component::{
     TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
     TransformParentComponent, TransformSampleAncestorComponent, TransitionComponent,
     TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
-    Vector3TemporalFilterComponent, WordWrapMode, FIT_BOUNDS_CONTENT_NAME,
-    FIT_BOUNDS_TRANSFORM_NAME,
+    Vector3TemporalFilterComponent, WordWrapMode,
 };
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::{ComponentId, World};
@@ -61,9 +61,6 @@ pub fn spawn_tree(
     emit: &mut dyn SignalEmitter,
 ) -> Result<ComponentId, String> {
     let type_name = resolve_type_name(&ce.component_type);
-    if type_name == "FitBounds" {
-        return spawn_fit_bounds_tree(ce, parent, world, emit, true);
-    }
     let id = create_component(world, &type_name, ce.ctor_method.as_deref(), &ce.ctor_args)?;
 
     // Extra ctor calls + body builder calls (already evaluated).
@@ -161,9 +158,6 @@ pub fn spawn_tree_uninitialized(
     emit: &mut dyn SignalEmitter,
 ) -> Result<ComponentId, String> {
     let type_name = resolve_type_name(&ce.component_type);
-    if type_name == "FitBounds" {
-        return spawn_fit_bounds_tree(ce, None, world, emit, false);
-    }
     let id = create_component(world, &type_name, ce.ctor_method.as_deref(), &ce.ctor_args)?;
 
     for (method, args) in &ce.calls {
@@ -228,103 +222,6 @@ pub fn spawn_tree_uninitialized(
                 }
             }
         }
-    }
-
-    Ok(id)
-}
-
-fn spawn_fit_bounds_tree(
-    ce: &MaterializedCE,
-    parent: Option<ComponentId>,
-    world: &mut World,
-    emit: &mut dyn SignalEmitter,
-    initialize_if_attached: bool,
-) -> Result<ComponentId, String> {
-    let id = create_component(world, "FitBounds", ce.ctor_method.as_deref(), &ce.ctor_args)?;
-
-    for (method, args) in &ce.calls {
-        apply_call(world, id, method, args)?;
-    }
-
-    for (prop, val) in &ce.named {
-        match prop.as_str() {
-            "name" => {
-                if let Some(node) = world.get_component_record_mut(id) {
-                    node.name = val_as_str(val).unwrap_or("").to_string();
-                }
-            }
-            "guid" => apply_guid_named_prop(world, id, val)?,
-            "class" => {
-                if let Some(node) = world.get_component_record_mut(id) {
-                    match val {
-                        Value::String(s) => {
-                            node.classes = s.split_whitespace().map(str::to_string).collect();
-                        }
-                        Value::Array(arr) => {
-                            node.classes = arr
-                                .iter()
-                                .filter_map(|v| {
-                                    if let Value::String(s) = v {
-                                        Some(s.clone())
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect();
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            _ => apply_named_assignment(world, id, prop, val)?,
-        }
-    }
-
-    for val in &ce.positionals {
-        apply_positional(world, id, val)?;
-    }
-
-    if let Some(p) = parent {
-        if let Err(e) = world.add_child(p, id) {
-            return Err(format!("attach failed: {e}"));
-        }
-    }
-
-    let fit_transform_id = world.add_component_boxed_named(
-        FIT_BOUNDS_TRANSFORM_NAME,
-        Box::new(TransformComponent::new()),
-    );
-    let content_root_id = world
-        .add_component_boxed_named(FIT_BOUNDS_CONTENT_NAME, Box::new(TransformComponent::new()));
-
-    world
-        .add_child(id, fit_transform_id)
-        .map_err(|e| format!("attach fit_bounds transform failed: {e}"))?;
-    world
-        .add_child(fit_transform_id, content_root_id)
-        .map_err(|e| format!("attach fit_bounds content failed: {e}"))?;
-
-    for child in &ce.children {
-        match child {
-            CeChild::Spawn(child_ce) => {
-                spawn_tree(child_ce, Some(content_root_id), world, emit)?;
-            }
-            CeChild::Attach(existing_id) => {
-                world
-                    .add_child(content_root_id, *existing_id)
-                    .map_err(|e| {
-                        format!(
-                            "attach existing fit_bounds child {:?} failed: {e}",
-                            existing_id
-                        )
-                    })?;
-            }
-        }
-    }
-
-    let parent_initialised = parent.map(|p| world.is_initialized(p)).unwrap_or(false);
-    if initialize_if_attached && (parent.is_none() || parent_initialised) {
-        world.init_component_tree(id, emit);
     }
 
     Ok(id)
@@ -1088,6 +985,22 @@ fn create_component(
             let mut c = FitBoundsComponent::new();
             if let Some(method) = ctor {
                 apply_fit_bounds_ctor(&mut c, method, args)?;
+            }
+            add!(c)
+        }
+        "LayoutBounds" => {
+            let mut c = LayoutBoundsComponent::new(
+                crate::engine::graphics::bounds::Aabb {
+                    min: [0.0, 0.0, 0.0],
+                    max: [0.0, 0.0, 0.0],
+                },
+                crate::engine::graphics::bounds::Aabb {
+                    min: [0.0, 0.0, 0.0],
+                    max: [0.0, 0.0, 0.0],
+                },
+            );
+            if let Some(method) = ctor {
+                apply_layout_bounds_ctor(&mut c, method, args)?;
             }
             add!(c)
         }
@@ -1862,7 +1775,30 @@ fn apply_call(
         match method {
             "renderable_only" => fit_bounds.mode = FitBoundsMode::RenderableOnly,
             "layout_aware" => fit_bounds.mode = FitBoundsMode::LayoutAware,
-            "to" => fit_bounds.target_bounds = val_as_f32_array::<6>(&Value::Array(args.to_vec()))?,
+            "to" => {
+                fit_bounds.target = FitBoundsTarget::ExplicitBounds;
+                fit_bounds.target_bounds = val_as_f32_array::<6>(&Value::Array(args.to_vec()))?;
+            }
+            "to_container" => fit_bounds.target = FitBoundsTarget::ParentPaddingBox,
+            _ => {}
+        }
+        return Ok(());
+    }
+
+    if let Some(layout_bounds) = world.get_component_by_id_as_mut::<LayoutBoundsComponent>(id) {
+        match method {
+            "content_box" => {
+                layout_bounds.content_local = crate::engine::graphics::bounds::Aabb {
+                    min: val_as_f32_array::<3>(&args[0])?,
+                    max: val_as_f32_array::<3>(&args[1])?,
+                }
+            }
+            "padding_box" => {
+                layout_bounds.padding_local = crate::engine::graphics::bounds::Aabb {
+                    min: val_as_f32_array::<3>(&args[0])?,
+                    max: val_as_f32_array::<3>(&args[1])?,
+                }
+            }
             _ => {}
         }
         return Ok(());
@@ -2734,9 +2670,38 @@ fn apply_fit_bounds_ctor(
     match method {
         "renderable_only" => c.mode = FitBoundsMode::RenderableOnly,
         "layout_aware" => c.mode = FitBoundsMode::LayoutAware,
-        "to" => c.target_bounds = val_as_f32_array::<6>(&Value::Array(args.to_vec()))?,
+        "to" => {
+            c.target = FitBoundsTarget::ExplicitBounds;
+            c.target_bounds = val_as_f32_array::<6>(&Value::Array(args.to_vec()))?;
+        }
+        "to_container" => c.target = FitBoundsTarget::ParentPaddingBox,
         other => {
             println!("[registry] unknown FitBounds builder: '{other}'");
+        }
+    }
+    Ok(())
+}
+
+fn apply_layout_bounds_ctor(
+    c: &mut LayoutBoundsComponent,
+    method: &str,
+    args: &[Value],
+) -> Result<(), String> {
+    match method {
+        "content_box" => {
+            c.content_local = crate::engine::graphics::bounds::Aabb {
+                min: val_as_f32_array::<3>(&args[0])?,
+                max: val_as_f32_array::<3>(&args[1])?,
+            };
+        }
+        "padding_box" => {
+            c.padding_local = crate::engine::graphics::bounds::Aabb {
+                min: val_as_f32_array::<3>(&args[0])?,
+                max: val_as_f32_array::<3>(&args[1])?,
+            };
+        }
+        other => {
+            println!("[registry] unknown LayoutBounds builder: '{other}'");
         }
     }
     Ok(())

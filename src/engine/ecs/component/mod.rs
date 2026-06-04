@@ -46,6 +46,7 @@ pub mod inspect_layout;
 pub mod keyframe;
 pub mod kinetic_response;
 pub mod layout;
+pub mod layout_bounds;
 pub mod light_quantization;
 pub mod mesh;
 pub mod music_context;
@@ -128,9 +129,7 @@ pub use editor::EditorComponent;
 pub use editor::TransformGizmoCoordSpace;
 pub use emissive::EmissiveComponent;
 pub use emissive_pass::EmissivePassComponent;
-pub use fit_bounds::{
-    FitBoundsComponent, FitBoundsMode, FIT_BOUNDS_CONTENT_NAME, FIT_BOUNDS_TRANSFORM_NAME,
-};
+pub use fit_bounds::{FitBoundsComponent, FitBoundsMode, FitBoundsTarget};
 pub use gesture_coord_type::{GestureCoordType, GestureCoordTypeComponent};
 pub use gizmo::{
     TransformGizmoAxis, TransformGizmoComponent, TransformGizmoRotateComponent,
@@ -146,6 +145,7 @@ pub use inspect_layout::InspectLayoutComponent;
 pub use keyframe::KeyframeComponent;
 pub use kinetic_response::{KineticResponseComponent, KineticResponseMode};
 pub use layout::LayoutComponent;
+pub use layout_bounds::LayoutBoundsComponent;
 pub use light_quantization::LightQuantizationComponent;
 pub use music_context::MusicContextComponent;
 pub(crate) use music_note::NotePitch;

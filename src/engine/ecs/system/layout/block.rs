@@ -6,10 +6,10 @@ use super::measure::{
 use crate::engine::ecs::component::style::VerticalAlign;
 use crate::engine::ecs::component::style::{Display, SizeDimension, TextAlign};
 use crate::engine::ecs::component::{
-    ColorComponent, InspectLayoutComponent, OpacityComponent, Overflow, RaycastableComponent,
-    RaycastableShapeComponent, RaycastableShapeType, RenderableComponent, RouterComponent,
-    ScrollingComponent, SerializeComponent, StencilClipComponent, StyleComponent, TextComponent,
-    TransformComponent,
+    ColorComponent, InspectLayoutComponent, LayoutBoundsComponent, OpacityComponent, Overflow,
+    RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RenderableComponent,
+    RouterComponent, ScrollingComponent, SerializeComponent, StencilClipComponent,
+    StyleComponent, TextComponent, TransformComponent,
 };
 use crate::engine::ecs::system::text_system::TextSystem;
 use crate::engine::ecs::system::ScrollingSystem;
@@ -44,6 +44,7 @@ const OWNED_SCROLL_DRAG_RAYCASTABLE_LABEL: &str = "__scroll_drag_raycastable";
 const OWNED_SCROLL_DRAG_SHAPE_LABEL: &str = "__scroll_drag_shape";
 const OWNED_BG_RAYCASTABLE_LABEL: &str = "__bg_raycastable";
 const OWNED_BG_RAYCASTABLE_SHAPE_LABEL: &str = "__bg_raycastable_shape";
+const OWNED_LAYOUT_BOUNDS_LABEL: &str = "__layout_bounds";
 
 /// Run a block formatting context layout pass for `layout_id`.
 ///
@@ -151,6 +152,8 @@ fn layout_items(
                 scale: tc_scale,
             },
         );
+
+        sync_layout_bounds(world, emit, item, unit_scale);
 
         // Push the container-derived wrap_at into any descendant TextComponent
         // and rebuild glyphs so the rendered text matches the measured width.
@@ -678,6 +681,54 @@ pub(crate) fn sync_bg_quad(
             },
         );
     }
+}
+
+fn immediate_owned_layout_bounds(world: &World, tc_id: ComponentId) -> Option<ComponentId> {
+    world.children_of(tc_id).iter().copied().find(|&child| {
+        world.component_label(child) == Some(OWNED_LAYOUT_BOUNDS_LABEL)
+            && world
+                .get_component_by_id_as::<LayoutBoundsComponent>(child)
+                .is_some()
+    })
+}
+
+pub(crate) fn sync_layout_bounds(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    item: &MeasuredItem,
+    unit_scale: f32,
+) {
+    let content_local = crate::engine::graphics::bounds::Aabb {
+        min: [0.0, -item.content_height_gu * unit_scale, 0.0],
+        max: [item.content_width_gu * unit_scale, 0.0, 0.0],
+    };
+    let padding_local = crate::engine::graphics::bounds::Aabb {
+        min: [
+            -item.padding_left_gu * unit_scale,
+            (item.padding_top_gu - item.box_height_gu) * unit_scale,
+            0.0,
+        ],
+        max: [
+            (item.box_width_gu - item.padding_left_gu) * unit_scale,
+            item.padding_top_gu * unit_scale,
+            0.0,
+        ],
+    };
+
+    if let Some(existing) = immediate_owned_layout_bounds(world, item.tc_id) {
+        if let Some(bounds) = world.get_component_by_id_as_mut::<LayoutBoundsComponent>(existing) {
+            bounds.content_local = content_local;
+            bounds.padding_local = padding_local;
+        }
+        return;
+    }
+
+    let bounds_id = world.add_component_boxed_named(
+        OWNED_LAYOUT_BOUNDS_LABEL,
+        Box::new(LayoutBoundsComponent::new(content_local, padding_local)),
+    );
+    let _ = world.add_child(item.tc_id, bounds_id);
+    world.init_component_tree(bounds_id, emit);
 }
 
 fn immediate_owned_layout_stencil_clip(
