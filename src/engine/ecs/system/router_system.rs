@@ -202,12 +202,13 @@ impl RouterSystem {
 mod tests {
     use crate::engine::ecs::component::{RouterComponent, StyleComponent, TransformComponent};
     use crate::engine::ecs::{CommandQueue, IntentValue, SignalEmitter, SystemWorld, World};
-    use crate::engine::graphics::VisualWorld;
+    use crate::engine::graphics::{RenderAssets, VisualWorld};
 
     #[test]
     fn router_reroutes_initial_direct_children_to_target() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
 
@@ -233,7 +234,7 @@ mod tests {
         let _ = world.add_child(owner, authored);
 
         world.init_component_tree(owner, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         assert_eq!(world.parent_of(authored), Some(container));
         assert_eq!(world.parent_of(toolbar), Some(owner));
@@ -243,6 +244,7 @@ mod tests {
     fn router_reroutes_late_attached_children_to_target() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
 
@@ -258,7 +260,7 @@ mod tests {
         let _ = world.add_child(owner, container);
 
         world.init_component_tree(owner, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let late = world.add_component_boxed_named("late", Box::new(TransformComponent::new()));
         queue.push_intent_now(
@@ -269,7 +271,7 @@ mod tests {
             },
         );
 
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         assert_eq!(world.parent_of(late), Some(container));
     }
@@ -278,6 +280,7 @@ mod tests {
     fn router_does_not_reroute_non_transform_children() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
 
@@ -298,7 +301,7 @@ mod tests {
         let _ = world.add_child(owner, authored);
 
         world.init_component_tree(owner, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         assert_eq!(world.parent_of(authored), Some(container));
         assert_eq!(world.parent_of(style), Some(owner));

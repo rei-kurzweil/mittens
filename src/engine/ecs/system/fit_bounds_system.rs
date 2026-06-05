@@ -310,12 +310,13 @@ mod tests {
 
         let root = world.add_component(LayoutComponent::new(10.0));
         let item = world.add_component(TransformComponent::new());
-        let style = world.add_component(StyleComponent {
-            display: Some(Display::Block),
-            width: SizeDimension::GlyphUnits(4.0),
-            height: SizeDimension::GlyphUnits(6.0),
-            padding: EdgeInsets::axes(0.5, 1.0),
-            ..StyleComponent::default()
+        let style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.display = Some(Display::Block);
+            style.width = SizeDimension::GlyphUnits(4.0);
+            style.height = SizeDimension::GlyphUnits(6.0);
+            style.padding = EdgeInsets::axes(0.5, 1.0);
+            style
         });
         let fit = world.add_component(FitBoundsComponent {
             mode: FitBoundsMode::RenderableOnly,

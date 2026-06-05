@@ -1133,6 +1133,7 @@ mod tests {
     fn block_layout_recurses_into_styled_container_children() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1168,10 +1169,10 @@ mod tests {
         let _ = world.add_child(text, color);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let item_tc = world
             .get_component_by_id_as::<TransformComponent>(item)
@@ -1190,6 +1191,7 @@ mod tests {
     fn block_layout_marks_owned_background_quad_serialize_off() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1208,10 +1210,10 @@ mod tests {
         let _ = world.add_child(item, item_style);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let bg = world
             .children_of(item)
@@ -1240,10 +1242,11 @@ mod tests {
     fn block_layout_updates_existing_background_quad_color_when_style_changes() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
-        let render_assets = RenderAssets::new();
+
 
         let root = world.add_component(LayoutComponent::new(20.0).with_height(8.0));
         let item = world.add_component_boxed_named("item", Box::new(TransformComponent::new()));
@@ -1301,6 +1304,7 @@ mod tests {
     fn block_layout_does_not_reflow_unstyled_decorative_children() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1342,10 +1346,10 @@ mod tests {
         let _ = world.add_child(title_color, title_text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let title_bar_tc = world
             .get_component_by_id_as::<TransformComponent>(title_bar)
@@ -1362,6 +1366,7 @@ mod tests {
     fn text_align_scales_offsets_by_layout_unit_scale() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1391,10 +1396,10 @@ mod tests {
         let _ = world.add_child(text_wrap, text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let text_wrap_tc = world
             .get_component_by_id_as::<TransformComponent>(text_wrap)
@@ -1409,6 +1414,7 @@ mod tests {
     fn vertical_align_top_overrides_legacy_centering() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1437,10 +1443,10 @@ mod tests {
         let _ = world.add_child(text_wrap, text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let text_wrap_tc = world
             .get_component_by_id_as::<TransformComponent>(text_wrap)
@@ -1455,6 +1461,7 @@ mod tests {
     fn vertical_align_middle_respects_text_font_size() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1483,10 +1490,10 @@ mod tests {
         let _ = world.add_child(text_wrap, text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let text_wrap_tc = world
             .get_component_by_id_as::<TransformComponent>(text_wrap)
@@ -1506,6 +1513,7 @@ mod tests {
     fn auto_aligned_text_uses_content_box_top_left_origin() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1531,10 +1539,10 @@ mod tests {
         let _ = world.add_child(text_wrap, text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let text_wrap_tc = world
             .get_component_by_id_as::<TransformComponent>(text_wrap)
@@ -1551,6 +1559,7 @@ mod tests {
     fn overflow_scroll_uses_sibling_layout_owned_stencil_clip() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1570,10 +1579,10 @@ mod tests {
         let _ = world.add_child(item, style);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let bg = world
             .children_of(item)
@@ -1596,6 +1605,7 @@ mod tests {
     fn nested_inline_child_background_clamps_to_layoutroot_width_after_layout() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1638,10 +1648,10 @@ mod tests {
         let _ = world.add_child(title_bar, load);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let child_bg = |world: &World, owner| {
             world
@@ -1687,6 +1697,7 @@ mod tests {
     fn inline_overflow_hidden_creates_clipped_content_root() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1724,10 +1735,10 @@ mod tests {
         let _ = world.add_child(text_wrapper, text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let clipped = world.children_of(chip).iter().copied().find(|&child| {
             world.component_label(child) == Some(super::OWNED_CLIPPED_CONTENT_LABEL)
@@ -1768,6 +1779,7 @@ mod tests {
     fn vertical_align_middle_centers_multi_line_text_under_unit_scale() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1796,9 +1808,9 @@ mod tests {
         let _ = world.add_child(text_wrap, text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let text_wrap_tc = world
             .get_component_by_id_as::<TransformComponent>(text_wrap)
@@ -1821,6 +1833,7 @@ mod tests {
         use crate::engine::ecs::component::TextComponent;
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1839,9 +1852,9 @@ mod tests {
         let _ = world.add_child(row, text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let stamped = world
             .get_component_by_id_as::<TextComponent>(text)
@@ -1861,6 +1874,7 @@ mod tests {
         use crate::engine::ecs::component::TextComponent;
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1878,9 +1892,9 @@ mod tests {
         let _ = world.add_child(row, text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let stamped = world
             .get_component_by_id_as::<TextComponent>(text)

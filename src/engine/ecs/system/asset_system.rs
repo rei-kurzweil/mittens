@@ -607,6 +607,7 @@ mod tests {
     use crate::engine::ecs::World;
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::component::TextComponent;
+    use crate::engine::graphics::RenderAssets;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -677,6 +678,7 @@ mod tests {
 
         let item = &system.items[0];
         let mut world = World::default();
+        let render_assets = RenderAssets::new();
         let mut emit = CommandQueue::new();
         let _id = system
             .spawn_asset_component(item, vec![], &mut world, &mut emit)
@@ -702,9 +704,10 @@ mod tests {
 
         let item = &system.items[0];
         let mut world = World::default();
+        let render_assets = RenderAssets::new();
         let mut emit = CommandQueue::new();
         let item_root = system
-            .build_asset_item_shell(&mut world, &mut emit, item, 0)
+            .build_asset_item_shell(&mut world, &render_assets, &mut emit, item, 0)
             .expect("build asset item");
 
         assert_eq!(
@@ -732,9 +735,10 @@ mod tests {
 
         let item = &system.items[0];
         let mut world = World::default();
+        let render_assets = RenderAssets::new();
         let mut emit = CommandQueue::new();
         let item_root = system
-            .build_asset_item_shell(&mut world, &mut emit, item, 0)
+            .build_asset_item_shell(&mut world, &render_assets, &mut emit, item, 0)
             .expect("build asset item despite preview failure");
 
         assert_eq!(world.component_label(item_root), Some("asset_item"));
@@ -763,11 +767,12 @@ mod tests {
         system.scan_assets_dir(&tmp_dir).expect("scan assets dir");
 
         let mut world = World::default();
+        let render_assets = RenderAssets::new();
         let mut emit = CommandQueue::new();
         let parent = world.add_component_boxed_named("parent", Box::new(TransformComponent::new()));
 
         let wrapper = system
-            .spawn_assets_panel(&mut world, &mut emit, parent, (0.0, 0.0, 0.0))
+            .spawn_assets_panel(&mut world, &render_assets, &mut emit, parent, (0.0, 0.0, 0.0))
             .expect("spawn assets panel");
 
         let title_bar = world

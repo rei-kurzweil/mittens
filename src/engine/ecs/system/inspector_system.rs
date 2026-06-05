@@ -45,7 +45,7 @@ mod tests {
     };
     use crate::engine::ecs::system::inspector_system_stopgap_mms_adapter::set_world_panel_scene_path_for_tests;
     use crate::engine::ecs::{EventSignal, SystemWorld, World};
-    use crate::engine::graphics::VisualWorld;
+    use crate::engine::graphics::{RenderAssets, VisualWorld};
     use std::path::PathBuf;
     use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -110,9 +110,10 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = InspectorSystem::new();
-        let render_assets = crate::engine::graphics::RenderAssets::new();
+
 
         let editor_root =
             world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
@@ -207,6 +208,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = InspectorSystem::new();
 
@@ -221,6 +223,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
+            &render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -228,7 +231,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let item_0 = world
@@ -245,7 +248,7 @@ mod tests {
             },
         );
 
-        let _ = systems.process_signals(&mut world, &mut visuals, &mut emit, 100_000);
+        let _ = systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
 
         let panel_status_value = world
             .find_component(runtime_ui_root, "#panel_status_value")
@@ -265,6 +268,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = InspectorSystem::new();
 
@@ -280,6 +284,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
+            &render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -287,7 +292,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
 
@@ -302,6 +307,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = InspectorSystem::new();
 
@@ -317,6 +323,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
+            &render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -324,7 +331,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let item_0 = world
@@ -341,7 +348,7 @@ mod tests {
             },
         );
 
-        let _ = systems.process_signals(&mut world, &mut visuals, &mut emit, 100_000);
+        let _ = systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
 
         let panel_status_value = world
             .find_component(runtime_ui_root, "#panel_status_value")
@@ -394,6 +401,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = InspectorSystem::new();
 
@@ -411,17 +419,19 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
+            &render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
             &systems.asset_system,
         );
-        systems.process_commands(&mut world, &mut visuals, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
+            &render_assets,
             &mut emit,
             other_editor_root,
             (-0.7, 1.6, -1.2),
@@ -429,7 +439,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         assert_eq!(row_text(&world, runtime_ui_root, "#item_0"), "Editor#alpha");
@@ -443,6 +453,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = InspectorSystem::new();
 
@@ -460,6 +471,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
+            &render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -469,6 +481,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
+            &render_assets,
             &mut emit,
             other_editor_root,
             (-0.7, 1.6, -1.2),
@@ -476,7 +489,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         assert_eq!(
@@ -496,6 +509,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = InspectorSystem::new();
 
@@ -517,6 +531,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
+            &render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -524,7 +539,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let save_button = world
@@ -541,8 +556,8 @@ mod tests {
             },
         );
 
-        let _ = systems.process_signals(&mut world, &mut visuals, &mut emit, 100_000);
-        systems.process_commands(&mut world, &mut visuals, &mut emit);
+        let _ = systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
         let saved =
             std::fs::read_to_string(&scene_path).expect("expected saved world panel scene file");
@@ -568,8 +583,8 @@ mod tests {
             },
         );
 
-        let _ = systems.process_signals(&mut world, &mut visuals, &mut emit, 100_000);
-        systems.process_commands(&mut world, &mut visuals, &mut emit);
+        let _ = systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
         let reloaded_editor_root = world
             .all_components()

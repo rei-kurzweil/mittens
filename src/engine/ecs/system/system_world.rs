@@ -195,7 +195,7 @@ mod tests {
         let _ = world.add_child(content_color, content_renderable);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         assert!(
             world

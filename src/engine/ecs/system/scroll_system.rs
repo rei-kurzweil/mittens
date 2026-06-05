@@ -413,12 +413,13 @@ mod tests {
     use crate::engine::ecs::component::{
         RenderableComponent, ScrollingComponent, TransformComponent,
     };
-    use crate::engine::graphics::VisualWorld;
+    use crate::engine::graphics::{RenderAssets, VisualWorld};
 
     #[test]
     fn scrolling_without_explicit_track_gets_owned_scroll_track() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut queue = CommandQueue::new();
         let mut systems = SystemWorld::default();
 
@@ -427,7 +428,7 @@ mod tests {
         let _ = world.add_child(scrolling, item);
 
         world.init_component_tree(scrolling, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let track = world
             .get_component_by_id_as::<ScrollingComponent>(scrolling)
@@ -443,6 +444,7 @@ mod tests {
     fn explicit_scroll_track_is_preserved() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut queue = CommandQueue::new();
         let mut systems = SystemWorld::default();
 
@@ -458,7 +460,7 @@ mod tests {
         }
 
         world.init_component_tree(scrolling, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let sc = world
             .get_component_by_id_as::<ScrollingComponent>(scrolling)
@@ -472,12 +474,13 @@ mod tests {
     fn scrolling_late_attached_children_route_into_owned_track() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut queue = CommandQueue::new();
         let mut systems = SystemWorld::default();
 
         let scrolling = world.add_component(ScrollingComponent::new(1.0, 10.0));
         world.init_component_tree(scrolling, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let track = world
             .get_component_by_id_as::<ScrollingComponent>(scrolling)
@@ -492,7 +495,7 @@ mod tests {
                 child: late,
             },
         );
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         assert_eq!(world.parent_of(late), Some(track));
     }
@@ -501,6 +504,7 @@ mod tests {
     fn scrolling_prefers_sibling_layout_bg_renderable_for_drag_scope() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut queue = CommandQueue::new();
         let mut systems = SystemWorld::default();
 
@@ -517,7 +521,7 @@ mod tests {
         let _ = world.add_child(root, scrolling);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let sc = world
             .get_component_by_id_as::<ScrollingComponent>(scrolling)
@@ -529,6 +533,7 @@ mod tests {
     fn world_drag_is_converted_into_scroll_local_y() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
+        let render_assets = RenderAssets::new();
         let mut queue = CommandQueue::new();
         let mut systems = SystemWorld::default();
 
@@ -542,7 +547,7 @@ mod tests {
         let _ = world.add_child(parent, scrolling);
 
         world.init_component_tree(parent, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let delta_local_y =
             ScrollingSystem::scroll_local_drag_delta_y(&world, scrolling, [0.0, 2.0, 0.0]);
@@ -554,7 +559,7 @@ mod tests {
         let scroll_state =
             ScrollingSystem::apply_world_drag(&mut world, &mut queue, scrolling, [0.0, 2.0, 0.0])
                 .expect("scroll should move");
-        systems.process_commands(&mut world, &mut visuals, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
 
         let sc = world
             .get_component_by_id_as::<ScrollingComponent>(scrolling)

@@ -2,7 +2,8 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::{
-    EditorComponent, SelectableComponent, TransformComponent, TransformGizmoComponent,
+    EditorComponent, SelectableComponent, SelectionComponent, TransformComponent,
+    TransformGizmoComponent,
 };
 use crate::engine::ecs::system::grid_system::{GridSnapResult, GridStep, GridSystem};
 use crate::engine::ecs::system::paint_placement::{resolve_placement_pose, PlacementError};
@@ -133,6 +134,9 @@ impl PaintSystem {
             return;
         }
         self.installed_editor_roots.insert(editor_root);
+        println!(
+            "[PaintSystem][trace] install editor_root={editor_root:?} panel_query_root={panel_query_root:?}"
+        );
 
         let _ = world;
         let paint_state = Arc::new(Mutex::new(PaintState::default()));
@@ -162,6 +166,8 @@ impl PaintSystem {
                 );
             },
         );
+
+        bootstrap_paint_state(world, panel_query_root, &paint_state);
 
         for signal_kind in [
             SignalKind::Click,
@@ -207,6 +213,9 @@ fn handle_paint_event(
         let mut state = paint_state.lock().expect("paint state mutex poisoned");
         let old_state = state.clone();
         let new_state = reduce_paint_state(&old_state, event);
+        println!(
+            "[PaintSystem][trace] reduce editor_root={editor_root:?} panel_query_root={panel_query_root:?} old_state={old_state:?} event={event:?} new_state={new_state:?}"
+        );
         *state = new_state.clone();
         (old_state, new_state)
     };
@@ -224,13 +233,76 @@ fn handle_paint_event(
     );
 }
 
+fn bootstrap_paint_state(
+    world: &World,
+    panel_query_root: ComponentId,
+    paint_state: &Arc<Mutex<PaintState>>,
+) {
+    let mut events = Vec::new();
+
+    if let Some(asset_event) = bootstrap_selection_event(
+        world,
+        panel_query_root,
+        ASSETS_SELECTION_SELECTOR,
+        |selection| PaintEvent::AssetSelectionChanged {
+            item: selection.selected_item.clone(),
+            component: selection.selected_component,
+        },
+    ) {
+        events.push(asset_event);
+    }
+
+    if let Some(tool_event) = bootstrap_selection_event(
+        world,
+        panel_query_root,
+        PAINT_TOOL_SELECTION_SELECTOR,
+        |selection| PaintEvent::ToolSelectionChanged {
+            tool: paint_tool_from_item(selection.selected_item.clone()),
+            item: selection.selected_item.clone(),
+            component: selection.selected_component,
+        },
+    ) {
+        events.push(tool_event);
+    }
+
+    if let Some(panel_event) = bootstrap_selection_event(
+        world,
+        panel_query_root,
+        PANEL_LAYOUT_SELECTION_SELECTOR,
+        |selection| PaintEvent::PanelFocusChanged {
+            focused_panel: selection.selected_component,
+        },
+    ) {
+        events.push(panel_event);
+    }
+
+    for event in events {
+        let mut state = paint_state.lock().expect("paint state mutex poisoned");
+        *state = reduce_paint_state(&state, &event);
+    }
+}
+
+fn bootstrap_selection_event<F>(
+    world: &World,
+    panel_query_root: ComponentId,
+    selector: &str,
+    event_builder: F,
+) -> Option<PaintEvent>
+where
+    F: FnOnce(&SelectionComponent) -> PaintEvent,
+{
+    let selection_root = world.find_component(panel_query_root, selector)?;
+    let selection = world.get_component_by_id_as::<SelectionComponent>(selection_root)?;
+    Some(event_builder(selection))
+}
+
 fn paint_event_from_signal(
     world: &World,
     editor_root: ComponentId,
     panel_query_root: ComponentId,
     signal: &Signal,
 ) -> Option<PaintEvent> {
-    match signal.event.as_ref()? {
+    let event = match signal.event.as_ref()? {
         EventSignal::SelectionChanged {
             selection_root,
             selected_entries,
@@ -240,32 +312,30 @@ fn paint_event_from_signal(
             let item = selected_entries.last().and_then(|entry| entry.item.clone());
             let component =
                 selected_component.or_else(|| selected_entries.last().map(|entry| entry.component));
+            let asset_selection_root = world.find_component(panel_query_root, ASSETS_SELECTION_SELECTOR);
+            let tool_selection_root =
+                world.find_component(panel_query_root, PAINT_TOOL_SELECTION_SELECTOR);
+            let panel_layout_selection_root =
+                world.find_component(panel_query_root, PANEL_LAYOUT_SELECTION_SELECTOR);
 
-            if world.find_component(panel_query_root, ASSETS_SELECTION_SELECTOR)
-                == Some(*selection_root)
-            {
-                return Some(PaintEvent::AssetSelectionChanged { item, component });
-            }
-
-            if world.find_component(panel_query_root, PAINT_TOOL_SELECTION_SELECTOR)
-                == Some(*selection_root)
-            {
-                return Some(PaintEvent::ToolSelectionChanged {
+            if asset_selection_root == Some(*selection_root) {
+                Some(PaintEvent::AssetSelectionChanged { item, component })
+            } else if tool_selection_root == Some(*selection_root) {
+                Some(PaintEvent::ToolSelectionChanged {
                     tool: paint_tool_from_item(item.clone()),
                     item,
                     component,
-                });
-            }
-
-            if world.find_component(panel_query_root, PANEL_LAYOUT_SELECTION_SELECTOR)
-                == Some(*selection_root)
-            {
-                return Some(PaintEvent::PanelFocusChanged {
+                })
+            } else if panel_layout_selection_root == Some(*selection_root) {
+                Some(PaintEvent::PanelFocusChanged {
                     focused_panel: component,
-                });
+                })
+            } else {
+                println!(
+                    "[PaintSystem][trace] ignored selection_changed selection_root={selection_root:?} asset_selection_root={asset_selection_root:?} tool_selection_root={tool_selection_root:?} panel_layout_selection_root={panel_layout_selection_root:?} selected_entries={selected_entries:?} selected_component={selected_component:?}"
+                );
+                None
             }
-
-            None
         }
         EventSignal::Click {
             renderable,
@@ -299,7 +369,16 @@ fn paint_event_from_signal(
         ),
         EventSignal::DragEnd { .. } => Some(PaintEvent::StrokeEnded),
         _ => None,
+    };
+
+    if let Some(paint_event) = &event {
+        println!(
+            "[PaintSystem][trace] promoted signal_scope={:?} signal={:?} paint_event={paint_event:?}",
+            signal.scope, signal.event
+        );
     }
+
+    event
 }
 
 fn reduce_paint_state(old: &PaintState, event: &PaintEvent) -> PaintState {
@@ -345,6 +424,11 @@ fn apply_paint_side_effects(
     stroke_runtime: &Arc<Mutex<PaintStrokeRuntime>>,
 ) {
     let mut status_override = None;
+    let activity = paint_activity_status(world, editor_root, panel_query_root, new_state);
+    println!(
+        "[PaintSystem][trace] side_effects editor_root={editor_root:?} panel_query_root={panel_query_root:?} event={event:?} active={} reason={}",
+        activity.active, activity.reason
+    );
 
     match event {
         PaintEvent::SceneClick {
@@ -561,6 +645,52 @@ fn resolve_paint_context(
     })
 }
 
+struct PaintActivityStatus {
+    active: bool,
+    reason: String,
+}
+
+fn paint_activity_status(
+    world: &World,
+    editor_root: ComponentId,
+    panel_query_root: ComponentId,
+    paint_state: &PaintState,
+) -> PaintActivityStatus {
+    if paint_state
+        .selected_asset
+        .as_ref()
+        .and_then(|selection| selection.item.as_ref())
+        .is_none()
+    {
+        return PaintActivityStatus {
+            active: false,
+            reason: "no asset selected".to_string(),
+        };
+    }
+    if !is_paint_panel_focused(world, panel_query_root, paint_state) {
+        return PaintActivityStatus {
+            active: false,
+            reason: "focus Paint panel".to_string(),
+        };
+    }
+    if paint_state.selected_tool != PaintTool::FreeDraw {
+        return PaintActivityStatus {
+            active: false,
+            reason: format!("tool is not Free Draw ({:?})", paint_state.selected_tool),
+        };
+    }
+    if let Some(grid) = GridSystem::active_grid_for_editor(world, editor_root) {
+        return PaintActivityStatus {
+            active: true,
+            reason: format!("grid active @ {:.2}", grid.spacing),
+        };
+    }
+    PaintActivityStatus {
+        active: true,
+        reason: "grid inactive".to_string(),
+    }
+}
+
 fn is_paint_active(world: &World, panel_query_root: ComponentId, paint_state: &PaintState) -> bool {
     is_paint_panel_focused(world, panel_query_root, paint_state)
         && paint_state.selected_tool == PaintTool::FreeDraw
@@ -693,14 +823,23 @@ fn update_paint_status(
 ) {
     let Some(paint_panel_root) = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
     else {
+        println!(
+            "[PaintSystem][trace] status_skip panel_query_root={panel_query_root:?} reason=missing paint panel root"
+        );
         return;
     };
     let Some(status_wrap) = world.find_component(paint_panel_root, PAINT_STATUS_WRAP_SELECTOR)
     else {
+        println!(
+            "[PaintSystem][trace] status_skip paint_panel_root={paint_panel_root:?} reason=missing status wrap"
+        );
         return;
     };
     let text = override_text
         .unwrap_or_else(|| base_status_text(world, editor_root, panel_query_root, paint_state));
+    println!(
+        "[PaintSystem][trace] status_update paint_panel_root={paint_panel_root:?} text={text:?}"
+    );
     set_status_text(world, emit, status_wrap, &text);
 }
 
@@ -737,14 +876,23 @@ fn set_status_text(
     text: &str,
 ) {
     let Some(status_text) = world.find_component(status_wrap, PANEL_STATUS_VALUE_SELECTOR) else {
+        println!(
+            "[PaintSystem][trace] status_skip status_wrap={status_wrap:?} reason=missing status text"
+        );
         return;
     };
     let Some(text_component) = world
         .get_component_by_id_as_mut::<crate::engine::ecs::component::TextComponent>(status_text)
     else {
+        println!(
+            "[PaintSystem][trace] status_skip status_text={status_text:?} reason=missing TextComponent"
+        );
         return;
     };
     if text_component.text == text {
+        println!(
+            "[PaintSystem][trace] status_skip status_text={status_text:?} reason=unchanged"
+        );
         return;
     }
     text_component.text = text.to_string();
@@ -931,6 +1079,7 @@ mod tests {
             .asset_system
             .scan_assets_dir(&tmp_dir)
             .expect("scan");
+        systems.selection.install_handlers(&mut systems.rx);
 
         let editor_root =
             world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
@@ -976,6 +1125,8 @@ mod tests {
                 screen_pos_px: None,
             },
         );
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
 

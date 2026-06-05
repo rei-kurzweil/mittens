@@ -7,7 +7,7 @@ export fn assets_content(items, item_background_color) {
         name = "assets_content_area"
         id = "assets_content_area"
         Selection {
-            id = "assets_selection"
+            name = "assets_selection"
         }
         Style {
             display("block")
