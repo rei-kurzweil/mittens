@@ -955,18 +955,18 @@ mod tests {
         let selection_root = world
             .find_component(runtime_ui_root, "#editor_panel_layout_selection")
             .expect("expected panel layout selection");
-        let world_shell = world
-            .find_component(runtime_ui_root, "#editor_world_panel_shell")
-            .expect("expected world panel shell");
-        let paint_shell = world
-            .find_component(runtime_ui_root, "#editor_paint_panel_shell")
-            .expect("expected paint panel shell");
+        let world_panel_root = world
+            .find_component(runtime_ui_root, "#world_panel_root")
+            .expect("expected world panel root");
+        let paint_panel_root = world
+            .find_component(runtime_ui_root, "#paint_panel_root")
+            .expect("expected paint panel root");
 
         systems.rx.push_event(
-            world_shell,
+            world_panel_root,
             EventSignal::Click {
-                raycaster: world_shell,
-                renderable: world_shell,
+                raycaster: world_panel_root,
+                renderable: world_panel_root,
                 hit_point: [0.0, 0.0, 0.0],
                 screen_pos_px: None,
             },
@@ -978,14 +978,14 @@ mod tests {
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
             .expect("expected selection component");
-        assert_eq!(selection.selected_component, Some(world_shell));
+        assert_eq!(selection.selected_component, Some(world_panel_root));
         assert_eq!(selection.selected_entries.len(), 1);
 
         systems.rx.push_event(
-            paint_shell,
+            paint_panel_root,
             EventSignal::Click {
-                raycaster: paint_shell,
-                renderable: paint_shell,
+                raycaster: paint_panel_root,
+                renderable: paint_panel_root,
                 hit_point: [0.0, 0.0, 0.0],
                 screen_pos_px: None,
             },
@@ -997,7 +997,7 @@ mod tests {
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
             .expect("expected selection component");
-        assert_eq!(selection.selected_component, Some(paint_shell));
+        assert_eq!(selection.selected_component, Some(paint_panel_root));
         assert_eq!(selection.selected_entries.len(), 1);
     }
 
@@ -1152,9 +1152,9 @@ mod tests {
         let panel_layout_selection = world
             .find_component(runtime_ui_root, "#editor_panel_layout_selection")
             .expect("expected panel layout selection");
-        let world_shell = world
-            .find_component(runtime_ui_root, "#editor_world_panel_shell")
-            .expect("expected world panel shell");
+        let world_panel_root = world
+            .find_component(runtime_ui_root, "#world_panel_root")
+            .expect("expected world panel root");
         let first_row = world
             .find_component(world_panel_root, "#item_1")
             .expect("expected first selectable row");
@@ -1201,7 +1201,7 @@ mod tests {
         let panel_selection = world
             .get_component_by_id_as::<SelectionComponent>(panel_layout_selection)
             .expect("expected panel layout selection component");
-        assert_eq!(panel_selection.selected_component, Some(world_shell));
+        assert_eq!(panel_selection.selected_component, Some(world_panel_root));
         assert_eq!(panel_selection.selected_entries.len(), 1);
 
         systems.rx.push_event(
@@ -1227,7 +1227,7 @@ mod tests {
         let panel_selection = world
             .get_component_by_id_as::<SelectionComponent>(panel_layout_selection)
             .expect("expected panel layout selection component");
-        assert_eq!(panel_selection.selected_component, Some(world_shell));
+        assert_eq!(panel_selection.selected_component, Some(world_panel_root));
         assert_eq!(panel_selection.selected_entries.len(), 1);
     }
 
@@ -1292,9 +1292,9 @@ mod tests {
         let inspector_selection = world
             .find_component(inspector_panel_root, "#inspector_panel_selection")
             .expect("expected inspector panel selection");
-        let inspector_shell = world
-            .find_component(runtime_ui_root, "#editor_inspector_panel_shell")
-            .expect("expected inspector panel shell");
+        let inspector_panel_root = world
+            .find_component(runtime_ui_root, "#inspector_panel_root")
+            .expect("expected inspector panel root");
         let panel_layout_selection = world
             .find_component(runtime_ui_root, "#editor_panel_layout_selection")
             .expect("expected panel layout selection");
@@ -1342,7 +1342,7 @@ mod tests {
         let panel_selection = world
             .get_component_by_id_as::<SelectionComponent>(panel_layout_selection)
             .expect("expected panel layout selection component");
-        assert_eq!(panel_selection.selected_component, Some(inspector_shell));
+        assert_eq!(panel_selection.selected_component, Some(inspector_panel_root));
         assert_eq!(panel_selection.selected_entries.len(), 1);
     }
 

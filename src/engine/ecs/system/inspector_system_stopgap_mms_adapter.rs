@@ -19,10 +19,6 @@ const PANEL_LAYOUT_MOUNT_NAME: &str = "editor_panel_layout_mount";
 const PANEL_LAYOUT_ROOT_NAME: &str = "editor_panel_layout_root";
 const PANEL_LAYOUT_SELECTION_NAME: &str = "editor_panel_layout_selection";
 const EDITOR_RUNTIME_UI_ROOT_NAME: &str = "editor_runtime_ui_root";
-const WORLD_PANEL_SHELL_NAME: &str = "editor_world_panel_shell";
-const INSPECTOR_PANEL_SHELL_NAME: &str = "editor_inspector_panel_shell";
-const ASSET_PANEL_SHELL_NAME: &str = "editor_asset_panel_shell";
-const PAINT_PANEL_SHELL_NAME: &str = "editor_paint_panel_shell";
 const WORLD_PANEL_ROOT_SELECTOR: &str = "#world_panel_root";
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 const WORLD_PANEL_CONTENT_ROOT_SELECTOR: &str = "#world_panel_content_root";
@@ -50,8 +46,11 @@ const INSPECTOR_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
 const ASSET_PANEL_WIDTH_GU: f64 = 30.0;
 const ASSET_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
 const PAINT_PANEL_WIDTH_GU: f64 = 41.0;
-const PAINT_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
+const PAINT_PANEL_TOTAL_HEIGHT_GU: f64 = 32.0;
 const PANEL_LAYOUT_GAP_GU: f64 = 2.0;
+const PANEL_ROOT_MARGIN_X_GU: f64 = 0.5;
+const PANEL_ROOT_MARGIN_Y_GU: f64 = 0.5;
+const PANEL_LAYOUT_WIDTH_BUDGET_MULTIPLIER: f64 = 10.0;
 
 #[cfg(test)]
 static WORLD_PANEL_SCENE_PATH_OVERRIDE: Mutex<Option<PathBuf>> = Mutex::new(None);
@@ -385,8 +384,8 @@ impl InspectorSystemStopgapMmsAdapter {
                 else {
                     return;
                 };
-                let Some(world_shell) =
-                    world.find_component(panel_query_root, &format!("#{WORLD_PANEL_SHELL_NAME}"))
+                let Some(world_panel_root) =
+                    world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR)
                 else {
                     return;
                 };
@@ -397,10 +396,14 @@ impl InspectorSystemStopgapMmsAdapter {
                         component_ids: vec![panel_layout_selection],
                         entries: vec![SelectionEntry {
                             index: None,
-                            item: Some(WORLD_PANEL_SHELL_NAME.to_string()),
-                            component: world_shell,
+                            item: Some(
+                                WORLD_PANEL_ROOT_SELECTOR
+                                    .trim_start_matches('#')
+                                    .to_string(),
+                            ),
+                            component: world_panel_root,
                         }],
-                        primary: Some(world_shell),
+                        primary: Some(world_panel_root),
                     },
                 );
             },
@@ -430,8 +433,8 @@ impl InspectorSystemStopgapMmsAdapter {
                 else {
                     return;
                 };
-                let Some(inspector_shell) = world
-                    .find_component(panel_query_root, &format!("#{INSPECTOR_PANEL_SHELL_NAME}"))
+                let Some(inspector_panel_root) = world
+                    .find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR)
                 else {
                     return;
                 };
@@ -442,10 +445,14 @@ impl InspectorSystemStopgapMmsAdapter {
                         component_ids: vec![panel_layout_selection],
                         entries: vec![SelectionEntry {
                             index: None,
-                            item: Some(INSPECTOR_PANEL_SHELL_NAME.to_string()),
-                            component: inspector_shell,
+                            item: Some(
+                                INSPECTOR_PANEL_ROOT_SELECTOR
+                                    .trim_start_matches('#')
+                                    .to_string(),
+                            ),
+                            component: inspector_panel_root,
                         }],
-                        primary: Some(inspector_shell),
+                        primary: Some(inspector_panel_root),
                     },
                 );
             },
@@ -475,8 +482,8 @@ impl InspectorSystemStopgapMmsAdapter {
                 else {
                     return;
                 };
-                let Some(paint_shell) =
-                    world.find_component(panel_query_root, &format!("#{PAINT_PANEL_SHELL_NAME}"))
+                let Some(paint_panel_root) =
+                    world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
                 else {
                     return;
                 };
@@ -487,10 +494,14 @@ impl InspectorSystemStopgapMmsAdapter {
                         component_ids: vec![panel_layout_selection],
                         entries: vec![SelectionEntry {
                             index: None,
-                            item: Some(PAINT_PANEL_SHELL_NAME.to_string()),
-                            component: paint_shell,
+                            item: Some(
+                                PAINT_PANEL_ROOT_SELECTOR
+                                    .trim_start_matches('#')
+                                    .to_string(),
+                            ),
+                            component: paint_panel_root,
                         }],
-                        primary: Some(paint_shell),
+                        primary: Some(paint_panel_root),
                     },
                 );
             },
@@ -793,46 +804,25 @@ impl InspectorSystemStopgapMmsReconciler {
         let _ = inspector_panel_pos;
         let anchor_pos = world_panel_pos;
 
-        let total_width_gu = WORLD_PANEL_WIDTH_GU
+        let panel_strip_width_gu = WORLD_PANEL_WIDTH_GU
             + PANEL_LAYOUT_GAP_GU
             + INSPECTOR_PANEL_WIDTH_GU
             + PANEL_LAYOUT_GAP_GU
             + ASSET_PANEL_WIDTH_GU
             + PANEL_LAYOUT_GAP_GU
-            + PAINT_PANEL_WIDTH_GU;
+            + PAINT_PANEL_WIDTH_GU
+            + (PANEL_ROOT_MARGIN_X_GU * 2.0 * 4.0);
+        let total_width_gu = panel_strip_width_gu * PANEL_LAYOUT_WIDTH_BUDGET_MULTIPLIER;
         let total_height_gu = WORLD_PANEL_TOTAL_HEIGHT_GU
             .max(INSPECTOR_PANEL_TOTAL_HEIGHT_GU)
             .max(ASSET_PANEL_TOTAL_HEIGHT_GU)
-            .max(PAINT_PANEL_TOTAL_HEIGHT_GU);
+            .max(PAINT_PANEL_TOTAL_HEIGHT_GU)
+            + (PANEL_ROOT_MARGIN_Y_GU * 2.0);
 
-        let world_shell = panel_shell_ce(
-            WORLD_PANEL_SHELL_NAME,
-            WORLD_PANEL_WIDTH_GU,
-            WORLD_PANEL_TOTAL_HEIGHT_GU,
-            0.0,
-            world_panel,
-        );
-        let inspector_shell = panel_shell_ce(
-            INSPECTOR_PANEL_SHELL_NAME,
-            INSPECTOR_PANEL_WIDTH_GU,
-            INSPECTOR_PANEL_TOTAL_HEIGHT_GU,
-            PANEL_LAYOUT_GAP_GU,
-            inspector_panel,
-        );
-        let asset_shell = panel_shell_ce(
-            ASSET_PANEL_SHELL_NAME,
-            ASSET_PANEL_WIDTH_GU,
-            ASSET_PANEL_TOTAL_HEIGHT_GU,
-            PANEL_LAYOUT_GAP_GU,
-            asset_panel,
-        );
-        let paint_shell = panel_shell_ce(
-            PAINT_PANEL_SHELL_NAME,
-            PAINT_PANEL_WIDTH_GU,
-            PAINT_PANEL_TOTAL_HEIGHT_GU,
-            PANEL_LAYOUT_GAP_GU,
-            paint_panel,
-        );
+        let world_panel = decorate_panel_root_ce(world_panel, 0.0);
+        let inspector_panel = decorate_panel_root_ce(inspector_panel, PANEL_LAYOUT_GAP_GU);
+        let asset_panel = decorate_panel_root_ce(asset_panel, PANEL_LAYOUT_GAP_GU);
+        let paint_panel = decorate_panel_root_ce(paint_panel, PANEL_LAYOUT_GAP_GU);
 
         let shared_layout_root = MaterializedCE {
             component_type: "LayoutRoot".to_string(),
@@ -858,10 +848,10 @@ impl InspectorSystemStopgapMmsReconciler {
             )],
             positionals: Vec::new(),
             children: vec![
-                CeChild::Spawn(world_shell),
-                CeChild::Spawn(inspector_shell),
-                CeChild::Spawn(asset_shell),
-                CeChild::Spawn(paint_shell),
+                CeChild::Spawn(world_panel),
+                CeChild::Spawn(inspector_panel),
+                CeChild::Spawn(asset_panel),
+                CeChild::Spawn(paint_panel),
             ],
         };
 
@@ -1663,62 +1653,51 @@ fn build_panel_component_expr(
     }
 }
 
-fn panel_shell_ce(
-    shell_name: &str,
-    width_gu: f64,
-    height_gu: f64,
-    margin_left_gu: f64,
-    panel_root: MaterializedCE,
-) -> MaterializedCE {
-    MaterializedCE {
-        component_type: "T".to_string(),
-        ctor_method: None,
-        ctor_args: Vec::new(),
-        calls: Vec::new(),
-        named: vec![("name".to_string(), Value::String(shell_name.to_string()))],
-        positionals: Vec::new(),
-        children: vec![
+fn decorate_panel_root_ce(mut panel_root: MaterializedCE, margin_left_gu: f64) -> MaterializedCE {
+    panel_root.children.insert(
+        0,
+        CeChild::Spawn(MaterializedCE {
+            component_type: "Option".to_string(),
+            ctor_method: None,
+            ctor_args: Vec::new(),
+            calls: Vec::new(),
+            named: Vec::new(),
+            positionals: Vec::new(),
+            children: Vec::new(),
+        }),
+    );
+    panel_root.children.insert(
+        1,
+        CeChild::Spawn(MaterializedCE {
+            component_type: "Raycastable".to_string(),
+            ctor_method: Some("enabled".to_string()),
+            ctor_args: Vec::new(),
+            calls: Vec::new(),
+            named: Vec::new(),
+            positionals: Vec::new(),
+            children: Vec::new(),
+        }),
+    );
+
+    if let Some(CeChild::Spawn(style_ce)) = panel_root.children.iter_mut().find(|child| {
+        matches!(
+            child,
             CeChild::Spawn(MaterializedCE {
-                component_type: "Option".to_string(),
-                ctor_method: None,
-                ctor_args: Vec::new(),
-                calls: Vec::new(),
-                named: Vec::new(),
-                positionals: Vec::new(),
-                children: Vec::new(),
-            }),
-            CeChild::Spawn(MaterializedCE {
-                component_type: "Raycastable".to_string(),
-                ctor_method: Some("enabled".to_string()),
-                ctor_args: Vec::new(),
-                calls: Vec::new(),
-                named: Vec::new(),
-                positionals: Vec::new(),
-                children: Vec::new(),
-            }),
-            CeChild::Spawn(MaterializedCE {
-                component_type: "Style".to_string(),
-                ctor_method: None,
-                ctor_args: Vec::new(),
-                calls: vec![
-                    (
-                        "display".to_string(),
-                        vec![Value::String("inline-block".to_string())],
-                    ),
-                    ("width".to_string(), vec![Value::Number(width_gu)]),
-                    ("height".to_string(), vec![Value::Number(height_gu)]),
-                    (
-                        "margin_left".to_string(),
-                        vec![Value::Number(margin_left_gu)],
-                    ),
-                ],
-                named: Vec::new(),
-                positionals: Vec::new(),
-                children: Vec::new(),
-            }),
-            CeChild::Spawn(panel_root),
-        ],
+                component_type,
+                ..
+            }) if component_type == "Style"
+        )
+    }) {
+        style_ce.calls.push((
+            "display".to_string(),
+            vec![Value::String("inline-block".to_string())],
+        ));
+        style_ce
+            .calls
+            .push(("margin_left".to_string(), vec![Value::Number(margin_left_gu)]));
     }
+
+    panel_root
 }
 
 fn debug_style_details(world: &World, root: ComponentId, selector: &str, label: &str) {

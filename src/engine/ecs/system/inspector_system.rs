@@ -153,32 +153,9 @@ mod tests {
                 .find_component(runtime_ui_root, "#editor_panel_layout_root")
                 .is_some()
         );
-        assert!(
-            world
-                .find_component(runtime_ui_root, "#editor_world_panel_shell")
-                .is_some()
-        );
-        assert!(
-            world
-                .find_component(runtime_ui_root, "#editor_inspector_panel_shell")
-                .is_some()
-        );
-        assert!(
-            world
-                .find_component(runtime_ui_root, "#editor_asset_panel_shell")
-                .is_some()
-        );
-        assert!(
-            world
-                .find_component(runtime_ui_root, "#editor_paint_panel_shell")
-                .is_some()
-        );
-        let panel_shell = world
-            .parent_of(panel_root)
-            .expect("expected panel shell above world panel root");
         let panel_shared_layout = world
-            .parent_of(panel_shell)
-            .expect("expected shared layout root above world panel shell");
+            .parent_of(panel_root)
+            .expect("expected shared layout root above world panel root");
         let panel_overlay = world
             .parent_of(panel_shared_layout)
             .expect("expected overlay ancestor above shared layout root");
