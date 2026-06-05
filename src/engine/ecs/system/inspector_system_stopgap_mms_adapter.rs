@@ -318,19 +318,7 @@ impl InspectorSystemStopgapMmsAdapter {
                     return;
                 }
 
-                let Some(paint_panel_root) =
-                    world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
-                else {
-                    return;
-                };
-                let Some(status_wrap) =
-                    world.find_component(paint_panel_root, PAINT_STATUS_WRAP_SELECTOR)
-                else {
-                    return;
-                };
-
-                let status_text = paint_panel_status_text(world, panel_query_root);
-                rerender_panel_status(world, emit, paint_panel_root, status_wrap, &status_text);
+                let _ = emit;
             },
         );
 
@@ -380,23 +368,6 @@ impl InspectorSystemStopgapMmsAdapter {
                         primary: Some(world_panel_root),
                     },
                 );
-
-                if let Some(paint_panel_root) =
-                    world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
-                {
-                    if let Some(status_wrap) =
-                        world.find_component(paint_panel_root, PAINT_STATUS_WRAP_SELECTOR)
-                    {
-                        let status_text = paint_panel_status_text(world, panel_query_root);
-                        rerender_panel_status(
-                            world,
-                            emit,
-                            paint_panel_root,
-                            status_wrap,
-                            &status_text,
-                        );
-                    }
-                }
             },
         );
 
@@ -446,23 +417,6 @@ impl InspectorSystemStopgapMmsAdapter {
                         primary: Some(inspector_panel_root),
                     },
                 );
-
-                if let Some(paint_panel_root) =
-                    world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
-                {
-                    if let Some(status_wrap) =
-                        world.find_component(paint_panel_root, PAINT_STATUS_WRAP_SELECTOR)
-                    {
-                        let status_text = paint_panel_status_text(world, panel_query_root);
-                        rerender_panel_status(
-                            world,
-                            emit,
-                            paint_panel_root,
-                            status_wrap,
-                            &status_text,
-                        );
-                    }
-                }
             },
         );
 
@@ -512,23 +466,6 @@ impl InspectorSystemStopgapMmsAdapter {
                         primary: Some(paint_panel_root),
                     },
                 );
-
-                if let Some(paint_panel_root) =
-                    world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
-                {
-                    if let Some(status_wrap) =
-                        world.find_component(paint_panel_root, PAINT_STATUS_WRAP_SELECTOR)
-                    {
-                        let status_text = paint_panel_status_text(world, panel_query_root);
-                        rerender_panel_status(
-                            world,
-                            emit,
-                            paint_panel_root,
-                            status_wrap,
-                            &status_text,
-                        );
-                    }
-                }
             },
         );
 
@@ -573,23 +510,6 @@ impl InspectorSystemStopgapMmsAdapter {
                         primary: Some(asset_panel_root),
                     },
                 );
-
-                if let Some(paint_panel_root) =
-                    world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
-                {
-                    if let Some(status_wrap) =
-                        world.find_component(paint_panel_root, PAINT_STATUS_WRAP_SELECTOR)
-                    {
-                        let status_text = paint_panel_status_text(world, panel_query_root);
-                        rerender_panel_status(
-                            world,
-                            emit,
-                            paint_panel_root,
-                            status_wrap,
-                            &status_text,
-                        );
-                    }
-                }
             },
         );
     }
@@ -1143,15 +1063,6 @@ impl InspectorSystemStopgapMmsReconciler {
                         primary: Some(world_panel_root),
                     },
                 );
-            }
-        }
-
-        if let Some(paint_panel_root) = world.find_component(panel_mount_root, PAINT_PANEL_ROOT_SELECTOR)
-        {
-            if let Some(status_wrap) = world.find_component(paint_panel_root, PAINT_STATUS_WRAP_SELECTOR)
-            {
-                let status_text = paint_panel_status_text(world, panel_mount_root);
-                rerender_panel_status(world, emit, paint_panel_root, status_wrap, &status_text);
             }
         }
 
@@ -1728,48 +1639,6 @@ fn world_panel_item_label(world: &World, component_id: ComponentId) -> String {
         .component_name(component_id)
         .map(|name| name.to_string())
         .unwrap_or_else(|| format!("component_{:?}", component_id))
-}
-
-fn paint_panel_status_text(world: &World, panel_query_root: ComponentId) -> String {
-    let asset_label = world
-        .find_component(panel_query_root, "#assets_selection")
-        .and_then(|selection_root| {
-            world
-                .get_component_by_id_as::<SelectionComponent>(selection_root)
-                .and_then(|selection| selection.selected_item.clone())
-        });
-    if asset_label.is_none() {
-        return "paint inactive: no asset selected".to_string();
-    }
-
-    let paint_panel_focused = world
-        .find_component(panel_query_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
-        .and_then(|selection_root| {
-            world
-                .get_component_by_id_as::<SelectionComponent>(selection_root)
-                .and_then(|selection| selection.selected_component)
-        })
-        .zip(world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR))
-        .is_some_and(|(selected, paint_panel_root)| selected == paint_panel_root);
-    if !paint_panel_focused {
-        return "paint inactive: focus Paint panel".to_string();
-    }
-
-    let tool_label = world
-        .find_component(panel_query_root, PAINT_TOOL_SELECTION_SELECTOR)
-        .and_then(|selection_root| {
-            world
-                .get_component_by_id_as::<SelectionComponent>(selection_root)
-                .and_then(|selection| selection.selected_item.clone())
-        });
-    if tool_label.as_deref() != Some("Free Draw") {
-        return "paint inactive: tool is not Free Draw".to_string();
-    }
-
-    format!(
-        "paint active | grid inactive | asset={}",
-        asset_label.unwrap_or_else(|| "unknown".to_string())
-    )
 }
 
 fn editor_chunk_label(world: &World, editor_root: ComponentId) -> String {
