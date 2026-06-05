@@ -45,6 +45,13 @@ impl StrokeState {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+struct PaintUiState {
+    selected_asset_title: Option<String>,
+    selected_tool_label: Option<String>,
+    paint_panel_focused: bool,
+}
+
 #[derive(Debug, Default)]
 pub struct PaintSystem {
     installed_editor_roots: HashSet<ComponentId>,
@@ -58,6 +65,7 @@ impl PaintSystem {
     pub fn install_scoped_handlers_for_editor(
         &mut self,
         rx: &mut RxWorld,
+        world: &World,
         editor_root: ComponentId,
         panel_query_root: ComponentId,
         templates: Vec<PaintAssetTemplate>,
@@ -68,30 +76,72 @@ impl PaintSystem {
         self.installed_editor_roots.insert(editor_root);
 
         let stroke_state = Arc::new(Mutex::new(StrokeState::inactive()));
+        let ui_state = Arc::new(Mutex::new(read_ui_state(world, panel_query_root)));
 
-        for signal_kind in [
-            SignalKind::SelectionChanged,
-            SignalKind::Click,
-            SignalKind::DragStart,
-            SignalKind::DragMove,
-            SignalKind::DragEnd,
-        ] {
+        {
+            let ui_state = Arc::clone(&ui_state);
+            rx.add_handler_closure(
+                SignalKind::SelectionChanged,
+                panel_query_root,
+                move |world, emit, env| {
+                    let Some(EventSignal::SelectionChanged { selection_root, .. }) = env.event.as_ref() else {
+                        return;
+                    };
+
+                    let matches_assets = world
+                        .find_component(panel_query_root, ASSETS_SELECTION_SELECTOR)
+                        .is_some_and(|root| root == *selection_root);
+                    let matches_tools = world
+                        .find_component(panel_query_root, PAINT_TOOL_SELECTION_SELECTOR)
+                        .is_some_and(|root| root == *selection_root);
+                    let matches_panels = world
+                        .find_component(panel_query_root, PANEL_LAYOUT_SELECTION_SELECTOR)
+                        .is_some_and(|root| root == *selection_root);
+
+                    if !(matches_assets || matches_tools || matches_panels) {
+                        return;
+                    }
+
+                    *ui_state.lock().expect("paint ui state mutex poisoned") =
+                        read_ui_state(world, panel_query_root);
+                    update_paint_status(
+                        world,
+                        emit,
+                        editor_root,
+                        panel_query_root,
+                        &ui_state,
+                        None,
+                    );
+                },
+            );
+        }
+
+        for signal_kind in [SignalKind::Click, SignalKind::DragStart, SignalKind::DragMove, SignalKind::DragEnd] {
             let state = Arc::clone(&stroke_state);
+            let ui_state = Arc::clone(&ui_state);
             let templates = templates.clone();
             rx.add_handler_closure(signal_kind, editor_root, move |world, emit, env| {
                 match env.event.as_ref() {
-                    Some(EventSignal::SelectionChanged { .. }) => {
-                        update_paint_status(world, emit, editor_root, panel_query_root, None);
-                    }
                     Some(EventSignal::DragStart { renderable, .. }) => {
                         let mut state = state.lock().expect("paint stroke state mutex poisoned");
                         if !eligible_scene_hit(world, editor_root, panel_query_root, *renderable) {
                             *state = StrokeState::inactive();
                             return;
                         }
-                        if resolve_paint_context(world, editor_root, panel_query_root, &templates).is_none() {
+                        let ui_state_snapshot =
+                            ui_state.lock().expect("paint ui state mutex poisoned").clone();
+                        if resolve_paint_context(world, editor_root, &ui_state_snapshot, &templates)
+                            .is_none()
+                        {
                             *state = StrokeState::inactive();
-                            update_paint_status(world, emit, editor_root, panel_query_root, None);
+                            update_paint_status(
+                                world,
+                                emit,
+                                editor_root,
+                                panel_query_root,
+                                &ui_state,
+                                None,
+                            );
                             return;
                         }
                         *state = StrokeState {
@@ -99,7 +149,14 @@ impl PaintSystem {
                             non_grid_placed: false,
                             last_grid_step: None,
                         };
-                        update_paint_status(world, emit, editor_root, panel_query_root, None);
+                        update_paint_status(
+                            world,
+                            emit,
+                            editor_root,
+                            panel_query_root,
+                            &ui_state,
+                            None,
+                        );
                     }
                     Some(EventSignal::DragMove {
                         renderable,
@@ -110,8 +167,10 @@ impl PaintSystem {
                         if !state.active {
                             return;
                         }
+                        let ui_state_snapshot =
+                            ui_state.lock().expect("paint ui state mutex poisoned").clone();
                         let Some(context) =
-                            resolve_paint_context(world, editor_root, panel_query_root, &templates)
+                            resolve_paint_context(world, editor_root, &ui_state_snapshot, &templates)
                         else {
                             return;
                         };
@@ -133,7 +192,14 @@ impl PaintSystem {
                                     &context.asset,
                                     Some(grid_snap),
                                 );
-                                update_paint_status(world, emit, editor_root, panel_query_root, Some(message));
+                                update_paint_status(
+                                    world,
+                                    emit,
+                                    editor_root,
+                                    panel_query_root,
+                                    &ui_state,
+                                    Some(message),
+                                );
                             }
                             None => {
                                 if state.non_grid_placed {
@@ -149,7 +215,14 @@ impl PaintSystem {
                                     &context.asset,
                                     None,
                                 );
-                                update_paint_status(world, emit, editor_root, panel_query_root, Some(message));
+                                update_paint_status(
+                                    world,
+                                    emit,
+                                    editor_root,
+                                    panel_query_root,
+                                    &ui_state,
+                                    Some(message),
+                                );
                             }
                         }
                     }
@@ -161,10 +234,19 @@ impl PaintSystem {
                         if !eligible_scene_hit(world, editor_root, panel_query_root, *renderable) {
                             return;
                         }
+                        let ui_state_snapshot =
+                            ui_state.lock().expect("paint ui state mutex poisoned").clone();
                         let Some(context) =
-                            resolve_paint_context(world, editor_root, panel_query_root, &templates)
+                            resolve_paint_context(world, editor_root, &ui_state_snapshot, &templates)
                         else {
-                            update_paint_status(world, emit, editor_root, panel_query_root, None);
+                            update_paint_status(
+                                world,
+                                emit,
+                                editor_root,
+                                panel_query_root,
+                                &ui_state,
+                                None,
+                            );
                             return;
                         };
                         let mut state = state.lock().expect("paint stroke state mutex poisoned");
@@ -185,11 +267,25 @@ impl PaintSystem {
                             &context.asset,
                             grid_snap,
                         );
-                        update_paint_status(world, emit, editor_root, panel_query_root, Some(message));
+                        update_paint_status(
+                            world,
+                            emit,
+                            editor_root,
+                            panel_query_root,
+                            &ui_state,
+                            Some(message),
+                        );
                     }
                     Some(EventSignal::DragEnd { .. }) => {
                         *state.lock().expect("paint stroke state mutex poisoned") = StrokeState::inactive();
-                        update_paint_status(world, emit, editor_root, panel_query_root, None);
+                        update_paint_status(
+                            world,
+                            emit,
+                            editor_root,
+                            panel_query_root,
+                            &ui_state,
+                            None,
+                        );
                     }
                     _ => {}
                 }
@@ -215,16 +311,16 @@ impl PaintContext {
 fn resolve_paint_context(
     world: &World,
     editor_root: ComponentId,
-    panel_query_root: ComponentId,
+    ui_state: &PaintUiState,
     templates: &[PaintAssetTemplate],
 ) -> Option<PaintContext> {
-    if !paint_panel_is_focused(world, panel_query_root) {
+    if !ui_state.paint_panel_focused {
         return None;
     }
-    if selected_tool_label(world, panel_query_root).as_deref() != Some(FREE_DRAW_LABEL) {
+    if ui_state.selected_tool_label.as_deref() != Some(FREE_DRAW_LABEL) {
         return None;
     }
-    let asset_title = selected_asset_label(world, panel_query_root)?;
+    let asset_title = ui_state.selected_asset_title.clone()?;
     let asset = templates.iter().find(|template| template.title == asset_title)?.clone();
     Some(PaintContext {
         asset,
@@ -334,6 +430,7 @@ fn update_paint_status(
     emit: &mut dyn SignalEmitter,
     editor_root: ComponentId,
     panel_query_root: ComponentId,
+    ui_state: &Arc<Mutex<PaintUiState>>,
     override_text: Option<String>,
 ) {
     let Some(paint_panel_root) = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR) else {
@@ -342,18 +439,20 @@ fn update_paint_status(
     let Some(status_wrap) = world.find_component(paint_panel_root, PAINT_STATUS_WRAP_SELECTOR) else {
         return;
     };
-    let text = override_text.unwrap_or_else(|| base_status_text(world, editor_root, panel_query_root));
+    let ui_state_snapshot = ui_state.lock().expect("paint ui state mutex poisoned").clone();
+    let text = override_text
+        .unwrap_or_else(|| base_status_text(world, editor_root, &ui_state_snapshot));
     set_status_text(world, emit, status_wrap, &text);
 }
 
-fn base_status_text(world: &World, editor_root: ComponentId, panel_query_root: ComponentId) -> String {
-    if selected_asset_label(world, panel_query_root).is_none() {
+fn base_status_text(world: &World, editor_root: ComponentId, ui_state: &PaintUiState) -> String {
+    if ui_state.selected_asset_title.is_none() {
         return "paint inactive: no asset selected".to_string();
     }
-    if !paint_panel_is_focused(world, panel_query_root) {
+    if !ui_state.paint_panel_focused {
         return "paint inactive: focus Paint panel".to_string();
     }
-    if selected_tool_label(world, panel_query_root).as_deref() != Some(FREE_DRAW_LABEL) {
+    if ui_state.selected_tool_label.as_deref() != Some(FREE_DRAW_LABEL) {
         return "paint inactive: tool is not Free Draw".to_string();
     }
     if let Some(grid) = GridSystem::active_grid_for_editor(world, editor_root) {
@@ -388,33 +487,36 @@ fn set_status_text(
     );
 }
 
-fn paint_panel_is_focused(world: &World, panel_query_root: ComponentId) -> bool {
-    let Some(panel_selection) = world.find_component(panel_query_root, PANEL_LAYOUT_SELECTION_SELECTOR) else {
-        return false;
-    };
-    let Some(paint_panel_root) = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR) else {
-        return false;
-    };
-    world
-        .get_component_by_id_as::<SelectionComponent>(panel_selection)
-        .and_then(|selection| selection.selected_component)
-        == Some(paint_panel_root)
-}
+fn read_ui_state(world: &World, panel_query_root: ComponentId) -> PaintUiState {
+    let selected_asset_title = world
+        .find_component(panel_query_root, ASSETS_SELECTION_SELECTOR)
+        .and_then(|selection| {
+            world
+                .get_component_by_id_as::<SelectionComponent>(selection)
+                .and_then(|selection| selection.selected_item.clone())
+        });
+    let selected_tool_label = world
+        .find_component(panel_query_root, PAINT_TOOL_SELECTION_SELECTOR)
+        .and_then(|selection| {
+            world
+                .get_component_by_id_as::<SelectionComponent>(selection)
+                .and_then(|selection| selection.selected_item.clone())
+        });
+    let paint_panel_focused = world
+        .find_component(panel_query_root, PANEL_LAYOUT_SELECTION_SELECTOR)
+        .and_then(|selection| {
+            world
+                .get_component_by_id_as::<SelectionComponent>(selection)
+                .and_then(|selection| selection.selected_component)
+        })
+        .zip(world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR))
+        .is_some_and(|(selected, paint_panel_root)| selected == paint_panel_root);
 
-fn selected_asset_label(world: &World, panel_query_root: ComponentId) -> Option<String> {
-    let selection = world.find_component(panel_query_root, ASSETS_SELECTION_SELECTOR)?;
-    world
-        .get_component_by_id_as::<SelectionComponent>(selection)?
-        .selected_item
-        .clone()
-}
-
-fn selected_tool_label(world: &World, panel_query_root: ComponentId) -> Option<String> {
-    let selection = world.find_component(panel_query_root, PAINT_TOOL_SELECTION_SELECTOR)?;
-    world
-        .get_component_by_id_as::<SelectionComponent>(selection)?
-        .selected_item
-        .clone()
+    PaintUiState {
+        selected_asset_title,
+        selected_tool_label,
+        paint_panel_focused,
+    }
 }
 
 fn resolve_scene_parent(world: &World, editor_root: ComponentId) -> ComponentId {

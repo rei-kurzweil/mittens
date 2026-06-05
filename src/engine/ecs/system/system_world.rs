@@ -832,6 +832,7 @@ impl SystemWorld {
             {
                 self.paint.install_scoped_handlers_for_editor(
                     &mut self.rx,
+                    world,
                     component,
                     panel_query_root,
                     self.asset_system.paint_templates(),
