@@ -125,6 +125,26 @@ Paint-tool selection chooses a tool, not an editor.
 
 `PaintSystem` should be conceptually split even if implementation stays in one file at first.
 
+However, the preferred implementation direction is to give the reducer/state logic its own module
+from the first pass instead of embedding it back into `paint_system.rs`.
+
+Recommended shape:
+
+- `paint_system.rs`
+  - signal subscription/wiring
+  - scene-hit to editor-root resolution
+  - shared workspace registration
+  - effect execution against the chosen editor target
+- `paint_system_state_manager.rs`
+  - `PaintState`
+  - `PaintEvent`
+  - `PaintEffect`
+  - reducer / transition logic
+  - activation and targeting decisions derived from shared UI state
+
+That keeps the first implementation concrete and local to Paint, while making it easy to extract
+later if the same reducer/store pattern proves useful elsewhere.
+
 ### Shared half
 
 The shared half listens once to the shared panel/UI event stream and reduces:
@@ -137,6 +157,12 @@ The shared half listens once to the shared panel/UI event stream and reduces:
 This is the same reducer direction already described in
 [docs/analysis/paint-system-reducer-event-model.md](../analysis/paint-system-reducer-event-model.md),
 except the target scope is now clearly workspace/shared-UI scoped.
+
+The important design constraint is:
+
+- use a dedicated Paint state-manager module first
+- do not introduce a fully generic reducer/store framework before at least a few real users need
+  it
 
 ### Scene half
 
@@ -250,6 +276,53 @@ The missing shared-editor piece is event projection:
 
 That is why this problem is closer to `docs/draft/event-signal-pipelines.md` than to
 `SignalRouteUpward`.
+
+## State-manager direction
+
+This design does imply a small reactive state owner.
+
+For now, that should stay concrete rather than generic.
+
+Recommended first-pass shape:
+
+```rust
+struct PaintState { ... }
+
+enum PaintEvent { ... }
+
+enum PaintEffect { ... }
+
+fn reduce_paint_state(
+    state: &mut PaintState,
+    event: PaintEvent,
+) -> Vec<PaintEffect>
+```
+
+or equivalent.
+
+The key point is not the exact API surface. The key point is that Paint gets:
+
+- one canonical shared state owner
+- one transition boundary
+- one effect/output boundary
+
+### Why not make it generic yet
+
+The current pressure is architectural ownership, not lack of a reusable framework.
+
+So the first extraction point should be the module boundary, not a generic trait hierarchy.
+
+Good:
+
+- `paint_system_state_manager.rs` exists as a self-contained unit
+- later systems can copy the pattern if it proves sound
+
+Not recommended yet:
+
+- introducing a generic `StateManager<S, E, Fx>` or reducer trait before multiple systems need it
+
+If the pattern repeats later across Paint, Assets, Inspector, or shared panel focus, that module
+boundary gives us a clean place to extract a reusable abstraction.
 
 ## Proposed runtime shape
 
