@@ -1247,7 +1247,6 @@ mod tests {
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
 
-
         let root = world.add_component(LayoutComponent::new(20.0).with_height(8.0));
         let item = world.add_component_boxed_named("item", Box::new(TransformComponent::new()));
         let item_style = world.add_component({

@@ -301,10 +301,8 @@ impl InspectorSystemStopgapMmsAdapter {
             SignalKind::SelectionChanged,
             panel_query_root,
             move |world, emit, signal| {
-                let Some(EventSignal::SelectionChanged {
-                    selection_root,
-                    ..
-                }) = signal.event.as_ref()
+                let Some(EventSignal::SelectionChanged { selection_root, .. }) =
+                    signal.event.as_ref()
                 else {
                     return;
                 };
@@ -395,8 +393,8 @@ impl InspectorSystemStopgapMmsAdapter {
                 else {
                     return;
                 };
-                let Some(inspector_panel_root) = world
-                    .find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR)
+                let Some(inspector_panel_root) =
+                    world.find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR)
                 else {
                     return;
                 };
@@ -1777,9 +1775,10 @@ fn decorate_panel_root_ce(mut panel_root: MaterializedCE, margin_left_gu: f64) -
             "display".to_string(),
             vec![Value::String("inline-block".to_string())],
         ));
-        style_ce
-            .calls
-            .push(("margin_left".to_string(), vec![Value::Number(margin_left_gu)]));
+        style_ce.calls.push((
+            "margin_left".to_string(),
+            vec![Value::Number(margin_left_gu)],
+        ));
     }
 
     panel_root

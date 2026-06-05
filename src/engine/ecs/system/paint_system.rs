@@ -7,6 +7,10 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::system::grid_system::{GridSnapResult, GridStep, GridSystem};
 use crate::engine::ecs::system::paint_placement::{resolve_placement_pose, PlacementError};
+use crate::engine::ecs::system::paint_system_state_manager::{
+    is_paint_active, is_paint_panel_focused, paint_tool_from_item, reduce_paint_state, PaintEvent,
+    PaintState, PaintTool,
+};
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalKind, World,
 };
@@ -15,16 +19,12 @@ use crate::meow_meow::runner::{LoadedMmsModule, MeowMeowRunner};
 
 const PANEL_LAYOUT_SELECTION_SELECTOR: &str = "#editor_panel_layout_selection";
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
+const WORLD_PANEL_SELECTION_SELECTOR: &str = "#world_panel_selection";
 const ASSETS_SELECTION_SELECTOR: &str = "#assets_selection";
 const PAINT_TOOL_SELECTION_SELECTOR: &str = "#paint_tool_selection";
 const PAINT_STATUS_WRAP_SELECTOR: &str = "#paint_status_wrap";
 const PANEL_STATUS_VALUE_SELECTOR: &str = "#panel_status_value";
 const RUNTIME_UI_ROOT_NAME: &str = "editor_runtime_ui_root";
-const FREE_DRAW_LABEL: &str = "Free Draw";
-const LINE_LABEL: &str = "Line";
-const SPRAY_CAN_LABEL: &str = "Spray Can";
-const FILL_LABEL: &str = "Fill";
-const ERASE_LABEL: &str = "Erase";
 
 #[derive(Debug, Clone)]
 pub struct PaintAssetTemplate {
@@ -34,45 +34,24 @@ pub struct PaintAssetTemplate {
     pub param_names: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PaintState {
-    selected_asset: Option<PaintSelection>,
-    selected_tool: PaintTool,
-    focused_panel: Option<ComponentId>,
-    stroke: PaintStrokeMode,
+#[derive(Debug, Clone, Default)]
+struct SharedEditorWorkspaceState {
+    panel_query_root: Option<ComponentId>,
+    registered_editors: Vec<ComponentId>,
 }
 
-impl Default for PaintState {
-    fn default() -> Self {
-        Self {
-            selected_asset: None,
-            selected_tool: PaintTool::Unknown(None),
-            focused_panel: None,
-            stroke: PaintStrokeMode::Idle,
+impl SharedEditorWorkspaceState {
+    fn register_editor(&mut self, editor_root: ComponentId) -> bool {
+        if self.registered_editors.contains(&editor_root) {
+            return false;
         }
+        self.registered_editors.push(editor_root);
+        true
     }
-}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PaintSelection {
-    item: Option<String>,
-    component: Option<ComponentId>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum PaintTool {
-    FreeDraw,
-    Line,
-    SprayCan,
-    Fill,
-    Erase,
-    Unknown(Option<String>),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PaintStrokeMode {
-    Idle,
-    Dragging,
+    fn default_active_editor(&self) -> Option<ComponentId> {
+        self.registered_editors.first().copied()
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -83,38 +62,13 @@ struct PaintStrokeRuntime {
     last_grid_step: Option<GridStep>,
 }
 
-#[derive(Debug, Clone)]
-enum PaintEvent {
-    AssetSelectionChanged {
-        item: Option<String>,
-        component: Option<ComponentId>,
-    },
-    ToolSelectionChanged {
-        tool: PaintTool,
-        item: Option<String>,
-        component: Option<ComponentId>,
-    },
-    PanelFocusChanged {
-        focused_panel: Option<ComponentId>,
-    },
-    SceneClick {
-        renderable: ComponentId,
-        hit_point: [f32; 3],
-    },
-    StrokeStarted {
-        renderable: ComponentId,
-        hit_point: [f32; 3],
-    },
-    StrokeMoved {
-        renderable: ComponentId,
-        hit_point: [f32; 3],
-    },
-    StrokeEnded,
-}
-
 #[derive(Debug, Default)]
 pub struct PaintSystem {
     installed_editor_roots: HashSet<ComponentId>,
+    shared_panel_handlers_installed: bool,
+    shared_state: Arc<Mutex<PaintState>>,
+    shared_workspace_state: Arc<Mutex<SharedEditorWorkspaceState>>,
+    shared_templates: Arc<Mutex<Vec<PaintAssetTemplate>>>,
 }
 
 impl PaintSystem {
@@ -130,83 +84,149 @@ impl PaintSystem {
         panel_query_root: ComponentId,
         templates: Vec<PaintAssetTemplate>,
     ) {
+        {
+            let mut workspace = self
+                .shared_workspace_state
+                .lock()
+                .expect("paint workspace mutex poisoned");
+            workspace.panel_query_root = Some(panel_query_root);
+            let registered = workspace.register_editor(editor_root);
+            drop(workspace);
+
+            if registered {
+                ensure_default_active_editor(&self.shared_state, &self.shared_workspace_state);
+            }
+        }
+
+        *self
+            .shared_templates
+            .lock()
+            .expect("paint templates mutex poisoned") = templates;
+
+        if !self.shared_panel_handlers_installed {
+            self.shared_panel_handlers_installed = true;
+            println!(
+                "[PaintSystem][trace] install shared_panel_handlers panel_query_root={panel_query_root:?}"
+            );
+            install_shared_panel_handlers(
+                rx,
+                world,
+                panel_query_root,
+                Arc::clone(&self.shared_state),
+                Arc::clone(&self.shared_workspace_state),
+                Arc::clone(&self.shared_templates),
+            );
+            bootstrap_paint_state(
+                world,
+                panel_query_root,
+                &self.shared_state,
+                &self.shared_workspace_state,
+            );
+        }
+
         if self.installed_editor_roots.contains(&editor_root) {
             return;
         }
         self.installed_editor_roots.insert(editor_root);
         println!(
-            "[PaintSystem][trace] install editor_root={editor_root:?} panel_query_root={panel_query_root:?}"
+            "[PaintSystem][trace] install editor_scene_handlers editor_root={editor_root:?} panel_query_root={panel_query_root:?}"
         );
 
-        let _ = world;
-        let paint_state = Arc::new(Mutex::new(PaintState::default()));
         let stroke_runtime = Arc::new(Mutex::new(PaintStrokeRuntime::default()));
-
-        let selection_state = Arc::clone(&paint_state);
-        let selection_runtime = Arc::clone(&stroke_runtime);
-        let selection_templates = templates.clone();
-        rx.add_handler_closure(
-            SignalKind::SelectionChanged,
+        install_editor_scene_handlers(
+            rx,
+            editor_root,
             panel_query_root,
-            move |world, emit, signal| {
-                let Some(event) =
-                    paint_event_from_signal(world, editor_root, panel_query_root, signal)
-                else {
-                    return;
-                };
-                handle_paint_event(
-                    world,
-                    emit,
-                    editor_root,
-                    panel_query_root,
-                    &selection_templates,
-                    &selection_state,
-                    &selection_runtime,
-                    &event,
-                );
-            },
+            Arc::clone(&self.shared_state),
+            Arc::clone(&self.shared_workspace_state),
+            Arc::clone(&self.shared_templates),
+            stroke_runtime,
         );
+    }
+}
 
-        bootstrap_paint_state(world, panel_query_root, &paint_state);
+fn install_shared_panel_handlers(
+    rx: &mut RxWorld,
+    world: &World,
+    panel_query_root: ComponentId,
+    paint_state: Arc<Mutex<PaintState>>,
+    workspace_state: Arc<Mutex<SharedEditorWorkspaceState>>,
+    templates: Arc<Mutex<Vec<PaintAssetTemplate>>>,
+) {
+    let _ = world;
+    rx.add_handler_closure(
+        SignalKind::SelectionChanged,
+        panel_query_root,
+        move |world, emit, signal| {
+            let Some(event) = paint_event_from_shared_signal(world, panel_query_root, signal)
+            else {
+                return;
+            };
 
-        for signal_kind in [
-            SignalKind::Click,
-            SignalKind::DragStart,
-            SignalKind::DragMove,
-            SignalKind::DragEnd,
-        ] {
-            let state = Arc::clone(&paint_state);
-            let runtime = Arc::clone(&stroke_runtime);
-            let templates = templates.clone();
-            rx.add_handler_closure(signal_kind, editor_root, move |world, emit, env| {
-                let Some(event) =
-                    paint_event_from_signal(world, editor_root, panel_query_root, env)
-                else {
-                    return;
-                };
-                handle_paint_event(
-                    world,
-                    emit,
-                    editor_root,
-                    panel_query_root,
-                    &templates,
-                    &state,
-                    &runtime,
-                    &event,
-                );
-            });
-        }
+            handle_paint_event(
+                world,
+                emit,
+                panel_query_root,
+                &templates,
+                &paint_state,
+                &workspace_state,
+                None,
+                &event,
+            );
+            sync_paint_state_from_shared_selections(world, panel_query_root, &paint_state);
+        },
+    );
+}
+
+fn install_editor_scene_handlers(
+    rx: &mut RxWorld,
+    editor_root: ComponentId,
+    panel_query_root: ComponentId,
+    paint_state: Arc<Mutex<PaintState>>,
+    workspace_state: Arc<Mutex<SharedEditorWorkspaceState>>,
+    templates: Arc<Mutex<Vec<PaintAssetTemplate>>>,
+    stroke_runtime: Arc<Mutex<PaintStrokeRuntime>>,
+) {
+    for signal_kind in [
+        SignalKind::SelectionChanged,
+        SignalKind::Click,
+        SignalKind::DragStart,
+        SignalKind::DragMove,
+        SignalKind::DragEnd,
+    ] {
+        let state = Arc::clone(&paint_state);
+        let workspace = Arc::clone(&workspace_state);
+        let shared_templates = Arc::clone(&templates);
+        let runtime = Arc::clone(&stroke_runtime);
+        rx.add_handler_closure(signal_kind, editor_root, move |world, emit, signal| {
+            let Some(event) =
+                paint_event_from_editor_signal(world, editor_root, panel_query_root, signal)
+            else {
+                return;
+            };
+
+            handle_paint_event(
+                world,
+                emit,
+                panel_query_root,
+                &shared_templates,
+                &state,
+                &workspace,
+                Some(&runtime),
+                &event,
+            );
+        });
     }
 }
 
 fn handle_paint_event(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
-    editor_root: ComponentId,
     panel_query_root: ComponentId,
-    templates: &[PaintAssetTemplate],
+    templates: &Arc<Mutex<Vec<PaintAssetTemplate>>>,
     paint_state: &Arc<Mutex<PaintState>>,
-    stroke_runtime: &Arc<Mutex<PaintStrokeRuntime>>,
+    workspace_state: &Arc<Mutex<SharedEditorWorkspaceState>>,
+    stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     event: &PaintEvent,
 ) {
     let (old_state, new_state) = {
@@ -214,7 +234,7 @@ fn handle_paint_event(
         let old_state = state.clone();
         let new_state = reduce_paint_state(&old_state, event);
         println!(
-            "[PaintSystem][trace] reduce editor_root={editor_root:?} panel_query_root={panel_query_root:?} old_state={old_state:?} event={event:?} new_state={new_state:?}"
+            "[PaintSystem][trace] reduce panel_query_root={panel_query_root:?} old_state={old_state:?} event={event:?} new_state={new_state:?}"
         );
         *state = new_state.clone();
         (old_state, new_state)
@@ -223,9 +243,9 @@ fn handle_paint_event(
     apply_paint_side_effects(
         world,
         emit,
-        editor_root,
         panel_query_root,
         templates,
+        workspace_state,
         &old_state,
         &new_state,
         event,
@@ -237,6 +257,7 @@ fn bootstrap_paint_state(
     world: &World,
     panel_query_root: ComponentId,
     paint_state: &Arc<Mutex<PaintState>>,
+    workspace_state: &Arc<Mutex<SharedEditorWorkspaceState>>,
 ) {
     let mut events = Vec::new();
 
@@ -276,6 +297,16 @@ fn bootstrap_paint_state(
         events.push(panel_event);
     }
 
+    if let Some(editor) = workspace_state
+        .lock()
+        .expect("paint workspace mutex poisoned")
+        .default_active_editor()
+    {
+        events.push(PaintEvent::ActiveEditorChanged {
+            editor: Some(editor),
+        });
+    }
+
     for event in events {
         let mut state = paint_state.lock().expect("paint state mutex poisoned");
         *state = reduce_paint_state(&state, &event);
@@ -296,9 +327,61 @@ where
     Some(event_builder(selection))
 }
 
-fn paint_event_from_signal(
+fn sync_paint_state_from_shared_selections(
     world: &World,
-    editor_root: ComponentId,
+    panel_query_root: ComponentId,
+    paint_state: &Arc<Mutex<PaintState>>,
+) {
+    let mut events = Vec::new();
+
+    if let Some(event) = bootstrap_selection_event(
+        world,
+        panel_query_root,
+        ASSETS_SELECTION_SELECTOR,
+        |selection| PaintEvent::AssetSelectionChanged {
+            item: selection.selected_item.clone(),
+            component: selection.selected_component,
+        },
+    ) {
+        events.push(event);
+    }
+
+    if let Some(event) = bootstrap_selection_event(
+        world,
+        panel_query_root,
+        PAINT_TOOL_SELECTION_SELECTOR,
+        |selection| PaintEvent::ToolSelectionChanged {
+            tool: paint_tool_from_item(selection.selected_item.clone()),
+            item: selection.selected_item.clone(),
+            component: selection.selected_component,
+        },
+    ) {
+        events.push(event);
+    }
+
+    if let Some(event) = bootstrap_selection_event(
+        world,
+        panel_query_root,
+        PANEL_LAYOUT_SELECTION_SELECTOR,
+        |selection| PaintEvent::PanelFocusChanged {
+            focused_panel: selection.selected_component,
+        },
+    ) {
+        events.push(event);
+    }
+
+    if events.is_empty() {
+        return;
+    }
+
+    let mut state = paint_state.lock().expect("paint state mutex poisoned");
+    for event in events {
+        *state = reduce_paint_state(&state, &event);
+    }
+}
+
+fn paint_event_from_shared_signal(
+    world: &World,
     panel_query_root: ComponentId,
     signal: &Signal,
 ) -> Option<PaintEvent> {
@@ -312,11 +395,14 @@ fn paint_event_from_signal(
             let item = selected_entries.last().and_then(|entry| entry.item.clone());
             let component =
                 selected_component.or_else(|| selected_entries.last().map(|entry| entry.component));
-            let asset_selection_root = world.find_component(panel_query_root, ASSETS_SELECTION_SELECTOR);
+            let asset_selection_root =
+                world.find_component(panel_query_root, ASSETS_SELECTION_SELECTOR);
             let tool_selection_root =
                 world.find_component(panel_query_root, PAINT_TOOL_SELECTION_SELECTOR);
             let panel_layout_selection_root =
                 world.find_component(panel_query_root, PANEL_LAYOUT_SELECTION_SELECTOR);
+            let world_panel_selection_root =
+                world.find_component(panel_query_root, WORLD_PANEL_SELECTION_SELECTOR);
 
             if asset_selection_root == Some(*selection_root) {
                 Some(PaintEvent::AssetSelectionChanged { item, component })
@@ -330,19 +416,53 @@ fn paint_event_from_signal(
                 Some(PaintEvent::PanelFocusChanged {
                     focused_panel: component,
                 })
+            } else if world_panel_selection_root == Some(*selection_root) {
+                Some(PaintEvent::WorldPanelSelectionChanged {
+                    component,
+                    editor: component.and_then(|target| nearest_editor_ancestor(world, target)),
+                })
             } else {
                 println!(
-                    "[PaintSystem][trace] ignored selection_changed selection_root={selection_root:?} asset_selection_root={asset_selection_root:?} tool_selection_root={tool_selection_root:?} panel_layout_selection_root={panel_layout_selection_root:?} selected_entries={selected_entries:?} selected_component={selected_component:?}"
+                    "[PaintSystem][trace] ignored shared_selection_changed selection_root={selection_root:?} asset_selection_root={asset_selection_root:?} tool_selection_root={tool_selection_root:?} panel_layout_selection_root={panel_layout_selection_root:?} world_panel_selection_root={world_panel_selection_root:?} selected_entries={selected_entries:?} selected_component={selected_component:?}"
                 );
                 None
             }
         }
+        _ => None,
+    };
+
+    if let Some(paint_event) = &event {
+        println!(
+            "[PaintSystem][trace] promoted_shared signal_scope={:?} signal={:?} paint_event={paint_event:?}",
+            signal.scope, signal.event
+        );
+    }
+
+    event
+}
+
+fn paint_event_from_editor_signal(
+    world: &World,
+    editor_root: ComponentId,
+    panel_query_root: ComponentId,
+    signal: &Signal,
+) -> Option<PaintEvent> {
+    let event = match signal.event.as_ref()? {
+        EventSignal::SelectionChanged {
+            selection_root,
+            selected_component,
+            ..
+        } if *selection_root == editor_root => Some(PaintEvent::EditorSelectionChanged {
+            editor: editor_root,
+            component: *selected_component,
+        }),
         EventSignal::Click {
             renderable,
             hit_point,
             ..
         } => eligible_scene_hit(world, editor_root, panel_query_root, *renderable).then_some(
             PaintEvent::SceneClick {
+                editor: editor_root,
                 renderable: *renderable,
                 hit_point: *hit_point,
             },
@@ -353,6 +473,7 @@ fn paint_event_from_signal(
             ..
         } => eligible_scene_hit(world, editor_root, panel_query_root, *renderable).then_some(
             PaintEvent::StrokeStarted {
+                editor: editor_root,
                 renderable: *renderable,
                 hit_point: *hit_point,
             },
@@ -363,17 +484,20 @@ fn paint_event_from_signal(
             ..
         } => eligible_scene_hit(world, editor_root, panel_query_root, *renderable).then_some(
             PaintEvent::StrokeMoved {
+                editor: editor_root,
                 renderable: *renderable,
                 hit_point: *hit_point,
             },
         ),
-        EventSignal::DragEnd { .. } => Some(PaintEvent::StrokeEnded),
+        EventSignal::DragEnd { .. } => Some(PaintEvent::StrokeEnded {
+            editor: editor_root,
+        }),
         _ => None,
     };
 
     if let Some(paint_event) = &event {
         println!(
-            "[PaintSystem][trace] promoted signal_scope={:?} signal={:?} paint_event={paint_event:?}",
+            "[PaintSystem][trace] promoted_editor editor_root={editor_root:?} signal_scope={:?} signal={:?} paint_event={paint_event:?}",
             signal.scope, signal.event
         );
     }
@@ -381,66 +505,42 @@ fn paint_event_from_signal(
     event
 }
 
-fn reduce_paint_state(old: &PaintState, event: &PaintEvent) -> PaintState {
-    let mut new = old.clone();
-    match event {
-        PaintEvent::AssetSelectionChanged { item, component } => {
-            new.selected_asset = Some(PaintSelection {
-                item: item.clone(),
-                component: *component,
-            });
-        }
-        PaintEvent::ToolSelectionChanged {
-            tool,
-            item,
-            component,
-        } => {
-            let _ = (item, component);
-            new.selected_tool = tool.clone();
-        }
-        PaintEvent::PanelFocusChanged { focused_panel } => {
-            new.focused_panel = *focused_panel;
-        }
-        PaintEvent::StrokeStarted { .. } => {
-            new.stroke = PaintStrokeMode::Dragging;
-        }
-        PaintEvent::StrokeEnded => {
-            new.stroke = PaintStrokeMode::Idle;
-        }
-        PaintEvent::SceneClick { .. } | PaintEvent::StrokeMoved { .. } => {}
-    }
-    new
-}
-
 fn apply_paint_side_effects(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
-    editor_root: ComponentId,
     panel_query_root: ComponentId,
-    templates: &[PaintAssetTemplate],
+    templates: &Arc<Mutex<Vec<PaintAssetTemplate>>>,
+    workspace_state: &Arc<Mutex<SharedEditorWorkspaceState>>,
     _old_state: &PaintState,
     new_state: &PaintState,
     event: &PaintEvent,
-    stroke_runtime: &Arc<Mutex<PaintStrokeRuntime>>,
+    stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
 ) {
+    let active_editor = resolve_active_editor(new_state, workspace_state);
     let mut status_override = None;
-    let activity = paint_activity_status(world, editor_root, panel_query_root, new_state);
+    let activity = paint_activity_status(world, active_editor, panel_query_root, new_state);
     println!(
-        "[PaintSystem][trace] side_effects editor_root={editor_root:?} panel_query_root={panel_query_root:?} event={event:?} active={} reason={}",
+        "[PaintSystem][trace] side_effects panel_query_root={panel_query_root:?} active_editor={active_editor:?} event={event:?} active={} reason={}",
         activity.active, activity.reason
     );
 
+    let templates = templates
+        .lock()
+        .expect("paint templates mutex poisoned")
+        .clone();
+
     match event {
         PaintEvent::SceneClick {
+            editor,
             renderable,
             hit_point,
-        } => {
+        } if Some(*editor) == active_editor => {
             status_override = handle_scene_click(
                 world,
                 emit,
-                editor_root,
+                *editor,
                 panel_query_root,
-                templates,
+                &templates,
                 new_state,
                 stroke_runtime,
                 *renderable,
@@ -448,60 +548,96 @@ fn apply_paint_side_effects(
             );
         }
         PaintEvent::StrokeStarted {
+            editor,
             renderable,
             hit_point,
-        } => {
+        } if Some(*editor) == active_editor => {
             let _ = hit_point;
-            let mut runtime = stroke_runtime
-                .lock()
-                .expect("paint stroke runtime mutex poisoned");
-            if resolve_paint_context(world, editor_root, panel_query_root, new_state, templates)
-                .is_some()
-            {
-                *runtime = PaintStrokeRuntime {
-                    active: true,
-                    captured_renderable: Some(*renderable),
-                    non_grid_placed: false,
-                    last_grid_step: None,
-                };
-            } else {
-                *runtime = PaintStrokeRuntime::default();
+            if let Some(runtime) = stroke_runtime {
+                let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
+                if resolve_paint_context(world, *editor, panel_query_root, new_state, &templates)
+                    .is_some()
+                {
+                    *runtime = PaintStrokeRuntime {
+                        active: true,
+                        captured_renderable: Some(*renderable),
+                        non_grid_placed: false,
+                        last_grid_step: None,
+                    };
+                } else {
+                    *runtime = PaintStrokeRuntime::default();
+                }
             }
         }
         PaintEvent::StrokeMoved {
+            editor,
             renderable,
             hit_point,
-        } => {
+        } if Some(*editor) == active_editor => {
             status_override = handle_stroke_move(
                 world,
                 emit,
-                editor_root,
+                *editor,
                 panel_query_root,
-                templates,
+                &templates,
                 new_state,
                 stroke_runtime,
                 *renderable,
                 *hit_point,
             );
         }
-        PaintEvent::StrokeEnded => {
-            *stroke_runtime
-                .lock()
-                .expect("paint stroke runtime mutex poisoned") = PaintStrokeRuntime::default();
+        PaintEvent::StrokeEnded { .. } => {
+            if let Some(runtime) = stroke_runtime {
+                *runtime.lock().expect("paint stroke runtime mutex poisoned") =
+                    PaintStrokeRuntime::default();
+            }
         }
-        PaintEvent::AssetSelectionChanged { .. }
-        | PaintEvent::ToolSelectionChanged { .. }
-        | PaintEvent::PanelFocusChanged { .. } => {}
+        _ => {}
     }
 
     update_paint_status(
         world,
         emit,
-        editor_root,
+        active_editor,
         panel_query_root,
         new_state,
         status_override,
     );
+}
+
+fn resolve_active_editor(
+    paint_state: &PaintState,
+    workspace_state: &Arc<Mutex<SharedEditorWorkspaceState>>,
+) -> Option<ComponentId> {
+    paint_state.active_editor.or_else(|| {
+        workspace_state
+            .lock()
+            .expect("paint workspace mutex poisoned")
+            .default_active_editor()
+    })
+}
+
+fn ensure_default_active_editor(
+    paint_state: &Arc<Mutex<PaintState>>,
+    workspace_state: &Arc<Mutex<SharedEditorWorkspaceState>>,
+) {
+    let default_editor = workspace_state
+        .lock()
+        .expect("paint workspace mutex poisoned")
+        .default_active_editor();
+    let Some(default_editor) = default_editor else {
+        return;
+    };
+
+    let mut state = paint_state.lock().expect("paint state mutex poisoned");
+    if state.active_editor.is_none() {
+        *state = reduce_paint_state(
+            &state,
+            &PaintEvent::ActiveEditorChanged {
+                editor: Some(default_editor),
+            },
+        );
+    }
 }
 
 fn handle_scene_click(
@@ -511,15 +647,14 @@ fn handle_scene_click(
     panel_query_root: ComponentId,
     templates: &[PaintAssetTemplate],
     paint_state: &PaintState,
-    stroke_runtime: &Arc<Mutex<PaintStrokeRuntime>>,
+    stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     renderable: ComponentId,
     hit_point: [f32; 3],
 ) -> Option<String> {
     let context =
         resolve_paint_context(world, editor_root, panel_query_root, paint_state, templates)?;
-    let mut runtime = stroke_runtime
-        .lock()
-        .expect("paint stroke runtime mutex poisoned");
+    let runtime = stroke_runtime?;
+    let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
     if runtime.non_grid_placed {
         return None;
     }
@@ -546,15 +681,14 @@ fn handle_stroke_move(
     panel_query_root: ComponentId,
     templates: &[PaintAssetTemplate],
     paint_state: &PaintState,
-    stroke_runtime: &Arc<Mutex<PaintStrokeRuntime>>,
+    stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     renderable: ComponentId,
     hit_point: [f32; 3],
 ) -> Option<String> {
     let context =
         resolve_paint_context(world, editor_root, panel_query_root, paint_state, templates)?;
-    let mut runtime = stroke_runtime
-        .lock()
-        .expect("paint stroke runtime mutex poisoned");
+    let runtime = stroke_runtime?;
+    let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
     if !runtime.active {
         return None;
     }
@@ -599,17 +733,6 @@ fn handle_stroke_move(
     }
 }
 
-fn paint_tool_from_item(item: Option<String>) -> PaintTool {
-    match item.as_deref() {
-        Some(FREE_DRAW_LABEL) => PaintTool::FreeDraw,
-        Some(LINE_LABEL) => PaintTool::Line,
-        Some(SPRAY_CAN_LABEL) => PaintTool::SprayCan,
-        Some(FILL_LABEL) => PaintTool::Fill,
-        Some(ERASE_LABEL) => PaintTool::Erase,
-        _ => PaintTool::Unknown(item),
-    }
-}
-
 #[derive(Debug, Clone)]
 struct PaintContext {
     asset: PaintAssetTemplate,
@@ -631,7 +754,8 @@ fn resolve_paint_context(
     paint_state: &PaintState,
     templates: &[PaintAssetTemplate],
 ) -> Option<PaintContext> {
-    if !is_paint_active(world, panel_query_root, paint_state) {
+    let paint_panel_root = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR);
+    if !is_paint_active(paint_panel_root, paint_state) {
         return None;
     }
     let asset_title = paint_state.selected_asset.as_ref()?.item.as_ref()?;
@@ -652,7 +776,7 @@ struct PaintActivityStatus {
 
 fn paint_activity_status(
     world: &World,
-    editor_root: ComponentId,
+    active_editor: Option<ComponentId>,
     panel_query_root: ComponentId,
     paint_state: &PaintState,
 ) -> PaintActivityStatus {
@@ -667,7 +791,8 @@ fn paint_activity_status(
             reason: "no asset selected".to_string(),
         };
     }
-    if !is_paint_panel_focused(world, panel_query_root, paint_state) {
+    let paint_panel_root = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR);
+    if !is_paint_panel_focused(paint_panel_root, paint_state) {
         return PaintActivityStatus {
             active: false,
             reason: "focus Paint panel".to_string(),
@@ -679,6 +804,12 @@ fn paint_activity_status(
             reason: format!("tool is not Free Draw ({:?})", paint_state.selected_tool),
         };
     }
+    let Some(editor_root) = active_editor else {
+        return PaintActivityStatus {
+            active: false,
+            reason: "no active editor".to_string(),
+        };
+    };
     if let Some(grid) = GridSystem::active_grid_for_editor(world, editor_root) {
         return PaintActivityStatus {
             active: true,
@@ -689,26 +820,6 @@ fn paint_activity_status(
         active: true,
         reason: "grid inactive".to_string(),
     }
-}
-
-fn is_paint_active(world: &World, panel_query_root: ComponentId, paint_state: &PaintState) -> bool {
-    is_paint_panel_focused(world, panel_query_root, paint_state)
-        && paint_state.selected_tool == PaintTool::FreeDraw
-        && paint_state
-            .selected_asset
-            .as_ref()
-            .and_then(|selection| selection.item.as_ref())
-            .is_some()
-}
-
-fn is_paint_panel_focused(
-    world: &World,
-    panel_query_root: ComponentId,
-    paint_state: &PaintState,
-) -> bool {
-    world
-        .find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
-        .is_some_and(|paint_panel_root| paint_state.focused_panel == Some(paint_panel_root))
 }
 
 fn place_asset(
@@ -816,7 +927,7 @@ fn default_asset_args(asset: &PaintAssetTemplate) -> Vec<Value> {
 fn update_paint_status(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
-    editor_root: ComponentId,
+    active_editor: Option<ComponentId>,
     panel_query_root: ComponentId,
     paint_state: &PaintState,
     override_text: Option<String>,
@@ -836,16 +947,16 @@ fn update_paint_status(
         return;
     };
     let text = override_text
-        .unwrap_or_else(|| base_status_text(world, editor_root, panel_query_root, paint_state));
+        .unwrap_or_else(|| base_status_text(world, active_editor, panel_query_root, paint_state));
     println!(
-        "[PaintSystem][trace] status_update paint_panel_root={paint_panel_root:?} text={text:?}"
+        "[PaintSystem][trace] status_update paint_panel_root={paint_panel_root:?} active_editor={active_editor:?} text={text:?}"
     );
     set_status_text(world, emit, status_wrap, &text);
 }
 
 fn base_status_text(
     world: &World,
-    editor_root: ComponentId,
+    active_editor: Option<ComponentId>,
     panel_query_root: ComponentId,
     paint_state: &PaintState,
 ) -> String {
@@ -857,12 +968,16 @@ fn base_status_text(
     {
         return "paint inactive: no asset selected".to_string();
     }
-    if !is_paint_panel_focused(world, panel_query_root, paint_state) {
+    let paint_panel_root = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR);
+    if !is_paint_panel_focused(paint_panel_root, paint_state) {
         return "paint inactive: focus Paint panel".to_string();
     }
     if paint_state.selected_tool != PaintTool::FreeDraw {
         return "paint inactive: tool is not Free Draw".to_string();
     }
+    let Some(editor_root) = active_editor else {
+        return "paint inactive: no active editor".to_string();
+    };
     if let Some(grid) = GridSystem::active_grid_for_editor(world, editor_root) {
         return format!("paint active | grid active @ {:.2}", grid.spacing);
     }
@@ -890,9 +1005,7 @@ fn set_status_text(
         return;
     };
     if text_component.text == text {
-        println!(
-            "[PaintSystem][trace] status_skip status_text={status_text:?} reason=unchanged"
-        );
+        println!("[PaintSystem][trace] status_skip status_text={status_text:?} reason=unchanged");
         return;
     }
     text_component.text = text.to_string();
@@ -1055,6 +1168,51 @@ mod tests {
         );
     }
 
+    fn count_named_descendants(world: &World, root: ComponentId, name: &str) -> usize {
+        let mut count = 0;
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            if world.component_label(node) == Some(name) {
+                count += 1;
+            }
+            for &child in world.children_of(node) {
+                stack.push(child);
+            }
+        }
+        count
+    }
+
+    fn push_asset_and_panel_focus(
+        world: &World,
+        systems: &mut SystemWorld,
+        paint_panel_root: ComponentId,
+    ) {
+        let asset_item = world
+            .find_component(
+                find_named_root(world, RUNTIME_UI_ROOT_NAME),
+                "[name='asset_item']",
+            )
+            .expect("asset item");
+        systems.rx.push_event(
+            asset_item,
+            EventSignal::Click {
+                raycaster: asset_item,
+                renderable: asset_item,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+        systems.rx.push_event(
+            paint_panel_root,
+            EventSignal::Click {
+                raycaster: paint_panel_root,
+                renderable: paint_panel_root,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+    }
+
     fn init_editor_fixture() -> (
         World,
         CommandQueue,
@@ -1103,28 +1261,8 @@ mod tests {
         let assets_selection = world
             .find_component(runtime_ui_root, ASSETS_SELECTION_SELECTOR)
             .expect("assets selection");
-        let asset_item = world
-            .find_component(runtime_ui_root, "[name='asset_item']")
-            .expect("asset item");
 
-        systems.rx.push_event(
-            asset_item,
-            EventSignal::Click {
-                raycaster: asset_item,
-                renderable: asset_item,
-                hit_point: [0.0, 0.0, 0.0],
-                screen_pos_px: None,
-            },
-        );
-        systems.rx.push_event(
-            paint_panel_root,
-            EventSignal::Click {
-                raycaster: paint_panel_root,
-                renderable: paint_panel_root,
-                hit_point: [0.0, 0.0, 0.0],
-                screen_pos_px: None,
-            },
-        );
+        push_asset_and_panel_focus(&world, &mut systems, paint_panel_root);
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
         let _ =
@@ -1175,13 +1313,10 @@ mod tests {
         push_click(&mut systems, renderable);
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
         assert_eq!(
-            world
-                .children_of(scene_root)
-                .iter()
-                .filter(|&&child| world.component_label(child) == Some("painted_asset_root"))
-                .count(),
+            count_named_descendants(&world, editor_root, "painted_asset_root"),
             0
         );
     }
@@ -1194,8 +1329,8 @@ mod tests {
             mut visuals,
             mut systems,
             render_assets,
-            _editor_root,
-            scene_root,
+            editor_root,
+            _scene_root,
             renderable,
             _paint_panel_root,
         ) = init_editor_fixture();
@@ -1203,13 +1338,10 @@ mod tests {
         push_click(&mut systems, renderable);
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
         assert_eq!(
-            world
-                .children_of(scene_root)
-                .iter()
-                .filter(|&&child| world.component_label(child) == Some("painted_asset_root"))
-                .count(),
+            count_named_descendants(&world, editor_root, "painted_asset_root"),
             1
         );
     }
@@ -1222,8 +1354,8 @@ mod tests {
             mut visuals,
             mut systems,
             render_assets,
-            _editor_root,
-            scene_root,
+            editor_root,
+            _scene_root,
             renderable,
             _paint_panel_root,
         ) = init_editor_fixture();
@@ -1270,19 +1402,16 @@ mod tests {
         );
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
         assert_eq!(
-            world
-                .children_of(scene_root)
-                .iter()
-                .filter(|&&child| world.component_label(child) == Some("painted_asset_root"))
-                .count(),
+            count_named_descendants(&world, editor_root, "painted_asset_root"),
             1
         );
     }
 
     #[test]
-    fn grid_drag_places_only_when_cell_changes() {
+    fn grid_drag_keeps_painting_scoped_to_one_editor() {
         let (
             mut world,
             mut emit,
@@ -1356,14 +1485,84 @@ mod tests {
         );
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
         assert_eq!(
-            world
-                .children_of(scene_root)
-                .iter()
-                .filter(|&&child| world.component_label(child) == Some("painted_asset_root"))
-                .count(),
-            2
+            count_named_descendants(&world, editor_root, "painted_asset_root"),
+            1
+        );
+    }
+
+    #[test]
+    fn shared_ui_state_routes_paint_to_latest_scene_interaction_editor() {
+        let tmp_dir = temp_asset_directory();
+        write_test_asset(&tmp_dir);
+
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let render_assets = RenderAssets::new();
+
+        systems
+            .asset_system
+            .scan_assets_dir(&tmp_dir)
+            .expect("scan");
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let editor_a =
+            world.add_component_boxed_named("editor_a", Box::new(EditorComponent::new()));
+        let scene_a =
+            world.add_component_boxed_named("scene_a", Box::new(TransformComponent::new()));
+        let target_a =
+            world.add_component_boxed_named("target_a", Box::new(TransformComponent::new()));
+        let color_a = world.add_component(ColorComponent::rgba(0.7, 0.7, 0.7, 1.0));
+        let renderable_a = world.add_component(RenderableComponent::cube());
+        let _ = world.add_child(editor_a, scene_a);
+        let _ = world.add_child(scene_a, target_a);
+        let _ = world.add_child(target_a, color_a);
+        let _ = world.add_child(color_a, renderable_a);
+
+        let editor_b =
+            world.add_component_boxed_named("editor_b", Box::new(EditorComponent::new()));
+        let scene_b =
+            world.add_component_boxed_named("scene_b", Box::new(TransformComponent::new()));
+        let target_b =
+            world.add_component_boxed_named("target_b", Box::new(TransformComponent::new()));
+        let color_b = world.add_component(ColorComponent::rgba(0.7, 0.7, 0.7, 1.0));
+        let renderable_b = world.add_component(RenderableComponent::cube());
+        let _ = world.add_child(editor_b, scene_b);
+        let _ = world.add_child(scene_b, target_b);
+        let _ = world.add_child(target_b, color_b);
+        let _ = world.add_child(color_b, renderable_b);
+
+        world.init_component_tree(editor_a, &mut emit);
+        world.init_component_tree(editor_b, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let runtime_ui_root = find_named_root(&world, RUNTIME_UI_ROOT_NAME);
+        let paint_panel_root = world
+            .find_component(runtime_ui_root, PAINT_PANEL_ROOT_SELECTOR)
+            .expect("paint panel");
+
+        push_asset_and_panel_focus(&world, &mut systems, paint_panel_root);
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+
+        push_click(&mut systems, renderable_b);
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        assert_eq!(
+            count_named_descendants(&world, editor_a, "painted_asset_root"),
+            0
+        );
+        assert_eq!(
+            count_named_descendants(&world, editor_b, "painted_asset_root"),
+            1
         );
     }
 }

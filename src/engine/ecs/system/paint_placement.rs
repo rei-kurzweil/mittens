@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::{BoundsComponent, RenderableComponent, TransformComponent};
-use crate::engine::ecs::system::grid_system::GridSnapResult;
 use crate::engine::ecs::system::TransformSystem;
+use crate::engine::ecs::system::grid_system::GridSnapResult;
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::bounds::{Aabb, mesh_local_aabb};
 use crate::engine::graphics::primitives::CpuMeshHandle;
@@ -32,8 +32,8 @@ pub fn resolve_placement_pose(
     asset_root: ComponentId,
     grid_snap: Option<GridSnapResult>,
 ) -> Result<PlacementPose, PlacementError> {
-    let asset_bounds =
-        measure_subtree_local_bounds(world, asset_root).ok_or(PlacementError::MissingAssetBounds)?;
+    let asset_bounds = measure_subtree_local_bounds(world, asset_root)
+        .ok_or(PlacementError::MissingAssetBounds)?;
 
     let (surface_point, surface_normal) = match grid_snap {
         Some(grid) => (grid.point_world, grid.normal_world),
@@ -43,7 +43,8 @@ pub fn resolve_placement_pose(
         ),
     };
 
-    let rotation = make_alignment_quat(surface_normal, world_up_reference(world, target_renderable));
+    let rotation =
+        make_alignment_quat(surface_normal, world_up_reference(world, target_renderable));
     let outward_offset = SURFACE_EPSILON - asset_bounds.min[2];
 
     Ok(PlacementPose {
@@ -61,8 +62,8 @@ pub fn resolve_surface_normal(
     let renderable = world
         .get_component_by_id_as::<RenderableComponent>(target_renderable)
         .ok_or(PlacementError::UnsupportedSurface)?;
-    let target_world =
-        TransformSystem::world_model(world, target_renderable).ok_or(PlacementError::MissingTargetTransform)?;
+    let target_world = TransformSystem::world_model(world, target_renderable)
+        .ok_or(PlacementError::MissingTargetTransform)?;
     let inv_world = mat4_inverse(target_world).ok_or(PlacementError::MissingTargetTransform)?;
     let hit_local = transform_point(inv_world, hit_point_world);
 
@@ -89,7 +90,10 @@ pub fn measure_subtree_local_bounds(world: &World, root: ComponentId) -> Option<
     ) {
         let mut local_to_root = parent_to_root;
         if let Some(transform) = world.get_component_by_id_as::<TransformComponent>(node) {
-            local_to_root = crate::engine::graphics::bounds::mat4_mul(parent_to_root, transform.transform.model);
+            local_to_root = crate::engine::graphics::bounds::mat4_mul(
+                parent_to_root,
+                transform.transform.model,
+            );
         }
 
         if let Some(renderable) = world.get_component_by_id_as::<RenderableComponent>(node) {
@@ -205,7 +209,8 @@ mod tests {
 
     fn build_asset(world: &mut World, scale: [f32; 3]) -> ComponentId {
         let root = world.add_component(TransformComponent::new());
-        let shape = world.add_component(TransformComponent::new().with_scale(scale[0], scale[1], scale[2]));
+        let shape =
+            world.add_component(TransformComponent::new().with_scale(scale[0], scale[1], scale[2]));
         let color = world.add_component(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0));
         let renderable = world.add_component(RenderableComponent::cube());
         let _ = world.add_child(root, shape);
@@ -239,8 +244,8 @@ mod tests {
         let _ = world.add_child(target, renderable);
         let asset = build_asset(&mut world, [0.2, 0.2, 0.2]);
 
-        let pose = resolve_placement_pose(&world, renderable, [0.0, 0.0, 0.0], asset, None)
-            .expect("pose");
+        let pose =
+            resolve_placement_pose(&world, renderable, [0.0, 0.0, 0.0], asset, None).expect("pose");
         assert!((pose.translation[2] - 0.11).abs() < 1e-4);
     }
 

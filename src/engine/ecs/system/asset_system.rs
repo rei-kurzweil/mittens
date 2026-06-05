@@ -7,8 +7,8 @@ use std::collections::HashSet;
 use crate::engine::ecs::component::{
     LayoutComponent, RaycastableComponent, StyleComponent, TransformComponent,
 };
-use crate::engine::ecs::system::paint_system::PaintAssetTemplate;
 use crate::engine::ecs::system::bounds_system::{BoundsSystem, RenderableBoundsMeasure};
+use crate::engine::ecs::system::paint_system::PaintAssetTemplate;
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::meow_meow::object::Value;
 use crate::meow_meow::runner::{LoadedMmsModule, MeowMeowRunner};
@@ -772,7 +772,13 @@ mod tests {
         let parent = world.add_component_boxed_named("parent", Box::new(TransformComponent::new()));
 
         let wrapper = system
-            .spawn_assets_panel(&mut world, &render_assets, &mut emit, parent, (0.0, 0.0, 0.0))
+            .spawn_assets_panel(
+                &mut world,
+                &render_assets,
+                &mut emit,
+                parent,
+                (0.0, 0.0, 0.0),
+            )
             .expect("spawn assets panel");
 
         let title_bar = world

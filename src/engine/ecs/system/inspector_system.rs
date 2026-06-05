@@ -114,7 +114,6 @@ mod tests {
         let mut systems = SystemWorld::new();
         let mut inspector = InspectorSystem::new();
 
-
         let editor_root =
             world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
         let scene_root =
@@ -248,7 +247,8 @@ mod tests {
             },
         );
 
-        let _ = systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
 
         let panel_status_value = world
             .find_component(runtime_ui_root, "#panel_status_value")
@@ -348,7 +348,8 @@ mod tests {
             },
         );
 
-        let _ = systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
 
         let panel_status_value = world
             .find_component(runtime_ui_root, "#panel_status_value")
@@ -556,7 +557,8 @@ mod tests {
             },
         );
 
-        let _ = systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
         let saved =
@@ -583,7 +585,8 @@ mod tests {
             },
         );
 
-        let _ = systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
         let reloaded_editor_root = world

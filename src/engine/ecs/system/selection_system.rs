@@ -6,7 +6,7 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
 };
-use crate::engine::graphics::bounds::{mat4_identity, mat4_mul, Aabb};
+use crate::engine::graphics::bounds::{Aabb, mat4_identity, mat4_mul};
 
 const SELECTED_HIGHLIGHT_RGBA: [f32; 4] = [1.0, 0.84, 0.0, 1.0];
 const SELECTED_HIGHLIGHT_EMISSIVE: f32 = 3.0;
@@ -1428,7 +1428,10 @@ mod tests {
         let panel_selection = world
             .get_component_by_id_as::<SelectionComponent>(panel_layout_selection)
             .expect("expected panel layout selection component");
-        assert_eq!(panel_selection.selected_component, Some(inspector_panel_root));
+        assert_eq!(
+            panel_selection.selected_component,
+            Some(inspector_panel_root)
+        );
         assert_eq!(panel_selection.selected_entries.len(), 1);
     }
 
