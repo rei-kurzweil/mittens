@@ -2,7 +2,8 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::{
-    EditorComponent, SelectableComponent, SelectionComponent, TransformComponent,
+    EditorComponent, RaycastableComponent, SelectableComponent, SelectionComponent,
+    TransformComponent,
     TransformGizmoComponent,
 };
 use crate::engine::ecs::system::grid_system::{GridSnapResult, GridStep, GridSystem};
@@ -861,6 +862,10 @@ fn place_asset(
             }
         };
 
+    let raycastable_root = world.add_component_boxed_named(
+        "painted_asset_raycastable",
+        Box::new(RaycastableComponent::enabled()),
+    );
     let wrapper = world.add_component_boxed_named(
         "painted_asset_root",
         Box::new(
@@ -873,13 +878,14 @@ fn place_asset(
                 .with_rotation_quat(pose.rotation),
         ),
     );
+    let _ = world.add_child(raycastable_root, wrapper);
     let _ = world.add_child(wrapper, asset_root);
-    world.init_component_tree(wrapper, emit);
+    world.init_component_tree(raycastable_root, emit);
     emit.push_intent_now(
-        wrapper,
+        raycastable_root,
         IntentValue::Attach {
             parents: vec![scene_parent],
-            child: wrapper,
+            child: raycastable_root,
         },
     );
 
@@ -1343,6 +1349,41 @@ mod tests {
         assert_eq!(
             count_named_descendants(&world, editor_root, "painted_asset_root"),
             1
+        );
+    }
+
+    #[test]
+    fn painted_assets_get_raycastable_ancestor() {
+        let (
+            mut world,
+            mut emit,
+            mut visuals,
+            mut systems,
+            render_assets,
+            editor_root,
+            _scene_root,
+            renderable,
+            _paint_panel_root,
+        ) = init_editor_fixture();
+
+        push_click(&mut systems, renderable);
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let painted_root = world
+            .find_component(editor_root, "[name='painted_asset_root']")
+            .expect("painted asset root");
+        let painted_renderable = world
+            .find_component(painted_root, "Renderable")
+            .expect("painted renderable");
+
+        assert!(
+            crate::engine::ecs::system::BvhSystem::renderable_is_raycastable(
+                &world,
+                painted_renderable
+            ),
+            "expected painted asset renderables to inherit a raycastable ancestor"
         );
     }
 
