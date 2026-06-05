@@ -4,6 +4,7 @@ export fn asset_item(label, item_background_color) {
     return T {
         name = "asset_item"
         Option {}
+        Raycastable.enabled()
         Style {
             display("inline-block")
             width(8.5)
@@ -56,6 +57,7 @@ export fn asset_item(label, item_background_color) {
                 word_wrap("break-all")
             }
             Text {
+                name = "selection_item_label"
                 label
                 C.rgba(0.0, 0.0, 0.0, 1.0)
             }

@@ -37,6 +37,7 @@ pub mod gesture_coord_type;
 pub mod gizmo;
 pub mod gltf;
 pub mod gravity;
+pub mod grid;
 pub mod html_element;
 pub mod ik_chain;
 pub mod input;
@@ -136,6 +137,7 @@ pub use gizmo::{
     TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
 };
 pub use gravity::GravityComponent;
+pub use grid::GridComponent;
 pub use html_element::{ElementType, HtmlElementComponent};
 pub use ik_chain::{IKChainComponent, IKSolver};
 pub use input::InputComponent;

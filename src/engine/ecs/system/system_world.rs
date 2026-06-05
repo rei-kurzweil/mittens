@@ -33,8 +33,8 @@ use crate::engine::ecs::system::bounds_system::BoundsSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
 use crate::engine::ecs::system::{
     AssetSystem, AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, FitBoundsSystem,
-    GestureSystem, HeadPoseBodyXzFollowSystem, IKSystem, InspectorSystem, LayoutSystem,
-    SelectionSystem, TransformGizmoSystem,
+    GestureSystem, GridSystem, HeadPoseBodyXzFollowSystem, IKSystem, InspectorSystem,
+    LayoutSystem, PaintSystem, SelectionSystem, TransformGizmoSystem,
 };
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
@@ -74,6 +74,8 @@ pub struct SystemWorld {
     pub selection: SelectionSystem,
     pub asset_system: AssetSystem,
     pub fit_bounds: FitBoundsSystem,
+    pub grid: GridSystem,
+    pub paint: PaintSystem,
     pub avatar_body_yaw: AvatarBodyYawSystem,
     pub avatar_control: AvatarControlSystem,
     pub head_pose_body_xz_follow: HeadPoseBodyXzFollowSystem,
@@ -821,6 +823,20 @@ impl SystemWorld {
                 inspector_panel_pos,
                 &self.asset_system,
             );
+            if let Some(panel_query_root) = world
+                .all_components()
+                .find(|&component_id| {
+                    world.parent_of(component_id).is_none()
+                        && world.component_label(component_id) == Some("editor_runtime_ui_root")
+                })
+            {
+                self.paint.install_scoped_handlers_for_editor(
+                    &mut self.rx,
+                    component,
+                    panel_query_root,
+                    self.asset_system.paint_templates(),
+                );
+            }
         }
     }
 

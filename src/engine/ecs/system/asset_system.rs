@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use crate::engine::ecs::component::{
     LayoutComponent, RaycastableComponent, StyleComponent, TransformComponent,
 };
+use crate::engine::ecs::system::paint_system::PaintAssetTemplate;
 use crate::engine::ecs::system::bounds_system::{BoundsSystem, RenderableBoundsMeasure};
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::meow_meow::object::Value;
@@ -152,6 +153,21 @@ impl AssetSystem {
                 .and_then(|s| s.to_str())
                 .map(|s| s.to_string())
         })
+    }
+
+    pub fn paint_templates(&self) -> Vec<PaintAssetTemplate> {
+        self.items
+            .iter()
+            .filter_map(|item| {
+                let module = self.modules.get(&item.module_id)?;
+                Some(PaintAssetTemplate {
+                    title: item.title.clone(),
+                    module: module.module.clone(),
+                    export_name: item.export_name.clone(),
+                    param_names: item.param_names.clone(),
+                })
+            })
+            .collect()
     }
 
     pub fn build_asset_module_header(

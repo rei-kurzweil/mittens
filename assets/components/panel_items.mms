@@ -48,7 +48,10 @@ export fn paint_panel_item(label, icon, item_background_color, title_color) {
                     color = [0,0,0,1]
                     word_wrap("normal")
                 }
-                Text { label }
+                Text {
+                    name = "selection_item_label"
+                    label
+                }
             }
         }
     }

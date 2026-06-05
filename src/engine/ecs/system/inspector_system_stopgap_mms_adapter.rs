@@ -190,6 +190,8 @@ impl InspectorSystemStopgapMmsAdapter {
                 return;
             };
 
+            focus_panel_from_descendant_click(world, emit, panel_query_root, *renderable);
+
             let Some(panel_root) = world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR) else {
                 return;
             };
@@ -502,6 +504,50 @@ impl InspectorSystemStopgapMmsAdapter {
                             component: paint_panel_root,
                         }],
                         primary: Some(paint_panel_root),
+                    },
+                );
+            },
+        );
+
+        rx.add_handler_closure(
+            SignalKind::SelectionChanged,
+            panel_query_root,
+            move |world, emit, signal| {
+                let Some(EventSignal::SelectionChanged { selection_root, .. }) =
+                    signal.event.as_ref()
+                else {
+                    return;
+                };
+
+                let Some(expected_selection_root) =
+                    world.find_component(panel_query_root, "#assets_selection")
+                else {
+                    return;
+                };
+                if *selection_root != expected_selection_root {
+                    return;
+                }
+
+                let Some(panel_layout_selection) = world
+                    .find_component(panel_query_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
+                else {
+                    return;
+                };
+                let Some(asset_panel_root) = world.find_component(panel_query_root, "#assets_root")
+                else {
+                    return;
+                };
+
+                emit.push_intent_now(
+                    panel_layout_selection,
+                    IntentValue::SelectionSet {
+                        component_ids: vec![panel_layout_selection],
+                        entries: vec![SelectionEntry {
+                            index: None,
+                            item: Some("assets_root".to_string()),
+                            component: asset_panel_root,
+                        }],
+                        primary: Some(asset_panel_root),
                     },
                 );
             },
@@ -924,6 +970,24 @@ impl InspectorSystemStopgapMmsReconciler {
                 selection.mode = SelectionMode::Single;
                 selection.clear();
             }
+            if let Some(free_draw_item) = world
+                .find_all_components(panel_mount_root, "[name='paint_panel_item']")
+                .into_iter()
+                .next()
+            {
+                emit.push_intent_now(
+                    paint_tool_selection,
+                    IntentValue::SelectionSet {
+                        component_ids: vec![paint_tool_selection],
+                        entries: vec![SelectionEntry {
+                            index: Some(0),
+                            item: Some("Free Draw".to_string()),
+                            component: free_draw_item,
+                        }],
+                        primary: Some(free_draw_item),
+                    },
+                );
+            }
         }
         if let Some(inspector_panel_selection) =
             world.find_component(panel_mount_root, INSPECTOR_PANEL_SELECTION_SELECTOR)
@@ -1019,6 +1083,27 @@ impl InspectorSystemStopgapMmsReconciler {
         }
         if let Some(_paint_panel_root) = world.find_component(panel_mount_root, "#paint_panel_root")
         {
+        }
+
+        if let Some(panel_layout_selection) =
+            world.find_component(panel_mount_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
+        {
+            if let Some(world_panel_root) =
+                world.find_component(panel_mount_root, WORLD_PANEL_ROOT_SELECTOR)
+            {
+                emit.push_intent_now(
+                    panel_layout_selection,
+                    IntentValue::SelectionSet {
+                        component_ids: vec![panel_layout_selection],
+                        entries: vec![SelectionEntry {
+                            index: Some(0),
+                            item: Some("world_panel_root".to_string()),
+                            component: world_panel_root,
+                        }],
+                        primary: Some(world_panel_root),
+                    },
+                );
+            }
         }
 
         println!(
@@ -1530,6 +1615,46 @@ fn clicked_named_ancestor(world: &World, node: ComponentId, prefix: &str) -> Opt
         current = world.parent_of(component_id);
     }
     None
+}
+
+fn focus_panel_from_descendant_click(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    renderable: ComponentId,
+) {
+    let Some(panel_layout_selection) =
+        world.find_component(panel_query_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
+    else {
+        return;
+    };
+
+    for (selector, item_name) in [
+        (WORLD_PANEL_ROOT_SELECTOR, "world_panel_root"),
+        (INSPECTOR_PANEL_ROOT_SELECTOR, "inspector_panel_root"),
+        ("#assets_root", "assets_root"),
+        (PAINT_PANEL_ROOT_SELECTOR, "paint_panel_root"),
+    ] {
+        let Some(panel_root) = world.find_component(panel_query_root, selector) else {
+            continue;
+        };
+        if !is_descendant_or_self(world, panel_root, renderable) {
+            continue;
+        }
+        emit.push_intent_now(
+            panel_layout_selection,
+            IntentValue::SelectionSet {
+                component_ids: vec![panel_layout_selection],
+                entries: vec![SelectionEntry {
+                    index: None,
+                    item: Some(item_name.to_string()),
+                    component: panel_root,
+                }],
+                primary: Some(panel_root),
+            },
+        );
+        return;
+    }
 }
 
 fn is_descendant_or_self(world: &World, ancestor: ComponentId, node: ComponentId) -> bool {

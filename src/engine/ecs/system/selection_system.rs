@@ -169,7 +169,9 @@ fn find_descendant_by_type(
 }
 
 fn find_selected_item_text(world: &World, item_id: ComponentId) -> Option<String> {
-    let text_id = find_descendant_by_type(world, item_id, "text")?;
+    let text_id = world
+        .find_component(item_id, "#selection_item_label")
+        .or_else(|| find_descendant_by_type(world, item_id, "text"))?;
     world
         .get_component_by_id_as::<TextComponent>(text_id)
         .map(|text| text.text.clone())
@@ -1107,6 +1109,90 @@ mod tests {
         assert_eq!(selection.selected_component, Some(second));
         assert_eq!(selection.selected_entries.len(), 1);
         assert_eq!(fit_bounds_content_scale(&world, first), first_scale_before);
+
+        let panel_layout_selection = world
+            .find_component(runtime_ui_root, "#editor_panel_layout_selection")
+            .expect("expected panel layout selection");
+        let panel_selection = world
+            .get_component_by_id_as::<SelectionComponent>(panel_layout_selection)
+            .expect("expected panel layout selection state");
+        assert_eq!(panel_selection.selected_component, Some(paint_panel_root));
+    }
+
+    #[test]
+    fn asset_item_click_focuses_assets_panel_shell() {
+        let tmp_dir = temp_asset_directory();
+        let asset_path = tmp_dir.join("test_asset.mms");
+        std::fs::write(
+            &asset_path,
+            r#"
+                export fn example() {
+                    let root = T {}
+                    return root
+                }
+            "#,
+        )
+        .expect("write asset file");
+
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let render_assets = RenderAssets::new();
+
+        systems
+            .asset_system
+            .scan_assets_dir(&tmp_dir)
+            .expect("scan assets dir");
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_root);
+
+        systems.inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (-0.7, 1.6, -1.2),
+            &systems.asset_system,
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        let assets_panel_root = world
+            .find_component(runtime_ui_root, "#assets_root")
+            .expect("expected assets panel root");
+        let panel_layout_selection = world
+            .find_component(runtime_ui_root, "#editor_panel_layout_selection")
+            .expect("expected panel layout selection");
+        let asset_item = world
+            .find_component(assets_panel_root, "[name='asset_item']")
+            .expect("expected asset item");
+
+        systems.rx.push_event(
+            asset_item,
+            EventSignal::Click {
+                raycaster: asset_item,
+                renderable: asset_item,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+
+        let selection = world
+            .get_component_by_id_as::<SelectionComponent>(panel_layout_selection)
+            .expect("expected panel layout selection state");
+        assert_eq!(selection.selected_component, Some(assets_panel_root));
     }
 
     #[test]

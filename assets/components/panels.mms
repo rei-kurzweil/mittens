@@ -23,13 +23,13 @@ let TITLE_LABEL_PADDING_X_GU = 0.25
 // ── paint_panel ───────────────────────────────────────────────────────────────
 
 let PAINT_PANEL_WIDTH_GU = 41.0
-let PAINT_PANEL_STATUS_BAR_HEIGHT_GU = 6.0
+let PAINT_PANEL_STATUS_BAR_HEIGHT_GU = 4.0
 let PAINT_PANEL_CONTENT_STATUS_GAP_GU = 0.5
-let PAINT_PANEL_CONTENT_HEIGHT_GU = 22.0
+let PAINT_PANEL_CONTENT_HEIGHT_GU = 8.5
 let PAINT_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + PAINT_PANEL_CONTENT_HEIGHT_GU + PAINT_PANEL_CONTENT_STATUS_GAP_GU + PAINT_PANEL_STATUS_BAR_HEIGHT_GU
 
 export fn paint_panel(title, title_color, panel_background_color, item_background_color) {
-    let status = world_panel_status("paint status: idle")
+    let status = world_panel_status("paint inactive: no asset selected")
 
     return T {
         name = "paint_panel_root"
@@ -66,7 +66,6 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
                 display("block")
                 height(PAINT_PANEL_CONTENT_HEIGHT_GU)
                 margin_bottom(PAINT_PANEL_CONTENT_STATUS_GAP_GU)
-                overflow("scroll")
                 background_color([0.96, 0.92, 0.18, 0.80])
                 background_z(-0.001)
                 padding(0.5)
