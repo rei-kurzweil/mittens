@@ -429,9 +429,64 @@ mod tests {
                 .find_component(runtime_ui_root, "#editor_panel_layout_root")
                 .is_some()
         );
-        let panel_shared_layout = world
+        let panel_bottom_row = world
             .parent_of(panel_root)
-            .expect("expected shared layout root above world panel root");
+            .expect("expected bottom row above world panel root");
+        let panel_shared_layout = world
+            .parent_of(panel_bottom_row)
+            .expect("expected shared layout root above bottom row");
+        let layout_children = world.children_of(panel_shared_layout);
+        let top_row = layout_children
+            .iter()
+            .copied()
+            .find(|&child| {
+                world
+                    .component_label(child)
+                    .is_some_and(|label| label == "editor_panel_top_row")
+            })
+            .expect("expected top row under layout root");
+        let bottom_row = layout_children
+            .iter()
+            .copied()
+            .find(|&child| {
+                world
+                    .component_label(child)
+                    .is_some_and(|label| label == "editor_panel_bottom_row")
+            })
+            .expect("expected bottom row under layout root");
+        assert!(
+            layout_children
+                .iter()
+                .position(|&child| child == top_row)
+                .expect("top row position")
+                < layout_children
+                    .iter()
+                    .position(|&child| child == bottom_row)
+                    .expect("bottom row position")
+        );
+        assert_eq!(world.parent_of(top_row), Some(panel_shared_layout));
+        assert_eq!(world.parent_of(bottom_row), Some(panel_shared_layout));
+        assert!(
+            world.find_component(top_row, "#assets_root").is_some(),
+            "expected assets panel in the top row"
+        );
+        assert!(
+            world.find_component(top_row, "#paint_panel_root").is_some(),
+            "expected paint panel in the top row"
+        );
+        assert!(
+            world
+                .find_component(bottom_row, "#world_panel_root")
+                .is_some(),
+            "expected world panel in the bottom row"
+        );
+        assert!(
+            world
+                .find_component(bottom_row, "#inspector_panel_root")
+                .is_some(),
+            "expected inspector panel in the bottom row"
+        );
+        assert_eq!(world.parent_of(panel_root), Some(bottom_row));
         let panel_overlay = world
             .parent_of(panel_shared_layout)
             .expect("expected overlay ancestor above shared layout root");
@@ -1389,8 +1444,15 @@ mod tests {
             .find_component(runtime_ui_root, "#editor_panel_layout_root")
             .expect("panel layout root");
         assert!(
-            count_children_with_name(&world, layout_root, "inspector_panel_root") > 0,
-            "expected inspector panel instances to attach directly under the layout root"
+            count_children_with_name(&world, layout_root, "editor_panel_bottom_row") > 0,
+            "expected bottom row under the layout root"
+        );
+        let bottom_row = world
+            .find_component(layout_root, "#editor_panel_bottom_row")
+            .expect("expected bottom row under layout root");
+        assert!(
+            count_children_with_name(&world, bottom_row, "inspector_panel_root") > 0,
+            "expected inspector panel instances to attach under the bottom row"
         );
     }
 

@@ -25,6 +25,8 @@ use crate::meow_meow::runner::MeowMeowRunner;
 
 const PANEL_LAYOUT_MOUNT_NAME: &str = "editor_panel_layout_mount";
 const PANEL_LAYOUT_ROOT_NAME: &str = "editor_panel_layout_root";
+const PANEL_LAYOUT_TOP_ROW_NAME: &str = "editor_panel_top_row";
+const PANEL_LAYOUT_BOTTOM_ROW_NAME: &str = "editor_panel_bottom_row";
 const PANEL_LAYOUT_SELECTION_NAME: &str = "editor_panel_layout_selection";
 const EDITOR_RUNTIME_UI_ROOT_NAME: &str = "editor_runtime_ui_root";
 const WORLD_PANEL_ROOT_SELECTOR: &str = "#world_panel_root";
@@ -64,7 +66,7 @@ const PAINT_PANEL_TOTAL_HEIGHT_GU: f64 = 32.0;
 const PANEL_LAYOUT_GAP_GU: f64 = 2.0;
 const PANEL_ROOT_MARGIN_X_GU: f64 = 0.5;
 const PANEL_ROOT_MARGIN_Y_GU: f64 = 0.5;
-const PANEL_LAYOUT_WIDTH_BUDGET_MULTIPLIER: f64 = 10.0;
+const PANEL_LAYOUT_AVAILABLE_WIDTH_GU: f64 = 200000.0;
 const MAX_INSPECTOR_PANEL_ROWS: usize = 256;
 
 #[cfg(test)]
@@ -789,10 +791,10 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 .lock()
                 .expect("inspector workspace mutex poisoned"),
         );
-        let Some(layout_root) = panel_layout_root_id(world, panel_query_root) else {
+        let Some(bottom_row_root) = panel_layout_bottom_row_id(world, panel_query_root) else {
             return;
         };
-        rerender_inspector_panels(world, emit, layout_root, &inspector_models);
+        rerender_inspector_panels(world, emit, bottom_row_root, &inspector_models);
     }
 }
 
@@ -873,7 +875,7 @@ fn sync_and_refresh_inspector_panels(
         sync_inspector_workspace_to_selection(world, &editor_context, &mut workspace);
     }
 
-    let Some(layout_root) = panel_layout_root_id(world, panel_query_root) else {
+    let Some(bottom_row_root) = panel_layout_bottom_row_id(world, panel_query_root) else {
         return;
     };
 
@@ -886,7 +888,7 @@ fn sync_and_refresh_inspector_panels(
             .lock()
             .expect("inspector workspace mutex poisoned"),
     );
-    rerender_inspector_panels(world, emit, layout_root, &inspector_models);
+    rerender_inspector_panels(world, emit, bottom_row_root, &inspector_models);
 }
 
 fn refresh_inspector_panels_from_workspace(
@@ -896,7 +898,7 @@ fn refresh_inspector_panels_from_workspace(
     world_panel_scene_model: &Arc<Mutex<AuthoredWorldPanelSceneModel>>,
     inspector_workspace_state: &Arc<Mutex<InspectorWorkspaceState>>,
 ) {
-    let Some(layout_root) = panel_layout_root_id(world, panel_query_root) else {
+    let Some(bottom_row_root) = panel_layout_bottom_row_id(world, panel_query_root) else {
         return;
     };
 
@@ -909,7 +911,7 @@ fn refresh_inspector_panels_from_workspace(
             .lock()
             .expect("inspector workspace mutex poisoned"),
     );
-    rerender_inspector_panels(world, emit, layout_root, &inspector_models);
+    rerender_inspector_panels(world, emit, bottom_row_root, &inspector_models);
 }
 
 fn apply_world_panel_semantic_selection(
@@ -1102,8 +1104,10 @@ impl EditorInspectorSystemStopgapMmsReconciler {
     ) {
         let existing_world_panel =
             self.find_world_panel_node(world, panel_query_root, WORLD_PANEL_ROOT_SELECTOR);
-        let existing_inspector_panel =
-            self.find_inspector_panel_nodes(world, panel_query_root).first().copied();
+        let existing_inspector_panel = self
+            .find_inspector_panel_nodes(world, panel_query_root)
+            .first()
+            .copied();
         let existing_panel_mount = world.all_components().find(|&component_id| {
             world
                 .component_label(component_id)
@@ -1307,30 +1311,84 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         let _ = inspector_panel_pos;
         let anchor_pos = world_panel_pos;
 
-        let panel_count = 3.0 + inspector_models.len().max(1) as f64;
-        let panel_strip_width_gu = WORLD_PANEL_WIDTH_GU
-            + PANEL_LAYOUT_GAP_GU
-            + ((INSPECTOR_PANEL_WIDTH_GU * inspector_models.len().max(1) as f64)
-                + (PANEL_LAYOUT_GAP_GU * inspector_models.len().saturating_sub(1) as f64))
-            + PANEL_LAYOUT_GAP_GU
-            + ASSET_PANEL_WIDTH_GU
-            + PANEL_LAYOUT_GAP_GU
-            + PAINT_PANEL_WIDTH_GU
-            + (PANEL_ROOT_MARGIN_X_GU * 2.0 * panel_count);
-        let mut total_width_gu = panel_strip_width_gu * PANEL_LAYOUT_WIDTH_BUDGET_MULTIPLIER;
-        let mut total_height_gu = WORLD_PANEL_TOTAL_HEIGHT_GU
+        let total_height_gu = WORLD_PANEL_TOTAL_HEIGHT_GU
             .max(INSPECTOR_PANEL_TOTAL_HEIGHT_GU)
             .max(ASSET_PANEL_TOTAL_HEIGHT_GU)
             .max(PAINT_PANEL_TOTAL_HEIGHT_GU)
+            * 2.0
+            + PANEL_LAYOUT_GAP_GU
             + (PANEL_ROOT_MARGIN_Y_GU * 2.0);
 
-        // override panel width
-        total_width_gu = 200000.0; 
-        total_height_gu = 200000.0;
-
         let world_panel = decorate_panel_root_ce(world_panel, 0.0);
-        let asset_panel = decorate_panel_root_ce(asset_panel, PANEL_LAYOUT_GAP_GU);
-        let paint_panel = decorate_panel_root_ce(paint_panel, PANEL_LAYOUT_GAP_GU);
+        let top_row = MaterializedCE {
+            component_type: "T".to_string(),
+            ctor_method: None,
+            ctor_args: Vec::new(),
+            calls: Vec::new(),
+            named: vec![(
+                "name".to_string(),
+                Value::String(PANEL_LAYOUT_TOP_ROW_NAME.to_string()),
+            )],
+            positionals: Vec::new(),
+            children: vec![
+                CeChild::Spawn(MaterializedCE {
+                    component_type: "Style".to_string(),
+                    ctor_method: None,
+                    ctor_args: Vec::new(),
+                    calls: vec![
+                        (
+                            "display".to_string(),
+                            vec![Value::String("block".to_string())],
+                        ),
+                        (
+                            "width".to_string(),
+                            vec![Value::Number(PANEL_LAYOUT_AVAILABLE_WIDTH_GU)],
+                        ),
+                        (
+                            "margin_bottom".to_string(),
+                            vec![Value::Number(PANEL_LAYOUT_GAP_GU)],
+                        ),
+                    ],
+                    named: Vec::new(),
+                    positionals: Vec::new(),
+                    children: Vec::new(),
+                }),
+                CeChild::Spawn(asset_panel),
+                CeChild::Spawn(paint_panel),
+            ],
+        };
+        let bottom_row = MaterializedCE {
+            component_type: "T".to_string(),
+            ctor_method: None,
+            ctor_args: Vec::new(),
+            calls: Vec::new(),
+            named: vec![(
+                "name".to_string(),
+                Value::String(PANEL_LAYOUT_BOTTOM_ROW_NAME.to_string()),
+            )],
+            positionals: Vec::new(),
+            children: vec![
+                CeChild::Spawn(MaterializedCE {
+                    component_type: "Style".to_string(),
+                    ctor_method: None,
+                    ctor_args: Vec::new(),
+                    calls: vec![
+                        (
+                            "display".to_string(),
+                            vec![Value::String("block".to_string())],
+                        ),
+                        (
+                            "width".to_string(),
+                            vec![Value::Number(PANEL_LAYOUT_AVAILABLE_WIDTH_GU)],
+                        ),
+                    ],
+                    named: Vec::new(),
+                    positionals: Vec::new(),
+                    children: Vec::new(),
+                }),
+                CeChild::Spawn(world_panel),
+            ],
+        };
 
         let shared_layout_root = MaterializedCE {
             component_type: "LayoutRoot".to_string(),
@@ -1339,7 +1397,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             calls: vec![
                 (
                     "available_width".to_string(),
-                    vec![Value::Number(total_width_gu)],
+                    vec![Value::Number(PANEL_LAYOUT_AVAILABLE_WIDTH_GU)],
                 ),
                 (
                     "available_height".to_string(),
@@ -1355,11 +1413,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 Value::String(PANEL_LAYOUT_ROOT_NAME.to_string()),
             )],
             positionals: Vec::new(),
-            children: vec![
-                CeChild::Spawn(world_panel),
-                CeChild::Spawn(asset_panel),
-                CeChild::Spawn(paint_panel),
-            ],
+            children: vec![CeChild::Spawn(top_row), CeChild::Spawn(bottom_row)],
         };
 
         let overlay_ce = MaterializedCE {
@@ -1416,12 +1470,6 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             world.init_component_tree(selection, emit);
         }
 
-        if let Some(_world_panel_root) =
-            world.find_component(panel_mount_root, WORLD_PANEL_ROOT_SELECTOR)
-        {}
-        if let Some(_inspector_panel_root) =
-            world.find_component(panel_mount_root, INSPECTOR_PANEL_ROOT_SELECTOR)
-        {}
         if let Some(paint_tool_selection) =
             world.find_component(panel_mount_root, "#paint_tool_selection")
         {
@@ -1542,10 +1590,6 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 }
             }
         }
-        if let Some(_paint_panel_root) = world.find_component(panel_mount_root, "#paint_panel_root")
-        {
-        }
-
         if let Some(panel_layout_selection) =
             world.find_component(panel_mount_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
         {
@@ -1580,25 +1624,28 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             },
         );
 
-        if let Some(world_panel_root) =
-            world.find_component(panel_mount_root, WORLD_PANEL_ROOT_SELECTOR)
-        {
-            if let Some(content_slot) =
-                world.find_component(world_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
+        if let Some(bottom_row_root) = world.find_component(
+            panel_mount_root,
+            &format!("#{PANEL_LAYOUT_BOTTOM_ROW_NAME}"),
+        ) {
+            if let Some(world_panel_root) =
+                world.find_component(panel_mount_root, WORLD_PANEL_ROOT_SELECTOR)
             {
-                rerender_world_panel_content(
-                    world,
-                    emit,
-                    panel_mount_root,
-                    content_slot,
-                    &model.rows,
-                    model.selected_index,
-                );
+                if let Some(content_slot) =
+                    world.find_component(world_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
+                {
+                    rerender_world_panel_content(
+                        world,
+                        emit,
+                        panel_mount_root,
+                        content_slot,
+                        &model.rows,
+                        model.selected_index,
+                    );
+                }
             }
-        }
 
-        if let Some(layout_root) = self.find_panel_layout_root(world, panel_mount_root) {
-            rerender_inspector_panels(world, emit, layout_root, inspector_models);
+            rerender_inspector_panels(world, emit, bottom_row_root, inspector_models);
         }
 
         println!(
@@ -1808,20 +1855,23 @@ fn should_skip_loaded_root(component: &MaterializedCE) -> bool {
             | "inspector_panel_root"
             | "assets_root"
             | "paint_panel_root"
+            | PANEL_LAYOUT_TOP_ROW_NAME
+            | PANEL_LAYOUT_BOTTOM_ROW_NAME
             | "world_panel_content_root"
             | "inspector_panel_content_root"
             | "panel_status_root"
             | "paint_panel_item"
             | "rows_mount"
-            | "inspector_panel_strip"
     ) || name.starts_with(INSPECTOR_PANEL_INSTANCE_PREFIX)
 }
 
-fn panel_layout_root_id(
-    world: &World,
-    panel_query_root: ComponentId,
-) -> Option<ComponentId> {
+fn panel_layout_root_id(world: &World, panel_query_root: ComponentId) -> Option<ComponentId> {
     world.find_component(panel_query_root, "#editor_panel_layout_root")
+}
+
+fn panel_layout_bottom_row_id(world: &World, panel_query_root: ComponentId) -> Option<ComponentId> {
+    let layout_root = panel_layout_root_id(world, panel_query_root)?;
+    world.find_component(layout_root, &format!("#{PANEL_LAYOUT_BOTTOM_ROW_NAME}"))
 }
 
 fn materialized_ce_name(component: &MaterializedCE) -> Option<&str> {
