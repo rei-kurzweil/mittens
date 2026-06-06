@@ -5,6 +5,8 @@
 
 // ── paint_panel_item ──────────────────────────────────────────────────────────
 
+let PAINT_PANEL_ICON_SCALE = 1.25
+
 export fn paint_panel_item(label, icon, item_background_color, title_color) {
     return T {
         name = "paint_panel_item"
@@ -34,7 +36,7 @@ export fn paint_panel_item(label, icon, item_background_color, title_color) {
                     text_align("center")
                     vertical_align("middle")
                 }
-                FitBounds.to_container() {
+                T.scale(PAINT_PANEL_ICON_SCALE, PAINT_PANEL_ICON_SCALE, 1.0) {
                     T {
                         icon
                     }
