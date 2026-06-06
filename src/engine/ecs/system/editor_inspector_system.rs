@@ -46,10 +46,12 @@ mod tests {
     use super::EditorInspectorSystem;
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::component::{
-        EditorComponent, GLTFComponent, OverlayComponent, SerializeComponent, TransformComponent,
+        BoundsComponent, EditorComponent, GLTFComponent, OverlayComponent, RenderableComponent,
+        SerializeComponent, TransformComponent,
     };
     use crate::engine::ecs::system::editor_inspector_system_stopgap_mms_adapter::set_world_panel_scene_path_for_tests;
     use crate::engine::ecs::{EventSignal, IntentValue, SignalEmitter, SystemWorld, World};
+    use crate::engine::graphics::bounds::Aabb;
     use crate::engine::graphics::{RenderAssets, VisualWorld};
     use std::path::PathBuf;
     use std::sync::Mutex;
@@ -423,6 +425,90 @@ mod tests {
     }
 
     #[test]
+    fn setup_panels_for_editor_click_rerenders_inspector_and_status_once() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::new();
+        let mut inspector = EditorInspectorSystem::new();
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let child_transform =
+            world.add_component_boxed_named("child_transform", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_root);
+        let _ = world.add_child(scene_root, child_transform);
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (1.9, 1.6, -1.2),
+            systems.editor_context.shared_state(),
+            &systems.asset_system,
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        let world_panel_root = world
+            .find_component(runtime_ui_root, "#world_panel_root")
+            .expect("expected world panel root");
+        let inspector_panel_root = world
+            .find_component(runtime_ui_root, "#inspector_panel_root")
+            .expect("expected inspector panel root");
+        let scene_row = world
+            .find_component(runtime_ui_root, "#item_1")
+            .expect("expected scene row under runtime ui root");
+
+        systems.rx.push_event(
+            scene_row,
+            EventSignal::Click {
+                raycaster: scene_row,
+                renderable: scene_row,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        assert_eq!(
+            world
+                .find_all_components(world_panel_root, "#panel_status_value")
+                .len(),
+            1,
+            "expected exactly one status label after selection rerender"
+        );
+        assert_eq!(
+            world
+                .find_all_components(inspector_panel_root, "#inspector_item_0")
+                .len(),
+            1,
+            "expected exactly one first inspector row after selection rerender"
+        );
+        assert_eq!(
+            world
+                .find_all_components(inspector_panel_root, "#inspector_item_1")
+                .len(),
+            1,
+            "expected exactly one second inspector row after selection rerender"
+        );
+    }
+
+    #[test]
     fn setup_panels_for_editor_groups_rows_by_editor_tree() {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
@@ -716,6 +802,89 @@ mod tests {
                 .find_component(runtime_ui_root, "#inspector_item_2")
                 .is_none(),
             "expected runtime helper descendants to stay hidden from inspector"
+        );
+    }
+
+    #[test]
+    fn setup_panels_for_editor_inspector_uses_authored_rows_without_runtime_bounds_children() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::new();
+        let mut inspector = EditorInspectorSystem::new();
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let renderable_root =
+            world.add_component_boxed_named("mesh_root", Box::new(TransformComponent::new()));
+        let renderable =
+            world.add_component_boxed_named("mesh", Box::new(RenderableComponent::cube()));
+        let _ = world.add_child(editor_root, scene_root);
+        let _ = world.add_child(scene_root, renderable_root);
+        let _ = world.add_child(renderable_root, renderable);
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (1.9, 1.6, -1.2),
+            systems.editor_context.shared_state(),
+            &systems.asset_system,
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let bounds = world.add_component_boxed(Box::new(BoundsComponent::new(Aabb {
+            min: [-0.5, -0.5, -0.5],
+            max: [0.5, 0.5, 0.5],
+        })));
+        let _ = world.add_child(renderable, bounds);
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        let scene_row = world
+            .find_component(runtime_ui_root, "#item_1")
+            .expect("expected scene row under runtime ui root");
+        systems.rx.push_event(
+            scene_row,
+            EventSignal::Click {
+                raycaster: scene_row,
+                renderable: scene_row,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        assert_eq!(
+            row_text(&world, runtime_ui_root, "#inspector_item_0"),
+            "scene_root"
+        );
+        assert_eq!(
+            row_text(&world, runtime_ui_root, "#inspector_item_1"),
+            "  mesh_root"
+        );
+        assert_eq!(
+            row_text(&world, runtime_ui_root, "#inspector_item_2"),
+            "    mesh"
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#inspector_item_3")
+                .is_none(),
+            "expected runtime Bounds child to stay hidden from inspector"
         );
     }
 

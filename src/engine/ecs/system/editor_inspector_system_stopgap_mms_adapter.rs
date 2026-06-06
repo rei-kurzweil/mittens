@@ -169,7 +169,14 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 .lock()
                 .expect("world panel scene model mutex poisoned"),
         );
-        let inspector_model = build_inspector_panel_model(world, &editor_context);
+        let inspector_model = build_inspector_panel_model(
+            world,
+            &editor_context,
+            &self
+                .world_panel_scene_model
+                .lock()
+                .expect("world panel scene model mutex poisoned"),
+        );
 
         {
             let working_file_path = self
@@ -338,20 +345,22 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     emit,
                     panel_query_root,
                     &click_editor_context_state,
+                    &click_world_panel_scene_model,
                     selection_root,
                 );
             },
         );
 
         let world_selection_editor_context_state = editor_context_state.clone();
+        let world_selection_scene_model = Arc::clone(&self.world_panel_scene_model);
         rx.add_handler_closure(
             SignalKind::SelectionChanged,
             panel_query_root,
             move |world, emit, signal| {
                 let Some(EventSignal::SelectionChanged {
                     selection_root,
-                    selected_component,
-                    selected_payload,
+                    selected_component: _,
+                    selected_payload: _,
                     ..
                 }) = signal.event.as_ref()
                 else {
@@ -377,8 +386,8 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             move |world, emit, signal| {
                 let Some(EventSignal::SelectionChanged {
                     selection_root,
-                    selected_component,
-                    selected_payload,
+                    selected_component: _,
+                    selected_payload: _,
                     ..
                 }) = signal.event.as_ref()
                 else {
@@ -395,12 +404,19 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     return;
                 }
 
-                let _ = (selected_component, selected_payload);
+                if world_panel_selection_matches_editor_context(
+                    world,
+                    &world_selection_editor_context_state,
+                    *selection_root,
+                ) {
+                    return;
+                }
                 apply_world_panel_semantic_selection(
                     world,
                     emit,
                     panel_query_root,
                     &world_selection_editor_context_state,
+                    &world_selection_scene_model,
                     *selection_root,
                 );
 
@@ -658,7 +674,13 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     &editor_context_state,
                     &world_panel_scene_model,
                 );
-                refresh_inspector_panel(world, emit, panel_query_root, &editor_context_state);
+                refresh_inspector_panel(
+                    world,
+                    emit,
+                    panel_query_root,
+                    &editor_context_state,
+                    &world_panel_scene_model,
+                );
             },
         );
 
@@ -725,7 +747,14 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             return;
         };
 
-        let inspector_model = build_inspector_panel_model(world, &editor_context);
+        let inspector_model = build_inspector_panel_model(
+            world,
+            &editor_context,
+            &self
+                .world_panel_scene_model
+                .lock()
+                .expect("world panel scene model mutex poisoned"),
+        );
         rerender_inspector_panel_content(
             world,
             emit,
@@ -777,7 +806,13 @@ fn refresh_all_panel_models(
         );
     }
 
-    refresh_inspector_panel(world, emit, panel_query_root, editor_context_state);
+    refresh_inspector_panel(
+        world,
+        emit,
+        panel_query_root,
+        editor_context_state,
+        world_panel_scene_model,
+    );
 }
 
 fn refresh_inspector_panel(
@@ -785,6 +820,7 @@ fn refresh_inspector_panel(
     emit: &mut dyn SignalEmitter,
     panel_query_root: ComponentId,
     editor_context_state: &Arc<Mutex<EditorContextState>>,
+    world_panel_scene_model: &Arc<Mutex<AuthoredWorldPanelSceneModel>>,
 ) {
     let editor_context = editor_context_state
         .lock()
@@ -804,7 +840,13 @@ fn refresh_inspector_panel(
     if let Some(inspector_content_slot) =
         world.find_component(inspector_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
     {
-        let inspector_model = build_inspector_panel_model(world, &editor_context);
+        let inspector_model = build_inspector_panel_model(
+            world,
+            &editor_context,
+            &world_panel_scene_model
+                .lock()
+                .expect("world panel scene model mutex poisoned"),
+        );
         rerender_inspector_panel_content(
             world,
             emit,
@@ -820,6 +862,7 @@ fn apply_world_panel_semantic_selection(
     emit: &mut dyn SignalEmitter,
     panel_query_root: ComponentId,
     editor_context_state: &Arc<Mutex<EditorContextState>>,
+    world_panel_scene_model: &Arc<Mutex<AuthoredWorldPanelSceneModel>>,
     selection_root: ComponentId,
 ) {
     let Some(selection) = world.get_component_by_id_as::<SelectionComponent>(selection_root) else {
@@ -855,12 +898,42 @@ fn apply_world_panel_semantic_selection(
     {
         let status_text = format!(
             "selected {}",
-            world_panel_item_label(world, target_component)
+        world_panel_item_label(world, target_component)
         );
         rerender_world_panel_status(world, emit, world_panel_root, status_wrap, &status_text);
     }
 
-    refresh_inspector_panel(world, emit, panel_query_root, editor_context_state);
+    refresh_inspector_panel(
+        world,
+        emit,
+        panel_query_root,
+        editor_context_state,
+        world_panel_scene_model,
+    );
+}
+
+fn world_panel_selection_matches_editor_context(
+    world: &World,
+    editor_context_state: &Arc<Mutex<EditorContextState>>,
+    selection_root: ComponentId,
+) -> bool {
+    let Some(selection) = world.get_component_by_id_as::<SelectionComponent>(selection_root) else {
+        return false;
+    };
+    let Some(target_component) = resolve_semantic_target_from_payload(
+        world,
+        selection.selected_payload,
+        selection.selected_component,
+    ) else {
+        return false;
+    };
+    let active_editor = nearest_editor_ancestor(world, target_component);
+    let editor_context = editor_context_state
+        .lock()
+        .expect("editor context state mutex poisoned")
+        .clone();
+    editor_context.selected_component == Some(target_component)
+        && (active_editor.is_none() || editor_context.active_editor == active_editor)
 }
 
 fn sync_world_panel_selection(
@@ -1673,13 +1746,14 @@ fn build_world_panel_model(
 fn build_inspector_panel_model(
     world: &World,
     editor_context: &EditorContextState,
+    scene_model: &AuthoredWorldPanelSceneModel,
 ) -> InspectorPanelModel {
     let inspection_target = editor_context
         .selected_component
         .or(editor_context.active_editor);
     println!("[InspectorSystem][trace] build_inspector_panel_model target={inspection_target:?}");
     let rows = inspection_target
-        .map(|component_id| build_inspector_panel_rows(world, component_id))
+        .map(|component_id| build_inspector_panel_rows(world, scene_model, component_id))
         .unwrap_or_else(|| {
             vec![InspectorPanelRow {
                 display_label: "<nothing selected>".to_string(),
@@ -1693,7 +1767,15 @@ fn build_inspector_panel_model(
     }
 }
 
-fn build_inspector_panel_rows(world: &World, root: ComponentId) -> Vec<InspectorPanelRow> {
+fn build_inspector_panel_rows(
+    world: &World,
+    scene_model: &AuthoredWorldPanelSceneModel,
+    root: ComponentId,
+) -> Vec<InspectorPanelRow> {
+    if let Some(rows) = build_authored_inspector_panel_rows(world, scene_model, root) {
+        return rows;
+    }
+
     if matches!(
         authored_scene_node_policy(world, root),
         AuthoredSceneNodePolicy::Skip
@@ -1707,6 +1789,61 @@ fn build_inspector_panel_rows(world: &World, root: ComponentId) -> Vec<Inspector
     let mut rows = Vec::new();
     push_inspector_panel_rows(world, root, 0, &mut rows);
     rows
+}
+
+fn build_authored_inspector_panel_rows(
+    world: &World,
+    scene_model: &AuthoredWorldPanelSceneModel,
+    root: ComponentId,
+) -> Option<Vec<InspectorPanelRow>> {
+    for section in &scene_model.sections {
+        if section.editor_root == root {
+            let mut rows = Vec::with_capacity(section.rows.len() + 1);
+            rows.push(InspectorPanelRow {
+                display_label: editor_chunk_label(world, section.editor_root),
+                kind: InspectorPanelRowKind::Component,
+            });
+            rows.extend(section.rows.iter().map(|row| InspectorPanelRow {
+                display_label: format!("{}{}", "  ".repeat(row.depth + 1), row.label),
+                kind: InspectorPanelRowKind::Component,
+            }));
+            return Some(rows);
+        }
+
+        let Some((root_index, root_row)) = section
+            .rows
+            .iter()
+            .enumerate()
+            .find(|(_, row)| row.target_component == root)
+        else {
+            continue;
+        };
+
+        let mut rows = Vec::new();
+        rows.push(InspectorPanelRow {
+            display_label: root_row.label.clone(),
+            kind: InspectorPanelRowKind::Component,
+        });
+
+        for row in section.rows.iter().skip(root_index + 1) {
+            if row.depth <= root_row.depth {
+                break;
+            }
+
+            rows.push(InspectorPanelRow {
+                display_label: format!(
+                    "{}{}",
+                    "  ".repeat(row.depth - root_row.depth),
+                    row.label
+                ),
+                kind: InspectorPanelRowKind::Component,
+            });
+        }
+
+        return Some(rows);
+    }
+
+    None
 }
 
 fn push_inspector_panel_rows(
