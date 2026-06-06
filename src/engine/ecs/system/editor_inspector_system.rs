@@ -5,6 +5,166 @@ use crate::engine::ecs::system::editor_context_system::EditorContextState;
 use crate::engine::ecs::system::editor_inspector_system_stopgap_mms_adapter::EditorInspectorSystemStopgapMmsAdapter;
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 
+pub(crate) type InspectorPanelId = u64;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct InspectorSubtreeSelection {
+    pub(crate) focused_row: Option<ComponentId>,
+    pub(crate) expanded: Vec<ComponentId>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct InspectorScrollState {
+    pub(crate) row_offset: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InspectorPanelState {
+    pub(crate) panel_id: InspectorPanelId,
+    pub(crate) editor_root: ComponentId,
+    pub(crate) inspected: Option<ComponentId>,
+    pub(crate) pinned: bool,
+    pub(crate) subtree_selection: InspectorSubtreeSelection,
+    pub(crate) scroll_offset: InspectorScrollState,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct InspectorWorkspaceState {
+    pub(crate) panels: Vec<InspectorPanelState>,
+    pub(crate) active_panel: Option<InspectorPanelId>,
+    pub(crate) pending_spawn_target: Option<ComponentId>,
+    pub(crate) next_panel_id: InspectorPanelId,
+}
+
+impl InspectorWorkspaceState {
+    pub(crate) fn next_panel_id(&mut self) -> InspectorPanelId {
+        let next = self.next_panel_id.max(1);
+        self.next_panel_id = next + 1;
+        next
+    }
+
+    pub(crate) fn active_panel_index(&self) -> Option<usize> {
+        let active_panel = self.active_panel?;
+        self.panels
+            .iter()
+            .position(|panel| panel.panel_id == active_panel)
+    }
+
+    pub(crate) fn ensure_default_panel(
+        &mut self,
+        editor_root: ComponentId,
+        inspected: Option<ComponentId>,
+    ) -> InspectorPanelId {
+        if let Some(panel) = self.panels.first() {
+            return panel.panel_id;
+        }
+
+        let panel_id = self.next_panel_id();
+        self.panels.push(InspectorPanelState {
+            panel_id,
+            editor_root,
+            inspected,
+            pinned: false,
+            subtree_selection: InspectorSubtreeSelection::default(),
+            scroll_offset: InspectorScrollState::default(),
+        });
+        self.active_panel = Some(panel_id);
+        panel_id
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum InspectorWorkspaceEvent {
+    SelectionChanged {
+        editor_root: ComponentId,
+        selected_target: Option<ComponentId>,
+    },
+    PanelFocused {
+        panel_id: InspectorPanelId,
+    },
+    PanelPinToggled {
+        panel_id: InspectorPanelId,
+    },
+}
+
+pub(crate) fn clear_missing_inspector_targets(
+    workspace: &mut InspectorWorkspaceState,
+    component_exists: impl Fn(ComponentId) -> bool,
+) {
+    for panel in &mut workspace.panels {
+        if panel
+            .inspected
+            .is_some_and(|component_id| !component_exists(component_id))
+        {
+            panel.inspected = None;
+        }
+    }
+}
+
+pub(crate) fn reduce_inspector_workspace_state(
+    old: &InspectorWorkspaceState,
+    event: &InspectorWorkspaceEvent,
+) -> InspectorWorkspaceState {
+    let mut new = old.clone();
+
+    match event {
+        InspectorWorkspaceEvent::SelectionChanged {
+            editor_root,
+            selected_target,
+        } => {
+            if new.panels.is_empty() {
+                new.ensure_default_panel(*editor_root, *selected_target);
+                return new;
+            }
+
+            let active_index = new.active_panel_index().unwrap_or(0);
+            let active_panel = &new.panels[active_index];
+            let should_spawn = active_panel.pinned
+                && selected_target.is_some()
+                && active_panel.inspected != *selected_target;
+
+            if should_spawn {
+                let panel_id = new.next_panel_id();
+                new.panels.insert(
+                    active_index + 1,
+                    InspectorPanelState {
+                        panel_id,
+                        editor_root: *editor_root,
+                        inspected: *selected_target,
+                        pinned: false,
+                        subtree_selection: InspectorSubtreeSelection::default(),
+                        scroll_offset: InspectorScrollState::default(),
+                    },
+                );
+                new.active_panel = Some(panel_id);
+                new.pending_spawn_target = None;
+                return new;
+            }
+
+            let active_panel = &mut new.panels[active_index];
+            active_panel.editor_root = *editor_root;
+            active_panel.inspected = *selected_target;
+            new.active_panel = Some(active_panel.panel_id);
+            new.pending_spawn_target = None;
+        }
+        InspectorWorkspaceEvent::PanelFocused { panel_id } => {
+            new.active_panel = Some(*panel_id);
+        }
+        InspectorWorkspaceEvent::PanelPinToggled { panel_id } => {
+            new.active_panel = Some(*panel_id);
+            if let Some(panel) = new
+                .panels
+                .iter_mut()
+                .find(|panel| panel.panel_id == *panel_id)
+            {
+                panel.pinned = !panel.pinned;
+            }
+        }
+    }
+
+    new
+}
+
 #[derive(Debug, Default)]
 pub struct EditorInspectorSystem {
     stopgap_mms: EditorInspectorSystemStopgapMmsAdapter,
@@ -43,7 +203,11 @@ impl EditorInspectorSystem {
 
 #[cfg(test)]
 mod tests {
-    use super::EditorInspectorSystem;
+    use super::{
+        EditorInspectorSystem, InspectorPanelState, InspectorScrollState,
+        InspectorSubtreeSelection, InspectorWorkspaceEvent, InspectorWorkspaceState,
+        reduce_inspector_workspace_state,
+    };
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::component::{
         BoundsComponent, EditorComponent, GLTFComponent, OverlayComponent, RenderableComponent,
@@ -122,6 +286,81 @@ mod tests {
         systems.process_commands(world, visuals, render_assets, emit);
         let _ = systems.process_signals(world, visuals, render_assets, emit, 100_000);
         systems.process_commands(world, visuals, render_assets, emit);
+    }
+
+    #[test]
+    fn inspector_workspace_reducer_spawns_new_unpinned_panel_when_active_panel_is_pinned() {
+        let mut world = World::default();
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let target_a =
+            world.add_component_boxed_named("target_a", Box::new(TransformComponent::new()));
+        let target_b =
+            world.add_component_boxed_named("target_b", Box::new(TransformComponent::new()));
+        let workspace = InspectorWorkspaceState {
+            panels: vec![InspectorPanelState {
+                panel_id: 1,
+                editor_root,
+                inspected: Some(target_a),
+                pinned: true,
+                subtree_selection: InspectorSubtreeSelection::default(),
+                scroll_offset: InspectorScrollState::default(),
+            }],
+            active_panel: Some(1),
+            pending_spawn_target: None,
+            next_panel_id: 2,
+        };
+
+        let reduced = reduce_inspector_workspace_state(
+            &workspace,
+            &InspectorWorkspaceEvent::SelectionChanged {
+                editor_root,
+                selected_target: Some(target_b),
+            },
+        );
+
+        assert_eq!(reduced.panels.len(), 2);
+        assert_eq!(reduced.active_panel, Some(2));
+        assert_eq!(reduced.panels[0].inspected, Some(target_a));
+        assert!(reduced.panels[0].pinned);
+        assert_eq!(reduced.panels[1].inspected, Some(target_b));
+        assert!(!reduced.panels[1].pinned);
+    }
+
+    #[test]
+    fn inspector_workspace_reducer_retargets_active_panel_when_unpinned() {
+        let mut world = World::default();
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let target_a =
+            world.add_component_boxed_named("target_a", Box::new(TransformComponent::new()));
+        let target_b =
+            world.add_component_boxed_named("target_b", Box::new(TransformComponent::new()));
+        let workspace = InspectorWorkspaceState {
+            panels: vec![InspectorPanelState {
+                panel_id: 1,
+                editor_root,
+                inspected: Some(target_a),
+                pinned: false,
+                subtree_selection: InspectorSubtreeSelection::default(),
+                scroll_offset: InspectorScrollState::default(),
+            }],
+            active_panel: Some(1),
+            pending_spawn_target: None,
+            next_panel_id: 2,
+        };
+
+        let reduced = reduce_inspector_workspace_state(
+            &workspace,
+            &InspectorWorkspaceEvent::SelectionChanged {
+                editor_root,
+                selected_target: Some(target_b),
+            },
+        );
+
+        assert_eq!(reduced.panels.len(), 1);
+        assert_eq!(reduced.active_panel, Some(1));
+        assert_eq!(reduced.panels[0].inspected, Some(target_b));
     }
 
     #[test]
@@ -617,8 +856,14 @@ mod tests {
             .find_component(runtime_ui_root, "#inspector_panel_instance_2")
             .expect("expected second inspector instance");
 
-        assert_eq!(row_text(&world, inspector_one, "#inspector_item_0"), "scene_a");
-        assert_eq!(row_text(&world, inspector_two, "#inspector_item_0"), "scene_b");
+        assert_eq!(
+            row_text(&world, inspector_one, "#inspector_item_0"),
+            "scene_a"
+        );
+        assert_eq!(
+            row_text(&world, inspector_two, "#inspector_item_0"),
+            "scene_b"
+        );
     }
 
     #[test]
@@ -1050,6 +1295,77 @@ mod tests {
         assert_eq!(
             count_named_children(&world, runtime_ui_root, "editor_panel_layout_mount"),
             1
+        );
+    }
+
+    #[test]
+    fn setup_panels_for_editor_respawns_panel_layout_when_runtime_panel_subtree_was_removed() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::new();
+        let mut inspector = EditorInspectorSystem::new();
+
+        let editor_root =
+            world.add_component_boxed_named("alpha", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_root);
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
+            &systems.asset_system,
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        let panel_mount = world
+            .find_component(runtime_ui_root, "#editor_panel_layout_mount")
+            .expect("expected initial panel layout mount");
+        world
+            .remove_component_subtree(panel_mount)
+            .expect("expected initial panel layout mount subtree removal to succeed");
+
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#editor_panel_layout_mount")
+                .is_none(),
+            "expected panel layout mount subtree to be removed before respawn"
+        );
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
+            &systems.asset_system,
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        assert_eq!(
+            count_named_children(&world, runtime_ui_root, "editor_panel_layout_mount"),
+            1,
+            "expected panel layout mount to respawn exactly once after subtree removal"
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#inspector_panel_strip")
+                .is_some(),
+            "expected inspector panel strip to respawn with the panel layout"
         );
     }
 
