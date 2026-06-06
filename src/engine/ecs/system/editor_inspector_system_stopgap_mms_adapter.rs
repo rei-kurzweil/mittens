@@ -59,7 +59,7 @@ const WORLD_PANEL_WIDTH_GU: f64 = 29.5;
 const WORLD_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
 const INSPECTOR_PANEL_WIDTH_GU: f64 = 22.0;
 const INSPECTOR_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
-const ASSET_PANEL_WIDTH_GU: f64 = 30.0;
+const ASSET_PANEL_WIDTH_GU: f64 = 39.0;
 const ASSET_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
 const PAINT_PANEL_WIDTH_GU: f64 = 41.0;
 const PAINT_PANEL_TOTAL_HEIGHT_GU: f64 = 32.0;
@@ -1286,6 +1286,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         let _ = inspector_panel_pos;
         let anchor_pos = world_panel_pos;
 
+        let panel_count = 3.0 + inspector_models.len().max(1) as f64;
         let panel_strip_width_gu = WORLD_PANEL_WIDTH_GU
             + PANEL_LAYOUT_GAP_GU
             + ((INSPECTOR_PANEL_WIDTH_GU * inspector_models.len().max(1) as f64)
@@ -1294,7 +1295,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             + ASSET_PANEL_WIDTH_GU
             + PANEL_LAYOUT_GAP_GU
             + PAINT_PANEL_WIDTH_GU
-            + (PANEL_ROOT_MARGIN_X_GU * 2.0 * 4.0);
+            + (PANEL_ROOT_MARGIN_X_GU * 2.0 * panel_count);
         let total_width_gu = panel_strip_width_gu * PANEL_LAYOUT_WIDTH_BUDGET_MULTIPLIER;
         let total_height_gu = WORLD_PANEL_TOTAL_HEIGHT_GU
             .max(INSPECTOR_PANEL_TOTAL_HEIGHT_GU)
