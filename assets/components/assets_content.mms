@@ -6,7 +6,7 @@ export fn assets_content(items, item_background_color) {
     return T {
         name = "assets_content_area"
         id = "assets_content_area"
-        Selection {
+        Selection.payload_selector("[name='asset_payload']") {
             name = "assets_selection"
         }
         Style {

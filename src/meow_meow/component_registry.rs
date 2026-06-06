@@ -1,4 +1,5 @@
 use crate::engine::ecs::SignalEmitter;
+use crate::engine::ecs::component::AssetPayloadComponent;
 use crate::engine::ecs::component::style::VerticalAlign;
 /// Component registry: maps MMS type names to engine component constructors.
 ///
@@ -1242,6 +1243,18 @@ fn create_component(
             }
             Ok(id)
         }
+        "AssetPayload" => {
+            let id = world.add_component(match ctor {
+                Some("new") => AssetPayloadComponent::new(arg_str(args, 0)?, arg_str(args, 1)?),
+                _ => AssetPayloadComponent::new("", ""),
+            });
+            if let Some(method) = ctor {
+                if method != "new" {
+                    apply_call(world, id, method, args)?;
+                }
+            }
+            Ok(id)
+        }
         "Router" => {
             let id = world.add_component(RouterComponent::new());
             if let Some(method) = ctor {
@@ -1253,10 +1266,18 @@ fn create_component(
             Some("off") => add!(SelectableComponent::off()),
             _ => add!(SelectableComponent::on()),
         },
-        "Selection" => match ctor {
-            Some("multiple") => add!(SelectionComponent::multiple()),
-            _ => add!(SelectionComponent::new()),
-        },
+        "Selection" => {
+            let id = world.add_component(match ctor {
+                Some("multiple") => SelectionComponent::multiple(),
+                _ => SelectionComponent::new(),
+            });
+            if let Some(method) = ctor {
+                if method != "multiple" {
+                    apply_call(world, id, method, args)?;
+                }
+            }
+            Ok(id)
+        }
         "Option" => add!(OptionComponent::new()),
         "Serialize" => match ctor {
             Some("off") => add!(SerializeComponent::off()),
@@ -1858,6 +1879,23 @@ fn apply_call(
     if let Some(text_input) = world.get_component_by_id_as_mut::<TextInputComponent>(id) {
         match method {
             "read_only" => text_input.read_only = arg_bool(args, 0)?,
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(asset_payload) = world.get_component_by_id_as_mut::<AssetPayloadComponent>(id) {
+        match method {
+            "asset_key" => asset_payload.asset_key = arg_str(args, 0)?.to_string(),
+            "title" => asset_payload.title = arg_str(args, 0)?.to_string(),
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(id) {
+        match method {
+            "payload_selector" => {
+                selection.payload_selector = Some(arg_str(args, 0)?.to_string());
+            }
             _ => {}
         }
         return Ok(());

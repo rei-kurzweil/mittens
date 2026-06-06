@@ -197,6 +197,7 @@ pub(crate) fn select_editor_target(
                 component: target_transform,
             }],
             selected_component: Some(target_transform),
+            selected_payload: Some(target_transform),
         },
     );
 

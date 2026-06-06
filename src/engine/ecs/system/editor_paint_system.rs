@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::{
-    EditorComponent, OptionComponent, RaycastableComponent, SelectableComponent,
-    SelectionComponent, TransformComponent, TransformGizmoComponent,
+    AssetPayloadComponent, EditorComponent, OptionComponent, RaycastableComponent,
+    SelectableComponent, SelectionComponent, TransformComponent, TransformGizmoComponent,
 };
 use crate::engine::ecs::system::editor_context_system::EditorContextState;
 use crate::engine::ecs::system::editor_paint_system_state_manager::{
@@ -29,6 +29,7 @@ const RUNTIME_UI_ROOT_NAME: &str = "editor_runtime_ui_root";
 
 #[derive(Debug, Clone)]
 pub struct PaintAssetTemplate {
+    pub key: String,
     pub title: String,
     pub module: LoadedMmsModule,
     pub export_name: String,
@@ -228,7 +229,7 @@ fn bootstrap_paint_state(
         ASSETS_SELECTION_SELECTOR,
         |selection| PaintEvent::AssetSelectionChanged {
             item: selection.selected_item.clone(),
-            component: selection.selected_component,
+            component: selection.selected_payload.or(selection.selected_component),
         },
     ) {
         events.push(asset_event);
@@ -280,7 +281,7 @@ fn sync_paint_state_from_shared_selections(
         ASSETS_SELECTION_SELECTOR,
         |selection| PaintEvent::AssetSelectionChanged {
             item: selection.selected_item.clone(),
-            component: selection.selected_component,
+            component: selection.selected_payload.or(selection.selected_component),
         },
     ) {
         events.push(event);
@@ -319,11 +320,13 @@ fn paint_event_from_shared_signal(
             selection_root,
             selected_entries,
             selected_component,
+            selected_payload,
             ..
         } => {
             let item = selected_entries.last().and_then(|entry| entry.item.clone());
-            let component =
-                selected_component.or_else(|| selected_entries.last().map(|entry| entry.component));
+            let component = selected_payload
+                .or(*selected_component)
+                .or_else(|| selected_entries.last().map(|entry| entry.component));
             let asset_selection_root =
                 world.find_component(panel_query_root, ASSETS_SELECTION_SELECTOR);
             let tool_selection_root =
@@ -708,10 +711,15 @@ fn resolve_paint_context(
     if !is_paint_active(paint_panel_root, paint_state, editor_context) {
         return None;
     }
-    let asset_title = paint_state.selected_asset.as_ref()?.item.as_ref()?;
+    let selected_asset = paint_state.selected_asset.as_ref()?;
+    let payload = selected_asset.component?;
+    let asset_key = world
+        .get_component_by_id_as::<AssetPayloadComponent>(payload)?
+        .asset_key
+        .clone();
     let asset = templates
         .iter()
-        .find(|template| template.title == *asset_title)?
+        .find(|template| template.key == asset_key)?
         .clone();
     Some(PaintContext {
         asset,
@@ -734,7 +742,7 @@ fn paint_activity_status(
     if paint_state
         .selected_asset
         .as_ref()
-        .and_then(|selection| selection.item.as_ref())
+        .and_then(|selection| selection.component)
         .is_none()
     {
         return PaintActivityStatus {
@@ -961,7 +969,7 @@ fn base_status_text(
     if paint_state
         .selected_asset
         .as_ref()
-        .and_then(|selection| selection.item.as_ref())
+        .and_then(|selection| selection.component)
         .is_none()
     {
         return "paint inactive: no asset selected".to_string();
@@ -1109,7 +1117,8 @@ mod tests {
     use super::*;
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::component::{
-        ColorComponent, GridComponent, RenderableComponent, SelectionComponent,
+        AssetPayloadComponent, ColorComponent, GridComponent, RenderableComponent,
+        SelectionComponent,
     };
     use crate::engine::ecs::system::SystemWorld;
     use crate::engine::graphics::{RenderAssets, VisualWorld};
@@ -1319,6 +1328,36 @@ mod tests {
             count_named_descendants(&world, editor_root, "painted_asset_root"),
             0
         );
+    }
+
+    #[test]
+    fn asset_selection_bootstraps_to_asset_payload_component() {
+        let (
+            world,
+            _emit,
+            _visuals,
+            _systems,
+            _render_assets,
+            _editor_root,
+            _scene_root,
+            _renderable,
+            _paint_panel_root,
+        ) = init_editor_fixture();
+
+        let runtime_ui_root = find_named_root(&world, RUNTIME_UI_ROOT_NAME);
+        let assets_selection = world
+            .find_component(runtime_ui_root, ASSETS_SELECTION_SELECTOR)
+            .expect("assets selection");
+        let selection = world
+            .get_component_by_id_as::<SelectionComponent>(assets_selection)
+            .expect("selection");
+        let payload = selection.selected_payload.expect("selected payload");
+        let asset_payload = world
+            .get_component_by_id_as::<AssetPayloadComponent>(payload)
+            .expect("asset payload component");
+
+        assert!(!asset_payload.asset_key.is_empty());
+        assert_eq!(selection.selected_component, world.parent_of(payload));
     }
 
     #[test]

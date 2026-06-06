@@ -5,7 +5,8 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 
 use crate::engine::ecs::component::{
-    LayoutComponent, RaycastableComponent, StyleComponent, TransformComponent,
+    AssetPayloadComponent, LayoutComponent, RaycastableComponent, StyleComponent,
+    TransformComponent,
 };
 use crate::engine::ecs::system::bounds_system::{BoundsSystem, RenderableBoundsMeasure};
 use crate::engine::ecs::system::editor_paint_system::PaintAssetTemplate;
@@ -31,6 +32,12 @@ pub struct AssetItem {
     pub description: Option<String>,
     pub category: Option<String>,
     pub param_names: Vec<String>,
+}
+
+impl AssetItem {
+    pub fn asset_key(&self, module_path: &Path) -> String {
+        format!("{}::{}", module_path.display(), self.export_name)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -161,6 +168,7 @@ impl AssetSystem {
             .filter_map(|item| {
                 let module = self.modules.get(&item.module_id)?;
                 Some(PaintAssetTemplate {
+                    key: item.asset_key(&module.path),
                     title: item.title.clone(),
                     module: module.module.clone(),
                     export_name: item.export_name.clone(),
@@ -450,6 +458,19 @@ impl AssetSystem {
             world,
             emit,
         )?;
+
+        if let Some(module) = self.modules.get(&item.module_id) {
+            let payload = world.add_component_boxed_named(
+                "asset_payload",
+                Box::new(AssetPayloadComponent::new(
+                    item.asset_key(&module.path),
+                    item.title.clone(),
+                )),
+            );
+            world
+                .add_child(item_root, payload)
+                .map_err(|e| format!("attach asset payload failed: {e}"))?;
+        }
 
         // Pass dummy arguments based on param_names
         let mut args = Vec::new();

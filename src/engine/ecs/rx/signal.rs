@@ -145,6 +145,7 @@ pub enum EventSignal {
         mode: SelectionMode,
         selected_entries: Vec<SelectionEntry>,
         selected_component: Option<ComponentId>,
+        selected_payload: Option<ComponentId>,
     },
 
     /// An entry was added to a selection scope.

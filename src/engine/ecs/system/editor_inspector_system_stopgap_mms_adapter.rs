@@ -660,7 +660,6 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         // Intentionally no ParentChanged-scoped full refresh here. Runtime systems such as
         // AvatarControl re-parent large authored subtrees during the first tick, and rebuilding
         // the cached world-panel model on every such mutation can wedge the first frame.
-
     }
 
     fn editor_context(&self) -> EditorContextState {

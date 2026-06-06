@@ -1,6 +1,7 @@
 pub mod action;
 pub mod ambient_light;
 pub mod animation;
+pub mod asset_payload;
 pub mod audio_band_pass_filter;
 pub mod audio_buffer_size;
 pub mod audio_clip;
@@ -98,6 +99,7 @@ pub use ambient_light::AmbientLightComponent;
 pub use animation::AnimationComponent;
 pub use animation::AnimationState;
 pub use animation::ResolveTargetsMode;
+pub use asset_payload::AssetPayloadComponent;
 pub use audio_band_pass_filter::*;
 pub use audio_buffer_size::AudioBufferSizeComponent;
 pub use audio_clip::{AudioClipComponent, AudioClipLoadState, AudioTriggerMode};

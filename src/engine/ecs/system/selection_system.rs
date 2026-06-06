@@ -412,8 +412,10 @@ pub fn emit_selection_events(
     mode: SelectionMode,
     old_entries: &[SelectionEntry],
     old_selected_component: Option<ComponentId>,
+    old_selected_payload: Option<ComponentId>,
     new_entries: Vec<SelectionEntry>,
     new_selected_component: Option<ComponentId>,
+    new_selected_payload: Option<ComponentId>,
 ) {
     for entry in new_entries.iter() {
         if !old_entries
@@ -452,7 +454,10 @@ pub fn emit_selection_events(
         );
     }
 
-    if old_entries != new_entries || old_selected_component != new_selected_component {
+    if old_entries != new_entries
+        || old_selected_component != new_selected_component
+        || old_selected_payload != new_selected_payload
+    {
         emit.push_event(
             selection_root,
             EventSignal::SelectionChanged {
@@ -460,8 +465,31 @@ pub fn emit_selection_events(
                 mode,
                 selected_entries: new_entries,
                 selected_component: new_selected_component,
+                selected_payload: new_selected_payload,
             },
         );
+    }
+}
+
+fn resolve_selected_payload(
+    world: &World,
+    selection_root: ComponentId,
+    payload_selector: Option<&str>,
+    selected_component: Option<ComponentId>,
+) -> Option<ComponentId> {
+    let selector = payload_selector?;
+    let root = selected_component?;
+    let matches = world.find_all_components(root, selector);
+    match matches.len() {
+        0 => None,
+        1 => matches.into_iter().next(),
+        _ => {
+            eprintln!(
+                "[selection] payload selector resolved multiple matches selection_root={selection_root:?} selected_component={root:?} selector={selector:?} count={}",
+                matches.len()
+            );
+            None
+        }
     }
 }
 
@@ -472,7 +500,15 @@ pub fn apply_selection_set(
     entries: Vec<SelectionEntry>,
     primary: Option<ComponentId>,
 ) {
-    let (mode, old_entries, old_selected_component, new_entries, new_selected_component) = {
+    let (
+        mode,
+        payload_selector,
+        old_entries,
+        old_selected_component,
+        old_selected_payload,
+        new_entries,
+        new_selected_component,
+    ) = {
         let selection = match world.get_component_by_id_as_mut::<SelectionComponent>(selection_root)
         {
             Some(selection) => selection,
@@ -481,6 +517,7 @@ pub fn apply_selection_set(
 
         let old_entries = selection.selected_entries.clone();
         let old_selected_component = selection.selected_component;
+        let old_selected_payload = selection.selected_payload;
         let mut new_entries = entries;
         if matches!(selection.mode, SelectionMode::Single) && new_entries.len() > 1 {
             new_entries.truncate(1);
@@ -518,12 +555,26 @@ pub fn apply_selection_set(
 
         (
             selection.mode,
+            selection.payload_selector.clone(),
             old_entries,
             old_selected_component,
+            old_selected_payload,
             selection.selected_entries.clone(),
             selection.selected_component,
         )
     };
+
+    let new_selected_payload = resolve_selected_payload(
+        world,
+        selection_root,
+        payload_selector.as_deref(),
+        new_selected_component,
+    );
+
+    if let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(selection_root)
+    {
+        selection.selected_payload = new_selected_payload;
+    }
 
     for entry in old_entries.iter() {
         if !new_entries
@@ -557,8 +608,10 @@ pub fn apply_selection_set(
         mode,
         &old_entries,
         old_selected_component,
+        old_selected_payload,
         new_entries,
         new_selected_component,
+        new_selected_payload,
     );
 }
 
@@ -804,10 +857,17 @@ mod tests {
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
             .expect("expected selection component");
+        let payload = world
+            .find_component(item, "[name='asset_payload']")
+            .expect("expected asset payload");
 
         assert_eq!(selection.selected_component, Some(item));
+        assert_eq!(selection.selected_payload, Some(payload));
         assert_eq!(selection.selected_index, Some(0));
-        assert_eq!(selection.selected_item.as_deref(), Some("test_asset: example"));
+        assert_eq!(
+            selection.selected_item.as_deref(),
+            Some("test_asset: example")
+        );
     }
 
     #[test]

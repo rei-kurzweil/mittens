@@ -169,6 +169,6 @@ pub fn is_paint_active(
         && paint_state
             .selected_asset
             .as_ref()
-            .and_then(|selection| selection.item.as_ref())
+            .and_then(|selection| selection.component)
             .is_some()
 }

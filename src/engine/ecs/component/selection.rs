@@ -16,9 +16,11 @@ pub struct SelectionEntry {
 #[derive(Debug, Clone)]
 pub struct SelectionComponent {
     pub mode: SelectionMode,
+    pub payload_selector: Option<String>,
     pub selected_index: Option<usize>,
     pub selected_item: Option<String>,
     pub selected_component: Option<ComponentId>,
+    pub selected_payload: Option<ComponentId>,
     pub selected_entries: Vec<SelectionEntry>,
     component: Option<ComponentId>,
 }
@@ -27,9 +29,11 @@ impl SelectionComponent {
     pub fn new() -> Self {
         Self {
             mode: SelectionMode::Single,
+            payload_selector: None,
             selected_index: None,
             selected_item: None,
             selected_component: None,
+            selected_payload: None,
             selected_entries: Vec::new(),
             component: None,
         }
@@ -50,6 +54,7 @@ impl SelectionComponent {
         self.selected_index = None;
         self.selected_item = None;
         self.selected_component = None;
+        self.selected_payload = None;
         self.selected_entries.clear();
     }
 
@@ -65,6 +70,7 @@ impl SelectionComponent {
         self.selected_index = entry.index;
         self.selected_item = entry.item.clone();
         self.selected_component = Some(entry.component);
+        self.selected_payload = None;
         self.selected_entries.clear();
         self.selected_entries.push(entry);
     }
@@ -95,6 +101,7 @@ impl SelectionComponent {
         self.selected_index = entry.index;
         self.selected_item = entry.item;
         self.selected_component = Some(entry.component);
+        self.selected_payload = None;
         true
     }
 
@@ -103,10 +110,12 @@ impl SelectionComponent {
             self.selected_index = entry.index;
             self.selected_item = entry.item;
             self.selected_component = Some(entry.component);
+            self.selected_payload = None;
         } else {
             self.selected_index = None;
             self.selected_item = None;
             self.selected_component = None;
+            self.selected_payload = None;
         }
     }
 }
@@ -133,9 +142,17 @@ impl Component for SelectionComponent {
         _world: &crate::engine::ecs::World,
     ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
-        match self.mode {
+        let mut expr = match self.mode {
             SelectionMode::Single => ce_call("Selection", "", vec![]),
             SelectionMode::Multiple => ce_call("Selection", "multiple", vec![]),
+        };
+        if let Some(selector) = &self.payload_selector {
+            expr.constructors
+                .push(crate::meow_meow::ast::ConstructorCall {
+                    method: crate::meow_meow::ast::Ident("payload_selector".to_string()),
+                    args: vec![s(selector)],
+                });
         }
+        expr
     }
 }
