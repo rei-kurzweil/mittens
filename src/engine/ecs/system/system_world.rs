@@ -808,14 +808,13 @@ impl SystemWorld {
             spawn_panels, world_panel_pos, inspector_panel_pos,
         );
 
+        let editor_context_state = self.editor_context.shared_state();
+
         self.editor
             .materialize_editor_raycastables(world, emit, component);
-        self.editor
-            .install_scoped_handlers_for_editor(&mut self.rx, component);
 
         if spawn_panels {
             println!("[InspectorSystem][debug] setup_panels_for_editor editor_root={component:?}");
-            let editor_context_state = self.editor_context.shared_state();
             self.editor_inspector.setup_panels_for_editor(
                 &mut self.rx,
                 world,
@@ -833,6 +832,12 @@ impl SystemWorld {
             }) else {
                 return;
             };
+            self.editor.install_scoped_handlers_for_editor(
+                &mut self.rx,
+                component,
+                panel_query_root,
+                editor_context_state.clone(),
+            );
             self.editor_context.install_scoped_handlers_for_editor(
                 &mut self.rx,
                 world,
@@ -857,6 +862,13 @@ impl SystemWorld {
                 panel_query_root,
                 editor_context_state,
                 self.asset_system.paint_templates(),
+            );
+        } else {
+            self.editor.install_scoped_handlers_for_editor(
+                &mut self.rx,
+                component,
+                component,
+                editor_context_state,
             );
         }
     }

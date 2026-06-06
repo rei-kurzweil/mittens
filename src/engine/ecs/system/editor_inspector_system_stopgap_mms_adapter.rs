@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use crate::engine::ecs::component::Component;
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::component::{
     ColorComponent, Display, EdgeInsets, LayoutComponent, OptionComponent, Overflow,
@@ -52,6 +53,52 @@ const PANEL_LAYOUT_GAP_GU: f64 = 2.0;
 const PANEL_ROOT_MARGIN_X_GU: f64 = 0.5;
 const PANEL_ROOT_MARGIN_Y_GU: f64 = 0.5;
 const PANEL_LAYOUT_WIDTH_BUDGET_MULTIPLIER: f64 = 10.0;
+const MAX_INSPECTOR_PANEL_ROWS: usize = 256;
+
+#[derive(Debug, Clone)]
+struct WorldPanelRowTargetComponent {
+    row_index: usize,
+    target_component: ComponentId,
+    label: String,
+    component: Option<ComponentId>,
+}
+
+impl WorldPanelRowTargetComponent {
+    fn new(row_index: usize, target_component: ComponentId, label: String) -> Self {
+        Self {
+            row_index,
+            target_component,
+            label,
+            component: None,
+        }
+    }
+}
+
+impl Component for WorldPanelRowTargetComponent {
+    fn set_id(&mut self, id: ComponentId) {
+        self.component = Some(id);
+    }
+
+    fn name(&self) -> &'static str {
+        "world_panel_row_target"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::meow_meow::ast::ComponentExpression {
+        use crate::engine::ecs::component::ce_helpers::*;
+        ce("WorldPanelRowTarget")
+    }
+}
 
 #[cfg(test)]
 static WORLD_PANEL_SCENE_PATH_OVERRIDE: Mutex<Option<PathBuf>> = Mutex::new(None);
@@ -723,8 +770,9 @@ fn sync_world_panel_selection(
         return;
     };
 
-    let model = build_world_panel_model(world, &editor_context);
-    let Some(selected_index) = model.selected_index.and_then(|index| usize::try_from(index).ok())
+    let Some(target_component) = editor_context
+        .selected_component
+        .or(editor_context.active_editor)
     else {
         crate::engine::ecs::system::selection_system::apply_selection_set(
             world,
@@ -735,10 +783,9 @@ fn sync_world_panel_selection(
         );
         return;
     };
-    let Some(row) = model.rows.get(selected_index) else {
-        return;
-    };
-    let Some(target_component) = row.target_component else {
+    let Some((selected_index, label)) =
+        find_world_panel_row_target(world, world_panel_root, target_component)
+    else {
         return;
     };
 
@@ -758,11 +805,34 @@ fn sync_world_panel_selection(
         selection_root,
         vec![SelectionEntry {
             index: Some(selected_index),
-            item: Some(row.label.clone()),
+            item: Some(label),
             component: target_component,
         }],
         Some(target_component),
     );
+}
+
+fn find_world_panel_row_target(
+    world: &World,
+    world_panel_root: ComponentId,
+    target_component: ComponentId,
+) -> Option<(usize, String)> {
+    let content_root = world.find_component(world_panel_root, WORLD_PANEL_CONTENT_ROOT_SELECTOR)?;
+    let rows_mount = world.find_component(content_root, "#rows_mount")?;
+
+    for &row_root in world.children_of(rows_mount) {
+        for &child in world.children_of(row_root) {
+            let Some(target) = world.get_component_by_id_as::<WorldPanelRowTargetComponent>(child)
+            else {
+                continue;
+            };
+            if target.target_component == target_component {
+                return Some((target.row_index, target.label.clone()));
+            }
+        }
+    }
+
+    None
 }
 
 impl EditorInspectorSystemStopgapMmsReconciler {
@@ -1512,6 +1582,10 @@ fn push_inspector_panel_rows(
     depth: usize,
     out: &mut Vec<InspectorPanelRow>,
 ) {
+    if out.len() >= MAX_INSPECTOR_PANEL_ROWS {
+        return;
+    }
+
     out.push(InspectorPanelRow {
         display_label: format!(
             "{}{}",
@@ -1522,6 +1596,13 @@ fn push_inspector_panel_rows(
     });
 
     for &child in world.children_of(component_id) {
+        if out.len() >= MAX_INSPECTOR_PANEL_ROWS {
+            out.push(InspectorPanelRow {
+                display_label: "… inspector truncated …".to_string(),
+                kind: InspectorPanelRowKind::Info,
+            });
+            return;
+        }
         push_inspector_panel_rows(world, child, depth + 1, out);
     }
 }
@@ -2091,6 +2172,7 @@ fn spawn_world_panel_content_tree(
             world,
             &format!("{ITEM_PREFIX}{index}"),
             row,
+            index,
             selected_index == Some(index as i64),
         );
         let _ = world.add_child(rows_mount, row_root);
@@ -2115,6 +2197,7 @@ fn spawn_world_panel_row_tree(
     world: &mut World,
     row_name: &str,
     row: &WorldPanelRow,
+    row_index: usize,
     selected: bool,
 ) -> ComponentId {
     match row.kind {
@@ -2166,6 +2249,17 @@ fn spawn_world_panel_row_tree(
                     Box::new(RaycastableComponent::click_only()),
                 );
                 let _ = world.add_child(row_root, raycastable);
+                if let Some(target_component) = row.target_component {
+                    let row_target = world.add_component_boxed_named(
+                        format!("{row_name}_target"),
+                        Box::new(WorldPanelRowTargetComponent::new(
+                            row_index,
+                            target_component,
+                            row.label.clone(),
+                        )),
+                    );
+                    let _ = world.add_child(row_root, row_target);
+                }
             }
 
             let style = world.add_component_boxed_named(

@@ -2,7 +2,8 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::{
-    EditorComponent, RaycastableComponent, SelectableComponent, SelectionComponent,
+    EditorComponent, OptionComponent, RaycastableComponent, SelectableComponent,
+    SelectionComponent,
     TransformComponent,
     TransformGizmoComponent,
 };
@@ -802,6 +803,8 @@ fn place_asset(
         Err(error) => return format!("paint failed: asset spawn error: {error}"),
     };
 
+    sanitize_painted_asset_subtree(world, asset_root);
+
     let pose =
         match resolve_placement_pose(world, target_renderable, hit_point, asset_root, grid_snap) {
             Ok(pose) => pose,
@@ -852,6 +855,31 @@ fn place_asset(
         "grid inactive"
     };
     format!("paint placed: {} | {}", asset.title, grid_text)
+}
+
+fn sanitize_painted_asset_subtree(world: &mut World, root: ComponentId) {
+    let mut stack = vec![root];
+    let mut selection_components = Vec::new();
+    let mut option_components = Vec::new();
+
+    while let Some(node) = stack.pop() {
+        if world.get_component_by_id_as::<SelectionComponent>(node).is_some() {
+            selection_components.push(node);
+        }
+        if world.get_component_by_id_as::<OptionComponent>(node).is_some() {
+            option_components.push(node);
+        }
+        for &child in world.children_of(node) {
+            stack.push(child);
+        }
+    }
+
+    for component in option_components {
+        let _ = world.remove_component_leaf(component);
+    }
+    for component in selection_components {
+        let _ = world.remove_component_leaf(component);
+    }
 }
 
 fn default_asset_args(asset: &PaintAssetTemplate) -> Vec<Value> {

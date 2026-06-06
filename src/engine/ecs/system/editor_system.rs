@@ -2,8 +2,12 @@ use crate::engine::ecs::component::{
     EditorComponent, GLTFComponent, RaycastableComponent, SelectableComponent, TransformComponent,
     TransformGizmoComponent,
 };
+use crate::engine::ecs::system::editor_context_system::EditorContextState;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, RxWorld, SignalKind, World};
 use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
+
+const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 
 #[derive(Debug, Default)]
 pub struct EditorSystem {
@@ -22,6 +26,8 @@ impl EditorSystem {
         &mut self,
         rx: &mut RxWorld,
         editor_root: ComponentId,
+        panel_query_root: ComponentId,
+        editor_context_state: Arc<Mutex<EditorContextState>>,
     ) {
         if self.installed_editor_roots.contains(&editor_root) {
             return;
@@ -35,6 +41,14 @@ impl EditorSystem {
                 let Some(EventSignal::DragStart { renderable, .. }) = env.event.as_ref() else {
                     return;
                 };
+
+                let editor_context = editor_context_state
+                    .lock()
+                    .expect("editor context state mutex poisoned")
+                    .clone();
+                if paint_panel_is_focused(world, panel_query_root, &editor_context) {
+                    return;
+                }
 
                 let renderable = renderable.clone();
 
@@ -111,6 +125,18 @@ fn subtree_root_has_selectable_off(world: &World, node: ComponentId) -> bool {
         .get_component_by_id_as::<SelectableComponent>(node)
         .map(|s| !s.enabled)
         .unwrap_or(false)
+}
+
+fn paint_panel_is_focused(
+    world: &World,
+    panel_query_root: ComponentId,
+    editor_context: &EditorContextState,
+) -> bool {
+    let Some(paint_panel_root) = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
+    else {
+        return false;
+    };
+    editor_context.focused_panel == Some(paint_panel_root)
 }
 
 fn subtree_contains_gltf(world: &World, root: ComponentId) -> bool {
