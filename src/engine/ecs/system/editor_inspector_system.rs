@@ -49,7 +49,7 @@ mod tests {
         EditorComponent, GLTFComponent, OverlayComponent, SerializeComponent, TransformComponent,
     };
     use crate::engine::ecs::system::editor_inspector_system_stopgap_mms_adapter::set_world_panel_scene_path_for_tests;
-    use crate::engine::ecs::{EventSignal, SystemWorld, World};
+    use crate::engine::ecs::{EventSignal, IntentValue, SignalEmitter, SystemWorld, World};
     use crate::engine::graphics::{RenderAssets, VisualWorld};
     use std::path::PathBuf;
     use std::sync::Mutex;
@@ -108,6 +108,18 @@ mod tests {
             .expect("system clock before unix epoch")
             .as_nanos();
         std::env::temp_dir().join(format!("cat_engine_world_panel_{nanos}.mms"))
+    }
+
+    fn flush_runtime_updates(
+        systems: &mut SystemWorld,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        render_assets: &RenderAssets,
+        emit: &mut CommandQueue,
+    ) {
+        systems.process_commands(world, visuals, render_assets, emit);
+        let _ = systems.process_signals(world, visuals, render_assets, emit, 100_000);
+        systems.process_commands(world, visuals, render_assets, emit);
     }
 
     #[test]
@@ -458,6 +470,250 @@ mod tests {
         assert_eq!(row_text(&world, runtime_ui_root, "#item_1"), "scene_root");
         assert_eq!(row_text(&world, runtime_ui_root, "#item_3"), "Editor#beta");
         assert_eq!(row_text(&world, runtime_ui_root, "#item_4"), "other_scene");
+    }
+
+    #[test]
+    fn setup_panels_for_editor_hides_editor_helper_subtrees_from_world_and_inspector() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::new();
+        let mut inspector = EditorInspectorSystem::new();
+
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let wrapper = world.add_component_boxed_named(
+            "editor_auto_raycastable",
+            Box::new(crate::engine::ecs::component::RaycastableComponent::enabled()),
+        );
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let child_transform =
+            world.add_component_boxed_named("child_transform", Box::new(TransformComponent::new()));
+        let gizmo_anchor = world
+            .add_component_boxed_named("editor_gizmo_anchor", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, wrapper);
+        let _ = world.add_child(wrapper, scene_root);
+        let _ = world.add_child(scene_root, child_transform);
+        let _ = world.add_child(editor_root, gizmo_anchor);
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (1.9, 1.6, -1.2),
+            systems.editor_context.shared_state(),
+            &systems.asset_system,
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        assert_eq!(
+            row_text(&world, runtime_ui_root, "#item_0"),
+            "Editor#editor_root"
+        );
+        assert_eq!(row_text(&world, runtime_ui_root, "#item_1"), "scene_root");
+        assert_eq!(
+            row_text(&world, runtime_ui_root, "#item_2"),
+            "  child_transform"
+        );
+        assert!(
+            world.find_component(runtime_ui_root, "#item_3").is_none(),
+            "expected helper wrapper rows to stay hidden"
+        );
+
+        let scene_row = world
+            .find_component(runtime_ui_root, "#item_1")
+            .expect("expected scene row under runtime ui root");
+        systems.rx.push_event(
+            scene_row,
+            EventSignal::Click {
+                raycaster: scene_row,
+                renderable: scene_row,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+
+        assert_eq!(
+            row_text(&world, runtime_ui_root, "#inspector_item_0"),
+            "scene_root"
+        );
+        assert_eq!(
+            row_text(&world, runtime_ui_root, "#inspector_item_1"),
+            "  child_transform"
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#inspector_item_2")
+                .is_none(),
+            "expected helper subtrees to stay hidden from inspector"
+        );
+    }
+
+    #[test]
+    fn setup_panels_for_editor_parent_changed_refreshes_cached_world_rows() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::new();
+        let mut inspector = EditorInspectorSystem::new();
+
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let sibling_root =
+            world.add_component_boxed_named("sibling_root", Box::new(TransformComponent::new()));
+        let child_transform =
+            world.add_component_boxed_named("child_transform", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_root);
+        let _ = world.add_child(editor_root, sibling_root);
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (1.9, 1.6, -1.2),
+            systems.editor_context.shared_state(),
+            &systems.asset_system,
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        assert_eq!(row_text(&world, runtime_ui_root, "#item_1"), "scene_root");
+        assert_eq!(row_text(&world, runtime_ui_root, "#item_2"), "sibling_root");
+
+        emit.push_intent_now(
+            editor_root,
+            IntentValue::Attach {
+                parents: vec![scene_root],
+                child: child_transform,
+            },
+        );
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        assert_eq!(
+            row_text(&world, runtime_ui_root, "#item_2"),
+            "  child_transform"
+        );
+        assert_eq!(row_text(&world, runtime_ui_root, "#item_3"), "sibling_root");
+
+        emit.push_intent_now(
+            editor_root,
+            IntentValue::Attach {
+                parents: vec![sibling_root],
+                child: child_transform,
+            },
+        );
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        assert_eq!(row_text(&world, runtime_ui_root, "#item_2"), "sibling_root");
+        assert_eq!(
+            row_text(&world, runtime_ui_root, "#item_3"),
+            "  child_transform"
+        );
+    }
+
+    #[test]
+    fn setup_panels_for_editor_inspector_skips_runtime_helpers_under_selected_node() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::new();
+        let mut inspector = EditorInspectorSystem::new();
+
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("repro_cube_a", Box::new(TransformComponent::new()));
+        let child_transform =
+            world.add_component_boxed_named("child_transform", Box::new(TransformComponent::new()));
+        let selection_highlight = world
+            .add_component_boxed_named("selection_highlight", Box::new(TransformComponent::new()));
+        let gizmo_root = world.add_component_boxed_named(
+            "editor_transform_gizmo",
+            Box::new(TransformComponent::new()),
+        );
+        let gizmo_visual =
+            world.add_component_boxed_named("gizmo_visual", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_root);
+        let _ = world.add_child(scene_root, child_transform);
+        let _ = world.add_child(scene_root, selection_highlight);
+        let _ = world.add_child(scene_root, gizmo_root);
+        let _ = world.add_child(gizmo_root, gizmo_visual);
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (1.9, 1.6, -1.2),
+            systems.editor_context.shared_state(),
+            &systems.asset_system,
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        let scene_row = world
+            .find_component(runtime_ui_root, "#item_1")
+            .expect("expected scene row under runtime ui root");
+        systems.rx.push_event(
+            scene_row,
+            EventSignal::Click {
+                raycaster: scene_row,
+                renderable: scene_row,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+
+        assert_eq!(
+            row_text(&world, runtime_ui_root, "#inspector_item_0"),
+            "repro_cube_a"
+        );
+        assert_eq!(
+            row_text(&world, runtime_ui_root, "#inspector_item_1"),
+            "  child_transform"
+        );
+        assert!(
+            world
+                .find_component(runtime_ui_root, "#inspector_item_2")
+                .is_none(),
+            "expected runtime helper descendants to stay hidden from inspector"
+        );
     }
 
     #[test]

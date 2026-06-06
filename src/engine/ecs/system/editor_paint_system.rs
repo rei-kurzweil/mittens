@@ -3,17 +3,15 @@ use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::{
     EditorComponent, OptionComponent, RaycastableComponent, SelectableComponent,
-    SelectionComponent,
-    TransformComponent,
-    TransformGizmoComponent,
+    SelectionComponent, TransformComponent, TransformGizmoComponent,
 };
 use crate::engine::ecs::system::editor_context_system::EditorContextState;
-use crate::engine::ecs::system::grid_system::{GridSnapResult, GridStep, GridSystem};
-use crate::engine::ecs::system::paint_placement::{resolve_placement_pose, PlacementError};
 use crate::engine::ecs::system::editor_paint_system_state_manager::{
-    is_paint_active, is_paint_panel_focused, paint_tool_from_item, reduce_paint_state, PaintEvent,
-    PaintState, PaintTool,
+    PaintEvent, PaintState, PaintTool, is_paint_active, is_paint_panel_focused,
+    paint_tool_from_item, reduce_paint_state,
 };
+use crate::engine::ecs::system::grid_system::{GridSnapResult, GridStep, GridSystem};
+use crate::engine::ecs::system::paint_placement::{PlacementError, resolve_placement_pose};
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalKind, World,
 };
@@ -85,11 +83,7 @@ impl EditorPaintSystem {
                 Arc::clone(&editor_context_state),
                 Arc::clone(&self.shared_templates),
             );
-            bootstrap_paint_state(
-                world,
-                panel_query_root,
-                &self.shared_state,
-            );
+            bootstrap_paint_state(world, panel_query_root, &self.shared_state);
         }
 
         if self.installed_editor_roots.contains(&editor_root) {
@@ -495,7 +489,7 @@ fn apply_paint_side_effects(
             renderable,
             hit_point,
         } if Some(*editor) == active_editor => {
-                let _ = hit_point;
+            let _ = hit_point;
             if let Some(runtime) = stroke_runtime {
                 let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
                 if resolve_paint_context(
@@ -593,15 +587,14 @@ fn handle_scene_click(
     renderable: ComponentId,
     hit_point: [f32; 3],
 ) -> Option<String> {
-    let context =
-        resolve_paint_context(
-            world,
-            editor_root,
-            panel_query_root,
-            paint_state,
-            editor_context,
-            templates,
-        )?;
+    let context = resolve_paint_context(
+        world,
+        editor_root,
+        panel_query_root,
+        paint_state,
+        editor_context,
+        templates,
+    )?;
     let runtime = stroke_runtime?;
     let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
     if runtime.non_grid_placed {
@@ -635,15 +628,14 @@ fn handle_stroke_move(
     renderable: ComponentId,
     hit_point: [f32; 3],
 ) -> Option<String> {
-    let context =
-        resolve_paint_context(
-            world,
-            editor_root,
-            panel_query_root,
-            paint_state,
-            editor_context,
-            templates,
-        )?;
+    let context = resolve_paint_context(
+        world,
+        editor_root,
+        panel_query_root,
+        paint_state,
+        editor_context,
+        templates,
+    )?;
     let runtime = stroke_runtime?;
     let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
     if !runtime.active {
@@ -863,10 +855,16 @@ fn sanitize_painted_asset_subtree(world: &mut World, root: ComponentId) {
     let mut option_components = Vec::new();
 
     while let Some(node) = stack.pop() {
-        if world.get_component_by_id_as::<SelectionComponent>(node).is_some() {
+        if world
+            .get_component_by_id_as::<SelectionComponent>(node)
+            .is_some()
+        {
             selection_components.push(node);
         }
-        if world.get_component_by_id_as::<OptionComponent>(node).is_some() {
+        if world
+            .get_component_by_id_as::<OptionComponent>(node)
+            .is_some()
+        {
             option_components.push(node);
         }
         for &child in world.children_of(node) {
@@ -1268,11 +1266,13 @@ mod tests {
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
 
-        assert!(world
-            .get_component_by_id_as::<SelectionComponent>(assets_selection)
-            .expect("selection")
-            .selected_item
-            .is_some());
+        assert!(
+            world
+                .get_component_by_id_as::<SelectionComponent>(assets_selection)
+                .expect("selection")
+                .selected_item
+                .is_some()
+        );
 
         (
             world,

@@ -24,7 +24,8 @@ impl Windowing {
         universe: crate::engine::Universe,
         user_input: UserInput,
     ) -> EngineResult<()> {
-        let event_loop = EventLoop::new().map_err(|_| EngineError::NotImplemented)?;
+        let event_loop = EventLoop::new()
+            .map_err(|error| EngineError::Windowing(format!("event loop init failed: {error}")))?;
         event_loop.set_control_flow(ControlFlow::Poll);
 
         let mut app = App {
@@ -32,11 +33,16 @@ impl Windowing {
             universe: Some(universe),
             last_frame: None,
             user_input,
+            startup_error: None,
         };
 
-        event_loop
-            .run_app(&mut app)
-            .map_err(|_| EngineError::NotImplemented)?;
+        event_loop.run_app(&mut app).map_err(|error| {
+            EngineError::Windowing(format!("window event loop failed: {error}"))
+        })?;
+
+        if let Some(error) = app.startup_error.take() {
+            return Err(error);
+        }
 
         Ok(())
     }
@@ -47,6 +53,7 @@ struct App {
     universe: Option<crate::engine::Universe>,
     last_frame: Option<Instant>,
     user_input: UserInput,
+    startup_error: Option<EngineError>,
 }
 
 impl ApplicationHandler for App {
@@ -69,16 +76,27 @@ impl ApplicationHandler for App {
             ))
             .with_resizable(true);
 
-        let window = event_loop
-            .create_window(attrs)
-            .expect("failed to create window");
+        let window = match event_loop.create_window(attrs) {
+            Ok(window) => window,
+            Err(error) => {
+                self.startup_error = Some(EngineError::Windowing(format!(
+                    "window creation failed: {error}"
+                )));
+                event_loop.exit();
+                return;
+            }
+        };
         let window = Arc::new(window);
 
         // Initialize renderer backend for this window via Universe
         if let Some(universe) = self.universe.as_mut() {
-            universe
-                .init_renderer_for_window(&window)
-                .expect("renderer init failed");
+            if let Err(error) = universe.init_renderer_for_window(&window) {
+                self.startup_error = Some(EngineError::Windowing(format!(
+                    "renderer init failed: {error}"
+                )));
+                event_loop.exit();
+                return;
+            }
         }
 
         self.window = Some(window);

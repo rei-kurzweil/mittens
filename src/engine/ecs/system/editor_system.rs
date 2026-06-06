@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::{
-    EditorComponent, GLTFComponent, RaycastableComponent, SelectableComponent, TransformComponent,
-    TransformGizmoComponent,
+    EditorComponent, GLTFComponent, RaycastableComponent, SelectableComponent, SerializeComponent,
+    TransformComponent, TransformGizmoComponent,
 };
 use crate::engine::ecs::system::editor_context_system::EditorContextState;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, RxWorld, SignalKind, World};
@@ -100,10 +100,15 @@ impl EditorSystem {
                 "editor_auto_raycastable",
                 Box::new(RaycastableComponent::enabled()),
             );
+            let wrapper_serialize = world.add_component_boxed_named(
+                "editor_auto_raycastable_serialize",
+                Box::new(SerializeComponent::off()),
+            );
 
             if world.add_child(editor_root, wrapper).is_err() {
                 continue;
             }
+            let _ = world.add_child(wrapper, wrapper_serialize);
             if world.add_child(wrapper, child).is_err() {
                 let _ = world.remove_component_subtree(wrapper);
                 continue;
@@ -224,6 +229,16 @@ fn spawn_editor_transform_gizmo(
     let anchor =
         world.add_component_boxed_named("editor_gizmo_anchor", Box::new(TransformComponent::new()));
     let _ = world.add_child(editor_root, anchor);
+    let anchor_selectable = world.add_component_boxed_named(
+        "editor_gizmo_anchor_selectable",
+        Box::new(SelectableComponent::off()),
+    );
+    let _ = world.add_child(anchor, anchor_selectable);
+    let anchor_serialize = world.add_component_boxed_named(
+        "editor_gizmo_anchor_serialize",
+        Box::new(SerializeComponent::off()),
+    );
+    let _ = world.add_child(anchor, anchor_serialize);
 
     // Interpret `scale` as world-space size (GizmoSystem compensates for inherited scales).
     let gizmo = world.add_component_boxed_named(

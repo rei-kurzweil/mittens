@@ -108,7 +108,10 @@ impl EditorContextSystem {
         panel_query_root: ComponentId,
     ) {
         {
-            let mut workspace = self.workspace.lock().expect("editor context workspace poisoned");
+            let mut workspace = self
+                .workspace
+                .lock()
+                .expect("editor context workspace poisoned");
             workspace.panel_query_root = Some(panel_query_root);
             let registered = workspace.register_editor(editor_root);
             drop(workspace);
@@ -141,7 +144,8 @@ fn install_shared_panel_handlers(
         SignalKind::SelectionChanged,
         panel_query_root,
         move |world, _emit, signal| {
-            let Some(event) = editor_context_event_from_shared_signal(world, panel_query_root, signal)
+            let Some(event) =
+                editor_context_event_from_shared_signal(world, panel_query_root, signal)
             else {
                 return;
             };
@@ -188,7 +192,8 @@ fn bootstrap_editor_context(
     state: &Arc<Mutex<EditorContextState>>,
     workspace: &Arc<Mutex<EditorContextWorkspaceState>>,
 ) {
-    if let Some(selection_root) = world.find_component(panel_query_root, PANEL_LAYOUT_SELECTION_SELECTOR)
+    if let Some(selection_root) =
+        world.find_component(panel_query_root, PANEL_LAYOUT_SELECTION_SELECTOR)
         && let Some(selection) = world.get_component_by_id_as::<SelectionComponent>(selection_root)
     {
         apply_editor_context_event(
@@ -199,7 +204,8 @@ fn bootstrap_editor_context(
         );
     }
 
-    if let Some(selection_root) = world.find_component(panel_query_root, WORLD_PANEL_SELECTION_SELECTOR)
+    if let Some(selection_root) =
+        world.find_component(panel_query_root, WORLD_PANEL_SELECTION_SELECTOR)
         && let Some(selection) = world.get_component_by_id_as::<SelectionComponent>(selection_root)
     {
         let component = selection.selected_component;
@@ -261,10 +267,7 @@ fn editor_context_event_from_shared_signal(
     }
 }
 
-fn apply_editor_context_event(
-    state: &Arc<Mutex<EditorContextState>>,
-    event: &EditorContextEvent,
-) {
+fn apply_editor_context_event(state: &Arc<Mutex<EditorContextState>>, event: &EditorContextEvent) {
     let mut state = state.lock().expect("editor context state poisoned");
     *state = reduce_editor_context_state(&state, event);
 }

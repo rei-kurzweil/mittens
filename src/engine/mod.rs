@@ -13,7 +13,7 @@ pub use windowing::Windowing;
 /// Engine-level error type placeholder.
 #[derive(Debug)]
 pub enum EngineError {
-    NotImplemented,
+    Windowing(String),
 }
 
 pub type EngineResult<T> = Result<T, EngineError>;
