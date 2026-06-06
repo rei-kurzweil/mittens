@@ -560,7 +560,7 @@ mod tests {
     }
 
     #[test]
-    fn setup_panels_for_editor_parent_changed_refreshes_cached_world_rows() {
+    fn setup_panels_for_editor_parent_changed_does_not_live_refresh_cached_world_rows() {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
@@ -612,11 +612,11 @@ mod tests {
             &mut emit,
         );
 
-        assert_eq!(
-            row_text(&world, runtime_ui_root, "#item_2"),
-            "  child_transform"
+        assert_eq!(row_text(&world, runtime_ui_root, "#item_2"), "sibling_root");
+        assert!(
+            world.find_component(runtime_ui_root, "#item_3").is_none(),
+            "world panel should stay stable until an explicit refresh"
         );
-        assert_eq!(row_text(&world, runtime_ui_root, "#item_3"), "sibling_root");
 
         emit.push_intent_now(
             editor_root,
@@ -632,11 +632,10 @@ mod tests {
             &render_assets,
             &mut emit,
         );
-
         assert_eq!(row_text(&world, runtime_ui_root, "#item_2"), "sibling_root");
-        assert_eq!(
-            row_text(&world, runtime_ui_root, "#item_3"),
-            "  child_transform"
+        assert!(
+            world.find_component(runtime_ui_root, "#item_3").is_none(),
+            "world panel should stay stable until an explicit refresh"
         );
     }
 

@@ -657,38 +657,10 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             },
         );
 
-        let panel_query_root = Arc::clone(&self.runtime_ui_root);
-        let editor_context_state = self
-            .editor_context_state
-            .as_ref()
-            .expect("editor context state must be installed before panels")
-            .clone();
-        let world_panel_scene_model = Arc::clone(&self.world_panel_scene_model);
-        let installed_editor_roots = Arc::clone(&self.installed_editor_roots);
-        rx.add_handler_closure(
-            SignalKind::ParentChanged,
-            editor_root,
-            move |world, emit, signal| {
-                let Some(EventSignal::ParentChanged { .. }) = signal.event.as_ref() else {
-                    return;
-                };
-                let Some(panel_query_root) = *panel_query_root
-                    .lock()
-                    .expect("runtime ui root mutex poisoned")
-                else {
-                    return;
-                };
-                refresh_all_panel_models(
-                    world,
-                    emit,
-                    panel_query_root,
-                    &editor_context_state,
-                    &world_panel_scene_model,
-                    &installed_editor_roots,
-                    true,
-                );
-            },
-        );
+        // Intentionally no ParentChanged-scoped full refresh here. Runtime systems such as
+        // AvatarControl re-parent large authored subtrees during the first tick, and rebuilding
+        // the cached world-panel model on every such mutation can wedge the first frame.
+
     }
 
     fn editor_context(&self) -> EditorContextState {

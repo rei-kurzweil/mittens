@@ -3409,6 +3409,10 @@ mod vulkano_backend {
                 .take()
                 .unwrap_or_else(|| sync::now(device.clone()).boxed());
 
+            // Wayland windows don't participate correctly in frame-callback scheduling unless
+            // winit is notified just before we submit/present the rendered buffer.
+            self.window.pre_present_notify();
+
             let execution = image_future
                 .join(acquire_future)
                 .then_execute(queue.clone(), cb)?
