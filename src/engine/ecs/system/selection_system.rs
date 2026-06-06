@@ -1,5 +1,5 @@
 use crate::engine::ecs::component::{
-    BoundsComponent, ColorComponent, Component, EmissiveComponent, LayoutComponent,
+    BoundsComponent, ColorComponent, Component, DataComponent, EmissiveComponent, LayoutComponent,
     OptionComponent, RenderableComponent, SelectionComponent, SelectionEntry, SelectionMode,
     StyleComponent, TextComponent, TransformComponent,
 };
@@ -493,6 +493,22 @@ fn resolve_selected_payload(
     }
 }
 
+pub fn resolve_semantic_target_from_payload(
+    world: &World,
+    selected_payload: Option<ComponentId>,
+    selected_component: Option<ComponentId>,
+) -> Option<ComponentId> {
+    if let Some(payload) = selected_payload {
+        if let Some(data) = world.get_component_by_id_as::<DataComponent>(payload)
+            && let Some(target_component) = data.get_component("target_component")
+        {
+            return Some(target_component);
+        }
+        return Some(payload);
+    }
+    selected_component
+}
+
 pub fn apply_selection_set(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
@@ -672,7 +688,8 @@ mod tests {
     use super::*;
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::component::{
-        EditorComponent, OptionComponent, SelectionMode, TransformComponent,
+        DataComponent, DataValue, EditorComponent, OptionComponent, SelectionMode,
+        TransformComponent,
     };
     use crate::engine::ecs::system::SystemWorld;
     use crate::engine::ecs::{EventSignal, IntentValue, SignalKind, World};
@@ -1348,7 +1365,19 @@ mod tests {
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
             .expect("expected selection component");
-        assert_eq!(selection.selected_component, Some(scene_root));
+        let first_payload = world
+            .find_component(first_row, "[name='world_panel_payload']")
+            .expect("expected world-panel payload");
+        assert_eq!(selection.selected_component, Some(first_row));
+        assert_eq!(selection.selected_payload, Some(first_payload));
+        assert_eq!(
+            resolve_semantic_target_from_payload(
+                &world,
+                selection.selected_payload,
+                selection.selected_component,
+            ),
+            Some(scene_root)
+        );
         assert_eq!(selection.selected_index, Some(1));
         assert_eq!(selection.selected_entries.len(), 1);
 
@@ -1380,7 +1409,19 @@ mod tests {
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
             .expect("expected selection component");
-        assert_eq!(selection.selected_component, Some(scene_child));
+        let second_payload = world
+            .find_component(second_row, "[name='world_panel_payload']")
+            .expect("expected world-panel payload");
+        assert_eq!(selection.selected_component, Some(second_row));
+        assert_eq!(selection.selected_payload, Some(second_payload));
+        assert_eq!(
+            resolve_semantic_target_from_payload(
+                &world,
+                selection.selected_payload,
+                selection.selected_component,
+            ),
+            Some(scene_child)
+        );
         assert_eq!(selection.selected_index, Some(2));
         assert_eq!(selection.selected_entries.len(), 1);
 
@@ -1389,6 +1430,79 @@ mod tests {
             .expect("expected panel layout selection component");
         assert_eq!(panel_selection.selected_component, Some(world_panel_root));
         assert_eq!(panel_selection.selected_entries.len(), 1);
+    }
+
+    #[test]
+    fn world_panel_nested_text_click_keeps_ui_row_selection_and_authored_payload_target() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let render_assets = RenderAssets::new();
+        let asset_system = crate::engine::ecs::system::AssetSystem::new();
+
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let scene_child =
+            world.add_component_boxed_named("scene_child", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_root);
+        let _ = world.add_child(scene_root, scene_child);
+
+        systems.editor_inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
+            &asset_system,
+        );
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        let world_panel_root = world
+            .find_component(runtime_ui_root, "#world_panel_root")
+            .expect("expected world panel root");
+        let selection_root = world
+            .find_component(world_panel_root, "#world_panel_selection")
+            .expect("expected world panel selection");
+        let row = world
+            .find_component(world_panel_root, "#item_2")
+            .expect("expected selectable row");
+        let nested_text = world
+            .find_component(row, "Text")
+            .expect("expected nested text");
+
+        systems.rx.push_event(
+            nested_text,
+            EventSignal::Click {
+                raycaster: nested_text,
+                renderable: nested_text,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+
+        let selection = world
+            .get_component_by_id_as::<SelectionComponent>(selection_root)
+            .expect("selection");
+        assert_eq!(selection.selected_component, Some(row));
+        assert_eq!(
+            resolve_semantic_target_from_payload(
+                &world,
+                selection.selected_payload,
+                selection.selected_component,
+            ),
+            Some(scene_child)
+        );
     }
 
     #[test]
@@ -1700,6 +1814,152 @@ mod tests {
         assert_eq!(selection.selected_component, Some(second));
         assert!(selection.contains(first));
         assert!(selection.contains(second));
+    }
+
+    #[test]
+    fn selection_payload_selector_resolves_data_component_without_moving_highlight() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let render_assets = RenderAssets::new();
+
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let scene_target =
+            world.add_component_boxed_named("scene_target", Box::new(TransformComponent::new()));
+        let root = world.add_component_boxed_named("root", Box::new(TransformComponent::new()));
+        let selection_root = world.add_component_boxed(Box::new(SelectionComponent::new()));
+        let _ = world.add_child(root, selection_root);
+        world
+            .get_component_by_id_as_mut::<SelectionComponent>(selection_root)
+            .expect("selection")
+            .payload_selector = Some("[name='world_panel_payload']".to_string());
+
+        let (row, hit, style_id) = spawn_test_option_item(&mut world, root, "item_0", true);
+        let payload = world.add_component_boxed_named(
+            "world_panel_payload",
+            Box::new(
+                DataComponent::new()
+                    .with_entry("target_component", DataValue::Component(scene_target))
+                    .with_entry("row_kind", DataValue::Text("component".to_string())),
+            ),
+        );
+        let _ = world.add_child(row, payload);
+        let style_id = style_id.expect("row style");
+
+        systems.rx.push_event(
+            hit,
+            EventSignal::Click {
+                raycaster: hit,
+                renderable: hit,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+
+        let selection = world
+            .get_component_by_id_as::<SelectionComponent>(selection_root)
+            .expect("selection");
+        assert_eq!(selection.selected_component, Some(row));
+        assert_eq!(selection.selected_payload, Some(payload));
+        assert_eq!(
+            resolve_semantic_target_from_payload(
+                &world,
+                selection.selected_payload,
+                selection.selected_component,
+            ),
+            Some(scene_target)
+        );
+        assert_eq!(
+            world
+                .get_component_by_id_as::<StyleComponent>(style_id)
+                .expect("style")
+                .background_color,
+            Some(SELECTED_HIGHLIGHT_RGBA)
+        );
+    }
+
+    #[test]
+    fn selection_payload_selector_clears_payload_for_zero_or_multiple_matches() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+
+        let root = world.add_component_boxed_named("root", Box::new(TransformComponent::new()));
+        let selection_root = world.add_component_boxed(Box::new(SelectionComponent::new()));
+        let _ = world.add_child(root, selection_root);
+        world
+            .get_component_by_id_as_mut::<SelectionComponent>(selection_root)
+            .expect("selection")
+            .payload_selector = Some("[name='world_panel_payload']".to_string());
+
+        let zero_row =
+            world.add_component_boxed_named("item_0", Box::new(TransformComponent::new()));
+        let _ = world.add_child(root, zero_row);
+        let zero_option = world.add_component_boxed(Box::new(OptionComponent::new()));
+        let _ = world.add_child(zero_row, zero_option);
+
+        apply_selection_set(
+            &mut world,
+            &mut emit,
+            selection_root,
+            vec![SelectionEntry {
+                index: Some(0),
+                item: Some("zero".to_string()),
+                component: zero_row,
+            }],
+            Some(zero_row),
+        );
+        assert_eq!(
+            world
+                .get_component_by_id_as::<SelectionComponent>(selection_root)
+                .expect("selection")
+                .selected_payload,
+            None
+        );
+
+        let multi_row =
+            world.add_component_boxed_named("item_1", Box::new(TransformComponent::new()));
+        let _ = world.add_child(root, multi_row);
+        let multi_option = world.add_component_boxed(Box::new(OptionComponent::new()));
+        let _ = world.add_child(multi_row, multi_option);
+        let payload_a = world.add_component_boxed_named(
+            "world_panel_payload",
+            Box::new(
+                DataComponent::new().with_entry("target_component", DataValue::Component(zero_row)),
+            ),
+        );
+        let payload_b = world.add_component_boxed_named(
+            "world_panel_payload",
+            Box::new(
+                DataComponent::new()
+                    .with_entry("target_component", DataValue::Component(multi_row)),
+            ),
+        );
+        let _ = world.add_child(multi_row, payload_a);
+        let _ = world.add_child(multi_row, payload_b);
+
+        apply_selection_set(
+            &mut world,
+            &mut emit,
+            selection_root,
+            vec![SelectionEntry {
+                index: Some(1),
+                item: Some("multi".to_string()),
+                component: multi_row,
+            }],
+            Some(multi_row),
+        );
+        assert_eq!(
+            world
+                .get_component_by_id_as::<SelectionComponent>(selection_root)
+                .expect("selection")
+                .selected_payload,
+            None
+        );
     }
 
     #[test]

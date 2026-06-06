@@ -130,6 +130,7 @@ mod tests {
         let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
+        systems.selection.install_handlers(&mut systems.rx);
 
         let editor_root =
             world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
@@ -228,6 +229,7 @@ mod tests {
         let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
+        systems.selection.install_handlers(&mut systems.rx);
 
         let editor_root =
             world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
@@ -290,6 +292,7 @@ mod tests {
         let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
+        systems.selection.install_handlers(&mut systems.rx);
 
         let editor_root =
             world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
@@ -330,6 +333,7 @@ mod tests {
         let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
+        systems.selection.install_handlers(&mut systems.rx);
 
         let editor_root =
             world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));

@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-use crate::engine::ecs::component::SelectionComponent;
+use crate::engine::ecs::component::{EditorComponent, SelectionComponent};
+use crate::engine::ecs::system::selection_system::resolve_semantic_target_from_payload;
 use crate::engine::ecs::{ComponentId, EventSignal, RxWorld, Signal, SignalKind, World};
 
 const PANEL_LAYOUT_SELECTION_SELECTOR: &str = "#editor_panel_layout_selection";
@@ -150,6 +151,7 @@ fn install_shared_panel_handlers(
                 return;
             };
             apply_editor_context_event(&state, &event);
+            sync_editor_component_selection(world, &event);
         },
     );
 }
@@ -162,7 +164,7 @@ fn install_editor_handlers(
     rx.add_handler_closure(
         SignalKind::SelectionChanged,
         editor_root,
-        move |_world, _emit, signal| {
+        move |world, _emit, signal| {
             let Some(EventSignal::SelectionChanged {
                 selection_root,
                 selected_component,
@@ -175,13 +177,12 @@ fn install_editor_handlers(
                 return;
             }
 
-            apply_editor_context_event(
-                &state,
-                &EditorContextEvent::EditorSelectionChanged {
-                    editor: editor_root,
-                    component: *selected_component,
-                },
-            );
+            let event = EditorContextEvent::EditorSelectionChanged {
+                editor: editor_root,
+                component: *selected_component,
+            };
+            apply_editor_context_event(&state, &event);
+            sync_editor_component_selection(world, &event);
         },
     );
 }
@@ -208,14 +209,9 @@ fn bootstrap_editor_context(
         world.find_component(panel_query_root, WORLD_PANEL_SELECTION_SELECTOR)
         && let Some(selection) = world.get_component_by_id_as::<SelectionComponent>(selection_root)
     {
-        let component = selection.selected_component;
-        apply_editor_context_event(
-            state,
-            &EditorContextEvent::WorldPanelSelectionChanged {
-                component,
-                editor: component.and_then(|target| nearest_editor_ancestor(world, target)),
-            },
-        );
+        if let Some(event) = world_panel_selection_event(world, selection) {
+            apply_editor_context_event(state, &event);
+        }
     } else if let Some(editor_root) = workspace
         .lock()
         .expect("editor context workspace poisoned")
@@ -240,6 +236,7 @@ fn editor_context_event_from_shared_signal(
         selection_root,
         selected_entries,
         selected_component,
+        selected_payload,
         ..
     } = signal.event.as_ref()?
     else {
@@ -248,19 +245,29 @@ fn editor_context_event_from_shared_signal(
 
     let component =
         selected_component.or_else(|| selected_entries.last().map(|entry| entry.component));
-    let panel_layout_selection_root =
-        world.find_component(panel_query_root, PANEL_LAYOUT_SELECTION_SELECTOR);
-    let world_panel_selection_root =
-        world.find_component(panel_query_root, WORLD_PANEL_SELECTION_SELECTOR);
+    let is_panel_layout_selection = world.component_label(*selection_root)
+        == Some(PANEL_LAYOUT_SELECTION_SELECTOR.trim_start_matches('#'))
+        || world.find_component(panel_query_root, PANEL_LAYOUT_SELECTION_SELECTOR)
+            == Some(*selection_root);
+    let is_world_panel_selection = world.component_label(*selection_root)
+        == Some(WORLD_PANEL_SELECTION_SELECTOR.trim_start_matches('#'))
+        || world.find_component(panel_query_root, WORLD_PANEL_SELECTION_SELECTOR)
+            == Some(*selection_root);
 
-    if panel_layout_selection_root == Some(*selection_root) {
+    if is_panel_layout_selection {
         Some(EditorContextEvent::PanelFocusChanged {
             focused_panel: component,
         })
-    } else if world_panel_selection_root == Some(*selection_root) {
+    } else if is_world_panel_selection {
+        let semantic_target =
+            resolve_semantic_target_from_payload(world, *selected_payload, component);
+        println!(
+            "[EditorContext][trace] world_panel selection_root={selection_root:?} clicked_row={selected_component:?} payload={selected_payload:?} authored_target={semantic_target:?} active_editor={:?}",
+            semantic_target.and_then(|target| nearest_editor_ancestor(world, target))
+        );
         Some(EditorContextEvent::WorldPanelSelectionChanged {
-            component,
-            editor: component.and_then(|target| nearest_editor_ancestor(world, target)),
+            component: semantic_target,
+            editor: semantic_target.and_then(|target| nearest_editor_ancestor(world, target)),
         })
     } else {
         None
@@ -310,11 +317,67 @@ fn nearest_editor_ancestor(world: &World, start: ComponentId) -> Option<Componen
     None
 }
 
+fn world_panel_selection_event(
+    world: &World,
+    selection: &SelectionComponent,
+) -> Option<EditorContextEvent> {
+    let semantic_target = resolve_semantic_target_from_payload(
+        world,
+        selection.selected_payload,
+        selection.selected_component,
+    )?;
+    Some(EditorContextEvent::WorldPanelSelectionChanged {
+        component: Some(semantic_target),
+        editor: nearest_editor_ancestor(world, semantic_target),
+    })
+}
+
+fn sync_editor_component_selection(world: &mut World, event: &EditorContextEvent) {
+    match event {
+        EditorContextEvent::WorldPanelSelectionChanged { component, editor } => {
+            let Some(editor_root) = *editor else {
+                return;
+            };
+            if let Some(editor_component) =
+                world.get_component_by_id_as_mut::<EditorComponent>(editor_root)
+            {
+                editor_component.selected = *component;
+            }
+        }
+        EditorContextEvent::EditorSelectionChanged { editor, component } => {
+            if let Some(editor_component) =
+                world.get_component_by_id_as_mut::<EditorComponent>(*editor)
+            {
+                editor_component.selected = component.or(Some(*editor));
+            }
+        }
+        EditorContextEvent::ActiveEditorChanged {
+            editor,
+            selected_component,
+        } => {
+            let Some(editor_root) = *editor else {
+                return;
+            };
+            if let Some(editor_component) =
+                world.get_component_by_id_as_mut::<EditorComponent>(editor_root)
+            {
+                editor_component.selected = *selected_component;
+            }
+        }
+        EditorContextEvent::PanelFocusChanged { .. } => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{EditorContextEvent, EditorContextState, reduce_editor_context_state};
+    use super::{
+        EditorContextEvent, EditorContextState, reduce_editor_context_state,
+        sync_editor_component_selection, world_panel_selection_event,
+    };
     use crate::engine::ecs::World;
-    use crate::engine::ecs::component::TransformComponent;
+    use crate::engine::ecs::component::{
+        DataComponent, DataValue, EditorComponent, SelectionComponent, TransformComponent,
+    };
 
     fn cid(world: &mut World) -> crate::engine::ecs::ComponentId {
         world.add_component_boxed(Box::new(TransformComponent::new()))
@@ -398,5 +461,63 @@ mod tests {
 
         assert_eq!(next.active_editor, Some(editor));
         assert_eq!(next.selected_component, Some(editor));
+    }
+
+    #[test]
+    fn world_panel_payload_event_prefers_semantic_target_over_clicked_row() {
+        let mut world = World::default();
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_target =
+            world.add_component_boxed_named("scene_target", Box::new(TransformComponent::new()));
+        let row = world.add_component_boxed_named("item_1", Box::new(TransformComponent::new()));
+        let payload = world.add_component_boxed_named(
+            "world_panel_payload",
+            Box::new(
+                DataComponent::new()
+                    .with_entry("target_component", DataValue::Component(scene_target)),
+            ),
+        );
+        let _ = world.add_child(editor_root, scene_target);
+        let _ = world.add_child(row, payload);
+
+        let mut selection = SelectionComponent::new();
+        selection.selected_component = Some(row);
+        selection.selected_payload = Some(payload);
+        let event = world_panel_selection_event(&world, &selection).expect("event");
+
+        assert_eq!(
+            event,
+            EditorContextEvent::WorldPanelSelectionChanged {
+                component: Some(scene_target),
+                editor: Some(editor_root),
+            }
+        );
+    }
+
+    #[test]
+    fn world_panel_payload_sync_updates_editor_selected_to_semantic_target() {
+        let mut world = World::default();
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_target =
+            world.add_component_boxed_named("scene_target", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_target);
+
+        sync_editor_component_selection(
+            &mut world,
+            &EditorContextEvent::WorldPanelSelectionChanged {
+                component: Some(scene_target),
+                editor: Some(editor_root),
+            },
+        );
+
+        assert_eq!(
+            world
+                .get_component_by_id_as::<EditorComponent>(editor_root)
+                .expect("editor")
+                .selected,
+            Some(scene_target)
+        );
     }
 }

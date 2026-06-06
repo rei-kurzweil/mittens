@@ -3,12 +3,14 @@ use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::component::{
-    ColorComponent, Display, EdgeInsets, LayoutComponent, OptionComponent, Overflow,
-    RaycastableComponent, SelectableComponent, SelectionComponent, SelectionEntry, SelectionMode,
-    SerializeComponent, SizeDimension, StyleComponent, TextComponent,
+    ColorComponent, DataComponent, DataValue, Display, EdgeInsets, LayoutComponent,
+    OptionComponent, Overflow, RaycastableComponent, SelectableComponent, SelectionComponent,
+    SelectionEntry, SelectionMode, SerializeComponent, SizeDimension, StyleComponent,
+    TextComponent,
 };
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::system::editor_context_system::EditorContextState;
+use crate::engine::ecs::system::selection_system::resolve_semantic_target_from_payload;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
 use crate::meow_meow::component_registry::{
     filtered_root_ids_for_roots, filtered_roots_to_ce_ast, spawn_tree,
@@ -24,6 +26,7 @@ const WORLD_PANEL_ROOT_SELECTOR: &str = "#world_panel_root";
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 const WORLD_PANEL_CONTENT_ROOT_SELECTOR: &str = "#world_panel_content_root";
 const WORLD_PANEL_SELECTION_NAME: &str = "world_panel_selection";
+const WORLD_PANEL_PAYLOAD_NAME: &str = "world_panel_payload";
 const INSPECTOR_PANEL_SELECTION_NAME: &str = "inspector_panel_selection";
 const PANEL_CONTENT_SLOT_SELECTOR: &str = "#content_slot";
 const INSPECTOR_PANEL_ROOT_SELECTOR: &str = "#inspector_panel_root";
@@ -236,126 +239,121 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         let click_editor_context_state = editor_context_state.clone();
         let click_world_panel_scene_model = Arc::clone(&self.world_panel_scene_model);
         let click_installed_editor_roots = Arc::clone(&self.installed_editor_roots);
-        rx.add_handler_closure(SignalKind::Click, panel_query_root, move |world, emit, signal| {
-            let Some(EventSignal::Click { renderable, .. }) = signal.event.as_ref() else {
-                return;
-            };
+        rx.add_handler_closure(
+            SignalKind::Click,
+            panel_query_root,
+            move |world, emit, signal| {
+                let Some(EventSignal::Click { renderable, .. }) = signal.event.as_ref() else {
+                    return;
+                };
 
-            focus_panel_from_descendant_click(world, emit, panel_query_root, *renderable);
+                focus_panel_from_descendant_click(world, emit, panel_query_root, *renderable);
 
-            let Some(panel_root) = world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR) else {
-                return;
-            };
-            if !is_descendant_or_self(world, panel_root, *renderable) {
-                return;
-            }
-
-            let Some(world_panel_root) = world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR) else {
-                return;
-            };
-
-            let Some(status_wrap) = world.find_component(world_panel_root, PANEL_STATUS_WRAP_SELECTOR) else {
-                return;
-            };
-
-            let working_file_path = click_path_mutex
-                .lock()
-                .expect("working file path mutex poisoned");
-
-            if let Some(status_text) = handle_panel_button_click(world, emit, *renderable, &working_file_path) {
-                if panel_status_text(world, world_panel_root).as_deref() != Some(status_text.as_str()) {
-                    rerender_world_panel_status(world, emit, world_panel_root, status_wrap, &status_text);
+                let Some(panel_root) =
+                    world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR)
+                else {
+                    return;
+                };
+                if !is_descendant_or_self(world, panel_root, *renderable) {
+                    return;
                 }
 
-                refresh_all_panel_models(
-                    world,
-                    emit,
-                    panel_query_root,
-                    &click_editor_context_state,
-                    &click_world_panel_scene_model,
-                    &click_installed_editor_roots,
-                    true,
-                );
-                return;
-            }
+                let Some(world_panel_root) =
+                    world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR)
+                else {
+                    return;
+                };
 
-            let Some(row_name) = clicked_named_ancestor(world, *renderable, ITEM_PREFIX) else {
-                return;
-            };
-            let Some(row_index) = parse_item_index(&row_name) else {
-                return;
-            };
-            let editor_context = click_editor_context_state
-                .lock()
-                .expect("editor context state mutex poisoned")
-                .clone();
-            let visible_rows = build_world_panel_model(
-                world,
-                &editor_context,
-                &click_world_panel_scene_model
+                let Some(status_wrap) =
+                    world.find_component(world_panel_root, PANEL_STATUS_WRAP_SELECTOR)
+                else {
+                    return;
+                };
+
+                let working_file_path = click_path_mutex
                     .lock()
-                    .expect("world panel scene model mutex poisoned"),
-            )
-            .rows;
-            let Some(row) = visible_rows.get(row_index).cloned() else {
-                return;
-            };
-            let Some(target_component) = row.target_component else {
-                return;
-            };
+                    .expect("working file path mutex poisoned");
 
-            if let Some(selection_root) =
-                world.find_component(world_panel_root, &format!("#{WORLD_PANEL_SELECTION_NAME}"))
-            {
+                if let Some(status_text) =
+                    handle_panel_button_click(world, emit, *renderable, &working_file_path)
+                {
+                    if panel_status_text(world, world_panel_root).as_deref()
+                        != Some(status_text.as_str())
+                    {
+                        rerender_world_panel_status(
+                            world,
+                            emit,
+                            world_panel_root,
+                            status_wrap,
+                            &status_text,
+                        );
+                    }
+
+                    refresh_all_panel_models(
+                        world,
+                        emit,
+                        panel_query_root,
+                        &click_editor_context_state,
+                        &click_world_panel_scene_model,
+                        &click_installed_editor_roots,
+                        true,
+                    );
+                    return;
+                }
+
+                let Some(row_name) = clicked_named_ancestor(world, *renderable, ITEM_PREFIX) else {
+                    return;
+                };
+                let Some(row_index) = parse_item_index(&row_name) else {
+                    return;
+                };
+                let Some(row_root) =
+                    world.find_component(world_panel_root, &format!("#{row_name}"))
+                else {
+                    return;
+                };
+                let Some(selection_root) = world
+                    .find_component(world_panel_root, &format!("#{WORLD_PANEL_SELECTION_NAME}"))
+                else {
+                    return;
+                };
+                let row_label = world
+                    .find_component(row_root, "Text")
+                    .and_then(|text_id| world.get_component_by_id_as::<TextComponent>(text_id))
+                    .map(|text| text.text.trim().to_string());
+
                 crate::engine::ecs::system::selection_system::apply_selection_set(
                     world,
                     emit,
                     selection_root,
                     vec![SelectionEntry {
                         index: Some(row_index),
-                        item: Some(row.label.clone()),
-                        component: target_component,
+                        item: row_label,
+                        component: row_root,
                     }],
-                    Some(target_component),
+                    Some(row_root),
                 );
-            }
-
-            {
-                let mut editor_context = click_editor_context_state
-                    .lock()
-                    .expect("editor context state mutex poisoned");
-                editor_context.selected_component = Some(target_component);
-                editor_context.active_editor =
-                    nearest_editor_ancestor(world, target_component).or(Some(target_component));
-            }
-            if let Some(editor_root) = nearest_editor_ancestor(world, target_component)
-                && let Some(editor) =
-                    world.get_component_by_id_as_mut::<crate::engine::ecs::component::EditorComponent>(
-                        editor_root,
-                    )
-            {
-                editor.selected = Some(target_component);
-            }
-
-            let status_text = format!("selected {}", world_panel_item_label(world, target_component));
-            rerender_world_panel_status(world, emit, world_panel_root, status_wrap, &status_text);
-            sync_world_panel_selection(
-                world,
-                emit,
-                panel_query_root,
-                &click_editor_context_state,
-                &click_world_panel_scene_model,
-            );
-            refresh_inspector_panel(world, emit, panel_query_root, &click_editor_context_state);
-        });
+                apply_world_panel_semantic_selection(
+                    world,
+                    emit,
+                    panel_query_root,
+                    &click_editor_context_state,
+                    selection_root,
+                );
+            },
+        );
 
         let world_selection_editor_context_state = editor_context_state.clone();
         rx.add_handler_closure(
             SignalKind::SelectionChanged,
             panel_query_root,
             move |world, emit, signal| {
-                let Some(EventSignal::SelectionChanged { selection_root, .. }) =
-                    signal.event.as_ref()
+                let Some(EventSignal::SelectionChanged {
+                    selection_root,
+                    selected_component,
+                    selected_payload,
+                    ..
+                }) = signal.event.as_ref()
                 else {
                     return;
                 };
@@ -377,26 +375,33 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             SignalKind::SelectionChanged,
             panel_query_root,
             move |world, emit, signal| {
-                let Some(EventSignal::SelectionChanged { selection_root, .. }) =
-                    signal.event.as_ref()
+                let Some(EventSignal::SelectionChanged {
+                    selection_root,
+                    selected_component,
+                    selected_payload,
+                    ..
+                }) = signal.event.as_ref()
                 else {
                     return;
                 };
 
-                let Some(expected_selection_root) = world
-                    .find_component(panel_query_root, &format!("#{WORLD_PANEL_SELECTION_NAME}"))
-                else {
-                    return;
-                };
-                if *selection_root != expected_selection_root {
+                let is_world_panel_selection = world.component_label(*selection_root)
+                    == Some(WORLD_PANEL_SELECTION_NAME)
+                    || world.find_component(
+                        panel_query_root,
+                        &format!("#{WORLD_PANEL_SELECTION_NAME}"),
+                    ) == Some(*selection_root);
+                if !is_world_panel_selection {
                     return;
                 }
 
-                refresh_inspector_panel(
+                let _ = (selected_component, selected_payload);
+                apply_world_panel_semantic_selection(
                     world,
                     emit,
                     panel_query_root,
                     &world_selection_editor_context_state,
+                    *selection_root,
                 );
 
                 let Some(panel_layout_selection) = world
@@ -785,6 +790,11 @@ fn refresh_inspector_panel(
         .lock()
         .expect("editor context state mutex poisoned")
         .clone();
+    println!(
+        "[InspectorSystem][trace] rebuild inspector target={:?} active_editor={:?}",
+        editor_context.selected_component, editor_context.active_editor
+    );
+    trace_suspicious_inspector_target(world, editor_context.selected_component);
 
     let Some(inspector_panel_root) =
         world.find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR)
@@ -803,6 +813,54 @@ fn refresh_inspector_panel(
             &inspector_model.rows,
         );
     }
+}
+
+fn apply_world_panel_semantic_selection(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    editor_context_state: &Arc<Mutex<EditorContextState>>,
+    selection_root: ComponentId,
+) {
+    let Some(selection) = world.get_component_by_id_as::<SelectionComponent>(selection_root) else {
+        return;
+    };
+    let Some(target_component) = resolve_semantic_target_from_payload(
+        world,
+        selection.selected_payload,
+        selection.selected_component,
+    ) else {
+        return;
+    };
+    let active_editor = nearest_editor_ancestor(world, target_component);
+    {
+        let mut editor_context = editor_context_state
+            .lock()
+            .expect("editor context state mutex poisoned");
+        editor_context.selected_component = Some(target_component);
+        if active_editor.is_some() {
+            editor_context.active_editor = active_editor;
+        }
+    }
+
+    println!(
+        "[InspectorSystem][trace] world_panel selection_root={selection_root:?} clicked_row={:?} payload={:?} authored_target={target_component:?} active_editor={active_editor:?}",
+        selection.selected_component, selection.selected_payload
+    );
+
+    if let Some(world_panel_root) =
+        world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR)
+        && let Some(status_wrap) =
+            world.find_component(world_panel_root, PANEL_STATUS_WRAP_SELECTOR)
+    {
+        let status_text = format!(
+            "selected {}",
+            world_panel_item_label(world, target_component)
+        );
+        rerender_world_panel_status(world, emit, world_panel_root, status_wrap, &status_text);
+    }
+
+    refresh_inspector_panel(world, emit, panel_query_root, editor_context_state);
 }
 
 fn sync_world_panel_selection(
@@ -866,12 +924,23 @@ fn sync_world_panel_selection(
     let already_selected = world
         .get_component_by_id_as::<SelectionComponent>(selection_root)
         .is_some_and(|selection| {
-            selection.selected_component == Some(target_component)
-                && selection.selected_index == Some(selected_index)
+            selection.selected_payload.is_some_and(|payload| {
+                resolve_semantic_target_from_payload(
+                    world,
+                    Some(payload),
+                    selection.selected_component,
+                ) == Some(target_component)
+            }) && selection.selected_index == Some(selected_index)
         });
     if already_selected {
         return;
     }
+
+    let Some(row_root) =
+        world.find_component(world_panel_root, &format!("#{ITEM_PREFIX}{selected_index}"))
+    else {
+        return;
+    };
 
     crate::engine::ecs::system::selection_system::apply_selection_set(
         world,
@@ -880,9 +949,9 @@ fn sync_world_panel_selection(
         vec![SelectionEntry {
             index: Some(selected_index),
             item: Some(label),
-            component: target_component,
+            component: row_root,
         }],
-        Some(target_component),
+        Some(row_root),
     );
 }
 
@@ -1605,9 +1674,11 @@ fn build_inspector_panel_model(
     world: &World,
     editor_context: &EditorContextState,
 ) -> InspectorPanelModel {
-    let rows = editor_context
+    let inspection_target = editor_context
         .selected_component
-        .or(editor_context.active_editor)
+        .or(editor_context.active_editor);
+    println!("[InspectorSystem][trace] build_inspector_panel_model target={inspection_target:?}");
+    let rows = inspection_target
         .map(|component_id| build_inspector_panel_rows(world, component_id))
         .unwrap_or_else(|| {
             vec![InspectorPanelRow {
@@ -2020,6 +2091,34 @@ fn clicked_named_ancestor(world: &World, node: ComponentId, prefix: &str) -> Opt
     None
 }
 
+fn trace_suspicious_inspector_target(world: &World, target: Option<ComponentId>) {
+    let Some(target) = target else {
+        return;
+    };
+    let Some(name) = world
+        .component_label(target)
+        .or_else(|| world.component_name(target))
+    else {
+        return;
+    };
+    if [
+        "item_",
+        "_text",
+        "_option",
+        "selection_highlight",
+        "editor_runtime_ui_root",
+        "editor_gizmo_anchor",
+        "editor_transform_gizmo",
+    ]
+    .iter()
+    .any(|pattern| name.contains(pattern))
+    {
+        println!(
+            "[InspectorSystem][trace] suspicious inspector target target={target:?} name={name:?}"
+        );
+    }
+}
+
 fn focus_panel_from_descendant_click(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
@@ -2350,6 +2449,11 @@ fn spawn_world_panel_content_tree(
         WORLD_PANEL_SELECTION_NAME,
         Box::new(SelectionComponent::new()),
     );
+    if let Some(selection_component) =
+        world.get_component_by_id_as_mut::<SelectionComponent>(selection)
+    {
+        selection_component.payload_selector = Some(format!("[name='{WORLD_PANEL_PAYLOAD_NAME}']"));
+    }
     let _ = world.add_child(rows_mount, selection);
 
     for (index, row) in rows.iter().enumerate() {
@@ -2365,14 +2469,20 @@ fn spawn_world_panel_content_tree(
 
     if let Some(index) = selected_index.and_then(|index| usize::try_from(index).ok())
         && let Some(row) = rows.get(index)
-        && let Some(target_component) = row.target_component
-        && let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(selection)
+        && let Some(row_root) =
+            world.find_component(content_root, &format!("#{ITEM_PREFIX}{index}"))
     {
+        let selected_payload = resolve_selected_world_panel_payload(world, row_root);
+        let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(selection)
+        else {
+            return content_root;
+        };
         selection.select_entry(SelectionEntry {
             index: Some(index),
             item: Some(row.label.clone()),
-            component: target_component,
+            component: row_root,
         });
+        selection.selected_payload = selected_payload;
     }
 
     content_root
@@ -2434,6 +2544,19 @@ fn spawn_world_panel_row_tree(
                 let _ = world.add_child(row_root, raycastable);
             }
 
+            if let Some(target_component) = row.target_component {
+                let payload = world.add_component_boxed_named(
+                    WORLD_PANEL_PAYLOAD_NAME,
+                    Box::new(
+                        DataComponent::new()
+                            .with_entry("target_component", DataValue::Component(target_component))
+                            .with_entry("row_kind", DataValue::Text(format!("{:?}", row.kind)))
+                            .with_entry("label", DataValue::Text(row.label.clone())),
+                    ),
+                );
+                let _ = world.add_child(row_root, payload);
+            }
+
             let style = world.add_component_boxed_named(
                 format!("{row_name}_style"),
                 Box::new({
@@ -2475,6 +2598,19 @@ fn spawn_world_panel_row_tree(
 
             row_root
         }
+    }
+}
+
+fn resolve_selected_world_panel_payload(
+    world: &World,
+    row_root: ComponentId,
+) -> Option<ComponentId> {
+    let matches =
+        world.find_all_components(row_root, &format!("[name='{WORLD_PANEL_PAYLOAD_NAME}']"));
+    if matches.len() == 1 {
+        matches.into_iter().next()
+    } else {
+        None
     }
 }
 

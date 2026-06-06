@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::{
-    AssetPayloadComponent, EditorComponent, OptionComponent, RaycastableComponent,
+    AssetPayloadComponent, DataComponent, EditorComponent, OptionComponent, RaycastableComponent,
     SelectableComponent, SelectionComponent, TransformComponent, TransformGizmoComponent,
 };
 use crate::engine::ecs::system::editor_context_system::EditorContextState;
@@ -12,6 +12,7 @@ use crate::engine::ecs::system::editor_paint_system_state_manager::{
 };
 use crate::engine::ecs::system::grid_system::{GridSnapResult, GridStep, GridSystem};
 use crate::engine::ecs::system::paint_placement::{PlacementError, resolve_placement_pose};
+use crate::engine::ecs::system::selection_system::resolve_semantic_target_from_payload;
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalKind, World,
 };
@@ -333,8 +334,14 @@ fn paint_event_from_shared_signal(
                 world.find_component(panel_query_root, PAINT_TOOL_SELECTION_SELECTOR);
             let panel_layout_selection_root =
                 world.find_component(panel_query_root, PANEL_LAYOUT_SELECTION_SELECTOR);
+            let is_panel_layout_selection = panel_layout_selection_root == Some(*selection_root)
+                || world.component_label(*selection_root)
+                    == Some(PANEL_LAYOUT_SELECTION_SELECTOR.trim_start_matches('#'));
             let world_panel_selection_root =
                 world.find_component(panel_query_root, WORLD_PANEL_SELECTION_SELECTOR);
+            let is_world_panel_selection = world_panel_selection_root == Some(*selection_root)
+                || world.component_label(*selection_root)
+                    == Some(WORLD_PANEL_SELECTION_SELECTOR.trim_start_matches('#'));
 
             if asset_selection_root == Some(*selection_root) {
                 Some(PaintEvent::AssetSelectionChanged { item, component })
@@ -344,14 +351,20 @@ fn paint_event_from_shared_signal(
                     item,
                     component,
                 })
-            } else if panel_layout_selection_root == Some(*selection_root) {
+            } else if is_panel_layout_selection {
                 Some(PaintEvent::PanelFocusChanged {
                     focused_panel: component,
                 })
-            } else if world_panel_selection_root == Some(*selection_root) {
+            } else if is_world_panel_selection {
+                let semantic_target = resolve_semantic_target_from_payload(
+                    world,
+                    *selected_payload,
+                    *selected_component,
+                );
                 Some(PaintEvent::WorldPanelSelectionChanged {
-                    component,
-                    editor: component.and_then(|target| nearest_editor_ancestor(world, target)),
+                    component: semantic_target,
+                    editor: semantic_target
+                        .and_then(|target| nearest_editor_ancestor(world, target)),
                 })
             } else {
                 println!(
@@ -713,10 +726,18 @@ fn resolve_paint_context(
     }
     let selected_asset = paint_state.selected_asset.as_ref()?;
     let payload = selected_asset.component?;
-    let asset_key = world
-        .get_component_by_id_as::<AssetPayloadComponent>(payload)?
-        .asset_key
-        .clone();
+    let asset_key = if let Some(asset_payload) =
+        world.get_component_by_id_as::<AssetPayloadComponent>(payload)
+    {
+        asset_payload.asset_key.clone()
+    } else if let Some(data) = world.get_component_by_id_as::<DataComponent>(payload) {
+        match data.get("asset_key") {
+            Some(crate::engine::ecs::component::DataValue::Text(asset_key)) => asset_key.clone(),
+            _ => return None,
+        }
+    } else {
+        return None;
+    };
     let asset = templates
         .iter()
         .find(|template| template.key == asset_key)?
