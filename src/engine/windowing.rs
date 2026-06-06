@@ -57,8 +57,8 @@ impl ApplicationHandler for App {
 
         let preferred_window_size = self
             .universe
-            .as_ref()
-            .and_then(|universe| universe.preferred_window_size())
+            .as_mut()
+            .and_then(|universe| universe.take_preferred_window_size())
             .unwrap_or([1024, 768]);
 
         let attrs: WindowAttributes = Window::default_attributes()
@@ -128,18 +128,6 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::RedrawRequested => {
-                if let (Some(window), Some(universe)) = (&self.window, self.universe.as_ref()) {
-                    if let Some([width, height]) = universe.preferred_window_size() {
-                        let current = window.inner_size();
-                        if current.width != width || current.height != height {
-                            let _ = window.request_inner_size(winit::dpi::LogicalSize::new(
-                                width as f64,
-                                height as f64,
-                            ));
-                        }
-                    }
-                }
-
                 // Start of our "frame" from an input perspective: compute deltas, but keep
                 // edge-triggered sets so they remain visible during `universe.update`.
                 self.user_input.start_frame();

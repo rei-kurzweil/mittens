@@ -1434,6 +1434,10 @@ impl VisualWorld {
         self.preferred_window_size = size.filter(|[w, h]| *w > 0 && *h > 0);
     }
 
+    pub fn take_preferred_window_size(&mut self) -> Option<[u32; 2]> {
+        self.preferred_window_size.take()
+    }
+
     pub fn window_frame_dt_sec(&self) -> f32 {
         self.window_frame_dt_sec
     }

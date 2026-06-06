@@ -50,6 +50,10 @@ impl Universe {
         })
     }
 
+    pub fn take_preferred_window_size(&mut self) -> Option<[u32; 2]> {
+        self.visuals.take_preferred_window_size()
+    }
+
     pub fn enable_repl(&mut self) {
         if self.repl.is_none() {
             self.repl = Some(crate::engine::repl::Repl::new());
