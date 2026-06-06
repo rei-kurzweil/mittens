@@ -849,12 +849,14 @@ mod tests {
             "expected a second inspector instance after selecting a new target with the first pinned"
         );
 
-        let inspector_one = world
-            .find_component(runtime_ui_root, "#inspector_panel_instance_1")
-            .expect("expected first inspector instance");
-        let inspector_two = world
-            .find_component(runtime_ui_root, "#inspector_panel_instance_2")
-            .expect("expected second inspector instance");
+        let inspector_roots = world.find_all_components(runtime_ui_root, "#inspector_panel_root");
+        assert_eq!(
+            inspector_roots.len(),
+            2,
+            "expected two inspector panel roots"
+        );
+        let inspector_one = inspector_roots[0];
+        let inspector_two = inspector_roots[1];
 
         assert_eq!(
             row_text(&world, inspector_one, "#inspector_item_0"),
@@ -1484,6 +1486,117 @@ mod tests {
             world
                 .find_component(runtime_ui_root, "#world_panel_root")
                 .is_some()
+        );
+
+        let panel_status_value = world
+            .find_component(runtime_ui_root, "#panel_status_value")
+            .expect("expected panel status text after load");
+        let status_text = world
+            .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(
+                panel_status_value,
+            )
+            .map(|text| text.text.clone())
+            .expect("expected panel status text component");
+        assert!(status_text.contains("loaded 1 roots"));
+
+        let _ = std::fs::remove_file(&scene_path);
+        set_world_panel_scene_path_for_tests(None);
+    }
+
+    #[test]
+    fn world_panel_load_ignores_editor_panel_roots_from_legacy_scene_files() {
+        let _guard = WORLD_PANEL_SCENE_TEST_LOCK
+            .lock()
+            .expect("world panel scene test lock poisoned");
+        let scene_path = unique_test_scene_path();
+        set_world_panel_scene_path_for_tests(Some(scene_path.clone()));
+
+        std::fs::write(
+            &scene_path,
+            r#"
+T {
+    name = "inspector_panel_root"
+    Style {}
+    T {
+        name = "title_bar"
+        T {
+            Text { "Inspector" }
+        }
+    }
+}
+
+Editor.panels(true) {
+    name = "editor_root"
+    T {
+        name = "scene_root"
+    }
+}
+"#,
+        )
+        .expect("expected test scene file write to succeed");
+
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::new();
+        let mut inspector = EditorInspectorSystem::new();
+
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
+            &systems.asset_system,
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        let load_button = world
+            .find_component(runtime_ui_root, "#load_button")
+            .expect("expected load button");
+        systems.rx.push_event(
+            load_button,
+            EventSignal::Click {
+                raycaster: load_button,
+                renderable: load_button,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let loaded_editor_root = world
+            .all_components()
+            .find(|&component_id| {
+                world.parent_of(component_id).is_none()
+                    && world.component_label(component_id) == Some("editor_root")
+                    && component_id != editor_root
+            })
+            .expect("expected authored editor root to load");
+        assert!(
+            world
+                .find_component(loaded_editor_root, "#scene_root")
+                .is_some(),
+            "expected authored scene root to load"
+        );
+        assert_eq!(
+            world
+                .find_all_components(runtime_ui_root, "#inspector_panel_root")
+                .len(),
+            1,
+            "expected only the runtime inspector panel root to remain after load"
         );
 
         let panel_status_value = world

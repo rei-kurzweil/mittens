@@ -40,6 +40,8 @@ const INSPECTOR_PANEL_SELECTION_SELECTOR: &str = "#inspector_panel_selection";
 const INSPECTOR_PANEL_STRIP_NAME: &str = "inspector_panel_strip";
 const INSPECTOR_PANEL_STRIP_SELECTOR: &str = "#inspector_panel_strip";
 const INSPECTOR_PANEL_INSTANCE_PREFIX: &str = "inspector_panel_instance_";
+const INSPECTOR_PANEL_INSTANCE_DATA_NAME: &str = "inspector_panel_instance_data";
+const INSPECTOR_PANEL_INSTANCE_ID_KEY: &str = "inspector_panel_id";
 const INSPECTOR_PANEL_PIN_BUTTON_NAME: &str = "pin_button";
 const INSPECTOR_PANEL_PIN_BUTTON_SELECTOR: &str = "#pin_button";
 const PANEL_STATUS_ROOT_SELECTOR: &str = "#panel_status_root";
@@ -1765,10 +1767,48 @@ fn load_world_panel_scene_from_path(
     let module = MeowMeowRunner::load_module_source(&source, Some(path_str))?;
     let mut loaded_roots = 0;
     for component in &module.sequence {
+        if should_skip_loaded_root(component) {
+            continue;
+        }
         spawn_tree(component, None, world, emit)?;
         loaded_roots += 1;
     }
     Ok(loaded_roots)
+}
+
+fn should_skip_loaded_root(component: &MaterializedCE) -> bool {
+    let Some(name) = materialized_ce_name(component) else {
+        return false;
+    };
+
+    matches!(
+        name,
+        EDITOR_RUNTIME_UI_ROOT_NAME
+            | PANEL_LAYOUT_MOUNT_NAME
+            | PANEL_LAYOUT_ROOT_NAME
+            | PANEL_LAYOUT_SELECTION_NAME
+            | "world_panel_root"
+            | "inspector_panel_root"
+            | "assets_root"
+            | "paint_panel_root"
+            | "world_panel_content_root"
+            | "inspector_panel_content_root"
+            | "panel_status_root"
+            | "paint_panel_item"
+            | "rows_mount"
+    ) || name.starts_with(INSPECTOR_PANEL_INSTANCE_PREFIX)
+}
+
+fn materialized_ce_name(component: &MaterializedCE) -> Option<&str> {
+    component.named.iter().find_map(|(key, value)| {
+        if key != "name" {
+            return None;
+        }
+        match value {
+            Value::String(name) => Some(name.as_str()),
+            _ => None,
+        }
+    })
 }
 
 fn editor_scene_roots(world: &World) -> Vec<ComponentId> {
@@ -2273,22 +2313,13 @@ fn rerender_inspector_panel_strip(
         .children_of(inspector_panel_strip_root)
         .iter()
         .copied()
-        .filter(|&child| {
-            world
-                .component_label(child)
-                .is_some_and(|label| label.starts_with(INSPECTOR_PANEL_INSTANCE_PREFIX))
-        })
+        .filter(|&child| inspector_panel_instance_id_on_root(world, child).is_some())
         .collect::<Vec<_>>();
 
     let existing_by_id = existing_instance_roots
         .iter()
         .filter_map(|&child| {
-            let label = world.component_label(child)?;
-            let panel_id = label
-                .strip_prefix(INSPECTOR_PANEL_INSTANCE_PREFIX)?
-                .parse::<InspectorPanelId>()
-                .ok()?;
-            Some((panel_id, child))
+            inspector_panel_instance_id_on_root(world, child).map(|panel_id| (panel_id, child))
         })
         .collect::<std::collections::HashMap<_, _>>();
 
@@ -2356,11 +2387,7 @@ fn update_inspector_panel_instance_tree(
     instance_root: ComponentId,
     model: &InspectorPanelModel,
 ) {
-    let Some(inspector_panel_root) =
-        world.find_component(instance_root, INSPECTOR_PANEL_ROOT_SELECTOR)
-    else {
-        return;
-    };
+    let inspector_panel_root = instance_root;
     let Some(content_slot) =
         world.find_component(inspector_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
     else {
@@ -2431,13 +2458,8 @@ fn clicked_inspector_panel_instance_id(
 ) -> Option<InspectorPanelId> {
     let mut current = Some(node);
     while let Some(component_id) = current {
-        if let Some(label) = world.component_label(component_id) {
-            if let Some(id) = label
-                .strip_prefix(INSPECTOR_PANEL_INSTANCE_PREFIX)
-                .and_then(|suffix| suffix.parse::<InspectorPanelId>().ok())
-            {
-                return Some(id);
-            }
+        if let Some(id) = inspector_panel_instance_id_on_root(world, component_id) {
+            return Some(id);
         }
         current = world.parent_of(component_id);
     }
@@ -2449,10 +2471,29 @@ fn find_inspector_panel_instance_root(
     panel_query_root: ComponentId,
     panel_id: InspectorPanelId,
 ) -> Option<ComponentId> {
-    world.find_component(
-        panel_query_root,
-        &format!("#{INSPECTOR_PANEL_INSTANCE_PREFIX}{panel_id}"),
-    )
+    world
+        .find_component(panel_query_root, INSPECTOR_PANEL_STRIP_SELECTOR)
+        .and_then(|strip_root| {
+            world
+                .children_of(strip_root)
+                .iter()
+                .copied()
+                .find(|&child| inspector_panel_instance_id_on_root(world, child) == Some(panel_id))
+        })
+}
+
+fn inspector_panel_instance_id_on_root(
+    world: &World,
+    root: ComponentId,
+) -> Option<InspectorPanelId> {
+    world.children_of(root).iter().find_map(|&child| {
+        world
+            .get_component_by_id_as::<DataComponent>(child)
+            .and_then(|data| match data.get(INSPECTOR_PANEL_INSTANCE_ID_KEY) {
+                Some(DataValue::Integer(id)) => Some(*id as InspectorPanelId),
+                _ => None,
+            })
+    })
 }
 
 fn sync_inspector_workspace_to_selection(
@@ -2900,52 +2941,28 @@ fn spawn_inspector_panel_instance_tree(
             decorate_panel_root_ce(panel, if index == 0 { PANEL_LAYOUT_GAP_GU } else { 0.0 })
         }
         None => {
-            return world.add_component_boxed_named(
-                format!("{INSPECTOR_PANEL_INSTANCE_PREFIX}{}", model.panel_id),
-                Box::new(TransformComponent::new()),
-            );
+            return spawn_inspector_panel_instance_fallback_root(world, model.panel_id);
         }
     };
 
-    let wrapper_ce = MaterializedCE {
-        component_type: "T".to_string(),
-        ctor_method: None,
-        ctor_args: Vec::new(),
-        calls: Vec::new(),
-        named: vec![(
-            "name".to_string(),
-            Value::String(format!(
-                "{INSPECTOR_PANEL_INSTANCE_PREFIX}{}",
-                model.panel_id
-            )),
-        )],
-        positionals: Vec::new(),
-        children: vec![CeChild::Spawn(panel_ce)],
-    };
-
-    let wrapper_root = match spawn_tree(&wrapper_ce, None, world, emit) {
+    let instance_root = match spawn_tree(&panel_ce, None, world, emit) {
         Ok(component_id) => component_id,
         Err(error) => {
             eprintln!("[InspectorSystemStopgapMmsAdapter] inspector instance spawn error: {error}");
-            return world.add_component_boxed_named(
-                format!("{INSPECTOR_PANEL_INSTANCE_PREFIX}{}", model.panel_id),
-                Box::new(TransformComponent::new()),
-            );
+            return spawn_inspector_panel_instance_fallback_root(world, model.panel_id);
         }
     };
 
-    let Some(inspector_panel_root) =
-        world.find_component(wrapper_root, INSPECTOR_PANEL_ROOT_SELECTOR)
-    else {
-        return wrapper_root;
-    };
+    attach_inspector_panel_instance_id(world, instance_root, model.panel_id);
+
+    let inspector_panel_root = instance_root;
     let Some(title_bar) = world.find_component(inspector_panel_root, "#title_bar") else {
-        return wrapper_root;
+        return inspector_panel_root;
     };
     let Some(content_slot) =
         world.find_component(inspector_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
     else {
-        return wrapper_root;
+        return inspector_panel_root;
     };
 
     let pin_button = spawn_inspector_pin_button(world, model.pinned);
@@ -2957,7 +2974,39 @@ fn spawn_inspector_panel_instance_tree(
         content_slot,
         &model.rows,
     );
-    wrapper_root
+    inspector_panel_root
+}
+
+fn attach_inspector_panel_instance_id(
+    world: &mut World,
+    instance_root: ComponentId,
+    panel_id: InspectorPanelId,
+) {
+    let data = world.add_component_boxed_named(
+        INSPECTOR_PANEL_INSTANCE_DATA_NAME,
+        Box::new(
+            DataComponent::new()
+                .with_entry(
+                    INSPECTOR_PANEL_INSTANCE_ID_KEY,
+                    DataValue::Integer(panel_id as i64),
+                )
+                .with_entry(
+                    "instance_name",
+                    DataValue::Text(format!("{INSPECTOR_PANEL_INSTANCE_PREFIX}{panel_id}")),
+                ),
+        ),
+    );
+    let _ = world.add_child(instance_root, data);
+}
+
+fn spawn_inspector_panel_instance_fallback_root(
+    world: &mut World,
+    panel_id: InspectorPanelId,
+) -> ComponentId {
+    let root = world
+        .add_component_boxed_named("inspector_panel_root", Box::new(TransformComponent::new()));
+    attach_inspector_panel_instance_id(world, root, panel_id);
+    root
 }
 
 fn spawn_inspector_pin_button(world: &mut World, pinned: bool) -> ComponentId {
