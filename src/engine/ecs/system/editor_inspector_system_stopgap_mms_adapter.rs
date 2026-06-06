@@ -37,8 +37,6 @@ const PANEL_CONTENT_SLOT_SELECTOR: &str = "#content_slot";
 const INSPECTOR_PANEL_ROOT_SELECTOR: &str = "#inspector_panel_root";
 const INSPECTOR_PANEL_CONTENT_ROOT_SELECTOR: &str = "#inspector_panel_content_root";
 const INSPECTOR_PANEL_SELECTION_SELECTOR: &str = "#inspector_panel_selection";
-const INSPECTOR_PANEL_STRIP_NAME: &str = "inspector_panel_strip";
-const INSPECTOR_PANEL_STRIP_SELECTOR: &str = "#inspector_panel_strip";
 const INSPECTOR_PANEL_INSTANCE_PREFIX: &str = "inspector_panel_instance_";
 const INSPECTOR_PANEL_INSTANCE_DATA_NAME: &str = "inspector_panel_instance_data";
 const INSPECTOR_PANEL_INSTANCE_ID_KEY: &str = "inspector_panel_id";
@@ -780,11 +778,6 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             model.selected_index,
         );
 
-        let Some(inspector_panel_strip_root) =
-            world.find_component(panel_query_root, INSPECTOR_PANEL_STRIP_SELECTOR)
-        else {
-            return;
-        };
         let inspector_models = build_inspector_panel_models(
             world,
             &self
@@ -796,7 +789,10 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 .lock()
                 .expect("inspector workspace mutex poisoned"),
         );
-        rerender_inspector_panel_strip(world, emit, inspector_panel_strip_root, &inspector_models);
+        let Some(layout_root) = panel_layout_root_id(world, panel_query_root) else {
+            return;
+        };
+        rerender_inspector_panels(world, emit, layout_root, &inspector_models);
     }
 }
 
@@ -877,9 +873,7 @@ fn sync_and_refresh_inspector_panels(
         sync_inspector_workspace_to_selection(world, &editor_context, &mut workspace);
     }
 
-    let Some(inspector_panel_strip_root) =
-        world.find_component(panel_query_root, INSPECTOR_PANEL_STRIP_SELECTOR)
-    else {
+    let Some(layout_root) = panel_layout_root_id(world, panel_query_root) else {
         return;
     };
 
@@ -892,19 +886,17 @@ fn sync_and_refresh_inspector_panels(
             .lock()
             .expect("inspector workspace mutex poisoned"),
     );
-    rerender_inspector_panel_strip(world, emit, inspector_panel_strip_root, &inspector_models);
+    rerender_inspector_panels(world, emit, layout_root, &inspector_models);
 }
 
-fn refresh_inspector_panel_strip_from_workspace(
+fn refresh_inspector_panels_from_workspace(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     panel_query_root: ComponentId,
     world_panel_scene_model: &Arc<Mutex<AuthoredWorldPanelSceneModel>>,
     inspector_workspace_state: &Arc<Mutex<InspectorWorkspaceState>>,
 ) {
-    let Some(inspector_panel_strip_root) =
-        world.find_component(panel_query_root, INSPECTOR_PANEL_STRIP_SELECTOR)
-    else {
+    let Some(layout_root) = panel_layout_root_id(world, panel_query_root) else {
         return;
     };
 
@@ -917,7 +909,7 @@ fn refresh_inspector_panel_strip_from_workspace(
             .lock()
             .expect("inspector workspace mutex poisoned"),
     );
-    rerender_inspector_panel_strip(world, emit, inspector_panel_strip_root, &inspector_models);
+    rerender_inspector_panels(world, emit, layout_root, &inspector_models);
 }
 
 fn apply_world_panel_semantic_selection(
@@ -1111,7 +1103,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         let existing_world_panel =
             self.find_world_panel_node(world, panel_query_root, WORLD_PANEL_ROOT_SELECTOR);
         let existing_inspector_panel =
-            self.find_world_panel_node(world, panel_query_root, INSPECTOR_PANEL_STRIP_SELECTOR);
+            self.find_inspector_panel_nodes(world, panel_query_root).first().copied();
         let existing_panel_mount = world.all_components().find(|&component_id| {
             world
                 .component_label(component_id)
@@ -1178,6 +1170,35 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         selector: &str,
     ) -> Option<ComponentId> {
         world.find_component(panel_query_root, selector)
+    }
+
+    fn find_panel_layout_root(
+        &self,
+        world: &World,
+        panel_query_root: ComponentId,
+    ) -> Option<ComponentId> {
+        world.find_component(panel_query_root, &format!("#{PANEL_LAYOUT_ROOT_NAME}"))
+    }
+
+    fn find_inspector_panel_nodes(
+        &self,
+        world: &World,
+        panel_query_root: ComponentId,
+    ) -> Vec<ComponentId> {
+        let Some(layout_root) = self.find_panel_layout_root(world, panel_query_root) else {
+            return Vec::new();
+        };
+
+        world
+            .children_of(layout_root)
+            .iter()
+            .copied()
+            .filter(|&child| {
+                world
+                    .component_label(child)
+                    .is_some_and(|label| label == "inspector_panel_root")
+            })
+            .collect()
     }
 
     fn spawn_panel_layout(
@@ -1296,15 +1317,18 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             + PANEL_LAYOUT_GAP_GU
             + PAINT_PANEL_WIDTH_GU
             + (PANEL_ROOT_MARGIN_X_GU * 2.0 * panel_count);
-        let total_width_gu = panel_strip_width_gu * PANEL_LAYOUT_WIDTH_BUDGET_MULTIPLIER;
-        let total_height_gu = WORLD_PANEL_TOTAL_HEIGHT_GU
+        let mut total_width_gu = panel_strip_width_gu * PANEL_LAYOUT_WIDTH_BUDGET_MULTIPLIER;
+        let mut total_height_gu = WORLD_PANEL_TOTAL_HEIGHT_GU
             .max(INSPECTOR_PANEL_TOTAL_HEIGHT_GU)
             .max(ASSET_PANEL_TOTAL_HEIGHT_GU)
             .max(PAINT_PANEL_TOTAL_HEIGHT_GU)
             + (PANEL_ROOT_MARGIN_Y_GU * 2.0);
 
+        // override panel width
+        total_width_gu = 200000.0; 
+        total_height_gu = 200000.0;
+
         let world_panel = decorate_panel_root_ce(world_panel, 0.0);
-        let inspector_panel_strip = build_inspector_panel_strip_ce();
         let asset_panel = decorate_panel_root_ce(asset_panel, PANEL_LAYOUT_GAP_GU);
         let paint_panel = decorate_panel_root_ce(paint_panel, PANEL_LAYOUT_GAP_GU);
 
@@ -1333,7 +1357,6 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             positionals: Vec::new(),
             children: vec![
                 CeChild::Spawn(world_panel),
-                CeChild::Spawn(inspector_panel_strip),
                 CeChild::Spawn(asset_panel),
                 CeChild::Spawn(paint_panel),
             ],
@@ -1574,15 +1597,8 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             }
         }
 
-        if let Some(inspector_panel_strip_root) =
-            world.find_component(panel_mount_root, INSPECTOR_PANEL_STRIP_SELECTOR)
-        {
-            rerender_inspector_panel_strip(
-                world,
-                emit,
-                inspector_panel_strip_root,
-                inspector_models,
-            );
+        if let Some(layout_root) = self.find_panel_layout_root(world, panel_mount_root) {
+            rerender_inspector_panels(world, emit, layout_root, inspector_models);
         }
 
         println!(
@@ -1797,7 +1813,15 @@ fn should_skip_loaded_root(component: &MaterializedCE) -> bool {
             | "panel_status_root"
             | "paint_panel_item"
             | "rows_mount"
+            | "inspector_panel_strip"
     ) || name.starts_with(INSPECTOR_PANEL_INSTANCE_PREFIX)
+}
+
+fn panel_layout_root_id(
+    world: &World,
+    panel_query_root: ComponentId,
+) -> Option<ComponentId> {
+    world.find_component(panel_query_root, "#editor_panel_layout_root")
 }
 
 fn materialized_ce_name(component: &MaterializedCE) -> Option<&str> {
@@ -2304,14 +2328,14 @@ fn rerender_world_panel_content(
     mark_nearest_layout_dirty(world, content_slot);
 }
 
-fn rerender_inspector_panel_strip(
+fn rerender_inspector_panels(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
-    inspector_panel_strip_root: ComponentId,
+    layout_root: ComponentId,
     models: &[InspectorPanelModel],
 ) {
     let existing_instance_roots = world
-        .children_of(inspector_panel_strip_root)
+        .children_of(layout_root)
         .iter()
         .copied()
         .filter(|&child| inspector_panel_instance_id_on_root(world, child).is_some())
@@ -2343,14 +2367,32 @@ fn rerender_inspector_panel_strip(
     for (index, model) in models.iter().enumerate() {
         if let Some(&instance_root) = existing_by_id.get(&model.panel_id) {
             update_inspector_panel_instance_tree(world, emit, instance_root, model);
-            let _ = world.add_child(inspector_panel_strip_root, instance_root);
+            emit.push_intent_now(
+                instance_root,
+                IntentValue::Detach {
+                    component_ids: vec![instance_root],
+                },
+            );
+            emit.push_intent_now(
+                layout_root,
+                IntentValue::Attach {
+                    parents: vec![layout_root],
+                    child: instance_root,
+                },
+            );
             continue;
         }
 
         let instance_root = spawn_inspector_panel_instance_tree(world, emit, model, index);
-        let _ = world.add_child(inspector_panel_strip_root, instance_root);
+        emit.push_intent_now(
+            layout_root,
+            IntentValue::Attach {
+                parents: vec![layout_root],
+                child: instance_root,
+            },
+        );
     }
-    mark_nearest_layout_dirty(world, inspector_panel_strip_root);
+    mark_nearest_layout_dirty(world, layout_root);
 }
 
 fn rerender_single_inspector_panel_content(
@@ -2473,10 +2515,10 @@ fn find_inspector_panel_instance_root(
     panel_id: InspectorPanelId,
 ) -> Option<ComponentId> {
     world
-        .find_component(panel_query_root, INSPECTOR_PANEL_STRIP_SELECTOR)
-        .and_then(|strip_root| {
+        .find_component(panel_query_root, &format!("#{PANEL_LAYOUT_ROOT_NAME}"))
+        .and_then(|layout_root| {
             world
-                .children_of(strip_root)
+                .children_of(layout_root)
                 .iter()
                 .copied()
                 .find(|&child| inspector_panel_instance_id_on_root(world, child) == Some(panel_id))
@@ -2567,7 +2609,7 @@ fn handle_inspector_panel_workspace_click(
     }
 
     if rerender_needed {
-        refresh_inspector_panel_strip_from_workspace(
+        refresh_inspector_panels_from_workspace(
             world,
             emit,
             panel_query_root,
@@ -2844,32 +2886,6 @@ fn decorate_panel_root_ce(mut panel_root: MaterializedCE, margin_left_gu: f64) -
     }
 
     panel_root
-}
-
-fn build_inspector_panel_strip_ce() -> MaterializedCE {
-    MaterializedCE {
-        component_type: "T".to_string(),
-        ctor_method: None,
-        ctor_args: Vec::new(),
-        calls: Vec::new(),
-        named: vec![(
-            "name".to_string(),
-            Value::String(INSPECTOR_PANEL_STRIP_NAME.to_string()),
-        )],
-        positionals: Vec::new(),
-        children: vec![CeChild::Spawn(MaterializedCE {
-            component_type: "Style".to_string(),
-            ctor_method: None,
-            ctor_args: Vec::new(),
-            calls: vec![(
-                "display".to_string(),
-                vec![Value::String("inline-block".to_string())],
-            )],
-            named: Vec::new(),
-            positionals: Vec::new(),
-            children: Vec::new(),
-        })],
-    }
 }
 
 fn spawn_inspector_panel_instance_tree(

@@ -268,6 +268,22 @@ mod tests {
             .count()
     }
 
+    fn count_children_with_name(
+        world: &World,
+        root: crate::engine::ecs::ComponentId,
+        name: &str,
+    ) -> usize {
+        world
+            .children_of(root)
+            .iter()
+            .filter(|&&child| {
+                world
+                    .component_label(child)
+                    .is_some_and(|label| label == name)
+            })
+            .count()
+    }
+
     fn unique_test_scene_path() -> PathBuf {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1365,9 +1381,16 @@ mod tests {
         );
         assert!(
             world
-                .find_component(runtime_ui_root, "#inspector_panel_strip")
+                .find_component(runtime_ui_root, "#editor_panel_layout_root")
                 .is_some(),
-            "expected inspector panel strip to respawn with the panel layout"
+            "expected panel layout root to respawn with the panel layout"
+        );
+        let layout_root = world
+            .find_component(runtime_ui_root, "#editor_panel_layout_root")
+            .expect("panel layout root");
+        assert!(
+            count_children_with_name(&world, layout_root, "inspector_panel_root") > 0,
+            "expected inspector panel instances to attach directly under the layout root"
         );
     }
 
