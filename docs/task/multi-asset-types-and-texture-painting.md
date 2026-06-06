@@ -6,13 +6,14 @@ Status: planning only. Do not start implementation from this doc.
 
 ## Goal
 
-Extend the editor asset workflow beyond MMS factory assets so the assets panel can browse and select:
+Extend the editor asset workflow beyond MMS factory assets so the assets panel can browse and select these proposed asset types:
 
-- image/texture assets: `.dds`, `.png`
-- audio assets: `.ogg`, `.opus`, `.wav`
-- model assets: `.glb`
-- existing MMS assets: `.mms`
-- folders
+0. folders, if we decide they count as assets for browser purposes; they may need to for cases like skyboxes that are effectively six-image sets
+1. MMS script assets: `.mms`
+2. image/texture assets: `.dds`, `.png`
+3. audio assets: `.wav`, `.opus`
+4. model assets: `.glb`
+5. shader assets: `.frag`, `.vert`
 
 And change paint behavior so:
 
@@ -42,7 +43,7 @@ Current `AssetItem` shape is MMS-centric:
 - `category`
 - `param_names`
 
-That shape cannot represent a raw `.png`, `.dds`, `.wav`, `.ogg`, `.opus`, or `.glb` asset without bolting on nullable fields.
+That shape cannot represent a raw folder entry, `.png`, `.dds`, `.wav`, `.opus`, `.glb`, `.frag`, or `.vert` asset without bolting on nullable fields.
 
 ### Paint behavior is hardwired to MMS placement
 
@@ -95,6 +96,7 @@ enum AssetType {
     Texture,
     Audio,
     Glb,
+    Shader,
 }
 ```
 
@@ -134,6 +136,7 @@ enum AssetSource {
     TextureFile,
     AudioFile,
     GlbFile,
+    ShaderFile,
 }
 ```
 
@@ -153,10 +156,11 @@ Notes:
 - `.mms`
 - `.dds`
 - `.png`
-- `.ogg`
 - `.opus`
 - `.wav`
 - `.glb`
+- `.frag`
+- `.vert`
 
 and classify them into `AssetType`.
 
@@ -258,6 +262,14 @@ Folders do not need a rendered world-space preview. Recommended first pass:
 - show `..` using the same folder/navigation presentation, but visually distinct enough that it
   reads as "navigate up" rather than "ordinary directory asset"
 
+### Shader preview
+
+Shaders do not need a rendered world-space preview for the first pass. Recommended first pass:
+
+- show a shader/code icon or placeholder tile
+- show the extension prominently so `.frag` and `.vert` are easy to distinguish
+- avoid implying they are directly paintable until shader-attachment behavior is specified
+
 ## Paint behavior by asset type
 
 ### Texture assets: apply to clicked target
@@ -319,6 +331,15 @@ Recommended first pass:
 - folder items do not become the active paint asset
 - paint status should remain unchanged or clearly report that navigation items are not paintable
 
+### Shader assets: browse/select-only for now
+
+Shader assets should be discoverable and selectable in the assets panel, but they should not imply a paint behavior until we define how a shader gets attached to a renderable/material.
+
+Recommended first pass:
+
+- selecting a `.frag` or `.vert` asset keeps the status text honest: asset selected, but paint action unsupported
+- clicking scene objects while a shader asset is selected should no-op with a clear status message
+
 ## Paint-system refactor needed
 
 The current paint state/template model should be generalized from "selected MMS template" to "selected asset descriptor".
@@ -374,6 +395,7 @@ Examples:
 
 - `paint active | texture mode`
 - `paint active | object placement`
+- `paint inactive: shader assets are not paintable`
 - `paint inactive: selected asset cannot be painted`
 
 The current status text assumes every valid asset is placeable.
@@ -398,6 +420,8 @@ The current status text assumes every valid asset is placeable.
   GLB placement should route through `GLTFComponent`.
 - [src/engine/ecs/component/audio_clip.rs](/home/rei/_/cat-engine/src/engine/ecs/component/audio_clip.rs)
   Audio asset browsing can reuse existing clip URI conventions even if paint is unsupported.
+- shader/material systems
+  Shader asset browsing should stop short of attachment/application behavior in the first pass unless a concrete shader-binding path already exists.
 
 ## Suggested implementation order
 
@@ -409,11 +433,11 @@ The current status text assumes every valid asset is placeable.
 6. Split paint action by asset type.
 7. Implement texture-application paint behavior.
 8. Add GLB placement behavior.
-9. Leave audio as browse/select-only unless a concrete attach/play UX is specified.
+9. Leave audio and shader assets as browse/select-only unless a concrete attach/apply UX is specified.
 
 ## Verification checklist
 
-- assets panel lists `.mms`, `.dds`, `.png`, `.ogg`, `.opus`, `.wav`, and `.glb` entries from the configured asset tree
+- assets panel lists folders, `.mms`, `.dds`, `.png`, `.wav`, `.opus`, `.glb`, `.frag`, and `.vert` entries from the configured asset tree
 - assets panel lists folders as first-class items and always shows `..` in the first slot
 - clicking a folder item navigates into it
 - clicking `..` navigates upward when possible
@@ -421,6 +445,7 @@ The current status text assumes every valid asset is placeable.
 - selecting an MMS asset still places the authored subtree exactly as before
 - selecting a GLB asset places a GLTF-backed object rather than failing through the MMS path
 - selecting an audio asset does not crash and reports unsupported paint behavior clearly
+- selecting a shader asset does not crash and reports unsupported paint behavior clearly
 - selecting folder navigation items does not corrupt paint selection state
 - mixed assets with similar labels do not alias each other through title-based selection
 - texture preview tiles are consistently readable regardless of source image dimensions
@@ -429,6 +454,7 @@ The current status text assumes every valid asset is placeable.
 
 - waveform rendering
 - audio playback UI in the assets panel
+- shader authoring or shader/material attachment UI
 - robust automatic GLB thumbnail framing
 - material-slot editing beyond "apply one texture to the clicked renderable"
 - generalized material authoring UI
