@@ -509,6 +509,119 @@ mod tests {
     }
 
     #[test]
+    fn setup_panels_for_editor_pinned_inspector_spawns_second_instance_for_new_selection() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::new();
+        let mut inspector = EditorInspectorSystem::new();
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_a =
+            world.add_component_boxed_named("scene_a", Box::new(TransformComponent::new()));
+        let scene_b =
+            world.add_component_boxed_named("scene_b", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_a);
+        let _ = world.add_child(editor_root, scene_b);
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (1.9, 1.6, -1.2),
+            systems.editor_context.shared_state(),
+            &systems.asset_system,
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        let scene_a_row = world
+            .find_component(runtime_ui_root, "#item_1")
+            .expect("expected scene_a row under runtime ui root");
+        systems.rx.push_event(
+            scene_a_row,
+            EventSignal::Click {
+                raycaster: scene_a_row,
+                renderable: scene_a_row,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        let pin_button = world
+            .find_component(runtime_ui_root, "#pin_button")
+            .expect("expected pin button on the initial inspector panel");
+        systems.rx.push_event(
+            pin_button,
+            EventSignal::Click {
+                raycaster: pin_button,
+                renderable: pin_button,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        let scene_b_row = world
+            .find_component(runtime_ui_root, "#item_2")
+            .expect("expected scene_b row under runtime ui root");
+        systems.rx.push_event(
+            scene_b_row,
+            EventSignal::Click {
+                raycaster: scene_b_row,
+                renderable: scene_b_row,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        assert_eq!(
+            world
+                .find_all_components(runtime_ui_root, "#inspector_panel_root")
+                .len(),
+            2,
+            "expected a second inspector instance after selecting a new target with the first pinned"
+        );
+
+        let inspector_one = world
+            .find_component(runtime_ui_root, "#inspector_panel_instance_1")
+            .expect("expected first inspector instance");
+        let inspector_two = world
+            .find_component(runtime_ui_root, "#inspector_panel_instance_2")
+            .expect("expected second inspector instance");
+
+        assert_eq!(row_text(&world, inspector_one, "#inspector_item_0"), "scene_a");
+        assert_eq!(row_text(&world, inspector_two, "#inspector_item_0"), "scene_b");
+    }
+
+    #[test]
     fn setup_panels_for_editor_groups_rows_by_editor_tree() {
         let mut world = World::default();
         let mut emit = CommandQueue::new();

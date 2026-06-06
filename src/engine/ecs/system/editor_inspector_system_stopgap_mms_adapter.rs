@@ -5,9 +5,10 @@ use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::component::{
     ColorComponent, DataComponent, DataValue, Display, EdgeInsets, LayoutComponent,
     OptionComponent, Overflow, RaycastableComponent, SelectableComponent, SelectionComponent,
-    SelectionEntry, SelectionMode, SerializeComponent, SizeDimension, StyleComponent,
+    SelectionEntry, SelectionMode, SerializeComponent, SizeDimension, StyleComponent, TextAlign,
     TextComponent,
 };
+use crate::engine::ecs::component::style::VerticalAlign;
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::system::editor_context_system::EditorContextState;
 use crate::engine::ecs::system::selection_system::resolve_semantic_target_from_payload;
@@ -32,6 +33,11 @@ const PANEL_CONTENT_SLOT_SELECTOR: &str = "#content_slot";
 const INSPECTOR_PANEL_ROOT_SELECTOR: &str = "#inspector_panel_root";
 const INSPECTOR_PANEL_CONTENT_ROOT_SELECTOR: &str = "#inspector_panel_content_root";
 const INSPECTOR_PANEL_SELECTION_SELECTOR: &str = "#inspector_panel_selection";
+const INSPECTOR_PANEL_STRIP_NAME: &str = "inspector_panel_strip";
+const INSPECTOR_PANEL_STRIP_SELECTOR: &str = "#inspector_panel_strip";
+const INSPECTOR_PANEL_INSTANCE_PREFIX: &str = "inspector_panel_instance_";
+const INSPECTOR_PANEL_PIN_BUTTON_NAME: &str = "pin_button";
+const INSPECTOR_PANEL_PIN_BUTTON_SELECTOR: &str = "#pin_button";
 const PANEL_STATUS_ROOT_SELECTOR: &str = "#panel_status_root";
 const PANEL_STATUS_WRAP_SELECTOR: &str = "#save_status_wrap";
 const PANEL_STATUS_VALUE_SELECTOR: &str = "#panel_status_value";
@@ -56,6 +62,72 @@ const PANEL_ROOT_MARGIN_X_GU: f64 = 0.5;
 const PANEL_ROOT_MARGIN_Y_GU: f64 = 0.5;
 const PANEL_LAYOUT_WIDTH_BUDGET_MULTIPLIER: f64 = 10.0;
 const MAX_INSPECTOR_PANEL_ROWS: usize = 256;
+
+type InspectorPanelId = u64;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct InspectorSubtreeSelection {
+    focused_row: Option<ComponentId>,
+    expanded: Vec<ComponentId>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct InspectorScrollState {
+    row_offset: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InspectorPanelState {
+    panel_id: InspectorPanelId,
+    editor_root: ComponentId,
+    inspected: Option<ComponentId>,
+    pinned: bool,
+    subtree_selection: InspectorSubtreeSelection,
+    scroll_offset: InspectorScrollState,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct InspectorWorkspaceState {
+    panels: Vec<InspectorPanelState>,
+    active_panel: Option<InspectorPanelId>,
+    pending_spawn_target: Option<ComponentId>,
+    next_panel_id: InspectorPanelId,
+}
+
+impl InspectorWorkspaceState {
+    fn next_panel_id(&mut self) -> InspectorPanelId {
+        let next = self.next_panel_id.max(1);
+        self.next_panel_id = next + 1;
+        next
+    }
+
+    fn active_panel_index(&self) -> Option<usize> {
+        let active_panel = self.active_panel?;
+        self.panels.iter().position(|panel| panel.panel_id == active_panel)
+    }
+
+    fn ensure_default_panel(
+        &mut self,
+        editor_root: ComponentId,
+        inspected: Option<ComponentId>,
+    ) -> InspectorPanelId {
+        if let Some(panel) = self.panels.first() {
+            return panel.panel_id;
+        }
+
+        let panel_id = self.next_panel_id();
+        self.panels.push(InspectorPanelState {
+            panel_id,
+            editor_root,
+            inspected,
+            pinned: false,
+            subtree_selection: InspectorSubtreeSelection::default(),
+            scroll_offset: InspectorScrollState::default(),
+        });
+        self.active_panel = Some(panel_id);
+        panel_id
+    }
+}
 
 #[cfg(test)]
 static WORLD_PANEL_SCENE_PATH_OVERRIDE: Mutex<Option<PathBuf>> = Mutex::new(None);
@@ -111,6 +183,7 @@ pub(crate) struct EditorInspectorSystemStopgapMmsAdapter {
     runtime_ui_root: Arc<Mutex<Option<ComponentId>>>,
     working_file_path: Arc<Mutex<PathBuf>>,
     world_panel_scene_model: Arc<Mutex<AuthoredWorldPanelSceneModel>>,
+    inspector_workspace_state: Arc<Mutex<InspectorWorkspaceState>>,
 }
 
 impl Default for EditorInspectorSystemStopgapMmsAdapter {
@@ -125,6 +198,7 @@ impl Default for EditorInspectorSystemStopgapMmsAdapter {
             runtime_ui_root: Arc::new(Mutex::new(None)),
             working_file_path: Arc::new(Mutex::new(world_panel_scene_path())),
             world_panel_scene_model: Arc::new(Mutex::new(AuthoredWorldPanelSceneModel::default())),
+            inspector_workspace_state: Arc::new(Mutex::new(InspectorWorkspaceState::default())),
         }
     }
 }
@@ -161,6 +235,18 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         );
 
         let editor_context = self.editor_context();
+        {
+            let mut workspace = self
+                .inspector_workspace_state
+                .lock()
+                .expect("inspector workspace mutex poisoned");
+            workspace.ensure_default_panel(
+                editor_root,
+                editor_context
+                    .selected_component
+                    .or(editor_context.active_editor),
+            );
+        }
         let model = build_world_panel_model(
             world,
             &editor_context,
@@ -169,13 +255,16 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 .lock()
                 .expect("world panel scene model mutex poisoned"),
         );
-        let inspector_model = build_inspector_panel_model(
+        let inspector_models = build_inspector_panel_models(
             world,
-            &editor_context,
             &self
                 .world_panel_scene_model
                 .lock()
                 .expect("world panel scene model mutex poisoned"),
+            &self
+                .inspector_workspace_state
+                .lock()
+                .expect("inspector workspace mutex poisoned"),
         );
 
         {
@@ -192,7 +281,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 world_panel_pos,
                 inspector_panel_pos,
                 &model,
-                &inspector_model,
+                &inspector_models,
                 &working_file_path,
                 asset_system,
             );
@@ -246,6 +335,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         let click_editor_context_state = editor_context_state.clone();
         let click_world_panel_scene_model = Arc::clone(&self.world_panel_scene_model);
         let click_installed_editor_roots = Arc::clone(&self.installed_editor_roots);
+        let click_inspector_workspace_state = Arc::clone(&self.inspector_workspace_state);
         rx.add_handler_closure(
             SignalKind::Click,
             panel_query_root,
@@ -255,6 +345,14 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 };
 
                 focus_panel_from_descendant_click(world, emit, panel_query_root, *renderable);
+                handle_inspector_panel_workspace_click(
+                    world,
+                    emit,
+                    panel_query_root,
+                    *renderable,
+                    &click_world_panel_scene_model,
+                    &click_inspector_workspace_state,
+                );
 
                 let Some(panel_root) =
                     world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR)
@@ -302,6 +400,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                         panel_query_root,
                         &click_editor_context_state,
                         &click_world_panel_scene_model,
+                        &click_inspector_workspace_state,
                         &click_installed_editor_roots,
                         true,
                     );
@@ -346,6 +445,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     panel_query_root,
                     &click_editor_context_state,
                     &click_world_panel_scene_model,
+                    &click_inspector_workspace_state,
                     selection_root,
                 );
             },
@@ -353,6 +453,8 @@ impl EditorInspectorSystemStopgapMmsAdapter {
 
         let world_selection_editor_context_state = editor_context_state.clone();
         let world_selection_scene_model = Arc::clone(&self.world_panel_scene_model);
+        let world_selection_inspector_workspace_state =
+            Arc::clone(&self.inspector_workspace_state);
         rx.add_handler_closure(
             SignalKind::SelectionChanged,
             panel_query_root,
@@ -417,6 +519,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     panel_query_root,
                     &world_selection_editor_context_state,
                     &world_selection_scene_model,
+                    &world_selection_inspector_workspace_state,
                     *selection_root,
                 );
 
@@ -649,6 +752,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             .expect("editor context state must be installed before panels")
             .clone();
         let world_panel_scene_model = Arc::clone(&self.world_panel_scene_model);
+        let inspector_workspace_state = Arc::clone(&self.inspector_workspace_state);
         rx.add_handler_closure(
             SignalKind::SelectionChanged,
             editor_root,
@@ -674,12 +778,13 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     &editor_context_state,
                     &world_panel_scene_model,
                 );
-                refresh_inspector_panel(
+                sync_and_refresh_inspector_panels(
                     world,
                     emit,
                     panel_query_root,
                     &editor_context_state,
                     &world_panel_scene_model,
+                    &inspector_workspace_state,
                 );
             },
         );
@@ -736,31 +841,27 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             model.selected_index,
         );
 
-        let Some(inspector_panel_root) =
-            world.find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR)
+        let Some(inspector_panel_strip_root) =
+            world.find_component(panel_query_root, INSPECTOR_PANEL_STRIP_SELECTOR)
         else {
             return;
         };
-        let Some(inspector_content_slot) =
-            world.find_component(inspector_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
-        else {
-            return;
-        };
-
-        let inspector_model = build_inspector_panel_model(
+        let inspector_models = build_inspector_panel_models(
             world,
-            &editor_context,
             &self
                 .world_panel_scene_model
                 .lock()
                 .expect("world panel scene model mutex poisoned"),
+            &self
+                .inspector_workspace_state
+                .lock()
+                .expect("inspector workspace mutex poisoned"),
         );
-        rerender_inspector_panel_content(
+        rerender_inspector_panel_strip(
             world,
             emit,
-            panel_query_root,
-            inspector_content_slot,
-            &inspector_model.rows,
+            inspector_panel_strip_root,
+            &inspector_models,
         );
     }
 }
@@ -771,6 +872,7 @@ fn refresh_all_panel_models(
     panel_query_root: ComponentId,
     editor_context_state: &Arc<Mutex<EditorContextState>>,
     world_panel_scene_model: &Arc<Mutex<AuthoredWorldPanelSceneModel>>,
+    inspector_workspace_state: &Arc<Mutex<InspectorWorkspaceState>>,
     installed_editor_roots: &Arc<Mutex<Vec<ComponentId>>>,
     rebuild_world_panel: bool,
 ) {
@@ -806,21 +908,23 @@ fn refresh_all_panel_models(
         );
     }
 
-    refresh_inspector_panel(
+    sync_and_refresh_inspector_panels(
         world,
         emit,
         panel_query_root,
         editor_context_state,
         world_panel_scene_model,
+        inspector_workspace_state,
     );
 }
 
-fn refresh_inspector_panel(
+fn sync_and_refresh_inspector_panels(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     panel_query_root: ComponentId,
     editor_context_state: &Arc<Mutex<EditorContextState>>,
     world_panel_scene_model: &Arc<Mutex<AuthoredWorldPanelSceneModel>>,
+    inspector_workspace_state: &Arc<Mutex<InspectorWorkspaceState>>,
 ) {
     let editor_context = editor_context_state
         .lock()
@@ -832,29 +936,54 @@ fn refresh_inspector_panel(
     );
     trace_suspicious_inspector_target(world, editor_context.selected_component);
 
-    let Some(inspector_panel_root) =
-        world.find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR)
+    {
+        let mut workspace = inspector_workspace_state
+            .lock()
+            .expect("inspector workspace mutex poisoned");
+        sync_inspector_workspace_to_selection(world, &editor_context, &mut workspace);
+    }
+
+    let Some(inspector_panel_strip_root) =
+        world.find_component(panel_query_root, INSPECTOR_PANEL_STRIP_SELECTOR)
     else {
         return;
     };
-    if let Some(inspector_content_slot) =
-        world.find_component(inspector_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
-    {
-        let inspector_model = build_inspector_panel_model(
-            world,
-            &editor_context,
-            &world_panel_scene_model
-                .lock()
-                .expect("world panel scene model mutex poisoned"),
-        );
-        rerender_inspector_panel_content(
-            world,
-            emit,
-            panel_query_root,
-            inspector_content_slot,
-            &inspector_model.rows,
-        );
-    }
+
+    let inspector_models = build_inspector_panel_models(
+        world,
+        &world_panel_scene_model
+            .lock()
+            .expect("world panel scene model mutex poisoned"),
+        &inspector_workspace_state
+            .lock()
+            .expect("inspector workspace mutex poisoned"),
+    );
+    rerender_inspector_panel_strip(world, emit, inspector_panel_strip_root, &inspector_models);
+}
+
+fn refresh_inspector_panel_strip_from_workspace(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    world_panel_scene_model: &Arc<Mutex<AuthoredWorldPanelSceneModel>>,
+    inspector_workspace_state: &Arc<Mutex<InspectorWorkspaceState>>,
+) {
+    let Some(inspector_panel_strip_root) =
+        world.find_component(panel_query_root, INSPECTOR_PANEL_STRIP_SELECTOR)
+    else {
+        return;
+    };
+
+    let inspector_models = build_inspector_panel_models(
+        world,
+        &world_panel_scene_model
+            .lock()
+            .expect("world panel scene model mutex poisoned"),
+        &inspector_workspace_state
+            .lock()
+            .expect("inspector workspace mutex poisoned"),
+    );
+    rerender_inspector_panel_strip(world, emit, inspector_panel_strip_root, &inspector_models);
 }
 
 fn apply_world_panel_semantic_selection(
@@ -863,6 +992,7 @@ fn apply_world_panel_semantic_selection(
     panel_query_root: ComponentId,
     editor_context_state: &Arc<Mutex<EditorContextState>>,
     world_panel_scene_model: &Arc<Mutex<AuthoredWorldPanelSceneModel>>,
+    inspector_workspace_state: &Arc<Mutex<InspectorWorkspaceState>>,
     selection_root: ComponentId,
 ) {
     let Some(selection) = world.get_component_by_id_as::<SelectionComponent>(selection_root) else {
@@ -903,12 +1033,13 @@ fn apply_world_panel_semantic_selection(
         rerender_world_panel_status(world, emit, world_panel_root, status_wrap, &status_text);
     }
 
-    refresh_inspector_panel(
+    sync_and_refresh_inspector_panels(
         world,
         emit,
         panel_query_root,
         editor_context_state,
         world_panel_scene_model,
+        inspector_workspace_state,
     );
 }
 
@@ -1039,14 +1170,14 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         world_panel_pos: (f32, f32, f32),
         inspector_panel_pos: (f32, f32, f32),
         model: &WorldPanelModel,
-        inspector_model: &InspectorPanelModel,
+        inspector_models: &[InspectorPanelModel],
         working_file_path: &Path,
         asset_system: &crate::engine::ecs::system::AssetSystem,
     ) {
         let existing_world_panel =
             self.find_world_panel_node(world, panel_query_root, WORLD_PANEL_ROOT_SELECTOR);
         let existing_inspector_panel =
-            self.find_world_panel_node(world, panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR);
+            self.find_world_panel_node(world, panel_query_root, INSPECTOR_PANEL_STRIP_SELECTOR);
 
         println!(
             "[InspectorSystem][debug] reconcile_panel_layout panel_query_root={panel_query_root:?} existing_world_panel={existing_world_panel:?} existing_inspector_panel={existing_inspector_panel:?}"
@@ -1077,7 +1208,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             world_panel_pos,
             inspector_panel_pos,
             model,
-            inspector_model,
+            inspector_models,
             working_file_path,
             asset_system,
         );
@@ -1101,7 +1232,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         world_panel_pos: (f32, f32, f32),
         inspector_panel_pos: (f32, f32, f32),
         model: &WorldPanelModel,
-        inspector_model: &InspectorPanelModel,
+        inspector_models: &[InspectorPanelModel],
         working_file_path: &Path,
         asset_system: &crate::engine::ecs::system::AssetSystem,
     ) {
@@ -1129,25 +1260,6 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             Value::Number(1.0),
         ]);
 
-        let inspector_panel_title_color = Value::Array(vec![
-            Value::Number(0.90),
-            Value::Number(1.00),
-            Value::Number(0.92),
-            Value::Number(1.0),
-        ]);
-        let inspector_panel_bg = Value::Array(vec![
-            Value::Number(0.18),
-            Value::Number(0.78),
-            Value::Number(0.22),
-            Value::Number(0.95),
-        ]);
-        let inspector_panel_item_bg = Value::Array(vec![
-            Value::Number(0.92),
-            Value::Number(0.92),
-            Value::Number(0.92),
-            Value::Number(0.80),
-        ]);
-
         let asset_panel_title_color = world_panel_title_color.clone();
         let asset_panel_bg = world_panel_bg.clone();
         let asset_panel_item_bg = world_panel_item_bg.clone();
@@ -1172,24 +1284,6 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 Value::String(working_file_path_str),
             ],
             "world panel",
-        ) {
-            Some(panel) => panel,
-            None => return,
-        };
-
-        let inspector_panel = match build_panel_component_expr(
-            world,
-            emit,
-            inspector_panel_asset_path(),
-            "inspector_panel",
-            vec![
-                Value::String(inspector_model.title.clone()),
-                Value::Array(Vec::new()),
-                inspector_panel_title_color.clone(),
-                inspector_panel_bg.clone(),
-                inspector_panel_item_bg.clone(),
-            ],
-            "inspector panel",
         ) {
             Some(panel) => panel,
             None => return,
@@ -1237,7 +1331,8 @@ impl EditorInspectorSystemStopgapMmsReconciler {
 
         let panel_strip_width_gu = WORLD_PANEL_WIDTH_GU
             + PANEL_LAYOUT_GAP_GU
-            + INSPECTOR_PANEL_WIDTH_GU
+            + ((INSPECTOR_PANEL_WIDTH_GU * inspector_models.len().max(1) as f64)
+                + (PANEL_LAYOUT_GAP_GU * inspector_models.len().saturating_sub(1) as f64))
             + PANEL_LAYOUT_GAP_GU
             + ASSET_PANEL_WIDTH_GU
             + PANEL_LAYOUT_GAP_GU
@@ -1251,7 +1346,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             + (PANEL_ROOT_MARGIN_Y_GU * 2.0);
 
         let world_panel = decorate_panel_root_ce(world_panel, 0.0);
-        let inspector_panel = decorate_panel_root_ce(inspector_panel, PANEL_LAYOUT_GAP_GU);
+        let inspector_panel_strip = build_inspector_panel_strip_ce();
         let asset_panel = decorate_panel_root_ce(asset_panel, PANEL_LAYOUT_GAP_GU);
         let paint_panel = decorate_panel_root_ce(paint_panel, PANEL_LAYOUT_GAP_GU);
 
@@ -1280,7 +1375,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             positionals: Vec::new(),
             children: vec![
                 CeChild::Spawn(world_panel),
-                CeChild::Spawn(inspector_panel),
+                CeChild::Spawn(inspector_panel_strip),
                 CeChild::Spawn(asset_panel),
                 CeChild::Spawn(paint_panel),
             ],
@@ -1521,6 +1616,12 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             }
         }
 
+        if let Some(inspector_panel_strip_root) =
+            world.find_component(panel_mount_root, INSPECTOR_PANEL_STRIP_SELECTOR)
+        {
+            rerender_inspector_panel_strip(world, emit, inspector_panel_strip_root, inspector_models);
+        }
+
         println!(
             "[InspectorSystem][debug] queued attach panel_mount_root={panel_mount_root:?} -> panel_query_root={panel_query_root:?}"
         );
@@ -1536,8 +1637,11 @@ impl EditorInspectorSystemStopgapMmsReconciler {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct InspectorPanelModel {
+    panel_id: InspectorPanelId,
     title: String,
     rows: Vec<InspectorPanelRow>,
+    pinned: bool,
+    active: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1743,28 +1847,62 @@ fn build_world_panel_model(
     }
 }
 
-fn build_inspector_panel_model(
+fn build_inspector_panel_models(
     world: &World,
-    editor_context: &EditorContextState,
     scene_model: &AuthoredWorldPanelSceneModel,
-) -> InspectorPanelModel {
-    let inspection_target = editor_context
-        .selected_component
-        .or(editor_context.active_editor);
-    println!("[InspectorSystem][trace] build_inspector_panel_model target={inspection_target:?}");
-    let rows = inspection_target
-        .map(|component_id| build_inspector_panel_rows(world, scene_model, component_id))
-        .unwrap_or_else(|| {
-            vec![InspectorPanelRow {
+    workspace: &InspectorWorkspaceState,
+) -> Vec<InspectorPanelModel> {
+    if workspace.panels.is_empty() {
+        return vec![InspectorPanelModel {
+            panel_id: 0,
+            title: "Inspector".to_string(),
+            rows: vec![InspectorPanelRow {
                 display_label: "<nothing selected>".to_string(),
                 kind: InspectorPanelRowKind::Info,
-            }]
-        });
-
-    InspectorPanelModel {
-        title: "Inspector".to_string(),
-        rows,
+            }],
+            pinned: false,
+            active: true,
+        }];
     }
+
+    workspace
+        .panels
+        .iter()
+        .map(|panel| {
+            println!(
+                "[InspectorSystem][trace] build_inspector_panel_model panel_id={} target={:?} pinned={}",
+                panel.panel_id, panel.inspected, panel.pinned
+            );
+            let rows = panel
+                .inspected
+                .filter(|&component_id| world.get_component_record(component_id).is_some())
+                .map(|component_id| build_inspector_panel_rows(world, scene_model, component_id))
+                .unwrap_or_else(|| {
+                    vec![InspectorPanelRow {
+                        display_label: "<nothing selected>".to_string(),
+                        kind: InspectorPanelRowKind::Info,
+                    }]
+                });
+
+            let target_label = panel
+                .inspected
+                .filter(|&component_id| world.get_component_record(component_id).is_some())
+                .map(|component_id| world_panel_item_label(world, component_id))
+                .unwrap_or_else(|| "Inspector".to_string());
+
+            InspectorPanelModel {
+                panel_id: panel.panel_id,
+                title: if panel.pinned {
+                    format!("{target_label} [Pinned]")
+                } else {
+                    target_label
+                },
+                rows,
+                pinned: panel.pinned,
+                active: workspace.active_panel == Some(panel.panel_id),
+            }
+        })
+        .collect()
 }
 
 fn build_inspector_panel_rows(
@@ -2169,19 +2307,68 @@ fn rerender_world_panel_content(
     mark_nearest_layout_dirty(world, content_slot);
 }
 
-fn rerender_inspector_panel_content(
+fn rerender_inspector_panel_strip(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
-    panel_query_root: ComponentId,
+    inspector_panel_strip_root: ComponentId,
+    models: &[InspectorPanelModel],
+) {
+    let existing_instance_roots = world
+        .children_of(inspector_panel_strip_root)
+        .iter()
+        .copied()
+        .filter(|&child| {
+            world.component_label(child).is_some_and(|label| {
+                label.starts_with(INSPECTOR_PANEL_INSTANCE_PREFIX)
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let existing_by_id = existing_instance_roots
+        .iter()
+        .filter_map(|&child| {
+            let label = world.component_label(child)?;
+            let panel_id = label
+                .strip_prefix(INSPECTOR_PANEL_INSTANCE_PREFIX)?
+                .parse::<InspectorPanelId>()
+                .ok()?;
+            Some((panel_id, child))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+
+    let desired_ids = models.iter().map(|model| model.panel_id).collect::<Vec<_>>();
+    for (&panel_id, &child) in &existing_by_id {
+        if desired_ids.contains(&panel_id) {
+            continue;
+        }
+        emit.push_intent_now(
+            child,
+            IntentValue::RemoveSubtree {
+                component_ids: vec![child],
+            },
+        );
+    }
+
+    for (index, model) in models.iter().enumerate() {
+        if let Some(&instance_root) = existing_by_id.get(&model.panel_id) {
+            update_inspector_panel_instance_tree(world, emit, instance_root, model);
+            let _ = world.add_child(inspector_panel_strip_root, instance_root);
+            continue;
+        }
+
+        let instance_root = spawn_inspector_panel_instance_tree(world, emit, model, index);
+        let _ = world.add_child(inspector_panel_strip_root, instance_root);
+    }
+    mark_nearest_layout_dirty(world, inspector_panel_strip_root);
+}
+
+fn rerender_single_inspector_panel_content(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    inspector_panel_root: ComponentId,
     content_slot: ComponentId,
     rows: &[InspectorPanelRow],
 ) {
-    let Some(inspector_panel_root) =
-        world.find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR)
-    else {
-        return;
-    };
-
     if let Some(existing_content_root) =
         world.find_component(inspector_panel_root, INSPECTOR_PANEL_CONTENT_ROOT_SELECTOR)
     {
@@ -2202,6 +2389,49 @@ fn rerender_inspector_panel_content(
         },
     );
     mark_nearest_layout_dirty(world, content_slot);
+}
+
+fn update_inspector_panel_instance_tree(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    instance_root: ComponentId,
+    model: &InspectorPanelModel,
+) {
+    let Some(inspector_panel_root) = world.find_component(instance_root, INSPECTOR_PANEL_ROOT_SELECTOR)
+    else {
+        return;
+    };
+    let Some(content_slot) = world.find_component(inspector_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
+    else {
+        return;
+    };
+
+    if let Some(title_label) = world.find_component(inspector_panel_root, "#title_label") {
+        emit.push_intent_now(
+            title_label,
+            IntentValue::SetText {
+                component_ids: vec![title_label],
+                text: model.title.clone(),
+            },
+        );
+    }
+
+    if let Some(existing_pin_button) =
+        world.find_component(inspector_panel_root, INSPECTOR_PANEL_PIN_BUTTON_SELECTOR)
+    {
+        emit.push_intent_now(
+            existing_pin_button,
+            IntentValue::RemoveSubtree {
+                component_ids: vec![existing_pin_button],
+            },
+        );
+    }
+    if let Some(title_bar) = world.find_component(inspector_panel_root, "#title_bar") {
+        let pin_button = spawn_inspector_pin_button(world, model.pinned);
+        let _ = world.add_child(title_bar, pin_button);
+    }
+
+    rerender_single_inspector_panel_content(world, emit, inspector_panel_root, content_slot, &model.rows);
 }
 
 fn mark_nearest_layout_dirty(world: &mut World, start: ComponentId) {
@@ -2226,6 +2456,133 @@ fn clicked_named_ancestor(world: &World, node: ComponentId, prefix: &str) -> Opt
         current = world.parent_of(component_id);
     }
     None
+}
+
+fn clicked_inspector_panel_instance_id(world: &World, node: ComponentId) -> Option<InspectorPanelId> {
+    let mut current = Some(node);
+    while let Some(component_id) = current {
+        if let Some(label) = world.component_label(component_id) {
+            if let Some(id) = label
+                .strip_prefix(INSPECTOR_PANEL_INSTANCE_PREFIX)
+                .and_then(|suffix| suffix.parse::<InspectorPanelId>().ok())
+            {
+                return Some(id);
+            }
+        }
+        current = world.parent_of(component_id);
+    }
+    None
+}
+
+fn find_inspector_panel_instance_root(
+    world: &World,
+    panel_query_root: ComponentId,
+    panel_id: InspectorPanelId,
+) -> Option<ComponentId> {
+    world.find_component(
+        panel_query_root,
+        &format!("#{INSPECTOR_PANEL_INSTANCE_PREFIX}{panel_id}"),
+    )
+}
+
+fn sync_inspector_workspace_to_selection(
+    world: &World,
+    editor_context: &EditorContextState,
+    workspace: &mut InspectorWorkspaceState,
+) {
+    let selected_target = editor_context
+        .selected_component
+        .or(editor_context.active_editor);
+    let editor_root = selected_target
+        .and_then(|component_id| nearest_editor_ancestor(world, component_id))
+        .or(editor_context.active_editor);
+
+    for panel in &mut workspace.panels {
+        if panel.inspected.is_some_and(|component_id| world.get_component_record(component_id).is_none()) {
+            panel.inspected = None;
+        }
+    }
+
+    let Some(editor_root) = editor_root else {
+        return;
+    };
+
+    if workspace.panels.is_empty() {
+        workspace.ensure_default_panel(editor_root, selected_target);
+        return;
+    }
+
+    let active_index = workspace.active_panel_index().unwrap_or(0);
+    let active_panel = &workspace.panels[active_index];
+    let should_spawn = active_panel.pinned
+        && selected_target.is_some()
+        && active_panel.inspected != selected_target;
+
+    if should_spawn {
+        let panel_id = workspace.next_panel_id();
+        workspace.panels.insert(
+            active_index + 1,
+            InspectorPanelState {
+                panel_id,
+                editor_root,
+                inspected: selected_target,
+                pinned: false,
+                subtree_selection: InspectorSubtreeSelection::default(),
+                scroll_offset: InspectorScrollState::default(),
+            },
+        );
+        workspace.active_panel = Some(panel_id);
+        workspace.pending_spawn_target = None;
+        return;
+    }
+
+    let active_panel = &mut workspace.panels[active_index];
+    active_panel.editor_root = editor_root;
+    active_panel.inspected = selected_target;
+    workspace.active_panel = Some(active_panel.panel_id);
+    workspace.pending_spawn_target = None;
+}
+
+fn handle_inspector_panel_workspace_click(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    renderable: ComponentId,
+    world_panel_scene_model: &Arc<Mutex<AuthoredWorldPanelSceneModel>>,
+    inspector_workspace_state: &Arc<Mutex<InspectorWorkspaceState>>,
+) {
+    let Some(panel_id) = clicked_inspector_panel_instance_id(world, renderable) else {
+        return;
+    };
+
+    let mut rerender_needed;
+    {
+        let mut workspace = inspector_workspace_state
+            .lock()
+            .expect("inspector workspace mutex poisoned");
+        rerender_needed = workspace.active_panel != Some(panel_id);
+        workspace.active_panel = Some(panel_id);
+
+        if let Some(panel_root) = find_inspector_panel_instance_root(world, panel_query_root, panel_id)
+            && let Some(pin_button) =
+                world.find_component(panel_root, INSPECTOR_PANEL_PIN_BUTTON_SELECTOR)
+            && is_descendant_or_self(world, pin_button, renderable)
+            && let Some(panel) = workspace.panels.iter_mut().find(|panel| panel.panel_id == panel_id)
+        {
+            panel.pinned = !panel.pinned;
+            rerender_needed = true;
+        }
+    }
+
+    if rerender_needed {
+        refresh_inspector_panel_strip_from_workspace(
+            world,
+            emit,
+            panel_query_root,
+            world_panel_scene_model,
+            inspector_workspace_state,
+        );
+    }
 }
 
 fn trace_suspicious_inspector_target(world: &World, target: Option<ComponentId>) {
@@ -2268,9 +2625,27 @@ fn focus_panel_from_descendant_click(
         return;
     };
 
+    if let Some(panel_id) = clicked_inspector_panel_instance_id(world, renderable)
+        && let Some(panel_root) =
+            find_inspector_panel_instance_root(world, panel_query_root, panel_id)
+    {
+        emit.push_intent_now(
+            panel_layout_selection,
+            IntentValue::SelectionSet {
+                component_ids: vec![panel_layout_selection],
+                entries: vec![SelectionEntry {
+                    index: None,
+                    item: Some(format!("{INSPECTOR_PANEL_INSTANCE_PREFIX}{panel_id}")),
+                    component: panel_root,
+                }],
+                primary: Some(panel_root),
+            },
+        );
+        return;
+    }
+
     for (selector, item_name) in [
         (WORLD_PANEL_ROOT_SELECTOR, "world_panel_root"),
-        (INSPECTOR_PANEL_ROOT_SELECTOR, "inspector_panel_root"),
         ("#assets_root", "assets_root"),
         (PAINT_PANEL_ROOT_SELECTOR, "paint_panel_root"),
     ] {
@@ -2477,6 +2852,199 @@ fn decorate_panel_root_ce(mut panel_root: MaterializedCE, margin_left_gu: f64) -
     }
 
     panel_root
+}
+
+fn build_inspector_panel_strip_ce() -> MaterializedCE {
+    MaterializedCE {
+        component_type: "T".to_string(),
+        ctor_method: None,
+        ctor_args: Vec::new(),
+        calls: Vec::new(),
+        named: vec![(
+            "name".to_string(),
+            Value::String(INSPECTOR_PANEL_STRIP_NAME.to_string()),
+        )],
+        positionals: Vec::new(),
+        children: vec![CeChild::Spawn(MaterializedCE {
+            component_type: "Style".to_string(),
+            ctor_method: None,
+            ctor_args: Vec::new(),
+            calls: vec![(
+                "display".to_string(),
+                vec![Value::String("inline-block".to_string())],
+            )],
+            named: Vec::new(),
+            positionals: Vec::new(),
+            children: Vec::new(),
+        })],
+    }
+}
+
+fn spawn_inspector_panel_instance_tree(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    model: &InspectorPanelModel,
+    index: usize,
+) -> ComponentId {
+    let title_color = if model.active {
+        Value::Array(vec![
+            Value::Number(0.96),
+            Value::Number(1.0),
+            Value::Number(0.98),
+            Value::Number(1.0),
+        ])
+    } else {
+        Value::Array(vec![
+            Value::Number(0.84),
+            Value::Number(0.90),
+            Value::Number(0.86),
+            Value::Number(1.0),
+        ])
+    };
+    let panel_bg = if model.active {
+        Value::Array(vec![
+            Value::Number(0.18),
+            Value::Number(0.78),
+            Value::Number(0.22),
+            Value::Number(0.95),
+        ])
+    } else {
+        Value::Array(vec![
+            Value::Number(0.20),
+            Value::Number(0.52),
+            Value::Number(0.24),
+            Value::Number(0.90),
+        ])
+    };
+    let item_bg = if model.pinned {
+        Value::Array(vec![
+            Value::Number(0.96),
+            Value::Number(0.94),
+            Value::Number(0.86),
+            Value::Number(0.86),
+        ])
+    } else {
+        Value::Array(vec![
+            Value::Number(0.92),
+            Value::Number(0.92),
+            Value::Number(0.92),
+            Value::Number(0.80),
+        ])
+    };
+
+    let panel_ce = match build_panel_component_expr(
+        world,
+        emit,
+        inspector_panel_asset_path(),
+        "inspector_panel",
+        vec![
+            Value::String(model.title.clone()),
+            Value::Array(Vec::new()),
+            title_color,
+            panel_bg,
+            item_bg,
+        ],
+        "inspector panel",
+    ) {
+        Some(panel) => decorate_panel_root_ce(panel, if index == 0 { PANEL_LAYOUT_GAP_GU } else { 0.0 }),
+        None => return world.add_component_boxed_named(
+            format!("{INSPECTOR_PANEL_INSTANCE_PREFIX}{}", model.panel_id),
+            Box::new(TransformComponent::new()),
+        ),
+    };
+
+    let wrapper_ce = MaterializedCE {
+        component_type: "T".to_string(),
+        ctor_method: None,
+        ctor_args: Vec::new(),
+        calls: Vec::new(),
+        named: vec![(
+            "name".to_string(),
+            Value::String(format!("{INSPECTOR_PANEL_INSTANCE_PREFIX}{}", model.panel_id)),
+        )],
+        positionals: Vec::new(),
+        children: vec![CeChild::Spawn(panel_ce)],
+    };
+
+    let wrapper_root = match spawn_tree(&wrapper_ce, None, world, emit) {
+        Ok(component_id) => component_id,
+        Err(error) => {
+            eprintln!("[InspectorSystemStopgapMmsAdapter] inspector instance spawn error: {error}");
+            return world.add_component_boxed_named(
+                format!("{INSPECTOR_PANEL_INSTANCE_PREFIX}{}", model.panel_id),
+                Box::new(TransformComponent::new()),
+            );
+        }
+    };
+
+    let Some(inspector_panel_root) = world.find_component(wrapper_root, INSPECTOR_PANEL_ROOT_SELECTOR) else {
+        return wrapper_root;
+    };
+    let Some(title_bar) = world.find_component(inspector_panel_root, "#title_bar") else {
+        return wrapper_root;
+    };
+    let Some(content_slot) = world.find_component(inspector_panel_root, PANEL_CONTENT_SLOT_SELECTOR) else {
+        return wrapper_root;
+    };
+
+    let pin_button = spawn_inspector_pin_button(world, model.pinned);
+    let _ = world.add_child(title_bar, pin_button);
+    rerender_single_inspector_panel_content(world, emit, inspector_panel_root, content_slot, &model.rows);
+    wrapper_root
+}
+
+fn spawn_inspector_pin_button(world: &mut World, pinned: bool) -> ComponentId {
+    let root = world.add_component_boxed_named(
+        INSPECTOR_PANEL_PIN_BUTTON_NAME,
+        Box::new(TransformComponent::new()),
+    );
+    let raycastable = world.add_component_boxed_named(
+        "pin_button_raycastable",
+        Box::new(RaycastableComponent::click_only()),
+    );
+    let _ = world.add_child(root, raycastable);
+    let style = world.add_component_boxed_named(
+        "pin_button_style",
+        Box::new({
+            let mut style = StyleComponent::new();
+            style.display = Some(Display::InlineBlock);
+            style.width = SizeDimension::GlyphUnits(5.0);
+            style.height = SizeDimension::GlyphUnits(2.4);
+            style.margin = EdgeInsets {
+                left: SizeDimension::GlyphUnits(15.5),
+                right: SizeDimension::GlyphUnits(0.0),
+                top: SizeDimension::GlyphUnits(0.3),
+                bottom: SizeDimension::GlyphUnits(0.3),
+            };
+            style.padding = EdgeInsets::axes(0.0, 0.35);
+            style.text_align = TextAlign::Center;
+            style.vertical_align = VerticalAlign::Middle;
+            style.background_color = Some(if pinned {
+                [0.95, 0.82, 0.18, 1.0]
+            } else {
+                [0.10, 0.55, 0.18, 1.0]
+            });
+            style.color = Some(if pinned {
+                [0.10, 0.12, 0.06, 1.0]
+            } else {
+                [0.75, 1.00, 0.45, 1.0]
+            });
+            style
+        }),
+    );
+    let text_root = world.add_component_boxed_named(
+        "pin_button_text_root",
+        Box::new(TransformComponent::new()),
+    );
+    let text = world.add_component_boxed_named(
+        "pin_button_text",
+        Box::new(TextComponent::new(if pinned { "Unpin" } else { "Pin" })),
+    );
+
+    let _ = world.add_child(root, style);
+    let _ = world.add_child(root, text_root);
+    let _ = world.add_child(text_root, text);
+    root
 }
 
 fn debug_style_details(world: &World, root: ComponentId, selector: &str, label: &str) {
