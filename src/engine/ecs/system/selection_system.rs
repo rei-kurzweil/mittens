@@ -171,6 +171,7 @@ fn find_descendant_by_type(
 fn find_selected_item_text(world: &World, item_id: ComponentId) -> Option<String> {
     let text_id = world
         .find_component(item_id, "#selection_item_label")
+        .or_else(|| world.find_component(item_id, "[name='selection_item_label']"))
         .or_else(|| find_descendant_by_type(world, item_id, "text"))?;
     world
         .get_component_by_id_as::<TextComponent>(text_id)
@@ -777,8 +778,12 @@ mod tests {
         }
         print_subtree(&world, wrapper, 0);
 
-        let item_text = super::find_descendant_by_type(&world, assets_content_area, "text")
-            .expect("expected item text component");
+        let item = world
+            .find_component(assets_content_area, "[name='asset_item']")
+            .expect("expected asset item");
+        let item_text = world
+            .find_component(item, "[name='selection_item_label']")
+            .expect("expected item label");
         let (resolved_selection, item) =
             super::resolve_selection_click(&world, item_text).expect("expected option hit");
         assert_eq!(resolved_selection, selection_root);
@@ -802,7 +807,7 @@ mod tests {
 
         assert_eq!(selection.selected_component, Some(item));
         assert_eq!(selection.selected_index, Some(0));
-        assert!(selection.selected_item.is_some());
+        assert_eq!(selection.selected_item.as_deref(), Some("test_asset: example"));
     }
 
     #[test]
