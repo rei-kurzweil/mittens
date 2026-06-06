@@ -940,7 +940,7 @@ mod tests {
             world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
         let _ = world.add_child(editor_root, scene_root);
 
-        systems.inspector.setup_panels_for_editor(
+        systems.editor_inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
             &render_assets,
@@ -948,6 +948,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
             &asset_system,
         );
 
@@ -1020,7 +1021,7 @@ mod tests {
             world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
         let _ = world.add_child(editor_root, scene_root);
 
-        systems.inspector.setup_panels_for_editor(
+        systems.editor_inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
             &render_assets,
@@ -1028,6 +1029,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
             &asset_system,
         );
 
@@ -1152,7 +1154,7 @@ mod tests {
             world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
         let _ = world.add_child(editor_root, scene_root);
 
-        systems.inspector.setup_panels_for_editor(
+        systems.editor_inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
             &render_assets,
@@ -1160,6 +1162,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
             &systems.asset_system,
         );
 
@@ -1215,7 +1218,7 @@ mod tests {
         let _ = world.add_child(editor_root, scene_root);
         let _ = world.add_child(scene_root, scene_child);
 
-        systems.inspector.setup_panels_for_editor(
+        systems.editor_inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
             &render_assets,
@@ -1223,6 +1226,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
             &asset_system,
         );
 
@@ -1244,10 +1248,6 @@ mod tests {
         let first_row = world
             .find_component(world_panel_root, "#item_1")
             .expect("expected first selectable row");
-        let second_row = world
-            .find_component(world_panel_root, "#item_2")
-            .expect("expected second selectable row");
-
         assert!(
             world
                 .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1277,10 +1277,13 @@ mod tests {
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
 
+        let selection_root = world
+            .find_component(world_panel_root, "#world_panel_selection")
+            .expect("expected world panel selection after rerender");
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
             .expect("expected selection component");
-        assert_eq!(selection.selected_component, Some(first_row));
+        assert_eq!(selection.selected_component, Some(scene_root));
         assert_eq!(selection.selected_index, Some(1));
         assert_eq!(selection.selected_entries.len(), 1);
 
@@ -1290,6 +1293,9 @@ mod tests {
         assert_eq!(panel_selection.selected_component, Some(world_panel_root));
         assert_eq!(panel_selection.selected_entries.len(), 1);
 
+        let second_row = world
+            .find_component(world_panel_root, "#item_2")
+            .expect("expected second selectable row after rerender");
         systems.rx.push_event(
             second_row,
             EventSignal::Click {
@@ -1303,10 +1309,13 @@ mod tests {
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
 
+        let selection_root = world
+            .find_component(world_panel_root, "#world_panel_selection")
+            .expect("expected world panel selection after second rerender");
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
             .expect("expected selection component");
-        assert_eq!(selection.selected_component, Some(second_row));
+        assert_eq!(selection.selected_component, Some(scene_child));
         assert_eq!(selection.selected_index, Some(2));
         assert_eq!(selection.selected_entries.len(), 1);
 
@@ -1337,7 +1346,7 @@ mod tests {
         let _ = world.add_child(editor_root, scene_root);
         let _ = world.add_child(scene_root, scene_child);
 
-        systems.inspector.setup_panels_for_editor(
+        systems.editor_inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
             &render_assets,
@@ -1345,6 +1354,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
             &asset_system,
         );
 

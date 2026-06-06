@@ -39,8 +39,15 @@ BGC {
 
 AL.rgb(0.18, 0.18, 0.22)
 
+Clock.bpm(60) {}
+
 RenderGraph {
-    EmissivePass {}
+    EmissivePass {
+        BlurPass {
+            radius_ndc(0.06)
+            half_res(true)
+        }
+    }
     Bloom {
         intensity(0.95)
         radius_ndc(0.06)
@@ -60,24 +67,100 @@ T.position(0.15, -0.45, 1.0) {
 // --- Floor + back wall so the room has visual reference ---
 ED {
     T.position(0.0, -1.65, -0.4).scale(120.0, 0.1, 95) {
-        R.cube() { C.rgba(0.18, 0.18, 0.22, 1.0) }
+        Collision.static() {
+            CollisionShape.cube([60.0, 0.05, 47.5])
+        }
+        R.cube() { C.rgba(0.28, 0.28, 0.33, 1.0) }
     }
     T.position(0.0, 2.15, -7.2).scale(8.8, 3.6, 0.24) {
         R.cube() { C.rgba(0.11, 0.10, 0.14, 1.0) }
     }
 
-    T.position(2.0, 0, 1.0) {    
-        T.position(-0.9, -0.44, -1.0).scale(0.50, 0.50, 0.50) {
-            R.cube() { C.rgba(1.0, 0.88, 0.15, 1.0) }
+    T.position(2.0, 0.15, 1.0) {
+        name = "repro_rotating_parent"
+        Transition {
+            duration_beats(1.0)
+            ease_in_out_sine()
+            replace_same_target()
         }
 
-        T.position(0.0, -0.44, -0.7).scale(0.50, 0.50, 0.50) {
-            R.cube() { C.rgba(1.0, 0.35, 0.78, 1.0) }
+        T.position(-0.9, -0.44, -1.0) {
+            name = "repro_cube_a_transform"
+            Transition {
+                duration_beats(1.0)
+                ease_in_out_sine()
+                replace_same_target()
+            }
+            T.scale(0.50, 0.50, 0.50) {
+                name = "repro_cube_a"
+                R.cube() {
+                    C.rgba(1.0, 0.88, 0.15, 1.0)
+                    EM.on()
+                    Raycastable.enabled()
+                }
+            }
         }
 
-        T.position(0.9, -0.44, -1.1).scale(0.50, 0.50, 0.50) {
-            R.cube() { C.rgba(0.10, 0.95, 1.0, 1.0) }
+        T.position(0.0, -0.44, -0.7) {
+            name = "repro_cube_b_transform"
+            Transition {
+                duration_beats(1.0)
+                ease_in_out_sine()
+                replace_same_target()
+            }
+            T.scale(0.50, 0.50, 0.50) {
+                name = "repro_cube_b"
+                R.cube() {
+                    C.rgba(1.0, 0.35, 0.78, 1.0)
+                    EM.on()
+                    Raycastable.enabled()
+                }
+            }
         }
+
+        T.position(0.9, -0.44, -1.1) {
+            name = "repro_cube_c_transform"
+            Transition {
+                duration_beats(1.0)
+                ease_in_out_sine()
+                replace_same_target()
+            }
+            T.scale(0.50, 0.50, 0.50) {
+                name = "repro_cube_c"
+                R.cube() {
+                    C.rgba(0.10, 0.95, 1.0, 1.0)
+                    EM.on()
+                    Raycastable.enabled()
+                }
+            }
+        }
+    }
+}
+
+Animation.looping().length(4.0) {
+    Keyframe.at(0.0) {
+        Action.update_transform("#repro_rotating_parent", [2.0, 0.15, 1.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        Action.update_transform("#repro_cube_a_transform", [-0.9, -0.44, -1.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        Action.update_transform("#repro_cube_b_transform", [0.0, -0.44, -0.7], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        Action.update_transform("#repro_cube_c_transform", [0.9, -0.44, -1.1], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+    }
+    Keyframe.at(1.0) {
+        Action.update_transform("#repro_rotating_parent", [2.0, 0.15, 1.0], [0.55, 0.0, 0.0], [1.0, 1.0, 1.0])
+        Action.update_transform("#repro_cube_a_transform", [-0.9, -0.44, -1.0], [0.0, 1.570795, 0.0], [1.0, 1.0, 1.0])
+        Action.update_transform("#repro_cube_b_transform", [0.0, -0.44, -0.7], [1.570795, 0.0, 0.0], [1.0, 1.0, 1.0])
+        Action.update_transform("#repro_cube_c_transform", [0.9, -0.44, -1.1], [0.0, 0.0, 1.570795], [1.0, 1.0, 1.0])
+    }
+    Keyframe.at(2.0) {
+        Action.update_transform("#repro_rotating_parent", [2.0, 0.15, 1.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        Action.update_transform("#repro_cube_a_transform", [-0.9, -0.44, -1.0], [0.0, 3.14159, 0.0], [1.0, 1.0, 1.0])
+        Action.update_transform("#repro_cube_b_transform", [0.0, -0.44, -0.7], [3.14159, 0.0, 0.0], [1.0, 1.0, 1.0])
+        Action.update_transform("#repro_cube_c_transform", [0.9, -0.44, -1.1], [0.0, 0.0, 3.14159], [1.0, 1.0, 1.0])
+    }
+    Keyframe.at(3.0) {
+        Action.update_transform("#repro_rotating_parent", [2.0, 0.15, 1.0], [-0.55, 0.0, 0.0], [1.0, 1.0, 1.0])
+        Action.update_transform("#repro_cube_a_transform", [-0.9, -0.44, -1.0], [0.0, 4.712385, 0.0], [1.0, 1.0, 1.0])
+        Action.update_transform("#repro_cube_b_transform", [0.0, -0.44, -0.7], [4.712385, 0.0, 0.0], [1.0, 1.0, 1.0])
+        Action.update_transform("#repro_cube_c_transform", [0.9, -0.44, -1.1], [0.0, 0.0, 4.712385], [1.0, 1.0, 1.0])
     }
 }
 
@@ -128,6 +211,10 @@ ED {
                 // so changing it moves body/neck together instead of crushing the
                 // upper torso with a head-only correction.
                 T.position(0.0, 0.08, 0.12) {
+                    name = "xr_camera_wrapper"
+                    Collision.kinematic() {
+                        CollisionShape.sphere(0.18)
+                    }
                     CXR { Pointer {} }
                 }
                 
@@ -214,6 +301,10 @@ I.speed(1.0) {
         
     }
     T.position(3.0, 1.2, 3.5).rotation(0.0, 0.5, 0.0) {
+        name = "desktop_camera_rig"
+        Collision.kinematic() {
+            CollisionShape.sphere(0.22)
+        }
         C3D {}
         Pointer {}
     }

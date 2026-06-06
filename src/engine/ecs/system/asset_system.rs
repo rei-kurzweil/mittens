@@ -8,7 +8,7 @@ use crate::engine::ecs::component::{
     LayoutComponent, RaycastableComponent, StyleComponent, TransformComponent,
 };
 use crate::engine::ecs::system::bounds_system::{BoundsSystem, RenderableBoundsMeasure};
-use crate::engine::ecs::system::paint_system::PaintAssetTemplate;
+use crate::engine::ecs::system::editor_paint_system::PaintAssetTemplate;
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::meow_meow::object::Value;
 use crate::meow_meow::runner::{LoadedMmsModule, MeowMeowRunner};

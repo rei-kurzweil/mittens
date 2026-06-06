@@ -32,9 +32,10 @@ use crate::engine::ecs::system::TransitionSystem;
 use crate::engine::ecs::system::bounds_system::BoundsSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
 use crate::engine::ecs::system::{
-    AssetSystem, AvatarBodyYawSystem, AvatarControlSystem, EditorSystem, FitBoundsSystem,
-    GestureSystem, GridSystem, HeadPoseBodyXzFollowSystem, IKSystem, InspectorSystem, LayoutSystem,
-    PaintSystem, SelectionSystem, TransformGizmoSystem,
+    AssetSystem, AvatarBodyYawSystem, AvatarControlSystem, EditorContextSystem,
+    EditorInspectorSystem, EditorPaintSystem, EditorSystem, FitBoundsSystem, GestureSystem,
+    GridSystem, HeadPoseBodyXzFollowSystem, IKSystem, LayoutSystem, SelectionSystem,
+    TransformGizmoSystem,
 };
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
@@ -70,12 +71,13 @@ pub struct SystemWorld {
     pub raycast: RayCastSystem,
 
     pub editor: EditorSystem,
-    pub inspector: InspectorSystem,
+    pub editor_context: EditorContextSystem,
+    pub editor_inspector: EditorInspectorSystem,
     pub selection: SelectionSystem,
     pub asset_system: AssetSystem,
     pub fit_bounds: FitBoundsSystem,
     pub grid: GridSystem,
-    pub paint: PaintSystem,
+    pub editor_paint: EditorPaintSystem,
     pub avatar_body_yaw: AvatarBodyYawSystem,
     pub avatar_control: AvatarControlSystem,
     pub head_pose_body_xz_follow: HeadPoseBodyXzFollowSystem,
@@ -813,7 +815,8 @@ impl SystemWorld {
 
         if spawn_panels {
             println!("[InspectorSystem][debug] setup_panels_for_editor editor_root={component:?}");
-            self.inspector.setup_panels_for_editor(
+            let editor_context_state = self.editor_context.shared_state();
+            self.editor_inspector.setup_panels_for_editor(
                 &mut self.rx,
                 world,
                 render_assets,
@@ -821,20 +824,40 @@ impl SystemWorld {
                 component,
                 world_panel_pos,
                 inspector_panel_pos,
+                editor_context_state.clone(),
                 &self.asset_system,
             );
-            if let Some(panel_query_root) = world.all_components().find(|&component_id| {
+            let Some(panel_query_root) = world.all_components().find(|&component_id| {
                 world.parent_of(component_id).is_none()
                     && world.component_label(component_id) == Some("editor_runtime_ui_root")
-            }) {
-                self.paint.install_scoped_handlers_for_editor(
-                    &mut self.rx,
-                    world,
-                    component,
-                    panel_query_root,
-                    self.asset_system.paint_templates(),
-                );
-            }
+            }) else {
+                return;
+            };
+            self.editor_context.install_scoped_handlers_for_editor(
+                &mut self.rx,
+                world,
+                component,
+                panel_query_root,
+            );
+            self.editor_inspector.setup_panels_for_editor(
+                &mut self.rx,
+                world,
+                render_assets,
+                emit,
+                component,
+                world_panel_pos,
+                inspector_panel_pos,
+                editor_context_state.clone(),
+                &self.asset_system,
+            );
+            self.editor_paint.install_scoped_handlers_for_editor(
+                &mut self.rx,
+                world,
+                component,
+                panel_query_root,
+                editor_context_state,
+                self.asset_system.paint_templates(),
+            );
         }
     }
 

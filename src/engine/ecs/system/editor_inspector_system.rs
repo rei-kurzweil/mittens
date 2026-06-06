@@ -1,13 +1,16 @@
+use std::sync::{Arc, Mutex};
+
 use crate::engine::ecs::rx::RxWorld;
-use crate::engine::ecs::system::inspector_system_stopgap_mms_adapter::InspectorSystemStopgapMmsAdapter;
+use crate::engine::ecs::system::editor_context_system::EditorContextState;
+use crate::engine::ecs::system::editor_inspector_system_stopgap_mms_adapter::EditorInspectorSystemStopgapMmsAdapter;
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 
 #[derive(Debug, Default)]
-pub struct InspectorSystem {
-    stopgap_mms: InspectorSystemStopgapMmsAdapter,
+pub struct EditorInspectorSystem {
+    stopgap_mms: EditorInspectorSystemStopgapMmsAdapter,
 }
 
-impl InspectorSystem {
+impl EditorInspectorSystem {
     pub fn new() -> Self {
         Self::default()
     }
@@ -21,6 +24,7 @@ impl InspectorSystem {
         editor_root: ComponentId,
         world_panel_pos: (f32, f32, f32),
         _inspector_panel_pos: (f32, f32, f32),
+        editor_context_state: Arc<Mutex<EditorContextState>>,
         asset_system: &crate::engine::ecs::system::AssetSystem,
     ) {
         self.stopgap_mms.setup_panels_for_editor(
@@ -31,6 +35,7 @@ impl InspectorSystem {
             editor_root,
             world_panel_pos,
             _inspector_panel_pos,
+            editor_context_state,
             asset_system,
         );
     }
@@ -38,12 +43,12 @@ impl InspectorSystem {
 
 #[cfg(test)]
 mod tests {
-    use super::InspectorSystem;
+    use super::EditorInspectorSystem;
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::component::{
         EditorComponent, GLTFComponent, OverlayComponent, SerializeComponent, TransformComponent,
     };
-    use crate::engine::ecs::system::inspector_system_stopgap_mms_adapter::set_world_panel_scene_path_for_tests;
+    use crate::engine::ecs::system::editor_inspector_system_stopgap_mms_adapter::set_world_panel_scene_path_for_tests;
     use crate::engine::ecs::{EventSignal, SystemWorld, World};
     use crate::engine::graphics::{RenderAssets, VisualWorld};
     use std::path::PathBuf;
@@ -112,7 +117,7 @@ mod tests {
         let mut visuals = VisualWorld::default();
         let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
-        let mut inspector = InspectorSystem::new();
+        let mut inspector = EditorInspectorSystem::new();
 
         let editor_root =
             world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
@@ -134,6 +139,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
             &systems.asset_system,
         );
 
@@ -209,7 +215,7 @@ mod tests {
         let mut visuals = VisualWorld::default();
         let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
-        let mut inspector = InspectorSystem::new();
+        let mut inspector = EditorInspectorSystem::new();
 
         let editor_root =
             world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
@@ -227,6 +233,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
             &systems.asset_system,
         );
 
@@ -270,7 +277,7 @@ mod tests {
         let mut visuals = VisualWorld::default();
         let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
-        let mut inspector = InspectorSystem::new();
+        let mut inspector = EditorInspectorSystem::new();
 
         let editor_root =
             world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
@@ -289,6 +296,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
             &systems.asset_system,
         );
 
@@ -309,7 +317,7 @@ mod tests {
         let mut visuals = VisualWorld::default();
         let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
-        let mut inspector = InspectorSystem::new();
+        let mut inspector = EditorInspectorSystem::new();
 
         let editor_root =
             world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
@@ -328,6 +336,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (1.9, 1.6, -1.2),
+            systems.editor_context.shared_state(),
             &systems.asset_system,
         );
 
@@ -404,7 +413,7 @@ mod tests {
         let mut visuals = VisualWorld::default();
         let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
-        let mut inspector = InspectorSystem::new();
+        let mut inspector = EditorInspectorSystem::new();
 
         let editor_root =
             world.add_component_boxed_named("alpha", Box::new(EditorComponent::new()));
@@ -425,6 +434,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
             &systems.asset_system,
         );
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
@@ -437,6 +447,7 @@ mod tests {
             other_editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
             &systems.asset_system,
         );
 
@@ -456,7 +467,7 @@ mod tests {
         let mut visuals = VisualWorld::default();
         let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
-        let mut inspector = InspectorSystem::new();
+        let mut inspector = EditorInspectorSystem::new();
 
         let editor_root =
             world.add_component_boxed_named("alpha", Box::new(EditorComponent::new()));
@@ -477,6 +488,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
             &systems.asset_system,
         );
         inspector.setup_panels_for_editor(
@@ -487,6 +499,7 @@ mod tests {
             other_editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
             &systems.asset_system,
         );
 
@@ -512,7 +525,7 @@ mod tests {
         let mut visuals = VisualWorld::default();
         let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
-        let mut inspector = InspectorSystem::new();
+        let mut inspector = EditorInspectorSystem::new();
 
         let editor_root =
             world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
@@ -537,6 +550,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
             &systems.asset_system,
         );
 

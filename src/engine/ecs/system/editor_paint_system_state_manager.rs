@@ -1,4 +1,5 @@
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::system::editor_context_system::EditorContextState;
 
 const FREE_DRAW_LABEL: &str = "Free Draw";
 const LINE_LABEL: &str = "Line";
@@ -10,8 +11,6 @@ const ERASE_LABEL: &str = "Erase";
 pub struct PaintState {
     pub selected_asset: Option<PaintSelection>,
     pub selected_tool: PaintTool,
-    pub focused_panel: Option<ComponentId>,
-    pub active_editor: Option<ComponentId>,
     pub stroke: PaintStrokeMode,
 }
 
@@ -20,8 +19,6 @@ impl Default for PaintState {
         Self {
             selected_asset: None,
             selected_tool: PaintTool::Unknown(None),
-            focused_panel: None,
-            active_editor: None,
             stroke: PaintStrokeMode::Idle,
         }
     }
@@ -97,9 +94,6 @@ pub enum PaintEvent {
 pub fn reduce_paint_state(old: &PaintState, event: &PaintEvent) -> PaintState {
     let mut new = old.clone();
     match event {
-        PaintEvent::ActiveEditorChanged { editor } => {
-            new.active_editor = *editor;
-        }
         PaintEvent::AssetSelectionChanged { item, component } => {
             new.selected_asset = Some(PaintSelection {
                 item: item.clone(),
@@ -114,25 +108,23 @@ pub fn reduce_paint_state(old: &PaintState, event: &PaintEvent) -> PaintState {
             let _ = (item, component);
             new.selected_tool = tool.clone();
         }
-        PaintEvent::PanelFocusChanged { focused_panel } => {
-            new.focused_panel = *focused_panel;
+        PaintEvent::ActiveEditorChanged { editor }
+        | PaintEvent::PanelFocusChanged {
+            focused_panel: editor,
+        } => {
+            let _ = editor;
         }
         PaintEvent::WorldPanelSelectionChanged { component, editor } => {
-            let _ = component;
-            if editor.is_some() {
-                new.active_editor = *editor;
-            }
+            let _ = (component, editor);
         }
         PaintEvent::EditorSelectionChanged { editor, component } => {
-            if component.is_some() {
-                new.active_editor = Some(*editor);
-            }
+            let _ = (editor, component);
         }
         PaintEvent::SceneClick { editor, .. }
         | PaintEvent::StrokeStarted { editor, .. }
         | PaintEvent::StrokeMoved { editor, .. }
         | PaintEvent::StrokeEnded { editor } => {
-            new.active_editor = Some(*editor);
+            let _ = editor;
         }
     }
 
@@ -162,13 +154,17 @@ pub fn paint_tool_from_item(item: Option<String>) -> PaintTool {
 
 pub fn is_paint_panel_focused(
     paint_panel_root: Option<ComponentId>,
-    paint_state: &PaintState,
+    editor_context: &EditorContextState,
 ) -> bool {
-    paint_panel_root.is_some_and(|panel_root| paint_state.focused_panel == Some(panel_root))
+    paint_panel_root.is_some_and(|panel_root| editor_context.focused_panel == Some(panel_root))
 }
 
-pub fn is_paint_active(paint_panel_root: Option<ComponentId>, paint_state: &PaintState) -> bool {
-    is_paint_panel_focused(paint_panel_root, paint_state)
+pub fn is_paint_active(
+    paint_panel_root: Option<ComponentId>,
+    paint_state: &PaintState,
+    editor_context: &EditorContextState,
+) -> bool {
+    is_paint_panel_focused(paint_panel_root, editor_context)
         && paint_state.selected_tool == PaintTool::FreeDraw
         && paint_state
             .selected_asset

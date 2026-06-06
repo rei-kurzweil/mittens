@@ -8,9 +8,10 @@ use crate::engine::ecs::component::{
     SizeDimension, StyleComponent, TextComponent,
 };
 use crate::engine::ecs::rx::RxWorld;
+use crate::engine::ecs::system::editor_context_system::EditorContextState;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
 use crate::meow_meow::component_registry::{
-    filtered_root_ids_for_roots, filtered_roots_to_ce_ast, filtered_world_root_ids, spawn_tree,
+    filtered_root_ids_for_roots, filtered_roots_to_ce_ast, spawn_tree,
 };
 use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
 use crate::meow_meow::runner::MeowMeowRunner;
@@ -72,28 +73,30 @@ struct WorldPanelRow {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WorldPanelRowKind {
     Spacer,
-    EditorHeader,
+    EditorRoot,
     Info,
     Component,
 }
 
 #[derive(Debug)]
-pub(crate) struct InspectorSystemStopgapMmsAdapter {
-    reconciler: InspectorSystemStopgapMmsReconciler,
+pub(crate) struct EditorInspectorSystemStopgapMmsAdapter {
+    reconciler: EditorInspectorSystemStopgapMmsReconciler,
     panel_handler_installed: bool,
     panel_layout_spawned: bool,
-    selected_component: Arc<Mutex<Option<ComponentId>>>,
+    installed_editor_roots: Vec<ComponentId>,
+    editor_context_state: Option<Arc<Mutex<EditorContextState>>>,
     runtime_ui_root: Arc<Mutex<Option<ComponentId>>>,
     working_file_path: Arc<Mutex<PathBuf>>,
 }
 
-impl Default for InspectorSystemStopgapMmsAdapter {
+impl Default for EditorInspectorSystemStopgapMmsAdapter {
     fn default() -> Self {
         Self {
-            reconciler: InspectorSystemStopgapMmsReconciler,
+            reconciler: EditorInspectorSystemStopgapMmsReconciler,
             panel_handler_installed: false,
             panel_layout_spawned: false,
-            selected_component: Arc::new(Mutex::new(None)),
+            installed_editor_roots: Vec::new(),
+            editor_context_state: None,
             runtime_ui_root: Arc::new(Mutex::new(None)),
             working_file_path: Arc::new(Mutex::new(world_panel_scene_path())),
         }
@@ -101,9 +104,9 @@ impl Default for InspectorSystemStopgapMmsAdapter {
 }
 
 #[derive(Debug, Default)]
-struct InspectorSystemStopgapMmsReconciler;
+struct EditorInspectorSystemStopgapMmsReconciler;
 
-impl InspectorSystemStopgapMmsAdapter {
+impl EditorInspectorSystemStopgapMmsAdapter {
     pub fn setup_panels_for_editor(
         &mut self,
         rx: &mut RxWorld,
@@ -113,8 +116,10 @@ impl InspectorSystemStopgapMmsAdapter {
         editor_root: ComponentId,
         world_panel_pos: (f32, f32, f32),
         inspector_panel_pos: (f32, f32, f32),
+        editor_context_state: Arc<Mutex<EditorContextState>>,
         asset_system: &crate::engine::ecs::system::AssetSystem,
     ) {
+        self.editor_context_state = Some(Arc::clone(&editor_context_state));
         let runtime_ui_root = self.get_or_create_runtime_ui_root(world);
 
         println!(
@@ -122,8 +127,9 @@ impl InspectorSystemStopgapMmsAdapter {
             world_panel_pos, inspector_panel_pos,
         );
 
-        let model = build_world_panel_model(world, None);
-        let inspector_model = build_inspector_panel_model(world, None);
+        let editor_context = self.editor_context();
+        let model = build_world_panel_model(world, &editor_context);
+        let inspector_model = build_inspector_panel_model(world, &editor_context);
 
         {
             let working_file_path = self
@@ -148,6 +154,7 @@ impl InspectorSystemStopgapMmsAdapter {
         self.refresh_world_panels(world, emit);
 
         self.install_shared_panel_handlers(rx, runtime_ui_root);
+        self.install_editor_refresh_handlers(rx, editor_root);
     }
 
     fn install_shared_panel_handlers(&mut self, rx: &mut RxWorld, panel_query_root: ComponentId) {
@@ -156,7 +163,11 @@ impl InspectorSystemStopgapMmsAdapter {
         }
         self.panel_handler_installed = true;
 
-        let selected_component = Arc::clone(&self.selected_component);
+        let editor_context_state = self
+            .editor_context_state
+            .as_ref()
+            .expect("editor context state must be installed before panels")
+            .clone();
         let working_file_path_mutex = Arc::clone(&self.working_file_path);
 
         let input_changed_path_mutex = Arc::clone(&working_file_path_mutex);
@@ -185,6 +196,7 @@ impl InspectorSystemStopgapMmsAdapter {
         );
 
         let click_path_mutex = Arc::clone(&working_file_path_mutex);
+        let click_editor_context_state = editor_context_state.clone();
         rx.add_handler_closure(SignalKind::Click, panel_query_root, move |world, emit, signal| {
             let Some(EventSignal::Click { renderable, .. }) = signal.event.as_ref() else {
                 return;
@@ -207,10 +219,6 @@ impl InspectorSystemStopgapMmsAdapter {
                 return;
             };
 
-            let Some(content_slot) = world.find_component(world_panel_root, PANEL_CONTENT_SLOT_SELECTOR) else {
-                return;
-            };
-
             let working_file_path = click_path_mutex
                 .lock()
                 .expect("working file path mutex poisoned");
@@ -220,33 +228,7 @@ impl InspectorSystemStopgapMmsAdapter {
                     rerender_world_panel_status(world, emit, world_panel_root, status_wrap, &status_text);
                 }
 
-                let mut selected = selected_component.lock().expect("selected component mutex poisoned");
-                if selected.is_some_and(|component_id| world.get_component_record(component_id).is_none()) {
-                    *selected = None;
-                }
-
-                let world_model = build_world_panel_model(world, *selected);
-                rerender_world_panel_content(
-                    world,
-                    emit,
-                    panel_query_root,
-                    content_slot,
-                    &world_model.rows,
-                    world_model.selected_index,
-                );
-
-                if let Some(inspector_panel_root) = world.find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR) {
-                    if let Some(inspector_content_slot) = world.find_component(inspector_panel_root, PANEL_CONTENT_SLOT_SELECTOR) {
-                        let inspector_model = build_inspector_panel_model(world, *selected);
-                        rerender_inspector_panel_content(
-                            world,
-                            emit,
-                            panel_query_root,
-                            inspector_content_slot,
-                            &inspector_model.rows,
-                        );
-                    }
-                }
+                refresh_all_panel_models(world, emit, panel_query_root, &click_editor_context_state);
                 return;
             }
 
@@ -256,8 +238,11 @@ impl InspectorSystemStopgapMmsAdapter {
             let Some(row_index) = parse_item_index(&row_name) else {
                 return;
             };
-
-            let visible_rows = build_world_panel_rows(world);
+            let editor_context = click_editor_context_state
+                .lock()
+                .expect("editor context state mutex poisoned")
+                .clone();
+            let visible_rows = build_world_panel_model(world, &editor_context).rows;
             let Some(row) = visible_rows.get(row_index).cloned() else {
                 return;
             };
@@ -265,38 +250,46 @@ impl InspectorSystemStopgapMmsAdapter {
                 return;
             };
 
-            println!(
-                "[InspectorSystem][debug] world panel click target_component={target_component:?} name={:?}",
-                world.component_label(target_component).filter(|label| !label.is_empty())
-            );
+            if let Some(selection_root) =
+                world.find_component(world_panel_root, &format!("#{WORLD_PANEL_SELECTION_NAME}"))
+            {
+                crate::engine::ecs::system::selection_system::apply_selection_set(
+                    world,
+                    emit,
+                    selection_root,
+                    vec![SelectionEntry {
+                        index: Some(row_index),
+                        item: Some(row.label.clone()),
+                        component: target_component,
+                    }],
+                    Some(target_component),
+                );
+            }
 
             {
-                let mut selected = selected_component.lock().expect("selected component mutex poisoned");
-                *selected = Some(target_component);
+                let mut editor_context = click_editor_context_state
+                    .lock()
+                    .expect("editor context state mutex poisoned");
+                editor_context.selected_component = Some(target_component);
+                editor_context.active_editor =
+                    nearest_editor_ancestor(world, target_component).or(Some(target_component));
+            }
+            if let Some(editor_root) = nearest_editor_ancestor(world, target_component)
+                && let Some(editor) =
+                    world.get_component_by_id_as_mut::<crate::engine::ecs::component::EditorComponent>(
+                        editor_root,
+                    )
+            {
+                editor.selected = Some(target_component);
             }
 
-            if let Some(target_label) = world.component_label(target_component) {
-                let status_text = format!("selected {target_label}");
-                rerender_world_panel_status(world, emit, world_panel_root, status_wrap, &status_text);
-            }
-
-            if let Some(inspector_panel_root) = world.find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR) {
-                if let Some(inspector_content_slot) = world.find_component(inspector_panel_root, PANEL_CONTENT_SLOT_SELECTOR) {
-                    let inspector_model = build_inspector_panel_model(world, Some(target_component));
-                    rerender_inspector_panel_content(
-                        world,
-                        emit,
-                        panel_query_root,
-                        inspector_content_slot,
-                        &inspector_model.rows,
-                    );
-                }
-            }
-
-            let _ = content_slot;
-            return;
+            let status_text = format!("selected {}", world_panel_item_label(world, target_component));
+            rerender_world_panel_status(world, emit, world_panel_root, status_wrap, &status_text);
+            sync_world_panel_selection(world, emit, panel_query_root, &click_editor_context_state);
+            refresh_inspector_panel(world, emit, panel_query_root, &click_editor_context_state);
         });
 
+        let world_selection_editor_context_state = editor_context_state.clone();
         rx.add_handler_closure(
             SignalKind::SelectionChanged,
             panel_query_root,
@@ -338,6 +331,13 @@ impl InspectorSystemStopgapMmsAdapter {
                 if *selection_root != expected_selection_root {
                     return;
                 }
+
+                refresh_inspector_panel(
+                    world,
+                    emit,
+                    panel_query_root,
+                    &world_selection_editor_context_state,
+                );
 
                 let Some(panel_layout_selection) = world
                     .find_component(panel_query_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
@@ -545,6 +545,50 @@ impl InspectorSystemStopgapMmsAdapter {
         runtime_ui_root
     }
 
+    fn install_editor_refresh_handlers(&mut self, rx: &mut RxWorld, editor_root: ComponentId) {
+        if self.installed_editor_roots.contains(&editor_root) {
+            return;
+        }
+        self.installed_editor_roots.push(editor_root);
+
+        let panel_query_root = Arc::clone(&self.runtime_ui_root);
+        let editor_context_state = self
+            .editor_context_state
+            .as_ref()
+            .expect("editor context state must be installed before panels")
+            .clone();
+        rx.add_handler_closure(
+            SignalKind::SelectionChanged,
+            editor_root,
+            move |world, emit, signal| {
+                let Some(EventSignal::SelectionChanged { selection_root, .. }) =
+                    signal.event.as_ref()
+                else {
+                    return;
+                };
+                if *selection_root != editor_root {
+                    return;
+                }
+                let Some(panel_query_root) =
+                    *panel_query_root.lock().expect("runtime ui root mutex poisoned")
+                else {
+                    return;
+                };
+                sync_world_panel_selection(world, emit, panel_query_root, &editor_context_state);
+                refresh_inspector_panel(world, emit, panel_query_root, &editor_context_state);
+            },
+        );
+    }
+
+    fn editor_context(&self) -> EditorContextState {
+        self.editor_context_state
+            .as_ref()
+            .expect("editor context state must be installed before panels")
+            .lock()
+            .expect("editor context state mutex poisoned")
+            .clone()
+    }
+
     fn refresh_world_panels(&self, world: &mut World, emit: &mut dyn SignalEmitter) {
         let Some(panel_query_root) = *self
             .runtime_ui_root
@@ -565,11 +609,8 @@ impl InspectorSystemStopgapMmsAdapter {
             return;
         };
 
-        let selected_component = *self
-            .selected_component
-            .lock()
-            .expect("selected component mutex poisoned");
-        let model = build_world_panel_model(world, selected_component);
+        let editor_context = self.editor_context();
+        let model = build_world_panel_model(world, &editor_context);
         rerender_world_panel_content(
             world,
             emit,
@@ -590,7 +631,7 @@ impl InspectorSystemStopgapMmsAdapter {
             return;
         };
 
-        let inspector_model = build_inspector_panel_model(world, selected_component);
+        let inspector_model = build_inspector_panel_model(world, &editor_context);
         rerender_inspector_panel_content(
             world,
             emit,
@@ -601,7 +642,130 @@ impl InspectorSystemStopgapMmsAdapter {
     }
 }
 
-impl InspectorSystemStopgapMmsReconciler {
+fn refresh_all_panel_models(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    editor_context_state: &Arc<Mutex<EditorContextState>>,
+) {
+    let editor_context = editor_context_state
+        .lock()
+        .expect("editor context state mutex poisoned")
+        .clone();
+
+    let Some(world_panel_root) = world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR)
+    else {
+        return;
+    };
+    if let Some(content_slot) = world.find_component(world_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
+    {
+        let world_model = build_world_panel_model(world, &editor_context);
+        rerender_world_panel_content(
+            world,
+            emit,
+            panel_query_root,
+            content_slot,
+            &world_model.rows,
+            world_model.selected_index,
+        );
+    }
+
+    refresh_inspector_panel(world, emit, panel_query_root, editor_context_state);
+}
+
+fn refresh_inspector_panel(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    editor_context_state: &Arc<Mutex<EditorContextState>>,
+) {
+    let editor_context = editor_context_state
+        .lock()
+        .expect("editor context state mutex poisoned")
+        .clone();
+
+    let Some(inspector_panel_root) =
+        world.find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR)
+    else {
+        return;
+    };
+    if let Some(inspector_content_slot) =
+        world.find_component(inspector_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
+    {
+        let inspector_model = build_inspector_panel_model(world, &editor_context);
+        rerender_inspector_panel_content(
+            world,
+            emit,
+            panel_query_root,
+            inspector_content_slot,
+            &inspector_model.rows,
+        );
+    }
+}
+
+fn sync_world_panel_selection(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    editor_context_state: &Arc<Mutex<EditorContextState>>,
+) {
+    let editor_context = editor_context_state
+        .lock()
+        .expect("editor context state mutex poisoned")
+        .clone();
+    let Some(world_panel_root) = world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR)
+    else {
+        return;
+    };
+    let Some(selection_root) =
+        world.find_component(world_panel_root, &format!("#{WORLD_PANEL_SELECTION_NAME}"))
+    else {
+        return;
+    };
+
+    let model = build_world_panel_model(world, &editor_context);
+    let Some(selected_index) = model.selected_index.and_then(|index| usize::try_from(index).ok())
+    else {
+        crate::engine::ecs::system::selection_system::apply_selection_set(
+            world,
+            emit,
+            selection_root,
+            Vec::new(),
+            None,
+        );
+        return;
+    };
+    let Some(row) = model.rows.get(selected_index) else {
+        return;
+    };
+    let Some(target_component) = row.target_component else {
+        return;
+    };
+
+    let already_selected = world
+        .get_component_by_id_as::<SelectionComponent>(selection_root)
+        .is_some_and(|selection| {
+            selection.selected_component == Some(target_component)
+                && selection.selected_index == Some(selected_index)
+        });
+    if already_selected {
+        return;
+    }
+
+    crate::engine::ecs::system::selection_system::apply_selection_set(
+        world,
+        emit,
+        selection_root,
+        vec![SelectionEntry {
+            index: Some(selected_index),
+            item: Some(row.label.clone()),
+            component: target_component,
+        }],
+        Some(target_component),
+    );
+}
+
+impl EditorInspectorSystemStopgapMmsReconciler {
     fn reconcile_panel_layout(
         &self,
         world: &mut World,
@@ -1202,11 +1366,7 @@ fn save_world_panel_scene_to_path(world: &World, path: &Path) -> Result<usize, S
             .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
     }
 
-    let world_roots: Vec<ComponentId> = world
-        .all_components()
-        .filter(|&cid| world.parent_of(cid).is_none())
-        .collect();
-    let serializable_roots = filtered_root_ids_for_roots(world, &world_roots);
+    let serializable_roots = filtered_root_ids_for_roots(world, &editor_scene_roots(world));
     if serializable_roots.is_empty() {
         return Err("no serializable roots found".to_string());
     }
@@ -1265,7 +1425,7 @@ fn load_world_panel_scene_from_path(
     let source = std::fs::read_to_string(path)
         .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
 
-    let removable_roots = filtered_world_root_ids(world);
+    let removable_roots = filtered_root_ids_for_roots(world, &editor_scene_roots(world));
     for root in removable_roots {
         world
             .remove_component_subtree(root)
@@ -1284,12 +1444,29 @@ fn load_world_panel_scene_from_path(
     Ok(loaded_roots)
 }
 
+fn editor_scene_roots(world: &World) -> Vec<ComponentId> {
+    world
+        .all_components()
+        .filter(|&component_id| {
+            world.parent_of(component_id).is_none()
+                && world
+                    .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(
+                        component_id,
+                    )
+                    .is_some()
+        })
+        .collect()
+}
+
 fn build_world_panel_model(
     world: &World,
-    selected_component: Option<ComponentId>,
+    editor_context: &EditorContextState,
 ) -> WorldPanelModel {
     let rows = build_world_panel_rows(world);
-    let selected_index = selected_component.and_then(|selected| {
+    let selected_target = editor_context
+        .selected_component
+        .or(editor_context.active_editor);
+    let selected_index = selected_target.and_then(|selected| {
         rows.iter()
             .position(|row| row.target_component == Some(selected))
             .map(|index| index as i64)
@@ -1304,9 +1481,11 @@ fn build_world_panel_model(
 
 fn build_inspector_panel_model(
     world: &World,
-    selected_component: Option<ComponentId>,
+    editor_context: &EditorContextState,
 ) -> InspectorPanelModel {
-    let rows = selected_component
+    let rows = editor_context
+        .selected_component
+        .or(editor_context.active_editor)
         .map(|component_id| build_inspector_panel_rows(world, component_id))
         .unwrap_or_else(|| {
             vec![InspectorPanelRow {
@@ -1373,10 +1552,10 @@ fn build_world_panel_rows(world: &World) -> Vec<WorldPanelRow> {
 
         let header_label = editor_chunk_label(world, editor_root);
         out.push(WorldPanelRow {
-            target_component: None,
+            target_component: Some(editor_root),
             label: header_label.clone(),
             display_label: header_label,
-            kind: WorldPanelRowKind::EditorHeader,
+            kind: WorldPanelRowKind::EditorRoot,
         });
 
         for &child in world.children_of(editor_root) {
@@ -1624,6 +1803,20 @@ fn is_descendant_or_self(world: &World, ancestor: ComponentId, node: ComponentId
         current = world.parent_of(component_id);
     }
     false
+}
+
+fn nearest_editor_ancestor(world: &World, start: ComponentId) -> Option<ComponentId> {
+    let mut current = Some(start);
+    while let Some(component_id) = current {
+        if world
+            .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(component_id)
+            .is_some()
+        {
+            return Some(component_id);
+        }
+        current = world.parent_of(component_id);
+    }
+    None
 }
 
 fn world_panel_item_label(world: &World, component_id: ComponentId) -> String {
@@ -1903,6 +2096,18 @@ fn spawn_world_panel_content_tree(
         let _ = world.add_child(rows_mount, row_root);
     }
 
+    if let Some(index) = selected_index.and_then(|index| usize::try_from(index).ok())
+        && let Some(row) = rows.get(index)
+        && let Some(target_component) = row.target_component
+        && let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(selection)
+    {
+        selection.select_entry(SelectionEntry {
+            index: Some(index),
+            item: Some(row.label.clone()),
+            component: target_component,
+        });
+    }
+
     content_root
 }
 
@@ -1930,12 +2135,12 @@ fn spawn_world_panel_row_tree(
             let _ = world.add_child(row_root, style);
             row_root
         }
-        WorldPanelRowKind::EditorHeader
+        WorldPanelRowKind::EditorRoot
         | WorldPanelRowKind::Info
         | WorldPanelRowKind::Component => {
             let (background_rgba, text_rgba, interactive) = match row.kind {
-                WorldPanelRowKind::EditorHeader => {
-                    ([0.18, 0.78, 0.22, 0.95], [0.0, 0.0, 0.0, 1.0], false)
+                WorldPanelRowKind::EditorRoot => {
+                    ([0.30, 0.84, 0.38, 0.98], [0.03, 0.08, 0.04, 1.0], true)
                 }
                 WorldPanelRowKind::Info => ([0.85, 0.85, 0.85, 1.0], [0.0, 0.0, 0.0, 1.0], false),
                 WorldPanelRowKind::Component if selected => {

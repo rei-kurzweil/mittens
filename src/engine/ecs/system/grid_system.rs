@@ -132,8 +132,10 @@ mod tests {
     fn active_grid_uses_editor_selected_grid_component() {
         let mut world = World::default();
         let editor = world.add_component(EditorComponent::new());
+        let grid_transform = world.add_component(crate::engine::ecs::component::TransformComponent::new());
         let grid = world.add_component(GridComponent::new(0.25));
-        let _ = world.add_child(editor, grid);
+        let _ = world.add_child(editor, grid_transform);
+        let _ = world.add_child(grid_transform, grid);
 
         world
             .get_component_by_id_as_mut::<EditorComponent>(editor)

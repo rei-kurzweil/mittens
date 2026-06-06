@@ -6,9 +6,10 @@ use crate::engine::ecs::component::{
     TransformComponent,
     TransformGizmoComponent,
 };
+use crate::engine::ecs::system::editor_context_system::EditorContextState;
 use crate::engine::ecs::system::grid_system::{GridSnapResult, GridStep, GridSystem};
 use crate::engine::ecs::system::paint_placement::{resolve_placement_pose, PlacementError};
-use crate::engine::ecs::system::paint_system_state_manager::{
+use crate::engine::ecs::system::editor_paint_system_state_manager::{
     is_paint_active, is_paint_panel_focused, paint_tool_from_item, reduce_paint_state, PaintEvent,
     PaintState, PaintTool,
 };
@@ -36,26 +37,6 @@ pub struct PaintAssetTemplate {
 }
 
 #[derive(Debug, Clone, Default)]
-struct SharedEditorWorkspaceState {
-    panel_query_root: Option<ComponentId>,
-    registered_editors: Vec<ComponentId>,
-}
-
-impl SharedEditorWorkspaceState {
-    fn register_editor(&mut self, editor_root: ComponentId) -> bool {
-        if self.registered_editors.contains(&editor_root) {
-            return false;
-        }
-        self.registered_editors.push(editor_root);
-        true
-    }
-
-    fn default_active_editor(&self) -> Option<ComponentId> {
-        self.registered_editors.first().copied()
-    }
-}
-
-#[derive(Debug, Clone, Default)]
 struct PaintStrokeRuntime {
     active: bool,
     captured_renderable: Option<ComponentId>,
@@ -64,15 +45,14 @@ struct PaintStrokeRuntime {
 }
 
 #[derive(Debug, Default)]
-pub struct PaintSystem {
+pub struct EditorPaintSystem {
     installed_editor_roots: HashSet<ComponentId>,
     shared_panel_handlers_installed: bool,
     shared_state: Arc<Mutex<PaintState>>,
-    shared_workspace_state: Arc<Mutex<SharedEditorWorkspaceState>>,
     shared_templates: Arc<Mutex<Vec<PaintAssetTemplate>>>,
 }
 
-impl PaintSystem {
+impl EditorPaintSystem {
     pub fn new() -> Self {
         Self::default()
     }
@@ -83,22 +63,9 @@ impl PaintSystem {
         world: &World,
         editor_root: ComponentId,
         panel_query_root: ComponentId,
+        editor_context_state: Arc<Mutex<EditorContextState>>,
         templates: Vec<PaintAssetTemplate>,
     ) {
-        {
-            let mut workspace = self
-                .shared_workspace_state
-                .lock()
-                .expect("paint workspace mutex poisoned");
-            workspace.panel_query_root = Some(panel_query_root);
-            let registered = workspace.register_editor(editor_root);
-            drop(workspace);
-
-            if registered {
-                ensure_default_active_editor(&self.shared_state, &self.shared_workspace_state);
-            }
-        }
-
         *self
             .shared_templates
             .lock()
@@ -114,14 +81,13 @@ impl PaintSystem {
                 world,
                 panel_query_root,
                 Arc::clone(&self.shared_state),
-                Arc::clone(&self.shared_workspace_state),
+                Arc::clone(&editor_context_state),
                 Arc::clone(&self.shared_templates),
             );
             bootstrap_paint_state(
                 world,
                 panel_query_root,
                 &self.shared_state,
-                &self.shared_workspace_state,
             );
         }
 
@@ -139,7 +105,7 @@ impl PaintSystem {
             editor_root,
             panel_query_root,
             Arc::clone(&self.shared_state),
-            Arc::clone(&self.shared_workspace_state),
+            editor_context_state,
             Arc::clone(&self.shared_templates),
             stroke_runtime,
         );
@@ -151,7 +117,7 @@ fn install_shared_panel_handlers(
     world: &World,
     panel_query_root: ComponentId,
     paint_state: Arc<Mutex<PaintState>>,
-    workspace_state: Arc<Mutex<SharedEditorWorkspaceState>>,
+    editor_context_state: Arc<Mutex<EditorContextState>>,
     templates: Arc<Mutex<Vec<PaintAssetTemplate>>>,
 ) {
     let _ = world;
@@ -170,7 +136,7 @@ fn install_shared_panel_handlers(
                 panel_query_root,
                 &templates,
                 &paint_state,
-                &workspace_state,
+                &editor_context_state,
                 None,
                 &event,
             );
@@ -184,7 +150,7 @@ fn install_editor_scene_handlers(
     editor_root: ComponentId,
     panel_query_root: ComponentId,
     paint_state: Arc<Mutex<PaintState>>,
-    workspace_state: Arc<Mutex<SharedEditorWorkspaceState>>,
+    editor_context_state: Arc<Mutex<EditorContextState>>,
     templates: Arc<Mutex<Vec<PaintAssetTemplate>>>,
     stroke_runtime: Arc<Mutex<PaintStrokeRuntime>>,
 ) {
@@ -196,7 +162,7 @@ fn install_editor_scene_handlers(
         SignalKind::DragEnd,
     ] {
         let state = Arc::clone(&paint_state);
-        let workspace = Arc::clone(&workspace_state);
+        let editor_context = Arc::clone(&editor_context_state);
         let shared_templates = Arc::clone(&templates);
         let runtime = Arc::clone(&stroke_runtime);
         rx.add_handler_closure(signal_kind, editor_root, move |world, emit, signal| {
@@ -212,7 +178,7 @@ fn install_editor_scene_handlers(
                 panel_query_root,
                 &shared_templates,
                 &state,
-                &workspace,
+                &editor_context,
                 Some(&runtime),
                 &event,
             );
@@ -226,7 +192,7 @@ fn handle_paint_event(
     panel_query_root: ComponentId,
     templates: &Arc<Mutex<Vec<PaintAssetTemplate>>>,
     paint_state: &Arc<Mutex<PaintState>>,
-    workspace_state: &Arc<Mutex<SharedEditorWorkspaceState>>,
+    editor_context_state: &Arc<Mutex<EditorContextState>>,
     stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     event: &PaintEvent,
 ) {
@@ -246,7 +212,7 @@ fn handle_paint_event(
         emit,
         panel_query_root,
         templates,
-        workspace_state,
+        editor_context_state,
         &old_state,
         &new_state,
         event,
@@ -258,7 +224,6 @@ fn bootstrap_paint_state(
     world: &World,
     panel_query_root: ComponentId,
     paint_state: &Arc<Mutex<PaintState>>,
-    workspace_state: &Arc<Mutex<SharedEditorWorkspaceState>>,
 ) {
     let mut events = Vec::new();
 
@@ -285,27 +250,6 @@ fn bootstrap_paint_state(
         },
     ) {
         events.push(tool_event);
-    }
-
-    if let Some(panel_event) = bootstrap_selection_event(
-        world,
-        panel_query_root,
-        PANEL_LAYOUT_SELECTION_SELECTOR,
-        |selection| PaintEvent::PanelFocusChanged {
-            focused_panel: selection.selected_component,
-        },
-    ) {
-        events.push(panel_event);
-    }
-
-    if let Some(editor) = workspace_state
-        .lock()
-        .expect("paint workspace mutex poisoned")
-        .default_active_editor()
-    {
-        events.push(PaintEvent::ActiveEditorChanged {
-            editor: Some(editor),
-        });
     }
 
     for event in events {
@@ -355,17 +299,6 @@ fn sync_paint_state_from_shared_selections(
             tool: paint_tool_from_item(selection.selected_item.clone()),
             item: selection.selected_item.clone(),
             component: selection.selected_component,
-        },
-    ) {
-        events.push(event);
-    }
-
-    if let Some(event) = bootstrap_selection_event(
-        world,
-        panel_query_root,
-        PANEL_LAYOUT_SELECTION_SELECTOR,
-        |selection| PaintEvent::PanelFocusChanged {
-            focused_panel: selection.selected_component,
         },
     ) {
         events.push(event);
@@ -511,15 +444,22 @@ fn apply_paint_side_effects(
     emit: &mut dyn SignalEmitter,
     panel_query_root: ComponentId,
     templates: &Arc<Mutex<Vec<PaintAssetTemplate>>>,
-    workspace_state: &Arc<Mutex<SharedEditorWorkspaceState>>,
+    editor_context_state: &Arc<Mutex<EditorContextState>>,
     _old_state: &PaintState,
     new_state: &PaintState,
     event: &PaintEvent,
     stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
 ) {
-    let active_editor = resolve_active_editor(new_state, workspace_state);
+    let editor_context = current_editor_context(editor_context_state);
+    let active_editor = event_active_editor(event).or(editor_context.active_editor);
     let mut status_override = None;
-    let activity = paint_activity_status(world, active_editor, panel_query_root, new_state);
+    let activity = paint_activity_status(
+        world,
+        active_editor,
+        panel_query_root,
+        new_state,
+        &editor_context,
+    );
     println!(
         "[PaintSystem][trace] side_effects panel_query_root={panel_query_root:?} active_editor={active_editor:?} event={event:?} active={} reason={}",
         activity.active, activity.reason
@@ -543,6 +483,7 @@ fn apply_paint_side_effects(
                 panel_query_root,
                 &templates,
                 new_state,
+                &editor_context,
                 stroke_runtime,
                 *renderable,
                 *hit_point,
@@ -553,11 +494,18 @@ fn apply_paint_side_effects(
             renderable,
             hit_point,
         } if Some(*editor) == active_editor => {
-            let _ = hit_point;
+                let _ = hit_point;
             if let Some(runtime) = stroke_runtime {
                 let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
-                if resolve_paint_context(world, *editor, panel_query_root, new_state, &templates)
-                    .is_some()
+                if resolve_paint_context(
+                    world,
+                    *editor,
+                    panel_query_root,
+                    new_state,
+                    &editor_context,
+                    &templates,
+                )
+                .is_some()
                 {
                     *runtime = PaintStrokeRuntime {
                         active: true,
@@ -582,6 +530,7 @@ fn apply_paint_side_effects(
                 panel_query_root,
                 &templates,
                 new_state,
+                &editor_context,
                 stroke_runtime,
                 *renderable,
                 *hit_point,
@@ -602,42 +551,32 @@ fn apply_paint_side_effects(
         active_editor,
         panel_query_root,
         new_state,
+        &editor_context,
         status_override,
     );
 }
 
-fn resolve_active_editor(
-    paint_state: &PaintState,
-    workspace_state: &Arc<Mutex<SharedEditorWorkspaceState>>,
-) -> Option<ComponentId> {
-    paint_state.active_editor.or_else(|| {
-        workspace_state
-            .lock()
-            .expect("paint workspace mutex poisoned")
-            .default_active_editor()
-    })
+fn current_editor_context(
+    editor_context_state: &Arc<Mutex<EditorContextState>>,
+) -> EditorContextState {
+    editor_context_state
+        .lock()
+        .expect("editor context mutex poisoned")
+        .clone()
 }
 
-fn ensure_default_active_editor(
-    paint_state: &Arc<Mutex<PaintState>>,
-    workspace_state: &Arc<Mutex<SharedEditorWorkspaceState>>,
-) {
-    let default_editor = workspace_state
-        .lock()
-        .expect("paint workspace mutex poisoned")
-        .default_active_editor();
-    let Some(default_editor) = default_editor else {
-        return;
-    };
-
-    let mut state = paint_state.lock().expect("paint state mutex poisoned");
-    if state.active_editor.is_none() {
-        *state = reduce_paint_state(
-            &state,
-            &PaintEvent::ActiveEditorChanged {
-                editor: Some(default_editor),
-            },
-        );
+fn event_active_editor(event: &PaintEvent) -> Option<ComponentId> {
+    match event {
+        PaintEvent::ActiveEditorChanged { editor } => *editor,
+        PaintEvent::WorldPanelSelectionChanged { editor, .. } => *editor,
+        PaintEvent::EditorSelectionChanged { editor, .. }
+        | PaintEvent::SceneClick { editor, .. }
+        | PaintEvent::StrokeStarted { editor, .. }
+        | PaintEvent::StrokeMoved { editor, .. }
+        | PaintEvent::StrokeEnded { editor } => Some(*editor),
+        PaintEvent::AssetSelectionChanged { .. }
+        | PaintEvent::ToolSelectionChanged { .. }
+        | PaintEvent::PanelFocusChanged { .. } => None,
     }
 }
 
@@ -648,12 +587,20 @@ fn handle_scene_click(
     panel_query_root: ComponentId,
     templates: &[PaintAssetTemplate],
     paint_state: &PaintState,
+    editor_context: &EditorContextState,
     stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     renderable: ComponentId,
     hit_point: [f32; 3],
 ) -> Option<String> {
     let context =
-        resolve_paint_context(world, editor_root, panel_query_root, paint_state, templates)?;
+        resolve_paint_context(
+            world,
+            editor_root,
+            panel_query_root,
+            paint_state,
+            editor_context,
+            templates,
+        )?;
     let runtime = stroke_runtime?;
     let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
     if runtime.non_grid_placed {
@@ -682,12 +629,20 @@ fn handle_stroke_move(
     panel_query_root: ComponentId,
     templates: &[PaintAssetTemplate],
     paint_state: &PaintState,
+    editor_context: &EditorContextState,
     stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     renderable: ComponentId,
     hit_point: [f32; 3],
 ) -> Option<String> {
     let context =
-        resolve_paint_context(world, editor_root, panel_query_root, paint_state, templates)?;
+        resolve_paint_context(
+            world,
+            editor_root,
+            panel_query_root,
+            paint_state,
+            editor_context,
+            templates,
+        )?;
     let runtime = stroke_runtime?;
     let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
     if !runtime.active {
@@ -753,10 +708,11 @@ fn resolve_paint_context(
     editor_root: ComponentId,
     panel_query_root: ComponentId,
     paint_state: &PaintState,
+    editor_context: &EditorContextState,
     templates: &[PaintAssetTemplate],
 ) -> Option<PaintContext> {
     let paint_panel_root = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR);
-    if !is_paint_active(paint_panel_root, paint_state) {
+    if !is_paint_active(paint_panel_root, paint_state, editor_context) {
         return None;
     }
     let asset_title = paint_state.selected_asset.as_ref()?.item.as_ref()?;
@@ -780,6 +736,7 @@ fn paint_activity_status(
     active_editor: Option<ComponentId>,
     panel_query_root: ComponentId,
     paint_state: &PaintState,
+    editor_context: &EditorContextState,
 ) -> PaintActivityStatus {
     if paint_state
         .selected_asset
@@ -793,7 +750,7 @@ fn paint_activity_status(
         };
     }
     let paint_panel_root = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR);
-    if !is_paint_panel_focused(paint_panel_root, paint_state) {
+    if !is_paint_panel_focused(paint_panel_root, editor_context) {
         return PaintActivityStatus {
             active: false,
             reason: "focus Paint panel".to_string(),
@@ -936,6 +893,7 @@ fn update_paint_status(
     active_editor: Option<ComponentId>,
     panel_query_root: ComponentId,
     paint_state: &PaintState,
+    editor_context: &EditorContextState,
     override_text: Option<String>,
 ) {
     let Some(paint_panel_root) = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
@@ -952,8 +910,15 @@ fn update_paint_status(
         );
         return;
     };
-    let text = override_text
-        .unwrap_or_else(|| base_status_text(world, active_editor, panel_query_root, paint_state));
+    let text = override_text.unwrap_or_else(|| {
+        base_status_text(
+            world,
+            active_editor,
+            panel_query_root,
+            paint_state,
+            editor_context,
+        )
+    });
     println!(
         "[PaintSystem][trace] status_update paint_panel_root={paint_panel_root:?} active_editor={active_editor:?} text={text:?}"
     );
@@ -965,6 +930,7 @@ fn base_status_text(
     active_editor: Option<ComponentId>,
     panel_query_root: ComponentId,
     paint_state: &PaintState,
+    editor_context: &EditorContextState,
 ) -> String {
     if paint_state
         .selected_asset
@@ -975,7 +941,7 @@ fn base_status_text(
         return "paint inactive: no asset selected".to_string();
     }
     let paint_panel_root = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR);
-    if !is_paint_panel_focused(paint_panel_root, paint_state) {
+    if !is_paint_panel_focused(paint_panel_root, editor_context) {
         return "paint inactive: focus Paint panel".to_string();
     }
     if paint_state.selected_tool != PaintTool::FreeDraw {
