@@ -51,12 +51,22 @@ const OWNED_LAYOUT_BOUNDS_LABEL: &str = "__layout_bounds";
 /// Calls `measure_items` (Pass 1) then walks the results with a vertical cursor,
 /// emits `UpdateTransform` for each TC child, and manages background quads for
 /// items with `Style { background_color }`.
-pub fn layout(world: &mut World, emit: &mut dyn SignalEmitter, layout_id: ComponentId) {
+///
+/// Returns `(total_width_gu, total_height_gu)` — the total extent of the
+/// top-level items in glyph units.
+pub fn layout(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    layout_id: ComponentId,
+) -> (f32, f32) {
     let (items, _avail_w, _avail_h, unit_scale) = measure_items(world, layout_id);
     let viz = layout_root_has_inspect(world, layout_id);
     let axis_scales = super::measure::layout_root_axis_scales(world, layout_id);
 
     layout_items(world, emit, &items, unit_scale, axis_scales, 0, 0, viz);
+
+    let total_height_gu: f32 = items.iter().map(|i| i.margin_box_height_gu).sum();
+    (_avail_w, total_height_gu)
 }
 
 /// Public-to-the-layout-module entry so `inline::layout_items` can recurse

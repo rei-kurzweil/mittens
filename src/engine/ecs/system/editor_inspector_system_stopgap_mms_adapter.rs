@@ -633,6 +633,71 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 );
             },
         );
+
+        let layout_size_panel_query_root = panel_query_root;
+        let original_mount_y: Arc<Mutex<Option<f32>>> = Arc::new(Mutex::new(None));
+        let orig_mount_y = original_mount_y.clone();
+        rx.add_handler_closure(
+            SignalKind::LayoutRootSizeAvailable,
+            layout_size_panel_query_root,
+            move |world, emit, signal| {
+                let Some(EventSignal::LayoutRootSizeAvailable {
+                    layout_id,
+                    width_wu,
+                    height_wu,
+                }) = signal.event.as_ref()
+                else {
+                    return;
+                };
+
+                if world.find_component(
+                    layout_size_panel_query_root,
+                    &format!("#{PANEL_LAYOUT_ROOT_NAME}"),
+                ) != Some(*layout_id)
+                {
+                    return;
+                }
+
+                let Some(mount_root) = world.all_components().find(|&id| {
+                    world
+                        .component_label(id)
+                        .is_some_and(|label| label == PANEL_LAYOUT_MOUNT_NAME)
+                }) else {
+                    return;
+                };
+
+                let Some(tc) =
+                    world.get_component_by_id_as::<TransformComponent>(mount_root)
+                else {
+                    return;
+                };
+
+                let mut base = orig_mount_y.lock().expect("mount y mutex poisoned");
+                if base.is_none() {
+                    *base = Some(tc.transform.translation[1]);
+                }
+                let base_y = base.unwrap();
+
+                println!(
+                    "[LayoutRootSizeAvailable] layout_id={layout_id:?} width_wu={width_wu:.4} height_wu={height_wu:.4} mount_root={mount_root:?} base_y={base_y:.4} new_y={:.4}",
+                    base_y + height_wu,
+                );
+
+                emit.push_intent_now(
+                    mount_root,
+                    IntentValue::UpdateTransform {
+                        component_ids: vec![mount_root],
+                        translation: [
+                            tc.transform.translation[0],
+                            -2.0 + height_wu, // base_y + height_wu,
+                            tc.transform.translation[2],
+                        ],
+                        rotation_quat_xyzw: tc.transform.rotation,
+                        scale: tc.transform.scale,
+                    },
+                );
+            },
+        );
     }
 
     fn get_or_create_runtime_ui_root(&self, world: &mut World) -> ComponentId {

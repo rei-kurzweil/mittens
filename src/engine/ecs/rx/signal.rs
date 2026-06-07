@@ -187,6 +187,14 @@ pub enum EventSignal {
         text: String,
         caret: usize,
     },
+
+    /// A `LayoutComponent` subtree finished layout and its computed size is now
+    /// available in world units. Scoped to the `LayoutComponent`'s `ComponentId`.
+    LayoutRootSizeAvailable {
+        layout_id: ComponentId,
+        width_wu: f32,
+        height_wu: f32,
+    },
 }
 
 impl EventSignal {
@@ -207,6 +215,7 @@ impl EventSignal {
             EventSignal::Scrolling { .. } => SignalKind::Scrolling,
             EventSignal::TextInputFocusChanged { .. } => SignalKind::TextInputFocusChanged,
             EventSignal::TextInputChanged { .. } => SignalKind::TextInputChanged,
+            EventSignal::LayoutRootSizeAvailable { .. } => SignalKind::LayoutRootSizeAvailable,
         }
     }
 }
@@ -751,6 +760,7 @@ pub enum SignalKind {
     Scrolling,
     TextInputFocusChanged,
     TextInputChanged,
+    LayoutRootSizeAvailable,
 }
 
 /// Optional timing metadata on the signal envelope.

@@ -5,6 +5,7 @@ pub mod inline;
 pub mod measure;
 
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::EventSignal;
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::LayoutComponent;
@@ -62,7 +63,25 @@ impl LayoutSystem {
             .collect();
 
         for &layout_id in &dirty {
-            Self::run_layout(world, emit, layout_id);
+            let (width_gu, height_gu) = Self::run_layout(world, emit, layout_id);
+            let unit_scale = world
+                .get_component_by_id_as::<LayoutComponent>(layout_id)
+                .map(|lc| lc.unit_scale)
+                .unwrap_or(1.0);
+            let size_wu = (width_gu * unit_scale, height_gu * unit_scale);
+
+            if let Some(lc) = world.get_component_by_id_as_mut::<LayoutComponent>(layout_id) {
+                lc.computed_size_wu = Some(size_wu);
+            }
+
+            emit.push_event(
+                layout_id,
+                EventSignal::LayoutRootSizeAvailable {
+                    layout_id,
+                    width_wu: size_wu.0,
+                    height_wu: size_wu.1,
+                },
+            );
         }
 
         for layout_id in dirty {
@@ -74,15 +93,22 @@ impl LayoutSystem {
 
     /// Dispatch to the correct formatting-context algorithm for `layout_id`.
     ///
+    /// Returns `(total_width_gu, total_height_gu)` — the total extent of the
+    /// layout root's direct children in glyph units.
+    ///
     /// Currently always uses block layout. Future: read the container's
     /// `StyleComponent.display` (Flex, Block, etc.) to select the algorithm.
-    fn run_layout(world: &mut World, emit: &mut dyn SignalEmitter, layout_id: ComponentId) {
+    fn run_layout(
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        layout_id: ComponentId,
+    ) -> (f32, f32) {
         // Guard: skip if the LayoutComponent is gone.
         if world
             .get_component_by_id_as::<LayoutComponent>(layout_id)
             .is_none()
         {
-            return;
+            return (0.0, 0.0);
         }
 
         // Peek at the immediate item children to choose a formatting context.
@@ -101,9 +127,9 @@ impl LayoutSystem {
                 .all(|it| matches!(it.display, Some(Display::InlineBlock | Display::Inline)));
 
         if all_inline_block {
-            inline::layout(world, emit, layout_id);
+            inline::layout(world, emit, layout_id)
         } else {
-            block::layout(world, emit, layout_id);
+            block::layout(world, emit, layout_id)
         }
     }
 

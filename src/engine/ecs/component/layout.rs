@@ -51,6 +51,10 @@ pub struct LayoutComponent {
     /// child to the LayoutRoot.
     pub inspect: bool,
 
+    /// Computed total extent of this layout root's direct children, in world units,
+    /// populated after each successful layout pass. `None` before the first layout.
+    pub computed_size_wu: Option<(f32, f32)>,
+
     component: Option<ComponentId>,
 }
 
@@ -64,6 +68,7 @@ impl LayoutComponent {
             dirty: true,
             unit_scale: 1.0,
             inspect: false,
+            computed_size_wu: None,
             component: None,
         }
     }

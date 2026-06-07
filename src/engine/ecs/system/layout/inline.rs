@@ -25,11 +25,15 @@ use crate::engine::ecs::component::style::Display;
 /// Each TC child is treated as an atomic inline-block: its measured
 /// margin box becomes the cursor advance. Wrap occurs when the cursor
 /// would exceed `available_width`.
-pub fn layout(world: &mut World, emit: &mut dyn SignalEmitter, layout_id: ComponentId) {
+pub fn layout(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    layout_id: ComponentId,
+) -> (f32, f32) {
     let (items, avail_w_gu, _avail_h_gu, unit_scale) = measure_items(world, layout_id);
     let viz = super::block::layout_root_has_inspect(world, layout_id);
     let axis_scales = super::measure::layout_root_axis_scales(world, layout_id);
-    layout_items(
+    let (_total_x_gu, total_y_gu) = layout_items(
         world,
         emit,
         &items,
@@ -40,6 +44,7 @@ pub fn layout(world: &mut World, emit: &mut dyn SignalEmitter, layout_id: Compon
         0,
         viz,
     );
+    (avail_w_gu, total_y_gu)
 }
 
 /// Inline-formatting-context layout over a pre-measured item list.
@@ -48,6 +53,8 @@ pub fn layout(world: &mut World, emit: &mut dyn SignalEmitter, layout_id: Compon
 /// passes down — for the LayoutRoot case that's `LayoutComponent.available_width`;
 /// for a nested block item that switches to inline flow, it's
 /// `item.content_width_gu` of the enclosing block.
+/// Returns `(total_x_gu, total_y_gu)` — the final cursor position in glyph units
+/// after placing all items (useful for computing the total extents).
 pub(crate) fn layout_items(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
@@ -58,7 +65,7 @@ pub(crate) fn layout_items(
     depth: i32,
     parent_depth: i32,
     viz: bool,
-) {
+) -> (f32, f32) {
     let mut cursor_x_gu: f32 = 0.0;
     let mut cursor_y_gu: f32 = 0.0;
     let mut line_height_gu: f32 = 0.0;
@@ -192,4 +199,6 @@ pub(crate) fn layout_items(
             line_height_gu = item.margin_box_height_gu;
         }
     }
+
+    (cursor_x_gu, cursor_y_gu + line_height_gu)
 }
