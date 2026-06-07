@@ -5,7 +5,7 @@
 
 // ── paint_panel_item ──────────────────────────────────────────────────────────
 
-let PAINT_PANEL_ICON_SCALE = 1.25
+let PAINT_PANEL_ICON_SCALE = 0.25
 
 export fn paint_panel_item(label, icon, item_background_color, title_color) {
     return T {
