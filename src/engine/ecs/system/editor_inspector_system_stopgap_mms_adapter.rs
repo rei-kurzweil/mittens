@@ -25,8 +25,6 @@ use crate::meow_meow::runner::MeowMeowRunner;
 
 const PANEL_LAYOUT_MOUNT_NAME: &str = "editor_panel_layout_mount";
 const PANEL_LAYOUT_ROOT_NAME: &str = "editor_panel_layout_root";
-const PANEL_LAYOUT_TOP_ROW_NAME: &str = "editor_panel_top_row";
-const PANEL_LAYOUT_BOTTOM_ROW_NAME: &str = "editor_panel_bottom_row";
 const PANEL_LAYOUT_SELECTION_NAME: &str = "editor_panel_layout_selection";
 const EDITOR_RUNTIME_UI_ROOT_NAME: &str = "editor_runtime_ui_root";
 const WORLD_PANEL_ROOT_SELECTOR: &str = "#world_panel_root";
@@ -689,7 +687,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                         component_ids: vec![mount_root],
                         translation: [
                             tc.transform.translation[0],
-                            -2.0 + height_wu, // base_y + height_wu,
+                            -1.75 + height_wu, // base_y + height_wu,
                             tc.transform.translation[2],
                         ],
                         rotation_quat_xyzw: tc.transform.rotation,
@@ -1384,76 +1382,9 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             + PANEL_LAYOUT_GAP_GU
             + (PANEL_ROOT_MARGIN_Y_GU * 2.0);
 
-        let world_panel = decorate_panel_root_ce(world_panel, 0.0);
-        let top_row = MaterializedCE {
-            component_type: "T".to_string(),
-            ctor_method: None,
-            ctor_args: Vec::new(),
-            calls: Vec::new(),
-            named: vec![(
-                "name".to_string(),
-                Value::String(PANEL_LAYOUT_TOP_ROW_NAME.to_string()),
-            )],
-            positionals: Vec::new(),
-            children: vec![
-                CeChild::Spawn(MaterializedCE {
-                    component_type: "Style".to_string(),
-                    ctor_method: None,
-                    ctor_args: Vec::new(),
-                    calls: vec![
-                        (
-                            "display".to_string(),
-                            vec![Value::String("block".to_string())],
-                        ),
-                        (
-                            "width".to_string(),
-                            vec![Value::Number(PANEL_LAYOUT_AVAILABLE_WIDTH_GU)],
-                        ),
-                        (
-                            "margin_bottom".to_string(),
-                            vec![Value::Number(PANEL_LAYOUT_GAP_GU)],
-                        ),
-                    ],
-                    named: Vec::new(),
-                    positionals: Vec::new(),
-                    children: Vec::new(),
-                }),
-                CeChild::Spawn(asset_panel),
-                CeChild::Spawn(paint_panel),
-            ],
-        };
-        let bottom_row = MaterializedCE {
-            component_type: "T".to_string(),
-            ctor_method: None,
-            ctor_args: Vec::new(),
-            calls: Vec::new(),
-            named: vec![(
-                "name".to_string(),
-                Value::String(PANEL_LAYOUT_BOTTOM_ROW_NAME.to_string()),
-            )],
-            positionals: Vec::new(),
-            children: vec![
-                CeChild::Spawn(MaterializedCE {
-                    component_type: "Style".to_string(),
-                    ctor_method: None,
-                    ctor_args: Vec::new(),
-                    calls: vec![
-                        (
-                            "display".to_string(),
-                            vec![Value::String("block".to_string())],
-                        ),
-                        (
-                            "width".to_string(),
-                            vec![Value::Number(PANEL_LAYOUT_AVAILABLE_WIDTH_GU)],
-                        ),
-                    ],
-                    named: Vec::new(),
-                    positionals: Vec::new(),
-                    children: Vec::new(),
-                }),
-                CeChild::Spawn(world_panel),
-            ],
-        };
+        let world_panel = decorate_panel_root_ce(world_panel);
+        let paint_panel = decorate_panel_root_ce(paint_panel);
+        let asset_panel = decorate_panel_root_ce(asset_panel);
 
         let shared_layout_root = MaterializedCE {
             component_type: "LayoutRoot".to_string(),
@@ -1478,7 +1409,11 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 Value::String(PANEL_LAYOUT_ROOT_NAME.to_string()),
             )],
             positionals: Vec::new(),
-            children: vec![CeChild::Spawn(top_row), CeChild::Spawn(bottom_row)],
+            children: vec![
+                CeChild::Spawn(paint_panel),
+                CeChild::Spawn(asset_panel),
+                CeChild::Spawn(world_panel),
+            ],
         };
 
         let overlay_ce = MaterializedCE {
@@ -1689,28 +1624,27 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             },
         );
 
-        if let Some(bottom_row_root) = world.find_component(
-            panel_mount_root,
-            &format!("#{PANEL_LAYOUT_BOTTOM_ROW_NAME}"),
-        ) {
-            if let Some(world_panel_root) =
-                world.find_component(panel_mount_root, WORLD_PANEL_ROOT_SELECTOR)
+        if let Some(world_panel_root) =
+            world.find_component(panel_mount_root, WORLD_PANEL_ROOT_SELECTOR)
+        {
+            if let Some(content_slot) =
+                world.find_component(world_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
             {
-                if let Some(content_slot) =
-                    world.find_component(world_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
-                {
-                    rerender_world_panel_content(
-                        world,
-                        emit,
-                        panel_mount_root,
-                        content_slot,
-                        &model.rows,
-                        model.selected_index,
-                    );
-                }
+                rerender_world_panel_content(
+                    world,
+                    emit,
+                    panel_mount_root,
+                    content_slot,
+                    &model.rows,
+                    model.selected_index,
+                );
             }
+        }
 
-            rerender_inspector_panels(world, emit, bottom_row_root, inspector_models);
+        if let Some(layout_root) =
+            world.find_component(panel_mount_root, &format!("#{PANEL_LAYOUT_ROOT_NAME}"))
+        {
+            rerender_inspector_panels(world, emit, layout_root, inspector_models);
         }
 
         println!(
@@ -1920,8 +1854,6 @@ fn should_skip_loaded_root(component: &MaterializedCE) -> bool {
             | "inspector_panel_root"
             | "assets_root"
             | "paint_panel_root"
-            | PANEL_LAYOUT_TOP_ROW_NAME
-            | PANEL_LAYOUT_BOTTOM_ROW_NAME
             | "world_panel_content_root"
             | "inspector_panel_content_root"
             | "panel_status_root"
@@ -1935,8 +1867,7 @@ fn panel_layout_root_id(world: &World, panel_query_root: ComponentId) -> Option<
 }
 
 fn panel_layout_bottom_row_id(world: &World, panel_query_root: ComponentId) -> Option<ComponentId> {
-    let layout_root = panel_layout_root_id(world, panel_query_root)?;
-    world.find_component(layout_root, &format!("#{PANEL_LAYOUT_BOTTOM_ROW_NAME}"))
+    panel_layout_root_id(world, panel_query_root)
 }
 
 fn materialized_ce_name(component: &MaterializedCE) -> Option<&str> {
@@ -2955,7 +2886,7 @@ fn build_panel_component_expr(
     }
 }
 
-fn decorate_panel_root_ce(mut panel_root: MaterializedCE, margin_left_gu: f64) -> MaterializedCE {
+fn decorate_panel_root_ce(mut panel_root: MaterializedCE) -> MaterializedCE {
     panel_root.children.insert(
         0,
         CeChild::Spawn(MaterializedCE {
@@ -2995,8 +2926,8 @@ fn decorate_panel_root_ce(mut panel_root: MaterializedCE, margin_left_gu: f64) -
             vec![Value::String("inline-block".to_string())],
         ));
         style_ce.calls.push((
-            "margin_left".to_string(),
-            vec![Value::Number(margin_left_gu)],
+            "margin_right".to_string(),
+            vec![Value::Number(PANEL_LAYOUT_GAP_GU)],
         ));
     }
 
@@ -3070,7 +3001,7 @@ fn spawn_inspector_panel_instance_tree(
         "inspector panel",
     ) {
         Some(panel) => {
-            decorate_panel_root_ce(panel, if index == 0 { PANEL_LAYOUT_GAP_GU } else { 0.0 })
+            decorate_panel_root_ce(panel)
         }
         None => {
             return spawn_inspector_panel_instance_fallback_root(world, model.panel_id);
