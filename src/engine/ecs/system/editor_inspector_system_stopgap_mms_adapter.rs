@@ -40,6 +40,7 @@ const INSPECTOR_PANEL_DETAIL_SLOT_SELECTOR: &str = "#detail_slot";
 const INSPECTOR_PANEL_CONTENT_ROOT_SELECTOR: &str = "#inspector_panel_content_root";
 const INSPECTOR_PANEL_DETAIL_ROOT_SELECTOR: &str = "#inspector_details_root";
 const INSPECTOR_PANEL_SELECTION_SELECTOR: &str = "#inspector_panel_selection";
+const INSPECTOR_PANEL_PAYLOAD_NAME: &str = "inspector_panel_payload";
 const INSPECTOR_PANEL_INSTANCE_PREFIX: &str = "inspector_panel_instance_";
 const INSPECTOR_PANEL_INSTANCE_DATA_NAME: &str = "inspector_panel_instance_data";
 const INSPECTOR_PANEL_INSTANCE_ID_KEY: &str = "inspector_panel_id";
@@ -1732,6 +1733,20 @@ enum InspectorPanelRowKind {
     Component,
 }
 
+#[derive(Debug, Clone)]
+struct PanelUiRowSpec<'a> {
+    row_name: &'a str,
+    payload_name: &'a str,
+    target_component: Option<ComponentId>,
+    label: &'a str,
+    row_kind_label: &'a str,
+    interactive: bool,
+    background_rgba: [f32; 4],
+    text_rgba: [f32; 4],
+    font_size_gu: Option<f32>,
+    spacer_height_gu: Option<f32>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct InspectorPanelDetailModel {
     name: String,
@@ -2005,10 +2020,6 @@ fn build_inspector_panel_models(
         .panels
         .iter()
         .map(|panel| {
-            println!(
-                "[InspectorSystem][trace] build_inspector_panel_model panel_id={} target={:?} pinned={}",
-                panel.panel_id, panel.inspected, panel.pinned
-            );
             let rows = panel
                 .inspected
                 .filter(|&component_id| world.get_component_record(component_id).is_some())
@@ -2027,6 +2038,15 @@ fn build_inspector_panel_models(
                 .filter(|&component_id| world.get_component_record(component_id).is_some())
                 .map(|component_id| world_panel_item_label(world, component_id))
                 .unwrap_or_else(|| "Inspector".to_string());
+            println!(
+                "[InspectorSystem][trace] build_inspector_panel_model panel_id={} inspected={:?} active={} pinned={} title={} row_count={}",
+                panel.panel_id,
+                panel.inspected,
+                workspace.active_panel == Some(panel.panel_id),
+                panel.pinned,
+                target_label,
+                rows.len()
+            );
 
             InspectorPanelModel {
                 panel_id: panel.panel_id,
@@ -2574,9 +2594,16 @@ fn rerender_single_inspector_panel_sidebar(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     inspector_panel_root: ComponentId,
+    panel_id: InspectorPanelId,
     sidebar_slot: ComponentId,
     rows: &[InspectorPanelRow],
 ) {
+    println!(
+        "[InspectorSystem][trace] rerender_single_inspector_panel_sidebar panel_id={} inspector_panel_root={inspector_panel_root:?} sidebar_slot={sidebar_slot:?} row_count={}",
+        panel_id,
+        rows.len()
+    );
+
     if let Some(existing_content_root) =
         world.find_component(inspector_panel_root, INSPECTOR_PANEL_CONTENT_ROOT_SELECTOR)
     {
@@ -2654,11 +2681,6 @@ fn update_inspector_panel_instance_tree(
     else {
         return;
     };
-    let Some(detail_slot) =
-        world.find_component(inspector_panel_root, INSPECTOR_PANEL_DETAIL_SLOT_SELECTOR)
-    else {
-        return;
-    };
 
     let title_changed = previous_model.is_none_or(|previous| previous.title != model.title);
     if title_changed && let Some(title_label) = world.find_component(inspector_panel_root, "#title_label") {
@@ -2690,10 +2712,14 @@ fn update_inspector_panel_instance_tree(
     }
 
     if previous_model.is_none_or(|previous| previous.rows != model.rows) {
-        rerender_single_inspector_panel_sidebar(world, emit, inspector_panel_root, sidebar_slot, &model.rows);
-    }
-    if previous_model.is_none_or(|previous| previous.detail != model.detail) {
-        rerender_single_inspector_panel_detail(world, emit, inspector_panel_root, detail_slot, &model.detail);
+        rerender_single_inspector_panel_sidebar(
+            world,
+            emit,
+            inspector_panel_root,
+            model.panel_id,
+            sidebar_slot,
+            &model.rows,
+        );
     }
 }
 
@@ -2858,7 +2884,10 @@ fn handle_inspector_panel_workspace_click(
                     && panel.subtree_selection.focused_row != Some(target_component)
                 {
                     panel.subtree_selection.focused_row = Some(target_component);
-                    rerender_needed = true;
+                    // Keep the existing sidebar subtree alive on row clicks. The
+                    // SelectionComponent/Option styling already updates the visual
+                    // highlight, and rebuilding the sidebar here churns the
+                    // selection subtree while the detail pane is disabled.
                 }
             }
         }
@@ -3245,16 +3274,17 @@ fn spawn_inspector_panel_instance_tree(
     else {
         return inspector_panel_root;
     };
-    let Some(detail_slot) =
-        world.find_component(inspector_panel_root, INSPECTOR_PANEL_DETAIL_SLOT_SELECTOR)
-    else {
-        return inspector_panel_root;
-    };
 
     let pin_button = spawn_inspector_pin_button(world, model.pinned);
     let _ = world.add_child(title_bar, pin_button);
-    rerender_single_inspector_panel_sidebar(world, emit, inspector_panel_root, sidebar_slot, &model.rows);
-    rerender_single_inspector_panel_detail(world, emit, inspector_panel_root, detail_slot, &model.detail);
+    rerender_single_inspector_panel_sidebar(
+        world,
+        emit,
+        inspector_panel_root,
+        model.panel_id,
+        sidebar_slot,
+        &model.rows,
+    );
     inspector_panel_root
 }
 
@@ -3497,106 +3527,71 @@ fn spawn_world_panel_row_tree(
 ) -> ComponentId {
     match row.kind {
         WorldPanelRowKind::Spacer => {
-            let row_root =
-                world.add_component_boxed_named(row_name, Box::new(TransformComponent::new()));
-            let style = world.add_component_boxed_named(
-                format!("{row_name}_style"),
-                Box::new({
-                    let mut style = StyleComponent::new();
-                    style.display = Some(Display::Block);
-                    style.width = SizeDimension::Percent(100.0);
-                    style.height = SizeDimension::GlyphUnits(0.8);
-                    style.overflow = Overflow::Visible;
-                    style
-                }),
-            );
-            let _ = world.add_child(row_root, style);
-            row_root
+            spawn_panel_ui_row_tree(
+                world,
+                PanelUiRowSpec {
+                    row_name,
+                    payload_name: WORLD_PANEL_PAYLOAD_NAME,
+                    target_component: None,
+                    label: "",
+                    row_kind_label: "Spacer",
+                    interactive: false,
+                    background_rgba: [0.0, 0.0, 0.0, 0.0],
+                    text_rgba: [0.0, 0.0, 0.0, 0.0],
+                    font_size_gu: None,
+                    spacer_height_gu: Some(0.8),
+                },
+            )
         }
         WorldPanelRowKind::EditorRoot | WorldPanelRowKind::Info | WorldPanelRowKind::Component => {
-            let (background_rgba, text_rgba, interactive) = match row.kind {
+            let (background_rgba, text_rgba, interactive, row_kind_label) = match row.kind {
                 WorldPanelRowKind::EditorRoot => {
-                    ([0.30, 0.84, 0.38, 0.98], [0.03, 0.08, 0.04, 1.0], true)
+                    (
+                        [0.30, 0.84, 0.38, 0.98],
+                        [0.03, 0.08, 0.04, 1.0],
+                        true,
+                        "EditorRoot",
+                    )
                 }
-                WorldPanelRowKind::Info => ([0.85, 0.85, 0.85, 1.0], [0.0, 0.0, 0.0, 1.0], false),
+                WorldPanelRowKind::Info => (
+                    [0.85, 0.85, 0.85, 1.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                    false,
+                    "Info",
+                ),
                 WorldPanelRowKind::Component if selected => {
-                    ([1.00, 0.88, 0.20, 0.96], [0.06, 0.09, 0.08, 1.0], true)
+                    (
+                        [1.00, 0.88, 0.20, 0.96],
+                        [0.06, 0.09, 0.08, 1.0],
+                        true,
+                        "Component",
+                    )
                 }
                 WorldPanelRowKind::Component => {
-                    ([0.92, 0.97, 0.92, 1.0], [0.06, 0.09, 0.08, 1.0], true)
+                    (
+                        [0.92, 0.97, 0.92, 1.0],
+                        [0.06, 0.09, 0.08, 1.0],
+                        true,
+                        "Component",
+                    )
                 }
                 WorldPanelRowKind::Spacer => unreachable!(),
             };
-
-            let row_root =
-                world.add_component_boxed_named(row_name, Box::new(TransformComponent::new()));
-
-            if interactive {
-                let option = world.add_component_boxed_named(
-                    format!("{row_name}_option"),
-                    Box::new(OptionComponent::new()),
-                );
-                let _ = world.add_child(row_root, option);
-                let raycastable = world.add_component_boxed_named(
-                    format!("{row_name}_raycastable"),
-                    Box::new(RaycastableComponent::click_only()),
-                );
-                let _ = world.add_child(row_root, raycastable);
-            }
-
-            if let Some(target_component) = row.target_component {
-                let payload = world.add_component_boxed_named(
-                    WORLD_PANEL_PAYLOAD_NAME,
-                    Box::new(
-                        DataComponent::new()
-                            .with_entry("target_component", DataValue::Component(target_component))
-                            .with_entry("row_kind", DataValue::Text(format!("{:?}", row.kind)))
-                            .with_entry("label", DataValue::Text(row.label.clone())),
-                    ),
-                );
-                let _ = world.add_child(row_root, payload);
-            }
-
-            let style = world.add_component_boxed_named(
-                format!("{row_name}_style"),
-                Box::new({
-                    let mut style = StyleComponent::new();
-                    style.display = Some(Display::Block);
-                    style.width = SizeDimension::Percent(100.0);
-                    style.margin = EdgeInsets::axes(0.25, 0.20);
-                    style.padding = EdgeInsets::axes(0.55, 0.45);
-                    style.background_color = Some(background_rgba);
-                    style.background_z = Some(0.001);
-                    style.color = Some(text_rgba);
-                    style.overflow = Overflow::Visible;
-                    style
-                }),
-            );
-            let _ = world.add_child(row_root, style);
-
-            let text_root = world.add_component_boxed_named(
-                format!("{row_name}_text_root"),
-                Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.005)),
-            );
-            let text = world.add_component_boxed_named(
-                format!("{row_name}_text"),
-                Box::new(TextComponent::new(row.display_label.clone())),
-            );
-            let text_color = world.add_component_boxed_named(
-                format!("{row_name}_text_color"),
-                Box::new(ColorComponent::rgba(
-                    text_rgba[0],
-                    text_rgba[1],
-                    text_rgba[2],
-                    text_rgba[3],
-                )),
-            );
-
-            let _ = world.add_child(row_root, text_root);
-            let _ = world.add_child(text_root, text);
-            let _ = world.add_child(text, text_color);
-
-            row_root
+            spawn_panel_ui_row_tree(
+                world,
+                PanelUiRowSpec {
+                    row_name,
+                    payload_name: WORLD_PANEL_PAYLOAD_NAME,
+                    target_component: row.target_component,
+                    label: &row.display_label,
+                    row_kind_label,
+                    interactive,
+                    background_rgba,
+                    text_rgba,
+                    font_size_gu: None,
+                    spacer_height_gu: None,
+                },
+            )
         }
     }
 }
@@ -3629,12 +3624,35 @@ fn spawn_inspector_panel_content_tree(
         INSPECTOR_PANEL_SELECTION_NAME,
         Box::new(SelectionComponent::new()),
     );
+    if let Some(selection_component) =
+        world.get_component_by_id_as_mut::<SelectionComponent>(selection)
+    {
+        selection_component.payload_selector =
+            Some(format!("[name='{INSPECTOR_PANEL_PAYLOAD_NAME}']"));
+    }
     let _ = world.add_child(rows_mount, selection);
 
     for (index, row) in rows.iter().enumerate() {
         let row_root =
             spawn_inspector_panel_row_tree(world, &format!("{INSPECTOR_ITEM_PREFIX}{index}"), row);
         let _ = world.add_child(rows_mount, row_root);
+    }
+
+    if let Some((index, row)) = rows.iter().enumerate().find(|(_, row)| row.selected)
+        && let Some(row_root) =
+            world.find_component(content_root, &format!("#{INSPECTOR_ITEM_PREFIX}{index}"))
+    {
+        let selected_payload = resolve_selected_inspector_panel_payload(world, row_root);
+        if let Some(selection_component) =
+            world.get_component_by_id_as_mut::<SelectionComponent>(selection)
+        {
+            selection_component.select_entry(SelectionEntry {
+                index: Some(index),
+                item: Some(row.display_label.clone()),
+                component: row_root,
+            });
+            selection_component.selected_payload = selected_payload;
+        }
     }
 
     content_root
@@ -3645,38 +3663,101 @@ fn spawn_inspector_panel_row_tree(
     row_name: &str,
     row: &InspectorPanelRow,
 ) -> ComponentId {
-    let (background_rgba, text_rgba) = match row.kind {
-        InspectorPanelRowKind::Info => ([0.85, 0.85, 0.85, 1.0], [0.0, 0.0, 0.0, 1.0]),
+    let (background_rgba, text_rgba, interactive, row_kind_label) = match row.kind {
+        InspectorPanelRowKind::Info => ([0.85, 0.85, 0.85, 1.0], [0.0, 0.0, 0.0, 1.0], false, "Info"),
         InspectorPanelRowKind::Component if row.selected => {
-            ([1.00, 0.88, 0.20, 0.96], [0.08, 0.08, 0.02, 1.0])
+            ([1.00, 0.88, 0.20, 0.96], [0.08, 0.08, 0.02, 1.0], true, "Component")
         }
-        InspectorPanelRowKind::Component => ([0.92, 0.97, 0.92, 1.0], [0.06, 0.09, 0.08, 1.0]),
+        InspectorPanelRowKind::Component => ([0.92, 0.97, 0.92, 1.0], [0.06, 0.09, 0.08, 1.0], true, "Component"),
     };
+    spawn_panel_ui_row_tree(
+        world,
+        PanelUiRowSpec {
+            row_name,
+            payload_name: INSPECTOR_PANEL_PAYLOAD_NAME,
+            target_component: row.target_component,
+            label: &row.display_label,
+            row_kind_label,
+            interactive,
+            background_rgba,
+            text_rgba,
+            font_size_gu: Some(1.0),
+            spacer_height_gu: None,
+        },
+    )
+}
 
-    let row_root = world.add_component_boxed_named(row_name, Box::new(TransformComponent::new()));
-    if matches!(row.kind, InspectorPanelRowKind::Component) {
+fn resolve_selected_inspector_panel_payload(
+    world: &World,
+    row_root: ComponentId,
+) -> Option<ComponentId> {
+    let matches =
+        world.find_all_components(row_root, &format!("[name='{INSPECTOR_PANEL_PAYLOAD_NAME}']"));
+    if matches.len() == 1 {
+        matches.into_iter().next()
+    } else {
+        None
+    }
+}
+
+fn spawn_panel_ui_row_tree(world: &mut World, spec: PanelUiRowSpec<'_>) -> ComponentId {
+    let row_root =
+        world.add_component_boxed_named(spec.row_name, Box::new(TransformComponent::new()));
+
+    if let Some(height_gu) = spec.spacer_height_gu {
+        let style = world.add_component_boxed_named(
+            format!("{}_style", spec.row_name),
+            Box::new({
+                let mut style = StyleComponent::new();
+                style.display = Some(Display::Block);
+                style.width = SizeDimension::Percent(100.0);
+                style.height = SizeDimension::GlyphUnits(height_gu);
+                style.overflow = Overflow::Visible;
+                style
+            }),
+        );
+        let _ = world.add_child(row_root, style);
+        return row_root;
+    }
+
+    if spec.interactive {
         let option = world.add_component_boxed_named(
-            format!("{row_name}_option"),
+            format!("{}_option", spec.row_name),
             Box::new(OptionComponent::new()),
         );
         let _ = world.add_child(row_root, option);
         let raycastable = world.add_component_boxed_named(
-            format!("{row_name}_raycastable"),
+            format!("{}_raycastable", spec.row_name),
             Box::new(RaycastableComponent::click_only()),
         );
         let _ = world.add_child(row_root, raycastable);
     }
+
+    let mut payload_data = DataComponent::new()
+        .with_entry("row_name", DataValue::Text(spec.row_name.to_string()))
+        .with_entry("row_kind", DataValue::Text(spec.row_kind_label.to_string()))
+        .with_entry("label", DataValue::Text(spec.label.to_string()))
+        .with_entry("interactive", DataValue::Bool(spec.interactive));
+    if let Some(target_component) = spec.target_component {
+        payload_data.insert("target_component", DataValue::Component(target_component));
+    }
+    let payload = world.add_component_boxed_named(spec.payload_name, Box::new(payload_data));
+    let _ = world.add_child(row_root, payload);
+
     let style = world.add_component_boxed_named(
-        format!("{row_name}_style"),
+        format!("{}_style", spec.row_name),
         Box::new({
             let mut style = StyleComponent::new();
             style.display = Some(Display::Block);
             style.width = SizeDimension::Percent(100.0);
             style.margin = EdgeInsets::axes(0.25, 0.20);
             style.padding = EdgeInsets::axes(0.55, 0.45);
-            style.background_color = Some(background_rgba);
+            if let Some(font_size_gu) = spec.font_size_gu {
+                style.font_size = SizeDimension::GlyphUnits(font_size_gu);
+            }
+            style.background_color = Some(spec.background_rgba);
             style.background_z = Some(0.001);
-            style.color = Some(text_rgba);
+            style.color = Some(spec.text_rgba);
             style.overflow = Overflow::Visible;
             style
         }),
@@ -3684,20 +3765,20 @@ fn spawn_inspector_panel_row_tree(
     let _ = world.add_child(row_root, style);
 
     let text_root = world.add_component_boxed_named(
-        format!("{row_name}_text_root"),
+        format!("{}_text_root", spec.row_name),
         Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.005)),
     );
     let text = world.add_component_boxed_named(
-        format!("{row_name}_text"),
-        Box::new(TextComponent::new(row.display_label.clone())),
+        format!("{}_text", spec.row_name),
+        Box::new(TextComponent::new(spec.label.to_string())),
     );
     let text_color = world.add_component_boxed_named(
-        format!("{row_name}_text_color"),
+        format!("{}_text_color", spec.row_name),
         Box::new(ColorComponent::rgba(
-            text_rgba[0],
-            text_rgba[1],
-            text_rgba[2],
-            text_rgba[3],
+            spec.text_rgba[0],
+            spec.text_rgba[1],
+            spec.text_rgba[2],
+            spec.text_rgba[3],
         )),
     );
 

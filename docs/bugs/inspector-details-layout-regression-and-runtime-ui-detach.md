@@ -1,4 +1,4 @@
-# Bug: Inspector detail split view renders oversized/overlapping content and escapes `editor_runtime_ui_root`
+# Bug: Inspector sidebar text scale and pin layout regress after inspector split-view work
 
 ## Status
 
@@ -6,76 +6,49 @@ Open bug / investigation note.
 
 ## Summary
 
-After adding the inspector detail split view, the inspector panel can render in a visibly broken
-state:
+After adding the inspector detail split view, the inspector panel regressed in two ways:
 
-- the component list is not readable
-- the detail view is not readable
-- a large green button is prominent in the title/content area
-- oversized text overlaps the panel content
+- pinning still works as described, but the pin button does not fit the title bar and is pushed
+  down onto a second line
+- even with the detail view disabled, the sidebar text is still rendered at a huge scale and the
+  rows overlap vertically on a single line
 
-The same repro also shows the panel trees materialized as top-level roots instead of ending up
-cleanly under `editor_runtime_ui_root`.
+The current issue is now focused on sidebar layout/text sizing rather than the detail view itself.
 
 ## Repro
 
-Observed from a live topology dump after the inspector detail work landed.
-
-Top-level roots included both the shared runtime UI root and loose panel roots:
-
-```text
-16: editor_runtime_ui_root  type=transform
-17: paint_panel_root        type=transform
-18: world_panel_root        type=transform
-20: inspector_panel_root    type=transform
-25: inspector_panel_content_root type=transform
-```
-
-And the inspector shell itself still has the new split slots:
-
-```text
-inspector_panel_root
-  title_bar
-  content_slot
-    content_area
-      sidebar_slot
-      detail_slot
-```
+Observed with the detail view temporarily disabled and only the sidebar path active.
 
 ## Expected
 
 - The inspector sidebar should show the component list at normal panel text size.
-- The detail slot should show the selected component fields at normal panel text size.
-- The split view should fit inside the inspector panel without overlapping giant text.
-- Runtime editor panels should be attached beneath `editor_runtime_ui_root`, not left as
-  independent top-level roots.
+- The pin button should stay within the title bar and not wrap to a second line.
+- The sidebar should fit inside the inspector panel without overlapping giant text.
 
 ## Actual
 
-- The split view is visually broken: the list and detail content are effectively unusable.
-- A large green affordance dominates the panel, consistent with the inspector pin/title area being
-  much more visible than the actual content.
-- Panel-related roots appear at top level alongside `editor_runtime_ui_root` instead of only under
-  it.
+- Pinning works, but the pin button overflows the title bar and drops to a second line.
+- The sidebar rows are still rendered at an oversized text scale, so the component list overlaps
+  vertically and becomes unreadable.
 
 ## Likely causes
 
-### 1. New inspector detail subtree never sets panel-sized text
+### 1. Sidebar and detail split-view containers rely on inherited text sizing
 
 The older sidebar rows explicitly set panel text size:
 
 - [assets/components/panel_items.mms](/home/rei/_/cat-engine/assets/components/panel_items.mms:151)
   sets `font_size(1)` on `inspector_panel_row`.
 
-The new split-view/detail layout does not do the same:
+The split-view container and the detail subtree were the first places to audit:
 
 - [assets/components/panels.mms](/home/rei/_/cat-engine/assets/components/panels.mms:321)
   `content_area` / `sidebar_slot` / `detail_slot` do not set `font_size(...)`
 - [assets/components/inspector_details.mms](/home/rei/_/cat-engine/assets/components/inspector_details.mms:12)
   detail rows and labels/values also do not set `font_size(...)`
 
-This is a strong match for the observed "overlapping giant text" regression. The split-view
-subtrees are likely inheriting an unintended text scale instead of the normal panel row size.
+Even with the detail subtree disabled, the sidebar is still affected, which suggests the inherited
+text scale is being introduced higher in the inspector shell or during panel materialization.
 
 ### 2. Inspector width constants are out of sync between MMS and Rust
 
@@ -90,7 +63,7 @@ But the stopgap adapter still uses the old width:
   `const INSPECTOR_PANEL_WIDTH_GU: f64 = 22.0;`
 
 Even if text sizing were correct, this stale Rust-side width can leave layout calculations out of
-date for the new split inspector.
+date for the new inspector shell.
 
 ### 3. Panel trees are spawned root-first and attached later
 
@@ -104,7 +77,8 @@ The stopgap adapter still spawns the inspector instance and detail/sidebar subtr
 - [src/engine/ecs/system/editor_inspector_system_stopgap_mms_adapter.rs](/home/rei/_/cat-engine/src/engine/ecs/system/editor_inspector_system_stopgap_mms_adapter.rs:1498)
   later attaches the panel mount to `panel_query_root`
 
-This matches the topology symptom where panel roots are still visible as independent roots.
+This remains a possible contributor to layout timing, but it is not the primary repro now that the
+detail view is disabled.
 
 There is also a suspicious duplicate attach of the panel mount:
 
@@ -133,11 +107,8 @@ The mount is queued for attach to `panel_query_root` twice in the same spawn pat
 
 ## Notes
 
-- The bright green button is probably not the primary bug by itself; it is likely just the pin/title
-  affordance remaining visible while the actual split content is laid out or scaled incorrectly.
+- The green pin/title affordance likely needs explicit sizing or wrapping control.
 - The hard-coded yellow `content_slot` background in
   [assets/components/panels.mms](/home/rei/_/cat-engine/assets/components/panels.mms:312)
-  also looks like debug/test styling that now makes the regression more obvious.
-- The runtime topology issue may be older than the detail-view styling regression, but it is now
-  easier to observe because the new panel structure is more complex and is being re-rendered more
-  often.
+  still looks like debug/test styling that makes the regression easier to spot.
+- The detail view can stay disabled until the sidebar layout is stable again.

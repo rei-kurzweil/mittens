@@ -74,9 +74,6 @@ impl EditorPaintSystem {
 
         if !self.shared_panel_handlers_installed {
             self.shared_panel_handlers_installed = true;
-            println!(
-                "[PaintSystem][trace] install shared_panel_handlers panel_query_root={panel_query_root:?}"
-            );
             install_shared_panel_handlers(
                 rx,
                 world,
@@ -92,9 +89,6 @@ impl EditorPaintSystem {
             return;
         }
         self.installed_editor_roots.insert(editor_root);
-        println!(
-            "[PaintSystem][trace] install editor_scene_handlers editor_root={editor_root:?} panel_query_root={panel_query_root:?}"
-        );
 
         let stroke_runtime = Arc::new(Mutex::new(PaintStrokeRuntime::default()));
         install_editor_scene_handlers(
@@ -197,9 +191,6 @@ fn handle_paint_event(
         let mut state = paint_state.lock().expect("paint state mutex poisoned");
         let old_state = state.clone();
         let new_state = reduce_paint_state(&old_state, event);
-        println!(
-            "[PaintSystem][trace] reduce panel_query_root={panel_query_root:?} old_state={old_state:?} event={event:?} new_state={new_state:?}"
-        );
         *state = new_state.clone();
         (old_state, new_state)
     };
@@ -367,21 +358,11 @@ fn paint_event_from_shared_signal(
                         .and_then(|target| nearest_editor_ancestor(world, target)),
                 })
             } else {
-                println!(
-                    "[PaintSystem][trace] ignored shared_selection_changed selection_root={selection_root:?} asset_selection_root={asset_selection_root:?} tool_selection_root={tool_selection_root:?} panel_layout_selection_root={panel_layout_selection_root:?} world_panel_selection_root={world_panel_selection_root:?} selected_entries={selected_entries:?} selected_component={selected_component:?}"
-                );
                 None
             }
         }
         _ => None,
     };
-
-    if let Some(paint_event) = &event {
-        println!(
-            "[PaintSystem][trace] promoted_shared signal_scope={:?} signal={:?} paint_event={paint_event:?}",
-            signal.scope, signal.event
-        );
-    }
 
     event
 }
@@ -440,13 +421,6 @@ fn paint_event_from_editor_signal(
         _ => None,
     };
 
-    if let Some(paint_event) = &event {
-        println!(
-            "[PaintSystem][trace] promoted_editor editor_root={editor_root:?} signal_scope={:?} signal={:?} paint_event={paint_event:?}",
-            signal.scope, signal.event
-        );
-    }
-
     event
 }
 
@@ -464,18 +438,6 @@ fn apply_paint_side_effects(
     let editor_context = current_editor_context(editor_context_state);
     let active_editor = event_active_editor(event).or(editor_context.active_editor);
     let mut status_override = None;
-    let activity = paint_activity_status(
-        world,
-        active_editor,
-        panel_query_root,
-        new_state,
-        &editor_context,
-    );
-    println!(
-        "[PaintSystem][trace] side_effects panel_query_root={panel_query_root:?} active_editor={active_editor:?} event={event:?} active={} reason={}",
-        activity.active, activity.reason
-    );
-
     let templates = templates
         .lock()
         .expect("paint templates mutex poisoned")
@@ -953,16 +915,10 @@ fn update_paint_status(
 ) {
     let Some(paint_panel_root) = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
     else {
-        println!(
-            "[PaintSystem][trace] status_skip panel_query_root={panel_query_root:?} reason=missing paint panel root"
-        );
         return;
     };
     let Some(status_wrap) = world.find_component(paint_panel_root, PAINT_STATUS_WRAP_SELECTOR)
     else {
-        println!(
-            "[PaintSystem][trace] status_skip paint_panel_root={paint_panel_root:?} reason=missing status wrap"
-        );
         return;
     };
     let text = override_text.unwrap_or_else(|| {
@@ -974,9 +930,6 @@ fn update_paint_status(
             editor_context,
         )
     });
-    println!(
-        "[PaintSystem][trace] status_update paint_panel_root={paint_panel_root:?} active_editor={active_editor:?} text={text:?}"
-    );
     set_status_text(world, emit, status_wrap, &text);
 }
 
@@ -1018,21 +971,14 @@ fn set_status_text(
     text: &str,
 ) {
     let Some(status_text) = world.find_component(status_wrap, PANEL_STATUS_VALUE_SELECTOR) else {
-        println!(
-            "[PaintSystem][trace] status_skip status_wrap={status_wrap:?} reason=missing status text"
-        );
         return;
     };
     let Some(text_component) = world
         .get_component_by_id_as_mut::<crate::engine::ecs::component::TextComponent>(status_text)
     else {
-        println!(
-            "[PaintSystem][trace] status_skip status_text={status_text:?} reason=missing TextComponent"
-        );
         return;
     };
     if text_component.text == text {
-        println!("[PaintSystem][trace] status_skip status_text={status_text:?} reason=unchanged");
         return;
     }
     text_component.text = text.to_string();

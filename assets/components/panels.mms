@@ -323,6 +323,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                     display("block")
                     width(100%)
                     height(100%)
+                    font_size(1)
                 }
 
                 T {
@@ -331,6 +332,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                         display("inline-block")
                         width(35%)
                         height(100%)
+                        font_size(1)
                         overflow("scroll")
                     }
                     inspector_panel_content(items, item_background_color)
@@ -342,6 +344,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                         display("inline-block")
                         width(65%)
                         height(100%)
+                        font_size(1)
                         overflow("scroll")
                     }
                 }

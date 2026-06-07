@@ -23,6 +23,10 @@ containing `inspector_panel_content(items, item_background_color)` — a flat li
 mirror the ECS subtree of the selected component. There is no detail view, no editable fields,
 no form layout.
 
+The detail view is currently disabled in the live Rust update path while the sidebar layout is
+being stabilized. The current blocker is that the inspector sidebar renders at an incorrect text
+scale and the pin button wraps outside the title bar.
+
 Width constants:
 - `INSPECTOR_PANEL_WIDTH_GU = 22.0` in `panels.mms`
 - `INSPECTOR_PANEL_WIDTH_GU = 22.0` in `editor_inspector_system_stopgap_mms_adapter.rs:58`
@@ -31,6 +35,9 @@ The panel is spawned per-inspected-component via `spawn_inspector_panel_instance
 calls `build_panel_component_expr()` with the MMS `inspector_panel` factory, passing rows as
 an empty `Value::Array` (rows are populated imperatively via
 `spawn_inspector_panel_content_tree` → `spawn_inspector_panel_row_tree`).
+
+The detail subtree is still modeled in Rust, but its live render call is currently disabled while
+the sidebar/text sizing regression is addressed.
 
 ## Proposed layout
 
@@ -121,7 +128,8 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
 ```
 
 The sidebar retains the existing selection behavior (click a row to select).
-When selection changes, the detail area re-renders with the selected component's fields.
+When the detail view is re-enabled, the detail area should re-render with the selected
+component's fields. For now, it stays disabled so the sidebar can be stabilized on its own.
 
 ## Width changes
 
@@ -184,6 +192,18 @@ Later additions:
 - `assets/components/inspector_details.mms` — new file
 - `src/engine/ecs/system/editor_inspector_system_stopgap_mms_adapter.rs` — Rust-side adapter
 - `src/engine/ecs/system/editor_inspector_system_stopgap_mms_adapter.rs:58` — `INSPECTOR_PANEL_WIDTH_GU`
+
+## Current regression note
+
+The live repro now looks like this:
+
+- pinning works as described
+- the pin button does not fit inside the title bar and wraps down a line
+- the sidebar text is oversized even with the detail view disabled
+- the sidebar rows overlap vertically and become unreadable
+
+That makes the sidebar text-size/layout path the immediate target before reintroducing the detail
+pane.
 
 ## Related
 

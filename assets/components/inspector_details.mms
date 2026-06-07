@@ -57,6 +57,7 @@ export fn inspector_details(component_name, component_id, component_guid) {
             display("block")
             width(100%)
             padding(0.5)
+            font_size(1)
         }
 
         detail_row("Name", component_name)
