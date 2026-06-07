@@ -29,8 +29,6 @@ let PAINT_PANEL_CONTENT_HEIGHT_GU = 8.5
 let PAINT_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + PAINT_PANEL_CONTENT_HEIGHT_GU + PAINT_PANEL_CONTENT_STATUS_GAP_GU + PAINT_PANEL_STATUS_BAR_HEIGHT_GU
 
 export fn paint_panel(title, title_color, panel_background_color, item_background_color) {
-    let status = world_panel_status("paint inactive: no asset selected")
-
     return T {
         name = "paint_panel_root"
         Style {
@@ -103,7 +101,15 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
                 background_color([0.08, 0.24, 0.11, 0.92])
                 background_z(-0.01)
             }
-            status
+            T {
+                name = "paint_panel_status_root"
+                T.position(0.0, 0.0, 0.0) {
+                    Text {
+                        name = "paint_panel_status_value"
+                        "paint inactive: no asset selected"
+                    }
+                }
+            }
         }
     }
 }
@@ -256,7 +262,7 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
 
 // ── inspector_panel ───────────────────────────────────────────────────────────
 
-let INSPECTOR_PANEL_WIDTH_GU = 22.0
+let INSPECTOR_PANEL_WIDTH_GU = 44.0
 let INSPECTOR_PANEL_CONTENT_HEIGHT_GU = 57.0
 let INSPECTOR_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + INSPECTOR_PANEL_CONTENT_HEIGHT_GU
 
@@ -307,12 +313,39 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
             Style {
                 display("block")
                 height(INSPECTOR_PANEL_CONTENT_HEIGHT_GU)
-                overflow("scroll")
                 background_color([0.96, 0.92, 0.18, 0.80])
                 background_z(-0.01)
             }
 
-            inspector_panel_content(items, item_background_color)
+            T {
+                name = "content_area"
+                Style {
+                    display("block")
+                    width(100%)
+                    height(100%)
+                }
+
+                T {
+                    name = "sidebar_slot"
+                    Style {
+                        display("inline-block")
+                        width(35%)
+                        height(100%)
+                        overflow("scroll")
+                    }
+                    inspector_panel_content(items, item_background_color)
+                }
+
+                T {
+                    name = "detail_slot"
+                    Style {
+                        display("inline-block")
+                        width(65%)
+                        height(100%)
+                        overflow("scroll")
+                    }
+                }
+            }
         }
     }
 

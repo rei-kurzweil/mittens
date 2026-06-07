@@ -268,6 +268,24 @@ mod tests {
             .count()
     }
 
+    fn text_values_under(
+        world: &World,
+        root: crate::engine::ecs::ComponentId,
+        selector: &str,
+    ) -> Vec<String> {
+        world
+            .find_all_components(root, selector)
+            .into_iter()
+            .filter_map(|component_id| {
+                world
+                    .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(
+                        component_id,
+                    )
+                    .map(|text| text.text.clone())
+            })
+            .collect()
+    }
+
     fn count_children_with_name(
         world: &World,
         root: crate::engine::ecs::ComponentId,
@@ -902,6 +920,117 @@ mod tests {
         assert_eq!(
             row_text(&world, inspector_two, "#inspector_item_0"),
             "scene_b"
+        );
+
+        let detail_one = text_values_under(&world, inspector_one, "Text");
+        let detail_two = text_values_under(&world, inspector_two, "Text");
+        assert!(
+            detail_one.iter().any(|text| text == "scene_a"),
+            "expected first pinned inspector detail to stay on scene_a: {detail_one:?}"
+        );
+        assert!(
+            detail_two.iter().any(|text| text == "scene_b"),
+            "expected second inspector detail to show scene_b: {detail_two:?}"
+        );
+    }
+
+    #[test]
+    fn setup_panels_for_editor_sidebar_click_updates_detail_without_duplication() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::new();
+        let mut inspector = EditorInspectorSystem::new();
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let child_transform =
+            world.add_component_boxed_named("child_transform", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_root);
+        let _ = world.add_child(scene_root, child_transform);
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (1.9, 1.6, -1.2),
+            systems.editor_context.shared_state(),
+            &systems.asset_system,
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        let scene_row = world
+            .find_component(runtime_ui_root, "#item_1")
+            .expect("expected scene row under runtime ui root");
+        systems.rx.push_event(
+            scene_row,
+            EventSignal::Click {
+                raycaster: scene_row,
+                renderable: scene_row,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        let inspector_panel_root = world
+            .find_component(runtime_ui_root, "#inspector_panel_root")
+            .expect("expected inspector panel root");
+        let detail_before = text_values_under(&world, inspector_panel_root, "Text");
+        assert_eq!(
+            detail_before.iter().filter(|text| text.as_str() == "Name").count(),
+            1,
+            "expected one Name label before sidebar selection: {detail_before:?}"
+        );
+        assert!(
+            detail_before.iter().any(|text| text == "scene_root"),
+            "expected initial detail to show scene_root: {detail_before:?}"
+        );
+
+        let inspector_child_row = world
+            .find_component(inspector_panel_root, "#inspector_item_1")
+            .expect("expected child row in inspector sidebar");
+        systems.rx.push_event(
+            inspector_child_row,
+            EventSignal::Click {
+                raycaster: inspector_child_row,
+                renderable: inspector_child_row,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        let detail_after = text_values_under(&world, inspector_panel_root, "Text");
+        assert_eq!(
+            detail_after.iter().filter(|text| text.as_str() == "Name").count(),
+            1,
+            "expected one Name label after sidebar selection: {detail_after:?}"
+        );
+        assert!(
+            detail_after.iter().any(|text| text == "child_transform"),
+            "expected detail to update to child_transform: {detail_after:?}"
         );
     }
 
