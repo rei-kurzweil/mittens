@@ -37,6 +37,7 @@ const PANEL_CONTENT_SLOT_SELECTOR: &str = "#content_slot";
 const INSPECTOR_PANEL_ROOT_SELECTOR: &str = "#inspector_panel_root";
 const INSPECTOR_PANEL_SIDEBAR_SLOT_SELECTOR: &str = "#sidebar_slot";
 const INSPECTOR_PANEL_DETAIL_SLOT_SELECTOR: &str = "#detail_slot";
+const INSPECTOR_PANEL_PIN_SLOT_SELECTOR: &str = "#pin_slot";
 const INSPECTOR_PANEL_CONTENT_ROOT_SELECTOR: &str = "#inspector_panel_content_root";
 const INSPECTOR_PANEL_DETAIL_ROOT_SELECTOR: &str = "#inspector_details_root";
 const INSPECTOR_PANEL_SELECTION_SELECTOR: &str = "#inspector_panel_selection";
@@ -2684,10 +2685,13 @@ fn spawn_debug_inspector_detail_tree(
     );
     let text = world.add_component_boxed_named(
         "inspector_details_debug_text",
-        Box::new(TextComponent::new(format!(
-            "DETAIL DEBUG\nname: {}\nid: {}\nguid: {}",
-            detail.name, detail.id, detail.guid
-        ))),
+        Box::new(
+            TextComponent::new(format!(
+                "DETAIL DEBUG\nname: {}\nid: {}\nguid: {}",
+                detail.name, detail.id, detail.guid
+            ))
+            .with_font_size(0.08),
+        ),
     );
     let color = world.add_component_boxed_named(
         "inspector_details_debug_text_color",
@@ -2743,9 +2747,11 @@ fn update_inspector_panel_instance_tree(
                 },
             );
         }
-        if let Some(title_bar) = world.find_component(inspector_panel_root, "#title_bar") {
+        if let Some(pin_slot) =
+            world.find_component(inspector_panel_root, INSPECTOR_PANEL_PIN_SLOT_SELECTOR)
+        {
             let pin_button = spawn_inspector_pin_button(world, model.pinned);
-            let _ = world.add_child(title_bar, pin_button);
+            let _ = world.add_child(pin_slot, pin_button);
         }
     }
 
@@ -3313,7 +3319,9 @@ fn spawn_inspector_panel_instance_tree(
     attach_inspector_panel_instance_id(world, instance_root, model.panel_id);
 
     let inspector_panel_root = instance_root;
-    let Some(title_bar) = world.find_component(inspector_panel_root, "#title_bar") else {
+    let Some(pin_slot) =
+        world.find_component(inspector_panel_root, INSPECTOR_PANEL_PIN_SLOT_SELECTOR)
+    else {
         return inspector_panel_root;
     };
     let Some(sidebar_slot) =
@@ -3328,7 +3336,7 @@ fn spawn_inspector_panel_instance_tree(
     };
 
     let pin_button = spawn_inspector_pin_button(world, model.pinned);
-    let _ = world.add_child(title_bar, pin_button);
+    let _ = world.add_child(pin_slot, pin_button);
     rerender_single_inspector_panel_sidebar(
         world,
         emit,
@@ -3393,16 +3401,16 @@ fn spawn_inspector_pin_button(world: &mut World, pinned: bool) -> ComponentId {
         "pin_button_style",
         Box::new({
             let mut style = StyleComponent::new();
-            style.display = Some(Display::InlineBlock);
-            style.width = SizeDimension::GlyphUnits(5.0);
-            style.height = SizeDimension::GlyphUnits(2.4);
+            style.display = Some(Display::Block);
+            style.width = SizeDimension::Percent(100.0);
+            style.height = SizeDimension::GlyphUnits(2.0);
             style.margin = EdgeInsets {
-                left: SizeDimension::GlyphUnits(15.5),
+                left: SizeDimension::GlyphUnits(0.0),
                 right: SizeDimension::GlyphUnits(0.0),
-                top: SizeDimension::GlyphUnits(0.3),
-                bottom: SizeDimension::GlyphUnits(0.3),
+                top: SizeDimension::GlyphUnits(0.5),
+                bottom: SizeDimension::GlyphUnits(0.0),
             };
-            style.padding = EdgeInsets::axes(0.0, 0.35);
+            style.padding = EdgeInsets::axes(0.0, 0.15);
             style.text_align = TextAlign::Center;
             style.vertical_align = VerticalAlign::Middle;
             style.background_color = Some(if pinned {
@@ -3422,7 +3430,7 @@ fn spawn_inspector_pin_button(world: &mut World, pinned: bool) -> ComponentId {
         .add_component_boxed_named("pin_button_text_root", Box::new(TransformComponent::new()));
     let text = world.add_component_boxed_named(
         "pin_button_text",
-        Box::new(TextComponent::new(if pinned { "Unpin" } else { "Pin" })),
+        Box::new(TextComponent::new(if pinned { "Unpin" } else { "Pin" }).with_font_size(0.08)),
     );
 
     let _ = world.add_child(root, style);

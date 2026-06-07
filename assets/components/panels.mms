@@ -268,6 +268,8 @@ let INSPECTOR_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU
 let INSPECTOR_PANEL_SPLIT_GAP_GU = 0.5
 let INSPECTOR_PANEL_SIDEBAR_WIDTH_GU = 15.0
 let INSPECTOR_PANEL_DETAIL_WIDTH_GU = INSPECTOR_PANEL_WIDTH_GU - INSPECTOR_PANEL_SIDEBAR_WIDTH_GU - INSPECTOR_PANEL_SPLIT_GAP_GU
+let INSPECTOR_PANEL_PIN_SLOT_WIDTH_GU = 5.0
+let INSPECTOR_PANEL_TITLE_TEXT_WIDTH_GU = INSPECTOR_PANEL_WIDTH_GU - INSPECTOR_PANEL_PIN_SLOT_WIDTH_GU
 
 export fn inspector_panel(title, items, title_color, panel_background_color, item_background_color) {
     let root = T {
@@ -291,21 +293,40 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
             }
 
             T {
-                name = "title_label_wrap"
+                name = "title_text_slot"
                 Style {
-                    display("block")
-                    width(100%)
+                    display("inline-block")
+                    width(INSPECTOR_PANEL_TITLE_TEXT_WIDTH_GU)
                     height(TITLE_BAR_HEIGHT_GU)
                     padding_xy(0.0, TITLE_LABEL_PADDING_X_GU)
                     font_size(1)
                     vertical_align("middle")
                     color = title_color
                 }
-                T.position(0.0, 0.0, 0.015) {
-                    Text {
-                        name = "title_label"
-                        title
+                T {
+                    name = "title_label_wrap"
+                    Style {
+                        display("block")
+                        width(100%)
+                        height(TITLE_BAR_HEIGHT_GU)
+                        vertical_align("middle")
                     }
+                    T.position(0.0, 0.0, 0.015) {
+                        Text {
+                            name = "title_label"
+                            title
+                        }
+                    }
+                }
+            }
+
+            T {
+                name = "pin_slot"
+                Style {
+                    display("inline-block")
+                    width(INSPECTOR_PANEL_PIN_SLOT_WIDTH_GU)
+                    height(TITLE_BAR_HEIGHT_GU)
+                    vertical_align("middle")
                 }
             }
         }
