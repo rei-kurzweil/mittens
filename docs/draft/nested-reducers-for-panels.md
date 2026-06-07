@@ -21,7 +21,7 @@ delegates children to sub-reducers, and can be tested independently.
 EditorWorkspace (top-level coordinator)
  ├── context: EditorContextState       (which editor tree is active, what's selected in it)
  ├── focus: InputFocusState            (what currently has input focus — a panel slot or an editor tree)
- ├── editor_trees: EditorTreeCollection(per-tree settings: visibility, locked, selectable)
+ ├── editor_trees: EditorTreeCollection(per-tree settings: visibility, locked)
  ├── world_panel: WorldPanelState      (rows, selected index for the "World" tree panel)
  ├── inspector: InspectorWorkspaceState(open inspector panel instances)
  ├── asset_panel: AssetPanelState      (asset list, filter, selection)
@@ -72,8 +72,7 @@ struct EditorTreeCollection {
 
 struct EditorTreeSettings {
     visible: bool,      // show/hide the tree's renderables in the viewport
-    locked: bool,       // prevent transform edits via gizmo
-    selectable: bool,   // allow click-selection in the viewport
+    locked: bool,       // prevent transform edits + viewport selection
 }
 
 // ── WorldPanelState (new) ──────────────────────────────────────────────────
@@ -231,7 +230,6 @@ enum PaintEvent {
 enum EditorTreeSetting {
     VisibilityToggled,
     LockToggled,
-    SelectabilityToggled,
 }
 ```
 
@@ -293,9 +291,6 @@ fn reduce_editor_tree_collection(
             match setting {
                 EditorTreeSetting::VisibilityToggled => settings.visible = !settings.visible,
                 EditorTreeSetting::LockToggled => settings.locked = !settings.locked,
-                EditorTreeSetting::SelectabilityToggled => {
-                    settings.selectable = !settings.selectable;
-                }
             }
         }
         _ => {}
@@ -484,7 +479,7 @@ The header shows the editor tree's label (e.g. `Editor#avatar_scene`) plus
 three toggle icons:
 
 ```
- Editor#avatar_scene             [eye] [lock] [cursor]
+ Editor#avatar_scene             [eye] [lock]
  ├── scene_root
  │   ├── mesh
  │   └── armature_pelvis
@@ -493,7 +488,7 @@ three toggle icons:
  ├── camera_rig
  └── lights
 
- Editor#ui_overlay              [eye] [lock] [cursor]
+ Editor#ui_overlay              [eye] [lock]
  ├── panel_root
  └── cursor
 ```
@@ -505,8 +500,11 @@ like the paint panel's `pencil_icon`, `line_icon`, etc. — they return simple
 | MMS export | Purpose | Binding |
 |---|---|---|
 | `eye_icon` | Toggle tree visibility | `EditorTreeSetting::VisibilityToggled` |
-| `lock_icon` | Lock/unlock transform edits | `EditorTreeSetting::LockToggled` |
-| `cursor_icon` | Toggle click-selectability | `EditorTreeSetting::SelectabilityToggled` |
+| `lock_icon` | Lock/unlock edits + selection | `EditorTreeSetting::LockToggled` |
+
+Locking a tree implies both preventing transform gizmo edits AND preventing
+viewport click-selection on that tree's contents. There is no separate
+selectability toggle — `locked = true` gates both.
 
 ### Rendering pattern
 
@@ -515,7 +513,7 @@ Each icon sits inside a clickable item that follows the same `Option {}` +
 header row spawns them like this (in `assets/components/panel_items.mms`):
 
 ```mms
-import { eye_icon, lock_icon, cursor_icon } from "./icons.mms"
+import { eye_icon, lock_icon } from "./icons.mms"
 
 export fn editor_tree_header(label, icon_setting_bg) {
     return T {
@@ -547,25 +545,15 @@ export fn editor_tree_header(label, icon_setting_bg) {
             }
             T.scale(0.25, 0.25, 1.0) { T { lock_icon() } }
         }
-        T.position(16.0, 0.0, 0.0) {
-            Option {}
-            Raycastable.enabled()
-            Style {
-                display("inline-block")
-                width(1.5) height(1.5)
-                background_color(icon_setting_bg)
-            }
-            T.scale(0.25, 0.25, 1.0) { T { cursor_icon() } }
-        }
     }
 }
 ```
 
 Unlike the paint panel's tool selection (which uses the selection system's
 gold highlight), the toggle icons need **persistent** visual state — the icon
-should look different when a tree is locked vs unlocked, not just flash on
-click. The view-diff pass handles this by replacing each icon's background
-color based on `EditorTreeSettings`:
+should look different when a setting is active vs inactive. The view-diff pass
+handles this by replacing each icon's background color based on
+`EditorTreeSettings`:
 
 ```
 active   background = [0.95, 0.82, 0.18, 1.0]  (gold, setting is on)
