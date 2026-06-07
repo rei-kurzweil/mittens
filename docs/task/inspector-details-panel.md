@@ -2,7 +2,9 @@
 
 Date: 2026-06-06
 
-Status: planning only.
+Last updated: 2026-06-07
+
+Status: in progress, with detail view still disabled.
 
 This is a `docs/task` note only. No `src/` or `assets/` changes are proposed here yet.
 
@@ -24,8 +26,18 @@ mirror the ECS subtree of the selected component. There is no detail view, no ed
 no form layout.
 
 The detail view is currently disabled in the live Rust update path while the sidebar layout is
-being stabilized. The current blocker is that the inspector sidebar renders at an incorrect text
-scale and the pin button wraps outside the title bar.
+being stabilized.
+
+Current blockers are now more specific:
+
+- the inspector title updates correctly from `world_panel` selection
+- the sidebar rows are built in Rust and now share the same row-subtree/DataComponent pattern as
+  `world_panel`
+- however, the sidebar region only becomes visibly/renderably correct when `#sidebar_slot` has its
+  own explicit background, which strongly suggests a remaining layout / paint / clipping bug
+  around the sidebar container itself
+- pinning / active-panel behavior still has workspace-state bugs, independent of the sidebar
+  render issue
 
 Width constants:
 - `INSPECTOR_PANEL_WIDTH_GU = 22.0` in `panels.mms`
@@ -35,6 +47,10 @@ The panel is spawned per-inspected-component via `spawn_inspector_panel_instance
 calls `build_panel_component_expr()` with the MMS `inspector_panel` factory, passing rows as
 an empty `Value::Array` (rows are populated imperatively via
 `spawn_inspector_panel_content_tree` → `spawn_inspector_panel_row_tree`).
+
+That Rust-side row path now uses a shared row builder that is also used by the world panel, so
+both panels attach a `DataComponent` payload per non-spacer row rather than using diverging
+bespoke row metadata schemes.
 
 The detail subtree is still modeled in Rust, but its live render call is currently disabled while
 the sidebar/text sizing regression is addressed.
@@ -129,7 +145,8 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
 
 The sidebar retains the existing selection behavior (click a row to select).
 When the detail view is re-enabled, the detail area should re-render with the selected
-component's fields. For now, it stays disabled so the sidebar can be stabilized on its own.
+component's fields. For now, it stays disabled so the sidebar container/render path can be
+stabilized on its own.
 
 ## Width changes
 
@@ -161,6 +178,14 @@ Option B (more efficient): a stable MMS subtree with TextInput/Text nodes that t
 updates in place via `SetText` intents when selection changes.
 
 Start with Option A. Move to Option B if respawn flickers.
+
+Current implementation note:
+
+- world-panel and inspector-sidebar rows now both carry a `DataComponent` payload on the row
+  subtree, including at least the logical row kind, label, interactivity, and target component
+  when present
+- that means the remaining sidebar issue is no longer "inspector rows are using a completely
+  different metadata model than world panel rows"
 
 ## Future fields
 
@@ -197,13 +222,18 @@ Later additions:
 
 The live repro now looks like this:
 
-- pinning works as described
-- the pin button does not fit inside the title bar and wraps down a line
-- the sidebar text is oversized even with the detail view disabled
-- the sidebar rows overlap vertically and become unreadable
+- selecting in `world_panel` correctly updates the inspector title
+- the sidebar rows are built in Rust and share the world-panel row payload pattern
+- the sidebar slot can be made visible by giving `#sidebar_slot` a light grey background
+- without that background, the inspector can appear title-only / empty
+- with that background, the sidebar behavior improves, which points to a sidebar container
+  rendering dependency rather than a pure data-flow failure
+- the pin button still does not fit inside the title bar and wraps down a line
+- the active inspector panel is not always the most recently created unpinned panel
+- selection changes can still eagerly create a new inspector panel when reuse would be expected
 
-That makes the sidebar text-size/layout path the immediate target before reintroducing the detail
-pane.
+That makes the sidebar container render/layout path and the workspace pinning reducer the
+immediate targets before reintroducing the detail pane.
 
 ## Related
 

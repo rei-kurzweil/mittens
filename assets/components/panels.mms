@@ -333,6 +333,8 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                         width(35%)
                         height(100%)
                         font_size(1)
+                        background_color([0.88, 0.88, 0.88, 0.95])
+                        background_z(-0.005)
                         overflow("scroll")
                     }
                     inspector_panel_content(items, item_background_color)
