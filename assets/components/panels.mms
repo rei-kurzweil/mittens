@@ -265,6 +265,9 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
 let INSPECTOR_PANEL_WIDTH_GU = 44.0
 let INSPECTOR_PANEL_CONTENT_HEIGHT_GU = 57.0
 let INSPECTOR_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + INSPECTOR_PANEL_CONTENT_HEIGHT_GU
+let INSPECTOR_PANEL_SPLIT_GAP_GU = 0.5
+let INSPECTOR_PANEL_SIDEBAR_WIDTH_GU = 15.0
+let INSPECTOR_PANEL_DETAIL_WIDTH_GU = INSPECTOR_PANEL_WIDTH_GU - INSPECTOR_PANEL_SIDEBAR_WIDTH_GU - INSPECTOR_PANEL_SPLIT_GAP_GU
 
 export fn inspector_panel(title, items, title_color, panel_background_color, item_background_color) {
     let root = T {
@@ -330,8 +333,9 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                     name = "sidebar_slot"
                     Style {
                         display("inline-block")
-                        width(35%)
+                        width(INSPECTOR_PANEL_SIDEBAR_WIDTH_GU)
                         height(100%)
+                        margin_right(INSPECTOR_PANEL_SPLIT_GAP_GU)
                         font_size(1)
                         background_color([0.88, 0.88, 0.88, 0.95])
                         background_z(-0.005)
@@ -344,9 +348,11 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                     name = "detail_slot"
                     Style {
                         display("inline-block")
-                        width(65%)
+                        width(INSPECTOR_PANEL_DETAIL_WIDTH_GU)
                         height(100%)
                         font_size(1)
+                        background_color([0.66, 0.66, 0.66, 0.95])
+                        background_z(-0.005)
                         overflow("scroll")
                     }
                 }

@@ -2642,21 +2642,7 @@ fn rerender_single_inspector_panel_detail(
         );
     }
 
-    let Some(spawned_detail_root) = build_panel_component_expr(
-        world,
-        emit,
-        inspector_details_asset_path(),
-        "inspector_details",
-        vec![
-            Value::String(detail.name.clone()),
-            Value::String(detail.id.clone()),
-            Value::String(detail.guid.clone()),
-        ],
-        "inspector details",
-    )
-    .and_then(|ce| spawn_tree(&ce, None, world, emit).ok()) else {
-        return;
-    };
+    let spawned_detail_root = spawn_debug_inspector_detail_tree(world, detail);
 
     emit.push_intent_now(
         spawned_detail_root,
@@ -2666,6 +2652,53 @@ fn rerender_single_inspector_panel_detail(
         },
     );
     mark_nearest_layout_dirty(world, detail_slot);
+}
+
+fn spawn_debug_inspector_detail_tree(
+    world: &mut World,
+    detail: &InspectorPanelDetailModel,
+) -> ComponentId {
+    let root = world.add_component_boxed_named(
+        "inspector_details_root",
+        Box::new(TransformComponent::new()),
+    );
+    let style = world.add_component_boxed_named(
+        "inspector_details_root_style",
+        Box::new({
+            let mut style = StyleComponent::new();
+            style.display = Some(Display::Block);
+            style.width = SizeDimension::Percent(100.0);
+            style.height = SizeDimension::Percent(100.0);
+            style.padding = EdgeInsets::all(0.5);
+            style.background_color = Some([1.0, 0.0, 1.0, 1.0]);
+            style.background_z = Some(-0.01);
+            style.color = Some([0.0, 0.0, 0.0, 1.0]);
+            style.font_size = SizeDimension::GlyphUnits(1.0);
+            style.overflow = Overflow::Visible;
+            style
+        }),
+    );
+    let text_root = world.add_component_boxed_named(
+        "inspector_details_debug_text_root",
+        Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.005)),
+    );
+    let text = world.add_component_boxed_named(
+        "inspector_details_debug_text",
+        Box::new(TextComponent::new(format!(
+            "DETAIL DEBUG\nname: {}\nid: {}\nguid: {}",
+            detail.name, detail.id, detail.guid
+        ))),
+    );
+    let color = world.add_component_boxed_named(
+        "inspector_details_debug_text_color",
+        Box::new(ColorComponent::rgba(0.0, 0.0, 0.0, 1.0)),
+    );
+
+    let _ = world.add_child(root, style);
+    let _ = world.add_child(root, text_root);
+    let _ = world.add_child(text_root, text);
+    let _ = world.add_child(text, color);
+    root
 }
 
 fn update_inspector_panel_instance_tree(
@@ -2678,6 +2711,11 @@ fn update_inspector_panel_instance_tree(
     let inspector_panel_root = instance_root;
     let Some(sidebar_slot) =
         world.find_component(inspector_panel_root, INSPECTOR_PANEL_SIDEBAR_SLOT_SELECTOR)
+    else {
+        return;
+    };
+    let Some(detail_slot) =
+        world.find_component(inspector_panel_root, INSPECTOR_PANEL_DETAIL_SLOT_SELECTOR)
     else {
         return;
     };
@@ -2719,6 +2757,15 @@ fn update_inspector_panel_instance_tree(
             model.panel_id,
             sidebar_slot,
             &model.rows,
+        );
+    }
+    if previous_model.is_none_or(|previous| previous.detail != model.detail) {
+        rerender_single_inspector_panel_detail(
+            world,
+            emit,
+            inspector_panel_root,
+            detail_slot,
+            &model.detail,
         );
     }
 }
@@ -3274,6 +3321,11 @@ fn spawn_inspector_panel_instance_tree(
     else {
         return inspector_panel_root;
     };
+    let Some(detail_slot) =
+        world.find_component(inspector_panel_root, INSPECTOR_PANEL_DETAIL_SLOT_SELECTOR)
+    else {
+        return inspector_panel_root;
+    };
 
     let pin_button = spawn_inspector_pin_button(world, model.pinned);
     let _ = world.add_child(title_bar, pin_button);
@@ -3284,6 +3336,13 @@ fn spawn_inspector_panel_instance_tree(
         model.panel_id,
         sidebar_slot,
         &model.rows,
+    );
+    rerender_single_inspector_panel_detail(
+        world,
+        emit,
+        inspector_panel_root,
+        detail_slot,
+        &model.detail,
     );
     inspector_panel_root
 }
