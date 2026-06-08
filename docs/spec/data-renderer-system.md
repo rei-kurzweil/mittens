@@ -136,6 +136,9 @@ impl DataRendererSystem {
     ///   5. Attach the container to the slot.
     ///   6. Mark nearest layout dirty.
     ///
+    /// Returns the container `ComponentId` so callers can attach additional
+    /// panel-specific state (e.g. `SelectionComponent`).
+    ///
     /// Error policy: returns Err on materialization/spawn failure.
     /// The caller decides how to surface the error.
     pub fn render_list(
@@ -145,7 +148,7 @@ impl DataRendererSystem {
         slot: ComponentId,
         spec: &ItemRendererSpec,
         items: &[UiItem],
-    ) -> Result<(), String>;
+    ) -> Result<ComponentId, String>;
 
     /// Render a detail view into a target slot.
     ///
@@ -154,6 +157,8 @@ impl DataRendererSystem {
     ///   2. Call the spec's renderer once (MMS or Rust).
     ///   3. Attach the resulting subtree to the slot.
     ///   4. Mark nearest layout dirty.
+    ///
+    /// Returns the root `ComponentId` of the rendered subtree.
     pub fn render_detail(
         &mut self,
         world: &mut World,
@@ -161,7 +166,7 @@ impl DataRendererSystem {
         slot: ComponentId,
         spec: &DetailRendererSpec,
         detail: &UiDetailItem,
-    ) -> Result<(), String>;
+    ) -> Result<ComponentId, String>;
 
     /// Remove any rendered content for this slot. No-op if nothing is tracked.
     pub fn clear_slot(

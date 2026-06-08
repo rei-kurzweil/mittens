@@ -17,6 +17,7 @@ pub mod camera_system;
 pub mod clipping_system;
 pub mod clock_system;
 pub mod collision_system;
+pub mod data_renderer_system;
 pub mod editor_context_system;
 pub mod editor_inspector_system;
 pub(crate) mod editor_inspector_system_stopgap_mms_adapter;
@@ -66,6 +67,10 @@ pub use camera_system::{Camera3D, CameraHandle, CameraSystem};
 pub use clipping_system::ClippingSystem;
 pub use clock_system::{ClockDriver, ClockSystem};
 pub use collision_system::CollisionSystem;
+pub use data_renderer_system::{
+    DataRendererSystem, DetailRendererSpec, ItemRendererSpec, RendererSpec, UiDetailItem, UiItem,
+    UiItemKind,
+};
 pub use editor_context_system::EditorContextSystem;
 pub use editor_inspector_system::EditorInspectorSystem;
 pub use editor_paint_system::EditorPaintSystem;
