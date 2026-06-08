@@ -18,7 +18,7 @@ pub mod clipping_system;
 pub mod clock_system;
 pub mod collision_system;
 pub mod data_renderer_system;
-pub mod editor_context_system;
+pub mod editor;
 pub mod editor_inspector_system;
 pub(crate) mod editor_inspector_system_stopgap_mms_adapter;
 pub mod editor_paint_system;
@@ -71,7 +71,7 @@ pub use data_renderer_system::{
     DataRendererSystem, DetailRendererSpec, ItemRendererSpec, RendererSpec, UiDetailItem, UiItem,
     UiItemKind,
 };
-pub use editor_context_system::EditorContextSystem;
+pub use editor::EditorContextSystem;
 pub use editor_inspector_system::EditorInspectorSystem;
 pub use editor_paint_system::EditorPaintSystem;
 pub use editor_system::EditorSystem;

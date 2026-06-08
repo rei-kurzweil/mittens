@@ -5,7 +5,7 @@ use crate::engine::ecs::component::{
     AssetPayloadComponent, DataComponent, EditorComponent, OptionComponent, RaycastableComponent,
     SelectableComponent, SelectionComponent, TransformComponent, TransformGizmoComponent,
 };
-use crate::engine::ecs::system::editor_context_system::EditorContextState;
+use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor_paint_system_state_manager::{
     PaintEvent, PaintState, PaintTool, is_paint_active, is_paint_panel_focused,
     paint_tool_from_item, reduce_paint_state,

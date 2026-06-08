@@ -2,7 +2,7 @@ use crate::engine::ecs::component::{
     EditorComponent, GLTFComponent, RaycastableComponent, SelectableComponent, SerializeComponent,
     TransformComponent, TransformGizmoComponent,
 };
-use crate::engine::ecs::system::editor_context_system::EditorContextState;
+use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, RxWorld, SignalKind, World};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};

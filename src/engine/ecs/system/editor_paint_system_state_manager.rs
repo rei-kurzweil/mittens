@@ -1,5 +1,5 @@
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::system::editor_context_system::EditorContextState;
+use crate::engine::ecs::system::editor::context::EditorContextState;
 
 const FREE_DRAW_LABEL: &str = "Free Draw";
 const LINE_LABEL: &str = "Line";
