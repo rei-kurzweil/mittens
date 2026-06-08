@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::component::style::VerticalAlign;
 use crate::engine::ecs::component::{
-    ColorComponent, DataComponent, DataValue, Display, EdgeInsets, LayoutComponent,
-    OptionComponent, Overflow, RaycastableComponent, SelectableComponent, SelectionComponent,
+    ColorComponent, DataComponent, DataValue, Display, EdgeInsets, OptionComponent, Overflow,
+    RaycastableComponent, SelectableComponent, SelectionComponent,
     SelectionEntry, SelectionMode, SerializeComponent, SizeDimension, StyleComponent, TextAlign,
     TextComponent,
 };
@@ -19,6 +19,16 @@ use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor::inspector::{
     InspectorPanelId, InspectorWorkspaceEvent, InspectorWorkspaceState,
     clear_missing_inspector_targets, reduce_inspector_workspace_state,
+};
+use crate::engine::ecs::system::editor::panel_ui::{spawn_panel_ui_row_tree, spawn_block_container, PanelUiRowSpec};
+use crate::engine::ecs::system::editor::world_panel::{
+    AuthoredSceneNodePolicy, AuthoredWorldPanelSceneModel, WorldPanelModel, WorldPanelRow,
+    WorldPanelRowKind, authored_scene_node_policy, build_world_panel_model, component_id_short,
+    editor_chunk_label, editor_scene_roots, mark_nearest_layout_dirty, parse_item_index,
+    rebuild_world_panel_scene_model, register_editor_root, rerender_world_panel_content,
+    rerender_world_panel_status, resolve_selected_world_panel_payload,
+    sync_world_panel_selection, world_panel_item_label, ITEM_PREFIX, WORLD_PANEL_PAYLOAD_NAME,
+    WORLD_PANEL_SELECTION_NAME,
 };
 use crate::engine::ecs::system::selection_system::resolve_semantic_target_from_payload;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
@@ -35,8 +45,6 @@ const EDITOR_RUNTIME_UI_ROOT_NAME: &str = "editor_runtime_ui_root";
 const WORLD_PANEL_ROOT_SELECTOR: &str = "#world_panel_root";
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 const WORLD_PANEL_CONTENT_ROOT_SELECTOR: &str = "#world_panel_content_root";
-const WORLD_PANEL_SELECTION_NAME: &str = "world_panel_selection";
-const WORLD_PANEL_PAYLOAD_NAME: &str = "world_panel_payload";
 const INSPECTOR_PANEL_SELECTION_NAME: &str = "inspector_panel_selection";
 const PANEL_CONTENT_SLOT_SELECTOR: &str = "#content_slot";
 const INSPECTOR_PANEL_ROOT_SELECTOR: &str = "#inspector_panel_root";
@@ -53,7 +61,6 @@ const INSPECTOR_PANEL_INSTANCE_ID_KEY: &str = "inspector_panel_id";
 const INSPECTOR_PANEL_PIN_BUTTON_NAME: &str = "pin_button";
 const INSPECTOR_PANEL_PIN_BUTTON_SELECTOR: &str = "#pin_button";
 // Removed: INSPECTOR_DETAIL_WORLD_PANEL_MOUNT_NAME, INSPECTOR_DETAIL_WORLD_LAYOUT_ROOT_NAME
-const PANEL_STATUS_ROOT_SELECTOR: &str = "#panel_status_root";
 const PANEL_STATUS_WRAP_SELECTOR: &str = "#save_status_wrap";
 const PANEL_STATUS_VALUE_SELECTOR: &str = "#panel_status_value";
 const PAINT_STATUS_WRAP_SELECTOR: &str = "#paint_status_wrap";
@@ -61,7 +68,6 @@ const PAINT_TOOL_SELECTION_SELECTOR: &str = "#paint_tool_selection";
 const PANEL_PATH_INPUT_SELECTOR: &str = "#path_input";
 const SAVE_BUTTON_SELECTOR: &str = "#save_button";
 const LOAD_BUTTON_SELECTOR: &str = "#load_button";
-const ITEM_PREFIX: &str = "item_";
 const INSPECTOR_ITEM_PREFIX: &str = "inspector_item_";
 const PANEL_LAYOUT_TEXT_SCALE: f64 = 0.08;
 const WORLD_PANEL_WIDTH_GU: f64 = 29.5;
@@ -80,46 +86,6 @@ const MAX_INSPECTOR_PANEL_ROWS: usize = 256;
 
 #[cfg(test)]
 static WORLD_PANEL_SCENE_PATH_OVERRIDE: Mutex<Option<PathBuf>> = Mutex::new(None);
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct WorldPanelModel {
-    title: String,
-    rows: Vec<WorldPanelRow>,
-    selected_index: Option<i64>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct AuthoredWorldPanelSceneModel {
-    sections: Vec<AuthoredWorldPanelSection>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct AuthoredWorldPanelSection {
-    editor_root: ComponentId,
-    rows: Vec<AuthoredWorldPanelRow>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct AuthoredWorldPanelRow {
-    target_component: ComponentId,
-    label: String,
-    depth: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct WorldPanelRow {
-    target_component: Option<ComponentId>,
-    label: String,
-    display_label: String,
-    kind: WorldPanelRowKind,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WorldPanelRowKind {
-    Spacer,
-    EditorRoot,
-    Info,
-    Component,
-}
 
 #[derive(Debug)]
 pub(crate) struct EditorInspectorSystemStopgapMmsAdapter {
@@ -876,7 +842,6 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         rerender_world_panel_content(
             world,
             emit,
-            panel_query_root,
             content_slot,
             &model.rows,
             model.selected_index,
@@ -945,7 +910,6 @@ fn refresh_all_panel_models(
         rerender_world_panel_content(
             world,
             emit,
-            panel_query_root,
             content_slot,
             &world_model.rows,
             world_model.selected_index,
@@ -1132,97 +1096,6 @@ fn world_panel_selection_matches_editor_context(
         && (active_editor.is_none() || editor_context.active_editor == active_editor)
 }
 
-fn sync_world_panel_selection(
-    world: &mut World,
-    emit: &mut dyn SignalEmitter,
-    panel_query_root: ComponentId,
-    editor_context_state: &Arc<Mutex<EditorContextState>>,
-    world_panel_scene_model: &Arc<Mutex<AuthoredWorldPanelSceneModel>>,
-) {
-    let editor_context = editor_context_state
-        .lock()
-        .expect("editor context state mutex poisoned")
-        .clone();
-    let Some(world_panel_root) = world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR)
-    else {
-        return;
-    };
-    let Some(selection_root) =
-        world.find_component(world_panel_root, &format!("#{WORLD_PANEL_SELECTION_NAME}"))
-    else {
-        return;
-    };
-
-    let Some(target_component) = editor_context
-        .selected_component
-        .or(editor_context.active_editor)
-    else {
-        crate::engine::ecs::system::selection_system::apply_selection_set(
-            world,
-            emit,
-            selection_root,
-            Vec::new(),
-            None,
-        );
-        return;
-    };
-    let model = build_world_panel_model(
-        world,
-        &editor_context,
-        &world_panel_scene_model
-            .lock()
-            .expect("world panel scene model mutex poisoned"),
-    );
-    let Some((selected_index, row)) = model
-        .rows
-        .iter()
-        .enumerate()
-        .find(|(_, row)| row.target_component == Some(target_component))
-    else {
-        crate::engine::ecs::system::selection_system::apply_selection_set(
-            world,
-            emit,
-            selection_root,
-            Vec::new(),
-            None,
-        );
-        return;
-    };
-    let label = row.label.clone();
-
-    let already_selected = world
-        .get_component_by_id_as::<SelectionComponent>(selection_root)
-        .is_some_and(|selection| {
-            selection.selected_payload.is_some_and(|payload| {
-                resolve_semantic_target_from_payload(
-                    world,
-                    Some(payload),
-                    selection.selected_component,
-                ) == Some(target_component)
-            }) && selection.selected_index == Some(selected_index)
-        });
-    if already_selected {
-        return;
-    }
-
-    let Some(row_root) =
-        world.find_component(world_panel_root, &format!("#{ITEM_PREFIX}{selected_index}"))
-    else {
-        return;
-    };
-
-    crate::engine::ecs::system::selection_system::apply_selection_set(
-        world,
-        emit,
-        selection_root,
-        vec![SelectionEntry {
-            index: Some(selected_index),
-            item: Some(label),
-            component: row_root,
-        }],
-        Some(row_root),
-    );
-}
 
 impl EditorInspectorSystemStopgapMmsReconciler {
     fn reconcile_panel_layout(
@@ -1713,7 +1586,6 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 rerender_world_panel_content(
                     world,
                     emit,
-                    panel_mount_root,
                     content_slot,
                     &model.rows,
                     model.selected_index,
@@ -1770,20 +1642,6 @@ struct InspectorPanelRow {
 enum InspectorPanelRowKind {
     Info,
     Component,
-}
-
-#[derive(Debug, Clone)]
-struct PanelUiRowSpec<'a> {
-    row_name: &'a str,
-    payload_name: &'a str,
-    target_component: Option<ComponentId>,
-    label: &'a str,
-    row_kind_label: &'a str,
-    interactive: bool,
-    background_rgba: [f32; 4],
-    text_rgba: [f32; 4],
-    font_size_gu: Option<f32>,
-    spacer_height_gu: Option<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1994,41 +1852,7 @@ fn materialized_ce_name(component: &MaterializedCE) -> Option<&str> {
     })
 }
 
-fn editor_scene_roots(world: &World) -> Vec<ComponentId> {
-    world
-        .all_components()
-        .filter(|&component_id| {
-            world.parent_of(component_id).is_none()
-                && world
-                    .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(
-                        component_id,
-                    )
-                    .is_some()
-        })
-        .collect()
-}
 
-fn build_world_panel_model(
-    world: &World,
-    editor_context: &EditorContextState,
-    scene_model: &AuthoredWorldPanelSceneModel,
-) -> WorldPanelModel {
-    let rows = build_world_panel_rows(world, scene_model);
-    let selected_target = editor_context
-        .selected_component
-        .or(editor_context.active_editor);
-    let selected_index = selected_target.and_then(|selected| {
-        rows.iter()
-            .position(|row| row.target_component == Some(selected))
-            .map(|index| index as i64)
-    });
-
-    WorldPanelModel {
-        title: "World".to_string(),
-        rows,
-        selected_index,
-    }
-}
 
 fn build_inspector_panel_models(
     world: &World,
@@ -2283,190 +2107,14 @@ fn build_inspector_panel_detail_model(
     }
 }
 
-fn build_world_panel_rows(
-    world: &World,
-    scene_model: &AuthoredWorldPanelSceneModel,
-) -> Vec<WorldPanelRow> {
-    let mut out = Vec::new();
-    for (editor_index, section) in scene_model.sections.iter().enumerate() {
-        if editor_index > 0 {
-            out.push(WorldPanelRow {
-                target_component: None,
-                label: String::new(),
-                display_label: String::new(),
-                kind: WorldPanelRowKind::Spacer,
-            });
-        }
 
-        let header_label = editor_chunk_label(world, section.editor_root);
-        out.push(WorldPanelRow {
-            target_component: Some(section.editor_root),
-            label: header_label.clone(),
-            display_label: header_label,
-            kind: WorldPanelRowKind::EditorRoot,
-        });
-
-        for row in &section.rows {
-            out.push(WorldPanelRow {
-                target_component: Some(row.target_component),
-                display_label: format!("{}{}", "  ".repeat(row.depth), row.label),
-                label: row.label.clone(),
-                kind: WorldPanelRowKind::Component,
-            });
-        }
-    }
-
-    if out.is_empty() {
-        out.push(WorldPanelRow {
-            target_component: None,
-            label: "<empty>".to_string(),
-            display_label: "<empty>".to_string(),
-            kind: WorldPanelRowKind::Info,
-        });
-    }
-
-    out
-}
-
-fn parse_item_index(row_name: &str) -> Option<usize> {
-    row_name.strip_prefix(ITEM_PREFIX)?.parse().ok()
-}
 
 fn parse_inspector_item_index(row_name: &str) -> Option<usize> {
     row_name.strip_prefix(INSPECTOR_ITEM_PREFIX)?.parse().ok()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AuthoredSceneNodePolicy {
-    Include,
-    Skip,
-    Flatten,
-}
 
-fn authored_scene_node_policy(world: &World, component_id: ComponentId) -> AuthoredSceneNodePolicy {
-    if world
-        .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(component_id)
-        .is_some()
-    {
-        return AuthoredSceneNodePolicy::Include;
-    }
 
-    match world.component_label(component_id) {
-        Some("editor_auto_raycastable") => return AuthoredSceneNodePolicy::Flatten,
-        Some("selection_highlight")
-        | Some(EDITOR_RUNTIME_UI_ROOT_NAME)
-        | Some("editor_gizmo_anchor")
-        | Some("editor_transform_gizmo") => return AuthoredSceneNodePolicy::Skip,
-        _ => {}
-    }
-
-    if world
-        .get_component_by_id_as::<crate::engine::ecs::component::TransformGizmoComponent>(
-            component_id,
-        )
-        .is_some()
-    {
-        return AuthoredSceneNodePolicy::Skip;
-    }
-
-    AuthoredSceneNodePolicy::Include
-}
-
-fn rebuild_world_panel_scene_model(
-    scene_model: &Arc<Mutex<AuthoredWorldPanelSceneModel>>,
-    world: &World,
-    installed_editor_roots: &Arc<Mutex<Vec<ComponentId>>>,
-) {
-    let editor_roots = effective_editor_roots(world, installed_editor_roots);
-    let rebuilt = build_authored_world_panel_scene_model(world, &editor_roots);
-    *scene_model
-        .lock()
-        .expect("world panel scene model mutex poisoned") = rebuilt;
-}
-
-fn register_editor_root(
-    installed_editor_roots: &Arc<Mutex<Vec<ComponentId>>>,
-    editor_root: ComponentId,
-) {
-    let mut roots = installed_editor_roots
-        .lock()
-        .expect("installed editor roots mutex poisoned");
-    if !roots.contains(&editor_root) {
-        roots.push(editor_root);
-    }
-}
-
-fn effective_editor_roots(
-    world: &World,
-    installed_editor_roots: &Arc<Mutex<Vec<ComponentId>>>,
-) -> Vec<ComponentId> {
-    let mut roots = installed_editor_roots
-        .lock()
-        .expect("installed editor roots mutex poisoned")
-        .iter()
-        .copied()
-        .filter(|&component_id| {
-            world
-                .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(
-                    component_id,
-                )
-                .is_some()
-        })
-        .collect::<Vec<_>>();
-
-    for editor_root in editor_scene_roots(world) {
-        if !roots.contains(&editor_root) {
-            roots.push(editor_root);
-        }
-    }
-
-    roots.sort_by_key(|component_id| component_id_short(*component_id));
-    roots
-}
-
-fn build_authored_world_panel_scene_model(
-    world: &World,
-    editor_roots: &[ComponentId],
-) -> AuthoredWorldPanelSceneModel {
-    let mut sections = Vec::new();
-
-    for &editor_root in editor_roots {
-        let mut rows = Vec::new();
-        for &child in world.children_of(editor_root) {
-            push_authored_world_panel_rows(world, child, 0, &mut rows);
-        }
-        sections.push(AuthoredWorldPanelSection { editor_root, rows });
-    }
-
-    AuthoredWorldPanelSceneModel { sections }
-}
-
-fn push_authored_world_panel_rows(
-    world: &World,
-    component_id: ComponentId,
-    depth: usize,
-    out: &mut Vec<AuthoredWorldPanelRow>,
-) {
-    match authored_scene_node_policy(world, component_id) {
-        AuthoredSceneNodePolicy::Skip => return,
-        AuthoredSceneNodePolicy::Flatten => {
-            for &child in world.children_of(component_id) {
-                push_authored_world_panel_rows(world, child, depth, out);
-            }
-        }
-        AuthoredSceneNodePolicy::Include => {
-            out.push(AuthoredWorldPanelRow {
-                target_component: component_id,
-                label: world_panel_item_label(world, component_id),
-                depth,
-            });
-
-            for &child in world.children_of(component_id) {
-                push_authored_world_panel_rows(world, child, depth + 1, out);
-            }
-        }
-    }
-}
 
 fn panel_status_text(world: &World, panel_root: ComponentId) -> Option<String> {
     world
@@ -2478,105 +2126,6 @@ fn panel_status_text(world: &World, panel_root: ComponentId) -> Option<String> {
         })
 }
 
-fn rerender_world_panel_status(
-    world: &mut World,
-    emit: &mut dyn SignalEmitter,
-    world_panel_root: ComponentId,
-    status_wrap: ComponentId,
-    label: &str,
-) {
-    rerender_panel_status(world, emit, world_panel_root, status_wrap, label);
-}
-
-fn rerender_panel_status(
-    world: &mut World,
-    emit: &mut dyn SignalEmitter,
-    panel_root: ComponentId,
-    status_wrap: ComponentId,
-    label: &str,
-) {
-    if let Some(existing_status_root) = world.find_component(panel_root, PANEL_STATUS_ROOT_SELECTOR)
-    {
-        emit.push_intent_now(
-            existing_status_root,
-            IntentValue::RemoveSubtree {
-                component_ids: vec![existing_status_root],
-            },
-        );
-    }
-
-    let spawned_status_root =
-        match MeowMeowRunner::spawn_mms_module_component_uninitialized_from_file(
-            world_panel_status_asset_path(),
-            "world_panel_status",
-            vec![Value::String(label.to_string())],
-            world,
-            emit,
-        ) {
-            Ok(component_id) => component_id,
-            Err(error) => {
-                eprintln!("[InspectorSystemStopgapMmsAdapter] panel status spawn error: {error}");
-                return;
-            }
-        };
-
-    emit.push_intent_now(
-        spawned_status_root,
-        IntentValue::Attach {
-            parents: vec![status_wrap],
-            child: spawned_status_root,
-        },
-    );
-    mark_nearest_layout_dirty(world, status_wrap);
-}
-
-fn world_panel_ui_row_render_fn(
-    world: &mut World,
-    _emit: &mut dyn SignalEmitter,
-    item: &UiItem,
-) -> Result<ComponentId, String> {
-    let height_gu = if matches!(item.kind, UiItemKind::Spacer) {
-        Some(0.8)
-    } else {
-        None
-    };
-
-    let (background_rgba, text_rgba, interactive, row_kind_label) = match item.kind {
-        UiItemKind::Spacer => ([0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], false, "Spacer"),
-        UiItemKind::EditorRoot => {
-            ([0.30, 0.84, 0.38, 0.98], [0.03, 0.08, 0.04, 1.0], true, "EditorRoot")
-        }
-        UiItemKind::Info => ([0.85, 0.85, 0.85, 1.0], [0.0, 0.0, 0.0, 1.0], false, "Info"),
-        UiItemKind::Component if item.selected => {
-            ([1.00, 0.88, 0.20, 0.96], [0.06, 0.09, 0.08, 1.0], true, "Component")
-        }
-        UiItemKind::Component => {
-            ([0.92, 0.97, 0.92, 1.0], [0.06, 0.09, 0.08, 1.0], true, "Component")
-        }
-    };
-
-    Ok(spawn_panel_ui_row_tree(
-        world,
-        PanelUiRowSpec {
-            row_name: &item.key,
-            payload_name: WORLD_PANEL_PAYLOAD_NAME,
-            target_component: item.target_ref,
-            label: &item.label,
-            row_kind_label,
-            interactive,
-            background_rgba,
-            text_rgba,
-            font_size_gu: None,
-            spacer_height_gu: height_gu,
-        },
-    ))
-}
-
-static WORLD_PANEL_ROW_SPEC: LazyLock<ItemRendererSpec> = LazyLock::new(|| {
-    RendererSpec::Rust {
-        render_fn: Box::new(world_panel_ui_row_render_fn),
-    }
-});
 
 fn inspector_panel_ui_row_render_fn(
     world: &mut World,
@@ -2616,72 +2165,6 @@ static INSPECTOR_DETAIL_SPEC: LazyLock<DetailRendererSpec> = LazyLock::new(|| {
         },
     }
 });
-
-fn rerender_world_panel_content(
-    world: &mut World,
-    emit: &mut dyn SignalEmitter,
-    _panel_query_root: ComponentId,
-    content_slot: ComponentId,
-    rows: &[WorldPanelRow],
-    selected_index: Option<i64>,
-    data_renderer: &mut DataRendererSystem,
-) {
-    let items: Vec<UiItem> = rows
-        .iter()
-        .enumerate()
-        .map(|(i, row)| UiItem {
-            key: format!("{ITEM_PREFIX}{i}"),
-            kind: match row.kind {
-                WorldPanelRowKind::Spacer => UiItemKind::Spacer,
-                WorldPanelRowKind::EditorRoot => UiItemKind::EditorRoot,
-                WorldPanelRowKind::Info => UiItemKind::Info,
-                WorldPanelRowKind::Component => UiItemKind::Component,
-            },
-            label: row.display_label.clone(),
-            selected: selected_index == Some(i as i64),
-            target_ref: row.target_component,
-        })
-        .collect();
-
-    let container = match data_renderer.render_list(world, emit, content_slot, &WORLD_PANEL_ROW_SPEC, &items) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("[InspectorSystem] world panel content render error: {e}");
-            return;
-        }
-    };
-
-    let selection = world.add_component_boxed_named(
-        WORLD_PANEL_SELECTION_NAME,
-        Box::new(SelectionComponent::new()),
-    );
-    if let Some(selection_component) =
-        world.get_component_by_id_as_mut::<SelectionComponent>(selection)
-    {
-        selection_component.payload_selector =
-            Some(format!("[name='{WORLD_PANEL_PAYLOAD_NAME}']"));
-    }
-    let _ = world.add_child(container, selection);
-
-    if let Some(index) = selected_index.and_then(|i| usize::try_from(i).ok()) {
-        if let Some(row) = rows.get(index) {
-            let row_selector = format!("#{ITEM_PREFIX}{index}");
-            if let Some(row_root) = world.find_component(container, &row_selector) {
-                let selected_payload = resolve_selected_world_panel_payload(world, row_root);
-                if let Some(selection_component) =
-                    world.get_component_by_id_as_mut::<SelectionComponent>(selection)
-                {
-                    selection_component.select_entry(SelectionEntry {
-                        index: Some(index),
-                        item: Some(row.label.clone()),
-                        component: row_root,
-                    });
-                    selection_component.selected_payload = selected_payload;
-                }
-            }
-        }
-    }
-}
 
 fn rerender_inspector_panels(
     world: &mut World,
@@ -2927,16 +2410,6 @@ fn update_inspector_panel_instance_tree(
     }
 }
 
-fn mark_nearest_layout_dirty(world: &mut World, start: ComponentId) {
-    let mut current = Some(start);
-    while let Some(component_id) = current {
-        if let Some(layout) = world.get_component_by_id_as_mut::<LayoutComponent>(component_id) {
-            layout.mark_dirty();
-            return;
-        }
-        current = world.parent_of(component_id);
-    }
-}
 
 fn clicked_named_ancestor(world: &World, node: ComponentId, prefix: &str) -> Option<String> {
     let mut current = Some(node);
@@ -3222,35 +2695,6 @@ fn nearest_editor_ancestor(world: &World, start: ComponentId) -> Option<Componen
     None
 }
 
-fn world_panel_item_label(world: &World, component_id: ComponentId) -> String {
-    if let Some(label) = world.component_label(component_id) {
-        if !label.is_empty() {
-            return label.to_string();
-        }
-    }
-
-    world
-        .component_name(component_id)
-        .map(|name| name.to_string())
-        .unwrap_or_else(|| format!("component_{:?}", component_id))
-}
-
-fn editor_chunk_label(world: &World, editor_root: ComponentId) -> String {
-    if let Some(label) = world.component_label(editor_root) {
-        if !label.is_empty() {
-            return format!("Editor#{label}");
-        }
-    }
-
-    format!("Editor {{ id={} }}", component_id_short(editor_root))
-}
-
-fn component_id_short(component_id: ComponentId) -> String {
-    format!("{:?}", component_id)
-        .trim_start_matches("ComponentId(")
-        .trim_end_matches(')')
-        .to_string()
-}
 
 fn world_panel_asset_path() -> &'static str {
     concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
@@ -3819,18 +3263,6 @@ fn spawn_world_panel_row_tree(
     }
 }
 
-fn resolve_selected_world_panel_payload(
-    world: &World,
-    row_root: ComponentId,
-) -> Option<ComponentId> {
-    let matches =
-        world.find_all_components(row_root, &format!("[name='{WORLD_PANEL_PAYLOAD_NAME}']"));
-    if matches.len() == 1 {
-        matches.into_iter().next()
-    } else {
-        None
-    }
-}
 
 fn spawn_inspector_panel_content_tree(
     world: &mut World,
@@ -3923,107 +3355,5 @@ fn resolve_selected_inspector_panel_payload(
     }
 }
 
-fn spawn_panel_ui_row_tree(world: &mut World, spec: PanelUiRowSpec<'_>) -> ComponentId {
-    let row_root =
-        world.add_component_boxed_named(spec.row_name, Box::new(TransformComponent::new()));
 
-    if let Some(height_gu) = spec.spacer_height_gu {
-        let style = world.add_component_boxed_named(
-            format!("{}_style", spec.row_name),
-            Box::new({
-                let mut style = StyleComponent::new();
-                style.display = Some(Display::Block);
-                style.width = SizeDimension::Percent(100.0);
-                style.height = SizeDimension::GlyphUnits(height_gu);
-                style.overflow = Overflow::Visible;
-                style
-            }),
-        );
-        let _ = world.add_child(row_root, style);
-        return row_root;
-    }
 
-    if spec.interactive {
-        let option = world.add_component_boxed_named(
-            format!("{}_option", spec.row_name),
-            Box::new(OptionComponent::new()),
-        );
-        let _ = world.add_child(row_root, option);
-        let raycastable = world.add_component_boxed_named(
-            format!("{}_raycastable", spec.row_name),
-            Box::new(RaycastableComponent::click_only()),
-        );
-        let _ = world.add_child(row_root, raycastable);
-    }
-
-    let mut payload_data = DataComponent::new()
-        .with_entry("row_name", DataValue::Text(spec.row_name.to_string()))
-        .with_entry("row_kind", DataValue::Text(spec.row_kind_label.to_string()))
-        .with_entry("label", DataValue::Text(spec.label.to_string()))
-        .with_entry("interactive", DataValue::Bool(spec.interactive));
-    if let Some(target_component) = spec.target_component {
-        payload_data.insert("target_component", DataValue::Component(target_component));
-    }
-    let payload = world.add_component_boxed_named(spec.payload_name, Box::new(payload_data));
-    let _ = world.add_child(row_root, payload);
-
-    let style = world.add_component_boxed_named(
-        format!("{}_style", spec.row_name),
-        Box::new({
-            let mut style = StyleComponent::new();
-            style.display = Some(Display::Block);
-            style.width = SizeDimension::Percent(100.0);
-            style.margin = EdgeInsets::axes(0.25, 0.20);
-            style.padding = EdgeInsets::axes(0.55, 0.45);
-            if let Some(font_size_gu) = spec.font_size_gu {
-                style.font_size = SizeDimension::GlyphUnits(font_size_gu);
-            }
-            style.background_color = Some(spec.background_rgba);
-            style.background_z = Some(0.001);
-            style.color = Some(spec.text_rgba);
-            style.overflow = Overflow::Visible;
-            style
-        }),
-    );
-    let _ = world.add_child(row_root, style);
-
-    let text_root = world.add_component_boxed_named(
-        format!("{}_text_root", spec.row_name),
-        Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.005)),
-    );
-    let text = world.add_component_boxed_named(
-        format!("{}_text", spec.row_name),
-        Box::new(TextComponent::new(spec.label.to_string())),
-    );
-    let text_color = world.add_component_boxed_named(
-        format!("{}_text_color", spec.row_name),
-        Box::new(ColorComponent::rgba(
-            spec.text_rgba[0],
-            spec.text_rgba[1],
-            spec.text_rgba[2],
-            spec.text_rgba[3],
-        )),
-    );
-
-    let _ = world.add_child(row_root, text_root);
-    let _ = world.add_child(text_root, text);
-    let _ = world.add_child(text, text_color);
-
-    row_root
-}
-
-fn spawn_block_container(world: &mut World, name: &str) -> ComponentId {
-    let root = world.add_component_boxed_named(name, Box::new(TransformComponent::new()));
-    let style = world.add_component_boxed_named(
-        format!("{name}_style"),
-        Box::new({
-            let mut style = StyleComponent::new();
-            style.display = Some(Display::Block);
-            style.width = SizeDimension::Percent(100.0);
-            style.overflow = Overflow::Visible;
-            style
-        }),
-    );
-    let _ = world.add_child(root, style);
-    root
-}
