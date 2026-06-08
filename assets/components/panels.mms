@@ -354,7 +354,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                     name = "sidebar_slot"
                     Style {
                         display("inline-block")
-                        width(12gu)
+                        width(40%)
                         height(100%)
                         margin_right(1gu)
                         font_size(1)
@@ -369,7 +369,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                     name = "detail_slot"
                     Style {
                         display("inline-block")
-                        width(20gu)
+                        width(60%)
                         height(100%)
                         font_size(1)
                         background_color([0.26, 0.28, 0.86, 0.95])
