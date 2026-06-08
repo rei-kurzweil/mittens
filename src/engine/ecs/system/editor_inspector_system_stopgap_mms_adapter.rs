@@ -16,7 +16,7 @@ use crate::engine::ecs::system::data_renderer_system::{
 };
 use std::sync::LazyLock;
 use crate::engine::ecs::system::editor::context::EditorContextState;
-use crate::engine::ecs::system::editor::inspector::{
+use crate::engine::ecs::system::editor::inspector_panel::{
     InspectorPanelId, InspectorWorkspaceEvent, InspectorWorkspaceState,
     clear_missing_inspector_targets, reduce_inspector_workspace_state,
 };
@@ -1930,7 +1930,7 @@ fn build_inspector_panel_models(
 fn build_inspector_panel_rows(
     world: &World,
     scene_model: &AuthoredWorldPanelSceneModel,
-    panel: &crate::engine::ecs::system::editor::inspector::InspectorPanelState,
+    panel: &crate::engine::ecs::system::editor::inspector_panel::InspectorPanelState,
     root: ComponentId,
 ) -> Vec<InspectorPanelRow> {
     if let Some(rows) = build_authored_inspector_panel_rows(world, scene_model, panel, root) {
@@ -1957,7 +1957,7 @@ fn build_inspector_panel_rows(
 fn build_authored_inspector_panel_rows(
     world: &World,
     scene_model: &AuthoredWorldPanelSceneModel,
-    panel: &crate::engine::ecs::system::editor::inspector::InspectorPanelState,
+    panel: &crate::engine::ecs::system::editor::inspector_panel::InspectorPanelState,
     root: ComponentId,
 ) -> Option<Vec<InspectorPanelRow>> {
     for section in &scene_model.sections {
@@ -2016,7 +2016,7 @@ fn build_authored_inspector_panel_rows(
 
 fn push_inspector_panel_rows(
     world: &World,
-    panel: &crate::engine::ecs::system::editor::inspector::InspectorPanelState,
+    panel: &crate::engine::ecs::system::editor::inspector_panel::InspectorPanelState,
     component_id: ComponentId,
     depth: usize,
     out: &mut Vec<InspectorPanelRow>,
@@ -2065,7 +2065,7 @@ fn push_inspector_panel_rows(
 }
 
 fn inspector_row_selected(
-    panel: &crate::engine::ecs::system::editor::inspector::InspectorPanelState,
+    panel: &crate::engine::ecs::system::editor::inspector_panel::InspectorPanelState,
     component_id: ComponentId,
 ) -> bool {
     panel
@@ -2077,7 +2077,7 @@ fn inspector_row_selected(
 
 fn build_inspector_panel_detail_model(
     world: &World,
-    panel: &crate::engine::ecs::system::editor::inspector::InspectorPanelState,
+    panel: &crate::engine::ecs::system::editor::inspector_panel::InspectorPanelState,
 ) -> InspectorPanelDetailModel {
     let selected_component = panel
         .subtree_selection

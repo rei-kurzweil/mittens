@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::system::editor::context::EditorContextState;
 #[cfg(test)]
-use crate::engine::ecs::system::editor::inspector::{
+use crate::engine::ecs::system::editor::inspector_panel::{
     InspectorPanelState, InspectorScrollState, InspectorSubtreeSelection,
     InspectorWorkspaceEvent, InspectorWorkspaceState, reduce_inspector_workspace_state,
 };
@@ -54,7 +54,7 @@ mod tests {
         BoundsComponent, EditorComponent, GLTFComponent, OverlayComponent, RenderableComponent,
         SerializeComponent, TransformComponent,
     };
-    use crate::engine::ecs::system::editor::inspector::{
+    use crate::engine::ecs::system::editor::inspector_panel::{
         InspectorPanelState, InspectorScrollState, InspectorSubtreeSelection,
         InspectorWorkspaceEvent, InspectorWorkspaceState, reduce_inspector_workspace_state,
     };
