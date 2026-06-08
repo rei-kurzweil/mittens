@@ -47,6 +47,8 @@ const INSPECTOR_PANEL_INSTANCE_DATA_NAME: &str = "inspector_panel_instance_data"
 const INSPECTOR_PANEL_INSTANCE_ID_KEY: &str = "inspector_panel_id";
 const INSPECTOR_PANEL_PIN_BUTTON_NAME: &str = "pin_button";
 const INSPECTOR_PANEL_PIN_BUTTON_SELECTOR: &str = "#pin_button";
+const INSPECTOR_DETAIL_WORLD_PANEL_MOUNT_NAME: &str = "inspector_detail_world_panel_mount";
+const INSPECTOR_DETAIL_WORLD_LAYOUT_ROOT_NAME: &str = "inspector_detail_world_layout_root";
 const PANEL_STATUS_ROOT_SELECTOR: &str = "#panel_status_root";
 const PANEL_STATUS_WRAP_SELECTOR: &str = "#save_status_wrap";
 const PANEL_STATUS_VALUE_SELECTOR: &str = "#panel_status_value";
@@ -2631,17 +2633,125 @@ fn rerender_single_inspector_panel_detail(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     _inspector_panel_root: ComponentId,
-    detail_slot: ComponentId,
+    _detail_slot: ComponentId,
     detail: &InspectorPanelDetailModel,
 ) {
-    for existing_detail_root in world.children_of(detail_slot).to_vec() {
+    sync_world_detail_panel(world, emit, detail);
+}
+
+fn sync_world_detail_panel(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    detail: &InspectorPanelDetailModel,
+) {
+    if let Some(existing_mount) = find_top_level_named(world, INSPECTOR_DETAIL_WORLD_PANEL_MOUNT_NAME)
+    {
         emit.push_intent_now(
-            existing_detail_root,
+            existing_mount,
             IntentValue::RemoveSubtree {
-                component_ids: vec![existing_detail_root],
+                component_ids: vec![existing_mount],
             },
         );
     }
+
+    if detail.id.is_empty() && detail.guid.is_empty() {
+        return;
+    }
+
+    let title_color = Value::Array(vec![
+        Value::Number(0.96),
+        Value::Number(1.0),
+        Value::Number(0.98),
+        Value::Number(1.0),
+    ]);
+    let panel_bg = Value::Array(vec![
+        Value::Number(0.18),
+        Value::Number(0.78),
+        Value::Number(0.22),
+        Value::Number(0.95),
+    ]);
+    let item_bg = Value::Array(vec![
+        Value::Number(0.92),
+        Value::Number(0.92),
+        Value::Number(0.92),
+        Value::Number(0.80),
+    ]);
+
+    let panel_ce = match build_panel_component_expr(
+        world,
+        emit,
+        inspector_panel_asset_path(),
+        "inspector_panel",
+        vec![
+            Value::String("Inspector Detail".to_string()),
+            Value::Array(Vec::new()),
+            title_color,
+            panel_bg,
+            item_bg,
+        ],
+        "world detail inspector panel",
+    ) {
+        Some(panel) => panel,
+        None => return,
+    };
+
+    let mount_ce = MaterializedCE {
+        component_type: "T".to_string(),
+        ctor_method: Some("position".to_string()),
+        ctor_args: vec![
+            Value::Number(0.0),
+            Value::Number(8.0),
+            Value::Number(0.0),
+        ],
+        calls: Vec::new(),
+        named: vec![(
+            "name".to_string(),
+            Value::String(INSPECTOR_DETAIL_WORLD_PANEL_MOUNT_NAME.to_string()),
+        )],
+        positionals: Vec::new(),
+        children: vec![CeChild::Spawn(MaterializedCE {
+            component_type: "LayoutRoot".to_string(),
+            ctor_method: None,
+            ctor_args: Vec::new(),
+            calls: vec![
+                (
+                    "available_width".to_string(),
+                    vec![Value::Number(INSPECTOR_PANEL_WIDTH_GU)],
+                ),
+                (
+                    "available_height".to_string(),
+                    vec![Value::Number(INSPECTOR_PANEL_TOTAL_HEIGHT_GU)],
+                ),
+                (
+                    "unit_scale".to_string(),
+                    vec![Value::Number(PANEL_LAYOUT_TEXT_SCALE)],
+                ),
+            ],
+            named: vec![(
+                "name".to_string(),
+                Value::String(INSPECTOR_DETAIL_WORLD_LAYOUT_ROOT_NAME.to_string()),
+            )],
+            positionals: Vec::new(),
+            children: vec![CeChild::Spawn(panel_ce)],
+        })],
+    };
+
+    let mount_root = match spawn_tree(&mount_ce, None, world, emit) {
+        Ok(component_id) => component_id,
+        Err(error) => {
+            eprintln!(
+                "[InspectorSystemStopgapMmsAdapter] world detail panel spawn error: {error}"
+            );
+            return;
+        }
+    };
+
+    let Some(world_panel_root) = world.find_component(mount_root, INSPECTOR_PANEL_ROOT_SELECTOR) else {
+        return;
+    };
+    let Some(detail_slot) = world.find_component(world_panel_root, INSPECTOR_PANEL_DETAIL_SLOT_SELECTOR) else {
+        return;
+    };
 
     let detail_ce = match build_panel_component_expr(
         world,
@@ -2653,30 +2763,54 @@ fn rerender_single_inspector_panel_detail(
             Value::String(detail.id.clone()),
             Value::String(detail.guid.clone()),
         ],
-        "inspector details",
+        "world detail inspector details",
     ) {
         Some(detail_ce) => detail_ce,
         None => return,
     };
 
-    let spawned_detail_root = match spawn_tree(&detail_ce, None, world, emit) {
+    let detail_root = match spawn_tree(&detail_ce, None, world, emit) {
         Ok(component_id) => component_id,
         Err(error) => {
             eprintln!(
-                "[InspectorSystemStopgapMmsAdapter] inspector details spawn error: {error}"
+                "[InspectorSystemStopgapMmsAdapter] world detail tree spawn error: {error}"
             );
             return;
         }
     };
 
     emit.push_intent_now(
-        spawned_detail_root,
+        detail_root,
         IntentValue::Attach {
             parents: vec![detail_slot],
-            child: spawned_detail_root,
+            child: detail_root,
         },
     );
-    mark_nearest_layout_dirty(world, detail_slot);
+
+    let mount_guid = world
+        .get_component_record(mount_root)
+        .map(|node| node.guid.to_string())
+        .unwrap_or_else(|| "<missing-guid>".to_string());
+    let panel_guid = world
+        .get_component_record(world_panel_root)
+        .map(|node| node.guid.to_string())
+        .unwrap_or_else(|| "<missing-guid>".to_string());
+    let detail_guid = world
+        .get_component_record(detail_root)
+        .map(|node| node.guid.to_string())
+        .unwrap_or_else(|| "<missing-guid>".to_string());
+    println!(
+        "[InspectorSystem][debug] world detail panel mount={mount_root:?} mount_guid={mount_guid} panel_root={world_panel_root:?} panel_guid={panel_guid} detail_root={detail_root:?} detail_guid={detail_guid} repl=cd {mount_guid}"
+    );
+}
+
+fn find_top_level_named(world: &World, name: &str) -> Option<ComponentId> {
+    world.all_components().find(|&component_id| {
+        world.parent_of(component_id).is_none()
+            && world
+                .component_label(component_id)
+                .is_some_and(|label| label == name)
+    })
 }
 
 fn update_inspector_panel_instance_tree(
