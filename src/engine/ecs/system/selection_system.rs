@@ -1124,7 +1124,15 @@ mod tests {
         let selection_root = world
             .find_component(paint_panel_root, "#paint_tool_selection")
             .expect("expected paint tool selection");
-        let items = world.find_all_components(paint_panel_root, "[name='paint_panel_item']");
+        let content_slot = world
+            .find_component(paint_panel_root, "#content_slot")
+            .expect("expected content slot");
+        let items: Vec<ComponentId> = world
+            .children_of(content_slot)
+            .iter()
+            .flat_map(|&child| world.children_of(child))
+            .copied()
+            .collect();
         assert!(items.len() >= 2, "expected at least two paint tool items");
 
         let first = items[0];

@@ -68,23 +68,6 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
                 background_z(-0.001)
                 padding(0.5)
             }
-
-            T {
-                name = "paint_tool_options_wrap"
-                Selection {
-                    name = "paint_tool_selection"
-                }
-                Style {
-                    display("block")
-                    width(100%)
-                }
-
-                paint_panel_item("Free Draw", pencil_icon(), item_background_color, title_color)
-                paint_panel_item("Line", line_icon(), item_background_color, title_color)
-                paint_panel_item("Spray Can", spray_can_icon(), item_background_color, title_color)
-                paint_panel_item("Fill", fill_icon(), item_background_color, title_color)
-                paint_panel_item("Erase", erase_icon(), item_background_color, title_color)
-            }
         }
 
         T {
