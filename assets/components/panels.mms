@@ -354,11 +354,11 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                     name = "sidebar_slot"
                     Style {
                         display("inline-block")
-                        width(INSPECTOR_PANEL_SIDEBAR_WIDTH_GU)
+                        width(12gu)
                         height(100%)
-                        margin_right(INSPECTOR_PANEL_SPLIT_GAP_GU)
+                        margin_right(1gu)
                         font_size(1)
-                        background_color([0.88, 0.88, 0.88, 0.95])
+                        background_color([0.88, 0.28, 0.88, 0.95])
                         background_z(-0.005)
                         overflow("scroll")
                     }
@@ -369,10 +369,10 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                     name = "detail_slot"
                     Style {
                         display("inline-block")
-                        width(INSPECTOR_PANEL_DETAIL_WIDTH_GU)
+                        width(20gu)
                         height(100%)
                         font_size(1)
-                        background_color([0.66, 0.66, 0.66, 0.95])
+                        background_color([0.26, 0.28, 0.86, 0.95])
                         background_z(-0.005)
                         overflow("scroll")
                     }

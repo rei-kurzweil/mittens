@@ -2643,7 +2643,31 @@ fn rerender_single_inspector_panel_detail(
         );
     }
 
-    let spawned_detail_root = spawn_debug_inspector_detail_tree(world, detail);
+    let detail_ce = match build_panel_component_expr(
+        world,
+        emit,
+        inspector_details_asset_path(),
+        "inspector_details",
+        vec![
+            Value::String(detail.name.clone()),
+            Value::String(detail.id.clone()),
+            Value::String(detail.guid.clone()),
+        ],
+        "inspector details",
+    ) {
+        Some(detail_ce) => detail_ce,
+        None => return,
+    };
+
+    let spawned_detail_root = match spawn_tree(&detail_ce, None, world, emit) {
+        Ok(component_id) => component_id,
+        Err(error) => {
+            eprintln!(
+                "[InspectorSystemStopgapMmsAdapter] inspector details spawn error: {error}"
+            );
+            return;
+        }
+    };
 
     emit.push_intent_now(
         spawned_detail_root,
@@ -2653,56 +2677,6 @@ fn rerender_single_inspector_panel_detail(
         },
     );
     mark_nearest_layout_dirty(world, detail_slot);
-}
-
-fn spawn_debug_inspector_detail_tree(
-    world: &mut World,
-    detail: &InspectorPanelDetailModel,
-) -> ComponentId {
-    let root = world.add_component_boxed_named(
-        "inspector_details_root",
-        Box::new(TransformComponent::new()),
-    );
-    let style = world.add_component_boxed_named(
-        "inspector_details_root_style",
-        Box::new({
-            let mut style = StyleComponent::new();
-            style.display = Some(Display::Block);
-            style.width = SizeDimension::Percent(100.0);
-            style.height = SizeDimension::Percent(100.0);
-            style.padding = EdgeInsets::all(0.5);
-            style.background_color = Some([1.0, 0.0, 1.0, 1.0]);
-            style.background_z = Some(-0.01);
-            style.color = Some([0.0, 0.0, 0.0, 1.0]);
-            style.font_size = SizeDimension::GlyphUnits(1.0);
-            style.overflow = Overflow::Visible;
-            style
-        }),
-    );
-    let text_root = world.add_component_boxed_named(
-        "inspector_details_debug_text_root",
-        Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.005)),
-    );
-    let text = world.add_component_boxed_named(
-        "inspector_details_debug_text",
-        Box::new(
-            TextComponent::new(format!(
-                "DETAIL DEBUG\nname: {}\nid: {}\nguid: {}",
-                detail.name, detail.id, detail.guid
-            ))
-            .with_font_size(0.08),
-        ),
-    );
-    let color = world.add_component_boxed_named(
-        "inspector_details_debug_text_color",
-        Box::new(ColorComponent::rgba(0.0, 0.0, 0.0, 1.0)),
-    );
-
-    let _ = world.add_child(root, style);
-    let _ = world.add_child(root, text_root);
-    let _ = world.add_child(text_root, text);
-    let _ = world.add_child(text, color);
-    root
 }
 
 fn update_inspector_panel_instance_tree(
