@@ -47,8 +47,11 @@ pub enum RendererSpec<T> {
         to_args: fn(&T) -> Vec<Value>,
     },
     /// Build a component subtree directly from Rust.
+    ///
+    /// Uses a boxed closure so the renderer can capture shared state
+    /// (e.g. panel models from an `Arc<Mutex<Vec<...>>>`).
     Rust {
-        render_fn: fn(&mut World, &mut dyn SignalEmitter, &T) -> Result<ComponentId, String>,
+        render_fn: Box<dyn Fn(&mut World, &mut dyn SignalEmitter, &T) -> Result<ComponentId, String> + Send + Sync>,
     },
 }
 

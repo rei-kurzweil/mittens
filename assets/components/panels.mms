@@ -358,7 +358,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                         height(100%)
                         margin_right(1gu)
                         font_size(1)
-                        background_color([0.88, 0.28, 0.88, 0.95])
+                        background_color([0.9, 0.9, 0.9, 0.95])
                         background_z(-0.005)
                         overflow("scroll")
                     }
@@ -372,7 +372,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                         width(60%)
                         height(100%)
                         font_size(1)
-                        background_color([0.26, 0.28, 0.86, 0.95])
+                        background_color([0.26, 0.26, 0.26, 0.95])
                         background_z(-0.005)
                         overflow("scroll")
                     }
