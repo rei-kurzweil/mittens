@@ -16,13 +16,13 @@ use crate::engine::ecs::component::{
     BackgroundComponent, BloomComponent, BlurPassComponent, BoundsComponent, BoxSizing,
     Camera2DComponent, Camera3DComponent, CameraXRComponent, ClockComponent, CollisionComponent,
     CollisionShape, CollisionShapeComponent, ColorComponent, ControllerHand, ControllerPoseKind,
-    ControllerXRComponent, DirectionalLightComponent, Display, EdgeInsets, EditorComponent,
-    ElementType, EmissiveComponent, EmissivePassComponent, FitBoundsComponent, FitBoundsMode,
-    FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent, GestureCoordTypeComponent,
-    GravityComponent, HtmlElementComponent, IKChainComponent, IKSolver, InputComponent,
-    InputTransformModeComponent, InputXRComponent, InspectLayoutComponent, JustifyContent,
-    KeyframeComponent, KineticResponseComponent, LayoutBoundsComponent, LayoutComponent,
-    LightQuantizationComponent, MeshComponent, MusicContextComponent, MusicNote,
+    ControllerXRComponent, DataComponent, DataValue, DirectionalLightComponent, Display,
+    EdgeInsets, EditorComponent, ElementType, EmissiveComponent, EmissivePassComponent,
+    FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent,
+    GestureCoordTypeComponent, GravityComponent, HtmlElementComponent, IKChainComponent, IKSolver,
+    InputComponent, InputTransformModeComponent, InputXRComponent, InspectLayoutComponent,
+    JustifyContent, KeyframeComponent, KineticResponseComponent, LayoutBoundsComponent,
+    LayoutComponent, LightQuantizationComponent, MeshComponent, MusicContextComponent, MusicNote,
     MusicNoteComponent, NormalVisualisationComponent, OpacityComponent, OpenXRComponent,
     OptionComponent, OscillatorType, Overflow, OverlayComponent, PointLightComponent,
     PointerComponent, PointerEvents, Position, QuatTemporalFilterComponent, QuatYawFollowComponent,
@@ -1727,6 +1727,9 @@ fn create_component(
             let id = world.add_component(c);
             Ok(id)
         }
+        "Data" => {
+            add!(DataComponent::new())
+        }
         other => Err(format!("unknown component type: '{other}'")),
     }
 }
@@ -1752,6 +1755,26 @@ fn apply_named_assignment(
                 return Ok(());
             }
             _ => {}
+        }
+    }
+
+    if let Some(data) = world.get_component_by_id_as_mut::<DataComponent>(id) {
+        data.insert(
+            name.to_string(),
+            match val {
+                Value::String(s) => DataValue::Text(s.clone()),
+                Value::Bool(b) => DataValue::Bool(*b),
+                Value::Number(n) => DataValue::Integer(*n as i64),
+                _ => DataValue::Text(format!("{val:?}")),
+            },
+        );
+        return Ok(());
+    }
+
+    if let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(id) {
+        if name == "payload_selector" {
+            selection.payload_selector = Some(val_as_str(val)?.to_string());
+            return Ok(());
         }
     }
 

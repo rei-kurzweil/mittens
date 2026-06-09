@@ -28,6 +28,17 @@ let PAINT_PANEL_CONTENT_STATUS_GAP_GU = 0.5
 let PAINT_PANEL_CONTENT_HEIGHT_GU = 8.5
 let PAINT_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + PAINT_PANEL_CONTENT_HEIGHT_GU + PAINT_PANEL_CONTENT_STATUS_GAP_GU + PAINT_PANEL_STATUS_BAR_HEIGHT_GU
 
+let tool_names = ["Free Draw", "Line", "Spray Can", "Fill", "Erase"]
+
+fn tool_at_index(idx) {
+    if idx == 0 { return pencil_icon() }
+    if idx == 1 { return line_icon() }
+    if idx == 2 { return spray_can_icon() }
+    if idx == 3 { return fill_icon() }
+    if idx == 4 { return erase_icon() }
+    return T {}
+}
+
 export fn paint_panel(title, title_color, panel_background_color, item_background_color) {
     return T {
         name = "paint_panel_root"
@@ -59,7 +70,6 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
 
         T {
             name = "content_slot"
-            Raycastable.enabled()
             Style {
                 display("block")
                 height(PAINT_PANEL_CONTENT_HEIGHT_GU)
@@ -68,11 +78,21 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
                 background_z(-0.001)
                 padding(0.5)
             }
+
+            let idx = 0
+            for name in tool_names {
+                paint_panel_item(name, tool_at_index(idx), item_background_color, title_color)
+                idx = idx + 1
+            }
+
+            Selection {
+                name = "paint_tool_selection"
+                payload_selector = "[name='paint_panel_payload']"
+            }
         }
 
         T {
             name = "paint_status_wrap"
-            Raycastable.enabled()
             Style {
                 display("block")
                 height(PAINT_PANEL_STATUS_BAR_HEIGHT_GU)

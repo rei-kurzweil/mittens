@@ -22,6 +22,12 @@ export fn paint_panel_item(label, icon, item_background_color, title_color) {
             text_align("center")
             vertical_align("middle")
         }
+        Data {
+            name = "paint_panel_payload"
+            label = label
+            row_kind = "PaintTool"
+            interactive = true
+        }
         T {
             Style {
                 display("block")
@@ -144,6 +150,8 @@ export fn world_panel_content(items, item_background_color) {
 fn inspector_panel_row(label, item_background_color) {
     let row = T {
         name = "inspector_panel_row"
+        Option {}
+        Raycastable.click_only()
         Style {
             display("block")
             width(100%)

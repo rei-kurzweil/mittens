@@ -658,6 +658,10 @@ fn handle_selection_click(
                 next_entries.push(entry.clone());
                 (next_entries, Some(entry.component))
             }
+        } else if selection.selected_entries.len() == 1
+            && selection.selected_entries[0].component == item_id
+        {
+            (Vec::new(), None)
         } else {
             (vec![entry.clone()], Some(entry.component))
         }

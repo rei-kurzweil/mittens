@@ -1396,16 +1396,6 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             world.init_component_tree(selection, emit);
         }
 
-        if let Some(paint_panel_root) =
-            world.find_component(panel_mount_root, PAINT_PANEL_ROOT_SELECTOR)
-        {
-            if let Some(paint_content_slot) =
-                world.find_component(paint_panel_root, "#content_slot")
-            {
-                use crate::engine::ecs::system::editor::paint_panel::rerender_paint_panel_content;
-                rerender_paint_panel_content(world, emit, paint_content_slot, data_renderer);
-            }
-        }
         if let Some(inspector_panel_selection) =
             world.find_component(panel_mount_root, INSPECTOR_PANEL_SELECTION_SELECTOR)
         {
