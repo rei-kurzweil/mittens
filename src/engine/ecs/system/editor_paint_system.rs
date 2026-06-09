@@ -41,6 +41,7 @@ struct PaintStrokeRuntime {
     captured_renderable: Option<ComponentId>,
     non_grid_placed: bool,
     last_grid_step: Option<GridStep>,
+    last_placed_position: Option<[f32; 3]>,
 }
 
 #[derive(Debug, Default)]
@@ -456,6 +457,7 @@ fn apply_paint_side_effects(
                         captured_renderable: Some(*renderable),
                         non_grid_placed: false,
                         last_grid_step: None,
+                        last_placed_position: None,
                     };
                 } else {
                     *runtime = PaintStrokeRuntime::default();
@@ -524,26 +526,56 @@ fn event_active_editor(event: &PaintEvent) -> Option<ComponentId> {
     }
 }
 
-fn handle_scene_click(
+fn random_offset_xz(max_dist: f32) -> [f32; 3] {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static SEED: AtomicU32 = AtomicU32::new(987654321);
+
+    let mut x = SEED.load(Ordering::Relaxed);
+    if x == 0 {
+        x = 987654321;
+    }
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    SEED.store(x, Ordering::Relaxed);
+
+    let r1 = ((x & 0xffff) as f32) / 65535.0; // [0, 1]
+
+    let mut y = x.wrapping_mul(1103515245).wrapping_add(12345);
+    if y == 0 {
+        y = 123456789;
+    }
+    y ^= y << 13;
+    y ^= y >> 17;
+    y ^= y << 5;
+    let r2 = ((y & 0xffff) as f32) / 65535.0; // [0, 1]
+
+    let r = r1.sqrt() * max_dist;
+    let theta = r2 * 2.0 * std::f32::consts::PI;
+
+    [r * theta.cos(), 0.0, r * theta.sin()]
+}
+
+fn find_painted_asset_root(world: &World, start: ComponentId) -> Option<ComponentId> {
+    let mut cur = Some(start);
+    while let Some(node) = cur {
+        if world.component_label(node) == Some("painted_asset_raycastable") {
+            return Some(node);
+        }
+        cur = world.parent_of(node);
+    }
+    None
+}
+
+fn handle_free_draw_click(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     editor_root: ComponentId,
-    panel_query_root: ComponentId,
-    templates: &[PaintAssetTemplate],
-    paint_state: &PaintState,
-    editor_context: &EditorContextState,
+    context: &PaintContext,
     stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     renderable: ComponentId,
     hit_point: [f32; 3],
 ) -> Option<String> {
-    let context = resolve_paint_context(
-        world,
-        editor_root,
-        panel_query_root,
-        paint_state,
-        editor_context,
-        templates,
-    )?;
     let runtime = stroke_runtime?;
     let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
     if runtime.non_grid_placed {
@@ -565,26 +597,15 @@ fn handle_scene_click(
     ))
 }
 
-fn handle_stroke_move(
+fn handle_free_draw_stroke_move(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     editor_root: ComponentId,
-    panel_query_root: ComponentId,
-    templates: &[PaintAssetTemplate],
-    paint_state: &PaintState,
-    editor_context: &EditorContextState,
+    context: &PaintContext,
     stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     renderable: ComponentId,
     hit_point: [f32; 3],
 ) -> Option<String> {
-    let context = resolve_paint_context(
-        world,
-        editor_root,
-        panel_query_root,
-        paint_state,
-        editor_context,
-        templates,
-    )?;
     let runtime = stroke_runtime?;
     let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
     if !runtime.active {
@@ -628,6 +649,335 @@ fn handle_stroke_move(
                 None,
             ))
         }
+    }
+}
+
+fn handle_spray_can_click(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    editor_root: ComponentId,
+    context: &PaintContext,
+    stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
+    renderable: ComponentId,
+    hit_point: [f32; 3],
+) -> Option<String> {
+    let runtime = stroke_runtime?;
+    let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
+    if runtime.non_grid_placed {
+        return None;
+    }
+    runtime.non_grid_placed = true;
+    runtime.last_placed_position = Some(hit_point);
+
+    let offset = random_offset_xz(1.5);
+    let offset_hit_point = [
+        hit_point[0] + offset[0],
+        hit_point[1] + offset[1],
+        hit_point[2] + offset[2],
+    ];
+
+    Some(place_asset(
+        world,
+        emit,
+        editor_root,
+        renderable,
+        offset_hit_point,
+        &context.asset,
+        None,
+    ))
+}
+
+fn handle_spray_can_stroke_move(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    editor_root: ComponentId,
+    context: &PaintContext,
+    stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
+    renderable: ComponentId,
+    hit_point: [f32; 3],
+) -> Option<String> {
+    let runtime = stroke_runtime?;
+    let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
+    if !runtime.active {
+        return None;
+    }
+    if runtime
+        .captured_renderable
+        .is_some_and(|captured| captured != renderable)
+    {
+        return None;
+    }
+
+    let dist = if let Some(last_pos) = runtime.last_placed_position {
+        let dx = hit_point[0] - last_pos[0];
+        let dy = hit_point[1] - last_pos[1];
+        let dz = hit_point[2] - last_pos[2];
+        (dx * dx + dy * dy + dz * dz).sqrt()
+    } else {
+        f32::MAX
+    };
+
+    if dist >= 0.5 {
+        runtime.last_placed_position = Some(hit_point);
+
+        let offset = random_offset_xz(1.5);
+        let offset_hit_point = [
+            hit_point[0] + offset[0],
+            hit_point[1] + offset[1],
+            hit_point[2] + offset[2],
+        ];
+
+        Some(place_asset(
+            world,
+            emit,
+            editor_root,
+            renderable,
+            offset_hit_point,
+            &context.asset,
+            None,
+        ))
+    } else {
+        None
+    }
+}
+
+fn handle_erase_click(
+    world: &mut World,
+    _emit: &mut dyn SignalEmitter,
+    _editor_root: ComponentId,
+    _context: &PaintContext,
+    stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
+    renderable: ComponentId,
+    _hit_point: [f32; 3],
+) -> Option<String> {
+    let runtime = stroke_runtime?;
+    let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
+    if runtime.non_grid_placed {
+        return None;
+    }
+    runtime.non_grid_placed = true;
+
+    if let Some(target_root) = find_painted_asset_root(world, renderable) {
+        if world.remove_component_subtree(target_root).is_ok() {
+            Some("erased asset".to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
+fn handle_erase_stroke_move(
+    world: &mut World,
+    _emit: &mut dyn SignalEmitter,
+    _editor_root: ComponentId,
+    _context: &PaintContext,
+    stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
+    renderable: ComponentId,
+    _hit_point: [f32; 3],
+) -> Option<String> {
+    let runtime = stroke_runtime?;
+    let runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
+    if !runtime.active {
+        return None;
+    }
+
+    if let Some(target_root) = find_painted_asset_root(world, renderable) {
+        if world.remove_component_subtree(target_root).is_ok() {
+            return Some("erased asset".to_string());
+        }
+    }
+    None
+}
+
+fn handle_line_click(
+    _world: &mut World,
+    _emit: &mut dyn SignalEmitter,
+    _editor_root: ComponentId,
+    _context: &PaintContext,
+    _stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
+    _renderable: ComponentId,
+    _hit_point: [f32; 3],
+) -> Option<String> {
+    None
+}
+
+fn handle_line_stroke_move(
+    _world: &mut World,
+    _emit: &mut dyn SignalEmitter,
+    _editor_root: ComponentId,
+    _context: &PaintContext,
+    _stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
+    _renderable: ComponentId,
+    _hit_point: [f32; 3],
+) -> Option<String> {
+    None
+}
+
+fn handle_fill_click(
+    _world: &mut World,
+    _emit: &mut dyn SignalEmitter,
+    _editor_root: ComponentId,
+    _context: &PaintContext,
+    _stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
+    _renderable: ComponentId,
+    _hit_point: [f32; 3],
+) -> Option<String> {
+    None
+}
+
+fn handle_fill_stroke_move(
+    _world: &mut World,
+    _emit: &mut dyn SignalEmitter,
+    _editor_root: ComponentId,
+    _context: &PaintContext,
+    _stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
+    _renderable: ComponentId,
+    _hit_point: [f32; 3],
+) -> Option<String> {
+    None
+}
+
+fn handle_scene_click(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    editor_root: ComponentId,
+    panel_query_root: ComponentId,
+    templates: &[PaintAssetTemplate],
+    paint_state: &PaintState,
+    editor_context: &EditorContextState,
+    stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
+    renderable: ComponentId,
+    hit_point: [f32; 3],
+) -> Option<String> {
+    let context = resolve_paint_context(
+        world,
+        editor_root,
+        panel_query_root,
+        paint_state,
+        editor_context,
+        templates,
+    )?;
+
+    match paint_state.selected_tool {
+        PaintTool::FreeDraw => handle_free_draw_click(
+            world,
+            emit,
+            editor_root,
+            &context,
+            stroke_runtime,
+            renderable,
+            hit_point,
+        ),
+        PaintTool::SprayCan => handle_spray_can_click(
+            world,
+            emit,
+            editor_root,
+            &context,
+            stroke_runtime,
+            renderable,
+            hit_point,
+        ),
+        PaintTool::Erase => handle_erase_click(
+            world,
+            emit,
+            editor_root,
+            &context,
+            stroke_runtime,
+            renderable,
+            hit_point,
+        ),
+        PaintTool::Line => handle_line_click(
+            world,
+            emit,
+            editor_root,
+            &context,
+            stroke_runtime,
+            renderable,
+            hit_point,
+        ),
+        PaintTool::Fill => handle_fill_click(
+            world,
+            emit,
+            editor_root,
+            &context,
+            stroke_runtime,
+            renderable,
+            hit_point,
+        ),
+        PaintTool::Unknown(_) => None,
+    }
+}
+
+fn handle_stroke_move(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    editor_root: ComponentId,
+    panel_query_root: ComponentId,
+    templates: &[PaintAssetTemplate],
+    paint_state: &PaintState,
+    editor_context: &EditorContextState,
+    stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
+    renderable: ComponentId,
+    hit_point: [f32; 3],
+) -> Option<String> {
+    let context = resolve_paint_context(
+        world,
+        editor_root,
+        panel_query_root,
+        paint_state,
+        editor_context,
+        templates,
+    )?;
+
+    match paint_state.selected_tool {
+        PaintTool::FreeDraw => handle_free_draw_stroke_move(
+            world,
+            emit,
+            editor_root,
+            &context,
+            stroke_runtime,
+            renderable,
+            hit_point,
+        ),
+        PaintTool::SprayCan => handle_spray_can_stroke_move(
+            world,
+            emit,
+            editor_root,
+            &context,
+            stroke_runtime,
+            renderable,
+            hit_point,
+        ),
+        PaintTool::Erase => handle_erase_stroke_move(
+            world,
+            emit,
+            editor_root,
+            &context,
+            stroke_runtime,
+            renderable,
+            hit_point,
+        ),
+        PaintTool::Line => handle_line_stroke_move(
+            world,
+            emit,
+            editor_root,
+            &context,
+            stroke_runtime,
+            renderable,
+            hit_point,
+        ),
+        PaintTool::Fill => handle_fill_stroke_move(
+            world,
+            emit,
+            editor_root,
+            &context,
+            stroke_runtime,
+            renderable,
+            hit_point,
+        ),
+        PaintTool::Unknown(_) => None,
     }
 }
 
@@ -1579,6 +1929,166 @@ mod tests {
         assert_eq!(
             count_named_descendants(&world, editor_b, "painted_asset_root"),
             1
+        );
+    }
+
+    #[test]
+    fn paint_tool_line_and_fill_noop() {
+        let (
+            mut world,
+            mut emit,
+            mut visuals,
+            mut systems,
+            render_assets,
+            editor_root,
+            _scene_root,
+            renderable,
+            _paint_panel_root,
+        ) = init_editor_fixture();
+
+        // 1. Line tool
+        {
+            let mut state = systems.editor_paint.shared_state.lock().unwrap();
+            state.selected_tool = PaintTool::Line;
+        }
+
+        push_click(&mut systems, renderable);
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        assert_eq!(
+            count_named_descendants(&world, editor_root, "painted_asset_root"),
+            0,
+            "Line tool should NOT place assets on click (NOOP)"
+        );
+
+        // 2. Fill tool
+        {
+            let mut state = systems.editor_paint.shared_state.lock().unwrap();
+            state.selected_tool = PaintTool::Fill;
+        }
+
+        push_click(&mut systems, renderable);
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        assert_eq!(
+            count_named_descendants(&world, editor_root, "painted_asset_root"),
+            0,
+            "Fill tool should NOT place assets on click (NOOP)"
+        );
+    }
+
+    #[test]
+    fn paint_tool_spray_can_scatters_assets() {
+        let (
+            mut world,
+            mut emit,
+            mut visuals,
+            mut systems,
+            render_assets,
+            editor_root,
+            _scene_root,
+            renderable,
+            _paint_panel_root,
+        ) = init_editor_fixture();
+
+        {
+            let mut state = systems.editor_paint.shared_state.lock().unwrap();
+            state.selected_tool = PaintTool::SprayCan;
+        }
+
+        // Click hit point is [0.0, 0.0, 0.5] in push_click
+        push_click(&mut systems, renderable);
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        assert_eq!(
+            count_named_descendants(&world, editor_root, "painted_asset_root"),
+            1,
+            "Spray Can tool should place 1 asset"
+        );
+
+        let painted_root = world
+            .find_component(editor_root, "[name='painted_asset_root']")
+            .expect("painted asset root");
+        let transform = world
+            .get_component_by_id_as::<TransformComponent>(painted_root)
+            .expect("transform");
+        let position = transform.transform.translation;
+
+        // Since Spray Can places with random offset, it should NOT be exactly at [0.0, 0.0, 0.5].
+        let dx = position[0] - 0.0;
+        let dz = position[2] - 0.5;
+        let dist = (dx * dx + dz * dz).sqrt();
+        assert!(dist > 0.0, "Spray Can should offset the asset placement by a random distance: position={:?}", position);
+        assert!(dist <= 1.5, "Spray Can offset should be at most 1.5 units: position={:?}", position);
+    }
+
+    #[test]
+    fn paint_tool_erase_removes_painted_assets() {
+        let (
+            mut world,
+            mut emit,
+            mut visuals,
+            mut systems,
+            render_assets,
+            editor_root,
+            _scene_root,
+            renderable,
+            _paint_panel_root,
+        ) = init_editor_fixture();
+
+        // 1. First, place an asset using Free Draw
+        push_click(&mut systems, renderable);
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        assert_eq!(
+            count_named_descendants(&world, editor_root, "painted_asset_root"),
+            1,
+            "expected 1 painted asset root initially"
+        );
+
+        // Reset the stroke runtime by ending the stroke
+        systems.rx.push_event(
+            renderable,
+            EventSignal::DragEnd {
+                raycaster: renderable,
+                renderable,
+                hit_point: None,
+            },
+        );
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+
+        let painted_root = world
+            .find_component(editor_root, "[name='painted_asset_root']")
+            .expect("painted asset root");
+        let painted_renderable = world
+            .find_component(painted_root, "Renderable")
+            .expect("painted renderable");
+
+        // 2. Select Erase tool
+        {
+            let mut state = systems.editor_paint.shared_state.lock().unwrap();
+            state.selected_tool = PaintTool::Erase;
+        }
+
+        // 3. Click directly on the painted renderable to erase it
+        push_click(&mut systems, painted_renderable);
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        assert_eq!(
+            count_named_descendants(&world, editor_root, "painted_asset_root"),
+            0,
+            "Erase tool should remove the painted asset subtree"
         );
     }
 }
