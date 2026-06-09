@@ -23,7 +23,7 @@ const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 const ASSETS_SELECTION_SELECTOR: &str = "#assets_selection";
 const PAINT_TOOL_SELECTION_SELECTOR: &str = "#paint_tool_selection";
 const PAINT_STATUS_WRAP_SELECTOR: &str = "#paint_status_wrap";
-const PANEL_STATUS_VALUE_SELECTOR: &str = "#panel_status_value";
+const PANEL_STATUS_VALUE_SELECTOR: &str = "#paint_panel_status_value";
 const RUNTIME_UI_ROOT_NAME: &str = "editor_runtime_ui_root";
 
 #[derive(Debug, Clone)]

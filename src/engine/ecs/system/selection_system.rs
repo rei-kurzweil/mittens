@@ -661,7 +661,8 @@ fn handle_selection_click(
         } else if selection.selected_entries.len() == 1
             && selection.selected_entries[0].component == item_id
         {
-            (Vec::new(), None)
+            // Single-select reclick is a no-op — keep existing selection
+            return;
         } else {
             (vec![entry.clone()], Some(entry.component))
         }
