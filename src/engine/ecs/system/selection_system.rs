@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::{
     BoundsComponent, ColorComponent, Component, DataComponent, EmissiveComponent, LayoutComponent,
     OptionComponent, RenderableComponent, SelectionComponent, SelectionEntry, SelectionMode,
-    StyleComponent, TextComponent, TransformComponent,
+    StyleComponent, TransformComponent,
 };
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
@@ -166,16 +166,6 @@ fn find_descendant_by_type(
         }
     }
     None
-}
-
-fn find_selected_item_text(world: &World, item_id: ComponentId) -> Option<String> {
-    let text_id = world
-        .find_component(item_id, "#selection_item_label")
-        .or_else(|| world.find_component(item_id, "[name='selection_item_label']"))
-        .or_else(|| find_descendant_by_type(world, item_id, "text"))?;
-    world
-        .get_component_by_id_as::<TextComponent>(text_id)
-        .map(|text| text.text.clone())
 }
 
 fn find_selected_item_index(
@@ -548,24 +538,19 @@ pub fn apply_selection_set(
                 .cloned()
             {
                 selection.selected_index = entry.index;
-                selection.selected_item = entry.item;
                 selection.selected_component = Some(entry.component);
             } else if let Some(entry) = selection.selected_entries.last().cloned() {
                 selection.selected_index = entry.index;
-                selection.selected_item = entry.item;
                 selection.selected_component = Some(entry.component);
             } else {
                 selection.selected_index = None;
-                selection.selected_item = None;
                 selection.selected_component = None;
             }
         } else if let Some(entry) = selection.selected_entries.last().cloned() {
             selection.selected_index = entry.index;
-            selection.selected_item = entry.item;
             selection.selected_component = Some(entry.component);
         } else {
             selection.selected_index = None;
-            selection.selected_item = None;
             selection.selected_component = None;
         }
 
@@ -643,16 +628,14 @@ fn handle_selection_click(
             rec.name, rec.component_type, item_id
         );
     }
-    let selected_text = find_selected_item_text(world, item_id);
     let selected_index = find_selected_item_index(world, selection_root, item_id);
     println!(
-        "[selection] text={:?} index={:?}",
-        selected_text, selected_index
+        "[selection] index={:?}",
+        selected_index
     );
 
     let entry = SelectionEntry {
         index: selected_index,
-        item: selected_text,
         component: item_id,
     };
 
@@ -882,7 +865,12 @@ mod tests {
         assert_eq!(selection.selected_payload, Some(payload));
         assert_eq!(selection.selected_index, Some(0));
         assert_eq!(
-            selection.selected_item.as_deref(),
+            world
+                .get_component_by_id_as::<DataComponent>(payload)
+                .and_then(|data| match data.get("label")? {
+                    crate::engine::ecs::component::DataValue::Text(label) => Some(label.as_str()),
+                    _ => None,
+                }),
             Some("test_asset: example")
         );
     }
@@ -1799,12 +1787,10 @@ mod tests {
                 entries: vec![
                     SelectionEntry {
                         index: Some(0),
-                        item: Some("first_item".to_string()),
                         component: first,
                     },
                     SelectionEntry {
                         index: Some(1),
-                        item: Some("second_item".to_string()),
                         component: second,
                     },
                 ],
@@ -1916,7 +1902,6 @@ mod tests {
             selection_root,
             vec![SelectionEntry {
                 index: Some(0),
-                item: Some("zero".to_string()),
                 component: zero_row,
             }],
             Some(zero_row),
@@ -1956,7 +1941,6 @@ mod tests {
             selection_root,
             vec![SelectionEntry {
                 index: Some(1),
-                item: Some("multi".to_string()),
                 component: multi_row,
             }],
             Some(multi_row),

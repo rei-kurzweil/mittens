@@ -264,7 +264,6 @@ pub(crate) fn rerender_paint_panel_content(
         if let Some(item_component) = first_item {
             selection_component.select_entry(SelectionEntry {
                 index: Some(0),
-                item: Some(FREE_DRAW_LABEL.to_string()),
                 component: item_component,
             });
         }

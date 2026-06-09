@@ -193,7 +193,6 @@ pub(crate) fn select_editor_target(
             mode: crate::engine::ecs::component::SelectionMode::Single,
             selected_entries: vec![crate::engine::ecs::component::SelectionEntry {
                 index: None,
-                item: None,
                 component: target_transform,
             }],
             selected_component: Some(target_transform),

@@ -350,18 +350,12 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 else {
                     return;
                 };
-                let row_label = world
-                    .find_component(row_root, "Text")
-                    .and_then(|text_id| world.get_component_by_id_as::<TextComponent>(text_id))
-                    .map(|text| text.text.trim().to_string());
-
                 crate::engine::ecs::system::selection_system::apply_selection_set(
                     world,
                     emit,
                     selection_root,
                     vec![SelectionEntry {
                         index: Some(row_index),
-                        item: row_label,
                         component: row_root,
                     }],
                     Some(row_root),
@@ -473,11 +467,6 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                         component_ids: vec![panel_layout_selection],
                         entries: vec![SelectionEntry {
                             index: None,
-                            item: Some(
-                                WORLD_PANEL_ROOT_SELECTOR
-                                    .trim_start_matches('#')
-                                    .to_string(),
-                            ),
                             component: world_panel_root,
                         }],
                         primary: Some(world_panel_root),
@@ -522,11 +511,6 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                         component_ids: vec![panel_layout_selection],
                         entries: vec![SelectionEntry {
                             index: None,
-                            item: Some(
-                                INSPECTOR_PANEL_ROOT_SELECTOR
-                                    .trim_start_matches('#')
-                                    .to_string(),
-                            ),
                             component: inspector_panel_root,
                         }],
                         primary: Some(inspector_panel_root),
@@ -571,11 +555,6 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                         component_ids: vec![panel_layout_selection],
                         entries: vec![SelectionEntry {
                             index: None,
-                            item: Some(
-                                PAINT_PANEL_ROOT_SELECTOR
-                                    .trim_start_matches('#')
-                                    .to_string(),
-                            ),
                             component: paint_panel_root,
                         }],
                         primary: Some(paint_panel_root),
@@ -619,7 +598,6 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                         component_ids: vec![panel_layout_selection],
                         entries: vec![SelectionEntry {
                             index: None,
-                            item: Some("assets_root".to_string()),
                             component: asset_panel_root,
                         }],
                         primary: Some(asset_panel_root),
@@ -1532,7 +1510,6 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                         component_ids: vec![panel_layout_selection],
                         entries: vec![SelectionEntry {
                             index: Some(0),
-                            item: Some("world_panel_root".to_string()),
                             component: world_panel_root,
                         }],
                         primary: Some(world_panel_root),
@@ -1936,7 +1913,7 @@ fn rerender_single_inspector_panel_sidebar(
     }
     let _ = world.add_child(container, selection);
 
-    if let Some((index, row)) = rows.iter().enumerate().find(|(_, row)| row.selected)
+    if let Some((index, _)) = rows.iter().enumerate().find(|(_, row)| row.selected)
         && let Some(row_root) =
             world.find_component(container, &format!("#{INSPECTOR_ITEM_PREFIX}{index}"))
     {
@@ -1946,7 +1923,6 @@ fn rerender_single_inspector_panel_sidebar(
         {
             selection_component.select_entry(SelectionEntry {
                 index: Some(index),
-                item: Some(row.display_label.clone()),
                 component: row_root,
             });
             selection_component.selected_payload = selected_payload;
@@ -2265,9 +2241,8 @@ fn focus_panel_from_descendant_click(
             panel_layout_selection,
             IntentValue::SelectionSet {
                 component_ids: vec![panel_layout_selection],
-                entries: vec![SelectionEntry {
+                    entries: vec![SelectionEntry {
                     index: None,
-                    item: Some(format!("{INSPECTOR_PANEL_INSTANCE_PREFIX}{panel_id}")),
                     component: panel_root,
                 }],
                 primary: Some(panel_root),
@@ -2276,10 +2251,10 @@ fn focus_panel_from_descendant_click(
         return;
     }
 
-    for (selector, item_name) in [
-        (WORLD_PANEL_ROOT_SELECTOR, "world_panel_root"),
-        ("#assets_root", "assets_root"),
-        (PAINT_PANEL_ROOT_SELECTOR, "paint_panel_root"),
+    for selector in [
+        WORLD_PANEL_ROOT_SELECTOR,
+        "#assets_root",
+        PAINT_PANEL_ROOT_SELECTOR,
     ] {
         let Some(panel_root) = world.find_component(panel_query_root, selector) else {
             continue;
@@ -2293,7 +2268,6 @@ fn focus_panel_from_descendant_click(
                 component_ids: vec![panel_layout_selection],
                 entries: vec![SelectionEntry {
                     index: None,
-                    item: Some(item_name.to_string()),
                     component: panel_root,
                 }],
                 primary: Some(panel_root),
@@ -2791,7 +2765,7 @@ fn spawn_world_panel_content_tree(
     }
 
     if let Some(index) = selected_index.and_then(|index| usize::try_from(index).ok())
-        && let Some(row) = rows.get(index)
+        && let Some(_) = rows.get(index)
         && let Some(row_root) =
             world.find_component(content_root, &format!("#{ITEM_PREFIX}{index}"))
     {
@@ -2802,7 +2776,6 @@ fn spawn_world_panel_content_tree(
         };
         selection.select_entry(SelectionEntry {
             index: Some(index),
-            item: Some(row.label.clone()),
             component: row_root,
         });
         selection.selected_payload = selected_payload;

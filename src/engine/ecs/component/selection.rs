@@ -9,7 +9,6 @@ pub enum SelectionMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectionEntry {
     pub index: Option<usize>,
-    pub item: Option<String>,
     pub component: ComponentId,
 }
 
@@ -18,7 +17,6 @@ pub struct SelectionComponent {
     pub mode: SelectionMode,
     pub payload_selector: Option<String>,
     pub selected_index: Option<usize>,
-    pub selected_item: Option<String>,
     pub selected_component: Option<ComponentId>,
     pub selected_payload: Option<ComponentId>,
     pub selected_entries: Vec<SelectionEntry>,
@@ -31,7 +29,6 @@ impl SelectionComponent {
             mode: SelectionMode::Single,
             payload_selector: None,
             selected_index: None,
-            selected_item: None,
             selected_component: None,
             selected_payload: None,
             selected_entries: Vec::new(),
@@ -52,23 +49,13 @@ impl SelectionComponent {
 
     pub fn clear(&mut self) {
         self.selected_index = None;
-        self.selected_item = None;
         self.selected_component = None;
         self.selected_payload = None;
         self.selected_entries.clear();
     }
 
-    pub fn select(&mut self, index: usize, item: String, component: ComponentId) {
-        self.select_entry(SelectionEntry {
-            index: Some(index),
-            item: Some(item),
-            component,
-        });
-    }
-
     pub fn select_entry(&mut self, entry: SelectionEntry) {
         self.selected_index = entry.index;
-        self.selected_item = entry.item.clone();
         self.selected_component = Some(entry.component);
         self.selected_payload = None;
         self.selected_entries.clear();
@@ -99,7 +86,6 @@ impl SelectionComponent {
 
         self.selected_entries.push(entry.clone());
         self.selected_index = entry.index;
-        self.selected_item = entry.item;
         self.selected_component = Some(entry.component);
         self.selected_payload = None;
         true
@@ -108,12 +94,10 @@ impl SelectionComponent {
     fn sync_primary_from_entries(&mut self) {
         if let Some(entry) = self.selected_entries.last().cloned() {
             self.selected_index = entry.index;
-            self.selected_item = entry.item;
             self.selected_component = Some(entry.component);
             self.selected_payload = None;
         } else {
             self.selected_index = None;
-            self.selected_item = None;
             self.selected_component = None;
             self.selected_payload = None;
         }

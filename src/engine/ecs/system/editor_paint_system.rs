@@ -219,8 +219,8 @@ fn bootstrap_paint_state(
         world,
         panel_query_root,
         ASSETS_SELECTION_SELECTOR,
-        |selection| PaintEvent::AssetSelectionChanged {
-            item: selection.selected_item.clone(),
+        |selection, w| PaintEvent::AssetSelectionChanged {
+            item: label_from_selected_payload(w, selection),
             component: selection.selected_payload.or(selection.selected_component),
         },
     ) {
@@ -231,10 +231,13 @@ fn bootstrap_paint_state(
         world,
         panel_query_root,
         PAINT_TOOL_SELECTION_SELECTOR,
-        |selection| PaintEvent::ToolSelectionChanged {
-            tool: paint_tool_from_item(selection.selected_item.clone()),
-            item: selection.selected_item.clone(),
-            component: selection.selected_component,
+        |selection, w| {
+            let label = label_from_selected_payload(w, selection);
+            PaintEvent::ToolSelectionChanged {
+                tool: paint_tool_from_item(label.clone()),
+                item: label,
+                component: selection.selected_component,
+            }
         },
     ) {
         events.push(tool_event);
@@ -246,6 +249,15 @@ fn bootstrap_paint_state(
     }
 }
 
+fn label_from_selected_payload(world: &World, selection: &SelectionComponent) -> Option<String> {
+    let payload_id = selection.selected_payload?;
+    let data = world.get_component_by_id_as::<DataComponent>(payload_id)?;
+    match data.get("label")? {
+        crate::engine::ecs::component::DataValue::Text(label) => Some(label.clone()),
+        _ => None,
+    }
+}
+
 fn bootstrap_selection_event<F>(
     world: &World,
     panel_query_root: ComponentId,
@@ -253,11 +265,11 @@ fn bootstrap_selection_event<F>(
     event_builder: F,
 ) -> Option<PaintEvent>
 where
-    F: FnOnce(&SelectionComponent) -> PaintEvent,
+    F: FnOnce(&SelectionComponent, &World) -> PaintEvent,
 {
     let selection_root = world.find_component(panel_query_root, selector)?;
     let selection = world.get_component_by_id_as::<SelectionComponent>(selection_root)?;
-    Some(event_builder(selection))
+    Some(event_builder(selection, world))
 }
 
 fn sync_paint_state_from_shared_selections(
@@ -271,8 +283,8 @@ fn sync_paint_state_from_shared_selections(
         world,
         panel_query_root,
         ASSETS_SELECTION_SELECTOR,
-        |selection| PaintEvent::AssetSelectionChanged {
-            item: selection.selected_item.clone(),
+        |selection, w| PaintEvent::AssetSelectionChanged {
+            item: label_from_selected_payload(w, selection),
             component: selection.selected_payload.or(selection.selected_component),
         },
     ) {
@@ -283,10 +295,13 @@ fn sync_paint_state_from_shared_selections(
         world,
         panel_query_root,
         PAINT_TOOL_SELECTION_SELECTOR,
-        |selection| PaintEvent::ToolSelectionChanged {
-            tool: paint_tool_from_item(selection.selected_item.clone()),
-            item: selection.selected_item.clone(),
-            component: selection.selected_component,
+        |selection, w| {
+            let label = label_from_selected_payload(w, selection);
+            PaintEvent::ToolSelectionChanged {
+                tool: paint_tool_from_item(label.clone()),
+                item: label,
+                component: selection.selected_component,
+            }
         },
     ) {
         events.push(event);
@@ -315,7 +330,13 @@ fn paint_event_from_shared_signal(
             selected_payload,
             ..
         } => {
-            let item = selected_entries.last().and_then(|entry| entry.item.clone());
+            let item = selected_payload.and_then(|payload_id| {
+                world.get_component_by_id_as::<DataComponent>(payload_id)
+                    .and_then(|data| match data.get("label")? {
+                        crate::engine::ecs::component::DataValue::Text(label) => Some(label.clone()),
+                        _ => None,
+                    })
+            });
             let component = selected_payload
                 .or(*selected_component)
                 .or_else(|| selected_entries.last().map(|entry| entry.component));
@@ -1246,7 +1267,7 @@ mod tests {
             world
                 .get_component_by_id_as::<SelectionComponent>(assets_selection)
                 .expect("selection")
-                .selected_item
+                .selected_payload
                 .is_some()
         );
 

@@ -549,20 +549,17 @@ pub fn rerender_world_panel_content(
     let _ = world.add_child(container, selection);
 
     if let Some(index) = selected_index.and_then(|i| usize::try_from(i).ok()) {
-        if let Some(row) = rows.get(index) {
-            let row_selector = format!("#{ITEM_PREFIX}{index}");
-            if let Some(row_root) = world.find_component(container, &row_selector) {
-                let selected_payload = resolve_selected_world_panel_payload(world, row_root);
-                if let Some(selection_component) =
-                    world.get_component_by_id_as_mut::<SelectionComponent>(selection)
-                {
-                    selection_component.select_entry(SelectionEntry {
-                        index: Some(index),
-                        item: Some(row.label.clone()),
-                        component: row_root,
-                    });
-                    selection_component.selected_payload = selected_payload;
-                }
+        let row_selector = format!("#{ITEM_PREFIX}{index}");
+        if let Some(row_root) = world.find_component(container, &row_selector) {
+            let selected_payload = resolve_selected_world_panel_payload(world, row_root);
+            if let Some(selection_component) =
+                world.get_component_by_id_as_mut::<SelectionComponent>(selection)
+            {
+                selection_component.select_entry(SelectionEntry {
+                    index: Some(index),
+                    component: row_root,
+                });
+                selection_component.selected_payload = selected_payload;
             }
         }
     }
@@ -613,7 +610,7 @@ pub fn sync_world_panel_selection(
             .lock()
             .expect("world panel scene model mutex poisoned"),
     );
-    let Some((selected_index, row)) = model
+    let Some((selected_index, _)) = model
         .rows
         .iter()
         .enumerate()
@@ -628,8 +625,6 @@ pub fn sync_world_panel_selection(
         );
         return;
     };
-    let label = row.label.clone();
-
     let already_selected = world
         .get_component_by_id_as::<SelectionComponent>(selection_root)
         .is_some_and(|selection| {
@@ -657,7 +652,6 @@ pub fn sync_world_panel_selection(
         selection_root,
         vec![SelectionEntry {
             index: Some(selected_index),
-            item: Some(label),
             component: row_root,
         }],
         Some(row_root),
