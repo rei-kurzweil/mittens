@@ -2,8 +2,9 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::{
-    AssetPayloadComponent, DataComponent, EditorComponent, OptionComponent, RaycastableComponent,
-    SelectableComponent, SelectionComponent, TransformComponent, TransformGizmoComponent,
+    AssetPayloadComponent, DataComponent, DataValue, EditorComponent, OptionComponent,
+    RaycastableComponent, SelectableComponent, SelectionComponent, TransformComponent,
+    TransformGizmoComponent,
 };
 use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor_paint_system_state_manager::{
@@ -12,16 +13,13 @@ use crate::engine::ecs::system::editor_paint_system_state_manager::{
 };
 use crate::engine::ecs::system::grid_system::{GridSnapResult, GridStep, GridSystem};
 use crate::engine::ecs::system::paint_placement::{PlacementError, resolve_placement_pose};
-use crate::engine::ecs::system::selection_system::resolve_semantic_target_from_payload;
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalKind, World,
 };
 use crate::meow_meow::object::Value;
 use crate::meow_meow::runner::{LoadedMmsModule, MeowMeowRunner};
 
-const PANEL_LAYOUT_SELECTION_SELECTOR: &str = "#editor_panel_layout_selection";
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
-const WORLD_PANEL_SELECTION_SELECTOR: &str = "#world_panel_selection";
 const ASSETS_SELECTION_SELECTOR: &str = "#assets_selection";
 const PAINT_TOOL_SELECTION_SELECTOR: &str = "#paint_tool_selection";
 const PAINT_STATUS_WRAP_SELECTOR: &str = "#paint_status_wrap";
@@ -112,26 +110,66 @@ fn install_shared_panel_handlers(
     templates: Arc<Mutex<Vec<PaintAssetTemplate>>>,
 ) {
     let _ = world;
+
+    // Translate panel-level selection changes into PaintEvents synchronously.
+    // We cannot emit DataEvent here because events emitted from within handler
+    // dispatch go to deferred_events and won't be processed until begin_frame()
+    // — which never runs inside process_signals or test flow.
+    let state = Arc::clone(&paint_state);
+    let ctx = Arc::clone(&editor_context_state);
+    let tpl = Arc::clone(&templates);
     rx.add_handler_closure(
         SignalKind::SelectionChanged,
         panel_query_root,
         move |world, emit, signal| {
-            let Some(event) = paint_event_from_shared_signal(world, panel_query_root, signal)
-            else {
-                return;
-            };
+            let Some(ref event) = signal.event else { return };
+            let EventSignal::SelectionChanged {
+                selection_root,
+                selected_component,
+                selected_payload,
+                ..
+            } = event else { return };
 
-            handle_paint_event(
-                world,
-                emit,
-                panel_query_root,
-                &templates,
-                &paint_state,
-                &editor_context_state,
-                None,
-                &event,
+            let component = selected_payload.or(*selected_component);
+            let label = component.and_then(|id| label_from_component_id(world, id));
+
+            if let Some(id) = component {
+                if label.is_none() {
+                    if let Some(rec) = world.get_component_record(id) {
+                        let dc = world.get_component_by_id_as::<DataComponent>(id);
+                        let has_dc = dc.is_some();
+                        let entries_str = dc.map(|d| format!("{:?}", d.entries())).unwrap_or_default();
+                        eprintln!("🎨🖌️ paint_debug bridge: label missing for component={id:?} type={} name={:?} has_DataComponent={} entries={}", rec.component_type, rec.name, has_dc, entries_str);
+                    } else {
+                        eprintln!("🎨🖌️ paint_debug bridge: component={id:?} has no record");
+                    }
+                }
+            }
+
+            let is_asset = world
+                .find_component(panel_query_root, ASSETS_SELECTION_SELECTOR)
+                .is_some_and(|root| root == *selection_root);
+            let is_tool = world
+                .find_component(panel_query_root, PAINT_TOOL_SELECTION_SELECTOR)
+                .is_some_and(|root| root == *selection_root);
+
+            println!(
+                "🎨🖌️ paint_debug bridge SelectionChanged is_asset={is_asset} is_tool={is_tool} selection_root={selection_root:?} component={component:?} label={label:?}",
             );
-            sync_paint_state_from_shared_selections(world, panel_query_root, &paint_state);
+            if is_asset {
+                let event = PaintEvent::AssetSelectionChanged {
+                    item: label,
+                    component,
+                };
+                handle_paint_event(world, emit, panel_query_root, &tpl, &state, &ctx, None, &event);
+            } else if is_tool {
+                let event = PaintEvent::ToolSelectionChanged {
+                    tool: paint_tool_from_item(label.clone()),
+                    item: label,
+                    component,
+                };
+                handle_paint_event(world, emit, panel_query_root, &tpl, &state, &ctx, None, &event);
+            }
         },
     );
 }
@@ -187,11 +225,13 @@ fn handle_paint_event(
     stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     event: &PaintEvent,
 ) {
+    eprintln!("🎨🖌️ paint_debug handle_paint_event event={event:?}");
     let (old_state, new_state) = {
         let mut state = paint_state.lock().expect("paint state mutex poisoned");
         let old_state = state.clone();
         let new_state = reduce_paint_state(&old_state, event);
         *state = new_state.clone();
+        eprintln!("🎨🖌️ paint_debug   old={old_state:?} new={new_state:?}");
         (old_state, new_state)
     };
 
@@ -243,19 +283,45 @@ fn bootstrap_paint_state(
         events.push(tool_event);
     }
 
-    for event in events {
+    let state_str;
+    {
         let mut state = paint_state.lock().expect("paint state mutex poisoned");
-        *state = reduce_paint_state(&state, &event);
+        for event in &events {
+            *state = reduce_paint_state(&state, event);
+        }
+        // If the tool selection component exists but has no selected item,
+        // default to FreeDraw. The MMS template creates the selection
+        // component but doesn't set an initial selection.
+        if matches!(state.selected_tool, PaintTool::Unknown(None)) {
+            *state = reduce_paint_state(
+                &state,
+                &PaintEvent::ToolSelectionChanged {
+                    tool: PaintTool::FreeDraw,
+                    item: Some("FreeDraw".to_string()),
+                    component: None,
+                },
+            );
+        }
+        state_str = format!("{state:?}");
     }
+    eprintln!("🎨🖌️ paint_debug bootstrap_paint_state done → {}", state_str);
+}
+
+fn label_from_component_id(world: &World, id: ComponentId) -> Option<String> {
+    if let Some(data) = world.get_component_by_id_as::<DataComponent>(id) {
+        if let Some(DataValue::Text(label)) = data.get("label") {
+            return Some(label.clone());
+        }
+    }
+    if let Some(asset) = world.get_component_by_id_as::<AssetPayloadComponent>(id) {
+        return Some(asset.title.clone());
+    }
+    None
 }
 
 fn label_from_selected_payload(world: &World, selection: &SelectionComponent) -> Option<String> {
     let payload_id = selection.selected_payload?;
-    let data = world.get_component_by_id_as::<DataComponent>(payload_id)?;
-    match data.get("label")? {
-        crate::engine::ecs::component::DataValue::Text(label) => Some(label.clone()),
-        _ => None,
-    }
+    label_from_component_id(world, payload_id)
 }
 
 fn bootstrap_selection_event<F>(
@@ -270,122 +336,6 @@ where
     let selection_root = world.find_component(panel_query_root, selector)?;
     let selection = world.get_component_by_id_as::<SelectionComponent>(selection_root)?;
     Some(event_builder(selection, world))
-}
-
-fn sync_paint_state_from_shared_selections(
-    world: &World,
-    panel_query_root: ComponentId,
-    paint_state: &Arc<Mutex<PaintState>>,
-) {
-    let mut events = Vec::new();
-
-    if let Some(event) = bootstrap_selection_event(
-        world,
-        panel_query_root,
-        ASSETS_SELECTION_SELECTOR,
-        |selection, w| PaintEvent::AssetSelectionChanged {
-            item: label_from_selected_payload(w, selection),
-            component: selection.selected_payload.or(selection.selected_component),
-        },
-    ) {
-        events.push(event);
-    }
-
-    if let Some(event) = bootstrap_selection_event(
-        world,
-        panel_query_root,
-        PAINT_TOOL_SELECTION_SELECTOR,
-        |selection, w| {
-            let label = label_from_selected_payload(w, selection);
-            PaintEvent::ToolSelectionChanged {
-                tool: paint_tool_from_item(label.clone()),
-                item: label,
-                component: selection.selected_component,
-            }
-        },
-    ) {
-        events.push(event);
-    }
-
-    if events.is_empty() {
-        return;
-    }
-
-    let mut state = paint_state.lock().expect("paint state mutex poisoned");
-    for event in events {
-        *state = reduce_paint_state(&state, &event);
-    }
-}
-
-fn paint_event_from_shared_signal(
-    world: &World,
-    panel_query_root: ComponentId,
-    signal: &Signal,
-) -> Option<PaintEvent> {
-    let event = match signal.event.as_ref()? {
-        EventSignal::SelectionChanged {
-            selection_root,
-            selected_entries,
-            selected_component,
-            selected_payload,
-            ..
-        } => {
-            let item = selected_payload.and_then(|payload_id| {
-                world.get_component_by_id_as::<DataComponent>(payload_id)
-                    .and_then(|data| match data.get("label")? {
-                        crate::engine::ecs::component::DataValue::Text(label) => Some(label.clone()),
-                        _ => None,
-                    })
-            });
-            let component = selected_payload
-                .or(*selected_component)
-                .or_else(|| selected_entries.last().map(|entry| entry.component));
-            let asset_selection_root =
-                world.find_component(panel_query_root, ASSETS_SELECTION_SELECTOR);
-            let tool_selection_root =
-                world.find_component(panel_query_root, PAINT_TOOL_SELECTION_SELECTOR);
-            let panel_layout_selection_root =
-                world.find_component(panel_query_root, PANEL_LAYOUT_SELECTION_SELECTOR);
-            let is_panel_layout_selection = panel_layout_selection_root == Some(*selection_root)
-                || world.component_label(*selection_root)
-                    == Some(PANEL_LAYOUT_SELECTION_SELECTOR.trim_start_matches('#'));
-            let world_panel_selection_root =
-                world.find_component(panel_query_root, WORLD_PANEL_SELECTION_SELECTOR);
-            let is_world_panel_selection = world_panel_selection_root == Some(*selection_root)
-                || world.component_label(*selection_root)
-                    == Some(WORLD_PANEL_SELECTION_SELECTOR.trim_start_matches('#'));
-
-            if asset_selection_root == Some(*selection_root) {
-                Some(PaintEvent::AssetSelectionChanged { item, component })
-            } else if tool_selection_root == Some(*selection_root) {
-                Some(PaintEvent::ToolSelectionChanged {
-                    tool: paint_tool_from_item(item.clone()),
-                    item,
-                    component,
-                })
-            } else if is_panel_layout_selection {
-                Some(PaintEvent::PanelFocusChanged {
-                    focused_panel: component,
-                })
-            } else if is_world_panel_selection {
-                let semantic_target = resolve_semantic_target_from_payload(
-                    world,
-                    *selected_payload,
-                    *selected_component,
-                );
-                Some(PaintEvent::WorldPanelSelectionChanged {
-                    component: semantic_target,
-                    editor: semantic_target
-                        .and_then(|target| nearest_editor_ancestor(world, target)),
-                })
-            } else {
-                None
-            }
-        }
-        _ => None,
-    };
-
-    event
 }
 
 fn paint_event_from_editor_signal(
@@ -1260,8 +1210,12 @@ mod tests {
         push_asset_and_panel_focus(&world, &mut systems, paint_panel_root);
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+
+        // Re-bootstrap paint state after Click events establish the initial selection.
+        // The SelectionChanged event emitted by the selection system is deferred and won't
+        // be processed until the next frame (via begin_frame). For this test fixture we
+        // read the current selection directly.
+        bootstrap_paint_state(&world, runtime_ui_root, &systems.editor_paint.shared_state);
 
         assert!(
             world

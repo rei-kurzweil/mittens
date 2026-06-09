@@ -195,6 +195,16 @@ pub enum EventSignal {
         width_wu: f32,
         height_wu: f32,
     },
+
+    /// A named data event for cross-subtree communication.
+    ///
+    /// The `name` identifies the event kind (e.g. "asset_selected", "tool_selected").
+    /// The `scope` on the `Signal` envelope identifies the shared ancestor on which
+    /// handlers are registered. `payload` is an optional `ComponentId` reference.
+    DataEvent {
+        name: String,
+        payload: Option<ComponentId>,
+    },
 }
 
 impl EventSignal {
@@ -216,6 +226,7 @@ impl EventSignal {
             EventSignal::TextInputFocusChanged { .. } => SignalKind::TextInputFocusChanged,
             EventSignal::TextInputChanged { .. } => SignalKind::TextInputChanged,
             EventSignal::LayoutRootSizeAvailable { .. } => SignalKind::LayoutRootSizeAvailable,
+            EventSignal::DataEvent { .. } => SignalKind::DataEvent,
         }
     }
 }
@@ -761,6 +772,12 @@ pub enum SignalKind {
     TextInputFocusChanged,
     TextInputChanged,
     LayoutRootSizeAvailable,
+
+    /// A named data event for cross-subtree communication.
+    ///
+    /// Handlers must filter by name inside the closure body since the kind is
+    /// a unit variant (no payload).
+    DataEvent,
 }
 
 /// Optional timing metadata on the signal envelope.

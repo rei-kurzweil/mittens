@@ -7,10 +7,17 @@
 
 let PAINT_PANEL_ICON_SCALE = 0.25
 
-export fn paint_panel_item(label, icon, item_background_color, title_color) {
+export fn paint_panel_item(item_label, icon, item_background_color, title_color) {
     return T {
         name = "paint_panel_item"
-        Option {}
+        Option {
+            Data {
+                name = "paint_panel_payload"
+                label = item_label
+                row_kind = "PaintTool"
+                interactive = true
+            }
+        }
         Raycastable.enabled()
         Style {
             display("inline-block")
@@ -21,12 +28,6 @@ export fn paint_panel_item(label, icon, item_background_color, title_color) {
             background_z(-0.01)
             text_align("center")
             vertical_align("middle")
-        }
-        Data {
-            name = "paint_panel_payload"
-            label = label
-            row_kind = "PaintTool"
-            interactive = true
         }
         T {
             Style {
@@ -58,7 +59,7 @@ export fn paint_panel_item(label, icon, item_background_color, title_color) {
                 }
                 Text {
                     name = "selection_item_label"
-                    label
+                    item_label
                 }
             }
         }
