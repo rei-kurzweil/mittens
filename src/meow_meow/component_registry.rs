@@ -29,7 +29,8 @@ use crate::engine::ecs::component::{
     RayCastComponent, RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType,
     RenderGraphComponent, RenderableComponent, RendererSettingsComponent, RendererStatsComponent,
     RouterComponent, ScrollingComponent, SelectableComponent, SelectionComponent,
-    SerializeComponent, SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent,
+    SerializeComponent, SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension,
+    SkinnedMeshComponent,
     StencilClipComponent, StyleComponent, TextAlign, TextComponent, TextInputComponent,
     TextShadowComponent, TextureComponent, TextureFilteringComponent, TransformComponent,
     TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
@@ -1279,6 +1280,13 @@ fn create_component(
             Ok(id)
         }
         "Option" => add!(OptionComponent::new()),
+        "ObserverRouter" => {
+            let id = world.add_component(SignalObserverRouterComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "Serialize" => match ctor {
             Some("off") => add!(SerializeComponent::off()),
             _ => add!(SerializeComponent::on()),

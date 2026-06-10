@@ -141,9 +141,10 @@ fn install_shared_panel_handlers(
     state: Arc<Mutex<EditorContextState>>,
 ) {
     let _ = world;
-    rx.add_handler_closure(
+    rx.add_handler_closure_named(
         SignalKind::SelectionChanged,
         panel_query_root,
+        Some("editor_system".to_string()),
         move |world, _emit, signal| {
             let Some(event) =
                 editor_context_event_from_shared_signal(world, panel_query_root, signal)
@@ -161,9 +162,10 @@ fn install_editor_handlers(
     editor_root: ComponentId,
     state: Arc<Mutex<EditorContextState>>,
 ) {
-    rx.add_handler_closure(
+    rx.add_handler_closure_named(
         SignalKind::SelectionChanged,
         editor_root,
+        Some("editor_system".to_string()),
         move |world, _emit, signal| {
             let Some(EventSignal::SelectionChanged {
                 selection_root,

@@ -64,6 +64,7 @@ pub mod scrolling;
 pub mod selectable;
 pub mod selection;
 pub mod serialize;
+pub mod signal_observer_router;
 pub mod signal_route_upward;
 pub mod skinned_mesh;
 pub mod stencil_clip;
@@ -175,6 +176,7 @@ pub use scrolling::ScrollingComponent;
 pub use selectable::SelectableComponent;
 pub use selection::{SelectionComponent, SelectionEntry, SelectionMode};
 pub use serialize::SerializeComponent;
+pub use signal_observer_router::SignalObserverRouterComponent;
 pub use signal_route_upward::SignalRouteUpwardComponent;
 pub use skinned_mesh::SkinnedMeshComponent;
 pub use stencil_clip::StencilClipComponent;
@@ -423,5 +425,9 @@ pub mod ce_helpers {
 
     pub fn array(items: Vec<Expression>) -> Expression {
         Expression::Array(items)
+    }
+
+    pub fn ls<I: IntoIterator<Item = S>, S: AsRef<str>>(values: I) -> Expression {
+        Expression::Array(values.into_iter().map(|v| s(v.as_ref())).collect())
     }
 }

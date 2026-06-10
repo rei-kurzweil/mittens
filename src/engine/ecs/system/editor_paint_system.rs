@@ -119,9 +119,10 @@ fn install_shared_panel_handlers(
     let state = Arc::clone(&paint_state);
     let ctx = Arc::clone(&editor_context_state);
     let tpl = Arc::clone(&templates);
-    rx.add_handler_closure(
+    rx.add_handler_closure_named(
         SignalKind::SelectionChanged,
         panel_query_root,
+        Some("paint_system".to_string()),
         move |world, emit, signal| {
             let Some(ref event) = signal.event else { return };
             let EventSignal::SelectionChanged {
@@ -195,24 +196,29 @@ fn install_editor_scene_handlers(
         let editor_context = Arc::clone(&editor_context_state);
         let shared_templates = Arc::clone(&templates);
         let runtime = Arc::clone(&stroke_runtime);
-        rx.add_handler_closure(signal_kind, editor_root, move |world, emit, signal| {
-            let Some(event) =
-                paint_event_from_editor_signal(world, editor_root, panel_query_root, signal)
-            else {
-                return;
-            };
+        rx.add_handler_closure_named(
+            signal_kind,
+            editor_root,
+            Some("paint_system".to_string()),
+            move |world, emit, signal| {
+                let Some(event) =
+                    paint_event_from_editor_signal(world, editor_root, panel_query_root, signal)
+                else {
+                    return;
+                };
 
-            handle_paint_event(
-                world,
-                emit,
-                panel_query_root,
-                &shared_templates,
-                &state,
-                &editor_context,
-                Some(&runtime),
-                &event,
-            );
-        });
+                handle_paint_event(
+                    world,
+                    emit,
+                    panel_query_root,
+                    &shared_templates,
+                    &state,
+                    &editor_context,
+                    Some(&runtime),
+                    &event,
+                );
+            },
+        );
     }
 }
 
