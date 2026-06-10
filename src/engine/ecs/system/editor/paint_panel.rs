@@ -168,11 +168,15 @@ pub fn is_paint_active(
 ) -> bool {
     let focused = is_paint_panel_focused(paint_panel_root, editor_context);
     let tool_ok = !matches!(paint_state.selected_tool, PaintTool::Unknown(_));
-    let asset_ok = paint_state
-        .selected_asset
-        .as_ref()
-        .and_then(|selection| selection.component)
-        .is_some();
+    let asset_ok = if paint_state.selected_tool == PaintTool::Erase {
+        true
+    } else {
+        paint_state
+            .selected_asset
+            .as_ref()
+            .and_then(|selection| selection.component)
+            .is_some()
+    };
     let result = focused && tool_ok && asset_ok;
     eprintln!("🎨🖌️ paint_debug is_paint_active result={result} focused={focused} tool_ok={tool_ok} asset_ok={asset_ok} tool={:?} asset={:?} panel={paint_panel_root:?} focused_panel={:?}",
         paint_state.selected_tool, paint_state.selected_asset, editor_context.focused_panel);

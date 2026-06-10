@@ -1043,7 +1043,16 @@ fn paint_activity_status(
     paint_state: &PaintState,
     editor_context: &EditorContextState,
 ) -> PaintActivityStatus {
-    if paint_state
+    let paint_panel_root = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR);
+    if !is_paint_panel_focused(paint_panel_root, editor_context) {
+        return PaintActivityStatus {
+            active: false,
+            reason: "focus Paint panel".to_string(),
+        };
+    }
+
+    let is_erase = paint_state.selected_tool == PaintTool::Erase;
+    if !is_erase && paint_state
         .selected_asset
         .as_ref()
         .and_then(|selection| selection.component)
@@ -1054,25 +1063,24 @@ fn paint_activity_status(
             reason: "no asset selected".to_string(),
         };
     }
-    let paint_panel_root = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR);
-    if !is_paint_panel_focused(paint_panel_root, editor_context) {
-        return PaintActivityStatus {
-            active: false,
-            reason: "focus Paint panel".to_string(),
-        };
+
+    match paint_state.selected_tool {
+        PaintTool::FreeDraw | PaintTool::SprayCan | PaintTool::Erase => {}
+        _ => {
+            return PaintActivityStatus {
+                active: false,
+                reason: format!("tool is not supported ({:?})", paint_state.selected_tool),
+            };
+        }
     }
-    if paint_state.selected_tool != PaintTool::FreeDraw {
-        return PaintActivityStatus {
-            active: false,
-            reason: format!("tool is not Free Draw ({:?})", paint_state.selected_tool),
-        };
-    }
+
     let Some(editor_root) = active_editor else {
         return PaintActivityStatus {
             active: false,
             reason: "no active editor".to_string(),
         };
     };
+
     if let Some(grid) = GridSystem::active_grid_for_editor(world, editor_root) {
         return PaintActivityStatus {
             active: true,
@@ -1261,7 +1269,13 @@ fn base_status_text(
     paint_state: &PaintState,
     editor_context: &EditorContextState,
 ) -> String {
-    if paint_state
+    let paint_panel_root = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR);
+    if !is_paint_panel_focused(paint_panel_root, editor_context) {
+        return "paint inactive: focus Paint panel".to_string();
+    }
+
+    let is_erase = paint_state.selected_tool == PaintTool::Erase;
+    if !is_erase && paint_state
         .selected_asset
         .as_ref()
         .and_then(|selection| selection.component)
@@ -1269,20 +1283,30 @@ fn base_status_text(
     {
         return "paint inactive: no asset selected".to_string();
     }
-    let paint_panel_root = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR);
-    if !is_paint_panel_focused(paint_panel_root, editor_context) {
-        return "paint inactive: focus Paint panel".to_string();
+
+    match paint_state.selected_tool {
+        PaintTool::FreeDraw | PaintTool::SprayCan | PaintTool::Erase => {}
+        _ => {
+            return format!("paint inactive: tool is not supported ({:?})", paint_state.selected_tool);
+        }
     }
-    if paint_state.selected_tool != PaintTool::FreeDraw {
-        return "paint inactive: tool is not Free Draw".to_string();
-    }
+
     let Some(editor_root) = active_editor else {
         return "paint inactive: no active editor".to_string();
     };
+
+    let tool_name = match paint_state.selected_tool {
+        PaintTool::FreeDraw => "Free Draw",
+        PaintTool::SprayCan => "Spray Can",
+        PaintTool::Erase => "Erase",
+        _ => unreachable!(),
+    };
+
     if let Some(grid) = GridSystem::active_grid_for_editor(world, editor_root) {
-        return format!("paint active | grid active @ {:.2}", grid.spacing);
+        format!("{} active | grid active @ {:.2}", tool_name, grid.spacing)
+    } else {
+        format!("{} active | grid inactive", tool_name)
     }
-    "paint active | grid inactive".to_string()
 }
 
 fn set_status_text(
