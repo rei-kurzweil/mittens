@@ -7,31 +7,28 @@ Currently, editor panels like the Paint Tool subscribe to signals (Click, Drag, 
 - **Overhead**: Every `DragMove` in the viewport triggers multiple ancestor-walk checks (`eligible_scene_hit`) even when the Paint panel is closed or unfocused.
 - **Log Noise**: Console output is cluttered with inactive system traces.
 
-## Proposed Solution: Lateral Observation Routing
-Introduce a mechanism to filter signal observations based on a dynamic data-driven policy. This allows systems to stay subscribed to broad scopes without processing events when they are "blacklisted" by a local router.
-
-This differs from `SignalRouteUpwardComponent` (which routes *intents* to ancestors) by filtering *observations* (signals already in the bubbling phase).
+## Proposed Solution: Local Scope Observation Filtering
+Introduce a mechanism to filter signal handlers based on a dynamic data-driven policy attached to the same scope as the handler. This allows systems to stay subscribed to broad scopes (like `editor_root`) without processing events when they are "blacklisted" by a router on that specific scope.
 
 ### 1. `SignalObserverRouterComponent` (MMS: `ObserverRouter`)
-This component acts as a generic gateway for signals emitted within its subtree. It is entirely agnostic of higher-level concepts like "Editor" or "Workspace".
+This component acts as a filter for signal handlers attached to the **same node**.
 
-- **Placement**: Attached to a node whose signals should be filtered (e.g., the Active Editor Root).
-- **Responsibility**: It holds a `SignalObserverFilter` that determines which handlers are allowed to receive events bubbling through this node.
-- **Named Handlers**: To enable filtering, signal handlers registered via `RxWorld` (or MMS) must optionally support **names** (e.g., `"paint_system"`, `"gizmo_system"`).
-- **SignalObserverFilter**: A data structure (likely a blacklist/whitelist of handler names) that the component uses to intercept and block signals.
+- **Placement**: Attached to a node that has broad signal subscriptions (e.g., the `editor_root`).
+- **Local Responsibility**: It only filters handlers attached directly to its own node. It does **not** affect handlers on descendants (e.g., Gizmos) or ancestors.
+- **Named Handlers**: Signal handlers registered via `RxWorld` must optionally support **names** (e.g., `"paint_system"`).
+- **SignalObserverFilter**: A blacklist of handler names that the `ObserverRouter` uses to prevent execution.
 
-### 2. Focus-Aware Filtering
-Higher-level systems (like an Editor Coordinator) are responsible for updating the `SignalObserverFilter` on the router.
+### 2. High-Performance Execution
+This model is highly efficient because it eliminates the need for a global "routing state" during signal bubbling.
 
-- **Dynamic Updates**: When the `focused_panel` changes, the coordinator updates the `SignalObserverRouterComponent`'s filter.
-- **Blacklisting**: For example, if the Paint panel is not focused, the coordinator adds `"paint_system"` to the blacklist of the `ObserverRouter` on the active editor root.
-- **Decoupling**: The `ObserverRouter` doesn't know *why* a handler is blacklisted; it just enforces the current data-driven policy.
+- **Dispatch Logic**: When the `RxWorld` bubbling loop reaches a node, it checks for an `ObserverRouter`. If present, it skips any handlers on that node whose names appear in the router's blacklist.
+- **Safety**: Because it only affects its own node, an `ObserverRouter` on the `editor_root` can never accidentally block a Gizmo handler attached to a specific scene object, even if the Gizmo handler has the same name.
 
-### 3. Lateral Observation
-This mechanism allows observers (topologically distant systems or panels) to subscribe to broad scopes (like `editor_root`) without incurring the cost of processing every event when inactive. 
-
-1. **Broad Subscription**: A system registers a **named handler** on a high-level scope.
-2. **Local Enforcement**: An `ObserverRouter` placed further down the tree (near the event source) blocks that named handler from receiving the signal if the current filter forbids it.
+### 3. Usage Pattern: Lateral Observation
+1. **The Observer**: The Paint system registers a named handler (`"paint_system"`) on the `editor_root`.
+2. **The Router**: An `ObserverRouter` is also attached to the `editor_root`.
+3. **The Coordinator**: When the Paint panel loses focus, the Editor Coordinator adds `"paint_system"` to the `ObserverRouter`'s blacklist.
+4. **The Result**: Signals bubble up from the scene to the `editor_root`. When they arrive, the `ObserverRouter` sees the `"paint_system"` handler is blacklisted and prevents it from running. No `eligible_scene_hit` checks or log traces occur.
 
 ## Implementation Plan
 
