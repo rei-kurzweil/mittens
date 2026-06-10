@@ -177,20 +177,7 @@ impl ScrollingSystem {
             };
             let prev_offset = sc.scroll_offset;
             let changed = sc.apply_drag(-delta_local_y);
-            println!(
-                "[Scrolling] DragMove scroll={:?} track={:?} scope={:?} delta_world=({:.3},{:.3},{:.3}) delta_local_y={:.3} offset={:.3}->{:.3} changed={} max={:.3}",
-                scroll_component,
-                sc.track,
-                sc.drag_scope,
-                delta_world[0],
-                delta_world[1],
-                delta_world[2],
-                delta_local_y,
-                prev_offset,
-                sc.scroll_offset,
-                changed,
-                sc.max_scroll(),
-            );
+            
             if !changed {
                 return None;
             }

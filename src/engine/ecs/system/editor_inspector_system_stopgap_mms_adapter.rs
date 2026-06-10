@@ -1787,6 +1787,7 @@ fn rerender_inspector_panels(
     rendered_models: &Arc<Mutex<Vec<InspectorPanelModel>>>,
     data_renderer: &mut DataRendererSystem,
 ) {
+    let start = std::time::Instant::now();
     let existing_instance_roots = world
         .children_of(layout_root)
         .iter()
@@ -1842,6 +1843,7 @@ fn rerender_inspector_panels(
         .lock()
         .expect("rendered inspector models mutex poisoned") = models.to_vec();
     mark_nearest_layout_dirty(world, layout_root);
+    println!("[InspectorPanel] rerender_inspector_panels took {:?}", start.elapsed());
 }
 
 fn rerender_single_inspector_panel_sidebar(
@@ -1853,6 +1855,7 @@ fn rerender_single_inspector_panel_sidebar(
     rows: &[InspectorPanelRow],
     data_renderer: &mut DataRendererSystem,
 ) {
+    let start = std::time::Instant::now();
     println!(
         "[InspectorSystem][trace] rerender_single_inspector_panel_sidebar panel_id={} inspector_panel_root={inspector_panel_root:?} sidebar_slot={sidebar_slot:?} row_count={}",
         panel_id,
@@ -1918,6 +1921,10 @@ fn rerender_single_inspector_panel_sidebar(
             selection_component.selected_payload = selected_payload;
         }
     }
+    println!(
+        "[InspectorPanel] rerender_single_inspector_panel_sidebar took {:?}",
+        start.elapsed()
+    );
 }
 
 fn rerender_single_inspector_panel_detail(
@@ -1928,6 +1935,7 @@ fn rerender_single_inspector_panel_detail(
     detail: &InspectorPanelDetailModel,
     data_renderer: &mut DataRendererSystem,
 ) {
+    let start = std::time::Instant::now();
     if detail.id.is_empty() && detail.guid.is_empty() {
         data_renderer.clear_slot(world, emit, detail_slot);
         return;
@@ -1944,6 +1952,10 @@ fn rerender_single_inspector_panel_detail(
     {
         eprintln!("[InspectorSystemStopgapMmsAdapter] detail render error: {error}");
     }
+    println!(
+        "[InspectorPanel] rerender_single_inspector_panel_detail took {:?}",
+        start.elapsed()
+    );
 }
 
 

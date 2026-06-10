@@ -443,6 +443,7 @@ fn rerender_panel_status(
     status_wrap: ComponentId,
     label: &str,
 ) {
+    let start = std::time::Instant::now();
     if let Some(existing_status_root) = world.find_component(panel_root, PANEL_STATUS_ROOT_SELECTOR)
     {
         emit.push_intent_now(
@@ -476,6 +477,10 @@ fn rerender_panel_status(
         },
     );
     mark_nearest_layout_dirty(world, status_wrap);
+    println!(
+        "[WorldPanel] rerender_panel_status took {:?}",
+        start.elapsed()
+    );
 }
 
 pub fn rerender_world_panel_status(
@@ -511,6 +516,7 @@ pub fn rerender_world_panel_content(
     selected_index: Option<i64>,
     data_renderer: &mut DataRendererSystem,
 ) {
+    let start = std::time::Instant::now();
     let items: Vec<UiItem> = rows
         .iter()
         .enumerate()
@@ -563,6 +569,10 @@ pub fn rerender_world_panel_content(
             }
         }
     }
+    println!(
+        "[WorldPanel] rerender_world_panel_content took {:?}",
+        start.elapsed()
+    );
 }
 
 pub fn parse_item_index(row_name: &str) -> Option<usize> {
