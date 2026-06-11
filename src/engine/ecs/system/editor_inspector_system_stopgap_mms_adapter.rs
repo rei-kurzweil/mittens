@@ -13,6 +13,11 @@ use crate::engine::ecs::system::data_renderer_system::{
     DataRendererSystem, UiDetailItem, UiItem, UiItemKind,
 };
 use crate::engine::ecs::system::editor::context::EditorContextState;
+use crate::engine::ecs::system::editor::grid_panel::{
+    GRID_PANEL_ADD_BUTTON_SELECTOR, GRID_PANEL_DELETE_PAYLOAD_NAME, GRID_PANEL_ROOT_SELECTOR,
+    GRID_PANEL_ROW_PAYLOAD_NAME, GRID_PANEL_ROW_SPEC, GRID_PANEL_TOGGLE_PAYLOAD_NAME,
+    build_grid_panel_model, grid_panel_items,
+};
 use crate::engine::ecs::system::editor::inspector_panel::{
     INSPECTOR_DETAIL_SPEC, INSPECTOR_ITEM_PREFIX, INSPECTOR_PANEL_INSTANCE_ID_KEY,
     INSPECTOR_PANEL_PAYLOAD_NAME, INSPECTOR_ROW_SPEC, InspectorPanelDetailModel, InspectorPanelId,
@@ -34,6 +39,7 @@ use crate::engine::ecs::system::editor::world_panel::{
     world_panel_item_label,
 };
 use crate::engine::ecs::system::editor_system::select_editor_target;
+use crate::engine::ecs::system::GridSystem;
 use crate::engine::ecs::system::panel_system::{
     EDITOR_RUNTIME_UI_ROOT_NAME, PANEL_LAYOUT_MOUNT_NAME, PANEL_LAYOUT_ROOT_NAME,
     PANEL_LAYOUT_SELECTION_NAME, PanelActionKind, PanelKind, PanelLayoutMountSpec, PanelShellSpec,
@@ -83,6 +89,8 @@ const ASSET_PANEL_WIDTH_GU: f64 = 39.0;
 const ASSET_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
 const PAINT_PANEL_WIDTH_GU: f64 = 41.0;
 const PAINT_PANEL_TOTAL_HEIGHT_GU: f64 = 32.0;
+const GRID_PANEL_WIDTH_GU: f64 = 29.5;
+const GRID_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
 const PANEL_LAYOUT_GAP_GU: f64 = 2.0;
 const PANEL_ROOT_MARGIN_X_GU: f64 = 0.5;
 const PANEL_ROOT_MARGIN_Y_GU: f64 = 0.5;
@@ -286,6 +294,22 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                         .lock()
                         .expect("data renderer mutex poisoned"),
                 );
+                if handle_grid_panel_click(
+                    world,
+                    emit,
+                    panel_query_root,
+                    *renderable,
+                    &click_editor_context_state,
+                    &click_world_panel_scene_model,
+                    &click_inspector_workspace_state,
+                    &click_installed_editor_roots,
+                    &click_rendered_inspector_models,
+                    &mut *click_data_renderer
+                        .lock()
+                        .expect("data renderer mutex poisoned"),
+                ) {
+                    return;
+                }
 
                 let Some(panel_root) =
                     world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR)
@@ -825,6 +849,17 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 .expect("data renderer mutex poisoned"),
         );
 
+        rerender_grid_panel_from_context(
+            world,
+            emit,
+            panel_query_root,
+            &editor_context,
+            &mut *self
+                .data_renderer
+                .lock()
+                .expect("data renderer mutex poisoned"),
+        );
+
         let inspector_models = build_inspector_panel_models(
             world,
             &self
@@ -896,6 +931,8 @@ fn refresh_all_panel_models(
             data_renderer,
         );
     }
+
+    rerender_grid_panel_from_context(world, emit, panel_query_root, &editor_context, data_renderer);
 
     sync_and_refresh_inspector_panels(
         world,
@@ -1317,6 +1354,25 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             None => return,
         };
 
+        let grid_panel = match build_panel_component_expr(
+            world,
+            emit,
+            grid_panel_asset_path(),
+            "grid_panel",
+            vec![
+                Value::String("Grids".to_string()),
+                Value::Array(Vec::new()),
+                world_panel_title_color.clone(),
+                world_panel_bg.clone(),
+                world_panel_item_bg.clone(),
+            ],
+            PanelKind::Grid,
+            "grid panel",
+        ) {
+            Some(panel) => panel,
+            None => return,
+        };
+
         let _ = inspector_panel_pos;
         let anchor_pos = world_panel_pos;
 
@@ -1324,6 +1380,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             .max(INSPECTOR_PANEL_TOTAL_HEIGHT_GU)
             .max(ASSET_PANEL_TOTAL_HEIGHT_GU)
             .max(PAINT_PANEL_TOTAL_HEIGHT_GU)
+            .max(GRID_PANEL_TOTAL_HEIGHT_GU)
             * 2.0
             + PANEL_LAYOUT_GAP_GU
             + (PANEL_ROOT_MARGIN_Y_GU * 2.0);
@@ -1331,6 +1388,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         let world_panel = decorate_panel_root_ce(world_panel, PANEL_LAYOUT_GAP_GU);
         let paint_panel = decorate_panel_root_ce(paint_panel, PANEL_LAYOUT_GAP_GU);
         let asset_panel = decorate_panel_root_ce(asset_panel, PANEL_LAYOUT_GAP_GU);
+        let grid_panel = decorate_panel_root_ce(grid_panel, PANEL_LAYOUT_GAP_GU);
 
         let (panel_mount_root, layout_root_id) = match spawn_panel_layout_mount(
             world,
@@ -1342,7 +1400,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 text_scale: PANEL_LAYOUT_TEXT_SCALE,
                 mount_name: PANEL_LAYOUT_MOUNT_NAME.to_string(),
                 layout_name: PANEL_LAYOUT_ROOT_NAME.to_string(),
-                children: vec![paint_panel, asset_panel, world_panel],
+                children: vec![paint_panel, asset_panel, world_panel, grid_panel],
             },
         ) {
             Ok(ids) => ids,
@@ -1495,7 +1553,6 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 );
             }
         }
-
         if let Some(layout_root) =
             world.find_component(panel_mount_root, &format!("#{PANEL_LAYOUT_ROOT_NAME}"))
         {
@@ -1508,6 +1565,15 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 data_renderer,
             );
         }
+
+        let grid_context = EditorContextState::default();
+        rerender_grid_panel_from_context(
+            world,
+            emit,
+            panel_mount_root,
+            &grid_context,
+            data_renderer,
+        );
 
         println!(
             "[InspectorSystem][debug] queued attach panel_mount_root={panel_mount_root:?} -> panel_query_root={panel_query_root:?}"
@@ -2157,6 +2223,192 @@ fn handle_inspector_panel_workspace_click(
     }
 }
 
+fn handle_grid_panel_click(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    renderable: ComponentId,
+    editor_context_state: &Arc<Mutex<EditorContextState>>,
+    world_panel_scene_model: &Arc<Mutex<AuthoredWorldPanelSceneModel>>,
+    inspector_workspace_state: &Arc<Mutex<InspectorWorkspaceState>>,
+    installed_editor_roots: &Arc<Mutex<Vec<ComponentId>>>,
+    rendered_inspector_models: &Arc<Mutex<Vec<InspectorPanelModel>>>,
+    data_renderer: &mut DataRendererSystem,
+) -> bool {
+    let Some(grid_panel_root) = world.find_component(panel_query_root, GRID_PANEL_ROOT_SELECTOR)
+    else {
+        return false;
+    };
+    if !is_descendant_or_self(world, grid_panel_root, renderable) {
+        return false;
+    }
+
+    let editor_context = editor_context_state
+        .lock()
+        .expect("editor context state mutex poisoned")
+        .clone();
+    let Some(editor_root) = editor_context.active_editor else {
+        return true;
+    };
+
+    if let Some(add_button) = world.find_component(grid_panel_root, GRID_PANEL_ADD_BUTTON_SELECTOR)
+        && is_descendant_or_self(world, add_button, renderable)
+    {
+        let owner_transform = spawn_default_grid_for_editor(world, editor_root);
+        select_editor_target(world, emit, editor_root, owner_transform, true);
+        refresh_all_panel_models(
+            world,
+            emit,
+            panel_query_root,
+            editor_context_state,
+            world_panel_scene_model,
+            inspector_workspace_state,
+            installed_editor_roots,
+            rendered_inspector_models,
+            true,
+            data_renderer,
+        );
+        return true;
+    }
+
+    if let Some(action) = decode_panel_action_payload(
+        world,
+        renderable,
+        GRID_PANEL_TOGGLE_PAYLOAD_NAME,
+        PanelKind::Grid,
+        PanelActionKind::Toggle,
+        None,
+        None,
+    ) && let Some(owner_transform) = action.target_component
+    {
+        toggle_grid_visibility(world, owner_transform);
+        rerender_grid_panel_from_context(world, emit, panel_query_root, &editor_context, data_renderer);
+        return true;
+    }
+
+    if let Some(action) = decode_panel_action_payload(
+        world,
+        renderable,
+        GRID_PANEL_DELETE_PAYLOAD_NAME,
+        PanelKind::Grid,
+        PanelActionKind::Delete,
+        None,
+        None,
+    ) && let Some(owner_transform) = action.target_component
+    {
+        if editor_context.selected_component == Some(owner_transform)
+            && let Some(editor) = world.get_component_by_id_as_mut::<crate::engine::ecs::component::EditorComponent>(editor_root)
+        {
+            editor.selected = Some(editor_root);
+        }
+        let _ = world.remove_component_subtree(owner_transform);
+        refresh_all_panel_models(
+            world,
+            emit,
+            panel_query_root,
+            editor_context_state,
+            world_panel_scene_model,
+            inspector_workspace_state,
+            installed_editor_roots,
+            rendered_inspector_models,
+            true,
+            data_renderer,
+        );
+        return true;
+    }
+
+    if let Some(action) = decode_panel_action_payload(
+        world,
+        renderable,
+        GRID_PANEL_ROW_PAYLOAD_NAME,
+        PanelKind::Grid,
+        PanelActionKind::Select,
+        None,
+        None,
+    ) && let Some(owner_transform) = action.target_component
+    {
+        select_editor_target(world, emit, editor_root, owner_transform, true);
+        refresh_all_panel_models(
+            world,
+            emit,
+            panel_query_root,
+            editor_context_state,
+            world_panel_scene_model,
+            inspector_workspace_state,
+            installed_editor_roots,
+            rendered_inspector_models,
+            false,
+            data_renderer,
+        );
+        return true;
+    }
+
+    true
+}
+
+fn rerender_grid_panel_from_context(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    editor_context: &EditorContextState,
+    data_renderer: &mut DataRendererSystem,
+) {
+    let Some(grid_panel_root) = world.find_component(panel_query_root, GRID_PANEL_ROOT_SELECTOR)
+    else {
+        return;
+    };
+    let Some(content_slot) = world.find_component(grid_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
+    else {
+        return;
+    };
+    let Some(editor_root) = editor_context.active_editor else {
+        data_renderer.clear_slot(world, emit, content_slot);
+        return;
+    };
+
+    let grids = GridSystem::new();
+    let model = build_grid_panel_model(world, &grids, editor_root);
+    let items = grid_panel_items(&model);
+    if let Err(error) =
+        data_renderer.render_list(world, emit, content_slot, &GRID_PANEL_ROW_SPEC, &items)
+    {
+        eprintln!("[InspectorSystem] grid panel content render error: {error}");
+        return;
+    }
+}
+
+fn spawn_default_grid_for_editor(world: &mut World, editor_root: ComponentId) -> ComponentId {
+    let index = GridSystem::new()
+        .enumerate_grids_for_editor(world, editor_root)
+        .len()
+        + 1;
+    let owner_transform = world.add_component_boxed_named(
+        &format!("grid_{index}"),
+        Box::new(TransformComponent::new()),
+    );
+    let grid = world.add_component_boxed_named(
+        &format!("grid_{index}_component"),
+        Box::new(crate::engine::ecs::component::GridComponent::default()),
+    );
+    let _ = world.add_child(editor_root, owner_transform);
+    let _ = world.add_child(owner_transform, grid);
+    owner_transform
+}
+
+fn toggle_grid_visibility(world: &mut World, owner_transform: ComponentId) {
+    let grids = GridSystem::new();
+    let Some(grid_entry) = grids.grid_owned_by_transform(world, owner_transform) else {
+        return;
+    };
+    if let Some(grid) =
+        world.get_component_by_id_as_mut::<crate::engine::ecs::component::GridComponent>(
+            grid_entry.grid_component,
+        )
+    {
+        grid.enabled = !grid.enabled;
+    }
+}
+
 fn trace_suspicious_inspector_target(world: &World, target: Option<ComponentId>) {
     let Some(target) = target else {
         return;
@@ -2219,6 +2471,7 @@ fn focus_panel_from_descendant_click(
         WORLD_PANEL_ROOT_SELECTOR,
         "#assets_root",
         PAINT_PANEL_ROOT_SELECTOR,
+        GRID_PANEL_ROOT_SELECTOR,
     ] {
         let Some(panel_root) = world.find_component(panel_query_root, selector) else {
             continue;
@@ -2285,6 +2538,10 @@ fn asset_panel_asset_path() -> &'static str {
 }
 
 fn paint_panel_asset_path() -> &'static str {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
+}
+
+fn grid_panel_asset_path() -> &'static str {
     concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
 }
 

@@ -1,7 +1,23 @@
-use crate::engine::ecs::component::EditorComponent;
+use std::sync::LazyLock;
+
+use crate::engine::ecs::component::{
+    ColorComponent, DataComponent, DataValue, Display, EdgeInsets, OptionComponent,
+    RaycastableComponent, SizeDimension, StyleComponent, TextAlign, TextComponent,
+    TransformComponent, style::VerticalAlign,
+};
 use crate::engine::ecs::system::GridSystem;
+use crate::engine::ecs::system::data_renderer_system::{
+    ItemRendererSpec, RendererSpec, UiItem, UiItemKind,
+};
 use crate::engine::ecs::system::editor::world_panel::world_panel_item_label;
-use crate::engine::ecs::{ComponentId, World};
+use crate::engine::ecs::{ComponentId, SignalEmitter, World};
+
+pub(crate) const GRID_PANEL_ROOT_SELECTOR: &str = "#grid_panel_root";
+pub(crate) const GRID_PANEL_ADD_BUTTON_SELECTOR: &str = "#grid_add_button";
+pub(crate) const GRID_PANEL_ITEM_PREFIX: &str = "grid_item_";
+pub(crate) const GRID_PANEL_ROW_PAYLOAD_NAME: &str = "grid_panel_row_payload";
+pub(crate) const GRID_PANEL_TOGGLE_PAYLOAD_NAME: &str = "grid_panel_toggle_payload";
+pub(crate) const GRID_PANEL_DELETE_PAYLOAD_NAME: &str = "grid_panel_delete_payload";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct GridPanelState {
@@ -64,7 +80,7 @@ pub(crate) fn build_grid_panel_model(
     editor_root: ComponentId,
 ) -> GridPanelModel {
     let selected_component = world
-        .get_component_by_id_as::<EditorComponent>(editor_root)
+        .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(editor_root)
         .and_then(|editor| editor.selected);
 
     let rows = grids
@@ -87,10 +103,251 @@ pub(crate) fn build_grid_panel_model(
     }
 }
 
+pub(crate) fn grid_panel_items(model: &GridPanelModel) -> Vec<UiItem> {
+    model.rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| UiItem {
+            key: format!("{GRID_PANEL_ITEM_PREFIX}{index}"),
+            kind: UiItemKind::Component,
+            label: row.label.clone(),
+            selected: row.selected,
+            target_ref: Some(row.owner_transform),
+        })
+        .collect()
+}
+
+fn grid_panel_row_render_fn(
+    world: &mut World,
+    _emit: &mut dyn SignalEmitter,
+    item: &UiItem,
+) -> Result<ComponentId, String> {
+    let owner_transform = item
+        .target_ref
+        .ok_or_else(|| "grid row missing owner transform".to_string())?;
+    let grids = GridSystem::new();
+    let visible = grids
+        .grid_owned_by_transform(world, owner_transform)
+        .map(|entry| entry.enabled)
+        .unwrap_or(true);
+    Ok(spawn_grid_panel_row_tree(
+        world,
+        &item.key,
+        owner_transform,
+        &item.label,
+        item.selected,
+        visible,
+    ))
+}
+
+pub(crate) static GRID_PANEL_ROW_SPEC: LazyLock<ItemRendererSpec> =
+    LazyLock::new(|| RendererSpec::Rust {
+        render_fn: Box::new(grid_panel_row_render_fn),
+    });
+
+fn spawn_grid_panel_row_tree(
+    world: &mut World,
+    row_name: &str,
+    owner_transform: ComponentId,
+    label: &str,
+    selected: bool,
+    visible: bool,
+) -> ComponentId {
+    let row_root = world.add_component_boxed_named(row_name, Box::new(TransformComponent::new()));
+
+    let style = world.add_component_boxed_named(
+        format!("{row_name}_style"),
+        Box::new({
+            let mut style = StyleComponent::new();
+            style.display = Some(Display::Block);
+            style.width = SizeDimension::Percent(100.0);
+            style.margin = EdgeInsets::axes(0.25, 0.20);
+            style.padding = EdgeInsets::axes(0.30, 0.35);
+            style.background_color = Some(if selected {
+                [1.00, 0.88, 0.20, 0.96]
+            } else {
+                [0.92, 0.97, 0.92, 1.0]
+            });
+            style.background_z = Some(0.001);
+            style.overflow = crate::engine::ecs::component::Overflow::Visible;
+            style
+        }),
+    );
+    let _ = world.add_child(row_root, style);
+
+    let body = world.add_component_boxed_named(
+        format!("{row_name}_body"),
+        Box::new(TransformComponent::new()),
+    );
+    let body_option = world.add_component_boxed_named(
+        format!("{row_name}_body_option"),
+        Box::new(OptionComponent::new()),
+    );
+    let body_raycastable = world.add_component_boxed_named(
+        format!("{row_name}_body_raycastable"),
+        Box::new(RaycastableComponent::click_only()),
+    );
+    let body_payload = world.add_component_boxed_named(
+        GRID_PANEL_ROW_PAYLOAD_NAME,
+        Box::new(
+            DataComponent::new()
+                .with_entry("row_name", DataValue::Text(row_name.to_string()))
+                .with_entry("label", DataValue::Text(label.to_string()))
+                .with_entry(
+                    "target_component",
+                    DataValue::Component(owner_transform),
+                ),
+        ),
+    );
+    let body_style = world.add_component_boxed_named(
+        format!("{row_name}_body_style"),
+        Box::new({
+            let mut style = StyleComponent::new();
+            style.display = Some(Display::InlineBlock);
+            style.width = SizeDimension::GlyphUnits(20.5);
+            style.height = SizeDimension::GlyphUnits(2.3);
+            style.padding = EdgeInsets::axes(0.15, 0.10);
+            style.vertical_align = VerticalAlign::Middle;
+            style.color = Some(if selected {
+                [0.08, 0.08, 0.02, 1.0]
+            } else {
+                [0.06, 0.09, 0.08, 1.0]
+            });
+            style
+        }),
+    );
+    let body_text_root = world.add_component_boxed_named(
+        format!("{row_name}_body_text_root"),
+        Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.005)),
+    );
+    let body_text = world.add_component_boxed_named(
+        format!("{row_name}_body_text"),
+        Box::new(TextComponent::new(label.to_string())),
+    );
+    let body_text_color = world.add_component_boxed_named(
+        format!("{row_name}_body_text_color"),
+        Box::new(ColorComponent::rgba(
+            if selected { 0.08 } else { 0.06 },
+            if selected { 0.08 } else { 0.09 },
+            if selected { 0.02 } else { 0.08 },
+            1.0,
+        )),
+    );
+    let _ = world.add_child(row_root, body);
+    let _ = world.add_child(body, body_option);
+    let _ = world.add_child(body, body_raycastable);
+    let _ = world.add_child(body, body_payload);
+    let _ = world.add_child(body, body_style);
+    let _ = world.add_child(body, body_text_root);
+    let _ = world.add_child(body_text_root, body_text);
+    let _ = world.add_child(body_text, body_text_color);
+
+    let toggle = spawn_grid_icon_button(
+        world,
+        row_name,
+        "toggle",
+        GRID_PANEL_TOGGLE_PAYLOAD_NAME,
+        owner_transform,
+        row_name,
+        if visible { "Hide" } else { "Show" },
+        if visible {
+            [0.10, 0.55, 0.18, 1.0]
+        } else {
+            [0.42, 0.42, 0.42, 1.0]
+        },
+    );
+    let delete = spawn_grid_icon_button(
+        world,
+        row_name,
+        "delete",
+        GRID_PANEL_DELETE_PAYLOAD_NAME,
+        owner_transform,
+        row_name,
+        "Delete",
+        [0.72, 0.15, 0.15, 1.0],
+    );
+    let _ = world.add_child(row_root, toggle);
+    let _ = world.add_child(row_root, delete);
+
+    row_root
+}
+
+fn spawn_grid_icon_button(
+    world: &mut World,
+    row_name: &str,
+    suffix: &str,
+    payload_name: &str,
+    owner_transform: ComponentId,
+    item_key: &str,
+    text: &str,
+    background_color: [f32; 4],
+) -> ComponentId {
+    let root = world.add_component_boxed_named(
+        format!("{row_name}_{suffix}_button"),
+        Box::new(TransformComponent::new()),
+    );
+    let option = world.add_component_boxed_named(
+        format!("{row_name}_{suffix}_option"),
+        Box::new(OptionComponent::new()),
+    );
+    let raycastable = world.add_component_boxed_named(
+        format!("{row_name}_{suffix}_raycastable"),
+        Box::new(RaycastableComponent::click_only()),
+    );
+    let payload = world.add_component_boxed_named(
+        payload_name,
+        Box::new(
+            DataComponent::new()
+                .with_entry("row_name", DataValue::Text(item_key.to_string()))
+                .with_entry(
+                    "target_component",
+                    DataValue::Component(owner_transform),
+                )
+                .with_entry("label", DataValue::Text(text.to_string())),
+        ),
+    );
+    let style = world.add_component_boxed_named(
+        format!("{row_name}_{suffix}_style"),
+        Box::new({
+            let mut style = StyleComponent::new();
+            style.display = Some(Display::InlineBlock);
+            style.width = SizeDimension::GlyphUnits(3.3);
+            style.height = SizeDimension::GlyphUnits(2.3);
+            style.margin = EdgeInsets {
+                left: SizeDimension::GlyphUnits(0.20),
+                right: SizeDimension::GlyphUnits(0.0),
+                top: SizeDimension::GlyphUnits(0.0),
+                bottom: SizeDimension::GlyphUnits(0.0),
+            };
+            style.text_align = TextAlign::Center;
+            style.vertical_align = VerticalAlign::Middle;
+            style.background_color = Some(background_color);
+            style.color = Some([0.96, 0.98, 0.96, 1.0]);
+            style
+        }),
+    );
+    let text_root = world.add_component_boxed_named(
+        format!("{row_name}_{suffix}_text_root"),
+        Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.005)),
+    );
+    let text_component = world.add_component_boxed_named(
+        format!("{row_name}_{suffix}_text"),
+        Box::new(TextComponent::new(text.to_string()).with_font_size(0.08)),
+    );
+
+    let _ = world.add_child(root, option);
+    let _ = world.add_child(root, raycastable);
+    let _ = world.add_child(root, payload);
+    let _ = world.add_child(root, style);
+    let _ = world.add_child(root, text_root);
+    let _ = world.add_child(text_root, text_component);
+    root
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ecs::component::{GridComponent, TransformComponent};
+    use crate::engine::ecs::component::{EditorComponent, GridComponent, TransformComponent};
 
     #[test]
     fn reduce_grid_panel_state_tracks_selection_and_delete() {

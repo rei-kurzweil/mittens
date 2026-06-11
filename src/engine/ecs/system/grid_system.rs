@@ -156,7 +156,13 @@ impl GridSystem {
             .get(&editor_root)
             .into_iter()
             .flat_map(|ids| ids.iter())
-            .filter_map(|grid_id| registry.by_grid.get(grid_id).copied())
+            .filter_map(|grid_id| {
+                registry
+                    .by_grid
+                    .get(grid_id)
+                    .copied()
+                    .map(|entry| refresh_grid_entry(world, entry))
+            })
             .collect()
     }
 
@@ -176,10 +182,11 @@ impl GridSystem {
     pub fn grid_entry(&self, world: &World, grid_component: ComponentId) -> Option<GridEntry> {
         self.ensure_registry_current(world);
         let registry = self.registry.lock().expect("grid registry mutex poisoned");
-        registry.by_grid.get(&grid_component).copied().or_else(|| {
-            let _ = world;
-            None
-        })
+        registry
+            .by_grid
+            .get(&grid_component)
+            .copied()
+            .map(|entry| refresh_grid_entry(world, entry))
     }
 
     pub fn snap_hit(active: &ActiveGrid, hit_point_world: [f32; 3]) -> GridSnapResult {
@@ -249,6 +256,14 @@ impl GridSystem {
 
 fn mark_registry_dirty(registry: &Arc<Mutex<GridRegistry>>) {
     registry.lock().expect("grid registry mutex poisoned").dirty = true;
+}
+
+fn refresh_grid_entry(world: &World, mut entry: GridEntry) -> GridEntry {
+    if let Some(grid) = world.get_component_by_id_as::<GridComponent>(entry.grid_component) {
+        entry.enabled = grid.enabled;
+        entry.selectable = grid.selectable;
+    }
+    entry
 }
 
 fn nearest_editor_ancestor(world: &World, start: ComponentId) -> Option<ComponentId> {
@@ -381,5 +396,35 @@ mod tests {
                 && entry.editor_root == editor
                 && !entry.enabled
         }));
+    }
+
+    #[test]
+    fn grid_entry_reads_live_enabled_state_after_component_edit() {
+        let mut world = World::default();
+        let grids = GridSystem::new();
+        let editor = world.add_component(EditorComponent::new());
+        let transform = world.add_component(TransformComponent::new());
+        let grid = world.add_component(GridComponent::new(1.0));
+        let _ = world.add_child(editor, transform);
+        let _ = world.add_child(transform, grid);
+
+        assert!(
+            grids
+                .grid_entry(&world, grid)
+                .expect("grid entry before toggle")
+                .enabled
+        );
+
+        world
+            .get_component_by_id_as_mut::<GridComponent>(grid)
+            .expect("grid component")
+            .enabled = false;
+
+        assert!(
+            !grids
+                .grid_entry(&world, grid)
+                .expect("grid entry after toggle")
+                .enabled
+        );
     }
 }
