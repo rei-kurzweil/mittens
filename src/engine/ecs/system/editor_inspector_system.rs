@@ -63,6 +63,7 @@ mod tests {
     use crate::engine::ecs::system::editor_inspector_system_stopgap_mms_adapter::set_world_panel_scene_path_for_tests;
     use crate::engine::ecs::{EventSignal, IntentValue, SignalEmitter, SystemWorld, World};
     use crate::engine::graphics::bounds::Aabb;
+    use crate::engine::graphics::primitives::MaterialHandle;
     use crate::engine::graphics::{RenderAssets, VisualWorld};
     use crate::utils::math::mat_to_quat;
     use std::path::PathBuf;
@@ -1460,5 +1461,91 @@ mod tests {
         {
             assert!((actual - expected).abs() < 1.0e-5);
         }
+    }
+
+    #[test]
+    fn add_grid_registers_visible_render_instance() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::new();
+        let mut inspector = EditorInspectorSystem::new();
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_root);
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (1.9, 1.6, -1.2),
+            systems.editor_context.shared_state(),
+            &systems.asset_system,
+        );
+
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        let add_button = world
+            .find_component(runtime_ui_root, "#grid_add_button")
+            .expect("expected grid add button");
+        systems.rx.push_event(
+            add_button,
+            EventSignal::Click {
+                raycaster: add_button,
+                renderable: add_button,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        let grid_root = world
+            .find_component(editor_root, "#grid_1")
+            .expect("expected spawned grid transform");
+        let grid_visual_renderable = world
+            .find_component(grid_root, "#grid_visual_renderable")
+            .expect("expected grid visual renderable");
+        let renderable = world
+            .get_component_by_id_as::<RenderableComponent>(grid_visual_renderable)
+            .expect("expected renderable component");
+        let handle = renderable.get_handle().expect("expected registered visual handle");
+        let instance = visuals
+            .instance(handle)
+            .expect("expected visual world instance for grid");
+
+        assert_eq!(instance.renderable.material, MaterialHandle::GRID_MESH);
+        assert_eq!(instance.opacity, 1.0);
+        assert_eq!(instance.color, [0.22, 0.92, 0.34, 1.0]);
+        assert!(!instance.overlay);
+        assert!(!instance.background);
+        assert!(
+            visuals
+                .draw_order()
+                .iter()
+                .copied()
+                .any(|idx| visuals.instances()[idx as usize].renderable.material == MaterialHandle::GRID_MESH),
+            "expected grid instance to appear in opaque draw order"
+        );
     }
 }

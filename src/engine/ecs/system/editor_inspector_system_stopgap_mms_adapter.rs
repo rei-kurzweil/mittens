@@ -2263,7 +2263,8 @@ fn handle_grid_panel_click(
     if let Some(add_button) = world.find_component(grid_panel_root, GRID_PANEL_ADD_BUTTON_SELECTOR)
         && is_descendant_or_self(world, add_button, renderable)
     {
-        let _owner_transform = spawn_default_grid_for_editor(world, editor_root, &editor_context);
+        let _owner_transform =
+            spawn_default_grid_for_editor(world, emit, editor_root, &editor_context);
         let mut refreshed_context = editor_context.clone();
         refreshed_context.active_editor = Some(editor_root);
         rerender_grid_panel_from_context(
@@ -2437,6 +2438,7 @@ fn rerender_world_panel_for_context(
 
 fn spawn_default_grid_for_editor(
     world: &mut World,
+    emit: &mut dyn SignalEmitter,
     editor_root: ComponentId,
     editor_context: &EditorContextState,
 ) -> ComponentId {
@@ -2506,6 +2508,19 @@ fn spawn_default_grid_for_editor(
     let _ = world.add_child(visual_shape, visual_renderable);
     let _ = world.add_child(visual_renderable, visual_color);
     let _ = world.add_child(visual_renderable, visual_opacity);
+    world.init_component_tree(owner_transform, emit);
+    emit.push_intent_now(
+        owner_transform,
+        IntentValue::RegisterTransform {
+            component_ids: vec![owner_transform, visual_root, visual_shape],
+        },
+    );
+    emit.push_intent_now(
+        visual_renderable,
+        IntentValue::RegisterRenderable {
+            component_ids: vec![visual_renderable],
+        },
+    );
     owner_transform
 }
 
