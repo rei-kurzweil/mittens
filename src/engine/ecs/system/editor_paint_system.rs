@@ -61,6 +61,7 @@ impl EditorPaintSystem {
         &mut self,
         rx: &mut RxWorld,
         world: &World,
+        grid_system: GridSystem,
         editor_root: ComponentId,
         panel_query_root: ComponentId,
         editor_context_state: Arc<Mutex<EditorContextState>>,
@@ -77,6 +78,7 @@ impl EditorPaintSystem {
                 rx,
                 world,
                 panel_query_root,
+                grid_system.clone(),
                 Arc::clone(&self.shared_state),
                 Arc::clone(&editor_context_state),
                 Arc::clone(&self.shared_templates),
@@ -94,6 +96,7 @@ impl EditorPaintSystem {
             rx,
             editor_root,
             panel_query_root,
+            grid_system,
             Arc::clone(&self.shared_state),
             editor_context_state,
             Arc::clone(&self.shared_templates),
@@ -106,6 +109,7 @@ fn install_shared_panel_handlers(
     rx: &mut RxWorld,
     world: &World,
     panel_query_root: ComponentId,
+    grid_system: GridSystem,
     paint_state: Arc<Mutex<PaintState>>,
     editor_context_state: Arc<Mutex<EditorContextState>>,
     templates: Arc<Mutex<Vec<PaintAssetTemplate>>>,
@@ -163,14 +167,34 @@ fn install_shared_panel_handlers(
                     item: label,
                     component,
                 };
-                handle_paint_event(world, emit, panel_query_root, &tpl, &state, &ctx, None, &event);
+                handle_paint_event(
+                    world,
+                    emit,
+                    panel_query_root,
+                    &grid_system,
+                    &tpl,
+                    &state,
+                    &ctx,
+                    None,
+                    &event,
+                );
             } else if is_tool {
                 let event = PaintEvent::ToolSelectionChanged {
                     tool: paint_tool_from_item(label.clone()),
                     item: label,
                     component,
                 };
-                handle_paint_event(world, emit, panel_query_root, &tpl, &state, &ctx, None, &event);
+                handle_paint_event(
+                    world,
+                    emit,
+                    panel_query_root,
+                    &grid_system,
+                    &tpl,
+                    &state,
+                    &ctx,
+                    None,
+                    &event,
+                );
             }
         },
     );
@@ -180,6 +204,7 @@ fn install_editor_scene_handlers(
     rx: &mut RxWorld,
     editor_root: ComponentId,
     panel_query_root: ComponentId,
+    grid_system: GridSystem,
     paint_state: Arc<Mutex<PaintState>>,
     editor_context_state: Arc<Mutex<EditorContextState>>,
     templates: Arc<Mutex<Vec<PaintAssetTemplate>>>,
@@ -196,6 +221,7 @@ fn install_editor_scene_handlers(
         let editor_context = Arc::clone(&editor_context_state);
         let shared_templates = Arc::clone(&templates);
         let runtime = Arc::clone(&stroke_runtime);
+        let grid_system = grid_system.clone();
         rx.add_handler_closure_named(
             signal_kind,
             editor_root,
@@ -211,6 +237,7 @@ fn install_editor_scene_handlers(
                     world,
                     emit,
                     panel_query_root,
+                    &grid_system,
                     &shared_templates,
                     &state,
                     &editor_context,
@@ -226,6 +253,7 @@ fn handle_paint_event(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     panel_query_root: ComponentId,
+    grid_system: &GridSystem,
     templates: &Arc<Mutex<Vec<PaintAssetTemplate>>>,
     paint_state: &Arc<Mutex<PaintState>>,
     editor_context_state: &Arc<Mutex<EditorContextState>>,
@@ -246,6 +274,7 @@ fn handle_paint_event(
         world,
         emit,
         panel_query_root,
+        grid_system,
         templates,
         editor_context_state,
         &old_state,
@@ -409,6 +438,7 @@ fn apply_paint_side_effects(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     panel_query_root: ComponentId,
+    grid_system: &GridSystem,
     templates: &Arc<Mutex<Vec<PaintAssetTemplate>>>,
     editor_context_state: &Arc<Mutex<EditorContextState>>,
     _old_state: &PaintState,
@@ -435,6 +465,7 @@ fn apply_paint_side_effects(
                 emit,
                 *editor,
                 panel_query_root,
+                grid_system,
                 &templates,
                 new_state,
                 &editor_context,
@@ -453,6 +484,7 @@ fn apply_paint_side_effects(
                 let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
                 if resolve_paint_context(
                     world,
+                    grid_system,
                     *editor,
                     panel_query_root,
                     new_state,
@@ -483,6 +515,7 @@ fn apply_paint_side_effects(
                 emit,
                 *editor,
                 panel_query_root,
+                grid_system,
                 &templates,
                 new_state,
                 &editor_context,
@@ -505,6 +538,7 @@ fn apply_paint_side_effects(
         emit,
         active_editor,
         panel_query_root,
+        grid_system,
         new_state,
         &editor_context,
         status_override,
@@ -853,6 +887,7 @@ fn handle_scene_click(
     emit: &mut dyn SignalEmitter,
     editor_root: ComponentId,
     panel_query_root: ComponentId,
+    grid_system: &GridSystem,
     templates: &[PaintAssetTemplate],
     paint_state: &PaintState,
     editor_context: &EditorContextState,
@@ -862,6 +897,7 @@ fn handle_scene_click(
 ) -> Option<String> {
     let context = resolve_paint_context(
         world,
+        grid_system,
         editor_root,
         panel_query_root,
         paint_state,
@@ -924,6 +960,7 @@ fn handle_stroke_move(
     emit: &mut dyn SignalEmitter,
     editor_root: ComponentId,
     panel_query_root: ComponentId,
+    grid_system: &GridSystem,
     templates: &[PaintAssetTemplate],
     paint_state: &PaintState,
     editor_context: &EditorContextState,
@@ -933,6 +970,7 @@ fn handle_stroke_move(
 ) -> Option<String> {
     let context = resolve_paint_context(
         world,
+        grid_system,
         editor_root,
         panel_query_root,
         paint_state,
@@ -1006,6 +1044,7 @@ impl PaintContext {
 
 fn resolve_paint_context(
     world: &World,
+    grid_system: &GridSystem,
     editor_root: ComponentId,
     panel_query_root: ComponentId,
     paint_state: &PaintState,
@@ -1036,7 +1075,7 @@ fn resolve_paint_context(
         .clone();
     Some(PaintContext {
         asset,
-        active_grid: GridSystem::active_grid_for_editor(world, editor_root),
+        active_grid: grid_system.active_grid_for_editor(world, editor_root),
     })
 }
 
@@ -1047,6 +1086,7 @@ struct PaintActivityStatus {
 
 fn paint_activity_status(
     world: &World,
+    grid_system: &GridSystem,
     active_editor: Option<ComponentId>,
     panel_query_root: ComponentId,
     paint_state: &PaintState,
@@ -1091,7 +1131,7 @@ fn paint_activity_status(
         };
     };
 
-    if let Some(grid) = GridSystem::active_grid_for_editor(world, editor_root) {
+    if let Some(grid) = grid_system.active_grid_for_editor(world, editor_root) {
         return PaintActivityStatus {
             active: true,
             reason: format!("grid active @ {:.2}", grid.spacing),
@@ -1248,6 +1288,7 @@ fn update_paint_status(
     emit: &mut dyn SignalEmitter,
     active_editor: Option<ComponentId>,
     panel_query_root: ComponentId,
+    grid_system: &GridSystem,
     paint_state: &PaintState,
     editor_context: &EditorContextState,
     override_text: Option<String>,
@@ -1265,6 +1306,7 @@ fn update_paint_status(
             world,
             active_editor,
             panel_query_root,
+            grid_system,
             paint_state,
             editor_context,
         )
@@ -1276,6 +1318,7 @@ fn base_status_text(
     world: &World,
     active_editor: Option<ComponentId>,
     panel_query_root: ComponentId,
+    grid_system: &GridSystem,
     paint_state: &PaintState,
     editor_context: &EditorContextState,
 ) -> String {
@@ -1316,7 +1359,7 @@ fn base_status_text(
         _ => unreachable!(),
     };
 
-    if let Some(grid) = GridSystem::active_grid_for_editor(world, editor_root) {
+    if let Some(grid) = grid_system.active_grid_for_editor(world, editor_root) {
         format!("{} active | grid active @ {:.2}", tool_name, grid.spacing)
     } else {
         format!("{} active | grid inactive", tool_name)

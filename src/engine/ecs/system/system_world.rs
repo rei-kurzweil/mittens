@@ -339,6 +339,7 @@ impl SystemWorld {
 
     pub fn new() -> Self {
         let mut systems = Self::default();
+        systems.grid.install_handlers(&mut systems.rx);
         let asset_dir = Path::new("assets/components/");
         if let Err(error) = systems.asset_system.scan_assets_dir(asset_dir) {
             eprintln!("[SystemWorld] failed to scan assets dir: {error}");
@@ -858,6 +859,7 @@ impl SystemWorld {
             self.editor_paint.install_scoped_handlers_for_editor(
                 &mut self.rx,
                 world,
+                self.grid.clone(),
                 component,
                 panel_query_root,
                 editor_context_state,
