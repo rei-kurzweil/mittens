@@ -14,6 +14,12 @@ Add a dedicated grid management flow to the editor in two phases:
    - list all grids in the active editor
    - allow add, select, visibility toggle, and delete
    - ensure grids live under transforms and can be selected with the normal editor gizmo flow
+   - keep grid ownership/editor mutations inside the `grid_panel` flow rather than requiring a fully general grid lifecycle API yet
+   - add a dedicated grid render path:
+     - a grid shader under `assets/shaders`
+     - a `GridMaterial` / `MaterialHandle` entry for it
+     - plane-backed grid rendering sized from grid dimensions rather than an infinite or point-style primitive
+     - slightly thick grid lines using multiple `fwidth` worth of smoothing rather than a razor-thin line
 2. Phase 2:
    - clicking a grid in `grid_panel` also drives the active unpinned inspector
    - inspector details switch from a fixed hardcoded shape to a generic field-set model
@@ -48,6 +54,19 @@ This note is intentionally grounded in what the repo already has.
 Implication:
 - we do not need to invent grid snapping
 - we do need to expand the grid model from “selected grid used for paint snapping” into “all grids known to the editor”
+
+### Grid rendering direction
+
+- There is already a rendering design note in
+  [`docs/spec/grid-material.md`](/home/rei/_/cat-engine/docs/spec/grid-material.md:1).
+- That spec already points toward dedicated grid shaders and a dedicated material handle rather than reusing the ordinary toon mesh path.
+
+Implication:
+- phase 1 should include the first real grid render path, not just panel/editor plumbing
+- a grid should render on a plane mesh sized from its dimensions
+- the shader should own the line pattern
+- line thickness should be slightly heavier than a single razor-thin analytical line, using several `fwidth` worth of smoothing / width so the grid remains readable in-editor
+- this should land as a new grid-specific material handle rather than overloading `TOON_MESH`
 
 ### Grid-driven paint integration
 
@@ -136,7 +155,9 @@ Implication:
 
 Current grid data only stores spacing/enabled/selectable.
 
-Phase 2 needs at least:
+Phase 1 now also wants explicit finite dimensions for rendering, and phase 2 needs those dimensions to become editable.
+
+Phase 1/2 needs at least:
 - granularity / spacing
 - size x
 - size z
@@ -156,6 +177,10 @@ Recommendation:
 - derive world extent as `size * spacing`
 - default both to `16`
 
+Rendering implication:
+- the grid renderable should use a plane because the grid now has finite dimensions
+- the plane extent should come from `size_x * spacing` and `size_z * spacing`
+
 ## 2. `GridSystem` is not yet a grid registry
 
 The existing `GridSystem` is only an active-grid resolver plus snapping helper.
@@ -169,6 +194,18 @@ Phase 1 needs registry-style helpers such as:
 Important constraint:
 - this should be scoped to an editor root, not global across the entire world
 
+Phase 1 should not require authoritative lifecycle APIs such as:
+- `GridAttach`
+- `GridDetach`
+- `GridParentChanged`
+- `GridRemove`
+
+Reason:
+- in phase 1, grids only need to be useful for editor-side grid management through `grid_panel`
+- new grids can be spawned with wrapper transforms by the panel itself
+- deletes/toggles/select actions can stay inside that editor-owned flow
+- full support for arbitrary external attach/reparent/remove of registered grids is broader lifecycle work and should be deferred
+
 ## 3. There is no grid panel shell or grid panel state
 
 We do not have:
@@ -176,6 +213,7 @@ We do not have:
 - a grid panel item row/tile in MMS or Rust
 - grid panel state reducer/model
 - click handlers for add/delete/visibility/select
+- the dedicated grid shader/material hookup described above
 
 Recommended phase 1 shape:
 - add `src/engine/ecs/system/editor/grid_panel.rs`
@@ -186,6 +224,10 @@ Recommended phase 1 shape:
   - helper functions for row selection and grid actions
 - use `DataRendererSystem::render_list(...)` with a Rust row renderer for the repeated grid list
 - keep the panel shell, title bar, and add button in MMS
+- add the grid render path in parallel:
+  - shader files under `assets/shaders`
+  - `MaterialHandle::GRID_MATERIAL` or equivalent
+  - renderable hookup so editor-created grids use the new material on a plane mesh
 
 ## 4. Panel row spawning is currently text-only
 
@@ -345,17 +387,22 @@ This does not need its own independent selection model if it simply reflects edi
 
 1. Expand `GridSystem` helper API so it can enumerate grids under an editor and resolve transform/grid ownership.
 2. Update active-grid resolution so selecting a transform that owns a grid still activates snapping.
-3. Add `grid_panel` MMS shell and new icons.
-4. Add Rust-side `grid_panel.rs` model/reconcile/click handling.
-5. Integrate the new panel into the stopgap editor panel layout beside the existing panels.
-6. Add add/toggle/delete/select actions.
-7. Verify scene-click selection and panel-click selection both attach gizmos to the grid transform.
+3. Add finite grid dimensions to `GridComponent` and treat the grid as a plane-backed renderable.
+4. Add a dedicated grid shader under `assets/shaders` and a `GridMaterial` material handle for it.
+5. Ensure grid lines render slightly thick using multi-`fwidth` style smoothing / width.
+6. Add `grid_panel` MMS shell and new icons.
+7. Add Rust-side `grid_panel.rs` model/reconcile/click handling.
+8. Integrate the new panel into the stopgap editor panel layout beside the existing panels.
+9. Add add/toggle/delete/select actions.
+10. Verify scene-click selection and panel-click selection both attach gizmos to the grid transform.
 
 ## Proposed phase 2
 
 ## Scope
 
 - clicking a grid in `grid_panel` also retargets the active unpinned inspector panel
+- `GridSystem` can grow from editor-owned registry helpers into an authoritative grid lifecycle owner
+- if needed, explicit operations such as `GridAttach` / `GridDetach` / `GridParentChanged` / `GridRemove` land here rather than in phase 1
 - inspector details become field-set driven
 - selected grid shows editable numeric fields:
   - granularity
@@ -425,15 +472,18 @@ Recommendation:
 
 ## Recommended concrete file targets
 
+- `assets/shaders/`
 - `assets/components/panels.mms`
 - `assets/components/icons.mms`
 - `src/engine/ecs/component/grid.rs`
+- `src/engine/graphics/primitives.rs`
 - `src/engine/ecs/system/grid_system.rs`
 - `src/engine/ecs/system/editor/grid_panel.rs` (new)
 - `src/engine/ecs/system/editor/mod.rs`
 - `src/engine/ecs/system/editor_inspector_system_stopgap_mms_adapter.rs`
 - `src/engine/ecs/system/editor/inspector_panel.rs`
 - `assets/components/inspector_details.mms`
+- [`docs/spec/grid-material.md`](/home/rei/_/cat-engine/docs/spec/grid-material.md:1)
 
 ## Broader editor panel direction
 
