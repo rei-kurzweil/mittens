@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::thread::{self, JoinHandle};
 
@@ -90,6 +91,7 @@ pub enum HostCallKind {
     RegisterHandler {
         scope: ComponentId,
         signal_kind: SignalKind,
+        name: Option<String>,
         handler: Value,
     },
     /// Query the live ECS world. `scope = None` means search from the world's
@@ -284,6 +286,22 @@ struct EvalContext<'a> {
     /// Inline live-world host access used when MMS runs directly inside a
     /// registered engine handler rather than through evaluator channels.
     host_world: Option<*mut World>,
+}
+
+thread_local! {
+    static LIVE_SIGNAL_EMITTER: RefCell<Option<*mut dyn SignalEmitter>> = RefCell::new(None);
+}
+
+fn with_live_signal_emitter<R>(
+    emit: Option<*mut dyn SignalEmitter>,
+    f: impl FnOnce() -> R,
+) -> R {
+    LIVE_SIGNAL_EMITTER.with(|slot| {
+        let prev = slot.replace(emit);
+        let result = f();
+        let _ = slot.replace(prev);
+        result
+    })
 }
 
 /// Accumulator used while evaluating a component expression body block.
@@ -684,7 +702,7 @@ fn push_component_emit(val: Value, ctx: &mut EvalContext<'_>) {
 fn is_builtin_fn(name: &str) -> bool {
     matches!(
         name,
-        "print" | "assert" | "range" | "emit" | "on" | "query" | "query_all"
+        "print" | "assert" | "range" | "emit" | "on" | "query" | "query_all" | "emit_data"
     )
 }
 
@@ -949,7 +967,9 @@ fn eval_call(call: &CallExpression, ctx: &mut EvalContext<'_>) -> Result<Value, 
         return dispatch_query_result(result, handler, multiple, ctx);
     }
 
-    // Built-in: on(component_object, "SignalKind", fn(event) { ... })
+    // Built-in:
+    //   on(component_object, "SignalKind", fn(event) { ... })
+    //   on(component_object, "SignalKind", "handler_name", fn(event) { ... })
     if callee_name == "on" {
         let args: Vec<Value> = call
             .args
@@ -974,16 +994,81 @@ fn eval_call(call: &CallExpression, ctx: &mut EvalContext<'_>) -> Result<Value, 
                 ));
             }
         };
-        let handler = match args.get(2) {
+        let (name, handler_idx) = match args.get(2) {
+            Some(Value::String(name)) => (Some(name.clone()), 3),
+            _ => (None, 2),
+        };
+        let handler = match args.get(handler_idx) {
             Some(f @ Value::Function { .. }) => f.clone(),
-            other => return Err(format!("on(): arg 2 must be a function, got {:?}", other)),
+            other => {
+                return Err(format!(
+                    "on(): arg {} must be a function, got {:?}",
+                    handler_idx, other
+                ));
+            }
         };
         if let Some(ch) = ctx.channels.as_mut() {
             ch.call(HostCallKind::RegisterHandler {
                 scope,
                 signal_kind,
+                name,
                 handler,
             });
+        }
+        return Ok(Value::Null);
+    }
+
+    // Built-in:
+    //   emit_data(scope_component, "name")
+    //   emit_data(scope_component, "name", payload_component)
+    if callee_name == "emit_data" {
+        let args: Vec<Value> = call
+            .args
+            .iter()
+            .map(|a| eval_expr(a, ctx))
+            .collect::<Result<_, _>>()?;
+        let scope = match args.first() {
+            Some(Value::ComponentObject { id, .. }) => *id,
+            other => {
+                return Err(format!(
+                    "emit_data(): arg 0 must be a ComponentObject, got {:?}",
+                    other
+                ));
+            }
+        };
+        let name = match args.get(1) {
+            Some(Value::String(name)) => name.clone(),
+            other => {
+                return Err(format!(
+                    "emit_data(): arg 1 must be a string, got {:?}",
+                    other
+                ));
+            }
+        };
+        let payload = match args.get(2) {
+            Some(Value::ComponentObject { id, .. }) => Some(*id),
+            Some(Value::Null) | None => None,
+            other => {
+                return Err(format!(
+                    "emit_data(): arg 2 must be a ComponentObject or null, got {:?}",
+                    other
+                ));
+            }
+        };
+        let emitted = LIVE_SIGNAL_EMITTER.with(|slot| {
+            let Some(host_emit) = *slot.borrow() else {
+                return false;
+            };
+            unsafe {
+                (&mut *host_emit).push_event(
+                    scope,
+                    crate::engine::ecs::EventSignal::DataEvent { name, payload },
+                );
+            }
+            true
+        });
+        if !emitted {
+            return Err("emit_data(): no live signal emitter".into());
         }
         return Ok(Value::Null);
     }
@@ -1482,6 +1567,109 @@ fn eval_method_call(
                 return Ok(Value::Null);
             }
 
+            if matches!(
+                component_type.as_str(),
+                "Emissive" | "EmissiveComponent" | "emissive"
+            ) && matches!(method, "set_intensity" | "on" | "off")
+            {
+                let Some(world) = ctx.host_world else {
+                    return Err(format!("{method}(): no host world"));
+                };
+                let world = unsafe { &mut *world };
+                let emissive = world
+                    .get_component_by_id_as_mut::<crate::engine::ecs::component::EmissiveComponent>(
+                        id,
+                    )
+                    .ok_or_else(|| format!("{method}(): not an EmissiveComponent"))?;
+                emissive.intensity = match method {
+                    "on" => 1.0,
+                    "off" => 0.0,
+                    "set_intensity" => match args.first() {
+                        Some(Value::Number(n)) => (*n as f32).max(0.0),
+                        Some(other) => {
+                            return Err(format!(
+                                "set_intensity: expected number argument, got {:?}",
+                                other
+                            ));
+                        }
+                        None => return Err("set_intensity: missing number argument".into()),
+                    },
+                    _ => unreachable!(),
+                };
+                ctx.emits.push(IntentValue::RegisterEmissive {
+                    component_ids: vec![id],
+                });
+                return Ok(Value::Null);
+            }
+
+            if matches!(
+                component_type.as_str(),
+                "ObserverRouter" | "signal_observer_router" | "SignalObserverRouterComponent"
+            ) && matches!(method, "blacklist" | "whitelist" | "block" | "allow")
+            {
+                let Some(world) = ctx.host_world else {
+                    return Err(format!("{method}(): no host world"));
+                };
+                let world = unsafe { &mut *world };
+                let router = world
+                    .get_component_by_id_as_mut::<crate::engine::ecs::component::SignalObserverRouterComponent>(
+                        id,
+                    )
+                    .ok_or_else(|| format!("{method}(): not a SignalObserverRouterComponent"))?;
+                match method {
+                    "blacklist" | "whitelist" => {
+                        let values = match args.first() {
+                            Some(Value::Array(values)) => values,
+                            Some(other) => {
+                                return Err(format!(
+                                    "{method}(): expected array argument, got {:?}",
+                                    other
+                                ));
+                            }
+                            None => return Err(format!("{method}(): missing array argument")),
+                        };
+                        let mut out = Vec::with_capacity(values.len());
+                        for value in values {
+                            match value {
+                                Value::String(s) => out.push(s.clone()),
+                                other => {
+                                    return Err(format!(
+                                        "{method}(): expected string array, got {:?}",
+                                        other
+                                    ));
+                                }
+                            }
+                        }
+                        match method {
+                            "blacklist" => router.blacklist = out,
+                            "whitelist" => router.whitelist = out,
+                            _ => unreachable!(),
+                        }
+                    }
+                    "block" | "allow" => {
+                        let name = match args.first() {
+                            Some(Value::String(name)) => name.clone(),
+                            Some(other) => {
+                                return Err(format!(
+                                    "{method}(): expected string argument, got {:?}",
+                                    other
+                                ));
+                            }
+                            None => return Err(format!("{method}(): missing string argument")),
+                        };
+                        if method == "block" {
+                            if !router.blacklist.iter().any(|item| item == &name) {
+                                router.blacklist.push(name);
+                            }
+                        } else {
+                            router.blacklist.retain(|item| item != &name);
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+                return Ok(Value::Null);
+            }
+
             // AudioClip.instance([start_beat], [stop_beat]) — produce a
             // new clip that shares the receiver's decoded buffer but
             // gets its own playhead. Mirrors `let x = CE` semantics:
@@ -1815,6 +2003,7 @@ fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
         "SelectionRemoved" => Ok(SignalKind::SelectionRemoved),
         "SelectionCleared" => Ok(SignalKind::SelectionCleared),
         "Scrolling" => Ok(SignalKind::Scrolling),
+        "DataEvent" => Ok(SignalKind::DataEvent),
         other => Err(format!("unknown signal kind: '{}'", other)),
     }
 }
@@ -1831,7 +2020,7 @@ pub(crate) fn eval_mms_fn(
     args: Vec<Value>,
     channels: Option<&mut EvalChannels>,
     world_host: Option<&mut World>,
-    emit: Option<&mut dyn SignalEmitter>,
+    mut emit: Option<&mut dyn SignalEmitter>,
 ) -> Result<Value, String> {
     let Value::Function {
         params,
@@ -1855,10 +2044,15 @@ pub(crate) fn eval_mms_fn(
         object_world: &mut world,
         host_world: world_host.map(|world| world as *mut World),
     };
-    let result = match eval_block_stmts(&body.statements, &mut ctx)? {
-        StmtEffect::Return(val) => val,
-        _ => Value::Null,
-    };
+    let live_emit = emit.as_mut().map(|em| unsafe {
+        std::mem::transmute::<&mut dyn SignalEmitter, *mut dyn SignalEmitter>(&mut **em)
+    });
+    let result = with_live_signal_emitter(live_emit, || {
+        match eval_block_stmts(&body.statements, &mut ctx)? {
+            StmtEffect::Return(val) => Ok::<Value, String>(val),
+            _ => Ok::<Value, String>(Value::Null),
+        }
+    })?;
     if let Some(em) = emit {
         for iv in emits {
             em.push_intent_now(ComponentId::default(), iv);

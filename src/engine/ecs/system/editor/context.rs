@@ -1,12 +1,16 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-use crate::engine::ecs::component::{EditorComponent, SelectionComponent};
+use crate::engine::ecs::component::{
+    EditorComponent, SelectionComponent, SignalObserverRouterComponent,
+};
 use crate::engine::ecs::system::selection_system::resolve_semantic_target_from_payload;
 use crate::engine::ecs::{ComponentId, EventSignal, RxWorld, Signal, SignalKind, World};
 
 const PANEL_LAYOUT_SELECTION_SELECTOR: &str = "#editor_panel_layout_selection";
 const WORLD_PANEL_SELECTION_SELECTOR: &str = "#world_panel_selection";
+const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
+const PAINT_SYSTEM_HANDLER_NAME: &str = "paint_system";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EditorContextState {
@@ -104,10 +108,11 @@ impl EditorContextSystem {
     pub fn install_scoped_handlers_for_editor(
         &mut self,
         rx: &mut RxWorld,
-        world: &World,
+        world: &mut World,
         editor_root: ComponentId,
         panel_query_root: ComponentId,
     ) {
+        ensure_editor_observer_router(world, editor_root);
         {
             let mut workspace = self
                 .workspace
@@ -124,13 +129,21 @@ impl EditorContextSystem {
 
         if !self.shared_panel_handlers_installed {
             self.shared_panel_handlers_installed = true;
-            install_shared_panel_handlers(rx, world, panel_query_root, Arc::clone(&self.state));
+            install_shared_panel_handlers(
+                rx,
+                world,
+                panel_query_root,
+                Arc::clone(&self.state),
+                Arc::clone(&self.workspace),
+            );
             bootstrap_editor_context(world, panel_query_root, &self.state, &self.workspace);
+            sync_editor_observer_routes(world, &self.state, &self.workspace);
         }
 
         if self.installed_editor_roots.insert(editor_root) {
             install_editor_handlers(rx, editor_root, Arc::clone(&self.state));
         }
+        sync_editor_observer_routes(world, &self.state, &self.workspace);
     }
 }
 
@@ -139,6 +152,7 @@ fn install_shared_panel_handlers(
     world: &World,
     panel_query_root: ComponentId,
     state: Arc<Mutex<EditorContextState>>,
+    workspace: Arc<Mutex<EditorContextWorkspaceState>>,
 ) {
     let _ = world;
     rx.add_handler_closure_named(
@@ -153,6 +167,7 @@ fn install_shared_panel_handlers(
             };
             apply_editor_context_event(&state, &event);
             sync_editor_component_selection(world, &event);
+            sync_editor_observer_routes(world, &state, &workspace);
         },
     );
 }
@@ -187,6 +202,23 @@ fn install_editor_handlers(
             sync_editor_component_selection(world, &event);
         },
     );
+}
+
+fn ensure_editor_observer_router(world: &mut World, editor_root: ComponentId) -> ComponentId {
+    if let Some(existing) = world.children_of(editor_root).iter().copied().find(|&child| {
+        world
+            .get_component_by_id_as::<SignalObserverRouterComponent>(child)
+            .is_some()
+    }) {
+        return existing;
+    }
+
+    let router = world.add_component_boxed_named(
+        "editor_signal_observer_router",
+        Box::new(SignalObserverRouterComponent::new()),
+    );
+    let _ = world.add_child(editor_root, router);
+    router
 }
 
 fn bootstrap_editor_context(
@@ -279,6 +311,42 @@ fn editor_context_event_from_shared_signal(
 fn apply_editor_context_event(state: &Arc<Mutex<EditorContextState>>, event: &EditorContextEvent) {
     let mut state = state.lock().expect("editor context state poisoned");
     *state = reduce_editor_context_state(&state, event);
+}
+
+fn sync_editor_observer_routes(
+    world: &mut World,
+    state: &Arc<Mutex<EditorContextState>>,
+    workspace: &Arc<Mutex<EditorContextWorkspaceState>>,
+) {
+    let editor_context = state.lock().expect("editor context state poisoned").clone();
+    let workspace = workspace
+        .lock()
+        .expect("editor context workspace poisoned")
+        .clone();
+    let paint_panel_root = workspace
+        .panel_query_root
+        .and_then(|panel_query_root| world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR));
+    let paint_focused = paint_panel_root.is_some_and(|panel| editor_context.focused_panel == Some(panel));
+
+    for editor_root in workspace.registered_editors {
+        let router_id = ensure_editor_observer_router(world, editor_root);
+        let Some(router) = world.get_component_by_id_as_mut::<SignalObserverRouterComponent>(router_id)
+        else {
+            continue;
+        };
+
+        if paint_focused {
+            router
+                .blacklist
+                .retain(|name| name != PAINT_SYSTEM_HANDLER_NAME);
+        } else if !router
+            .blacklist
+            .iter()
+            .any(|name| name == PAINT_SYSTEM_HANDLER_NAME)
+        {
+            router.blacklist.push(PAINT_SYSTEM_HANDLER_NAME.to_string());
+        }
+    }
 }
 
 fn ensure_default_active_editor(

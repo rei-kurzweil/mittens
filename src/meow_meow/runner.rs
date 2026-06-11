@@ -316,23 +316,40 @@ impl MeowMeowRunner {
                         HostCallKind::RegisterHandler {
                             scope,
                             signal_kind,
+                            name,
                             handler,
                         } => {
-                            rx.add_handler_closure(
-                                signal_kind,
-                                scope,
-                                move |world, emit, _signal| {
+                            let callback =
+                                move |world: &mut World,
+                                      emit: &mut dyn SignalEmitter,
+                                      signal: &crate::engine::ecs::Signal| {
+                                    let arg = match signal.event.as_ref() {
+                                        Some(crate::engine::ecs::EventSignal::DataEvent {
+                                            name,
+                                            ..
+                                        }) => Value::String(name.clone()),
+                                        _ => Value::Null,
+                                    };
                                     if let Err(e) = eval_mms_fn(
                                         &handler,
-                                        vec![Value::Null],
+                                        vec![arg],
                                         None,
                                         Some(world),
                                         Some(emit),
                                     ) {
                                         eprintln!("[mms] handler error: {e}");
                                     }
-                                },
-                            );
+                                };
+                            if let Some(name) = name {
+                                rx.add_handler_closure_named(
+                                    signal_kind,
+                                    scope,
+                                    Some(name),
+                                    callback,
+                                );
+                            } else {
+                                rx.add_handler_closure(signal_kind, scope, callback);
+                            }
                             HostValue::Null
                         }
                         HostCallKind::AudioClipInstance {

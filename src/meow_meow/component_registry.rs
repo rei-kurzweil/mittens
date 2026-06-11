@@ -1931,6 +1931,18 @@ fn apply_call(
         }
         return Ok(());
     }
+    if let Some(router) = world.get_component_by_id_as_mut::<SignalObserverRouterComponent>(id) {
+        match method {
+            "blacklist" => {
+                router.blacklist = arg_str_vec(args, 0)?;
+            }
+            "whitelist" => {
+                router.whitelist = arg_str_vec(args, 0)?;
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
     if let Some(dl) = world.get_component_by_id_as_mut::<DirectionalLightComponent>(id) {
         match method {
             "intensity" => *dl = dl.clone().with_intensity(arg_f32(args, 0)?),

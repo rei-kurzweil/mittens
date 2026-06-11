@@ -595,16 +595,17 @@ fn dispatch_scoped_kind(
     for idx in 0..handlers.len() {
         let handler_ptr: *mut Handler = &mut handlers[idx];
         unsafe {
-            if let Some(blacklist) = blacklist.as_ref() {
-                if let Some(name) = (*handler_ptr).name() {
-                    if blacklist.iter().any(|b| b == name) {
-                        continue;
-                    }
-                    if let Some(whitelist) = whitelist.as_ref() {
-                        if !whitelist.is_empty() && !whitelist.iter().any(|w| w == name) {
-                            continue;
-                        }
-                    }
+            if let Some(name) = (*handler_ptr).name() {
+                if let Some(blacklist) = blacklist.as_ref()
+                    && blacklist.iter().any(|b| b == name)
+                {
+                    continue;
+                }
+                if let Some(whitelist) = whitelist.as_ref()
+                    && !whitelist.is_empty()
+                    && !whitelist.iter().any(|w| w == name)
+                {
+                    continue;
                 }
             }
 

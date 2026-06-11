@@ -743,6 +743,165 @@ fn handler_registered_inside_function_body_fires() {
 }
 
 #[test]
+fn mms_named_handler_is_filtered_by_observer_router() {
+    let src = r##"
+        let router = ObserverRouter {}
+        let root = T {
+            name = "router_root"
+            router
+        }
+        T {
+            Text { "(idle)" name = "target" }
+        }
+
+        on(root, "DataEvent", "named_light", fn(event) {
+            if event == "pulse_on" {
+                let t = query("#target")
+                if t {
+                    t.set_text("allowed")
+                }
+            }
+        })
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    let root_id = world
+        .all_components()
+        .filter(|&id| world.parent_of(id).is_none())
+        .find_map(|root| world.find_component(root, "#router_root"))
+        .expect("expected #router_root");
+    let router_id = world
+        .children_of(root_id)
+        .iter()
+        .copied()
+        .find(|&child| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::SignalObserverRouterComponent>(
+                    child,
+                )
+                .is_some()
+        })
+        .expect("expected ObserverRouter child");
+
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            root_id,
+            EventSignal::DataEvent {
+                name: "pulse_on".to_string(),
+                payload: None,
+            },
+        ),
+    );
+
+    let intents = rx.drain_ready_intents();
+    assert!(
+        intents.iter().any(|signal| matches!(
+            signal.intent.as_ref().map(|intent| &intent.value),
+            Some(crate::engine::ecs::IntentValue::SetText { text, .. }) if text == "allowed"
+        )),
+        "expected named handler to run before router blacklist"
+    );
+
+    world
+        .get_component_by_id_as_mut::<crate::engine::ecs::component::SignalObserverRouterComponent>(
+            router_id,
+        )
+        .expect("expected mutable router")
+        .blacklist = vec!["named_light".to_string()];
+
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            root_id,
+            EventSignal::DataEvent {
+                name: "pulse_on".to_string(),
+                payload: None,
+            },
+        ),
+    );
+
+    let intents = rx.drain_ready_intents();
+    assert!(
+        !intents.iter().any(|signal| matches!(
+            signal.intent.as_ref().map(|intent| &intent.value),
+            Some(crate::engine::ecs::IntentValue::SetText { text, .. }) if text == "allowed"
+        )),
+        "expected router blacklist to suppress named handler"
+    );
+}
+
+#[test]
+fn mms_click_handler_can_emit_data_event() {
+    let src = r##"
+        let root = T { name = "router_root" }
+        let btn = T { name = "btn" }
+        T {
+            Text { "(idle)" name = "target" }
+        }
+
+        on(root, "DataEvent", "named_light", fn(event) {
+            if event == "pulse_on" {
+                let t = query("#target")
+                if t {
+                    t.set_text("emitted")
+                }
+            }
+        })
+
+        on(btn, "Click", fn(event) {
+            emit_data(root, "pulse_on")
+        })
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    let btn_id = world
+        .all_components()
+        .filter(|&id| world.parent_of(id).is_none())
+        .find_map(|root| world.find_component(root, "#btn"))
+        .expect("expected #btn");
+
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            btn_id,
+            EventSignal::Click {
+                raycaster: ComponentId::default(),
+                renderable: btn_id,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        ),
+    );
+
+    rx.begin_frame();
+    for signal in rx.drain_ready_events() {
+        rx.dispatch_event_handlers(&mut world, &signal);
+    }
+
+    let intents = rx.drain_ready_intents();
+    assert!(
+        intents.iter().any(|signal| matches!(
+            signal.intent.as_ref().map(|intent| &intent.value),
+            Some(crate::engine::ecs::IntentValue::SetText { text, .. }) if text == "emitted"
+        )),
+        "expected emit_data() inside MMS handler to produce a follow-up DataEvent"
+    );
+}
+
+#[test]
 fn eval_for_in_array_emits_correct_count() {
     // 3 elements → 3 SpawnComponentTree intents
     let out = eval("for x in [1, 2, 3] { T {} }");
