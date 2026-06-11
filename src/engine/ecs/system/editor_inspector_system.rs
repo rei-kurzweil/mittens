@@ -276,7 +276,13 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let panel_mount = world
@@ -1266,6 +1272,75 @@ mod tests {
                 .find_component(runtime_ui_root, "#inspector_item_3")
                 .is_none(),
             "expected runtime bounds children to be hidden from inspector rows"
+        );
+    }
+
+    #[test]
+    fn setup_panels_for_editor_add_grid_click_completes_and_rerenders() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::new();
+        let mut inspector = EditorInspectorSystem::new();
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_root);
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (1.9, 1.6, -1.2),
+            systems.editor_context.shared_state(),
+            &systems.asset_system,
+        );
+
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        let add_button = world
+            .find_component(runtime_ui_root, "#grid_add_button")
+            .expect("expected grid add button");
+
+        systems.rx.push_event(
+            add_button,
+            EventSignal::Click {
+                raycaster: add_button,
+                renderable: add_button,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        assert_eq!(row_text(&world, runtime_ui_root, "#grid_item_0"), "grid_1");
+        assert_eq!(
+            world
+                .get_component_by_id_as::<EditorComponent>(editor_root)
+                .and_then(|editor| editor.selected),
+            None,
+            "add-grid should not force scene selection"
+        );
+
+        let processed =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 10_000);
+        assert!(
+            processed < 10_000,
+            "expected add-grid path to quiesce before signal budget exhaustion"
         );
     }
 }

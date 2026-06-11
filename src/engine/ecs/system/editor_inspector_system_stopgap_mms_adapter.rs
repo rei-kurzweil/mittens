@@ -2247,25 +2247,28 @@ fn handle_grid_panel_click(
         .lock()
         .expect("editor context state mutex poisoned")
         .clone();
-    let Some(editor_root) = editor_context.active_editor else {
+    let editor_root = editor_context.active_editor.or_else(|| {
+        installed_editor_roots
+            .lock()
+            .expect("installed editor roots mutex poisoned")
+            .first()
+            .copied()
+    });
+    let Some(editor_root) = editor_root else {
         return true;
     };
 
     if let Some(add_button) = world.find_component(grid_panel_root, GRID_PANEL_ADD_BUTTON_SELECTOR)
         && is_descendant_or_self(world, add_button, renderable)
     {
-        let owner_transform = spawn_default_grid_for_editor(world, editor_root);
-        select_editor_target(world, emit, editor_root, owner_transform, true);
-        refresh_all_panel_models(
+        let _owner_transform = spawn_default_grid_for_editor(world, editor_root);
+        let mut refreshed_context = editor_context.clone();
+        refreshed_context.active_editor = Some(editor_root);
+        rerender_grid_panel_from_context(
             world,
             emit,
             panel_query_root,
-            editor_context_state,
-            world_panel_scene_model,
-            inspector_workspace_state,
-            installed_editor_roots,
-            rendered_inspector_models,
-            true,
+            &refreshed_context,
             data_renderer,
         );
         return true;
@@ -2301,6 +2304,15 @@ fn handle_grid_panel_click(
         {
             editor.selected = Some(editor_root);
         }
+        {
+            let mut editor_context = editor_context_state
+                .lock()
+                .expect("editor context state mutex poisoned");
+            editor_context.active_editor = Some(editor_root);
+            if editor_context.selected_component == Some(owner_transform) {
+                editor_context.selected_component = Some(editor_root);
+            }
+        }
         let _ = world.remove_component_subtree(owner_transform);
         refresh_all_panel_models(
             world,
@@ -2328,6 +2340,13 @@ fn handle_grid_panel_click(
     ) && let Some(owner_transform) = action.target_component
     {
         select_editor_target(world, emit, editor_root, owner_transform, true);
+        {
+            let mut editor_context = editor_context_state
+                .lock()
+                .expect("editor context state mutex poisoned");
+            editor_context.active_editor = Some(editor_root);
+            editor_context.selected_component = Some(owner_transform);
+        }
         refresh_all_panel_models(
             world,
             emit,
