@@ -311,7 +311,10 @@ fn bootstrap_paint_state(
         }
         state_str = format!("{state:?}");
     }
-    eprintln!("🎨🖌️ paint_debug bootstrap_paint_state done → {}", state_str);
+    eprintln!(
+        "🎨🖌️ paint_debug bootstrap_paint_state done → {}",
+        state_str
+    );
 }
 
 fn label_from_component_id(world: &World, id: ComponentId) -> Option<String> {
@@ -1058,11 +1061,12 @@ fn paint_activity_status(
     }
 
     let is_erase = paint_state.selected_tool == PaintTool::Erase;
-    if !is_erase && paint_state
-        .selected_asset
-        .as_ref()
-        .and_then(|selection| selection.component)
-        .is_none()
+    if !is_erase
+        && paint_state
+            .selected_asset
+            .as_ref()
+            .and_then(|selection| selection.component)
+            .is_none()
     {
         return PaintActivityStatus {
             active: false,
@@ -1281,11 +1285,12 @@ fn base_status_text(
     }
 
     let is_erase = paint_state.selected_tool == PaintTool::Erase;
-    if !is_erase && paint_state
-        .selected_asset
-        .as_ref()
-        .and_then(|selection| selection.component)
-        .is_none()
+    if !is_erase
+        && paint_state
+            .selected_asset
+            .as_ref()
+            .and_then(|selection| selection.component)
+            .is_none()
     {
         return "paint inactive: no asset selected".to_string();
     }
@@ -1293,7 +1298,10 @@ fn base_status_text(
     match paint_state.selected_tool {
         PaintTool::FreeDraw | PaintTool::SprayCan | PaintTool::Erase => {}
         _ => {
-            return format!("paint inactive: tool is not supported ({:?})", paint_state.selected_tool);
+            return format!(
+                "paint inactive: tool is not supported ({:?})",
+                paint_state.selected_tool
+            );
         }
     }
 
@@ -2054,8 +2062,16 @@ mod tests {
         let dx = position[0] - 0.0;
         let dz = position[2] - 0.5;
         let dist = (dx * dx + dz * dz).sqrt();
-        assert!(dist > 0.0, "Spray Can should offset the asset placement by a random distance: position={:?}", position);
-        assert!(dist <= 1.5, "Spray Can offset should be at most 1.5 units: position={:?}", position);
+        assert!(
+            dist > 0.0,
+            "Spray Can should offset the asset placement by a random distance: position={:?}",
+            position
+        );
+        assert!(
+            dist <= 1.5,
+            "Spray Can offset should be at most 1.5 units: position={:?}",
+            position
+        );
     }
 
     #[test]

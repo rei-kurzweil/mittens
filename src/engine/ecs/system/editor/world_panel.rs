@@ -7,7 +7,7 @@ use crate::engine::ecs::system::data_renderer_system::{
     DataRendererSystem, ItemRendererSpec, RendererSpec, UiItem, UiItemKind,
 };
 use crate::engine::ecs::system::editor::context::EditorContextState;
-use crate::engine::ecs::system::editor::panel_ui::{spawn_panel_ui_row_tree, PanelUiRowSpec};
+use crate::engine::ecs::system::editor::panel_ui::{PanelUiRowSpec, spawn_panel_ui_row_tree};
 use crate::engine::ecs::system::selection_system::{
     apply_selection_set, resolve_semantic_target_from_payload,
 };
@@ -51,7 +51,10 @@ pub(crate) enum WorldPanelEvent {
     ClearSelection,
 }
 
-pub(crate) fn reduce_world_panel_state(old: &WorldPanelState, event: &WorldPanelEvent) -> WorldPanelState {
+pub(crate) fn reduce_world_panel_state(
+    old: &WorldPanelState,
+    event: &WorldPanelEvent,
+) -> WorldPanelState {
     let mut new = WorldPanelState {
         scene_model: old.scene_model.clone(),
         selected_component: old.selected_component,
@@ -132,7 +135,10 @@ pub enum AuthoredSceneNodePolicy {
 
 // ── Shared helper functions ─────────────────────────────────────────
 
-pub fn authored_scene_node_policy(world: &World, component_id: ComponentId) -> AuthoredSceneNodePolicy {
+pub fn authored_scene_node_policy(
+    world: &World,
+    component_id: ComponentId,
+) -> AuthoredSceneNodePolicy {
     if world
         .get_component_by_id_as::<EditorComponent>(component_id)
         .is_some()
@@ -381,16 +387,25 @@ fn world_panel_ui_row_render_fn(
 
     let (background_rgba, text_rgba, interactive, row_kind_label) = match item.kind {
         UiItemKind::Spacer => ([0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], false, "Spacer"),
-        UiItemKind::EditorRoot => {
-            ([0.30, 0.84, 0.38, 0.98], [0.03, 0.08, 0.04, 1.0], true, "EditorRoot")
-        }
+        UiItemKind::EditorRoot => (
+            [0.30, 0.84, 0.38, 0.98],
+            [0.03, 0.08, 0.04, 1.0],
+            true,
+            "EditorRoot",
+        ),
         UiItemKind::Info => ([0.85, 0.85, 0.85, 1.0], [0.0, 0.0, 0.0, 1.0], false, "Info"),
-        UiItemKind::Component if item.selected => {
-            ([1.00, 0.88, 0.20, 0.96], [0.06, 0.09, 0.08, 1.0], true, "Component")
-        }
-        UiItemKind::Component => {
-            ([0.92, 0.97, 0.92, 1.0], [0.06, 0.09, 0.08, 1.0], true, "Component")
-        }
+        UiItemKind::Component if item.selected => (
+            [1.00, 0.88, 0.20, 0.96],
+            [0.06, 0.09, 0.08, 1.0],
+            true,
+            "Component",
+        ),
+        UiItemKind::Component => (
+            [0.92, 0.97, 0.92, 1.0],
+            [0.06, 0.09, 0.08, 1.0],
+            true,
+            "Component",
+        ),
     };
 
     Ok(spawn_panel_ui_row_tree(
@@ -410,11 +425,10 @@ fn world_panel_ui_row_render_fn(
     ))
 }
 
-pub static WORLD_PANEL_ROW_SPEC: LazyLock<ItemRendererSpec> = LazyLock::new(|| {
-    RendererSpec::Rust {
+pub static WORLD_PANEL_ROW_SPEC: LazyLock<ItemRendererSpec> =
+    LazyLock::new(|| RendererSpec::Rust {
         render_fn: Box::new(world_panel_ui_row_render_fn),
-    }
-});
+    });
 
 // ── Panel status rendering ──────────────────────────────────────────
 
@@ -428,7 +442,11 @@ fn world_panel_status_asset_path() -> &'static str {
 pub fn mark_nearest_layout_dirty(world: &mut World, start: ComponentId) {
     let mut current = Some(start);
     while let Some(component_id) = current {
-        if let Some(layout) = world.get_component_by_id_as_mut::<crate::engine::ecs::component::LayoutComponent>(component_id) {
+        if let Some(layout) = world
+            .get_component_by_id_as_mut::<crate::engine::ecs::component::LayoutComponent>(
+                component_id,
+            )
+        {
             layout.mark_dirty();
             return;
         }
@@ -534,13 +552,14 @@ pub fn rerender_world_panel_content(
         })
         .collect();
 
-    let container = match data_renderer.render_list(world, emit, content_slot, &WORLD_PANEL_ROW_SPEC, &items) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("[InspectorSystem] world panel content render error: {e}");
-            return;
-        }
-    };
+    let container =
+        match data_renderer.render_list(world, emit, content_slot, &WORLD_PANEL_ROW_SPEC, &items) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("[InspectorSystem] world panel content render error: {e}");
+                return;
+            }
+        };
 
     let selection = world.add_component_boxed_named(
         WORLD_PANEL_SELECTION_NAME,
@@ -549,8 +568,7 @@ pub fn rerender_world_panel_content(
     if let Some(selection_component) =
         world.get_component_by_id_as_mut::<SelectionComponent>(selection)
     {
-        selection_component.payload_selector =
-            Some(format!("[name='{WORLD_PANEL_PAYLOAD_NAME}']"));
+        selection_component.payload_selector = Some(format!("[name='{WORLD_PANEL_PAYLOAD_NAME}']"));
     }
     let _ = world.add_child(container, selection);
 
@@ -590,8 +608,7 @@ pub fn sync_world_panel_selection(
         .lock()
         .expect("editor context state mutex poisoned")
         .clone();
-    let Some(world_panel_root) = world.find_component(panel_query_root, "#world_panel_root")
-    else {
+    let Some(world_panel_root) = world.find_component(panel_query_root, "#world_panel_root") else {
         return;
     };
     let Some(selection_root) =
@@ -604,13 +621,7 @@ pub fn sync_world_panel_selection(
         .selected_component
         .or(editor_context.active_editor)
     else {
-        apply_selection_set(
-            world,
-            emit,
-            selection_root,
-            Vec::new(),
-            None,
-        );
+        apply_selection_set(world, emit, selection_root, Vec::new(), None);
         return;
     };
     let model = build_world_panel_model(
@@ -626,13 +637,7 @@ pub fn sync_world_panel_selection(
         .enumerate()
         .find(|(_, row)| row.target_component == Some(target_component))
     else {
-        apply_selection_set(
-            world,
-            emit,
-            selection_root,
-            Vec::new(),
-            None,
-        );
+        apply_selection_set(world, emit, selection_root, Vec::new(), None);
         return;
     };
     let already_selected = world

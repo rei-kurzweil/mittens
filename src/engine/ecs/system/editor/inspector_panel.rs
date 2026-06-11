@@ -4,10 +4,10 @@ use crate::engine::ecs::component::{DataComponent, DataValue};
 use crate::engine::ecs::system::data_renderer_system::{
     DetailRendererSpec, ItemRendererSpec, RendererSpec, UiDetailItem, UiItem, UiItemKind,
 };
-use crate::engine::ecs::system::editor::panel_ui::{spawn_panel_ui_row_tree, PanelUiRowSpec};
+use crate::engine::ecs::system::editor::panel_ui::{PanelUiRowSpec, spawn_panel_ui_row_tree};
 use crate::engine::ecs::system::editor::world_panel::{
-    authored_scene_node_policy, component_id_short, editor_chunk_label, world_panel_item_label,
-    AuthoredSceneNodePolicy, AuthoredWorldPanelSceneModel,
+    AuthoredSceneNodePolicy, AuthoredWorldPanelSceneModel, authored_scene_node_policy,
+    component_id_short, editor_chunk_label, world_panel_item_label,
 };
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::meow_meow::object::Value;
@@ -242,7 +242,9 @@ pub(crate) fn build_inspector_panel_models(
             let rows = panel
                 .inspected
                 .filter(|&component_id| world.get_component_record(component_id).is_some())
-                .map(|component_id| build_inspector_panel_rows(world, scene_model, panel, component_id))
+                .map(|component_id| {
+                    build_inspector_panel_rows(world, scene_model, panel, component_id)
+                })
                 .unwrap_or_else(|| {
                     vec![InspectorPanelRow {
                         target_component: None,
@@ -411,15 +413,8 @@ fn push_inspector_panel_rows(
     }
 }
 
-fn inspector_row_selected(
-    panel: &InspectorPanelState,
-    component_id: ComponentId,
-) -> bool {
-    panel
-        .subtree_selection
-        .focused_row
-        .or(panel.inspected)
-        == Some(component_id)
+fn inspector_row_selected(panel: &InspectorPanelState, component_id: ComponentId) -> bool {
+    panel.subtree_selection.focused_row.or(panel.inspected) == Some(component_id)
 }
 
 fn build_inspector_panel_detail_model(
@@ -462,8 +457,10 @@ pub(crate) fn resolve_selected_inspector_panel_payload(
     world: &World,
     row_root: ComponentId,
 ) -> Option<ComponentId> {
-    let matches =
-        world.find_all_components(row_root, &format!("[name='{INSPECTOR_PANEL_PAYLOAD_NAME}']"));
+    let matches = world.find_all_components(
+        row_root,
+        &format!("[name='{INSPECTOR_PANEL_PAYLOAD_NAME}']"),
+    );
     if matches.len() == 1 {
         matches.into_iter().next()
     } else {
@@ -511,14 +508,13 @@ fn inspector_panel_ui_row_render_fn(
     Ok(spawn_inspector_panel_row_tree(world, &item.key, &row))
 }
 
-pub(crate) static INSPECTOR_ROW_SPEC: LazyLock<ItemRendererSpec> = LazyLock::new(|| {
-    RendererSpec::Rust {
+pub(crate) static INSPECTOR_ROW_SPEC: LazyLock<ItemRendererSpec> =
+    LazyLock::new(|| RendererSpec::Rust {
         render_fn: Box::new(inspector_panel_ui_row_render_fn),
-    }
-});
+    });
 
-pub(crate) static INSPECTOR_DETAIL_SPEC: LazyLock<DetailRendererSpec> = LazyLock::new(|| {
-    RendererSpec::Mms {
+pub(crate) static INSPECTOR_DETAIL_SPEC: LazyLock<DetailRendererSpec> =
+    LazyLock::new(|| RendererSpec::Mms {
         asset_path: inspector_details_asset_path(),
         export_name: "inspector_details",
         to_args: |detail: &UiDetailItem| {
@@ -528,8 +524,7 @@ pub(crate) static INSPECTOR_DETAIL_SPEC: LazyLock<DetailRendererSpec> = LazyLock
                 Value::String(detail.guid.clone()),
             ]
         },
-    }
-});
+    });
 
 fn spawn_inspector_panel_row_tree(
     world: &mut World,
@@ -537,11 +532,21 @@ fn spawn_inspector_panel_row_tree(
     row: &InspectorPanelRow,
 ) -> ComponentId {
     let (background_rgba, text_rgba, interactive, row_kind_label) = match row.kind {
-        InspectorPanelRowKind::Info => ([0.85, 0.85, 0.85, 1.0], [0.0, 0.0, 0.0, 1.0], false, "Info"),
-        InspectorPanelRowKind::Component if row.selected => {
-            ([1.00, 0.88, 0.20, 0.96], [0.08, 0.08, 0.02, 1.0], true, "Component")
+        InspectorPanelRowKind::Info => {
+            ([0.85, 0.85, 0.85, 1.0], [0.0, 0.0, 0.0, 1.0], false, "Info")
         }
-        InspectorPanelRowKind::Component => ([0.92, 0.97, 0.92, 1.0], [0.06, 0.09, 0.08, 1.0], true, "Component"),
+        InspectorPanelRowKind::Component if row.selected => (
+            [1.00, 0.88, 0.20, 0.96],
+            [0.08, 0.08, 0.02, 1.0],
+            true,
+            "Component",
+        ),
+        InspectorPanelRowKind::Component => (
+            [0.92, 0.97, 0.92, 1.0],
+            [0.06, 0.09, 0.08, 1.0],
+            true,
+            "Component",
+        ),
     };
     spawn_panel_ui_row_tree(
         world,

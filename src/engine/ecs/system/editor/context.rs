@@ -207,11 +207,16 @@ fn install_editor_handlers(
 }
 
 fn ensure_editor_observer_router(world: &mut World, editor_root: ComponentId) -> ComponentId {
-    if let Some(existing) = world.children_of(editor_root).iter().copied().find(|&child| {
-        world
-            .get_component_by_id_as::<SignalObserverRouterComponent>(child)
-            .is_some()
-    }) {
+    if let Some(existing) = world
+        .children_of(editor_root)
+        .iter()
+        .copied()
+        .find(|&child| {
+            world
+                .get_component_by_id_as::<SignalObserverRouterComponent>(child)
+                .is_some()
+        })
+    {
         return existing;
     }
 
@@ -325,14 +330,16 @@ fn sync_editor_observer_routes(
         .lock()
         .expect("editor context workspace poisoned")
         .clone();
-    let paint_panel_root = workspace
-        .panel_query_root
-        .and_then(|panel_query_root| world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR));
-    let paint_focused = paint_panel_root.is_some_and(|panel| editor_context.focused_panel == Some(panel));
+    let paint_panel_root = workspace.panel_query_root.and_then(|panel_query_root| {
+        world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
+    });
+    let paint_focused =
+        paint_panel_root.is_some_and(|panel| editor_context.focused_panel == Some(panel));
 
     for editor_root in workspace.registered_editors {
         let router_id = ensure_editor_observer_router(world, editor_root);
-        let Some(router) = world.get_component_by_id_as_mut::<SignalObserverRouterComponent>(router_id)
+        let Some(router) =
+            world.get_component_by_id_as_mut::<SignalObserverRouterComponent>(router_id)
         else {
             continue;
         };

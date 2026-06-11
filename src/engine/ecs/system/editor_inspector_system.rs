@@ -4,8 +4,8 @@ use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::system::editor::context::EditorContextState;
 #[cfg(test)]
 use crate::engine::ecs::system::editor::inspector_panel::{
-    InspectorPanelState, InspectorScrollState, InspectorSubtreeSelection,
-    InspectorWorkspaceEvent, InspectorWorkspaceState, reduce_inspector_workspace_state,
+    InspectorPanelState, InspectorScrollState, InspectorSubtreeSelection, InspectorWorkspaceEvent,
+    InspectorWorkspaceState, reduce_inspector_workspace_state,
 };
 use crate::engine::ecs::system::editor_inspector_system_stopgap_mms_adapter::EditorInspectorSystemStopgapMmsAdapter;
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
@@ -296,11 +296,15 @@ mod tests {
             .parent_of(panel_root)
             .expect("expected layout root above world panel root");
         assert!(
-            world.find_component(panel_shared_layout, "#paint_panel_root").is_some(),
+            world
+                .find_component(panel_shared_layout, "#paint_panel_root")
+                .is_some(),
             "expected paint panel under layout root"
         );
         assert!(
-            world.find_component(panel_shared_layout, "#assets_root").is_some(),
+            world
+                .find_component(panel_shared_layout, "#assets_root")
+                .is_some(),
             "expected assets panel under layout root"
         );
         assert!(
@@ -838,7 +842,10 @@ mod tests {
             .expect("expected inspector panel root");
         let detail_before = text_values_under(&world, inspector_panel_root, "Text");
         assert_eq!(
-            detail_before.iter().filter(|text| text.as_str() == "Name").count(),
+            detail_before
+                .iter()
+                .filter(|text| text.as_str() == "Name")
+                .count(),
             1,
             "expected one Name label before sidebar selection: {detail_before:?}"
         );
@@ -869,7 +876,10 @@ mod tests {
 
         let detail_after = text_values_under(&world, inspector_panel_root, "Text");
         assert_eq!(
-            detail_after.iter().filter(|text| text.as_str() == "Name").count(),
+            detail_after
+                .iter()
+                .filter(|text| text.as_str() == "Name")
+                .count(),
             1,
             "expected one Name label after sidebar selection: {detail_after:?}"
         );

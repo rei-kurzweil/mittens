@@ -14,7 +14,8 @@ enum Handler {
         name: Option<String>,
     },
     Closure {
-        handler: Box<dyn FnMut(&mut World, &mut dyn SignalEmitter, &Signal) + Send + Sync + 'static>,
+        handler:
+            Box<dyn FnMut(&mut World, &mut dyn SignalEmitter, &Signal) + Send + Sync + 'static>,
         name: Option<String>,
     },
 }
@@ -582,12 +583,17 @@ fn dispatch_scoped_kind(
         return;
     };
 
-    let router = world
-        .children_of(scope)
-        .iter()
-        .find_map(|&ch| world.get_component_by_id_as::<crate::engine::ecs::component::SignalObserverRouterComponent>(ch));
+    let router = world.children_of(scope).iter().find_map(|&ch| {
+        world
+            .get_component_by_id_as::<crate::engine::ecs::component::SignalObserverRouterComponent>(
+                ch,
+            )
+    });
     let (blacklist, whitelist) = if let Some(router) = router {
-        (Some(router.blacklist.clone()), Some(router.whitelist.clone()))
+        (
+            Some(router.blacklist.clone()),
+            Some(router.whitelist.clone()),
+        )
     } else {
         (None, None)
     };

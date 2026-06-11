@@ -14,23 +14,26 @@ use crate::engine::ecs::system::data_renderer_system::{
 };
 use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor::inspector_panel::{
-    build_inspector_panel_models, build_inspector_panel_rows, inspector_panel_instance_id_on_root,
-    parse_inspector_item_index, resolve_selected_inspector_panel_payload, InspectorPanelDetailModel,
-    InspectorPanelId, InspectorPanelModel, InspectorPanelRow, InspectorPanelRowKind,
-    InspectorWorkspaceEvent, InspectorWorkspaceState, INSPECTOR_DETAIL_SPEC, INSPECTOR_ITEM_PREFIX,
-    INSPECTOR_ROW_SPEC, INSPECTOR_PANEL_INSTANCE_ID_KEY, INSPECTOR_PANEL_PAYLOAD_NAME,
-    clear_missing_inspector_targets, reduce_inspector_workspace_state,
+    INSPECTOR_DETAIL_SPEC, INSPECTOR_ITEM_PREFIX, INSPECTOR_PANEL_INSTANCE_ID_KEY,
+    INSPECTOR_PANEL_PAYLOAD_NAME, INSPECTOR_ROW_SPEC, InspectorPanelDetailModel, InspectorPanelId,
+    InspectorPanelModel, InspectorPanelRow, InspectorPanelRowKind, InspectorWorkspaceEvent,
+    InspectorWorkspaceState, build_inspector_panel_models, build_inspector_panel_rows,
+    clear_missing_inspector_targets, inspector_panel_instance_id_on_root,
+    parse_inspector_item_index, reduce_inspector_workspace_state,
+    resolve_selected_inspector_panel_payload,
 };
-use crate::engine::ecs::system::editor::panel_ui::{spawn_panel_ui_row_tree, spawn_block_container, PanelUiRowSpec};
-use crate::engine::ecs::system::editor_system::select_editor_target;
+use crate::engine::ecs::system::editor::panel_ui::{
+    PanelUiRowSpec, spawn_block_container, spawn_panel_ui_row_tree,
+};
 use crate::engine::ecs::system::editor::world_panel::{
+    AuthoredWorldPanelSceneModel, ITEM_PREFIX, WORLD_PANEL_PAYLOAD_NAME,
+    WORLD_PANEL_SELECTION_NAME, WorldPanelModel, WorldPanelRow, WorldPanelRowKind,
     build_world_panel_model, editor_scene_roots, mark_nearest_layout_dirty, parse_item_index,
     rebuild_world_panel_scene_model, register_editor_root, rerender_world_panel_content,
-    rerender_world_panel_status, resolve_selected_world_panel_payload,
-    sync_world_panel_selection, world_panel_item_label, AuthoredWorldPanelSceneModel,
-    WorldPanelModel, WorldPanelRow, WorldPanelRowKind, ITEM_PREFIX, WORLD_PANEL_PAYLOAD_NAME,
-    WORLD_PANEL_SELECTION_NAME,
+    rerender_world_panel_status, resolve_selected_world_panel_payload, sync_world_panel_selection,
+    world_panel_item_label,
 };
+use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::system::selection_system::resolve_semantic_target_from_payload;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
 use crate::meow_meow::component_registry::{
@@ -200,7 +203,10 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 &self.rendered_inspector_models,
                 &working_file_path,
                 asset_system,
-                &mut *self.data_renderer.lock().expect("data renderer mutex poisoned"),
+                &mut *self
+                    .data_renderer
+                    .lock()
+                    .expect("data renderer mutex poisoned"),
             );
         }
 
@@ -272,7 +278,9 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     &click_world_panel_scene_model,
                     &click_inspector_workspace_state,
                     &click_rendered_inspector_models,
-                    &mut *click_data_renderer.lock().expect("data renderer mutex poisoned"),
+                    &mut *click_data_renderer
+                        .lock()
+                        .expect("data renderer mutex poisoned"),
                 );
 
                 let Some(panel_root) =
@@ -370,7 +378,9 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     &click_inspector_workspace_state,
                     &click_rendered_inspector_models,
                     selection_root,
-                    &mut *click_data_renderer.lock().expect("data renderer mutex poisoned"),
+                    &mut *click_data_renderer
+                        .lock()
+                        .expect("data renderer mutex poisoned"),
                 );
             },
         );
@@ -378,8 +388,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         let world_selection_editor_context_state = editor_context_state.clone();
         let world_selection_scene_model = Arc::clone(&self.world_panel_scene_model);
         let world_selection_inspector_workspace_state = Arc::clone(&self.inspector_workspace_state);
-        let world_selection_rendered_inspector_models =
-            Arc::clone(&self.rendered_inspector_models);
+        let world_selection_rendered_inspector_models = Arc::clone(&self.rendered_inspector_models);
         let world_selection_data_renderer = Arc::clone(&self.data_renderer);
         rx.add_handler_closure(
             SignalKind::SelectionChanged,
@@ -448,7 +457,9 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     &world_selection_inspector_workspace_state,
                     &world_selection_rendered_inspector_models,
                     *selection_root,
-                    &mut *world_selection_data_renderer.lock().expect("data renderer mutex poisoned"),
+                    &mut *world_selection_data_renderer
+                        .lock()
+                        .expect("data renderer mutex poisoned"),
                 );
 
                 let Some(panel_layout_selection) = world
@@ -766,7 +777,9 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     &world_panel_scene_model,
                     &inspector_workspace_state,
                     &rendered_inspector_models,
-                    &mut *selection_data_renderer.lock().expect("data renderer mutex poisoned"),
+                    &mut *selection_data_renderer
+                        .lock()
+                        .expect("data renderer mutex poisoned"),
                 );
             },
         );
@@ -820,7 +833,10 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             content_slot,
             &model.rows,
             model.selected_index,
-            &mut *self.data_renderer.lock().expect("data renderer mutex poisoned"),
+            &mut *self
+                .data_renderer
+                .lock()
+                .expect("data renderer mutex poisoned"),
         );
 
         let inspector_models = build_inspector_panel_models(
@@ -843,7 +859,10 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             bottom_row_root,
             &inspector_models,
             &self.rendered_inspector_models,
-            &mut *self.data_renderer.lock().expect("data renderer mutex poisoned"),
+            &mut *self
+                .data_renderer
+                .lock()
+                .expect("data renderer mutex poisoned"),
         );
     }
 }
@@ -1003,19 +1022,20 @@ fn apply_world_panel_semantic_selection(
     else {
         return;
     };
-    let Some(target_component) = resolve_semantic_target_from_payload(
-        world,
-        selected_payload,
-        selected_component,
-    ) else {
+    let Some(target_component) =
+        resolve_semantic_target_from_payload(world, selected_payload, selected_component)
+    else {
         return;
     };
     let active_editor = nearest_editor_ancestor(world, target_component);
     let gizmo_target = nearest_transform_ancestor(world, target_component);
-    let used_editor_selection_path = active_editor.zip(gizmo_target).map(|(editor_root, transform)| {
-        select_editor_target(world, emit, editor_root, transform, true);
-        transform
-    });
+    let used_editor_selection_path =
+        active_editor
+            .zip(gizmo_target)
+            .map(|(editor_root, transform)| {
+                select_editor_target(world, emit, editor_root, transform, true);
+                transform
+            });
     {
         let mut editor_context = editor_context_state
             .lock()
@@ -1080,7 +1100,6 @@ fn world_panel_selection_matches_editor_context(
     editor_context.selected_component == Some(target_component)
         && (active_editor.is_none() || editor_context.active_editor == active_editor)
 }
-
 
 impl EditorInspectorSystemStopgapMmsReconciler {
     fn reconcile_panel_layout(
@@ -1776,8 +1795,6 @@ fn materialized_ce_name(component: &MaterializedCE) -> Option<&str> {
     })
 }
 
-
-
 fn panel_status_text(world: &World, panel_root: ComponentId) -> Option<String> {
     world
         .find_component(panel_root, PANEL_STATUS_VALUE_SELECTOR)
@@ -1787,9 +1804,6 @@ fn panel_status_text(world: &World, panel_root: ComponentId) -> Option<String> {
                 .map(|text| text.text.clone())
         })
 }
-
-
-
 
 fn rerender_inspector_panels(
     world: &mut World,
@@ -1838,11 +1852,19 @@ fn rerender_inspector_panels(
                 .iter()
                 .find(|cached| cached.panel_id == model.panel_id)
                 .cloned();
-            update_inspector_panel_instance_tree(world, emit, instance_root, model, previous_model.as_ref(), data_renderer);
+            update_inspector_panel_instance_tree(
+                world,
+                emit,
+                instance_root,
+                model,
+                previous_model.as_ref(),
+                data_renderer,
+            );
             continue;
         }
 
-        let instance_root = spawn_inspector_panel_instance_tree(world, emit, model, index, data_renderer);
+        let instance_root =
+            spawn_inspector_panel_instance_tree(world, emit, model, index, data_renderer);
         emit.push_intent_now(
             layout_root,
             IntentValue::Attach {
@@ -1855,7 +1877,10 @@ fn rerender_inspector_panels(
         .lock()
         .expect("rendered inspector models mutex poisoned") = models.to_vec();
     mark_nearest_layout_dirty(world, layout_root);
-    println!("[InspectorPanel] rerender_inspector_panels took {:?}", start.elapsed());
+    println!(
+        "[InspectorPanel] rerender_inspector_panels took {:?}",
+        start.elapsed()
+    );
 }
 
 fn rerender_single_inspector_panel_sidebar(
@@ -1901,7 +1926,8 @@ fn rerender_single_inspector_panel_sidebar(
         })
         .collect();
 
-    let Ok(container) = data_renderer.render_list(world, emit, sidebar_slot, &INSPECTOR_ROW_SPEC, &items)
+    let Ok(container) =
+        data_renderer.render_list(world, emit, sidebar_slot, &INSPECTOR_ROW_SPEC, &items)
     else {
         return;
     };
@@ -1959,9 +1985,13 @@ fn rerender_single_inspector_panel_detail(
         guid: detail.guid.clone(),
     };
 
-    if let Err(error) =
-        data_renderer.render_detail(world, emit, detail_slot, &INSPECTOR_DETAIL_SPEC, &detail_item)
-    {
+    if let Err(error) = data_renderer.render_detail(
+        world,
+        emit,
+        detail_slot,
+        &INSPECTOR_DETAIL_SPEC,
+        &detail_item,
+    ) {
         eprintln!("[InspectorSystemStopgapMmsAdapter] detail render error: {error}");
     }
     println!(
@@ -1969,8 +1999,6 @@ fn rerender_single_inspector_panel_detail(
         start.elapsed()
     );
 }
-
-
 
 fn update_inspector_panel_instance_tree(
     world: &mut World,
@@ -1993,7 +2021,9 @@ fn update_inspector_panel_instance_tree(
     };
 
     let title_changed = previous_model.is_none_or(|previous| previous.title != model.title);
-    if title_changed && let Some(title_label) = world.find_component(inspector_panel_root, "#title_label") {
+    if title_changed
+        && let Some(title_label) = world.find_component(inspector_panel_root, "#title_label")
+    {
         emit.push_intent_now(
             title_label,
             IntentValue::SetText {
@@ -2046,7 +2076,6 @@ fn update_inspector_panel_instance_tree(
     }
 }
 
-
 fn clicked_named_ancestor(world: &World, node: ComponentId, prefix: &str) -> Option<String> {
     let mut current = Some(node);
     while let Some(component_id) = current {
@@ -2089,7 +2118,6 @@ fn find_inspector_panel_instance_root(
                 .find(|&child| inspector_panel_instance_id_on_root(world, child) == Some(panel_id))
         })
 }
-
 
 fn sync_inspector_workspace_to_selection(
     world: &World,
@@ -2255,7 +2283,7 @@ fn focus_panel_from_descendant_click(
             panel_layout_selection,
             IntentValue::SelectionSet {
                 component_ids: vec![panel_layout_selection],
-                    entries: vec![SelectionEntry {
+                entries: vec![SelectionEntry {
                     index: None,
                     component: panel_root,
                 }],
@@ -2329,7 +2357,6 @@ fn nearest_transform_ancestor(world: &World, start: ComponentId) -> Option<Compo
     }
     None
 }
-
 
 fn world_panel_asset_path() -> &'static str {
     concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
@@ -2526,9 +2553,7 @@ fn spawn_inspector_panel_instance_tree(
         ],
         "inspector panel",
     ) {
-        Some(panel) => {
-            decorate_panel_root_ce(panel)
-        }
+        Some(panel) => decorate_panel_root_ce(panel),
         None => {
             return spawn_inspector_panel_instance_fallback_root(world, model.panel_id);
         }
@@ -2820,55 +2845,44 @@ fn spawn_world_panel_row_tree(
     selected: bool,
 ) -> ComponentId {
     match row.kind {
-        WorldPanelRowKind::Spacer => {
-            spawn_panel_ui_row_tree(
-                world,
-                PanelUiRowSpec {
-                    row_name,
-                    payload_name: WORLD_PANEL_PAYLOAD_NAME,
-                    target_component: None,
-                    label: "",
-                    row_kind_label: "Spacer",
-                    interactive: false,
-                    background_rgba: [0.0, 0.0, 0.0, 0.0],
-                    text_rgba: [0.0, 0.0, 0.0, 0.0],
-                    font_size_gu: None,
-                    spacer_height_gu: Some(0.8),
-                },
-            )
-        }
+        WorldPanelRowKind::Spacer => spawn_panel_ui_row_tree(
+            world,
+            PanelUiRowSpec {
+                row_name,
+                payload_name: WORLD_PANEL_PAYLOAD_NAME,
+                target_component: None,
+                label: "",
+                row_kind_label: "Spacer",
+                interactive: false,
+                background_rgba: [0.0, 0.0, 0.0, 0.0],
+                text_rgba: [0.0, 0.0, 0.0, 0.0],
+                font_size_gu: None,
+                spacer_height_gu: Some(0.8),
+            },
+        ),
         WorldPanelRowKind::EditorRoot | WorldPanelRowKind::Info | WorldPanelRowKind::Component => {
             let (background_rgba, text_rgba, interactive, row_kind_label) = match row.kind {
-                WorldPanelRowKind::EditorRoot => {
-                    (
-                        [0.30, 0.84, 0.38, 0.98],
-                        [0.03, 0.08, 0.04, 1.0],
-                        true,
-                        "EditorRoot",
-                    )
-                }
-                WorldPanelRowKind::Info => (
-                    [0.85, 0.85, 0.85, 1.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                    false,
-                    "Info",
+                WorldPanelRowKind::EditorRoot => (
+                    [0.30, 0.84, 0.38, 0.98],
+                    [0.03, 0.08, 0.04, 1.0],
+                    true,
+                    "EditorRoot",
                 ),
-                WorldPanelRowKind::Component if selected => {
-                    (
-                        [1.00, 0.88, 0.20, 0.96],
-                        [0.06, 0.09, 0.08, 1.0],
-                        true,
-                        "Component",
-                    )
+                WorldPanelRowKind::Info => {
+                    ([0.85, 0.85, 0.85, 1.0], [0.0, 0.0, 0.0, 1.0], false, "Info")
                 }
-                WorldPanelRowKind::Component => {
-                    (
-                        [0.92, 0.97, 0.92, 1.0],
-                        [0.06, 0.09, 0.08, 1.0],
-                        true,
-                        "Component",
-                    )
-                }
+                WorldPanelRowKind::Component if selected => (
+                    [1.00, 0.88, 0.20, 0.96],
+                    [0.06, 0.09, 0.08, 1.0],
+                    true,
+                    "Component",
+                ),
+                WorldPanelRowKind::Component => (
+                    [0.92, 0.97, 0.92, 1.0],
+                    [0.06, 0.09, 0.08, 1.0],
+                    true,
+                    "Component",
+                ),
                 WorldPanelRowKind::Spacer => unreachable!(),
             };
             spawn_panel_ui_row_tree(
@@ -2889,4 +2903,3 @@ fn spawn_world_panel_row_tree(
         }
     }
 }
-

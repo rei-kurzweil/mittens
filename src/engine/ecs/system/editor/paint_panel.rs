@@ -1,5 +1,5 @@
-use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::system::editor::context::EditorContextState;
 
 const FREE_DRAW_LABEL: &str = "Free Draw";
 const LINE_LABEL: &str = "Line";
@@ -156,8 +156,12 @@ pub fn is_paint_panel_focused(
     paint_panel_root: Option<ComponentId>,
     editor_context: &EditorContextState,
 ) -> bool {
-    let focused = paint_panel_root.is_some_and(|panel_root| editor_context.focused_panel == Some(panel_root));
-    eprintln!("🎨🖌️ paint_debug is_paint_panel_focused paint_panel_root={paint_panel_root:?} focused_panel={:?} → {focused}", editor_context.focused_panel);
+    let focused =
+        paint_panel_root.is_some_and(|panel_root| editor_context.focused_panel == Some(panel_root));
+    eprintln!(
+        "🎨🖌️ paint_debug is_paint_panel_focused paint_panel_root={paint_panel_root:?} focused_panel={:?} → {focused}",
+        editor_context.focused_panel
+    );
     focused
 }
 
@@ -178,9 +182,9 @@ pub fn is_paint_active(
             .is_some()
     };
     let result = focused && tool_ok && asset_ok;
-    eprintln!("🎨🖌️ paint_debug is_paint_active result={result} focused={focused} tool_ok={tool_ok} asset_ok={asset_ok} tool={:?} asset={:?} panel={paint_panel_root:?} focused_panel={:?}",
-        paint_state.selected_tool, paint_state.selected_asset, editor_context.focused_panel);
+    eprintln!(
+        "🎨🖌️ paint_debug is_paint_active result={result} focused={focused} tool_ok={tool_ok} asset_ok={asset_ok} tool={:?} asset={:?} panel={paint_panel_root:?} focused_panel={:?}",
+        paint_state.selected_tool, paint_state.selected_asset, editor_context.focused_panel
+    );
     result
 }
-
-

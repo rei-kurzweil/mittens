@@ -292,10 +292,7 @@ thread_local! {
     static LIVE_SIGNAL_EMITTER: RefCell<Option<*mut dyn SignalEmitter>> = RefCell::new(None);
 }
 
-fn with_live_signal_emitter<R>(
-    emit: Option<*mut dyn SignalEmitter>,
-    f: impl FnOnce() -> R,
-) -> R {
+fn with_live_signal_emitter<R>(emit: Option<*mut dyn SignalEmitter>, f: impl FnOnce() -> R) -> R {
     LIVE_SIGNAL_EMITTER.with(|slot| {
         let prev = slot.replace(emit);
         let result = f();

@@ -110,16 +110,6 @@ impl TransformGizmoSystem {
         );
     }
 
-    fn use_parent_inverse_enabled() -> bool {
-        static ENABLED: OnceLock<bool> = OnceLock::new();
-        *ENABLED.get_or_init(|| {
-            // Default OFF to preserve previous gizmo behavior unless explicitly enabled.
-            let v = std::env::var("CAT_GIZMO_USE_PARENT_INVERSE").unwrap_or_default();
-            let v = v.trim().to_ascii_lowercase();
-            matches!(v.as_str(), "1" | "true" | "yes" | "on")
-        })
-    }
-
     fn sanity_check_transform_values(
         world: &World,
         target_transform: ComponentId,
@@ -261,10 +251,6 @@ impl TransformGizmoSystem {
     ) -> [f32; 3] {
         use crate::utils::math;
 
-        if !Self::use_parent_inverse_enabled() {
-            return delta_world;
-        }
-
         let parent_world = Self::parent_transform_world_matrix(world, target_transform)
             .unwrap_or_else(Self::mat4_identity);
         let inv_parent_world = math::mat4_inverse(parent_world).unwrap_or_else(Self::mat4_identity);
@@ -283,12 +269,57 @@ impl TransformGizmoSystem {
     ) -> [f32; 3] {
         use crate::utils::math;
 
-        if !Self::use_parent_inverse_enabled() {
-            return math::vec3_normalize(dir_world);
-        }
-
         let d = Self::world_delta_to_target_local(world, target_transform, dir_world);
         math::vec3_normalize(d)
+    }
+
+    fn resolve_translation_space(
+        world: &World,
+        gizmo_cid: ComponentId,
+    ) -> crate::engine::ecs::component::TransformGizmoCoordSpace {
+        let mut translation_space = crate::engine::ecs::component::TransformGizmoCoordSpace::World;
+        let mut cur = Some(gizmo_cid);
+        while let Some(node) = cur {
+            if let Some(ed) =
+                world.get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(node)
+            {
+                translation_space = ed.transform_gizmo_translation_space;
+                break;
+            }
+            cur = world.parent_of(node);
+        }
+        translation_space
+    }
+
+    fn transform_direction(
+        m: crate::engine::graphics::primitives::TransformMatrix,
+        v: [f32; 3],
+    ) -> [f32; 3] {
+        [
+            m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2],
+            m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2],
+            m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2],
+        ]
+    }
+
+    fn translation_axis_world(
+        world: &World,
+        target_transform: ComponentId,
+        space: crate::engine::ecs::component::TransformGizmoCoordSpace,
+        axis: TransformGizmoAxis,
+    ) -> [f32; 3] {
+        use crate::engine::ecs::system::transform_system::TransformSystem;
+        use crate::utils::math;
+
+        let axis_local = axis.unit_vec3();
+        match space {
+            crate::engine::ecs::component::TransformGizmoCoordSpace::World => axis_local,
+            crate::engine::ecs::component::TransformGizmoCoordSpace::Local => {
+                let target_world = TransformSystem::world_model(world, target_transform)
+                    .unwrap_or_else(Self::mat4_identity);
+                math::vec3_normalize(Self::transform_direction(target_world, axis_local))
+            }
+        }
     }
 
     fn quat_from_z_to_dir(dir: [f32; 3]) -> [f32; 4] {
@@ -592,7 +623,9 @@ impl TransformGizmoSystem {
 
         match op {
             TransformGizmoOp::Translate(axis) => {
-                let axis_v = axis.unit_vec3();
+                let translation_space = Self::resolve_translation_space(world, gizmo_cid);
+                let axis_v =
+                    Self::translation_axis_world(world, target_transform, translation_space, axis);
                 let d = dot(*delta_world, axis_v);
                 let delta_world_axis = mul(axis_v, d);
                 let delta =
@@ -612,7 +645,8 @@ impl TransformGizmoSystem {
                         "translate",
                         target_transform,
                         &format!(
-                            "delta_world={:?} axis={:?} d={:.6} delta_world_axis={:?} delta_applied={:?} cur_t={:?} next_t={:?} use_parent_inverse={}",
+                            "translation_space={:?} delta_world={:?} axis_world={:?} d={:.6} delta_world_axis={:?} delta_applied={:?} cur_t={:?} next_t={:?}",
+                            translation_space,
                             *delta_world,
                             axis_v,
                             d,
@@ -620,7 +654,6 @@ impl TransformGizmoSystem {
                             delta,
                             cur,
                             next,
-                            Self::use_parent_inverse_enabled(),
                         ),
                     );
                 }
@@ -735,7 +768,7 @@ impl TransformGizmoSystem {
                             "rotate",
                             target_transform,
                             &format!(
-                                "delta_world={:?} axis_world={:?} axis_local={:?} angle={:.6} cur_q={:?} next_q={:?} pivot_world={:?} use_parent_inverse={}",
+                                "delta_world={:?} axis_world={:?} axis_local={:?} angle={:.6} cur_q={:?} next_q={:?} pivot_world={:?}",
                                 *delta_world,
                                 axis_v,
                                 axis_local,
@@ -744,7 +777,6 @@ impl TransformGizmoSystem {
                                 q_next,
                                 TransformSystem::world_position(world, target_transform)
                                     .unwrap_or([0.0, 0.0, 0.0]),
-                                Self::use_parent_inverse_enabled(),
                             ),
                         );
                     }
@@ -805,7 +837,7 @@ impl TransformGizmoSystem {
                         "scale",
                         target_transform,
                         &format!(
-                            "delta_world={:?} axis_world={:?} d_world={:.6} delta_world_axis={:?} delta_local_axis={:?} axis_local_dir={:?} d_local={:.6} cur_s={:?} next_s={:?} use_parent_inverse={}",
+                            "delta_world={:?} axis_world={:?} d_world={:.6} delta_world_axis={:?} delta_local_axis={:?} axis_local_dir={:?} d_local={:.6} cur_s={:?} next_s={:?}",
                             *delta_world,
                             axis.unit_vec3(),
                             d,
@@ -815,7 +847,6 @@ impl TransformGizmoSystem {
                             d_local,
                             t_ro.transform.scale,
                             s,
-                            Self::use_parent_inverse_enabled(),
                         ),
                     );
                 }
@@ -1538,5 +1569,79 @@ impl TransformGizmoSystem {
         // Handler-driven: drag + parent events are handled during drain points.
         // Keep `tick_with_queue` as a no-op entrypoint for now.
         let _ = (world, emit);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TransformGizmoSystem;
+    use crate::engine::ecs::World;
+    use crate::engine::ecs::component::{
+        TransformComponent, TransformGizmoAxis, TransformGizmoCoordSpace,
+    };
+
+    fn approx3(a: [f32; 3], b: [f32; 3]) {
+        for i in 0..3 {
+            assert!(
+                (a[i] - b[i]).abs() < 1e-4,
+                "index {i}: left={:?} right={:?}",
+                a,
+                b
+            );
+        }
+    }
+
+    #[test]
+    fn world_delta_is_converted_through_rotated_parent_inverse() {
+        let mut world = World::default();
+        let parent = world.add_component(TransformComponent::new().with_rotation_euler(
+            0.0,
+            0.0,
+            std::f32::consts::FRAC_PI_2,
+        ));
+        let target = world.add_component(TransformComponent::new());
+        world.add_child(parent, target).expect("attach target");
+
+        let parent_world = world
+            .get_component_by_id_as::<TransformComponent>(parent)
+            .expect("parent transform")
+            .transform
+            .model;
+        world
+            .get_component_by_id_as_mut::<TransformComponent>(parent)
+            .expect("parent transform")
+            .transform
+            .matrix_world = parent_world;
+
+        let local =
+            TransformGizmoSystem::world_delta_to_target_local(&world, target, [1.0, 0.0, 0.0]);
+        approx3(local, [0.0, -1.0, 0.0]);
+    }
+
+    #[test]
+    fn local_translation_axis_uses_target_world_rotation() {
+        let mut world = World::default();
+        let target = world.add_component(TransformComponent::new().with_rotation_euler(
+            0.0,
+            0.0,
+            std::f32::consts::FRAC_PI_2,
+        ));
+        let target_world = world
+            .get_component_by_id_as::<TransformComponent>(target)
+            .expect("target transform")
+            .transform
+            .model;
+        world
+            .get_component_by_id_as_mut::<TransformComponent>(target)
+            .expect("target transform")
+            .transform
+            .matrix_world = target_world;
+        let axis = TransformGizmoSystem::translation_axis_world(
+            &world,
+            target,
+            TransformGizmoCoordSpace::Local,
+            TransformGizmoAxis::X,
+        );
+        approx3(axis, [0.0, 1.0, 0.0]);
     }
 }

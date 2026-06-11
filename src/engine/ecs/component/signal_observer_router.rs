@@ -1,5 +1,5 @@
-use crate::engine::ecs::component::ce_helpers::*;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::component::ce_helpers::*;
 use crate::engine::ecs::{ComponentId, SignalEmitter};
 
 /// Signal routing operator: filters signal observers (handlers) on this node.

@@ -3,9 +3,7 @@ use std::collections::HashMap;
 use crate::engine::ecs::component::{
     Display, LayoutComponent, Overflow, SizeDimension, StyleComponent, TransformComponent,
 };
-use crate::engine::ecs::{
-    ComponentId, IntentValue, SignalEmitter, World,
-};
+use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::meow_meow::component_registry::spawn_tree;
 use crate::meow_meow::object::Value;
 use crate::meow_meow::runner::MeowMeowRunner;
@@ -51,7 +49,11 @@ pub enum RendererSpec<T> {
     /// Uses a boxed closure so the renderer can capture shared state
     /// (e.g. panel models from an `Arc<Mutex<Vec<...>>>`).
     Rust {
-        render_fn: Box<dyn Fn(&mut World, &mut dyn SignalEmitter, &T) -> Result<ComponentId, String> + Send + Sync>,
+        render_fn: Box<
+            dyn Fn(&mut World, &mut dyn SignalEmitter, &T) -> Result<ComponentId, String>
+                + Send
+                + Sync,
+        >,
     },
 }
 

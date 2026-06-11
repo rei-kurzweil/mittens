@@ -177,7 +177,7 @@ impl ScrollingSystem {
             };
             let prev_offset = sc.scroll_offset;
             let changed = sc.apply_drag(-delta_local_y);
-            
+
             if !changed {
                 return None;
             }

@@ -1,5 +1,5 @@
-use cat_engine::{engine, meow_meow, utils};
 use cat_engine::engine::ecs::SignalEmitter;
+use cat_engine::{engine, meow_meow, utils};
 
 fn main() {
     utils::logger::init();

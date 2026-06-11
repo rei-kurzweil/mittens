@@ -629,10 +629,7 @@ fn handle_selection_click(
         );
     }
     let selected_index = find_selected_item_index(world, selection_root, item_id);
-    println!(
-        "[selection] index={:?}",
-        selected_index
-    );
+    println!("[selection] index={:?}", selected_index);
 
     let entry = SelectionEntry {
         index: selected_index,
