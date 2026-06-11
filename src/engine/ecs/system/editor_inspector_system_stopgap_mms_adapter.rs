@@ -4,13 +4,18 @@ use std::sync::{Arc, Mutex};
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::component::style::VerticalAlign;
 use crate::engine::ecs::component::{
-    DataComponent, DataValue, Display, EdgeInsets, RaycastableComponent, SelectableComponent,
-    SelectionComponent, SelectionEntry, SelectionMode, SerializeComponent, SizeDimension,
-    StyleComponent, TextAlign, TextComponent,
+    DataComponent, DataValue, Display, EdgeInsets, RaycastableComponent, SelectionComponent,
+    SelectionEntry, SelectionMode, SizeDimension, StyleComponent, TextAlign, TextComponent,
 };
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::system::data_renderer_system::{
     DataRendererSystem, UiDetailItem, UiItem, UiItemKind,
+};
+use crate::engine::ecs::system::panel_system::{
+    EDITOR_RUNTIME_UI_ROOT_NAME, PANEL_LAYOUT_MOUNT_NAME, PANEL_LAYOUT_ROOT_NAME,
+    PANEL_LAYOUT_SELECTION_NAME, ensure_panel_layout_selection, find_named_root,
+    get_or_create_runtime_ui_root, is_descendant_or_self, panel_layout_root_id,
+    panel_layout_selection_id,
 };
 use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor::inspector_panel::{
@@ -42,10 +47,6 @@ use crate::meow_meow::component_registry::{
 use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
 use crate::meow_meow::runner::MeowMeowRunner;
 
-const PANEL_LAYOUT_MOUNT_NAME: &str = "editor_panel_layout_mount";
-const PANEL_LAYOUT_ROOT_NAME: &str = "editor_panel_layout_root";
-const PANEL_LAYOUT_SELECTION_NAME: &str = "editor_panel_layout_selection";
-const EDITOR_RUNTIME_UI_ROOT_NAME: &str = "editor_runtime_ui_root";
 const WORLD_PANEL_ROOT_SELECTOR: &str = "#world_panel_root";
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 const WORLD_PANEL_CONTENT_ROOT_SELECTOR: &str = "#world_panel_content_root";
@@ -685,40 +686,11 @@ impl EditorInspectorSystemStopgapMmsAdapter {
     }
 
     fn get_or_create_runtime_ui_root(&self, world: &mut World) -> ComponentId {
-        {
-            let runtime_ui_root = self
-                .runtime_ui_root
-                .lock()
-                .expect("runtime ui root mutex poisoned");
-            if let Some(root) = *runtime_ui_root {
-                return root;
-            }
-        }
-
-        let runtime_ui_root = world.add_component_boxed_named(
-            EDITOR_RUNTIME_UI_ROOT_NAME,
-            Box::new(TransformComponent::new()),
-        );
-        let runtime_ui_selectable = world.add_component_boxed_named(
-            "editor_runtime_ui_selectable",
-            Box::new(SelectableComponent::off()),
-        );
-        let _ = world.add_child(runtime_ui_root, runtime_ui_selectable);
-        let runtime_ui_serialize = world.add_component_boxed_named(
-            "editor_runtime_ui_serialize",
-            Box::new(SerializeComponent::off()),
-        );
-        let _ = world.add_child(runtime_ui_root, runtime_ui_serialize);
-
+        let runtime_ui_root = get_or_create_runtime_ui_root(world);
         *self
             .runtime_ui_root
             .lock()
             .expect("runtime ui root mutex poisoned") = Some(runtime_ui_root);
-
-        println!(
-            "[InspectorSystem][debug] created runtime ui root runtime_ui_root={runtime_ui_root:?}"
-        );
-
         runtime_ui_root
     }
 
@@ -1412,18 +1384,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         if let Some(layout_root_id) =
             world.find_component(panel_mount_root, &format!("#{PANEL_LAYOUT_ROOT_NAME}"))
         {
-            use crate::engine::ecs::component::SelectionComponent;
-            let selection = world.add_component_boxed_named(
-                PANEL_LAYOUT_SELECTION_NAME,
-                Box::new(SelectionComponent::new()),
-            );
-            emit.push_intent_now(
-                layout_root_id,
-                IntentValue::Attach {
-                    parents: vec![layout_root_id],
-                    child: selection,
-                },
-            );
+            let selection = ensure_panel_layout_selection(world, layout_root_id);
             world.init_component_tree(selection, emit);
         }
 
@@ -1519,9 +1480,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 }
             }
         }
-        if let Some(panel_layout_selection) =
-            world.find_component(panel_mount_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
-        {
+        if let Some(panel_layout_selection) = panel_layout_selection_id(world, panel_mount_root) {
             if let Some(world_panel_root) =
                 world.find_component(panel_mount_root, WORLD_PANEL_ROOT_SELECTOR)
             {
@@ -1630,15 +1589,6 @@ fn handle_panel_button_click(
     }
 
     None
-}
-
-fn find_named_root(world: &World, name: &str) -> Option<ComponentId> {
-    world.all_components().find(|&component_id| {
-        world.parent_of(component_id).is_none()
-            && world
-                .component_label(component_id)
-                .is_some_and(|label| label == name)
-    })
 }
 
 fn world_panel_scene_path() -> PathBuf {
@@ -1773,10 +1723,6 @@ fn should_skip_loaded_root(component: &MaterializedCE) -> bool {
             | "panel_status_root"
             | "rows_mount"
     ) || name.starts_with(INSPECTOR_PANEL_INSTANCE_PREFIX)
-}
-
-fn panel_layout_root_id(world: &World, panel_query_root: ComponentId) -> Option<ComponentId> {
-    world.find_component(panel_query_root, "#editor_panel_layout_root")
 }
 
 fn panel_layout_bottom_row_id(world: &World, panel_query_root: ComponentId) -> Option<ComponentId> {
@@ -2317,17 +2263,6 @@ fn focus_panel_from_descendant_click(
         );
         return;
     }
-}
-
-fn is_descendant_or_self(world: &World, ancestor: ComponentId, node: ComponentId) -> bool {
-    let mut current = Some(node);
-    while let Some(component_id) = current {
-        if component_id == ancestor {
-            return true;
-        }
-        current = world.parent_of(component_id);
-    }
-    false
 }
 
 fn nearest_editor_ancestor(world: &World, start: ComponentId) -> Option<ComponentId> {

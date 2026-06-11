@@ -39,6 +39,7 @@ pub mod model;
 pub mod music_system;
 pub mod openxr_system;
 pub mod paint_placement;
+pub mod panel_system;
 pub mod pipeline_system;
 pub mod pointer_system;
 pub mod raycast_system;
