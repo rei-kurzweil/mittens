@@ -19,25 +19,26 @@ use crate::engine::ecs::component::{
     ControllerXRComponent, DataComponent, DataValue, DirectionalLightComponent, Display,
     EdgeInsets, EditorComponent, ElementType, EmissiveComponent, EmissivePassComponent,
     FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent,
-    GestureCoordTypeComponent, GravityComponent, HtmlElementComponent, IKChainComponent, IKSolver,
-    InputComponent, InputTransformModeComponent, InputXRComponent, InspectLayoutComponent,
-    JustifyContent, KeyframeComponent, KineticResponseComponent, LayoutBoundsComponent,
-    LayoutComponent, LightQuantizationComponent, MeshComponent, MusicContextComponent, MusicNote,
-    MusicNoteComponent, NormalVisualisationComponent, OpacityComponent, OpenXRComponent,
-    OptionComponent, OscillatorType, Overflow, OverlayComponent, PointLightComponent,
-    PointerComponent, PointerEvents, Position, QuatTemporalFilterComponent, QuatYawFollowComponent,
-    RayCastComponent, RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType,
-    RenderGraphComponent, RenderableComponent, RendererSettingsComponent, RendererStatsComponent,
-    RouterComponent, ScrollingComponent, SelectableComponent, SelectionComponent,
-    SerializeComponent, SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension,
-    SkinnedMeshComponent, StencilClipComponent, StyleComponent, TextAlign, TextComponent,
-    TextInputComponent, TextShadowComponent, TextureComponent, TextureFilteringComponent,
-    TransformComponent, TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis,
-    TransformGizmoComponent, TransformGizmoCoordSpace, TransformGizmoRotateComponent,
-    TransformGizmoScaleComponent, TransformGizmoTranslateComponent, TransformMapRotationComponent,
-    TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
-    TransformParentComponent, TransformSampleAncestorComponent, TransitionComponent,
-    TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
+    GestureCoordTypeComponent, GravityComponent, GridComponent, HtmlElementComponent,
+    IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent, InputXRComponent,
+    InspectLayoutComponent, JustifyContent, KeyframeComponent, KineticResponseComponent,
+    LayoutBoundsComponent, LayoutComponent, LightQuantizationComponent, MeshComponent,
+    MusicContextComponent, MusicNote, MusicNoteComponent, NormalVisualisationComponent,
+    OpacityComponent, OpenXRComponent, OptionComponent, OscillatorType, Overflow, OverlayComponent,
+    PointLightComponent, PointerComponent, PointerEvents, Position, QuatTemporalFilterComponent,
+    QuatYawFollowComponent, RayCastComponent, RaycastableComponent, RaycastableShapeComponent,
+    RaycastableShapeType, RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
+    RendererStatsComponent, RouterComponent, ScrollingComponent, SelectableComponent,
+    SelectionComponent, SerializeComponent, SignalObserverRouterComponent,
+    SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent, StencilClipComponent,
+    StyleComponent, TextAlign, TextComponent, TextInputComponent, TextShadowComponent,
+    TextureComponent, TextureFilteringComponent, TransformComponent, TransformDropComponent,
+    TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
+    TransformGizmoCoordSpace, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
+    TransformGizmoTranslateComponent, TransformMapRotationComponent, TransformMapScaleComponent,
+    TransformMapTranslationComponent, TransformMergeTRSComponent, TransformParentComponent,
+    TransformSampleAncestorComponent, TransitionComponent, TransitionEasing,
+    TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
     Vector3TemporalFilterComponent, WordWrapMode,
 };
 use crate::engine::ecs::{ComponentId, World};
@@ -1027,6 +1028,18 @@ fn create_component(
                 ctor.unwrap_or("")
             )),
         },
+        "Grid" => {
+            let mut c = GridComponent::default();
+            if let Some(method) = ctor {
+                match method {
+                    "spacing" => c = c.with_spacing(arg_f32(args, 0)?),
+                    "size_x" => c = c.with_size_x(arg_f32(args, 0)? as u32),
+                    "size_z" => c = c.with_size_z(arg_f32(args, 0)? as u32),
+                    _ => return Err(format!("Grid: unknown constructor '{method}'")),
+                }
+            }
+            add!(c)
+        }
         "StencilClip" => {
             let id = world.add_component(StencilClipComponent::new());
             if let Some(method) = ctor {
@@ -2470,6 +2483,17 @@ fn apply_call(
             "uri" | "with_uri" => *tex = TextureComponent::with_uri(arg_str(args, 0)?),
             "from_png" => *tex = TextureComponent::from_png(arg_str(args, 0)?),
             "from_dds" => *tex = TextureComponent::from_dds(arg_str(args, 0)?),
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(grid) = world.get_component_by_id_as_mut::<GridComponent>(id) {
+        match method {
+            "spacing" => *grid = grid.with_spacing(arg_f32(args, 0)?),
+            "size_x" => *grid = grid.with_size_x(arg_f32(args, 0)? as u32),
+            "size_z" => *grid = grid.with_size_z(arg_f32(args, 0)? as u32),
+            "enabled" => *grid = grid.with_enabled(arg_bool(args, 0)?),
+            "selectable" => *grid = grid.with_selectable(arg_bool(args, 0)?),
             _ => {}
         }
         return Ok(());

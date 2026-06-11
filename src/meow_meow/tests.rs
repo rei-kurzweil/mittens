@@ -2301,6 +2301,23 @@ fn roundtrip_emissive_pass() {
 }
 
 #[test]
+fn roundtrip_grid_component_with_dimensions() {
+    use crate::engine::ecs::component::GridComponent;
+    let original = GridComponent::new(0.5)
+        .with_size_x(24)
+        .with_size_z(12)
+        .with_enabled(false)
+        .with_selectable(false);
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<GridComponent>(id).unwrap();
+    assert!((got.spacing - 0.5).abs() < 1e-6);
+    assert_eq!(got.size_x, 24);
+    assert_eq!(got.size_z, 12);
+    assert!(!got.enabled);
+    assert!(!got.selectable);
+}
+
+#[test]
 fn roundtrip_bloom() {
     use crate::engine::ecs::component::BloomComponent;
     let original = BloomComponent::new()

@@ -13,6 +13,7 @@ import { line_icon } from "./icons.mms"
 import { spray_can_icon } from "./icons.mms"
 import { fill_icon } from "./icons.mms"
 import { erase_icon } from "./icons.mms"
+import { grid_visibility_icon } from "./icons.mms"
 
 // ── Shared constants ──────────────────────────────────────────────────────────
 
@@ -434,6 +435,116 @@ export fn asset_panel(title, items, title_color, panel_background_color, item_ba
                 background_z(-0.001)
             }
             assets_content(items, item_background_color)
+        }
+    }
+}
+
+// ── grid_panel ───────────────────────────────────────────────────────────────
+
+let GRID_PANEL_WIDTH_GU = 29.5
+let GRID_PANEL_CONTENT_HEIGHT_GU = 51.0
+let GRID_PANEL_ADD_BUTTON_HEIGHT_GU = 3.0
+let GRID_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + GRID_PANEL_CONTENT_HEIGHT_GU + GAP_GU + GRID_PANEL_ADD_BUTTON_HEIGHT_GU
+
+export fn grid_panel(title, items, title_color, panel_background_color, item_background_color) {
+    let _unused_items = items
+    let _unused_item_background_color = item_background_color
+
+    return T {
+        name = "grid_panel_root"
+        Style {
+            display("block")
+            width(GRID_PANEL_WIDTH_GU)
+            height(GRID_PANEL_TOTAL_HEIGHT_GU)
+            margin_xy(0.5, 0.5)
+        }
+
+        T {
+            name = "title_bar"
+            Raycastable.enabled()
+            Style {
+                display("block")
+                height(TITLE_BAR_HEIGHT_GU)
+                margin_bottom(TITLE_CONTENT_GAP_GU)
+                background_color(panel_background_color)
+                background_z(-0.01)
+            }
+
+            T {
+                name = "title_label_wrap"
+                Style {
+                    display("inline-block")
+                    width(23.0)
+                    height(TITLE_BAR_HEIGHT_GU)
+                    padding_xy(0.25, TITLE_LABEL_PADDING_X_GU)
+                    text_align("left")
+                    vertical_align("middle")
+                    color = title_color
+                }
+                T.position(0.0, 0.0, 0.0) {
+                    Text {
+                        name = "title_label"
+                        title
+                    }
+                }
+            }
+
+            T {
+                name = "title_icon_wrap"
+                Style {
+                    display("inline-block")
+                    width(5.0)
+                    height(TITLE_BAR_HEIGHT_GU)
+                    text_align("center")
+                    vertical_align("middle")
+                }
+                T.position(0.0, 0.0, 0.0) {
+                    T.scale(0.25, 0.25, 1.0) {
+                        grid_visibility_icon()
+                    }
+                }
+            }
+        }
+
+        T {
+            name = "content_slot"
+            Raycastable.enabled()
+            Style {
+                display("block")
+                height(GRID_PANEL_CONTENT_HEIGHT_GU)
+                margin_bottom(GAP_GU)
+                overflow("scroll")
+                background_color([0.96, 0.92, 0.18, 0.80])
+                background_z(-0.001)
+            }
+        }
+
+        T {
+            name = "grid_add_button"
+            Raycastable.enabled()
+            Style {
+                display("block")
+                height(GRID_PANEL_ADD_BUTTON_HEIGHT_GU)
+                background_color([0.10, 0.55, 0.18, 1.0])
+                background_z(-0.01)
+            }
+
+            T {
+                name = "grid_add_button_label"
+                Style {
+                    display("inline-block")
+                    width(24.0)
+                    height(GRID_PANEL_ADD_BUTTON_HEIGHT_GU)
+                    padding_xy(0.25, TITLE_LABEL_PADDING_X_GU)
+                    text_align("left")
+                    vertical_align("middle")
+                    color = [0.75, 1.00, 0.45, 1.0]
+                }
+                T.position(0.0, 0.0, 0.0) {
+                    Text { "Add Grid" }
+                }
+            }
+
         }
     }
 }

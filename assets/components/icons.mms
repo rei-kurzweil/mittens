@@ -67,3 +67,29 @@ export fn erase_icon() {
         }
     }
 }
+
+export fn delete_x_icon() {
+    return T {
+        name = "delete_x_icon"
+        let arm = T.scale(0.22, 1.15, 0.22) {
+            R.cube() { C.rgba(0.92, 0.20, 0.20, 1.0) }
+        }
+        T.rotation(0.0, 0.0, 0.785) { arm }
+        T.rotation(0.0, 0.0, -0.785) { arm }
+    }
+}
+
+export fn grid_visibility_icon() {
+    return T {
+        name = "grid_visibility_icon"
+        T.scale(1.2, 0.55, 0.15) {
+            R.cube() { C.rgba(0.10, 0.16, 0.12, 1.0) }
+        }
+        T.scale(0.7, 0.25, 0.16) {
+            R.cube() { C.rgba(0.92, 0.97, 0.92, 1.0) }
+        }
+        T.scale(0.18, 0.18, 0.2) {
+            R.cube() { C.rgba(0.10, 0.16, 0.12, 1.0) }
+        }
+    }
+}
