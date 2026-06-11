@@ -731,9 +731,10 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         let inspector_workspace_state = Arc::clone(&self.inspector_workspace_state);
         let rendered_inspector_models = Arc::clone(&self.rendered_inspector_models);
         let selection_data_renderer = Arc::clone(&self.data_renderer);
-        rx.add_handler_closure(
+        rx.add_handler_closure_named(
             SignalKind::SelectionChanged,
             editor_root,
+            Some("editor_panel_refresh".to_string()),
             move |world, emit, signal| {
                 let Some(EventSignal::SelectionChanged { selection_root, .. }) =
                     signal.event.as_ref()
@@ -2863,7 +2864,6 @@ fn spawn_world_panel_row_tree(
         }
     }
 }
-
 
 
 

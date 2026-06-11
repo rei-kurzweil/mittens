@@ -11,6 +11,8 @@ const PANEL_LAYOUT_SELECTION_SELECTOR: &str = "#editor_panel_layout_selection";
 const WORLD_PANEL_SELECTION_SELECTOR: &str = "#world_panel_selection";
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 const PAINT_SYSTEM_HANDLER_NAME: &str = "paint_system";
+const EDITOR_PANEL_REFRESH_HANDLER_NAME: &str = "editor_panel_refresh";
+const DEBUG_BLACKLIST_EDITOR_PANEL_REFRESH: bool = true;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EditorContextState {
@@ -345,6 +347,22 @@ fn sync_editor_observer_routes(
             .any(|name| name == PAINT_SYSTEM_HANDLER_NAME)
         {
             router.blacklist.push(PAINT_SYSTEM_HANDLER_NAME.to_string());
+        }
+
+        if DEBUG_BLACKLIST_EDITOR_PANEL_REFRESH {
+            if !router
+                .blacklist
+                .iter()
+                .any(|name| name == EDITOR_PANEL_REFRESH_HANDLER_NAME)
+            {
+                router
+                    .blacklist
+                    .push(EDITOR_PANEL_REFRESH_HANDLER_NAME.to_string());
+            }
+        } else {
+            router
+                .blacklist
+                .retain(|name| name != EDITOR_PANEL_REFRESH_HANDLER_NAME);
         }
     }
 }
