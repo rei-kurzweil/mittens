@@ -22,6 +22,7 @@ use crate::engine::ecs::system::editor::inspector_panel::{
     clear_missing_inspector_targets, reduce_inspector_workspace_state,
 };
 use crate::engine::ecs::system::editor::panel_ui::{spawn_panel_ui_row_tree, spawn_block_container, PanelUiRowSpec};
+use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::system::editor::world_panel::{
     build_world_panel_model, editor_scene_roots, mark_nearest_layout_dirty, parse_item_index,
     rebuild_world_panel_scene_model, register_editor_root, rerender_world_panel_content,
@@ -996,17 +997,25 @@ fn apply_world_panel_semantic_selection(
     selection_root: ComponentId,
     data_renderer: &mut DataRendererSystem,
 ) {
-    let Some(selection) = world.get_component_by_id_as::<SelectionComponent>(selection_root) else {
+    let Some((selected_component, selected_payload)) = world
+        .get_component_by_id_as::<SelectionComponent>(selection_root)
+        .map(|selection| (selection.selected_component, selection.selected_payload))
+    else {
         return;
     };
     let Some(target_component) = resolve_semantic_target_from_payload(
         world,
-        selection.selected_payload,
-        selection.selected_component,
+        selected_payload,
+        selected_component,
     ) else {
         return;
     };
     let active_editor = nearest_editor_ancestor(world, target_component);
+    let gizmo_target = nearest_transform_ancestor(world, target_component);
+    let used_editor_selection_path = active_editor.zip(gizmo_target).map(|(editor_root, transform)| {
+        select_editor_target(world, emit, editor_root, transform, true);
+        transform
+    });
     {
         let mut editor_context = editor_context_state
             .lock()
@@ -1018,8 +1027,10 @@ fn apply_world_panel_semantic_selection(
     }
 
     println!(
-        "[InspectorSystem][trace] world_panel selection_root={selection_root:?} clicked_row={:?} payload={:?} authored_target={target_component:?} active_editor={active_editor:?}",
-        selection.selected_component, selection.selected_payload
+        "[InspectorSystem][trace] world_panel selection_root={selection_root:?} clicked_row={:?} payload={:?} authored_target={target_component:?} active_editor={active_editor:?} gizmo_target={gizmo_target:?} select_editor_target_ran={}",
+        selected_component,
+        selected_payload,
+        used_editor_selection_path.is_some()
     );
 
     if let Some(world_panel_root) =
@@ -2305,6 +2316,20 @@ fn nearest_editor_ancestor(world: &World, start: ComponentId) -> Option<Componen
     None
 }
 
+fn nearest_transform_ancestor(world: &World, start: ComponentId) -> Option<ComponentId> {
+    let mut current = Some(start);
+    while let Some(component_id) = current {
+        if world
+            .get_component_by_id_as::<TransformComponent>(component_id)
+            .is_some()
+        {
+            return Some(component_id);
+        }
+        current = world.parent_of(component_id);
+    }
+    None
+}
+
 
 fn world_panel_asset_path() -> &'static str {
     concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
@@ -2864,6 +2889,4 @@ fn spawn_world_panel_row_tree(
         }
     }
 }
-
-
 
