@@ -5,8 +5,10 @@ use std::sync::{Arc, Mutex};
 use crate::engine::ecs::component::TransformComponent;
 use crate::engine::ecs::component::style::VerticalAlign;
 use crate::engine::ecs::component::{
-    DataComponent, DataValue, Display, EdgeInsets, RaycastableComponent, SelectionComponent,
-    SelectionEntry, SelectionMode, SizeDimension, StyleComponent, TextAlign, TextComponent,
+    ColorComponent, DataComponent, DataValue, Display, EdgeInsets, OpacityComponent,
+    RaycastableComponent, RenderableComponent, SelectableComponent, SelectionComponent,
+    SelectionEntry, SelectionMode, SerializeComponent, SizeDimension, StyleComponent, TextAlign,
+    TextComponent,
 };
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::system::data_renderer_system::{
@@ -2261,7 +2263,7 @@ fn handle_grid_panel_click(
     if let Some(add_button) = world.find_component(grid_panel_root, GRID_PANEL_ADD_BUTTON_SELECTOR)
         && is_descendant_or_self(world, add_button, renderable)
     {
-        let _owner_transform = spawn_default_grid_for_editor(world, editor_root);
+        let _owner_transform = spawn_default_grid_for_editor(world, editor_root, &editor_context);
         let mut refreshed_context = editor_context.clone();
         refreshed_context.active_editor = Some(editor_root);
         rerender_grid_panel_from_context(
@@ -2396,21 +2398,114 @@ fn rerender_grid_panel_from_context(
     }
 }
 
-fn spawn_default_grid_for_editor(world: &mut World, editor_root: ComponentId) -> ComponentId {
+fn rerender_world_panel_for_context(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    editor_context: &EditorContextState,
+    world_panel_scene_model: &Arc<Mutex<AuthoredWorldPanelSceneModel>>,
+    installed_editor_roots: &Arc<Mutex<Vec<ComponentId>>>,
+    data_renderer: &mut DataRendererSystem,
+) {
+    rebuild_world_panel_scene_model(world_panel_scene_model, world, installed_editor_roots);
+
+    let Some(world_panel_root) = world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR)
+    else {
+        return;
+    };
+    let Some(content_slot) = world.find_component(world_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
+    else {
+        return;
+    };
+
+    let world_model = build_world_panel_model(
+        world,
+        editor_context,
+        &world_panel_scene_model
+            .lock()
+            .expect("world panel scene model mutex poisoned"),
+    );
+    rerender_world_panel_content(
+        world,
+        emit,
+        content_slot,
+        &world_model.rows,
+        world_model.selected_index,
+        data_renderer,
+    );
+}
+
+fn spawn_default_grid_for_editor(
+    world: &mut World,
+    editor_root: ComponentId,
+    editor_context: &EditorContextState,
+) -> ComponentId {
     let index = GridSystem::new()
         .enumerate_grids_for_editor(world, editor_root)
         .len()
         + 1;
+    let grid_component = crate::engine::ecs::component::GridComponent::default();
+    let visual_scale_x = grid_component.size_x as f32 * grid_component.spacing;
+    let visual_scale_z = grid_component.size_z as f32 * grid_component.spacing;
+    let mut owner_transform_component = TransformComponent::new();
+    if let Some(translation) = editor_context.cursor_translation {
+        owner_transform_component = owner_transform_component.with_position(
+            translation[0],
+            translation[1],
+            translation[2],
+        );
+    }
+    if let Some(rotation) = editor_context.cursor_rotation {
+        owner_transform_component = owner_transform_component.with_rotation_quat(rotation);
+    }
     let owner_transform = world.add_component_boxed_named(
         &format!("grid_{index}"),
-        Box::new(TransformComponent::new()),
+        Box::new(owner_transform_component),
     );
     let grid = world.add_component_boxed_named(
         &format!("grid_{index}_component"),
-        Box::new(crate::engine::ecs::component::GridComponent::default()),
+        Box::new(grid_component),
+    );
+    let visual_root = world.add_component_boxed_named(
+        "grid_visual",
+        Box::new(TransformComponent::new()),
+    );
+    let visual_selectable =
+        world.add_component_boxed_named("grid_visual_selectable", Box::new(SelectableComponent::off()));
+    let visual_serialize =
+        world.add_component_boxed_named("grid_visual_serialize", Box::new(SerializeComponent::off()));
+    let visual_shape = world.add_component_boxed_named(
+        "grid_visual_shape",
+        Box::new(
+            TransformComponent::new()
+                .with_position(0.0, 0.005, 0.0)
+                .with_scale(visual_scale_x, 0.0025, visual_scale_z),
+        ),
+    );
+    let visual_renderable = world.add_component_boxed_named(
+        "grid_visual_renderable",
+        Box::new(RenderableComponent::from_cpu_mesh_handle(
+            crate::engine::graphics::primitives::CpuMeshHandle::CUBE,
+            crate::engine::graphics::primitives::MaterialHandle::GRID_MESH,
+        )),
+    );
+    let visual_color = world.add_component_boxed_named(
+        "grid_visual_color",
+        Box::new(ColorComponent::rgba(0.22, 0.92, 0.34, 1.0)),
+    );
+    let visual_opacity = world.add_component_boxed_named(
+        "grid_visual_opacity",
+        Box::new(OpacityComponent::new().with_opacity(1.0)),
     );
     let _ = world.add_child(editor_root, owner_transform);
     let _ = world.add_child(owner_transform, grid);
+    let _ = world.add_child(owner_transform, visual_root);
+    let _ = world.add_child(visual_root, visual_selectable);
+    let _ = world.add_child(visual_root, visual_serialize);
+    let _ = world.add_child(visual_root, visual_shape);
+    let _ = world.add_child(visual_shape, visual_renderable);
+    let _ = world.add_child(visual_renderable, visual_color);
+    let _ = world.add_child(visual_renderable, visual_opacity);
     owner_transform
 }
 

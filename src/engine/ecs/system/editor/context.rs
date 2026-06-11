@@ -4,8 +4,10 @@ use std::sync::{Arc, Mutex};
 use crate::engine::ecs::component::{
     EditorComponent, SelectionComponent, SignalObserverRouterComponent,
 };
+use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::selection_system::resolve_semantic_target_from_payload;
 use crate::engine::ecs::{ComponentId, EventSignal, RxWorld, Signal, SignalKind, World};
+use crate::utils::math::mat_to_quat;
 
 const PANEL_LAYOUT_SELECTION_SELECTOR: &str = "#editor_panel_layout_selection";
 const WORLD_PANEL_SELECTION_SELECTOR: &str = "#world_panel_selection";
@@ -14,11 +16,13 @@ const PAINT_SYSTEM_HANDLER_NAME: &str = "paint_system";
 const EDITOR_PANEL_REFRESH_HANDLER_NAME: &str = "editor_panel_refresh";
 const DEBUG_BLACKLIST_EDITOR_PANEL_REFRESH: bool = true;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct EditorContextState {
     pub active_editor: Option<ComponentId>,
     pub selected_component: Option<ComponentId>,
     pub focused_panel: Option<ComponentId>,
+    pub cursor_translation: Option<[f32; 3]>,
+    pub cursor_rotation: Option<[f32; 4]>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -169,6 +173,7 @@ fn install_shared_panel_handlers(
             };
             apply_editor_context_event(&state, &event);
             sync_editor_component_selection(world, &event);
+            sync_editor_cursor_pose(world, &state);
             sync_editor_observer_routes(world, &state, &workspace);
         },
     );
@@ -202,6 +207,7 @@ fn install_editor_handlers(
             };
             apply_editor_context_event(&state, &event);
             sync_editor_component_selection(world, &event);
+            sync_editor_cursor_pose(world, &state);
         },
     );
 }
@@ -252,6 +258,7 @@ fn bootstrap_editor_context(
     {
         if let Some(event) = world_panel_selection_event(world, selection) {
             apply_editor_context_event(state, &event);
+            sync_editor_cursor_pose(world, state);
         }
     } else if let Some(editor_root) = workspace
         .lock()
@@ -265,6 +272,7 @@ fn bootstrap_editor_context(
                 selected_component: Some(editor_root),
             },
         );
+        sync_editor_cursor_pose(world, state);
     }
 }
 
@@ -318,6 +326,23 @@ fn editor_context_event_from_shared_signal(
 fn apply_editor_context_event(state: &Arc<Mutex<EditorContextState>>, event: &EditorContextEvent) {
     let mut state = state.lock().expect("editor context state poisoned");
     *state = reduce_editor_context_state(&state, event);
+}
+
+fn sync_editor_cursor_pose(world: &World, state: &Arc<Mutex<EditorContextState>>) {
+    let mut state = state.lock().expect("editor context state poisoned");
+    let Some(selected_component) = state.selected_component else {
+        state.cursor_translation = None;
+        state.cursor_rotation = None;
+        return;
+    };
+    let Some(world_model) = TransformSystem::world_model(world, selected_component) else {
+        state.cursor_translation = None;
+        state.cursor_rotation = None;
+        return;
+    };
+
+    state.cursor_translation = Some([world_model[3][0], world_model[3][1], world_model[3][2]]);
+    state.cursor_rotation = Some(mat_to_quat(world_model));
 }
 
 fn sync_editor_observer_routes(

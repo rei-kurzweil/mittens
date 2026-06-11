@@ -4,6 +4,12 @@ Date: 2026-06-11
 
 Status: planning / inventory
 
+## Known bugs
+
+- `Add Grid` works without freezing only when it rerenders the grid panel in isolation. Refreshing the world panel from that path still freezes the editor and is deferred.
+- Deleting a grid from `grid_panel` currently freezes the editor and remains unfixed.
+- Editor panel setup currently leaks phantom panel/content roots into the authored world root (for example duplicate `world_panel_content_root` nodes). This appears related to panel/assets loading and should be treated as a separate cleanup bug.
+
 ## Goal
 
 Add a dedicated grid management flow to the editor in two phases:

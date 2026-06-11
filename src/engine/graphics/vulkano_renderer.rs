@@ -141,6 +141,20 @@ mod vulkano_backend {
         }
     }
 
+    mod grid_mesh_vs {
+        vulkano_shaders::shader! {
+            ty: "vertex",
+            path: "assets/shaders/grid.vert",
+        }
+    }
+
+    mod grid_square_mesh_fs {
+        vulkano_shaders::shader! {
+            ty: "fragment",
+            path: "assets/shaders/grid-square.frag",
+        }
+    }
+
     #[derive(BufferContents, Clone, Copy, Debug, Default)]
     #[repr(C, align(16))]
     pub struct CameraUBO {
@@ -272,6 +286,10 @@ mod vulkano_backend {
         pub pipeline_toon_mesh_cutout: Arc<GraphicsPipeline>,
         pub pipeline_toon_mesh_transparent_clipped: Arc<GraphicsPipeline>,
         pub pipeline_toon_mesh_cutout_clipped: Arc<GraphicsPipeline>,
+
+        pub pipeline_grid_mesh: Arc<GraphicsPipeline>,
+        pub pipeline_grid_mesh_transparent: Arc<GraphicsPipeline>,
+        pub pipeline_grid_mesh_transparent_clipped: Arc<GraphicsPipeline>,
 
         pub pipeline_emissive_toon_mesh: Arc<GraphicsPipeline>,
         pub pipeline_emissive_toon_mesh_transparent: Arc<GraphicsPipeline>,
@@ -454,6 +472,12 @@ mod vulkano_backend {
                         _pad0: [0, 0],
                     }
                 }
+                crate::engine::graphics::MaterialHandle::GRID_MESH => MaterialUBO {
+                    base_color: [1.0, 1.0, 1.0, 1.0],
+                    quant_steps: 1.0,
+                    emissive: 1,
+                    _pad0: [0, 0],
+                },
                 // While migrating, treat UNLIT as a simple toon material too.
                 crate::engine::graphics::MaterialHandle::UNLIT_MESH => MaterialUBO {
                     base_color: [1.0, 1.0, 1.0, 1.0],
@@ -627,6 +651,8 @@ mod vulkano_backend {
             let vs = toon_mesh_vs::load(device.clone())?;
             let fs = toon_mesh_fs::load(device.clone())?;
             let emissive_fs = emissive_toon_mesh_fs::load(device.clone())?;
+            let grid_vs = grid_mesh_vs::load(device.clone())?;
+            let grid_fs = grid_square_mesh_fs::load(device.clone())?;
 
             let skinned_vs = skinned_toon_mesh_vs::load(device.clone())?;
 
@@ -638,6 +664,19 @@ mod vulkano_backend {
                 PipelineShaderStageCreateInfo::new(
                     fs.entry_point("main")
                         .ok_or("missing toon-mesh.frag entry point")?,
+                ),
+            ];
+
+            let grid_stages = vec![
+                PipelineShaderStageCreateInfo::new(
+                    grid_vs
+                        .entry_point("main")
+                        .ok_or("missing grid.vert entry point")?,
+                ),
+                PipelineShaderStageCreateInfo::new(
+                    grid_fs
+                        .entry_point("main")
+                        .ok_or("missing grid-square.frag entry point")?,
                 ),
             ];
 
@@ -1025,6 +1064,10 @@ mod vulkano_backend {
 
             let pipeline_toon_mesh =
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci.clone())?;
+            let mut pipeline_ci_grid = pipeline_ci.clone();
+            pipeline_ci_grid.stages = grid_stages.clone().into();
+            let pipeline_grid_mesh =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_grid.clone())?;
 
             let mut pipeline_ci_emissive = pipeline_ci.clone();
             pipeline_ci_emissive.stages = emissive_stages.clone().into();
@@ -1054,6 +1097,10 @@ mod vulkano_backend {
             });
             let pipeline_toon_mesh_transparent =
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci_transparent.clone())?;
+            let mut pipeline_ci_grid_transparent = pipeline_ci_transparent.clone();
+            pipeline_ci_grid_transparent.stages = grid_stages.clone().into();
+            let pipeline_grid_mesh_transparent =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_grid_transparent.clone())?;
 
             let mut pipeline_ci_emissive_transparent = pipeline_ci_transparent.clone();
             pipeline_ci_emissive_transparent.stages = emissive_stages.clone().into();
@@ -1317,6 +1364,16 @@ mod vulkano_backend {
             pipeline_ci_transparent_clipped.dynamic_state = stencil_dynamic_state.clone();
             let pipeline_toon_mesh_transparent_clipped =
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci_transparent_clipped)?;
+            let mut pipeline_ci_grid_transparent_clipped =
+                pipeline_ci_grid_transparent.clone();
+            pipeline_ci_grid_transparent_clipped.depth_stencil_state =
+                Some(transparent_clipped_depth_stencil.clone());
+            pipeline_ci_grid_transparent_clipped.dynamic_state = stencil_dynamic_state.clone();
+            let pipeline_grid_mesh_transparent_clipped = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                pipeline_ci_grid_transparent_clipped,
+            )?;
 
             let mut pipeline_ci_emissive_transparent_clipped =
                 pipeline_ci_emissive_transparent.clone();
@@ -1432,6 +1489,10 @@ mod vulkano_backend {
                 pipeline_toon_mesh_cutout,
                 pipeline_toon_mesh_transparent_clipped,
                 pipeline_toon_mesh_cutout_clipped,
+
+                pipeline_grid_mesh,
+                pipeline_grid_mesh_transparent,
+                pipeline_grid_mesh_transparent_clipped,
 
                 pipeline_emissive_toon_mesh,
                 pipeline_emissive_toon_mesh_transparent,
@@ -2272,7 +2333,8 @@ mod vulkano_backend {
                 | crate::engine::graphics::MaterialHandle::UNLIT_MESH
                 | crate::engine::graphics::MaterialHandle::SKINNED_TOON_MESH
                 | crate::engine::graphics::MaterialHandle::EMISSIVE_TOON_MESH
-                | crate::engine::graphics::MaterialHandle::SKINNED_EMISSIVE_TOON_MESH => {}
+                | crate::engine::graphics::MaterialHandle::SKINNED_EMISSIVE_TOON_MESH
+                | crate::engine::graphics::MaterialHandle::GRID_MESH => {}
                 _ => return Ok(None),
             }
 
@@ -3033,6 +3095,7 @@ mod vulkano_backend {
                                 visual_world.emissive_draw_batches(),
                                 self.pipeline_emissive_prepass_toon_mesh.clone(),
                                 self.pipeline_emissive_prepass_toon_mesh.clone(),
+                                self.pipeline_emissive_prepass_toon_mesh.clone(),
                                 self.pipeline_skinned_emissive_prepass_toon_mesh.clone(),
                                 self.pipeline_skinned_emissive_prepass_toon_mesh.clone(),
                             )?;
@@ -3048,6 +3111,7 @@ mod vulkano_backend {
                                 emissive_cutout_instance_buffer,
                                 emissive_cutout_instance_count,
                                 visual_world.emissive_cutout_batches(),
+                                self.pipeline_emissive_prepass_toon_mesh_cutout.clone(),
                                 self.pipeline_emissive_prepass_toon_mesh_cutout.clone(),
                                 self.pipeline_emissive_prepass_toon_mesh_cutout.clone(),
                                 self.pipeline_skinned_emissive_prepass_toon_mesh_cutout
@@ -3256,6 +3320,7 @@ mod vulkano_backend {
                     stencil_clip_debug_instance_count,
                     &stencil_clip_debug_batches,
                     self.pipeline_toon_mesh.clone(),
+                    self.pipeline_grid_mesh.clone(),
                     self.pipeline_emissive_toon_mesh.clone(),
                     self.pipeline_skinned_toon_mesh.clone(),
                     self.pipeline_skinned_emissive_toon_mesh.clone(),

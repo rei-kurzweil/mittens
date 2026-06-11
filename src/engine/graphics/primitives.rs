@@ -253,6 +253,12 @@ impl Material {
         vertex_shader: "assets/shaders/skinned-toon-mesh.vert",
         fragment_shader: "assets/shaders/emissive-toon-mesh.frag",
     };
+
+    /// Procedural square grid material.
+    pub const GRID_MESH: Material = Material {
+        vertex_shader: "assets/shaders/grid.vert",
+        fragment_shader: "assets/shaders/grid-square.frag",
+    };
 }
 
 impl MaterialHandle {
@@ -270,4 +276,7 @@ impl MaterialHandle {
 
     /// Skinned emissive toon mesh material (see `Material::SKINNED_EMISSIVE_TOON_MESH`).
     pub const SKINNED_EMISSIVE_TOON_MESH: MaterialHandle = MaterialHandle(4);
+
+    /// Procedural square grid material (see `Material::GRID_MESH`).
+    pub const GRID_MESH: MaterialHandle = MaterialHandle(5);
 }

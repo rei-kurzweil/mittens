@@ -54,14 +54,17 @@ mod tests {
         BoundsComponent, EditorComponent, GLTFComponent, OverlayComponent, RenderableComponent,
         SerializeComponent, TransformComponent,
     };
+    use crate::engine::ecs::system::TransformSystem;
     use crate::engine::ecs::system::editor::inspector_panel::{
         InspectorPanelState, InspectorScrollState, InspectorSubtreeSelection,
         InspectorWorkspaceEvent, InspectorWorkspaceState, reduce_inspector_workspace_state,
     };
+    use crate::engine::ecs::system::editor_system::select_editor_target;
     use crate::engine::ecs::system::editor_inspector_system_stopgap_mms_adapter::set_world_panel_scene_path_for_tests;
     use crate::engine::ecs::{EventSignal, IntentValue, SignalEmitter, SystemWorld, World};
     use crate::engine::graphics::bounds::Aabb;
     use crate::engine::graphics::{RenderAssets, VisualWorld};
+    use crate::utils::math::mat_to_quat;
     use std::path::PathBuf;
     use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -495,6 +498,7 @@ mod tests {
         let _ = world.add_child(editor_root, scene_root);
         let _ = world.add_child(scene_root, child_transform);
 
+        let editor_context_state = systems.editor_context.shared_state();
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
@@ -503,7 +507,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (1.9, 1.6, -1.2),
-            systems.editor_context.shared_state(),
+            editor_context_state.clone(),
             &systems.asset_system,
         );
 
@@ -592,6 +596,7 @@ mod tests {
         let _ = world.add_child(editor_root, scene_root);
         let _ = world.add_child(scene_root, child_transform);
 
+        let editor_context_state = systems.editor_context.shared_state();
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
@@ -600,7 +605,7 @@ mod tests {
             editor_root,
             (-0.7, 1.6, -1.2),
             (1.9, 1.6, -1.2),
-            systems.editor_context.shared_state(),
+            editor_context_state.clone(),
             &systems.asset_system,
         );
 
@@ -1335,6 +1340,13 @@ mod tests {
             None,
             "add-grid should not force scene selection"
         );
+        let grid_root = world
+            .find_component(editor_root, "#grid_1")
+            .expect("expected spawned grid transform under editor root");
+        assert!(
+            world.find_component(grid_root, "#grid_visual").is_some(),
+            "expected a helper visual subtree under the spawned grid"
+        );
 
         let processed =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 10_000);
@@ -1342,5 +1354,111 @@ mod tests {
             processed < 10_000,
             "expected add-grid path to quiesce before signal budget exhaustion"
         );
+    }
+
+    #[test]
+    fn add_grid_spawns_at_selected_transform_pose() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::new();
+        let mut inspector = EditorInspectorSystem::new();
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let target = world.add_component_boxed_named(
+            "target",
+            Box::new(
+                TransformComponent::new()
+                    .with_position(1.25, 2.5, -3.75)
+                    .with_rotation_quat([0.0, 0.38268343, 0.0, 0.9238795]),
+            ),
+        );
+        let _ = world.add_child(editor_root, scene_root);
+        let _ = world.add_child(scene_root, target);
+
+        let editor_context_state = systems.editor_context.shared_state();
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (1.9, 1.6, -1.2),
+            editor_context_state.clone(),
+            &systems.asset_system,
+        );
+
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        select_editor_target(&mut world, &mut emit, editor_root, target, false);
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+        {
+            let mut editor_context = editor_context_state
+                .lock()
+                .expect("editor context state mutex poisoned");
+            editor_context.active_editor = Some(editor_root);
+            editor_context.selected_component = Some(target);
+            editor_context.cursor_translation = Some([1.25, 2.5, -3.75]);
+            editor_context.cursor_rotation = Some([0.0, 0.38268343, 0.0, 0.9238795]);
+        }
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        let add_button = world
+            .find_component(runtime_ui_root, "#grid_add_button")
+            .expect("expected grid add button");
+
+        systems.rx.push_event(
+            add_button,
+            EventSignal::Click {
+                raycaster: add_button,
+                renderable: add_button,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        let grid_root = world
+            .find_component(editor_root, "#grid_1")
+            .expect("expected spawned grid transform under editor root");
+        let grid_transform = world
+            .get_component_by_id_as::<TransformComponent>(grid_root)
+            .expect("expected grid transform");
+        let target_world = TransformSystem::world_model(&world, target).expect("target world pose");
+        let expected_rotation = mat_to_quat(target_world);
+
+        assert_eq!(grid_transform.transform.translation, [1.25, 2.5, -3.75]);
+        for (actual, expected) in grid_transform
+            .transform
+            .rotation
+            .iter()
+            .zip(expected_rotation.iter())
+        {
+            assert!((actual - expected).abs() < 1.0e-5);
+        }
     }
 }

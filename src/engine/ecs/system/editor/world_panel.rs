@@ -151,6 +151,7 @@ pub fn authored_scene_node_policy(
         Some("selection_highlight")
         | Some("editor_runtime_ui_root")
         | Some("editor_gizmo_anchor")
+        | Some("grid_visual")
         | Some("editor_transform_gizmo") => return AuthoredSceneNodePolicy::Skip,
         _ => {}
     }

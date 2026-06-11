@@ -13,11 +13,13 @@ impl VulkanoState {
         &self,
         material: crate::engine::graphics::MaterialHandle,
         pipeline_toon: Arc<GraphicsPipeline>,
+        pipeline_grid: Arc<GraphicsPipeline>,
         pipeline_emissive: Arc<GraphicsPipeline>,
         pipeline_skinned: Arc<GraphicsPipeline>,
         pipeline_skinned_emissive: Arc<GraphicsPipeline>,
     ) -> Arc<GraphicsPipeline> {
         match material {
+            crate::engine::graphics::MaterialHandle::GRID_MESH => pipeline_grid,
             crate::engine::graphics::MaterialHandle::EMISSIVE_TOON_MESH => pipeline_emissive,
             crate::engine::graphics::MaterialHandle::SKINNED_EMISSIVE_TOON_MESH => {
                 pipeline_skinned_emissive
@@ -36,6 +38,7 @@ impl VulkanoState {
         instance_count: usize,
         batches: &[crate::engine::graphics::visual_world::DrawBatch],
         pipeline_toon: Arc<GraphicsPipeline>,
+        pipeline_grid: Arc<GraphicsPipeline>,
         pipeline_emissive: Arc<GraphicsPipeline>,
         pipeline_skinned: Arc<GraphicsPipeline>,
         pipeline_skinned_emissive: Arc<GraphicsPipeline>,
@@ -50,6 +53,7 @@ impl VulkanoState {
             let pipeline = self.pipeline_for_material(
                 batch.material,
                 pipeline_toon.clone(),
+                pipeline_grid.clone(),
                 pipeline_emissive.clone(),
                 pipeline_skinned.clone(),
                 pipeline_skinned_emissive.clone(),
@@ -143,6 +147,7 @@ impl VulkanoState {
             visual_world.background_batches(),
             // Plain background: no depth write.
             self.pipeline_toon_mesh_transparent.clone(),
+            self.pipeline_grid_mesh_transparent.clone(),
             self.pipeline_emissive_toon_mesh_transparent.clone(),
             self.pipeline_skinned_toon_mesh_transparent.clone(),
             self.pipeline_skinned_emissive_toon_mesh_transparent.clone(),
@@ -171,6 +176,7 @@ impl VulkanoState {
             visual_world.background_occluded_lit_batches(),
             // Occluded+lit background: depth write ON for self-occlusion.
             self.pipeline_toon_mesh.clone(),
+            self.pipeline_grid_mesh.clone(),
             self.pipeline_emissive_toon_mesh.clone(),
             self.pipeline_skinned_toon_mesh.clone(),
             self.pipeline_skinned_emissive_toon_mesh.clone(),
@@ -198,6 +204,7 @@ impl VulkanoState {
         ops: &[crate::engine::graphics::visual_world::RenderOp],
         stream_instances: &[u32],
         pipeline_normal: Arc<GraphicsPipeline>,
+        pipeline_grid: Arc<GraphicsPipeline>,
         pipeline_emissive: Arc<GraphicsPipeline>,
         pipeline_skinned: Arc<GraphicsPipeline>,
         pipeline_skinned_emissive: Arc<GraphicsPipeline>,
@@ -266,6 +273,7 @@ impl VulkanoState {
                         self.pipeline_for_material(
                             batch.material,
                             pipeline_normal.clone(),
+                            pipeline_grid.clone(),
                             pipeline_emissive.clone(),
                             pipeline_skinned.clone(),
                             pipeline_skinned_emissive.clone(),
@@ -400,6 +408,7 @@ impl VulkanoState {
             ops,
             stream_instances,
             self.pipeline_toon_mesh.clone(),
+            self.pipeline_grid_mesh.clone(),
             self.pipeline_emissive_toon_mesh.clone(),
             self.pipeline_skinned_toon_mesh.clone(),
             self.pipeline_skinned_emissive_toon_mesh.clone(),
@@ -431,6 +440,7 @@ impl VulkanoState {
             ops,
             stream_instances,
             self.pipeline_toon_mesh_cutout.clone(),
+            self.pipeline_grid_mesh.clone(),
             self.pipeline_emissive_toon_mesh_cutout.clone(),
             self.pipeline_skinned_toon_mesh_cutout.clone(),
             self.pipeline_skinned_emissive_toon_mesh_cutout.clone(),
@@ -464,6 +474,7 @@ impl VulkanoState {
             ops,
             stream_instances,
             self.pipeline_toon_mesh.clone(),
+            self.pipeline_grid_mesh.clone(),
             self.pipeline_emissive_toon_mesh.clone(),
             self.pipeline_skinned_toon_mesh.clone(),
             self.pipeline_skinned_emissive_toon_mesh.clone(),
@@ -502,6 +513,7 @@ impl VulkanoState {
             ops,
             stream_instances,
             self.pipeline_toon_mesh_transparent.clone(),
+            self.pipeline_grid_mesh_transparent.clone(),
             self.pipeline_emissive_toon_mesh_transparent.clone(),
             self.pipeline_skinned_toon_mesh_transparent.clone(),
             self.pipeline_skinned_emissive_toon_mesh_transparent.clone(),
@@ -562,6 +574,7 @@ impl VulkanoState {
                 let pipeline = self.pipeline_for_material(
                     batch.material,
                     self.pipeline_toon_mesh_transparent.clone(),
+                    self.pipeline_grid_mesh_transparent.clone(),
                     self.pipeline_emissive_toon_mesh_transparent.clone(),
                     self.pipeline_skinned_toon_mesh_transparent.clone(),
                     self.pipeline_skinned_emissive_toon_mesh_transparent.clone(),
