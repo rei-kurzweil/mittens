@@ -42,19 +42,19 @@ void main() {
 
     float minor = grid_square_alpha(world_xz, 1.0, 1.0);
     float major = grid_square_alpha(world_xz, 8.0, 1.8);
-    float axis = max(grid_axis_alpha(world_xz.x, 2.4), grid_axis_alpha(world_xz.y, 2.4));
+    float axis = max(grid_axis_alpha(world_xz.x, 2.0), grid_axis_alpha(world_xz.y, 2.0));
 
     vec3 line_rgb = v_color.rgb;
-    vec3 major_rgb = mix(line_rgb, vec3(1.0), 0.18);
-    vec3 axis_rgb = vec3(0.92, 0.32, 0.18);
+    //vec3 major_rgb = mix(line_rgb, vec3(1.0,1.0,1.0), 0.18);
+    //vec3 axis_rgb = vec3(1.0, 0.32, 0.32);
 
     float cam_dist = length(v_world_pos.xz);
     float fade = 1.0 - smoothstep(32.0, 96.0, cam_dist);
 
     vec3 rgb = vec3(0.0);
     rgb = mix(rgb, line_rgb, minor * 0.45);
-    rgb = mix(rgb, major_rgb, major * 0.75);
-    rgb = mix(rgb, axis_rgb, axis);
+    //rgb = mix(rgb, major_rgb, major * 0.75);
+    //rgb = mix(rgb, axis_rgb, axis);
 
     float alpha = max(max(minor * 0.45, major * 0.75), axis) * v_color.a * fade;
     if (alpha <= 0.001) {

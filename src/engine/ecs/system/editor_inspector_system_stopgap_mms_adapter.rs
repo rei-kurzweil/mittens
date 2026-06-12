@@ -2508,7 +2508,7 @@ fn spawn_default_grid_for_editor(
     );
     let visual_color = world.add_component_boxed_named(
         "grid_visual_color",
-        Box::new(ColorComponent::rgba(0.22, 0.92, 0.34, 1.0)),
+        Box::new(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0)),
     );
     let visual_opacity = world.add_component_boxed_named(
         "grid_visual_opacity",
