@@ -20,6 +20,88 @@ import { grid_visibility_icon } from "./icons.mms"
 let TITLE_BAR_HEIGHT_GU = 3.0
 let TITLE_CONTENT_GAP_GU = 0.5
 let TITLE_LABEL_PADDING_X_GU = 0.25
+let SETTINGS_PANEL_WIDTH_GU = 16.0
+let SETTINGS_PANEL_CONTENT_HEIGHT_GU = 8.0
+let SETTINGS_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + SETTINGS_PANEL_CONTENT_HEIGHT_GU
+
+fn editor_settings_mode_row(row_name, label, mode_value) {
+    return T {
+        name = row_name
+        Option {
+            Data {
+                name = "editor_settings_payload"
+                row_name = row_name
+                label = label
+                mode_value = mode_value
+                row_kind = "EditorMode"
+                interactive = true
+            }
+        }
+        Raycastable.click_only()
+        Style {
+            display("block")
+            width(100%)
+            margin_xy(0.25, 0.20)
+            padding_xy(0.55, 0.45)
+            background_color([0.92, 0.97, 0.92, 1.0])
+            background_z(-0.01)
+            text_align("left")
+            vertical_align("middle")
+        }
+        T {
+            Text { label }
+        }
+    }
+}
+
+export fn editor_settings_panel(title, title_color, panel_background_color) {
+    return T {
+        name = "editor_settings_panel_root"
+        Style {
+            display("block")
+            width(SETTINGS_PANEL_WIDTH_GU)
+            height(SETTINGS_PANEL_TOTAL_HEIGHT_GU)
+            margin_xy(0.5, 0.5)
+        }
+
+        T {
+            name = "title_bar"
+            Raycastable.enabled()
+            Style {
+                display("block")
+                height(TITLE_BAR_HEIGHT_GU)
+                margin_bottom(TITLE_CONTENT_GAP_GU)
+                padding_xy(0.5, 0.5)
+                color = title_color
+                background_color(panel_background_color)
+                text_align("left")
+                vertical_align("middle")
+                background_z(-0.01)
+            }
+            T.position(0.0, 0.0, 0.0) {
+                Text { title }
+            }
+        }
+
+        T {
+            name = "content_slot"
+            Style {
+                display("block")
+                height(SETTINGS_PANEL_CONTENT_HEIGHT_GU)
+                background_color([0.96, 0.92, 0.18, 0.80])
+                background_z(-0.001)
+                padding(0.25)
+            }
+
+            editor_settings_mode_row("editor_settings_mode_select", "Select", "select")
+            editor_settings_mode_row("editor_settings_mode_cursor_3d", "3D Cursor", "cursor_3d")
+
+            Selection.payload_selector("[name='editor_settings_payload']") {
+                name = "editor_settings_selection"
+            }
+        }
+    }
+}
 
 // ── paint_panel ───────────────────────────────────────────────────────────────
 

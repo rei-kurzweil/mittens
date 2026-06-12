@@ -329,6 +329,12 @@ mod tests {
                 .is_some(),
             "expected inspector panel under layout root"
         );
+        assert!(
+            world
+                .find_component(panel_shared_layout, "#editor_settings_panel_root")
+                .is_some(),
+            "expected editor settings panel under layout root"
+        );
         assert_eq!(world.parent_of(panel_root), Some(panel_shared_layout));
         let panel_overlay = world
             .parent_of(panel_shared_layout)

@@ -34,7 +34,8 @@ use crate::engine::ecs::component::{
     StyleComponent, TextAlign, TextComponent, TextInputComponent, TextShadowComponent,
     TextureComponent, TextureFilteringComponent, TransformComponent, TransformDropComponent,
     TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
-    TransformGizmoCoordSpace, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
+    EditorInteractionMode, TransformGizmoCoordSpace, TransformGizmoRotateComponent,
+    TransformGizmoScaleComponent,
     TransformGizmoTranslateComponent, TransformMapRotationComponent, TransformMapScaleComponent,
     TransformMapTranslationComponent, TransformMergeTRSComponent, TransformParentComponent,
     TransformSampleAncestorComponent, TransitionComponent, TransitionEasing,
@@ -2304,6 +2305,12 @@ fn apply_call(
     }
     if let Some(ed) = world.get_component_by_id_as_mut::<EditorComponent>(id) {
         match method {
+            "interaction_mode" => {
+                ed.interaction_mode = match arg_str(args, 0)? {
+                    "cursor_3d" => EditorInteractionMode::Cursor3d,
+                    _ => EditorInteractionMode::Select,
+                };
+            }
             "translation_space" => {
                 let space = match arg_str(args, 0)? {
                     "local" => TransformGizmoCoordSpace::Local,

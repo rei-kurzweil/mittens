@@ -43,9 +43,49 @@ pub fn resolve_placement_pose(
         ),
     };
 
+    resolve_surface_aligned_pose_from_normal(
+        world,
+        target_renderable,
+        surface_point,
+        surface_normal,
+        asset_bounds.min[2],
+    )
+}
+
+pub fn resolve_surface_aligned_pose(
+    world: &World,
+    target_renderable: ComponentId,
+    hit_point_world: [f32; 3],
+    local_min_z: f32,
+    grid_snap: Option<GridSnapResult>,
+) -> Result<PlacementPose, PlacementError> {
+    let (surface_point, surface_normal) = match grid_snap {
+        Some(grid) => (grid.point_world, grid.normal_world),
+        None => (
+            hit_point_world,
+            resolve_surface_normal(world, target_renderable, hit_point_world)?,
+        ),
+    };
+
+    resolve_surface_aligned_pose_from_normal(
+        world,
+        target_renderable,
+        surface_point,
+        surface_normal,
+        local_min_z,
+    )
+}
+
+fn resolve_surface_aligned_pose_from_normal(
+    world: &World,
+    target_renderable: ComponentId,
+    surface_point: [f32; 3],
+    surface_normal: [f32; 3],
+    local_min_z: f32,
+) -> Result<PlacementPose, PlacementError> {
     let rotation =
         make_alignment_quat(surface_normal, world_up_reference(world, target_renderable));
-    let outward_offset = SURFACE_EPSILON - asset_bounds.min[2];
+    let outward_offset = SURFACE_EPSILON - local_min_z;
 
     Ok(PlacementPose {
         translation: vec3_add(surface_point, vec3_scale(surface_normal, outward_offset)),

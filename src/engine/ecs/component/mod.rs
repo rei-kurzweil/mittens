@@ -132,6 +132,7 @@ pub use controller_xr::{ControllerHand, ControllerPoseKind, ControllerXRComponen
 pub use data::{DataComponent, DataEntry, DataValue};
 pub use directional_light::DirectionalLightComponent;
 pub use editor::EditorComponent;
+pub use editor::EditorInteractionMode;
 pub use editor::TransformGizmoCoordSpace;
 pub use emissive::EmissiveComponent;
 pub use emissive_pass::EmissivePassComponent;

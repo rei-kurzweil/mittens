@@ -15,6 +15,18 @@ impl Default for TransformGizmoCoordSpace {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorInteractionMode {
+    Select,
+    Cursor3d,
+}
+
+impl Default for EditorInteractionMode {
+    fn default() -> Self {
+        Self::Select
+    }
+}
+
 /// Marks an "editor root" subtree.
 ///
 /// When a renderable under this subtree is clicked, the editor selection system can reattach
@@ -31,6 +43,9 @@ pub struct EditorComponent {
     /// Set by EditorSystem on DragStart. Read by InspectorSystem to drive panel content.
     /// Not serialized.
     pub selected: Option<ComponentId>,
+
+    /// Runtime editor interaction mode.
+    pub interaction_mode: EditorInteractionMode,
 
     /// Coordinate space used for translation handles (arrows).
     pub transform_gizmo_translation_space: TransformGizmoCoordSpace,
@@ -61,6 +76,7 @@ impl Default for EditorComponent {
         Self {
             transform_gizmo: None,
             selected: None,
+            interaction_mode: EditorInteractionMode::Select,
             // Default to the common editor expectation: translate in World, rotate in Local.
             transform_gizmo_translation_space: TransformGizmoCoordSpace::World,
             transform_gizmo_rotation_space: TransformGizmoCoordSpace::Local,
@@ -91,6 +107,11 @@ impl EditorComponent {
 
     pub fn with_transform_gizmo_rotation_space(mut self, space: TransformGizmoCoordSpace) -> Self {
         self.transform_gizmo_rotation_space = space;
+        self
+    }
+
+    pub fn with_interaction_mode(mut self, mode: EditorInteractionMode) -> Self {
+        self.interaction_mode = mode;
         self
     }
 
@@ -160,7 +181,12 @@ impl Component for EditorComponent {
             TransformGizmoCoordSpace::Local => "local",
             TransformGizmoCoordSpace::World => "world",
         };
+        let interaction_mode = match self.interaction_mode {
+            EditorInteractionMode::Select => "select",
+            EditorInteractionMode::Cursor3d => "cursor_3d",
+        };
         ce("Editor")
+            .with_call("interaction_mode", vec![s(interaction_mode)])
             .with_call("translation_space", vec![s(translation)])
             .with_call("rotation_space", vec![s(rotation)])
     }

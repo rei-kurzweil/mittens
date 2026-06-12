@@ -1,8 +1,9 @@
 use crate::engine::ecs::component::{
-    EditorComponent, GLTFComponent, RaycastableComponent, SelectableComponent, SerializeComponent,
-    TransformComponent, TransformGizmoComponent,
+    EditorComponent, EditorInteractionMode, GLTFComponent, RaycastableComponent,
+    SelectableComponent, SerializeComponent, TransformComponent, TransformGizmoComponent,
 };
 use crate::engine::ecs::system::editor::context::EditorContextState;
+use crate::engine::ecs::system::paint_placement::resolve_surface_aligned_pose;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, RxWorld, SignalKind, World};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -38,7 +39,12 @@ impl EditorSystem {
             SignalKind::DragStart,
             editor_root,
             move |world, emit, env| {
-                let Some(EventSignal::DragStart { renderable, .. }) = env.event.as_ref() else {
+                let Some(EventSignal::DragStart {
+                    renderable,
+                    hit_point,
+                    ..
+                }) = env.event.as_ref()
+                else {
                     return;
                 };
 
@@ -72,7 +78,21 @@ impl EditorSystem {
                     return;
                 };
 
-                select_editor_target(world, emit, editor_root, target_transform, true);
+                match editor_interaction_mode(world, editor_root) {
+                    EditorInteractionMode::Select => {
+                        select_editor_target(world, emit, editor_root, target_transform, true);
+                    }
+                    EditorInteractionMode::Cursor3d => {
+                        update_editor_cursor_from_surface(
+                            world,
+                            emit,
+                            editor_context_state.clone(),
+                            editor_root,
+                            renderable,
+                            *hit_point,
+                        );
+                    }
+                }
             },
         );
     }
@@ -160,6 +180,51 @@ fn subtree_contains_gltf(world: &World, root: ComponentId) -> bool {
     }
 
     false
+}
+
+fn editor_interaction_mode(world: &World, editor_root: ComponentId) -> EditorInteractionMode {
+    world
+        .get_component_by_id_as::<EditorComponent>(editor_root)
+        .map(|editor| editor.interaction_mode)
+        .unwrap_or(EditorInteractionMode::Select)
+}
+
+fn update_editor_cursor_from_surface(
+    world: &mut World,
+    emit: &mut dyn crate::engine::ecs::SignalEmitter,
+    editor_context_state: Arc<Mutex<EditorContextState>>,
+    editor_root: ComponentId,
+    target_renderable: ComponentId,
+    hit_point: [f32; 3],
+) {
+    let Ok(pose) = resolve_surface_aligned_pose(world, target_renderable, hit_point, 0.0, None)
+    else {
+        return;
+    };
+
+    {
+        let mut editor_context = editor_context_state
+            .lock()
+            .expect("editor context state mutex poisoned");
+        editor_context.active_editor = Some(editor_root);
+        editor_context.interaction_mode = EditorInteractionMode::Cursor3d;
+        editor_context.cursor_translation = Some(pose.translation);
+        editor_context.cursor_rotation = Some(pose.rotation);
+    }
+
+    if let Some(marker_root) = world.children_of(editor_root).iter().copied().find(|&child| {
+        world.component_label(child) == Some("editor_cursor_marker")
+    }) {
+        emit.push_intent_now(
+            marker_root,
+            IntentValue::UpdateTransform {
+                component_ids: vec![marker_root],
+                translation: pose.translation,
+                rotation_quat_xyzw: pose.rotation,
+                scale: [0.5, 0.5, 0.5],
+            },
+        );
+    }
 }
 
 pub(crate) fn select_editor_target(
@@ -354,4 +419,77 @@ fn find_transform_gizmo_in_subtree(world: &World, root: ComponentId) -> Option<C
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EditorSystem;
+    use crate::engine::ecs::command_queue::CommandQueue;
+    use crate::engine::ecs::component::{
+        EditorComponent, EditorInteractionMode, RenderableComponent, TransformComponent,
+    };
+    use crate::engine::ecs::system::editor::context::EditorContextState;
+    use crate::engine::ecs::{EventSignal, SystemWorld, World};
+    use crate::engine::graphics::{RenderAssets, VisualWorld};
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn cursor_mode_updates_cursor_pose_without_scene_selection() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::new();
+        let mut editor_system = EditorSystem::new();
+
+        let panel_root = world.add_component_boxed_named(
+            "panel_root",
+            Box::new(TransformComponent::new()),
+        );
+        let editor_root = world.add_component_boxed_named(
+            "editor_root",
+            Box::new(EditorComponent::new().with_interaction_mode(EditorInteractionMode::Cursor3d)),
+        );
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let renderable =
+            world.add_component_boxed_named("plane", Box::new(RenderableComponent::plane()));
+        let _ = world.add_child(editor_root, scene_root);
+        let _ = world.add_child(scene_root, renderable);
+
+        let context = Arc::new(Mutex::new(EditorContextState::default()));
+        editor_system.install_scoped_handlers_for_editor(
+            &mut systems.rx,
+            editor_root,
+            panel_root,
+            context.clone(),
+        );
+
+        systems.rx.push_event(
+            renderable,
+            EventSignal::DragStart {
+                raycaster: renderable,
+                renderable,
+                hit_point: [0.0, 0.0, 0.0],
+                ray_dir_world: [0.0, 0.0, -1.0],
+                screen_pos_px: None,
+            },
+        );
+
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 10_000);
+
+        let state = context.lock().expect("editor context mutex poisoned").clone();
+        assert_eq!(state.active_editor, Some(editor_root));
+        assert_eq!(state.selected_component, None);
+        assert_eq!(state.cursor_translation, Some([0.0, 0.0, 0.01]));
+        assert_eq!(state.interaction_mode, EditorInteractionMode::Cursor3d);
+        assert_eq!(
+            world
+                .get_component_by_id_as::<EditorComponent>(editor_root)
+                .expect("editor")
+                .selected,
+            None
+        );
+    }
 }
