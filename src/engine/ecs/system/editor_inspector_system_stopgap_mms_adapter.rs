@@ -41,7 +41,7 @@ use crate::engine::ecs::system::editor::world_panel::{
     world_panel_item_label,
 };
 use crate::engine::ecs::system::editor_system::select_editor_target;
-use crate::engine::ecs::system::GridSystem;
+use crate::engine::ecs::system::{GridSystem, TransformSystem};
 use crate::engine::ecs::system::panel_system::{
     EDITOR_RUNTIME_UI_ROOT_NAME, PANEL_LAYOUT_MOUNT_NAME, PANEL_LAYOUT_ROOT_NAME,
     PANEL_LAYOUT_SELECTION_NAME, PanelActionKind, PanelKind, PanelLayoutMountSpec, PanelShellSpec,
@@ -57,6 +57,7 @@ use crate::meow_meow::component_registry::{
 };
 use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
 use crate::meow_meow::runner::MeowMeowRunner;
+use crate::utils::math::mat_to_quat;
 
 const WORLD_PANEL_ROOT_SELECTOR: &str = "#world_panel_root";
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
@@ -2450,14 +2451,28 @@ fn spawn_default_grid_for_editor(
     let visual_scale_x = grid_component.size_x as f32 * grid_component.spacing;
     let visual_scale_z = grid_component.size_z as f32 * grid_component.spacing;
     let mut owner_transform_component = TransformComponent::new();
-    if let Some(translation) = editor_context.cursor_translation {
+    let live_cursor_pose = editor_context.selected_component.and_then(|selected| {
+        TransformSystem::world_model(world, selected).map(|world_model| {
+            (
+                [world_model[3][0], world_model[3][1], world_model[3][2]],
+                mat_to_quat(world_model),
+            )
+        })
+    });
+    if let Some(translation) = live_cursor_pose
+        .map(|(translation, _)| translation)
+        .or(editor_context.cursor_translation)
+    {
         owner_transform_component = owner_transform_component.with_position(
             translation[0],
             translation[1],
             translation[2],
         );
     }
-    if let Some(rotation) = editor_context.cursor_rotation {
+    if let Some(rotation) = live_cursor_pose
+        .map(|(_, rotation)| rotation)
+        .or(editor_context.cursor_rotation)
+    {
         owner_transform_component = owner_transform_component.with_rotation_quat(rotation);
     }
     let owner_transform = world.add_component_boxed_named(

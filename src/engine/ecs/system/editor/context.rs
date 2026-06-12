@@ -2,12 +2,18 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::{
-    EditorComponent, SelectionComponent, SignalObserverRouterComponent,
+    ColorComponent, EditorComponent, EmissiveComponent, OpacityComponent,
+    RaycastableComponent, RenderableComponent, SelectableComponent, SelectionComponent,
+    SerializeComponent, SignalObserverRouterComponent, TransformComponent,
 };
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::selection_system::resolve_semantic_target_from_payload;
-use crate::engine::ecs::{ComponentId, EventSignal, RxWorld, Signal, SignalKind, World};
+use crate::engine::ecs::{
+    ComponentId, EventSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalKind, World,
+};
+use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle};
 use crate::utils::math::mat_to_quat;
+use std::f32::consts::FRAC_PI_2;
 
 const PANEL_LAYOUT_SELECTION_SELECTOR: &str = "#editor_panel_layout_selection";
 const WORLD_PANEL_SELECTION_SELECTOR: &str = "#world_panel_selection";
@@ -15,6 +21,8 @@ const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 const PAINT_SYSTEM_HANDLER_NAME: &str = "paint_system";
 const EDITOR_PANEL_REFRESH_HANDLER_NAME: &str = "editor_panel_refresh";
 const DEBUG_BLACKLIST_EDITOR_PANEL_REFRESH: bool = true;
+const CURSOR_MARKER_ROOT_NAME: &str = "editor_cursor_marker";
+const CURSOR_MARKER_SIZE: f32 = 0.5;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct EditorContextState {
@@ -165,7 +173,7 @@ fn install_shared_panel_handlers(
         SignalKind::SelectionChanged,
         panel_query_root,
         Some("editor_system".to_string()),
-        move |world, _emit, signal| {
+        move |world, emit, signal| {
             let Some(event) =
                 editor_context_event_from_shared_signal(world, panel_query_root, signal)
             else {
@@ -174,6 +182,7 @@ fn install_shared_panel_handlers(
             apply_editor_context_event(&state, &event);
             sync_editor_component_selection(world, &event);
             sync_editor_cursor_pose(world, &state);
+            sync_editor_cursor_visual(world, emit, &state);
             sync_editor_observer_routes(world, &state, &workspace);
         },
     );
@@ -208,6 +217,7 @@ fn install_editor_handlers(
             apply_editor_context_event(&state, &event);
             sync_editor_component_selection(world, &event);
             sync_editor_cursor_pose(world, &state);
+            sync_editor_cursor_visual(world, _emit, &state);
         },
     );
 }
@@ -343,6 +353,192 @@ fn sync_editor_cursor_pose(world: &World, state: &Arc<Mutex<EditorContextState>>
 
     state.cursor_translation = Some([world_model[3][0], world_model[3][1], world_model[3][2]]);
     state.cursor_rotation = Some(mat_to_quat(world_model));
+}
+
+fn sync_editor_cursor_visual(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    state: &Arc<Mutex<EditorContextState>>,
+) {
+    let state = state.lock().expect("editor context state poisoned").clone();
+    let Some(editor_root) = state.active_editor else {
+        return;
+    };
+    let marker = ensure_cursor_marker(world, emit, editor_root);
+    let Some(marker_transform) = world.get_component_by_id_as_mut::<TransformComponent>(marker)
+    else {
+        return;
+    };
+
+    let translation = state.cursor_translation.unwrap_or([0.0, 0.0, 0.0]);
+    let rotation = state.cursor_rotation.unwrap_or([0.0, 0.0, 0.0, 1.0]);
+    marker_transform.transform.translation = translation;
+    marker_transform.transform.rotation = rotation;
+    marker_transform.transform.scale = [CURSOR_MARKER_SIZE, CURSOR_MARKER_SIZE, CURSOR_MARKER_SIZE];
+    marker_transform.transform.recompute_model();
+
+    emit.push_intent_now(
+        marker,
+        IntentValue::UpdateTransform {
+            component_ids: vec![marker],
+            translation,
+            rotation_quat_xyzw: rotation,
+            scale: [CURSOR_MARKER_SIZE, CURSOR_MARKER_SIZE, CURSOR_MARKER_SIZE],
+        },
+    );
+
+    let opacity_ids = cursor_marker_opacities(world, marker);
+    let target_opacity = if state.selected_component.is_some() {
+        0.35
+    } else {
+        0.0
+    };
+    for opacity_id in &opacity_ids {
+        if let Some(opacity) = world.get_component_by_id_as_mut::<OpacityComponent>(*opacity_id) {
+            opacity.opacity = target_opacity;
+        }
+    }
+    if !opacity_ids.is_empty() {
+        emit.push_intent_now(
+            marker,
+            IntentValue::RegisterOpacity {
+                component_ids: opacity_ids,
+            },
+        );
+    }
+}
+
+fn ensure_cursor_marker(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    editor_root: ComponentId,
+) -> ComponentId {
+    if let Some(existing) = world.children_of(editor_root).iter().copied().find(|&child| {
+        world.component_label(child) == Some(CURSOR_MARKER_ROOT_NAME)
+    }) {
+        return existing;
+    }
+
+    let marker_root = world.add_component_boxed_named(
+        CURSOR_MARKER_ROOT_NAME,
+        Box::new(TransformComponent::new().with_scale(
+            CURSOR_MARKER_SIZE,
+            CURSOR_MARKER_SIZE,
+            CURSOR_MARKER_SIZE,
+        )),
+    );
+    let marker_selectable = world.add_component_boxed_named(
+        "editor_cursor_marker_selectable",
+        Box::new(SelectableComponent::off()),
+    );
+    let marker_serialize = world.add_component_boxed_named(
+        "editor_cursor_marker_serialize",
+        Box::new(SerializeComponent::off()),
+    );
+    let _ = world.add_child(editor_root, marker_root);
+    let _ = world.add_child(marker_root, marker_selectable);
+    let _ = world.add_child(marker_root, marker_serialize);
+
+    let half_extent = CURSOR_MARKER_SIZE * 0.5;
+    let plane_scale = CURSOR_MARKER_SIZE;
+    let plane_roots = [
+        (
+            "editor_cursor_marker_x_plane_root",
+            TransformComponent::new()
+                .with_position(half_extent, 0.0, 0.0)
+                .with_rotation_euler(0.0, FRAC_PI_2, 0.0)
+                .with_scale(plane_scale, plane_scale, plane_scale),
+            [0.0, 0.0, 1.0, 1.0],
+        ),
+        (
+            "editor_cursor_marker_y_plane_root",
+            TransformComponent::new()
+                .with_position(0.0, half_extent, 0.0)
+                .with_rotation_euler(-FRAC_PI_2, 0.0, 0.0)
+                .with_scale(plane_scale, plane_scale, plane_scale),
+            [0.0, 1.0, 0.0, 1.0],
+        ),
+        (
+            "editor_cursor_marker_z_plane_root",
+            TransformComponent::new()
+                .with_position(0.0, 0.0, half_extent)
+                .with_scale(plane_scale, plane_scale, plane_scale),
+            [1.0, 0.0, 0.0, 1.0],
+        ),
+    ];
+
+    let mut renderable_ids = Vec::new();
+    for (name, transform, color) in plane_roots {
+        let plane_root = world.add_component_boxed_named(name, Box::new(transform));
+        let plane_renderable = world.add_component_boxed_named(
+            &format!("{name}_renderable"),
+            Box::new(RenderableComponent::from_cpu_mesh_handle(
+                CpuMeshHandle::QUAD_2D,
+                MaterialHandle::TOON_MESH,
+            )),
+        );
+        let plane_raycastable = world.add_component_boxed_named(
+            &format!("{name}_raycastable"),
+            Box::new(RaycastableComponent::disabled()),
+        );
+        let plane_color = world.add_component_boxed_named(
+            &format!("{name}_color"),
+            Box::new(ColorComponent::rgba(color[0], color[1], color[2], color[3])),
+        );
+        let plane_opacity = world.add_component_boxed_named(
+            &format!("{name}_opacity"),
+            Box::new(OpacityComponent::new().with_opacity(0.0)),
+        );
+        let plane_emissive = world.add_component_boxed_named(
+            &format!("{name}_emissive"),
+            Box::new(EmissiveComponent::new(1.0)),
+        );
+
+        let _ = world.add_child(marker_root, plane_root);
+        let _ = world.add_child(plane_root, plane_renderable);
+        let _ = world.add_child(plane_renderable, plane_raycastable);
+        let _ = world.add_child(plane_renderable, plane_color);
+        let _ = world.add_child(plane_renderable, plane_opacity);
+        let _ = world.add_child(plane_renderable, plane_emissive);
+        renderable_ids.push(plane_renderable);
+    }
+
+    world.init_component_tree(marker_root, emit);
+    emit.push_intent_now(
+        marker_root,
+        IntentValue::RegisterTransform {
+            component_ids: vec![marker_root],
+        },
+    );
+    emit.push_intent_now(
+        marker_root,
+        IntentValue::RegisterRenderable {
+            component_ids: renderable_ids,
+        },
+    );
+    marker_root
+}
+
+fn cursor_marker_opacities(world: &World, marker_root: ComponentId) -> Vec<ComponentId> {
+    let mut opacities = Vec::new();
+    for &child in world.children_of(marker_root) {
+        for &grandchild in world.children_of(child) {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(grandchild)
+                .is_some()
+            {
+                for &style_child in world.children_of(grandchild) {
+                    if world
+                        .get_component_by_id_as::<OpacityComponent>(style_child)
+                        .is_some()
+                    {
+                        opacities.push(style_child);
+                    }
+                }
+            }
+        }
+    }
+    opacities
 }
 
 fn sync_editor_observer_routes(
