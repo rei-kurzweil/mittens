@@ -103,6 +103,8 @@ See [docs/render-phases.md](docs/render-phases.md) for details and the relevant 
 
 # Components
 
+See [docs/spec/components.md](docs/spec/components.md) for a full list of built-in components and their usage.
+
 ## Transforms
 
 Transforms are central in cat-engine: most component subtrees are rooted at a `TransformComponent`, and many engine systems interpret the component tree as “a scene graph of nested transforms + things attached under them”.
@@ -147,117 +149,6 @@ Transforms are central in cat-engine: most component subtrees are rooted at a `T
     - Gizmo coord spaces (Local/World): `docs/spec/editor-gizmo-coord-spaces.md`
     - Transform update flow and refit/rebuild behavior: `docs/analysis/refresh-transform.md`
 
-+ TransformComponent
-  + lets position anything in space (translation/rotation/scale)
-  + can be nested to build scene graphs; see “Transforms” above for propagation + affected systems
-
-+ RenderableComponent
-  + Several built-in RenderableComponents are available as special constructors on the impl.
-  + If you need lower level control over the mesh or material, you can create a `CPUMesh` and `MaterialHandle` and pass them to the `RenderableComponent::new()` constructor.
-  + Meshes are uploaded to the GPU via the RenderableSystem and stored in RenderAssets.
-  + Materials are pre-defined pipelines stored in `graphics::primitives::MaterialHandle`.
-  + TODO: make separate material and geometry components
-
-+ InputComponent
-  + Recieves keyboard or other input sources and passes that info to relevant child components
-  + TODO: set up key mappings and movement / transform modes beyond the defaults.
-+ InputTransformModeComponent
-  + Configures how an InputComponent affects the TransformComponent child.
-  + construct with `forward_z()` or `forward_y()` 
-    + to change which axis is forward(useful for both 3D or 2D games)
-  + `with_roll_axis_y()` to remap roll keys to yaw
-  + `with_fps_rotation()` to use FPS-style mouse rotation 
-  +
-+ Camera2DComponent
-  + simple orthographic camera for 2D rendering
-  + add to TransformComponent to use that transform's model matrix for the camera
-
-+ Camera3DComponent
-  + add to TransformComponent to use that transform's model matrix for the camera
-  + add to TransformComponent and add that TransformComponent to an InputComponent to control the camera with the keyboard.
-
-+ CameraXRComponent
-  + stereoscopic camera for OpenXR rendering
-  + can be parented to TransformComponent to transform both eyes at once
-  + must be used with OpenXRComponent to get proper view/projection matrices from the XR
-```
-// input example (pseudo code)
-InputComponent {
-    TransformComponent {
-        Camera3DComponent { }
-    }
-    InputTransformModeComponent::forward_z().with_fps_rotation()
-}
-```
-
-+ ColorComponent
-  + Per-instance RGBA tint.
-  + Routed into the instanced vertex buffer, so it does not split draw batches.
-  + Useful for quick “team color” / debug visualization without creating new materials.
-
-+ OpacityComponent
-  + Per-instance opacity multiplier (separate from `ColorComponent` alpha).
-  + Routed into the instanced vertex buffer as `i_opacity` and multiplied into the fragment alpha.
-  + Like color, opacity can be inherited from ancestors (so you can set it once on a parent and affect all children).
-  + Influences which virtual render pass (render phase) an instance uses:
-    + Instances are treated as transparent if `opacity < 0.999` **or** `color.a < 0.999`.
-      + (Note: texture alpha is not currently considered for pass selection.)
-    + If it is not transparent, it goes through the **opaque** instanced phase.
-    + Transparent instances with `multiple_layers=false` go through the **transparent single-layer** instanced phase.
-    + Transparent instances with `multiple_layers=true` go through the **transparent multi-layer** sorted phase.
-    + This does not control the **cutout** or **background** phases; those are driven by other instance flags/components.
-  + Usage:
-    + `OpacityComponent::new().with_opacity(0.5)`
-    + `OpacityComponent::new().with_opacity(0.5).with_multiple_layers()` when it must blend correctly with other transparent surfaces.
-
-+ UVComponent
-  + Supplies UVs for a mesh so shaders can sample textures.
-
-+ TextureComponent
-  + References a texture by `uri` (e.g. `"assets/images/cat-face-neutral.png"`).
-  + Loaded/decoded via the `image` crate and uploaded to the GPU.
-  + Textures are deduplicated by `uri` (multiple components can share the same GPU texture).
-  + Texture affects batching: draw calls are grouped by (material, mesh, texture).
-
-+ GLTFComponent
-  + Loads a glTF 2.0 model from a URI (e.g. `"assets/models/cat.glb"`).
-  + Creates child components for each mesh in the glTF file.
-  + Materials are mapped to built-in `MaterialHandle` pipelines where possible.
-  + Textures are loaded and deduplicated via TextureComponent.
-
-+ PointLightComponent
-  + Adds a point light to the scene (fed to the shader via an SSBO).
-
-+ CollisionComponent
-  + adds parent transform as a collision object
-  + types supported
-    + STATIC     // does not move. only interacts with other CollisionComponents
-    + KINEMATIC  // can move in response to collisions
-    + RIGGED     // for cameras and players and npcs and stuff
-
-  + CollisionShapeComponent
-    + Defines the collision shape for this collider (attach as a child of the `CollisionComponent`).
-
-  + (see `GravityComponent` below) gravity is inherited from ancestors.
-
-  + KineticResponseComponent
-    + Opt-in kinematic collision response (automatic movement/push-out in response to overlaps).
-    + **Topology requirement:** attach as a direct child of a `CollisionComponent`.
-    + Modes and tuning fields are documented in: [docs/spec/kinetic-response.md](docs/spec/kinetic-response.md)
-
-+ GravityComponent
-  + Gravity field component.
-  + Any `KineticResponseComponent` nested under a `GravityComponent` will have gravity applied.
-  + Can live anywhere in the scene graph and affect an entire subtree.
-  + If multiple `GravityComponent`s are in the ancestor chain, the nearest enabled one wins.
-  + Fields:
-    + `enabled: bool`
-    + `coefficient: f32` — multiplier applied to the system gravity (e.g. `1.0` earth, `0.0` none).
-
-+ OpenXRComponent
-  + adds OpenXR support to the universe
-  + handles session, frame loop, and input events from XR runtime
-
 
 # Signals
 
@@ -297,48 +188,63 @@ Scoped handler lifecycle: systems can install handlers rooted at a component sub
 See [docs/signals.md](docs/signals.md) for the deeper rationale.
 
 
-# Building Widgets
+# Building Widgets (Panels & Tools)
 
-This engine’s “widgets” (gizmos, editor handles, debug UI-in-world) are usually built as **component subtrees** plus **scoped signal handlers**.
+Complex editor UI (like the `inspector_panel`, `paint_panel`, or `world_panel`) follows a data-driven projection pattern.
 
-At a high level:
+### 1. State & Reducers
+Panels define their own domain-specific state and a pure reducer function to handle events.
+- **State**: e.g., `InspectorWorkspaceState` or `PaintState`.
+- **Reducer**: `fn reduce_state(old: &State, event: &Event) -> State`.
 
-- A widget is a small subtree of components that contains renderable geometry (things you can see) and `RaycastableComponent` markers (things you can click/drag).
-- Interaction comes in as signals (`RayIntersected`, `DragStart`, `DragMove`, `DragEnd`). Systems install scoped handlers rooted at the widget subtree, so the widget can respond to events happening on any of its descendants.
+### 2. Event Adapters
+Raw engine events (clicks, drags, signal emissions) are converted into high-level domain events by "adapters" (often scoped signal handlers installed at the widget root).
 
-## Transform gizmo (example widget)
+### 3. Data Renderer System
+The `DataRendererSystem` manages the lifecycle of projecting a list of data items into a live component subtree. It ensures that when data changes, the previous visual subtree is cleaned up and a fresh one is attached to the target slot.
 
-The transform gizmo is a reference implementation of this pattern:
+### 4. RendererSpec
+You define how each item in your data list should be rendered using a `RendererSpec<T>`:
 
-- `TransformGizmoComponent` is attached under a target `TransformComponent`.
-- On init, `TransformGizmoSystem` spawns a visual subtree (rotate rings, translate arrows) and marks the clickable parts as raycastable.
-- During a drag, the gizmo figures out “what operation is this?” by walking up ancestry from the hit renderable and looking for handle marker components:
-  - `TransformGizmoTranslateComponent { axis }`
-  - `TransformGizmoRotateComponent { axis }`
-  - `TransformGizmoScaleComponent { axis }`
+- **RendererSpec::Mms**: Project data into an MMS component factory.
+  ```rust
+  RendererSpec::Mms {
+      asset_path: "assets/components/item.mms",
+      export_name: "my_item",
+      to_args: |data| vec![Value::String(data.label.clone())],
+  }
+  ```
+- **RendererSpec::Rust**: Build the component tree directly in Rust.
+  ```rust
+  RendererSpec::Rust {
+      render_fn: Box::new(|world, emit, data| {
+          let root = world.add_component(...);
+          // ... build tree ...
+          Ok(root)
+      }),
+  }
+  ```
 
-## GestureCoordType (how a handle interprets motion)
+## Working with MMS Components
 
-Some handles need different coordinate mappings. This is controlled by attaching a `GestureCoordTypeComponent` somewhere in the ancestry of the clicked handle renderable:
+For simpler widgets or reusable UI elements, you can define factory functions in `.mms` scripts.
 
-- `GestureCoordType::WorldPlane`
-  - Use world-space hit-point deltas (good for translation along an axis, with the gesture system providing a stable drag plane).
-- `GestureCoordType::ScreenSpace1DSlider`
-  - Use screen-space deltas (good for rotation rings, where you want “drag anywhere” behavior).
+### Reusable Buttons (`button.mms`)
+The `assets/components/button.mms` file provides a standard button:
 
-The up-to-date, code-matching interaction pipeline docs are:
+```javascript
+import { button } from "assets/components/button.mms"
 
-- [docs/spec/gestures-and-gizmos.md](docs/spec/gestures-and-gizmos.md)
-- [docs/refactor/gesture-screen-distance.md](docs/refactor/gesture-screen-distance.md)
+let my_btn = button("Click Me")
+T.position(0, 0, 0) { my_btn }
 
-## Building your own widget
+// Attach signal handlers directly in MMS:
+on(my_btn, "Click", fn(e) {
+    print("Button was clicked!")
+})
+```
 
-Typical steps:
-
-1. Create a root marker component for the widget (stores runtime state like “active pointer”, “drag start value”, etc.).
-2. Spawn a visual subtree under that root, including raycastable renderables.
-3. Install scoped handlers for `DragStart/DragMove/DragEnd` rooted at the widget.
-4. In handlers, mutate the target component(s) directly (or emit intents if you need the changes to flow through the drain-point signal model).
+See `assets/components/` for more reusable primitives.
 
 
 # REPL / CLI
