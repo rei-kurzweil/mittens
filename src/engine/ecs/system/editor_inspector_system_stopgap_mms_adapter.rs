@@ -52,7 +52,7 @@ use crate::engine::ecs::system::panel_system::{
     PanelSlotKind, build_panel_shell_component_expr, decode_panel_action_payload,
     decorate_panel_root_ce, ensure_panel_layout_selection, find_named_root,
     get_or_create_runtime_ui_root, is_descendant_or_self, panel_layout_root_id,
-    panel_layout_selection_id, resolve_panel_instance, spawn_panel_layout_mount,
+    panel_layout_selection_id, spawn_panel_instance, spawn_panel_layout_mount,
 };
 use crate::engine::ecs::system::selection_system::{
     apply_selection_set, resolve_semantic_target_from_payload,
@@ -2883,7 +2883,7 @@ fn spawn_inspector_panel_instance_tree(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     model: &InspectorPanelModel,
-    index: usize,
+    _index: usize,
     data_renderer: &mut DataRendererSystem,
 ) -> ComponentId {
     let title_color = if model.active {
@@ -2932,59 +2932,17 @@ fn spawn_inspector_panel_instance_tree(
         ])
     };
 
-    let panel_ce = match build_panel_shell_component_expr(
-        world,
-        emit,
-        &PanelShellSpec {
-            panel_kind: PanelKind::Inspector,
-            asset_path: inspector_panel_asset_path().to_string(),
-            export_name: "inspector_panel".to_string(),
-            args: vec![
-                Value::String(model.title.clone()),
-                Value::Array(Vec::new()),
-                title_color,
-                panel_bg,
-                item_bg,
-            ],
-            root_selector: INSPECTOR_PANEL_ROOT_SELECTOR.to_string(),
-            slot_selectors: HashMap::from([
-                (
-                    PanelSlotKind::Sidebar,
-                    INSPECTOR_PANEL_SIDEBAR_SLOT_SELECTOR.to_string(),
-                ),
-                (
-                    PanelSlotKind::Detail,
-                    INSPECTOR_PANEL_DETAIL_SLOT_SELECTOR.to_string(),
-                ),
-                (
-                    PanelSlotKind::Toolbar,
-                    INSPECTOR_PANEL_PIN_SLOT_SELECTOR.to_string(),
-                ),
-            ]),
-        },
-    ) {
-        Ok(panel) => decorate_panel_root_ce(panel, PANEL_LAYOUT_GAP_GU),
-        Err(error) => {
-            eprintln!("[InspectorSystemStopgapMmsAdapter] inspector panel render error: {error}");
-            return spawn_inspector_panel_instance_fallback_root(world, model.panel_id);
-        }
-    };
-
-    let instance_root = match spawn_tree(&panel_ce, None, world, emit) {
-        Ok(component_id) => component_id,
-        Err(error) => {
-            eprintln!("[InspectorSystemStopgapMmsAdapter] inspector instance spawn error: {error}");
-            return spawn_inspector_panel_instance_fallback_root(world, model.panel_id);
-        }
-    };
-
-    attach_inspector_panel_instance_id(world, instance_root, model.panel_id);
-
     let shell_spec = PanelShellSpec {
         panel_kind: PanelKind::Inspector,
         asset_path: inspector_panel_asset_path().to_string(),
         export_name: "inspector_panel".to_string(),
-        args: Vec::new(),
+        args: vec![
+            Value::String(model.title.clone()),
+            Value::Array(Vec::new()),
+            title_color,
+            panel_bg,
+            item_bg,
+        ],
         root_selector: INSPECTOR_PANEL_ROOT_SELECTOR.to_string(),
         slot_selectors: HashMap::from([
             (
@@ -3001,15 +2959,21 @@ fn spawn_inspector_panel_instance_tree(
             ),
         ]),
     };
-    let Some(instance) = resolve_panel_instance(
+    let spawned = match spawn_panel_instance(
         world,
-        instance_root,
+        emit,
         &shell_spec,
-        instance_root,
         Some(model.panel_id),
-    ) else {
-        return instance_root;
+        PANEL_LAYOUT_GAP_GU,
+    ) {
+        Ok(spawned) => spawned,
+        Err(error) => {
+            eprintln!("[InspectorSystemStopgapMmsAdapter] inspector instance spawn error: {error}");
+            return spawn_inspector_panel_instance_fallback_root(world, model.panel_id);
+        }
     };
+    attach_inspector_panel_instance_id(world, spawned.mount_root, model.panel_id);
+    let instance = spawned.instance;
     let inspector_panel_root = instance.root;
     let Some(pin_slot) = instance.slots.get(&PanelSlotKind::Toolbar).copied() else {
         return inspector_panel_root;

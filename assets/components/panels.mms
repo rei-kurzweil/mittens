@@ -43,6 +43,7 @@ fn editor_settings_mode_row(row_name, label, mode_value) {
             width(100%)
             margin_xy(0.25, 0.20)
             padding_xy(0.55, 0.45)
+            color([0, 0, 0, 1.0])
             background_color([0.92, 0.97, 0.92, 1.0])
             background_z(-0.01)
             text_align("left")

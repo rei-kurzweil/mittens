@@ -84,6 +84,12 @@ pub struct PanelLayoutMountSpec {
     pub children: Vec<MaterializedCE>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpawnedPanelInstance {
+    pub mount_root: ComponentId,
+    pub instance: PanelInstance,
+}
+
 pub fn find_named_root(world: &World, name: &str) -> Option<ComponentId> {
     world.all_components().find(|&component_id| {
         world.parent_of(component_id).is_none()
@@ -302,6 +308,29 @@ pub fn resolve_panel_instance(
         root: shell_root,
         slots,
         instance_id,
+    })
+}
+
+pub fn spawn_panel_instance(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    spec: &PanelShellSpec,
+    instance_id: Option<u64>,
+    margin_right_gu: f64,
+) -> Result<SpawnedPanelInstance, String> {
+    let panel_ce = build_panel_shell_component_expr(world, emit, spec)?;
+    let panel_ce = decorate_panel_root_ce(panel_ce, margin_right_gu);
+    let mount_root = spawn_tree(&panel_ce, None, world, emit)?;
+    let instance = resolve_panel_instance(world, mount_root, spec, mount_root, instance_id)
+        .ok_or_else(|| {
+            format!(
+                "failed to resolve {:?} panel instance from root selector {}",
+                spec.panel_kind, spec.root_selector
+            )
+        })?;
+    Ok(SpawnedPanelInstance {
+        mount_root,
+        instance,
     })
 }
 
