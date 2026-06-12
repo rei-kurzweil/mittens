@@ -36,6 +36,7 @@ use crate::engine::ecs::system::editor::settings_panel::{
     EDITOR_SETTINGS_PANEL_ROOT_SELECTOR, EDITOR_SETTINGS_SELECTION_SELECTOR,
     EditorSettingsOption,
 };
+use crate::engine::ecs::system::editor::workspace::EditorWorkspaceRuntime;
 use crate::engine::ecs::system::editor::world_panel::{
     AuthoredWorldPanelSceneModel, ITEM_PREFIX, WORLD_PANEL_PAYLOAD_NAME,
     WORLD_PANEL_SELECTION_NAME, WorldPanelModel, WorldPanelRow, WorldPanelRowKind,
@@ -51,8 +52,8 @@ use crate::engine::ecs::system::panel_system::{
     PANEL_LAYOUT_SELECTION_NAME, PanelActionKind, PanelKind, PanelLayoutMountSpec, PanelShellSpec,
     PanelSlotKind, build_panel_shell_component_expr, decode_panel_action_payload,
     decorate_panel_root_ce, ensure_panel_layout_selection, find_named_root,
-    get_or_create_runtime_ui_root, is_descendant_or_self, panel_layout_root_id,
-    panel_layout_selection_id, spawn_panel_instance, spawn_panel_layout_mount,
+    is_descendant_or_self, panel_layout_root_id, panel_layout_selection_id, spawn_panel_instance,
+    spawn_panel_layout_mount,
 };
 use crate::engine::ecs::system::selection_system::{
     apply_selection_set, resolve_semantic_target_from_payload,
@@ -112,12 +113,8 @@ static WORLD_PANEL_SCENE_PATH_OVERRIDE: Mutex<Option<PathBuf>> = Mutex::new(None
 #[derive(Debug)]
 pub(crate) struct EditorInspectorSystemStopgapMmsAdapter {
     reconciler: EditorInspectorSystemStopgapMmsReconciler,
-    panel_handler_installed: bool,
-    panel_layout_spawned: bool,
-    installed_editor_roots: Arc<Mutex<Vec<ComponentId>>>,
-    refresh_handler_editor_roots: Arc<Mutex<Vec<ComponentId>>>,
+    workspace_runtime: EditorWorkspaceRuntime,
     editor_context_state: Option<Arc<Mutex<EditorContextState>>>,
-    runtime_ui_root: Arc<Mutex<Option<ComponentId>>>,
     working_file_path: Arc<Mutex<PathBuf>>,
     world_panel_scene_model: Arc<Mutex<AuthoredWorldPanelSceneModel>>,
     inspector_workspace_state: Arc<Mutex<InspectorWorkspaceState>>,
@@ -129,12 +126,8 @@ impl Default for EditorInspectorSystemStopgapMmsAdapter {
     fn default() -> Self {
         Self {
             reconciler: EditorInspectorSystemStopgapMmsReconciler,
-            panel_handler_installed: false,
-            panel_layout_spawned: false,
-            installed_editor_roots: Arc::new(Mutex::new(Vec::new())),
-            refresh_handler_editor_roots: Arc::new(Mutex::new(Vec::new())),
+            workspace_runtime: EditorWorkspaceRuntime::default(),
             editor_context_state: None,
-            runtime_ui_root: Arc::new(Mutex::new(None)),
             working_file_path: Arc::new(Mutex::new(world_panel_scene_path())),
             world_panel_scene_model: Arc::new(Mutex::new(AuthoredWorldPanelSceneModel::default())),
             inspector_workspace_state: Arc::new(Mutex::new(InspectorWorkspaceState::default())),
@@ -161,18 +154,18 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         asset_system: &crate::engine::ecs::system::AssetSystem,
     ) {
         self.editor_context_state = Some(Arc::clone(&editor_context_state));
-        let runtime_ui_root = self.get_or_create_runtime_ui_root(world);
+        let runtime_ui_root = self.workspace_runtime.get_or_create_runtime_ui_root(world);
 
         println!(
             "[InspectorSystem][debug] setup_panels_for_editor editor_root={editor_root:?} runtime_ui_root={runtime_ui_root:?} world_panel_pos={:?} inspector_panel_pos={:?}",
             world_panel_pos, inspector_panel_pos,
         );
 
-        register_editor_root(&self.installed_editor_roots, editor_root);
+        register_editor_root(self.workspace_runtime.installed_editor_roots(), editor_root);
         rebuild_world_panel_scene_model(
             &self.world_panel_scene_model,
             world,
-            &self.installed_editor_roots,
+            self.workspace_runtime.installed_editor_roots(),
         );
 
         let editor_context = self.editor_context();
@@ -217,7 +210,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 world,
                 render_assets,
                 emit,
-                &mut self.panel_layout_spawned,
+                self.workspace_runtime.panel_layout_spawned_mut(),
                 runtime_ui_root,
                 world_panel_pos,
                 inspector_panel_pos,
@@ -240,10 +233,10 @@ impl EditorInspectorSystemStopgapMmsAdapter {
     }
 
     fn install_shared_panel_handlers(&mut self, rx: &mut RxWorld, panel_query_root: ComponentId) {
-        if self.panel_handler_installed {
+        if self.workspace_runtime.panel_handler_installed() {
             return;
         }
-        self.panel_handler_installed = true;
+        self.workspace_runtime.mark_panel_handler_installed();
 
         let editor_context_state = self
             .editor_context_state
@@ -280,7 +273,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         let click_path_mutex = Arc::clone(&working_file_path_mutex);
         let click_editor_context_state = editor_context_state.clone();
         let click_world_panel_scene_model = Arc::clone(&self.world_panel_scene_model);
-        let click_installed_editor_roots = Arc::clone(&self.installed_editor_roots);
+        let click_installed_editor_roots = Arc::clone(self.workspace_runtime.installed_editor_roots());
         let click_inspector_workspace_state = Arc::clone(&self.inspector_workspace_state);
         let click_rendered_inspector_models = Arc::clone(&self.rendered_inspector_models);
         let click_data_renderer = Arc::clone(&self.data_renderer);
@@ -778,27 +771,22 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         );
     }
 
-    fn get_or_create_runtime_ui_root(&self, world: &mut World) -> ComponentId {
-        let runtime_ui_root = get_or_create_runtime_ui_root(world);
-        *self
-            .runtime_ui_root
-            .lock()
-            .expect("runtime ui root mutex poisoned") = Some(runtime_ui_root);
-        runtime_ui_root
-    }
-
     fn install_editor_refresh_handlers(&mut self, rx: &mut RxWorld, editor_root: ComponentId) {
         let already_installed = self
-            .refresh_handler_editor_roots
+            .workspace_runtime
+            .refresh_handler_editor_roots()
             .lock()
             .expect("refresh handler editor roots mutex poisoned")
             .contains(&editor_root);
         if already_installed {
             return;
         }
-        register_editor_root(&self.refresh_handler_editor_roots, editor_root);
+        register_editor_root(
+            self.workspace_runtime.refresh_handler_editor_roots(),
+            editor_root,
+        );
 
-        let panel_query_root = Arc::clone(&self.runtime_ui_root);
+        let panel_query_root = self.workspace_runtime.runtime_ui_root_handle();
         let editor_context_state = self
             .editor_context_state
             .as_ref()
@@ -864,11 +852,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
     }
 
     fn refresh_world_panels(&self, world: &mut World, emit: &mut dyn SignalEmitter) {
-        let Some(panel_query_root) = *self
-            .runtime_ui_root
-            .lock()
-            .expect("runtime ui root mutex poisoned")
-        else {
+        let Some(panel_query_root) = self.workspace_runtime.current_runtime_ui_root() else {
             return;
         };
 
