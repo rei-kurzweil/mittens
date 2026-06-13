@@ -16,6 +16,9 @@ use crate::engine::ecs::ComponentId;
 pub struct MaterializedCE {
     /// Component type name (short or full, e.g. `"T"` / `"Transform"`).
     pub component_type: String,
+    /// When true, `name = expr` inside the CE body is captured as a named
+    /// component property instead of a lexical reassignment.
+    pub component_property_assignment_only: bool,
     /// First constructor call method, e.g. `"position"` from `T.position(...)`.
     pub ctor_method: Option<String>,
     /// First constructor call args, evaluated.

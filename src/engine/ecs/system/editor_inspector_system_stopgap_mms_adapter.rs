@@ -2880,6 +2880,7 @@ fn build_panel_component_expr(
 fn build_placeholder_panel_component_expr(title_name: &'static str, title: &str) -> MaterializedCE {
     MaterializedCE {
         component_type: "T".to_string(),
+        component_property_assignment_only: false,
         ctor_method: None,
         ctor_args: Vec::new(),
         calls: Vec::new(),
@@ -2887,6 +2888,7 @@ fn build_placeholder_panel_component_expr(title_name: &'static str, title: &str)
         positionals: Vec::new(),
         children: vec![CeChild::Spawn(MaterializedCE {
             component_type: "T".to_string(),
+            component_property_assignment_only: false,
             ctor_method: None,
             ctor_args: Vec::new(),
             calls: Vec::new(),
@@ -2897,6 +2899,7 @@ fn build_placeholder_panel_component_expr(title_name: &'static str, title: &str)
             positionals: Vec::new(),
             children: vec![CeChild::Spawn(MaterializedCE {
                 component_type: "Text".to_string(),
+                component_property_assignment_only: false,
                 ctor_method: None,
                 ctor_args: Vec::new(),
                 calls: Vec::new(),

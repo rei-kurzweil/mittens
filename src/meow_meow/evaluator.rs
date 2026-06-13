@@ -14,6 +14,9 @@ use crate::meow_meow::ast::{
     BinOpKind, CallExpression, ComponentExpression, ElseBranch, Expression, IfStatement,
     ImportItem, Statement, UnaryOpKind,
 };
+use crate::meow_meow::component_registry::{
+    component_expr_uses_property_assignment_only, is_universal_component_named_prop,
+};
 use crate::meow_meow::object::{CeChild, FrameKind, MaterializedCE, ObjectWorld, Value};
 use crate::meow_meow::parser::{MeowMeowParser, ParseError};
 use crate::meow_meow::token::TokenizeError;
@@ -304,6 +307,8 @@ fn with_live_signal_emitter<R>(emit: Option<*mut dyn SignalEmitter>, f: impl FnO
 /// Accumulator used while evaluating a component expression body block.
 /// Collects the results that will be materialized into a `MaterializedCE`.
 struct CeBuilder {
+    /// Whether `name = expr` in this CE body should be captured as a named prop.
+    component_property_assignment_only: bool,
     /// Remaining chained ctor calls + body builder calls (calls to names not in env).
     calls: Vec<(String, Vec<Value>)>,
     /// Named property assignments (`name = expr` in body where name was pre-injected).
@@ -477,12 +482,16 @@ fn eval_stmt(stmt: &Statement, ctx: &mut EvalContext<'_>) -> Result<StmtEffect, 
         }
         Statement::Reassign { name, value } => {
             let val = eval_expr(value, ctx)?;
-            // Inside a CE body, `foo = expr` defines a named component property.
-            // This must win even when `foo` also exists as a lexical binding, so
-            // authored payloads like `row_name = row_name` materialize correctly.
             if let Some(builder) = ctx.ce_builder.as_mut() {
-                builder.named.push((name.0.clone(), val));
-                return Ok(StmtEffect::None);
+                if builder.component_property_assignment_only
+                    || is_universal_component_named_prop(&name.0)
+                {
+                    // Property-bag CE bodies capture assignments as named props.
+                    // This must win even when `foo` also exists as a lexical binding,
+                    // so authored payloads like `row_name = row_name` survive.
+                    builder.named.push((name.0.clone(), val));
+                    return Ok(StmtEffect::None);
+                }
             }
             let val = maybe_register_live_component_value(val, ctx);
             ctx.object_world.reassign(&name.0, val)?;
@@ -742,6 +751,8 @@ fn eval_if(if_stmt: &IfStatement, ctx: &mut EvalContext<'_>) -> Result<StmtEffec
 /// - `Value::String` expression statements → captured as positionals
 /// - Named assignments (`name = expr`) → read from env after block if pre-injected
 fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value, String> {
+    let component_property_assignment_only =
+        component_expr_uses_property_assignment_only(&ce.component_type.0);
     // Evaluate all constructor calls.
     let mut ctor_method: Option<String> = None;
     let mut ctor_args: Vec<Value> = vec![];
@@ -762,6 +773,7 @@ fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value,
 
     // Evaluate the body block with a CE builder context.
     let mut builder = CeBuilder {
+        component_property_assignment_only,
         calls: extra_ctor_calls,
         named: vec![],
         positionals: vec![],
@@ -787,6 +799,7 @@ fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value,
 
     let mce = MaterializedCE {
         component_type: ce.component_type.0.clone(),
+        component_property_assignment_only,
         ctor_method,
         ctor_args,
         calls: builder.calls,
@@ -2200,6 +2213,70 @@ export let payload = make_payload("editor_settings_mode_cursor_3d", "3D Cursor",
         }));
         assert!(component.named.iter().any(|(key, value)| {
             key == "mode_value" && matches!(value, Value::String(value) if value == "cursor_3d")
+        }));
+        assert!(component.component_property_assignment_only);
+    }
+
+    #[test]
+    fn structural_component_bodies_keep_normal_reassign_semantics() {
+        let source = r#"
+fn rename_label() {
+    let label = "hello"
+    return T {
+        label = "goodbye"
+        Text { label }
+    }
+}
+
+export let payload = rename_label()
+"#;
+
+        let module = eval_module_source(source, None).expect("module eval");
+        let Value::Module { named, .. } = module else {
+            panic!("expected module value");
+        };
+        let payload = named.get("payload").expect("exported payload");
+        let Value::ComponentExpr(component) = payload else {
+            panic!("expected component expr");
+        };
+
+        assert!(!component.component_property_assignment_only);
+        assert!(component.named.is_empty());
+        let Some(crate::meow_meow::object::CeChild::Spawn(text_child)) = component.children.first()
+        else {
+            panic!("expected text child");
+        };
+        assert!(matches!(
+            text_child.positionals.first(),
+            Some(Value::String(label)) if label == "goodbye"
+        ));
+    }
+
+    #[test]
+    fn structural_component_bodies_still_capture_universal_named_props() {
+        let source = r#"
+export let payload = T {
+    name = "paint_panel_root"
+    id = "paint_panel_root"
+    Text { "hello" }
+}
+"#;
+
+        let module = eval_module_source(source, None).expect("module eval");
+        let Value::Module { named, .. } = module else {
+            panic!("expected module value");
+        };
+        let payload = named.get("payload").expect("exported payload");
+        let Value::ComponentExpr(component) = payload else {
+            panic!("expected component expr");
+        };
+
+        assert!(!component.component_property_assignment_only);
+        assert!(component.named.iter().any(|(key, value)| {
+            key == "name" && matches!(value, Value::String(value) if value == "paint_panel_root")
+        }));
+        assert!(component.named.iter().any(|(key, value)| {
+            key == "id" && matches!(value, Value::String(value) if value == "paint_panel_root")
         }));
     }
 }

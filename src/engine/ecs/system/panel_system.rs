@@ -191,6 +191,7 @@ pub fn decorate_panel_root_ce(
         0,
         CeChild::Spawn(MaterializedCE {
             component_type: "Option".to_string(),
+            component_property_assignment_only: false,
             ctor_method: None,
             ctor_args: Vec::new(),
             calls: Vec::new(),
@@ -203,6 +204,7 @@ pub fn decorate_panel_root_ce(
         1,
         CeChild::Spawn(MaterializedCE {
             component_type: "Raycastable".to_string(),
+            component_property_assignment_only: false,
             ctor_method: Some("enabled".to_string()),
             ctor_args: Vec::new(),
             calls: Vec::new(),
@@ -237,6 +239,7 @@ pub fn decorate_panel_root_ce(
 pub fn build_panel_layout_mount_ce(spec: PanelLayoutMountSpec) -> MaterializedCE {
     let shared_layout_root = MaterializedCE {
         component_type: "LayoutRoot".to_string(),
+        component_property_assignment_only: false,
         ctor_method: None,
         ctor_args: Vec::new(),
         calls: vec![
@@ -260,6 +263,7 @@ pub fn build_panel_layout_mount_ce(spec: PanelLayoutMountSpec) -> MaterializedCE
 
     let overlay_ce = MaterializedCE {
         component_type: "Overlay".to_string(),
+        component_property_assignment_only: false,
         ctor_method: None,
         ctor_args: Vec::new(),
         calls: Vec::new(),
@@ -270,6 +274,7 @@ pub fn build_panel_layout_mount_ce(spec: PanelLayoutMountSpec) -> MaterializedCE
 
     MaterializedCE {
         component_type: "T".to_string(),
+        component_property_assignment_only: false,
         ctor_method: Some("position".to_string()),
         ctor_args: vec![
             Value::Number(spec.anchor_pos.0 as f64),

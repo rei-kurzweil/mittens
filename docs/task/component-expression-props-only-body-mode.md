@@ -144,6 +144,19 @@ Structural/authored tree nodes should stay on normal body semantics:
 - panel/container/layout-related components
 - any component expression intended to own meaningful descendant structure
 
+This is not theoretical. We already have a concrete regression from the current
+global behavior:
+
+- the paint panel option rows now all show the first icon (`Free Draw`)
+- the authored iterator / local variable progression inside the component
+  expression no longer behaves normally
+- forcing all CE-body assignments into named-property capture broke that
+  structural CE logic
+
+That regression is a useful acceptance signal for this cleanup because it proves
+we must restore normal assignment semantics for non-`props_only` component
+bodies.
+
 ## Desired evaluator behavior
 
 For `props_only` component bodies:
@@ -262,6 +275,8 @@ This task is complete when:
 4. evaluator tests cover both `PropsOnly` and normal-body cases explicitly
 5. the language rule is encoded in one clear place rather than implied by the
    presence of a CE builder alone
+6. the paint panel options once again show distinct authored icons rather than
+   repeating the first `Free Draw` icon for every row
 
 ## Open question
 

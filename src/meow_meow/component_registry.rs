@@ -73,7 +73,7 @@ pub fn spawn_tree(
     // Named property assignments — intercept node-level fields first.
     for (prop, val) in &ce.named {
         match prop.as_str() {
-            "name" => {
+            "name" | "id" => {
                 if let Some(node) = world.get_component_record_mut(id) {
                     node.name = val_as_str(val).unwrap_or("").to_string();
                 }
@@ -168,7 +168,7 @@ pub fn spawn_tree_uninitialized(
 
     for (prop, val) in &ce.named {
         match prop.as_str() {
-            "name" => {
+            "name" | "id" => {
                 if let Some(node) = world.get_component_record_mut(id) {
                     node.name = val_as_str(val).unwrap_or("").to_string();
                 }
@@ -577,6 +577,8 @@ fn subtree_to_ce_ast_inner_limited(
 /// bridge between `to_mms_ast` output and the live spawn path; it does not
 /// involve the MMS evaluator thread.
 pub fn ce_ast_to_materialized(ce: &ComponentExpression) -> Result<MaterializedCE, String> {
+    let component_property_assignment_only =
+        component_expr_uses_property_assignment_only(&ce.component_type.0);
     let mut ctor_method: Option<String> = None;
     let mut ctor_args: Vec<Value> = Vec::new();
     let mut calls: Vec<(String, Vec<Value>)> = Vec::new();
@@ -618,12 +620,16 @@ pub fn ce_ast_to_materialized(ce: &ComponentExpression) -> Result<MaterializedCE
                 }
             }
             Statement::Reassign { name, value } => {
-                // Named-prop in a CE body, e.g. `name = "hero"`, `guid = "..."`.
-                // The full evaluator handles this via builder.named.push in
-                // evaluator.rs; replicate the same mapping here so the
-                // ground-CE dump path preserves named props on round-trip.
-                let val = expression_to_value(value)?;
-                named.push((name.0.clone(), val));
+                if component_property_assignment_only
+                    || is_universal_component_named_prop(&name.0)
+                {
+                    // Named-prop in a property-bag CE body, e.g. `row_name = "hero"`.
+                    // The full evaluator handles this via builder.named.push in
+                    // evaluator.rs; replicate the same mapping here so the
+                    // ground-CE dump path preserves named props on round-trip.
+                    let val = expression_to_value(value)?;
+                    named.push((name.0.clone(), val));
+                }
             }
             _ => {
                 // Skip other statement kinds (control flow, lets) —
@@ -635,6 +641,7 @@ pub fn ce_ast_to_materialized(ce: &ComponentExpression) -> Result<MaterializedCE
 
     Ok(MaterializedCE {
         component_type: ce.component_type.0.clone(),
+        component_property_assignment_only,
         ctor_method,
         ctor_args,
         calls,
@@ -642,6 +649,17 @@ pub fn ce_ast_to_materialized(ce: &ComponentExpression) -> Result<MaterializedCE
         positionals: Vec::new(),
         children,
     })
+}
+
+pub fn component_expr_uses_property_assignment_only(raw: &str) -> bool {
+    matches!(
+        resolve_type_name(raw).as_str(),
+        "Data" | "DataComponent" | "Style" | "StyleComponent"
+    )
+}
+
+pub fn is_universal_component_named_prop(name: &str) -> bool {
+    matches!(name, "name" | "id" | "guid" | "class")
 }
 
 fn expression_to_value(e: &Expression) -> Result<Value, String> {
