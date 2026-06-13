@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::{
-    BoundsComponent, ColorComponent, Component, DataComponent, EmissiveComponent, LayoutComponent,
-    OptionComponent, RenderableComponent, SelectionComponent, SelectionEntry, SelectionMode,
-    StyleComponent, TransformComponent,
+    BoundsComponent, ColorComponent, Component, ComponentRef, DataComponent, EmissiveComponent,
+    LayoutComponent, OptionComponent, RenderableComponent, SelectionComponent, SelectionEntry,
+    SelectionMode, StyleComponent, TransformComponent,
 };
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
@@ -119,11 +119,57 @@ fn selection_scope_owner(world: &World, selection_root: ComponentId) -> Componen
     }
 }
 
+fn is_descendant_or_self(world: &World, ancestor: ComponentId, node: ComponentId) -> bool {
+    let mut current = Some(node);
+    while let Some(component_id) = current {
+        if component_id == ancestor {
+            return true;
+        }
+        current = world.parent_of(component_id);
+    }
+    false
+}
+
+fn resolve_selection_target_root(world: &World, selection_root: ComponentId) -> ComponentId {
+    let selection = world.get_component_by_id_as::<SelectionComponent>(selection_root);
+    let scope_owner = selection_scope_owner(world, selection_root);
+    let Some(source) = selection.and_then(|selection| selection.target_root_source.as_ref()) else {
+        return scope_owner;
+    };
+
+    match source {
+        ComponentRef::Guid(uuid) => world.component_id_by_guid(*uuid).unwrap_or(scope_owner),
+        ComponentRef::Query(selector) => world
+            .find_component(scope_owner, selector)
+            .or_else(|| world.find_component(selection_root, selector))
+            .unwrap_or(scope_owner),
+    }
+}
+
+fn selection_controls_for_node(world: &World, node: ComponentId) -> Vec<ComponentId> {
+    let mut out = Vec::new();
+    if let Some(selection) = selection_marker_on_node(world, node) {
+        out.push(selection);
+    }
+    for &child in world.children_of(node) {
+        if world
+            .get_component_by_id_as::<SelectionComponent>(child)
+            .is_some()
+        {
+            out.push(child);
+        }
+    }
+    out
+}
+
 fn nearest_enclosing_selection(world: &World, start: ComponentId) -> Option<ComponentId> {
     let mut current = Some(start);
     while let Some(node) = current {
-        if let Some(selection) = selection_marker_on_node(world, node) {
-            return Some(selection);
+        for selection in selection_controls_for_node(world, node) {
+            let target_root = resolve_selection_target_root(world, selection);
+            if is_descendant_or_self(world, target_root, start) {
+                return Some(selection);
+            }
         }
         current = world.parent_of(node);
     }
@@ -173,9 +219,9 @@ fn find_selected_item_index(
     selection_root: ComponentId,
     item_id: ComponentId,
 ) -> Option<usize> {
-    let scope_owner = selection_scope_owner(world, selection_root);
+    let scope_root = resolve_selection_target_root(world, selection_root);
     let mut index = 0usize;
-    for &child in world.children_of(scope_owner) {
+    for &child in world.children_of(scope_root) {
         if option_marker_on_node(world, child).is_some() {
             if child == item_id {
                 return Some(index);
@@ -461,21 +507,24 @@ pub fn emit_selection_events(
     }
 }
 
-fn resolve_selected_payload(
+fn direct_option_payload(
     world: &World,
     selection_root: ComponentId,
-    payload_selector: Option<&str>,
     selected_component: Option<ComponentId>,
 ) -> Option<ComponentId> {
-    let selector = payload_selector?;
     let root = selected_component?;
-    let matches = world.find_all_components(root, selector);
+    let matches: Vec<_> = world
+        .children_of(root)
+        .iter()
+        .copied()
+        .filter(|&child| world.get_component_by_id_as::<DataComponent>(child).is_some())
+        .collect();
     match matches.len() {
         0 => None,
         1 => matches.into_iter().next(),
         _ => {
             eprintln!(
-                "[selection] payload selector resolved multiple matches selection_root={selection_root:?} selected_component={root:?} selector={selector:?} count={}",
+                "[selection] direct payload resolution found multiple Data children selection_root={selection_root:?} selected_component={root:?} count={}",
                 matches.len()
             );
             None
@@ -508,7 +557,6 @@ pub fn apply_selection_set(
 ) {
     let (
         mode,
-        payload_selector,
         old_entries,
         old_selected_component,
         old_selected_payload,
@@ -556,7 +604,6 @@ pub fn apply_selection_set(
 
         (
             selection.mode,
-            selection.payload_selector.clone(),
             old_entries,
             old_selected_component,
             old_selected_payload,
@@ -565,12 +612,7 @@ pub fn apply_selection_set(
         )
     };
 
-    let new_selected_payload = resolve_selected_payload(
-        world,
-        selection_root,
-        payload_selector.as_deref(),
-        new_selected_component,
-    );
+    let new_selected_payload = direct_option_payload(world, selection_root, new_selected_component);
 
     if let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(selection_root)
     {
@@ -1813,7 +1855,7 @@ mod tests {
     }
 
     #[test]
-    fn selection_payload_selector_resolves_data_component_without_moving_highlight() {
+    fn selection_direct_option_payload_resolves_without_moving_highlight() {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
@@ -1827,11 +1869,6 @@ mod tests {
         let root = world.add_component_boxed_named("root", Box::new(TransformComponent::new()));
         let selection_root = world.add_component_boxed(Box::new(SelectionComponent::new()));
         let _ = world.add_child(root, selection_root);
-        world
-            .get_component_by_id_as_mut::<SelectionComponent>(selection_root)
-            .expect("selection")
-            .payload_selector = Some("[name='world_panel_payload']".to_string());
-
         let (row, hit, style_id) = spawn_test_option_item(&mut world, root, "item_0", true);
         let payload = world.add_component_boxed_named(
             "world_panel_payload",
@@ -1880,18 +1917,13 @@ mod tests {
     }
 
     #[test]
-    fn selection_payload_selector_clears_payload_for_zero_or_multiple_matches() {
+    fn selection_direct_option_payload_clears_for_zero_or_multiple_matches() {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
 
         let root = world.add_component_boxed_named("root", Box::new(TransformComponent::new()));
         let selection_root = world.add_component_boxed(Box::new(SelectionComponent::new()));
         let _ = world.add_child(root, selection_root);
-        world
-            .get_component_by_id_as_mut::<SelectionComponent>(selection_root)
-            .expect("selection")
-            .payload_selector = Some("[name='world_panel_payload']".to_string());
-
         let zero_row =
             world.add_component_boxed_named("item_0", Box::new(TransformComponent::new()));
         let _ = world.add_child(root, zero_row);
@@ -1954,6 +1986,58 @@ mod tests {
                 .selected_payload,
             None
         );
+    }
+
+    #[test]
+    fn selection_root_target_can_be_sibling_scope() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let render_assets = RenderAssets::new();
+
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let root = world.add_component_boxed_named("root", Box::new(TransformComponent::new()));
+        let selection_root = world.add_component_boxed(Box::new({
+            let mut selection = SelectionComponent::new();
+            selection.target_root_source = Some(ComponentRef::Query("#rows_mount".to_string()));
+            selection
+        }));
+        let _ = world.add_child(root, selection_root);
+
+        let rows_mount =
+            world.add_component_boxed_named("rows_mount", Box::new(TransformComponent::new()));
+        let _ = world.add_child(root, rows_mount);
+
+        let (row, hit, _style_id) = spawn_test_option_item(&mut world, rows_mount, "item_0", true);
+        let payload = world.add_component_boxed_named(
+            "world_panel_payload",
+            Box::new(DataComponent::new().with_entry(
+                "row_kind",
+                DataValue::Text("component".to_string()),
+            )),
+        );
+        let _ = world.add_child(row, payload);
+
+        systems.rx.push_event(
+            hit,
+            EventSignal::Click {
+                raycaster: hit,
+                renderable: hit,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+
+        let selection = world
+            .get_component_by_id_as::<SelectionComponent>(selection_root)
+            .expect("selection");
+        assert_eq!(selection.selected_component, Some(row));
+        assert_eq!(selection.selected_payload, Some(payload));
     }
 
     #[test]

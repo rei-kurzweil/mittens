@@ -3179,11 +3179,6 @@ fn spawn_world_panel_content_tree(
         WORLD_PANEL_SELECTION_NAME,
         Box::new(SelectionComponent::new()),
     );
-    if let Some(selection_component) =
-        world.get_component_by_id_as_mut::<SelectionComponent>(selection)
-    {
-        selection_component.payload_selector = Some(format!("[name='{WORLD_PANEL_PAYLOAD_NAME}']"));
-    }
     let _ = world.add_child(rows_mount, selection);
 
     for (index, row) in rows.iter().enumerate() {

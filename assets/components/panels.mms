@@ -97,9 +97,7 @@ export fn editor_settings_panel(title, title_color, panel_background_color) {
             editor_settings_mode_row("editor_settings_mode_select", "Select", "select")
             editor_settings_mode_row("editor_settings_mode_cursor_3d", "3D Cursor", "cursor_3d")
 
-            Selection.payload_selector("[name='editor_settings_payload']") {
-                name = "editor_settings_selection"
-            }
+            Selection { name = "editor_settings_selection" }
         }
     }
 }
@@ -169,10 +167,7 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
                 idx = idx + 1
             }
 
-            Selection {
-                name = "paint_tool_selection"
-                payload_selector = "[name='paint_panel_payload']"
-            }
+            Selection { name = "paint_tool_selection" }
         }
 
         T {
@@ -324,9 +319,7 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
                 background_color([0.96, 0.92, 0.18, 0.80])
                 background_z(-0.001)
             }
-            Selection.payload_selector("[name='world_panel_payload']") {
-                name = "world_panel_selection"
-            }
+            Selection.root("#content_slot") { name = "world_panel_selection" }
             T {
                 name = "content_slot"
                 Style {
@@ -460,9 +453,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                         background_z(-0.005)
                         overflow("scroll")
                     }
-                    Selection.payload_selector("[name='inspector_panel_payload']") {
-                        name = "inspector_panel_selection"
-                    }
+                    Selection.root("#sidebar_slot") { name = "inspector_panel_selection" }
                     T {
                         name = "sidebar_slot"
                         Style {

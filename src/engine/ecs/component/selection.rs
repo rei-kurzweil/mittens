@@ -1,5 +1,7 @@
 use crate::engine::ecs::{ComponentId, component::Component};
 
+use super::ComponentRef;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SelectionMode {
     Single,
@@ -15,7 +17,7 @@ pub struct SelectionEntry {
 #[derive(Debug, Clone)]
 pub struct SelectionComponent {
     pub mode: SelectionMode,
-    pub payload_selector: Option<String>,
+    pub target_root_source: Option<ComponentRef>,
     pub selected_index: Option<usize>,
     pub selected_component: Option<ComponentId>,
     pub selected_payload: Option<ComponentId>,
@@ -27,7 +29,7 @@ impl SelectionComponent {
     pub fn new() -> Self {
         Self {
             mode: SelectionMode::Single,
-            payload_selector: None,
+            target_root_source: None,
             selected_index: None,
             selected_component: None,
             selected_payload: None,
@@ -130,11 +132,15 @@ impl Component for SelectionComponent {
             SelectionMode::Single => ce_call("Selection", "", vec![]),
             SelectionMode::Multiple => ce_call("Selection", "multiple", vec![]),
         };
-        if let Some(selector) = &self.payload_selector {
+        if let Some(source) = &self.target_root_source {
+            let arg = match source {
+                ComponentRef::Guid(uuid) => s(&format!("@uuid:{uuid}")),
+                ComponentRef::Query(selector) => s(selector),
+            };
             expr.constructors
                 .push(crate::meow_meow::ast::ConstructorCall {
-                    method: crate::meow_meow::ast::Ident("payload_selector".to_string()),
-                    args: vec![s(selector)],
+                    method: crate::meow_meow::ast::Ident("root".to_string()),
+                    args: vec![arg],
                 });
         }
         expr

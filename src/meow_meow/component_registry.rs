@@ -1792,11 +1792,12 @@ fn apply_named_assignment(
         return Ok(());
     }
 
-    if let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(id) {
-        if name == "payload_selector" {
-            selection.payload_selector = Some(val_as_str(val)?.to_string());
-            return Ok(());
+    if name == "root" && world.get_component_by_id_as::<SelectionComponent>(id).is_some() {
+        let src = value_to_component_ref(world, val)?;
+        if let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(id) {
+            selection.target_root_source = Some(src);
         }
+        return Ok(());
     }
 
     if let Some(router) = world.get_component_by_id_as_mut::<RouterComponent>(id) {
@@ -1935,10 +1936,14 @@ fn apply_call(
         }
         return Ok(());
     }
-    if let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(id) {
+    if world.get_component_by_id_as::<SelectionComponent>(id).is_some() {
         match method {
-            "payload_selector" => {
-                selection.payload_selector = Some(arg_str(args, 0)?.to_string());
+            "root" => {
+                let src = arg_component_ref(world, args, 0)?;
+                if let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(id)
+                {
+                    selection.target_root_source = Some(src);
+                }
             }
             _ => {}
         }
