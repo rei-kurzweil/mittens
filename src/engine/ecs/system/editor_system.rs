@@ -3,12 +3,13 @@ use crate::engine::ecs::component::{
     SelectableComponent, SerializeComponent, TransformComponent, TransformGizmoComponent,
 };
 use crate::engine::ecs::system::editor::context::EditorContextState;
-use crate::engine::ecs::system::paint_placement::resolve_surface_aligned_pose;
+use crate::engine::ecs::system::editor_scene_hit::resolve_editor_scene_hit;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, RxWorld, SignalKind, World};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
+const EDITOR_SELECT_HANDLER_NAME: &str = "editor_select";
 
 #[derive(Debug, Default)]
 pub struct EditorSystem {
@@ -35,16 +36,12 @@ impl EditorSystem {
         }
         self.installed_editor_roots.insert(editor_root);
 
-        rx.add_handler_closure(
+        rx.add_handler_closure_named(
             SignalKind::DragStart,
             editor_root,
+            Some(EDITOR_SELECT_HANDLER_NAME.to_string()),
             move |world, emit, env| {
-                let Some(EventSignal::DragStart {
-                    renderable,
-                    hit_point,
-                    ..
-                }) = env.event.as_ref()
-                else {
+                let Some(EventSignal::DragStart { renderable, .. }) = env.event.as_ref() else {
                     return;
                 };
 
@@ -56,40 +53,37 @@ impl EditorSystem {
                     return;
                 }
 
-                let renderable = renderable.clone();
-
-                // If editors are nested, only the *nearest* editor root should handle the event.
-                if nearest_editor_ancestor(world, renderable) != Some(editor_root) {
-                    return;
-                }
-
-                // Ignore clicks inside a SelectableComponent::off() subtree (panel UI etc.).
-                if has_selectable_off_ancestor(world, renderable) {
-                    return;
-                }
-
-                // Ignore clicks on transform gizmo handles themselves.
-                if has_transform_gizmo_ancestor(world, renderable) {
-                    return;
-                }
-
-                // Resolve the clicked target's nearest TransformComponent.
-                let Some(target_transform) = nearest_transform_ancestor(world, renderable) else {
+                let Some(scene_hit) = resolve_editor_scene_hit(world, *renderable) else {
                     return;
                 };
+                if scene_hit.editor_root != editor_root {
+                    return;
+                }
 
-                match editor_interaction_mode(world, editor_root) {
+                let interaction_mode = editor_interaction_mode(world, editor_root);
+                eprintln!(
+                    "🖱️🧭🎛️ editor click resolved editor_root={editor_root:?} renderable={renderable:?} target_transform={:?} mode={interaction_mode:?}",
+                    scene_hit.target_transform
+                );
+
+                match interaction_mode {
                     EditorInteractionMode::Select => {
-                        select_editor_target(world, emit, editor_root, target_transform, true);
-                    }
-                    EditorInteractionMode::Cursor3d => {
-                        update_editor_cursor_from_surface(
+                        select_editor_target(
                             world,
                             emit,
-                            editor_context_state.clone(),
                             editor_root,
-                            renderable,
-                            *hit_point,
+                            scene_hit.target_transform,
+                            true,
+                        );
+                    }
+                    EditorInteractionMode::Cursor3d => {}
+                    EditorInteractionMode::SelectAndCursor => {
+                        select_editor_target(
+                            world,
+                            emit,
+                            editor_root,
+                            scene_hit.target_transform,
+                            true,
                         );
                     }
                 }
@@ -189,47 +183,6 @@ fn editor_interaction_mode(world: &World, editor_root: ComponentId) -> EditorInt
         .unwrap_or(EditorInteractionMode::Select)
 }
 
-fn update_editor_cursor_from_surface(
-    world: &mut World,
-    emit: &mut dyn crate::engine::ecs::SignalEmitter,
-    editor_context_state: Arc<Mutex<EditorContextState>>,
-    editor_root: ComponentId,
-    target_renderable: ComponentId,
-    hit_point: [f32; 3],
-) {
-    let Ok(pose) = resolve_surface_aligned_pose(world, target_renderable, hit_point, 0.0, None)
-    else {
-        return;
-    };
-
-    {
-        let mut editor_context = editor_context_state
-            .lock()
-            .expect("editor context state mutex poisoned");
-        editor_context.active_editor = Some(editor_root);
-        editor_context.interaction_mode = EditorInteractionMode::Cursor3d;
-        editor_context.cursor_translation = Some(pose.translation);
-        editor_context.cursor_rotation = Some(pose.rotation);
-    }
-
-    if let Some(marker_root) = world
-        .children_of(editor_root)
-        .iter()
-        .copied()
-        .find(|&child| world.component_label(child) == Some("editor_cursor_marker"))
-    {
-        emit.push_intent_now(
-            marker_root,
-            IntentValue::UpdateTransform {
-                component_ids: vec![marker_root],
-                translation: pose.translation,
-                rotation_quat_xyzw: pose.rotation,
-                scale: [0.5, 0.5, 0.5],
-            },
-        );
-    }
-}
-
 pub(crate) fn select_editor_target(
     world: &mut World,
     emit: &mut dyn crate::engine::ecs::SignalEmitter,
@@ -237,6 +190,14 @@ pub(crate) fn select_editor_target(
     target_transform: ComponentId,
     update_repl_cwd: bool,
 ) {
+    let interaction_mode = world
+        .get_component_by_id_as::<EditorComponent>(editor_root)
+        .map(|editor| editor.interaction_mode)
+        .unwrap_or(EditorInteractionMode::Select);
+    eprintln!(
+        "🧲🛠️🐛 select_editor_target called editor_root={editor_root:?} target_transform={target_transform:?} mode={interaction_mode:?} update_repl_cwd={update_repl_cwd}"
+    );
+
     let gizmo = resolve_editor_transform_gizmo(world, editor_root)
         .or_else(|| spawn_editor_transform_gizmo(world, emit, editor_root));
 
@@ -325,63 +286,6 @@ fn spawn_editor_transform_gizmo(
     Some(gizmo)
 }
 
-fn nearest_editor_ancestor(world: &World, start: ComponentId) -> Option<ComponentId> {
-    let mut cur = Some(start);
-    while let Some(node) = cur {
-        if world
-            .get_component_by_id_as::<EditorComponent>(node)
-            .is_some()
-        {
-            return Some(node);
-        }
-        cur = world.parent_of(node);
-    }
-    None
-}
-
-fn nearest_transform_ancestor(world: &World, start: ComponentId) -> Option<ComponentId> {
-    let mut cur = Some(start);
-    while let Some(node) = cur {
-        if world
-            .get_component_by_id_as::<TransformComponent>(node)
-            .is_some()
-        {
-            return Some(node);
-        }
-        cur = world.parent_of(node);
-    }
-    None
-}
-
-fn has_transform_gizmo_ancestor(world: &World, start: ComponentId) -> bool {
-    let mut cur = Some(start);
-    while let Some(node) = cur {
-        if world
-            .get_component_by_id_as::<TransformGizmoComponent>(node)
-            .is_some()
-        {
-            return true;
-        }
-        cur = world.parent_of(node);
-    }
-    false
-}
-
-fn has_selectable_off_ancestor(world: &World, start: ComponentId) -> bool {
-    let mut cur = Some(start);
-    while let Some(node) = cur {
-        if world
-            .get_component_by_id_as::<SelectableComponent>(node)
-            .map(|s| !s.enabled)
-            .unwrap_or(false)
-        {
-            return true;
-        }
-        cur = world.parent_of(node);
-    }
-    false
-}
-
 fn resolve_editor_transform_gizmo(
     world: &mut World,
     editor_root: ComponentId,
@@ -437,7 +341,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     #[test]
-    fn cursor_mode_updates_cursor_pose_without_scene_selection() {
+    fn select_mode_selects_target_without_moving_cursor() {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
@@ -449,7 +353,7 @@ mod tests {
             world.add_component_boxed_named("panel_root", Box::new(TransformComponent::new()));
         let editor_root = world.add_component_boxed_named(
             "editor_root",
-            Box::new(EditorComponent::new().with_interaction_mode(EditorInteractionMode::Cursor3d)),
+            Box::new(EditorComponent::new().with_interaction_mode(EditorInteractionMode::Select)),
         );
         let scene_root =
             world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
@@ -484,16 +388,15 @@ mod tests {
             .lock()
             .expect("editor context mutex poisoned")
             .clone();
-        assert_eq!(state.active_editor, Some(editor_root));
+        assert_eq!(state.active_editor, None);
         assert_eq!(state.selected_component, None);
-        assert_eq!(state.cursor_translation, Some([0.0, 0.0, 0.01]));
-        assert_eq!(state.interaction_mode, EditorInteractionMode::Cursor3d);
+        assert_eq!(state.cursor_translation, None);
         assert_eq!(
             world
                 .get_component_by_id_as::<EditorComponent>(editor_root)
                 .expect("editor")
                 .selected,
-            None
+            Some(scene_root)
         );
     }
 }

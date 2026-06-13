@@ -76,6 +76,33 @@ pub fn resolve_surface_aligned_pose(
     )
 }
 
+pub fn resolve_surface_aligned_pose_for_subtree(
+    world: &World,
+    target_renderable: ComponentId,
+    hit_point_world: [f32; 3],
+    asset_root: ComponentId,
+    grid_snap: Option<GridSnapResult>,
+) -> Result<PlacementPose, PlacementError> {
+    let asset_bounds = measure_subtree_local_bounds(world, asset_root)
+        .ok_or(PlacementError::MissingAssetBounds)?;
+
+    let (surface_point, surface_normal) = match grid_snap {
+        Some(grid) => (grid.point_world, grid.normal_world),
+        None => (
+            hit_point_world,
+            resolve_surface_normal(world, target_renderable, hit_point_world)?,
+        ),
+    };
+
+    resolve_surface_aligned_pose_from_normal(
+        world,
+        target_renderable,
+        surface_point,
+        surface_normal,
+        asset_bounds.min[2],
+    )
+}
+
 fn resolve_surface_aligned_pose_from_normal(
     world: &World,
     target_renderable: ComponentId,

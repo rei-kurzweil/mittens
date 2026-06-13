@@ -32,7 +32,7 @@ use crate::engine::ecs::system::TransitionSystem;
 use crate::engine::ecs::system::bounds_system::BoundsSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
 use crate::engine::ecs::system::{
-    AssetSystem, AvatarBodyYawSystem, AvatarControlSystem, EditorContextSystem,
+    AssetSystem, AvatarBodyYawSystem, AvatarControlSystem, Cursor3dSystem, EditorContextSystem,
     EditorInspectorSystem, EditorPaintSystem, EditorSystem, FitBoundsSystem, GestureSystem,
     GridSystem, HeadPoseBodyXzFollowSystem, IKSystem, LayoutSystem, SelectionSystem,
     TransformGizmoSystem,
@@ -71,6 +71,7 @@ pub struct SystemWorld {
     pub raycast: RayCastSystem,
 
     pub editor: EditorSystem,
+    pub cursor_3d: Cursor3dSystem,
     pub editor_context: EditorContextSystem,
     pub editor_inspector: EditorInspectorSystem,
     pub selection: SelectionSystem,
@@ -839,6 +840,12 @@ impl SystemWorld {
                 panel_query_root,
                 editor_context_state.clone(),
             );
+            self.cursor_3d.install_scoped_handlers_for_editor(
+                &mut self.rx,
+                component,
+                panel_query_root,
+                editor_context_state.clone(),
+            );
             self.editor_context.install_scoped_handlers_for_editor(
                 &mut self.rx,
                 world,
@@ -871,6 +878,12 @@ impl SystemWorld {
                 component,
                 component,
                 editor_context_state,
+            );
+            self.cursor_3d.install_scoped_handlers_for_editor(
+                &mut self.rx,
+                component,
+                component,
+                self.editor_context.shared_state(),
             );
         }
     }

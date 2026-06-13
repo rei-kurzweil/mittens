@@ -19,6 +19,7 @@ impl Default for TransformGizmoCoordSpace {
 pub enum EditorInteractionMode {
     Select,
     Cursor3d,
+    SelectAndCursor,
 }
 
 impl Default for EditorInteractionMode {
@@ -184,6 +185,7 @@ impl Component for EditorComponent {
         let interaction_mode = match self.interaction_mode {
             EditorInteractionMode::Select => "select",
             EditorInteractionMode::Cursor3d => "cursor_3d",
+            EditorInteractionMode::SelectAndCursor => "select_cursor",
         };
         ce("Editor")
             .with_call("interaction_mode", vec![s(interaction_mode)])

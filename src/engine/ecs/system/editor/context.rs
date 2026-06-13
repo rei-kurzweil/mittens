@@ -6,7 +6,6 @@ use crate::engine::ecs::component::{
     RaycastableComponent, RenderableComponent, SelectableComponent, SelectionComponent,
     SerializeComponent, SignalObserverRouterComponent, TransformComponent,
 };
-use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::editor::settings_panel::{
     EDITOR_SETTINGS_PAYLOAD_NAME, EDITOR_SETTINGS_SELECTION_SELECTOR, EditorSettingsOption,
 };
@@ -15,7 +14,6 @@ use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalKind, World,
 };
 use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle};
-use crate::utils::math::mat_to_quat;
 use std::f32::consts::FRAC_PI_2;
 
 const PANEL_LAYOUT_SELECTION_SELECTOR: &str = "#editor_panel_layout_selection";
@@ -25,6 +23,8 @@ const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 pub const EDITOR_WORKSPACE_ASSET_SELECTION_CHANGED: &str = "EditorWorkspaceAssetSelectionChanged";
 const PAINT_SYSTEM_HANDLER_NAME: &str = "paint_system";
 const EDITOR_PANEL_REFRESH_HANDLER_NAME: &str = "editor_panel_refresh";
+const EDITOR_SELECT_HANDLER_NAME: &str = "editor_select";
+const EDITOR_CURSOR_HANDLER_NAME: &str = "editor_cursor_3d";
 const DEBUG_BLACKLIST_EDITOR_PANEL_REFRESH: bool = true;
 const CURSOR_MARKER_ROOT_NAME: &str = "editor_cursor_marker";
 const CURSOR_MARKER_SIZE: f32 = 0.5;
@@ -199,7 +199,17 @@ impl EditorContextSystem {
             install_editor_handlers(rx, editor_root, Arc::clone(&self.state));
         }
         sync_editor_observer_routes(world, &self.state, &self.workspace);
+        let mut emit = NullEmit;
+        sync_editor_cursor_visual(world, &mut emit, &self.state);
     }
+}
+
+struct NullEmit;
+
+impl SignalEmitter for NullEmit {
+    fn push_event(&mut self, _scope: ComponentId, _event: EventSignal) {}
+
+    fn push_intent(&mut self, _scope: ComponentId, _intent: crate::engine::ecs::IntentSignal) {}
 }
 
 fn install_shared_panel_handlers(
@@ -215,15 +225,25 @@ fn install_shared_panel_handlers(
         panel_query_root,
         Some("editor_system".to_string()),
         move |world, emit, signal| {
-            let Some(event) =
-                editor_context_event_from_shared_signal(world, panel_query_root, signal)
-            else {
+            let active_editor = state
+                .lock()
+                .expect("editor context state poisoned")
+                .active_editor;
+            let default_editor = workspace
+                .lock()
+                .expect("editor context workspace poisoned")
+                .default_active_editor();
+            let Some(event) = editor_context_event_from_shared_signal(
+                world,
+                panel_query_root,
+                signal,
+                active_editor.or(default_editor),
+            ) else {
                 return;
             };
             apply_editor_context_event(&state, &event);
             emit_editor_workspace_data_event(world, emit, panel_query_root, &event);
             sync_editor_component_selection(world, &event);
-            sync_editor_cursor_pose(world, &state);
             sync_editor_cursor_visual(world, emit, &state);
             sync_editor_observer_routes(world, &state, &workspace);
         },
@@ -259,7 +279,6 @@ fn install_editor_handlers(
             };
             apply_editor_context_event(&state, &event);
             sync_editor_component_selection(world, &event);
-            sync_editor_cursor_pose(world, &state);
             sync_editor_cursor_visual(world, _emit, &state);
         },
     );
@@ -311,7 +330,6 @@ fn bootstrap_editor_context(
     {
         if let Some(event) = world_panel_selection_event(world, selection) {
             apply_editor_context_event(state, &event);
-            sync_editor_cursor_pose(world, state);
         }
     } else if let Some(editor_root) = workspace
         .lock()
@@ -326,7 +344,6 @@ fn bootstrap_editor_context(
                 interaction_mode: editor_interaction_mode(world, Some(editor_root)),
             },
         );
-        sync_editor_cursor_pose(world, state);
     }
 
     if let Some(selection_root) = world.find_component(panel_query_root, ASSETS_SELECTION_SELECTOR)
@@ -345,6 +362,7 @@ fn editor_context_event_from_shared_signal(
     world: &World,
     panel_query_root: ComponentId,
     signal: &Signal,
+    fallback_editor: Option<ComponentId>,
 ) -> Option<EditorContextEvent> {
     let EventSignal::SelectionChanged {
         selection_root,
@@ -383,11 +401,16 @@ fn editor_context_event_from_shared_signal(
     } else if is_editor_settings_selection {
         let row_name = selected_payload
             .or(component)
-            .and_then(|id| editor_settings_row_name(world, id));
+            .and_then(|id| editor_settings_row_name(world, id))
+            .or_else(|| component.and_then(|id| world.component_label(id).map(str::to_string)));
         let option = row_name
             .as_deref()
             .and_then(EditorSettingsOption::from_row_name)?;
-        let active_editor = current_or_default_editor_root(world, panel_query_root, component);
+        let active_editor =
+            current_or_default_editor_root(world, panel_query_root, component, fallback_editor);
+        eprintln!(
+            "⚙️🧪📝 editor settings selection selection_root={selection_root:?} component={component:?} payload={selected_payload:?} row_name={row_name:?} option={option:?} active_editor={active_editor:?}"
+        );
         Some(EditorContextEvent::InteractionModeChanged {
             editor: active_editor,
             interaction_mode: option.interaction_mode(),
@@ -417,7 +440,15 @@ fn editor_context_event_from_shared_signal(
 
 fn apply_editor_context_event(state: &Arc<Mutex<EditorContextState>>, event: &EditorContextEvent) {
     let mut state = state.lock().expect("editor context state poisoned");
+    eprintln!(
+        "🧠🔁📣 apply_editor_context_event before state.active_editor={:?} state.mode={:?} event={event:?}",
+        state.active_editor, state.interaction_mode
+    );
     *state = reduce_editor_context_state(&state, event);
+    eprintln!(
+        "🧠✅📣 apply_editor_context_event after state.active_editor={:?} state.mode={:?}",
+        state.active_editor, state.interaction_mode
+    );
 }
 
 fn emit_editor_workspace_data_event(
@@ -465,9 +496,11 @@ fn current_or_default_editor_root(
     world: &World,
     panel_query_root: ComponentId,
     component: Option<ComponentId>,
+    fallback_editor: Option<ComponentId>,
 ) -> Option<ComponentId> {
     component
         .and_then(|component| nearest_editor_ancestor(world, component))
+        .or(fallback_editor)
         .or_else(|| {
             world
                 .find_component(panel_query_root, WORLD_PANEL_SELECTION_SELECTOR)
@@ -507,23 +540,6 @@ fn editor_settings_row_name(world: &World, payload_or_row: ComponentId) -> Optio
     })
 }
 
-fn sync_editor_cursor_pose(world: &World, state: &Arc<Mutex<EditorContextState>>) {
-    let mut state = state.lock().expect("editor context state poisoned");
-    let Some(selected_component) = state.selected_component else {
-        state.cursor_translation = None;
-        state.cursor_rotation = None;
-        return;
-    };
-    let Some(world_model) = TransformSystem::world_model(world, selected_component) else {
-        state.cursor_translation = None;
-        state.cursor_rotation = None;
-        return;
-    };
-
-    state.cursor_translation = Some([world_model[3][0], world_model[3][1], world_model[3][2]]);
-    state.cursor_rotation = Some(mat_to_quat(world_model));
-}
-
 fn sync_editor_cursor_visual(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
@@ -557,7 +573,7 @@ fn sync_editor_cursor_visual(
     );
 
     let opacity_ids = cursor_marker_opacities(world, marker);
-    let target_opacity = if state.selected_component.is_some() {
+    let target_opacity = if state.cursor_translation.is_some() {
         0.35
     } else {
         0.0
@@ -731,6 +747,10 @@ fn sync_editor_observer_routes(
 
     for editor_root in workspace.registered_editors {
         let router_id = ensure_editor_observer_router(world, editor_root);
+        let interaction_mode = world
+            .get_component_by_id_as::<EditorComponent>(editor_root)
+            .map(|editor| editor.interaction_mode)
+            .unwrap_or(EditorInteractionMode::Select);
         let Some(router) =
             world.get_component_by_id_as_mut::<SignalObserverRouterComponent>(router_id)
         else {
@@ -747,6 +767,23 @@ fn sync_editor_observer_routes(
             .any(|name| name == PAINT_SYSTEM_HANDLER_NAME)
         {
             router.blacklist.push(PAINT_SYSTEM_HANDLER_NAME.to_string());
+        }
+
+        router.blacklist.retain(|name| {
+            name != EDITOR_SELECT_HANDLER_NAME && name != EDITOR_CURSOR_HANDLER_NAME
+        });
+        match interaction_mode {
+            EditorInteractionMode::Select => {
+                router
+                    .blacklist
+                    .push(EDITOR_CURSOR_HANDLER_NAME.to_string());
+            }
+            EditorInteractionMode::Cursor3d => {
+                router
+                    .blacklist
+                    .push(EDITOR_SELECT_HANDLER_NAME.to_string());
+            }
+            EditorInteractionMode::SelectAndCursor => {}
         }
 
         if DEBUG_BLACKLIST_EDITOR_PANEL_REFRESH {
@@ -880,6 +917,10 @@ fn sync_editor_component_selection(world: &mut World, event: &EditorContextEvent
             if let Some(editor_component) =
                 world.get_component_by_id_as_mut::<EditorComponent>(editor_root)
             {
+                eprintln!(
+                    "🛠️🎚️📌 sync_editor_component_selection interaction_mode_change editor_root={editor_root:?} old_mode={:?} new_mode={interaction_mode:?}",
+                    editor_component.interaction_mode
+                );
                 editor_component.interaction_mode = *interaction_mode;
             }
         }
@@ -890,14 +931,18 @@ fn sync_editor_component_selection(world: &mut World, event: &EditorContextEvent
 #[cfg(test)]
 mod tests {
     use super::{
-        EditorContextEvent, EditorContextState, reduce_editor_context_state,
-        sync_editor_component_selection, world_panel_selection_event,
+        EDITOR_CURSOR_HANDLER_NAME, EDITOR_SELECT_HANDLER_NAME, EditorContextEvent,
+        EditorContextState, EditorContextWorkspaceState, editor_context_event_from_shared_signal,
+        ensure_editor_observer_router, reduce_editor_context_state,
+        sync_editor_component_selection, sync_editor_observer_routes, world_panel_selection_event,
     };
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
         DataComponent, DataValue, EditorComponent, EditorInteractionMode, SelectionComponent,
-        TransformComponent,
+        SignalObserverRouterComponent, TransformComponent,
     };
+    use crate::engine::ecs::{EventSignal, Signal};
+    use std::sync::{Arc, Mutex};
 
     fn cid(world: &mut World) -> crate::engine::ecs::ComponentId {
         world.add_component_boxed(Box::new(TransformComponent::new()))
@@ -994,6 +1039,178 @@ mod tests {
         assert_eq!(next.active_editor, Some(editor));
         assert_eq!(next.selected_component, Some(selected));
         assert_eq!(next.interaction_mode, EditorInteractionMode::Cursor3d);
+    }
+
+    #[test]
+    fn interaction_mode_supports_select_and_cursor() {
+        let mut world = World::default();
+        let editor = cid(&mut world);
+        let selected = cid(&mut world);
+        let next = reduce_editor_context_state(
+            &EditorContextState {
+                active_editor: Some(editor),
+                selected_component: Some(selected),
+                selected_asset_payload: None,
+                focused_panel: None,
+                interaction_mode: EditorInteractionMode::Select,
+                cursor_translation: None,
+                cursor_rotation: None,
+            },
+            &EditorContextEvent::InteractionModeChanged {
+                editor: Some(editor),
+                interaction_mode: EditorInteractionMode::SelectAndCursor,
+            },
+        );
+
+        assert_eq!(
+            next.interaction_mode,
+            EditorInteractionMode::SelectAndCursor
+        );
+        assert_eq!(next.selected_component, Some(selected));
+    }
+
+    #[test]
+    fn observer_routes_blacklist_handlers_by_interaction_mode() {
+        let mut world = World::default();
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        ensure_editor_observer_router(&mut world, editor_root);
+        let state = Arc::new(Mutex::new(EditorContextState {
+            active_editor: Some(editor_root),
+            selected_component: Some(editor_root),
+            selected_asset_payload: None,
+            focused_panel: None,
+            interaction_mode: EditorInteractionMode::Select,
+            cursor_translation: None,
+            cursor_rotation: None,
+        }));
+        let workspace = Arc::new(Mutex::new(EditorContextWorkspaceState {
+            panel_query_root: None,
+            registered_editors: vec![editor_root],
+        }));
+
+        sync_editor_observer_routes(&mut world, &state, &workspace);
+        let router = world
+            .children_of(editor_root)
+            .iter()
+            .find_map(|child| world.get_component_by_id_as::<SignalObserverRouterComponent>(*child))
+            .expect("router");
+        assert!(
+            router
+                .blacklist
+                .iter()
+                .any(|name| name == EDITOR_CURSOR_HANDLER_NAME)
+        );
+        assert!(
+            !router
+                .blacklist
+                .iter()
+                .any(|name| name == EDITOR_SELECT_HANDLER_NAME)
+        );
+
+        if let Some(editor) = world.get_component_by_id_as_mut::<EditorComponent>(editor_root) {
+            editor.interaction_mode = EditorInteractionMode::Cursor3d;
+        }
+        sync_editor_observer_routes(&mut world, &state, &workspace);
+        let router = world
+            .children_of(editor_root)
+            .iter()
+            .find_map(|child| world.get_component_by_id_as::<SignalObserverRouterComponent>(*child))
+            .expect("router");
+        assert!(
+            router
+                .blacklist
+                .iter()
+                .any(|name| name == EDITOR_SELECT_HANDLER_NAME)
+        );
+        assert!(
+            !router
+                .blacklist
+                .iter()
+                .any(|name| name == EDITOR_CURSOR_HANDLER_NAME)
+        );
+
+        if let Some(editor) = world.get_component_by_id_as_mut::<EditorComponent>(editor_root) {
+            editor.interaction_mode = EditorInteractionMode::SelectAndCursor;
+        }
+        sync_editor_observer_routes(&mut world, &state, &workspace);
+        let router = world
+            .children_of(editor_root)
+            .iter()
+            .find_map(|child| world.get_component_by_id_as::<SignalObserverRouterComponent>(*child))
+            .expect("router");
+        assert!(
+            !router
+                .blacklist
+                .iter()
+                .any(|name| name == EDITOR_SELECT_HANDLER_NAME)
+        );
+        assert!(
+            !router
+                .blacklist
+                .iter()
+                .any(|name| name == EDITOR_CURSOR_HANDLER_NAME)
+        );
+    }
+
+    #[test]
+    fn editor_settings_selection_uses_fallback_active_editor() {
+        let mut world = World::default();
+        let panel_query_root =
+            world.add_component_boxed_named("panel_root", Box::new(TransformComponent::new()));
+        let settings_panel_root = world.add_component_boxed_named(
+            "editor_settings_panel_root",
+            Box::new(TransformComponent::new()),
+        );
+        let settings_selection = world.add_component_boxed_named(
+            "editor_settings_selection",
+            Box::new(SelectionComponent::new()),
+        );
+        let row_root = world.add_component_boxed_named(
+            "editor_settings_mode_select_cursor",
+            Box::new(TransformComponent::new()),
+        );
+        let payload = world.add_component_boxed_named(
+            "editor_settings_payload",
+            Box::new(DataComponent::new().with_entry(
+                "row_name",
+                DataValue::Text("editor_settings_mode_select_cursor".into()),
+            )),
+        );
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+
+        let _ = world.add_child(panel_query_root, settings_panel_root);
+        let _ = world.add_child(panel_query_root, settings_selection);
+        let _ = world.add_child(settings_panel_root, row_root);
+        let _ = world.add_child(row_root, payload);
+
+        let signal = Signal::event(
+            settings_selection,
+            EventSignal::SelectionChanged {
+                selection_root: settings_selection,
+                mode: crate::engine::ecs::component::SelectionMode::Single,
+                selected_entries: vec![],
+                selected_component: Some(row_root),
+                selected_payload: Some(payload),
+            },
+        );
+
+        let event = editor_context_event_from_shared_signal(
+            &world,
+            panel_query_root,
+            &signal,
+            Some(editor_root),
+        )
+        .expect("event");
+
+        assert_eq!(
+            event,
+            EditorContextEvent::InteractionModeChanged {
+                editor: Some(editor_root),
+                interaction_mode: EditorInteractionMode::SelectAndCursor,
+            }
+        );
     }
 
     #[test]

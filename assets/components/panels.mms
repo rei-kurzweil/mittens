@@ -96,6 +96,7 @@ export fn editor_settings_panel(title, title_color, panel_background_color) {
 
             editor_settings_mode_row("editor_settings_mode_select", "Select", "select")
             editor_settings_mode_row("editor_settings_mode_cursor_3d", "3D Cursor", "cursor_3d")
+            editor_settings_mode_row("editor_settings_mode_select_cursor", "Select + Cursor", "select_cursor")
 
             Selection { name = "editor_settings_selection" }
         }

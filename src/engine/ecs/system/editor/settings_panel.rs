@@ -7,11 +7,14 @@ pub(crate) const EDITOR_SETTINGS_SELECTION_SELECTOR: &str = "#editor_settings_se
 pub(crate) const EDITOR_SETTINGS_PAYLOAD_NAME: &str = "editor_settings_payload";
 pub(crate) const EDITOR_SETTINGS_SELECT_ROW_NAME: &str = "editor_settings_mode_select";
 pub(crate) const EDITOR_SETTINGS_CURSOR_ROW_NAME: &str = "editor_settings_mode_cursor_3d";
+pub(crate) const EDITOR_SETTINGS_SELECT_CURSOR_ROW_NAME: &str =
+    "editor_settings_mode_select_cursor";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EditorSettingsOption {
     Select,
     Cursor3d,
+    SelectAndCursor,
 }
 
 impl EditorSettingsOption {
@@ -19,6 +22,7 @@ impl EditorSettingsOption {
         match self {
             Self::Select => EditorInteractionMode::Select,
             Self::Cursor3d => EditorInteractionMode::Cursor3d,
+            Self::SelectAndCursor => EditorInteractionMode::SelectAndCursor,
         }
     }
 
@@ -26,6 +30,7 @@ impl EditorSettingsOption {
         match self {
             Self::Select => EDITOR_SETTINGS_SELECT_ROW_NAME,
             Self::Cursor3d => EDITOR_SETTINGS_CURSOR_ROW_NAME,
+            Self::SelectAndCursor => EDITOR_SETTINGS_SELECT_CURSOR_ROW_NAME,
         }
     }
 
@@ -33,6 +38,7 @@ impl EditorSettingsOption {
         match row_name {
             EDITOR_SETTINGS_SELECT_ROW_NAME => Some(Self::Select),
             EDITOR_SETTINGS_CURSOR_ROW_NAME => Some(Self::Cursor3d),
+            EDITOR_SETTINGS_SELECT_CURSOR_ROW_NAME => Some(Self::SelectAndCursor),
             _ => None,
         }
     }

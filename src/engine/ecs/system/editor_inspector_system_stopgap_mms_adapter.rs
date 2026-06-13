@@ -1044,8 +1044,7 @@ fn sync_and_refresh_inspector_panels(
     );
     println!(
         "✨🫠🐈 [2/5] [InspectorPanel][Refresh] selected_component={:?} active_editor={:?} panel_query_root={panel_query_root:?}",
-        editor_context.selected_component,
-        editor_context.active_editor,
+        editor_context.selected_component, editor_context.active_editor,
     );
     trace_suspicious_inspector_target(world, editor_context.selected_component);
 
@@ -2238,9 +2237,7 @@ fn sync_inspector_workspace_to_selection(
     );
     println!(
         "✨🫠🐈 [4/5] [InspectorPanel][WorkspaceSync] editor_root={editor_root:?} selected_target={selected_target:?} active_panel={:?} before={:?} after={:?}",
-        workspace.active_panel,
-        workspace,
-        next_workspace,
+        workspace.active_panel, workspace, next_workspace,
     );
     *workspace = next_workspace;
 }
@@ -2522,6 +2519,7 @@ fn sync_editor_settings_panel_selection(
     let desired_option = match editor_context.interaction_mode {
         EditorInteractionMode::Select => EditorSettingsOption::Select,
         EditorInteractionMode::Cursor3d => EditorSettingsOption::Cursor3d,
+        EditorInteractionMode::SelectAndCursor => EditorSettingsOption::SelectAndCursor,
     };
     let Some(panel_root) =
         world.find_component(panel_query_root, EDITOR_SETTINGS_PANEL_ROOT_SELECTOR)
@@ -2541,6 +2539,7 @@ fn sync_editor_settings_panel_selection(
             index: Some(match desired_option {
                 EditorSettingsOption::Select => 0,
                 EditorSettingsOption::Cursor3d => 1,
+                EditorSettingsOption::SelectAndCursor => 2,
             }),
             component: row_root,
         }],

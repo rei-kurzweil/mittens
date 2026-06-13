@@ -17,12 +17,14 @@ pub mod camera_system;
 pub mod clipping_system;
 pub mod clock_system;
 pub mod collision_system;
+pub mod cursor_3d;
 pub mod data_renderer_system;
 pub mod editor;
 pub mod editor_inspector_system;
 pub(crate) mod editor_inspector_system_stopgap_mms_adapter;
 pub mod editor_paint_system;
 pub mod editor_paint_system_state_manager;
+pub mod editor_scene_hit;
 pub mod editor_system;
 pub mod fit_bounds_system;
 pub mod gesture_system;
@@ -68,6 +70,7 @@ pub use camera_system::{Camera3D, CameraHandle, CameraSystem};
 pub use clipping_system::ClippingSystem;
 pub use clock_system::{ClockDriver, ClockSystem};
 pub use collision_system::CollisionSystem;
+pub use cursor_3d::Cursor3dSystem;
 pub use data_renderer_system::{
     DataRendererSystem, DetailRendererSpec, ItemRendererSpec, RendererSpec, UiDetailItem, UiItem,
     UiItemKind,

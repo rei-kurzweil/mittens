@@ -2319,6 +2319,7 @@ fn apply_call(
             "interaction_mode" => {
                 ed.interaction_mode = match arg_str(args, 0)? {
                     "cursor_3d" => EditorInteractionMode::Cursor3d,
+                    "select_cursor" => EditorInteractionMode::SelectAndCursor,
                     _ => EditorInteractionMode::Select,
                 };
             }

@@ -481,9 +481,7 @@ fn apply_paint_side_effects(
     );
     let mut status_override = None;
     let templates_start = Instant::now();
-    let templates_lock = templates
-        .lock()
-        .expect("paint templates mutex poisoned");
+    let templates_lock = templates.lock().expect("paint templates mutex poisoned");
     let templates = &*templates_lock;
     paint_perf(
         "apply_paint_side_effects.clone_templates",
