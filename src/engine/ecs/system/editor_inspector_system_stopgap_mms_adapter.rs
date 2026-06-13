@@ -22,9 +22,8 @@ use crate::engine::ecs::system::editor::inspector_panel::{
     INSPECTOR_DETAIL_SPEC, INSPECTOR_ITEM_PREFIX, INSPECTOR_PANEL_INSTANCE_ID_KEY,
     INSPECTOR_PANEL_PAYLOAD_NAME, INSPECTOR_ROW_SPEC, InspectorPanelDetailModel, InspectorPanelId,
     InspectorPanelModel, InspectorPanelRow, InspectorPanelRowKind, InspectorWorkspaceEvent,
-    InspectorWorkspaceState, build_inspector_panel_models, build_inspector_panel_rows,
-    clear_missing_inspector_targets, inspector_panel_instance_id_on_root,
-    parse_inspector_item_index, reduce_inspector_workspace_state,
+    InspectorWorkspaceState, build_inspector_panel_models, clear_missing_inspector_targets,
+    inspector_panel_instance_id_on_root, reduce_inspector_workspace_state,
 };
 use crate::engine::ecs::system::editor::panel_ui::{
     PanelUiRowSpec, spawn_block_container, spawn_panel_ui_row_tree,
@@ -610,6 +609,10 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     return;
                 };
 
+                println!(
+                    "✨🫠🐈 [1/5] [InspectorPanel][SelectionChanged] sidebar selection_root={selection_root:?} panel_query_root={panel_query_root:?} inspector_panel_root={inspector_panel_root:?}",
+                );
+
                 emit.push_intent_now(
                     panel_layout_selection,
                     IntentValue::SelectionSet {
@@ -1038,6 +1041,11 @@ fn sync_and_refresh_inspector_panels(
     println!(
         "[InspectorSystem][trace] rebuild inspector target={:?} active_editor={:?}",
         editor_context.selected_component, editor_context.active_editor
+    );
+    println!(
+        "✨🫠🐈 [2/5] [InspectorPanel][Refresh] selected_component={:?} active_editor={:?} panel_query_root={panel_query_root:?}",
+        editor_context.selected_component,
+        editor_context.active_editor,
     );
     trace_suspicious_inspector_target(world, editor_context.selected_component);
 
@@ -2068,6 +2076,9 @@ fn rerender_single_inspector_panel_detail(
         return;
     }
 
+    println!(
+        "✨🫠🐈 [5/5] [InspectorPanel][DetailRender] detail_slot={detail_slot:?} detail={detail:?}",
+    );
     let detail_item = UiDetailItem {
         name: detail.name.clone(),
         id: detail.id.clone(),
@@ -2225,12 +2236,13 @@ fn sync_inspector_workspace_to_selection(
             selected_target,
         },
     );
+    println!(
+        "✨🫠🐈 [4/5] [InspectorPanel][WorkspaceSync] editor_root={editor_root:?} selected_target={selected_target:?} active_panel={:?} before={:?} after={:?}",
+        workspace.active_panel,
+        workspace,
+        next_workspace,
+    );
     *workspace = next_workspace;
-    if let Some(active_index) = workspace.active_panel_index()
-        && let Some(active_panel) = workspace.panels.get_mut(active_index)
-    {
-        active_panel.subtree_selection.focused_row = active_panel.inspected;
-    }
 }
 
 fn handle_inspector_panel_workspace_click(
@@ -2281,31 +2293,21 @@ fn handle_inspector_panel_workspace_click(
             PanelActionKind::Select,
             Some(panel_id),
             None,
-        ) && let Some(row_name) = action.item_key.as_deref()
-            && let Some(row_index) = parse_inspector_item_index(row_name)
+        ) && let Some(target_component) = action.target_component
         {
-            let scene_model = world_panel_scene_model
-                .lock()
-                .expect("world panel scene model mutex poisoned")
-                .clone();
-            if let Some(panel) = workspace
-                .panels
-                .iter_mut()
-                .find(|panel| panel.panel_id == panel_id)
-                && let Some(inspected_root) = panel.inspected
-            {
-                let rows = build_inspector_panel_rows(world, &scene_model, panel, inspected_root);
-                if let Some(target_component) =
-                    rows.get(row_index).and_then(|row| row.target_component)
-                    && panel.subtree_selection.focused_row != Some(target_component)
-                {
-                    panel.subtree_selection.focused_row = Some(target_component);
-                    // Keep the existing sidebar subtree alive on row clicks. The
-                    // SelectionComponent/Option styling already updates the visual
-                    // highlight, and rebuilding the sidebar here churns the
-                    // selection subtree while the detail pane is disabled.
-                }
-            }
+            println!(
+                "✨🫠🐈 [3/5] [InspectorPanel][SidebarSelect] panel_id={} renderable={renderable:?} target_component={target_component:?} rerender_needed_pre={rerender_needed}",
+                panel_id,
+            );
+            let next_workspace = reduce_inspector_workspace_state(
+                &workspace,
+                &InspectorWorkspaceEvent::SidebarRowFocused {
+                    panel_id,
+                    component: target_component,
+                },
+            );
+            rerender_needed |= next_workspace != *workspace;
+            *workspace = next_workspace;
         }
     }
 

@@ -2,11 +2,6 @@ use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::system::editor::context::EditorContextState;
-#[cfg(test)]
-use crate::engine::ecs::system::editor::inspector_panel::{
-    InspectorPanelState, InspectorScrollState, InspectorSubtreeSelection, InspectorWorkspaceEvent,
-    InspectorWorkspaceState, reduce_inspector_workspace_state,
-};
 use crate::engine::ecs::system::editor_inspector_system_stopgap_mms_adapter::EditorInspectorSystemStopgapMmsAdapter;
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 
@@ -244,6 +239,50 @@ mod tests {
         assert_eq!(reduced.panels.len(), 1);
         assert_eq!(reduced.active_panel, Some(1));
         assert_eq!(reduced.panels[0].inspected, Some(target_b));
+        assert_eq!(
+            reduced.panels[0].subtree_selection.focused_row,
+            Some(target_b)
+        );
+    }
+
+    #[test]
+    fn inspector_workspace_reducer_focuses_sidebar_row_through_explicit_event() {
+        let mut world = World::default();
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let inspected =
+            world.add_component_boxed_named("inspected", Box::new(TransformComponent::new()));
+        let target = world.add_component_boxed_named("target", Box::new(TransformComponent::new()));
+        let workspace = InspectorWorkspaceState {
+            panels: vec![InspectorPanelState {
+                panel_id: 7,
+                editor_root,
+                inspected: Some(inspected),
+                pinned: false,
+                subtree_selection: InspectorSubtreeSelection {
+                    focused_row: Some(inspected),
+                    expanded: Vec::new(),
+                },
+                scroll_offset: InspectorScrollState::default(),
+            }],
+            active_panel: None,
+            pending_spawn_target: None,
+            next_panel_id: 8,
+        };
+
+        let reduced = reduce_inspector_workspace_state(
+            &workspace,
+            &InspectorWorkspaceEvent::SidebarRowFocused {
+                panel_id: 7,
+                component: target,
+            },
+        );
+
+        assert_eq!(reduced.active_panel, Some(7));
+        assert_eq!(
+            reduced.panels[0].subtree_selection.focused_row,
+            Some(target)
+        );
     }
 
     #[test]
@@ -1204,7 +1243,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn setup_panels_for_editor_inspector_uses_authored_rows_without_runtime_bounds_children() {
         let mut world = World::default();
         let mut emit = CommandQueue::new();

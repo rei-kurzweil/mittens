@@ -122,6 +122,10 @@ pub(crate) enum InspectorWorkspaceEvent {
         editor_root: ComponentId,
         selected_target: Option<ComponentId>,
     },
+    SidebarRowFocused {
+        panel_id: InspectorPanelId,
+        component: ComponentId,
+    },
     PanelFocused {
         panel_id: InspectorPanelId,
     },
@@ -187,8 +191,25 @@ pub(crate) fn reduce_inspector_workspace_state(
             let active_panel = &mut new.panels[active_index];
             active_panel.editor_root = *editor_root;
             active_panel.inspected = *selected_target;
+            active_panel.subtree_selection.focused_row = *selected_target;
             new.active_panel = Some(active_panel.panel_id);
             new.pending_spawn_target = None;
+        }
+        InspectorWorkspaceEvent::SidebarRowFocused {
+            panel_id,
+            component,
+        } => {
+            if let Some(panel) = new
+                .panels
+                .iter_mut()
+                .find(|panel| panel.panel_id == *panel_id)
+            {
+                if panel.subtree_selection.focused_row == Some(*component) {
+                    return new;
+                }
+                panel.subtree_selection.focused_row = Some(*component);
+                new.active_panel = Some(*panel_id);
+            }
         }
         InspectorWorkspaceEvent::PanelFocused { panel_id } => {
             new.active_panel = Some(*panel_id);
