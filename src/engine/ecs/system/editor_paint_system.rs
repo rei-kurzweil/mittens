@@ -481,10 +481,10 @@ fn apply_paint_side_effects(
     );
     let mut status_override = None;
     let templates_start = Instant::now();
-    let templates = templates
+    let templates_lock = templates
         .lock()
-        .expect("paint templates mutex poisoned")
-        .clone();
+        .expect("paint templates mutex poisoned");
+    let templates = &*templates_lock;
     paint_perf(
         "apply_paint_side_effects.clone_templates",
         templates_start,
@@ -504,7 +504,7 @@ fn apply_paint_side_effects(
                 *editor,
                 panel_query_root,
                 grid_system,
-                &templates,
+                templates,
                 new_state,
                 &editor_context,
                 stroke_runtime,
@@ -527,7 +527,7 @@ fn apply_paint_side_effects(
                     panel_query_root,
                     new_state,
                     &editor_context,
-                    &templates,
+                    templates,
                 )
                 .is_some()
                 {
@@ -554,7 +554,7 @@ fn apply_paint_side_effects(
                 *editor,
                 panel_query_root,
                 grid_system,
-                &templates,
+                templates,
                 new_state,
                 &editor_context,
                 stroke_runtime,
@@ -668,7 +668,7 @@ fn handle_free_draw_click(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     editor_root: ComponentId,
-    context: &PaintContext,
+    context: &PaintContext<'_>,
     stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     renderable: ComponentId,
     hit_point: [f32; 3],
@@ -698,7 +698,7 @@ fn handle_free_draw_stroke_move(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     editor_root: ComponentId,
-    context: &PaintContext,
+    context: &PaintContext<'_>,
     stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     renderable: ComponentId,
     hit_point: [f32; 3],
@@ -753,7 +753,7 @@ fn handle_spray_can_click(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     editor_root: ComponentId,
-    context: &PaintContext,
+    context: &PaintContext<'_>,
     stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     renderable: ComponentId,
     hit_point: [f32; 3],
@@ -788,7 +788,7 @@ fn handle_spray_can_stroke_move(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     editor_root: ComponentId,
-    context: &PaintContext,
+    context: &PaintContext<'_>,
     stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     renderable: ComponentId,
     hit_point: [f32; 3],
@@ -842,7 +842,7 @@ fn handle_erase_click(
     world: &mut World,
     _emit: &mut dyn SignalEmitter,
     _editor_root: ComponentId,
-    _context: &PaintContext,
+    _context: &PaintContext<'_>,
     stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     renderable: ComponentId,
     _hit_point: [f32; 3],
@@ -869,7 +869,7 @@ fn handle_erase_stroke_move(
     world: &mut World,
     _emit: &mut dyn SignalEmitter,
     _editor_root: ComponentId,
-    _context: &PaintContext,
+    _context: &PaintContext<'_>,
     stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     renderable: ComponentId,
     _hit_point: [f32; 3],
@@ -892,7 +892,7 @@ fn handle_line_click(
     _world: &mut World,
     _emit: &mut dyn SignalEmitter,
     _editor_root: ComponentId,
-    _context: &PaintContext,
+    _context: &PaintContext<'_>,
     _stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     _renderable: ComponentId,
     _hit_point: [f32; 3],
@@ -904,7 +904,7 @@ fn handle_line_stroke_move(
     _world: &mut World,
     _emit: &mut dyn SignalEmitter,
     _editor_root: ComponentId,
-    _context: &PaintContext,
+    _context: &PaintContext<'_>,
     _stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     _renderable: ComponentId,
     _hit_point: [f32; 3],
@@ -916,7 +916,7 @@ fn handle_fill_click(
     _world: &mut World,
     _emit: &mut dyn SignalEmitter,
     _editor_root: ComponentId,
-    _context: &PaintContext,
+    _context: &PaintContext<'_>,
     _stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     _renderable: ComponentId,
     _hit_point: [f32; 3],
@@ -928,7 +928,7 @@ fn handle_fill_stroke_move(
     _world: &mut World,
     _emit: &mut dyn SignalEmitter,
     _editor_root: ComponentId,
-    _context: &PaintContext,
+    _context: &PaintContext<'_>,
     _stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     _renderable: ComponentId,
     _hit_point: [f32; 3],
@@ -1119,12 +1119,12 @@ fn handle_stroke_move(
 }
 
 #[derive(Debug, Clone)]
-struct PaintContext {
-    asset: PaintAssetTemplate,
+struct PaintContext<'a> {
+    asset: &'a PaintAssetTemplate,
     active_grid: Option<crate::engine::ecs::system::grid_system::ActiveGrid>,
 }
 
-impl PaintContext {
+impl<'a> PaintContext<'a> {
     fn grid_snap(&self, hit_point: [f32; 3]) -> Option<GridSnapResult> {
         self.active_grid
             .as_ref()
@@ -1132,15 +1132,15 @@ impl PaintContext {
     }
 }
 
-fn resolve_paint_context(
+fn resolve_paint_context<'a>(
     world: &World,
     grid_system: &GridSystem,
     editor_root: ComponentId,
     panel_query_root: ComponentId,
     paint_state: &PaintState,
     editor_context: &EditorContextState,
-    templates: &[PaintAssetTemplate],
-) -> Option<PaintContext> {
+    templates: &'a [PaintAssetTemplate],
+) -> Option<PaintContext<'a>> {
     let start = Instant::now();
     let paint_panel_root = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR);
     if !is_paint_active(paint_panel_root, paint_state, editor_context) {
@@ -1166,8 +1166,7 @@ fn resolve_paint_context(
     };
     let asset = templates
         .iter()
-        .find(|template| template.key == asset_key)?
-        .clone();
+        .find(|template| template.key == asset_key)?;
     let active_grid = grid_system.active_grid_for_editor(world, editor_root);
     let context = PaintContext { asset, active_grid };
     paint_perf(
