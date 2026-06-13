@@ -20,7 +20,9 @@ use std::f32::consts::FRAC_PI_2;
 
 const PANEL_LAYOUT_SELECTION_SELECTOR: &str = "#editor_panel_layout_selection";
 const WORLD_PANEL_SELECTION_SELECTOR: &str = "#world_panel_selection";
+const ASSETS_SELECTION_SELECTOR: &str = "#assets_selection";
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
+pub const EDITOR_WORKSPACE_ASSET_SELECTION_CHANGED: &str = "EditorWorkspaceAssetSelectionChanged";
 const PAINT_SYSTEM_HANDLER_NAME: &str = "paint_system";
 const EDITOR_PANEL_REFRESH_HANDLER_NAME: &str = "editor_panel_refresh";
 const DEBUG_BLACKLIST_EDITOR_PANEL_REFRESH: bool = true;
@@ -31,6 +33,7 @@ const CURSOR_MARKER_SIZE: f32 = 0.5;
 pub struct EditorContextState {
     pub active_editor: Option<ComponentId>,
     pub selected_component: Option<ComponentId>,
+    pub selected_asset_payload: Option<ComponentId>,
     pub focused_panel: Option<ComponentId>,
     pub interaction_mode: EditorInteractionMode,
     pub cursor_translation: Option<[f32; 3]>,
@@ -72,6 +75,9 @@ pub enum EditorContextEvent {
         editor: Option<ComponentId>,
         interaction_mode: EditorInteractionMode,
     },
+    AssetPanelSelectionChanged {
+        asset_payload: Option<ComponentId>,
+    },
     EditorSelectionChanged {
         editor: ComponentId,
         component: Option<ComponentId>,
@@ -111,6 +117,9 @@ pub fn reduce_editor_context_state(
                 new.active_editor = *editor;
             }
             new.interaction_mode = *interaction_mode;
+        }
+        EditorContextEvent::AssetPanelSelectionChanged { asset_payload } => {
+            new.selected_asset_payload = *asset_payload;
         }
         EditorContextEvent::EditorSelectionChanged {
             editor,
@@ -212,6 +221,7 @@ fn install_shared_panel_handlers(
                 return;
             };
             apply_editor_context_event(&state, &event);
+            emit_editor_workspace_data_event(world, emit, panel_query_root, &event);
             sync_editor_component_selection(world, &event);
             sync_editor_cursor_pose(world, &state);
             sync_editor_cursor_visual(world, emit, &state);
@@ -318,6 +328,17 @@ fn bootstrap_editor_context(
         );
         sync_editor_cursor_pose(world, state);
     }
+
+    if let Some(selection_root) = world.find_component(panel_query_root, ASSETS_SELECTION_SELECTOR)
+        && let Some(selection) = world.get_component_by_id_as::<SelectionComponent>(selection_root)
+    {
+        apply_editor_context_event(
+            state,
+            &EditorContextEvent::AssetPanelSelectionChanged {
+                asset_payload: selection.selected_payload.or(selection.selected_component),
+            },
+        );
+    }
 }
 
 fn editor_context_event_from_shared_signal(
@@ -345,6 +366,10 @@ fn editor_context_event_from_shared_signal(
     let is_world_panel_selection = world.component_label(*selection_root)
         == Some(WORLD_PANEL_SELECTION_SELECTOR.trim_start_matches('#'))
         || world.find_component(panel_query_root, WORLD_PANEL_SELECTION_SELECTOR)
+            == Some(*selection_root);
+    let is_assets_selection = world.component_label(*selection_root)
+        == Some(ASSETS_SELECTION_SELECTOR.trim_start_matches('#'))
+        || world.find_component(panel_query_root, ASSETS_SELECTION_SELECTOR)
             == Some(*selection_root);
     let is_editor_settings_selection = world.component_label(*selection_root)
         == Some(EDITOR_SETTINGS_SELECTION_SELECTOR.trim_start_matches('#'))
@@ -380,6 +405,10 @@ fn editor_context_event_from_shared_signal(
             editor: active_editor,
             interaction_mode: editor_interaction_mode(world, active_editor),
         })
+    } else if is_assets_selection {
+        Some(EditorContextEvent::AssetPanelSelectionChanged {
+            asset_payload: selected_payload.or(component),
+        })
     } else {
         None
     }
@@ -388,6 +417,34 @@ fn editor_context_event_from_shared_signal(
 fn apply_editor_context_event(state: &Arc<Mutex<EditorContextState>>, event: &EditorContextEvent) {
     let mut state = state.lock().expect("editor context state poisoned");
     *state = reduce_editor_context_state(&state, event);
+}
+
+fn emit_editor_workspace_data_event(
+    world: &World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    event: &EditorContextEvent,
+) {
+    let Some(runtime_ui_root) = world
+        .all_components()
+        .find(|&component_id| {
+            world.parent_of(component_id).is_none()
+                && world.component_label(component_id) == Some("editor_runtime_ui_root")
+        })
+        .or(Some(panel_query_root))
+    else {
+        return;
+    };
+
+    if let EditorContextEvent::AssetPanelSelectionChanged { asset_payload } = event {
+        emit.push_event(
+            runtime_ui_root,
+            EventSignal::DataEvent {
+                name: EDITOR_WORKSPACE_ASSET_SELECTION_CHANGED.to_string(),
+                payload: *asset_payload,
+            },
+        );
+    }
 }
 
 fn editor_interaction_mode(world: &World, editor_root: Option<ComponentId>) -> EditorInteractionMode {
@@ -801,6 +858,7 @@ fn sync_editor_component_selection(world: &mut World, event: &EditorContextEvent
                 editor_component.interaction_mode = *interaction_mode;
             }
         }
+        EditorContextEvent::AssetPanelSelectionChanged { .. } => {}
         EditorContextEvent::InteractionModeChanged {
             editor,
             interaction_mode,
@@ -910,6 +968,7 @@ mod tests {
             &EditorContextState {
                 active_editor: Some(editor),
                 selected_component: Some(selected),
+                selected_asset_payload: None,
                 focused_panel: None,
                 interaction_mode: EditorInteractionMode::Select,
                 cursor_translation: None,
