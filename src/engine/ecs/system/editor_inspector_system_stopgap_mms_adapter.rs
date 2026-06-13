@@ -1153,14 +1153,18 @@ fn apply_world_panel_semantic_selection(
         return;
     };
     let active_editor = nearest_editor_ancestor(world, target_component);
+    let is_editor_root_target = active_editor == Some(target_component);
     let gizmo_target = nearest_transform_ancestor(world, target_component);
-    let used_editor_selection_path =
+    let used_editor_selection_path = if is_editor_root_target {
+        None
+    } else {
         active_editor
             .zip(gizmo_target)
             .map(|(editor_root, transform)| {
                 select_editor_target(world, emit, editor_root, transform, true);
                 transform
-            });
+            })
+    };
     {
         let mut editor_context = editor_context_state
             .lock()
@@ -1172,7 +1176,7 @@ fn apply_world_panel_semantic_selection(
     }
 
     println!(
-        "[InspectorSystem][trace] world_panel selection_root={selection_root:?} clicked_row={:?} payload={:?} authored_target={target_component:?} active_editor={active_editor:?} gizmo_target={gizmo_target:?} select_editor_target_ran={}",
+        "[InspectorSystem][trace] world_panel selection_root={selection_root:?} clicked_row={:?} payload={:?} authored_target={target_component:?} active_editor={active_editor:?} is_editor_root_target={is_editor_root_target} gizmo_target={gizmo_target:?} select_editor_target_ran={}",
         selected_component,
         selected_payload,
         used_editor_selection_path.is_some()
@@ -3312,5 +3316,86 @@ fn spawn_world_panel_row_tree(
                 },
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::ecs::command_queue::CommandQueue;
+    use crate::engine::ecs::component::{
+        DataComponent, DataValue, EditorComponent, SelectionComponent, TransformComponent,
+    };
+
+    #[test]
+    fn world_panel_editor_root_target_does_not_attach_gizmo() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let panel_query_root =
+            world.add_component_boxed_named("panel_root", Box::new(TransformComponent::new()));
+        let selection_root = world.add_component_boxed_named(
+            WORLD_PANEL_SELECTION_NAME,
+            Box::new(SelectionComponent::new()),
+        );
+        let row_root =
+            world.add_component_boxed_named("item_0", Box::new(TransformComponent::new()));
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let payload = world.add_component_boxed_named(
+            WORLD_PANEL_PAYLOAD_NAME,
+            Box::new(
+                DataComponent::new()
+                    .with_entry("target_component", DataValue::Component(editor_root)),
+            ),
+        );
+
+        let _ = world.add_child(panel_query_root, selection_root);
+        let _ = world.add_child(panel_query_root, row_root);
+        let _ = world.add_child(row_root, payload);
+
+        if let Some(selection) =
+            world.get_component_by_id_as_mut::<SelectionComponent>(selection_root)
+        {
+            selection.selected_component = Some(row_root);
+            selection.selected_payload = Some(payload);
+        }
+
+        let editor_context_state = Arc::new(Mutex::new(EditorContextState::default()));
+        let world_panel_scene_model = Arc::new(Mutex::new(AuthoredWorldPanelSceneModel::default()));
+        let inspector_workspace_state = Arc::new(Mutex::new(InspectorWorkspaceState::default()));
+        let rendered_inspector_models = Arc::new(Mutex::new(Vec::new()));
+        let mut data_renderer = DataRendererSystem::new();
+
+        apply_world_panel_semantic_selection(
+            &mut world,
+            &mut emit,
+            panel_query_root,
+            &editor_context_state,
+            &world_panel_scene_model,
+            &inspector_workspace_state,
+            &rendered_inspector_models,
+            selection_root,
+            &mut data_renderer,
+        );
+
+        assert!(
+            world
+                .find_component(editor_root, "#editor_transform_gizmo")
+                .is_none(),
+            "editor-root semantic selection should not spawn or attach gizmo",
+        );
+        assert_eq!(
+            world
+                .get_component_by_id_as::<EditorComponent>(editor_root)
+                .and_then(|editor| editor.selected),
+            None,
+        );
+        assert_eq!(
+            editor_context_state
+                .lock()
+                .expect("editor context mutex poisoned")
+                .selected_component,
+            Some(editor_root),
+        );
     }
 }

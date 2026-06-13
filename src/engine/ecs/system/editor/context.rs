@@ -399,17 +399,13 @@ fn editor_context_event_from_shared_signal(
             focused_panel: component,
         })
     } else if is_editor_settings_selection {
-        let row_name = selected_payload
+        let option = selected_payload
             .or(component)
-            .and_then(|id| editor_settings_row_name(world, id))
-            .or_else(|| component.and_then(|id| world.component_label(id).map(str::to_string)));
-        let option = row_name
-            .as_deref()
-            .and_then(EditorSettingsOption::from_row_name)?;
+            .and_then(|payload| editor_settings_option_from_payload(world, payload))?;
         let active_editor =
             current_or_default_editor_root(world, panel_query_root, component, fallback_editor);
         eprintln!(
-            "⚙️🧪📝 editor settings selection selection_root={selection_root:?} component={component:?} payload={selected_payload:?} row_name={row_name:?} option={option:?} active_editor={active_editor:?}"
+            "⚙️🧪📝 editor settings selection selection_root={selection_root:?} component={component:?} payload={selected_payload:?} option={option:?} active_editor={active_editor:?}"
         );
         Some(EditorContextEvent::InteractionModeChanged {
             editor: active_editor,
@@ -516,26 +512,38 @@ fn current_or_default_editor_root(
         })
 }
 
-fn editor_settings_row_name(world: &World, payload_or_row: ComponentId) -> Option<String> {
+fn editor_settings_option_from_payload(
+    world: &World,
+    payload_or_row: ComponentId,
+) -> Option<EditorSettingsOption> {
+    editor_settings_payload_data(world, payload_or_row).and_then(|data| {
+        match data.get("mode_value") {
+            Some(crate::engine::ecs::component::DataValue::Text(mode_value)) => {
+                EditorSettingsOption::from_mode_value(mode_value)
+            }
+            _ => None,
+        }
+    })
+}
+
+fn editor_settings_payload_data(
+    world: &World,
+    payload_or_row: ComponentId,
+) -> Option<&crate::engine::ecs::component::DataComponent> {
     if let Some(data) =
         world.get_component_by_id_as::<crate::engine::ecs::component::DataComponent>(payload_or_row)
         && world.component_label(payload_or_row) == Some(EDITOR_SETTINGS_PAYLOAD_NAME)
-        && let Some(crate::engine::ecs::component::DataValue::Text(row_name)) = data.get("row_name")
     {
-        return Some(row_name.clone());
+        return Some(data);
     }
 
     world.children_of(payload_or_row).iter().find_map(|&child| {
         let data =
             world.get_component_by_id_as::<crate::engine::ecs::component::DataComponent>(child)?;
-        if world.component_label(child) != Some(EDITOR_SETTINGS_PAYLOAD_NAME) {
-            return None;
-        }
-        match data.get("row_name") {
-            Some(crate::engine::ecs::component::DataValue::Text(row_name)) => {
-                Some(row_name.clone())
-            }
-            _ => None,
+        if world.component_label(child) == Some(EDITOR_SETTINGS_PAYLOAD_NAME) {
+            Some(data)
+        } else {
+            None
         }
     })
 }
@@ -1172,10 +1180,10 @@ mod tests {
         );
         let payload = world.add_component_boxed_named(
             "editor_settings_payload",
-            Box::new(DataComponent::new().with_entry(
-                "row_name",
-                DataValue::Text("editor_settings_mode_select_cursor".into()),
-            )),
+            Box::new(
+                DataComponent::new()
+                    .with_entry("mode_value", DataValue::Text("select_cursor".into())),
+            ),
         );
         let editor_root =
             world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
@@ -1211,6 +1219,120 @@ mod tests {
                 interaction_mode: EditorInteractionMode::SelectAndCursor,
             }
         );
+    }
+
+    #[test]
+    fn editor_settings_selection_prefers_mode_value_payload() {
+        let mut world = World::default();
+        let panel_query_root =
+            world.add_component_boxed_named("panel_root", Box::new(TransformComponent::new()));
+        let settings_panel_root = world.add_component_boxed_named(
+            "editor_settings_panel_root",
+            Box::new(TransformComponent::new()),
+        );
+        let settings_selection = world.add_component_boxed_named(
+            "editor_settings_selection",
+            Box::new(SelectionComponent::new()),
+        );
+        let row_root = world
+            .add_component_boxed_named("unexpected_row_label", Box::new(TransformComponent::new()));
+        let payload = world.add_component_boxed_named(
+            "editor_settings_payload",
+            Box::new(
+                DataComponent::new()
+                    .with_entry("mode_value", DataValue::Text("cursor_3d".into()))
+                    .with_entry(
+                        "row_name",
+                        DataValue::Text("editor_settings_mode_select".into()),
+                    ),
+            ),
+        );
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+
+        let _ = world.add_child(panel_query_root, settings_panel_root);
+        let _ = world.add_child(panel_query_root, settings_selection);
+        let _ = world.add_child(settings_panel_root, row_root);
+        let _ = world.add_child(row_root, payload);
+
+        let signal = Signal::event(
+            settings_selection,
+            EventSignal::SelectionChanged {
+                selection_root: settings_selection,
+                mode: crate::engine::ecs::component::SelectionMode::Single,
+                selected_entries: vec![],
+                selected_component: Some(row_root),
+                selected_payload: Some(payload),
+            },
+        );
+
+        let event = editor_context_event_from_shared_signal(
+            &world,
+            panel_query_root,
+            &signal,
+            Some(editor_root),
+        )
+        .expect("event");
+
+        assert_eq!(
+            event,
+            EditorContextEvent::InteractionModeChanged {
+                editor: Some(editor_root),
+                interaction_mode: EditorInteractionMode::Cursor3d,
+            }
+        );
+    }
+
+    #[test]
+    fn editor_settings_selection_requires_payload_contract_not_component_label() {
+        let mut world = World::default();
+        let panel_query_root =
+            world.add_component_boxed_named("panel_root", Box::new(TransformComponent::new()));
+        let settings_panel_root = world.add_component_boxed_named(
+            "editor_settings_panel_root",
+            Box::new(TransformComponent::new()),
+        );
+        let settings_selection = world.add_component_boxed_named(
+            "editor_settings_selection",
+            Box::new(SelectionComponent::new()),
+        );
+        let row_root = world.add_component_boxed_named(
+            "editor_settings_mode_cursor_3d",
+            Box::new(TransformComponent::new()),
+        );
+        let payload = world.add_component_boxed_named(
+            "editor_settings_payload",
+            Box::new(
+                DataComponent::new().with_entry("row_kind", DataValue::Text("EditorMode".into())),
+            ),
+        );
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+
+        let _ = world.add_child(panel_query_root, settings_panel_root);
+        let _ = world.add_child(panel_query_root, settings_selection);
+        let _ = world.add_child(settings_panel_root, row_root);
+        let _ = world.add_child(row_root, payload);
+
+        let signal = Signal::event(
+            settings_selection,
+            EventSignal::SelectionChanged {
+                selection_root: settings_selection,
+                mode: crate::engine::ecs::component::SelectionMode::Single,
+                selected_entries: vec![],
+                selected_component: Some(row_root),
+                selected_payload: Some(payload),
+            },
+        );
+
+        let event = editor_context_event_from_shared_signal(
+            &world,
+            panel_query_root,
+            &signal,
+            Some(editor_root),
+        );
+
+        assert_eq!(event, None);
     }
 
     #[test]

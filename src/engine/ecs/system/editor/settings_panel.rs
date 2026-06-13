@@ -34,11 +34,11 @@ impl EditorSettingsOption {
         }
     }
 
-    pub(crate) fn from_row_name(row_name: &str) -> Option<Self> {
-        match row_name {
-            EDITOR_SETTINGS_SELECT_ROW_NAME => Some(Self::Select),
-            EDITOR_SETTINGS_CURSOR_ROW_NAME => Some(Self::Cursor3d),
-            EDITOR_SETTINGS_SELECT_CURSOR_ROW_NAME => Some(Self::SelectAndCursor),
+    pub(crate) fn from_mode_value(mode_value: &str) -> Option<Self> {
+        match mode_value {
+            "select" => Some(Self::Select),
+            "cursor_3d" => Some(Self::Cursor3d),
+            "select_cursor" => Some(Self::SelectAndCursor),
             _ => None,
         }
     }

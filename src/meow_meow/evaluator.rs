@@ -477,12 +477,12 @@ fn eval_stmt(stmt: &Statement, ctx: &mut EvalContext<'_>) -> Result<StmtEffect, 
         }
         Statement::Reassign { name, value } => {
             let val = eval_expr(value, ctx)?;
-            // Inside a CE body: if name not in scope, capture as named property.
-            if !ctx.object_world.has(&name.0) {
-                if let Some(builder) = ctx.ce_builder.as_mut() {
-                    builder.named.push((name.0.clone(), val));
-                    return Ok(StmtEffect::None);
-                }
+            // Inside a CE body, `foo = expr` defines a named component property.
+            // This must win even when `foo` also exists as a lexical binding, so
+            // authored payloads like `row_name = row_name` materialize correctly.
+            if let Some(builder) = ctx.ce_builder.as_mut() {
+                builder.named.push((name.0.clone(), val));
+                return Ok(StmtEffect::None);
             }
             let val = maybe_register_live_component_value(val, ctx);
             ctx.object_world.reassign(&name.0, val)?;
@@ -2159,4 +2159,47 @@ fn parse_err_to_string(source: &str, e: ParseError) -> String {
         e.message,
         format_source_context(source, line, col),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::eval_module_source;
+    use crate::meow_meow::object::Value;
+
+    #[test]
+    fn component_body_named_props_can_reference_same_named_bindings() {
+        let source = r#"
+fn make_payload(row_name, label, mode_value) {
+    return Data {
+        row_name = row_name
+        label = label
+        mode_value = mode_value
+        row_kind = "EditorMode"
+        interactive = true
+    }
+}
+
+export let payload = make_payload("editor_settings_mode_cursor_3d", "3D Cursor", "cursor_3d")
+"#;
+
+        let module = eval_module_source(source, None).expect("module eval");
+        let Value::Module { named, .. } = module else {
+            panic!("expected module value");
+        };
+        let payload = named.get("payload").expect("exported payload");
+        let Value::ComponentExpr(component) = payload else {
+            panic!("expected component expr");
+        };
+
+        assert!(component.named.iter().any(|(key, value)| {
+            key == "row_name"
+                && matches!(value, Value::String(value) if value == "editor_settings_mode_cursor_3d")
+        }));
+        assert!(component.named.iter().any(|(key, value)| {
+            key == "label" && matches!(value, Value::String(value) if value == "3D Cursor")
+        }));
+        assert!(component.named.iter().any(|(key, value)| {
+            key == "mode_value" && matches!(value, Value::String(value) if value == "cursor_3d")
+        }));
+    }
 }
