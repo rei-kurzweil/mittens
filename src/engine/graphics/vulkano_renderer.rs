@@ -1364,16 +1364,12 @@ mod vulkano_backend {
             pipeline_ci_transparent_clipped.dynamic_state = stencil_dynamic_state.clone();
             let pipeline_toon_mesh_transparent_clipped =
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci_transparent_clipped)?;
-            let mut pipeline_ci_grid_transparent_clipped =
-                pipeline_ci_grid_transparent.clone();
+            let mut pipeline_ci_grid_transparent_clipped = pipeline_ci_grid_transparent.clone();
             pipeline_ci_grid_transparent_clipped.depth_stencil_state =
                 Some(transparent_clipped_depth_stencil.clone());
             pipeline_ci_grid_transparent_clipped.dynamic_state = stencil_dynamic_state.clone();
-            let pipeline_grid_mesh_transparent_clipped = GraphicsPipeline::new(
-                device.clone(),
-                None,
-                pipeline_ci_grid_transparent_clipped,
-            )?;
+            let pipeline_grid_mesh_transparent_clipped =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_grid_transparent_clipped)?;
 
             let mut pipeline_ci_emissive_transparent_clipped =
                 pipeline_ci_emissive_transparent.clone();

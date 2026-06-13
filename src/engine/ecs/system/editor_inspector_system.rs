@@ -59,8 +59,8 @@ mod tests {
         InspectorPanelState, InspectorScrollState, InspectorSubtreeSelection,
         InspectorWorkspaceEvent, InspectorWorkspaceState, reduce_inspector_workspace_state,
     };
-    use crate::engine::ecs::system::editor_system::select_editor_target;
     use crate::engine::ecs::system::editor_inspector_system_stopgap_mms_adapter::set_world_panel_scene_path_for_tests;
+    use crate::engine::ecs::system::editor_system::select_editor_target;
     use crate::engine::ecs::{EventSignal, IntentValue, SignalEmitter, SystemWorld, World};
     use crate::engine::graphics::bounds::Aabb;
     use crate::engine::graphics::primitives::MaterialHandle;
@@ -1535,7 +1535,9 @@ mod tests {
         let renderable = world
             .get_component_by_id_as::<RenderableComponent>(grid_visual_renderable)
             .expect("expected renderable component");
-        let handle = renderable.get_handle().expect("expected registered visual handle");
+        let handle = renderable
+            .get_handle()
+            .expect("expected registered visual handle");
         let instance = visuals
             .instance(handle)
             .expect("expected visual world instance for grid");
@@ -1550,7 +1552,8 @@ mod tests {
                 .draw_order()
                 .iter()
                 .copied()
-                .any(|idx| visuals.instances()[idx as usize].renderable.material == MaterialHandle::GRID_MESH),
+                .any(|idx| visuals.instances()[idx as usize].renderable.material
+                    == MaterialHandle::GRID_MESH),
             "expected grid instance to appear in opaque draw order"
         );
     }

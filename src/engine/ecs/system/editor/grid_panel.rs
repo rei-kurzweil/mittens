@@ -104,7 +104,8 @@ pub(crate) fn build_grid_panel_model(
 }
 
 pub(crate) fn grid_panel_items(model: &GridPanelModel) -> Vec<UiItem> {
-    model.rows
+    model
+        .rows
         .iter()
         .enumerate()
         .map(|(index, row)| UiItem {
@@ -193,10 +194,7 @@ fn spawn_grid_panel_row_tree(
             DataComponent::new()
                 .with_entry("row_name", DataValue::Text(row_name.to_string()))
                 .with_entry("label", DataValue::Text(label.to_string()))
-                .with_entry(
-                    "target_component",
-                    DataValue::Component(owner_transform),
-                ),
+                .with_entry("target_component", DataValue::Component(owner_transform)),
         ),
     );
     let body_style = world.add_component_boxed_named(
@@ -299,10 +297,7 @@ fn spawn_grid_icon_button(
         Box::new(
             DataComponent::new()
                 .with_entry("row_name", DataValue::Text(item_key.to_string()))
-                .with_entry(
-                    "target_component",
-                    DataValue::Component(owner_transform),
-                )
+                .with_entry("target_component", DataValue::Component(owner_transform))
                 .with_entry("label", DataValue::Text(text.to_string())),
         ),
     );

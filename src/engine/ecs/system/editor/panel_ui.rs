@@ -37,12 +37,17 @@ pub fn spawn_panel_ui_row_tree(world: &mut World, spec: PanelUiRowSpec<'_>) -> C
         return row_root;
     }
 
-    if spec.interactive {
+    let option_root = if spec.interactive {
         let option = world.add_component_boxed_named(
             format!("{}_option", spec.row_name),
             Box::new(OptionComponent::new()),
         );
         let _ = world.add_child(row_root, option);
+        Some(option)
+    } else {
+        None
+    };
+    if spec.interactive {
         let raycastable = world.add_component_boxed_named(
             format!("{}_raycastable", spec.row_name),
             Box::new(RaycastableComponent::click_only()),
@@ -59,7 +64,7 @@ pub fn spawn_panel_ui_row_tree(world: &mut World, spec: PanelUiRowSpec<'_>) -> C
         payload_data.insert("target_component", DataValue::Component(target_component));
     }
     let payload = world.add_component_boxed_named(spec.payload_name, Box::new(payload_data));
-    let _ = world.add_child(row_root, payload);
+    let _ = world.add_child(option_root.unwrap_or(row_root), payload);
 
     let style = world.add_component_boxed_named(
         format!("{}_style", spec.row_name),

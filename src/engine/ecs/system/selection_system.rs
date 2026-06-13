@@ -518,8 +518,15 @@ fn direct_option_payload(
         .children_of(option_root)
         .iter()
         .copied()
-        .filter(|&child| world.get_component_by_id_as::<DataComponent>(child).is_some())
+        .filter(|&child| {
+            world
+                .get_component_by_id_as::<DataComponent>(child)
+                .is_some()
+        })
         .collect();
+    println!(
+        "[selection] direct_option_payload selection_root={selection_root:?} row_root={row_root:?} option_root={option_root:?} matches={matches:?}"
+    );
     match matches.len() {
         0 => None,
         1 => matches.into_iter().next(),
@@ -542,10 +549,19 @@ pub fn resolve_semantic_target_from_payload(
         if let Some(data) = world.get_component_by_id_as::<DataComponent>(payload)
             && let Some(target_component) = data.get_component("target_component")
         {
+            println!(
+                "[selection] resolve_semantic_target_from_payload payload={payload:?} target_component={target_component:?} selected_component={selected_component:?}"
+            );
             return Some(target_component);
         }
+        println!(
+            "[selection] resolve_semantic_target_from_payload payload={payload:?} missing target_component selected_component={selected_component:?}"
+        );
         return Some(payload);
     }
+    println!(
+        "[selection] resolve_semantic_target_from_payload no payload, falling back to selected_component={selected_component:?}"
+    );
     selected_component
 }
 
@@ -2015,10 +2031,10 @@ mod tests {
         let option = option_marker_on_node(&world, row).expect("row option");
         let payload = world.add_component_boxed_named(
             "world_panel_payload",
-            Box::new(DataComponent::new().with_entry(
-                "row_kind",
-                DataValue::Text("component".to_string()),
-            )),
+            Box::new(
+                DataComponent::new()
+                    .with_entry("row_kind", DataValue::Text("component".to_string())),
+            ),
         );
         let _ = world.add_child(option, payload);
 

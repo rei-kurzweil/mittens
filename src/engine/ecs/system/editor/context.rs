@@ -395,7 +395,8 @@ fn editor_context_event_from_shared_signal(
     } else if is_world_panel_selection {
         let semantic_target =
             resolve_semantic_target_from_payload(world, *selected_payload, component);
-        let active_editor = semantic_target.and_then(|target| nearest_editor_ancestor(world, target));
+        let active_editor =
+            semantic_target.and_then(|target| nearest_editor_ancestor(world, target));
         println!(
             "[EditorContext][trace] world_panel selection_root={selection_root:?} clicked_row={selected_component:?} payload={selected_payload:?} authored_target={semantic_target:?} active_editor={:?}",
             active_editor
@@ -447,7 +448,10 @@ fn emit_editor_workspace_data_event(
     }
 }
 
-fn editor_interaction_mode(world: &World, editor_root: Option<ComponentId>) -> EditorInteractionMode {
+fn editor_interaction_mode(
+    world: &World,
+    editor_root: Option<ComponentId>,
+) -> EditorInteractionMode {
     editor_root
         .and_then(|editor_root| {
             world
@@ -480,7 +484,8 @@ fn current_or_default_editor_root(
 }
 
 fn editor_settings_row_name(world: &World, payload_or_row: ComponentId) -> Option<String> {
-    if let Some(data) = world.get_component_by_id_as::<crate::engine::ecs::component::DataComponent>(payload_or_row)
+    if let Some(data) =
+        world.get_component_by_id_as::<crate::engine::ecs::component::DataComponent>(payload_or_row)
         && world.component_label(payload_or_row) == Some(EDITOR_SETTINGS_PAYLOAD_NAME)
         && let Some(crate::engine::ecs::component::DataValue::Text(row_name)) = data.get("row_name")
     {
@@ -488,12 +493,15 @@ fn editor_settings_row_name(world: &World, payload_or_row: ComponentId) -> Optio
     }
 
     world.children_of(payload_or_row).iter().find_map(|&child| {
-        let data = world.get_component_by_id_as::<crate::engine::ecs::component::DataComponent>(child)?;
+        let data =
+            world.get_component_by_id_as::<crate::engine::ecs::component::DataComponent>(child)?;
         if world.component_label(child) != Some(EDITOR_SETTINGS_PAYLOAD_NAME) {
             return None;
         }
         match data.get("row_name") {
-            Some(crate::engine::ecs::component::DataValue::Text(row_name)) => Some(row_name.clone()),
+            Some(crate::engine::ecs::component::DataValue::Text(row_name)) => {
+                Some(row_name.clone())
+            }
             _ => None,
         }
     })
@@ -574,9 +582,12 @@ fn ensure_cursor_marker(
     emit: &mut dyn SignalEmitter,
     editor_root: ComponentId,
 ) -> ComponentId {
-    if let Some(existing) = world.children_of(editor_root).iter().copied().find(|&child| {
-        world.component_label(child) == Some(CURSOR_MARKER_ROOT_NAME)
-    }) {
+    if let Some(existing) = world
+        .children_of(editor_root)
+        .iter()
+        .copied()
+        .find(|&child| world.component_label(child) == Some(CURSOR_MARKER_ROOT_NAME))
+    {
         return existing;
     }
 

@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use crate::engine::ecs::component::{
     DataComponent, DataValue, EditorComponent, OptionComponent, RaycastableComponent,
-    SelectableComponent, SelectionComponent, TransformComponent,
-    TransformGizmoComponent,
+    SelectableComponent, SelectionComponent, TransformComponent, TransformGizmoComponent,
 };
 use crate::engine::ecs::system::editor::context::{
     EDITOR_WORKSPACE_ASSET_SELECTION_CHANGED, EditorContextState,
@@ -26,6 +26,14 @@ const PAINT_TOOL_SELECTION_SELECTOR: &str = "#paint_tool_selection";
 const PAINT_STATUS_WRAP_SELECTOR: &str = "#paint_status_wrap";
 const PANEL_STATUS_VALUE_SELECTOR: &str = "#paint_panel_status_value";
 const RUNTIME_UI_ROOT_NAME: &str = "editor_runtime_ui_root";
+
+fn paint_perf(label: &str, start: Instant, detail: impl AsRef<str>) {
+    eprintln!(
+        "🎨⏱️ paint_perf {label} took {:?} {}",
+        start.elapsed(),
+        detail.as_ref()
+    );
+}
 
 #[derive(Debug, Clone)]
 pub struct PaintAssetTemplate {
@@ -274,7 +282,9 @@ fn handle_paint_event(
     stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
     event: &PaintEvent,
 ) {
+    let total_start = Instant::now();
     eprintln!("🎨🖌️ paint_debug handle_paint_event event={event:?}");
+    let reduce_start = Instant::now();
     let (old_state, new_state) = {
         let mut state = paint_state.lock().expect("paint state mutex poisoned");
         let old_state = state.clone();
@@ -283,7 +293,13 @@ fn handle_paint_event(
         eprintln!("🎨🖌️ paint_debug   old={old_state:?} new={new_state:?}");
         (old_state, new_state)
     };
+    paint_perf(
+        "handle_paint_event.reduce",
+        reduce_start,
+        format!("event={event:?}"),
+    );
 
+    let effects_start = Instant::now();
     apply_paint_side_effects(
         world,
         emit,
@@ -295,6 +311,16 @@ fn handle_paint_event(
         &new_state,
         event,
         stroke_runtime,
+    );
+    paint_perf(
+        "handle_paint_event.side_effects",
+        effects_start,
+        format!("event={event:?}"),
+    );
+    paint_perf(
+        "handle_paint_event.total",
+        total_start,
+        format!("event={event:?}"),
     );
 }
 
@@ -445,14 +471,27 @@ fn apply_paint_side_effects(
     event: &PaintEvent,
     stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
 ) {
+    let total_start = Instant::now();
     let editor_context = current_editor_context(editor_context_state);
     let active_editor = event_active_editor(event).or(editor_context.active_editor);
+    paint_perf(
+        "apply_paint_side_effects.context",
+        total_start,
+        format!("event={event:?} active_editor={active_editor:?}"),
+    );
     let mut status_override = None;
+    let templates_start = Instant::now();
     let templates = templates
         .lock()
         .expect("paint templates mutex poisoned")
         .clone();
+    paint_perf(
+        "apply_paint_side_effects.clone_templates",
+        templates_start,
+        format!("count={}", templates.len()),
+    );
 
+    let event_specific_start = Instant::now();
     match event {
         PaintEvent::SceneClick {
             editor,
@@ -531,7 +570,13 @@ fn apply_paint_side_effects(
         }
         _ => {}
     }
+    paint_perf(
+        "apply_paint_side_effects.event_specific",
+        event_specific_start,
+        format!("event={event:?} status_override={status_override:?}"),
+    );
 
+    let update_status_start = Instant::now();
     update_paint_status(
         world,
         emit,
@@ -541,6 +586,16 @@ fn apply_paint_side_effects(
         new_state,
         &editor_context,
         status_override,
+    );
+    paint_perf(
+        "apply_paint_side_effects.update_status",
+        update_status_start,
+        format!("event={event:?}"),
+    );
+    paint_perf(
+        "apply_paint_side_effects.total",
+        total_start,
+        format!("event={event:?}"),
     );
 }
 
@@ -894,6 +949,7 @@ fn handle_scene_click(
     renderable: ComponentId,
     hit_point: [f32; 3],
 ) -> Option<String> {
+    let start = Instant::now();
     let context = resolve_paint_context(
         world,
         grid_system,
@@ -903,8 +959,14 @@ fn handle_scene_click(
         editor_context,
         templates,
     )?;
+    paint_perf(
+        "handle_scene_click.resolve_context",
+        start,
+        format!("tool={:?}", paint_state.selected_tool),
+    );
 
-    match paint_state.selected_tool {
+    let apply_tool_start = Instant::now();
+    let result = match paint_state.selected_tool {
         PaintTool::FreeDraw => handle_free_draw_click(
             world,
             emit,
@@ -951,7 +1013,18 @@ fn handle_scene_click(
             hit_point,
         ),
         PaintTool::Unknown(_) => None,
-    }
+    };
+    paint_perf(
+        "handle_scene_click.apply_tool",
+        apply_tool_start,
+        format!("tool={:?} result={result:?}", paint_state.selected_tool),
+    );
+    paint_perf(
+        "handle_scene_click.total",
+        start,
+        format!("tool={:?} result={result:?}", paint_state.selected_tool),
+    );
+    result
 }
 
 fn handle_stroke_move(
@@ -967,6 +1040,7 @@ fn handle_stroke_move(
     renderable: ComponentId,
     hit_point: [f32; 3],
 ) -> Option<String> {
+    let start = Instant::now();
     let context = resolve_paint_context(
         world,
         grid_system,
@@ -976,8 +1050,14 @@ fn handle_stroke_move(
         editor_context,
         templates,
     )?;
+    paint_perf(
+        "handle_stroke_move.resolve_context",
+        start,
+        format!("tool={:?}", paint_state.selected_tool),
+    );
 
-    match paint_state.selected_tool {
+    let apply_tool_start = Instant::now();
+    let result = match paint_state.selected_tool {
         PaintTool::FreeDraw => handle_free_draw_stroke_move(
             world,
             emit,
@@ -1024,7 +1104,18 @@ fn handle_stroke_move(
             hit_point,
         ),
         PaintTool::Unknown(_) => None,
-    }
+    };
+    paint_perf(
+        "handle_stroke_move.apply_tool",
+        apply_tool_start,
+        format!("tool={:?} result={result:?}", paint_state.selected_tool),
+    );
+    paint_perf(
+        "handle_stroke_move.total",
+        start,
+        format!("tool={:?} result={result:?}", paint_state.selected_tool),
+    );
+    result
 }
 
 #[derive(Debug, Clone)]
@@ -1050,8 +1141,17 @@ fn resolve_paint_context(
     editor_context: &EditorContextState,
     templates: &[PaintAssetTemplate],
 ) -> Option<PaintContext> {
+    let start = Instant::now();
     let paint_panel_root = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR);
     if !is_paint_active(paint_panel_root, paint_state, editor_context) {
+        paint_perf(
+            "resolve_paint_context.inactive",
+            start,
+            format!(
+                "tool={:?} panel={paint_panel_root:?}",
+                paint_state.selected_tool
+            ),
+        );
         return None;
     }
     let selected_asset = paint_state.selected_asset.as_ref()?;
@@ -1068,10 +1168,19 @@ fn resolve_paint_context(
         .iter()
         .find(|template| template.key == asset_key)?
         .clone();
-    Some(PaintContext {
-        asset,
-        active_grid: grid_system.active_grid_for_editor(world, editor_root),
-    })
+    let active_grid = grid_system.active_grid_for_editor(world, editor_root);
+    let context = PaintContext { asset, active_grid };
+    paint_perf(
+        "resolve_paint_context.active",
+        start,
+        format!(
+            "tool={:?} payload={payload:?} asset_key={} grid_active={}",
+            paint_state.selected_tool,
+            asset_key,
+            context.active_grid.is_some()
+        ),
+    );
+    Some(context)
 }
 
 struct PaintActivityStatus {
@@ -1288,6 +1397,7 @@ fn update_paint_status(
     editor_context: &EditorContextState,
     override_text: Option<String>,
 ) {
+    let start = Instant::now();
     let Some(paint_panel_root) = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
     else {
         return;
@@ -1306,7 +1416,19 @@ fn update_paint_status(
             editor_context,
         )
     });
+    paint_perf(
+        "update_paint_status.compute_text",
+        start,
+        format!("active_editor={active_editor:?} text={text}"),
+    );
+    let set_start = Instant::now();
     set_status_text(world, emit, status_wrap, &text);
+    paint_perf(
+        "update_paint_status.set_text",
+        set_start,
+        format!("text={text}"),
+    );
+    paint_perf("update_paint_status.total", start, format!("text={text}"));
 }
 
 fn base_status_text(
@@ -1477,12 +1599,10 @@ fn is_descendant_or_self(world: &World, ancestor: ComponentId, node: ComponentId
 }
 
 #[cfg(test)]
-    mod tests {
+mod tests {
     use super::*;
     use crate::engine::ecs::command_queue::CommandQueue;
-    use crate::engine::ecs::component::{
-        ColorComponent, GridComponent, RenderableComponent,
-    };
+    use crate::engine::ecs::component::{ColorComponent, GridComponent, RenderableComponent};
     use crate::engine::ecs::system::SystemWorld;
     use crate::engine::graphics::{RenderAssets, VisualWorld};
     use std::path::PathBuf;

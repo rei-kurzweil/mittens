@@ -453,7 +453,6 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                         background_z(-0.005)
                         overflow("scroll")
                     }
-                    Selection.root("#sidebar_slot") { name = "inspector_panel_selection" }
                     T {
                         name = "sidebar_slot"
                         Style {
@@ -461,6 +460,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                             width(100%)
                         }
                     }
+                    Selection.root("#sidebar_slot") { name = "inspector_panel_selection" }
                 }
 
                 T {

@@ -17,25 +17,24 @@ use crate::engine::ecs::component::{
     Camera2DComponent, Camera3DComponent, CameraXRComponent, ClockComponent, CollisionComponent,
     CollisionShape, CollisionShapeComponent, ColorComponent, ControllerHand, ControllerPoseKind,
     ControllerXRComponent, DataComponent, DataValue, DirectionalLightComponent, Display,
-    EdgeInsets, EditorComponent, ElementType, EmissiveComponent, EmissivePassComponent,
-    FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent,
-    GestureCoordTypeComponent, GravityComponent, GridComponent, HtmlElementComponent,
-    IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent, InputXRComponent,
-    InspectLayoutComponent, JustifyContent, KeyframeComponent, KineticResponseComponent,
-    LayoutBoundsComponent, LayoutComponent, LightQuantizationComponent, MeshComponent,
-    MusicContextComponent, MusicNote, MusicNoteComponent, NormalVisualisationComponent,
-    OpacityComponent, OpenXRComponent, OptionComponent, OscillatorType, Overflow, OverlayComponent,
-    PointLightComponent, PointerComponent, PointerEvents, Position, QuatTemporalFilterComponent,
-    QuatYawFollowComponent, RayCastComponent, RaycastableComponent, RaycastableShapeComponent,
-    RaycastableShapeType, RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
-    RendererStatsComponent, RouterComponent, ScrollingComponent, SelectableComponent,
-    SelectionComponent, SerializeComponent, SignalObserverRouterComponent,
-    SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent, StencilClipComponent,
-    StyleComponent, TextAlign, TextComponent, TextInputComponent, TextShadowComponent,
-    TextureComponent, TextureFilteringComponent, TransformComponent, TransformDropComponent,
-    TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
-    EditorInteractionMode, TransformGizmoCoordSpace, TransformGizmoRotateComponent,
-    TransformGizmoScaleComponent,
+    EdgeInsets, EditorComponent, EditorInteractionMode, ElementType, EmissiveComponent,
+    EmissivePassComponent, FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection,
+    FlexWrap, GLTFComponent, GestureCoordTypeComponent, GravityComponent, GridComponent,
+    HtmlElementComponent, IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent,
+    InputXRComponent, InspectLayoutComponent, JustifyContent, KeyframeComponent,
+    KineticResponseComponent, LayoutBoundsComponent, LayoutComponent, LightQuantizationComponent,
+    MeshComponent, MusicContextComponent, MusicNote, MusicNoteComponent,
+    NormalVisualisationComponent, OpacityComponent, OpenXRComponent, OptionComponent,
+    OscillatorType, Overflow, OverlayComponent, PointLightComponent, PointerComponent,
+    PointerEvents, Position, QuatTemporalFilterComponent, QuatYawFollowComponent, RayCastComponent,
+    RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RenderGraphComponent,
+    RenderableComponent, RendererSettingsComponent, RendererStatsComponent, RouterComponent,
+    ScrollingComponent, SelectableComponent, SelectionComponent, SerializeComponent,
+    SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent,
+    StencilClipComponent, StyleComponent, TextAlign, TextComponent, TextInputComponent,
+    TextShadowComponent, TextureComponent, TextureFilteringComponent, TransformComponent,
+    TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
+    TransformGizmoCoordSpace, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
     TransformGizmoTranslateComponent, TransformMapRotationComponent, TransformMapScaleComponent,
     TransformMapTranslationComponent, TransformMergeTRSComponent, TransformParentComponent,
     TransformSampleAncestorComponent, TransitionComponent, TransitionEasing,
@@ -1792,7 +1791,11 @@ fn apply_named_assignment(
         return Ok(());
     }
 
-    if name == "root" && world.get_component_by_id_as::<SelectionComponent>(id).is_some() {
+    if name == "root"
+        && world
+            .get_component_by_id_as::<SelectionComponent>(id)
+            .is_some()
+    {
         let src = value_to_component_ref(world, val)?;
         if let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(id) {
             selection.target_root_source = Some(src);
@@ -1936,7 +1939,10 @@ fn apply_call(
         }
         return Ok(());
     }
-    if world.get_component_by_id_as::<SelectionComponent>(id).is_some() {
+    if world
+        .get_component_by_id_as::<SelectionComponent>(id)
+        .is_some()
+    {
         match method {
             "root" => {
                 let src = arg_component_ref(world, args, 0)?;

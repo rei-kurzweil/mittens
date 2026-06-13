@@ -212,9 +212,12 @@ fn update_editor_cursor_from_surface(
         editor_context.cursor_rotation = Some(pose.rotation);
     }
 
-    if let Some(marker_root) = world.children_of(editor_root).iter().copied().find(|&child| {
-        world.component_label(child) == Some("editor_cursor_marker")
-    }) {
+    if let Some(marker_root) = world
+        .children_of(editor_root)
+        .iter()
+        .copied()
+        .find(|&child| world.component_label(child) == Some("editor_cursor_marker"))
+    {
         emit.push_intent_now(
             marker_root,
             IntentValue::UpdateTransform {
@@ -442,10 +445,8 @@ mod tests {
         let mut systems = SystemWorld::new();
         let mut editor_system = EditorSystem::new();
 
-        let panel_root = world.add_component_boxed_named(
-            "panel_root",
-            Box::new(TransformComponent::new()),
-        );
+        let panel_root =
+            world.add_component_boxed_named("panel_root", Box::new(TransformComponent::new()));
         let editor_root = world.add_component_boxed_named(
             "editor_root",
             Box::new(EditorComponent::new().with_interaction_mode(EditorInteractionMode::Cursor3d)),
@@ -479,7 +480,10 @@ mod tests {
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 10_000);
 
-        let state = context.lock().expect("editor context mutex poisoned").clone();
+        let state = context
+            .lock()
+            .expect("editor context mutex poisoned")
+            .clone();
         assert_eq!(state.active_editor, Some(editor_root));
         assert_eq!(state.selected_component, None);
         assert_eq!(state.cursor_translation, Some([0.0, 0.0, 0.01]));
