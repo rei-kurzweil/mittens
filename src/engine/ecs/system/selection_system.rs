@@ -512,9 +512,10 @@ fn direct_option_payload(
     selection_root: ComponentId,
     selected_component: Option<ComponentId>,
 ) -> Option<ComponentId> {
-    let root = selected_component?;
+    let row_root = selected_component?;
+    let option_root = option_marker_on_node(world, row_root).unwrap_or(row_root);
     let matches: Vec<_> = world
-        .children_of(root)
+        .children_of(option_root)
         .iter()
         .copied()
         .filter(|&child| world.get_component_by_id_as::<DataComponent>(child).is_some())
@@ -524,7 +525,7 @@ fn direct_option_payload(
         1 => matches.into_iter().next(),
         _ => {
             eprintln!(
-                "[selection] direct payload resolution found multiple Data children selection_root={selection_root:?} selected_component={root:?} count={}",
+                "[selection] direct payload resolution found multiple Data children selection_root={selection_root:?} selected_component={row_root:?} option_root={option_root:?} count={}",
                 matches.len()
             );
             None
@@ -2011,6 +2012,7 @@ mod tests {
         let _ = world.add_child(root, rows_mount);
 
         let (row, hit, _style_id) = spawn_test_option_item(&mut world, rows_mount, "item_0", true);
+        let option = option_marker_on_node(&world, row).expect("row option");
         let payload = world.add_component_boxed_named(
             "world_panel_payload",
             Box::new(DataComponent::new().with_entry(
@@ -2018,7 +2020,7 @@ mod tests {
                 DataValue::Text("component".to_string()),
             )),
         );
-        let _ = world.add_child(row, payload);
+        let _ = world.add_child(option, payload);
 
         systems.rx.push_event(
             hit,

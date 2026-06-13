@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::{
-    AssetPayloadComponent, DataComponent, DataValue, EditorComponent, OptionComponent,
-    RaycastableComponent, SelectableComponent, SelectionComponent, TransformComponent,
+    DataComponent, DataValue, EditorComponent, OptionComponent, RaycastableComponent,
+    SelectableComponent, SelectionComponent, TransformComponent,
     TransformGizmoComponent,
 };
 use crate::engine::ecs::system::editor::context::EditorContextState;
@@ -351,9 +351,6 @@ fn label_from_component_id(world: &World, id: ComponentId) -> Option<String> {
         if let Some(DataValue::Text(label)) = data.get("label") {
             return Some(label.clone());
         }
-    }
-    if let Some(asset) = world.get_component_by_id_as::<AssetPayloadComponent>(id) {
-        return Some(asset.title.clone());
     }
     None
 }
@@ -1057,11 +1054,7 @@ fn resolve_paint_context(
     }
     let selected_asset = paint_state.selected_asset.as_ref()?;
     let payload = selected_asset.component?;
-    let asset_key = if let Some(asset_payload) =
-        world.get_component_by_id_as::<AssetPayloadComponent>(payload)
-    {
-        asset_payload.asset_key.clone()
-    } else if let Some(data) = world.get_component_by_id_as::<DataComponent>(payload) {
+    let asset_key = if let Some(data) = world.get_component_by_id_as::<DataComponent>(payload) {
         match data.get("asset_key") {
             Some(crate::engine::ecs::component::DataValue::Text(asset_key)) => asset_key.clone(),
             _ => return None,
@@ -1486,8 +1479,7 @@ mod tests {
     use super::*;
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::component::{
-        AssetPayloadComponent, ColorComponent, GridComponent, RenderableComponent,
-        SelectionComponent,
+        ColorComponent, GridComponent, RenderableComponent, SelectionComponent,
     };
     use crate::engine::ecs::system::SystemWorld;
     use crate::engine::graphics::{RenderAssets, VisualWorld};
@@ -1704,7 +1696,7 @@ mod tests {
     }
 
     #[test]
-    fn asset_selection_bootstraps_to_asset_payload_component() {
+    fn asset_selection_bootstraps_to_data_payload() {
         let (
             world,
             _emit,
@@ -1726,11 +1718,15 @@ mod tests {
             .expect("selection");
         let payload = selection.selected_payload.expect("selected payload");
         let asset_payload = world
-            .get_component_by_id_as::<AssetPayloadComponent>(payload)
-            .expect("asset payload component");
+            .get_component_by_id_as::<DataComponent>(payload)
+            .expect("asset payload data");
 
-        assert!(!asset_payload.asset_key.is_empty());
-        assert_eq!(selection.selected_component, world.parent_of(payload));
+        assert!(matches!(
+            asset_payload.get("asset_key"),
+            Some(DataValue::Text(asset_key)) if !asset_key.is_empty()
+        ));
+        let option_root = world.parent_of(payload).expect("payload option parent");
+        assert_eq!(selection.selected_component, world.parent_of(option_root));
     }
 
     #[test]

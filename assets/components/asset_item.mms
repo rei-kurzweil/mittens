@@ -1,9 +1,17 @@
 // asset_item.mms — individual asset item factory (=^･ω･^=)
 
-export fn asset_item(label, item_background_color) {
+export fn asset_item(display_label, payload_asset_key, item_background_color) {
     return T {
         name = "asset_item"
-        Option {}
+        Option {
+            Data {
+                name = "asset_payload"
+                label = display_label
+                title = display_label
+                asset_key = payload_asset_key
+                row_kind = "Asset"
+            }
+        }
         Raycastable.enabled()
         Style {
             display("inline-block")
@@ -58,7 +66,7 @@ export fn asset_item(label, item_background_color) {
             }
             Text {
                 name = "selection_item_label"
-                label
+                display_label
                 C.rgba(0.0, 0.0, 0.0, 1.0)
             }
         }

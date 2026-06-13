@@ -25,7 +25,6 @@ use crate::engine::ecs::system::editor::inspector_panel::{
     InspectorWorkspaceState, build_inspector_panel_models, build_inspector_panel_rows,
     clear_missing_inspector_targets, inspector_panel_instance_id_on_root,
     parse_inspector_item_index, reduce_inspector_workspace_state,
-    resolve_selected_inspector_panel_payload,
 };
 use crate::engine::ecs::system::editor::panel_ui::{
     PanelUiRowSpec, spawn_block_container, spawn_panel_ui_row_tree,
@@ -40,8 +39,7 @@ use crate::engine::ecs::system::editor::world_panel::{
     WORLD_PANEL_SELECTION_NAME, WorldPanelModel, WorldPanelRow, WorldPanelRowKind,
     build_world_panel_model, editor_scene_roots, mark_nearest_layout_dirty, parse_item_index,
     rebuild_world_panel_scene_model, register_editor_root, rerender_world_panel_content,
-    rerender_world_panel_status, resolve_selected_world_panel_payload, sync_world_panel_selection,
-    world_panel_item_label,
+    rerender_world_panel_status, sync_world_panel_selection, world_panel_item_label,
 };
 use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::system::{GridSystem, TransformSystem};
@@ -2001,7 +1999,6 @@ fn rerender_single_inspector_panel_sidebar(
             && let Some(row_root) =
                 world.find_component(container, &format!("#{INSPECTOR_ITEM_PREFIX}{index}"))
         {
-            let selected_payload = resolve_selected_inspector_panel_payload(world, row_root);
             apply_selection_set(
                 world,
                 emit,
@@ -2010,7 +2007,7 @@ fn rerender_single_inspector_panel_sidebar(
                     index: Some(index),
                     component: row_root,
                 }],
-                selected_payload.or(Some(row_root)),
+                Some(row_root),
             );
         } else {
             apply_selection_set(world, emit, selection_root, Vec::new(), None);
@@ -3197,7 +3194,6 @@ fn spawn_world_panel_content_tree(
         && let Some(row_root) =
             world.find_component(content_root, &format!("#{ITEM_PREFIX}{index}"))
     {
-        let selected_payload = resolve_selected_world_panel_payload(world, row_root);
         let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(selection)
         else {
             return content_root;
@@ -3206,7 +3202,6 @@ fn spawn_world_panel_content_tree(
             index: Some(index),
             component: row_root,
         });
-        selection.selected_payload = selected_payload;
     }
 
     content_root

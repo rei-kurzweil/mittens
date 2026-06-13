@@ -514,19 +514,6 @@ pub fn rerender_world_panel_status(
 
 // ── Content rendering ───────────────────────────────────────────────
 
-pub fn resolve_selected_world_panel_payload(
-    world: &World,
-    row_root: ComponentId,
-) -> Option<ComponentId> {
-    let matches =
-        world.find_all_components(row_root, &format!("[name='{WORLD_PANEL_PAYLOAD_NAME}']"));
-    if matches.len() == 1 {
-        matches.into_iter().next()
-    } else {
-        None
-    }
-}
-
 pub fn rerender_world_panel_content(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
@@ -566,7 +553,6 @@ pub fn rerender_world_panel_content(
     if let Some(index) = selected_index.and_then(|i| usize::try_from(i).ok()) {
         let row_selector = format!("#{ITEM_PREFIX}{index}");
         if let Some(row_root) = world.find_component(container, &row_selector) {
-            let selected_payload = resolve_selected_world_panel_payload(world, row_root);
             apply_selection_set(
                 world,
                 emit,
@@ -575,7 +561,7 @@ pub fn rerender_world_panel_content(
                     index: Some(index),
                     component: row_root,
                 }],
-                selected_payload.or(Some(row_root)),
+                Some(row_root),
             );
         } else {
             apply_selection_set(world, emit, selection_root, Vec::new(), None);

@@ -453,21 +453,6 @@ pub(crate) fn parse_inspector_item_index(row_name: &str) -> Option<usize> {
     row_name.strip_prefix(INSPECTOR_ITEM_PREFIX)?.parse().ok()
 }
 
-pub(crate) fn resolve_selected_inspector_panel_payload(
-    world: &World,
-    row_root: ComponentId,
-) -> Option<ComponentId> {
-    let matches = world.find_all_components(
-        row_root,
-        &format!("[name='{INSPECTOR_PANEL_PAYLOAD_NAME}']"),
-    );
-    if matches.len() == 1 {
-        matches.into_iter().next()
-    } else {
-        None
-    }
-}
-
 pub(crate) fn inspector_panel_instance_id_on_root(
     world: &World,
     root: ComponentId,

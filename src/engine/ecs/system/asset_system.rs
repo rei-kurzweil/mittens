@@ -5,8 +5,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 
 use crate::engine::ecs::component::{
-    AssetPayloadComponent, LayoutComponent, RaycastableComponent, StyleComponent,
-    TransformComponent,
+    LayoutComponent, RaycastableComponent, StyleComponent, TransformComponent,
 };
 use crate::engine::ecs::system::bounds_system::{BoundsSystem, RenderableBoundsMeasure};
 use crate::engine::ecs::system::editor_paint_system::PaintAssetTemplate;
@@ -441,12 +440,19 @@ impl AssetSystem {
             env!("CARGO_MANIFEST_DIR"),
             "/assets/components/asset_item.mms"
         );
+        let module = self.modules.get(&item.module_id).ok_or_else(|| {
+            format!(
+                "asset module not loaded for item '{}::{}'",
+                item.title, item.export_name
+            )
+        })?;
 
         let item_root = MeowMeowRunner::spawn_mms_module_component_from_file(
             asset_item_path,
             "asset_item",
             vec![
                 Value::String(item.title.clone()),
+                Value::String(item.asset_key(&module.path)),
                 Value::Array(vec![
                     Value::Number(0.92),
                     Value::Number(0.97),
@@ -458,19 +464,6 @@ impl AssetSystem {
             world,
             emit,
         )?;
-
-        if let Some(module) = self.modules.get(&item.module_id) {
-            let payload = world.add_component_boxed_named(
-                "asset_payload",
-                Box::new(AssetPayloadComponent::new(
-                    item.asset_key(&module.path),
-                    item.title.clone(),
-                )),
-            );
-            world
-                .add_child(item_root, payload)
-                .map_err(|e| format!("attach asset payload failed: {e}"))?;
-        }
 
         // Pass dummy arguments based on param_names
         let mut args = Vec::new();
