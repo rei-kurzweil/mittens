@@ -106,6 +106,7 @@ const PANEL_LAYOUT_GAP_GU: f64 = 2.0;
 const PANEL_ROOT_MARGIN_X_GU: f64 = 0.5;
 const PANEL_ROOT_MARGIN_Y_GU: f64 = 0.5;
 const PANEL_LAYOUT_AVAILABLE_WIDTH_GU: f64 = 200000.0;
+const DISABLE_INSPECTOR_MOUNT_WRITES: bool = true;
 #[cfg(test)]
 static WORLD_PANEL_SCENE_PATH_OVERRIDE: Mutex<Option<PathBuf>> = Mutex::new(None);
 
@@ -1005,6 +1006,18 @@ fn sync_and_refresh_inspector_panels(
     rendered_inspector_models: &Arc<Mutex<Vec<InspectorPanelModel>>>,
     data_renderer: &mut DataRendererSystem,
 ) {
+    if DISABLE_INSPECTOR_MOUNT_WRITES {
+        let _ = world;
+        let _ = emit;
+        let _ = panel_query_root;
+        let _ = editor_context_state;
+        let _ = world_panel_scene_model;
+        let _ = inspector_workspace_state;
+        let _ = rendered_inspector_models;
+        let _ = data_renderer;
+        return;
+    }
+
     let editor_context = editor_context_state
         .lock()
         .expect("editor context state mutex poisoned")
@@ -1631,18 +1644,8 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 );
             }
         }
-        if let Some(layout_root) =
-            world.find_component(panel_mount_root, &format!("#{PANEL_LAYOUT_ROOT_NAME}"))
-        {
-            rerender_inspector_panels(
-                world,
-                emit,
-                layout_root,
-                &inspector_models,
-                rendered_inspector_models,
-                data_renderer,
-            );
-        }
+        let _ = inspector_models;
+        let _ = rendered_inspector_models;
 
         let grid_context = EditorContextState::default();
         rerender_grid_panel_from_context(
