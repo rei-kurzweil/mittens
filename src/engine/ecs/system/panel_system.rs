@@ -33,6 +33,13 @@ pub enum PanelSlotKind {
     Footer,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PanelControlKind {
+    Selection,
+    TitleLabel,
+    PinButton,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PanelShellSpec {
     pub panel_kind: PanelKind,
@@ -41,6 +48,7 @@ pub struct PanelShellSpec {
     pub args: Vec<crate::meow_meow::object::Value>,
     pub root_selector: String,
     pub slot_selectors: HashMap<PanelSlotKind, String>,
+    pub control_selectors: HashMap<PanelControlKind, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,6 +57,7 @@ pub struct PanelInstance {
     pub editor_root: ComponentId,
     pub root: ComponentId,
     pub slots: HashMap<PanelSlotKind, ComponentId>,
+    pub controls: HashMap<PanelControlKind, ComponentId>,
     pub instance_id: Option<u64>,
 }
 
@@ -302,11 +311,17 @@ pub fn resolve_panel_instance(
         let slot = world.find_component(shell_root, selector)?;
         slots.insert(*kind, slot);
     }
+    let mut controls = HashMap::new();
+    for (kind, selector) in &spec.control_selectors {
+        let control = world.find_component(shell_root, selector)?;
+        controls.insert(*kind, control);
+    }
     Some(PanelInstance {
         panel_kind: spec.panel_kind,
         editor_root,
         root: shell_root,
         slots,
+        controls,
         instance_id,
     })
 }

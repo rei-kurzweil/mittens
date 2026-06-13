@@ -3,12 +3,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::{EditorInteractionMode, TransformComponent};
-use crate::engine::ecs::component::style::VerticalAlign;
 use crate::engine::ecs::component::{
-    ColorComponent, DataComponent, DataValue, Display, EdgeInsets, OpacityComponent,
-    RaycastableComponent, RenderableComponent, SelectableComponent, SelectionComponent,
-    SelectionEntry, SelectionMode, SerializeComponent, SizeDimension, StyleComponent, TextAlign,
-    TextComponent,
+    ColorComponent, DataComponent, DataValue, OpacityComponent, RenderableComponent,
+    SelectableComponent, SelectionComponent, SelectionEntry, SelectionMode, SerializeComponent,
+    StyleComponent,
 };
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::system::data_renderer_system::{
@@ -49,11 +47,11 @@ use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::system::{GridSystem, TransformSystem};
 use crate::engine::ecs::system::panel_system::{
     EDITOR_RUNTIME_UI_ROOT_NAME, PANEL_LAYOUT_MOUNT_NAME, PANEL_LAYOUT_ROOT_NAME,
-    PANEL_LAYOUT_SELECTION_NAME, PanelActionKind, PanelKind, PanelLayoutMountSpec, PanelShellSpec,
-    PanelSlotKind, build_panel_shell_component_expr, decode_panel_action_payload,
-    decorate_panel_root_ce, ensure_panel_layout_selection, find_named_root,
-    is_descendant_or_self, panel_layout_root_id, panel_layout_selection_id, spawn_panel_instance,
-    spawn_panel_layout_mount,
+    PANEL_LAYOUT_SELECTION_NAME, PanelActionKind, PanelControlKind, PanelKind,
+    PanelLayoutMountSpec, PanelShellSpec, PanelSlotKind, build_panel_shell_component_expr,
+    decode_panel_action_payload, decorate_panel_root_ce, ensure_panel_layout_selection,
+    find_named_root, is_descendant_or_self, panel_layout_root_id, panel_layout_selection_id,
+    spawn_panel_instance, spawn_panel_layout_mount,
 };
 use crate::engine::ecs::system::selection_system::{
     apply_selection_set, resolve_semantic_target_from_payload,
@@ -84,6 +82,7 @@ const INSPECTOR_PANEL_INSTANCE_PREFIX: &str = "inspector_panel_instance_";
 const INSPECTOR_PANEL_INSTANCE_DATA_NAME: &str = "inspector_panel_instance_data";
 const INSPECTOR_PANEL_PIN_BUTTON_NAME: &str = "pin_button";
 const INSPECTOR_PANEL_PIN_BUTTON_SELECTOR: &str = "#pin_button";
+const WORLD_PANEL_SELECTION_SELECTOR: &str = "#world_panel_selection";
 // Removed: INSPECTOR_DETAIL_WORLD_PANEL_MOUNT_NAME, INSPECTOR_DETAIL_WORLD_LAYOUT_ROOT_NAME
 const PANEL_STATUS_WRAP_SELECTOR: &str = "#save_status_wrap";
 const PANEL_STATUS_VALUE_SELECTOR: &str = "#panel_status_value";
@@ -866,6 +865,11 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         else {
             return;
         };
+        let Some(selection_root) =
+            world.find_component(world_panel_root, WORLD_PANEL_SELECTION_SELECTOR)
+        else {
+            return;
+        };
 
         let editor_context = self.editor_context();
         let model = build_world_panel_model(
@@ -880,6 +884,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             world,
             emit,
             content_slot,
+            selection_root,
             &model.rows,
             model.selected_index,
             &mut *self
@@ -954,6 +959,8 @@ fn refresh_all_panel_models(
         return;
     };
     if let Some(content_slot) = world.find_component(world_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
+        && let Some(selection_root) =
+            world.find_component(world_panel_root, WORLD_PANEL_SELECTION_SELECTOR)
     {
         let world_model = build_world_panel_model(
             world,
@@ -966,6 +973,7 @@ fn refresh_all_panel_models(
             world,
             emit,
             content_slot,
+            selection_root,
             &world_model.rows,
             world_model.selected_index,
             data_renderer,
@@ -1609,11 +1617,14 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         {
             if let Some(content_slot) =
                 world.find_component(world_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
+                && let Some(selection_root) =
+                    world.find_component(world_panel_root, WORLD_PANEL_SELECTION_SELECTOR)
             {
                 rerender_world_panel_content(
                     world,
                     emit,
                     content_slot,
+                    selection_root,
                     &model.rows,
                     model.selected_index,
                     data_renderer,
@@ -1938,6 +1949,7 @@ fn rerender_single_inspector_panel_sidebar(
     inspector_panel_root: ComponentId,
     panel_id: InspectorPanelId,
     sidebar_slot: ComponentId,
+    selection_root: Option<ComponentId>,
     rows: &[InspectorPanelRow],
     data_renderer: &mut DataRendererSystem,
 ) {
@@ -1981,31 +1993,24 @@ fn rerender_single_inspector_panel_sidebar(
         return;
     };
 
-    let selection = world.add_component_boxed_named(
-        INSPECTOR_PANEL_SELECTION_NAME,
-        Box::new(SelectionComponent::new()),
-    );
-    if let Some(selection_component) =
-        world.get_component_by_id_as_mut::<SelectionComponent>(selection)
-    {
-        selection_component.payload_selector =
-            Some(format!("[name='{INSPECTOR_PANEL_PAYLOAD_NAME}']"));
-    }
-    let _ = world.add_child(container, selection);
-
-    if let Some((index, _)) = rows.iter().enumerate().find(|(_, row)| row.selected)
-        && let Some(row_root) =
-            world.find_component(container, &format!("#{INSPECTOR_ITEM_PREFIX}{index}"))
-    {
-        let selected_payload = resolve_selected_inspector_panel_payload(world, row_root);
-        if let Some(selection_component) =
-            world.get_component_by_id_as_mut::<SelectionComponent>(selection)
+    if let Some(selection_root) = selection_root {
+        if let Some((index, _)) = rows.iter().enumerate().find(|(_, row)| row.selected)
+            && let Some(row_root) =
+                world.find_component(container, &format!("#{INSPECTOR_ITEM_PREFIX}{index}"))
         {
-            selection_component.select_entry(SelectionEntry {
-                index: Some(index),
-                component: row_root,
-            });
-            selection_component.selected_payload = selected_payload;
+            let selected_payload = resolve_selected_inspector_panel_payload(world, row_root);
+            apply_selection_set(
+                world,
+                emit,
+                selection_root,
+                vec![SelectionEntry {
+                    index: Some(index),
+                    component: row_root,
+                }],
+                selected_payload.or(Some(row_root)),
+            );
+        } else {
+            apply_selection_set(world, emit, selection_root, Vec::new(), None);
         }
     }
     println!(
@@ -2084,21 +2089,10 @@ fn update_inspector_panel_instance_tree(
 
     let pin_changed = previous_model.is_none_or(|previous| previous.pinned != model.pinned);
     if pin_changed {
-        if let Some(existing_pin_button) =
+        if let Some(pin_button) =
             world.find_component(inspector_panel_root, INSPECTOR_PANEL_PIN_BUTTON_SELECTOR)
         {
-            emit.push_intent_now(
-                existing_pin_button,
-                IntentValue::RemoveSubtree {
-                    component_ids: vec![existing_pin_button],
-                },
-            );
-        }
-        if let Some(pin_slot) =
-            world.find_component(inspector_panel_root, INSPECTOR_PANEL_PIN_SLOT_SELECTOR)
-        {
-            let pin_button = spawn_inspector_pin_button(world, model.pinned);
-            let _ = world.add_child(pin_slot, pin_button);
+            set_inspector_pin_button_state(world, emit, pin_button, model.pinned);
         }
     }
 
@@ -2109,6 +2103,7 @@ fn update_inspector_panel_instance_tree(
             inspector_panel_root,
             model.panel_id,
             sidebar_slot,
+            world.find_component(inspector_panel_root, INSPECTOR_PANEL_SELECTION_SELECTOR),
             &model.rows,
             data_renderer,
         );
@@ -2524,6 +2519,11 @@ fn rerender_world_panel_for_context(
     else {
         return;
     };
+    let Some(selection_root) =
+        world.find_component(world_panel_root, WORLD_PANEL_SELECTION_SELECTOR)
+    else {
+        return;
+    };
 
     let world_model = build_world_panel_model(
         world,
@@ -2536,6 +2536,7 @@ fn rerender_world_panel_for_context(
         world,
         emit,
         content_slot,
+        selection_root,
         &world_model.rows,
         world_model.selected_index,
         data_renderer,
@@ -2811,18 +2812,19 @@ fn build_panel_component_expr(
     panel_kind: PanelKind,
     panel_kind_label: &str,
 ) -> Option<MaterializedCE> {
-    build_panel_shell_component_expr(
-        world,
-        emit,
-        &PanelShellSpec {
-            panel_kind,
+        build_panel_shell_component_expr(
+            world,
+            emit,
+            &PanelShellSpec {
+                panel_kind,
             asset_path: asset_path.to_string(),
-            export_name: export_name.to_string(),
-            args,
-            root_selector: String::new(),
-            slot_selectors: HashMap::new(),
-        },
-    )
+                export_name: export_name.to_string(),
+                args,
+                root_selector: String::new(),
+                slot_selectors: HashMap::new(),
+                control_selectors: HashMap::new(),
+            },
+        )
     .map_err(|error| {
         eprintln!("[InspectorSystemStopgapMmsAdapter] {panel_kind_label} render error: {error}");
     })
@@ -2942,6 +2944,16 @@ fn spawn_inspector_panel_instance_tree(
                 INSPECTOR_PANEL_PIN_SLOT_SELECTOR.to_string(),
             ),
         ]),
+        control_selectors: HashMap::from([
+            (
+                PanelControlKind::Selection,
+                INSPECTOR_PANEL_SELECTION_SELECTOR.to_string(),
+            ),
+            (
+                PanelControlKind::TitleLabel,
+                "#title_label".to_string(),
+            ),
+        ]),
     };
     let spawned = match spawn_panel_instance(
         world,
@@ -2959,24 +2971,23 @@ fn spawn_inspector_panel_instance_tree(
     attach_inspector_panel_instance_id(world, spawned.mount_root, model.panel_id);
     let instance = spawned.instance;
     let inspector_panel_root = instance.root;
-    let Some(pin_slot) = instance.slots.get(&PanelSlotKind::Toolbar).copied() else {
-        return inspector_panel_root;
-    };
     let Some(sidebar_slot) = instance.slots.get(&PanelSlotKind::Sidebar).copied() else {
         return inspector_panel_root;
     };
     let Some(detail_slot) = instance.slots.get(&PanelSlotKind::Detail).copied() else {
         return inspector_panel_root;
     };
-
-    let pin_button = spawn_inspector_pin_button(world, model.pinned);
-    let _ = world.add_child(pin_slot, pin_button);
+    let selection_root = instance
+        .controls
+        .get(&PanelControlKind::Selection)
+        .copied();
     rerender_single_inspector_panel_sidebar(
         world,
         emit,
         inspector_panel_root,
         model.panel_id,
         sidebar_slot,
+        selection_root,
         &model.rows,
         data_renderer,
     );
@@ -3023,56 +3034,39 @@ fn spawn_inspector_panel_instance_fallback_root(
     root
 }
 
-fn spawn_inspector_pin_button(world: &mut World, pinned: bool) -> ComponentId {
-    let root = world.add_component_boxed_named(
-        INSPECTOR_PANEL_PIN_BUTTON_NAME,
-        Box::new(TransformComponent::new()),
-    );
-    let raycastable = world.add_component_boxed_named(
-        "pin_button_raycastable",
-        Box::new(RaycastableComponent::click_only()),
-    );
-    let _ = world.add_child(root, raycastable);
-    let style = world.add_component_boxed_named(
-        "pin_button_style",
-        Box::new({
-            let mut style = StyleComponent::new();
-            style.display = Some(Display::Block);
-            style.width = SizeDimension::Percent(100.0);
-            style.height = SizeDimension::GlyphUnits(2.0);
-            style.margin = EdgeInsets {
-                left: SizeDimension::GlyphUnits(0.0),
-                right: SizeDimension::GlyphUnits(0.0),
-                top: SizeDimension::GlyphUnits(0.5),
-                bottom: SizeDimension::GlyphUnits(0.0),
-            };
-            style.padding = EdgeInsets::axes(0.0, 0.15);
-            style.text_align = TextAlign::Center;
-            style.vertical_align = VerticalAlign::Middle;
-            style.background_color = Some(if pinned {
-                [0.95, 0.82, 0.18, 1.0]
-            } else {
-                [0.10, 0.55, 0.18, 1.0]
-            });
-            style.color = Some(if pinned {
-                [0.10, 0.12, 0.06, 1.0]
-            } else {
-                [0.75, 1.00, 0.45, 1.0]
-            });
-            style
-        }),
-    );
-    let text_root = world
-        .add_component_boxed_named("pin_button_text_root", Box::new(TransformComponent::new()));
-    let text = world.add_component_boxed_named(
-        "pin_button_text",
-        Box::new(TextComponent::new(if pinned { "Unpin" } else { "Pin" }).with_font_size(0.08)),
-    );
+fn set_inspector_pin_button_state(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    pin_button: ComponentId,
+    pinned: bool,
+) {
+    if let Some(text) = world.find_component(pin_button, "#pin_button_text") {
+        emit.push_intent_now(
+            text,
+            IntentValue::SetText {
+                component_ids: vec![text],
+                text: if pinned { "Unpin" } else { "Pin" }.to_string(),
+            },
+        );
+    }
 
-    let _ = world.add_child(root, style);
-    let _ = world.add_child(root, text_root);
-    let _ = world.add_child(text_root, text);
-    root
+    if let Some(style_id) = world.children_of(pin_button).iter().copied().find(|&child| {
+        world
+            .get_component_by_id_as::<StyleComponent>(child)
+            .is_some()
+    }) && let Some(style) = world.get_component_by_id_as_mut::<StyleComponent>(style_id)
+    {
+        style.background_color = Some(if pinned {
+            [0.95, 0.82, 0.18, 1.0]
+        } else {
+            [0.10, 0.55, 0.18, 1.0]
+        });
+        style.color = Some(if pinned {
+            [0.10, 0.12, 0.06, 1.0]
+        } else {
+            [0.75, 1.00, 0.45, 1.0]
+        });
+    }
 }
 
 fn debug_style_details(world: &World, root: ComponentId, selector: &str, label: &str) {

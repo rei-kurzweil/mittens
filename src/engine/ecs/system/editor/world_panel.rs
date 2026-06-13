@@ -531,6 +531,7 @@ pub fn rerender_world_panel_content(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     content_slot: ComponentId,
+    selection_root: ComponentId,
     rows: &[WorldPanelRow],
     selected_index: Option<i64>,
     data_renderer: &mut DataRendererSystem,
@@ -562,31 +563,25 @@ pub fn rerender_world_panel_content(
             }
         };
 
-    let selection = world.add_component_boxed_named(
-        WORLD_PANEL_SELECTION_NAME,
-        Box::new(SelectionComponent::new()),
-    );
-    if let Some(selection_component) =
-        world.get_component_by_id_as_mut::<SelectionComponent>(selection)
-    {
-        selection_component.payload_selector = Some(format!("[name='{WORLD_PANEL_PAYLOAD_NAME}']"));
-    }
-    let _ = world.add_child(container, selection);
-
     if let Some(index) = selected_index.and_then(|i| usize::try_from(i).ok()) {
         let row_selector = format!("#{ITEM_PREFIX}{index}");
         if let Some(row_root) = world.find_component(container, &row_selector) {
             let selected_payload = resolve_selected_world_panel_payload(world, row_root);
-            if let Some(selection_component) =
-                world.get_component_by_id_as_mut::<SelectionComponent>(selection)
-            {
-                selection_component.select_entry(SelectionEntry {
+            apply_selection_set(
+                world,
+                emit,
+                selection_root,
+                vec![SelectionEntry {
                     index: Some(index),
                     component: row_root,
-                });
-                selection_component.selected_payload = selected_payload;
-            }
+                }],
+                selected_payload.or(Some(row_root)),
+            );
+        } else {
+            apply_selection_set(world, emit, selection_root, Vec::new(), None);
         }
+    } else {
+        apply_selection_set(world, emit, selection_root, Vec::new(), None);
     }
     println!(
         "[WorldPanel] rerender_world_panel_content took {:?}",

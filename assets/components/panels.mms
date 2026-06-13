@@ -314,17 +314,22 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
         }
 
         T {
-            name = "content_slot"
-            Raycastable.enabled()
-            Style {
-                display("block")
-                height(WORLD_PANEL_CONTENT_HEIGHT_GU)
-                margin_bottom(GAP_GU)
-                overflow("scroll")
-                background_color([0.96, 0.92, 0.18, 0.80])
-                background_z(-0.001)
+            Selection.payload_selector("[name='world_panel_payload']") {
+                name = "world_panel_selection"
+                T {
+                    name = "content_slot"
+                    Raycastable.enabled()
+                    Style {
+                        display("block")
+                        height(WORLD_PANEL_CONTENT_HEIGHT_GU)
+                        margin_bottom(GAP_GU)
+                        overflow("scroll")
+                        background_color([0.96, 0.92, 0.18, 0.80])
+                        background_z(-0.001)
+                    }
+                    content
+                }
             }
-            content
         }
 
         T {
@@ -359,6 +364,7 @@ let INSPECTOR_PANEL_PIN_SLOT_WIDTH_GU = 5.0
 let INSPECTOR_PANEL_TITLE_TEXT_WIDTH_GU = INSPECTOR_PANEL_WIDTH_GU - INSPECTOR_PANEL_PIN_SLOT_WIDTH_GU
 
 export fn inspector_panel(title, items, title_color, panel_background_color, item_background_color) {
+    let pin_button = panel_button("pin_button", "Pin")
     let root = T {
         name = "inspector_panel_root"
         Style {
@@ -415,6 +421,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                     height(TITLE_BAR_HEIGHT_GU)
                     vertical_align("middle")
                 }
+                pin_button
             }
         }
 
@@ -438,18 +445,23 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
                 }
 
                 T {
-                    name = "sidebar_slot"
-                    Style {
-                        display("inline-block")
-                        width(40%)
-                        height(100%)
-                        margin_right(1gu)
-                        font_size(1)
-                        background_color([0.9, 0.9, 0.9, 0.95])
-                        background_z(-0.005)
-                        overflow("scroll")
+                    Selection.payload_selector("[name='inspector_panel_payload']") {
+                        name = "inspector_panel_selection"
+                        T {
+                            name = "sidebar_slot"
+                            Style {
+                                display("inline-block")
+                                width(40%)
+                                height(100%)
+                                margin_right(1gu)
+                                font_size(1)
+                                background_color([0.9, 0.9, 0.9, 0.95])
+                                background_z(-0.005)
+                                overflow("scroll")
+                            }
+                            inspector_panel_content(items, item_background_color)
+                        }
                     }
-                    inspector_panel_content(items, item_background_color)
                 }
 
                 T {
