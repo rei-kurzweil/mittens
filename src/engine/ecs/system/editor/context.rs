@@ -199,6 +199,7 @@ impl EditorContextSystem {
         if self.installed_editor_roots.insert(editor_root) {
             install_editor_handlers(rx, editor_root, Arc::clone(&self.state));
         }
+        sync_global_editor_interaction_mode(world, &self.state);
         sync_editor_observer_routes(world, &self.state, &self.workspace);
         let mut emit = NullEmit;
         sync_editor_cursor_visual(world, &mut emit, &self.state);
@@ -752,10 +753,7 @@ fn sync_editor_observer_routes(
 
     for editor_root in workspace.registered_editors {
         let router_id = ensure_editor_observer_router(world, editor_root);
-        let interaction_mode = world
-            .get_component_by_id_as::<EditorComponent>(editor_root)
-            .map(|editor| editor.interaction_mode)
-            .unwrap_or(EditorInteractionMode::Select);
+        let interaction_mode = editor_context.interaction_mode;
         let Some(router) =
             world.get_component_by_id_as_mut::<SignalObserverRouterComponent>(router_id)
         else {
@@ -916,20 +914,39 @@ fn sync_editor_component_selection(world: &mut World, event: &EditorContextEvent
             editor,
             interaction_mode,
         } => {
-            let Some(editor_root) = *editor else {
-                return;
-            };
-            if let Some(editor_component) =
-                world.get_component_by_id_as_mut::<EditorComponent>(editor_root)
-            {
+            let _ = editor;
+            for editor_root in world.all_components().collect::<Vec<_>>() {
+                let Some(editor_component) =
+                    world.get_component_by_id_as_mut::<EditorComponent>(editor_root)
+                else {
+                    continue;
+                };
                 eprintln!(
-                    "\n\n🛠️🎚️📌 sync_editor_component_selection interaction_mode_change editor_root={editor_root:?} old_mode={:?} new_mode={interaction_mode:?}\n",
+                    "🛠️🎚️📌 sync_editor_component_selection interaction_mode_change editor_root={editor_root:?} old_mode={:?} new_mode={interaction_mode:?}",
                     editor_component.interaction_mode
                 );
                 editor_component.interaction_mode = *interaction_mode;
             }
         }
         EditorContextEvent::PanelFocusChanged { .. } => {}
+    }
+}
+
+fn sync_global_editor_interaction_mode(
+    world: &mut World,
+    state: &Arc<Mutex<EditorContextState>>,
+) {
+    let interaction_mode = state
+        .lock()
+        .expect("editor context state poisoned")
+        .interaction_mode;
+
+    for editor_root in world.all_components().collect::<Vec<_>>() {
+        let Some(editor_component) = world.get_component_by_id_as_mut::<EditorComponent>(editor_root)
+        else {
+            continue;
+        };
+        editor_component.interaction_mode = interaction_mode;
     }
 }
 
@@ -1113,8 +1130,8 @@ mod tests {
                 .any(|name| name == EDITOR_SELECT_HANDLER_NAME)
         );
 
-        if let Some(editor) = world.get_component_by_id_as_mut::<EditorComponent>(editor_root) {
-            editor.interaction_mode = EditorInteractionMode::Cursor3d;
+        if let Ok(mut guard) = state.lock() {
+            guard.interaction_mode = EditorInteractionMode::Cursor3d;
         }
         sync_editor_observer_routes(&mut world, &state, &workspace);
         let router = world
@@ -1135,8 +1152,8 @@ mod tests {
                 .any(|name| name == EDITOR_CURSOR_HANDLER_NAME)
         );
 
-        if let Some(editor) = world.get_component_by_id_as_mut::<EditorComponent>(editor_root) {
-            editor.interaction_mode = EditorInteractionMode::SelectAndCursor;
+        if let Ok(mut guard) = state.lock() {
+            guard.interaction_mode = EditorInteractionMode::SelectAndCursor;
         }
         sync_editor_observer_routes(&mut world, &state, &workspace);
         let router = world
@@ -1406,6 +1423,38 @@ mod tests {
                 .expect("editor")
                 .selected,
             Some(scene_target)
+        );
+    }
+
+    #[test]
+    fn interaction_mode_change_updates_all_editor_roots() {
+        let mut world = World::default();
+        let editor_a =
+            world.add_component_boxed_named("editor_a", Box::new(EditorComponent::new()));
+        let editor_b =
+            world.add_component_boxed_named("editor_b", Box::new(EditorComponent::new()));
+
+        sync_editor_component_selection(
+            &mut world,
+            &EditorContextEvent::InteractionModeChanged {
+                editor: Some(editor_a),
+                interaction_mode: EditorInteractionMode::Cursor3d,
+            },
+        );
+
+        assert_eq!(
+            world
+                .get_component_by_id_as::<EditorComponent>(editor_a)
+                .expect("editor_a")
+                .interaction_mode,
+            EditorInteractionMode::Cursor3d
+        );
+        assert_eq!(
+            world
+                .get_component_by_id_as::<EditorComponent>(editor_b)
+                .expect("editor_b")
+                .interaction_mode,
+            EditorInteractionMode::Cursor3d
         );
     }
 }
