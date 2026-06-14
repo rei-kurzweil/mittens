@@ -106,7 +106,7 @@ export fn editor_settings_panel(title, title_color, panel_background_color) {
 
 // ── paint_panel ───────────────────────────────────────────────────────────────
 
-let PAINT_PANEL_WIDTH_GU = 41.0
+let PAINT_PANEL_WIDTH_GU = 26.0
 let PAINT_PANEL_STATUS_BAR_HEIGHT_GU = 4.0
 let PAINT_PANEL_CONTENT_STATUS_GAP_GU = 0.5
 let PAINT_PANEL_CONTENT_HEIGHT_GU = 8.5
@@ -157,7 +157,6 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
             name = "content_slot"
             Style {
                 display("block")
-                height(PAINT_PANEL_CONTENT_HEIGHT_GU)
                 margin_bottom(PAINT_PANEL_CONTENT_STATUS_GAP_GU)
                 background_color([0.96, 0.92, 0.18, 0.80])
                 background_z(-0.001)
