@@ -28,6 +28,7 @@ const EDITOR_CURSOR_HANDLER_NAME: &str = "editor_cursor_3d";
 const DEBUG_BLACKLIST_EDITOR_PANEL_REFRESH: bool = true;
 const CURSOR_MARKER_ROOT_NAME: &str = "editor_cursor_marker";
 const CURSOR_MARKER_SIZE: f32 = 0.5;
+const CURSOR_MARKER_OPACITY: f32 = 0.9;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct EditorContextState {
@@ -405,7 +406,7 @@ fn editor_context_event_from_shared_signal(
         let active_editor =
             current_or_default_editor_root(world, panel_query_root, component, fallback_editor);
         eprintln!(
-            "⚙️🧪📝 editor settings selection selection_root={selection_root:?} component={component:?} payload={selected_payload:?} option={option:?} active_editor={active_editor:?}"
+            "\n\n⚙️🧪📝 editor settings selection selection_root={selection_root:?} component={component:?} payload={selected_payload:?} option={option:?} active_editor={active_editor:?}\n"
         );
         Some(EditorContextEvent::InteractionModeChanged {
             editor: active_editor,
@@ -417,7 +418,7 @@ fn editor_context_event_from_shared_signal(
         let active_editor =
             semantic_target.and_then(|target| nearest_editor_ancestor(world, target));
         println!(
-            "[EditorContext][trace] world_panel selection_root={selection_root:?} clicked_row={selected_component:?} payload={selected_payload:?} authored_target={semantic_target:?} active_editor={:?}",
+            "\n\n[EditorContext][trace] world_panel selection_root={selection_root:?} clicked_row={selected_component:?} payload={selected_payload:?} authored_target={semantic_target:?} active_editor={:?}\n",
             active_editor
         );
         Some(EditorContextEvent::WorldPanelSelectionChanged {
@@ -581,11 +582,7 @@ fn sync_editor_cursor_visual(
     );
 
     let opacity_ids = cursor_marker_opacities(world, marker);
-    let target_opacity = if state.cursor_translation.is_some() {
-        0.35
-    } else {
-        0.0
-    };
+    let target_opacity = CURSOR_MARKER_OPACITY;
     for opacity_id in &opacity_ids {
         if let Some(opacity) = world.get_component_by_id_as_mut::<OpacityComponent>(*opacity_id) {
             opacity.opacity = target_opacity;
@@ -683,7 +680,7 @@ fn ensure_cursor_marker(
         );
         let plane_opacity = world.add_component_boxed_named(
             &format!("{name}_opacity"),
-            Box::new(OpacityComponent::new().with_opacity(0.0)),
+            Box::new(OpacityComponent::new().with_opacity(CURSOR_MARKER_OPACITY)),
         );
         let plane_emissive = world.add_component_boxed_named(
             &format!("{name}_emissive"),
@@ -926,7 +923,7 @@ fn sync_editor_component_selection(world: &mut World, event: &EditorContextEvent
                 world.get_component_by_id_as_mut::<EditorComponent>(editor_root)
             {
                 eprintln!(
-                    "🛠️🎚️📌 sync_editor_component_selection interaction_mode_change editor_root={editor_root:?} old_mode={:?} new_mode={interaction_mode:?}",
+                    "\n\n🛠️🎚️📌 sync_editor_component_selection interaction_mode_change editor_root={editor_root:?} old_mode={:?} new_mode={interaction_mode:?}\n",
                     editor_component.interaction_mode
                 );
                 editor_component.interaction_mode = *interaction_mode;

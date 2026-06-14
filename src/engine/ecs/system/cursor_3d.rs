@@ -38,29 +38,52 @@ impl Cursor3dSystem {
             editor_root,
             Some(EDITOR_CURSOR_HANDLER_NAME.to_string()),
             move |world, emit, env| {
+                eprintln!("✨✨✨🐈🐈🐈 cursor_3d handler invoked editor_root={editor_root:?}");
                 let Some(EventSignal::DragStart {
                     renderable,
                     hit_point,
                     ..
                 }) = env.event.as_ref()
                 else {
+                    eprintln!("✨✨✨🐈🐈🐈 cursor_3d ignoring non-DragStart signal editor_root={editor_root:?}");
                     return;
                 };
+
+                eprintln!(
+                    "✨✨✨🐈🐈🐈 cursor_3d drag_start editor_root={editor_root:?} renderable={renderable:?} hit_point={hit_point:?}"
+                );
 
                 let editor_context = editor_context_state
                     .lock()
                     .expect("editor context state mutex poisoned")
                     .clone();
                 if paint_panel_is_focused(world, panel_query_root, &editor_context) {
+                    eprintln!(
+                        "✨✨✨🐈🐈🐈 cursor_3d suppressed because paint panel is focused editor_root={editor_root:?} focused_panel={:?}",
+                        editor_context.focused_panel
+                    );
                     return;
                 }
 
                 let Some(scene_hit) = resolve_editor_scene_hit(world, *renderable) else {
+                    eprintln!(
+                        "✨✨✨🐈🐈🐈 cursor_3d failed resolve_editor_scene_hit editor_root={editor_root:?} renderable={renderable:?}"
+                    );
                     return;
                 };
                 if scene_hit.editor_root != editor_root {
+                    eprintln!(
+                        "✨✨✨🐈🐈🐈 cursor_3d scene_hit belongs to different editor requested_editor={editor_root:?} hit_editor={:?} renderable={renderable:?}",
+                        scene_hit.editor_root
+                    );
                     return;
                 }
+
+                eprintln!(
+                    "✨✨✨🐈🐈🐈 cursor_3d resolved scene_hit editor_root={editor_root:?} target_renderable={:?} target_transform={:?}",
+                    scene_hit.target_renderable,
+                    scene_hit.target_transform
+                );
 
                 update_editor_cursor_from_surface(
                     world,
@@ -95,14 +118,24 @@ fn update_editor_cursor_from_surface(
     target_renderable: ComponentId,
     hit_point: [f32; 3],
 ) {
+    eprintln!(
+        "✨✨✨🐈🐈🐈 cursor_3d update_from_surface begin editor_root={editor_root:?} target_renderable={target_renderable:?} hit_point={hit_point:?}"
+    );
     let marker_root = world
         .children_of(editor_root)
         .iter()
         .copied()
         .find(|&child| world.component_label(child) == Some(CURSOR_MARKER_ROOT_NAME));
     let Some(marker_root) = marker_root else {
+        eprintln!(
+            "✨✨✨🐈🐈🐈 cursor_3d missing marker_root editor_root={editor_root:?} expected_label={CURSOR_MARKER_ROOT_NAME}"
+        );
         return;
     };
+
+    eprintln!(
+        "✨✨✨🐈🐈🐈 cursor_3d found marker_root editor_root={editor_root:?} marker_root={marker_root:?}"
+    );
 
     let Ok(pose) = resolve_surface_aligned_pose_for_subtree(
         world,
@@ -111,8 +144,17 @@ fn update_editor_cursor_from_surface(
         marker_root,
         None,
     ) else {
+        eprintln!(
+            "✨✨✨🐈🐈🐈 cursor_3d resolve_surface_aligned_pose_for_subtree failed editor_root={editor_root:?} marker_root={marker_root:?} target_renderable={target_renderable:?} hit_point={hit_point:?}"
+        );
         return;
     };
+
+    eprintln!(
+        "✨✨✨🐈🐈🐈 cursor_3d pose resolved editor_root={editor_root:?} marker_root={marker_root:?} translation={:?} rotation={:?}",
+        pose.translation,
+        pose.rotation
+    );
 
     {
         let mut editor_context = editor_context_state
@@ -136,6 +178,11 @@ fn update_editor_cursor_from_surface(
             rotation_quat_xyzw: pose.rotation,
             scale: [CURSOR_MARKER_SIZE, CURSOR_MARKER_SIZE, CURSOR_MARKER_SIZE],
         },
+    );
+    eprintln!(
+        "✨✨✨🐈🐈🐈 cursor_3d emitted UpdateTransform marker_root={marker_root:?} translation={:?} rotation={:?}",
+        pose.translation,
+        pose.rotation
     );
 }
 
