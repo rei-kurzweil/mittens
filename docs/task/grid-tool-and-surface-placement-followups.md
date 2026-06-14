@@ -4,6 +4,36 @@ Date: 2026-06-14
 
 Status: open
 
+## Preface: fix cursor observability first
+
+Before spending more time on `paint_panel` / `Grid Tool` placement math, get `3D Cursor` working reliably and visibly across the same editor roots and scene surfaces.
+
+Reason:
+
+- right now the cursor is the easiest interactive probe we have for the resolved placement frame
+- if cursor placement is driven by the same or related surface-frame logic, it can show:
+  - which direction the system thinks the surface normal points
+  - which way the fitted tangent/binormal basis is oriented
+  - whether a floor/wall surface is being interpreted as "up", "forward", or something else
+- that makes it much easier to distinguish:
+  - wrong hit routing
+  - wrong surface-normal extraction
+  - wrong tangent-frame construction
+  - wrong asset/grid local-plane assumptions
+
+Concrete debugging approach:
+
+- make `3D Cursor` visible and functional without requiring the current bisket bone-selection workaround
+- click the same back wall / ground box / other failing surfaces with the cursor
+- compare cursor orientation against:
+  - `Free Draw` preview orientation
+  - `Grid Tool` preview orientation
+  - expected surface-aligned behavior
+- use that comparison to decide whether the main bug is:
+  - shared frame resolution
+  - paint/grid-specific pose application
+  - or grid visual basis mismatch
+
 ## Latest verification notes
 
 Verified again on 2026-06-14 after an initial stabilization pass:
