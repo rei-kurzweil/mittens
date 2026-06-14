@@ -1,7 +1,14 @@
 use crate::engine::ecs::component::EditorInteractionMode;
 use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor_scene_hit::resolve_editor_scene_hit;
-use crate::engine::ecs::system::paint_placement::resolve_surface_aligned_pose_for_subtree;
+use crate::engine::ecs::system::object_placement_preview::{
+    PlacementKind, PlacementPreviewSession, PlacementPreviewStyle, commit_preview,
+    create_preview_shell, update_preview_pose,
+};
+use crate::engine::ecs::system::paint_placement::{
+    resolve_surface_aligned_pose_for_subtree, resolve_surface_aligned_pose_from_frame,
+    resolve_surface_placement_frame,
+};
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, RxWorld, SignalKind, World};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -33,69 +40,149 @@ impl Cursor3dSystem {
         }
         self.installed_editor_roots.insert(editor_root);
 
-        rx.add_handler_closure_named(
+        for signal_kind in [
             SignalKind::DragStart,
-            editor_root,
-            Some(EDITOR_CURSOR_HANDLER_NAME.to_string()),
-            move |world, emit, env| {
-                eprintln!("✨✨✨🐈🐈🐈 cursor_3d handler invoked editor_root={editor_root:?}");
-                let Some(EventSignal::DragStart {
-                    renderable,
-                    hit_point,
-                    ..
-                }) = env.event.as_ref()
-                else {
-                    eprintln!("✨✨✨🐈🐈🐈 cursor_3d ignoring non-DragStart signal editor_root={editor_root:?}");
-                    return;
-                };
-
-                eprintln!(
-                    "✨✨✨🐈🐈🐈 cursor_3d drag_start editor_root={editor_root:?} renderable={renderable:?} hit_point={hit_point:?}"
-                );
-
-                let editor_context = editor_context_state
-                    .lock()
-                    .expect("editor context state mutex poisoned")
-                    .clone();
-                if paint_panel_is_focused(world, panel_query_root, &editor_context) {
-                    eprintln!(
-                        "✨✨✨🐈🐈🐈 cursor_3d suppressed because paint panel is focused editor_root={editor_root:?} focused_panel={:?}",
-                        editor_context.focused_panel
+            SignalKind::DragMove,
+            SignalKind::DragEnd,
+        ] {
+            let editor_context_state = editor_context_state.clone();
+            rx.add_handler_closure_named(
+                signal_kind,
+                editor_root,
+                Some(EDITOR_CURSOR_HANDLER_NAME.to_string()),
+                move |world, emit, env| {
+                    handle_cursor_signal(
+                        world,
+                        emit,
+                        env.event.as_ref(),
+                        editor_root,
+                        panel_query_root,
+                        editor_context_state.clone(),
                     );
-                    return;
-                }
+                },
+            );
+        }
+    }
+}
 
-                let Some(scene_hit) = resolve_editor_scene_hit(world, *renderable) else {
-                    eprintln!(
-                        "✨✨✨🐈🐈🐈 cursor_3d failed resolve_editor_scene_hit editor_root={editor_root:?} renderable={renderable:?}"
-                    );
-                    return;
-                };
-                if scene_hit.editor_root != editor_root {
-                    eprintln!(
-                        "✨✨✨🐈🐈🐈 cursor_3d scene_hit belongs to different editor requested_editor={editor_root:?} hit_editor={:?} renderable={renderable:?}",
-                        scene_hit.editor_root
-                    );
-                    return;
-                }
+fn handle_cursor_signal(
+    world: &mut World,
+    emit: &mut dyn crate::engine::ecs::SignalEmitter,
+    event: Option<&EventSignal>,
+    editor_root: ComponentId,
+    panel_query_root: ComponentId,
+    editor_context_state: Arc<Mutex<EditorContextState>>,
+) {
+    let editor_context = editor_context_state
+        .lock()
+        .expect("editor context state mutex poisoned")
+        .clone();
+    if paint_panel_is_focused(world, panel_query_root, &editor_context) {
+        return;
+    }
 
-                eprintln!(
-                    "✨✨✨🐈🐈🐈 cursor_3d resolved scene_hit editor_root={editor_root:?} target_renderable={:?} target_transform={:?}",
+    match event {
+        Some(EventSignal::DragStart {
+            renderable,
+            hit_point,
+            ..
+        })
+        | Some(EventSignal::DragMove {
+            renderable,
+            hit_point,
+            ..
+        }) => {
+            let Some(scene_hit) = resolve_editor_scene_hit(world, *renderable) else {
+                return;
+            };
+            if scene_hit.editor_root != editor_root {
+                return;
+            }
+            if editor_context.pending_grid_placement_editor == Some(editor_root) {
+                update_grid_preview_from_surface(
+                    world,
+                    emit,
+                    editor_context_state,
+                    editor_root,
                     scene_hit.target_renderable,
-                    scene_hit.target_transform
+                    *hit_point,
+                    matches!(event, Some(EventSignal::DragStart { .. })),
                 );
-
+                return;
+            }
+            if matches!(event, Some(EventSignal::DragStart { .. })) {
                 update_editor_cursor_from_surface(
                     world,
                     emit,
-                    editor_context_state.clone(),
+                    editor_context_state,
                     editor_root,
                     scene_hit.target_renderable,
                     *hit_point,
                 );
-            },
-        );
+            }
+        }
+        Some(EventSignal::DragEnd { .. }) => {
+            let mut editor_context = editor_context_state
+                .lock()
+                .expect("editor context state mutex poisoned");
+            if let Some(session) = editor_context.grid_preview_session.take() {
+                commit_preview(world, session.preview_root_component_id);
+                editor_context.pending_grid_placement_editor = None;
+                editor_context.selected_component = Some(session.preview_root_component_id);
+                if let Some(editor) = world
+                    .get_component_by_id_as_mut::<crate::engine::ecs::component::EditorComponent>(
+                        editor_root,
+                    )
+                {
+                    editor.selected = Some(session.preview_root_component_id);
+                }
+            }
+        }
+        _ => {}
     }
+}
+
+fn update_grid_preview_from_surface(
+    world: &mut World,
+    emit: &mut dyn crate::engine::ecs::SignalEmitter,
+    editor_context_state: Arc<Mutex<EditorContextState>>,
+    editor_root: ComponentId,
+    target_renderable: ComponentId,
+    hit_point: [f32; 3],
+    start_session: bool,
+) {
+    let frame = match resolve_surface_placement_frame(world, target_renderable, hit_point, None) {
+        Ok(frame) => frame,
+        Err(_) => return,
+    };
+    let mut editor_context = editor_context_state
+        .lock()
+        .expect("editor context state mutex poisoned");
+    if start_session && editor_context.grid_preview_session.is_none() {
+        let preview_root = crate::engine::ecs::system::editor_inspector_system_stopgap_mms_adapter::spawn_default_grid_for_editor(
+            world, emit, editor_root, &editor_context, true,
+        );
+        create_preview_shell(world, preview_root, emit, PlacementPreviewStyle::default());
+        editor_context.grid_preview_session = Some(PlacementPreviewSession {
+            active_editor: editor_root,
+            placement_kind: PlacementKind::Grid,
+            preview_root_component_id: preview_root,
+            target_renderable: Some(target_renderable),
+            last_valid_placement_frame: Some(frame),
+        });
+    }
+    let Some(mut session) = editor_context.grid_preview_session else {
+        return;
+    };
+    let Ok(pose) = resolve_surface_aligned_pose_from_frame(&frame, 0.0) else {
+        return;
+    };
+    update_preview_pose(world, emit, session.preview_root_component_id, pose);
+    session.last_valid_placement_frame = Some(frame);
+    editor_context.cursor_frame = Some(frame);
+    editor_context.cursor_translation = Some(pose.translation);
+    editor_context.cursor_rotation = Some(pose.rotation);
+    editor_context.grid_preview_session = Some(session);
 }
 
 fn paint_panel_is_focused(
@@ -118,25 +205,18 @@ fn update_editor_cursor_from_surface(
     target_renderable: ComponentId,
     hit_point: [f32; 3],
 ) {
-    eprintln!(
-        "✨✨✨🐈🐈🐈 cursor_3d update_from_surface begin editor_root={editor_root:?} target_renderable={target_renderable:?} hit_point={hit_point:?}"
-    );
     let marker_root = world
         .children_of(editor_root)
         .iter()
         .copied()
         .find(|&child| world.component_label(child) == Some(CURSOR_MARKER_ROOT_NAME));
     let Some(marker_root) = marker_root else {
-        eprintln!(
-            "✨✨✨🐈🐈🐈 cursor_3d missing marker_root editor_root={editor_root:?} expected_label={CURSOR_MARKER_ROOT_NAME}"
-        );
         return;
     };
-
-    eprintln!(
-        "✨✨✨🐈🐈🐈 cursor_3d found marker_root editor_root={editor_root:?} marker_root={marker_root:?}"
-    );
-
+    let Ok(frame) = resolve_surface_placement_frame(world, target_renderable, hit_point, None)
+    else {
+        return;
+    };
     let Ok(pose) = resolve_surface_aligned_pose_for_subtree(
         world,
         target_renderable,
@@ -144,17 +224,8 @@ fn update_editor_cursor_from_surface(
         marker_root,
         None,
     ) else {
-        eprintln!(
-            "✨✨✨🐈🐈🐈 cursor_3d resolve_surface_aligned_pose_for_subtree failed editor_root={editor_root:?} marker_root={marker_root:?} target_renderable={target_renderable:?} hit_point={hit_point:?}"
-        );
         return;
     };
-
-    eprintln!(
-        "✨✨✨🐈🐈🐈 cursor_3d pose resolved editor_root={editor_root:?} marker_root={marker_root:?} translation={:?} rotation={:?}",
-        pose.translation,
-        pose.rotation
-    );
 
     {
         let mut editor_context = editor_context_state
@@ -168,6 +239,7 @@ fn update_editor_cursor_from_surface(
         };
         editor_context.cursor_translation = Some(pose.translation);
         editor_context.cursor_rotation = Some(pose.rotation);
+        editor_context.cursor_frame = Some(frame);
     }
 
     emit.push_intent_now(
@@ -178,11 +250,6 @@ fn update_editor_cursor_from_surface(
             rotation_quat_xyzw: pose.rotation,
             scale: [CURSOR_MARKER_SIZE, CURSOR_MARKER_SIZE, CURSOR_MARKER_SIZE],
         },
-    );
-    eprintln!(
-        "✨✨✨🐈🐈🐈 cursor_3d emitted UpdateTransform marker_root={marker_root:?} translation={:?} rotation={:?}",
-        pose.translation,
-        pose.rotation
     );
 }
 

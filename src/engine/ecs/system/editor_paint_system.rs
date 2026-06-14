@@ -14,7 +14,14 @@ use crate::engine::ecs::system::editor_paint_system_state_manager::{
     paint_tool_from_item, reduce_paint_state,
 };
 use crate::engine::ecs::system::grid_system::{GridSnapResult, GridStep, GridSystem};
-use crate::engine::ecs::system::paint_placement::{PlacementError, resolve_placement_pose};
+use crate::engine::ecs::system::object_placement_preview::{
+    PlacementKind, PlacementPreviewSession, PlacementPreviewStyle, commit_preview,
+    create_preview_shell, update_preview_pose,
+};
+use crate::engine::ecs::system::paint_placement::{
+    PlacementError, resolve_placement_pose, resolve_surface_aligned_pose_from_frame,
+    resolve_surface_placement_frame,
+};
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalKind, World,
 };
@@ -51,6 +58,7 @@ struct PaintStrokeRuntime {
     non_grid_placed: bool,
     last_grid_step: Option<GridStep>,
     last_placed_position: Option<[f32; 3]>,
+    preview_session: Option<PlacementPreviewSession>,
 }
 
 #[derive(Debug, Default)]
@@ -518,7 +526,7 @@ fn apply_paint_side_effects(
             let _ = hit_point;
             if let Some(runtime) = stroke_runtime {
                 let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
-                if resolve_paint_context(
+                if let Some(context) = resolve_paint_context(
                     world,
                     grid_system,
                     *editor,
@@ -526,15 +534,25 @@ fn apply_paint_side_effects(
                     new_state,
                     &editor_context,
                     templates,
-                )
-                .is_some()
-                {
+                ) {
                     *runtime = PaintStrokeRuntime {
                         active: true,
                         captured_renderable: Some(*renderable),
                         non_grid_placed: false,
                         last_grid_step: None,
                         last_placed_position: None,
+                        preview_session: if new_state.selected_tool == PaintTool::FreeDraw {
+                            start_paint_preview_session(
+                                world,
+                                emit,
+                                *editor,
+                                *renderable,
+                                *hit_point,
+                                &context,
+                            )
+                        } else {
+                            None
+                        },
                     };
                 } else {
                     *runtime = PaintStrokeRuntime::default();
@@ -562,8 +580,12 @@ fn apply_paint_side_effects(
         }
         PaintEvent::StrokeEnded { .. } => {
             if let Some(runtime) = stroke_runtime {
-                *runtime.lock().expect("paint stroke runtime mutex poisoned") =
-                    PaintStrokeRuntime::default();
+                let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
+                if let Some(session) = runtime.preview_session.take() {
+                    commit_preview(world, session.preview_root_component_id);
+                    status_override = Some("paint placed".to_string());
+                }
+                *runtime = PaintStrokeRuntime::default();
             }
         }
         _ => {}
@@ -671,25 +693,16 @@ fn handle_free_draw_click(
     renderable: ComponentId,
     hit_point: [f32; 3],
 ) -> Option<String> {
-    let runtime = stroke_runtime?;
-    let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
-    if runtime.non_grid_placed {
-        return None;
-    }
-    let grid_snap = context.grid_snap(hit_point);
-    if let Some(snap) = grid_snap {
-        runtime.last_grid_step = Some(snap.step);
-    }
-    runtime.non_grid_placed = true;
-    Some(place_asset(
+    let _ = (
         world,
         emit,
         editor_root,
+        context,
+        stroke_runtime,
         renderable,
         hit_point,
-        &context.asset,
-        grid_snap,
-    ))
+    );
+    None
 }
 
 fn handle_free_draw_stroke_move(
@@ -713,38 +726,22 @@ fn handle_free_draw_stroke_move(
         return None;
     }
 
-    match context.grid_snap(hit_point) {
-        Some(grid_snap) => {
-            if GridSystem::same_step(runtime.last_grid_step, grid_snap.step) {
-                return None;
-            }
-            runtime.last_grid_step = Some(grid_snap.step);
-            Some(place_asset(
-                world,
-                emit,
-                editor_root,
-                renderable,
-                hit_point,
-                &context.asset,
-                Some(grid_snap),
-            ))
-        }
-        None => {
-            if runtime.non_grid_placed {
-                return None;
-            }
-            runtime.non_grid_placed = true;
-            Some(place_asset(
-                world,
-                emit,
-                editor_root,
-                renderable,
-                hit_point,
-                &context.asset,
-                None,
-            ))
-        }
-    }
+    let Some(session) = runtime.preview_session.as_mut() else {
+        return None;
+    };
+    let grid_snap = context.grid_snap(hit_point);
+    let frame = match resolve_surface_placement_frame(world, renderable, hit_point, grid_snap) {
+        Ok(frame) => frame,
+        Err(_) => return None,
+    };
+    let pose = resolve_surface_aligned_pose_from_frame(
+        &frame,
+        asset_local_min_z(world, session.preview_root_component_id)?,
+    )
+    .ok()?;
+    update_preview_pose(world, emit, session.preview_root_component_id, pose);
+    session.last_valid_placement_frame = Some(frame);
+    Some(format!("paint preview: {}", context.asset.title))
 }
 
 fn handle_spray_can_click(
@@ -1185,6 +1182,43 @@ struct PaintActivityStatus {
     reason: String,
 }
 
+fn start_paint_preview_session(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    editor_root: ComponentId,
+    target_renderable: ComponentId,
+    hit_point: [f32; 3],
+    context: &PaintContext<'_>,
+) -> Option<PlacementPreviewSession> {
+    let scene_parent = resolve_scene_parent(world, editor_root);
+    let asset_root = spawn_asset_subtree(world, emit, &context.asset).ok()?;
+    let preview_root =
+        world.add_component_boxed_named("painted_asset_root", Box::new(TransformComponent::new()));
+    let raycastable_root = world.add_component_boxed_named(
+        "painted_asset_raycastable",
+        Box::new(RaycastableComponent::enabled()),
+    );
+    let _ = world.add_child(raycastable_root, preview_root);
+    let _ = world.add_child(preview_root, asset_root);
+    let _ = world.add_child(scene_parent, raycastable_root);
+    create_preview_shell(world, preview_root, emit, PlacementPreviewStyle::default());
+    world.init_component_tree(raycastable_root, emit);
+    let grid_snap = context.grid_snap(hit_point);
+    let frame =
+        resolve_surface_placement_frame(world, target_renderable, hit_point, grid_snap).ok()?;
+    let pose =
+        resolve_surface_aligned_pose_from_frame(&frame, asset_local_min_z(world, preview_root)?)
+            .ok()?;
+    update_preview_pose(world, emit, preview_root, pose);
+    Some(PlacementPreviewSession {
+        active_editor: editor_root,
+        placement_kind: PlacementKind::PaintAsset,
+        preview_root_component_id: preview_root,
+        target_renderable: Some(target_renderable),
+        last_valid_placement_frame: Some(frame),
+    })
+}
+
 fn paint_activity_status(
     world: &World,
     grid_system: &GridSystem,
@@ -1255,18 +1289,10 @@ fn place_asset(
 ) -> String {
     let scene_parent = resolve_scene_parent(world, editor_root);
 
-    let asset_root = match MeowMeowRunner::spawn_mms_module_component_uninitialized(
-        &asset.module,
-        &asset.export_name,
-        default_asset_args(asset),
-        world,
-        emit,
-    ) {
+    let asset_root = match spawn_asset_subtree(world, emit, asset) {
         Ok(asset_root) => asset_root,
-        Err(error) => return format!("paint failed: asset spawn error: {error}"),
+        Err(error) => return error,
     };
-
-    sanitize_painted_asset_subtree(world, asset_root);
 
     let pose =
         match resolve_placement_pose(world, target_renderable, hit_point, asset_root, grid_snap) {
@@ -1318,6 +1344,28 @@ fn place_asset(
         "grid inactive"
     };
     format!("paint placed: {} | {}", asset.title, grid_text)
+}
+
+fn spawn_asset_subtree(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    asset: &PaintAssetTemplate,
+) -> Result<ComponentId, String> {
+    let asset_root = MeowMeowRunner::spawn_mms_module_component_uninitialized(
+        &asset.module,
+        &asset.export_name,
+        default_asset_args(asset),
+        world,
+        emit,
+    )
+    .map_err(|error| format!("paint failed: asset spawn error: {error}"))?;
+    sanitize_painted_asset_subtree(world, asset_root);
+    Ok(asset_root)
+}
+
+fn asset_local_min_z(world: &World, root: ComponentId) -> Option<f32> {
+    crate::engine::ecs::system::paint_placement::measure_subtree_local_bounds(world, root)
+        .map(|bounds| bounds.min[2])
 }
 
 fn sanitize_painted_asset_subtree(world: &mut World, root: ComponentId) {
@@ -1655,6 +1703,38 @@ mod tests {
         );
     }
 
+    fn push_drag_place(systems: &mut SystemWorld, renderable: ComponentId) {
+        systems.rx.push_event(
+            renderable,
+            EventSignal::DragStart {
+                raycaster: renderable,
+                renderable,
+                hit_point: [0.0, 0.0, 0.5],
+                ray_dir_world: [0.0, 0.0, -1.0],
+                screen_pos_px: None,
+            },
+        );
+        systems.rx.push_event(
+            renderable,
+            EventSignal::DragMove {
+                raycaster: renderable,
+                renderable,
+                hit_point: [0.2, 0.0, 0.5],
+                delta_world: [0.2, 0.0, 0.0],
+                screen_pos_px: None,
+                screen_delta_px: None,
+            },
+        );
+        systems.rx.push_event(
+            renderable,
+            EventSignal::DragEnd {
+                raycaster: renderable,
+                renderable,
+                hit_point: Some([0.2, 0.0, 0.5]),
+            },
+        );
+    }
+
     fn count_named_descendants(world: &World, root: ComponentId, name: &str) -> usize {
         let mut count = 0;
         let mut stack = vec![root];
@@ -1806,7 +1886,7 @@ mod tests {
         world.init_component_tree(editor_root, &mut emit);
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
 
-        push_click(&mut systems, renderable);
+        push_drag_place(&mut systems, renderable);
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
@@ -1862,7 +1942,7 @@ mod tests {
             _paint_panel_root,
         ) = init_editor_fixture();
 
-        push_click(&mut systems, renderable);
+        push_drag_place(&mut systems, renderable);
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
@@ -1887,7 +1967,7 @@ mod tests {
             _paint_panel_root,
         ) = init_editor_fixture();
 
-        push_click(&mut systems, renderable);
+        push_drag_place(&mut systems, renderable);
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
@@ -2123,7 +2203,7 @@ mod tests {
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
 
-        push_click(&mut systems, renderable_b);
+        push_drag_place(&mut systems, renderable_b);
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
@@ -2158,7 +2238,7 @@ mod tests {
             state.selected_tool = PaintTool::Line;
         }
 
-        push_click(&mut systems, renderable);
+        push_drag_place(&mut systems, renderable);
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
@@ -2175,7 +2255,7 @@ mod tests {
             state.selected_tool = PaintTool::Fill;
         }
 
-        push_click(&mut systems, renderable);
+        push_drag_place(&mut systems, renderable);
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
@@ -2207,7 +2287,7 @@ mod tests {
         }
 
         // Click hit point is [0.0, 0.0, 0.5] in push_click
-        push_click(&mut systems, renderable);
+        push_drag_place(&mut systems, renderable);
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
@@ -2257,7 +2337,7 @@ mod tests {
         ) = init_editor_fixture();
 
         // 1. First, place an asset using Free Draw
-        push_click(&mut systems, renderable);
+        push_drag_place(&mut systems, renderable);
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
@@ -2267,18 +2347,6 @@ mod tests {
             1,
             "expected 1 painted asset root initially"
         );
-
-        // Reset the stroke runtime by ending the stroke
-        systems.rx.push_event(
-            renderable,
-            EventSignal::DragEnd {
-                raycaster: renderable,
-                renderable,
-                hit_point: None,
-            },
-        );
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
 
         let painted_root = world
             .find_component(editor_root, "[name='painted_asset_root']")

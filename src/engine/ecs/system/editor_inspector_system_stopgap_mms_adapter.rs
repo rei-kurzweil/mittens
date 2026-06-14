@@ -2363,17 +2363,14 @@ fn handle_grid_panel_click(
     if let Some(add_button) = world.find_component(grid_panel_root, GRID_PANEL_ADD_BUTTON_SELECTOR)
         && is_descendant_or_self(world, add_button, renderable)
     {
-        let _owner_transform =
-            spawn_default_grid_for_editor(world, emit, editor_root, &editor_context);
-        let mut refreshed_context = editor_context.clone();
-        refreshed_context.active_editor = Some(editor_root);
-        rerender_grid_panel_from_context(
-            world,
-            emit,
-            panel_query_root,
-            &refreshed_context,
-            data_renderer,
-        );
+        {
+            let mut editor_context = editor_context_state
+                .lock()
+                .expect("editor context state mutex poisoned");
+            editor_context.active_editor = Some(editor_root);
+            editor_context.pending_grid_placement_editor = Some(editor_root);
+            editor_context.grid_preview_session = None;
+        }
         return true;
     }
 
@@ -2594,11 +2591,12 @@ fn rerender_world_panel_for_context(
     );
 }
 
-fn spawn_default_grid_for_editor(
+pub(crate) fn spawn_default_grid_for_editor(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     editor_root: ComponentId,
     editor_context: &EditorContextState,
+    preview_mode: bool,
 ) -> ComponentId {
     let index = GridSystem::new()
         .enumerate_grids_for_editor(world, editor_root)
@@ -2608,25 +2606,11 @@ fn spawn_default_grid_for_editor(
     let visual_scale_x = grid_component.size_x as f32 * grid_component.spacing;
     let visual_scale_z = grid_component.size_z as f32 * grid_component.spacing;
     let mut owner_transform_component = TransformComponent::new();
-    let live_cursor_pose = editor_context.selected_component.and_then(|selected| {
-        TransformSystem::world_model(world, selected).map(|world_model| {
-            (
-                [world_model[3][0], world_model[3][1], world_model[3][2]],
-                mat_to_quat(world_model),
-            )
-        })
-    });
-    if let Some(translation) = live_cursor_pose
-        .map(|(translation, _)| translation)
-        .or(editor_context.cursor_translation)
-    {
+    if let Some(translation) = editor_context.cursor_translation {
         owner_transform_component =
             owner_transform_component.with_position(translation[0], translation[1], translation[2]);
     }
-    if let Some(rotation) = live_cursor_pose
-        .map(|(_, rotation)| rotation)
-        .or(editor_context.cursor_rotation)
-    {
+    if let Some(rotation) = editor_context.cursor_rotation {
         owner_transform_component = owner_transform_component.with_rotation_quat(rotation);
     }
     let owner_transform = world.add_component_boxed_named(
@@ -2639,7 +2623,11 @@ fn spawn_default_grid_for_editor(
         world.add_component_boxed_named("grid_visual", Box::new(TransformComponent::new()));
     let visual_selectable = world.add_component_boxed_named(
         "grid_visual_selectable",
-        Box::new(SelectableComponent::off()),
+        Box::new(if preview_mode {
+            SelectableComponent::off()
+        } else {
+            SelectableComponent::on()
+        }),
     );
     let visual_serialize = world
         .add_component_boxed_named("grid_visual_serialize", Box::new(SerializeComponent::off()));
@@ -2664,7 +2652,7 @@ fn spawn_default_grid_for_editor(
     );
     let visual_opacity = world.add_component_boxed_named(
         "grid_visual_opacity",
-        Box::new(OpacityComponent::new().with_opacity(1.0)),
+        Box::new(OpacityComponent::new().with_opacity(if preview_mode { 0.45 } else { 1.0 })),
     );
     let _ = world.add_child(editor_root, owner_transform);
     let _ = world.add_child(owner_transform, grid);

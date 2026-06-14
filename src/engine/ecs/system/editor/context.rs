@@ -9,6 +9,8 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::editor::settings_panel::{
     EDITOR_SETTINGS_PAYLOAD_NAME, EDITOR_SETTINGS_SELECTION_SELECTOR, EditorSettingsOption,
 };
+use crate::engine::ecs::system::object_placement_preview::PlacementPreviewSession;
+use crate::engine::ecs::system::paint_placement::SurfacePlacementFrame;
 use crate::engine::ecs::system::selection_system::resolve_semantic_target_from_payload;
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalKind, World,
@@ -39,6 +41,9 @@ pub struct EditorContextState {
     pub interaction_mode: EditorInteractionMode,
     pub cursor_translation: Option<[f32; 3]>,
     pub cursor_rotation: Option<[f32; 4]>,
+    pub cursor_frame: Option<SurfacePlacementFrame>,
+    pub pending_grid_placement_editor: Option<ComponentId>,
+    pub grid_preview_session: Option<PlacementPreviewSession>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -932,17 +937,15 @@ fn sync_editor_component_selection(world: &mut World, event: &EditorContextEvent
     }
 }
 
-fn sync_global_editor_interaction_mode(
-    world: &mut World,
-    state: &Arc<Mutex<EditorContextState>>,
-) {
+fn sync_global_editor_interaction_mode(world: &mut World, state: &Arc<Mutex<EditorContextState>>) {
     let interaction_mode = state
         .lock()
         .expect("editor context state poisoned")
         .interaction_mode;
 
     for editor_root in world.all_components().collect::<Vec<_>>() {
-        let Some(editor_component) = world.get_component_by_id_as_mut::<EditorComponent>(editor_root)
+        let Some(editor_component) =
+            world.get_component_by_id_as_mut::<EditorComponent>(editor_root)
         else {
             continue;
         };
@@ -1051,6 +1054,9 @@ mod tests {
                 interaction_mode: EditorInteractionMode::Select,
                 cursor_translation: None,
                 cursor_rotation: None,
+                cursor_frame: None,
+                pending_grid_placement_editor: None,
+                grid_preview_session: None,
             },
             &EditorContextEvent::InteractionModeChanged {
                 editor: Some(editor),
@@ -1077,6 +1083,9 @@ mod tests {
                 interaction_mode: EditorInteractionMode::Select,
                 cursor_translation: None,
                 cursor_rotation: None,
+                cursor_frame: None,
+                pending_grid_placement_editor: None,
+                grid_preview_session: None,
             },
             &EditorContextEvent::InteractionModeChanged {
                 editor: Some(editor),
@@ -1105,6 +1114,9 @@ mod tests {
             interaction_mode: EditorInteractionMode::Select,
             cursor_translation: None,
             cursor_rotation: None,
+            cursor_frame: None,
+            pending_grid_placement_editor: None,
+            grid_preview_session: None,
         }));
         let workspace = Arc::new(Mutex::new(EditorContextWorkspaceState {
             panel_query_root: None,

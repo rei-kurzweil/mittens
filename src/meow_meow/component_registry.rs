@@ -620,8 +620,7 @@ pub fn ce_ast_to_materialized(ce: &ComponentExpression) -> Result<MaterializedCE
                 }
             }
             Statement::Reassign { name, value } => {
-                if component_property_assignment_only
-                    || is_universal_component_named_prop(&name.0)
+                if component_property_assignment_only || is_universal_component_named_prop(&name.0)
                 {
                     // Named-prop in a property-bag CE body, e.g. `row_name = "hero"`.
                     // The full evaluator handles this via builder.named.push in

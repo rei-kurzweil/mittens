@@ -19,6 +19,22 @@ pub struct PlacementPose {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlacementSource {
+    SurfaceHit,
+    SelectionTransformFallback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SurfacePlacementFrame {
+    pub translation_world: [f32; 3],
+    pub rotation_world: [f32; 4],
+    pub hit_point_world: [f32; 3],
+    pub surface_normal_world: [f32; 3],
+    pub target_renderable: ComponentId,
+    pub source: PlacementSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlacementError {
     MissingAssetBounds,
     MissingTargetTransform,
@@ -34,22 +50,9 @@ pub fn resolve_placement_pose(
 ) -> Result<PlacementPose, PlacementError> {
     let asset_bounds = measure_subtree_local_bounds(world, asset_root)
         .ok_or(PlacementError::MissingAssetBounds)?;
-
-    let (surface_point, surface_normal) = match grid_snap {
-        Some(grid) => (grid.point_world, grid.normal_world),
-        None => (
-            hit_point_world,
-            resolve_surface_normal(world, target_renderable, hit_point_world)?,
-        ),
-    };
-
-    resolve_surface_aligned_pose_from_normal(
-        world,
-        target_renderable,
-        surface_point,
-        surface_normal,
-        asset_bounds.min[2],
-    )
+    let frame =
+        resolve_surface_placement_frame(world, target_renderable, hit_point_world, grid_snap)?;
+    resolve_surface_aligned_pose_from_frame(&frame, asset_bounds.min[2])
 }
 
 pub fn resolve_surface_aligned_pose(
@@ -59,21 +62,9 @@ pub fn resolve_surface_aligned_pose(
     local_min_z: f32,
     grid_snap: Option<GridSnapResult>,
 ) -> Result<PlacementPose, PlacementError> {
-    let (surface_point, surface_normal) = match grid_snap {
-        Some(grid) => (grid.point_world, grid.normal_world),
-        None => (
-            hit_point_world,
-            resolve_surface_normal(world, target_renderable, hit_point_world)?,
-        ),
-    };
-
-    resolve_surface_aligned_pose_from_normal(
-        world,
-        target_renderable,
-        surface_point,
-        surface_normal,
-        local_min_z,
-    )
+    let frame =
+        resolve_surface_placement_frame(world, target_renderable, hit_point_world, grid_snap)?;
+    resolve_surface_aligned_pose_from_frame(&frame, local_min_z)
 }
 
 pub fn resolve_surface_aligned_pose_for_subtree(
@@ -85,22 +76,60 @@ pub fn resolve_surface_aligned_pose_for_subtree(
 ) -> Result<PlacementPose, PlacementError> {
     let asset_bounds = measure_subtree_local_bounds(world, asset_root)
         .ok_or(PlacementError::MissingAssetBounds)?;
+    let frame =
+        resolve_surface_placement_frame(world, target_renderable, hit_point_world, grid_snap)?;
+    resolve_surface_aligned_pose_from_frame(&frame, asset_bounds.min[2])
+}
 
-    let (surface_point, surface_normal) = match grid_snap {
-        Some(grid) => (grid.point_world, grid.normal_world),
-        None => (
-            hit_point_world,
-            resolve_surface_normal(world, target_renderable, hit_point_world)?,
+pub fn resolve_surface_placement_frame(
+    world: &World,
+    target_renderable: ComponentId,
+    hit_point_world: [f32; 3],
+    grid_snap: Option<GridSnapResult>,
+) -> Result<SurfacePlacementFrame, PlacementError> {
+    let (surface_point, surface_normal_world, source) = match grid_snap {
+        Some(grid) => (
+            grid.point_world,
+            grid.normal_world,
+            PlacementSource::SurfaceHit,
         ),
+        None => match resolve_surface_normal(world, target_renderable, hit_point_world) {
+            Ok(normal) => (hit_point_world, normal, PlacementSource::SurfaceHit),
+            Err(PlacementError::UnsupportedSurface) => (
+                hit_point_world,
+                fallback_surface_normal(world, target_renderable, hit_point_world)?,
+                PlacementSource::SelectionTransformFallback,
+            ),
+            Err(err) => return Err(err),
+        },
     };
-
-    resolve_surface_aligned_pose_from_normal(
-        world,
+    let rotation_world = make_alignment_quat(
+        surface_normal_world,
+        world_up_reference(world, target_renderable),
+    );
+    Ok(SurfacePlacementFrame {
+        translation_world: surface_point,
+        rotation_world,
+        hit_point_world,
+        surface_normal_world,
         target_renderable,
-        surface_point,
-        surface_normal,
-        asset_bounds.min[2],
-    )
+        source,
+    })
+}
+
+pub fn resolve_surface_aligned_pose_from_frame(
+    frame: &SurfacePlacementFrame,
+    local_min_z: f32,
+) -> Result<PlacementPose, PlacementError> {
+    let outward_offset = SURFACE_EPSILON - local_min_z;
+    Ok(PlacementPose {
+        translation: vec3_add(
+            frame.translation_world,
+            vec3_scale(frame.surface_normal_world, outward_offset),
+        ),
+        rotation: frame.rotation_world,
+        surface_normal: frame.surface_normal_world,
+    })
 }
 
 fn resolve_surface_aligned_pose_from_normal(
@@ -119,6 +148,66 @@ fn resolve_surface_aligned_pose_from_normal(
         rotation,
         surface_normal,
     })
+}
+
+fn fallback_surface_normal(
+    world: &World,
+    target_renderable: ComponentId,
+    hit_point_world: [f32; 3],
+) -> Result<[f32; 3], PlacementError> {
+    let target_world = TransformSystem::world_model(world, target_renderable)
+        .ok_or(PlacementError::MissingTargetTransform)?;
+    let inv_world = mat4_inverse(target_world).ok_or(PlacementError::MissingTargetTransform)?;
+    let hit_local = transform_point(inv_world, hit_point_world);
+    if let Some(local_bounds) = fallback_local_bounds(world, target_renderable) {
+        let center = [
+            (local_bounds.min[0] + local_bounds.max[0]) * 0.5,
+            (local_bounds.min[1] + local_bounds.max[1]) * 0.5,
+            (local_bounds.min[2] + local_bounds.max[2]) * 0.5,
+        ];
+        let extents = [
+            ((local_bounds.max[0] - local_bounds.min[0]) * 0.5).max(1e-4),
+            ((local_bounds.max[1] - local_bounds.min[1]) * 0.5).max(1e-4),
+            ((local_bounds.max[2] - local_bounds.min[2]) * 0.5).max(1e-4),
+        ];
+        let centered = vec3_sub(hit_local, center);
+        let ratios = [
+            (centered[0] / extents[0]).abs(),
+            (centered[1] / extents[1]).abs(),
+            (centered[2] / extents[2]).abs(),
+        ];
+        let local_normal = if ratios[0] >= ratios[1] && ratios[0] >= ratios[2] {
+            [centered[0].signum(), 0.0, 0.0]
+        } else if ratios[1] >= ratios[2] {
+            [0.0, centered[1].signum(), 0.0]
+        } else {
+            [0.0, 0.0, centered[2].signum()]
+        };
+        let world_normal = vec3_normalize(transform_direction(target_world, local_normal));
+        if world_normal != [0.0, 0.0, 0.0] {
+            return Ok(world_normal);
+        }
+    }
+    let fallback = vec3_normalize(transform_direction(target_world, [0.0, 0.0, 1.0]));
+    if fallback == [0.0, 0.0, 0.0] {
+        Err(PlacementError::UnsupportedSurface)
+    } else {
+        Ok(fallback)
+    }
+}
+
+fn fallback_local_bounds(world: &World, target_renderable: ComponentId) -> Option<Aabb> {
+    world
+        .children_of(target_renderable)
+        .iter()
+        .copied()
+        .find_map(|child| world.get_component_by_id_as::<BoundsComponent>(child))
+        .map(|bounds| bounds.local)
+        .or_else(|| {
+            let renderable =
+                world.get_component_by_id_as::<RenderableComponent>(target_renderable)?;
+            mesh_local_aabb(renderable.renderable.base_mesh)
+        })
 }
 
 pub fn resolve_surface_normal(

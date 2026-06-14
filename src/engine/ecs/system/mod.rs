@@ -39,6 +39,7 @@ pub mod layout;
 pub mod light_system;
 pub mod model;
 pub mod music_system;
+pub mod object_placement_preview;
 pub mod openxr_system;
 pub mod paint_placement;
 pub mod panel_system;
