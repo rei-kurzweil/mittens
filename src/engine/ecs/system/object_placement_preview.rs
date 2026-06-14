@@ -32,6 +32,7 @@ pub struct PlacementPreviewSession {
     pub preview_root_component_id: ComponentId,
     pub target_renderable: Option<ComponentId>,
     pub last_valid_placement_frame: Option<SurfacePlacementFrame>,
+    pub local_min_z: f32,
 }
 
 pub fn create_preview_shell(
@@ -83,28 +84,64 @@ pub fn update_preview_pose(
 }
 
 pub fn commit_preview(world: &mut World, preview_root: ComponentId) {
-    remove_preview_marker_children(world, preview_root);
+    remove_preview_markers(world, preview_root);
 }
 
 pub fn cancel_preview(world: &mut World, preview_root: ComponentId) {
     let _ = world.remove_component_subtree(preview_root);
 }
 
-fn remove_preview_marker_children(world: &mut World, preview_root: ComponentId) {
-    let preview_children: Vec<_> = world
-        .children_of(preview_root)
-        .iter()
-        .copied()
-        .filter(|&child| {
-            matches!(
-                world.component_label(child),
-                Some("placement_preview_selectable")
-                    | Some("placement_preview_serialize")
-                    | Some("placement_preview_opacity")
-            )
-        })
-        .collect();
-    for child in preview_children {
+fn remove_preview_markers(world: &mut World, preview_root: ComponentId) {
+    let mut stack = vec![preview_root];
+    let mut preview_nodes = Vec::new();
+    while let Some(node) = stack.pop() {
+        if matches!(
+            world.component_label(node),
+            Some("placement_preview_selectable")
+                | Some("placement_preview_serialize")
+                | Some("placement_preview_opacity")
+        ) {
+            preview_nodes.push(node);
+            continue;
+        }
+        for &child in world.children_of(node) {
+            stack.push(child);
+        }
+    }
+    for child in preview_nodes {
         let _ = world.remove_component_leaf(child);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commit_preview_removes_preview_markers_recursively() {
+        let mut world = World::default();
+        let preview_root = world.add_component(TransformComponent::new());
+        let child = world.add_component(TransformComponent::new());
+        let grandchild = world.add_component(TransformComponent::new());
+        let opacity = world.add_component_boxed_named(
+            "placement_preview_opacity",
+            Box::new(OpacityComponent::new().with_opacity(PLACEMENT_PREVIEW_OPACITY)),
+        );
+        let selectable = world.add_component_boxed_named(
+            "placement_preview_selectable",
+            Box::new(SelectableComponent::off()),
+        );
+
+        let _ = world.add_child(preview_root, child);
+        let _ = world.add_child(child, grandchild);
+        let _ = world.add_child(grandchild, opacity);
+        let _ = world.add_child(preview_root, selectable);
+
+        commit_preview(&mut world, preview_root);
+
+        assert!(world.get_component_record(opacity).is_none());
+        assert!(world.get_component_record(selectable).is_none());
+        assert!(world.get_component_record(child).is_some());
+        assert!(world.get_component_record(grandchild).is_some());
     }
 }

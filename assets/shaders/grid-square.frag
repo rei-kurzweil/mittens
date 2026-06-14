@@ -42,7 +42,7 @@ void main() {
 
     float minor = grid_square_alpha(world_xz, 1.0, 1.0);
     float major = grid_square_alpha(world_xz, 8.0, 1.8);
-    float axis = max(grid_axis_alpha(world_xz.x, 2.0), grid_axis_alpha(world_xz.y, 2.0));
+    float axis = max(grid_axis_alpha(world_xz.x, 2.0), grid_axis_alpha(world_xz.y, 3.0));
 
     vec3 line_rgb = v_color.rgb;
     //vec3 major_rgb = mix(line_rgb, vec3(1.0,1.0,1.0), 0.18);
@@ -52,7 +52,7 @@ void main() {
     float fade = 1.0 - smoothstep(32.0, 96.0, cam_dist);
 
     vec3 rgb = vec3(0.0);
-    rgb = mix(rgb, line_rgb, minor * 0.45);
+    rgb = mix(line_rgb, vec3(minor * 0.45), 0.5);
     //rgb = mix(rgb, major_rgb, major * 0.75);
     //rgb = mix(rgb, axis_rgb, axis);
 

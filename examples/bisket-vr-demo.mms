@@ -70,10 +70,11 @@ ED {
         Collision.static() {
             CollisionShape.cube([60.0, 0.05, 47.5])
         }
-        R.cube() { C.rgba(0.28, 0.28, 0.33, 1.0) }
+        R.cube() { C.rgba(0.68, 0.48, 0.60, 1.0) }
     }
+    // back wall
     T.position(0.0, 2.15, -7.2).scale(8.8, 3.6, 0.24) {
-        R.cube() { C.rgba(0.11, 0.10, 0.14, 1.0) }
+        R.cube() { C.rgba(1.0, 0.8, 0.4, 1.0) }
     }
 
     T.position(2.0, 0.15, 1.0) {

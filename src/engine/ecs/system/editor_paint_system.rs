@@ -10,6 +10,7 @@ use crate::engine::ecs::system::editor::context::{
     EDITOR_WORKSPACE_ASSET_SELECTION_CHANGED, EditorContextState,
 };
 use crate::engine::ecs::system::editor_inspector_system_stopgap_mms_adapter::spawn_default_grid_for_editor;
+use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::system::editor_paint_system_state_manager::{
     PaintEvent, PaintState, PaintTool, is_paint_active, is_paint_panel_focused,
     paint_tool_from_item, reduce_paint_state,
@@ -583,11 +584,14 @@ fn apply_paint_side_effects(
                 if let Some(session) = runtime.preview_session.take() {
                     commit_preview(world, session.preview_root_component_id);
                     if session.placement_kind == PlacementKind::Grid {
-                        if let Some(editor) = world
-                            .get_component_by_id_as_mut::<EditorComponent>(session.active_editor)
-                        {
-                            editor.selected = Some(session.preview_root_component_id);
-                        }
+                        grid_system.mark_dirty();
+                        select_editor_target(
+                            world,
+                            emit,
+                            session.active_editor,
+                            session.preview_root_component_id,
+                            false,
+                        );
                     }
                     status_override = Some("paint placed".to_string());
                 }
@@ -740,11 +744,7 @@ fn handle_free_draw_stroke_move(
         Ok(frame) => frame,
         Err(_) => return None,
     };
-    let local_min_z = match session.placement_kind {
-        PlacementKind::PaintAsset => asset_local_min_z(world, session.preview_root_component_id)?,
-        PlacementKind::Grid => 0.0,
-    };
-    let pose = resolve_surface_aligned_pose_from_frame(&frame, local_min_z).ok()?;
+    let pose = resolve_surface_aligned_pose_from_frame(&frame, session.local_min_z).ok()?;
     update_preview_pose(world, emit, session.preview_root_component_id, pose);
     session.last_valid_placement_frame = Some(frame);
     Some(match session.placement_kind {
@@ -1275,6 +1275,7 @@ fn start_paint_preview_session(
         preview_root_component_id: preview_root,
         target_renderable: Some(target_renderable),
         last_valid_placement_frame: Some(frame),
+        local_min_z: asset_local_min_z(world, preview_root)?,
     })
 }
 
@@ -1304,6 +1305,7 @@ fn start_grid_preview_session(
         preview_root_component_id: preview_root,
         target_renderable: Some(target_renderable),
         last_valid_placement_frame: Some(frame),
+        local_min_z: 0.0,
     })
 }
 
