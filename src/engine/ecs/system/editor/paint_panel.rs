@@ -6,6 +6,7 @@ const LINE_LABEL: &str = "Line";
 const SPRAY_CAN_LABEL: &str = "Spray Can";
 const FILL_LABEL: &str = "Fill";
 const ERASE_LABEL: &str = "Erase";
+const GRID_TOOL_LABEL: &str = "Grid Tool";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PaintState {
@@ -33,6 +34,7 @@ pub struct PaintSelection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PaintTool {
     FreeDraw,
+    GridTool,
     Line,
     SprayCan,
     Fill,
@@ -144,6 +146,7 @@ pub fn reduce_paint_state(old: &PaintState, event: &PaintEvent) -> PaintState {
 pub fn paint_tool_from_item(item: Option<String>) -> PaintTool {
     match item.as_deref() {
         Some(FREE_DRAW_LABEL) => PaintTool::FreeDraw,
+        Some(GRID_TOOL_LABEL) => PaintTool::GridTool,
         Some(LINE_LABEL) => PaintTool::Line,
         Some(SPRAY_CAN_LABEL) => PaintTool::SprayCan,
         Some(FILL_LABEL) => PaintTool::Fill,

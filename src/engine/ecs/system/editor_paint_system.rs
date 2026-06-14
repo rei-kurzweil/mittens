@@ -9,6 +9,7 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::editor::context::{
     EDITOR_WORKSPACE_ASSET_SELECTION_CHANGED, EditorContextState,
 };
+use crate::engine::ecs::system::editor_inspector_system_stopgap_mms_adapter::spawn_default_grid_for_editor;
 use crate::engine::ecs::system::editor_paint_system_state_manager::{
     PaintEvent, PaintState, PaintTool, is_paint_active, is_paint_panel_focused,
     paint_tool_from_item, reduce_paint_state,
@@ -541,18 +542,16 @@ fn apply_paint_side_effects(
                         non_grid_placed: false,
                         last_grid_step: None,
                         last_placed_position: None,
-                        preview_session: if new_state.selected_tool == PaintTool::FreeDraw {
-                            start_paint_preview_session(
-                                world,
-                                emit,
-                                *editor,
-                                *renderable,
-                                *hit_point,
-                                &context,
-                            )
-                        } else {
-                            None
-                        },
+                        preview_session: start_preview_session_for_tool(
+                            world,
+                            emit,
+                            *editor,
+                            *renderable,
+                            *hit_point,
+                            new_state.selected_tool.clone(),
+                            &context,
+                            &editor_context,
+                        ),
                     };
                 } else {
                     *runtime = PaintStrokeRuntime::default();
@@ -583,6 +582,13 @@ fn apply_paint_side_effects(
                 let mut runtime = runtime.lock().expect("paint stroke runtime mutex poisoned");
                 if let Some(session) = runtime.preview_session.take() {
                     commit_preview(world, session.preview_root_component_id);
+                    if session.placement_kind == PlacementKind::Grid {
+                        if let Some(editor) = world
+                            .get_component_by_id_as_mut::<EditorComponent>(session.active_editor)
+                        {
+                            editor.selected = Some(session.preview_root_component_id);
+                        }
+                    }
                     status_override = Some("paint placed".to_string());
                 }
                 *runtime = PaintStrokeRuntime::default();
@@ -734,14 +740,17 @@ fn handle_free_draw_stroke_move(
         Ok(frame) => frame,
         Err(_) => return None,
     };
-    let pose = resolve_surface_aligned_pose_from_frame(
-        &frame,
-        asset_local_min_z(world, session.preview_root_component_id)?,
-    )
-    .ok()?;
+    let local_min_z = match session.placement_kind {
+        PlacementKind::PaintAsset => asset_local_min_z(world, session.preview_root_component_id)?,
+        PlacementKind::Grid => 0.0,
+    };
+    let pose = resolve_surface_aligned_pose_from_frame(&frame, local_min_z).ok()?;
     update_preview_pose(world, emit, session.preview_root_component_id, pose);
     session.last_valid_placement_frame = Some(frame);
-    Some(format!("paint preview: {}", context.asset.title))
+    Some(match session.placement_kind {
+        PlacementKind::PaintAsset => format!("paint preview: {}", context.asset.title),
+        PlacementKind::Grid => "grid preview".to_string(),
+    })
 }
 
 fn handle_spray_can_click(
@@ -971,6 +980,7 @@ fn handle_scene_click(
             renderable,
             hit_point,
         ),
+        PaintTool::GridTool => None,
         PaintTool::SprayCan => handle_spray_can_click(
             world,
             emit,
@@ -1054,6 +1064,15 @@ fn handle_stroke_move(
     let apply_tool_start = Instant::now();
     let result = match paint_state.selected_tool {
         PaintTool::FreeDraw => handle_free_draw_stroke_move(
+            world,
+            emit,
+            editor_root,
+            &context,
+            stroke_runtime,
+            renderable,
+            hit_point,
+        ),
+        PaintTool::GridTool => handle_free_draw_stroke_move(
             world,
             emit,
             editor_root,
@@ -1149,28 +1168,36 @@ fn resolve_paint_context<'a>(
         );
         return None;
     }
-    let selected_asset = paint_state.selected_asset.as_ref()?;
-    let payload = selected_asset.component?;
-    let asset_key = if let Some(data) = world.get_component_by_id_as::<DataComponent>(payload) {
-        match data.get("asset_key") {
-            Some(crate::engine::ecs::component::DataValue::Text(asset_key)) => asset_key.clone(),
-            _ => return None,
+    let asset = match paint_state.selected_tool {
+        PaintTool::GridTool | PaintTool::Erase => templates.first(),
+        _ => {
+            let selected_asset = paint_state.selected_asset.as_ref()?;
+            let payload = selected_asset.component?;
+            let asset_key =
+                if let Some(data) = world.get_component_by_id_as::<DataComponent>(payload) {
+                    match data.get("asset_key") {
+                        Some(crate::engine::ecs::component::DataValue::Text(asset_key)) => {
+                            asset_key.clone()
+                        }
+                        _ => return None,
+                    }
+                } else {
+                    return None;
+                };
+            templates
+                .iter()
+                .find(|template| template.key == asset_key)
         }
-    } else {
-        return None;
-    };
-    let asset = templates
-        .iter()
-        .find(|template| template.key == asset_key)?;
+    }?;
     let active_grid = grid_system.active_grid_for_editor(world, editor_root);
     let context = PaintContext { asset, active_grid };
     paint_perf(
         "resolve_paint_context.active",
         start,
         format!(
-            "tool={:?} payload={payload:?} asset_key={} grid_active={}",
+            "tool={:?} asset_key={} grid_active={}",
             paint_state.selected_tool,
-            asset_key,
+            asset.key,
             context.active_grid.is_some()
         ),
     );
@@ -1180,6 +1207,38 @@ fn resolve_paint_context<'a>(
 struct PaintActivityStatus {
     active: bool,
     reason: String,
+}
+
+fn start_preview_session_for_tool(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    editor_root: ComponentId,
+    target_renderable: ComponentId,
+    hit_point: [f32; 3],
+    selected_tool: PaintTool,
+    context: &PaintContext<'_>,
+    editor_context: &EditorContextState,
+) -> Option<PlacementPreviewSession> {
+    match selected_tool {
+        PaintTool::FreeDraw => start_paint_preview_session(
+            world,
+            emit,
+            editor_root,
+            target_renderable,
+            hit_point,
+            context,
+        ),
+        PaintTool::GridTool => start_grid_preview_session(
+            world,
+            emit,
+            editor_root,
+            target_renderable,
+            hit_point,
+            context,
+            editor_context,
+        ),
+        _ => None,
+    }
 }
 
 fn start_paint_preview_session(
@@ -1219,6 +1278,35 @@ fn start_paint_preview_session(
     })
 }
 
+fn start_grid_preview_session(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    editor_root: ComponentId,
+    target_renderable: ComponentId,
+    hit_point: [f32; 3],
+    context: &PaintContext<'_>,
+    editor_context: &EditorContextState,
+) -> Option<PlacementPreviewSession> {
+    let grid_snap = context.grid_snap(hit_point);
+    let frame =
+        resolve_surface_placement_frame(world, target_renderable, hit_point, grid_snap).ok()?;
+    let pose = resolve_surface_aligned_pose_from_frame(&frame, 0.0).ok()?;
+    let mut preview_context = editor_context.clone();
+    preview_context.cursor_translation = Some(pose.translation);
+    preview_context.cursor_rotation = Some(pose.rotation);
+    let preview_root =
+        spawn_default_grid_for_editor(world, emit, editor_root, &preview_context, true);
+    create_preview_shell(world, preview_root, emit, PlacementPreviewStyle::default());
+    update_preview_pose(world, emit, preview_root, pose);
+    Some(PlacementPreviewSession {
+        active_editor: editor_root,
+        placement_kind: PlacementKind::Grid,
+        preview_root_component_id: preview_root,
+        target_renderable: Some(target_renderable),
+        last_valid_placement_frame: Some(frame),
+    })
+}
+
 fn paint_activity_status(
     world: &World,
     grid_system: &GridSystem,
@@ -1235,8 +1323,11 @@ fn paint_activity_status(
         };
     }
 
-    let is_erase = paint_state.selected_tool == PaintTool::Erase;
-    if !is_erase
+    let asset_required = !matches!(
+        paint_state.selected_tool,
+        PaintTool::Erase | PaintTool::GridTool
+    );
+    if asset_required
         && paint_state
             .selected_asset
             .as_ref()
@@ -1250,7 +1341,7 @@ fn paint_activity_status(
     }
 
     match paint_state.selected_tool {
-        PaintTool::FreeDraw | PaintTool::SprayCan | PaintTool::Erase => {}
+        PaintTool::FreeDraw | PaintTool::GridTool | PaintTool::SprayCan | PaintTool::Erase => {}
         _ => {
             return PaintActivityStatus {
                 active: false,
@@ -1489,8 +1580,11 @@ fn base_status_text(
         return "paint inactive: focus Paint panel".to_string();
     }
 
-    let is_erase = paint_state.selected_tool == PaintTool::Erase;
-    if !is_erase
+    let asset_required = !matches!(
+        paint_state.selected_tool,
+        PaintTool::Erase | PaintTool::GridTool
+    );
+    if asset_required
         && paint_state
             .selected_asset
             .as_ref()
@@ -1501,7 +1595,7 @@ fn base_status_text(
     }
 
     match paint_state.selected_tool {
-        PaintTool::FreeDraw | PaintTool::SprayCan | PaintTool::Erase => {}
+        PaintTool::FreeDraw | PaintTool::GridTool | PaintTool::SprayCan | PaintTool::Erase => {}
         _ => {
             return format!(
                 "paint inactive: tool is not supported ({:?})",
@@ -1516,6 +1610,7 @@ fn base_status_text(
 
     let tool_name = match paint_state.selected_tool {
         PaintTool::FreeDraw => "Free Draw",
+        PaintTool::GridTool => "Grid Tool",
         PaintTool::SprayCan => "Spray Can",
         PaintTool::Erase => "Erase",
         _ => unreachable!(),

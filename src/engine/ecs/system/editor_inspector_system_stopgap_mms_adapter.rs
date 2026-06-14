@@ -2363,14 +2363,17 @@ fn handle_grid_panel_click(
     if let Some(add_button) = world.find_component(grid_panel_root, GRID_PANEL_ADD_BUTTON_SELECTOR)
         && is_descendant_or_self(world, add_button, renderable)
     {
-        {
-            let mut editor_context = editor_context_state
-                .lock()
-                .expect("editor context state mutex poisoned");
-            editor_context.active_editor = Some(editor_root);
-            editor_context.pending_grid_placement_editor = Some(editor_root);
-            editor_context.grid_preview_session = None;
-        }
+        let _owner_transform =
+            spawn_default_grid_for_editor(world, emit, editor_root, &editor_context, false);
+        let mut refreshed_context = editor_context.clone();
+        refreshed_context.active_editor = Some(editor_root);
+        rerender_grid_panel_from_context(
+            world,
+            emit,
+            panel_query_root,
+            &refreshed_context,
+            data_renderer,
+        );
         return true;
     }
 

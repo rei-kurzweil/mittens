@@ -13,6 +13,7 @@ import { line_icon } from "./icons.mms"
 import { spray_can_icon } from "./icons.mms"
 import { fill_icon } from "./icons.mms"
 import { erase_icon } from "./icons.mms"
+import { grid_tool_icon } from "./icons.mms"
 import { grid_visibility_icon } from "./icons.mms"
 
 // ── Shared constants ──────────────────────────────────────────────────────────
@@ -111,14 +112,15 @@ let PAINT_PANEL_CONTENT_STATUS_GAP_GU = 0.5
 let PAINT_PANEL_CONTENT_HEIGHT_GU = 8.5
 let PAINT_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + PAINT_PANEL_CONTENT_HEIGHT_GU + PAINT_PANEL_CONTENT_STATUS_GAP_GU + PAINT_PANEL_STATUS_BAR_HEIGHT_GU
 
-let tool_names = ["Free Draw", "Line", "Spray Can", "Fill", "Erase"]
+let tool_names = ["Free Draw", "Grid Tool", "Line", "Spray Can", "Fill", "Erase"]
 
 fn tool_at_index(idx) {
     if idx == 0 { return pencil_icon() }
-    if idx == 1 { return line_icon() }
-    if idx == 2 { return spray_can_icon() }
-    if idx == 3 { return fill_icon() }
-    if idx == 4 { return erase_icon() }
+    if idx == 1 { return grid_tool_icon() }
+    if idx == 2 { return line_icon() }
+    if idx == 3 { return spray_can_icon() }
+    if idx == 4 { return fill_icon() }
+    if idx == 5 { return erase_icon() }
     return T {}
 }
 

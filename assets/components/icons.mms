@@ -68,6 +68,35 @@ export fn erase_icon() {
     }
 }
 
+export fn grid_tool_icon() {
+    return T.scale(0.5, 0.5, 0.2) {
+        name = "grid_tool_icon"
+
+        let beam_color = [0.62, 0.62, 0.62, 1.0]
+        let plus_color = [0.78, 0.78, 0.78, 1.0]
+        // border beams
+        T.position(0.0, 0.95, 0.0).scale(1.6, 0.18, 0.12) {
+            R.cube() { C.rgba(beam_color[0], beam_color[1], beam_color[2], beam_color[3]) }
+        }
+        T.position(0.0, -0.95, 0.0).scale(1.6, 0.18, 0.12) {
+            R.cube() { C.rgba(beam_color[0], beam_color[1], beam_color[2], beam_color[3]) }
+        }
+        T.position(-0.95, 0.0, 0.0).scale(0.18, 1.6, 0.12) {
+            R.cube() { C.rgba(beam_color[0], beam_color[1], beam_color[2], beam_color[3]) }
+        }
+        T.position(0.95, 0.0, 0.0).scale(0.18, 1.6, 0.12) {
+            R.cube() { C.rgba(beam_color[0], beam_color[1], beam_color[2], beam_color[3]) }
+        }
+        // center cross 
+        T.scale(0.22, 1.65, 0.16) {
+            R.cube() { C.rgba(plus_color[0], plus_color[1], plus_color[2], plus_color[3]) }
+        }
+        T.scale(1.65, 0.22, 0.16) {
+            R.cube() { C.rgba(plus_color[0], plus_color[1], plus_color[2], plus_color[3]) }
+        }
+    }
+}
+
 export fn delete_x_icon() {
     return T {
         name = "delete_x_icon"
