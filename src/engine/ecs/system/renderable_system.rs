@@ -1027,6 +1027,11 @@ impl RenderableSystem {
             let Some(p) = self.pending.get(&key).cloned() else {
                 continue;
             };
+            let effective_style =
+                Self::resolve_effective_renderable_style(world, p.renderable_cid);
+            if let Some(pending) = self.pending.get_mut(&key) {
+                pending.effective_style = effective_style;
+            }
 
             let mut cpu_mesh = p.cpu_mesh;
 
@@ -1131,19 +1136,19 @@ impl RenderableSystem {
                 .pending_color
                 .get(&p.renderable_cid)
                 .copied()
-                .unwrap_or(p.effective_style.color);
+                .unwrap_or(effective_style.color);
 
             let opacity = self
                 .pending_opacity
                 .get(&p.renderable_cid)
                 .copied()
-                .unwrap_or(p.effective_style.opacity);
+                .unwrap_or(effective_style.opacity);
 
             let transparent_cutout = self
                 .pending_cutout
                 .get(&p.renderable_cid)
                 .copied()
-                .unwrap_or(p.effective_style.transparent_cutout);
+                .unwrap_or(effective_style.transparent_cutout);
 
             let emissive = self
                 .pending_emissive
@@ -1174,9 +1179,9 @@ impl RenderableSystem {
                 opacity.opacity,
                 opacity.multiple_layers,
                 transparent_cutout,
-                p.effective_style.background,
-                p.effective_style.background_occluded_lit,
-                p.effective_style.overlay,
+                effective_style.background,
+                effective_style.background_occluded_lit,
+                effective_style.overlay,
                 emissive,
                 None,
                 quant_steps,
@@ -1332,12 +1337,30 @@ impl System for RenderableSystem {
 #[cfg(test)]
 mod tests {
     use super::RenderableSystem;
+    use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
         BackgroundComponent, ColorComponent, EmissiveComponent, OpacityComponent, OverlayComponent,
         RenderableComponent, TextComponent, TransformComponent, TransparentCutoutComponent,
     };
-    use crate::engine::graphics::VisualWorld;
+    use crate::engine::graphics::primitives::MeshHandle;
+    use crate::engine::graphics::{CpuMesh, MeshUploader, RenderAssets, VisualWorld};
+
+    #[derive(Default)]
+    struct TestUploader {
+        next_mesh: u32,
+    }
+
+    impl MeshUploader for TestUploader {
+        fn upload_mesh(
+            &mut self,
+            _mesh: &CpuMesh,
+        ) -> Result<MeshHandle, Box<dyn std::error::Error>> {
+            let handle = MeshHandle(self.next_mesh);
+            self.next_mesh += 1;
+            Ok(handle)
+        }
+    }
 
     #[test]
     fn effective_style_preserves_renderable_local_and_ancestor_semantics() {
@@ -1396,6 +1419,44 @@ mod tests {
         assert!(!style.background);
         assert!(!style.background_occluded_lit);
         assert!(!style.overlay);
+    }
+
+    #[test]
+    fn flush_pending_recomputes_style_after_attach() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::default();
+        let mut renderable_system = RenderableSystem::default();
+        let mut render_assets = RenderAssets::new();
+        let mut uploader = TestUploader::default();
+        let mut queue = CommandQueue::new();
+
+        let overlay_root = world.add_component(OverlayComponent::new());
+        let item_root = world.add_component(TransformComponent::new());
+        let renderable_root = world.add_component(TransformComponent::new());
+        let renderable = world.add_component(RenderableComponent::square());
+
+        let _ = world.add_child(item_root, renderable_root);
+        let _ = world.add_child(renderable_root, renderable);
+
+        renderable_system.register_renderable_from_world(&mut world, &mut visuals, renderable);
+
+        let _ = world.add_child(overlay_root, item_root);
+
+        let inserted = renderable_system.flush_pending(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut uploader,
+            &mut queue,
+        );
+
+        assert!(inserted);
+        let handle = world
+            .get_component_by_id_as::<RenderableComponent>(renderable)
+            .and_then(|r| r.get_handle())
+            .expect("renderable handle after flush");
+        let instance = visuals.instance(handle).expect("visual instance");
+        assert!(instance.overlay);
     }
 
     #[test]
