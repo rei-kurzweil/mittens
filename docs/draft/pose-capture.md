@@ -274,16 +274,23 @@ The panel should only emit intents.
 
 ## Capture algorithm
 
-For a given `PoseCaptureComponent` target:
+Capture is selection-aware at the editor-workspace level:
 
-1. resolve the root transform subtree to capture
-2. walk descendants in deterministic order
-3. for each relevant transform:
+1. if an editor currently has a gizmo-attached selection inside a `PoseCaptureComponent` subtree,
+   capture only that pose-capture target
+2. otherwise, capture one pose into every discovered `PoseCaptureComponent` target in the world
+
+For each resolved `PoseCaptureComponent` target:
+
+1. resolve or create exactly one `PoseCaptureLibraryComponent` child for that target
+2. resolve the root transform subtree to capture
+3. walk descendants in deterministic order
+4. for each relevant transform:
    - read its current local TRS from `TransformComponent`
    - compute its subtree-relative path
    - append a `PoseBoneEntry`
-4. create a new `PoseCapturePoseComponent`
-5. attach it under the target's pose library subtree
+5. create a new `PoseCapturePoseComponent`
+6. attach it under that target's pose-library subtree
 
 Deterministic order matters so:
 
@@ -315,18 +322,24 @@ This matches capture semantics, imported glTF local TRS, animation keyframe expe
 
 Add a new editor panel section similar in role to world/paint/grid panels.
 
-The panel groups captured content by pose-capture target in the current world.
+The panel groups captured content by pose library in the current world, with one
+library per `PoseCaptureComponent` target.
 
 Section model:
 
-- section header: target label
+- section header divider: target/library label
 - section rows: captured poses for that target
-- section footer: `Add` button
+- section footer: `Capture Pose` button
 
 Click behavior:
 
-- clicking `Add` emits `PoseCapture { target, pose_name: None }`
+- clicking `Capture Pose` emits `PoseCapture { target, pose_name: None }`
 - clicking a pose row emits `PoseApply { target, pose }`
+
+The capture button is only a trigger. The system decides whether that click means:
+
+- capture the currently gizmo-selected pose-capture target
+- or, if nothing relevant is selected, capture across all pose libraries
 
 ## Why this should be driven by `PoseCaptureComponent`
 
@@ -354,7 +367,7 @@ Suggested payload keys:
   - `pose_component = <PoseCapturePose>`
 - on add button rows:
   - `row_kind = "pose_capture_add"`
-  - `target_component = <PoseCapture root>`
+  - `target_component = <panel root or other non-pose trigger scope>`
 
 The stopgap editor panel adapter can decode these payloads the same way it already decodes world/grid/panel actions.
 

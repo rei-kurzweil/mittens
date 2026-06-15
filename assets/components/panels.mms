@@ -202,7 +202,8 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
 
 let POSE_PANEL_WIDTH_GU = 29.5
 let POSE_PANEL_CONTENT_HEIGHT_GU = 51.0
-let POSE_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + POSE_PANEL_CONTENT_HEIGHT_GU
+let POSE_PANEL_CAPTURE_BUTTON_HEIGHT_GU = 3.0
+let POSE_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + POSE_PANEL_CONTENT_HEIGHT_GU + TITLE_CONTENT_GAP_GU + POSE_PANEL_CAPTURE_BUTTON_HEIGHT_GU
 
 export fn pose_capture_panel(title, title_color, panel_background_color) {
     return T {
@@ -239,6 +240,7 @@ export fn pose_capture_panel(title, title_color, panel_background_color) {
             Style {
                 display("block")
                 height(POSE_PANEL_CONTENT_HEIGHT_GU)
+                margin_bottom(TITLE_CONTENT_GAP_GU)
                 overflow("scroll")
                 background_color([0.96, 0.92, 0.18, 0.80])
                 background_z(-0.001)
@@ -249,6 +251,33 @@ export fn pose_capture_panel(title, title_color, panel_background_color) {
                 Style {
                     display("block")
                     width(100%)
+                }
+            }
+        }
+
+        T {
+            name = "pose_capture_button"
+            Raycastable.enabled()
+            Style {
+                display("block")
+                height(POSE_PANEL_CAPTURE_BUTTON_HEIGHT_GU)
+                background_color([0.10, 0.55, 0.18, 1.0])
+                background_z(-0.01)
+            }
+
+            T {
+                name = "pose_capture_button_label"
+                Style {
+                    display("inline-block")
+                    width(24.0)
+                    height(POSE_PANEL_CAPTURE_BUTTON_HEIGHT_GU)
+                    padding_xy(0.25, TITLE_LABEL_PADDING_X_GU)
+                    text_align("left")
+                    vertical_align("middle")
+                    color = [0.75, 1.00, 0.45, 1.0]
+                }
+                T.position(0.0, 0.0, 0.0) {
+                    Text { "Capture Pose" }
                 }
             }
         }

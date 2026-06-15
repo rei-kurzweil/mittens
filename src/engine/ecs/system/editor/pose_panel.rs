@@ -5,6 +5,7 @@ use crate::engine::ecs::component::{PoseCaptureComponent, PoseCapturePoseCompone
 pub const POSE_PANEL_ROOT_SELECTOR: &str = "#pose_capture_panel_root";
 pub const POSE_PANEL_SELECTION_NAME: &str = "pose_capture_selection";
 pub const POSE_PANEL_PAYLOAD_NAME: &str = "pose_panel_payload";
+pub const POSE_PANEL_CAPTURE_BUTTON_SELECTOR: &str = "#pose_capture_button";
 
 #[derive(Debug, Clone, Default)]
 pub struct PosePanelModel {

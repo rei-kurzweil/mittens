@@ -126,3 +126,47 @@ pub fn spawn_block_container(world: &mut World, name: &str) -> ComponentId {
     let _ = world.add_child(root, style);
     root
 }
+
+pub fn spawn_panel_ui_section_header_tree(
+    world: &mut World,
+    row_name: &str,
+    label: &str,
+) -> ComponentId {
+    let row_root = world.add_component_boxed_named(row_name, Box::new(TransformComponent::new()));
+
+    let style = world.add_component_boxed_named(
+        format!("{row_name}_style"),
+        Box::new({
+            let mut style = StyleComponent::new();
+            style.display = Some(Display::Block);
+            style.width = SizeDimension::Percent(100.0);
+            style.margin = EdgeInsets::axes(0.0, 0.35);
+            style.padding = EdgeInsets::axes(0.4, 0.2);
+            style.background_color = Some([0.16, 0.20, 0.18, 1.0]);
+            style.background_z = Some(0.001);
+            style.color = Some([0.95, 0.98, 0.92, 1.0]);
+            style.overflow = Overflow::Visible;
+            style
+        }),
+    );
+    let _ = world.add_child(row_root, style);
+
+    let text_root = world.add_component_boxed_named(
+        format!("{row_name}_text_root"),
+        Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.005)),
+    );
+    let text = world.add_component_boxed_named(
+        format!("{row_name}_text"),
+        Box::new(TextComponent::new(label.to_string())),
+    );
+    let text_color = world.add_component_boxed_named(
+        format!("{row_name}_text_color"),
+        Box::new(ColorComponent::rgba(0.95, 0.98, 0.92, 1.0)),
+    );
+
+    let _ = world.add_child(row_root, text_root);
+    let _ = world.add_child(text_root, text);
+    let _ = world.add_child(text, text_color);
+
+    row_root
+}

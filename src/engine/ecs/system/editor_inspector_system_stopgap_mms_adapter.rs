@@ -27,6 +27,7 @@ use crate::engine::ecs::system::editor::inspector_panel::{
 };
 use crate::engine::ecs::system::editor::panel_ui::{
     PanelUiRowSpec, spawn_block_container, spawn_panel_ui_row_tree,
+    spawn_panel_ui_section_header_tree,
 };
 use crate::engine::ecs::system::editor::settings_panel::{
     EDITOR_SETTINGS_PANEL_ROOT_SELECTOR, EDITOR_SETTINGS_SELECTION_SELECTOR, EditorSettingsOption,
@@ -2904,20 +2905,8 @@ pub fn rerender_pose_panel(
     let model = build_pose_panel_model(world);
 
     for section in model.sections {
-        // Section Header
-        let header_spec = PanelUiRowSpec {
-            row_name: "pose_section_header",
-            payload_name: "pose_section_payload",
-            target_component: Some(section.target),
-            label: &section.label,
-            row_kind_label: "PoseSection",
-            interactive: false,
-            background_rgba: [0.2, 0.2, 0.2, 1.0],
-            text_rgba: [1.0, 1.0, 1.0, 1.0],
-            font_size_gu: None,
-            spacer_height_gu: None,
-        };
-        let header = spawn_panel_ui_row_tree(world, header_spec);
+        let header =
+            spawn_panel_ui_section_header_tree(world, "pose_section_header", &section.label);
         let _ = world.add_child(content_slot, header);
 
         for row in section.poses {
@@ -2947,21 +2936,6 @@ pub fn rerender_pose_panel(
             let _ = world.add_child(content_slot, row_node);
         }
 
-        // Add Button
-        let add_spec = PanelUiRowSpec {
-            row_name: "pose_add_button",
-            payload_name: POSE_PANEL_PAYLOAD_NAME,
-            target_component: Some(section.target),
-            label: "+ Capture Pose",
-            row_kind_label: "PoseAdd",
-            interactive: true,
-            background_rgba: [0.1, 0.5, 0.1, 1.0],
-            text_rgba: [0.8, 1.0, 0.8, 1.0],
-            font_size_gu: None,
-            spacer_height_gu: None,
-        };
-        let add_btn = spawn_panel_ui_row_tree(world, add_spec);
-        let _ = world.add_child(content_slot, add_btn);
     }
 
     world.init_component_tree(content_slot, emit);
@@ -2982,6 +2956,19 @@ pub fn handle_pose_panel_click(
 
     if !is_descendant_or_self(world, panel_root, clicked_node) {
         return false;
+    }
+
+    if let Some(capture_button) = world.find_component(panel_root, POSE_PANEL_CAPTURE_BUTTON_SELECTOR)
+        && is_descendant_or_self(world, capture_button, clicked_node)
+    {
+        emit.push_intent_now(
+            panel_root,
+            IntentValue::PoseCapture {
+                target: panel_root,
+                pose_name: None,
+            },
+        );
+        return true;
     }
 
     // Search up for a payload
