@@ -401,8 +401,8 @@ mod tests {
         );
         let spawned_node =
             world.add_component_boxed_named("spawned_node", Box::new(TransformComponent::new()));
-        let renderable =
-            world.add_component_boxed_named("mesh_renderable", Box::new(RenderableComponent::cube()));
+        let renderable = world
+            .add_component_boxed_named("mesh_renderable", Box::new(RenderableComponent::cube()));
 
         let _ = world.add_child(editor_root, gltf_anchor);
         let _ = world.add_child(gltf_anchor, gltf);

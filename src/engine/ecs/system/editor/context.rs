@@ -207,7 +207,12 @@ impl EditorContextSystem {
         sync_global_editor_interaction_mode(world, &self.state);
         sync_editor_observer_routes(world, &self.state, &self.workspace);
         let mut emit = NullEmit;
-        sync_editor_cursor_visual(world, &mut emit, &self.state);
+        let panel_query_root = self
+            .workspace
+            .lock()
+            .expect("editor context workspace poisoned")
+            .panel_query_root;
+        sync_editor_cursor_visual(world, &mut emit, &self.state, panel_query_root);
     }
 }
 
@@ -251,7 +256,7 @@ fn install_shared_panel_handlers(
             apply_editor_context_event(&state, &event);
             emit_editor_workspace_data_event(world, emit, panel_query_root, &event);
             sync_editor_component_selection(world, &event);
-            sync_editor_cursor_visual(world, emit, &state);
+            sync_editor_cursor_visual(world, emit, &state, Some(panel_query_root));
             sync_editor_observer_routes(world, &state, &workspace);
         },
     );
@@ -286,7 +291,7 @@ fn install_editor_handlers(
             };
             apply_editor_context_event(&state, &event);
             sync_editor_component_selection(world, &event);
-            sync_editor_cursor_visual(world, _emit, &state);
+            sync_editor_cursor_visual(world, _emit, &state, Some(editor_root));
         },
     );
 }
@@ -555,16 +560,17 @@ fn editor_settings_payload_data(
     })
 }
 
-fn sync_editor_cursor_visual(
+pub(crate) fn sync_editor_cursor_visual(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     state: &Arc<Mutex<EditorContextState>>,
+    cursor_root_host: Option<ComponentId>,
 ) {
     let state = state.lock().expect("editor context state poisoned").clone();
-    let Some(editor_root) = state.active_editor else {
+    let Some(cursor_root_host) = cursor_root_host.or(state.active_editor) else {
         return;
     };
-    let marker = ensure_cursor_marker(world, emit, editor_root);
+    let marker = ensure_cursor_marker(world, emit, cursor_root_host);
     let Some(marker_transform) = world.get_component_by_id_as_mut::<TransformComponent>(marker)
     else {
         return;
@@ -607,10 +613,10 @@ fn sync_editor_cursor_visual(
 fn ensure_cursor_marker(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
-    editor_root: ComponentId,
+    cursor_root_host: ComponentId,
 ) -> ComponentId {
     if let Some(existing) = world
-        .children_of(editor_root)
+        .children_of(cursor_root_host)
         .iter()
         .copied()
         .find(|&child| world.component_label(child) == Some(CURSOR_MARKER_ROOT_NAME))
@@ -634,7 +640,7 @@ fn ensure_cursor_marker(
         "editor_cursor_marker_serialize",
         Box::new(SerializeComponent::off()),
     );
-    let _ = world.add_child(editor_root, marker_root);
+    let _ = world.add_child(cursor_root_host, marker_root);
     let _ = world.add_child(marker_root, marker_selectable);
     let _ = world.add_child(marker_root, marker_serialize);
 
@@ -1359,6 +1365,47 @@ mod tests {
         );
 
         assert_eq!(event, None);
+    }
+
+    #[test]
+    fn cursor_visual_is_hosted_under_shared_panel_root() {
+        let mut world = World::default();
+        let panel_query_root =
+            world.add_component_boxed_named("panel_root", Box::new(TransformComponent::new()));
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let state = Arc::new(Mutex::new(EditorContextState {
+            active_editor: Some(editor_root),
+            selected_component: Some(editor_root),
+            selected_asset_payload: None,
+            focused_panel: None,
+            interaction_mode: EditorInteractionMode::Cursor3d,
+            cursor_translation: Some([1.0, 2.0, 3.0]),
+            cursor_rotation: Some([0.0, 0.0, 0.0, 1.0]),
+            cursor_frame: None,
+            pending_grid_placement_editor: None,
+            grid_preview_session: None,
+        }));
+        let mut emit = super::NullEmit;
+
+        super::sync_editor_cursor_visual(&mut world, &mut emit, &state, Some(panel_query_root));
+
+        let panel_marker = world
+            .children_of(panel_query_root)
+            .iter()
+            .copied()
+            .find(|&child| world.component_label(child) == Some(super::CURSOR_MARKER_ROOT_NAME));
+        let editor_marker = world
+            .children_of(editor_root)
+            .iter()
+            .copied()
+            .find(|&child| world.component_label(child) == Some(super::CURSOR_MARKER_ROOT_NAME));
+
+        assert!(
+            panel_marker.is_some(),
+            "expected shared cursor marker under panel root"
+        );
+        assert_eq!(editor_marker, None);
     }
 
     #[test]

@@ -10,11 +10,11 @@ use crate::engine::ecs::system::editor::context::{
     EDITOR_WORKSPACE_ASSET_SELECTION_CHANGED, EditorContextState,
 };
 use crate::engine::ecs::system::editor_inspector_system_stopgap_mms_adapter::spawn_default_grid_for_editor;
-use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::system::editor_paint_system_state_manager::{
     PaintEvent, PaintState, PaintTool, is_paint_active, is_paint_panel_focused,
     paint_tool_from_item, reduce_paint_state,
 };
+use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::system::grid_system::{GridSnapResult, GridStep, GridSystem};
 use crate::engine::ecs::system::object_placement_preview::{
     PlacementKind, PlacementPreviewSession, PlacementPreviewStyle, commit_preview,
@@ -1184,9 +1184,7 @@ fn resolve_paint_context<'a>(
                 } else {
                     return None;
                 };
-            templates
-                .iter()
-                .find(|template| template.key == asset_key)
+            templates.iter().find(|template| template.key == asset_key)
         }
     }?;
     let active_grid = grid_system.active_grid_for_editor(world, editor_root);

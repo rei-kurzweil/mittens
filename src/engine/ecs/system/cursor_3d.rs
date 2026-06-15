@@ -1,16 +1,15 @@
 use crate::engine::ecs::component::EditorInteractionMode;
-use crate::engine::ecs::system::editor::context::EditorContextState;
+use crate::engine::ecs::system::editor::context::{EditorContextState, sync_editor_cursor_visual};
 use crate::engine::ecs::system::editor_scene_hit::resolve_editor_scene_hit;
 use crate::engine::ecs::system::paint_placement::{
     resolve_surface_aligned_pose_for_subtree, resolve_surface_placement_frame,
 };
-use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, RxWorld, SignalKind, World};
+use crate::engine::ecs::{ComponentId, EventSignal, RxWorld, SignalKind, World};
+use crate::utils::math;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 const EDITOR_CURSOR_HANDLER_NAME: &str = "editor_cursor_3d";
-const CURSOR_MARKER_ROOT_NAME: &str = "editor_cursor_marker";
-const CURSOR_MARKER_SIZE: f32 = 0.5;
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 
 #[derive(Debug, Default)]
@@ -84,11 +83,13 @@ fn handle_cursor_signal(
             if scene_hit.editor_root != editor_root {
                 return;
             }
-            update_editor_cursor_from_surface(
+            update_editor_cursor(
                 world,
                 emit,
                 editor_context_state,
                 editor_root,
+                panel_query_root,
+                scene_hit.target_transform,
                 scene_hit.target_renderable,
                 *hit_point,
             );
@@ -109,34 +110,50 @@ fn paint_panel_is_focused(
     editor_context.focused_panel == Some(paint_panel_root)
 }
 
-fn update_editor_cursor_from_surface(
+fn update_editor_cursor(
     world: &mut World,
     emit: &mut dyn crate::engine::ecs::SignalEmitter,
     editor_context_state: Arc<Mutex<EditorContextState>>,
     editor_root: ComponentId,
+    panel_query_root: ComponentId,
+    target_transform: ComponentId,
     target_renderable: ComponentId,
     hit_point: [f32; 3],
 ) {
-    let marker_root = world
-        .children_of(editor_root)
-        .iter()
-        .copied()
-        .find(|&child| world.component_label(child) == Some(CURSOR_MARKER_ROOT_NAME));
-    let Some(marker_root) = marker_root else {
-        return;
-    };
-    let Ok(frame) = resolve_surface_placement_frame(world, target_renderable, hit_point, None)
-    else {
-        return;
-    };
-    let Ok(pose) = resolve_surface_aligned_pose_for_subtree(
-        world,
-        target_renderable,
-        hit_point,
-        marker_root,
-        None,
-    ) else {
-        return;
+    let interaction_mode = world
+        .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(editor_root)
+        .map(|editor| editor.interaction_mode)
+        .unwrap_or(EditorInteractionMode::Select);
+
+    let (translation, rotation, frame) = match interaction_mode {
+        EditorInteractionMode::Select => return,
+        EditorInteractionMode::Cursor3d => {
+            let Ok(frame) =
+                resolve_surface_placement_frame(world, target_renderable, hit_point, None)
+            else {
+                return;
+            };
+            let Ok(pose) = resolve_surface_aligned_pose_for_subtree(
+                world,
+                target_renderable,
+                hit_point,
+                panel_query_root,
+                None,
+            ) else {
+                return;
+            };
+            (pose.translation, pose.rotation, Some(frame))
+        }
+        EditorInteractionMode::SelectAndCursor => {
+            let Some(model) = authored_world_model(world, target_transform) else {
+                return;
+            };
+            (
+                [model[3][0], model[3][1], model[3][2]],
+                math::mat_to_quat(model),
+                None,
+            )
+        }
     };
 
     {
@@ -144,25 +161,57 @@ fn update_editor_cursor_from_surface(
             .lock()
             .expect("editor context state mutex poisoned");
         editor_context.active_editor = Some(editor_root);
-        editor_context.interaction_mode = match editor_context.interaction_mode {
-            EditorInteractionMode::Select => EditorInteractionMode::Select,
-            EditorInteractionMode::Cursor3d => EditorInteractionMode::Cursor3d,
-            EditorInteractionMode::SelectAndCursor => EditorInteractionMode::SelectAndCursor,
-        };
-        editor_context.cursor_translation = Some(pose.translation);
-        editor_context.cursor_rotation = Some(pose.rotation);
-        editor_context.cursor_frame = Some(frame);
+        editor_context.interaction_mode = interaction_mode;
+        editor_context.cursor_translation = Some(translation);
+        editor_context.cursor_rotation = Some(rotation);
+        editor_context.cursor_frame = frame;
     }
 
-    emit.push_intent_now(
-        marker_root,
-        IntentValue::UpdateTransform {
-            component_ids: vec![marker_root],
-            translation: pose.translation,
-            rotation_quat_xyzw: pose.rotation,
-            scale: [CURSOR_MARKER_SIZE, CURSOR_MARKER_SIZE, CURSOR_MARKER_SIZE],
-        },
-    );
+    sync_editor_cursor_visual(world, emit, &editor_context_state, Some(panel_query_root));
+}
+
+fn authored_world_model(
+    world: &World,
+    component: ComponentId,
+) -> Option<crate::engine::graphics::primitives::TransformMatrix> {
+    let mut chain = Vec::new();
+
+    if world
+        .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(component)
+        .is_some()
+    {
+        chain.push(component);
+    }
+
+    let mut current = component;
+    while let Some(parent) = world.parent_of(current) {
+        if world
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(parent)
+            .is_some()
+        {
+            chain.push(parent);
+        }
+        current = parent;
+    }
+
+    let mut iter = chain.into_iter().rev();
+    let first = iter.next()?;
+    let mut world_model = world
+        .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(first)?
+        .transform
+        .model;
+
+    for transform_id in iter {
+        let local = world
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(
+                transform_id,
+            )?
+            .transform
+            .model;
+        world_model = math::mat4_mul(world_model, local);
+    }
+
+    Some(world_model)
 }
 
 #[cfg(test)]
@@ -272,8 +321,14 @@ mod tests {
             panel_root,
         );
         let context = context_system.shared_state();
-        let scene_root =
-            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let scene_root = world.add_component_boxed_named(
+            "scene_root",
+            Box::new(
+                TransformComponent::new()
+                    .with_position(1.25, 2.5, -3.75)
+                    .with_rotation_quat([0.0, 0.38268343, 0.0, 0.9238795]),
+            ),
+        );
         let renderable =
             world.add_component_boxed_named("plane", Box::new(RenderableComponent::plane()));
         let _ = world.add_child(editor_root, scene_root);
@@ -321,7 +376,12 @@ mod tests {
                 .selected,
             Some(scene_root)
         );
-        assert!(state.cursor_translation.is_some());
-        assert!(state.cursor_rotation.is_some());
+        assert_eq!(state.cursor_translation, Some([1.25, 2.5, -3.75]));
+        let rotation = state.cursor_rotation.expect("cursor rotation");
+        assert!((rotation[0] - 0.0).abs() < 1e-6);
+        assert!((rotation[1] - 0.38268343).abs() < 1e-6);
+        assert!((rotation[2] - 0.0).abs() < 1e-6);
+        assert!((rotation[3] - 0.9238795).abs() < 1e-6);
+        assert_eq!(state.cursor_frame, None);
     }
 }
