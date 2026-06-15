@@ -200,7 +200,10 @@ ED {
                 hand_rotation_smoothing(220.0)
 
                 T {
-                    GLTF.new("assets/models/bisket.8.0.glb") { EM.on() }
+                    GLTF.new("assets/models/bisket.8.0.glb") { 
+                        EM.on() 
+                        PoseCapture { label("Bisket") }
+                    }
                 }
 
                 // Camera wrapped in T(eye_offset). The T's translation is the

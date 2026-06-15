@@ -14,6 +14,7 @@ use crate::engine::ecs::system::LightSystem;
 use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::OpenXRSystem;
 use crate::engine::ecs::system::PipelineSystem;
+use crate::engine::ecs::system::PoseCaptureSystem;
 use crate::engine::ecs::system::PointerSystem;
 use crate::engine::ecs::system::RayCastSystem;
 use crate::engine::ecs::system::RenderToTextureSystem;
@@ -93,6 +94,8 @@ pub struct SystemWorld {
     pub gltf: GLTFSystem,
 
     pub openxr: OpenXRSystem,
+
+    pub pose_capture: PoseCaptureSystem,
 
     pub pipeline: PipelineSystem,
 

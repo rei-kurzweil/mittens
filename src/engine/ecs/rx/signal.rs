@@ -403,6 +403,16 @@ pub enum IntentValue {
     UnregisterStencilClip {
         component_ids: Vec<ComponentId>,
     },
+
+    PoseCapture {
+        target: ComponentId,
+        pose_name: Option<String>,
+    },
+    PoseApply {
+        target: ComponentId,
+        pose: ComponentId,
+    },
+
     RegisterRouter {
         component_ids: Vec<ComponentId>,
     },
@@ -735,6 +745,9 @@ impl IntentValue {
             IntentValue::RegisterNormalVis { .. } => "register_normal_vis",
             IntentValue::RegisterEditor { .. } => "register_editor",
             IntentValue::RegisterAction { .. } => "register_action",
+
+            IntentValue::PoseCapture { .. } => "pose_capture",
+            IntentValue::PoseApply { .. } => "pose_apply",
 
             IntentValue::RegisterSignalRouteUpward { .. } => "register_signal_route_upward",
             IntentValue::RemoveSignalRouteUpward { .. } => "remove_signal_route_upward",

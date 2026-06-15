@@ -98,6 +98,7 @@ const PAINT_PANEL_WIDTH_GU: f64 = 41.0;
 const PAINT_PANEL_TOTAL_HEIGHT_GU: f64 = 32.0;
 const GRID_PANEL_WIDTH_GU: f64 = 29.5;
 const GRID_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
+const POSE_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
 const PANEL_LAYOUT_GAP_GU: f64 = 2.0;
 const PANEL_ROOT_MARGIN_X_GU: f64 = 0.5;
 const PANEL_ROOT_MARGIN_Y_GU: f64 = 0.5;
@@ -305,6 +306,18 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     &click_inspector_workspace_state,
                     &click_installed_editor_roots,
                     &click_rendered_inspector_models,
+                    &mut *click_data_renderer
+                        .lock()
+                        .expect("data renderer mutex poisoned"),
+                ) {
+                    return;
+                }
+
+                if handle_pose_panel_click(
+                    world,
+                    emit,
+                    panel_query_root,
+                    *renderable,
                     &mut *click_data_renderer
                         .lock()
                         .expect("data renderer mutex poisoned"),
@@ -778,6 +791,28 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 );
             },
         );
+
+        let pose_data_renderer = Arc::clone(&self.data_renderer);
+        rx.add_handler_closure(
+            SignalKind::DataEvent,
+            panel_query_root,
+            move |world, emit, signal| {
+                let Some(EventSignal::DataEvent { name, .. }) = signal.event.as_ref() else {
+                    return;
+                };
+
+                if name == "pose_captured" {
+                    rerender_pose_panel(
+                        world,
+                        emit,
+                        panel_query_root,
+                        &mut *pose_data_renderer
+                            .lock()
+                            .expect("data renderer mutex poisoned"),
+                    );
+                }
+            },
+        );
     }
 
     fn install_editor_refresh_handlers(&mut self, rx: &mut RxWorld, editor_root: ComponentId) {
@@ -913,6 +948,17 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 .lock()
                 .expect("data renderer mutex poisoned"),
         );
+
+        rerender_pose_panel(
+            world,
+            emit,
+            panel_query_root,
+            &mut *self
+                .data_renderer
+                .lock()
+                .expect("data renderer mutex poisoned"),
+        );
+
         sync_editor_settings_panel_selection(world, emit, panel_query_root, &editor_context);
 
         let inspector_models = build_inspector_panel_models(
@@ -997,7 +1043,11 @@ fn refresh_all_panel_models(
         &editor_context,
         data_renderer,
     );
+
+    rerender_pose_panel(world, emit, panel_query_root, data_renderer);
+
     sync_editor_settings_panel_selection(world, emit, panel_query_root, &editor_context);
+
 
     sync_and_refresh_inspector_panels(
         world,
@@ -1479,6 +1529,23 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             None => return,
         };
 
+        let pose_panel = match build_panel_component_expr(
+            world,
+            emit,
+            pose_panel_asset_path(),
+            "pose_capture_panel",
+            vec![
+                Value::String("Poses".to_string()),
+                world_panel_title_color.clone(),
+                world_panel_bg.clone(),
+            ],
+            PanelKind::Pose,
+            "pose capture panel",
+        ) {
+            Some(panel) => panel,
+            None => return,
+        };
+
         let editor_settings_panel = match build_panel_component_expr(
             world,
             emit,
@@ -1504,6 +1571,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             .max(ASSET_PANEL_TOTAL_HEIGHT_GU)
             .max(PAINT_PANEL_TOTAL_HEIGHT_GU)
             .max(GRID_PANEL_TOTAL_HEIGHT_GU)
+            .max(POSE_PANEL_TOTAL_HEIGHT_GU)
             .max(EDITOR_SETTINGS_PANEL_TOTAL_HEIGHT_GU)
             * 2.0
             + PANEL_LAYOUT_GAP_GU
@@ -1513,6 +1581,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         let paint_panel = decorate_panel_root_ce(paint_panel, PANEL_LAYOUT_GAP_GU);
         let asset_panel = decorate_panel_root_ce(asset_panel, PANEL_LAYOUT_GAP_GU);
         let grid_panel = decorate_panel_root_ce(grid_panel, PANEL_LAYOUT_GAP_GU);
+        let pose_panel = decorate_panel_root_ce(pose_panel, PANEL_LAYOUT_GAP_GU);
         let editor_settings_panel =
             decorate_panel_root_ce(editor_settings_panel, PANEL_LAYOUT_GAP_GU);
 
@@ -1530,6 +1599,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                     editor_settings_panel,
                     paint_panel,
                     grid_panel,
+                    pose_panel,
                     asset_panel,
                     world_panel,
                 ],
@@ -2809,6 +2879,151 @@ fn nearest_transform_ancestor(world: &World, start: ComponentId) -> Option<Compo
     None
 }
 
+pub fn rerender_pose_panel(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_mount_root: ComponentId,
+    data_renderer: &mut DataRendererSystem,
+) {
+    use crate::engine::ecs::system::editor::pose_panel::*;
+
+    let Some(panel_root) = world.find_component(panel_mount_root, POSE_PANEL_ROOT_SELECTOR) else {
+        return;
+    };
+
+    let Some(content_slot) = world.find_component(panel_root, "#content_area") else {
+        return;
+    };
+
+    // Clear content
+    let children = world.children_of(content_slot).to_vec();
+    for ch in children {
+        let _ = world.remove_component_subtree(ch);
+    }
+
+    let model = build_pose_panel_model(world);
+
+    for section in model.sections {
+        // Section Header
+        let header_spec = PanelUiRowSpec {
+            row_name: "pose_section_header",
+            payload_name: "pose_section_payload",
+            target_component: Some(section.target),
+            label: &section.label,
+            row_kind_label: "PoseSection",
+            interactive: false,
+            background_rgba: [0.2, 0.2, 0.2, 1.0],
+            text_rgba: [1.0, 1.0, 1.0, 1.0],
+            font_size_gu: None,
+            spacer_height_gu: None,
+        };
+        let header = spawn_panel_ui_row_tree(world, header_spec);
+        let _ = world.add_child(content_slot, header);
+
+        for row in section.poses {
+            let row_spec = PanelUiRowSpec {
+                row_name: "pose_row",
+                payload_name: POSE_PANEL_PAYLOAD_NAME,
+                target_component: Some(row.pose),
+                label: &row.label,
+                row_kind_label: "PoseRow",
+                interactive: true,
+                background_rgba: [0.92, 0.97, 0.92, 1.0],
+                text_rgba: [0.0, 0.0, 0.0, 1.0],
+                font_size_gu: None,
+                spacer_height_gu: None,
+            };
+            let row_node = spawn_panel_ui_row_tree(world, row_spec);
+
+            // Add extra payload for target
+            if let Some(payload_id) = world
+                .find_component(row_node, &format!("[name='{POSE_PANEL_PAYLOAD_NAME}']"))
+            {
+                if let Some(data) = world.get_component_by_id_as_mut::<DataComponent>(payload_id) {
+                    data.insert("pose_target", DataValue::Component(row.target));
+                }
+            }
+
+            let _ = world.add_child(content_slot, row_node);
+        }
+
+        // Add Button
+        let add_spec = PanelUiRowSpec {
+            row_name: "pose_add_button",
+            payload_name: POSE_PANEL_PAYLOAD_NAME,
+            target_component: Some(section.target),
+            label: "+ Capture Pose",
+            row_kind_label: "PoseAdd",
+            interactive: true,
+            background_rgba: [0.1, 0.5, 0.1, 1.0],
+            text_rgba: [0.8, 1.0, 0.8, 1.0],
+            font_size_gu: None,
+            spacer_height_gu: None,
+        };
+        let add_btn = spawn_panel_ui_row_tree(world, add_spec);
+        let _ = world.add_child(content_slot, add_btn);
+    }
+
+    world.init_component_tree(content_slot, emit);
+}
+
+pub fn handle_pose_panel_click(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    clicked_node: ComponentId,
+    data_renderer: &mut DataRendererSystem,
+) -> bool {
+    use crate::engine::ecs::system::editor::pose_panel::*;
+
+    let Some(panel_root) = world.find_component(panel_query_root, POSE_PANEL_ROOT_SELECTOR) else {
+        return false;
+    };
+
+    if !is_descendant_or_self(world, panel_root, clicked_node) {
+        return false;
+    }
+
+    // Search up for a payload
+    let mut current = Some(clicked_node);
+    while let Some(curr_id) = current {
+        if let Some(payload_id) = world
+            .children_of(curr_id)
+            .iter()
+            .find(|&&child| world.component_label(child) == Some(POSE_PANEL_PAYLOAD_NAME))
+        {
+            if let Some(data) = world.get_component_by_id_as::<DataComponent>(*payload_id) {
+                let row_kind = data_text(data, "row_kind").unwrap_or_default();
+                match row_kind.as_str() {
+                    "PoseRow" => {
+                        let pose_id = data.get_component("target_component");
+                        let target_id = data.get_component("pose_target");
+                        if let (Some(pose), Some(target)) = (pose_id, target_id) {
+                            emit.push_intent_now(target, IntentValue::PoseApply { target, pose });
+                            return true;
+                        }
+                    }
+                    "PoseAdd" => {
+                        let target_id = data.get_component("target_component");
+                        if let Some(target) = target_id {
+                            emit.push_intent_now(target, IntentValue::PoseCapture {
+                                target,
+                                pose_name: None,
+                            });
+                            // Delay rerender slightly to allow system to process capture
+                            return true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        current = world.parent_of(curr_id);
+    }
+
+    false
+}
+
 fn world_panel_asset_path() -> &'static str {
     concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
 }
@@ -2838,6 +3053,17 @@ fn editor_settings_panel_asset_path() -> &'static str {
 
 fn inspector_panel_asset_path() -> &'static str {
     concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
+}
+
+fn pose_panel_asset_path() -> &'static str {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
+}
+
+fn data_text(data: &DataComponent, key: &str) -> Option<String> {
+    match data.get(key) {
+        Some(DataValue::Text(value)) => Some(value.clone()),
+        _ => None,
+    }
 }
 
 fn build_panel_component_expr(

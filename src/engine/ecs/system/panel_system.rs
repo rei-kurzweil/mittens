@@ -21,6 +21,7 @@ pub enum PanelKind {
     Paint,
     Assets,
     Grid,
+    Pose,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -200,3 +200,62 @@ export fn inspector_panel_content(items, item_background_color) {
 
     return root
 }
+
+// ── pose_capture_panel ────────────────────────────────────────────────────────
+
+export fn pose_capture_section_header(label) {
+    return T {
+        name = "pose_capture_section_header"
+        Style {
+            display("block")
+            width(100%)
+            padding_xy(0.5, 0.45)
+            background_color([0.2, 0.2, 0.2, 1.0])
+            color = [1, 1, 1, 1]
+        }
+        T {
+            Text { label }
+        }
+    }
+}
+
+export fn pose_capture_row(label, bg) {
+    return T {
+        name = "pose_capture_row"
+        Raycastable.click_only()
+        Style {
+            display("block")
+            width(100%)
+            margin_xy(0.25, 0.1)
+            padding_xy(0.55, 0.45)
+            background_color = bg
+            background_z(-0.01)
+        }
+        T {
+            Text {
+                label
+                C.rgba(0, 0, 0, 1)
+            }
+        }
+    }
+}
+
+export fn pose_capture_add_button(label) {
+    return T {
+        name = "pose_capture_add_button"
+        Raycastable.enabled()
+        Style {
+            display("block")
+            width(100%)
+            margin_xy(0.25, 0.1)
+            padding_xy(0.55, 0.45)
+            background_color([0.1, 0.5, 0.1, 1.0])
+            color = [0.8, 1.0, 0.8, 1.0]
+            text_align("center")
+        }
+        T {
+            Text { label }
+        }
+    }
+}
+

@@ -571,6 +571,15 @@ impl RxMutationExecutor {
                 }
             }
 
+            IntentValue::PoseCapture { target, pose_name } => {
+                systems
+                    .pose_capture
+                    .handle_capture(world, emit, *target, pose_name.clone());
+            }
+            IntentValue::PoseApply { target, pose } => {
+                systems.pose_capture.handle_apply(world, emit, *target, *pose);
+            }
+
             // Not executed by the mutation executor.
             _ => {}
         }

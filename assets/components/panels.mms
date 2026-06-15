@@ -198,6 +198,64 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
     }
 }
 
+// ── pose_capture_panel ────────────────────────────────────────────────────────
+
+let POSE_PANEL_WIDTH_GU = 29.5
+let POSE_PANEL_CONTENT_HEIGHT_GU = 51.0
+let POSE_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + POSE_PANEL_CONTENT_HEIGHT_GU
+
+export fn pose_capture_panel(title, title_color, panel_background_color) {
+    return T {
+        name = "pose_capture_panel_root"
+        Style {
+            display("block")
+            width(POSE_PANEL_WIDTH_GU)
+            height(POSE_PANEL_TOTAL_HEIGHT_GU)
+            margin_xy(0.5, 0.5)
+        }
+
+        T {
+            name = "title_bar"
+            Raycastable.enabled()
+            Style {
+                display("block")
+                height(TITLE_BAR_HEIGHT_GU)
+                margin_bottom(TITLE_CONTENT_GAP_GU)
+                background_color(panel_background_color)
+                background_z(-0.01)
+                padding_xy(0.5, 0.5)
+                color = title_color
+                text_align("left")
+                vertical_align("middle")
+            }
+            T.position(0.0, 0.0, 0.0) {
+                Text { title }
+            }
+        }
+
+        T {
+            name = "content_slot"
+            Raycastable.enabled()
+            Style {
+                display("block")
+                height(POSE_PANEL_CONTENT_HEIGHT_GU)
+                overflow("scroll")
+                background_color([0.96, 0.92, 0.18, 0.80])
+                background_z(-0.001)
+            }
+            Selection.root("#content_slot") { name = "pose_capture_selection" }
+            T {
+                name = "content_area"
+                Style {
+                    display("block")
+                    width(100%)
+                }
+            }
+        }
+    }
+}
+
+
 // ── world_panel ───────────────────────────────────────────────────────────────
 
 let WORLD_PANEL_WIDTH_GU = 29.5

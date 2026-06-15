@@ -26,7 +26,8 @@ use crate::engine::ecs::component::{
     MeshComponent, MusicContextComponent, MusicNote, MusicNoteComponent,
     NormalVisualisationComponent, OpacityComponent, OpenXRComponent, OptionComponent,
     OscillatorType, Overflow, OverlayComponent, PointLightComponent, PointerComponent,
-    PointerEvents, Position, QuatTemporalFilterComponent, QuatYawFollowComponent, RayCastComponent,
+    PointerEvents, PoseCaptureComponent, PoseCaptureLibraryComponent, PoseCapturePoseComponent,
+    Position, QuatTemporalFilterComponent, QuatYawFollowComponent, RayCastComponent,
     RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RenderGraphComponent,
     RenderableComponent, RendererSettingsComponent, RendererStatsComponent, RouterComponent,
     ScrollingComponent, SelectableComponent, SelectionComponent, SerializeComponent,
@@ -1365,6 +1366,19 @@ fn create_component(
             Some("enabled") => add!(RaycastableComponent::enabled()),
             _ => add!(RaycastableComponent::enabled()),
         },
+        "PoseCapture" => add!(PoseCaptureComponent::new()),
+        "PoseCaptureLibrary" => {
+            add!(PoseCaptureLibraryComponent::new(
+                crate::engine::ecs::component::PoseTargetRef::Query("TODO".to_string())
+            ))
+        }
+        "PoseCapturePose" => {
+            add!(PoseCapturePoseComponent::new(
+                arg_str(args, 0)?,
+                crate::engine::ecs::component::PoseTargetRef::Query("TODO".to_string()),
+                Vec::new()
+            ))
+        }
         "TextureFiltering" => match ctor {
             Some("linear") => add!(TextureFilteringComponent::linear()),
             Some("nearest_magnification") => {
@@ -1887,6 +1901,14 @@ fn apply_call(
                     max: val_as_f32_array::<3>(&args[1])?,
                 }
             }
+            _ => {}
+        }
+        return Ok(());
+    }
+
+    if let Some(pc) = world.get_component_by_id_as_mut::<PoseCaptureComponent>(id) {
+        match method {
+            "with_label" | "label" => pc.label = Some(arg_str(args, 0)?.to_string()),
             _ => {}
         }
         return Ok(());
