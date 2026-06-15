@@ -34,19 +34,18 @@ Current rule:
 
 This gives editor subtrees a practical “selectable by default” behavior while still preserving explicit authored overrides.
 
-### GLTF exception
+### GLTF branches
 
-Editor auto-raycast wrapping must also skip any immediate editor child branch whose subtree contains a `GLTFComponent`.
+GLTF-bearing editor branches should receive the same default editor auto-raycast wrapper as any other immediate child of the editor root, unless the branch root already provides an explicit `RaycastableComponent` or disables selection.
 
 Reason:
 
-- `GLTFSystem` already treats editor ancestry as meaningful.
-- A glTF under an editor subtree automatically enables `with_visualized_transforms`.
-- Transform-only glTF nodes then get explicit visualization proxies, and those proxies are themselves raycastable.
-
-So GLTF/editor interaction is already a special path with its own pick proxies. `EditorSystem` should not add a second generic raycastable ancestor above that same branch.
+- `GLTFSystem` automatically enables `with_visualized_transforms` under editor ancestry, but that only creates raycastable proxies for transform-only nodes.
+- Mesh-bearing glTF nodes do not automatically become raycastable through that path.
+- Skipping the editor auto-raycast wrapper makes imported meshes miss editor picking entirely, leaving only helper proxies such as bone markers hittable.
 
 Practical effect:
 
 - ordinary authored editor geometry gets the automatic wrapper
-- avatar / imported glTF branches rely on `GLTFSystem`’s editor-aware visualization path instead
+- imported glTF mesh branches also get that wrapper
+- transform-visualization proxies remain useful for transform-only/joint nodes, but they are additive rather than the sole source of pickability

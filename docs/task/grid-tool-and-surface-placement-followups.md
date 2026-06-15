@@ -4,6 +4,10 @@ Date: 2026-06-14
 
 Status: open
 
+Related:
+
+- `docs/task/shared-3d-cursor-and-selection-vs-surface-placement.md`
+
 ## Preface: fix cursor observability first
 
 Before spending more time on `paint_panel` / `Grid Tool` placement math, get `3D Cursor` working reliably and visibly across the same editor roots and scene surfaces.
@@ -237,6 +241,12 @@ Follow-up:
 - document this explicitly
 - if current behavior differs, fix routing so `Grid Tool` owns scene drag interpretation while active
 
+Code note confirmed on 2026-06-14:
+
+- `Select + Cursor` currently uses the same surface-hit placement path as pure `3D Cursor`
+- it does not currently move the cursor to the exact selected transform / gizmo pose
+- for intended semantics, see `docs/task/shared-3d-cursor-and-selection-vs-surface-placement.md`
+
 ### 7. Cursor mode currently seems editor-root specific
 
 Observed behavior:
@@ -266,6 +276,17 @@ Likely work:
 - confirm `active_editor`, focused panel state, and scene-hit editor-root resolution are not suppressing cursor updates for non-primary editors
 - audit cursor visual spawn / reveal conditions and whether they are incorrectly coupled to selection/gizmo setup
 - compare the event path for selecting a bisket bone marker against selecting ordinary scene geometry
+- root cause confirmed in code on 2026-06-14:
+  - `EditorSystem::materialize_editor_raycastables(...)` skipped any immediate editor child branch whose subtree contained a `GLTFComponent`
+  - `GLTFSystem` only adds explicit raycastable proxies for transform-only nodes when `with_visualized_transforms` is active
+  - result: imported mesh renderables in editor trees were not editor-pickable by default, while bone/joint viz markers were
+- fix direction:
+  - make GLTF-bearing editor branches inherit the same default editor auto-raycast wrapper as other editor children
+  - keep transform-viz bone markers as additive helpers, not the only raycastable surfaces in imported editor content
+- additional root-cause thread confirmed in code on 2026-06-14:
+  - the cursor marker is currently created/fetched under `active_editor`
+  - `Cursor3dSystem` also resolves and updates the marker by searching under the triggering `editor_root`
+  - so the current implementation is not yet modeling one shared workspace-global cursor
 - add coverage with multiple editor roots, not just the bisket fixture
 
 ## Recommended next steps

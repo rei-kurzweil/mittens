@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::{
-    EditorComponent, EditorInteractionMode, GLTFComponent, RaycastableComponent,
-    SelectableComponent, SerializeComponent, TransformComponent, TransformGizmoComponent,
+    EditorComponent, EditorInteractionMode, RaycastableComponent, SelectableComponent,
+    SerializeComponent, TransformComponent, TransformGizmoComponent,
 };
 use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor_scene_hit::resolve_editor_scene_hit;
@@ -105,7 +105,6 @@ impl EditorSystem {
         for child in children {
             if subtree_root_has_explicit_raycastable(world, child)
                 || subtree_root_has_selectable_off(world, child)
-                || subtree_contains_gltf(world, child)
             {
                 continue;
             }
@@ -156,24 +155,6 @@ fn paint_panel_is_focused(
         return false;
     };
     editor_context.focused_panel == Some(paint_panel_root)
-}
-
-fn subtree_contains_gltf(world: &World, root: ComponentId) -> bool {
-    let mut stack = vec![root];
-    while let Some(node) = stack.pop() {
-        if world
-            .get_component_by_id_as::<GLTFComponent>(node)
-            .is_some()
-        {
-            return true;
-        }
-
-        for &child in world.children_of(node).iter() {
-            stack.push(child);
-        }
-    }
-
-    false
 }
 
 fn editor_interaction_mode(world: &World, editor_root: ComponentId) -> EditorInteractionMode {
@@ -333,8 +314,10 @@ mod tests {
     use super::EditorSystem;
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::component::{
-        EditorComponent, EditorInteractionMode, RenderableComponent, TransformComponent,
+        EditorComponent, EditorInteractionMode, GLTFComponent, RenderableComponent,
+        TransformComponent,
     };
+    use crate::engine::ecs::system::BvhSystem;
     use crate::engine::ecs::system::editor::context::EditorContextState;
     use crate::engine::ecs::{EventSignal, SystemWorld, World};
     use crate::engine::graphics::{RenderAssets, VisualWorld};
@@ -397,6 +380,40 @@ mod tests {
                 .expect("editor")
                 .selected,
             Some(scene_root)
+        );
+    }
+
+    #[test]
+    fn materialize_editor_raycastables_covers_gltf_branches() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut editor_system = EditorSystem::new();
+
+        let editor_root = world.add_component_boxed_named(
+            "editor_root",
+            Box::new(EditorComponent::new().with_interaction_mode(EditorInteractionMode::Select)),
+        );
+        let gltf_anchor =
+            world.add_component_boxed_named("gltf_anchor", Box::new(TransformComponent::new()));
+        let gltf = world.add_component_boxed_named(
+            "gltf_component",
+            Box::new(GLTFComponent::new("assets/models/test.glb")),
+        );
+        let spawned_node =
+            world.add_component_boxed_named("spawned_node", Box::new(TransformComponent::new()));
+        let renderable =
+            world.add_component_boxed_named("mesh_renderable", Box::new(RenderableComponent::cube()));
+
+        let _ = world.add_child(editor_root, gltf_anchor);
+        let _ = world.add_child(gltf_anchor, gltf);
+        let _ = world.add_child(gltf_anchor, spawned_node);
+        let _ = world.add_child(spawned_node, renderable);
+
+        editor_system.materialize_editor_raycastables(&mut world, &mut emit, editor_root);
+
+        assert!(
+            BvhSystem::renderable_is_raycastable(&world, renderable),
+            "expected GLTF-backed editor renderables to inherit the editor auto-raycastable wrapper"
         );
     }
 }
