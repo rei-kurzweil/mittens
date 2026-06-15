@@ -1,5 +1,7 @@
 use crate::engine::ecs::component::EditorInteractionMode;
-use crate::engine::ecs::system::editor::context::{EditorContextState, sync_editor_cursor_visual};
+use crate::engine::ecs::system::editor::context::{
+    EditorContextState, ensure_shared_workspace_cursor_host, sync_editor_cursor_visual,
+};
 use crate::engine::ecs::system::editor_scene_hit::resolve_editor_scene_hit;
 use crate::engine::ecs::system::paint_placement::{
     resolve_surface_aligned_pose_for_subtree, resolve_surface_placement_frame,
@@ -128,6 +130,8 @@ fn update_editor_cursor(
     let (translation, rotation, frame) = match interaction_mode {
         EditorInteractionMode::Select => return,
         EditorInteractionMode::Cursor3d => {
+            let cursor_host = ensure_shared_workspace_cursor_host(world, Some(panel_query_root))
+                .unwrap_or(editor_root);
             let Ok(frame) =
                 resolve_surface_placement_frame(world, target_renderable, hit_point, None)
             else {
@@ -137,7 +141,7 @@ fn update_editor_cursor(
                 world,
                 target_renderable,
                 hit_point,
-                panel_query_root,
+                cursor_host,
                 None,
             ) else {
                 return;

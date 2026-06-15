@@ -49,6 +49,7 @@ pub struct EditorContextState {
 #[derive(Debug, Clone, Default)]
 struct EditorContextWorkspaceState {
     panel_query_root: Option<ComponentId>,
+    cursor_host_root: Option<ComponentId>,
     registered_editors: Vec<ComponentId>,
 }
 
@@ -202,17 +203,18 @@ impl EditorContextSystem {
         }
 
         if self.installed_editor_roots.insert(editor_root) {
-            install_editor_handlers(rx, editor_root, Arc::clone(&self.state));
+            install_editor_handlers(
+                rx,
+                editor_root,
+                Arc::clone(&self.state),
+                Arc::clone(&self.workspace),
+            );
         }
         sync_global_editor_interaction_mode(world, &self.state);
         sync_editor_observer_routes(world, &self.state, &self.workspace);
         let mut emit = NullEmit;
-        let panel_query_root = self
-            .workspace
-            .lock()
-            .expect("editor context workspace poisoned")
-            .panel_query_root;
-        sync_editor_cursor_visual(world, &mut emit, &self.state, panel_query_root);
+        let cursor_host = ensure_workspace_cursor_host(world, &self.workspace);
+        sync_editor_cursor_visual(world, &mut emit, &self.state, cursor_host);
     }
 }
 
@@ -256,7 +258,8 @@ fn install_shared_panel_handlers(
             apply_editor_context_event(&state, &event);
             emit_editor_workspace_data_event(world, emit, panel_query_root, &event);
             sync_editor_component_selection(world, &event);
-            sync_editor_cursor_visual(world, emit, &state, Some(panel_query_root));
+            let cursor_host = ensure_workspace_cursor_host(world, &workspace);
+            sync_editor_cursor_visual(world, emit, &state, cursor_host);
             sync_editor_observer_routes(world, &state, &workspace);
         },
     );
@@ -266,6 +269,7 @@ fn install_editor_handlers(
     rx: &mut RxWorld,
     editor_root: ComponentId,
     state: Arc<Mutex<EditorContextState>>,
+    workspace: Arc<Mutex<EditorContextWorkspaceState>>,
 ) {
     rx.add_handler_closure_named(
         SignalKind::SelectionChanged,
@@ -291,9 +295,33 @@ fn install_editor_handlers(
             };
             apply_editor_context_event(&state, &event);
             sync_editor_component_selection(world, &event);
-            sync_editor_cursor_visual(world, _emit, &state, Some(editor_root));
+            let cursor_host = ensure_workspace_cursor_host(world, &workspace).or(Some(editor_root));
+            sync_editor_cursor_visual(world, _emit, &state, cursor_host);
         },
     );
+}
+
+fn ensure_workspace_cursor_host(
+    world: &mut World,
+    workspace: &Arc<Mutex<EditorContextWorkspaceState>>,
+) -> Option<ComponentId> {
+    let mut workspace = workspace.lock().expect("editor context workspace poisoned");
+
+    if workspace.panel_query_root.is_none() {
+        return None;
+    }
+
+    if let Some(existing) = workspace.cursor_host_root
+        && world
+            .get_component_by_id_as::<TransformComponent>(existing)
+            .is_some()
+    {
+        return Some(existing);
+    }
+
+    let cursor_host_root = ensure_shared_workspace_cursor_host(world, workspace.panel_query_root)?;
+    workspace.cursor_host_root = Some(cursor_host_root);
+    Some(cursor_host_root)
 }
 
 fn ensure_editor_observer_router(world: &mut World, editor_root: ComponentId) -> ComponentId {
@@ -608,6 +636,38 @@ pub(crate) fn sync_editor_cursor_visual(
             },
         );
     }
+}
+
+pub(crate) fn ensure_shared_workspace_cursor_host(
+    world: &mut World,
+    panel_query_root: Option<ComponentId>,
+) -> Option<ComponentId> {
+    let panel_query_root = panel_query_root?;
+
+    if let Some(existing) = world.all_components().find(|&component_id| {
+        world.parent_of(component_id).is_none()
+            && world.component_label(component_id) == Some("editor_workspace_cursor_root")
+    }) {
+        return Some(existing);
+    }
+
+    let cursor_host_root = world.add_component_boxed_named(
+        "editor_workspace_cursor_root",
+        Box::new(TransformComponent::new()),
+    );
+    let cursor_host_selectable = world.add_component_boxed_named(
+        "editor_workspace_cursor_root_selectable",
+        Box::new(SelectableComponent::off()),
+    );
+    let cursor_host_serialize = world.add_component_boxed_named(
+        "editor_workspace_cursor_root_serialize",
+        Box::new(SerializeComponent::off()),
+    );
+    let _ = world.add_child(cursor_host_root, cursor_host_selectable);
+    let _ = world.add_child(cursor_host_root, cursor_host_serialize);
+
+    let _ = panel_query_root;
+    Some(cursor_host_root)
 }
 
 fn ensure_cursor_marker(
@@ -1126,6 +1186,7 @@ mod tests {
         }));
         let workspace = Arc::new(Mutex::new(EditorContextWorkspaceState {
             panel_query_root: None,
+            cursor_host_root: None,
             registered_editors: vec![editor_root],
         }));
 
@@ -1374,6 +1435,11 @@ mod tests {
             world.add_component_boxed_named("panel_root", Box::new(TransformComponent::new()));
         let editor_root =
             world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let workspace = Arc::new(Mutex::new(EditorContextWorkspaceState {
+            panel_query_root: Some(panel_query_root),
+            cursor_host_root: None,
+            registered_editors: vec![editor_root],
+        }));
         let state = Arc::new(Mutex::new(EditorContextState {
             active_editor: Some(editor_root),
             selected_component: Some(editor_root),
@@ -1387,11 +1453,13 @@ mod tests {
             grid_preview_session: None,
         }));
         let mut emit = super::NullEmit;
+        let cursor_host =
+            super::ensure_workspace_cursor_host(&mut world, &workspace).expect("cursor host");
 
-        super::sync_editor_cursor_visual(&mut world, &mut emit, &state, Some(panel_query_root));
+        super::sync_editor_cursor_visual(&mut world, &mut emit, &state, Some(cursor_host));
 
-        let panel_marker = world
-            .children_of(panel_query_root)
+        let shared_marker = world
+            .children_of(cursor_host)
             .iter()
             .copied()
             .find(|&child| world.component_label(child) == Some(super::CURSOR_MARKER_ROOT_NAME));
@@ -1400,12 +1468,55 @@ mod tests {
             .iter()
             .copied()
             .find(|&child| world.component_label(child) == Some(super::CURSOR_MARKER_ROOT_NAME));
+        let panel_marker = world
+            .children_of(panel_query_root)
+            .iter()
+            .copied()
+            .find(|&child| world.component_label(child) == Some(super::CURSOR_MARKER_ROOT_NAME));
 
         assert!(
-            panel_marker.is_some(),
-            "expected shared cursor marker under panel root"
+            shared_marker.is_some(),
+            "expected shared cursor marker under dedicated workspace root"
         );
         assert_eq!(editor_marker, None);
+        assert_eq!(panel_marker, None);
+    }
+
+    #[test]
+    fn workspace_cursor_host_prefers_shared_panel_root() {
+        let mut world = World::default();
+        let panel_query_root = cid(&mut world);
+        let workspace = Arc::new(Mutex::new(EditorContextWorkspaceState {
+            panel_query_root: Some(panel_query_root),
+            cursor_host_root: None,
+            registered_editors: vec![],
+        }));
+
+        assert_eq!(
+            super::ensure_workspace_cursor_host(&mut world, &workspace),
+            workspace
+                .lock()
+                .expect("workspace poisoned")
+                .cursor_host_root
+        );
+    }
+
+    #[test]
+    fn workspace_cursor_host_reuses_existing_root() {
+        let mut world = World::default();
+        let panel_query_root = cid(&mut world);
+        let workspace = Arc::new(Mutex::new(EditorContextWorkspaceState {
+            panel_query_root: Some(panel_query_root),
+            cursor_host_root: None,
+            registered_editors: vec![],
+        }));
+
+        let first =
+            super::ensure_workspace_cursor_host(&mut world, &workspace).expect("first host");
+        let second =
+            super::ensure_workspace_cursor_host(&mut world, &workspace).expect("second host");
+
+        assert_eq!(first, second);
     }
 
     #[test]
