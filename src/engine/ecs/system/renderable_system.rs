@@ -93,6 +93,29 @@ impl Default for PendingOpacity {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct EffectiveRenderableStyle {
+    color: [f32; 4],
+    opacity: PendingOpacity,
+    transparent_cutout: bool,
+    background: bool,
+    background_occluded_lit: bool,
+    overlay: bool,
+}
+
+impl Default for EffectiveRenderableStyle {
+    fn default() -> Self {
+        Self {
+            color: [1.0, 1.0, 1.0, 1.0],
+            opacity: PendingOpacity::default(),
+            transparent_cutout: false,
+            background: false,
+            background_occluded_lit: false,
+            overlay: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct UvMeshCacheKey {
     base_mesh: CpuMeshHandle,
@@ -108,6 +131,7 @@ struct PendingRenderable {
     cpu_mesh: CpuMeshHandle,
     material: MaterialHandle,
     renderable_cid: ComponentId,
+    effective_style: EffectiveRenderableStyle,
 
     /// Optional string-key override for the CPU mesh (resolved via `RenderAssets::imported_mesh`).
     mesh_key: Option<String>,
@@ -139,37 +163,6 @@ impl RenderableSystem {
             }
             _ => material,
         }
-    }
-
-    fn inherited_background_for_renderable(
-        world: &World,
-        renderable_cid: ComponentId,
-    ) -> (bool, bool) {
-        // Nearest BackgroundComponent ancestor wins.
-        // Returns: (is_background, occluded_lit)
-        let mut cur = renderable_cid;
-        while let Some(parent) = world.parent_of(cur) {
-            if let Some(bg) = world.get_component_by_id_as::<BackgroundComponent>(parent) {
-                return (true, bg.occlusion_and_lighting);
-            }
-            cur = parent;
-        }
-        (false, false)
-    }
-
-    fn inherited_overlay_for_renderable(world: &World, renderable_cid: ComponentId) -> bool {
-        // Nearest OverlayComponent ancestor wins.
-        let mut cur = renderable_cid;
-        while let Some(parent) = world.parent_of(cur) {
-            if world
-                .get_component_by_id_as::<OverlayComponent>(parent)
-                .is_some()
-            {
-                return true;
-            }
-            cur = parent;
-        }
-        false
     }
 
     fn immediate_color_child(world: &World, node: ComponentId) -> Option<[f32; 4]> {
@@ -207,62 +200,72 @@ impl RenderableSystem {
         })
     }
 
-    fn inherited_color_for_renderable(
+    fn resolve_effective_renderable_style(
         world: &World,
         renderable_cid: ComponentId,
-    ) -> Option<[f32; 4]> {
-        // Explicit per-renderable override wins.
+    ) -> EffectiveRenderableStyle {
+        let mut style = EffectiveRenderableStyle::default();
+        let mut color_resolved = false;
+        let mut opacity_resolved = false;
+        let mut cutout_resolved = false;
+
         if let Some(rgba) = Self::immediate_color_child(world, renderable_cid) {
-            return Some(rgba);
+            style.color = rgba;
+            color_resolved = true;
         }
 
-        // Otherwise, walk up the ancestry and look for a ColorComponent attached to any ancestor
-        // node (e.g., TextComponent root).
+        if let Some(opacity) = Self::immediate_opacity_child(world, renderable_cid) {
+            style.opacity = opacity;
+            opacity_resolved = true;
+        }
+
+        if let Some(enabled) = Self::immediate_cutout_child(world, renderable_cid) {
+            style.transparent_cutout = enabled;
+            cutout_resolved = true;
+        }
+
         let mut cur = renderable_cid;
         while let Some(parent) = world.parent_of(cur) {
-            if let Some(rgba) = Self::immediate_color_child(world, parent) {
-                return Some(rgba);
+            if !color_resolved {
+                if let Some(rgba) = Self::immediate_color_child(world, parent) {
+                    style.color = rgba;
+                    color_resolved = true;
+                }
             }
+
+            if !opacity_resolved {
+                if let Some(opacity) = Self::immediate_opacity_child(world, parent) {
+                    style.opacity = opacity;
+                    opacity_resolved = true;
+                }
+            }
+
+            if !cutout_resolved {
+                if let Some(enabled) = Self::immediate_cutout_child(world, parent) {
+                    style.transparent_cutout = enabled;
+                    cutout_resolved = true;
+                }
+            }
+
+            if !style.background {
+                if let Some(bg) = world.get_component_by_id_as::<BackgroundComponent>(parent) {
+                    style.background = true;
+                    style.background_occluded_lit = bg.occlusion_and_lighting;
+                }
+            }
+
+            if !style.overlay
+                && world
+                    .get_component_by_id_as::<OverlayComponent>(parent)
+                    .is_some()
+            {
+                style.overlay = true;
+            }
+
             cur = parent;
         }
-        None
-    }
 
-    fn inherited_opacity_for_renderable(
-        world: &World,
-        renderable_cid: ComponentId,
-    ) -> Option<PendingOpacity> {
-        // Explicit per-renderable override wins.
-        if let Some(o) = Self::immediate_opacity_child(world, renderable_cid) {
-            return Some(o);
-        }
-
-        // Otherwise, walk up ancestry and look for an OpacityComponent attached to any ancestor.
-        let mut cur = renderable_cid;
-        while let Some(parent) = world.parent_of(cur) {
-            if let Some(o) = Self::immediate_opacity_child(world, parent) {
-                return Some(o);
-            }
-            cur = parent;
-        }
-        None
-    }
-
-    fn inherited_cutout_for_renderable(world: &World, renderable_cid: ComponentId) -> Option<bool> {
-        // Explicit per-renderable override wins.
-        if let Some(v) = Self::immediate_cutout_child(world, renderable_cid) {
-            return Some(v);
-        }
-
-        // Otherwise, walk up ancestry and look for a TransparentCutoutComponent attached under any ancestor.
-        let mut cur = renderable_cid;
-        while let Some(parent) = world.parent_of(cur) {
-            if let Some(v) = Self::immediate_cutout_child(world, parent) {
-                return Some(v);
-            }
-            cur = parent;
-        }
-        None
+        style
     }
 
     fn clone_mesh_with_uv_overrides_cached(
@@ -979,23 +982,10 @@ impl RenderableSystem {
                 cpu_mesh: renderable_comp.renderable.mesh,
                 material: renderable_comp.renderable.material,
                 renderable_cid: component,
+                effective_style: Self::resolve_effective_renderable_style(world, component),
                 mesh_key,
             },
         );
-
-        // Style inheritance: if this renderable doesn't have an explicit ColorComponent child,
-        // inherit the nearest ancestor ColorComponent's rgba.
-        if !self.pending_color.contains_key(&component) {
-            if let Some(rgba) = Self::inherited_color_for_renderable(world, component) {
-                self.pending_color.insert(component, rgba);
-            }
-        }
-
-        if !self.pending_opacity.contains_key(&component) {
-            if let Some(o) = Self::inherited_opacity_for_renderable(world, component) {
-                self.pending_opacity.insert(component, o);
-            }
-        }
 
         // Mark draw cache dirty only when we actually insert into visuals.
         let _ = visuals;
@@ -1141,20 +1131,19 @@ impl RenderableSystem {
                 .pending_color
                 .get(&p.renderable_cid)
                 .copied()
-                .unwrap_or([1.0, 1.0, 1.0, 1.0]);
+                .unwrap_or(p.effective_style.color);
 
             let opacity = self
                 .pending_opacity
                 .get(&p.renderable_cid)
                 .copied()
-                .unwrap_or_default();
+                .unwrap_or(p.effective_style.opacity);
 
             let transparent_cutout = self
                 .pending_cutout
                 .get(&p.renderable_cid)
                 .copied()
-                .or_else(|| Self::inherited_cutout_for_renderable(world, p.renderable_cid))
-                .unwrap_or(false);
+                .unwrap_or(p.effective_style.transparent_cutout);
 
             let emissive = self
                 .pending_emissive
@@ -1177,11 +1166,6 @@ impl RenderableSystem {
                     _ => 3.0,
                 });
 
-            let (background, background_occluded_lit) =
-                Self::inherited_background_for_renderable(world, p.renderable_cid);
-
-            let overlay = Self::inherited_overlay_for_renderable(world, p.renderable_cid);
-
             let handle = visuals.register(
                 p.renderable_cid,
                 gpu_r,
@@ -1190,9 +1174,9 @@ impl RenderableSystem {
                 opacity.opacity,
                 opacity.multiple_layers,
                 transparent_cutout,
-                background,
-                background_occluded_lit,
-                overlay,
+                p.effective_style.background,
+                p.effective_style.background_occluded_lit,
+                p.effective_style.overlay,
                 emissive,
                 None,
                 quant_steps,
@@ -1350,13 +1334,50 @@ mod tests {
     use super::RenderableSystem;
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
-        EmissiveComponent, RenderableComponent, TextComponent, TransformComponent,
-        TransparentCutoutComponent,
+        BackgroundComponent, ColorComponent, EmissiveComponent, OpacityComponent, OverlayComponent,
+        RenderableComponent, TextComponent, TransformComponent, TransparentCutoutComponent,
     };
     use crate::engine::graphics::VisualWorld;
 
     #[test]
-    fn text_like_renderable_inherits_cutout_from_ancestor_but_not_implicitly() {
+    fn effective_style_preserves_renderable_local_and_ancestor_semantics() {
+        let mut world = World::default();
+
+        let text = world.add_component(TextComponent::new("item"));
+        let text_color = world.add_component(ColorComponent::rgba(0.2, 0.3, 0.4, 1.0));
+        let text_opacity = world.add_component(OpacityComponent::new().with_opacity(0.4));
+        let overlay = world.add_component(OverlayComponent::new());
+        let background =
+            world.add_component(BackgroundComponent::new().with_occlusion_and_lighting());
+        let overlay_host = world.add_component(TransformComponent::new());
+        let glyph_t = world.add_component(TransformComponent::new());
+        let glyph_r = world.add_component(RenderableComponent::square());
+        let local_color = world.add_component(ColorComponent::rgba(0.9, 0.8, 0.7, 1.0));
+        let cutout = world.add_component(TransparentCutoutComponent::new());
+
+        let _ = world.add_child(text, text_color);
+        let _ = world.add_child(text, text_opacity);
+        let _ = world.add_child(text, background);
+        let _ = world.add_child(background, overlay);
+        let _ = world.add_child(overlay, overlay_host);
+        let _ = world.add_child(overlay_host, glyph_t);
+        let _ = world.add_child(glyph_t, glyph_r);
+        let _ = world.add_child(glyph_r, local_color);
+        let _ = world.add_child(glyph_r, cutout);
+
+        let style = RenderableSystem::resolve_effective_renderable_style(&world, glyph_r);
+
+        assert_eq!(style.color, [0.9, 0.8, 0.7, 1.0]);
+        assert_eq!(style.opacity.opacity, 0.4);
+        assert!(!style.opacity.multiple_layers);
+        assert!(style.transparent_cutout);
+        assert!(style.background);
+        assert!(style.background_occluded_lit);
+        assert!(style.overlay);
+    }
+
+    #[test]
+    fn effective_style_defaults_when_no_style_ancestors_exist() {
         let mut world = World::default();
 
         let text = world.add_component(TextComponent::new("item"));
@@ -1366,18 +1387,15 @@ mod tests {
         let _ = world.add_child(text, glyph_t);
         let _ = world.add_child(glyph_t, glyph_r);
 
-        assert_eq!(
-            RenderableSystem::inherited_cutout_for_renderable(&world, glyph_r),
-            None
-        );
+        let style = RenderableSystem::resolve_effective_renderable_style(&world, glyph_r);
 
-        let cutout = world.add_component(TransparentCutoutComponent::new());
-        let _ = world.add_child(text, cutout);
-
-        assert_eq!(
-            RenderableSystem::inherited_cutout_for_renderable(&world, glyph_r),
-            Some(true)
-        );
+        assert_eq!(style.color, [1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(style.opacity.opacity, 1.0);
+        assert!(!style.opacity.multiple_layers);
+        assert!(!style.transparent_cutout);
+        assert!(!style.background);
+        assert!(!style.background_occluded_lit);
+        assert!(!style.overlay);
     }
 
     #[test]
