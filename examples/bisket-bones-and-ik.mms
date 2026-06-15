@@ -93,8 +93,9 @@ ED {
                 //     forward is +Z (VRM); flip the camera 180° so its view direction matches
                 //     the avatar's forward. (CameraXR doesn't need this — OpenXR overrides pose.)
                 T.position(0.0, 0.08, 0.07).rotation(0.0, 3.14159, 0.0) {
-                    C3D {}
-                    Pointer {}
+                    C3D {
+                        Pointer {}
+                    }
                 }
             }
         }

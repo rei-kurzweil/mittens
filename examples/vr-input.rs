@@ -275,7 +275,7 @@ fn main() {
     let _ = universe.attach(desktop_rig, camera3d);
 
     let pointer = universe.world.add_component(PointerComponent::new());
-    let _ = universe.attach(desktop_rig, pointer);
+    let _ = universe.attach(camera3d, pointer);
 
     example_util::spawn_desktop_camera_controls_hint(&mut universe, desktop_rig);
     universe.add(input);

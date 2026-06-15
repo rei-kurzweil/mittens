@@ -21,8 +21,9 @@ I.speed(3.0) {
     }
 
     T.position(0.0, 1.4, 4.6) {
-        C3D {}
-        Pointer {}
+        C3D {
+            Pointer {}
+        }
     }
 }
 

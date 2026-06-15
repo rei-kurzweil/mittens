@@ -21,6 +21,19 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::OnceLock;
 use std::time::Instant;
 
+/// Per-frame trigger activation state for XR controllers.
+///
+/// Mirrors the edge-triggered / level-triggered structure of `InputState` for mouse buttons,
+/// but for the XR select action. Index 0 = left hand, 1 = right hand.
+///
+/// Reset to default each frame when XR is not running.
+#[derive(Default, Debug, Clone, Copy)]
+pub struct XrInputState {
+    pub trigger_pressed: [bool; 2],
+    pub trigger_down: [bool; 2],
+    pub trigger_released: [bool; 2],
+}
+
 pub struct OpenXRSystem {
     state: Option<OpenXRState>,
     last_init_error: Option<String>,
@@ -33,6 +46,8 @@ pub struct OpenXRSystem {
 
     input_xr_components: HashSet<ComponentId>,
     controller_components: HashSet<ComponentId>,
+
+    xr_input_state: XrInputState,
 }
 
 struct OpenXRState {
@@ -117,6 +132,7 @@ struct ControllerInput {
     action_set: openxr::ActionSet,
     aim_pose: openxr::Action<openxr::Posef>,
     grip_pose: openxr::Action<openxr::Posef>,
+    select: openxr::Action<bool>,
 
     left: openxr::Path,
     right: openxr::Path,
@@ -140,6 +156,8 @@ impl Default for OpenXRSystem {
 
             input_xr_components: HashSet::new(),
             controller_components: HashSet::new(),
+
+            xr_input_state: XrInputState::default(),
         }
     }
 }
@@ -155,6 +173,10 @@ impl std::fmt::Debug for OpenXRSystem {
 }
 
 impl OpenXRSystem {
+    pub fn xr_input_state(&self) -> &XrInputState {
+        &self.xr_input_state
+    }
+
     fn debug_hand_rotation_enabled() -> bool {
         static ENABLED: OnceLock<bool> = OnceLock::new();
         *ENABLED.get_or_init(|| {
@@ -1188,6 +1210,9 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
         let grip_pose = action_set
             .create_action::<openxr::Posef>("grip_pose", "Grip Pose", &subaction_paths)
             .map_err(|e| format!("create_action(grip_pose): {e:?}"))?;
+        let select = action_set
+            .create_action::<bool>("select", "Select", &subaction_paths)
+            .map_err(|e| format!("create_action(select): {e:?}"))?;
 
         // Create spaces for each subaction path.
         let left_aim_space = aim_pose
@@ -1232,12 +1257,20 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
         let right_grip_path = instance
             .string_to_path("/user/hand/right/input/grip/pose")
             .map_err(|e| format!("string_to_path(right grip): {e:?}"))?;
+        let left_select_path = instance
+            .string_to_path("/user/hand/left/input/select/click")
+            .map_err(|e| format!("string_to_path(left select): {e:?}"))?;
+        let right_select_path = instance
+            .string_to_path("/user/hand/right/input/select/click")
+            .map_err(|e| format!("string_to_path(right select): {e:?}"))?;
 
         let bindings = [
             openxr::Binding::new(&aim_pose, left_aim_path),
             openxr::Binding::new(&aim_pose, right_aim_path),
             openxr::Binding::new(&grip_pose, left_grip_path),
             openxr::Binding::new(&grip_pose, right_grip_path),
+            openxr::Binding::new(&select, left_select_path),
+            openxr::Binding::new(&select, right_select_path),
         ];
 
         for profile_str in profiles {
@@ -1252,6 +1285,7 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             action_set,
             aim_pose,
             grip_pose,
+            select,
             left,
             right,
             left_aim_space,
@@ -1419,15 +1453,18 @@ impl OpenXRSystem {
         renderer: &mut VulkanoRenderer,
     ) {
         let Some(state) = self.state.as_mut() else {
+            self.xr_input_state = XrInputState::default();
             visuals.set_xr_frame_dt_sec(None);
             return;
         };
 
         let Some(sess) = state.session.as_mut() else {
+            self.xr_input_state = XrInputState::default();
             visuals.set_xr_frame_dt_sec(None);
             return;
         };
         if !sess.running {
+            self.xr_input_state = XrInputState::default();
             visuals.set_xr_frame_dt_sec(None);
             return;
         }
@@ -1639,6 +1676,22 @@ impl OpenXRSystem {
             } else {
                 sess.controller_pose_cache.right_grip = None;
             }
+
+            // Poll select action for each hand and derive pressed/down/released edges.
+            let prev = self.xr_input_state.trigger_down;
+            for (i, subaction) in [ci.left, ci.right].into_iter().enumerate() {
+                let cur_down = ci
+                    .select
+                    .state(&sess.session, subaction)
+                    .ok()
+                    .map(|s| s.current_state)
+                    .unwrap_or(false);
+                self.xr_input_state.trigger_down[i] = cur_down;
+                self.xr_input_state.trigger_pressed[i] = cur_down && !prev[i];
+                self.xr_input_state.trigger_released[i] = !cur_down && prev[i];
+            }
+        } else {
+            self.xr_input_state = XrInputState::default();
         }
 
         // Publish XR per-eye camera matrices into VisualWorld (CameraTarget::Xr).

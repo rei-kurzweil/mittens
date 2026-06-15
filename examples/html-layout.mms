@@ -19,8 +19,9 @@ I {
         fps_rotation()
     }
     T.position(0.0, 1.0, 3.5) {
-        C3D {}
-        Pointer {}
+        C3D {
+            Pointer {}
+        }
     }
 }
 

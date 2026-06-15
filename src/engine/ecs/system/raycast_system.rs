@@ -1,7 +1,7 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    ControllerXRComponent, InputComponent, InputXRComponent, RayCastComponent, RayCastMode,
+    RayCastComponent, RayCastMode,
     RaycastableShapeComponent, RaycastableShapeType, RenderableComponent,
 };
 use crate::engine::ecs::system::BvhSystem;
@@ -38,14 +38,8 @@ enum RaySourceKind {
     ParentForward,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-struct PointerTopologyContext {
-    has_desktop_input_driver: bool,
-    has_xr_input_driver: bool,
-    has_controller_driver: bool,
-    has_desktop_camera_anchor: bool,
-    has_xr_camera_anchor: bool,
-}
+// Topology helpers live in pointer_system; use them directly.
+use crate::engine::ecs::system::pointer_system::pointer_topology_context;
 
 impl RayCastSystem {
     fn explicit_shape_on_renderable(
@@ -511,115 +505,6 @@ impl RayCastSystem {
         ]
     }
 
-    fn nearest_ancestor_transform(world: &World, start: ComponentId) -> Option<ComponentId> {
-        if world
-            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(start)
-            .is_some()
-        {
-            return Some(start);
-        }
-
-        let mut cur = start;
-        while let Some(parent) = world.parent_of(cur) {
-            if world
-                .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(parent)
-                .is_some()
-            {
-                return Some(parent);
-            }
-            cur = parent;
-        }
-        None
-    }
-
-    fn has_ancestor_component<T: 'static>(world: &World, start: ComponentId) -> bool {
-        let mut cur = start;
-        while let Some(parent) = world.parent_of(cur) {
-            if world.get_component_by_id_as::<T>(parent).is_some() {
-                return true;
-            }
-            cur = parent;
-        }
-        false
-    }
-
-    fn classify_same_lineage_descendants(
-        world: &World,
-        transform_cid: ComponentId,
-    ) -> (bool, bool) {
-        let mut has_desktop_camera = false;
-        let mut has_xr_camera = false;
-        let mut stack: Vec<ComponentId> = world.children_of(transform_cid).to_vec();
-
-        while let Some(node) = stack.pop() {
-            if world
-                .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(node)
-                .is_some()
-            {
-                continue;
-            }
-
-            if world
-                .get_component_by_id_as::<crate::engine::ecs::component::Camera3DComponent>(node)
-                .is_some()
-                || world
-                    .get_component_by_id_as::<crate::engine::ecs::component::Camera2DComponent>(
-                        node,
-                    )
-                    .is_some()
-            {
-                has_desktop_camera = true;
-            }
-
-            if world
-                .get_component_by_id_as::<crate::engine::ecs::component::CameraXRComponent>(node)
-                .is_some()
-            {
-                has_xr_camera = true;
-            }
-
-            if has_desktop_camera && has_xr_camera {
-                break;
-            }
-
-            stack.extend(world.children_of(node).iter().copied());
-        }
-
-        (has_desktop_camera, has_xr_camera)
-    }
-
-    fn pointer_topology_context(
-        world: &World,
-        raycaster_cid: ComponentId,
-    ) -> PointerTopologyContext {
-        let has_desktop_input_driver =
-            Self::has_ancestor_component::<InputComponent>(world, raycaster_cid);
-        let has_xr_input_driver =
-            Self::has_ancestor_component::<InputXRComponent>(world, raycaster_cid);
-        let has_controller_driver =
-            Self::has_ancestor_component::<ControllerXRComponent>(world, raycaster_cid);
-
-        let Some(tcid) = Self::nearest_ancestor_transform(world, raycaster_cid) else {
-            return PointerTopologyContext {
-                has_desktop_input_driver,
-                has_xr_input_driver,
-                has_controller_driver,
-                ..Default::default()
-            };
-        };
-
-        let (has_desktop_camera_anchor, has_xr_camera_anchor) =
-            Self::classify_same_lineage_descendants(world, tcid);
-
-        PointerTopologyContext {
-            has_desktop_input_driver,
-            has_xr_input_driver,
-            has_controller_driver,
-            has_desktop_camera_anchor,
-            has_xr_camera_anchor,
-        }
-    }
-
     /// Infer ray source behavior from topology.
     ///
     /// Current runtime policy remains conservative:
@@ -630,7 +515,7 @@ impl RayCastSystem {
     /// We also classify outer driver ancestry here so gesture trigger policy can later prefer a
     /// stronger enclosing driver without requiring the pointer to move in the authored topology.
     fn inferred_source_kind(world: &World, raycaster_cid: ComponentId) -> RaySourceKind {
-        let topology = Self::pointer_topology_context(world, raycaster_cid);
+        let topology = pointer_topology_context(world, raycaster_cid);
 
         let _future_trigger_policy_hint = (
             topology.has_desktop_input_driver,

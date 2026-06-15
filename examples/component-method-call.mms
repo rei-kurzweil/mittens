@@ -30,8 +30,9 @@ I.speed(3.0) {
     }
 
     T.position(0.0, 0.5, 5.0) {
-        C3D {}
-        Pointer {}
+        C3D {
+            Pointer {}
+        }
 
         T.position(0.0, 1.6, -2.0).scale(0.055, 0.055, 1.0) {
             TXT {

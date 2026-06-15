@@ -40,8 +40,9 @@ I.speed(1.5) {
         roll_axis_y()
     }
     T.position(0.0, 1.2, 3.5) {
-        C3D {}
-        Pointer {}
+        C3D {
+            Pointer {}
+        }
     }
 }
 

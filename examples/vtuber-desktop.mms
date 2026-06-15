@@ -37,8 +37,9 @@ T.position(0.15, -0.45, 1.0) {
 
 // --- Desktop camera rig ---
 T.position(0.0, 1.2, 3.0) {
-    C3D {}
-    Pointer {}
+    C3D {
+        Pointer {}
+    }
     T {
         position(0.65, 1.45, 1.8)
         scale(0.055, 0.055, 1.0)

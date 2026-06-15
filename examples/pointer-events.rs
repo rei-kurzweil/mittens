@@ -404,7 +404,7 @@ fn main() {
 
     let _ = universe.attach(input, cam_t);
     let _ = universe.attach(cam_t, cam);
-    let _ = universe.attach(cam_t, pointer);
+    let _ = universe.attach(cam, pointer);
 
     example_util::spawn_desktop_camera_controls_hint(&mut universe, cam_t);
     universe.add(input);

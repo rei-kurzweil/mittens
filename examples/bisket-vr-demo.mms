@@ -311,8 +311,9 @@ I.speed(1.0) {
             CollisionShape.sphere(0.22)
             KineticResponse.slide() {}
         }
-        C3D {}
-        Pointer {}
+        C3D {
+            Pointer {}
+        }
     }
 
 }

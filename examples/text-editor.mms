@@ -8,8 +8,9 @@ I {
     }
 
     T.position(0.0, 1.1, 3.8) {
-        C3D {}
-        Pointer {}
+        C3D {
+            Pointer {}
+        }
     }
 }
 

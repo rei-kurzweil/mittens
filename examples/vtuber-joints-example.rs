@@ -61,7 +61,7 @@ fn main() {
 
     // Pointer so gizmos can be interacted with.
     let pointer = universe.world.add_component(PointerComponent::new());
-    let _ = universe.attach(rig_transform, pointer);
+    let _ = universe.attach(camera3d, pointer);
 
     // Topology: I { T { C3D } } — add a small camera-attached controls hint.
     example_util::spawn_desktop_camera_controls_hint(&mut universe, rig_transform);
