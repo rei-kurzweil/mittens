@@ -9,6 +9,7 @@ use crate::engine::ecs::system::paint_placement::{
 use crate::engine::ecs::{ComponentId, EventSignal, RxWorld, SignalKind, World};
 use crate::utils::math;
 use std::collections::HashSet;
+use std::f32::consts::FRAC_PI_2;
 use std::sync::{Arc, Mutex};
 
 const EDITOR_CURSOR_HANDLER_NAME: &str = "editor_cursor_3d";
@@ -146,7 +147,11 @@ fn update_editor_cursor(
             ) else {
                 return;
             };
-            (pose.translation, pose.rotation, Some(frame))
+            (
+                pose.translation,
+                remap_cursor_rotation_to_surface_up(pose.rotation),
+                Some(frame),
+            )
         }
         EditorInteractionMode::SelectAndCursor => {
             let Some(model) = authored_world_model(world, target_transform) else {
@@ -172,6 +177,11 @@ fn update_editor_cursor(
     }
 
     sync_editor_cursor_visual(world, emit, &editor_context_state, Some(panel_query_root));
+}
+
+fn remap_cursor_rotation_to_surface_up(surface_aligned_rotation: [f32; 4]) -> [f32; 4] {
+    let z_to_y = math::quat_from_axis_angle([1.0, 0.0, 0.0], FRAC_PI_2);
+    math::quat_mul(surface_aligned_rotation, z_to_y)
 }
 
 fn authored_world_model(
@@ -229,6 +239,7 @@ mod tests {
     use crate::engine::ecs::system::editor_system::EditorSystem;
     use crate::engine::ecs::{EventSignal, SystemWorld, World};
     use crate::engine::graphics::{RenderAssets, VisualWorld};
+    use crate::utils::math::quat_rotate_vec3;
 
     #[test]
     fn cursor_mode_places_cursor_without_selecting() {
@@ -296,6 +307,13 @@ mod tests {
                 .selected,
             None
         );
+        let cursor_up = quat_rotate_vec3(
+            state.cursor_rotation.expect("cursor rotation"),
+            [0.0, 1.0, 0.0],
+        );
+        assert!((cursor_up[0] - 1.0).abs() < 1e-5);
+        assert!(cursor_up[1].abs() < 1e-5);
+        assert!(cursor_up[2].abs() < 1e-5);
     }
 
     #[test]
