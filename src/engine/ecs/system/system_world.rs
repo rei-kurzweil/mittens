@@ -1776,14 +1776,16 @@ impl SystemWorld {
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
 
+        let activations = self.pointer.build_activations(world, input, self.openxr.xr_input_state());
+
         self.raycast
-            .tick_with_queue(world, visuals, input, &mut self.rx, &self.bvh, dt_sec);
+            .tick_with_queue(world, visuals, input, &mut self.rx, &self.bvh, &activations, &self.pointer, dt_sec);
 
         // Execute/dispatch any signals produced by raycast immediately (e.g. RayIntersected).
         let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
 
         // Gestures interpret ray hits + input into drag events.
-        self.gesture.tick_with_rx(visuals, input, &mut self.rx);
+        self.gesture.tick_with_rx(visuals, input, &activations, &self.pointer, &mut self.rx);
 
         // Execute/dispatch gesture-produced signals immediately (e.g. DragStart/DragMove/DragEnd).
         let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);

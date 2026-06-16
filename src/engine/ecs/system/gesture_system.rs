@@ -1,25 +1,22 @@
 use crate::engine::ecs::component::PointerEvents;
+use crate::engine::ecs::system::pointer_system::{PointerActivations, PointerSystem};
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::{ComponentId, EventSignal, RxWorld, SignalKind};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 use crate::utils::math;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use winit::event::MouseButton;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DragUpdatePolicy {
     /// Only emit drag moves while the pointer still intersects the original target.
-    ///
-    /// This is the right default for “contact-driven” interactions (e.g. pushing/poking with a VR
-    /// hand), and for direct manipulation tools that should stop when leaving the target.
     RequireTargetContact,
 
     /// After `DragStart`, continue producing deltas by projecting the current pointer ray onto a
     /// stable plane captured at drag start.
     ///
-    /// This is the right default for editor gizmos, where requiring continuous intersection with a
-    /// thin handle geometry tends to feel unstable.
+    /// Used for editor gizmos where losing intersection with thin handle geometry is common.
     StartPlaneProjection,
 }
 
@@ -50,7 +47,8 @@ pub struct GestureState {
 
 #[derive(Debug)]
 pub struct GestureSystem {
-    state: GestureState,
+    /// Per-pointer gesture state, keyed by PointerComponent id.
+    states: HashMap<ComponentId, GestureState>,
     pub drag_update_policy: DragUpdatePolicy,
 
     /// All ray hits this frame, sorted front-to-back by t.
@@ -78,8 +76,6 @@ impl GestureSystem {
     }
 
     /// Install drain-point handlers into `RxWorld`.
-    ///
-    /// This lets GestureSystem consume `RayIntersected` without scanning `rx.signals()`.
     pub fn install_handlers(&mut self, rx: &mut RxWorld) {
         if self.immediate_handlers_installed {
             return;
@@ -109,7 +105,6 @@ impl GestureSystem {
             let Ok(mut hits) = hits_ref.lock() else {
                 return;
             };
-            // Insert sorted by t (front-to-back).
             let entry = (*t, *raycaster, *renderable, *origin, *dir, pe);
             let pos = hits.partition_point(|h| h.0 < *t);
             hits.insert(pos, entry);
@@ -118,8 +113,15 @@ impl GestureSystem {
         self.immediate_handlers_installed = true;
     }
 
+    /// Returns the gesture state for the first active pointer, for callers that only care about
+    /// a single pointer (e.g. editor gizmos, cursor 3D).
     pub fn state(&self) -> &GestureState {
-        &self.state
+        // Return the first dragging state if any, otherwise any state, otherwise a default.
+        self.states
+            .values()
+            .find(|s| s.dragging)
+            .or_else(|| self.states.values().next())
+            .unwrap_or(&EMPTY_GESTURE_STATE)
     }
 
     pub fn set_drag_update_policy(&mut self, policy: DragUpdatePolicy) {
@@ -127,7 +129,6 @@ impl GestureSystem {
     }
 
     fn mat4_mul(a: [[f32; 4]; 4], b: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
-        // Column-major multiplication: out = a * b.
         let mut out = [[0.0f32; 4]; 4];
         for c in 0..4 {
             for r in 0..4 {
@@ -222,116 +223,147 @@ impl GestureSystem {
         ])
     }
 
-    /// Consume RayIntersected signals (as inputs) and emit DragStart/DragMove/DragEnd signals.
+    /// Consume RayIntersected signals and PointerActivations to emit DragStart/DragMove/DragEnd/Click.
     ///
-    /// This is mouse-only for now: left button + cursor ray.
-    pub fn tick_with_rx(&mut self, visuals: &VisualWorld, input: &InputState, rx: &mut RxWorld) {
-        // Immediate-mode: hits accumulated by handler as raycasts are emitted, sorted front-to-back.
-        let hits: Vec<(
-            f32,
-            ComponentId,
-            ComponentId,
-            [f32; 3],
-            [f32; 3],
-            PointerEvents,
-        )> = self
+    /// `input` is still passed for `cursor_pos` (screen-space fields on desktop pointer events).
+    /// `activations` drives press/down/release for each pointer regardless of input source.
+    pub fn tick_with_rx(
+        &mut self,
+        visuals: &VisualWorld,
+        input: &InputState,
+        activations: &PointerActivations,
+        pointer_system: &PointerSystem,
+        rx: &mut RxWorld,
+    ) {
+        let hits: Vec<(f32, ComponentId, ComponentId, [f32; 3], [f32; 3], PointerEvents)> = self
             .ray_hits_sorted
             .lock()
             .ok()
             .map(|g| g.clone())
             .unwrap_or_default();
 
-        // Start drag.
-        if input.mouse_pressed.contains(&MouseButton::Left) {
-            // Drag target: first hit that captures drag.
-            let drag_hit = hits.iter().find(|h| h.5.captures_drag());
-            // Click target: first hit that captures click (stored separately).
-            let click_hit = hits.iter().find(|h| h.5.captures_click());
+        // --- Press: start a new drag per activated pointer ---
+        for &pointer_cid in &activations.pressed {
+            // Only start a gesture if this pointer isn't already dragging.
+            if self.states.get(&pointer_cid).map(|s| s.dragging).unwrap_or(false) {
+                continue;
+            }
 
-            if let Some(&(t, raycaster, renderable, origin, dir, _pe)) = drag_hit {
-                let drag_hit_point = Some([
-                    origin[0] + dir[0] * t,
-                    origin[1] + dir[1] * t,
-                    origin[2] + dir[2] * t,
-                ]);
+            let Some(raycaster_cid) = pointer_system.raycast_for_pointer(pointer_cid) else {
+                continue;
+            };
 
-                self.state.dragging = true;
-                self.state.drag_raycaster = Some(raycaster);
-                self.state.drag_renderable = Some(renderable);
-                self.state.click_renderable = click_hit.map(|h| h.2);
-                self.state.last_hit_point = drag_hit_point;
-                self.state.last_cursor_pos = input.cursor_pos;
-                self.state.drag_start_screen_pos = input.cursor_pos;
-                self.state.drag_start_hit_point = drag_hit_point;
+            // Hits from this pointer's raycaster only.
+            let pointer_hits: Vec<_> = hits.iter().filter(|h| h.1 == raycaster_cid).collect();
 
-                if self.drag_update_policy == DragUpdatePolicy::StartPlaneProjection {
-                    let n = math::vec3_normalize(dir);
-                    self.state.drag_plane_point_world = drag_hit_point;
-                    self.state.drag_plane_normal_world = Some(n);
+            let drag_hit = pointer_hits.iter().find(|h| h.5.captures_drag());
+            let click_hit = pointer_hits.iter().find(|h| h.5.captures_click());
 
-                    if let Some(p0) = drag_hit_point {
-                        self.state.last_hit_point = Some(p0);
-                    } else if let (Some(pp), Some(pn)) = (
-                        self.state.drag_plane_point_world,
-                        self.state.drag_plane_normal_world,
-                    ) {
-                        if let Some(p) = Self::ray_plane_intersect(origin, dir, pp, pn) {
-                            self.state.last_hit_point = Some(p);
-                        }
-                    }
+            let Some(&&(t, raycaster, renderable, origin, dir, _pe)) = drag_hit else {
+                continue;
+            };
+
+            let drag_hit_point = Some([
+                origin[0] + dir[0] * t,
+                origin[1] + dir[1] * t,
+                origin[2] + dir[2] * t,
+            ]);
+
+            // Determine if this is a screen-space pointer (has cursor_pos).
+            let screen_pos = input.cursor_pos;
+            let is_screen_pointer = screen_pos.is_some();
+
+            let state = self.states.entry(pointer_cid).or_default();
+            state.dragging = true;
+            state.drag_raycaster = Some(raycaster);
+            state.drag_renderable = Some(renderable);
+            state.click_renderable = click_hit.map(|h| h.2);
+            state.last_hit_point = drag_hit_point;
+            state.last_cursor_pos = if is_screen_pointer { screen_pos } else { None };
+            state.drag_start_screen_pos = if is_screen_pointer { screen_pos } else { None };
+            state.drag_start_hit_point = drag_hit_point;
+
+            // StartPlaneProjection only makes sense for screen-space pointers; XR uses RequireTargetContact.
+            if self.drag_update_policy == DragUpdatePolicy::StartPlaneProjection && is_screen_pointer {
+                let n = math::vec3_normalize(dir);
+                state.drag_plane_point_world = drag_hit_point;
+                state.drag_plane_normal_world = Some(n);
+                if let Some(p0) = drag_hit_point {
+                    state.last_hit_point = Some(p0);
                 }
+            }
 
-                if let Some(p) = drag_hit_point {
-                    rx.push_event(
+            if let Some(p) = drag_hit_point {
+                rx.push_event(
+                    renderable,
+                    EventSignal::DragStart {
+                        raycaster,
                         renderable,
-                        EventSignal::DragStart {
-                            raycaster,
-                            renderable,
-                            hit_point: p,
-                            ray_dir_world: dir,
-                            screen_pos_px: input.cursor_pos,
-                        },
-                    );
-                }
+                        hit_point: p,
+                        ray_dir_world: dir,
+                        screen_pos_px: if is_screen_pointer { screen_pos } else { None },
+                    },
+                );
             }
         }
 
-        // Move drag.
-        if self.state.dragging {
-            let left_down = input.mouse_down.contains(&MouseButton::Left);
-            if left_down {
-                let (Some(active_rc), Some(active_renderable)) =
-                    (self.state.drag_raycaster, self.state.drag_renderable)
-                else {
-                    self.state.dragging = false;
-                    self.state.last_hit_point = None;
-                    return;
+        // --- Down: continue active drags ---
+        let active_pointers: Vec<ComponentId> = self.states.keys().copied().collect();
+        for pointer_cid in active_pointers {
+            let is_down = activations.down.contains(&pointer_cid);
+            let is_released = activations.released.contains(&pointer_cid);
+
+            // Move drag.
+            if is_down {
+                let (Some(active_rc), Some(active_renderable)) = ({
+                    let s = self.states.get(&pointer_cid).unwrap();
+                    (s.drag_raycaster, s.drag_renderable)
+                }) else {
+                    self.states.remove(&pointer_cid);
+                    continue;
                 };
 
-                match self.drag_update_policy {
+                if !self.states.get(&pointer_cid).map(|s| s.dragging).unwrap_or(false) {
+                    continue;
+                }
+
+                let pointer_hits: Vec<_> = hits.iter().filter(|h| h.1 == active_rc).collect();
+                let is_screen_pointer = self
+                    .states
+                    .get(&pointer_cid)
+                    .and_then(|s| s.drag_start_screen_pos)
+                    .is_some();
+
+                let effective_policy = if is_screen_pointer {
+                    self.drag_update_policy
+                } else {
+                    DragUpdatePolicy::RequireTargetContact
+                };
+
+                match effective_policy {
                     DragUpdatePolicy::RequireTargetContact => {
-                        // Only move when the hit is still on the captured renderable.
-                        let target_hit = hits.iter().find(|&&(_t, rc, r, _o, _d, _pe)| {
-                            rc == active_rc && r == active_renderable
-                        });
-                        if let Some(&(t, _rc, _r, origin, dir, _pe)) = target_hit {
+                        let target_hit = pointer_hits
+                            .iter()
+                            .find(|h| h.1 == active_rc && h.2 == active_renderable);
+                        if let Some(&(t, _rc, _r, origin, dir, _pe)) = target_hit.copied() {
                             let cur = [
                                 origin[0] + dir[0] * t,
                                 origin[1] + dir[1] * t,
                                 origin[2] + dir[2] * t,
                             ];
-                            if let Some(prev) = self.state.last_hit_point {
+                            let state = self.states.get_mut(&pointer_cid).unwrap();
+                            if let Some(prev) = state.last_hit_point {
                                 let delta = [cur[0] - prev[0], cur[1] - prev[1], cur[2] - prev[2]];
                                 if delta[0] != 0.0 || delta[1] != 0.0 || delta[2] != 0.0 {
-                                    let screen_pos_px = input.cursor_pos;
-                                    let screen_delta_px =
-                                        match (self.state.last_cursor_pos, screen_pos_px) {
-                                            (Some((px, py)), Some((cx, cy))) => {
-                                                Some((cx - px, cy - py))
-                                            }
+                                    let screen_pos_px = if is_screen_pointer { input.cursor_pos } else { None };
+                                    let screen_delta_px = if is_screen_pointer {
+                                        match (state.last_cursor_pos, screen_pos_px) {
+                                            (Some((px, py)), Some((cx, cy))) => Some((cx - px, cy - py)),
                                             _ => None,
-                                        };
-
+                                        }
+                                    } else {
+                                        None
+                                    };
                                     rx.push_event(
                                         active_renderable,
                                         EventSignal::DragMove {
@@ -345,46 +377,48 @@ impl GestureSystem {
                                     );
                                 }
                             }
-                            self.state.last_hit_point = Some(cur);
-                            self.state.last_cursor_pos = input.cursor_pos;
+                            let state = self.states.get_mut(&pointer_cid).unwrap();
+                            state.last_hit_point = Some(cur);
+                            state.last_cursor_pos = input.cursor_pos;
                         }
                     }
 
                     DragUpdatePolicy::StartPlaneProjection => {
-                        // Continue emitting DragMove based on cursor motion projected onto a
-                        // stable drag plane (captured at DragStart), even if we are no longer
-                        // hovering the handle geometry.
                         let Some((o, d)) = Self::ray_from_cursor(visuals, input) else {
-                            // Still update cursor tracking so we don't accumulate a huge delta.
-                            self.state.last_cursor_pos = input.cursor_pos;
-                            return;
+                            if let Some(s) = self.states.get_mut(&pointer_cid) {
+                                s.last_cursor_pos = input.cursor_pos;
+                            }
+                            continue;
                         };
 
-                        let (Some(pp), Some(pn)) = (
-                            self.state.drag_plane_point_world,
-                            self.state.drag_plane_normal_world,
-                        ) else {
-                            self.state.last_cursor_pos = input.cursor_pos;
-                            return;
+                        let (pp, pn) = {
+                            let s = self.states.get(&pointer_cid).unwrap();
+                            (s.drag_plane_point_world, s.drag_plane_normal_world)
+                        };
+                        let (Some(pp), Some(pn)) = (pp, pn) else {
+                            if let Some(s) = self.states.get_mut(&pointer_cid) {
+                                s.last_cursor_pos = input.cursor_pos;
+                            }
+                            continue;
                         };
 
                         let Some(cur) = Self::ray_plane_intersect(o, d, pp, pn) else {
-                            self.state.last_cursor_pos = input.cursor_pos;
-                            return;
+                            if let Some(s) = self.states.get_mut(&pointer_cid) {
+                                s.last_cursor_pos = input.cursor_pos;
+                            }
+                            continue;
                         };
 
-                        if let Some(prev) = self.state.last_hit_point {
+                        let state = self.states.get_mut(&pointer_cid).unwrap();
+                        if let Some(prev) = state.last_hit_point {
                             let delta = [cur[0] - prev[0], cur[1] - prev[1], cur[2] - prev[2]];
                             if delta[0] != 0.0 || delta[1] != 0.0 || delta[2] != 0.0 {
                                 let screen_pos_px = input.cursor_pos;
                                 let screen_delta_px =
-                                    match (self.state.last_cursor_pos, screen_pos_px) {
-                                        (Some((px, py)), Some((cx, cy))) => {
-                                            Some((cx - px, cy - py))
-                                        }
+                                    match (state.last_cursor_pos, screen_pos_px) {
+                                        (Some((px, py)), Some((cx, cy))) => Some((cx - px, cy - py)),
                                         _ => None,
                                     };
-
                                 rx.push_event(
                                     active_renderable,
                                     EventSignal::DragMove {
@@ -398,83 +432,87 @@ impl GestureSystem {
                                 );
                             }
                         }
-
-                        self.state.last_hit_point = Some(cur);
-                        self.state.last_cursor_pos = input.cursor_pos;
+                        state.last_hit_point = Some(cur);
+                        state.last_cursor_pos = input.cursor_pos;
                     }
                 }
             }
 
             // End drag.
-            if input.mouse_released.contains(&MouseButton::Left) {
-                if let (Some(active_rc), Some(active_renderable)) =
-                    (self.state.drag_raycaster, self.state.drag_renderable)
-                {
-                    rx.push_event(
-                        active_renderable,
-                        EventSignal::DragEnd {
-                            raycaster: active_rc,
-                            renderable: active_renderable,
-                            hit_point: self.state.last_hit_point,
-                        },
-                    );
-
-                    // Emit Click if the pointer didn't travel far.
-                    let is_click = match (self.state.drag_start_screen_pos, input.cursor_pos) {
-                        (Some((sx, sy)), Some((ex, ey))) => {
-                            let dx = ex - sx;
-                            let dy = ey - sy;
-                            (dx * dx + dy * dy).sqrt() < CLICK_THRESHOLD_PX
-                        }
-                        _ => match (self.state.drag_start_hit_point, self.state.last_hit_point) {
-                            (Some(s), Some(e)) => {
-                                let d = [e[0] - s[0], e[1] - s[1], e[2] - s[2]];
-                                (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
-                                    < CLICK_THRESHOLD_WORLD
-                            }
-                            _ => false,
-                        },
-                    };
-
-                    if is_click {
-                        // Dispatch to the click-capable target, not the drag plane.
-                        let click_target = self.state.click_renderable.unwrap_or(active_renderable);
-                        if let Some(start_hit) = self.state.drag_start_hit_point {
+            if is_released {
+                if let Some(state) = self.states.get(&pointer_cid) {
+                    if state.dragging {
+                        if let (Some(active_rc), Some(active_renderable)) =
+                            (state.drag_raycaster, state.drag_renderable)
+                        {
                             rx.push_event(
-                                click_target,
-                                EventSignal::Click {
+                                active_renderable,
+                                EventSignal::DragEnd {
                                     raycaster: active_rc,
-                                    renderable: click_target,
-                                    hit_point: start_hit,
-                                    screen_pos_px: self.state.drag_start_screen_pos,
+                                    renderable: active_renderable,
+                                    hit_point: state.last_hit_point,
                                 },
                             );
+
+                            let is_click =
+                                match (state.drag_start_screen_pos, input.cursor_pos) {
+                                    (Some((sx, sy)), Some((ex, ey))) => {
+                                        let dx = ex - sx;
+                                        let dy = ey - sy;
+                                        (dx * dx + dy * dy).sqrt() < CLICK_THRESHOLD_PX
+                                    }
+                                    _ => match (state.drag_start_hit_point, state.last_hit_point) {
+                                        (Some(s), Some(e)) => {
+                                            let d = [e[0] - s[0], e[1] - s[1], e[2] - s[2]];
+                                            (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+                                                < CLICK_THRESHOLD_WORLD
+                                        }
+                                        _ => false,
+                                    },
+                                };
+
+                            if is_click {
+                                let click_target =
+                                    state.click_renderable.unwrap_or(active_renderable);
+                                if let Some(start_hit) = state.drag_start_hit_point {
+                                    rx.push_event(
+                                        click_target,
+                                        EventSignal::Click {
+                                            raycaster: active_rc,
+                                            renderable: click_target,
+                                            hit_point: start_hit,
+                                            screen_pos_px: state.drag_start_screen_pos,
+                                        },
+                                    );
+                                }
+                            }
                         }
                     }
                 }
-
-                self.state.dragging = false;
-                self.state.drag_raycaster = None;
-                self.state.drag_renderable = None;
-                self.state.click_renderable = None;
-                self.state.last_hit_point = None;
-                self.state.last_cursor_pos = None;
-                self.state.drag_plane_point_world = None;
-                self.state.drag_plane_normal_world = None;
-                self.state.drag_start_screen_pos = None;
-                self.state.drag_start_hit_point = None;
+                self.states.remove(&pointer_cid);
             }
         }
     }
 }
 
+static EMPTY_GESTURE_STATE: GestureState = GestureState {
+    dragging: false,
+    drag_raycaster: None,
+    drag_renderable: None,
+    click_renderable: None,
+    last_hit_point: None,
+    last_cursor_pos: None,
+    drag_plane_point_world: None,
+    drag_plane_normal_world: None,
+    drag_start_screen_pos: None,
+    drag_start_hit_point: None,
+};
+
 impl Default for GestureSystem {
     fn default() -> Self {
         Self {
-            state: GestureState::default(),
-            // Desktop/mobile tends to feel better with free-after-start gizmo dragging.
+            states: HashMap::new(),
             drag_update_policy: DragUpdatePolicy::StartPlaneProjection,
-
             ray_hits_sorted: Arc::new(Mutex::new(Vec::new())),
             immediate_handlers_installed: false,
         }

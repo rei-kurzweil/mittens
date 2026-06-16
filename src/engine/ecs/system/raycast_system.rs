@@ -384,6 +384,7 @@ impl RayCastSystem {
         input: &InputState,
         cast_requested: bool,
         source: RaySourceKind,
+        pointer_trigger_active: bool,
     ) -> bool {
         match mode {
             RayCastMode::Continuous => true,
@@ -393,7 +394,7 @@ impl RayCastSystem {
                         || (input.mouse_down.contains(&MouseButton::Left)
                             && input.mouse_dragging()));
 
-                cast_requested || desktop_mouse_auto_cast
+                cast_requested || desktop_mouse_auto_cast || pointer_trigger_active
             }
         }
     }
@@ -793,7 +794,7 @@ impl System for RayCastSystem {
 
             let source = Self::inferred_source_kind(world, rcid);
 
-            if !Self::should_cast(rc.mode, input, cast_requested, source) {
+            if !Self::should_cast(rc.mode, input, cast_requested, source, false) {
                 continue;
             }
 
@@ -825,6 +826,8 @@ impl RayCastSystem {
         input: &InputState,
         rx: &mut RxWorld,
         bvh: &BvhSystem,
+        activations: &crate::engine::ecs::system::pointer_system::PointerActivations,
+        pointer_system: &crate::engine::ecs::system::pointer_system::PointerSystem,
         _dt_sec: f32,
     ) {
         // Cursor ray (if needed by any raycaster this frame).
@@ -847,6 +850,12 @@ impl RayCastSystem {
 
                 let source = Self::inferred_source_kind(world, rcid);
 
+                // A pointer's trigger being down should auto-cast the same way mouse-down does.
+                let pointer_trigger_active = pointer_system
+                    .raycast_to_pointer(rcid)
+                    .map(|ptr| activations.down.contains(&ptr) || activations.pressed.contains(&ptr))
+                    .unwrap_or(false);
+
                 let (origin, dir) = match source {
                     RaySourceKind::CursorThroughActiveCamera => {
                         let Some(r) = cursor_ray else {
@@ -862,7 +871,7 @@ impl RayCastSystem {
                     }
                 };
 
-                if !Self::should_cast(mode, input, cast_requested, source) {
+                if !Self::should_cast(mode, input, cast_requested, source, pointer_trigger_active) {
                     continue;
                 }
 

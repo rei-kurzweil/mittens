@@ -64,6 +64,13 @@ impl PointerSystem {
     pub fn raycast_for_pointer(&self, component: ComponentId) -> Option<ComponentId> {
         self.pointer_to_raycast.get(&component).copied()
     }
+
+    pub fn raycast_to_pointer(&self, raycaster: ComponentId) -> Option<ComponentId> {
+        self.pointer_to_raycast
+            .iter()
+            .find(|(_, rc)| **rc == raycaster)
+            .map(|(&ptr, _)| ptr)
+    }
 }
 
 /// Lineage classification for a pointer / raycaster node.
