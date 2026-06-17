@@ -238,16 +238,18 @@ All per-frame pose work is handled by:
 
 ---
 
-## Open questions / future work
+## Resolved (see [ik-system.md](ik-system.md) for details)
 
 1. **Pole direction body-local space** — world-space pole breaks when body rotates.
-   `IKChainComponent` should have `pole_space: BodyLocal | World`; or AVC rotates the
-   pole vector by `model_root` world rotation each tick.
+   `IKChainComponent` now has a `pub(crate) avc_id` field; when an ancestor AVC is found,
+   the solver rotates the pole by the model root world rotation each tick.  Non-AVC
+   `TwoBoneIK` chains keep world-space behaviour.
 
-2. **Side-specific pole directions** — currently `[0, -1, 0]` for both arms.
-   Should be `[-1, -0.5, 0]` / `[1, -0.5, 0]` once body-local space is sorted.
+2. **Side-specific pole directions** — defaults are now semantically body-local:
+   `[-1, 0, -1]` for left, `[1, 0, -1]` for right.  The solver transforms them to world
+   space each tick, so the mirroring stays correct even as the body turns.
 
-3. **Hand rotation smoothing in arm IK mode** — `hand_rotation_smoothing` currently
+## Open questions / future work
    only applies to simple splice. Add `QuatTemporalFilter` on end-effector rotation.
 
 4. **Spine IK** — FABRIK chain from hips to neck driven by head offset from body.

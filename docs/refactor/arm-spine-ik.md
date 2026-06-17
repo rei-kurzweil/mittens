@@ -43,19 +43,18 @@ working with IK across all vtuber/VR examples.
 
 ---
 
+## ✅ Done — arm IK
+
+- ✅ **Side-specific pole directions** — both arms use body-local pole directions
+  (`[-1, 0, -1]` / `[1, 0, -1]`), transformed to world by the solver each tick.
+
+- ✅ **Pole direction body-local space** — `IKChainComponent.avc_id` discovered on first
+  tick; solver rotates the pole vector by `model_root` world rotation when the chain
+  lives under an `AvatarControlComponent`.
+
 ## ❌ Not done / needs work
 
-### Arm IK
-
-- ❌ **Side-specific pole directions** — both arms use `[0, -1, 0]` (elbow down).
-  Natural VR pose wants `[-1, -0.5, 0]` / `[1, -0.5, 0]` (elbow out per side).
-  Blocked by pole space issue below.
-
-- ❌ **Pole direction body-local space** — world-space pole breaks when body
-  rotates. `IKChainComponent` needs a `pole_space: BodyLocal | World` field, or
-  AVC should rotate the pole vector by `model_root` world rotation each tick.
-
-- ❌ **Hand rotation smoothing in arm IK mode** — `hand_rotation_smoothing` is
+### Arm IK (remaining)
   ignored when arm IK mode activates (only applies to simple splice fallback).
   Add `QuatTemporalFilter` on end-effector rotation if needed.
 

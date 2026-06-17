@@ -186,11 +186,12 @@ discovers (head, left arm, right arm). The IKSystem then owns the per-tick solve
 
 ---
 
-## Open questions
+## Resolved
 
-1. **Pole vector in body space vs world space**: the elbow hint should probably be expressed
-   in body-local space and transformed to world each tick, so it stays anatomically correct
-   when the body rotates.
+1. **Pole vector in body space vs world space** — `IKChainComponent` now caches an ancestor
+   `AvatarControlComponent` id on first tick.  When present, the `TwoBoneIK` solver rotates
+   `pole_direction` from body-local to world each tick using the model root world rotation,
+   so the elbow hint stays anatomically correct when the body rotates.
 
 2. **Handedness correction for arm end rotation**: does the controller grip pose already
    align with the VRM hand bone rest frame, or does it need the same `rot_y(PI)` offset as

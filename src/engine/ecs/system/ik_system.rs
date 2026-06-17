@@ -1,4 +1,6 @@
-use crate::engine::ecs::component::{IKChainComponent, IKSolver, TransformComponent};
+use crate::engine::ecs::component::{
+    AvatarControlComponent, IKChainComponent, IKSolver, TransformComponent,
+};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::utils::math::{
     mat_to_quat, quat_conjugate, quat_from_axis_angle, quat_mul, quat_nlerp, quat_rotate_vec3,
@@ -31,6 +33,7 @@ impl IKSystem {
             // ids are already filled (either by registry-time resolve at
             // call-construction, or by a previous tick).
             resolve_ik_chain_refs(world, id);
+            resolve_avc_ancestor(world, id);
             tick_chain(id, world, emit);
         }
     }
@@ -95,12 +98,52 @@ fn resolve_ik_chain_refs(world: &mut World, id: ComponentId) {
     }
 }
 
+/// One-time ancestor walk: find the nearest `AvatarControlComponent` above
+/// this IKChainComponent and cache it.  No-op once cached.
+fn resolve_avc_ancestor(world: &mut World, id: ComponentId) {
+    let needs_walk = world
+        .get_component_by_id_as::<IKChainComponent>(id)
+        .map(|c| c.avc_id.is_none())
+        .unwrap_or(false);
+    if !needs_walk {
+        return;
+    }
+    let found = find_avc_ancestor(world, id);
+    if let Some(ik) = world.get_component_by_id_as_mut::<IKChainComponent>(id) {
+        ik.avc_id = found;
+    }
+}
+
+/// Walk up the parent chain from `id` to find the nearest ancestor
+/// `AvatarControlComponent`.  Returns `None` if no AVC is found within
+/// 32 hops.
+fn find_avc_ancestor(world: &World, id: ComponentId) -> Option<ComponentId> {
+    let mut cur = id;
+    for _ in 0..32 {
+        let parent = world.parent_of(cur)?;
+        if world
+            .get_component_by_id_as::<AvatarControlComponent>(parent)
+            .is_some()
+        {
+            return Some(parent);
+        }
+        cur = parent;
+    }
+    None
+}
+
 fn tick_chain(id: ComponentId, world: &World, emit: &mut dyn SignalEmitter) {
-    let (solver, target_id, end_effector_id, weight) = {
+    let (solver, target_id, end_effector_id, weight, avc_id) = {
         let Some(c) = world.get_component_by_id_as::<IKChainComponent>(id) else {
             return;
         };
-        (c.solver, c.target_id, c.end_effector_id, c.weight)
+        (
+            c.solver,
+            c.target_id,
+            c.end_effector_id,
+            c.weight,
+            c.avc_id,
+        )
     };
     if weight <= 0.0 {
         return;
@@ -165,6 +208,7 @@ fn tick_chain(id: ComponentId, world: &World, emit: &mut dyn SignalEmitter) {
                 pole_direction,
                 copy_end_rotation,
                 weight,
+                avc_id,
             );
         }
         IKSolver::Fabrik {
@@ -339,8 +383,11 @@ fn solve_aim(
 ///
 /// `chain` must have length ≥ 3: [root (upper arm), mid (lower arm), end (hand)].
 /// `target_id`: TC providing the desired hand world position.
-/// `pole_direction`: world-space elbow hint.
+/// `pole_direction`: direction hint for the elbow.  Interpreted in body-local
+///   space when `avc_id` is `Some` (transformed to world via model root rotation);
+///   world-space when `avc_id` is `None`.
 /// `copy_end_rotation`: if true, also aligns the end bone to the target's world rotation.
+/// `avc_id`: cached ancestor `AvatarControlComponent` id, or `None` for world-space pole.
 fn solve_two_bone(
     world: &World,
     emit: &mut dyn SignalEmitter,
@@ -349,6 +396,7 @@ fn solve_two_bone(
     pole_direction: [f32; 3],
     copy_end_rotation: bool,
     weight: f32,
+    avc_id: Option<ComponentId>,
 ) {
     let (root_tc, mid_tc, end_tc) = (chain[0], chain[1], chain[2]);
 
@@ -386,7 +434,19 @@ fn solve_two_bone(
     let upper_angle = cos_upper.acos();
 
     // Build elbow plane from pole hint.
-    let cross_tp = vec3_cross(to_target, pole_direction);
+    // Transform body-local pole to world space when under an AVC.
+    let pole = match avc_id {
+        Some(avc) => world
+            .get_component_by_id_as::<AvatarControlComponent>(avc)
+            .and_then(|c| c.model_root_id)
+            .map(|root_id| {
+                let root_rot = tc_world_rot(world, root_id);
+                quat_rotate_vec3(root_rot, pole_direction)
+            })
+            .unwrap_or(pole_direction),
+        None => pole_direction,
+    };
+    let cross_tp = vec3_cross(to_target, pole);
     let plane_normal = if vec3_len(cross_tp) > 1e-6 {
         vec3_normalize(cross_tp)
     } else {

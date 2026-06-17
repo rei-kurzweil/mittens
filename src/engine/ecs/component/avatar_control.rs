@@ -79,11 +79,15 @@ pub struct AvatarControlComponent {
     /// If `None` and `right_hand_bone` is set, topology derivation fills it in.
     pub right_lower_arm_bone: Option<String>,
 
-    /// World-space pole hint for the left elbow in the 2-bone arm IK solve.
-    /// Default `[-1, 0, -1]` (elbow out + slightly back). Per `docs/spec/ik-system.md`.
+    /// Body-local pole hint for the left elbow in the 2-bone arm IK solve.
+    /// Transformed to world-space each tick by the solver using the model root
+    /// rotation, so the elbow stays anatomically correct when the body turns.
+    /// Default `[-1, 0, -1]` (elbow out + slightly back).
     pub left_arm_pole_direction: [f32; 3],
 
-    /// World-space pole hint for the right elbow in the 2-bone arm IK solve.
+    /// Body-local pole hint for the right elbow in the 2-bone arm IK solve.
+    /// Transformed to world-space each tick by the solver using the model root
+    /// rotation, so the elbow stays anatomically correct when the body turns.
     /// Default `[1, 0, -1]`.
     pub right_arm_pole_direction: [f32; 3],
 
@@ -263,13 +267,13 @@ impl AvatarControlComponent {
         self
     }
 
-    /// Override the left elbow pole direction (world space).
+    /// Override the left elbow pole direction (body-local).
     pub fn with_left_arm_pole_direction(mut self, dir: [f32; 3]) -> Self {
         self.left_arm_pole_direction = dir;
         self
     }
 
-    /// Override the right elbow pole direction (world space).
+    /// Override the right elbow pole direction (body-local).
     pub fn with_right_arm_pole_direction(mut self, dir: [f32; 3]) -> Self {
         self.right_arm_pole_direction = dir;
         self

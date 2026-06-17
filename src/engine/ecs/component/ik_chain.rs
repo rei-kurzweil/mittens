@@ -40,7 +40,11 @@ pub enum IKSolver {
     ///
     /// `root_joint_id`: upper-arm TC (chain root).
     /// `mid_joint_id`:  lower-arm TC (elbow).
-    /// `pole_direction`: world-space hint for the elbow.
+    /// `pole_direction`: direction hint for the middle joint (elbow / knee).
+    ///   Interpreted in body-local space when an ancestor `AvatarControlComponent`
+    ///   exists, otherwise world-space.  Body-local mode rotates the pole by the
+    ///   model root's world rotation each tick so the elbow stays anatomically
+    ///   correct when the body turns.
     /// `copy_end_rotation`: if true, also aligns the end-effector bone to the target's rotation.
     TwoBoneIK {
         root_joint_id: ComponentId,
@@ -103,6 +107,13 @@ pub struct IKChainComponent {
     /// Authored form of `end_effector_id` for round-trip dump.
     pub end_effector_source: Option<ComponentRef>,
 
+    /// Cached ancestor `AvatarControlComponent` ID, discovered by `IKSystem`
+    /// on first tick via a parent-chain walk.  When `Some`, the solver
+    /// transforms `TwoBoneIK.pole_direction` from body-local to world space
+    /// using the AVC's model root rotation.  `None` → world-space pole
+    /// (current behavior for non-AVC chains).
+    pub(crate) avc_id: Option<ComponentId>,
+
     component: Option<ComponentId>,
 }
 
@@ -115,6 +126,7 @@ impl IKChainComponent {
             weight: 1.0,
             target_source: None,
             end_effector_source: None,
+            avc_id: None,
             component: None,
         }
     }

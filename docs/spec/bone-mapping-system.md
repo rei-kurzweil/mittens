@@ -248,11 +248,11 @@ if let Some(arm) = BoneMappingSystem::resolve_arm_chain(
 
 ---
 
-## 9. Open questions
+## 9. Resolved open questions
 
-1. **Pole direction space**: world-space pole direction breaks when the body rotates.
-   Body-local (rotated by model_root world rotation each tick) is more correct.
-   `IKChainComponent` could express this via `pole_space: BodyLocal | World`.
+1. **Pole direction space**: resolved — `IKChainComponent.avc_id` caches the ancestor AVC;
+   the solver transforms the pole from body-local to world via model root rotation when
+   the chain is under an AVC.  Non-AVC chains keep world-space `pole_direction`.
 
 2. **VRM naming preset**: a `vrm_names()` tier-1 resolver would eliminate the need for
    users to set any bone name fields on AVC for standard VRM models.

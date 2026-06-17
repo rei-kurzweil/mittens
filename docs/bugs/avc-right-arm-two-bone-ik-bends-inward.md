@@ -2,7 +2,7 @@
 
 ## Status
 
-Open bug / investigation note.
+Fixed.  See resolution below.
 
 ## Symptom
 
@@ -94,3 +94,23 @@ At minimum, this likely means:
 - converting per-arm pole hints from avatar/body-local space into world space before solving
 
 The key rule is simple: the right elbow should solve away from the torso, not inward through it.
+
+## Resolution
+
+Fixed by making the solver interpret `pole_direction` in **body-local space** when an ancestor
+`AvatarControlComponent` exists, transforming it to world space each tick via the model root
+world rotation.
+
+Changes:
+- `IKChainComponent` gains a `pub(crate) avc_id: Option<ComponentId>` field, discovered
+  once on first tick via a parent-chain walk.
+- `solve_two_bone` transforms `pole_direction` from body-local to world (`quat_rotate_vec3`
+  by the model root's world rotation) before the elbow-plane cross-product when `avc_id` is
+  `Some`.
+- No changes to the AVC defaults: `[1, 0, -1]` and `[-1, 0, -1]` are now **semantically
+  body-local**, which is what they always should have been.
+- Non-AVC `TwoBoneIK` chains (MMS-authored, bone-mapping-system-driven) see no change in
+  behaviour — `avc_id` is `None`, so `pole_direction` remains world-space as before.
+
+See the task doc at [`docs/task/avc-ik-pole-body-local-space.md`](../task/avc-ik-pole-body-local-space.md)
+for implementation details.
