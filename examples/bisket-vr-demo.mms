@@ -198,10 +198,10 @@ ED {
                 initial_yaw(3.14159)
 
                 hand_rotation_smoothing(220.0)
-                // Trial: yaw inward 90 degrees, then apply mirrored pitch in
-                // the post-yaw local frame instead of mirrored roll.
-                hand_grip_rotation_left([0.5, 0.5, -0.5, 0.5])
-                hand_grip_rotation_right([-0.5, -0.5, -0.5, 0.5])
+                // Trial: yaw inward 90 degrees, then apply the opposite
+                // mirrored pitch branch in the post-yaw local frame.
+                hand_grip_rotation_left([-0.5, 0.5, 0.5, 0.5])
+                hand_grip_rotation_right([0.5, -0.5, 0.5, 0.5])
 
                 T {
                     GLTF.new("assets/models/bisket.8.0.glb") { 
