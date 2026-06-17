@@ -198,11 +198,10 @@ ED {
                 initial_yaw(3.14159)
 
                 hand_rotation_smoothing(220.0)
-                // Convert OpenXR grip pose into this rig's wrist frame:
-                // yaw inward 90 degrees, then roll outward 90 degrees so the
-                // avatar hand sits thumb-up with fingertips forward.
-                hand_grip_rotation_left([-0.5, 0.5, -0.5, 0.5])
-                hand_grip_rotation_right([-0.5, -0.5, 0.5, 0.5])
+                // Trial: yaw inward 90 degrees, then apply mirrored pitch in
+                // the post-yaw local frame instead of mirrored roll.
+                hand_grip_rotation_left([0.5, 0.5, -0.5, 0.5])
+                hand_grip_rotation_right([-0.5, -0.5, -0.5, 0.5])
 
                 T {
                     GLTF.new("assets/models/bisket.8.0.glb") { 
