@@ -97,6 +97,8 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         eye_height_from_head_bone,
         head_ik_eye_height,
         neck_bone_name,
+        hand_grip_rotation_left,
+        hand_grip_rotation_right,
     ) = {
         let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
             return;
@@ -121,6 +123,8 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             c.eye_height_from_head_bone,
             c.head_ik_eye_height,
             c.neck_bone.clone(),
+            c.hand_grip_rotation_left,
+            c.hand_grip_rotation_right,
         )
     };
 
@@ -177,9 +181,22 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
 
     // Resolve hand bones + controller drivers for 2-bone arm IK.
     // The hand bone stays in the armature; IKSystem rotates UpperArm + LowerArm
-    // each tick so the hand reaches `raw_driver` (the controller's world pose).
-    let left = resolve_hand_splice(world, model_root_id, left_hand_bone.as_deref(), left_ctrl);
-    let right = resolve_hand_splice(world, model_root_id, right_hand_bone.as_deref(), right_ctrl);
+    // each tick so the hand reaches the controller world pose, optionally
+    // through a rotated child target that compensates for grip-vs-palm framing.
+    let left = resolve_hand_splice(
+        world,
+        model_root_id,
+        left_hand_bone.as_deref(),
+        left_ctrl,
+        hand_grip_rotation_left,
+    );
+    let right = resolve_hand_splice(
+        world,
+        model_root_id,
+        right_hand_bone.as_deref(),
+        right_ctrl,
+        hand_grip_rotation_right,
+    );
 
     // --- Camera bone: auto-calibrate model_root.y + discover camera children ---
     //
@@ -353,10 +370,10 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         c.model_root_local_y = model_root_local_y;
         c.neck_bone_id = neck_bone_id;
         c.neck_rest_translation = neck_rest_t;
-        if let Some((_, _, bone)) = left {
+        if let Some((_, _, _, bone)) = left {
             c.left_hand_bone_id = Some(bone);
         }
-        if let Some((_, _, bone)) = right {
+        if let Some((_, _, _, bone)) = right {
             c.right_hand_bone_id = Some(bone);
         }
     }
@@ -454,13 +471,14 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     //   - else fall back to `parent_of` walk-up from the hand bone (works for
     //     clean VRM-style rigs with no twist bones).
     // -----------------------------------------------------------------------
-    for (hand_opt, upper_name, lower_name, pole_dir, side_label) in [
+    for (hand_opt, upper_name, lower_name, pole_dir, side_label, grip_rotation_offset) in [
         (
             left,
             left_upper_arm_bone.as_deref(),
             left_lower_arm_bone.as_deref(),
             left_arm_pole_direction,
             "left",
+            hand_grip_rotation_left,
         ),
         (
             right,
@@ -468,9 +486,10 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             right_lower_arm_bone.as_deref(),
             right_arm_pole_direction,
             "right",
+            hand_grip_rotation_right,
         ),
     ] {
-        let Some((_, raw_driver, hand_bone)) = hand_opt else {
+        let Some((_, raw_driver, hand_driver, hand_bone)) = hand_opt else {
             continue;
         };
 
@@ -522,7 +541,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             lower_arm,
             hand_name_s,
             hand_bone,
-            raw_driver,
+            hand_driver,
         );
         let looks_suspicious = |n: &str| {
             n.contains("Twist")
@@ -547,12 +566,20 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
                 pole_direction: pole_dir,
                 copy_end_rotation: true,
             },
-            raw_driver,
+            hand_driver,
             hand_bone,
         );
         let chain_id = world.add_component(chain);
         let chain_serialize_id = world.add_component(SerializeComponent::off());
         let _ = world.set_parent(chain_serialize_id, Some(chain_id));
+        if let Some(offset_q) = grip_rotation_offset {
+            println!(
+                "[AVC] {} hand IK target rotation offset = {:?}",
+                side_label, offset_q
+            );
+        } else {
+            let _ = raw_driver;
+        }
         // Parent under AVC for cleanup; the solver itself ignores the chain's parent.
         emit_attach(emit, id, chain_id);
     }
@@ -578,14 +605,15 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
 
 /// Find a hand bone by name and determine its raw driver node.
 ///
-/// Returns `(bone_original_parent, raw_driver, bone_id)` or `None` if the bone
+/// Returns `(bone_original_parent, raw_driver, hand_driver, bone_id)` or `None` if the bone
 /// wasn't found (model may not have this joint — silently skip).
 fn resolve_hand_splice(
     world: &mut World,
     model_root: ComponentId,
     bone_name: Option<&str>,
     controller: Option<ComponentId>,
-) -> Option<(ComponentId, ComponentId, ComponentId)> {
+    rotation_offset: Option<[f32; 4]>,
+) -> Option<(ComponentId, ComponentId, ComponentId, ComponentId)> {
     let bone_name = bone_name?;
     let sel = format!("#{}", bone_name);
     let bone = world.find_component(model_root, &sel)?;
@@ -606,7 +634,17 @@ fn resolve_hand_splice(
         world.add_component(TransformComponent::new())
     };
 
-    Some((bone_parent, driver, bone))
+    let hand_driver = if let Some(offset_q) = rotation_offset {
+        let offset = world.add_component(TransformComponent::new().with_rotation_quat(offset_q));
+        let offset_serialize_id = world.add_component(SerializeComponent::off());
+        let _ = world.set_parent(offset_serialize_id, Some(offset));
+        let _ = world.set_parent(offset, Some(driver));
+        offset
+    } else {
+        driver
+    };
+
+    Some((bone_parent, driver, hand_driver, bone))
 }
 
 fn emit_attach(emit: &mut dyn SignalEmitter, parent: ComponentId, child: ComponentId) {

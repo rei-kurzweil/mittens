@@ -159,6 +159,21 @@ pub struct AvatarControlComponent {
     /// Default: `None`.
     pub head_ik_eye_height: Option<f32>,
 
+    /// Local-space rotation offset applied to the left hand IK target (after grip pose).
+    ///
+    /// Use this to correct for the gap between how the runtime reports grip orientation
+    /// and what the armature expects for the hand bone. For standard VRM rigs with
+    /// Vive-family controllers, `quat_rotation_y(PI/2)` (90° CW from above) is typical.
+    /// `None` = no offset (raw grip pose drives the hand bone directly).
+    pub hand_grip_rotation_left: Option<[f32; 4]>,
+
+    /// Local-space rotation offset applied to the right hand IK target (after grip pose).
+    ///
+    /// For standard VRM rigs with Vive-family controllers, `quat_rotation_y(-PI/2)`
+    /// (90° CCW from above) is typical.
+    /// `None` = no offset.
+    pub hand_grip_rotation_right: Option<[f32; 4]>,
+
     // Runtime IDs set by AvatarControlSystem on first tick:
     pub(crate) splice_head: Option<ComponentId>,
     pub(crate) displaced_head: Option<ComponentId>,
@@ -352,6 +367,19 @@ impl AvatarControlComponent {
         self.head_ik_eye_height = Some(dy);
         self
     }
+
+    /// Set a rotation offset applied to the left hand grip IK target.
+    /// Quaternion in `[x, y, z, w]` order.
+    pub fn with_hand_grip_rotation_left(mut self, q: [f32; 4]) -> Self {
+        self.hand_grip_rotation_left = Some(q);
+        self
+    }
+
+    /// Set a rotation offset applied to the right hand grip IK target.
+    pub fn with_hand_grip_rotation_right(mut self, q: [f32; 4]) -> Self {
+        self.hand_grip_rotation_right = Some(q);
+        self
+    }
 }
 
 impl Default for AvatarControlComponent {
@@ -388,6 +416,8 @@ impl Default for AvatarControlComponent {
             model_root_local_y: 0.0,
             neck_bone_id: None,
             neck_rest_translation: None,
+            hand_grip_rotation_left: None,
+            hand_grip_rotation_right: None,
             component: None,
         }
     }
@@ -478,6 +508,28 @@ impl Component for AvatarControlComponent {
         }
         if let Some(dy) = self.head_ik_eye_height {
             c = c.with_call("head_ik_eye_height", vec![num(dy as f64)]);
+        }
+        if let Some(q) = self.hand_grip_rotation_left {
+            c = c.with_call(
+                "hand_grip_rotation_left",
+                vec![array(vec![
+                    num(q[0] as f64),
+                    num(q[1] as f64),
+                    num(q[2] as f64),
+                    num(q[3] as f64),
+                ])],
+            );
+        }
+        if let Some(q) = self.hand_grip_rotation_right {
+            c = c.with_call(
+                "hand_grip_rotation_right",
+                vec![array(vec![
+                    num(q[0] as f64),
+                    num(q[1] as f64),
+                    num(q[2] as f64),
+                    num(q[3] as f64),
+                ])],
+            );
         }
         if let Some(b) = &self.hips_bone {
             c = c.with_call("hips_bone", vec![s(b)]);

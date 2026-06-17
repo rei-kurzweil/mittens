@@ -2529,6 +2529,17 @@ fn apply_call(
                     .clone()
                     .with_eye_height_from_head_bone(arg_f32(args, 0)?)
             }
+            "head_ik_eye_height" => *avc = avc.clone().with_head_ik_eye_height(arg_f32(args, 0)?),
+            "hand_grip_rotation_left" => {
+                *avc = avc
+                    .clone()
+                    .with_hand_grip_rotation_left(arg_f32_arr::<4>(args, 0)?)
+            }
+            "hand_grip_rotation_right" => {
+                *avc = avc
+                    .clone()
+                    .with_hand_grip_rotation_right(arg_f32_arr::<4>(args, 0)?)
+            }
             "hips_bone" => *avc = avc.clone().with_hips_bone(arg_str(args, 0)?),
             _ => {}
         }

@@ -198,6 +198,10 @@ ED {
                 initial_yaw(3.14159)
 
                 hand_rotation_smoothing(220.0)
+                // Convert OpenXR grip-pose forward into a more palm-forward
+                // "handshake" orientation for this avatar's hand bones.
+                hand_grip_rotation_left([0.0, 0.70710677, 0.0, 0.70710677])
+                hand_grip_rotation_right([0.0, -0.70710677, 0.0, 0.70710677])
 
                 T {
                     GLTF.new("assets/models/bisket.8.0.glb") { 
@@ -283,6 +287,22 @@ InputXR.on() {
                 }
             }
         }
+
+        // Grip pose markers (yellow = left, green = right) — compare with Aim above.
+        CTLXR.new(true, Left, Grip) {
+            T.scale(0.05, 0.05, 0.10) {
+                T {
+                    R.cube() { C.rgba(1.0, 1.0, 0.0, 1.0) EM.on() }
+                }
+            }
+        }
+        CTLXR.new(true, Right, Grip) {
+            T.scale(0.05, 0.05, 0.10) {
+                T {
+                    R.cube() { C.rgba(0.2, 1.0, 0.2, 1.0) EM.on() }
+                }
+            }
+        }
     }
 }
 
@@ -344,4 +364,3 @@ T.position(1, -1, 0) {
         color(1.0, 0.6, 0.15)
     }
 }
-
