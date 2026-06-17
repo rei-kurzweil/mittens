@@ -11,6 +11,7 @@ use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::InputSystem;
 use crate::engine::ecs::system::KineticResponseSystem;
 use crate::engine::ecs::system::LightSystem;
+use crate::engine::ecs::system::MirrorSystem;
 use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::OpenXRSystem;
 use crate::engine::ecs::system::PipelineSystem;
@@ -102,6 +103,7 @@ pub struct SystemWorld {
     pub camera: CameraSystem,
     pub input: InputSystem,
     pub light: LightSystem,
+    pub mirror: MirrorSystem,
 
     pub text: TextSystem,
     pub text_input: TextInputSystem,
@@ -1841,6 +1843,7 @@ impl SystemWorld {
         self.text.tick(world, visuals, input, dt_sec);
 
         self.light.tick(world, visuals, input, dt_sec);
+        self.mirror.tick(world, visuals, input, dt_sec);
     }
 
     /// Process commands from the command queue.

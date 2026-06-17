@@ -279,4 +279,7 @@ impl MaterialHandle {
 
     /// Procedural square grid material (see `Material::GRID_MESH`).
     pub const GRID_MESH: MaterialHandle = MaterialHandle(5);
+
+    /// Mirror material for planar reflections.
+    pub const MIRROR: MaterialHandle = MaterialHandle(6);
 }

@@ -52,6 +52,7 @@ pub mod layout;
 pub mod layout_bounds;
 pub mod light_quantization;
 pub mod mesh;
+pub mod mirror;
 pub mod music_context;
 pub mod music_note;
 pub mod normal_visualisation;
@@ -95,7 +96,8 @@ pub mod transition;
 pub mod uv;
 
 pub use self::gltf::GLTFComponent;
-pub use self::mesh::MeshComponent;
+pub use mesh::MeshComponent;
+pub use mirror::MirrorComponent;
 pub use crate::engine::ecs::system::model::collision_types::{CollisionMode, CollisionShape};
 pub use action::ActionComponent;
 pub use ambient_light::AmbientLightComponent;

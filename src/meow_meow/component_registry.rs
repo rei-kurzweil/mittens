@@ -23,7 +23,7 @@ use crate::engine::ecs::component::{
     HtmlElementComponent, IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent,
     InputXRComponent, InspectLayoutComponent, JustifyContent, KeyframeComponent,
     KineticResponseComponent, LayoutBoundsComponent, LayoutComponent, LightQuantizationComponent,
-    MeshComponent, MusicContextComponent, MusicNote, MusicNoteComponent,
+    MeshComponent, MirrorComponent, MusicContextComponent, MusicNote, MusicNoteComponent,
     NormalVisualisationComponent, OpacityComponent, OpenXRComponent, OptionComponent,
     OscillatorType, Overflow, OverlayComponent, PointLightComponent, PointerComponent,
     PointerEvents, PoseCaptureComponent, PoseCaptureLibraryComponent, PoseCapturePoseComponent,
@@ -1570,6 +1570,13 @@ fn create_component(
             Some("new") => add!(MeshComponent::new(arg_str(args, 0)?)),
             _ => add!(MeshComponent::new("")),
         },
+        "Mirror" => {
+            let mut c = MirrorComponent::default();
+            if let Some("quality") = ctor {
+                c = MirrorComponent::new(arg_f32(args, 0)? as i32);
+            }
+            add!(c)
+        }
         "GestureCoordType" => match ctor {
             Some("screen_space_1d_slider") => {
                 add!(GestureCoordTypeComponent::screen_space_1d_slider())

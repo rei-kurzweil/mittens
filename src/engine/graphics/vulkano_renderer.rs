@@ -14,6 +14,7 @@ mod vulkano_backend {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+    use crate::engine::ecs::ComponentId;
     use crate::engine::ecs::system::render_to_texture_system::INTERNAL_RENDERER_STENCIL_CLIP_DEBUG_SELECTOR;
     use crate::engine::graphics::MsaaMode;
     use crate::engine::graphics::mesh::{CpuMesh, CpuVertex};
@@ -233,6 +234,21 @@ mod vulkano_backend {
     pub struct GpuSkinVertex {
         pub joints0: [u16; 4],
         pub weights0: [f32; 4],
+    }
+
+    #[derive(Debug, Clone)]
+    pub enum RenderViewKind {
+        Window,
+        XrEye { eye: usize },
+        Mirror { mirror_component: ComponentId },
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct RenderView {
+        pub view: [[f32; 4]; 4],
+        pub proj: [[f32; 4]; 4],
+        pub viewport: [f32; 2],
+        pub kind: RenderViewKind,
     }
 
     pub struct VulkanoGpuMesh {
@@ -1768,14 +1784,27 @@ mod vulkano_backend {
                     (resolve_view.clone(), None, depth_view)
                 };
 
+            let xr_camera = visual_world
+                .visual_camera(crate::engine::graphics::CameraTarget::Xr)
+                .ok_or("missing XR camera")?;
+            let eye_data = xr_camera
+                .eyes
+                .get(eye)
+                .ok_or("XR camera eye out of range")?;
+            let render_view = RenderView {
+                view: eye_data.view,
+                proj: eye_data.proj,
+                viewport: [extent[0] as f32, extent[1] as f32],
+                kind: RenderViewKind::XrEye { eye },
+            };
+
             let window_slots = self.swapchain_state.swapchain_views.len().max(1);
             let bones_slots_total = window_slots + view_count;
             let bones_slot = window_slots + eye;
 
             let cb = self.build_draw_batches_command_buffer(
                 visual_world,
-                crate::engine::graphics::CameraTarget::Xr,
-                eye,
+                &render_view,
                 bones_slot,
                 bones_slots_total,
                 color_attachment_view,
@@ -2377,8 +2406,7 @@ mod vulkano_backend {
         fn build_draw_batches_command_buffer(
             &mut self,
             visual_world: &mut VisualWorld,
-            camera_target: crate::engine::graphics::CameraTarget,
-            eye: usize,
+            render_view: &RenderView,
             bones_slot: usize,
             bones_slots_total: usize,
             color_attachment_view: Arc<ImageView>,
@@ -2390,10 +2418,19 @@ mod vulkano_backend {
             Arc<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
             Box<dyn std::error::Error>,
         > {
+            let (camera_target, eye) = match render_view.kind {
+                RenderViewKind::Window => (crate::engine::graphics::CameraTarget::Window, 0),
+                RenderViewKind::XrEye { eye } => (crate::engine::graphics::CameraTarget::Xr, eye),
+                RenderViewKind::Mirror { .. } => (crate::engine::graphics::CameraTarget::Window, 0),
+            };
+
             let queue = self.context.graphics_queue().clone();
 
             // Always rebuild draw cache cheaply.
             let draw_cache_rebuilt = visual_world.prepare_draw_cache();
+
+            // Multi-layer transparency sort is always per-view.
+            visual_world.prepare_transparent_multi_draw_cache_for_view(render_view.view);
 
             // Consume dirty flags so they reflect "changed since last render".
             // For multi-eye (XR) rendering, only consume on the first eye.
@@ -2622,8 +2659,8 @@ mod vulkano_backend {
 
             // Camera uniform buffer (set=0, binding=0) for foreground.
             let camera_ubo_fg = CameraUBO {
-                view: visual_world.camera_view_for_eye(camera_target, eye),
-                proj: visual_world.camera_proj_for_eye(camera_target, eye),
+                view: render_view.view,
+                proj: render_view.proj,
                 camera2d: visual_world.camera_2d(),
                 viewport: [extent[0] as f32, extent[1] as f32],
                 _pad0: [0.0, 0.0],
@@ -3443,10 +3480,23 @@ mod vulkano_backend {
                     )
                 };
 
+            let window_camera = visual_world
+                .visual_camera(crate::engine::graphics::CameraTarget::Window)
+                .ok_or("missing window camera")?;
+            let window_eye = window_camera
+                .eyes
+                .get(0)
+                .ok_or("window camera has no eyes")?;
+            let render_view = RenderView {
+                view: window_eye.view,
+                proj: window_eye.proj,
+                viewport: [extent[0] as f32, extent[1] as f32],
+                kind: RenderViewKind::Window,
+            };
+
             let cb = self.build_draw_batches_command_buffer(
                 visual_world,
-                crate::engine::graphics::CameraTarget::Window,
-                0,
+                &render_view,
                 image_i as usize,
                 self.swapchain_state.swapchain_views.len().max(1),
                 color_attachment_view,

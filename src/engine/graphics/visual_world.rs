@@ -39,6 +39,14 @@ pub struct VisualCamera {
     pub eyes: Vec<CameraData>,
 }
 
+#[derive(Debug, Clone)]
+pub struct VisualMirror {
+    pub camera: VisualCamera,
+    pub target_key: String,
+    pub source_instance: InstanceHandle,
+    pub resolution_scale: f32,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct DrawBatch {
     pub material: crate::engine::graphics::MaterialHandle,
@@ -85,6 +93,8 @@ pub struct VisualWorld {
     renderer_msaa_mode: MsaaMode,
     preferred_window_size: Option<[u32; 2]>,
     post_processing: PostProcessingConfig,
+
+    mirrors: Vec<VisualMirror>,
 
     // Frame timing stats captured from the main loop (window) and the XR render path.
     // These are best-effort diagnostics and are not used for simulation.
@@ -243,7 +253,7 @@ impl Default for VisualWorld {
             renderer_msaa_mode: MsaaMode::default(),
             preferred_window_size: None,
             post_processing: PostProcessingConfig::default(),
-
+            mirrors: Vec::new(),
             window_frame_dt_sec: 0.0,
             xr_frame_dt_sec: None,
 
@@ -1687,6 +1697,18 @@ impl VisualWorld {
         self.dirty_camera = true;
     }
 
+    pub fn register_mirror(&mut self, mirror: VisualMirror) {
+        self.mirrors.push(mirror);
+    }
+
+    pub fn clear_mirrors(&mut self) {
+        self.mirrors.clear();
+    }
+
+    pub fn mirrors(&self) -> &[VisualMirror] {
+        &self.mirrors
+    }
+
     /// Returns whether any per-instance data has changed since the last time it was consumed.
     pub fn instance_data_dirty(&self) -> bool {
         self.dirty_instance_data
@@ -2076,14 +2098,17 @@ impl VisualWorld {
         true
     }
 
-    /// Rebuild multi-layer transparent draw order/batches for a specific camera eye.
-    ///
-    /// Intended to be called by the renderer (ordering depends on view).
     pub fn prepare_transparent_multi_draw_cache_for_eye(
         &mut self,
         target: CameraTarget,
         eye: usize,
     ) {
+        let view = self.camera_view_for_eye(target, eye);
+        self.prepare_transparent_multi_draw_cache_for_view(view);
+    }
+
+    /// Rebuild multi-layer transparent draw order/batches for a specific view matrix.
+    pub fn prepare_transparent_multi_draw_cache_for_view(&mut self, view: [[f32; 4]; 4]) {
         self.transparent_multi_draw_order.clear();
 
         for i in 0..self.instances.len() {
@@ -2106,8 +2131,6 @@ impl VisualWorld {
             self.transparent_multi_draw_batches.clear();
             return;
         }
-
-        let view = self.camera_view_for_eye(target, eye);
 
         // Back-to-front for blending.
         self.transparent_multi_draw_order.sort_by(|&a, &b| {
