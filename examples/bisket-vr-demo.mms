@@ -203,7 +203,7 @@ ED {
                 // Keep the near-correct left/right branches, then add a shared
                 // post-correction twist back toward the thumb by ~40 degrees.
                 hand_grip_rotation_left([-0.6408564, 0.29883623, 0.29883623, 0.6408564])
-                hand_grip_rotation_right([-0.29883623, -0.6408564, -0.6408564, 0.29883623])
+                hand_grip_rotation_right([-0.6408564, -0.29883623, -0.29883623, 0.6408564])
 
                 T {
                     GLTF.new("assets/models/bisket.8.0.glb") { 
