@@ -219,35 +219,35 @@ InputXR.on() {
             }
         }
 
-        CTLXR.new(true, Left, Aim) {
-            T.scale(0.06, 0.06, 0.12) {
-                TransformForkTRS {
-                    TransformMapTranslation {}
-                    TransformMapRotation {
-                        QuatTemporalFilter.smoothing_factor(220.0)
-                    }
-                    TransformMapScale {}
-                    T {
-                        R.cube() { C.rgba(0.10, 0.90, 1.00, 1.0) }
-                    }
-                }
-            }
-        }
+        // CTLXR.new(true, Left, Aim) {
+        //     T.scale(0.06, 0.06, 0.12) {
+        //         TransformForkTRS {
+        //             TransformMapTranslation {}
+        //             TransformMapRotation {
+        //                 QuatTemporalFilter.smoothing_factor(220.0)
+        //             }
+        //             TransformMapScale {}
+        //             T {
+        //                 R.cube() { C.rgba(0.10, 0.90, 1.00, 1.0) }
+        //             }
+        //         }
+        //     }
+        // }
 
-        CTLXR.new(true, Right, Aim) {
-            T.scale(0.06, 0.06, 0.12) {
-                TransformForkTRS {
-                    TransformMapTranslation {}
-                    TransformMapRotation {
-                        QuatTemporalFilter.smoothing_factor(220.0)
-                    }
-                    TransformMapScale {}
-                    T {
-                        R.cube() { C.rgba(1.00, 0.35, 0.35, 1.0) }
-                    }
-                }
-            }
-        }
+        // CTLXR.new(true, Right, Aim) {
+        //     T.scale(0.06, 0.06, 0.12) {
+        //         TransformForkTRS {
+        //             TransformMapTranslation {}
+        //             TransformMapRotation {
+        //                 QuatTemporalFilter.smoothing_factor(220.0)
+        //             }
+        //             TransformMapScale {}
+        //             T {
+        //                 R.cube() { C.rgba(1.00, 0.35, 0.35, 1.0) }
+        //             }
+        //         }
+        //     }
+        // }
 
         CTLXR.new(true, Left, Grip) {
             T.scale(0.05, 0.05, 0.10) {

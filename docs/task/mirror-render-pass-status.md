@@ -2,7 +2,7 @@
 
 ## Summary
 
-The ECS side of mirrors is fully wired: `MirrorComponent` exists, `MirrorSystem` runs each frame, derives reflected camera views, registers `VisualMirror` records on `VisualWorld`, overrides the mirror surface material to `MaterialHandle::MIRROR`, and wires a `TextureComponent.render_image` with the key `capture.mirror.{guid}.color`. The renderer, however, never consumes these `VisualMirror` records. No offscreen mirror render pass is constructed, no per-mirror `RenderViewKind::Mirror` is built, no mirror color target is populated or published. Mirror scene draw count is **0**. The main gap is renderer execution, not authoring or texture sampling.
+The ECS side of mirrors is wired: `MirrorComponent` exists, `MirrorSystem` runs each frame, derives reflected camera views, registers `VisualMirror` records on `VisualWorld`, overrides the mirror surface material to `MaterialHandle::MIRROR`, and wires a `TextureComponent.render_image` with the key `capture.mirror.{guid}.color`. The renderer now consumes `VisualMirror` records, allocates per-mirror offscreen targets, renders mirror views before the main window pass, and publishes mirror color outputs into runtime texture handles. The main remaining gaps are mirror self-exclusion, mirror material/shader support, and mirror-specific render-view observability.
 
 ## What's done
 
@@ -10,9 +10,9 @@ The ECS side of mirrors is fully wired: `MirrorComponent` exists, `MirrorSystem`
 |---|---|---|
 | `MirrorComponent` | `src/engine/ecs/component/mirror.rs` | `quality: i32` (64..=2048, default 512). MMS: `Mirror.quality(N)`. |
 | `MirrorSystem` | `src/engine/ecs/system/mirror_system.rs` | Discovers mirrors, derives reflected view/proj per source-camera eye, registers `VisualMirror`, overrides material + texture. |
-| `VisualMirror` | `src/engine/graphics/visual_world.rs:43-48` | `camera`, `target_key`, `source_instance`, `resolution_scale`. Stored in `Vec<VisualMirror>` on `VisualWorld`. |
+| `VisualMirror` | `src/engine/graphics/visual_world.rs:43-48` | `mirror_component`, `camera`, `target_key`, `source_instance`, `resolution_scale`. Stored in `Vec<VisualMirror>` on `VisualWorld`. |
 | `VisualWorld` mirror API | `src/engine/graphics/visual_world.rs:1700-1709` | `register_mirror`, `clear_mirrors`, `mirrors()`. Cleared and rebuilt every frame by `MirrorSystem`. |
-| `RenderViewKind::Mirror` | `src/engine/graphics/vulkano_renderer.rs:240-244` | Enum variant exists with `{ mirror_component: ComponentId }`. |
+| `RenderViewKind::Mirror` | `src/engine/graphics/vulkano_renderer.rs:240-244` | Enum variant exists and is now constructed from `VisualMirror` records. |
 | `RenderView` struct | `src/engine/graphics/vulkano_renderer.rs:246-252` | `view`, `proj`, `viewport`, `kind`. Used by XR offscreen path already. |
 | `MaterialHandle::MIRROR` | `src/engine/graphics/primitives.rs:284` | Handle 6. Set on parent renderable by `MirrorSystem`. No mirror-specific shader yet. |
 | `RenderTextureProducerKind::Mirror` | `src/engine/ecs/system/render_to_texture_system.rs:25` | Classification label for the render-to-texture bridge. No mirror-specific logic attached. |
@@ -25,16 +25,16 @@ The ECS side of mirrors is fully wired: `MirrorComponent` exists, `MirrorSystem`
 
 | Gap | File / area | Notes |
 |---|---|---|
-| Mirror render-pass scheduling | `vulkano_renderer.rs` | No code iterates `visual_world.mirrors()` to construct mirror `RenderView`s or record scene passes. |
-| Per-mirror offscreen targets | `vulkano_renderer.rs` | Need color + depth image allocation/reuse per mirror, similar to `ensure_xr_offscreen_targets`. |
-| Construction of `RenderViewKind::Mirror` | `vulkano_renderer.rs:2424` | Currently maps to fallback `(Window, 0)`. Never constructed from `visual_world.mirrors()`. |
-| Mirror scene pass submission | `vulkano_renderer.rs` | Need to call `build_draw_batches_command_buffer` for each mirror `RenderView`, submit before main pass. |
-| Runtime texture publication | `vulkano_renderer.rs` + `render_to_texture_system.rs` | After mirror pass, copy/swap the color result into the `capture.mirror.{guid}.color` texture handle so the mirror surface material can sample it. |
-| Self-exclusion during mirror pass | `vulkano_renderer.rs` / `visual_world.rs` | `VisualMirror.source_instance` is recorded but never used to exclude the mirror surface from its own reflection pass. |
-| Mirror-specific shader | `src/engine/graphics/` | `MaterialHandle::MIRROR` (handle 6) has no associated shader or pipeline fragment. The mirror surface needs a shader that samples the runtime texture. |
-| Render-view observability | renderer stats | No counters for mirror render-view count per frame. Can't answer "how many mirror scene draws this frame?" from runtime. |
-| Oblique clip plane | `mirror_system.rs` | Reflected projection does not clip geometry behind the mirror plane. Noted as v2 in spec — acceptable to skip initially. |
-| Recursion guard | renderer | No policy enforced for mirror-in-mirror. Source instance exclusion is step one; deeper recursion is v2. |
+| Mirror render-pass scheduling | `src/engine/graphics/vulkano_renderer.rs` | `visual_world.mirrors()` is now iterated, and mirror `RenderView`s are built and rendered before the main window pass. |
+| Per-mirror offscreen targets | `src/engine/graphics/vulkano_renderer.rs` | Added per-mirror target allocation/reuse via `MirrorOffscreenTargets`, based on mirror resolution scale. |
+| Construction of `RenderViewKind::Mirror` | `src/engine/graphics/vulkano_renderer.rs` | Now constructed from `VisualMirror` records and used for mirror passes. |
+| Mirror scene pass submission | `src/engine/graphics/vulkano_renderer.rs` | Mirror command buffers are now created and submitted before the main window render. |
+| Runtime texture publication | `src/engine/graphics/vulkano_renderer.rs` + `src/engine/ecs/system/render_to_texture_system.rs` | Mirror color output is copied into the runtime texture handle for `capture.mirror.{guid}.color` if the handle exists. |
+| Self-exclusion during mirror pass | `src/engine/graphics/vulkano_renderer.rs` / `src/engine/graphics/visual_world.rs` | `VisualMirror.source_instance` is still recorded but not yet used to exclude the mirror surface from its own reflection pass. |
+| Mirror-specific shader | `src/engine/graphics/` | `MaterialHandle::MIRROR` has no dedicated shader/pipeline. The mirror surface still needs a shader that samples the runtime texture. |
+| Render-view observability | renderer stats | No counters yet for mirror render-view count per frame. Can't answer "how many mirror scene draws this frame?" from runtime. |
+| Oblique clip plane | `src/engine/ecs/system/mirror_system.rs` | Reflected projection still does not apply an oblique near clip plane. v2 work. |
+| Recursion guard | renderer | No mirror-in-mirror recursion policy yet. Source instance exclusion is next. |
 
 ## Ordered next steps
 

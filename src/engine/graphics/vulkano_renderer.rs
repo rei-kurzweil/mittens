@@ -376,6 +376,7 @@ mod vulkano_backend {
         cached_bones_capacity: usize,
 
         xr_offscreen: Option<XrOffscreenTargets>,
+        mirror_offscreen: std::collections::HashMap<String, MirrorOffscreenTargets>,
 
         pub window_resized: bool,
         pub recreate_swapchain: bool,
@@ -383,6 +384,16 @@ mod vulkano_backend {
     }
 
     struct XrOffscreenTargets {
+        extent: [u32; 2],
+        color_format: Format,
+        color_images: Vec<Arc<vulkano::image::Image>>,
+        msaa_color_views: Vec<Arc<ImageView>>,
+        color_views: Vec<Arc<ImageView>>,
+        /// Combined depth+stencil views (same view used for both attachments).
+        depth_views: Vec<Arc<ImageView>>,
+    }
+
+    struct MirrorOffscreenTargets {
         extent: [u32; 2],
         color_format: Format,
         color_images: Vec<Arc<vulkano::image::Image>>,
@@ -1556,6 +1567,7 @@ mod vulkano_backend {
                 cached_bones_capacity: 0,
 
                 xr_offscreen: None,
+                mirror_offscreen: HashMap::new(),
 
                 window_resized: false,
                 recreate_swapchain: false,
@@ -1690,6 +1702,123 @@ mod vulkano_backend {
             Ok(())
         }
 
+        pub fn ensure_mirror_offscreen_targets(
+            &mut self,
+            mirror_key: &str,
+            view_count: usize,
+            extent: [u32; 2],
+            color_format: Format,
+        ) -> Result<&MirrorOffscreenTargets, Box<dyn std::error::Error>> {
+            let needs_recreate = self
+                .mirror_offscreen
+                .get(mirror_key)
+                .map_or(true, |targets| {
+                    targets.extent != extent
+                        || targets.color_format != color_format
+                        || targets.color_images.len() != view_count
+                });
+
+            if needs_recreate {
+                let mut color_images = Vec::new();
+                let mut msaa_color_views = Vec::new();
+                let mut color_views = Vec::new();
+                let mut depth_views = Vec::new();
+
+                let memory_allocator = self.context.memory_allocator().clone();
+                for _ in 0..view_count {
+                    let color_image = Image::new(
+                        memory_allocator.clone(),
+                        ImageCreateInfo {
+                            image_type: ImageType::Dim2d,
+                            format: color_format,
+                            extent: [extent[0], extent[1], 1],
+                            samples: SampleCount::Sample1,
+                            usage: ImageUsage::COLOR_ATTACHMENT
+                                | ImageUsage::SAMPLED
+                                | ImageUsage::TRANSFER_SRC,
+                            ..Default::default()
+                        },
+                        AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                            ..Default::default()
+                        },
+                    )?;
+
+                    let color_view = ImageView::new_default(color_image.clone())
+                        .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
+
+                    if self.msaa_samples != SampleCount::Sample1 {
+                        let msaa_color_image = Image::new(
+                            memory_allocator.clone(),
+                            ImageCreateInfo {
+                                image_type: ImageType::Dim2d,
+                                format: color_format,
+                                extent: [extent[0], extent[1], 1],
+                                samples: self.msaa_samples,
+                                usage: ImageUsage::COLOR_ATTACHMENT
+                                    | ImageUsage::TRANSIENT_ATTACHMENT,
+                                ..Default::default()
+                            },
+                            AllocationCreateInfo {
+                                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                                ..Default::default()
+                            },
+                        )?;
+
+                        let msaa_color_view = ImageView::new_default(msaa_color_image)
+                            .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
+                        msaa_color_views.push(msaa_color_view);
+                    }
+
+                    let depth_image = Image::new(
+                        memory_allocator.clone(),
+                        ImageCreateInfo {
+                            image_type: ImageType::Dim2d,
+                            format: VulkanoSwapchainState::DEPTH_FORMAT,
+                            extent: [extent[0], extent[1], 1],
+                            samples: self.msaa_samples,
+                            usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT,
+                            ..Default::default()
+                        },
+                        AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                            ..Default::default()
+                        },
+                    )?;
+
+                    let depth_view = ImageView::new(
+                        depth_image.clone(),
+                        ImageViewCreateInfo {
+                            subresource_range: ImageSubresourceRange {
+                                aspects: ImageAspects::DEPTH | ImageAspects::STENCIL,
+                                ..depth_image.subresource_range()
+                            },
+                            ..ImageViewCreateInfo::from_image(&depth_image)
+                        },
+                    )
+                    .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
+
+                    color_images.push(color_image);
+                    color_views.push(color_view);
+                    depth_views.push(depth_view);
+                }
+
+                self.mirror_offscreen.insert(
+                    mirror_key.to_string(),
+                    MirrorOffscreenTargets {
+                        extent,
+                        color_format,
+                        color_images,
+                        msaa_color_views,
+                        color_views,
+                        depth_views,
+                    },
+                );
+            }
+
+            Ok(self.mirror_offscreen.get(mirror_key).unwrap())
+        }
+
         pub fn render_xr_eye_offscreen(
             &mut self,
             visual_world: &mut VisualWorld,
@@ -1812,6 +1941,7 @@ mod vulkano_backend {
                 depth_view,
                 extent,
                 post_process,
+                None,
             )?;
 
             let device = self.context.device().clone();
@@ -2359,7 +2489,8 @@ mod vulkano_backend {
                 | crate::engine::graphics::MaterialHandle::SKINNED_TOON_MESH
                 | crate::engine::graphics::MaterialHandle::EMISSIVE_TOON_MESH
                 | crate::engine::graphics::MaterialHandle::SKINNED_EMISSIVE_TOON_MESH
-                | crate::engine::graphics::MaterialHandle::GRID_MESH => {}
+                | crate::engine::graphics::MaterialHandle::GRID_MESH
+                | crate::engine::graphics::MaterialHandle::MIRROR => {}
                 _ => return Ok(None),
             }
 
@@ -2414,6 +2545,7 @@ mod vulkano_backend {
             depth_view: Arc<ImageView>,
             extent: [u32; 2],
             post_process: Option<PostProcessInvocation>,
+            runtime_texture_publication: Option<(TextureHandle, Arc<ImageView>)>,
         ) -> Result<
             Arc<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
             Box<dyn std::error::Error>,
@@ -2744,12 +2876,12 @@ mod vulkano_backend {
             let global_set_bg: Option<Arc<DescriptorSet>> = if !any_background {
                 None
             } else {
-                let mut view_bg = visual_world.camera_view_for_eye(camera_target, eye);
+                let mut view_bg = render_view.view;
                 view_bg[3] = [0.0, 0.0, 0.0, 1.0];
 
                 let camera_ubo_bg = CameraUBO {
                     view: view_bg,
-                    proj: visual_world.camera_proj_for_eye(camera_target, eye),
+                    proj: render_view.proj,
                     camera2d: visual_world.camera_2d(),
                     viewport: [extent[0] as f32, extent[1] as f32],
                     _pad0: [0.0, 0.0],
@@ -3041,6 +3173,14 @@ mod vulkano_backend {
             }
 
             cbb.end_rendering()?;
+
+            if let Some((handle, src_view)) = runtime_texture_publication {
+                let dst_view = self.ensure_runtime_texture_target(handle, &src_view)?;
+                cbb.copy_image(CopyImageInfo::images(
+                    src_view.image().clone(),
+                    dst_view.image().clone(),
+                ))?;
+            }
 
             if let Some(post_process) = post_process {
                 let bloom_radius_pixels = post_process
@@ -3389,9 +3529,6 @@ mod vulkano_backend {
             }
             self.apply_pending_runtime_texture_updates();
 
-            let device = self.context.device().clone();
-            let queue = self.context.graphics_queue().clone();
-
             // Let Vulkano drop finished per-frame resources incrementally.
             for fut in self.images_in_flight.iter_mut() {
                 if let Some(fut) = fut.as_mut() {
@@ -3452,6 +3589,95 @@ mod vulkano_backend {
                 None
             };
 
+            let device = self.context.device().clone();
+            let queue = self.context.graphics_queue().clone();
+            let window_viewport = visual_world.viewport();
+            let mirrors = visual_world.mirrors().to_vec();
+            let msaa_samples = self.msaa_samples;
+
+            for mirror in mirrors {
+                let view_count = mirror.camera.eyes.len();
+                if view_count == 0 {
+                    continue;
+                }
+
+                let mirror_extent = [
+                    (window_viewport[0] * mirror.resolution_scale).max(1.0).floor() as u32,
+                    (window_viewport[1] * mirror.resolution_scale).max(1.0).floor() as u32,
+                ];
+                if mirror_extent[0] == 0 || mirror_extent[1] == 0 {
+                    continue;
+                }
+
+                let (color_views, msaa_color_views, depth_views) = {
+                    let targets = self.ensure_mirror_offscreen_targets(
+                        &mirror.target_key,
+                        view_count,
+                        mirror_extent,
+                        self.swapchain_state.swapchain.image_format(),
+                    )?;
+                    (
+                        targets.color_views.clone(),
+                        targets.msaa_color_views.clone(),
+                        targets.depth_views.clone(),
+                    )
+                };
+
+                for eye in 0..view_count {
+                    let eye_data = mirror.camera.eyes.get(eye).ok_or(
+                        "mirror camera eye out of range",
+                    )?;
+
+                    let render_view = RenderView {
+                        view: eye_data.view,
+                        proj: eye_data.proj,
+                        viewport: [mirror_extent[0] as f32, mirror_extent[1] as f32],
+                        kind: RenderViewKind::Mirror {
+                            mirror_component: mirror.mirror_component,
+                        },
+                    };
+
+                    let (color_attachment_view, color_resolve_view) = if msaa_samples
+                        != SampleCount::Sample1
+                    {
+                        (
+                            msaa_color_views[eye].clone(),
+                            Some(color_views[eye].clone()),
+                        )
+                    } else {
+                        (color_views[eye].clone(), None)
+                    };
+                    let depth_view = depth_views[eye].clone();
+
+                    let runtime_texture_publication = visual_world
+                        .runtime_texture_handle(&mirror.target_key)
+                        .map(|handle| {
+                            let src_view = color_resolve_view
+                                .clone()
+                                .unwrap_or_else(|| color_attachment_view.clone());
+                            (handle, src_view)
+                        });
+
+                    let cb = self.build_draw_batches_command_buffer(
+                        visual_world,
+                        &render_view,
+                        0,
+                        1,
+                        color_attachment_view,
+                        color_resolve_view,
+                        depth_view,
+                        mirror_extent,
+                        None,
+                        runtime_texture_publication,
+                    )?;
+
+                    sync::now(device.clone())
+                        .then_execute(queue.clone(), cb)?
+                        .then_signal_fence_and_flush()?
+                        .wait(None)?;
+                }
+            }
+
             let (color_attachment_view, color_resolve_view, depth_view) =
                 if let Some(post) = post_process.as_ref() {
                     (
@@ -3504,6 +3730,7 @@ mod vulkano_backend {
                 depth_view,
                 extent,
                 post_process,
+                None,
             )?;
 
             // Ensure we never render into a swapchain image (and its paired depth attachment)

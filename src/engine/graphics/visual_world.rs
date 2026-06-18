@@ -41,6 +41,7 @@ pub struct VisualCamera {
 
 #[derive(Debug, Clone)]
 pub struct VisualMirror {
+    pub mirror_component: ComponentId,
     pub camera: VisualCamera,
     pub target_key: String,
     pub source_instance: InstanceHandle,

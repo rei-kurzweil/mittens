@@ -213,6 +213,7 @@ impl System for MirrorSystem {
                 .unwrap_or(InstanceHandle(u32::MAX)); // renderer will handle null
 
             visuals.register_mirror(VisualMirror {
+                mirror_component: cid,
                 camera: VisualCamera {
                     target: CameraTarget::Window, // offscreen views are effectively ad-hoc window-like passes
                     eyes: derived_eyes,
