@@ -196,6 +196,7 @@ ED {
                 right_hand_bone("J_Bip_R_Hand")
 
                 initial_yaw(3.14159)
+                ik_debug()
 
                 // Body-local pole hints. The solver rotates them by the
                 // current model_root world rotation each tick, so author them

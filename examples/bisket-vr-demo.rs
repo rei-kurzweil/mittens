@@ -1,6 +1,7 @@
 use cat_engine::engine::ecs::component::{
-    AvatarControlComponent, ColorComponent, EmissiveComponent, OverlayComponent,
-    RaycastableComponent, RenderableComponent, TransformComponent,
+    AvatarControlComponent, ColorComponent, ControllerHand, ControllerXRComponent,
+    EmissiveComponent, OverlayComponent, RaycastableComponent, RenderableComponent,
+    TransformComponent,
 };
 use cat_engine::engine::ecs::{ComponentId, EventSignal, Signal, SignalEmitter, SignalKind, World};
 use cat_engine::utils::math::{mat_to_quat, quat_rotate_vec3, quat_rotation_y};
@@ -68,6 +69,73 @@ fn v3_len(v: [f32; 3]) -> f32 {
 
 fn deg(rad: f32) -> f32 {
     rad * (180.0 / std::f32::consts::PI)
+}
+
+fn component_label(world: &World, id: ComponentId) -> String {
+    world.component_name(id).unwrap_or("?").to_string()
+}
+
+fn controller_hand_for_component(world: &World, start: ComponentId) -> Option<ControllerHand> {
+    let mut cur = start;
+    loop {
+        if let Some(ctrl) = world.get_component_by_id_as::<ControllerXRComponent>(cur) {
+            return Some(ctrl.hand);
+        }
+        cur = world.parent_of(cur)?;
+    }
+}
+
+fn on_xr_pointer_event(world: &mut World, _emit: &mut dyn SignalEmitter, env: &Signal) {
+    let Some(event) = env.event.as_ref() else {
+        return;
+    };
+    let (kind, raycaster, renderable, hit_point) = match event {
+        EventSignal::DragStart {
+            raycaster,
+            renderable,
+            hit_point,
+            ..
+        } => ("DragStart", *raycaster, *renderable, Some(*hit_point)),
+        EventSignal::DragMove {
+            raycaster,
+            renderable,
+            hit_point,
+            ..
+        } => ("DragMove", *raycaster, *renderable, Some(*hit_point)),
+        EventSignal::DragEnd {
+            raycaster,
+            renderable,
+            hit_point,
+        } => ("DragEnd", *raycaster, *renderable, *hit_point),
+        EventSignal::Click {
+            raycaster,
+            renderable,
+            hit_point,
+            ..
+        } => ("Click", *raycaster, *renderable, Some(*hit_point)),
+        _ => return,
+    };
+
+    let Some(hand) = controller_hand_for_component(world, raycaster) else {
+        return;
+    };
+    let hand_label = match hand {
+        ControllerHand::Left => "Left",
+        ControllerHand::Right => "Right",
+    };
+    let renderable_name = component_label(world, renderable);
+    let ray_name = component_label(world, raycaster);
+    if let Some(p) = hit_point {
+        println!(
+            "[xr-pointer] hand={} kind={} raycaster={} renderable={} hit=[{:+.3},{:+.3},{:+.3}]",
+            hand_label, kind, ray_name, renderable_name, p[0], p[1], p[2]
+        );
+    } else {
+        println!(
+            "[xr-pointer] hand={} kind={} raycaster={} renderable={}",
+            hand_label, kind, ray_name, renderable_name
+        );
+    }
 }
 
 fn on_dump_click(world: &mut World, _emit: &mut dyn SignalEmitter, env: &Signal) {
@@ -441,6 +509,18 @@ fn main() {
         } else {
             eprintln!("[dump] AvatarControlComponent not found — skipping dump button");
         }
+    }
+
+    for kind in [
+        SignalKind::DragStart,
+        SignalKind::DragMove,
+        SignalKind::DragEnd,
+        SignalKind::Click,
+    ] {
+        universe
+            .systems
+            .rx
+            .add_global_handler(kind, on_xr_pointer_event);
     }
 
     universe.enable_repl();

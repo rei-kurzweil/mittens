@@ -1,6 +1,15 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::{Component, ComponentRef};
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TwoBoneIkDebugVisuals {
+    pub target_line: ComponentId,
+    pub pole_line: ComponentId,
+    pub plane_normal_line: ComponentId,
+    pub elbow_line: ComponentId,
+    pub elbow_point: ComponentId,
+}
+
 /// Solver configuration for an `IKChainComponent`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum IKSolver {
@@ -114,6 +123,9 @@ pub struct IKChainComponent {
     /// (current behavior for non-AVC chains).
     pub(crate) avc_id: Option<ComponentId>,
 
+    /// Lazily created runtime-only debug visual ids for TwoBoneIK inspection.
+    pub(crate) two_bone_debug_visuals: Option<TwoBoneIkDebugVisuals>,
+
     component: Option<ComponentId>,
 }
 
@@ -127,6 +139,7 @@ impl IKChainComponent {
             target_source: None,
             end_effector_source: None,
             avc_id: None,
+            two_bone_debug_visuals: None,
             component: None,
         }
     }

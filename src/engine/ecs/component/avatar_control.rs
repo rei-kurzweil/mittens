@@ -199,6 +199,11 @@ pub struct AvatarControlComponent {
     /// Use this to isolate whether torso-twist bugs originate in the body pipeline.
     pub skip_body_pipeline: bool,
 
+    /// Debug/diagnostic flag: when enabled, arm TwoBoneIK chains spawn overlay
+    /// visualizations for the actual target vector, transformed pole vector,
+    /// bend-plane normal, and solved elbow direction used by the solver.
+    pub ik_debug: bool,
+
     // ---------------------------------------------------------------------
     // Head-pose-sensitive body XZ translate follow (see
     // `docs/task/avatar-control-simple-humanoid-body-follow.md`, Phase 1).
@@ -318,6 +323,12 @@ impl AvatarControlComponent {
         self
     }
 
+    /// Enable TwoBoneIK debug visualizations for chains owned by this AVC.
+    pub fn with_ik_debug(mut self) -> Self {
+        self.ik_debug = true;
+        self
+    }
+
     /// Set the bone used as the camera anchor and for auto-calibrating `model_root.y`.
     ///
     /// `AvatarControlSystem` will measure this bone's local Y in the rest pose and set
@@ -414,6 +425,7 @@ impl Default for AvatarControlComponent {
             body_pipeline_id: None,
             splice_camera_bone: None,
             skip_body_pipeline: false,
+            ik_debug: false,
             head_ik_eye_height: None,
             neck_bone: Some("J_Bip_C_Neck".to_string()),
             model_root_id: None,
@@ -497,6 +509,9 @@ impl Component for AvatarControlComponent {
         }
         if self.forward_plus_z {
             c = c.with_call("forward_plus_z", vec![]);
+        }
+        if self.ik_debug {
+            c = c.with_call("ik_debug", vec![]);
         }
         if let Some(factor) = self.hand_rotation_smoothing {
             c = c.with_call("hand_rotation_smoothing", vec![num(factor as f64)]);

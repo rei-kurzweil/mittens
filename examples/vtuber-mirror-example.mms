@@ -167,6 +167,7 @@ ED {
                 right_hand_bone("J_Bip_R_Hand")
 
                 initial_yaw(3.14159)
+                ik_debug()
 
                 // Match bisket-vr-demo: body-local elbow hints that bias the
                 // bend downward and slightly outward from the torso.

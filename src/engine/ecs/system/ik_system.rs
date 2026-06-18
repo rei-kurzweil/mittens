@@ -1,11 +1,13 @@
 use crate::engine::ecs::component::{
-    AvatarControlComponent, IKChainComponent, IKSolver, TransformComponent,
+    AvatarControlComponent, ColorComponent, EmissiveComponent, IKChainComponent, IKSolver,
+    OverlayComponent, RenderableComponent, TransformComponent,
 };
+use crate::engine::ecs::component::ik_chain::TwoBoneIkDebugVisuals;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::utils::math::{
-    mat_to_quat, quat_conjugate, quat_from_axis_angle, quat_mul, quat_nlerp, quat_rotate_vec3,
-    quat_rotation_y, quat_to_axis_angle, shortest_arc_quat, vec3_add, vec3_cross, vec3_dot,
-    vec3_len, vec3_lerp, vec3_normalize, vec3_scale, vec3_sub,
+    mat4_inverse, mat_to_quat, quat_conjugate, quat_from_axis_angle, quat_mul,
+    quat_nlerp, quat_rotate_vec3, quat_rotation_y, quat_to_axis_angle, shortest_arc_quat,
+    vec3_add, vec3_cross, vec3_len, vec3_lerp, vec3_normalize, vec3_scale, vec3_sub,
 };
 
 #[derive(Debug, Default)]
@@ -132,7 +134,7 @@ fn find_avc_ancestor(world: &World, id: ComponentId) -> Option<ComponentId> {
     None
 }
 
-fn tick_chain(id: ComponentId, world: &World, emit: &mut dyn SignalEmitter) {
+fn tick_chain(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter) {
     let (solver, target_id, end_effector_id, weight, avc_id) = {
         let Some(c) = world.get_component_by_id_as::<IKChainComponent>(id) else {
             return;
@@ -203,6 +205,7 @@ fn tick_chain(id: ComponentId, world: &World, emit: &mut dyn SignalEmitter) {
             solve_two_bone(
                 world,
                 emit,
+                id,
                 &chain,
                 target_id,
                 pole_direction,
@@ -389,8 +392,9 @@ fn solve_aim(
 /// `copy_end_rotation`: if true, also aligns the end bone to the target's world rotation.
 /// `avc_id`: cached ancestor `AvatarControlComponent` id, or `None` for world-space pole.
 fn solve_two_bone(
-    world: &World,
+    world: &mut World,
     emit: &mut dyn SignalEmitter,
+    ik_chain_id: ComponentId,
     chain: &[ComponentId],
     target_id: ComponentId,
     pole_direction: [f32; 3],
@@ -464,6 +468,18 @@ fn solve_two_bone(
         vec3_scale(perp, upper_angle.sin()),
     ));
     let elbow_pos = vec3_add(root_pos, vec3_scale(elbow_dir, upper_len));
+
+    maybe_update_two_bone_debug(
+        world,
+        emit,
+        ik_chain_id,
+        avc_id,
+        root_pos,
+        target_pos,
+        pole,
+        plane_normal,
+        elbow_pos,
+    );
 
     // --- Upper arm ---
     let old_upper_fwd = if vec3_len(vec3_sub(mid_pos, root_pos)) > 1e-6 {
@@ -569,6 +585,222 @@ fn solve_two_bone(
                 scale: es,
             },
         );
+    }
+}
+
+fn maybe_update_two_bone_debug(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    ik_chain_id: ComponentId,
+    avc_id: Option<ComponentId>,
+    root_pos: [f32; 3],
+    target_pos: [f32; 3],
+    pole_world: [f32; 3],
+    plane_normal: [f32; 3],
+    elbow_pos: [f32; 3],
+) {
+    let enabled = avc_id
+        .and_then(|id| world.get_component_by_id_as::<AvatarControlComponent>(id))
+        .map(|avc| avc.ik_debug)
+        .unwrap_or(false);
+    if !enabled {
+        return;
+    }
+
+    let visuals = ensure_two_bone_debug_visuals(world, ik_chain_id);
+    let pole_tip = vec3_add(root_pos, vec3_scale(vec3_normalize_or_z(pole_world), 0.30));
+    let normal_tip = vec3_add(root_pos, vec3_scale(vec3_normalize_or_z(plane_normal), 0.22));
+
+    update_debug_segment(world, emit, visuals.target_line, root_pos, target_pos, 0.010);
+    update_debug_segment(world, emit, visuals.pole_line, root_pos, pole_tip, 0.008);
+    update_debug_segment(
+        world,
+        emit,
+        visuals.plane_normal_line,
+        root_pos,
+        normal_tip,
+        0.008,
+    );
+    update_debug_segment(world, emit, visuals.elbow_line, root_pos, elbow_pos, 0.010);
+    update_debug_point(world, emit, visuals.elbow_point, elbow_pos, [0.035, 0.035, 0.035]);
+}
+
+fn ensure_two_bone_debug_visuals(
+    world: &mut World,
+    ik_chain_id: ComponentId,
+) -> TwoBoneIkDebugVisuals {
+    if let Some(existing) = world
+        .get_component_by_id_as::<IKChainComponent>(ik_chain_id)
+        .and_then(|ik| ik.two_bone_debug_visuals)
+    {
+        return existing;
+    }
+
+    let parent = world
+        .get_component_by_id_as::<IKChainComponent>(ik_chain_id)
+        .and_then(|ik| ik.avc_id)
+        .unwrap_or(ik_chain_id);
+
+    let visuals = TwoBoneIkDebugVisuals {
+        target_line: spawn_debug_cube(
+            world,
+            parent,
+            "ik_debug_target_line",
+            (1.0, 0.85, 0.15, 0.95),
+        ),
+        pole_line: spawn_debug_cube(
+            world,
+            parent,
+            "ik_debug_pole_line",
+            (0.10, 0.95, 1.0, 0.95),
+        ),
+        plane_normal_line: spawn_debug_cube(
+            world,
+            parent,
+            "ik_debug_plane_normal_line",
+            (1.0, 0.35, 0.80, 0.95),
+        ),
+        elbow_line: spawn_debug_cube(
+            world,
+            parent,
+            "ik_debug_elbow_line",
+            (0.20, 1.0, 0.35, 0.95),
+        ),
+        elbow_point: spawn_debug_cube(
+            world,
+            parent,
+            "ik_debug_elbow_point",
+            (1.0, 1.0, 1.0, 0.95),
+        ),
+    };
+
+    if let Some(ik) = world.get_component_by_id_as_mut::<IKChainComponent>(ik_chain_id) {
+        ik.two_bone_debug_visuals = Some(visuals);
+    }
+    visuals
+}
+
+fn spawn_debug_cube(
+    world: &mut World,
+    parent: ComponentId,
+    name: &str,
+    color: (f32, f32, f32, f32),
+) -> ComponentId {
+    let overlay = world.add_component(OverlayComponent::new());
+    let transform =
+        world.add_component_boxed_named(name.to_string(), Box::new(TransformComponent::new()));
+    let renderable = world.add_component(RenderableComponent::cube());
+    let color = world.add_component(ColorComponent::rgba(color.0, color.1, color.2, color.3));
+    let emissive = world.add_component(EmissiveComponent::on());
+    let _ = world.add_child(overlay, transform);
+    let _ = world.add_child(transform, renderable);
+    let _ = world.add_child(renderable, color);
+    let _ = world.add_child(renderable, emissive);
+    let _ = world.add_child(parent, overlay);
+    transform
+}
+
+fn update_debug_segment(
+    world: &World,
+    emit: &mut dyn SignalEmitter,
+    component_id: ComponentId,
+    start: [f32; 3],
+    end: [f32; 3],
+    thickness: f32,
+) {
+    let delta = vec3_sub(end, start);
+    let len = vec3_len(delta);
+    let dir = if len > 1e-6 {
+        vec3_scale(delta, 1.0 / len)
+    } else {
+        [0.0, 0.0, 1.0]
+    };
+    let mid = vec3_scale(vec3_add(start, end), 0.5);
+    let rot = shortest_arc_quat([0.0, 0.0, 1.0], dir);
+    let local_mid = world_point_to_local(world, component_id, mid);
+    let local_rot = world_quat_to_local(world, component_id, rot);
+    emit.push_intent_now(
+        component_id,
+        IntentValue::UpdateTransform {
+            component_ids: vec![component_id],
+            translation: local_mid,
+            rotation_quat_xyzw: local_rot,
+            scale: [thickness, thickness, len.max(thickness)],
+        },
+    );
+}
+
+fn update_debug_point(
+    world: &World,
+    emit: &mut dyn SignalEmitter,
+    component_id: ComponentId,
+    position: [f32; 3],
+    scale: [f32; 3],
+) {
+    let local_pos = world_point_to_local(world, component_id, position);
+    emit.push_intent_now(
+        component_id,
+        IntentValue::UpdateTransform {
+            component_ids: vec![component_id],
+            translation: local_pos,
+            rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+            scale,
+        },
+    );
+}
+
+fn world_point_to_local(world: &World, component_id: ComponentId, world_point: [f32; 3]) -> [f32; 3] {
+    let parent_world = nearest_ancestor_transform_world(world, component_id);
+    let Some(inv_parent) = parent_world.and_then(mat4_inverse) else {
+        return world_point;
+    };
+    let local = mat4_mul_vec4(
+        inv_parent,
+        [world_point[0], world_point[1], world_point[2], 1.0],
+    );
+    if local[3].abs() > 1e-6 {
+        [local[0] / local[3], local[1] / local[3], local[2] / local[3]]
+    } else {
+        [local[0], local[1], local[2]]
+    }
+}
+
+fn world_quat_to_local(world: &World, component_id: ComponentId, world_rot: [f32; 4]) -> [f32; 4] {
+    let parent_world_rot = nearest_ancestor_transform_world(world, component_id)
+        .map(mat_to_quat)
+        .unwrap_or([0.0, 0.0, 0.0, 1.0]);
+    quat_mul(quat_conjugate(parent_world_rot), world_rot)
+}
+
+fn nearest_ancestor_transform_world(
+    world: &World,
+    component_id: ComponentId,
+) -> Option<[[f32; 4]; 4]> {
+    let mut cur = component_id;
+    while let Some(parent) = world.parent_of(cur) {
+        if let Some(t) = world.get_component_by_id_as::<TransformComponent>(parent) {
+            return Some(t.transform.matrix_world);
+        }
+        cur = parent;
+    }
+    None
+}
+
+fn mat4_mul_vec4(m: [[f32; 4]; 4], v: [f32; 4]) -> [f32; 4] {
+    [
+        m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2] + m[3][0] * v[3],
+        m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2] + m[3][1] * v[3],
+        m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2] + m[3][2] * v[3],
+        m[0][3] * v[0] + m[1][3] * v[1] + m[2][3] * v[2] + m[3][3] * v[3],
+    ]
+}
+
+fn vec3_normalize_or_z(v: [f32; 3]) -> [f32; 3] {
+    let len = vec3_len(v);
+    if len > 1e-6 {
+        vec3_scale(v, 1.0 / len)
+    } else {
+        [0.0, 0.0, 1.0]
     }
 }
 
