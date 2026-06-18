@@ -1505,6 +1505,22 @@ impl OpenXRSystem {
             visuals.set_xr_frame_dt_sec(Some(dt_sec));
         }
 
+        // If no XR camera is enabled, do not enter the OpenXR frame pacing path at all.
+        // `wait_frame()` can block to headset cadence, which would otherwise throttle the
+        // desktop window even though XR scene rendering is effectively disabled.
+        if visuals
+            .active_xr_camera()
+            .or_else(|| Self::first_enabled_camera_xr(world))
+            .is_none()
+        {
+            self.xr_input_state = XrInputState::default();
+            sess.head_pose_cache = None;
+            sess.hand_root_pose_cache = HandRootPoseCache::default();
+            sess.controller_pose_cache = ControllerPoseCache::default();
+            visuals.set_xr_frame_dt_sec(None);
+            return;
+        }
+
         let frame_state = match sess.frame_waiter.wait() {
             Ok(s) => s,
             Err(e) => {
@@ -1519,24 +1535,6 @@ impl OpenXRSystem {
         }
 
         if !frame_state.should_render {
-            let _ =
-                sess.frame_stream
-                    .end(frame_state.predicted_display_time, state.blend_mode, &[]);
-            return;
-        }
-
-        // If there is no enabled XR camera, keep the XR session alive but submit no
-        // projection layers. This matches the desktop path, which stops scene drawing
-        // when no active camera exists.
-        if visuals
-            .active_xr_camera()
-            .or_else(|| Self::first_enabled_camera_xr(world))
-            .is_none()
-        {
-            self.xr_input_state = XrInputState::default();
-            sess.head_pose_cache = None;
-            sess.hand_root_pose_cache = HandRootPoseCache::default();
-            sess.controller_pose_cache = ControllerPoseCache::default();
             let _ =
                 sess.frame_stream
                     .end(frame_state.predicted_display_time, state.blend_mode, &[]);
