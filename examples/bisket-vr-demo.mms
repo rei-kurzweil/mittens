@@ -197,6 +197,13 @@ ED {
 
                 initial_yaw(3.14159)
 
+                // Body-local pole hints.  The solver transforms them to world
+                // space each tick by the model root rotation.  These values
+                // compensate for initial_yaw(π) so the elbows bend outward at
+                // rest: left elbow → avatar's left, right → right.
+                left_arm_pole_direction([  1, 0, 1])
+                right_arm_pole_direction([-1, 0, 1])
+
                 hand_rotation_smoothing(220.0)
                 // Trial: yaw inward 90 degrees, then apply the opposite
                 // mirrored pitch branch in the post-yaw local frame.
