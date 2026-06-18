@@ -33,39 +33,39 @@ The intended scene is:
 
 ### 1. Create the example pair
 
-- [ ] Add `examples/vtuber-mirror-example.mms`
-- [ ] Add `examples/vtuber-mirror-example.rs`
-- [ ] Base both files on `bisket-vr-demo.{mms,rs}`
-- [ ] Remove the bone-dump / marker-debug logic from the Rust file
-- [ ] Keep the OpenXR bring-up and MMS loading flow as close to `bisket-vr-demo.rs` as possible
+- [x] Add `examples/vtuber-mirror-example.mms`
+- [x] Add `examples/vtuber-mirror-example.rs`
+- [x] Base both files on `bisket-vr-demo.{mms,rs}`
+- [x] Remove the bone-dump / marker-debug logic from the Rust file
+- [x] Keep the OpenXR bring-up and MMS loading flow as close to `bisket-vr-demo.rs` as possible
 
 The Rust file should be a clean runtime harness, not a debugging harness.
 
 ### 2. Preserve the useful VR topology
 
-- [ ] Keep the `InputXR` + `AVC` + `CameraXR` topology from `bisket-vr-demo.mms`
-- [ ] Keep the avatar asset and hand/controller routing initially unchanged
-- [ ] Keep any minimum floor / collision setup needed for VR movement and visual reference
-- [ ] Remove unrelated repro/debug scene dressing from the current demo once the new temple scene replaces it
+- [x] Keep the `InputXR` + `AVC` + `CameraXR` topology from `bisket-vr-demo.mms`
+- [x] Keep the avatar asset and hand/controller routing initially unchanged
+- [x] Keep any minimum floor / collision setup needed for VR movement and visual reference
+- [x] Remove unrelated repro/debug scene dressing from the current demo once the new temple scene replaces it
 
 The example should stay close enough to `bisket-vr-demo` that mirror regressions are easier to compare.
 
 ### 3. Add a mirror-focused scene
 
-- [ ] Author at least one obvious planar mirror surface in MMS
-- [ ] Place the mirror where both head motion and controller motion make the reflection easy to judge
-- [ ] Make the mirror large enough that per-eye issues will be visible in XR
-- [ ] Keep the surrounding geometry simple enough that incorrect recursion / self-inclusion is easy to spot
+- [x] Author at least one obvious planar mirror surface in MMS
+- [x] Place the mirror where both head motion and controller motion make the reflection easy to judge
+- [x] Make the mirror large enough that per-eye issues will be visible in XR
+- [x] Keep the surrounding geometry simple enough that incorrect recursion / self-inclusion is easy to spot
 
 For the first pass, prefer one hero mirror over several mirrors.
 
 ### 4. Build the Roman temple environment
 
-- [ ] Replace the current simple wall/cube dressing with a Roman temple composition
-- [ ] Use white / near-white marble columns
-- [ ] Use rectangular columns if we do not already have a practical cylinder path in example authoring
-- [ ] Add `circle_2d` rings or trim pieces near the top and bottom of columns where useful
-- [ ] Add a floor, raised platform, lintel/roof mass, and enough symmetry to make mirror errors visually obvious
+- [x] Replace the current simple wall/cube dressing with a Roman temple composition
+- [x] Use white / near-white marble columns
+- [x] Use rectangular columns if we do not already have a practical cylinder path in example authoring
+- [x] Add `circle_2d` rings or trim pieces near the top and bottom of columns where useful
+- [x] Add a floor, raised platform, lintel/roof mass, and enough symmetry to make mirror errors visually obvious
 
 Notes:
 
@@ -74,20 +74,20 @@ Notes:
 
 ### 5. Add the cloud background from Rust
 
-- [ ] In the Rust harness, create a `BackgroundComponent::new().with_occlusion_and_lighting()`
-- [ ] Add that background root to the universe
-- [ ] Import and use `example_util::CloudRingParams`
-- [ ] Call `example_util::spawn_cloud_ring(&mut universe, bg_root, cloud_params)`
-- [ ] Tune cloud count / jitter / height for a broad background layer behind the temple
+- [x] In the Rust harness, create a `BackgroundComponent::new().with_occlusion_and_lighting()`
+- [x] Add that background root to the universe
+- [x] Import and use `example_util::CloudRingParams`
+- [x] Call `example_util::spawn_cloud_ring(&mut universe, bg_root, cloud_params)`
+- [x] Tune cloud count / jitter / height for a broad background layer behind the temple
 
 This should stay on the Rust side for now rather than trying to proceduralize the clouds in MMS.
 
 ### 6. Decide the initial render-view expectations for this demo
 
-- [ ] Document the intended behavior for the example when only XR is active:
+- [x] Document the intended behavior for the example when only XR is active:
   - no desktop scene view if no `Camera3D` or `Camera2D` is active
   - XR eye views plus the mirror render views required for XR
-- [ ] Treat one mirror as one logical unit that may require multiple related render views
+- [x] Treat one mirror as one logical unit that may require multiple related render views
 - [ ] Use this example as the first regression surface for verifying mirror render-view count
 
 ### 7. Add lightweight observability
