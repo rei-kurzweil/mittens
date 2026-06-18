@@ -10,7 +10,7 @@ Add a dedicated editor settings panel that exposes a small set of editor-scoped 
 
 1. transform gizmo translation space: `World` / `Local`
 2. transform gizmo rotation space: `World` / `Local`
-3. glTF armature visualization: `On` / `Off`
+3. glTF bone visualization: `On` / `Off`
 
 This should be a real editor panel, rendered entirely from
 `assets/components/editor_settings_panel.mms` via a `RendererSpec`, rather than another Rust-only
@@ -21,7 +21,7 @@ stopgap subtree builder.
 We now have editor-level gizmo space settings on `EditorComponent`, but they are not exposed in the
 runtime editor UI.
 
-Separately, armature/bone visualization is useful while inspecting rigs, but it also creates visual
+Separately, bone visualization is useful while inspecting rigs, but it also creates visual
 and interaction noise. We need a quick toggle in the editor so a user can turn it off without
 removing the underlying glTF content.
 
@@ -44,17 +44,18 @@ These are editor-scoped settings, currently stored on `EditorComponent`:
 
 Those fields should remain the source of truth for the two gizmo rows.
 
-### Armature visualization
+### Bone visualization
 
-For v1, we do not need a perfect long-term armature helper-tree architecture here. A pragmatic first
-implementation is acceptable:
+This setting should align with the GLTF-scoped runtime toggle model described in
+`docs/task/gltf-bone-viz-tracking-and-toggle.md`.
 
-- toggling the setting may remove and re-attach / rebuild editor-owned glTF armature visualization
-  subtrees
-- this should affect visualization helpers only, not the authored glTF transform/joint tree itself
+For v1, a pragmatic implementation is acceptable:
 
-The panel should treat this as an editor-scoped toggle, even if the first implementation is a bit
-heavy.
+- editor state is `show_bones: bool`
+- when toggled, the editor emits `GLTF_TOGGLE_BONE_VIZ` for each `GLTFComponent` in that editor
+  scope
+- runtime attach/detach affects tracked helper nodes only, not the authored glTF transform/joint
+  tree
 
 ## Panel form
 
@@ -79,7 +80,7 @@ The requested layout shape is:
 
 1. `Translation Space`
 2. `Rotation Space`
-3. `Show Armature`
+3. `Show Bones`
 
 ### Right-column control behavior
 
@@ -93,7 +94,7 @@ Expected labels:
 
 - translation space: `world` / `local`
 - rotation space: `world` / `local`
-- show armature: `on` / `off`
+- show bones: `on` / `off`
 
 Expected visual behavior:
 
@@ -128,7 +129,7 @@ Introduce a compact editor-settings view model for rendering:
 pub struct EditorSettingsPanelModel {
     pub translation_space: TransformGizmoCoordSpace,
     pub rotation_space: TransformGizmoCoordSpace,
-    pub show_armature: bool,
+    pub show_bones: bool,
 }
 ```
 
@@ -144,7 +145,7 @@ Suggested action set:
 pub enum EditorSettingsAction {
     CycleTranslationSpace,
     CycleRotationSpace,
-    ToggleShowArmature,
+    ToggleShowBones,
 }
 ```
 
@@ -152,7 +153,7 @@ Expected semantics:
 
 - `CycleTranslationSpace`: `World <-> Local`
 - `CycleRotationSpace`: `World <-> Local`
-- `ToggleShowArmature`: `true <-> false`
+- `ToggleShowBones`: `true <-> false`
 
 The panel should not mutate gizmo or glTF state directly from MMS. MMS should only surface the user
 intent; Rust-side editor systems remain responsible for applying effects.
@@ -175,21 +176,23 @@ When toggled:
 - ensure the transform gizmo visuals are refreshed if needed so the rings reflect the new space
 - subsequent drags should use the new space immediately
 
-### 3. Show armature
+### 3. Show bones
 
 When toggled off:
 
-- remove or detach editor-owned armature visualization helpers for glTF content in that editor
-  scope
+- enumerate the `GLTFComponent`s under that editor
+- emit `GLTF_TOGGLE_BONE_VIZ(enabled = false)` for each one
+- remove only tracked bone viz helper nodes for those GLTFs
 
 When toggled on:
 
-- rebuild or re-attach those helpers
+- enumerate the `GLTFComponent`s under that editor
+- emit `GLTF_TOGGLE_BONE_VIZ(enabled = true)` for each one
+- recreate only the needed tracked bone viz helper nodes
 
 V1 allowance:
 
-- it is acceptable if this is implemented by re-running the armature visualization attach path for
-  relevant glTF/editor roots
+- it is acceptable if the runtime rebuilds bone viz helpers for an individual GLTF when toggled on
 - avoid mutating or recreating the authored glTF subtree itself
 
 ## Topology / ownership constraints
@@ -201,8 +204,8 @@ That means:
 - each `EditorComponent` subtree can have its own settings state
 - toggling settings in one editor should not implicitly mutate a different editor subtree
 
-Likewise, armature visibility should operate on editor-owned helper content for that editor, not as
-a global process-wide flag.
+Likewise, bone visibility should operate on editor-owned helper content for that editor, not as a
+global process-wide flag.
 
 ## Relation to gizmo math
 
@@ -249,8 +252,8 @@ That conversion logic belongs in the gizmo/editor implementation, not in the pan
 
 ### Stage 5 — armature visibility v1
 
-- connect `show_armature` to armature helper-tree removal / re-attachment
-- keep the implementation scoped to editor-owned visualization content
+- connect `show_bones` to editor-scoped per-GLTF `GLTF_TOGGLE_BONE_VIZ` emission
+- keep the implementation scoped to tracked visualization helper content
 
 ## Acceptance criteria
 
@@ -259,15 +262,16 @@ That conversion logic belongs in the gizmo/editor implementation, not in the pan
 - it has exactly three visible settings rows:
   - `Translation Space`
   - `Rotation Space`
-  - `Show Armature`
+  - `Show Bones`
 - each row has a left label column and a right value/button column
 - translation space button toggles between `world` and `local`
 - rotation space button toggles between `world` and `local`
-- show armature button toggles between `on` and `off`
+- show bones button toggles between `on` and `off`
 - button color changes with state
 - changing translation space affects existing gizmo behavior in that editor
 - changing rotation space affects existing gizmo behavior in that editor
-- toggling armature visibility removes/restores editor-owned glTF bone visualization for that
+- toggling bone visibility emits one `GLTF_TOGGLE_BONE_VIZ` per GLTF in that editor scope
+- toggling bone visibility removes/restores only tracked glTF bone visualization helpers for that
   editor scope
 - the authored glTF content itself is not destroyed or recreated as part of the armature toggle
 
@@ -275,7 +279,7 @@ That conversion logic belongs in the gizmo/editor implementation, not in the pan
 
 - persistence of settings across app restarts
 - a generalized preferences schema
-- a polished final armature-helper architecture
+- a polished final helper-tree architecture
 - a broad multi-panel editor settings framework
 - refactoring every editor panel to the same model in this task
 
@@ -283,5 +287,6 @@ That conversion logic belongs in the gizmo/editor implementation, not in the pan
 
 - [docs/spec/editor-gizmo-coord-spaces.md](../spec/editor-gizmo-coord-spaces.md)
 - [docs/spec/data-renderer-system.md](../spec/data-renderer-system.md)
+- [docs/task/gltf-bone-viz-tracking-and-toggle.md](./gltf-bone-viz-tracking-and-toggle.md)
 - [docs/task/armature-visualization-toggle.md](./armature-visualization-toggle.md)
 - [docs/task/serialize-component-and-armature-viz-save-plan.md](./serialize-component-and-armature-viz-save-plan.md)
