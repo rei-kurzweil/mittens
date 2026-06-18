@@ -119,6 +119,51 @@ In other words:
 - mirror sampling hookup exists
 - mirror pass execution appears missing
 
+## Mirror unit vs mirror render views
+
+We should distinguish between:
+
+- one mirror as an authored/runtime unit
+- the set of render views required to service that mirror for the currently active viewers
+
+The mirror itself is singular:
+
+- one `MirrorComponent`
+- one discovered `VisualMirror`-like logical mirror record
+- one mirror surface in the world
+
+But the render work for that mirror is not necessarily singular.
+
+The correct mental model is:
+
+- one mirror can require multiple related `RenderView`s
+- those views are grouped under the same mirror, but are still separate scene draws
+
+Examples:
+
+- window-only frame:
+  - `1` mirror
+  - `1` mirror render view
+- XR-only stereo frame:
+  - `1` mirror
+  - typically `2` mirror render views, one per eye
+- window + XR frame:
+  - `1` mirror
+  - separate window-derived and XR-derived mirror render views
+
+So we should not think of "one mirror = one render target" as a guaranteed rule.
+The more accurate rule is:
+
+- one mirror owns a family of related capture views
+- the renderer decides how many concrete `RenderView`s are needed for that mirror in the current frame
+
+This also means mirror runtime texture publication may need to be keyed by both:
+
+- mirror identity
+- viewer family or eye
+
+instead of only by mirror identity.
+
 ## What `RenderView` means in current code
 
 `RenderView` already exists as the right renderer-local abstraction:
@@ -178,13 +223,19 @@ That means the conceptual migration from "camera target + eye" to "draw this sce
 
 1. Window + XR policy
 - When XR is active, do we intentionally keep rendering the desktop window scene every frame?
-- If yes, that is `1 + eye_count + mirrors`.
-- If no, we should document when the window scene render is suppressed.
+- Intended policy:
+  - if no `Camera3D` or `Camera2D` is active, and only `CameraXR` is active, only XR should render
+  - in that case, total scene-view count should be `xr_eye_count + mirror_render_view_count`
+  - there is no separate window scene render in that mode
+- If both window and XR cameras are active, we should still document whether both families render every frame.
 
 2. Mirror source camera policy
 - `MirrorSystem` currently prefers XR if available, otherwise window.
-- Is that the intended rule for desktop companion-window behavior during XR?
-- Should mirror reflections in the desktop window derive from the desktop viewer instead of the XR viewer?
+- The intended model should be:
+  - mirrors are singular logical units
+  - mirror captures are derived per active viewer family
+  - when both window and XR are active, a single shared mirror capture is generally not correct if viewer poses differ
+- This implies mirror capture should usually be split into multiple related render views under one mirror, rather than one globally shared mirror image.
 
 3. Mirror extent policy
 - `quality` currently becomes a `resolution_scale` relative to `1024.0`, while aspect comes from bounds.
@@ -220,6 +271,7 @@ Add renderer stats for:
 - window scene views rendered this frame
 - XR scene views rendered this frame
 - mirror scene views rendered this frame
+- mirror logical units discovered this frame
 - total scene views rendered this frame
 
 This gives us a concrete answer to the RenderView inventory question in runtime, not just in code inspection.
