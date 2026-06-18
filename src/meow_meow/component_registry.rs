@@ -2321,6 +2321,7 @@ fn apply_call(
     }
     if let Some(c3) = world.get_component_by_id_as_mut::<Camera3DComponent>(id) {
         match method {
+            "enabled" => *c3 = c3.clone().with_enabled(arg_bool(args, 0)?),
             "fov" => *c3 = c3.clone().with_fov(arg_f32(args, 0)?),
             "near" => *c3 = c3.clone().with_near(arg_f32(args, 0)?),
             "far" => *c3 = c3.clone().with_far(arg_f32(args, 0)?),
@@ -2344,11 +2345,15 @@ fn apply_call(
         return Ok(());
     }
     if let Some(cxr) = world.get_component_by_id_as_mut::<CameraXRComponent>(id) {
-        if method == "target" {
-            cxr.target = match arg_str(args, 0)? {
-                "window" => CameraTarget::Window,
-                _ => CameraTarget::Xr,
-            };
+        match method {
+            "enabled" => cxr.enabled = arg_bool(args, 0)?,
+            "target" => {
+                cxr.target = match arg_str(args, 0)? {
+                    "window" => CameraTarget::Window,
+                    _ => CameraTarget::Xr,
+                };
+            }
+            _ => {}
         }
         return Ok(());
     }

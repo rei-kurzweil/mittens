@@ -179,6 +179,46 @@ impl CameraSystem {
         }
     }
 
+    fn window_camera_component_enabled(&self, world: &World, handle: CameraHandle) -> bool {
+        if let Some(cid) = self.camera3d_components.get(&handle) {
+            return world
+                .get_component_by_id_as::<Camera3DComponent>(*cid)
+                .is_some_and(|c| c.enabled && matches!(c.target, crate::engine::graphics::CameraTarget::Window));
+        }
+        if let Some(cid) = self.camera2d_components.get(&handle) {
+            return world
+                .get_component_by_id_as::<crate::engine::ecs::component::Camera2DComponent>(*cid)
+                .is_some_and(|c| matches!(c.target, crate::engine::graphics::CameraTarget::Window));
+        }
+        false
+    }
+
+    fn update_active_window_camera(&mut self, world: &World, visuals: &mut VisualWorld) {
+        if let Some(active) = self.active_window_camera {
+            if self.window_camera_component_enabled(world, active) {
+                return;
+            }
+        }
+
+        let next = self
+            .cameras
+            .iter()
+            .map(|(handle, _)| *handle)
+            .rev()
+            .find(|&handle| self.window_camera_component_enabled(world, handle));
+
+        self.active_window_camera = next;
+
+        if let Some(handle) = next {
+            if let Some((_, cam)) = self.cameras.iter().find(|(ch, _)| *ch == handle) {
+                match *cam {
+                    AnyCamera::Camera3D(cam3d) => visuals.set_camera(cam3d.view, cam3d.proj),
+                    AnyCamera::Camera2D(cam2d) => visuals.set_camera(cam2d.view, cam2d.proj),
+                }
+            }
+        }
+    }
+
     pub fn set_active_xr_camera(
         &mut self,
         world: &World,
@@ -283,6 +323,10 @@ impl CameraSystem {
         }
     }
 
+    pub fn has_active_window_camera(&self) -> bool {
+        self.active_window_camera_matrices().is_some()
+    }
+
     /// Update Camera3D view/proj from the component tree.
     ///
     /// `camera3d_component_id` should be the Camera3DComponent, whose parent is typically a TransformComponent.
@@ -355,7 +399,7 @@ impl CameraSystem {
         let next = world.all_components().find(|&id| {
             world
                 .get_component_by_id_as::<CameraXRComponent>(id)
-                .is_some_and(|c| c.enabled)
+                .is_some_and(|c| c.enabled && matches!(c.target, crate::engine::graphics::CameraTarget::Xr))
         });
 
         self.active_xr_camera = next;
@@ -430,6 +474,7 @@ impl System for CameraSystem {
         _input: &crate::engine::user_input::InputState,
         _dt_sec: f32,
     ) {
+        self.update_active_window_camera(world, visuals);
         // Maintain which XR rig is active so the OpenXR system can apply the correct world transform.
         self.update_active_xr_camera(world, visuals);
 

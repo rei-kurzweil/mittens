@@ -1544,6 +1544,84 @@ fn eval_method_call(
 
             if matches!(
                 component_type.as_str(),
+                "Camera3D" | "Camera3DComponent" | "camera3d" | "C3D"
+            ) && matches!(method, "enabled" | "make_active_camera")
+            {
+                let Some(world) = ctx.host_world else {
+                    return Err(format!("{method}(): no host world"));
+                };
+                let world = unsafe { &mut *world };
+                if method == "enabled" {
+                    if args.is_empty() {
+                        let enabled = world
+                            .get_component_by_id_as::<crate::engine::ecs::component::Camera3DComponent>(id)
+                            .ok_or_else(|| "enabled(): not a Camera3DComponent".to_string())?
+                            .enabled;
+                        return Ok(Value::Bool(enabled));
+                    }
+                    let enabled = match args.first() {
+                        Some(Value::Bool(b)) => *b,
+                        Some(other) => {
+                            return Err(format!(
+                                "enabled: expected bool argument, got {:?}",
+                                other
+                            ));
+                        }
+                        None => unreachable!(),
+                    };
+                    let camera = world
+                        .get_component_by_id_as_mut::<crate::engine::ecs::component::Camera3DComponent>(id)
+                        .ok_or_else(|| "enabled(): not a Camera3DComponent".to_string())?;
+                    camera.enabled = enabled;
+                    return Ok(Value::Null);
+                }
+                ctx.emits.push(IntentValue::MakeActiveCamera {
+                    component_ids: vec![id],
+                });
+                return Ok(Value::Null);
+            }
+
+            if matches!(
+                component_type.as_str(),
+                "CameraXR" | "CameraXRComponent" | "camera_xr" | "CXR"
+            ) && matches!(method, "enabled" | "make_active_camera")
+            {
+                let Some(world) = ctx.host_world else {
+                    return Err(format!("{method}(): no host world"));
+                };
+                let world = unsafe { &mut *world };
+                if method == "enabled" {
+                    if args.is_empty() {
+                        let enabled = world
+                            .get_component_by_id_as::<crate::engine::ecs::component::CameraXRComponent>(id)
+                            .ok_or_else(|| "enabled(): not a CameraXRComponent".to_string())?
+                            .enabled;
+                        return Ok(Value::Bool(enabled));
+                    }
+                    let enabled = match args.first() {
+                        Some(Value::Bool(b)) => *b,
+                        Some(other) => {
+                            return Err(format!(
+                                "enabled: expected bool argument, got {:?}",
+                                other
+                            ));
+                        }
+                        None => unreachable!(),
+                    };
+                    let camera = world
+                        .get_component_by_id_as_mut::<crate::engine::ecs::component::CameraXRComponent>(id)
+                        .ok_or_else(|| "enabled(): not a CameraXRComponent".to_string())?;
+                    camera.enabled = enabled;
+                    return Ok(Value::Null);
+                }
+                ctx.emits.push(IntentValue::MakeActiveCamera {
+                    component_ids: vec![id],
+                });
+                return Ok(Value::Null);
+            }
+
+            if matches!(
+                component_type.as_str(),
                 "Text" | "TXT" | "TextComponent" | "text"
             ) && method == "set_font_size"
             {

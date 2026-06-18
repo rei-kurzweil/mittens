@@ -414,10 +414,13 @@ impl Universe {
             .openxr
             .render_xr(&self.world, &mut self.visuals, &mut self.renderer);
 
-        // TODO: rebuild inspector around component graph instead of entities.
-
-        self.renderer
-            .render_visual_world(&mut self.visuals)
-            .expect("render failed");
+        // Skip the window scene draw when there is no active Camera3D/Camera2D.
+        // The winit loop and XR rendering continue to run independently.
+        if self.systems.camera.has_active_window_camera() {
+            // TODO: rebuild inspector around component graph instead of entities.
+            self.renderer
+                .render_visual_world(&mut self.visuals)
+                .expect("render failed");
+        }
     }
 }

@@ -1525,6 +1525,24 @@ impl OpenXRSystem {
             return;
         }
 
+        // If there is no enabled XR camera, keep the XR session alive but submit no
+        // projection layers. This matches the desktop path, which stops scene drawing
+        // when no active camera exists.
+        if visuals
+            .active_xr_camera()
+            .or_else(|| Self::first_enabled_camera_xr(world))
+            .is_none()
+        {
+            self.xr_input_state = XrInputState::default();
+            sess.head_pose_cache = None;
+            sess.hand_root_pose_cache = HandRootPoseCache::default();
+            sess.controller_pose_cache = ControllerPoseCache::default();
+            let _ =
+                sess.frame_stream
+                    .end(frame_state.predicted_display_time, state.blend_mode, &[]);
+            return;
+        }
+
         let views = match sess.session.locate_views(
             state.view_type,
             frame_state.predicted_display_time,

@@ -10,6 +10,8 @@ use crate::engine::graphics::CameraTarget;
 /// - Call `make_active_camera()` to explicitly set this camera active.
 #[derive(Debug, Clone)]
 pub struct Camera3DComponent {
+    pub enabled: bool,
+
     // Handle owned by CameraSystem. Filled in during init.
     pub handle: Option<crate::engine::ecs::system::camera_system::CameraHandle>,
 
@@ -36,6 +38,7 @@ impl Camera3DComponent {
 
     pub fn new() -> Self {
         Self {
+            enabled: true,
             handle: None,
             component_id: None,
             target: CameraTarget::Window,
@@ -57,6 +60,11 @@ impl Camera3DComponent {
 
     pub fn with_far(mut self, z_far: f32) -> Self {
         self.z_far = z_far;
+        self
+    }
+
+    pub fn with_enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
         self
     }
 
@@ -114,6 +122,7 @@ impl Component for Camera3DComponent {
             CameraTarget::Xr => "xr",
         };
         ce("Camera3D")
+            .with_call("enabled", vec![b(self.enabled)])
             .with_call("target", vec![s(target)])
             .with_call("fov", vec![num(self.fov_y_degrees as f64)])
             .with_call("near", vec![num(self.z_near as f64)])
