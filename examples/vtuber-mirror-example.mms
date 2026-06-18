@@ -168,8 +168,10 @@ ED {
 
                 initial_yaw(3.14159)
 
-                left_arm_pole_direction([  1, 0, 1])
-                right_arm_pole_direction([-1, 0, 1])
+                // Match bisket-vr-demo: body-local elbow hints that bias the
+                // bend downward and slightly outward from the torso.
+                left_arm_pole_direction([  1, -0.35, 1])
+                right_arm_pole_direction([-1, -0.35, 1])
 
                 hand_rotation_smoothing(220.0)
                 hand_grip_rotation_left([-0.6408564, 0.29883623, 0.29883623, 0.6408564])

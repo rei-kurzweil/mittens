@@ -197,12 +197,13 @@ ED {
 
                 initial_yaw(3.14159)
 
-                // Body-local pole hints.  The solver transforms them to world
-                // space each tick by the model root rotation.  These values
-                // compensate for initial_yaw(π) so the elbows bend outward at
-                // rest: left elbow → avatar's left, right → right.
-                left_arm_pole_direction([  1, 0, 1])
-                right_arm_pole_direction([-1, 0, 1])
+                // Body-local pole hints. The solver rotates them by the
+                // current model_root world rotation each tick, so author them
+                // as anatomical body-space directions. Bias slightly downward
+                // as well as outward so elbows drop when the hands pull back
+                // toward the chest instead of lifting upward.
+                left_arm_pole_direction([  1, -0.35, 1])
+                right_arm_pole_direction([-1, -0.35, 1])
 
                 hand_rotation_smoothing(220.0)
                 // Trial: yaw inward 90 degrees, then apply the opposite
