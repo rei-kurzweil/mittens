@@ -1,4 +1,5 @@
 use crate::engine::ecs::SignalEmitter;
+use crate::engine::startup_trace::{StartupCheckpoint, log_startup_progress};
 use crate::engine::user_input::InputState;
 use crate::engine::{ecs, graphics};
 use std::collections::HashSet;
@@ -393,6 +394,7 @@ impl Universe {
             &self.render_assets,
             &mut self.command_queue,
         );
+        log_startup_progress(StartupCheckpoint::FirstUpdateCompleted);
 
         // Editor systems may enqueue REPL navigation commands during this update.
         // Sync once more so the REPL reflects the just-applied world topology.
@@ -408,11 +410,13 @@ impl Universe {
             &mut self.renderer as &mut dyn graphics::RenderUploader,
             &mut self.command_queue,
         );
+        log_startup_progress(StartupCheckpoint::RenderPrepared);
 
         // Render XR (if enabled) before the window present.
         self.systems
             .openxr
             .render_xr(&self.world, &mut self.visuals, &mut self.renderer);
+        log_startup_progress(StartupCheckpoint::XrRenderCompleted);
 
         // Skip the window scene draw when there is no active Camera3D/Camera2D.
         // The winit loop and XR rendering continue to run independently.
@@ -422,5 +426,6 @@ impl Universe {
                 .render_visual_world(&mut self.visuals)
                 .expect("render failed");
         }
+        log_startup_progress(StartupCheckpoint::WindowRenderCompleted);
     }
 }

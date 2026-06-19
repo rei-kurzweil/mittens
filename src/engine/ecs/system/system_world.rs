@@ -859,17 +859,6 @@ impl SystemWorld {
                 component,
                 panel_query_root,
             );
-            self.editor_inspector.setup_panels_for_editor(
-                &mut self.rx,
-                world,
-                render_assets,
-                emit,
-                component,
-                world_panel_pos,
-                inspector_panel_pos,
-                editor_context_state.clone(),
-                &self.asset_system,
-            );
             self.editor_paint.install_scoped_handlers_for_editor(
                 &mut self.rx,
                 world,

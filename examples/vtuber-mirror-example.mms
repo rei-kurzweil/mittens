@@ -130,10 +130,6 @@ ED {
     T.position(0.0, 2.45, 0.55).scale(6.35, 0.24, 0.62) {
         R.cube() { C.rgba(0.92, 0.91, 0.89, 1.0) }
     }
-}
-
-// --- Hero mirror and nearby reference props ---
-ED {
     T.position(0.0, 0.55, -3.95).scale(2.2, 2.5, 0.08) {
         R.cube() {
             C.rgba(0.82, 0.88, 0.94, 1.0)
@@ -157,53 +153,51 @@ ED {
 }
 
 // --- bisket avatar — preserve the useful XR topology from bisket-vr-demo ---
-ED {
-    InputXR.on() {
-        T {
-            AVC {
-                head_bone("J_Bip_C_Head")
-                camera_bone("J_Bip_C_Head")
-                left_hand_bone("J_Bip_L_Hand")
-                right_hand_bone("J_Bip_R_Hand")
+InputXR.on() {
+    T {
+        AVC {
+            head_bone("J_Bip_C_Head")
+            camera_bone("J_Bip_C_Head")
+            left_hand_bone("J_Bip_L_Hand")
+            right_hand_bone("J_Bip_R_Hand")
 
-                initial_yaw(3.14159)
-                ik_debug()
+            initial_yaw(3.14159)
+            ik_debug()
 
-                // Match bisket-vr-demo: body-local elbow hints that bias the
-                // bend downward and slightly outward from the torso.
-                left_arm_pole_direction([  1, -0.35, 1])
-                right_arm_pole_direction([-1, -0.35, 1])
+            // Match bisket-vr-demo: body-local elbow hints that bias the
+            // bend downward and slightly outward from the torso.
+            left_arm_pole_direction([  1, -0.35, 1])
+            right_arm_pole_direction([-1, -0.35, 1])
 
-                hand_rotation_smoothing(220.0)
-                hand_grip_rotation_left([-0.6408564, 0.29883623, 0.29883623, 0.6408564])
-                hand_grip_rotation_right([-0.6408564, -0.29883623, -0.29883623, 0.6408564])
+            hand_rotation_smoothing(220.0)
+            hand_grip_rotation_left([-0.6408564, 0.29883623, 0.29883623, 0.6408564])
+            hand_grip_rotation_right([-0.6408564, -0.29883623, -0.29883623, 0.6408564])
 
-                T {
-                    GLTF.new("assets/models/bisket.8.0.glb") {
-                        EM.on()
-                        PoseCapture { label("Bisket") }
-                    }
+            T {
+                GLTF.new("assets/models/bisket.8.0.glb") {
+                    EM.on()
+                    PoseCapture { label("Bisket") }
                 }
-
-                T.position(0.0, 0.08, 0.12) {
-                    name = "xr_camera_wrapper"
-                    Collision.kinematic() {
-                        CollisionShape.sphere(0.18)
-                        KineticResponse.slide() {}
-                    }
-                    CXR { Pointer {} }
-                }
-
-                CTLXR.new(true, Left,  Grip) { T { Pointer {} } }
-                CTLXR.new(true, Right, Grip) { T { Pointer {} } }
             }
 
-            OV {
-                T.scale(0.06, 0.06, 0.12) {
-                    R.cube() {
-                        C.rgba(0.00, 1.0, 1.0, 0.5)
-                        EM.on()
-                    }
+            T.position(0.0, 0.08, 0.12) {
+                name = "xr_camera_wrapper"
+                Collision.kinematic() {
+                    CollisionShape.sphere(0.18)
+                    KineticResponse.slide() {}
+                }
+                CXR { Pointer {} }
+            }
+
+            CTLXR.new(true, Left,  Grip) { T { Pointer {} } }
+            CTLXR.new(true, Right, Grip) { T { Pointer {} } }
+        }
+
+        OV {
+            T.scale(0.06, 0.06, 0.12) {
+                R.cube() {
+                    C.rgba(0.00, 1.0, 1.0, 0.5)
+                    EM.on()
                 }
             }
         }

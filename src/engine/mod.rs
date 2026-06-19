@@ -2,6 +2,7 @@ pub mod cli;
 pub mod ecs;
 pub mod graphics;
 pub mod repl;
+pub(crate) mod startup_trace;
 pub mod universe;
 pub mod user_input;
 pub mod windowing;

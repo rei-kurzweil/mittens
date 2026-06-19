@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use crate::engine::startup_trace::{StartupCheckpoint, log_startup_progress};
 use crate::engine::user_input::UserInput;
 use crate::engine::{EngineError, EngineResult};
 
@@ -61,6 +62,7 @@ impl ApplicationHandler for App {
         if self.window.is_some() {
             return;
         }
+        log_startup_progress(StartupCheckpoint::EventLoopResumed);
 
         let preferred_window_size = self
             .universe
@@ -87,6 +89,7 @@ impl ApplicationHandler for App {
             }
         };
         let window = Arc::new(window);
+        log_startup_progress(StartupCheckpoint::WindowCreated);
 
         // Initialize renderer backend for this window via Universe
         if let Some(universe) = self.universe.as_mut() {
@@ -98,6 +101,7 @@ impl ApplicationHandler for App {
                 return;
             }
         }
+        log_startup_progress(StartupCheckpoint::RendererInitialized);
 
         self.window = Some(window);
         self.last_frame = Some(Instant::now());
@@ -146,6 +150,7 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::RedrawRequested => {
+                log_startup_progress(StartupCheckpoint::FirstRedrawRequested);
                 // Start of our "frame" from an input perspective: compute deltas, but keep
                 // edge-triggered sets so they remain visible during `universe.update`.
                 self.user_input.start_frame();
