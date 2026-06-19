@@ -253,6 +253,11 @@ impl RxMutationExecutor {
                     systems.register_text(world, visuals, component, emit);
                 }
             }
+            IntentValue::RegisterGLTF { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.gltf.register_component(component);
+                }
+            }
             IntentValue::RegisterTextInput { component_ids } => {
                 for &component in component_ids.iter() {
                     systems.register_text_input(world, component, emit);

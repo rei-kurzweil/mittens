@@ -29,6 +29,7 @@ impl RxIntentExecutor {
                 | IntentValue::Print { .. }
                 | IntentValue::SetColor { .. }
                 | IntentValue::SetPosition { .. }
+                | IntentValue::GLTFArmatureVisible { .. }
                 | IntentValue::SelectionSet { .. }
                 | IntentValue::Attach { .. }
                 | IntentValue::QueryFindComponent { .. }
@@ -124,6 +125,21 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                     world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
                 {
                     t.set_position(emit, position[0], position[1], position[2]);
+                }
+            }
+        }
+
+        IntentValue::GLTFArmatureVisible {
+            component_ids,
+            visible,
+        } => {
+            for &component_id in component_ids {
+                if let Some(gltf) = world
+                    .get_component_by_id_as_mut::<crate::engine::ecs::component::GLTFComponent>(
+                        component_id,
+                    )
+                {
+                    gltf.armature_visible = *visible;
                 }
             }
         }

@@ -82,6 +82,7 @@ pub fn signal_target_slot_count(signal: &IntentValue) -> usize {
         SetColor { component_ids, .. }
         | SetText { component_ids, .. }
         | SetPosition { component_ids, .. }
+        | GLTFArmatureVisible { component_ids, .. }
         | Detach { component_ids }
         | RemoveSubtree { component_ids }
         | AudioGraphRebuild { component_ids }
@@ -118,6 +119,7 @@ pub fn apply_resolved_targets(signal: &mut IntentValue, ids: &[ComponentId]) {
         SetColor { component_ids, .. }
         | SetText { component_ids, .. }
         | SetPosition { component_ids, .. }
+        | GLTFArmatureVisible { component_ids, .. }
         | Detach { component_ids }
         | RemoveSubtree { component_ids }
         | AudioGraphRebuild { component_ids }

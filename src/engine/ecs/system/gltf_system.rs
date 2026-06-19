@@ -1,7 +1,6 @@
 use crate::engine::ecs::component::{
-    ColorComponent, EditorComponent, EmissiveComponent, GLTFComponent, MeshComponent,
-    OverlayComponent, RaycastableComponent, RenderableComponent, SerializeComponent,
-    SignalRouteUpwardComponent, SkinnedMeshComponent, TextureComponent, TransformComponent,
+    ColorComponent, EmissiveComponent, GLTFComponent, MeshComponent, RenderableComponent,
+    SerializeComponent, SkinnedMeshComponent, TextureComponent, TransformComponent,
 };
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::engine::graphics::mesh::{CpuMesh, CpuVertex};
@@ -15,6 +14,7 @@ use std::path::Path;
 
 #[derive(Debug, Default)]
 pub struct GLTFSystem {
+    tracked_components: HashSet<ComponentId>,
     spawned_components: HashSet<ComponentId>,
     resources_by_uri: HashMap<String, LoadedGltf>,
 }
@@ -53,6 +53,14 @@ struct ImportedSkin {
 impl GLTFSystem {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn register_component(&mut self, component_id: ComponentId) {
+        self.tracked_components.insert(component_id);
+    }
+
+    pub fn tracked_components(&self) -> impl Iterator<Item = ComponentId> + '_ {
+        self.tracked_components.iter().copied()
     }
 
     fn debug_enabled() -> bool {
@@ -249,21 +257,18 @@ impl GLTFSystem {
         emit: &mut dyn SignalEmitter,
         _dt_sec: f32,
     ) {
-        let gltf_components: Vec<ComponentId> = world
-            .all_components()
-            .filter(|&cid| world.get_component_by_id_as::<GLTFComponent>(cid).is_some())
-            .collect();
+        self.tracked_components
+            .retain(|component_id| world.get_component_record(*component_id).is_some());
+        self.spawned_components
+            .retain(|component_id| world.get_component_record(*component_id).is_some());
+
+        let gltf_components: Vec<ComponentId> = self.tracked_components.iter().copied().collect();
 
         for cid in gltf_components {
             if self.spawned_components.contains(&cid) {
                 continue;
             }
 
-            let with_visualized_transforms = world
-                .get_component_by_id_as::<GLTFComponent>(cid)
-                .map(|c| c.with_visualized_transforms)
-                .unwrap_or(false)
-                || Self::has_editor_ancestor(world, cid);
             let serialize_spawned_nodes = world
                 .children_of(cid)
                 .iter()
@@ -273,12 +278,6 @@ impl GLTFSystem {
                         .map(|serialize| serialize.enabled)
                 })
                 .unwrap_or(false);
-
-            if with_visualized_transforms {
-                if let Some(c) = world.get_component_by_id_as_mut::<GLTFComponent>(cid) {
-                    c.with_visualized_transforms = true;
-                }
-            }
 
             let Some(uri) = world
                 .get_component_by_id_as::<GLTFComponent>(cid)
@@ -336,6 +335,11 @@ impl GLTFSystem {
             // Used to resolve skins (joint node indices -> ComponentId references).
             let mut node_index_to_component: HashMap<usize, ComponentId> = HashMap::new();
             let mut pending_skin_components: Vec<(ComponentId, usize)> = Vec::new();
+            let joint_node_indices: HashSet<usize> = loaded
+                .skins
+                .iter()
+                .flat_map(|skin| skin.joints.iter().copied())
+                .collect();
 
             for node in scene.nodes() {
                 let root = self.spawn_node_recursive(
@@ -346,7 +350,6 @@ impl GLTFSystem {
                     node,
                     &mut node_index_to_component,
                     &mut pending_skin_components,
-                    with_visualized_transforms,
                     serialize_spawned_nodes,
                 );
                 if let Some(root) = root {
@@ -424,6 +427,11 @@ impl GLTFSystem {
             self.spawned_components.insert(cid);
             if let Some(c) = world.get_component_by_id_as_mut::<GLTFComponent>(cid) {
                 c.spawned = true;
+                c.spawned_node_transforms = node_index_to_component.values().copied().collect();
+                c.armature_joint_transforms = joint_node_indices
+                    .iter()
+                    .filter_map(|node_index| node_index_to_component.get(node_index).copied())
+                    .collect();
             }
         }
     }
@@ -488,20 +496,6 @@ impl GLTFSystem {
             cid = parent;
         }
         None
-    }
-
-    fn has_editor_ancestor(world: &World, start: ComponentId) -> bool {
-        let mut cur = Some(start);
-        while let Some(node) = cur {
-            if world
-                .get_component_by_id_as::<EditorComponent>(node)
-                .is_some()
-            {
-                return true;
-            }
-            cur = world.parent_of(node);
-        }
-        false
     }
 
     fn sanitize_key_part(s: &str) -> String {
@@ -817,7 +811,6 @@ impl GLTFSystem {
         node: gltf::Node,
         node_index_to_component: &mut HashMap<usize, ComponentId>,
         pending_skin_components: &mut Vec<(ComponentId, usize)>,
-        with_visualized_transforms: bool,
         serialize_spawned_nodes: bool,
     ) -> Option<ComponentId> {
         let node_display_name = node
@@ -855,8 +848,6 @@ impl GLTFSystem {
 
         let node_skin_index = node.skin().map(|s| s.index());
 
-        let mut spawned_renderable = false;
-
         if let Some(mesh) = node.mesh() {
             for (prim_index, prim) in mesh.primitives().enumerate() {
                 if prim.mode() != gltf::mesh::Mode::Triangles {
@@ -888,8 +879,6 @@ impl GLTFSystem {
 
                 let _ = world.add_child(this_transform, renderable);
                 let _ = world.add_child(renderable, mesh_ref);
-
-                spawned_renderable = true;
 
                 if let Some(skin_index) = node_skin_index {
                     if loaded.skins.get(skin_index).is_some() {
@@ -979,53 +968,6 @@ impl GLTFSystem {
             }
         }
 
-        if with_visualized_transforms && !spawned_renderable {
-            const VIZ_BOX_SCALE: f32 = 0.03;
-
-            let mut viz_tc = TransformComponent::new();
-            viz_tc.transform.scale = [VIZ_BOX_SCALE, VIZ_BOX_SCALE, VIZ_BOX_SCALE];
-            viz_tc.transform.recompute_model();
-
-            let viz_transform = world
-                .add_component_boxed_named(format!("viz:{}", node_display_name), Box::new(viz_tc));
-            let _ = world.add_child(this_transform, viz_transform);
-
-            // Treat viz transforms as interaction proxies: route UpdateTransform intents to the
-            // nearest ancestor Transform.
-            let route_up = world.add_component_boxed_named(
-                format!("route_upward:viz:{}", node_display_name),
-                Box::new(SignalRouteUpwardComponent::new(
-                    "update_transform",
-                    "transform",
-                )),
-            );
-            let _ = world.add_child(viz_transform, route_up);
-
-            // Route joint markers into the overlay pass so they're drawn on top of the
-            // skinned mesh (otherwise they'd be occluded by the body they belong to).
-            // OverlayComponent must be an ancestor of the renderable; renderable_system
-            // walks parents looking for the nearest OverlayComponent.
-            let overlay = world.add_component_boxed_named(
-                format!("viz_overlay:{}", node_display_name),
-                Box::new(OverlayComponent::new()),
-            );
-            let _ = world.add_child(viz_transform, overlay);
-
-            let viz_renderable = world.add_component_boxed_named(
-                format!("viz_box:{}", node_display_name),
-                Box::new(RenderableComponent::cube()),
-            );
-            let _ = world.add_child(overlay, viz_renderable);
-
-            let raycastable = world.add_component(RaycastableComponent::enabled());
-            let _ = world.add_child(viz_renderable, raycastable);
-
-            let color = world.add_component(ColorComponent {
-                rgba: [1.0, 1.0, 1.0, 1.0],
-            });
-            let _ = world.add_child(viz_renderable, color);
-        }
-
         // Recurse into children.
         for ch in node.children() {
             let _ = self.spawn_node_recursive(
@@ -1036,7 +978,6 @@ impl GLTFSystem {
                 ch,
                 node_index_to_component,
                 pending_skin_components,
-                with_visualized_transforms,
                 serialize_spawned_nodes,
             );
         }

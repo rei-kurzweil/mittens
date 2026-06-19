@@ -15,6 +15,7 @@ import { fill_icon } from "./icons.mms"
 import { erase_icon } from "./icons.mms"
 import { grid_tool_icon } from "./icons.mms"
 import { grid_visibility_icon } from "./icons.mms"
+import { checkmark_icon } from "./icons.mms"
 
 // ── Shared constants ──────────────────────────────────────────────────────────
 
@@ -52,6 +53,50 @@ fn editor_settings_mode_row(row_name, label, mode_value) {
         }
         T {
             Text { label }
+        }
+    }
+}
+
+fn editor_settings_armature_row() {
+    return T {
+        name = "editor_settings_armature_visibility"
+        Option {
+            Data {
+                name = "editor_settings_payload"
+                row_kind = "GLTFArmatureVisibility"
+                visible = false
+                interactive = true
+            }
+        }
+        Raycastable.click_only()
+        Style {
+            display("block")
+            width(100%)
+            margin_xy(0.25, 0.20)
+            padding_xy(0.55, 0.45)
+            color([0, 0, 0, 1.0])
+            background_color([0.92, 0.97, 0.92, 1.0])
+            background_z(-0.01)
+            text_align("left")
+            vertical_align("middle")
+        }
+        T {
+            Style {
+                display("block")
+            }
+            T {
+                Style {
+                    display("inline-block")
+                }
+                Text { "show armature" }
+            }
+            T {
+                name = "checkmark_slot"
+                Style {
+                    display("inline-block")
+                    margin_left(0.65)
+                }
+            }
         }
     }
 }
@@ -98,6 +143,7 @@ export fn editor_settings_panel(title, title_color, panel_background_color) {
             editor_settings_mode_row("editor_settings_mode_select", "Select", "select")
             editor_settings_mode_row("editor_settings_mode_cursor_3d", "3D Cursor", "cursor_3d")
             editor_settings_mode_row("editor_settings_mode_select_cursor", "Select + Cursor", "select_cursor")
+            editor_settings_armature_row()
 
             Selection { name = "editor_settings_selection" }
         }

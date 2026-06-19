@@ -66,6 +66,7 @@ impl SignalPipelineProcessor {
             IntentValue::SetColor { component_ids, .. }
             | IntentValue::SetText { component_ids, .. }
             | IntentValue::SetPosition { component_ids, .. }
+            | IntentValue::GLTFArmatureVisible { component_ids, .. }
             | IntentValue::SetLayoutAvailableWidth { component_ids, .. }
             | IntentValue::SetLayoutAvailableHeight { component_ids, .. }
             | IntentValue::SetLayoutInspect { component_ids, .. }
@@ -107,6 +108,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterTexture { component_ids }
             | IntentValue::RegisterTextureFiltering { component_ids }
             | IntentValue::RegisterText { component_ids }
+            | IntentValue::RegisterGLTF { component_ids }
             | IntentValue::RegisterTextInput { component_ids }
             | IntentValue::RegisterCollision { component_ids }
             | IntentValue::RemoveCollision { component_ids }
@@ -169,6 +171,7 @@ impl SignalPipelineProcessor {
             IntentValue::SetColor { component_ids, .. }
             | IntentValue::SetText { component_ids, .. }
             | IntentValue::SetPosition { component_ids, .. }
+            | IntentValue::GLTFArmatureVisible { component_ids, .. }
             | IntentValue::SetLayoutAvailableWidth { component_ids, .. }
             | IntentValue::SetLayoutAvailableHeight { component_ids, .. }
             | IntentValue::SetLayoutInspect { component_ids, .. }
@@ -210,6 +213,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterTexture { component_ids }
             | IntentValue::RegisterTextureFiltering { component_ids }
             | IntentValue::RegisterText { component_ids }
+            | IntentValue::RegisterGLTF { component_ids }
             | IntentValue::RegisterTextInput { component_ids }
             | IntentValue::RegisterCollision { component_ids }
             | IntentValue::RemoveCollision { component_ids }

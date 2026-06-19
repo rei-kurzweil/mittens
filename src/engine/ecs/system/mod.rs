@@ -1,5 +1,6 @@
 pub mod action_system;
 pub mod animation_system;
+pub mod armature_visualization_system;
 pub(crate) mod animation_system_evaluator;
 pub mod asset_system;
 pub mod audio_decode;
@@ -64,6 +65,7 @@ pub mod transform_system;
 pub mod transition_system;
 
 pub use animation_system::AnimationSystem;
+pub use armature_visualization_system::ArmatureVisualizationSystem;
 pub use asset_system::AssetSystem;
 pub use audio_system::AudioSystem;
 pub use avatar_body_yaw_system::AvatarBodyYawSystem;

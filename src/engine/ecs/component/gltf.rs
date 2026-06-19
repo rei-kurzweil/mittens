@@ -18,6 +18,15 @@ pub struct GLTFComponent {
     /// Runtime-only: used by GLTFSystem to avoid re-spawning the same asset repeatedly.
     pub spawned: bool,
 
+    /// Runtime-only: whether armature visualization should be shown for this instance.
+    pub armature_visible: bool,
+
+    /// Runtime-only: spawned transform ids for imported glTF nodes in this instance.
+    pub spawned_node_transforms: Vec<ComponentId>,
+
+    /// Runtime-only: subset of `spawned_node_transforms` that correspond to skin joints.
+    pub armature_joint_transforms: Vec<ComponentId>,
+
     component: Option<ComponentId>,
 }
 
@@ -27,6 +36,9 @@ impl GLTFComponent {
             uri: uri.into(),
             with_visualized_transforms: false,
             spawned: false,
+            armature_visible: false,
+            spawned_node_transforms: Vec::new(),
+            armature_joint_transforms: Vec::new(),
             component: None,
         }
     }
@@ -55,8 +67,13 @@ impl Component for GLTFComponent {
         self
     }
 
-    fn init(&mut self, _emit: &mut dyn crate::engine::ecs::SignalEmitter, _component: ComponentId) {
-        // No-op: GLTFSystem discovers these during tick().
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterGLTF {
+                component_ids: vec![component],
+            },
+        );
     }
 
     fn to_mms_ast(

@@ -9,6 +9,8 @@ pub(crate) const EDITOR_SETTINGS_SELECT_ROW_NAME: &str = "editor_settings_mode_s
 pub(crate) const EDITOR_SETTINGS_CURSOR_ROW_NAME: &str = "editor_settings_mode_cursor_3d";
 pub(crate) const EDITOR_SETTINGS_SELECT_CURSOR_ROW_NAME: &str =
     "editor_settings_mode_select_cursor";
+pub(crate) const EDITOR_SETTINGS_ARMATURE_ROW_NAME: &str = "editor_settings_armature_visibility";
+pub(crate) const EDITOR_SETTINGS_ARMATURE_CHECKMARK_SLOT_NAME: &str = "checkmark_slot";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EditorSettingsOption {
@@ -48,6 +50,7 @@ impl EditorSettingsOption {
 pub(crate) struct EditorSettingsPanelState {
     pub(crate) active_editor: Option<ComponentId>,
     pub(crate) interaction_mode: EditorInteractionMode,
+    pub(crate) armature_visible: bool,
 }
 
 impl Default for EditorSettingsPanelState {
@@ -55,6 +58,7 @@ impl Default for EditorSettingsPanelState {
         Self {
             active_editor: None,
             interaction_mode: EditorInteractionMode::Select,
+            armature_visible: false,
         }
     }
 }
@@ -68,6 +72,9 @@ pub(crate) enum EditorSettingsPanelEvent {
     InteractionModeChanged {
         editor: Option<ComponentId>,
         interaction_mode: EditorInteractionMode,
+    },
+    ArmatureVisibilityChanged {
+        visible: bool,
     },
 }
 
@@ -87,6 +94,9 @@ pub(crate) fn reduce_editor_settings_panel_state(
         } => {
             new.active_editor = *editor;
             new.interaction_mode = *interaction_mode;
+        }
+        EditorSettingsPanelEvent::ArmatureVisibilityChanged { visible } => {
+            new.armature_visible = *visible;
         }
     }
     new

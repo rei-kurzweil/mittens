@@ -291,6 +291,10 @@ pub enum IntentValue {
         component_ids: Vec<ComponentId>,
         position: [f32; 3],
     },
+    GLTFArmatureVisible {
+        component_ids: Vec<ComponentId>,
+        visible: bool,
+    },
     SetLayoutAvailableWidth {
         component_ids: Vec<ComponentId>,
         width: SizeDimension,
@@ -496,6 +500,9 @@ pub enum IntentValue {
     RegisterText {
         component_ids: Vec<ComponentId>,
     },
+    RegisterGLTF {
+        component_ids: Vec<ComponentId>,
+    },
     RegisterTextInput {
         component_ids: Vec<ComponentId>,
     },
@@ -653,6 +660,7 @@ impl IntentValue {
             IntentValue::SetLayoutAvailableWidth { .. } => "set_layout_available_width",
             IntentValue::SetLayoutAvailableHeight { .. } => "set_layout_available_height",
             IntentValue::SetLayoutInspect { .. } => "set_layout_inspect",
+            IntentValue::GLTFArmatureVisible { .. } => "gltf_armature_visible",
             IntentValue::SelectionSet { .. } => "selection_set",
 
             IntentValue::Attach { .. } => "attach",
@@ -707,6 +715,7 @@ impl IntentValue {
             IntentValue::RegisterTextureFiltering { .. } => "register_texture_filtering",
 
             IntentValue::RegisterText { .. } => "register_text",
+            IntentValue::RegisterGLTF { .. } => "register_gltf",
             IntentValue::RegisterTextInput { .. } => "register_text_input",
             IntentValue::TextInputSetFocus { .. } => "text_input_set_focus",
             IntentValue::TextInputClearFocus => "text_input_clear_focus",

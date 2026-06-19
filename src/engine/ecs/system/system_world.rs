@@ -7,6 +7,7 @@ use crate::engine::ecs::system::CameraSystem;
 use crate::engine::ecs::system::ClippingSystem;
 use crate::engine::ecs::system::ClockSystem;
 use crate::engine::ecs::system::CollisionSystem;
+use crate::engine::ecs::system::ArmatureVisualizationSystem;
 use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::InputSystem;
 use crate::engine::ecs::system::KineticResponseSystem;
@@ -93,6 +94,7 @@ pub struct SystemWorld {
     pub layout: LayoutSystem,
 
     pub gltf: GLTFSystem,
+    pub armature_visualization: ArmatureVisualizationSystem,
 
     pub openxr: OpenXRSystem,
 
@@ -1713,6 +1715,10 @@ impl SystemWorld {
 
         // Flush queued registrations/transform updates *before* systems that need current
         // world matrices / acceleration structures (e.g. raycasting).
+        queue.flush(world, self, visuals, render_assets);
+
+        self.armature_visualization
+            .tick_with_queue(world, &self.gltf, visuals, queue, dt_sec);
         queue.flush(world, self, visuals, render_assets);
 
         // Audio clock takeover: once audio output is active, use it as the ClockDriver.
