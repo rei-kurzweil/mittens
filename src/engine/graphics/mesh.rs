@@ -85,6 +85,18 @@ impl CpuMesh {
     pub fn vertex_count(&self) -> u32 {
         self.vertices.len() as u32
     }
+
+    pub fn approximate_heap_bytes(&self) -> usize {
+        let mut bytes = self.vertices.capacity() * std::mem::size_of::<CpuVertex>();
+        bytes += self.indices_u32.capacity() * std::mem::size_of::<u32>();
+        if let Some(joints0) = &self.joints0 {
+            bytes += joints0.capacity() * std::mem::size_of::<[u16; 4]>();
+        }
+        if let Some(weights0) = &self.weights0 {
+            bytes += weights0.capacity() * std::mem::size_of::<[f32; 4]>();
+        }
+        bytes
+    }
 }
 
 /// Procedural mesh constructors.

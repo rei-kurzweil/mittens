@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use crate::engine::ecs::component::{
     LayoutComponent, RaycastableComponent, StyleComponent, TransformComponent,
@@ -20,7 +21,7 @@ pub struct AssetModuleId(u32);
 pub struct AssetModule {
     pub id: AssetModuleId,
     pub path: PathBuf,
-    pub module: LoadedMmsModule,
+    pub module: Arc<LoadedMmsModule>,
 }
 
 #[derive(Debug, Clone)]
@@ -90,11 +91,11 @@ impl AssetSystem {
             return Ok(());
         }
 
-        let module = MeowMeowRunner::load_module_file(
+        let module = Arc::new(MeowMeowRunner::load_module_file(
             normalized_path
                 .to_str()
                 .ok_or_else(|| format!("non-UTF8 asset path: {}", normalized_path.display()))?,
-        )?;
+        )?);
 
         let module_id = AssetModuleId(self.next_module_id);
         self.next_module_id += 1;
@@ -144,7 +145,7 @@ impl AssetSystem {
     pub fn get_item_module(&self, item: &AssetItem) -> Option<&LoadedMmsModule> {
         self.modules
             .get(&item.module_id)
-            .map(|module| &module.module)
+            .map(|module| module.module.as_ref())
     }
 
     pub fn asset_function(&self, item: &AssetItem) -> Option<&Value> {
@@ -169,7 +170,7 @@ impl AssetSystem {
                 Some(PaintAssetTemplate {
                     key: item.asset_key(&module.path),
                     title: item.title.clone(),
-                    module: module.module.clone(),
+                    module: Arc::clone(&module.module),
                     export_name: item.export_name.clone(),
                     param_names: item.param_names.clone(),
                 })

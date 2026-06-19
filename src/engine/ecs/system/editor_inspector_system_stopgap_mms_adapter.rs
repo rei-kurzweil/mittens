@@ -56,6 +56,7 @@ use crate::engine::ecs::system::selection_system::{
 };
 use crate::engine::ecs::system::{GridSystem, TransformSystem};
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
+use crate::engine::memory_trace;
 use crate::meow_meow::component_registry::{
     filtered_root_ids_for_roots, filtered_roots_to_ce_ast, spawn_tree,
 };
@@ -140,6 +141,15 @@ impl Default for EditorInspectorSystemStopgapMmsAdapter {
 #[derive(Debug, Default)]
 struct EditorInspectorSystemStopgapMmsReconciler;
 
+fn editor_memory_marker(label: &str) {
+    memory_trace::log_line(format!("\n🟧✏️ [editor-memory] {label}"));
+    memory_trace::sample(label, None);
+}
+
+fn editor_memory_marker_with_panel(label: &str, panel_export: &str) {
+    editor_memory_marker(&format!("{label} export={panel_export}"));
+}
+
 impl EditorInspectorSystemStopgapMmsAdapter {
     pub fn setup_panels_for_editor(
         &mut self,
@@ -153,8 +163,10 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         editor_context_state: Arc<Mutex<EditorContextState>>,
         asset_system: &crate::engine::ecs::system::AssetSystem,
     ) {
+        editor_memory_marker("editor setup_panels_for_editor:start");
         self.editor_context_state = Some(Arc::clone(&editor_context_state));
         let runtime_ui_root = self.workspace_runtime.get_or_create_runtime_ui_root(world);
+        editor_memory_marker("editor setup_panels_for_editor:after runtime ui root");
 
         println!(
             "[InspectorSystem][debug] setup_panels_for_editor editor_root={editor_root:?} runtime_ui_root={runtime_ui_root:?} world_panel_pos={:?} inspector_panel_pos={:?}",
@@ -162,11 +174,13 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         );
 
         register_editor_root(self.workspace_runtime.installed_editor_roots(), editor_root);
+        editor_memory_marker("editor setup_panels_for_editor:after register_editor_root");
         rebuild_world_panel_scene_model(
             &self.world_panel_scene_model,
             world,
             self.workspace_runtime.installed_editor_roots(),
         );
+        editor_memory_marker("editor setup_panels_for_editor:after rebuild_world_panel_scene_model");
 
         let editor_context = self.editor_context();
         {
@@ -181,6 +195,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     .or(editor_context.active_editor),
             );
         }
+        editor_memory_marker("editor setup_panels_for_editor:after ensure_default_panel");
         let model = build_world_panel_model(
             world,
             &editor_context,
@@ -189,6 +204,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 .lock()
                 .expect("world panel scene model mutex poisoned"),
         );
+        editor_memory_marker("editor setup_panels_for_editor:after build_world_panel_model");
         let inspector_models = build_inspector_panel_models(
             world,
             &self
@@ -200,12 +216,14 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 .lock()
                 .expect("inspector workspace mutex poisoned"),
         );
+        editor_memory_marker("editor setup_panels_for_editor:after build_inspector_panel_models");
 
         {
             let working_file_path = self
                 .working_file_path
                 .lock()
                 .expect("working file path mutex poisoned");
+            editor_memory_marker("editor setup_panels_for_editor:before reconcile_panel_layout");
             self.reconciler.reconcile_panel_layout(
                 world,
                 render_assets,
@@ -225,11 +243,16 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     .expect("data renderer mutex poisoned"),
             );
         }
+        editor_memory_marker("editor setup_panels_for_editor:after reconcile_panel_layout");
 
+        editor_memory_marker("editor setup_panels_for_editor:before refresh_world_panels");
         self.refresh_world_panels(world, emit);
+        editor_memory_marker("editor setup_panels_for_editor:after refresh_world_panels");
 
         self.install_shared_panel_handlers(rx, runtime_ui_root);
+        editor_memory_marker("editor setup_panels_for_editor:after install_shared_panel_handlers");
         self.install_editor_refresh_handlers(rx, editor_root);
+        editor_memory_marker("editor setup_panels_for_editor:end");
     }
 
     fn install_shared_panel_handlers(&mut self, rx: &mut RxWorld, panel_query_root: ComponentId) {
@@ -909,6 +932,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
     }
 
     fn refresh_world_panels(&self, world: &mut World, emit: &mut dyn SignalEmitter) {
+        editor_memory_marker("editor refresh_world_panels:start");
         let Some(panel_query_root) = self.workspace_runtime.current_runtime_ui_root() else {
             return;
         };
@@ -938,6 +962,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 .lock()
                 .expect("world panel scene model mutex poisoned"),
         );
+        editor_memory_marker("editor refresh_world_panels:after build_world_panel_model");
         rerender_world_panel_content(
             world,
             emit,
@@ -950,6 +975,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 .lock()
                 .expect("data renderer mutex poisoned"),
         );
+        editor_memory_marker("editor refresh_world_panels:after rerender_world_panel_content");
 
         rerender_grid_panel_from_context(
             world,
@@ -961,6 +987,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 .lock()
                 .expect("data renderer mutex poisoned"),
         );
+        editor_memory_marker("editor refresh_world_panels:after rerender_grid_panel");
 
         rerender_pose_panel(
             world,
@@ -971,8 +998,10 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 .lock()
                 .expect("data renderer mutex poisoned"),
         );
+        editor_memory_marker("editor refresh_world_panels:after rerender_pose_panel");
 
         sync_editor_settings_panel_selection(world, emit, panel_query_root, &editor_context);
+        editor_memory_marker("editor refresh_world_panels:after sync_editor_settings_panel_selection");
 
         let inspector_models = build_inspector_panel_models(
             world,
@@ -985,6 +1014,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 .lock()
                 .expect("inspector workspace mutex poisoned"),
         );
+        editor_memory_marker("editor refresh_world_panels:after build_inspector_panel_models");
         let Some(bottom_row_root) = panel_layout_bottom_row_id(world, panel_query_root) else {
             return;
         };
@@ -999,6 +1029,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 .lock()
                 .expect("data renderer mutex poisoned"),
         );
+        editor_memory_marker("editor refresh_world_panels:end");
     }
 }
 
@@ -1310,6 +1341,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         asset_system: &crate::engine::ecs::system::AssetSystem,
         data_renderer: &mut DataRendererSystem,
     ) {
+        editor_memory_marker("editor reconcile_panel_layout:start");
         let existing_world_panel =
             self.find_world_panel_node(world, panel_query_root, WORLD_PANEL_ROOT_SELECTOR);
         let existing_inspector_panel = self
@@ -1339,6 +1371,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 println!(
                     "[InspectorSystem][debug] panel layout already spawned for panel_query_root={panel_query_root:?}; skipping duplicate spawn"
                 );
+                editor_memory_marker("editor reconcile_panel_layout:skip already spawned");
                 return;
             }
         }
@@ -1348,6 +1381,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 "[InspectorSystem][debug] panel layout already present for panel_query_root={panel_query_root:?}; skipping spawn"
             );
             *panel_layout_spawned = true;
+            editor_memory_marker("editor reconcile_panel_layout:skip already present");
             return;
         }
 
@@ -1356,6 +1390,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 "[InspectorSystem][debug] pending panel layout mount already exists for panel_query_root={panel_query_root:?}; skipping duplicate spawn"
             );
             *panel_layout_spawned = true;
+            editor_memory_marker("editor reconcile_panel_layout:skip pending mount");
             return;
         }
 
@@ -1375,6 +1410,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             asset_system,
             data_renderer,
         );
+        editor_memory_marker("editor reconcile_panel_layout:end");
     }
 
     fn find_world_panel_node(
@@ -1430,6 +1466,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         asset_system: &crate::engine::ecs::system::AssetSystem,
         data_renderer: &mut DataRendererSystem,
     ) {
+        editor_memory_marker("editor spawn_panel_layout:start");
         println!(
             "[InspectorSystem][debug] spawn_panel_layout panel_query_root={panel_query_root:?} world_panel_pos={:?} inspector_panel_pos={:?}",
             world_panel_pos, inspector_panel_pos,
@@ -1483,6 +1520,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             Some(panel) => panel,
             None => return,
         };
+        editor_memory_marker("editor spawn_panel_layout:after world_panel expr");
 
         let asset_items_val = Value::Array(Vec::new());
 
@@ -1504,6 +1542,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             Some(panel) => panel,
             None => return,
         };
+        editor_memory_marker("editor spawn_panel_layout:after asset_panel expr");
 
         let paint_panel = match build_panel_component_expr(
             world,
@@ -1522,6 +1561,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             Some(panel) => panel,
             None => return,
         };
+        editor_memory_marker("editor spawn_panel_layout:after paint_panel expr");
 
         let grid_panel = match build_panel_component_expr(
             world,
@@ -1541,6 +1581,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             Some(panel) => panel,
             None => return,
         };
+        editor_memory_marker("editor spawn_panel_layout:after grid_panel expr");
 
         let pose_panel = match build_panel_component_expr(
             world,
@@ -1558,6 +1599,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             Some(panel) => panel,
             None => return,
         };
+        editor_memory_marker("editor spawn_panel_layout:after pose_panel expr");
 
         let editor_settings_panel = match build_panel_component_expr(
             world,
@@ -1575,6 +1617,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             Some(panel) => panel,
             None => return,
         };
+        editor_memory_marker("editor spawn_panel_layout:after editor_settings_panel expr");
 
         let _ = inspector_panel_pos;
         let anchor_pos = world_panel_pos;
@@ -1624,10 +1667,12 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 return;
             }
         };
+        editor_memory_marker("editor spawn_panel_layout:after spawn_panel_layout_mount");
 
         // Add SelectionComponent to the LayoutRoot so we can select individual panels.
         let selection = ensure_panel_layout_selection(world, layout_root_id);
         world.init_component_tree(selection, emit);
+        editor_memory_marker("editor spawn_panel_layout:after ensure_panel_layout_selection");
 
         if let Some(inspector_panel_selection) =
             world.find_component(panel_mount_root, INSPECTOR_PANEL_SELECTION_SELECTOR)
@@ -1654,6 +1699,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                             asset_system.items.len(),
                             selection_root
                         );
+                        editor_memory_marker("editor spawn_panel_layout:before asset panel population");
 
                         let mut last_module_id = None;
                         for (index, item) in asset_system.items.iter().enumerate() {
@@ -1717,6 +1763,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                             }
                         }
                         mark_nearest_layout_dirty(world, selection_root);
+                        editor_memory_marker("editor spawn_panel_layout:after asset panel population");
                     }
                 }
             }
@@ -1782,7 +1829,9 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             &grid_context,
             data_renderer,
         );
+        editor_memory_marker("editor spawn_panel_layout:after rerender_grid_panel");
         sync_editor_settings_panel_selection(world, emit, panel_mount_root, &grid_context);
+        editor_memory_marker("editor spawn_panel_layout:after sync_editor_settings_panel_selection");
 
         println!(
             "[InspectorSystem][debug] queued attach panel_mount_root={panel_mount_root:?} -> panel_query_root={panel_query_root:?}"
@@ -1794,6 +1843,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 child: panel_mount_root,
             },
         );
+        editor_memory_marker("editor spawn_panel_layout:end");
     }
 }
 
@@ -3217,7 +3267,11 @@ fn build_panel_component_expr(
     panel_kind: PanelKind,
     panel_kind_label: &str,
 ) -> Option<MaterializedCE> {
-    build_panel_shell_component_expr(
+    editor_memory_marker_with_panel(
+        "editor build_panel_component_expr:start",
+        export_name,
+    );
+    let result = build_panel_shell_component_expr(
         world,
         emit,
         &PanelShellSpec {
@@ -3232,8 +3286,12 @@ fn build_panel_component_expr(
     )
     .map_err(|error| {
         eprintln!("[InspectorSystemStopgapMmsAdapter] {panel_kind_label} render error: {error}");
-    })
-    .ok()
+    });
+    editor_memory_marker_with_panel(
+        "editor build_panel_component_expr:after materialize",
+        export_name,
+    );
+    result.ok()
 }
 
 fn build_placeholder_panel_component_expr(title_name: &'static str, title: &str) -> MaterializedCE {

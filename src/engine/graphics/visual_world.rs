@@ -1710,6 +1710,10 @@ impl VisualWorld {
         &self.mirrors
     }
 
+    pub fn mirror_count(&self) -> usize {
+        self.mirrors.len()
+    }
+
     /// Returns whether any per-instance data has changed since the last time it was consumed.
     pub fn instance_data_dirty(&self) -> bool {
         self.dirty_instance_data
@@ -1724,6 +1728,10 @@ impl VisualWorld {
 
     pub fn instances(&self) -> &[VisualInstance] {
         &self.instances
+    }
+
+    pub fn instance_count(&self) -> usize {
+        self.instances.len()
     }
 
     /// Indices into `instances()` in the order they should be drawn (opaque batching).

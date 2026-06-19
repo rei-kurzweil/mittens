@@ -5,6 +5,7 @@ use crate::engine::ecs::component::{
     TransformComponent,
 };
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
+use crate::engine::memory_trace;
 use crate::meow_meow::component_registry::spawn_tree;
 use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
 use crate::meow_meow::runner::MeowMeowRunner;
@@ -296,11 +297,39 @@ pub fn spawn_panel_layout_mount(
 ) -> Result<(ComponentId, ComponentId), String> {
     let mount_name = spec.mount_name.clone();
     let layout_name = spec.layout_name.clone();
+    memory_trace::log_line(format!(
+        "\n🟧✏️ [editor-memory] editor spawn_panel_layout_mount:start mount={mount_name} layout={layout_name}"
+    ));
+    memory_trace::sample(
+        &format!("editor spawn_panel_layout_mount:start mount={mount_name} layout={layout_name}"),
+        None,
+    );
     let mount_ce = build_panel_layout_mount_ce(spec);
+    memory_trace::log_line(format!(
+        "\n🟧✏️ [editor-memory] editor spawn_panel_layout_mount:after build_ce mount={mount_name} layout={layout_name}"
+    ));
+    memory_trace::sample(
+        &format!("editor spawn_panel_layout_mount:after build_ce mount={mount_name} layout={layout_name}"),
+        None,
+    );
     let mount_root = spawn_tree(&mount_ce, None, world, emit)?;
+    memory_trace::log_line(format!(
+        "\n🟧✏️ [editor-memory] editor spawn_panel_layout_mount:after spawn_tree mount={mount_name} layout={layout_name}"
+    ));
+    memory_trace::sample(
+        &format!("editor spawn_panel_layout_mount:after spawn_tree mount={mount_name} layout={layout_name}"),
+        None,
+    );
     let layout_root = world
         .find_component(mount_root, &format!("#{layout_name}"))
         .ok_or_else(|| format!("missing layout root #{layout_name} under {mount_name}"))?;
+    memory_trace::log_line(format!(
+        "\n🟧✏️ [editor-memory] editor spawn_panel_layout_mount:end mount={mount_name} layout={layout_name}"
+    ));
+    memory_trace::sample(
+        &format!("editor spawn_panel_layout_mount:end mount={mount_name} layout={layout_name}"),
+        None,
+    );
     Ok((mount_root, layout_root))
 }
 

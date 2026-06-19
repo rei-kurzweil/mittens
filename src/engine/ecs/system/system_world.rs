@@ -41,6 +41,7 @@ use crate::engine::ecs::system::{
     TransformGizmoSystem,
 };
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
+use crate::engine::memory_trace;
 use crate::engine::user_input::InputState;
 use std::path::Path;
 
@@ -816,14 +817,41 @@ impl SystemWorld {
             "[InspectorSystem][debug] register_editor editor_root={component:?} spawn_panels={} world_panel_pos={:?} inspector_panel_pos={:?}",
             spawn_panels, world_panel_pos, inspector_panel_pos,
         );
+        memory_trace::log_line(format!(
+            "\n🟧✏️ [editor-memory] editor register_editor:start editor_root={component:?} spawn_panels={spawn_panels}"
+        ));
+        memory_trace::sample(
+            &format!(
+                "editor register_editor:start editor_root={component:?} spawn_panels={spawn_panels}"
+            ),
+            None,
+        );
 
         let editor_context_state = self.editor_context.shared_state();
 
         self.editor
             .materialize_editor_raycastables(world, emit, component);
+        memory_trace::log_line(format!(
+            "\n🟧✏️ [editor-memory] editor register_editor:after materialize_editor_raycastables editor_root={component:?}"
+        ));
+        memory_trace::sample(
+            &format!(
+                "editor register_editor:after materialize_editor_raycastables editor_root={component:?}"
+            ),
+            None,
+        );
 
         if spawn_panels {
             println!("[InspectorSystem][debug] setup_panels_for_editor editor_root={component:?}");
+            memory_trace::log_line(format!(
+                "\n🟧✏️ [editor-memory] editor register_editor:before setup_panels_for_editor editor_root={component:?}"
+            ));
+            memory_trace::sample(
+                &format!(
+                    "editor register_editor:before setup_panels_for_editor editor_root={component:?}"
+                ),
+                None,
+            );
             self.editor_inspector.setup_panels_for_editor(
                 &mut self.rx,
                 world,
@@ -834,6 +862,15 @@ impl SystemWorld {
                 inspector_panel_pos,
                 editor_context_state.clone(),
                 &self.asset_system,
+            );
+            memory_trace::log_line(format!(
+                "\n🟧✏️ [editor-memory] editor register_editor:after setup_panels_for_editor editor_root={component:?}"
+            ));
+            memory_trace::sample(
+                &format!(
+                    "editor register_editor:after setup_panels_for_editor editor_root={component:?}"
+                ),
+                None,
             );
             let Some(panel_query_root) = world.all_components().find(|&component_id| {
                 world.parent_of(component_id).is_none()
@@ -868,6 +905,15 @@ impl SystemWorld {
                 editor_context_state,
                 self.asset_system.paint_templates(),
             );
+            memory_trace::log_line(format!(
+                "\n🟧✏️ [editor-memory] editor register_editor:after scoped handler install editor_root={component:?}"
+            ));
+            memory_trace::sample(
+                &format!(
+                    "editor register_editor:after scoped handler install editor_root={component:?}"
+                ),
+                None,
+            );
         } else {
             self.editor.install_scoped_handlers_for_editor(
                 &mut self.rx,
@@ -882,6 +928,13 @@ impl SystemWorld {
                 self.editor_context.shared_state(),
             );
         }
+        memory_trace::log_line(format!(
+            "\n🟧✏️ [editor-memory] editor register_editor:end editor_root={component:?}"
+        ));
+        memory_trace::sample(
+            &format!("editor register_editor:end editor_root={component:?}"),
+            None,
+        );
     }
 
     pub fn register_scrolling(
@@ -1437,6 +1490,15 @@ impl SystemWorld {
         uploader: &mut dyn RenderUploader,
         queue: &mut crate::engine::ecs::CommandQueue,
     ) {
+        memory_trace::sample(
+            "prepare_render:start",
+            Some(memory_trace::collect_counters(
+                world,
+                visuals,
+                render_assets,
+                Some(&self.gltf),
+            )),
+        );
         // Ensure any imported assets are registered before renderables try to resolve meshes/textures.
         self.gltf
             .flush_imports(render_assets, &mut self.texture, uploader);
@@ -1444,6 +1506,15 @@ impl SystemWorld {
         let flushed_renderables =
             self.renderable
                 .flush_pending(world, visuals, render_assets, uploader, queue);
+        memory_trace::sample(
+            "prepare_render:after renderable flush",
+            Some(memory_trace::collect_counters(
+                world,
+                visuals,
+                render_assets,
+                Some(&self.gltf),
+            )),
+        );
         if flushed_renderables {
             self.clipping.resync_after_renderable_flush(world, visuals);
         }
@@ -1452,6 +1523,15 @@ impl SystemWorld {
 
         // Must run after renderables are flushed so instance handles exist.
         self.texture.flush_pending(world, visuals, uploader);
+        memory_trace::sample(
+            "prepare_render:end",
+            Some(memory_trace::collect_counters(
+                world,
+                visuals,
+                render_assets,
+                Some(&self.gltf),
+            )),
+        );
     }
 
     /// Called when a TransformComponent changes.
@@ -1699,12 +1779,39 @@ impl SystemWorld {
         self.input.process_input(world, input, queue, dt_sec);
 
         // Spawn any GLTF component trees. This may queue component registrations.
+        memory_trace::sample(
+            "before gltf.tick_with_queue",
+            Some(memory_trace::collect_counters(
+                world,
+                visuals,
+                render_assets,
+                Some(&self.gltf),
+            )),
+        );
         self.gltf
             .tick_with_queue(world, visuals, &mut self.skinned_mesh, queue, dt_sec);
+        memory_trace::sample(
+            "after gltf.tick_with_queue",
+            Some(memory_trace::collect_counters(
+                world,
+                visuals,
+                render_assets,
+                Some(&self.gltf),
+            )),
+        );
 
         // Flush queued registrations/transform updates *before* systems that need current
         // world matrices / acceleration structures (e.g. raycasting).
         queue.flush(world, self, visuals, render_assets);
+        memory_trace::sample(
+            "after gltf queue.flush",
+            Some(memory_trace::collect_counters(
+                world,
+                visuals,
+                render_assets,
+                Some(&self.gltf),
+            )),
+        );
 
         self.armature_visualization
             .tick_with_queue(world, &self.gltf, visuals, queue, dt_sec);
@@ -1769,8 +1876,26 @@ impl SystemWorld {
         // OpenXR consumes the latest rig transform + publishes per-eye cameras.
         self.openxr
             .tick_with_queue(world, visuals, input, queue, dt_sec);
+        memory_trace::sample(
+            "after openxr.tick_with_queue",
+            Some(memory_trace::collect_counters(
+                world,
+                visuals,
+                render_assets,
+                Some(&self.gltf),
+            )),
+        );
         // Controller pose updates should be visible to raycasting/gestures this frame.
         queue.flush(world, self, visuals, render_assets);
+        memory_trace::sample(
+            "after openxr queue.flush",
+            Some(memory_trace::collect_counters(
+                world,
+                visuals,
+                render_assets,
+                Some(&self.gltf),
+            )),
+        );
         self.tick_transition_runtime(world, visuals);
 
         let activations = self.pointer.build_activations(world, input, self.openxr.xr_input_state());
@@ -1818,7 +1943,25 @@ impl SystemWorld {
         // Flex-column position pass: emit UpdateTransform for dirty LayoutComponent subtrees.
         // Runs after transforms are propagated so initial world matrices are valid.
         self.layout.tick(world, queue);
+        memory_trace::sample(
+            "after layout.tick",
+            Some(memory_trace::collect_counters(
+                world,
+                visuals,
+                render_assets,
+                Some(&self.gltf),
+            )),
+        );
         queue.flush(world, self, visuals, render_assets);
+        memory_trace::sample(
+            "after layout queue.flush",
+            Some(memory_trace::collect_counters(
+                world,
+                visuals,
+                render_assets,
+                Some(&self.gltf),
+            )),
+        );
 
         self.fit_bounds.tick(world, render_assets, queue);
 

@@ -246,6 +246,10 @@ impl World {
         self.components.keys()
     }
 
+    pub fn component_count(&self) -> usize {
+        self.components.len()
+    }
+
     pub fn children_of(&self, c: ComponentId) -> &[ComponentId] {
         static EMPTY: [ComponentId; 0] = [];
         self.get_component_record(c)

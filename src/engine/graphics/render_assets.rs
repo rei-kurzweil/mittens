@@ -115,6 +115,14 @@ impl RenderAssets {
         self.cpu_meshes.get(h.0 as usize)
     }
 
+    pub fn cpu_mesh_count(&self) -> usize {
+        self.cpu_meshes.len()
+    }
+
+    pub fn imported_mesh_count(&self) -> usize {
+        self.imported_meshes.len()
+    }
+
     /// Get (or upload) a mesh into the renderer and return a renderer-owned `MeshHandle`.
     pub fn gpu_mesh_handle(
         &mut self,

@@ -10,6 +10,7 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::World;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
+use crate::engine::memory_trace;
 use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Transform};
 use crate::engine::graphics::{GpuRenderable, VisualWorld};
 use crate::engine::graphics::{MeshUploader, RenderAssets};
@@ -152,6 +153,16 @@ fn clone_mesh_with_uv_overrides(
 }
 
 impl RenderableSystem {
+    fn uv_clone_audit_enabled() -> bool {
+        std::env::var("CAT_DEBUG_RENDERABLE_UV_CLONES")
+            .ok()
+            .map(|s| {
+                let s = s.trim().to_ascii_lowercase();
+                s == "1" || s == "true" || s == "on" || s == "yes"
+            })
+            .unwrap_or(false)
+    }
+
     fn material_with_emissive(material: MaterialHandle, emissive_intensity: f32) -> MaterialHandle {
         let is_emissive = emissive_intensity > 0.0;
         match (material, is_emissive) {
@@ -1057,6 +1068,20 @@ impl RenderableSystem {
                     self.clone_mesh_with_uv_overrides_cached(render_assets, cpu_mesh, &uvs)
                 {
                     let uv_base_mesh = cpu_mesh;
+                    if Self::uv_clone_audit_enabled() {
+                        let (verts, indices) = render_assets
+                            .cpu_mesh(new_mesh)
+                            .map(|m| (m.vertices.len(), m.indices_u32.len()))
+                            .unwrap_or((0, 0));
+                        memory_trace::log_line(format!(
+                            "[RenderableSystem][audit] uv_clone renderable={:?} base_mesh={:?} new_mesh={:?} verts={} indices={} repeated_work=true",
+                            p.renderable_cid,
+                            uv_base_mesh,
+                            new_mesh,
+                            verts,
+                            indices
+                        ));
+                    }
                     cpu_mesh = new_mesh;
                     if let Some(pending) = self.pending.get_mut(&key) {
                         pending.cpu_mesh = cpu_mesh;

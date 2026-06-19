@@ -7,6 +7,7 @@ use crate::engine::graphics::mesh::{CpuMesh, CpuVertex};
 use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Renderable};
 use crate::engine::graphics::{RenderAssets, RenderUploader, SkinId, VisualWorld};
+use crate::engine::memory_trace;
 use crate::engine::user_input::InputState;
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -23,6 +24,7 @@ pub struct GLTFSystem {
 struct LoadedGltf {
     gltf_name: String,
     meshes: Vec<ImportedMesh>,
+    texture_keys: Vec<String>,
     textures: Vec<ImportedTexture>,
     skins: Vec<ImportedSkin>,
     meshes_registered: bool,
@@ -32,13 +34,12 @@ struct LoadedGltf {
 #[derive(Debug)]
 struct ImportedMesh {
     key: String,
-    mesh: CpuMesh,
+    mesh: Option<CpuMesh>,
 }
 
 #[derive(Debug)]
 struct ImportedTexture {
-    key: String,
-    rgba: Vec<u8>,
+    rgba: Option<Vec<u8>>,
     width: u32,
     height: u32,
 }
@@ -63,11 +64,50 @@ impl GLTFSystem {
         self.tracked_components.iter().copied()
     }
 
+    pub fn tracked_component_count(&self) -> usize {
+        self.tracked_components.len()
+    }
+
+    pub fn cached_resource_count(&self) -> usize {
+        self.resources_by_uri.len()
+    }
+
+    pub fn cached_mesh_count(&self) -> usize {
+        self.resources_by_uri
+            .values()
+            .map(|loaded| loaded.meshes.len())
+            .sum()
+    }
+
+    pub fn cached_texture_count(&self) -> usize {
+        self.resources_by_uri
+            .values()
+            .map(|loaded| loaded.texture_keys.len())
+            .sum()
+    }
+
+    pub fn cached_cpu_bytes(&self) -> usize {
+        self.resources_by_uri
+            .values()
+            .map(LoadedGltf::approximate_heap_bytes)
+            .sum()
+    }
+
     fn debug_enabled() -> bool {
         match env::var("LITTLE_CAT_GLTF_DEBUG") {
             Ok(v) => {
                 let v = v.trim().to_ascii_lowercase();
                 !(v.is_empty() || v == "0" || v == "false" || v == "off")
+            }
+            Err(_) => false,
+        }
+    }
+
+    fn import_audit_enabled() -> bool {
+        match env::var("CAT_DEBUG_GLTF_IMPORT_AUDIT") {
+            Ok(v) => {
+                let v = v.trim().to_ascii_lowercase();
+                v == "1" || v == "true" || v == "on" || v == "yes"
             }
             Err(_) => false,
         }
@@ -357,6 +397,15 @@ impl GLTFSystem {
                 }
             }
 
+            if Self::import_audit_enabled() {
+                memory_trace::log_line(format!(
+                    "[GLTFSystem][audit] spawned uri='{}' component={cid:?} nodes={} joints={}",
+                    uri,
+                    node_index_to_component.len(),
+                    joint_node_indices.len()
+                ));
+            }
+
             // Register shared skin definitions in VisualWorld + per-instance joint resolution
             // in SkinnedMeshSystem.
             //
@@ -445,24 +494,47 @@ impl GLTFSystem {
         for loaded in self.resources_by_uri.values_mut() {
             if !loaded.meshes_registered {
                 for m in &loaded.meshes {
-                    let _h = render_assets.register_imported_mesh(m.key.clone(), m.mesh.clone());
+                    let Some(mesh) = &m.mesh else {
+                        continue;
+                    };
+                    if Self::import_audit_enabled() {
+                        memory_trace::log_line(format!(
+                            "[GLTFSystem][audit] imported mesh key='{}' first_registration=true verts={} indices={}",
+                            m.key,
+                            mesh.vertices.len(),
+                            mesh.indices_u32.len()
+                        ));
+                    }
+                    let _h = render_assets.register_imported_mesh(m.key.clone(), mesh.clone());
+                }
+                for mesh in &mut loaded.meshes {
+                    mesh.mesh = None;
                 }
                 loaded.meshes_registered = true;
             }
 
             if !loaded.textures_uploaded {
-                for t in &loaded.textures {
-                    match uploader.upload_texture_rgba8(&t.rgba, t.width, t.height) {
+                for (index, t) in loaded.textures.iter_mut().enumerate() {
+                    let Some(rgba) = t.rgba.as_deref() else {
+                        continue;
+                    };
+                    let key = loaded
+                        .texture_keys
+                        .get(index)
+                        .cloned()
+                        .unwrap_or_else(|| format!("{}:{}", loaded.gltf_name, index));
+                    match uploader.upload_texture_rgba8(rgba, t.width, t.height) {
                         Ok(handle) => {
-                            texture_system.register_cached_texture(t.key.clone(), handle);
+                            texture_system.register_cached_texture(key, handle);
                         }
                         Err(err) => {
                             println!(
                                 "[GLTFSystem] texture upload failed for key='{}': {:?}",
-                                t.key, err
+                                key, err
                             );
                         }
                     }
+                    t.rgba = None;
                 }
                 loaded.textures_uploaded = true;
             }
@@ -479,7 +551,21 @@ impl GLTFSystem {
                 continue;
             }
             for m in &loaded.meshes {
-                let _h = render_assets.register_imported_mesh(m.key.clone(), m.mesh.clone());
+                let Some(mesh) = &m.mesh else {
+                    continue;
+                };
+                if Self::import_audit_enabled() {
+                    memory_trace::log_line(format!(
+                        "[GLTFSystem][audit] imported mesh key='{}' first_registration=true verts={} indices={}",
+                        m.key,
+                        mesh.vertices.len(),
+                        mesh.indices_u32.len()
+                    ));
+                }
+                let _h = render_assets.register_imported_mesh(m.key.clone(), mesh.clone());
+            }
+            for mesh in &mut loaded.meshes {
+                mesh.mesh = None;
             }
             loaded.meshes_registered = true;
         }
@@ -644,19 +730,20 @@ impl GLTFSystem {
                 let key = format!("{}:{}:prim{}", gltf_name, mesh_name_or_index, prim_index);
                 meshes.push(ImportedMesh {
                     key,
-                    mesh: {
+                    mesh: Some({
                         let mesh = CpuMesh::new(vertices, indices_u32);
                         if let (Some(j), Some(w)) = (joints0, weights0) {
                             mesh.with_skinning(j, w)
                         } else {
                             mesh
                         }
-                    },
+                    }),
                 });
             }
         }
 
         // Build texture table (RGBA8).
+        let mut texture_keys: Vec<String> = Vec::new();
         let mut textures: Vec<ImportedTexture> = Vec::new();
         for (i, img) in images.into_iter().enumerate() {
             let name_or_index = doc
@@ -668,6 +755,7 @@ impl GLTFSystem {
                 .unwrap_or_else(|| format!("{}", i));
 
             let key = format!("{}:{}", gltf_name, name_or_index);
+            texture_keys.push(key);
 
             let (rgba, width, height) = match img.format {
                 gltf::image::Format::R8G8B8A8 => (img.pixels, img.width, img.height),
@@ -702,8 +790,7 @@ impl GLTFSystem {
             };
 
             textures.push(ImportedTexture {
-                key,
-                rgba,
+                rgba: Some(rgba),
                 width,
                 height,
             });
@@ -795,6 +882,7 @@ impl GLTFSystem {
         Ok(LoadedGltf {
             gltf_name,
             meshes,
+            texture_keys,
             textures,
             skins,
             meshes_registered: false,
@@ -903,9 +991,9 @@ impl GLTFSystem {
 
                 if let Some(image_index) = base_color_tex {
                     let image_name_or_index = loaded
-                        .textures
+                        .texture_keys
                         .get(image_index)
-                        .map(|t| t.key.clone())
+                        .cloned()
                         .unwrap_or_else(|| format!("{}:{}", loaded.gltf_name, image_index));
 
                     let tex_comp = world.add_component(TextureComponent::new(image_name_or_index));
@@ -983,6 +1071,45 @@ impl GLTFSystem {
         }
 
         Some(this_transform)
+    }
+}
+
+impl LoadedGltf {
+    fn approximate_heap_bytes(&self) -> usize {
+        let mesh_bytes: usize = self
+            .meshes
+            .iter()
+            .map(|mesh| {
+                mesh.key.capacity()
+                    + mesh
+                        .mesh
+                        .as_ref()
+                        .map(CpuMesh::approximate_heap_bytes)
+                        .unwrap_or(0)
+            })
+            .sum();
+        let texture_key_bytes: usize = self.texture_keys.iter().map(String::capacity).sum();
+        let texture_bytes: usize = self
+            .textures
+            .iter()
+            .map(|texture| {
+                texture
+                    .rgba
+                    .as_ref()
+                    .map(Vec::capacity)
+                    .unwrap_or(0)
+            })
+            .sum();
+        let skin_bytes: usize = self
+            .skins
+            .iter()
+            .map(|skin| {
+                skin.joints.capacity() * std::mem::size_of::<usize>()
+                    + skin.inverse_bind_matrices.capacity()
+                        * std::mem::size_of::<TransformMatrix>()
+            })
+            .sum();
+        self.gltf_name.capacity() + mesh_bytes + texture_key_bytes + texture_bytes + skin_bytes
     }
 }
 

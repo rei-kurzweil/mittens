@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod ecs;
 pub mod graphics;
+pub(crate) mod memory_trace;
 pub mod repl;
 pub(crate) mod startup_trace;
 pub mod universe;

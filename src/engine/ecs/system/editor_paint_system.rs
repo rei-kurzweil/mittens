@@ -48,7 +48,7 @@ fn paint_perf(label: &str, start: Instant, detail: impl AsRef<str>) {
 pub struct PaintAssetTemplate {
     pub key: String,
     pub title: String,
-    pub module: LoadedMmsModule,
+    pub module: Arc<LoadedMmsModule>,
     pub export_name: String,
     pub param_names: Vec<String>,
 }
