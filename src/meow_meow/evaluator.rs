@@ -23,7 +23,6 @@ use crate::meow_meow::parser::{MeowMeowParser, ParseError};
 use crate::meow_meow::token::TokenizeError;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;
 use crate::meow_meow::transform::{EmitLiftTransform, QueryDesugarTransform};
-use crate::meow_meow::unparser::unparse_program;
 
 // ---------------------------------------------------------------------------
 // Thread protocol
@@ -570,61 +569,13 @@ fn eval_stmt(stmt: &Statement, ctx: &mut EvalContext<'_>) -> Result<StmtEffect, 
         }
         Statement::Import { items, path } => {
             let resolved = resolve_import_path(path, ctx.source_path);
-            let importer = ctx.source_path.unwrap_or("<inline>");
-            memory_trace::log_line(format!(
-                "\n🐈 [startup-memory] mms import:start importer={importer} import={path} resolved={resolved}"
-            ));
-            memory_trace::sample(
-                &format!(
-                    "🐈 mms import:start importer={importer} import={path} resolved={resolved}"
-                ),
-                None,
-            );
             let content = std::fs::read_to_string(&resolved)
                 .map_err(|e| format!("import error: cannot read '{}': {}", path, e))?;
-            memory_trace::log_line(format!(
-                "\n🐈 [startup-memory] mms import:after read_to_string importer={importer} resolved={resolved}"
-            ));
-            memory_trace::sample(
-                &format!(
-                    "🐈 mms import:after read_to_string importer={importer} resolved={resolved}"
-                ),
-                None,
-            );
-            memory_trace::log_line(format!(
-                "\n🐈 [startup-memory] mms import:before eval_module_source importer={importer} resolved={resolved}"
-            ));
-            memory_trace::sample(
-                &format!(
-                    "🐈 mms import:before eval_module_source importer={importer} resolved={resolved}"
-                ),
-                None,
-            );
             let module_val = eval_module_source(&content, Some(&resolved))?;
-            memory_trace::log_line(format!(
-                "\n🐈 [startup-memory] mms import:after eval_module_source importer={importer} resolved={resolved}"
-            ));
-            memory_trace::sample(
-                &format!(
-                    "🐈 mms import:after eval_module_source importer={importer} resolved={resolved}"
-                ),
-                None,
-            );
             let (named, sequence) = match module_val {
                 Value::Module { named, sequence } => (named, sequence),
                 _ => return Err("import: internal error".to_string()),
             };
-            memory_trace::log_line(format!(
-                "\n🐈 [startup-memory] mms import:before bind importer={importer} resolved={resolved} item_count={}",
-                items.len()
-            ));
-            memory_trace::sample(
-                &format!(
-                    "🐈 mms import:before bind importer={importer} resolved={resolved} item_count={}",
-                    items.len()
-                ),
-                None,
-            );
             for item in items {
                 match item {
                     ImportItem::Named(id) => {
@@ -648,13 +599,6 @@ fn eval_stmt(stmt: &Statement, ctx: &mut EvalContext<'_>) -> Result<StmtEffect, 
                     }
                 }
             }
-            memory_trace::log_line(format!(
-                "\n🐈 [startup-memory] mms import:end importer={importer} resolved={resolved}"
-            ));
-            memory_trace::sample(
-                &format!("🐈 mms import:end importer={importer} resolved={resolved}"),
-                None,
-            );
             Ok(StmtEffect::None)
         }
     }
@@ -672,40 +616,6 @@ fn maybe_register_live_component_value(val: Value, ctx: &mut EvalContext<'_>) ->
             }
         }
         (val, _) => val,
-    }
-}
-
-fn top_level_stmt_kind(stmt: &Statement) -> &'static str {
-    match stmt {
-        Statement::Assignment(assign) => {
-            if assign.exported {
-                "ExportAssignment"
-            } else {
-                "Assignment"
-            }
-        }
-        Statement::Reassign { .. } => "Reassign",
-        Statement::Return(_) => "Return",
-        Statement::If(_) => "If",
-        Statement::Block(_) => "Block",
-        Statement::Expression(_) => "Expression",
-        Statement::ForIn { .. } => "ForIn",
-        Statement::While { .. } => "While",
-        Statement::Break => "Break",
-        Statement::Continue => "Continue",
-        Statement::Import { .. } => "Import",
-    }
-}
-
-fn top_level_stmt_label(stmt: &Statement) -> String {
-    let source = unparse_program(std::slice::from_ref(stmt));
-    let first_line = source.lines().next().unwrap_or("").trim();
-    let compact = first_line.replace('\t', " ");
-    const MAX_LEN: usize = 96;
-    if compact.len() <= MAX_LEN {
-        compact
-    } else {
-        format!("{}...", &compact[..MAX_LEN])
     }
 }
 
@@ -2373,31 +2283,9 @@ pub(crate) fn eval_mms_fn(
 /// Returns `Value::Module { named, sequence }`.
 pub(crate) fn eval_module_source(source: &str, source_path: Option<&str>) -> Result<Value, String> {
     let module_label = source_path.unwrap_or("<inline>");
-    memory_trace::log_line(format!(
-        "\n🐈 [startup-memory] mms eval_module_source:start path={module_label}"
-    ));
-    memory_trace::sample(
-        &format!("🐈 mms eval_module_source:start path={module_label}"),
-        None,
-    );
-
     let mut stmts = parse_source(source)?;
-    memory_trace::log_line(format!(
-        "\n🐈 [startup-memory] mms eval_module_source:after parse path={module_label}"
-    ));
-    memory_trace::sample(
-        &format!("🐈 mms eval_module_source:after parse path={module_label}"),
-        None,
-    );
     EmitLiftTransform::apply(&mut stmts);
     QueryDesugarTransform::apply(&mut stmts);
-    memory_trace::log_line(format!(
-        "\n🐈 [startup-memory] mms eval_module_source:after transforms path={module_label}"
-    ));
-    memory_trace::sample(
-        &format!("🐈 mms eval_module_source:after transforms path={module_label}"),
-        None,
-    );
 
     let mut emits: Vec<IntentValue> = Vec::new();
     let mut named: HashMap<String, Value> = HashMap::new();
@@ -2412,17 +2300,6 @@ pub(crate) fn eval_module_source(source: &str, source_path: Option<&str>) -> Res
     };
 
     for (stmt_index, stmt) in stmts.iter().enumerate() {
-        let stmt_kind = top_level_stmt_kind(stmt);
-        let stmt_label = top_level_stmt_label(stmt);
-        memory_trace::log_line(format!(
-            "\n🐈 [startup-memory] mms eval_module_source:before stmt path={module_label} index={stmt_index} kind={stmt_kind} label={stmt_label}"
-        ));
-        memory_trace::sample(
-            &format!(
-                "🐈 mms eval_module_source:before stmt path={module_label} index={stmt_index} kind={stmt_kind} label={stmt_label}"
-            ),
-            None,
-        );
         match eval_stmt(stmt, &mut ctx)? {
             StmtEffect::Exported(name) => {
                 let export_summary = ctx.object_world.lookup(&name).and_then(closure_summary);
@@ -2464,29 +2341,7 @@ pub(crate) fn eval_module_source(source: &str, source_path: Option<&str>) -> Res
             StmtEffect::None => {}
             StmtEffect::Return(_) | StmtEffect::Break | StmtEffect::Continue => {}
         }
-        memory_trace::log_line(format!(
-            "\n🐈 [startup-memory] mms eval_module_source:after stmt path={module_label} index={stmt_index} kind={stmt_kind} label={stmt_label} named_exports={}",
-            named.len()
-        ));
-        memory_trace::sample(
-            &format!(
-                "🐈 mms eval_module_source:after stmt path={module_label} index={stmt_index} kind={stmt_kind} label={stmt_label} named_exports={}",
-                named.len()
-            ),
-            None,
-        );
     }
-    memory_trace::log_line(format!(
-        "\n🐈 [startup-memory] mms eval_module_source:after stmts path={module_label} named_exports={}",
-        named.len()
-    ));
-    memory_trace::sample(
-        &format!(
-            "🐈 mms eval_module_source:after stmts path={module_label} named_exports={}",
-            named.len()
-        ),
-        None,
-    );
 
     let sequence: Vec<MaterializedCE> = emits
         .into_iter()
@@ -2495,20 +2350,6 @@ pub(crate) fn eval_module_source(source: &str, source_path: Option<&str>) -> Res
             _ => None,
         })
         .collect();
-
-    memory_trace::log_line(format!(
-        "\n🐈 [startup-memory] mms eval_module_source:end path={module_label} named_exports={} sequence={}",
-        named.len(),
-        sequence.len()
-    ));
-    memory_trace::sample(
-        &format!(
-            "🐈 mms eval_module_source:end path={module_label} named_exports={} sequence={}",
-            named.len(),
-            sequence.len()
-        ),
-        None,
-    );
 
     Ok(Value::Module { named, sequence })
 }
