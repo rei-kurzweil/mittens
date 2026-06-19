@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use rtrb::{Consumer, Producer, RingBuffer};
@@ -1014,7 +1015,7 @@ fn eval_expr(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<Value, Stri
             Ok(Value::Function {
                 params: param_names,
                 body: body.clone(),
-                captured_env,
+                captured_env: Arc::new(captured_env),
             })
         }
         Expression::Call(call) => eval_call(call, ctx),

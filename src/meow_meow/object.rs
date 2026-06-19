@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::engine::ecs::ComponentId;
 
@@ -91,7 +92,7 @@ pub enum Value {
     Function {
         params: Vec<String>,
         body: crate::meow_meow::ast::BlockStatement,
-        captured_env: HashMap<String, Value>,
+        captured_env: Arc<HashMap<String, Value>>,
     },
 
     /// A loaded module: named exports + ordered sequence of root CE emits.
@@ -179,6 +180,7 @@ pub enum FrameKind {
 struct Frame {
     kind_or_root: Option<FrameKind>,
     bindings: HashMap<String, Value>,
+    captured_bindings: Option<Arc<HashMap<String, Value>>>,
 }
 
 impl Frame {
@@ -186,12 +188,14 @@ impl Frame {
         Self {
             kind_or_root: Some(kind),
             bindings: HashMap::new(),
+            captured_bindings: None,
         }
     }
     fn root() -> Self {
         Self {
             kind_or_root: None,
             bindings: HashMap::new(),
+            captured_bindings: None,
         }
     }
     fn is_function_barrier(&self) -> bool {
@@ -236,10 +240,11 @@ impl ObjectWorld {
 
     /// Push a function frame seeded with the closure's captured environment.
     /// This is a hard barrier: lookups inside the function will not see past it.
-    pub fn push_function_frame(&mut self, captured: HashMap<String, Value>) {
+    pub fn push_function_frame(&mut self, captured: Arc<HashMap<String, Value>>) {
         self.frames.push(Frame {
             kind_or_root: Some(FrameKind::Function),
-            bindings: captured,
+            bindings: HashMap::new(),
+            captured_bindings: Some(captured),
         });
     }
 
@@ -269,6 +274,13 @@ impl ObjectWorld {
             if let Some(v) = frame.bindings.get(name) {
                 return Some(v);
             }
+            if let Some(v) = frame
+                .captured_bindings
+                .as_ref()
+                .and_then(|captured| captured.get(name))
+            {
+                return Some(v);
+            }
             if frame.is_function_barrier() {
                 return None;
             }
@@ -293,6 +305,14 @@ impl ObjectWorld {
                 frame.bindings.insert(name.to_string(), value);
                 return Ok(());
             }
+            if frame
+                .captured_bindings
+                .as_ref()
+                .is_some_and(|captured| captured.contains_key(name))
+            {
+                frame.bindings.insert(name.to_string(), value);
+                return Ok(());
+            }
             if matches!(frame.kind_or_root, Some(FrameKind::Function)) {
                 return Err(format!(
                     "cannot reassign '{}' from inside function (only its captured snapshot is visible)",
@@ -312,6 +332,11 @@ impl ObjectWorld {
         for frame in self.frames.iter().rev() {
             for (k, v) in &frame.bindings {
                 out.entry(k.clone()).or_insert_with(|| v.clone());
+            }
+            if let Some(captured) = &frame.captured_bindings {
+                for (k, v) in captured.iter() {
+                    out.entry(k.clone()).or_insert_with(|| v.clone());
+                }
             }
             if frame.is_function_barrier() {
                 break;
@@ -338,6 +363,7 @@ impl ObjectWorld {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     fn n(x: f64) -> Value {
         Value::Number(x)
@@ -381,7 +407,7 @@ mod tests {
         ow.bind("caller_var", n(1.0));
         let mut captured = HashMap::new();
         captured.insert("captured_var".to_string(), n(99.0));
-        ow.push_function_frame(captured);
+        ow.push_function_frame(Arc::new(captured));
         assert_eq!(ow.lookup("captured_var"), Some(&n(99.0)));
         assert_eq!(ow.lookup("caller_var"), None);
     }
@@ -390,7 +416,7 @@ mod tests {
     fn function_frame_blocks_reassign_of_caller_locals() {
         let mut ow = ObjectWorld::new();
         ow.bind("caller_var", n(1.0));
-        ow.push_function_frame(HashMap::new());
+        ow.push_function_frame(Arc::new(HashMap::new()));
         let err = ow.reassign("caller_var", n(2.0)).unwrap_err();
         assert!(err.contains("inside function"), "got: {}", err);
     }
@@ -434,12 +460,22 @@ mod tests {
         ow.bind("caller", n(1.0));
         let mut captured = HashMap::new();
         captured.insert("cap".to_string(), n(2.0));
-        ow.push_function_frame(captured);
+        ow.push_function_frame(Arc::new(captured));
         ow.bind("inner", n(3.0));
         let snap = ow.snapshot_visible();
         assert_eq!(snap.get("inner"), Some(&n(3.0)));
         assert_eq!(snap.get("cap"), Some(&n(2.0)));
         assert_eq!(snap.get("caller"), None);
+    }
+
+    #[test]
+    fn reassign_captured_binding_shadows_shared_snapshot_in_current_call() {
+        let mut ow = ObjectWorld::new();
+        let mut captured = HashMap::new();
+        captured.insert("cap".to_string(), n(2.0));
+        ow.push_function_frame(Arc::new(captured));
+        ow.reassign("cap", n(5.0)).unwrap();
+        assert_eq!(ow.lookup("cap"), Some(&n(5.0)));
     }
 
     #[test]
