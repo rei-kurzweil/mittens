@@ -680,6 +680,32 @@ fn captured_function_name_preview(captured_env: &HashMap<String, Value>) -> Stri
     }
 }
 
+fn captured_function_size_preview(captured_env: &HashMap<String, Value>) -> String {
+    let mut items: Vec<(&str, usize)> = captured_env
+        .iter()
+        .filter_map(|(name, value)| match value {
+            Value::Function { captured_env, .. } => Some((name.as_str(), captured_env.len())),
+            _ => None,
+        })
+        .collect();
+    items.sort_unstable_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    const LIMIT: usize = 8;
+    if items.is_empty() {
+        return String::from("<none>");
+    }
+    let preview = items
+        .iter()
+        .take(LIMIT)
+        .map(|(name, size)| format!("{name}:{size}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    if items.len() > LIMIT {
+        format!("{preview} +{}", items.len() - LIMIT)
+    } else {
+        preview
+    }
+}
+
 fn closure_summary(value: &Value) -> Option<String> {
     let Value::Function { captured_env, .. } = value else {
         return None;
@@ -690,11 +716,12 @@ fn closure_summary(value: &Value) -> Option<String> {
         .filter(|value| matches!(value, Value::Function { .. }))
         .count();
     Some(format!(
-        "captured_bindings={} nested_functions={} kinds={} function_names={}",
+        "captured_bindings={} nested_functions={} kinds={} function_names={} function_sizes={}",
         captured_env.len(),
         nested_function_count,
         capture_kind_summary(captured_env),
-        captured_function_name_preview(captured_env)
+        captured_function_name_preview(captured_env),
+        captured_function_size_preview(captured_env)
     ))
 }
 
@@ -960,24 +987,27 @@ fn eval_expr(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<Value, Stri
             let capture_preview = capture_name_preview(&captured_env);
             let capture_kind_summary = capture_kind_summary(&captured_env);
             let captured_function_preview = captured_function_name_preview(&captured_env);
+            let captured_function_sizes = captured_function_size_preview(&captured_env);
             memory_trace::log_line(format!(
-                "\n🐈 [startup-memory] mms closure:create:after snapshot path={} params={} captured_bindings={} captured_names={} capture_kinds={} captured_functions={}",
+                "\n🐈 [startup-memory] mms closure:create:after snapshot path={} params={} captured_bindings={} captured_names={} capture_kinds={} captured_functions={} captured_function_sizes={}",
                 ctx.source_path.unwrap_or("<inline>"),
                 preview_params,
                 captured_env.len(),
                 capture_preview,
                 capture_kind_summary,
-                captured_function_preview
+                captured_function_preview,
+                captured_function_sizes
             ));
             memory_trace::sample(
                 &format!(
-                    "🐈 mms closure:create:after snapshot path={} params={} captured_bindings={} captured_names={} capture_kinds={} captured_functions={}",
+                    "🐈 mms closure:create:after snapshot path={} params={} captured_bindings={} captured_names={} capture_kinds={} captured_functions={} captured_function_sizes={}",
                     ctx.source_path.unwrap_or("<inline>"),
                     preview_params,
                     captured_env.len(),
                     capture_preview,
                     capture_kind_summary,
-                    captured_function_preview
+                    captured_function_preview,
+                    captured_function_sizes
                 ),
                 None,
             );
