@@ -32,9 +32,10 @@ fn lerp(a, b, t) { return a + (b - a) * t }
 let x = lerp(0.0, 1.0, 0.5)
 ```
 
-**Evaluator:** `eval_call` recognises `Value::Function`, binds args into `call_env`, runs
-`eval_block_stmts` on the body. Closures capture the env at definition time
-(`captured_env: env.clone()`).
+**Evaluator:** `eval_call` recognises `Value::Function`, pushes a `Function` frame backed by
+the closure's shared `captured_env`, binds args into that frame's local overlay, and runs
+`eval_block_stmts` on the body. Closures still capture the visible lexical env at definition
+time, but the stored closure env is now shared rather than deep-cloned on every clone/call path.
 
 **Transpiler:** sees the full `BlockStatement` AST. Recurses into it and emits the equivalent
 function in the target language. No special casing, no per-target table lookup — it is just
@@ -197,7 +198,8 @@ eval_call(call, env, emits)
   └─ env.get(name)?
        │
        ├─ Value::Function { body, captured_env }
-       │    └─ eval_block_stmts(body, call_env)   ← MMS closure or stdlib function
+       │    └─ push Function frame(captured snapshot + local overlay)
+       │       eval_block_stmts(body)             ← MMS closure or stdlib function
        │
        └─ other value   → error: "cannot call X as a function"
 

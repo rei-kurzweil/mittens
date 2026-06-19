@@ -323,7 +323,7 @@ stored in the `ObjectWorld` env and passed between expressions.
 | `Value::Identifier(String)` | ✅ | bare symbolic flag (e.g. `Left`, `Aim`) — kept distinct from `String` so enum-like identifiers survive to the component registry |
 | `Value::ComponentExpr(Box<ComponentExpression>)` | ✅ pre-P6 | unresolved component expression; placeholder until Phase 6 live reply channel |
 | `Value::ComponentObject(ComponentId)` | 🔧 P6 | live engine component (unattached); replaces `ComponentExpr` once reply channel exists |
-| `Value::Function { params, body, captured_env }` | ✅ | closure; `captured_env` is a snapshot of the env at definition time |
+| `Value::Function { params, body, captured_env }` | ✅ | closure; `captured_env` is a snapshot of the visible env at definition time, stored as a shared captured map |
 | `Value::Object(ObjectId)` | struct only | heap-allocated map/record; `ObjectId` indexes into `Heap`; not yet creatable from MMS syntax — reserved for future record literals |
 
 > **Note on `Value::Object`:** no MMS syntax creates an `Object` yet. The `{` token is

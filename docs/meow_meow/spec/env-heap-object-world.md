@@ -46,7 +46,8 @@ Larger or reference-typed values live on the heap; env holds an `ObjectId` point
   an outer frame walks up to the declaring frame and writes there.
 - **`Function`** — hard barrier in both directions. Lookups don't see the caller's
   locals; reassign cannot write to anything declared past it. The frame is seeded at
-  push time with the closure's `captured_env` flattened map.
+  push time with the closure's shared `captured_env` snapshot plus an empty mutable
+  overlay for params, locals, and call-local reassignments.
 
 Push/pop sites:
 
@@ -54,7 +55,7 @@ Push/pop sites:
 |---|---|---|
 | `eval_script`, `eval_as_module` | (root frame) | empty |
 | `Statement::Block`, `If`, `ForIn`, `While`, CE body | `Block` | empty |
-| Function call (`eval_call` Function arm, pipe arm, `eval_mms_fn`) | `Function` | `captured_env` |
+| Function call (`eval_call` Function arm, pipe arm, `eval_mms_fn`) | `Function` | shared `captured_env` + empty overlay |
 
 Closure creation (`Expression::Function`) snapshots the *visible* env into a flat
 `HashMap` via `ObjectWorld::snapshot_visible()`, which walks frames inward-to-outward
@@ -102,7 +103,8 @@ pub enum FrameKind { Block, Function }
 
 struct Frame {
     kind_or_root: Option<FrameKind>,   // None = root frame (script-level)
-    bindings: HashMap<String, Value>,
+    bindings: HashMap<String, Value>,  // local overlay / ordinary block bindings
+    captured_bindings: Option<Arc<HashMap<String, Value>>>,
 }
 
 pub struct ObjectWorld {
@@ -113,9 +115,11 @@ pub struct ObjectWorld {
 
 Public methods on `ObjectWorld`: `push_frame(kind)`, `push_function_frame(captured)`,
 `pop_frame` (refuses to pop the root), `bind(name, value)` (writes to top frame),
-`lookup(name)` (walks inward, stops at Function), `has(name)`, `reassign(name, value)`
-(walks inward to declaring frame, stops at Function), `snapshot_visible()` (flatten
-into one map for closure capture, stops at Function).
+`lookup(name)` (walks inward, checking the function-frame overlay first, then the shared
+captured snapshot, then stopping at Function), `has(name)`, `reassign(name, value)`
+(walks inward to declaring frame, stops at Function; reassigning a captured name writes a
+shadowing value into the function-frame overlay), `snapshot_visible()` (flatten into one
+map for closure capture, stops at Function).
 
 ### Separation of concerns
 
@@ -209,7 +213,7 @@ a future extension.
   No `env: &Env` parameter exists anymore; the `Env` type alias was removed.
 - Frame stack is implemented with `FrameKind { Block, Function }`; loops, if-bodies,
   blocks, and CE bodies all push transparent `Block` frames. Function calls push a
-  `Function` frame seeded with the closure's `captured_env`.
+  `Function` frame with a shared captured snapshot plus an empty mutable overlay.
 - Standard scoping: a `let` inside a block doesn't leak; a `reassign` of an
   outer-declared variable walks up to the declaring frame and writes there.
 - Loop body reassignment of outer vars **propagates** after the loop ends (changed

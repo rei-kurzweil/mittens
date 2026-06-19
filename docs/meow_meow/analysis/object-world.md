@@ -125,7 +125,7 @@ pub struct ObjectWorld {
 impl ObjectWorld {
     pub fn new() -> Self;                                    // pushes one root frame
     pub fn push_frame(&mut self, kind: FrameKind);
-    pub fn push_function_frame(&mut self, captured: HashMap<String, Value>);
+    pub fn push_function_frame(&mut self, captured: Arc<HashMap<String, Value>>);
     pub fn pop_frame(&mut self);                             // refuses to pop the root
     pub fn bind(&mut self, name: impl Into<String>, value: Value);
     pub fn lookup(&self, name: &str) -> Option<&Value>;

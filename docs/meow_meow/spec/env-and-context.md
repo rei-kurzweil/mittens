@@ -10,42 +10,42 @@ MMS evaluation threads two distinct kinds of state through the evaluator:
 
 | Thing | Type | What it holds | Mutable? |
 |---|---|---|---|
-| **Variable env** | `Env` = `HashMap<String, Value>` | Names bound in the current script | `&mut Env` |
+| **Variable env** | `ObjectWorld` frame stack | Names bound in the current script / call | `&mut ObjectWorld` |
 | **Eval context** | `EvalContext<'a>` | Infrastructure: intent accumulator + source path | `&mut EvalContext` |
 
-They are always passed as separate arguments. Env is the *script-visible* state; `EvalContext` is the *evaluator-visible* infrastructure.
+They are separate concerns. `ObjectWorld` is the *script-visible* storage; `EvalContext` is the *evaluator-visible* infrastructure.
 
 ---
 
-## `Env` — the variable environment
+## Variable environment
 
-```rust
-type Env = HashMap<String, Value>;
-```
+The evaluator no longer uses a flat `Env = HashMap<String, Value>`. Variable storage lives in
+`ObjectWorld` as a frame stack:
 
-A flat `HashMap<String, Value>`. Every name in scope lives as a key in the map. There is no scope chain or frame stack in v1 — just one map that grows as `let` statements add bindings.
+- `Block` frames are transparent for lookup/reassign
+- `Function` frames are hard barriers
+- function frames hold a shared captured snapshot plus a mutable local overlay
 
 ### What goes in it
 
-- `let x = expr` → `Bind("x", val)` effect → `env.insert("x", val)`
-- `import { foo }` → `ImportBindings([("foo", val)])` effect → `env.insert`
-- `x = expr` (reassignment) → `Reassign("x", val)` effect → `env.insert` (must already exist)
-- For-loop binding variable → inserted at the start of each iteration
+- `let x = expr` → bind in the top frame
+- `import { foo }` → bind in the top frame
+- `x = expr` (reassignment) → walk outward to the declaring reachable frame
+- loop binding variable → bind in the loop body's block frame
 
-`Value::Function` closures snapshot the env at definition time into `captured_env` (see Functions below).
+`Value::Function` closures snapshot the visible env at definition time into `captured_env`.
 
-### How env flows through the evaluator
+### How variable storage flows through the evaluator
 
 ```
-eval_block_stmts(stmts, env: &mut Env, ctx)
-    └─ eval_stmt(stmt, env: &mut Env, ctx)
-        ├─ eval_if(if_stmt, env: &mut Env, ctx)
-        │   └─ eval_block_stmts(branch.statements, env: &mut Env, ctx)  ← same env
-        ├─ eval_block_stmts(block.statements, env: &mut Env, ctx)        ← same env
-        └─ (ForIn) eval_stmt(stmt, &mut loop_env, ctx)                   ← different env
+eval_block_stmts(stmts, ctx)
+    └─ eval_stmt(stmt, ctx)
+        ├─ push Block frame → eval nested block / if / loop body
+        └─ push Function frame(shared captured snapshot + overlay) → eval function body
 ```
 
-`eval_block_stmts` and `eval_if` receive `env` by `&mut` and **do not clone it**. Bindings and reassignments applied inside an if-branch or nested block are immediately visible to the enclosing block. This is why:
+Bindings inside a block frame disappear when that frame is popped. Reassignments of an outer
+reachable binding walk up to the declaring frame and update it there.
 
 ```mms
 let y = -2.0
@@ -55,23 +55,12 @@ if (z > 64) {
 T.position(0.0, y, 0.0) {}  // sees updated y
 ```
 
-> **Scoping note (v1):** there is no block-level shadowing. `let` inside an if-block adds to the same env as the surrounding code; those names remain after the block exits. This matches Python / Lua semantics. A proper scope chain (shadowing, block-local vars) is deferred.
+Inner `let` bindings now shadow outer names in the usual lexical way and do not leak after the block exits.
 
-### `for` loop env
+### Loop scope
 
-The `ForIn` evaluator arm clones env once before the loop to create `loop_env`:
-
-```rust
-let mut loop_env = env.clone();
-'for_loop: for item in items {
-    loop_env.insert(binding.0.clone(), item);  // set loop var
-    for stmt in &body.statements {
-        match eval_stmt(stmt, &mut loop_env, ctx)? { ... }
-    }
-}
-```
-
-`loop_env` is **shared across all iterations** — bindings and reassignments accumulate. This makes the classic accumulator pattern work:
+Loop bodies run in block frames. Reassignments to an outer-declared name walk outward to the
+declaring frame, so accumulator-style loops now persist after the loop as standard lexical scoping:
 
 ```mms
 let sum = 0
@@ -80,34 +69,18 @@ for i in [1, 2, 3] {
 }
 ```
 
-If-blocks inside the loop body propagate to `loop_env` correctly because `eval_stmt` receives `&mut loop_env` and `eval_if` → `eval_block_stmts` mutate it in place.
+The same applies to `while`.
 
-**What doesn't propagate:** reassignments inside the loop do not escape back to the env that existed before the loop started. `loop_env` is a clone, not a reference into the outer env. This means:
+### Function call scope
 
-```mms
-let sum = 0
-for i in [1, 2, 3] {
-    sum = sum + i   // accumulates within loop_env — works across iterations
-}
-// sum in the outer env is still 0 here — loop_env was discarded
-```
+Each function call pushes a `Function` frame containing:
 
-The `while` loop uses the same `loop_env` pattern with identical semantics.
+- a shared captured snapshot from the closure definition site
+- a mutable local overlay for params, local lets, and reassignments
 
-This is a known v1 limitation. The fix is a proper scope chain (v2) where reassignment walks the frame stack to update the correct binding in whichever frame originally declared the name.
-
-### Function call env
-
-`eval_call` builds a completely fresh env for each call:
-
-```rust
-let mut call_env = captured_env;                // start from closure's snapshot
-for (param, arg) in params.iter().zip(args) {
-    call_env.insert(param.clone(), arg.clone()); // bind arguments
-}
-```
-
-`call_env` is independent of the caller's env. Mutations inside the function body are invisible to the caller. Functions are closures — they capture a snapshot of the env at the `fn` expression site (`captured_env: env.clone()`).
+Lookup checks the overlay first, then the shared captured snapshot, then stops at the function
+barrier. Reassigning a captured name writes a shadowing value into the overlay. Mutations inside
+the function body remain invisible to the caller.
 
 ---
 
@@ -137,11 +110,11 @@ The filesystem path of the file currently being evaluated. Used solely to resolv
 
 ### Where contexts are created
 
-| Site | env | source_path |
+| Site | variable storage | source_path |
 |---|---|---|
-| `eval_script` (top-level script) | fresh empty `HashMap` | from `EvalRequest` |
-| `eval_as_module` (imported file) | fresh empty `HashMap` | path of the imported file |
-| `eval_call` (function body) | `captured_env` + args | `None` |
+| `eval_script` (top-level script) | fresh `ObjectWorld` with root frame | from `EvalRequest` |
+| `eval_as_module` (imported file) | fresh `ObjectWorld` with root frame | path of the imported file |
+| `eval_call` (function body) | pushed `Function` frame over current `ObjectWorld` | `None` |
 
 ---
 
