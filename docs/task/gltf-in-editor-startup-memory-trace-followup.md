@@ -12,6 +12,20 @@ Third update: retained startup plateau reduced from about `19 GiB` to about `9.1
 2026-06-19 after removing duplicated per-template MMS module clones in the editor paint template
 path.
 
+Fourth update: early-startup tracing showed the remaining pre-editor `~8.25 GiB` jump is created
+during `SystemWorld::new()` while scanning asset MMS modules, specifically while loading
+`assets/components/panels.mms`.
+
+Fifth update: import-level and per-top-level-statement tracing on 2026-06-19 showed the
+`panels.mms` blow-up is not caused by recursive import loading itself. Imported child modules stay
+around `~24 MiB`, while retained RSS ramps up during top-level function construction in
+`panels.mms`, especially exported panel factories.
+
+Sixth update: source-labeled statement tracing on 2026-06-19 showed the largest steps occur at
+function definitions such as `panel_button(...)` and exported panel factories such as
+`world_panel`, `inspector_panel`, and `asset_panel`, with each export copy causing an additional
+large duplication step.
+
 ## Problem
 
 GLTF-heavy editor examples are hitting extreme process memory growth during startup.
@@ -486,7 +500,306 @@ What remains after the fix is a smaller editor/UI cost, especially around:
 - `asset_panel` materialization at roughly `+0.9–1.0 GiB`
 
 but the catastrophic retained `~19 GiB` plateau appears resolved.
-  editor setup function
+
+## Separate earlier startup hotspot
+
+After the paint-template duplication fix, tracing was moved earlier in startup because the first
+editor sample still started at about `8.26 GiB`.
+
+That earlier pass showed:
+
+```text
+[memory] system_world:new:before scan_assets_dir rss=7.36 MiB
+[memory] system_world:new:after scan_assets_dir rss=8.26 GiB delta_prev=+8.25 GiB
+```
+
+So the remaining large early residency is created before editor registration, during asset-module
+scanning in `SystemWorld::new()`.
+
+## Narrowed asset-scan culprit
+
+Per-module tracing then showed the jump occurs entirely while loading:
+
+- `assets/components/panels.mms`
+
+Specifically:
+
+```text
+[memory] asset_system:load_module:start path=assets/components/panels.mms rss=7.45 MiB
+[memory] asset_system:load_module:after load_module_file path=assets/components/panels.mms rss=8.26 GiB delta_prev=+8.25 GiB
+[memory] asset_system:load_module:after export scan path=assets/components/panels.mms rss=8.26 GiB
+```
+
+This matters because it means the jump happens:
+
+- inside `MeowMeowRunner::load_module_file(...)`
+- before export enumeration in `AssetSystem`
+- before any editor panel is actually spawned
+
+So this is **not** the same bug as the earlier per-template `LoadedMmsModule` duplication.
+
+## Current theory for `panels.mms`
+
+The current likely cause is in MMS import/evaluation semantics.
+
+`panels.mms` is a multi-export module that imports:
+
+- `panel_items.mms`
+- `assets_content.mms`
+- `icons.mms`
+
+and defines several exported panel factories in one file.
+
+The current evaluator import path:
+
+1. reads the imported file
+2. calls `eval_module_source(...)` recursively
+3. obtains the imported module's `named` exports and `sequence`
+4. clones the imported values into the importing module's environment bindings
+
+Important code-level detail:
+
+- MMS `Value::Function` values capture a full `captured_env` snapshot
+
+That means a bad multiplication pattern is possible:
+
+1. import module A
+2. clone exported functions from A into module B
+3. those functions carry captured environments
+4. repeated imports / re-evaluation can duplicate large captured graphs
+
+So the leading theory is no longer just:
+
+- "loading one panel loads all panels"
+
+It is more precisely:
+
+- evaluating `panels.mms` likely duplicates imported function/value graphs during module load,
+  potentially because imports are not cached/shared and closure environments are cloned by value
+
+## What the import-level trace disproved
+
+The import-level tracer added around:
+
+- `load_module_file`
+- `eval_module_source`
+- `Statement::Import`
+- import-bind copies into the importer environment
+
+showed that:
+
+- `panel_items.mms` finishes around `24 MiB`
+- `assets_content.mms` and `icons.mms` stay in the same ballpark
+- the large multi-GiB jump does **not** happen during recursive import evaluation
+- the large jump does **not** happen during `ImportItem` binding copies into `panels.mms`
+
+The key transition remained:
+
+```text
+🐈 mms eval_module_source:after stmts path=assets/components/panels.mms named_exports=7
+rss=8.26 GiB
+```
+
+That moved suspicion away from import recursion and directly onto top-level statement evaluation in
+`panels.mms`.
+
+## What the per-statement trace proved
+
+Top-level statement tracing with source labels showed that memory ramps up incrementally across the
+panel factories instead of appearing in one single final step.
+
+Representative hotspots from `panels.mms`:
+
+1. `export fn pose_capture_panel(...)`
+   - before export copy: about `184 MiB`
+   - after export copy: about `252 MiB`
+   - export clone cost: about `+67 MiB`
+2. `fn panel_button(node_name, label) {`
+   - after statement: about `386 MiB`
+   - function construction cost at that statement: about `+134 MiB`
+3. `export fn world_panel(...)`
+   - before export copy: about `655 MiB`
+   - after export copy: about `924 MiB`
+   - export clone cost: about `+269 MiB`
+4. `export fn inspector_panel(...)`
+   - before export copy: about `1.43 GiB`
+   - after export copy: about `1.95 GiB`
+   - export clone cost: about `+538 MiB`
+5. `export fn asset_panel(...)`
+   - before export copy: about `3.00 GiB`
+   - after export copy: about `4.05 GiB`
+   - export clone cost: about `+1.05 GiB`
+
+This is the strongest evidence so far that:
+
+- top-level function creation in MMS is already capturing a huge environment
+- exporting that function then clones the already-large closure again into `named_exports`
+- later exports get progressively worse because more large bindings already exist in scope
+
+## Revised theory for the root cause inside MMS
+
+The current evaluator creates closures by doing:
+
+- `captured_env: ctx.object_world.snapshot_visible()`
+
+That means every `fn ...` or `export fn ...` currently snapshots **all visible bindings** in scope
+at creation time.
+
+For `panels.mms`, that likely means:
+
+1. early imported helpers and constants enter scope
+2. a panel factory function captures all visible bindings
+3. later helper/panel functions capture the already-grown environment, including prior large
+   function values
+4. exporting the function clones that closure into `named_exports`
+5. startup memory grows roughly with repeated full-environment snapshots rather than with only the
+   minimal free variables actually referenced by each function
+
+That matches the observed shape much better than the earlier import-recursion theory.
+
+## Current instrumentation added for the next pass
+
+Instrumentation now exists at the closure-construction boundary in `eval_expr(...)` for
+`Expression::Function`.
+
+The next run will log:
+
+- closure creation start
+- parameter names
+- body statement count
+- frame depth
+- captured binding count after `snapshot_visible()`
+- a short preview of captured binding names
+
+Those markers should confirm whether:
+
+- `panel_button`, `world_panel`, `inspector_panel`, and `asset_panel` are each snapshotting nearly
+  the whole module scope
+- closure size growth correlates directly with the number of visible prior bindings
+
+## Updated likely fix direction
+
+The next likely fix is no longer in the editor layer or import loader first.
+
+It is in MMS closure ownership / capture semantics:
+
+1. inspect and quantify `snapshot_visible()` capture size for large panel factories
+2. avoid snapshotting the entire visible environment for every function if only a subset of names
+   is actually needed
+3. if lexical precision is deferred, consider sharing captured environments instead of deep-cloning
+   them per function/export
+4. re-test `panels.mms` load RSS after any change before touching editor bootstrap again
+
+## What the closure-capture trace now strongly suggests
+
+Closure-construction tracing added around:
+
+- `Expression::Function`
+- `snapshot_visible()`
+- export-copy into `named_exports`
+
+now shows a highly regular pattern:
+
+1. constructing a panel-factory closure causes a large RSS jump
+2. exporting that closure causes an almost identical second jump
+3. later panel factories get progressively more expensive as more bindings are visible in scope
+
+Representative data:
+
+1. `pose_capture_panel`
+   - `captured_bindings=34`
+   - closure snapshot cost: about `+67 MiB`
+   - export copy cost: about `+67 MiB`
+2. `world_panel`
+   - `captured_bindings=47`
+   - closure snapshot cost: about `+269 MiB`
+   - export copy cost: about `+269 MiB`
+3. `inspector_panel`
+   - `captured_bindings=56`
+   - closure snapshot cost: about `+538 MiB`
+   - export copy cost: about `+538 MiB`
+
+This is important because the visible binding counts themselves are not especially large. That
+means the issue is probably **not** just the number of captured names.
+
+The more likely explanation is:
+
+- some captured bindings already hold very large values
+- especially prior `Value::Function` closures
+- each later closure snapshots those earlier closures again
+- exporting the new closure then deep-clones the whole nested structure one more time
+
+So the current leading theory is now:
+
+- `snapshot_visible()` is recursively duplicating already-large closure graphs
+- `named_exports` insertion is duplicating those closure graphs a second time
+
+## Concrete next instrumentation steps
+
+The next pass should stay in the MMS evaluator and focus on **what kinds of values** are being
+captured inside these large closures.
+
+Highest-priority additions:
+
+1. add a captured-binding kind summary for each closure after `snapshot_visible()`
+   - status: implemented on 2026-06-19 in `src/meow_meow/evaluator.rs`
+2. log which captured binding names are themselves `Function`
+   - status: implemented on 2026-06-19 in `src/meow_meow/evaluator.rs`
+   - especially useful for:
+   - `world_panel`
+   - `inspector_panel`
+   - `asset_panel`
+3. add a shallow recursive closure summary for exported values
+   - status: implemented on 2026-06-19 as `captured_bindings`, `nested_functions`, kind counts,
+     and captured function names
+4. add the same summary at export-copy time
+   - status: implemented on 2026-06-19 before and after `named_exports` insertion
+   - this should confirm whether export copy is duplicating the same closure graph shape
+
+## Expected decision point after that pass
+
+If the next trace shows that most of the retained weight is coming from captured prior functions,
+the likely implementation direction becomes:
+
+1. stop storing `captured_env` as a deep-copied `HashMap<String, Value>` per closure
+2. either share captured environments with reference counting
+3. or reduce capture to only the actually referenced free variables
+4. then re-measure `panels.mms` load RSS before touching editor bootstrap code again
+
+## What is known vs not yet proven
+
+Known:
+
+- the `~8.25 GiB` jump comes from `load_module_file("assets/components/panels.mms")`
+- it happens before export scanning and before editor spawn
+- the source files themselves are tiny, so raw file size is not the explanation
+- imported child modules themselves stay comparatively small during evaluation
+- large steps correlate with top-level function creation and export copy in `panels.mms`
+- closure snapshot cost and export-copy cost are often nearly identical
+- later panel factories become more expensive as additional prior bindings enter scope
+
+Not yet proven:
+
+- the exact captured binding counts for the hottest closures
+- which captured bindings dominate size, especially whether prior closures are the main recursive
+  multiplier
+- whether a shared captured-env representation is sufficient on its own, or whether narrower free
+  variable capture is required
+- whether non-export helper functions are retaining extra transitive state beyond full-environment
+  snapshotting
+
+## Next likely fix direction
+
+The next investigation/fix should focus on the MMS loader/evaluator, not the editor layer:
+
+1. measure closure capture sizes directly at `Expression::Function`
+2. inspect whether `snapshot_visible()` is pulling in nearly the whole module for each panel
+   factory
+3. measure what kinds of values are inside those captures, especially nested prior closures
+4. change closure capture/ownership shape so large environments are not deep-cloned for every
+   function and then cloned again on export
+5. revisit module-load caching only if closure tracing fails to explain the remaining majority of
+   the residency
 
 ## Related
 

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use crate::engine::memory_trace;
 use crate::engine::ecs::{ComponentId, IntentValue, RxWorld, SignalEmitter, World};
 use crate::meow_meow::evaluator::{
     EvalRequest, EvalResponse, HostCallKind, HostValue, MeowMeowEvaluator, eval_mms_fn,
@@ -36,6 +37,11 @@ impl LoadedMmsModule {
 pub struct MeowMeowRunner;
 
 impl MeowMeowRunner {
+    fn trace_module_load(label: &str, path: &str) {
+        memory_trace::log_line(format!("\n🐈 [startup-memory] {label} path={path}"));
+        memory_trace::sample(&format!("🐈 {label} path={path}"), None);
+    }
+
     /// Evaluate `source`, collecting all emitted intents and errors.
     /// Times out after 2 seconds if the evaluator stalls.
     pub fn eval(source: &str) -> EvalOutput {
@@ -75,7 +81,10 @@ impl MeowMeowRunner {
         source: &str,
         source_path: Option<&str>,
     ) -> Result<LoadedMmsModule, String> {
-        match eval_module_source(source, source_path)? {
+        if let Some(path) = source_path {
+            Self::trace_module_load("mms load_module_source:start", path);
+        }
+        let module = match eval_module_source(source, source_path)? {
             Value::Module { named, sequence } => Ok(LoadedMmsModule {
                 named_exports: named,
                 sequence,
@@ -85,13 +94,21 @@ impl MeowMeowRunner {
                 "load_module_source: expected module result, got {:?}",
                 other
             )),
+        }?;
+        if let Some(path) = source_path {
+            Self::trace_module_load("mms load_module_source:end", path);
         }
+        Ok(module)
     }
 
     pub fn load_module_file(path: &str) -> Result<LoadedMmsModule, String> {
+        Self::trace_module_load("mms load_module_file:start", path);
         let source = std::fs::read_to_string(path)
             .map_err(|e| format!("cannot read module '{}': {}", path, e))?;
-        Self::load_module_source(&source, Some(path))
+        Self::trace_module_load("mms load_module_file:after read_to_string", path);
+        let module = Self::load_module_source(&source, Some(path))?;
+        Self::trace_module_load("mms load_module_file:end", path);
+        Ok(module)
     }
 
     pub fn call_mms_module_fn(

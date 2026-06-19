@@ -347,12 +347,22 @@ impl SystemWorld {
     }
 
     pub fn new() -> Self {
+        memory_trace::log_line("\n🟧✏️ [startup-memory] system_world:new:start");
+        memory_trace::sample("system_world:new:start", None);
         let mut systems = Self::default();
+        memory_trace::log_line("\n🟧✏️ [startup-memory] system_world:new:after default");
+        memory_trace::sample("system_world:new:after default", None);
         systems.grid.install_handlers(&mut systems.rx);
+        memory_trace::log_line("\n🟧✏️ [startup-memory] system_world:new:after grid.install_handlers");
+        memory_trace::sample("system_world:new:after grid.install_handlers", None);
         let asset_dir = Path::new("assets/components/");
+        memory_trace::log_line("\n🟧✏️ [startup-memory] system_world:new:before scan_assets_dir");
+        memory_trace::sample("system_world:new:before scan_assets_dir", None);
         if let Err(error) = systems.asset_system.scan_assets_dir(asset_dir) {
             eprintln!("[SystemWorld] failed to scan assets dir: {error}");
         }
+        memory_trace::log_line("\n🟧✏️ [startup-memory] system_world:new:after scan_assets_dir");
+        memory_trace::sample("system_world:new:after scan_assets_dir", None);
         systems
     }
 
