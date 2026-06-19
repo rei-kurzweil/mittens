@@ -10,7 +10,6 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::World;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
-use crate::engine::memory_trace;
 use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Transform};
 use crate::engine::graphics::{GpuRenderable, VisualWorld};
 use crate::engine::graphics::{MeshUploader, RenderAssets};
@@ -1073,14 +1072,14 @@ impl RenderableSystem {
                             .cpu_mesh(new_mesh)
                             .map(|m| (m.vertices.len(), m.indices_u32.len()))
                             .unwrap_or((0, 0));
-                        memory_trace::log_line(format!(
+                        println!(
                             "[RenderableSystem][audit] uv_clone renderable={:?} base_mesh={:?} new_mesh={:?} verts={} indices={} repeated_work=true",
                             p.renderable_cid,
                             uv_base_mesh,
                             new_mesh,
                             verts,
                             indices
-                        ));
+                        );
                     }
                     cpu_mesh = new_mesh;
                     if let Some(pending) = self.pending.get_mut(&key) {

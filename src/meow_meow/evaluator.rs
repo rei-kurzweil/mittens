@@ -11,7 +11,6 @@ use crate::engine::ecs::IntentValue;
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::SignalKind;
 use crate::engine::ecs::World;
-use crate::engine::memory_trace;
 use crate::meow_meow::ast::{
     BinOpKind, CallExpression, ComponentExpression, ElseBranch, Expression, IfStatement,
     ImportItem, Statement, UnaryOpKind,
@@ -620,112 +619,6 @@ fn maybe_register_live_component_value(val: Value, ctx: &mut EvalContext<'_>) ->
     }
 }
 
-fn capture_name_preview(captured_env: &std::collections::HashMap<String, Value>) -> String {
-    let mut names: Vec<&str> = captured_env.keys().map(|name| name.as_str()).collect();
-    names.sort_unstable();
-    const LIMIT: usize = 8;
-    if names.len() > LIMIT {
-        format!("{} +{}", names[..LIMIT].join(","), names.len() - LIMIT)
-    } else {
-        names.join(",")
-    }
-}
-
-fn value_kind_name(value: &Value) -> &'static str {
-    match value {
-        Value::Function { .. } => "Function",
-        Value::Array(_) => "Array",
-        Value::ComponentExpr(_) => "ComponentExpr",
-        Value::Object(_) => "Object",
-        Value::Module { .. } => "Module",
-        Value::ComponentObject { .. } => "ComponentObject",
-        Value::String(_) => "String",
-        Value::Identifier(_) => "Identifier",
-        Value::Dimension { .. } => "Dimension",
-        Value::Number(_) => "Number",
-        Value::Bool(_) => "Bool",
-        Value::Null => "Null",
-    }
-}
-
-fn capture_kind_summary(captured_env: &HashMap<String, Value>) -> String {
-    let mut counts: HashMap<&'static str, usize> = HashMap::new();
-    for value in captured_env.values() {
-        *counts.entry(value_kind_name(value)).or_default() += 1;
-    }
-    let mut items: Vec<(&'static str, usize)> = counts.into_iter().collect();
-    items.sort_unstable_by(|a, b| a.0.cmp(b.0));
-    items
-        .into_iter()
-        .map(|(kind, count)| format!("{kind}:{count}"))
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-fn captured_function_name_preview(captured_env: &HashMap<String, Value>) -> String {
-    let mut names: Vec<&str> = captured_env
-        .iter()
-        .filter_map(|(name, value)| match value {
-            Value::Function { .. } => Some(name.as_str()),
-            _ => None,
-        })
-        .collect();
-    names.sort_unstable();
-    const LIMIT: usize = 8;
-    if names.is_empty() {
-        String::from("<none>")
-    } else if names.len() > LIMIT {
-        format!("{} +{}", names[..LIMIT].join(","), names.len() - LIMIT)
-    } else {
-        names.join(",")
-    }
-}
-
-fn captured_function_size_preview(captured_env: &HashMap<String, Value>) -> String {
-    let mut items: Vec<(&str, usize)> = captured_env
-        .iter()
-        .filter_map(|(name, value)| match value {
-            Value::Function { captured_env, .. } => Some((name.as_str(), captured_env.len())),
-            _ => None,
-        })
-        .collect();
-    items.sort_unstable_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
-    const LIMIT: usize = 8;
-    if items.is_empty() {
-        return String::from("<none>");
-    }
-    let preview = items
-        .iter()
-        .take(LIMIT)
-        .map(|(name, size)| format!("{name}:{size}"))
-        .collect::<Vec<_>>()
-        .join(",");
-    if items.len() > LIMIT {
-        format!("{preview} +{}", items.len() - LIMIT)
-    } else {
-        preview
-    }
-}
-
-fn closure_summary(value: &Value) -> Option<String> {
-    let Value::Function { captured_env, .. } = value else {
-        return None;
-    };
-
-    let nested_function_count = captured_env
-        .values()
-        .filter(|value| matches!(value, Value::Function { .. }))
-        .count();
-    Some(format!(
-        "captured_bindings={} nested_functions={} kinds={} function_names={} function_sizes={}",
-        captured_env.len(),
-        nested_function_count,
-        capture_kind_summary(captured_env),
-        captured_function_name_preview(captured_env),
-        captured_function_size_preview(captured_env)
-    ))
-}
-
 fn eval_expr_stmt(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<(), String> {
     // Special case: emit(expr) — produced by EmitLiftTransform or written explicitly.
     if let Expression::Call(call) = expr {
@@ -961,59 +854,9 @@ fn eval_expr(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<Value, Stri
         }
         Expression::Component(ce) => eval_ce(ce, ctx),
         Expression::Function { params, body } => {
-            let param_names: Vec<String> = params.iter().map(|p| p.0.clone()).collect();
-            let preview_params = if param_names.is_empty() {
-                String::from("<none>")
-            } else {
-                param_names.join(",")
-            };
-            memory_trace::log_line(format!(
-                "\n🐈 [startup-memory] mms closure:create:start path={} params={} body_stmts={} frame_depth={}",
-                ctx.source_path.unwrap_or("<inline>"),
-                preview_params,
-                body.statements.len(),
-                ctx.object_world.frame_depth()
-            ));
-            memory_trace::sample(
-                &format!(
-                    "🐈 mms closure:create:start path={} params={} body_stmts={} frame_depth={}",
-                    ctx.source_path.unwrap_or("<inline>"),
-                    preview_params,
-                    body.statements.len(),
-                    ctx.object_world.frame_depth()
-                ),
-                None,
-            );
             let captured_env = ctx.object_world.snapshot_visible();
-            let capture_preview = capture_name_preview(&captured_env);
-            let capture_kind_summary = capture_kind_summary(&captured_env);
-            let captured_function_preview = captured_function_name_preview(&captured_env);
-            let captured_function_sizes = captured_function_size_preview(&captured_env);
-            memory_trace::log_line(format!(
-                "\n🐈 [startup-memory] mms closure:create:after snapshot path={} params={} captured_bindings={} captured_names={} capture_kinds={} captured_functions={} captured_function_sizes={}",
-                ctx.source_path.unwrap_or("<inline>"),
-                preview_params,
-                captured_env.len(),
-                capture_preview,
-                capture_kind_summary,
-                captured_function_preview,
-                captured_function_sizes
-            ));
-            memory_trace::sample(
-                &format!(
-                    "🐈 mms closure:create:after snapshot path={} params={} captured_bindings={} captured_names={} capture_kinds={} captured_functions={} captured_function_sizes={}",
-                    ctx.source_path.unwrap_or("<inline>"),
-                    preview_params,
-                    captured_env.len(),
-                    capture_preview,
-                    capture_kind_summary,
-                    captured_function_preview,
-                    captured_function_sizes
-                ),
-                None,
-            );
             Ok(Value::Function {
-                params: param_names,
+                params: params.iter().map(|p| p.0.clone()).collect(),
                 body: body.clone(),
                 captured_env: Arc::new(captured_env),
             })
@@ -2313,7 +2156,6 @@ pub(crate) fn eval_mms_fn(
 /// Evaluate a source file as a module (sandboxed — emits go to `sequence`, not the engine).
 /// Returns `Value::Module { named, sequence }`.
 pub(crate) fn eval_module_source(source: &str, source_path: Option<&str>) -> Result<Value, String> {
-    let module_label = source_path.unwrap_or("<inline>");
     let mut stmts = parse_source(source)?;
     EmitLiftTransform::apply(&mut stmts);
     QueryDesugarTransform::apply(&mut stmts);
@@ -2330,44 +2172,14 @@ pub(crate) fn eval_module_source(source: &str, source_path: Option<&str>) -> Res
         host_world: None,
     };
 
-    for (stmt_index, stmt) in stmts.iter().enumerate() {
+    for stmt in &stmts {
         match eval_stmt(stmt, &mut ctx)? {
             StmtEffect::Exported(name) => {
-                let export_summary = ctx.object_world.lookup(&name).and_then(closure_summary);
-                let export_name_for_log = name.clone();
-                memory_trace::log_line(format!(
-                    "\n🐈 [startup-memory] mms eval_module_source:before export copy path={module_label} index={stmt_index} name={name} summary={}",
-                    export_summary.as_deref().unwrap_or("<non-function>")
-                ));
-                memory_trace::sample(
-                    &format!(
-                        "🐈 mms eval_module_source:before export copy path={module_label} index={stmt_index} name={name} summary={}",
-                        export_summary.as_deref().unwrap_or("<non-function>")
-                    ),
-                    None,
-                );
                 // The binding is already in object_world; copy it into the
                 // module's named-exports map.
                 if let Some(val) = ctx.object_world.lookup(&name).cloned() {
                     named.insert(name, val);
                 }
-                let copied_export_summary =
-                    named.get(&export_name_for_log).and_then(closure_summary);
-                memory_trace::log_line(format!(
-                    "\n🐈 [startup-memory] mms eval_module_source:after export copy path={module_label} index={stmt_index} name={} named_exports={} copied_summary={}",
-                    export_name_for_log,
-                    named.len(),
-                    copied_export_summary.as_deref().unwrap_or("<non-function>")
-                ));
-                memory_trace::sample(
-                    &format!(
-                        "🐈 mms eval_module_source:after export copy path={module_label} index={stmt_index} name={} named_exports={} copied_summary={}",
-                        export_name_for_log,
-                        named.len(),
-                        copied_export_summary.as_deref().unwrap_or("<non-function>")
-                    ),
-                    None,
-                );
             }
             StmtEffect::None => {}
             StmtEffect::Return(_) | StmtEffect::Break | StmtEffect::Continue => {}

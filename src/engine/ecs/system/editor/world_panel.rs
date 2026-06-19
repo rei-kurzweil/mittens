@@ -12,7 +12,6 @@ use crate::engine::ecs::system::selection_system::{
     apply_selection_set, resolve_semantic_target_from_payload,
 };
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
-use crate::engine::memory_trace;
 use crate::meow_meow::object::Value;
 use crate::meow_meow::runner::MeowMeowRunner;
 use std::sync::LazyLock;
@@ -260,15 +259,11 @@ pub fn rebuild_world_panel_scene_model(
     world: &World,
     installed_editor_roots: &Arc<Mutex<Vec<ComponentId>>>,
 ) {
-    memory_trace::log_line("\n🟧✏️ [editor-memory] editor rebuild_world_panel_scene_model:start");
-    memory_trace::sample("editor rebuild_world_panel_scene_model:start", None);
     let editor_roots = effective_editor_roots(world, installed_editor_roots);
     let rebuilt = build_authored_world_panel_scene_model(world, &editor_roots);
     *scene_model
         .lock()
         .expect("world panel scene model mutex poisoned") = rebuilt;
-    memory_trace::log_line("\n🟧✏️ [editor-memory] editor rebuild_world_panel_scene_model:end");
-    memory_trace::sample("editor rebuild_world_panel_scene_model:end", None);
 }
 
 pub fn effective_editor_roots(
@@ -537,11 +532,11 @@ pub fn rerender_world_panel_content(
         })
         .unwrap_or(false)
     {
-        memory_trace::log_line(format!(
+        println!(
             "[WorldPanel][audit] content rebuild rows={} selected_index={:?}",
             rows.len(),
             selected_index
-        ));
+        );
     }
     let items: Vec<UiItem> = rows
         .iter()
@@ -588,7 +583,6 @@ pub fn rerender_world_panel_content(
     } else {
         apply_selection_set(world, emit, selection_root, Vec::new(), None);
     }
-    memory_trace::sample("after world panel content rebuild", None);
     println!(
         "[WorldPanel] rerender_world_panel_content took {:?}",
         start.elapsed()

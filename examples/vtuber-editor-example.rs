@@ -75,16 +75,8 @@ fn on_xr_pointer_event(world: &mut World, _emit: &mut dyn SignalEmitter, env: &S
 fn main() {
     utils::logger::init();
 
-    cat_engine::engine::debug_memory_log_line(
-        "\n🟧✏️ [startup-memory] vtuber-editor-example:before mms eval",
-    );
-    cat_engine::engine::debug_memory_sample("vtuber-editor-example:before mms eval");
-
     let output = meow_meow::MeowMeowRunner::eval(include_str!("vtuber-editor-example.mms"));
-    cat_engine::engine::debug_memory_log_line(
-        "\n🟧✏️ [startup-memory] vtuber-editor-example:after mms eval",
-    );
-    cat_engine::engine::debug_memory_sample("vtuber-editor-example:after mms eval");
+    
 
     for error in &output.errors {
         eprintln!("[mms] {error}");
@@ -98,26 +90,15 @@ fn main() {
     );
 
     let world = engine::ecs::World::default();
-    cat_engine::engine::debug_memory_log_line(
-        "\n🟧✏️ [startup-memory] vtuber-editor-example:before universe new",
-    );
-    cat_engine::engine::debug_memory_sample("vtuber-editor-example:before universe new");
+    
     let mut universe = engine::Universe::new(world);
-    cat_engine::engine::debug_memory_log_line(
-        "\n🟧✏️ [startup-memory] vtuber-editor-example:after universe new",
-    );
-    cat_engine::engine::debug_memory_sample("vtuber-editor-example:after universe new");
+
 
     let scope = engine::ecs::ComponentId::default();
     for intent in output.intents {
         universe.command_queue.push_intent_now(scope, intent);
     }
-    cat_engine::engine::debug_memory_log_line(
-        "\n🟧✏️ [startup-memory] vtuber-editor-example:before initial process_commands",
-    );
-    cat_engine::engine::debug_memory_sample(
-        "vtuber-editor-example:before initial process_commands",
-    );
+    
 
     universe.systems.process_commands(
         &mut universe.world,
@@ -125,12 +106,7 @@ fn main() {
         &universe.render_assets,
         &mut universe.command_queue,
     );
-    cat_engine::engine::debug_memory_log_line(
-        "\n🟧✏️ [startup-memory] vtuber-editor-example:after initial process_commands",
-    );
-    cat_engine::engine::debug_memory_sample(
-        "vtuber-editor-example:after initial process_commands",
-    );
+
 
     let bg_root = universe.world.add_component(
         engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting(),

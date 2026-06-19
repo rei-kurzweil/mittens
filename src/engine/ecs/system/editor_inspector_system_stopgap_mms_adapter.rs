@@ -56,7 +56,6 @@ use crate::engine::ecs::system::selection_system::{
 };
 use crate::engine::ecs::system::{GridSystem, TransformSystem};
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
-use crate::engine::memory_trace;
 use crate::meow_meow::component_registry::{
     filtered_root_ids_for_roots, filtered_roots_to_ce_ast, spawn_tree,
 };
@@ -142,8 +141,7 @@ impl Default for EditorInspectorSystemStopgapMmsAdapter {
 struct EditorInspectorSystemStopgapMmsReconciler;
 
 fn editor_memory_marker(label: &str) {
-    memory_trace::log_line(format!("\n🟧✏️ [editor-memory] {label}"));
-    memory_trace::sample(label, None);
+    let _ = label;
 }
 
 fn editor_memory_marker_with_panel(label: &str, panel_export: &str) {

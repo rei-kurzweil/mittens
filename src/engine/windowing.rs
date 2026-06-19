@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::engine::memory_trace;
 use crate::engine::startup_trace::{StartupCheckpoint, log_startup_progress};
 use crate::engine::user_input::UserInput;
 use crate::engine::{EngineError, EngineResult};
@@ -64,7 +63,6 @@ impl ApplicationHandler for App {
             return;
         }
         log_startup_progress(StartupCheckpoint::EventLoopResumed);
-        memory_trace::sample("event loop resumed", None);
 
         let preferred_window_size = self
             .universe
@@ -92,7 +90,6 @@ impl ApplicationHandler for App {
         };
         let window = Arc::new(window);
         log_startup_progress(StartupCheckpoint::WindowCreated);
-        memory_trace::sample("window created", None);
 
         // Initialize renderer backend for this window via Universe
         if let Some(universe) = self.universe.as_mut() {
@@ -112,7 +109,6 @@ impl ApplicationHandler for App {
         if let Some(w) = &self.window {
             w.request_redraw();
         }
-        memory_trace::sample("first redraw requested", None);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {

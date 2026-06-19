@@ -11,7 +11,6 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::bounds_system::{BoundsSystem, RenderableBoundsMeasure};
 use crate::engine::ecs::system::editor_paint_system::PaintAssetTemplate;
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
-use crate::engine::memory_trace;
 use crate::meow_meow::object::Value;
 use crate::meow_meow::runner::{LoadedMmsModule, MeowMeowRunner};
 
@@ -91,24 +90,11 @@ impl AssetSystem {
         if self.module_paths.contains_key(&normalized_path) {
             return Ok(());
         }
-        let label = normalized_path.display().to_string();
-        memory_trace::log_line(format!(
-            "\n🟧✏️ [startup-memory] asset_system:load_module:start path={label}"
-        ));
-        memory_trace::sample(&format!("asset_system:load_module:start path={label}"), None);
-
         let module = Arc::new(MeowMeowRunner::load_module_file(
             normalized_path
                 .to_str()
                 .ok_or_else(|| format!("non-UTF8 asset path: {}", normalized_path.display()))?,
         )?);
-        memory_trace::log_line(format!(
-            "\n🟧✏️ [startup-memory] asset_system:load_module:after load_module_file path={label}"
-        ));
-        memory_trace::sample(
-            &format!("asset_system:load_module:after load_module_file path={label}"),
-            None,
-        );
 
         let module_id = AssetModuleId(self.next_module_id);
         self.next_module_id += 1;
@@ -141,14 +127,6 @@ impl AssetSystem {
                 });
             }
         }
-        memory_trace::log_line(format!(
-            "\n🟧✏️ [startup-memory] asset_system:load_module:after export scan path={label}"
-        ));
-        memory_trace::sample(
-            &format!("asset_system:load_module:after export scan path={label}"),
-            None,
-        );
-
         self.module_paths.insert(normalized_path.clone(), module_id);
         self.modules.insert(
             module_id,
@@ -158,10 +136,6 @@ impl AssetSystem {
                 module,
             },
         );
-        memory_trace::log_line(format!(
-            "\n🟧✏️ [startup-memory] asset_system:load_module:end path={label}"
-        ));
-        memory_trace::sample(&format!("asset_system:load_module:end path={label}"), None);
 
         Ok(())
     }

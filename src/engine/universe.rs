@@ -1,5 +1,4 @@
 use crate::engine::ecs::SignalEmitter;
-use crate::engine::memory_trace;
 use crate::engine::startup_trace::{StartupCheckpoint, log_startup_progress};
 use crate::engine::user_input::InputState;
 use crate::engine::{ecs, graphics};
@@ -312,15 +311,6 @@ impl Universe {
         &mut self,
         window: &Arc<Window>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        memory_trace::sample(
-            "before renderer init",
-            Some(memory_trace::collect_counters(
-                &self.world,
-                &self.visuals,
-                &self.render_assets,
-                Some(&self.systems.gltf),
-            )),
-        );
         let size = window.inner_size();
         self.visuals
             .set_viewport([size.width as f32, size.height as f32]);
@@ -370,16 +360,6 @@ impl Universe {
             self.systems.openxr.set_vulkan_graphics(gfx);
         }
 
-        memory_trace::sample(
-            "after renderer init",
-            Some(memory_trace::collect_counters(
-                &self.world,
-                &self.visuals,
-                &self.render_assets,
-                Some(&self.systems.gltf),
-            )),
-        );
-
         Ok(())
     }
 
@@ -393,16 +373,6 @@ impl Universe {
     /// Game/update step
     pub fn update(&mut self, dt_sec: f32, input: &InputState) {
         self.sync_repl();
-        memory_trace::sample(
-            "before Universe::update",
-            Some(memory_trace::collect_counters(
-                &self.world,
-                &self.visuals,
-                &self.render_assets,
-                Some(&self.systems.gltf),
-            )),
-        );
-
         // 1. Process input events (handled inside systems for now).
         // 2. Let systems call methods on components,
         //      for example, to update transforms or renderables, which
@@ -423,15 +393,6 @@ impl Universe {
             &self.render_assets,
             &mut self.command_queue,
         );
-        memory_trace::sample(
-            "after Universe::update",
-            Some(memory_trace::collect_counters(
-                &self.world,
-                &self.visuals,
-                &self.render_assets,
-                Some(&self.systems.gltf),
-            )),
-        );
         log_startup_progress(StartupCheckpoint::FirstUpdateCompleted);
 
         // Editor systems may enqueue REPL navigation commands during this update.
@@ -440,15 +401,6 @@ impl Universe {
     }
 
     pub fn render(&mut self) {
-        memory_trace::sample(
-            "before prepare_render",
-            Some(memory_trace::collect_counters(
-                &self.world,
-                &self.visuals,
-                &self.render_assets,
-                Some(&self.systems.gltf),
-            )),
-        );
         // Prepare render (mesh uploads) - cast renderer to trait
         self.systems.prepare_render(
             &mut self.world,
@@ -457,30 +409,12 @@ impl Universe {
             &mut self.renderer as &mut dyn graphics::RenderUploader,
             &mut self.command_queue,
         );
-        memory_trace::sample(
-            "after prepare_render",
-            Some(memory_trace::collect_counters(
-                &self.world,
-                &self.visuals,
-                &self.render_assets,
-                Some(&self.systems.gltf),
-            )),
-        );
         log_startup_progress(StartupCheckpoint::RenderPrepared);
 
         // Render XR (if enabled) before the window present.
         self.systems
             .openxr
             .render_xr(&self.world, &mut self.visuals, &mut self.renderer);
-        memory_trace::sample(
-            "after openxr.render_xr",
-            Some(memory_trace::collect_counters(
-                &self.world,
-                &self.visuals,
-                &self.render_assets,
-                Some(&self.systems.gltf),
-            )),
-        );
         log_startup_progress(StartupCheckpoint::XrRenderCompleted);
 
         // Skip the window scene draw when there is no active Camera3D/Camera2D.
@@ -491,15 +425,6 @@ impl Universe {
                 .render_visual_world(&mut self.visuals)
                 .expect("render failed");
         }
-        memory_trace::sample(
-            "after window render",
-            Some(memory_trace::collect_counters(
-                &self.world,
-                &self.visuals,
-                &self.render_assets,
-                Some(&self.systems.gltf),
-            )),
-        );
         log_startup_progress(StartupCheckpoint::WindowRenderCompleted);
     }
 }

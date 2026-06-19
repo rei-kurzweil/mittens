@@ -7,7 +7,6 @@ use crate::engine::graphics::mesh::{CpuMesh, CpuVertex};
 use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Renderable};
 use crate::engine::graphics::{RenderAssets, RenderUploader, SkinId, VisualWorld};
-use crate::engine::memory_trace;
 use crate::engine::user_input::InputState;
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -398,12 +397,12 @@ impl GLTFSystem {
             }
 
             if Self::import_audit_enabled() {
-                memory_trace::log_line(format!(
+                println!(
                     "[GLTFSystem][audit] spawned uri='{}' component={cid:?} nodes={} joints={}",
                     uri,
                     node_index_to_component.len(),
                     joint_node_indices.len()
-                ));
+                );
             }
 
             // Register shared skin definitions in VisualWorld + per-instance joint resolution
@@ -498,12 +497,12 @@ impl GLTFSystem {
                         continue;
                     };
                     if Self::import_audit_enabled() {
-                        memory_trace::log_line(format!(
+                        println!(
                             "[GLTFSystem][audit] imported mesh key='{}' first_registration=true verts={} indices={}",
                             m.key,
                             mesh.vertices.len(),
                             mesh.indices_u32.len()
-                        ));
+                        );
                     }
                     let _h = render_assets.register_imported_mesh(m.key.clone(), mesh.clone());
                 }
@@ -555,12 +554,12 @@ impl GLTFSystem {
                     continue;
                 };
                 if Self::import_audit_enabled() {
-                    memory_trace::log_line(format!(
+                    println!(
                         "[GLTFSystem][audit] imported mesh key='{}' first_registration=true verts={} indices={}",
                         m.key,
                         mesh.vertices.len(),
                         mesh.indices_u32.len()
-                    ));
+                    );
                 }
                 let _h = render_assets.register_imported_mesh(m.key.clone(), mesh.clone());
             }
