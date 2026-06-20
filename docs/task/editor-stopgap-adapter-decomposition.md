@@ -22,6 +22,20 @@ That file currently mixes:
 
 The result is not one “bad abstraction”, it is several abstractions collapsed into one file.
 
+## Desired end state
+
+The steady-state goal should be stronger than "smaller adapter":
+
+- selection resolution should not depend on a preselected "current editor root"
+- semantic target resolution should derive the owning editor root from the clicked or referenced
+  target itself
+- shared editor workspace state should live outside the adapter
+- panel-specific actions should live in their panel modules
+- the adapter should own only panel rendering/materialization concerns during migration
+
+If we complete the extraction cleanly, the adapter should either disappear entirely or remain only
+as a thin shell/projection compatibility layer.
+
 ## What the file is doing today
 
 High-level responsibilities visible in the file:
@@ -62,6 +76,13 @@ High-level responsibilities visible in the file:
    - instance id wiring
 
 These need to be separated by ownership, not just moved into smaller files arbitrarily.
+
+The especially important split is:
+
+- render/materialize panels
+- resolve meaning of selections and actions
+
+Those should not live in the same adapter layer.
 
 ## What should become generic
 
@@ -230,6 +251,13 @@ Likely generic workspace concepts:
 - mounted panels
 - panel ordering/layout metadata
 
+Important constraint:
+
+- `active_editor_root` is derived workspace state
+- it should not be required as an input to resolve what a clicked target means
+- selection should identify the owning editor by walking from the semantic target upward
+- workspace state then updates to reflect that resolved owner
+
 Panel-specific state stays outside:
 - inspector pin/subtree state
 - world panel scene rows
@@ -251,6 +279,11 @@ These should remain in dedicated panel modules:
 The rule should be:
 - generic infra knows how to mount, render, and route
 - panel modules know what their data means
+
+One more rule should be explicit:
+
+- no panel-domain behavior or selection semantics should remain in the stopgap adapter once the
+  extraction is complete
 
 ## Suggested decomposition
 

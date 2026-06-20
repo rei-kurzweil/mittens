@@ -133,7 +133,7 @@ ED {
     T.position(0.0, 0.55, -3.95).scale(2.2, 2.5, 0.08) {
         R.cube() {
             C.rgba(0.82, 0.88, 0.94, 1.0)
-            // Mirror.quality(1024) {}
+            Mirror.quality(1024) {}
         }
     }
 
@@ -207,13 +207,6 @@ InputXR.on() {
 // Aim/controller reference cubes kept so mirror hand motion is easy to judge.
 InputXR.on() {
     T {
-        T.position(0.0, 1.95, 0.8) {
-            RendererStats {
-                camera_target(Xr)
-            }
-        }
-
-
         CTLXR.new(true, Left, Grip) {
             T.scale(0.05, 0.05, 0.10) {
                 T {
