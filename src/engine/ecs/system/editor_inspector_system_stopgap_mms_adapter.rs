@@ -12,7 +12,9 @@ use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::system::data_renderer_system::{
     DataRendererSystem, UiDetailItem, UiItem, UiItemKind,
 };
-use crate::engine::ecs::system::editor::context::EditorContextState;
+use crate::engine::ecs::system::editor::context::{
+    EditorContextState, apply_semantic_target_selection,
+};
 use crate::engine::ecs::system::editor::grid_panel::{
     GRID_PANEL_ADD_BUTTON_SELECTOR, GRID_PANEL_DELETE_PAYLOAD_NAME, GRID_PANEL_ROOT_SELECTOR,
     GRID_PANEL_ROW_PAYLOAD_NAME, GRID_PANEL_ROW_SPEC, GRID_PANEL_TOGGLE_PAYLOAD_NAME,
@@ -42,7 +44,6 @@ use crate::engine::ecs::system::editor::world_panel::{
     rebuild_world_panel_scene_model, register_editor_root, rerender_world_panel_content,
     rerender_world_panel_status, sync_world_panel_selection, world_panel_item_label,
 };
-use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::system::panel_system::{
     EDITOR_RUNTIME_UI_ROOT_NAME, PANEL_LAYOUT_MOUNT_NAME, PANEL_LAYOUT_ROOT_NAME,
     PANEL_LAYOUT_SELECTION_NAME, PanelActionKind, PanelControlKind, PanelKind,
@@ -1244,34 +1245,22 @@ fn apply_world_panel_semantic_selection(
     else {
         return;
     };
-    let active_editor = nearest_editor_ancestor(world, target_component);
+    let selection_result = apply_semantic_target_selection(
+        world,
+        emit,
+        editor_context_state,
+        target_component,
+        true,
+    );
+    let active_editor = selection_result.active_editor;
     let is_editor_root_target = active_editor == Some(target_component);
-    let gizmo_target = nearest_transform_ancestor(world, target_component);
-    let used_editor_selection_path = if is_editor_root_target {
-        None
-    } else {
-        active_editor
-            .zip(gizmo_target)
-            .map(|(editor_root, transform)| {
-                select_editor_target(world, emit, editor_root, transform, true);
-                transform
-            })
-    };
-    {
-        let mut editor_context = editor_context_state
-            .lock()
-            .expect("editor context state mutex poisoned");
-        editor_context.selected_component = Some(target_component);
-        if active_editor.is_some() {
-            editor_context.active_editor = active_editor;
-        }
-    }
+    let gizmo_target = selection_result.gizmo_target;
 
     println!(
         "[InspectorSystem][trace] world_panel selection_root={selection_root:?} clicked_row={:?} payload={:?} authored_target={target_component:?} active_editor={active_editor:?} is_editor_root_target={is_editor_root_target} gizmo_target={gizmo_target:?} select_editor_target_ran={}",
         selected_component,
         selected_payload,
-        used_editor_selection_path.is_some()
+        selection_result.used_editor_selection_path
     );
 
     if let Some(world_panel_root) =
@@ -2582,14 +2571,14 @@ fn handle_grid_panel_click(
         None,
     ) && let Some(owner_transform) = action.target_component
     {
-        select_editor_target(world, emit, editor_root, owner_transform, true);
-        {
-            let mut editor_context = editor_context_state
-                .lock()
-                .expect("editor context state mutex poisoned");
-            editor_context.active_editor = Some(editor_root);
-            editor_context.selected_component = Some(owner_transform);
-        }
+        let _ = editor_root;
+        let _selection_result = apply_semantic_target_selection(
+            world,
+            emit,
+            editor_context_state,
+            owner_transform,
+            true,
+        );
         refresh_all_panel_models(
             world,
             emit,
@@ -3056,20 +3045,6 @@ fn nearest_editor_ancestor(world: &World, start: ComponentId) -> Option<Componen
     while let Some(component_id) = current {
         if world
             .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(component_id)
-            .is_some()
-        {
-            return Some(component_id);
-        }
-        current = world.parent_of(component_id);
-    }
-    None
-}
-
-fn nearest_transform_ancestor(world: &World, start: ComponentId) -> Option<ComponentId> {
-    let mut current = Some(start);
-    while let Some(component_id) = current {
-        if world
-            .get_component_by_id_as::<TransformComponent>(component_id)
             .is_some()
         {
             return Some(component_id);

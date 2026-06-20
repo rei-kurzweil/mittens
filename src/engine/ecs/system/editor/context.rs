@@ -6,6 +6,7 @@ use crate::engine::ecs::component::{
     RaycastableComponent, RenderableComponent, SelectableComponent, SelectionComponent,
     SerializeComponent, SignalObserverRouterComponent, TransformComponent,
 };
+use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::system::editor::settings_panel::{
     EDITOR_SETTINGS_PAYLOAD_NAME, EDITOR_SETTINGS_SELECTION_SELECTOR, EditorSettingsOption,
 };
@@ -45,6 +46,14 @@ pub struct EditorContextState {
     pub cursor_frame: Option<SurfacePlacementFrame>,
     pub pending_grid_placement_editor: Option<ComponentId>,
     pub grid_preview_session: Option<PlacementPreviewSession>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SemanticEditorSelectionResult {
+    pub(crate) target_component: ComponentId,
+    pub(crate) active_editor: Option<ComponentId>,
+    pub(crate) gizmo_target: Option<ComponentId>,
+    pub(crate) used_editor_selection_path: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -918,6 +927,55 @@ fn nearest_editor_ancestor(world: &World, start: ComponentId) -> Option<Componen
     None
 }
 
+fn nearest_transform_ancestor(world: &World, start: ComponentId) -> Option<ComponentId> {
+    let mut cur = Some(start);
+    while let Some(node) = cur {
+        if world
+            .get_component_by_id_as::<TransformComponent>(node)
+            .is_some()
+        {
+            return Some(node);
+        }
+        cur = world.parent_of(node);
+    }
+    None
+}
+
+pub(crate) fn apply_semantic_target_selection(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    state: &Arc<Mutex<EditorContextState>>,
+    target_component: ComponentId,
+    update_repl_cwd: bool,
+) -> SemanticEditorSelectionResult {
+    let active_editor = nearest_editor_ancestor(world, target_component);
+    let gizmo_target = nearest_transform_ancestor(world, target_component);
+    let is_editor_root_target = active_editor == Some(target_component);
+    let used_editor_selection_path = if is_editor_root_target {
+        false
+    } else if let Some((editor_root, transform)) = active_editor.zip(gizmo_target) {
+        select_editor_target(world, emit, editor_root, transform, update_repl_cwd);
+        true
+    } else {
+        false
+    };
+
+    {
+        let mut editor_context = state.lock().expect("editor context state poisoned");
+        editor_context.selected_component = Some(target_component);
+        if active_editor.is_some() {
+            editor_context.active_editor = active_editor;
+        }
+    }
+
+    SemanticEditorSelectionResult {
+        target_component,
+        active_editor,
+        gizmo_target,
+        used_editor_selection_path,
+    }
+}
+
 fn world_panel_selection_event(
     world: &World,
     selection: &SelectionComponent,
@@ -1024,9 +1082,10 @@ fn sync_global_editor_interaction_mode(world: &mut World, state: &Arc<Mutex<Edit
 mod tests {
     use super::{
         EDITOR_CURSOR_HANDLER_NAME, EDITOR_SELECT_HANDLER_NAME, EditorContextEvent,
-        EditorContextState, EditorContextWorkspaceState, editor_context_event_from_shared_signal,
-        ensure_editor_observer_router, reduce_editor_context_state,
-        sync_editor_component_selection, sync_editor_observer_routes, world_panel_selection_event,
+        EditorContextState, EditorContextWorkspaceState, NullEmit, apply_semantic_target_selection,
+        editor_context_event_from_shared_signal, ensure_editor_observer_router,
+        reduce_editor_context_state, sync_editor_component_selection, sync_editor_observer_routes,
+        world_panel_selection_event,
     };
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
@@ -1055,6 +1114,29 @@ mod tests {
 
         assert_eq!(next.active_editor, Some(editor));
         assert_eq!(next.selected_component, Some(editor));
+    }
+
+    #[test]
+    fn semantic_target_selection_derives_editor_from_target_ancestry() {
+        let mut world = World::default();
+        let editor = world.add_component_boxed(Box::new(EditorComponent::new()));
+        let target = world.add_component_boxed(Box::new(TransformComponent::new()));
+        let renderable = world.add_component_boxed(Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor, target);
+        let _ = world.add_child(target, renderable);
+
+        let state = Arc::new(Mutex::new(EditorContextState::default()));
+        let mut emit = NullEmit;
+        let result =
+            apply_semantic_target_selection(&mut world, &mut emit, &state, target, false);
+
+        assert_eq!(result.active_editor, Some(editor));
+        assert_eq!(result.gizmo_target, Some(target));
+        assert!(result.used_editor_selection_path);
+
+        let state = state.lock().expect("state");
+        assert_eq!(state.active_editor, Some(editor));
+        assert_eq!(state.selected_component, Some(target));
     }
 
     #[test]
