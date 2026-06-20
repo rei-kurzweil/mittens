@@ -13,7 +13,7 @@ use crate::engine::ecs::system::data_renderer_system::{
     DataRendererSystem, UiDetailItem, UiItem, UiItemKind,
 };
 use crate::engine::ecs::system::editor::context::{
-    EditorContextState, apply_semantic_target_selection,
+    EditorContextState, apply_editor_root_selection, apply_semantic_target_selection,
 };
 use crate::engine::ecs::system::editor::grid_panel::{
     GRID_PANEL_ADD_BUTTON_SELECTOR, GRID_PANEL_DELETE_PAYLOAD_NAME, GRID_PANEL_ROOT_SELECTOR,
@@ -2485,13 +2485,14 @@ fn handle_grid_panel_click(
     {
         let _owner_transform =
             spawn_default_grid_for_editor(world, emit, editor_root, &editor_context, false);
-        let mut refreshed_context = editor_context.clone();
-        refreshed_context.active_editor = Some(editor_root);
         rerender_grid_panel_from_context(
             world,
             emit,
             panel_query_root,
-            &refreshed_context,
+            &EditorContextState {
+                active_editor: Some(editor_root),
+                ..editor_context.clone()
+            },
             data_renderer,
         );
         return true;
@@ -2528,22 +2529,8 @@ fn handle_grid_panel_click(
         None,
     ) && let Some(owner_transform) = action.target_component
     {
-        if editor_context.selected_component == Some(owner_transform)
-            && let Some(editor) = world
-                .get_component_by_id_as_mut::<crate::engine::ecs::component::EditorComponent>(
-                    editor_root,
-                )
-        {
-            editor.selected = Some(editor_root);
-        }
-        {
-            let mut editor_context = editor_context_state
-                .lock()
-                .expect("editor context state mutex poisoned");
-            editor_context.active_editor = Some(editor_root);
-            if editor_context.selected_component == Some(owner_transform) {
-                editor_context.selected_component = Some(editor_root);
-            }
+        if editor_context.selected_component == Some(owner_transform) {
+            apply_editor_root_selection(world, editor_context_state, editor_root);
         }
         let _ = world.remove_component_subtree(owner_transform);
         refresh_all_panel_models(

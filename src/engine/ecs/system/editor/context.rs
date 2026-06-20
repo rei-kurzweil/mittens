@@ -976,6 +976,27 @@ pub(crate) fn apply_semantic_target_selection(
     }
 }
 
+pub(crate) fn apply_editor_root_selection(
+    world: &mut World,
+    state: &Arc<Mutex<EditorContextState>>,
+    editor_root: ComponentId,
+) {
+    let interaction_mode = editor_interaction_mode(world, Some(editor_root));
+
+    {
+        let mut editor_context = state.lock().expect("editor context state poisoned");
+        editor_context.active_editor = Some(editor_root);
+        editor_context.selected_component = Some(editor_root);
+        editor_context.interaction_mode = interaction_mode;
+    }
+
+    if let Some(editor_component) = world.get_component_by_id_as_mut::<EditorComponent>(editor_root)
+    {
+        editor_component.selected = Some(editor_root);
+        editor_component.interaction_mode = interaction_mode;
+    }
+}
+
 fn world_panel_selection_event(
     world: &World,
     selection: &SelectionComponent,
@@ -1082,10 +1103,10 @@ fn sync_global_editor_interaction_mode(world: &mut World, state: &Arc<Mutex<Edit
 mod tests {
     use super::{
         EDITOR_CURSOR_HANDLER_NAME, EDITOR_SELECT_HANDLER_NAME, EditorContextEvent,
-        EditorContextState, EditorContextWorkspaceState, NullEmit, apply_semantic_target_selection,
-        editor_context_event_from_shared_signal, ensure_editor_observer_router,
-        reduce_editor_context_state, sync_editor_component_selection, sync_editor_observer_routes,
-        world_panel_selection_event,
+        EditorContextState, EditorContextWorkspaceState, NullEmit, apply_editor_root_selection,
+        apply_semantic_target_selection, editor_context_event_from_shared_signal,
+        ensure_editor_observer_router, reduce_editor_context_state, sync_editor_component_selection,
+        sync_editor_observer_routes, world_panel_selection_event,
     };
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
@@ -1137,6 +1158,34 @@ mod tests {
         let state = state.lock().expect("state");
         assert_eq!(state.active_editor, Some(editor));
         assert_eq!(state.selected_component, Some(target));
+    }
+
+    #[test]
+    fn editor_root_selection_updates_shared_state_and_editor_component() {
+        let mut world = World::default();
+        let editor = world.add_component_boxed(Box::new(
+            EditorComponent::new().with_interaction_mode(EditorInteractionMode::SelectAndCursor),
+        ));
+        let state = Arc::new(Mutex::new(EditorContextState::default()));
+
+        apply_editor_root_selection(&mut world, &state, editor);
+
+        let state = state.lock().expect("state");
+        assert_eq!(state.active_editor, Some(editor));
+        assert_eq!(state.selected_component, Some(editor));
+        assert_eq!(
+            state.interaction_mode,
+            EditorInteractionMode::SelectAndCursor
+        );
+
+        let editor_component = world
+            .get_component_by_id_as::<EditorComponent>(editor)
+            .expect("editor component");
+        assert_eq!(editor_component.selected, Some(editor));
+        assert_eq!(
+            editor_component.interaction_mode,
+            EditorInteractionMode::SelectAndCursor
+        );
     }
 
     #[test]
