@@ -1053,6 +1053,7 @@ fn create_component(
                     "spacing" => c = c.with_spacing(arg_f32(args, 0)?),
                     "size_x" => c = c.with_size_x(arg_f32(args, 0)? as u32),
                     "size_z" => c = c.with_size_z(arg_f32(args, 0)? as u32),
+                    "hidden" => c = c.with_hidden(arg_bool(args, 0)?),
                     _ => return Err(format!("Grid: unknown constructor '{method}'")),
                 }
             }
@@ -2575,6 +2576,7 @@ fn apply_call(
             "size_x" => *grid = grid.with_size_x(arg_f32(args, 0)? as u32),
             "size_z" => *grid = grid.with_size_z(arg_f32(args, 0)? as u32),
             "enabled" => *grid = grid.with_enabled(arg_bool(args, 0)?),
+            "hidden" => *grid = grid.with_hidden(arg_bool(args, 0)?),
             "selectable" => *grid = grid.with_selectable(arg_bool(args, 0)?),
             _ => {}
         }

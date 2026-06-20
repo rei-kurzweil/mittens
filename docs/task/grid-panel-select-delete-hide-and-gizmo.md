@@ -16,6 +16,7 @@ Make `grid_panel` behave like a normal editor object-management panel for grids:
 - selecting a grid should select its owning transform
 - that selection should place the normal transform gizmo on the grid transform
 - hide/show should work from the panel
+- enable/disable should work from the panel
 - delete should work from the panel
 
 This task is intentionally narrower than the broader `grid-panel-and-grid-inspector` note.
@@ -27,6 +28,7 @@ Known or recently re-verified behavior:
 - grid panel selection is not yet reliable as a normal editor selection path
 - deleting a grid from `grid_panel` has been freezing or otherwise failing
 - hide/show behavior is incomplete
+- enable/disable behavior is not yet modeled as distinct from hide/show
 - a selected grid should behave like other editor-scene selections, but does not yet consistently attach the gizmo
 
 ## Intended behavior
@@ -46,11 +48,23 @@ The selected semantic target for panel purposes can still be the grid entry, but
 
 Clicking the visibility control should:
 
-- toggle the grid's enabled/visible state
+- toggle only the grid's visible state
 - rerender the panel row immediately
 - update the scene render path without requiring unrelated interaction
 
-The simplest first implementation is to drive this from the grid component's enabled flag if that already controls visibility in the render/snap path.
+This should not be the same thing as disabling the grid runtime entry.
+
+### Enable / Disable
+
+Clicking the enabled control should:
+
+- disable:
+  - remove the live grid from the world/runtime/BVH
+  - preserve the stored grid state so it can be re-enabled later
+- enable:
+  - recreate or reattach the live grid from the stored grid state
+- rerender the panel row immediately
+- update hit-testing/snapping/render participation without requiring unrelated interaction
 
 ### Delete
 
@@ -91,6 +105,7 @@ If the selected transform is the grid owner, the existing gizmo attach behavior 
 2. Add row actions for:
    - select
    - visibility toggle
+   - enable/disable toggle
    - delete
 3. Ensure row-body select resolves the transform owner, not just the leaf grid component.
 4. Reuse existing editor selection/gizmo attachment flow.
@@ -98,13 +113,14 @@ If the selected transform is the grid owner, the existing gizmo attach behavior 
 
 ## Open questions
 
-1. Should "hide" disable snapping too, or only visual rendering?
+1. Should hidden grids still participate in snapping, or should snap eligibility require both enabled and shown?
 2. Should deleting the selected grid move selection back to the editor root, or clear it entirely?
-3. Should clicking the visibility button preserve current selection?
+3. Should clicking hide/show or enable/disable preserve current selection?
 
 ## Acceptance
 
 - selecting a grid row places the transform gizmo on the grid's transform
 - toggling hide/show updates both panel state and scene visibility
+- toggling enable/disable removes or restores live world/BVH participation without losing stored grid state
 - deleting a grid removes its subtree and updates the panel immediately
 - these flows do not require switching to another panel to recover correct editor behavior

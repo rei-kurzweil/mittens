@@ -1,10 +1,17 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::engine::ecs::component::{EditorComponent, GridComponent, TransformComponent};
+use crate::engine::ecs::component::{
+    ColorComponent, EditorComponent, GridComponent, OpacityComponent, RaycastableComponent,
+    RenderableComponent, SelectableComponent, SerializeComponent, TransformComponent,
+};
 use crate::engine::ecs::system::TransformSystem;
-use crate::engine::ecs::{ComponentId, EventSignal, RxWorld, SignalKind, World};
-use crate::utils::math::{mat4_inverse, vec3_normalize};
+use crate::engine::ecs::{
+    ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
+};
+use crate::utils::math::{
+    mat4_inverse, quat_from_axis_angle, quat_mul, vec3_normalize,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GridEntry {
@@ -12,6 +19,7 @@ pub struct GridEntry {
     pub owner_transform: ComponentId,
     pub editor_root: ComponentId,
     pub enabled: bool,
+    pub hidden: bool,
     pub selectable: bool,
 }
 
@@ -51,7 +59,20 @@ pub struct GridSystem {
     registry: Arc<Mutex<GridRegistry>>,
 }
 
+const GRID_LIVE_ROOT_NAME: &str = "grid_live_root";
+const GRID_LIVE_SELECTABLE_NAME: &str = "grid_live_selectable";
+const GRID_LIVE_RAYCASTABLE_NAME: &str = "grid_live_raycastable";
+const GRID_LIVE_SERIALIZE_NAME: &str = "grid_live_serialize";
+const GRID_LIVE_SHAPE_NAME: &str = "grid_live_shape";
+const GRID_LIVE_RENDERABLE_NAME: &str = "grid_live_renderable";
+const GRID_LIVE_COLOR_NAME: &str = "grid_live_color";
+const GRID_LIVE_OPACITY_NAME: &str = "grid_live_opacity";
+
 impl GridSystem {
+    pub const DEFAULT_EDITOR_GRID_SIZE_X: u32 = 8192;
+    pub const DEFAULT_EDITOR_GRID_SIZE_Z: u32 = 8192;
+    pub const DEFAULT_EDITOR_GRID_SPACING: f32 = 1.0;
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -102,30 +123,13 @@ impl GridSystem {
         world: &World,
         editor_root: ComponentId,
     ) -> Option<ActiveGrid> {
-        let selected = self.selected_grid_for_editor(world, editor_root)?;
-        if !selected.enabled || !selected.selectable {
+        let selected = self
+            .selected_grid_for_editor(world, editor_root)
+            .or_else(|| self.enumerate_grids_for_editor(world, editor_root).into_iter().next())?;
+        if !selected.selectable || !selected.enabled || selected.hidden {
             return None;
         }
-
-        let matrix_world = TransformSystem::world_model(world, selected.owner_transform)?;
-        let inverse_world = mat4_inverse(matrix_world)?;
-        let origin_world = [matrix_world[3][0], matrix_world[3][1], matrix_world[3][2]];
-        let normal_world = vec3_normalize(transform_direction(matrix_world, [0.0, 0.0, 1.0]));
-        if normal_world == [0.0, 0.0, 0.0] {
-            return None;
-        }
-
-        Some(ActiveGrid {
-            component: selected.grid_component,
-            spacing: world
-                .get_component_by_id_as::<GridComponent>(selected.grid_component)?
-                .spacing
-                .max(1e-4),
-            origin_world,
-            normal_world,
-            matrix_world,
-            inverse_world,
-        })
+        self.active_grid_from_entry(world, selected)
     }
 
     pub fn selected_grid_for_editor(
@@ -189,14 +193,52 @@ impl GridSystem {
             .map(|entry| refresh_grid_entry(world, entry))
     }
 
+    pub fn grid_hit_context_for_renderable(
+        &self,
+        world: &World,
+        renderable: ComponentId,
+    ) -> Option<ActiveGrid> {
+        let grid_component = self.grid_component_for_renderable(world, renderable)?;
+        let entry = self.grid_entry(world, grid_component)?;
+        if !entry.enabled || entry.hidden || !entry.selectable {
+            return None;
+        }
+        self.active_grid_from_entry(world, entry)
+    }
+
+    pub fn grid_component_for_renderable(
+        &self,
+        world: &World,
+        renderable: ComponentId,
+    ) -> Option<ComponentId> {
+        let owner_transform = self.grid_owner_from_renderable(world, renderable)?;
+        self.grid_owned_by_transform(world, owner_transform)
+            .map(|entry| entry.grid_component)
+    }
+
+    pub fn grid_owner_from_renderable(
+        &self,
+        world: &World,
+        renderable: ComponentId,
+    ) -> Option<ComponentId> {
+        let mut current = Some(renderable);
+        while let Some(component_id) = current {
+            if world.component_label(component_id) == Some(GRID_LIVE_ROOT_NAME) {
+                return Self::grid_owner_transform(world, component_id);
+            }
+            current = world.parent_of(component_id);
+        }
+        None
+    }
+
     pub fn snap_hit(active: &ActiveGrid, hit_point_world: [f32; 3]) -> GridSnapResult {
         let local = transform_point(active.inverse_world, hit_point_world);
         let cell_x = round_to_i32(local[0] / active.spacing);
-        let cell_y = round_to_i32(local[1] / active.spacing);
+        let cell_y = round_to_i32(local[2] / active.spacing);
         let snapped_local = [
             cell_x as f32 * active.spacing,
-            cell_y as f32 * active.spacing,
             0.0,
+            cell_y as f32 * active.spacing,
         ];
         let snapped_world = transform_point(active.matrix_world, snapped_local);
 
@@ -211,6 +253,199 @@ impl GridSystem {
 
     pub fn same_step(a: Option<GridStep>, b: GridStep) -> bool {
         a == Some(b)
+    }
+
+    pub fn ensure_default_grid(
+        &self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        editor_root: ComponentId,
+    ) -> ComponentId {
+        if let Some(existing) = self
+            .enumerate_grids_for_editor(world, editor_root)
+            .into_iter()
+            .next()
+        {
+            return existing.owner_transform;
+        }
+
+        self.spawn_grid_for_editor(
+            world,
+            emit,
+            editor_root,
+            GridSpawnSpec::default_hidden_editor_grid(),
+        )
+    }
+
+    pub fn spawn_grid_for_editor(
+        &self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        editor_root: ComponentId,
+        spec: GridSpawnSpec,
+    ) -> ComponentId {
+        let index = self.enumerate_grids_for_editor(world, editor_root).len() + 1;
+        let grid_component = GridComponent::new(spec.spacing)
+            .with_size_x(spec.size_x)
+            .with_size_z(spec.size_z)
+            .with_enabled(spec.enabled)
+            .with_hidden(spec.hidden)
+            .with_selectable(true);
+
+        let owner_transform = world.add_component_boxed_named(
+            &format!("grid_{index}"),
+            Box::new(
+                TransformComponent::new()
+                    .with_position(spec.translation[0], spec.translation[1], spec.translation[2])
+                    .with_rotation_quat(spec.rotation),
+            ),
+        );
+        let grid = world.add_component_boxed_named(
+            &format!("grid_{index}_component"),
+            Box::new(grid_component),
+        );
+
+        let _ = world.add_child(editor_root, owner_transform);
+        let _ = world.add_child(owner_transform, grid);
+        world.init_component_tree(owner_transform, emit);
+        if spec.preview_mode || spec.enabled {
+            self.ensure_live_runtime(world, emit, owner_transform, spec.preview_mode);
+        }
+        self.mark_dirty();
+        owner_transform
+    }
+
+    pub fn set_grid_hidden(
+        &self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        owner_transform: ComponentId,
+        hidden: bool,
+    ) -> bool {
+        let Some(entry) = self.grid_owned_by_transform(world, owner_transform) else {
+            return false;
+        };
+        let Some(grid) = world.get_component_by_id_as_mut::<GridComponent>(entry.grid_component) else {
+            return false;
+        };
+        if grid.hidden == hidden {
+            return false;
+        }
+        grid.hidden = hidden;
+        if grid.enabled {
+            self.ensure_live_runtime(world, emit, owner_transform, false);
+            self.sync_live_runtime_visibility(world, owner_transform, false);
+        }
+        self.mark_dirty();
+        true
+    }
+
+    pub fn set_grid_enabled(
+        &self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        owner_transform: ComponentId,
+        enabled: bool,
+    ) -> bool {
+        let Some(entry) = self.grid_owned_by_transform(world, owner_transform) else {
+            return false;
+        };
+        let Some(grid) = world.get_component_by_id_as_mut::<GridComponent>(entry.grid_component) else {
+            return false;
+        };
+        if grid.enabled == enabled {
+            return false;
+        }
+        grid.enabled = enabled;
+        if enabled {
+            self.ensure_live_runtime(world, emit, owner_transform, false);
+            self.sync_live_runtime_visibility(world, owner_transform, false);
+        } else {
+            self.remove_live_runtime(world, owner_transform);
+        }
+        self.mark_dirty();
+        true
+    }
+
+    pub fn toggle_grid_hidden(
+        &self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        owner_transform: ComponentId,
+    ) -> bool {
+        let hidden = self
+            .grid_owned_by_transform(world, owner_transform)
+            .and_then(|entry| world.get_component_by_id_as::<GridComponent>(entry.grid_component))
+            .map(|grid| !grid.hidden);
+        hidden.is_some_and(|next| self.set_grid_hidden(world, emit, owner_transform, next))
+    }
+
+    pub fn toggle_grid_enabled(
+        &self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        owner_transform: ComponentId,
+    ) -> bool {
+        let enabled = self
+            .grid_owned_by_transform(world, owner_transform)
+            .and_then(|entry| world.get_component_by_id_as::<GridComponent>(entry.grid_component))
+            .map(|grid| !grid.enabled);
+        enabled.is_some_and(|next| self.set_grid_enabled(world, emit, owner_transform, next))
+    }
+
+    pub fn delete_grid(
+        &self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        owner_transform: ComponentId,
+    ) -> bool {
+        if world.get_component_record(owner_transform).is_none() {
+            return false;
+        }
+
+        let mut renderables = Vec::new();
+        let mut transforms = Vec::new();
+        let mut stack = vec![owner_transform];
+        while let Some(node) = stack.pop() {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(node)
+                .is_some()
+            {
+                renderables.push(node);
+            }
+            if world
+                .get_component_by_id_as::<TransformComponent>(node)
+                .is_some()
+            {
+                transforms.push(node);
+            }
+            for &child in world.children_of(node) {
+                stack.push(child);
+            }
+        }
+
+        if !renderables.is_empty() {
+            emit.push_intent_now(
+                owner_transform,
+                IntentValue::RemoveRenderable {
+                    component_ids: renderables,
+                },
+            );
+        }
+        if !transforms.is_empty() {
+            emit.push_intent_now(
+                owner_transform,
+                IntentValue::RemoveTransform {
+                    component_ids: transforms,
+                },
+            );
+        }
+
+        let removed = world.remove_component_subtree(owner_transform).is_ok();
+        if removed {
+            self.mark_dirty();
+        }
+        removed
     }
 
     fn ensure_registry_current(&self, world: &World) {
@@ -240,6 +475,7 @@ impl GridSystem {
                 owner_transform,
                 editor_root,
                 enabled: grid.enabled,
+                hidden: grid.hidden,
                 selectable: grid.selectable,
             };
             by_grid.insert(component_id, entry);
@@ -252,6 +488,154 @@ impl GridSystem {
         registry.cached_component_count = component_count;
         registry.dirty = false;
     }
+
+    fn active_grid_from_entry(&self, world: &World, entry: GridEntry) -> Option<ActiveGrid> {
+        let matrix_world = TransformSystem::world_model(world, entry.owner_transform)?;
+        let inverse_world = mat4_inverse(matrix_world)?;
+        let origin_world = [matrix_world[3][0], matrix_world[3][1], matrix_world[3][2]];
+        let normal_world = vec3_normalize(transform_direction(matrix_world, [0.0, 1.0, 0.0]));
+        if normal_world == [0.0, 0.0, 0.0] {
+            return None;
+        }
+
+        Some(ActiveGrid {
+            component: entry.grid_component,
+            spacing: world
+                .get_component_by_id_as::<GridComponent>(entry.grid_component)?
+                .spacing
+                .max(1e-4),
+            origin_world,
+            normal_world,
+            matrix_world,
+            inverse_world,
+        })
+    }
+
+    fn ensure_live_runtime(
+        &self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        owner_transform: ComponentId,
+        preview_mode: bool,
+    ) {
+        if self.live_runtime_root(world, owner_transform).is_some() {
+            self.sync_live_runtime_visibility(world, owner_transform, preview_mode);
+            return;
+        }
+        let Some(entry) = self.grid_owned_by_transform(world, owner_transform) else {
+            return;
+        };
+        let Some(grid) = world.get_component_by_id_as::<GridComponent>(entry.grid_component).copied() else {
+            return;
+        };
+
+        let visual_scale_x = grid.size_x as f32 * grid.spacing;
+        let visual_scale_z = grid.size_z as f32 * grid.spacing;
+        let live_root =
+            world.add_component_boxed_named(GRID_LIVE_ROOT_NAME, Box::new(TransformComponent::new()));
+        let live_selectable = world.add_component_boxed_named(
+            GRID_LIVE_SELECTABLE_NAME,
+            Box::new(if preview_mode || grid.hidden {
+                SelectableComponent::off()
+            } else {
+                SelectableComponent::on()
+            }),
+        );
+        let live_raycastable = world.add_component_boxed_named(
+            GRID_LIVE_RAYCASTABLE_NAME,
+            Box::new(if preview_mode || grid.hidden {
+                RaycastableComponent::disabled()
+            } else {
+                RaycastableComponent::enabled()
+            }),
+        );
+        let live_serialize =
+            world.add_component_boxed_named(GRID_LIVE_SERIALIZE_NAME, Box::new(SerializeComponent::off()));
+        let live_shape = world.add_component_boxed_named(
+            GRID_LIVE_SHAPE_NAME,
+            Box::new(
+                TransformComponent::new()
+                    .with_position(0.0, 0.005, 0.0)
+                    .with_scale(visual_scale_x, 0.0025, visual_scale_z),
+            ),
+        );
+        let live_renderable = world.add_component_boxed_named(
+            GRID_LIVE_RENDERABLE_NAME,
+            Box::new(RenderableComponent::from_cpu_mesh_handle(
+                crate::engine::graphics::primitives::CpuMeshHandle::CUBE,
+                crate::engine::graphics::primitives::MaterialHandle::GRID_MESH,
+            )),
+        );
+        let live_color = world.add_component_boxed_named(
+            GRID_LIVE_COLOR_NAME,
+            Box::new(ColorComponent::rgba(1.0, 1.0, 1.0, 1.0)),
+        );
+        let live_opacity = world.add_component_boxed_named(
+            GRID_LIVE_OPACITY_NAME,
+            Box::new(OpacityComponent::new().with_opacity(grid_opacity(grid.hidden, preview_mode))),
+        );
+
+        let _ = world.add_child(owner_transform, live_root);
+        let _ = world.add_child(live_root, live_selectable);
+        let _ = world.add_child(live_root, live_serialize);
+        let _ = world.add_child(live_root, live_shape);
+        let _ = world.add_child(live_shape, live_renderable);
+        let _ = world.add_child(live_renderable, live_color);
+        let _ = world.add_child(live_renderable, live_opacity);
+        let _ = world.add_child(live_renderable, live_raycastable);
+        world.init_component_tree(live_root, emit);
+        emit.push_intent_now(
+            live_root,
+            IntentValue::RegisterTransform {
+                component_ids: vec![live_root, live_shape],
+            },
+        );
+        emit.push_intent_now(
+            live_renderable,
+            IntentValue::RegisterRenderable {
+                component_ids: vec![live_renderable],
+            },
+        );
+    }
+
+    fn sync_live_runtime_visibility(
+        &self,
+        world: &mut World,
+        owner_transform: ComponentId,
+        preview_mode: bool,
+    ) {
+        let Some(entry) = self.grid_owned_by_transform(world, owner_transform) else {
+            return;
+        };
+        let Some(grid) = world.get_component_by_id_as::<GridComponent>(entry.grid_component).copied() else {
+            return;
+        };
+        if let Some(opacity_id) = world.find_component(owner_transform, "#grid_live_opacity")
+            && let Some(opacity) = world.get_component_by_id_as_mut::<OpacityComponent>(opacity_id)
+        {
+            opacity.opacity = grid_opacity(grid.hidden, preview_mode);
+        }
+        if let Some(selectable_id) = world.find_component(owner_transform, "#grid_live_selectable")
+            && let Some(selectable) = world.get_component_by_id_as_mut::<SelectableComponent>(selectable_id)
+        {
+            selectable.enabled = !preview_mode && !grid.hidden;
+        }
+        if let Some(raycastable_id) = world.find_component(owner_transform, "#grid_live_raycastable")
+            && let Some(raycastable) = world.get_component_by_id_as_mut::<RaycastableComponent>(raycastable_id)
+        {
+            raycastable.enable = !preview_mode && !grid.hidden;
+        }
+    }
+
+    fn live_runtime_root(&self, world: &World, owner_transform: ComponentId) -> Option<ComponentId> {
+        world.find_component(owner_transform, "#grid_live_root")
+    }
+
+    fn remove_live_runtime(&self, world: &mut World, owner_transform: ComponentId) {
+        if let Some(live_root) = self.live_runtime_root(world, owner_transform) {
+            let _ = world.remove_component_subtree(live_root);
+        }
+    }
 }
 
 fn mark_registry_dirty(registry: &Arc<Mutex<GridRegistry>>) {
@@ -261,9 +645,20 @@ fn mark_registry_dirty(registry: &Arc<Mutex<GridRegistry>>) {
 fn refresh_grid_entry(world: &World, mut entry: GridEntry) -> GridEntry {
     if let Some(grid) = world.get_component_by_id_as::<GridComponent>(entry.grid_component) {
         entry.enabled = grid.enabled;
+        entry.hidden = grid.hidden;
         entry.selectable = grid.selectable;
     }
     entry
+}
+
+fn grid_opacity(hidden: bool, preview_mode: bool) -> f32 {
+    if preview_mode {
+        0.45
+    } else if hidden {
+        0.0
+    } else {
+        1.0
+    }
 }
 
 fn nearest_editor_ancestor(world: &World, start: ComponentId) -> Option<ComponentId> {
@@ -300,26 +695,75 @@ fn transform_direction(m: [[f32; 4]; 4], v: [f32; 3]) -> [f32; 3] {
     ]
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GridSpawnSpec {
+    pub translation: [f32; 3],
+    pub rotation: [f32; 4],
+    pub spacing: f32,
+    pub size_x: u32,
+    pub size_z: u32,
+    pub enabled: bool,
+    pub hidden: bool,
+    pub preview_mode: bool,
+}
+
+impl GridSpawnSpec {
+    pub fn default_hidden_editor_grid() -> Self {
+        Self {
+            translation: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            spacing: GridSystem::DEFAULT_EDITOR_GRID_SPACING,
+            size_x: GridSystem::DEFAULT_EDITOR_GRID_SIZE_X,
+            size_z: GridSystem::DEFAULT_EDITOR_GRID_SIZE_Z,
+            enabled: true,
+            hidden: true,
+            preview_mode: false,
+        }
+    }
+
+    pub fn from_cursor_pose(
+        translation: Option<[f32; 3]>,
+        rotation: Option<[f32; 4]>,
+        preview_mode: bool,
+    ) -> Self {
+        Self {
+            translation: translation.unwrap_or([0.0, 0.0, 0.0]),
+            rotation: rotation.unwrap_or([0.0, 0.0, 0.0, 1.0]),
+            spacing: GridSystem::DEFAULT_EDITOR_GRID_SPACING,
+            size_x: GridComponent::DEFAULT_SIZE_X,
+            size_z: GridComponent::DEFAULT_SIZE_Z,
+            enabled: true,
+            hidden: preview_mode,
+            preview_mode,
+        }
+    }
+}
+
+pub fn remap_grid_rotation_to_surface_up(surface_aligned_rotation: [f32; 4]) -> [f32; 4] {
+    let z_to_y = quat_from_axis_angle([1.0, 0.0, 0.0], std::f32::consts::FRAC_PI_2);
+    quat_mul(surface_aligned_rotation, z_to_y)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn snap_hit_rounds_to_grid_cell_on_xy_plane() {
+    fn snap_hit_rounds_to_grid_cell_on_xz_plane() {
         let mut world = World::default();
         let active = ActiveGrid {
             component: world.add_component(TransformComponent::new()),
             spacing: 0.5,
             origin_world: [0.0, 0.0, 0.0],
-            normal_world: [0.0, 0.0, 1.0],
+            normal_world: [0.0, 1.0, 0.0],
             matrix_world: TransformComponent::new().transform.matrix_world,
             inverse_world: TransformComponent::new().transform.matrix_world,
         };
 
         let snapped = GridSystem::snap_hit(&active, [0.24, 0.76, 0.18]);
-        assert_eq!(snapped.step.cell, [0, 2]);
+        assert_eq!(snapped.step.cell, [0, 0]);
         assert!((snapped.point_world[0] - 0.0).abs() < 1e-5);
-        assert!((snapped.point_world[1] - 1.0).abs() < 1e-5);
+        assert!((snapped.point_world[1] - 0.0).abs() < 1e-5);
         assert!((snapped.point_world[2] - 0.0).abs() < 1e-5);
     }
 
@@ -388,6 +832,7 @@ mod tests {
                 && entry.owner_transform == a_transform
                 && entry.editor_root == editor
                 && entry.enabled
+                && !entry.hidden
                 && entry.selectable
         }));
         assert!(entries.iter().any(|entry| {
@@ -426,5 +871,23 @@ mod tests {
                 .expect("grid entry after toggle")
                 .enabled
         );
+    }
+
+    #[test]
+    fn active_grid_ignores_hidden_grid() {
+        let mut world = World::default();
+        let grids = GridSystem::new();
+        let editor = world.add_component(EditorComponent::new());
+        let grid_transform = world.add_component(TransformComponent::new());
+        let grid = world.add_component(GridComponent::new(1.0).with_hidden(true));
+        let _ = world.add_child(editor, grid_transform);
+        let _ = world.add_child(grid_transform, grid);
+
+        world
+            .get_component_by_id_as_mut::<EditorComponent>(editor)
+            .expect("editor")
+            .selected = Some(grid_transform);
+
+        assert!(grids.active_grid_for_editor(&world, editor).is_none());
     }
 }

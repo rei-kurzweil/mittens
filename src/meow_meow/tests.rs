@@ -2307,6 +2307,7 @@ fn roundtrip_grid_component_with_dimensions() {
         .with_size_x(24)
         .with_size_z(12)
         .with_enabled(false)
+        .with_hidden(true)
         .with_selectable(false);
     let (world, id) = roundtrip_component(original);
     let got = world.get_component_by_id_as::<GridComponent>(id).unwrap();
@@ -2314,6 +2315,7 @@ fn roundtrip_grid_component_with_dimensions() {
     assert_eq!(got.size_x, 24);
     assert_eq!(got.size_z, 12);
     assert!(!got.enabled);
+    assert!(got.hidden);
     assert!(!got.selectable);
 }
 

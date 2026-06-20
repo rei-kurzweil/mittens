@@ -9,13 +9,14 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::editor::context::{
     EDITOR_WORKSPACE_ASSET_SELECTION_CHANGED, EditorContextState,
 };
-use crate::engine::ecs::system::editor_inspector_system_stopgap_mms_adapter::spawn_default_grid_for_editor;
 use crate::engine::ecs::system::editor_paint_system_state_manager::{
     PaintEvent, PaintState, PaintTool, is_paint_active, is_paint_panel_focused,
     paint_tool_from_item, reduce_paint_state,
 };
 use crate::engine::ecs::system::editor_system::select_editor_target;
-use crate::engine::ecs::system::grid_system::{GridSnapResult, GridStep, GridSystem};
+use crate::engine::ecs::system::grid_system::{
+    GridSnapResult, GridSpawnSpec, GridStep, GridSystem, remap_grid_rotation_to_surface_up,
+};
 use crate::engine::ecs::system::object_placement_preview::{
     PlacementKind, PlacementPreviewSession, PlacementPreviewStyle, commit_preview,
     create_preview_shell, update_preview_pose,
@@ -35,6 +36,7 @@ const PAINT_TOOL_SELECTION_SELECTOR: &str = "#paint_tool_selection";
 const PAINT_STATUS_WRAP_SELECTOR: &str = "#paint_status_wrap";
 const PANEL_STATUS_VALUE_SELECTOR: &str = "#paint_panel_status_value";
 const RUNTIME_UI_ROOT_NAME: &str = "editor_runtime_ui_root";
+const EDITOR_WORKSPACE_GRIDS_CHANGED: &str = "EditorWorkspaceGridsChanged";
 
 fn paint_perf(label: &str, start: Instant, detail: impl AsRef<str>) {
     eprintln!(
@@ -584,7 +586,20 @@ fn apply_paint_side_effects(
                 if let Some(session) = runtime.preview_session.take() {
                     commit_preview(world, session.preview_root_component_id);
                     if session.placement_kind == PlacementKind::Grid {
+                        let _ = grid_system.set_grid_hidden(
+                            world,
+                            emit,
+                            session.preview_root_component_id,
+                            false,
+                        );
                         grid_system.mark_dirty();
+                        emit.push_event(
+                            panel_query_root,
+                            EventSignal::DataEvent {
+                                name: EDITOR_WORKSPACE_GRIDS_CHANGED.to_string(),
+                                payload: Some(session.active_editor),
+                            },
+                        );
                         select_editor_target(
                             world,
                             emit,
@@ -739,7 +754,7 @@ fn handle_free_draw_stroke_move(
     let Some(session) = runtime.preview_session.as_mut() else {
         return None;
     };
-    let grid_snap = context.grid_snap(hit_point);
+    let grid_snap = context.grid_snap(world, renderable, hit_point);
     let frame = match resolve_surface_placement_frame(world, renderable, hit_point, grid_snap) {
         Ok(frame) => frame,
         Err(_) => return None,
@@ -1135,14 +1150,20 @@ fn handle_stroke_move(
 #[derive(Debug, Clone)]
 struct PaintContext<'a> {
     asset: &'a PaintAssetTemplate,
-    active_grid: Option<crate::engine::ecs::system::grid_system::ActiveGrid>,
+    grid_system: GridSystem,
 }
 
 impl<'a> PaintContext<'a> {
-    fn grid_snap(&self, hit_point: [f32; 3]) -> Option<GridSnapResult> {
-        self.active_grid
-            .as_ref()
-            .map(|grid| GridSystem::snap_hit(grid, hit_point))
+    fn grid_snap(
+        &self,
+        world: &World,
+        target_renderable: ComponentId,
+        hit_point: [f32; 3],
+    ) -> Option<GridSnapResult> {
+        let grid = self
+            .grid_system
+            .grid_hit_context_for_renderable(world, target_renderable)?;
+        Some(GridSystem::snap_hit(&grid, hit_point))
     }
 }
 
@@ -1187,16 +1208,17 @@ fn resolve_paint_context<'a>(
             templates.iter().find(|template| template.key == asset_key)
         }
     }?;
-    let active_grid = grid_system.active_grid_for_editor(world, editor_root);
-    let context = PaintContext { asset, active_grid };
+    let context = PaintContext {
+        asset,
+        grid_system: grid_system.clone(),
+    };
     paint_perf(
         "resolve_paint_context.active",
         start,
         format!(
-            "tool={:?} asset_key={} grid_active={}",
+            "tool={:?} asset_key={}",
             paint_state.selected_tool,
             asset.key,
-            context.active_grid.is_some()
         ),
     );
     Some(context)
@@ -1260,7 +1282,7 @@ fn start_paint_preview_session(
     let _ = world.add_child(scene_parent, raycastable_root);
     create_preview_shell(world, preview_root, emit, PlacementPreviewStyle::default());
     world.init_component_tree(raycastable_root, emit);
-    let grid_snap = context.grid_snap(hit_point);
+    let grid_snap = context.grid_snap(world, target_renderable, hit_point);
     let frame =
         resolve_surface_placement_frame(world, target_renderable, hit_point, grid_snap).ok()?;
     let pose =
@@ -1286,15 +1308,23 @@ fn start_grid_preview_session(
     context: &PaintContext<'_>,
     editor_context: &EditorContextState,
 ) -> Option<PlacementPreviewSession> {
-    let grid_snap = context.grid_snap(hit_point);
+    let grid_snap = context.grid_snap(world, target_renderable, hit_point);
     let frame =
         resolve_surface_placement_frame(world, target_renderable, hit_point, grid_snap).ok()?;
     let pose = resolve_surface_aligned_pose_from_frame(&frame, 0.0).ok()?;
     let mut preview_context = editor_context.clone();
     preview_context.cursor_translation = Some(pose.translation);
-    preview_context.cursor_rotation = Some(pose.rotation);
-    let preview_root =
-        spawn_default_grid_for_editor(world, emit, editor_root, &preview_context, true);
+    preview_context.cursor_rotation = Some(remap_grid_rotation_to_surface_up(pose.rotation));
+    let preview_root = GridSystem::new().spawn_grid_for_editor(
+        world,
+        emit,
+        editor_root,
+        GridSpawnSpec::from_cursor_pose(
+            preview_context.cursor_translation,
+            preview_context.cursor_rotation,
+            true,
+        ),
+    );
     create_preview_shell(world, preview_root, emit, PlacementPreviewStyle::default());
     update_preview_pose(world, emit, preview_root, pose);
     Some(PlacementPreviewSession {
@@ -1350,22 +1380,16 @@ fn paint_activity_status(
         }
     }
 
-    let Some(editor_root) = active_editor else {
+    let Some(_editor_root) = active_editor else {
         return PaintActivityStatus {
             active: false,
             reason: "no active editor".to_string(),
         };
     };
 
-    if let Some(grid) = grid_system.active_grid_for_editor(world, editor_root) {
-        return PaintActivityStatus {
-            active: true,
-            reason: format!("grid active @ {:.2}", grid.spacing),
-        };
-    }
     PaintActivityStatus {
         active: true,
-        reason: "grid inactive".to_string(),
+        reason: "snap on shown grid hits only".to_string(),
     }
 }
 
@@ -1430,9 +1454,9 @@ fn place_asset(
     );
 
     let grid_text = if grid_snap.is_some() {
-        "grid active"
+        "snapped on grid hit"
     } else {
-        "grid inactive"
+        "unsnapped"
     };
     format!("paint placed: {} | {}", asset.title, grid_text)
 }
@@ -1604,7 +1628,7 @@ fn base_status_text(
         }
     }
 
-    let Some(editor_root) = active_editor else {
+    let Some(_editor_root) = active_editor else {
         return "paint inactive: no active editor".to_string();
     };
 
@@ -1616,11 +1640,7 @@ fn base_status_text(
         _ => unreachable!(),
     };
 
-    if let Some(grid) = grid_system.active_grid_for_editor(world, editor_root) {
-        format!("{} active | grid active @ {:.2}", tool_name, grid.spacing)
-    } else {
-        format!("{} active | grid inactive", tool_name)
-    }
+    format!("{tool_name} active | snap only on shown grid hits")
 }
 
 fn set_status_text(

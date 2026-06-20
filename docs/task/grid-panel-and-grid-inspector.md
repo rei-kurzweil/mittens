@@ -18,7 +18,7 @@ Add a dedicated grid management flow to the editor in two phases:
    - add a new `grid_panel` MMS panel under `assets/components/panels.mms`
    - add a new editor-side `system/editor/` panel integration for it
    - list all grids in the active editor
-   - allow add, select, visibility toggle, and delete
+   - allow add, select, hide/show, enable/disable, and delete
    - ensure grids live under transforms and can be selected with the normal editor gizmo flow
    - keep grid ownership/editor mutations inside the `grid_panel` flow rather than requiring a fully general grid lifecycle API yet
    - add a dedicated grid render path:
@@ -52,14 +52,16 @@ This note is intentionally grounded in what the repo already has.
 - [`src/engine/ecs/system/grid_system.rs`](/home/rei/_/cat-engine/src/engine/ecs/system/grid_system.rs:1)
   already exists, but today it is not a registry/listing system.
 - Current behavior is editor-paint oriented:
-  - reads `EditorComponent.selected`
-  - if the selected component is a `GridComponent` and is enabled/selectable, it becomes the active snap grid
+  - resolves a live grid for snapping/render participation
+  - still carries older assumptions about selected grids acting as the snap source
   - computes world matrix / inverse matrix
   - snaps hit points onto the selected grid plane
 
 Implication:
-- we do not need to invent grid snapping
-- we do need to expand the grid model from “selected grid used for paint snapping” into “all grids known to the editor”
+- we do not need to invent grid snapping from scratch
+- we do need to expand the grid model from “selected/live grid used for paint snapping” into:
+  - stored grid records known to the editor
+  - separately instantiated live grids that participate in rendering, BVH, and snapping
 
 ### Grid rendering direction
 
@@ -81,8 +83,9 @@ Implication:
 - Paint status already reports grid state when a selected grid is active.
 
 Implication:
-- phase 1 can keep the current “selected grid drives paint snapping” rule
 - `grid_panel` selection should feed normal editor selection rather than inventing a second active-grid source
+- paint snapping should only occur when the current interaction is actually hitting a grid surface
+- selecting a grid should not by itself force snapping on non-grid scene geometry
 
 ### Editor selection + gizmo path
 
@@ -163,6 +166,11 @@ Current grid data only stores spacing/enabled/selectable.
 
 Phase 1 now also wants explicit finite dimensions for rendering, and phase 2 needs those dimensions to become editable.
 
+It also needs to distinguish between:
+- persisted grid state
+- visual hidden/shown state
+- whether a live runtime instance currently exists in the world/BVH
+
 Phase 1/2 needs at least:
 - granularity / spacing
 - size x
@@ -173,6 +181,7 @@ Likely `GridComponent` expansion:
 - `size_x: i32` or `u32`
 - `size_z: i32` or `u32`
 - `enabled: bool`
+- `hidden: bool`
 - `selectable: bool`
 
 Open question:
@@ -187,6 +196,15 @@ Rendering implication:
 - the grid renderable should use a plane because the grid now has finite dimensions
 - the plane extent should come from `size_x * spacing` and `size_z * spacing`
 
+Runtime implication:
+- `enabled = false` should mean:
+  - preserve the stored grid state
+  - remove the live grid from world/render/BVH participation
+  - allow later re-enable to recreate the runtime subtree from saved state
+- `hidden = true` should mean:
+  - keep the grid state and live instance intact
+  - suppress rendering until shown again
+
 ## 2. `GridSystem` is not yet a grid registry
 
 The existing `GridSystem` is only an active-grid resolver plus snapping helper.
@@ -196,6 +214,7 @@ Phase 1 needs registry-style helpers such as:
 - `grid_owner_transform(world, grid_component) -> Option<ComponentId>`
 - `grid_component_under_transform(world, transform) -> Option<ComponentId>`
 - filtering for live grids under the active editor subtree
+- helpers that separate stored grid entries from currently-instantiated live grid entities
 
 Important constraint:
 - this should be scoped to an editor root, not global across the entire world
@@ -243,6 +262,7 @@ only produces a single labeled row.
 That is enough for world/inspector rows, but not for a grid row with:
 - label
 - visibility icon button
+- enable/disable button
 - delete icon button
 
 Recommendation:
@@ -250,7 +270,7 @@ Recommendation:
 - add a dedicated grid-row tree builder that emits:
   - row payload
   - main click target for selection
-  - child click targets for visibility / delete actions
+  - child click targets for visibility / enable / delete actions
   - explicit `DataComponent` entries describing action kind
 - wire that row builder behind `RendererSpec::Rust` rather than treating the list itself as an MMS loop
 

@@ -6,6 +6,7 @@ pub struct GridComponent {
     pub size_x: u32,
     pub size_z: u32,
     pub enabled: bool,
+    pub hidden: bool,
     pub selectable: bool,
     component: Option<ComponentId>,
 }
@@ -20,6 +21,7 @@ impl GridComponent {
             size_x: Self::DEFAULT_SIZE_X,
             size_z: Self::DEFAULT_SIZE_Z,
             enabled: true,
+            hidden: false,
             selectable: true,
             component: None,
         }
@@ -32,6 +34,11 @@ impl GridComponent {
 
     pub fn with_selectable(mut self, selectable: bool) -> Self {
         self.selectable = selectable;
+        self
+    }
+
+    pub fn with_hidden(mut self, hidden: bool) -> Self {
+        self.hidden = hidden;
         self
     }
 
@@ -83,6 +90,7 @@ impl Component for GridComponent {
             .with_call("size_x", vec![num(self.size_x as f64)])
             .with_call("size_z", vec![num(self.size_z as f64)])
             .with_call("enabled", vec![b(self.enabled)])
+            .with_call("hidden", vec![b(self.hidden)])
             .with_call("selectable", vec![b(self.selectable)])
     }
 }

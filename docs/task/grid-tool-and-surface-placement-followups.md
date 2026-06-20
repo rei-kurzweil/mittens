@@ -72,11 +72,25 @@ This note tracks those follow-ups in one place.
 ## Current intended behavior
 
 - `grid_panel`:
+  - when an editor session/panel set comes up and there are no editor grids yet, the system should ensure one default grid state exists:
+    - size `8192 x 8192`
+    - spacing `1.0`
+    - position `0,0,0`
+    - horizontal orientation
+    - hidden by default
   - `Add Grid` should create a grid immediately from the effective cursor / cursor-backed spawn pose.
   - It should remain the cursor-style, non-preview path.
+  - every grid row should expose three separate controls:
+    - `Hide` / `Show`
+    - `Disable` / `Enable`
+    - `Delete`
+  - `Hide` should affect visibility only.
+  - `Disable` should remove the live grid from the world/runtime/BVH, but preserve the stored grid state so the same grid can be re-enabled later.
 - `paint_panel`:
   - `Grid Tool` should create a preview grid on drag start, update it while dragging over valid scene hits, and commit the same object on drag end.
   - `Free Draw` should keep doing the same preview/commit pattern for non-grid object placement.
+  - snapping for paint tools should only become active when the current click/drag interaction is actually hitting a grid.
+  - clicking or dragging on ordinary scene geometry should not snap just because a grid exists, is selected, or is available elsewhere in the editor.
 
 ## Open issues
 
@@ -85,6 +99,7 @@ This note tracks those follow-ups in one place.
 Observed behavior:
 
 - placing a grid through `paint_panel` does not reliably update the `grid_panel` list after commit
+- the startup default grid also still fails to appear in the `grid_panel` until a later panel action such as `Add Grid`
 - this suggests either:
   - the placed grid is not being seen by `GridSystem` registry helpers after commit, or
   - the grid is registered correctly but `grid_panel` is not rerendered on drag end
@@ -95,11 +110,15 @@ Expected behavior:
   - the grid should be visible in `GridSystem::enumerate_grids_for_editor(...)`
   - the `grid_panel` content should rerender immediately
   - the newly placed grid should appear in the list without requiring unrelated editor interaction
+- when editor panels first come up:
+  - an ensured default grid should already be represented in the panel model
+  - hidden/default status should not require a manual `Add Grid` click before the row exists
 
 Likely work:
 
 - audit whether preview-created grid subtrees become ordinary registered grid subtrees after preview markers are removed
 - confirm `GridSystem` dirtying / registry refresh is triggered by preview attach/commit flow
+- confirm the startup `ensure_default_grid(...)` path also dirties or rerenders the same panel state
 - rerender `grid_panel` on preview commit, not only on direct `grid_panel` button paths
 
 ### 2. Preview opacity is not being removed on commit
@@ -167,23 +186,20 @@ Observed behavior:
 - snapping appears to work sometimes
 - it is not yet obvious what turns it on or off
 
-Questions that need explicit answers:
-
-- is snapping active whenever an authored grid exists?
-- only when a grid is selected?
-- only when dragging over a grid?
-- only when the editor has an active grid via `GridSystem::active_grid_for_editor(...)`?
-
 Expected behavior:
 
 - snapping rules should be explicit to the user
+- snapping should only engage when the active paint interaction is currently hitting a grid
+- snapping should not engage when starting or dragging on non-grid scene surfaces
+- grid existence, selection, or editor-local "active grid" state alone should not force snapping on unrelated geometry
 - `paint_panel` should expose a small grid-settings row between tool content and status:
   - `Snap?`
   - selection options: `yes` and `no`
 
 Phase recommendation:
 
-- keep the current active-grid-based implementation if it is otherwise correct
+- treat "snap enabled" as permission, not as proof that snapping should occur on the current hit
+- only apply the snap path when the resolved hit target is a grid surface
 - add UI that exposes whether snapping is enabled for paint/grid-tool placement
 - route that UI through a dedicated paint/grid settings state rather than burying it in implicit editor selection state
 

@@ -16,7 +16,8 @@ pub(crate) const GRID_PANEL_ROOT_SELECTOR: &str = "#grid_panel_root";
 pub(crate) const GRID_PANEL_ADD_BUTTON_SELECTOR: &str = "#grid_add_button";
 pub(crate) const GRID_PANEL_ITEM_PREFIX: &str = "grid_item_";
 pub(crate) const GRID_PANEL_ROW_PAYLOAD_NAME: &str = "grid_panel_row_payload";
-pub(crate) const GRID_PANEL_TOGGLE_PAYLOAD_NAME: &str = "grid_panel_toggle_payload";
+pub(crate) const GRID_PANEL_VISIBILITY_PAYLOAD_NAME: &str = "grid_panel_visibility_payload";
+pub(crate) const GRID_PANEL_ENABLED_PAYLOAD_NAME: &str = "grid_panel_enabled_payload";
 pub(crate) const GRID_PANEL_DELETE_PAYLOAD_NAME: &str = "grid_panel_delete_payload";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -41,7 +42,8 @@ pub(crate) struct GridPanelEntry {
     pub(crate) grid_component: ComponentId,
     pub(crate) owner_transform: ComponentId,
     pub(crate) label: String,
-    pub(crate) visible: bool,
+    pub(crate) shown: bool,
+    pub(crate) enabled: bool,
     pub(crate) selected: bool,
 }
 
@@ -90,7 +92,8 @@ pub(crate) fn build_grid_panel_model(
             grid_component: entry.grid_component,
             owner_transform: entry.owner_transform,
             label: world_panel_item_label(world, entry.owner_transform),
-            visible: entry.enabled,
+            shown: !entry.hidden,
+            enabled: entry.enabled,
             selected: selected_component == Some(entry.owner_transform)
                 || selected_component == Some(entry.grid_component),
         })
@@ -127,17 +130,18 @@ fn grid_panel_row_render_fn(
         .target_ref
         .ok_or_else(|| "grid row missing owner transform".to_string())?;
     let grids = GridSystem::new();
-    let visible = grids
+    let (shown, enabled) = grids
         .grid_owned_by_transform(world, owner_transform)
-        .map(|entry| entry.enabled)
-        .unwrap_or(true);
+        .map(|entry| (!entry.hidden, entry.enabled))
+        .unwrap_or((true, true));
     Ok(spawn_grid_panel_row_tree(
         world,
         &item.key,
         owner_transform,
         &item.label,
         item.selected,
-        visible,
+        shown,
+        enabled,
     ))
 }
 
@@ -152,7 +156,8 @@ fn spawn_grid_panel_row_tree(
     owner_transform: ComponentId,
     label: &str,
     selected: bool,
-    visible: bool,
+    shown: bool,
+    enabled: bool,
 ) -> ComponentId {
     let row_root = world.add_component_boxed_named(row_name, Box::new(TransformComponent::new()));
 
@@ -240,18 +245,32 @@ fn spawn_grid_panel_row_tree(
     let _ = world.add_child(body_text_root, body_text);
     let _ = world.add_child(body_text, body_text_color);
 
-    let toggle = spawn_grid_icon_button(
+    let visibility = spawn_grid_icon_button(
         world,
         row_name,
-        "toggle",
-        GRID_PANEL_TOGGLE_PAYLOAD_NAME,
+        "visibility",
+        GRID_PANEL_VISIBILITY_PAYLOAD_NAME,
         owner_transform,
         row_name,
-        if visible { "Hide" } else { "Show" },
-        if visible {
+        if shown { "Hide" } else { "Show" },
+        if shown {
             [0.10, 0.55, 0.18, 1.0]
         } else {
             [0.42, 0.42, 0.42, 1.0]
+        },
+    );
+    let enabled_toggle = spawn_grid_icon_button(
+        world,
+        row_name,
+        "enabled",
+        GRID_PANEL_ENABLED_PAYLOAD_NAME,
+        owner_transform,
+        row_name,
+        if enabled { "Off" } else { "On" },
+        if enabled {
+            [0.12, 0.36, 0.72, 1.0]
+        } else {
+            [0.45, 0.30, 0.08, 1.0]
         },
     );
     let delete = spawn_grid_icon_button(
@@ -264,7 +283,8 @@ fn spawn_grid_panel_row_tree(
         "Delete",
         [0.72, 0.15, 0.15, 1.0],
     );
-    let _ = world.add_child(row_root, toggle);
+    let _ = world.add_child(row_root, visibility);
+    let _ = world.add_child(row_root, enabled_toggle);
     let _ = world.add_child(row_root, delete);
 
     row_root
@@ -383,7 +403,8 @@ mod tests {
         assert_eq!(model.title, "Grids");
         assert_eq!(model.rows.len(), 1);
         assert_eq!(model.rows[0].label, "grid_1");
-        assert!(model.rows[0].visible);
+        assert!(model.rows[0].shown);
+        assert!(model.rows[0].enabled);
         assert!(model.rows[0].selected);
     }
 }

@@ -2,7 +2,7 @@
 
 ## Status
 
-Open bug / investigation.
+Partially fixed on 2026-06-20, with follow-up verification still needed.
 
 ## Symptom
 
@@ -11,6 +11,13 @@ update to show the new grid immediately.
 
 The new grid only appears in the panel after some other grid-panel-specific action happens, such as
 clicking `Add Grid`.
+
+The same stale-panel behavior also affects the startup default grid: the editor may ensure a
+default hidden grid exists, but its row still does not appear until a later panel action forces the
+list to rebuild.
+
+There is also a related delete/runtime cleanup bug: deleting grid rows can leave live grid visuals
+and hit state behind in the world, and the app may become noticeably slow after those deletes.
 
 ## Repro
 
@@ -23,12 +30,23 @@ clicking `Add Grid`.
 7. Click `Add Grid`.
 8. Observe that the panel list now refreshes and the previously placed grid appears.
 
+Startup variant:
+
+1. Open an editor scene with editor panels enabled and no authored grids yet.
+2. Observe that the startup/default grid is expected to exist as hidden editor state.
+3. Observe that no corresponding row appears in `grid_panel` yet.
+4. Click `Add Grid`.
+5. Observe that the panel list rebuild now reveals the previously missing grid row(s).
+
 ## Expected behavior
 
 Placing a grid via the paint panel should refresh the `grid_panel` immediately.
 
 The panel should reflect the current set of editor grids without requiring an unrelated
 panel-specific action to force a rerender.
+
+That same rule should apply to ensured startup grids: if the grid state exists, the row should
+exist, even if the grid starts hidden.
 
 ## Actual behavior
 
@@ -37,7 +55,12 @@ The panel model appears stale until a later action causes a grid-panel rerender 
 This suggests grid creation through the paint placement path is not emitting or triggering the same
 refresh/rebuild path that the explicit `Add Grid` button uses.
 
-## Likely root cause
+The startup default-grid path appears to miss that same refresh/rebuild path.
+
+Grid deletion also appears incomplete: the row can disappear from the panel while the live grid
+runtime remains registered in the world and visual world.
+
+## Root cause notes
 
 The paint/grid placement path creates the grid preview / final grid, but the shared editor UI layer
 does not appear to rerender the grid panel afterward.
@@ -53,14 +76,35 @@ Relevant paths:
 - [src/engine/ecs/system/editor_inspector_system_stopgap_mms_adapter.rs](/home/rei/_/cat-engine/src/engine/ecs/system/editor_inspector_system_stopgap_mms_adapter.rs:2690)
   rerenders grid-panel content from editor context
 
-Today, `Add Grid` has an explicit rerender path, but paint-driven grid placement appears not to
-flow through the same refresh mechanism.
+Before the 2026-06-20 fix pass, `Add Grid` had an explicit rerender path, but paint-driven grid
+placement appears not to flow through the same refresh mechanism.
+
+The startup `ensure_default_grid(...)` path also appeared not to flow through the same refresh
+mechanism because the first grid-panel render used a default editor context with no
+`active_editor`, so no grid rows were enumerated yet.
+
+The delete path used raw `world.remove_component_subtree(...)`, which bypassed the normal runtime
+unregister path for live renderables and transforms. That explains stale grid visuals after delete
+and is a plausible cause of the slowdown after deleting all grids.
+
+## Current fix direction
+
+The current implementation pass now:
+
+1. ensures the default grid before panel bootstrap
+2. renders the first grid panel with the owning editor root in context
+3. routes delete through shared grid cleanup instead of raw subtree removal
+
+Smoke testing is still needed to confirm the startup row now appears immediately and that deleting
+grids fully removes their live runtime.
 
 ## Investigation targets
 
 - `EditorPaintSystem`
   - where the grid preview becomes a committed grid
   - whether any panel refresh or data event is emitted at commit time
+- `GridSystem`
+  - whether startup/default-grid ensure logic marks editor grid state dirty for panel rebuilds
 - stopgap adapter / shared panel runtime
   - whether grid panel updates are only tied to direct grid-panel clicks
 - editor context / workspace events

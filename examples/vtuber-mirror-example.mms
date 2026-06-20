@@ -42,15 +42,15 @@ T.position(0.15, -0.45, 1.0) {
 
 T.position(-0.85, 0.55, 0.35) {
     DL {
-        intensity(0.55)
+        intensity(0.95)
         color(0.90, 0.94, 1.0)
     }
 }
 
-T.position(0.65, 0.35, -0.75) {
+T.position(0.75, 0.35, -0.75) {
     DL {
-        intensity(0.45)
-        color(1.0, 0.92, 0.88)
+        intensity(0.85)
+        color(1.0, 1.0, 1.0)
     }
 }
 
@@ -60,7 +60,7 @@ ED {
         Collision.static() {
             CollisionShape.cube([60.0, 0.06, 60.0])
         }
-        R.cube() { C.rgba(0.73, 0.71, 0.70, 1.0) }
+        R.cube() { C.rgba(0.75, 0.75, 0.75, 1.0) }
     }
 
     T.position(0.0, -1.55, -0.2).scale(8.0, 0.18, 10.5) {

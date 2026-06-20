@@ -1378,6 +1378,7 @@ mod tests {
         );
 
         assert_eq!(row_text(&world, runtime_ui_root, "#grid_item_0"), "grid_1");
+        assert_eq!(row_text(&world, runtime_ui_root, "#grid_item_1"), "grid_2");
         assert_eq!(
             world
                 .get_component_by_id_as::<EditorComponent>(editor_root)
@@ -1386,10 +1387,10 @@ mod tests {
             "add-grid should not force scene selection"
         );
         let grid_root = world
-            .find_component(editor_root, "#grid_1")
+            .find_component(editor_root, "#grid_2")
             .expect("expected spawned grid transform under editor root");
         assert!(
-            world.find_component(grid_root, "#grid_visual").is_some(),
+            world.find_component(grid_root, "#grid_live_root").is_some(),
             "expected a helper visual subtree under the spawned grid"
         );
 
@@ -1488,7 +1489,7 @@ mod tests {
         );
 
         let grid_root = world
-            .find_component(editor_root, "#grid_1")
+            .find_component(editor_root, "#grid_2")
             .expect("expected spawned grid transform under editor root");
         let grid_transform = world
             .get_component_by_id_as::<TransformComponent>(grid_root)
@@ -1565,10 +1566,10 @@ mod tests {
         );
 
         let grid_root = world
-            .find_component(editor_root, "#grid_1")
+            .find_component(editor_root, "#grid_2")
             .expect("expected spawned grid transform");
         let grid_visual_renderable = world
-            .find_component(grid_root, "#grid_visual_renderable")
+            .find_component(grid_root, "#grid_live_renderable")
             .expect("expected grid visual renderable");
         let renderable = world
             .get_component_by_id_as::<RenderableComponent>(grid_visual_renderable)
