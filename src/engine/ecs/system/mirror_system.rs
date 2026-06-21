@@ -338,6 +338,7 @@ impl System for MirrorSystem {
                 },
                 plane_origin: plane_pos,
                 plane_normal,
+                aspect_ratio: aspect,
                 target_key: mirror_key.clone(),
                 source_instance,
                 resolution_scale: quality as f32 / 1024.0, // normalized scale? renderer decides

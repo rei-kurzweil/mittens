@@ -137,6 +137,14 @@ ED {
         }
     }
 
+    T.position(-1.15, 0.55, -2.709).rotation(0.0, 3.14159 / 2.0, 0.0).scale(2.2, 2.5, 1.0) {
+        R.plane() { C.rgba(0.10, 0.30, 1.0, 1.0) }
+    }
+
+    T.position(1.15, 0.55, -2.709).rotation(0.0, 3.14159 / 2.0, 0.0).scale(2.2, 2.5, 1.0) {
+        R.plane() { C.rgba(0.12, 0.86, 0.22, 1.0) }
+    }
+
     T.position(0.0, 0.55, -4.08).scale(2.45, 2.75, 0.10) {
         R.cube() { C.rgba(0.66, 0.56, 0.34, 1.0) }
     }
@@ -224,26 +232,56 @@ InputXR.on() {
     }
 }
 
-// --- Desktop overview camera (Window target) ---
-//
-// Companion camera for desktop validation when XR is also active.
-// This keeps the example usable without a headset and avoids the white-screen
-// case where only the clear color is visible in the window.
-I.speed(1.0) {
-    InputTransformMode.forward_z() {
-        roll_axis_y()
-        fps_rotation()
-    }
-    T.position(3.1, 1.45, 3.9).rotation(0.0, 0.58, 0.0) {
-        name = "desktop_camera_rig"
-        Collision.kinematic() {
-            CollisionShape.sphere(0.22)
-            KineticResponse.slide() {}
+// // --- Desktop overview camera (Window target) ---
+// //
+// // Companion camera for desktop validation when XR is also active.
+// // This keeps the example usable without a headset and avoids the white-screen
+// // case where only the clear color is visible in the window.
+// I.speed(1.0) {
+//     InputTransformMode.forward_z() {
+//         roll_axis_y()
+//         fps_rotation()
+//     }
+//     T.position(3.1, 1.45, 3.9).rotation(0.0, 0.58, 0.0) {
+//         name = "desktop_camera_rig"
+//         Collision.kinematic() {
+//             CollisionShape.sphere(0.22)
+//             KineticResponse.slide() {}
+//         }
+//         C3D {
+//             Pointer {}
+//         }
+//     }
+//}
+
+
+I.speed(1.5) {
+        InputTransformMode.forward_z() {
+            fps_rotation()
+            roll_axis_y()
         }
-        C3D {
-            Pointer {}
+        T {
+            AVC {
+                head_bone("J_Bip_C_Head")
+                
+                initial_yaw(0.0)
+
+                T.position(0.0, -1.6, 0.0) {
+                    GLTF.new("assets/models/bisket.8.0.glb") { EM.on() }
+                }
+
+                // Camera wrapped in T(eye_offset).
+                // In desktop mode, we want this T to move the camera relative
+                // to the head bone, NOT move the head relative to the camera.
+                T.rotate(0.0, 3.14159, 0.0) {
+                
+                T.position(0.0, 0.08, -0.32) {
+                    C3D { Pointer {} }
+                }
+
+                }
+            }
         }
-    }
 }
 
 XR.on()

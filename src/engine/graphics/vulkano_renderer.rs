@@ -3729,7 +3729,6 @@ mod vulkano_backend {
 
             let device = self.context.device().clone();
             let queue = self.context.graphics_queue().clone();
-            let window_viewport = visual_world.viewport();
             let mirrors = visual_world.mirrors().to_vec();
             let msaa_samples = self.msaa_samples;
 
@@ -3739,14 +3738,19 @@ mod vulkano_backend {
                     continue;
                 }
 
-                let mirror_extent = [
-                    (window_viewport[0] * mirror.resolution_scale)
-                        .max(1.0)
-                        .floor() as u32,
-                    (window_viewport[1] * mirror.resolution_scale)
-                        .max(1.0)
-                        .floor() as u32,
-                ];
+                let aspect = mirror.aspect_ratio.max(1e-6);
+                let base_extent = (1024.0 * mirror.resolution_scale).max(1.0).floor() as u32;
+                let mirror_extent = if aspect >= 1.0 {
+                    [
+                        ((base_extent as f32) * aspect).max(1.0).floor() as u32,
+                        base_extent.max(1),
+                    ]
+                } else {
+                    [
+                        base_extent.max(1),
+                        ((base_extent as f32) / aspect).max(1.0).floor() as u32,
+                    ]
+                };
                 if mirror_extent[0] == 0 || mirror_extent[1] == 0 {
                     continue;
                 }

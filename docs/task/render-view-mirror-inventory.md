@@ -39,8 +39,8 @@ It also records what is already documented elsewhere, what is now stale, and wha
 ### Camera state pieces
 
 - `CameraSystem` still owns authored active camera selection:
-  - window target via `Camera3D` / `Camera2D`
-  - XR target via `CameraXR`
+  - active monoscopic camera via `Camera3D` / `Camera2D`
+  - active stereoscopic camera via `CameraXR`
 - `VisualWorld` still stores persistent target-scoped cameras as:
   - `CameraTarget::Window`
   - `CameraTarget::Xr`
@@ -54,7 +54,7 @@ That split is reasonable. It is already how XR is rendered. Mirrors should fit t
 
 ## Scene-draw inventory today
 
-### 1. Desktop / window rendering
+### 1. Monoscopic rendering
 
 Current path:
 
@@ -64,11 +64,11 @@ Current path:
 
 So in normal desktop mode, scene draw count is:
 
-- `1` scene draw for the main window camera
+- `1` scene draw for the active monoscopic camera
 
 Post-processing may add more full-screen passes, but that is not another scene draw.
 
-### 2. XR rendering
+### 2. Stereoscopic rendering
 
 Current path:
 
@@ -80,7 +80,7 @@ Current path:
 
 So in XR mode, scene draw count is:
 
-- `2` scene draws for the XR eyes
+- `2` scene draws for the stereoscopic views
 
 Desktop mirror / companion window behavior is separate:
 
@@ -142,14 +142,15 @@ The correct mental model is:
 Examples:
 
 - window-only frame:
+- active monoscopic camera only:
   - `1` mirror
   - `1` mirror render view
-- XR-only stereo frame:
+- active stereoscopic camera only:
   - `1` mirror
-  - typically `2` mirror render views, one per eye
-- window + XR frame:
+  - typically `2` mirror render views, one per stereoscopic view
+- active monoscopic + active stereoscopic cameras:
   - `1` mirror
-  - separate window-derived and XR-derived mirror render views
+  - separate monoscopic-derived and stereoscopic-derived mirror render views
 
 So we should not think of "one mirror = one render target" as a guaranteed rule.
 The more accurate rule is:
@@ -160,7 +161,8 @@ The more accurate rule is:
 This also means mirror runtime texture publication may need to be keyed by both:
 
 - mirror identity
-- viewer family or eye
+- viewer family
+- concrete stereoscopic view index
 
 instead of only by mirror identity.
 

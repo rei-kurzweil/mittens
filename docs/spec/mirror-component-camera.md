@@ -49,8 +49,8 @@ This is a transform-defined plane, not a mesh-derived plane.
 
 The source camera for a mirror pass must be the active viewer for that family of views:
 
-- desktop/window: the active window camera's current world transform
-- XR: each XR eye's current world transform independently
+- monoscopic: the active monoscopic camera's current world transform
+- stereoscopic: each concrete stereoscopic view's current world transform independently
 
 The important requirement is that the source must be a live per-frame world transform, not a stale
 registration-time pose.
@@ -229,8 +229,8 @@ Mirror tracking should be evaluated every frame from the current source camera t
 
 That means:
 
-- window mirror views must use the active window camera's latest world transform
-- XR mirror views must use the latest per-eye world transform
+- monoscopic mirror views must use the active monoscopic camera's latest world transform
+- stereoscopic mirror views must use the latest per-view world transform
 - the mirror system must not depend on registration-time camera state being continuously updated
 
 If the mirrored image appears pinned in place, the first thing to verify is that the source

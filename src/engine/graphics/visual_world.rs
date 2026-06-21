@@ -45,6 +45,7 @@ pub struct VisualMirror {
     pub camera: VisualCamera,
     pub plane_origin: [f32; 3],
     pub plane_normal: [f32; 3],
+    pub aspect_ratio: f32,
     pub target_key: String,
     pub source_instance: InstanceHandle,
     pub resolution_scale: f32,

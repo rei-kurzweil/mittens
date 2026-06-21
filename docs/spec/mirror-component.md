@@ -35,8 +35,8 @@ For a first pass, `quality` should be clamped to a sane range, e.g. `64..=2048`.
 
 A mirror is conceptually:
 1. a visible surface in the main scene,
-2. plus an offscreen camera whose pose is derived from the active viewer camera by reflection across the mirror plane,
-3. plus a render target whose color image is sampled by the mirror surface material.
+2. plus one or more offscreen cameras whose poses are derived from the active viewer family by reflection across the mirror plane,
+3. plus one or more render targets whose color images are sampled by the mirror surface material.
 
 So the runtime model is closer to:
 
@@ -72,7 +72,7 @@ So the clean mental model is:
 - keep authored cameras as-is,
 - add a runtime-only class of **derived render views** for mirrors.
 
-That can still be *handled by the camera system*, but it probably should not be represented as another `CameraTarget` enum value like `Mirror`, because one enum value cannot distinguish N mirror instances.
+That can still be *handled by the camera system*, but it probably should not be represented as another `CameraTarget` enum value like `Mirror`, because one enum value cannot distinguish N mirror instances or N viewer families.
 
 ---
 
@@ -106,7 +106,7 @@ struct MirrorCamera {
 ```
 
 Responsibilities:
-- derived each frame from the active viewer camera,
+- derived each frame from the active monoscopic camera or active stereoscopic camera,
 - reflects the viewer across the mirror plane,
 - carries the render extent implied by `quality`,
 - exists only for rendering, not as an ECS-authored camera component.
@@ -156,12 +156,13 @@ For v1, **transform-defined plane** is the safest assumption.
 ## How the reflected camera is derived
 
 Assume:
-- there is an active viewer camera for the window,
+- there may be an active monoscopic camera,
+- there may be an active stereoscopic camera,
 - the mirror plane is defined in world space,
-- the mirror wants a reflected version of that camera.
+- the mirror wants a reflected version of each active viewer family.
 
 Per frame:
-1. Get the active window camera transform.
+1. Get the active source camera transform for each active viewer family.
 2. Reflect the camera position across the mirror plane.
 3. Reflect the camera basis vectors across the mirror plane.
 4. Build a reflected world transform.
@@ -197,14 +198,14 @@ So the likely progression is:
 
 Today, the renderer already knows how to render a scene for a given:
 - `camera_target`
-- `eye`
+- concrete view index
 - color attachment
 - depth attachment
 - extent
 
 Relevant current shape:
 - `VisualWorld` stores a small set of cameras (`Window`, `Xr`)
-- `prepare_transparent_multi_draw_cache_for_eye(target, eye)` sorts transparency for one view
+- `prepare_transparent_multi_draw_cache_for_eye(target, eye)` sorts transparency for one concrete stereoscopic view
 - `build_draw_batches_command_buffer(...)` records all phases for one view into one target
 
 This is encouraging because mirror rendering is also “render the same scene from another view into another target”.
@@ -232,7 +233,7 @@ enum RenderViewKind {
 }
 ```
 
-Then adapt the render path so phase recording works from a `RenderView`, not strictly from `CameraTarget + eye`.
+Then adapt the render path so phase recording works from a `RenderView`, not strictly from `CameraTarget + view-index`.
 
 That would let the renderer:
 - render the main window view,
