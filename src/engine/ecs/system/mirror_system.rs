@@ -286,14 +286,15 @@ impl System for MirrorSystem {
                     })
                 });
 
-            // Derive aspect ratio from bounds (XY plane).
-            let aspect = if let Some(b) = bounds {
-                let w = (b.max[0] - b.min[0]).abs();
-                let h = (b.max[1] - b.min[1]).abs();
-                if h > 1e-6 { w / h } else { 1.0 }
+            // Mirror surface world-space dimensions (used for mirror-sized frustum).
+            let (mirror_world_w, mirror_world_h) = if let Some(b) = bounds {
+                let sx = math::vec3_len([world_matrix[0][0], world_matrix[0][1], world_matrix[0][2]]);
+                let sy = math::vec3_len([world_matrix[1][0], world_matrix[1][1], world_matrix[1][2]]);
+                ((b.max[0] - b.min[0]).abs() * sx, (b.max[1] - b.min[1]).abs() * sy)
             } else {
-                1.0
+                (1.0, 1.0)
             };
+            let mirror_aspect = if mirror_world_h > 1e-6 { mirror_world_w / mirror_world_h } else { 1.0 };
 
             // Mirror plane in world space.
             // Start from the transform origin, then move the plane onto the renderable's
@@ -392,15 +393,27 @@ impl System for MirrorSystem {
                     reflected_transform.model = ref_world;
                     reflected_transform.translation = ref_pos;
 
-                    // Projection: Adjust aspect ratio if it differs from source.
-                    let mut ref_proj = eye_data.proj;
-                    // proj[0][0] = 1 / (tan(fov/2) * aspect)
-                    // We want to replace the aspect part.
-                    // old_aspect = proj[1][1] / proj[0][0]
-                    // new_proj[0][0] = proj[1][1] / new_aspect
-                    if aspect > 1e-6 {
-                        ref_proj[0][0] = ref_proj[1][1] / aspect;
-                    }
+                    // Build projection so the mirror surface exactly fills the viewport.
+                    // This replaces the inherited source-camera FOV with one computed from
+                    // the mirror's world-space height and the reflected camera's distance,
+                    // giving a true 1:1 mapping between mesh UVs and reflected rays.
+                    let dist_to_mirror = math::vec3_dot(
+                        math::vec3_sub(cam_pos, plane_pos),
+                        plane_normal,
+                    )
+                    .abs()
+                    .max(0.01);
+                    let fov_y = 2.0 * (mirror_world_h * 0.5 / dist_to_mirror).atan();
+                    let f = 1.0 / (0.5 * fov_y).tan();
+                    let z_near = eye_data.proj[3][2] / eye_data.proj[2][2];
+                    let z_far = eye_data.proj[3][2] / (1.0 + eye_data.proj[2][2]);
+                    let nf = 1.0 / (z_near - z_far);
+                    let mut ref_proj = [
+                        [f / mirror_aspect, 0.0, 0.0, 0.0],
+                        [0.0, f, 0.0, 0.0],
+                        [0.0, 0.0, z_far * nf, -1.0],
+                        [0.0, 0.0, (z_near * z_far) * nf, 0.0],
+                    ];
 
                     if MIRROR_ENABLE_OBLIQUE_CLIP_PLANE {
                         let plane_normal_toward_camera = if math::vec3_dot(plane_normal, ref_pos)
@@ -465,7 +478,7 @@ impl System for MirrorSystem {
                 captures: captures.clone(),
                 plane_origin: plane_pos,
                 plane_normal,
-                aspect_ratio: aspect,
+                aspect_ratio: mirror_aspect,
                 source_instance,
                 resolution_scale: quality as f32 / 1024.0, // normalized scale? renderer decides
             });
