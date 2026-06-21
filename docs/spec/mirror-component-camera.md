@@ -3,7 +3,13 @@
 This document is the reference for how planar mirror camera matrices should be derived in
 `cat-engine`.
 
-It is intentionally narrower than [mirror-component.md](/home/rei/_/cat-engine/docs/spec/mirror-component.md):
+It is intentionally narrower than:
+
+- [mirror-component.md](/home/rei/_/cat-engine/docs/spec/mirror-component.md)
+- [mirror_system.md](/home/rei/_/cat-engine/docs/spec/mirror_system.md)
+
+Specifically:
+
 - this doc is only about the reflected camera pose, view matrix, and projection handling
 - it is written against the engine's current runtime conventions in `src/`
 - it is meant to be the baseline for debugging [mirror-camera-orientation-and-tracking.md](/home/rei/_/cat-engine/docs/bugs/mirror-camera-orientation-and-tracking.md)
