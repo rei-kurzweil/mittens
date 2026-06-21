@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::PointerEvents;
-use crate::engine::ecs::system::pointer_system::{PointerActivations, PointerSystem};
 use crate::engine::ecs::system::BvhSystem;
+use crate::engine::ecs::system::pointer_system::{PointerActivations, PointerSystem};
 use crate::engine::ecs::{ComponentId, EventSignal, RxWorld, SignalKind};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
@@ -235,7 +235,14 @@ impl GestureSystem {
         pointer_system: &PointerSystem,
         rx: &mut RxWorld,
     ) {
-        let hits: Vec<(f32, ComponentId, ComponentId, [f32; 3], [f32; 3], PointerEvents)> = self
+        let hits: Vec<(
+            f32,
+            ComponentId,
+            ComponentId,
+            [f32; 3],
+            [f32; 3],
+            PointerEvents,
+        )> = self
             .ray_hits_sorted
             .lock()
             .ok()
@@ -245,7 +252,12 @@ impl GestureSystem {
         // --- Press: start a new drag per activated pointer ---
         for &pointer_cid in &activations.pressed {
             // Only start a gesture if this pointer isn't already dragging.
-            if self.states.get(&pointer_cid).map(|s| s.dragging).unwrap_or(false) {
+            if self
+                .states
+                .get(&pointer_cid)
+                .map(|s| s.dragging)
+                .unwrap_or(false)
+            {
                 continue;
             }
 
@@ -284,7 +296,9 @@ impl GestureSystem {
             state.drag_start_hit_point = drag_hit_point;
 
             // StartPlaneProjection only makes sense for screen-space pointers; XR uses RequireTargetContact.
-            if self.drag_update_policy == DragUpdatePolicy::StartPlaneProjection && is_screen_pointer {
+            if self.drag_update_policy == DragUpdatePolicy::StartPlaneProjection
+                && is_screen_pointer
+            {
                 let n = math::vec3_normalize(dir);
                 state.drag_plane_point_world = drag_hit_point;
                 state.drag_plane_normal_world = Some(n);
@@ -323,7 +337,12 @@ impl GestureSystem {
                     continue;
                 };
 
-                if !self.states.get(&pointer_cid).map(|s| s.dragging).unwrap_or(false) {
+                if !self
+                    .states
+                    .get(&pointer_cid)
+                    .map(|s| s.dragging)
+                    .unwrap_or(false)
+                {
                     continue;
                 }
 
@@ -355,10 +374,16 @@ impl GestureSystem {
                             if let Some(prev) = state.last_hit_point {
                                 let delta = [cur[0] - prev[0], cur[1] - prev[1], cur[2] - prev[2]];
                                 if delta[0] != 0.0 || delta[1] != 0.0 || delta[2] != 0.0 {
-                                    let screen_pos_px = if is_screen_pointer { input.cursor_pos } else { None };
+                                    let screen_pos_px = if is_screen_pointer {
+                                        input.cursor_pos
+                                    } else {
+                                        None
+                                    };
                                     let screen_delta_px = if is_screen_pointer {
                                         match (state.last_cursor_pos, screen_pos_px) {
-                                            (Some((px, py)), Some((cx, cy))) => Some((cx - px, cy - py)),
+                                            (Some((px, py)), Some((cx, cy))) => {
+                                                Some((cx - px, cy - py))
+                                            }
                                             _ => None,
                                         }
                                     } else {
@@ -414,11 +439,10 @@ impl GestureSystem {
                             let delta = [cur[0] - prev[0], cur[1] - prev[1], cur[2] - prev[2]];
                             if delta[0] != 0.0 || delta[1] != 0.0 || delta[2] != 0.0 {
                                 let screen_pos_px = input.cursor_pos;
-                                let screen_delta_px =
-                                    match (state.last_cursor_pos, screen_pos_px) {
-                                        (Some((px, py)), Some((cx, cy))) => Some((cx - px, cy - py)),
-                                        _ => None,
-                                    };
+                                let screen_delta_px = match (state.last_cursor_pos, screen_pos_px) {
+                                    (Some((px, py)), Some((cx, cy))) => Some((cx - px, cy - py)),
+                                    _ => None,
+                                };
                                 rx.push_event(
                                     active_renderable,
                                     EventSignal::DragMove {
@@ -454,22 +478,21 @@ impl GestureSystem {
                                 },
                             );
 
-                            let is_click =
-                                match (state.drag_start_screen_pos, input.cursor_pos) {
-                                    (Some((sx, sy)), Some((ex, ey))) => {
-                                        let dx = ex - sx;
-                                        let dy = ey - sy;
-                                        (dx * dx + dy * dy).sqrt() < CLICK_THRESHOLD_PX
+                            let is_click = match (state.drag_start_screen_pos, input.cursor_pos) {
+                                (Some((sx, sy)), Some((ex, ey))) => {
+                                    let dx = ex - sx;
+                                    let dy = ey - sy;
+                                    (dx * dx + dy * dy).sqrt() < CLICK_THRESHOLD_PX
+                                }
+                                _ => match (state.drag_start_hit_point, state.last_hit_point) {
+                                    (Some(s), Some(e)) => {
+                                        let d = [e[0] - s[0], e[1] - s[1], e[2] - s[2]];
+                                        (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+                                            < CLICK_THRESHOLD_WORLD
                                     }
-                                    _ => match (state.drag_start_hit_point, state.last_hit_point) {
-                                        (Some(s), Some(e)) => {
-                                            let d = [e[0] - s[0], e[1] - s[1], e[2] - s[2]];
-                                            (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
-                                                < CLICK_THRESHOLD_WORLD
-                                        }
-                                        _ => false,
-                                    },
-                                };
+                                    _ => false,
+                                },
+                            };
 
                             if is_click {
                                 let click_target =

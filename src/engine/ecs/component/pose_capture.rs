@@ -89,7 +89,11 @@ pub struct PoseCapturePoseComponent {
 }
 
 impl PoseCapturePoseComponent {
-    pub fn new(name: impl Into<String>, target_root_ref: PoseTargetRef, entries: Vec<PoseBoneEntry>) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        target_root_ref: PoseTargetRef,
+        entries: Vec<PoseBoneEntry>,
+    ) -> Self {
         Self {
             name: name.into(),
             target_root_ref,

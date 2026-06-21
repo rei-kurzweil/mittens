@@ -1,8 +1,8 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    RayCastComponent, RayCastMode,
-    RaycastableShapeComponent, RaycastableShapeType, RenderableComponent,
+    RayCastComponent, RayCastMode, RaycastableShapeComponent, RaycastableShapeType,
+    RenderableComponent,
 };
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::System;
@@ -853,7 +853,9 @@ impl RayCastSystem {
                 // A pointer's trigger being down should auto-cast the same way mouse-down does.
                 let pointer_trigger_active = pointer_system
                     .raycast_to_pointer(rcid)
-                    .map(|ptr| activations.down.contains(&ptr) || activations.pressed.contains(&ptr))
+                    .map(|ptr| {
+                        activations.down.contains(&ptr) || activations.pressed.contains(&ptr)
+                    })
                     .unwrap_or(false);
 
                 let (origin, dir) = match source {

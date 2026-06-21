@@ -1,7 +1,5 @@
 use crate::engine::ecs::component::EditorInteractionMode;
-use crate::engine::ecs::system::editor::context::{
-    EditorContextState, sync_editor_cursor_visual,
-};
+use crate::engine::ecs::system::editor::context::{EditorContextState, sync_editor_cursor_visual};
 use crate::engine::ecs::system::editor_scene_hit::resolve_editor_scene_hit;
 use crate::engine::ecs::system::paint_placement::{
     resolve_surface_aligned_pose_from_frame, resolve_surface_placement_frame,

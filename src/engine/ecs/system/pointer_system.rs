@@ -1,8 +1,8 @@
 use crate::engine::ecs::component::{
     ControllerXRComponent, InputComponent, InputXRComponent, PointerComponent, RayCastComponent,
 };
-use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::engine::ecs::system::XrInputState;
+use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::engine::user_input::InputState;
 use std::collections::HashMap;
 use winit::event::MouseButton;
@@ -125,11 +125,17 @@ pub fn nearest_ancestor_transform(world: &World, start: ComponentId) -> Option<C
 pub fn pointer_topology_context(world: &World, cid: ComponentId) -> PointerTopologyContext {
     PointerTopologyContext {
         has_desktop_input_driver: has_ancestor_component::<InputComponent>(world, cid),
-        has_xr_input_driver:      has_ancestor_component::<InputXRComponent>(world, cid),
-        has_controller_driver:    has_ancestor_component::<ControllerXRComponent>(world, cid),
-        has_desktop_camera_anchor: has_ancestor_component::<crate::engine::ecs::component::Camera3DComponent>(world, cid)
-            || has_ancestor_component::<crate::engine::ecs::component::Camera2DComponent>(world, cid),
-        has_xr_camera_anchor: has_ancestor_component::<crate::engine::ecs::component::CameraXRComponent>(world, cid),
+        has_xr_input_driver: has_ancestor_component::<InputXRComponent>(world, cid),
+        has_controller_driver: has_ancestor_component::<ControllerXRComponent>(world, cid),
+        has_desktop_camera_anchor: has_ancestor_component::<
+            crate::engine::ecs::component::Camera3DComponent,
+        >(world, cid)
+            || has_ancestor_component::<crate::engine::ecs::component::Camera2DComponent>(
+                world, cid,
+            ),
+        has_xr_camera_anchor: has_ancestor_component::<
+            crate::engine::ecs::component::CameraXRComponent,
+        >(world, cid),
     }
 }
 
@@ -164,14 +170,26 @@ impl PointerSystem {
                 // Resolve which hand owns this pointer's controller ancestor.
                 let hand_idx = controller_hand_index(world, pointer_cid);
                 let Some(i) = hand_idx else { continue };
-                if xr.trigger_pressed[i] { act.pressed.push(pointer_cid); }
-                if xr.trigger_down[i]    { act.down.push(pointer_cid); }
-                if xr.trigger_released[i]{ act.released.push(pointer_cid); }
+                if xr.trigger_pressed[i] {
+                    act.pressed.push(pointer_cid);
+                }
+                if xr.trigger_down[i] {
+                    act.down.push(pointer_cid);
+                }
+                if xr.trigger_released[i] {
+                    act.released.push(pointer_cid);
+                }
             } else {
                 // Desktop / camera-anchored pointer: left mouse button.
-                if input.mouse_pressed.contains(&MouseButton::Left)  { act.pressed.push(pointer_cid); }
-                if input.mouse_down.contains(&MouseButton::Left)     { act.down.push(pointer_cid); }
-                if input.mouse_released.contains(&MouseButton::Left) { act.released.push(pointer_cid); }
+                if input.mouse_pressed.contains(&MouseButton::Left) {
+                    act.pressed.push(pointer_cid);
+                }
+                if input.mouse_down.contains(&MouseButton::Left) {
+                    act.down.push(pointer_cid);
+                }
+                if input.mouse_released.contains(&MouseButton::Left) {
+                    act.released.push(pointer_cid);
+                }
             }
         }
 

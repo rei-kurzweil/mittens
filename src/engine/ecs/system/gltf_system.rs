@@ -1091,21 +1091,14 @@ impl LoadedGltf {
         let texture_bytes: usize = self
             .textures
             .iter()
-            .map(|texture| {
-                texture
-                    .rgba
-                    .as_ref()
-                    .map(Vec::capacity)
-                    .unwrap_or(0)
-            })
+            .map(|texture| texture.rgba.as_ref().map(Vec::capacity).unwrap_or(0))
             .sum();
         let skin_bytes: usize = self
             .skins
             .iter()
             .map(|skin| {
                 skin.joints.capacity() * std::mem::size_of::<usize>()
-                    + skin.inverse_bind_matrices.capacity()
-                        * std::mem::size_of::<TransformMatrix>()
+                    + skin.inverse_bind_matrices.capacity() * std::mem::size_of::<TransformMatrix>()
             })
             .sum();
         self.gltf_name.capacity() + mesh_bytes + texture_key_bytes + texture_bytes + skin_bytes

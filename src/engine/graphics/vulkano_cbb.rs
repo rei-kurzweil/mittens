@@ -14,12 +14,14 @@ impl VulkanoState {
         &self,
         material: crate::engine::graphics::MaterialHandle,
         pipeline_toon: Arc<GraphicsPipeline>,
+        pipeline_mirror: Arc<GraphicsPipeline>,
         pipeline_grid: Arc<GraphicsPipeline>,
         pipeline_emissive: Arc<GraphicsPipeline>,
         pipeline_skinned: Arc<GraphicsPipeline>,
         pipeline_skinned_emissive: Arc<GraphicsPipeline>,
     ) -> Arc<GraphicsPipeline> {
         match material {
+            crate::engine::graphics::MaterialHandle::MIRROR => pipeline_mirror,
             crate::engine::graphics::MaterialHandle::GRID_MESH => pipeline_grid,
             crate::engine::graphics::MaterialHandle::EMISSIVE_TOON_MESH => pipeline_emissive,
             crate::engine::graphics::MaterialHandle::SKINNED_EMISSIVE_TOON_MESH => {
@@ -39,6 +41,7 @@ impl VulkanoState {
         instance_count: usize,
         batches: &[crate::engine::graphics::visual_world::DrawBatch],
         pipeline_toon: Arc<GraphicsPipeline>,
+        pipeline_mirror: Arc<GraphicsPipeline>,
         pipeline_grid: Arc<GraphicsPipeline>,
         pipeline_emissive: Arc<GraphicsPipeline>,
         pipeline_skinned: Arc<GraphicsPipeline>,
@@ -54,6 +57,7 @@ impl VulkanoState {
             let pipeline = self.pipeline_for_material(
                 batch.material,
                 pipeline_toon.clone(),
+                pipeline_mirror.clone(),
                 pipeline_grid.clone(),
                 pipeline_emissive.clone(),
                 pipeline_skinned.clone(),
@@ -148,6 +152,7 @@ impl VulkanoState {
             visual_world.background_batches(),
             // Plain background: no depth write.
             self.pipeline_toon_mesh_transparent.clone(),
+            self.pipeline_mirror_mesh_transparent.clone(),
             self.pipeline_grid_mesh_transparent.clone(),
             self.pipeline_emissive_toon_mesh_transparent.clone(),
             self.pipeline_skinned_toon_mesh_transparent.clone(),
@@ -177,6 +182,7 @@ impl VulkanoState {
             visual_world.background_occluded_lit_batches(),
             // Occluded+lit background: depth write ON for self-occlusion.
             self.pipeline_toon_mesh.clone(),
+            self.pipeline_mirror_mesh.clone(),
             self.pipeline_grid_mesh.clone(),
             self.pipeline_emissive_toon_mesh.clone(),
             self.pipeline_skinned_toon_mesh.clone(),
@@ -205,11 +211,13 @@ impl VulkanoState {
         ops: &[crate::engine::graphics::visual_world::RenderOp],
         stream_instances: &[u32],
         pipeline_normal: Arc<GraphicsPipeline>,
+        pipeline_mirror: Arc<GraphicsPipeline>,
         pipeline_grid: Arc<GraphicsPipeline>,
         pipeline_emissive: Arc<GraphicsPipeline>,
         pipeline_skinned: Arc<GraphicsPipeline>,
         pipeline_skinned_emissive: Arc<GraphicsPipeline>,
         pipeline_clipped: Arc<GraphicsPipeline>,
+        pipeline_mirror_clipped: Arc<GraphicsPipeline>,
         pipeline_emissive_clipped: Arc<GraphicsPipeline>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use crate::engine::graphics::visual_world::RenderOp;
@@ -224,7 +232,11 @@ impl VulkanoState {
 
         for op in ops {
             match op {
-                RenderOp::EnterClip { instance_index, parent_ref, .. } => {
+                RenderOp::EnterClip {
+                    instance_index,
+                    parent_ref,
+                    ..
+                } => {
                     let inst = instances[*instance_index as usize];
                     let Some(slot) = stream_instances.iter().position(|&i| i == *instance_index)
                     else {
@@ -232,8 +244,14 @@ impl VulkanoState {
                     };
                     // Copy mesh data before the mutable get_or_create_material_set call.
                     let (mesh_verts, mesh_indices, mesh_index_count) = {
-                        let Some(mesh) = self.meshes.get(&inst.renderable.mesh) else { continue };
-                        (mesh.vertices.clone(), mesh.indices.clone(), mesh.index_count)
+                        let Some(mesh) = self.meshes.get(&inst.renderable.mesh) else {
+                            continue;
+                        };
+                        (
+                            mesh.vertices.clone(),
+                            mesh.indices.clone(),
+                            mesh.index_count,
+                        )
                     };
                     let texture_handle = inst.texture.unwrap_or(self.default_white_texture);
                     let Some(material_set) = self.get_or_create_material_set(
@@ -265,6 +283,9 @@ impl VulkanoState {
                     let pipeline = if batch.stencil_ref > 0 {
                         // Clipped draw: non-skinned only (UI quads are never skinned).
                         match batch.material {
+                            crate::engine::graphics::MaterialHandle::MIRROR => {
+                                pipeline_mirror_clipped.clone()
+                            }
                             crate::engine::graphics::MaterialHandle::EMISSIVE_TOON_MESH => {
                                 pipeline_emissive_clipped.clone()
                             }
@@ -274,6 +295,7 @@ impl VulkanoState {
                         self.pipeline_for_material(
                             batch.material,
                             pipeline_normal.clone(),
+                            pipeline_mirror.clone(),
                             pipeline_grid.clone(),
                             pipeline_emissive.clone(),
                             pipeline_skinned.clone(),
@@ -319,9 +341,13 @@ impl VulkanoState {
                         )?;
                     }
 
-                    let Some(mesh) = self.meshes.get(&batch.mesh) else { continue };
+                    let Some(mesh) = self.meshes.get(&batch.mesh) else {
+                        continue;
+                    };
                     if Self::is_skinned_material(batch.material) {
-                        let Some(skin) = mesh.skin_vertices.as_ref() else { continue };
+                        let Some(skin) = mesh.skin_vertices.as_ref() else {
+                            continue;
+                        };
                         cbb.bind_vertex_buffers(
                             0,
                             (mesh.vertices.clone(), skin.clone(), instance_buffer.clone()),
@@ -346,15 +372,24 @@ impl VulkanoState {
                     }
                 }
 
-                RenderOp::ExitClip { instance_index, ref_value } => {
+                RenderOp::ExitClip {
+                    instance_index,
+                    ref_value,
+                } => {
                     let inst = instances[*instance_index as usize];
                     let Some(slot) = stream_instances.iter().position(|&i| i == *instance_index)
                     else {
                         continue;
                     };
                     let (mesh_verts, mesh_indices, mesh_index_count) = {
-                        let Some(mesh) = self.meshes.get(&inst.renderable.mesh) else { continue };
-                        (mesh.vertices.clone(), mesh.indices.clone(), mesh.index_count)
+                        let Some(mesh) = self.meshes.get(&inst.renderable.mesh) else {
+                            continue;
+                        };
+                        (
+                            mesh.vertices.clone(),
+                            mesh.indices.clone(),
+                            mesh.index_count,
+                        )
                     };
                     let texture_handle = inst.texture.unwrap_or(self.default_white_texture);
                     let Some(material_set) = self.get_or_create_material_set(
@@ -394,16 +429,14 @@ impl VulkanoState {
         rig_set: &Arc<DescriptorSet>,
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
-        stream_override: Option<(
-            &[crate::engine::graphics::visual_world::RenderOp],
-            &[u32],
-        )>,
+        stream_override: Option<(&[crate::engine::graphics::visual_world::RenderOp], &[u32])>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if instance_count == 0 {
             return Ok(());
         }
 
-        let (ops, stream_instances) = stream_override.unwrap_or_else(|| visual_world.opaque_stream());
+        let (ops, stream_instances) =
+            stream_override.unwrap_or_else(|| visual_world.opaque_stream());
         self.record_phase_stream_draws(
             cbb,
             visual_world,
@@ -413,11 +446,13 @@ impl VulkanoState {
             ops,
             stream_instances,
             self.pipeline_toon_mesh.clone(),
+            self.pipeline_mirror_mesh.clone(),
             self.pipeline_grid_mesh.clone(),
             self.pipeline_emissive_toon_mesh.clone(),
             self.pipeline_skinned_toon_mesh.clone(),
             self.pipeline_skinned_emissive_toon_mesh.clone(),
             self.pipeline_opaque_clipped.clone(),
+            self.pipeline_mirror_mesh_clipped.clone(),
             self.pipeline_emissive_opaque_clipped.clone(),
         )
     }
@@ -430,16 +465,14 @@ impl VulkanoState {
         rig_set: &Arc<DescriptorSet>,
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
-        stream_override: Option<(
-            &[crate::engine::graphics::visual_world::RenderOp],
-            &[u32],
-        )>,
+        stream_override: Option<(&[crate::engine::graphics::visual_world::RenderOp], &[u32])>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if instance_count == 0 {
             return Ok(());
         }
 
-        let (ops, stream_instances) = stream_override.unwrap_or_else(|| visual_world.cutout_stream());
+        let (ops, stream_instances) =
+            stream_override.unwrap_or_else(|| visual_world.cutout_stream());
         self.record_phase_stream_draws(
             cbb,
             visual_world,
@@ -449,11 +482,13 @@ impl VulkanoState {
             ops,
             stream_instances,
             self.pipeline_toon_mesh_cutout.clone(),
+            self.pipeline_mirror_mesh_cutout.clone(),
             self.pipeline_grid_mesh.clone(),
             self.pipeline_emissive_toon_mesh_cutout.clone(),
             self.pipeline_skinned_toon_mesh_cutout.clone(),
             self.pipeline_skinned_emissive_toon_mesh_cutout.clone(),
             self.pipeline_toon_mesh_cutout_clipped.clone(),
+            self.pipeline_mirror_mesh_cutout_clipped.clone(),
             self.pipeline_emissive_toon_mesh_cutout_clipped.clone(),
         )
     }
@@ -466,10 +501,7 @@ impl VulkanoState {
         rig_set: &Arc<DescriptorSet>,
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
-        stream_override: Option<(
-            &[crate::engine::graphics::visual_world::RenderOp],
-            &[u32],
-        )>,
+        stream_override: Option<(&[crate::engine::graphics::visual_world::RenderOp], &[u32])>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if instance_count == 0 {
             return Ok(());
@@ -477,7 +509,8 @@ impl VulkanoState {
 
         // Overlay depth-tests with itself (depth write ON). Depth gets cleared right
         // before the overlay phase so it still draws on top of the scene.
-        let (ops, stream_instances) = stream_override.unwrap_or_else(|| visual_world.overlay_stream());
+        let (ops, stream_instances) =
+            stream_override.unwrap_or_else(|| visual_world.overlay_stream());
         self.record_phase_stream_draws(
             cbb,
             visual_world,
@@ -487,11 +520,13 @@ impl VulkanoState {
             ops,
             stream_instances,
             self.pipeline_toon_mesh.clone(),
+            self.pipeline_mirror_mesh.clone(),
             self.pipeline_grid_mesh.clone(),
             self.pipeline_emissive_toon_mesh.clone(),
             self.pipeline_skinned_toon_mesh.clone(),
             self.pipeline_skinned_emissive_toon_mesh.clone(),
             self.pipeline_overlay_clipped.clone(),
+            self.pipeline_mirror_mesh_clipped.clone(),
             self.pipeline_emissive_overlay_clipped.clone(),
         )
     }
@@ -522,10 +557,8 @@ impl VulkanoState {
         }
 
         // Build instance buffer in transparent-single stream order.
-        let transparent_single_instance_buffer = self.build_instance_buffer_for_order_or_dummy(
-            visual_world,
-            stream_instances,
-        )?;
+        let transparent_single_instance_buffer =
+            self.build_instance_buffer_for_order_or_dummy(visual_world, stream_instances)?;
 
         self.record_phase_stream_draws(
             cbb,
@@ -536,11 +569,13 @@ impl VulkanoState {
             ops,
             stream_instances,
             self.pipeline_toon_mesh_transparent.clone(),
+            self.pipeline_mirror_mesh_transparent.clone(),
             self.pipeline_grid_mesh_transparent.clone(),
             self.pipeline_emissive_toon_mesh_transparent.clone(),
             self.pipeline_skinned_toon_mesh_transparent.clone(),
             self.pipeline_skinned_emissive_toon_mesh_transparent.clone(),
             self.pipeline_toon_mesh_transparent_clipped.clone(),
+            self.pipeline_mirror_mesh_transparent_clipped.clone(),
             self.pipeline_emissive_toon_mesh_transparent_clipped.clone(),
         )
     }
@@ -578,10 +613,8 @@ impl VulkanoState {
         }
 
         // Build transparent instance buffer in transparent-multi draw order.
-        let transparent_multi_instance_buffer = self.build_instance_buffer_for_order_or_dummy(
-            &*visual_world,
-            transparent_multi_order,
-        )?;
+        let transparent_multi_instance_buffer =
+            self.build_instance_buffer_for_order_or_dummy(&*visual_world, transparent_multi_order)?;
 
         // Bind pipeline/descriptor sets per (material, texture).
         let mut bound_material: Option<crate::engine::graphics::MaterialHandle> = None;
@@ -612,6 +645,7 @@ impl VulkanoState {
                 let pipeline = self.pipeline_for_material(
                     batch.material,
                     self.pipeline_toon_mesh_transparent.clone(),
+                    self.pipeline_mirror_mesh_transparent.clone(),
                     self.pipeline_grid_mesh_transparent.clone(),
                     self.pipeline_emissive_toon_mesh_transparent.clone(),
                     self.pipeline_skinned_toon_mesh_transparent.clone(),

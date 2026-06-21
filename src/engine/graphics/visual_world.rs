@@ -43,6 +43,8 @@ pub struct VisualCamera {
 pub struct VisualMirror {
     pub mirror_component: ComponentId,
     pub camera: VisualCamera,
+    pub plane_origin: [f32; 3],
+    pub plane_normal: [f32; 3],
     pub target_key: String,
     pub source_instance: InstanceHandle,
     pub resolution_scale: f32,
@@ -1336,11 +1338,18 @@ impl VisualWorld {
         }
     }
 
-    fn filtered_phase_order(&self, order: &[u32], excluded_instance: Option<InstanceHandle>) -> Vec<u32> {
-        let Some(excluded_index) = excluded_instance.and_then(|handle| self.handle_to_index.get(&handle).copied()) else {
+    fn filtered_phase_order(
+        &self,
+        order: &[u32],
+        excluded_instance: Option<InstanceHandle>,
+    ) -> Vec<u32> {
+        let Some(excluded_index) =
+            excluded_instance.and_then(|handle| self.handle_to_index.get(&handle).copied())
+        else {
             return order.to_vec();
         };
-        order.iter()
+        order
+            .iter()
             .copied()
             .filter(|&idx| idx as usize != excluded_index)
             .collect()
@@ -1352,7 +1361,8 @@ impl VisualWorld {
         excluded_instance: Option<InstanceHandle>,
     ) -> Vec<Vec<u32>> {
         let mut clip_sources_by_depth = vec![Vec::new(); max_depth as usize + 1];
-        let excluded_index = excluded_instance.and_then(|handle| self.handle_to_index.get(&handle).copied());
+        let excluded_index =
+            excluded_instance.and_then(|handle| self.handle_to_index.get(&handle).copied());
         for (index, inst) in self.instances.iter().enumerate() {
             if !inst.is_stencil_clip {
                 continue;
@@ -1448,7 +1458,8 @@ impl VisualWorld {
             return;
         }
 
-        let excluded_index = excluded_instance.and_then(|handle| self.handle_to_index.get(&handle).copied());
+        let excluded_index =
+            excluded_instance.and_then(|handle| self.handle_to_index.get(&handle).copied());
         let max_depth = filtered_order
             .iter()
             .map(|&i| self.instances[i as usize].stencil_ref)
@@ -1896,12 +1907,22 @@ impl VisualWorld {
         view: [[f32; 4]; 4],
         proj: [[f32; 4]; 4],
     ) {
+        self.set_camera_mono_for_target_with_transform(target, view, proj, Transform::default());
+    }
+
+    pub fn set_camera_mono_for_target_with_transform(
+        &mut self,
+        target: CameraTarget,
+        view: [[f32; 4]; 4],
+        proj: [[f32; 4]; 4],
+        transform: Transform,
+    ) {
         self.set_camera_for_target(
             target,
             vec![CameraData {
                 view,
                 proj,
-                transform: Transform::default(),
+                transform,
             }],
         );
     }
@@ -2173,7 +2194,8 @@ impl VisualWorld {
         &self,
         excluded_instance: Option<InstanceHandle>,
     ) -> (Vec<u32>, Vec<DrawBatch>) {
-        let order = self.filtered_phase_order(&self.transparent_multi_draw_order, excluded_instance);
+        let order =
+            self.filtered_phase_order(&self.transparent_multi_draw_order, excluded_instance);
         let mut batches = Vec::new();
         Self::build_draw_batches_for_order(&self.instances, &order, &mut batches);
         (order, batches)

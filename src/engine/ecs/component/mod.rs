@@ -96,8 +96,6 @@ pub mod transition;
 pub mod uv;
 
 pub use self::gltf::GLTFComponent;
-pub use mesh::MeshComponent;
-pub use mirror::MirrorComponent;
 pub use crate::engine::ecs::system::model::collision_types::{CollisionMode, CollisionShape};
 pub use action::ActionComponent;
 pub use ambient_light::AmbientLightComponent;
@@ -158,6 +156,8 @@ pub use kinetic_response::{KineticResponseComponent, KineticResponseMode};
 pub use layout::LayoutComponent;
 pub use layout_bounds::LayoutBoundsComponent;
 pub use light_quantization::LightQuantizationComponent;
+pub use mesh::MeshComponent;
+pub use mirror::MirrorComponent;
 pub use music_context::MusicContextComponent;
 pub(crate) use music_note::NotePitch;
 pub use music_note::{MusicNote, MusicNoteComponent};

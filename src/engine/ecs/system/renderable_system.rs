@@ -1037,8 +1037,7 @@ impl RenderableSystem {
             let Some(p) = self.pending.get(&key).cloned() else {
                 continue;
             };
-            let effective_style =
-                Self::resolve_effective_renderable_style(world, p.renderable_cid);
+            let effective_style = Self::resolve_effective_renderable_style(world, p.renderable_cid);
             if let Some(pending) = self.pending.get_mut(&key) {
                 pending.effective_style = effective_style;
             }
@@ -1074,11 +1073,7 @@ impl RenderableSystem {
                             .unwrap_or((0, 0));
                         println!(
                             "[RenderableSystem][audit] uv_clone renderable={:?} base_mesh={:?} new_mesh={:?} verts={} indices={} repeated_work=true",
-                            p.renderable_cid,
-                            uv_base_mesh,
-                            new_mesh,
-                            verts,
-                            indices
+                            p.renderable_cid, uv_base_mesh, new_mesh, verts, indices
                         );
                     }
                     cpu_mesh = new_mesh;

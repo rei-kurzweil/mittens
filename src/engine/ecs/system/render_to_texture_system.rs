@@ -62,11 +62,13 @@ impl RenderToTextureSystem {
                 self.remove_selector_if_unused(&previous.selector);
             }
 
-            self.producer_requests_by_selector
-                .insert(selector.clone(), RenderTextureProducerRequest {
+            self.producer_requests_by_selector.insert(
+                selector.clone(),
+                RenderTextureProducerRequest {
                     selector,
                     kind: producer_kind_for_selector(texture.render_image.as_deref().unwrap()),
-                });
+                },
+            );
         } else {
             self.unregister_texture(component);
         }

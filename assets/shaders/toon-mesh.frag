@@ -44,7 +44,8 @@ layout(set = 1, binding = 0) uniform MaterialUBO {
     vec4 base_color;
     float quant_steps;
     uint emissive;
-    uvec2 _pad0;
+    uint _pad0;
+    uint _pad1;
 } mat;
 
 layout(set = 1, binding = 1) uniform sampler2D base_tex;

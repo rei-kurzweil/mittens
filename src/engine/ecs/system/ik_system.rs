@@ -1,13 +1,13 @@
+use crate::engine::ecs::component::ik_chain::TwoBoneIkDebugVisuals;
 use crate::engine::ecs::component::{
     AvatarControlComponent, ColorComponent, EmissiveComponent, IKChainComponent, IKSolver,
     OverlayComponent, RenderableComponent, TransformComponent,
 };
-use crate::engine::ecs::component::ik_chain::TwoBoneIkDebugVisuals;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::utils::math::{
-    mat4_inverse, mat_to_quat, quat_conjugate, quat_from_axis_angle, quat_mul,
-    quat_nlerp, quat_rotate_vec3, quat_rotation_y, quat_to_axis_angle, shortest_arc_quat,
-    vec3_add, vec3_cross, vec3_len, vec3_lerp, vec3_normalize, vec3_scale, vec3_sub,
+    mat_to_quat, mat4_inverse, quat_conjugate, quat_from_axis_angle, quat_mul, quat_nlerp,
+    quat_rotate_vec3, quat_rotation_y, quat_to_axis_angle, shortest_arc_quat, vec3_add, vec3_cross,
+    vec3_len, vec3_lerp, vec3_normalize, vec3_scale, vec3_sub,
 };
 
 #[derive(Debug, Default)]
@@ -139,13 +139,7 @@ fn tick_chain(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter) 
         let Some(c) = world.get_component_by_id_as::<IKChainComponent>(id) else {
             return;
         };
-        (
-            c.solver,
-            c.target_id,
-            c.end_effector_id,
-            c.weight,
-            c.avc_id,
-        )
+        (c.solver, c.target_id, c.end_effector_id, c.weight, c.avc_id)
     };
     if weight <= 0.0 {
         return;
@@ -609,9 +603,19 @@ fn maybe_update_two_bone_debug(
 
     let visuals = ensure_two_bone_debug_visuals(world, ik_chain_id);
     let pole_tip = vec3_add(root_pos, vec3_scale(vec3_normalize_or_z(pole_world), 0.30));
-    let normal_tip = vec3_add(root_pos, vec3_scale(vec3_normalize_or_z(plane_normal), 0.22));
+    let normal_tip = vec3_add(
+        root_pos,
+        vec3_scale(vec3_normalize_or_z(plane_normal), 0.22),
+    );
 
-    update_debug_segment(world, emit, visuals.target_line, root_pos, target_pos, 0.010);
+    update_debug_segment(
+        world,
+        emit,
+        visuals.target_line,
+        root_pos,
+        target_pos,
+        0.010,
+    );
     update_debug_segment(world, emit, visuals.pole_line, root_pos, pole_tip, 0.008);
     update_debug_segment(
         world,
@@ -622,7 +626,13 @@ fn maybe_update_two_bone_debug(
         0.008,
     );
     update_debug_segment(world, emit, visuals.elbow_line, root_pos, elbow_pos, 0.010);
-    update_debug_point(world, emit, visuals.elbow_point, elbow_pos, [0.035, 0.035, 0.035]);
+    update_debug_point(
+        world,
+        emit,
+        visuals.elbow_point,
+        elbow_pos,
+        [0.035, 0.035, 0.035],
+    );
 }
 
 fn ensure_two_bone_debug_visuals(
@@ -648,12 +658,7 @@ fn ensure_two_bone_debug_visuals(
             "ik_debug_target_line",
             (1.0, 0.85, 0.15, 0.95),
         ),
-        pole_line: spawn_debug_cube(
-            world,
-            parent,
-            "ik_debug_pole_line",
-            (0.10, 0.95, 1.0, 0.95),
-        ),
+        pole_line: spawn_debug_cube(world, parent, "ik_debug_pole_line", (0.10, 0.95, 1.0, 0.95)),
         plane_normal_line: spawn_debug_cube(
             world,
             parent,
@@ -666,12 +671,7 @@ fn ensure_two_bone_debug_visuals(
             "ik_debug_elbow_line",
             (0.20, 1.0, 0.35, 0.95),
         ),
-        elbow_point: spawn_debug_cube(
-            world,
-            parent,
-            "ik_debug_elbow_point",
-            (1.0, 1.0, 1.0, 0.95),
-        ),
+        elbow_point: spawn_debug_cube(world, parent, "ik_debug_elbow_point", (1.0, 1.0, 1.0, 0.95)),
     };
 
     if let Some(ik) = world.get_component_by_id_as_mut::<IKChainComponent>(ik_chain_id) {
@@ -749,7 +749,11 @@ fn update_debug_point(
     );
 }
 
-fn world_point_to_local(world: &World, component_id: ComponentId, world_point: [f32; 3]) -> [f32; 3] {
+fn world_point_to_local(
+    world: &World,
+    component_id: ComponentId,
+    world_point: [f32; 3],
+) -> [f32; 3] {
     let parent_world = nearest_ancestor_transform_world(world, component_id);
     let Some(inv_parent) = parent_world.and_then(mat4_inverse) else {
         return world_point;
@@ -759,7 +763,11 @@ fn world_point_to_local(world: &World, component_id: ComponentId, world_point: [
         [world_point[0], world_point[1], world_point[2], 1.0],
     );
     if local[3].abs() > 1e-6 {
-        [local[0] / local[3], local[1] / local[3], local[2] / local[3]]
+        [
+            local[0] / local[3],
+            local[1] / local[3],
+            local[2] / local[3],
+        ]
     } else {
         [local[0], local[1], local[2]]
     }

@@ -5,12 +5,12 @@ use std::thread::{self, JoinHandle};
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
-use crate::engine::ecs::component::AnimationState;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::IntentValue;
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::SignalKind;
 use crate::engine::ecs::World;
+use crate::engine::ecs::component::AnimationState;
 use crate::meow_meow::ast::{
     BinOpKind, CallExpression, ComponentExpression, ElseBranch, Expression, IfStatement,
     ImportItem, Statement, UnaryOpKind,

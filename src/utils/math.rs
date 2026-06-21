@@ -50,8 +50,27 @@ pub fn vec3_scale(v: [f32; 3], s: f32) -> [f32; 3] {
     [v[0] * s, v[1] * s, v[2] * s]
 }
 
+pub fn vec3_negate(v: [f32; 3]) -> [f32; 3] {
+    [-v[0], -v[1], -v[2]]
+}
+
 pub fn vec3_sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+pub fn vec3_reflect(dir: [f32; 3], plane_normal: [f32; 3]) -> [f32; 3] {
+    let dist = vec3_dot(dir, plane_normal);
+    vec3_sub(dir, vec3_scale(plane_normal, 2.0 * dist))
+}
+
+pub fn vec3_reflect_point(
+    point: [f32; 3],
+    plane_pos: [f32; 3],
+    plane_normal: [f32; 3],
+) -> [f32; 3] {
+    let offset = vec3_sub(point, plane_pos);
+    let dist = vec3_dot(offset, plane_normal);
+    vec3_sub(point, vec3_scale(plane_normal, 2.0 * dist))
 }
 
 pub fn mat4_identity() -> [[f32; 4]; 4] {

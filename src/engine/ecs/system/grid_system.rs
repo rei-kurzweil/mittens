@@ -9,9 +9,7 @@ use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
 };
-use crate::utils::math::{
-    mat4_inverse, quat_from_axis_angle, quat_mul, vec3_normalize,
-};
+use crate::utils::math::{mat4_inverse, quat_from_axis_angle, quat_mul, vec3_normalize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GridEntry {
@@ -125,7 +123,11 @@ impl GridSystem {
     ) -> Option<ActiveGrid> {
         let selected = self
             .selected_grid_for_editor(world, editor_root)
-            .or_else(|| self.enumerate_grids_for_editor(world, editor_root).into_iter().next())?;
+            .or_else(|| {
+                self.enumerate_grids_for_editor(world, editor_root)
+                    .into_iter()
+                    .next()
+            })?;
         if !selected.selectable || !selected.enabled || selected.hidden {
             return None;
         }
@@ -296,7 +298,11 @@ impl GridSystem {
             &format!("grid_{index}"),
             Box::new(
                 TransformComponent::new()
-                    .with_position(spec.translation[0], spec.translation[1], spec.translation[2])
+                    .with_position(
+                        spec.translation[0],
+                        spec.translation[1],
+                        spec.translation[2],
+                    )
                     .with_rotation_quat(spec.rotation),
             ),
         );
@@ -325,7 +331,8 @@ impl GridSystem {
         let Some(entry) = self.grid_owned_by_transform(world, owner_transform) else {
             return false;
         };
-        let Some(grid) = world.get_component_by_id_as_mut::<GridComponent>(entry.grid_component) else {
+        let Some(grid) = world.get_component_by_id_as_mut::<GridComponent>(entry.grid_component)
+        else {
             return false;
         };
         if grid.hidden == hidden {
@@ -350,7 +357,8 @@ impl GridSystem {
         let Some(entry) = self.grid_owned_by_transform(world, owner_transform) else {
             return false;
         };
-        let Some(grid) = world.get_component_by_id_as_mut::<GridComponent>(entry.grid_component) else {
+        let Some(grid) = world.get_component_by_id_as_mut::<GridComponent>(entry.grid_component)
+        else {
             return false;
         };
         if grid.enabled == enabled {
@@ -525,14 +533,17 @@ impl GridSystem {
         let Some(entry) = self.grid_owned_by_transform(world, owner_transform) else {
             return;
         };
-        let Some(grid) = world.get_component_by_id_as::<GridComponent>(entry.grid_component).copied() else {
+        let Some(grid) = world
+            .get_component_by_id_as::<GridComponent>(entry.grid_component)
+            .copied()
+        else {
             return;
         };
 
         let visual_scale_x = grid.size_x as f32 * grid.spacing;
         let visual_scale_z = grid.size_z as f32 * grid.spacing;
-        let live_root =
-            world.add_component_boxed_named(GRID_LIVE_ROOT_NAME, Box::new(TransformComponent::new()));
+        let live_root = world
+            .add_component_boxed_named(GRID_LIVE_ROOT_NAME, Box::new(TransformComponent::new()));
         let live_selectable = world.add_component_boxed_named(
             GRID_LIVE_SELECTABLE_NAME,
             Box::new(if preview_mode || grid.hidden {
@@ -549,8 +560,10 @@ impl GridSystem {
                 RaycastableComponent::enabled()
             }),
         );
-        let live_serialize =
-            world.add_component_boxed_named(GRID_LIVE_SERIALIZE_NAME, Box::new(SerializeComponent::off()));
+        let live_serialize = world.add_component_boxed_named(
+            GRID_LIVE_SERIALIZE_NAME,
+            Box::new(SerializeComponent::off()),
+        );
         let live_shape = world.add_component_boxed_named(
             GRID_LIVE_SHAPE_NAME,
             Box::new(
@@ -607,7 +620,10 @@ impl GridSystem {
         let Some(entry) = self.grid_owned_by_transform(world, owner_transform) else {
             return;
         };
-        let Some(grid) = world.get_component_by_id_as::<GridComponent>(entry.grid_component).copied() else {
+        let Some(grid) = world
+            .get_component_by_id_as::<GridComponent>(entry.grid_component)
+            .copied()
+        else {
             return;
         };
         if let Some(opacity_id) = world.find_component(owner_transform, "#grid_live_opacity")
@@ -616,18 +632,25 @@ impl GridSystem {
             opacity.opacity = grid_opacity(grid.hidden, preview_mode);
         }
         if let Some(selectable_id) = world.find_component(owner_transform, "#grid_live_selectable")
-            && let Some(selectable) = world.get_component_by_id_as_mut::<SelectableComponent>(selectable_id)
+            && let Some(selectable) =
+                world.get_component_by_id_as_mut::<SelectableComponent>(selectable_id)
         {
             selectable.enabled = !preview_mode && !grid.hidden;
         }
-        if let Some(raycastable_id) = world.find_component(owner_transform, "#grid_live_raycastable")
-            && let Some(raycastable) = world.get_component_by_id_as_mut::<RaycastableComponent>(raycastable_id)
+        if let Some(raycastable_id) =
+            world.find_component(owner_transform, "#grid_live_raycastable")
+            && let Some(raycastable) =
+                world.get_component_by_id_as_mut::<RaycastableComponent>(raycastable_id)
         {
             raycastable.enable = !preview_mode && !grid.hidden;
         }
     }
 
-    fn live_runtime_root(&self, world: &World, owner_transform: ComponentId) -> Option<ComponentId> {
+    fn live_runtime_root(
+        &self,
+        world: &World,
+        owner_transform: ComponentId,
+    ) -> Option<ComponentId> {
         world.find_component(owner_transform, "#grid_live_root")
     }
 

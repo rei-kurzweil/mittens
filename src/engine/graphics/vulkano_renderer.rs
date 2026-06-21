@@ -121,6 +121,13 @@ mod vulkano_backend {
         }
     }
 
+    mod mirror_mesh_vs {
+        vulkano_shaders::shader! {
+            ty: "vertex",
+            path: "assets/shaders/mirror-mesh.vert",
+        }
+    }
+
     mod toon_mesh_fs {
         vulkano_shaders::shader! {
             ty: "fragment",
@@ -132,6 +139,13 @@ mod vulkano_backend {
         vulkano_shaders::shader! {
             ty: "fragment",
             path: "assets/shaders/emissive-toon-mesh.frag",
+        }
+    }
+
+    mod mirror_mesh_fs {
+        vulkano_shaders::shader! {
+            ty: "fragment",
+            path: "assets/shaders/mirror-mesh.frag",
         }
     }
 
@@ -178,7 +192,8 @@ mod vulkano_backend {
         base_color: [f32; 4],
         quant_steps: f32,
         emissive: u32,
-        _pad0: [u32; 2],
+        _pad0: u32,
+        _pad1: u32,
     }
 
     #[derive(BufferContents, Clone, Copy, Debug, Default)]
@@ -239,9 +254,13 @@ mod vulkano_backend {
     #[derive(Debug, Clone)]
     pub enum RenderViewKind {
         Window,
-        XrEye { eye: usize },
+        XrEye {
+            eye: usize,
+        },
         Mirror {
             mirror_component: ComponentId,
+            plane_origin: [f32; 3],
+            plane_normal: [f32; 3],
             excluded_instance: Option<crate::engine::graphics::primitives::InstanceHandle>,
         },
     }
@@ -305,6 +324,13 @@ mod vulkano_backend {
         pub pipeline_toon_mesh_cutout: Arc<GraphicsPipeline>,
         pub pipeline_toon_mesh_transparent_clipped: Arc<GraphicsPipeline>,
         pub pipeline_toon_mesh_cutout_clipped: Arc<GraphicsPipeline>,
+
+        pub pipeline_mirror_mesh: Arc<GraphicsPipeline>,
+        pub pipeline_mirror_mesh_transparent: Arc<GraphicsPipeline>,
+        pub pipeline_mirror_mesh_cutout: Arc<GraphicsPipeline>,
+        pub pipeline_mirror_mesh_clipped: Arc<GraphicsPipeline>,
+        pub pipeline_mirror_mesh_transparent_clipped: Arc<GraphicsPipeline>,
+        pub pipeline_mirror_mesh_cutout_clipped: Arc<GraphicsPipeline>,
 
         pub pipeline_grid_mesh: Arc<GraphicsPipeline>,
         pub pipeline_grid_mesh_transparent: Arc<GraphicsPipeline>,
@@ -480,46 +506,53 @@ mod vulkano_backend {
                     base_color: [1.0, 1.0, 1.0, 1.0],
                     quant_steps,
                     emissive: 0,
-                    _pad0: [0, 0],
+                    _pad0: 0,
+                    _pad1: 0,
                 },
                 crate::engine::graphics::MaterialHandle::SKINNED_TOON_MESH => MaterialUBO {
                     base_color: [1.0, 1.0, 1.0, 1.0],
                     quant_steps,
                     emissive: 0,
-                    _pad0: [0, 0],
+                    _pad0: 0,
+                    _pad1: 0,
                 },
                 crate::engine::graphics::MaterialHandle::EMISSIVE_TOON_MESH => MaterialUBO {
                     base_color: [1.0, 1.0, 1.0, 1.0],
                     quant_steps,
                     emissive: 0,
-                    _pad0: [0, 0],
+                    _pad0: 0,
+                    _pad1: 0,
                 },
                 crate::engine::graphics::MaterialHandle::SKINNED_EMISSIVE_TOON_MESH => {
                     MaterialUBO {
                         base_color: [1.0, 1.0, 1.0, 1.0],
                         quant_steps,
                         emissive: 0,
-                        _pad0: [0, 0],
+                        _pad0: 0,
+                        _pad1: 0,
                     }
                 }
                 crate::engine::graphics::MaterialHandle::GRID_MESH => MaterialUBO {
                     base_color: [1.0, 1.0, 1.0, 1.0],
                     quant_steps: 1.0,
                     emissive: 1,
-                    _pad0: [0, 0],
+                    _pad0: 0,
+                    _pad1: 0,
                 },
                 // While migrating, treat UNLIT as a simple toon material too.
                 crate::engine::graphics::MaterialHandle::UNLIT_MESH => MaterialUBO {
                     base_color: [1.0, 1.0, 1.0, 1.0],
                     quant_steps,
                     emissive: 1,
-                    _pad0: [0, 0],
+                    _pad0: 0,
+                    _pad1: 0,
                 },
                 crate::engine::graphics::MaterialHandle::MIRROR => MaterialUBO {
                     base_color: [1.0, 1.0, 1.0, 1.0],
                     quant_steps: 1.0,
                     emissive: 1,
-                    _pad0: [0, 0],
+                    _pad0: 0,
+                    _pad1: 0,
                 },
                 _ => MaterialUBO::default(),
             }
@@ -685,8 +718,10 @@ mod vulkano_backend {
             let set_layouts = PipelineDescriptorSetLayouts::new(device.clone())?;
 
             let vs = toon_mesh_vs::load(device.clone())?;
+            let mirror_vs = mirror_mesh_vs::load(device.clone())?;
             let fs = toon_mesh_fs::load(device.clone())?;
             let emissive_fs = emissive_toon_mesh_fs::load(device.clone())?;
+            let mirror_fs = mirror_mesh_fs::load(device.clone())?;
             let grid_vs = grid_mesh_vs::load(device.clone())?;
             let grid_fs = grid_square_mesh_fs::load(device.clone())?;
 
@@ -737,6 +772,19 @@ mod vulkano_backend {
                     emissive_fs
                         .entry_point("main")
                         .ok_or("missing emissive-toon-mesh.frag entry point")?,
+                ),
+            ];
+
+            let mirror_stages = vec![
+                PipelineShaderStageCreateInfo::new(
+                    mirror_vs
+                        .entry_point("main")
+                        .ok_or("missing mirror-mesh.vert entry point")?,
+                ),
+                PipelineShaderStageCreateInfo::new(
+                    mirror_fs
+                        .entry_point("main")
+                        .ok_or("missing mirror-mesh.frag entry point")?,
                 ),
             ];
 
@@ -1100,6 +1148,10 @@ mod vulkano_backend {
 
             let pipeline_toon_mesh =
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci.clone())?;
+            let mut pipeline_ci_mirror = pipeline_ci.clone();
+            pipeline_ci_mirror.stages = mirror_stages.clone().into();
+            let pipeline_mirror_mesh =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_mirror.clone())?;
             let mut pipeline_ci_grid = pipeline_ci.clone();
             pipeline_ci_grid.stages = grid_stages.clone().into();
             let pipeline_grid_mesh =
@@ -1133,6 +1185,10 @@ mod vulkano_backend {
             });
             let pipeline_toon_mesh_transparent =
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci_transparent.clone())?;
+            let mut pipeline_ci_mirror_transparent = pipeline_ci_transparent.clone();
+            pipeline_ci_mirror_transparent.stages = mirror_stages.clone().into();
+            let pipeline_mirror_mesh_transparent =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_mirror_transparent)?;
             let mut pipeline_ci_grid_transparent = pipeline_ci_transparent.clone();
             pipeline_ci_grid_transparent.stages = grid_stages.clone().into();
             let pipeline_grid_mesh_transparent =
@@ -1166,6 +1222,10 @@ mod vulkano_backend {
             ));
             let pipeline_toon_mesh_cutout =
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci_cutout.clone())?;
+            let mut pipeline_ci_mirror_cutout = pipeline_ci_cutout.clone();
+            pipeline_ci_mirror_cutout.stages = mirror_stages.clone().into();
+            let pipeline_mirror_mesh_cutout =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_mirror_cutout)?;
 
             let mut pipeline_ci_emissive_cutout = pipeline_ci_cutout.clone();
             pipeline_ci_emissive_cutout.stages = emissive_stages.clone().into();
@@ -1370,6 +1430,12 @@ mod vulkano_backend {
             let pipeline_opaque_clipped =
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci_opaque_clipped)?;
 
+            let mut pipeline_ci_mirror_clipped = pipeline_ci_mirror.clone();
+            pipeline_ci_mirror_clipped.depth_stencil_state = Some(clipped_depth_stencil.clone());
+            pipeline_ci_mirror_clipped.dynamic_state = stencil_dynamic_state.clone();
+            let pipeline_mirror_mesh_clipped =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_mirror_clipped)?;
+
             let mut pipeline_ci_emissive_opaque_clipped = pipeline_ci_emissive.clone();
             pipeline_ci_emissive_opaque_clipped.depth_stencil_state = Some(clipped_depth_stencil);
             pipeline_ci_emissive_opaque_clipped.dynamic_state = stencil_dynamic_state.clone();
@@ -1400,6 +1466,16 @@ mod vulkano_backend {
             pipeline_ci_transparent_clipped.dynamic_state = stencil_dynamic_state.clone();
             let pipeline_toon_mesh_transparent_clipped =
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci_transparent_clipped)?;
+            let mut pipeline_ci_mirror_transparent_clipped = pipeline_ci_transparent.clone();
+            pipeline_ci_mirror_transparent_clipped.stages = mirror_stages.clone().into();
+            pipeline_ci_mirror_transparent_clipped.depth_stencil_state =
+                Some(transparent_clipped_depth_stencil.clone());
+            pipeline_ci_mirror_transparent_clipped.dynamic_state = stencil_dynamic_state.clone();
+            let pipeline_mirror_mesh_transparent_clipped = GraphicsPipeline::new(
+                device.clone(),
+                None,
+                pipeline_ci_mirror_transparent_clipped,
+            )?;
             let mut pipeline_ci_grid_transparent_clipped = pipeline_ci_grid_transparent.clone();
             pipeline_ci_grid_transparent_clipped.depth_stencil_state =
                 Some(transparent_clipped_depth_stencil.clone());
@@ -1436,6 +1512,25 @@ mod vulkano_backend {
             pipeline_ci_cutout_clipped.dynamic_state = stencil_dynamic_state.clone();
             let pipeline_toon_mesh_cutout_clipped =
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci_cutout_clipped)?;
+            let mut pipeline_ci_mirror_cutout_clipped = pipeline_ci_cutout.clone();
+            pipeline_ci_mirror_cutout_clipped.stages = mirror_stages.into();
+            pipeline_ci_mirror_cutout_clipped.depth_stencil_state = Some(DepthStencilState {
+                depth: Some(DepthState::simple()),
+                stencil: Some(StencilState {
+                    front: StencilOpState {
+                        ops: stencil_ops_test,
+                        ..Default::default()
+                    },
+                    back: StencilOpState {
+                        ops: stencil_ops_test,
+                        ..Default::default()
+                    },
+                }),
+                ..Default::default()
+            });
+            pipeline_ci_mirror_cutout_clipped.dynamic_state = stencil_dynamic_state.clone();
+            let pipeline_mirror_mesh_cutout_clipped =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_mirror_cutout_clipped)?;
 
             let mut pipeline_ci_emissive_cutout_clipped = pipeline_ci_emissive_cutout.clone();
             pipeline_ci_emissive_cutout_clipped.depth_stencil_state = Some(DepthStencilState {
@@ -1521,6 +1616,12 @@ mod vulkano_backend {
                 pipeline_toon_mesh_cutout,
                 pipeline_toon_mesh_transparent_clipped,
                 pipeline_toon_mesh_cutout_clipped,
+                pipeline_mirror_mesh,
+                pipeline_mirror_mesh_transparent,
+                pipeline_mirror_mesh_cutout,
+                pipeline_mirror_mesh_clipped,
+                pipeline_mirror_mesh_transparent_clipped,
+                pipeline_mirror_mesh_cutout_clipped,
 
                 pipeline_grid_mesh,
                 pipeline_grid_mesh_transparent,
@@ -1774,8 +1875,9 @@ mod vulkano_backend {
                             },
                         )?;
 
-                        let msaa_color_view = ImageView::new_default(msaa_color_image)
-                            .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
+                        let msaa_color_view = ImageView::new_default(msaa_color_image).map_err(
+                            |e| -> Box<dyn std::error::Error> { format!("{e:?}").into() },
+                        )?;
                         msaa_color_views.push(msaa_color_view);
                     }
 
@@ -2666,10 +2768,8 @@ mod vulkano_backend {
                     .expect("cached_instance_buffer")
                     .clone()
             } else {
-                let buf = self.build_instance_buffer_for_order_or_dummy(
-                    &*visual_world,
-                    &opaque_instances,
-                )?;
+                let buf = self
+                    .build_instance_buffer_for_order_or_dummy(&*visual_world, &opaque_instances)?;
 
                 self.cached_instance_count = instance_count;
                 self.cached_instance_buffer = Some(buf.clone());
@@ -2715,10 +2815,8 @@ mod vulkano_backend {
             let cutout_instance_buffer = if !need_cutout_instance_buffer {
                 self.cached_cutout_instance_buffer.clone()
             } else {
-                let buf = self.build_instance_buffer_for_order_opt(
-                    &*visual_world,
-                    &cutout_instances,
-                )?;
+                let buf =
+                    self.build_instance_buffer_for_order_opt(&*visual_world, &cutout_instances)?;
                 self.cached_cutout_instance_count = cutout_instance_count;
                 self.cached_cutout_instance_buffer = buf.clone();
                 buf
@@ -2731,10 +2829,8 @@ mod vulkano_backend {
             let overlay_instance_buffer = if !need_overlay_instance_buffer {
                 self.cached_overlay_instance_buffer.clone()
             } else {
-                let buf = self.build_instance_buffer_for_order_opt(
-                    &*visual_world,
-                    &overlay_instances,
-                )?;
+                let buf =
+                    self.build_instance_buffer_for_order_opt(&*visual_world, &overlay_instances)?;
                 self.cached_overlay_instance_count = overlay_instance_count;
                 self.cached_overlay_instance_buffer = buf.clone();
                 buf
@@ -3141,26 +3237,26 @@ mod vulkano_backend {
                 )?;
             }
 
-                        self.record_opaque_draws(
-                            &mut cbb,
-                            visual_world,
-                            &global_set_fg,
-                            &rig_set,
-                            &instance_buffer,
-                            instance_count,
-                            Some((&opaque_ops, &opaque_instances)),
-                        )?;
+            self.record_opaque_draws(
+                &mut cbb,
+                visual_world,
+                &global_set_fg,
+                &rig_set,
+                &instance_buffer,
+                instance_count,
+                Some((&opaque_ops, &opaque_instances)),
+            )?;
 
             if let Some(cutout_instance_buffer) = cutout_instance_buffer.as_ref() {
-                        self.record_cutout_draws(
-                            &mut cbb,
-                            visual_world,
-                            &global_set_fg,
-                            &rig_set,
-                            cutout_instance_buffer,
-                            cutout_instance_count,
-                            Some((&cutout_ops, &cutout_instances)),
-                        )?;
+                self.record_cutout_draws(
+                    &mut cbb,
+                    visual_world,
+                    &global_set_fg,
+                    &rig_set,
+                    cutout_instance_buffer,
+                    cutout_instance_count,
+                    Some((&cutout_ops, &cutout_instances)),
+                )?;
             }
 
             self.record_transparent_single_draws(
@@ -3307,6 +3403,7 @@ mod vulkano_backend {
                                 self.pipeline_emissive_prepass_toon_mesh.clone(),
                                 self.pipeline_emissive_prepass_toon_mesh.clone(),
                                 self.pipeline_emissive_prepass_toon_mesh.clone(),
+                                self.pipeline_emissive_prepass_toon_mesh.clone(),
                                 self.pipeline_skinned_emissive_prepass_toon_mesh.clone(),
                                 self.pipeline_skinned_emissive_prepass_toon_mesh.clone(),
                             )?;
@@ -3322,6 +3419,7 @@ mod vulkano_backend {
                                 emissive_cutout_instance_buffer,
                                 emissive_cutout_instance_count,
                                 visual_world.emissive_cutout_batches(),
+                                self.pipeline_emissive_prepass_toon_mesh_cutout.clone(),
                                 self.pipeline_emissive_prepass_toon_mesh_cutout.clone(),
                                 self.pipeline_emissive_prepass_toon_mesh_cutout.clone(),
                                 self.pipeline_emissive_prepass_toon_mesh_cutout.clone(),
@@ -3532,6 +3630,7 @@ mod vulkano_backend {
                     stencil_clip_debug_instance_count,
                     &stencil_clip_debug_batches,
                     self.pipeline_toon_mesh.clone(),
+                    self.pipeline_mirror_mesh.clone(),
                     self.pipeline_grid_mesh.clone(),
                     self.pipeline_emissive_toon_mesh.clone(),
                     self.pipeline_skinned_toon_mesh.clone(),
@@ -3641,8 +3740,12 @@ mod vulkano_backend {
                 }
 
                 let mirror_extent = [
-                    (window_viewport[0] * mirror.resolution_scale).max(1.0).floor() as u32,
-                    (window_viewport[1] * mirror.resolution_scale).max(1.0).floor() as u32,
+                    (window_viewport[0] * mirror.resolution_scale)
+                        .max(1.0)
+                        .floor() as u32,
+                    (window_viewport[1] * mirror.resolution_scale)
+                        .max(1.0)
+                        .floor() as u32,
                 ];
                 if mirror_extent[0] == 0 || mirror_extent[1] == 0 {
                     continue;
@@ -3663,9 +3766,11 @@ mod vulkano_backend {
                 };
 
                 for eye in 0..view_count {
-                    let eye_data = mirror.camera.eyes.get(eye).ok_or(
-                        "mirror camera eye out of range",
-                    )?;
+                    let eye_data = mirror
+                        .camera
+                        .eyes
+                        .get(eye)
+                        .ok_or("mirror camera eye out of range")?;
 
                     let render_view = RenderView {
                         view: eye_data.view,
@@ -3673,20 +3778,21 @@ mod vulkano_backend {
                         viewport: [mirror_extent[0] as f32, mirror_extent[1] as f32],
                         kind: RenderViewKind::Mirror {
                             mirror_component: mirror.mirror_component,
+                            plane_origin: mirror.plane_origin,
+                            plane_normal: mirror.plane_normal,
                             excluded_instance: Some(mirror.source_instance),
                         },
                     };
 
-                    let (color_attachment_view, color_resolve_view) = if msaa_samples
-                        != SampleCount::Sample1
-                    {
-                        (
-                            msaa_color_views[eye].clone(),
-                            Some(color_views[eye].clone()),
-                        )
-                    } else {
-                        (color_views[eye].clone(), None)
-                    };
+                    let (color_attachment_view, color_resolve_view) =
+                        if msaa_samples != SampleCount::Sample1 {
+                            (
+                                msaa_color_views[eye].clone(),
+                                Some(color_views[eye].clone()),
+                            )
+                        } else {
+                            (color_views[eye].clone(), None)
+                        };
                     let depth_view = depth_views[eye].clone();
 
                     let runtime_texture_publication = visual_world

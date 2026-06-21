@@ -5,6 +5,7 @@ use crate::engine::ecs::component::CameraXRComponent;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::graphics::VisualWorld;
+use crate::engine::graphics::primitives::Transform;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CameraHandle(pub u32);
@@ -13,12 +14,14 @@ pub struct CameraHandle(pub u32);
 pub struct Camera3D {
     pub view: [[f32; 4]; 4],
     pub proj: [[f32; 4]; 4],
+    pub transform: Transform,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Camera2D {
     pub view: [[f32; 4]; 4],
     pub proj: [[f32; 4]; 4],
+    pub transform: Transform,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -42,6 +45,7 @@ impl Camera3D {
                 [0.0, 0.0, 1.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
             ],
+            transform: Transform::default(),
         }
     }
 
@@ -90,6 +94,7 @@ impl Camera2D {
                 [0.0, 0.0, 1.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
             ],
+            transform: Transform::default(),
         }
     }
 }
@@ -140,13 +145,22 @@ impl CameraSystem {
 
         // If the camera is parented under a TransformComponent, use that transform as the camera pose.
         // Otherwise default to identity view.
-        let view = if let Some(model) = TransformSystem::world_model(world, component) {
-            invert_affine_transform(&model)
+        let (view, transform) = if let Some(model) = TransformSystem::world_model(world, component)
+        {
+            (
+                invert_affine_transform(&model),
+                transform_from_matrix_world(model),
+            )
         } else {
-            Camera3D::identity().view
+            let ident = Camera3D::identity();
+            (ident.view, ident.transform)
         };
 
-        let cam = Camera3D { view, proj };
+        let cam = Camera3D {
+            view,
+            proj,
+            transform,
+        };
 
         let h = CameraHandle(self.next_handle);
         self.next_handle = self.next_handle.wrapping_add(1);
@@ -156,7 +170,12 @@ impl CameraSystem {
 
         // Newest becomes active (window target).
         self.active_window_camera = Some(h);
-        visuals.set_camera(cam.view, cam.proj);
+        visuals.set_camera_mono_for_target_with_transform(
+            crate::engine::graphics::CameraTarget::Window,
+            cam.view,
+            cam.proj,
+            cam.transform,
+        );
 
         h
     }
@@ -170,10 +189,20 @@ impl CameraSystem {
             self.active_window_camera = Some(h);
             match *cam {
                 AnyCamera::Camera3D(cam3d) => {
-                    visuals.set_camera(cam3d.view, cam3d.proj);
+                    visuals.set_camera_mono_for_target_with_transform(
+                        crate::engine::graphics::CameraTarget::Window,
+                        cam3d.view,
+                        cam3d.proj,
+                        cam3d.transform,
+                    );
                 }
                 AnyCamera::Camera2D(cam2d) => {
-                    visuals.set_camera(cam2d.view, cam2d.proj);
+                    visuals.set_camera_mono_for_target_with_transform(
+                        crate::engine::graphics::CameraTarget::Window,
+                        cam2d.view,
+                        cam2d.proj,
+                        cam2d.transform,
+                    );
                 }
             }
         }
@@ -183,12 +212,16 @@ impl CameraSystem {
         if let Some(cid) = self.camera3d_components.get(&handle) {
             return world
                 .get_component_by_id_as::<Camera3DComponent>(*cid)
-                .is_some_and(|c| c.enabled && matches!(c.target, crate::engine::graphics::CameraTarget::Window));
+                .is_some_and(|c| {
+                    c.enabled && matches!(c.target, crate::engine::graphics::CameraTarget::Window)
+                });
         }
         if let Some(cid) = self.camera2d_components.get(&handle) {
             return world
                 .get_component_by_id_as::<crate::engine::ecs::component::Camera2DComponent>(*cid)
-                .is_some_and(|c| matches!(c.target, crate::engine::graphics::CameraTarget::Window));
+                .is_some_and(|c| {
+                    matches!(c.target, crate::engine::graphics::CameraTarget::Window)
+                });
         }
         false
     }
@@ -212,8 +245,20 @@ impl CameraSystem {
         if let Some(handle) = next {
             if let Some((_, cam)) = self.cameras.iter().find(|(ch, _)| *ch == handle) {
                 match *cam {
-                    AnyCamera::Camera3D(cam3d) => visuals.set_camera(cam3d.view, cam3d.proj),
-                    AnyCamera::Camera2D(cam2d) => visuals.set_camera(cam2d.view, cam2d.proj),
+                    AnyCamera::Camera3D(cam3d) => visuals
+                        .set_camera_mono_for_target_with_transform(
+                            crate::engine::graphics::CameraTarget::Window,
+                            cam3d.view,
+                            cam3d.proj,
+                            cam3d.transform,
+                        ),
+                    AnyCamera::Camera2D(cam2d) => visuals
+                        .set_camera_mono_for_target_with_transform(
+                            crate::engine::graphics::CameraTarget::Window,
+                            cam2d.view,
+                            cam2d.proj,
+                            cam2d.transform,
+                        ),
                 }
             }
         }
@@ -287,9 +332,15 @@ impl CameraSystem {
                 {
                     cam2d.view = view;
                     cam2d.proj = proj;
+                    cam2d.transform = transform_from_matrix_world(model);
                 }
 
-                visuals.set_camera(view, proj);
+                visuals.set_camera_mono_for_target_with_transform(
+                    crate::engine::graphics::CameraTarget::Window,
+                    view,
+                    proj,
+                    transform_from_matrix_world(model),
+                );
             }
         }
     }
@@ -377,9 +428,15 @@ impl CameraSystem {
                 {
                     cam3d.view = view;
                     cam3d.proj = proj;
+                    cam3d.transform = transform_from_matrix_world(model);
                 }
 
-                visuals.set_camera(view, proj);
+                visuals.set_camera_mono_for_target_with_transform(
+                    crate::engine::graphics::CameraTarget::Window,
+                    view,
+                    proj,
+                    transform_from_matrix_world(model),
+                );
             }
         }
     }
@@ -399,7 +456,9 @@ impl CameraSystem {
         let next = world.all_components().find(|&id| {
             world
                 .get_component_by_id_as::<CameraXRComponent>(id)
-                .is_some_and(|c| c.enabled && matches!(c.target, crate::engine::graphics::CameraTarget::Xr))
+                .is_some_and(|c| {
+                    c.enabled && matches!(c.target, crate::engine::graphics::CameraTarget::Xr)
+                })
         });
 
         self.active_xr_camera = next;
@@ -501,7 +560,12 @@ impl System for CameraSystem {
                 [0.0, 0.0, 1.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
             ];
-            visuals.set_camera(view, proj);
+            visuals.set_camera_mono_for_target_with_transform(
+                crate::engine::graphics::CameraTarget::Window,
+                view,
+                proj,
+                Transform::default(),
+            );
             return;
         };
 
@@ -519,7 +583,12 @@ impl System for CameraSystem {
                     [0.0, 0.0, 1.0, 0.0],
                     [0.0, 0.0, 0.0, 1.0],
                 ];
-                visuals.set_camera(cam2d.view, cam2d.proj);
+                visuals.set_camera_mono_for_target_with_transform(
+                    crate::engine::graphics::CameraTarget::Window,
+                    cam2d.view,
+                    cam2d.proj,
+                    cam2d.transform,
+                );
             }
             AnyCamera::Camera3D(cam3d) => {
                 let aspect = if vp[1] > 0.0 { vp[0] / vp[1] } else { 1.0 };
@@ -537,8 +606,21 @@ impl System for CameraSystem {
 
                 cam3d.proj =
                     Camera3D::perspective_rh_zo(fov_y_deg.to_radians(), aspect, z_near, z_far);
-                visuals.set_camera(cam3d.view, cam3d.proj);
+                visuals.set_camera_mono_for_target_with_transform(
+                    crate::engine::graphics::CameraTarget::Window,
+                    cam3d.view,
+                    cam3d.proj,
+                    cam3d.transform,
+                );
             }
         }
     }
+}
+
+fn transform_from_matrix_world(m: [[f32; 4]; 4]) -> Transform {
+    let mut t = Transform::default();
+    t.model = m;
+    t.matrix_world = m;
+    t.translation = [m[3][0], m[3][1], m[3][2]];
+    t
 }

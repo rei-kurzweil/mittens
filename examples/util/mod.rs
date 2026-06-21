@@ -14,9 +14,7 @@ impl PerlinNoise {
 
         let mut state = seed;
         for i in (1..256).rev() {
-            state = state
-                .wrapping_mul(1_664_525)
-                .wrapping_add(1_013_904_223);
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
             let j = (state as usize) % (i + 1);
             base.swap(i, j);
         }
@@ -42,8 +40,8 @@ impl PerlinNoise {
         let aa = self.perm[(self.perm[xi as usize] as usize + yi as usize) & 255];
         let ab = self.perm[(self.perm[xi as usize] as usize + ((yi + 1) as usize)) & 255];
         let ba = self.perm[(self.perm[((xi + 1) & 255) as usize] as usize + yi as usize) & 255];
-        let bb = self.perm
-            [(self.perm[((xi + 1) & 255) as usize] as usize + ((yi + 1) as usize)) & 255];
+        let bb =
+            self.perm[(self.perm[((xi + 1) & 255) as usize] as usize + ((yi + 1) as usize)) & 255];
 
         let x1 = lerp(grad2(aa, xf, yf), grad2(ba, xf - 1.0, yf), u);
         let x2 = lerp(grad2(ab, xf, yf - 1.0), grad2(bb, xf - 1.0, yf - 1.0), u);
@@ -108,9 +106,9 @@ pub fn spawn_perlin_cube_patch(
     let half_w = (width as f32 - 1.0) * spacing * 0.5;
     let half_d = (depth as f32 - 1.0) * spacing * 0.5;
 
-    let root = universe.world.add_component(
-        TransformComponent::new().with_position(anchor[0], anchor[1], anchor[2]),
-    );
+    let root = universe
+        .world
+        .add_component(TransformComponent::new().with_position(anchor[0], anchor[1], anchor[2]));
     universe.add(root);
 
     for z in 0..depth {
@@ -131,7 +129,9 @@ pub fn spawn_perlin_cube_patch(
             let r = 0.10 + 0.18 * shade;
             let g = 0.28 + 0.55 * shade;
             let b = 0.40 + 0.22 * shade;
-            let color = universe.world.add_component(ColorComponent::rgba(r, g, b, 1.0));
+            let color = universe
+                .world
+                .add_component(ColorComponent::rgba(r, g, b, 1.0));
 
             let _ = universe.attach(root, tx);
             let _ = universe.attach(tx, renderable);

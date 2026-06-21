@@ -7,7 +7,10 @@ use crate::engine::graphics::primitives::{InstanceHandle, MaterialHandle};
 use crate::engine::graphics::visual_world::VisualMirror;
 use crate::engine::graphics::{CameraData, CameraTarget, VisualCamera, VisualWorld};
 use crate::engine::user_input::InputState;
+use crate::utils::math;
 use std::collections::HashSet;
+
+const MIRROR_CLIP_BIAS_WORLD_UNITS: f32 = 0.01;
 
 #[derive(Debug, Default)]
 pub struct MirrorSystem {
@@ -23,78 +26,83 @@ impl MirrorSystem {
         std::mem::take(&mut self.pending_texture_registrations)
     }
 
-    fn invert_affine_transform(m: &[[f32; 4]; 4]) -> [[f32; 4]; 4] {
-        let c0 = [m[0][0], m[0][1], m[0][2]];
-        let c1 = [m[1][0], m[1][1], m[1][2]];
-        let c2 = [m[2][0], m[2][1], m[2][2]];
-
-        let a00 = c0[0];
-        let a10 = c0[1];
-        let a20 = c0[2];
-        let a01 = c1[0];
-        let a11 = c1[1];
-        let a21 = c1[2];
-        let a02 = c2[0];
-        let a12 = c2[1];
-        let a22 = c2[2];
-
-        let det = a00 * (a11 * a22 - a12 * a21) - a01 * (a10 * a22 - a12 * a20)
-            + a02 * (a10 * a21 - a11 * a20);
-        if det.abs() < 1e-8 {
-            return [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ];
+    fn normalize(v: [f32; 3]) -> Option<[f32; 3]> {
+        let len2 = math::vec3_dot(v, v);
+        if len2 <= 1e-12 {
+            return None;
         }
-        let inv_det = 1.0 / det;
+        let inv_len = len2.sqrt().recip();
+        Some([v[0] * inv_len, v[1] * inv_len, v[2] * inv_len])
+    }
 
-        let inv00 = (a11 * a22 - a12 * a21) * inv_det;
-        let inv01 = (a02 * a21 - a01 * a22) * inv_det;
-        let inv02 = (a01 * a12 - a02 * a11) * inv_det;
-
-        let inv10 = (a12 * a20 - a10 * a22) * inv_det;
-        let inv11 = (a00 * a22 - a02 * a20) * inv_det;
-        let inv12 = (a02 * a10 - a00 * a12) * inv_det;
-
-        let inv20 = (a10 * a21 - a11 * a20) * inv_det;
-        let inv21 = (a01 * a20 - a00 * a21) * inv_det;
-        let inv22 = (a00 * a11 - a01 * a10) * inv_det;
-
-        let tx = m[3][0];
-        let ty = m[3][1];
-        let tz = m[3][2];
-
-        let itx = -(inv00 * tx + inv01 * ty + inv02 * tz);
-        let ity = -(inv10 * tx + inv11 * ty + inv12 * tz);
-        let itz = -(inv20 * tx + inv21 * ty + inv22 * tz);
-
+    fn mat4_mul_vec4(m: [[f32; 4]; 4], v: [f32; 4]) -> [f32; 4] {
         [
-            [inv00, inv10, inv20, 0.0],
-            [inv01, inv11, inv21, 0.0],
-            [inv02, inv12, inv22, 0.0],
-            [itx, ity, itz, 1.0],
+            m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2] + m[3][0] * v[3],
+            m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2] + m[3][1] * v[3],
+            m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2] + m[3][2] * v[3],
+            m[0][3] * v[0] + m[1][3] * v[1] + m[2][3] * v[2] + m[3][3] * v[3],
         ]
     }
 
-    fn reflect_pos(pos: [f32; 3], plane_pos: [f32; 3], plane_normal: [f32; 3]) -> [f32; 3] {
-        let v = [pos[0] - plane_pos[0], pos[1] - plane_pos[1], pos[2] - plane_pos[2]];
-        let dist = v[0] * plane_normal[0] + v[1] * plane_normal[1] + v[2] * plane_normal[2];
-        [
-            pos[0] - 2.0 * dist * plane_normal[0],
-            pos[1] - 2.0 * dist * plane_normal[1],
-            pos[2] - 2.0 * dist * plane_normal[2],
-        ]
+    fn transform_plane_world_to_camera(
+        view: [[f32; 4]; 4],
+        plane_origin: [f32; 3],
+        plane_normal_toward_camera: [f32; 3],
+    ) -> Option<[f32; 4]> {
+        let origin4 = Self::mat4_mul_vec4(
+            view,
+            [plane_origin[0], plane_origin[1], plane_origin[2], 1.0],
+        );
+        let normal4 = Self::mat4_mul_vec4(
+            view,
+            [
+                plane_normal_toward_camera[0],
+                plane_normal_toward_camera[1],
+                plane_normal_toward_camera[2],
+                0.0,
+            ],
+        );
+        let normal = Self::normalize([normal4[0], normal4[1], normal4[2]])?;
+        let origin = [origin4[0], origin4[1], origin4[2]];
+        Some([
+            normal[0],
+            normal[1],
+            normal[2],
+            -math::vec3_dot(normal, origin),
+        ])
     }
 
-    fn reflect_dir(dir: [f32; 3], plane_normal: [f32; 3]) -> [f32; 3] {
-        let dist = dir[0] * plane_normal[0] + dir[1] * plane_normal[1] + dir[2] * plane_normal[2];
-        [
-            dir[0] - 2.0 * dist * plane_normal[0],
-            dir[1] - 2.0 * dist * plane_normal[1],
-            dir[2] - 2.0 * dist * plane_normal[2],
-        ]
+    fn projection_inverse_corner(proj: [[f32; 4]; 4], clip: [f32; 4]) -> Option<[f32; 4]> {
+        let inv_proj = math::mat4_inverse(proj)?;
+        Some(Self::mat4_mul_vec4(inv_proj, clip))
+    }
+
+    fn apply_oblique_near_plane_projection(
+        proj: [[f32; 4]; 4],
+        plane_camera: [f32; 4],
+    ) -> Option<[[f32; 4]; 4]> {
+        let clip_corner = [
+            if plane_camera[0] >= 0.0 { 1.0 } else { -1.0 },
+            if plane_camera[1] >= 0.0 { 1.0 } else { -1.0 },
+            1.0,
+            1.0,
+        ];
+        let q = Self::projection_inverse_corner(proj, clip_corner)?;
+        let dot = plane_camera[0] * q[0]
+            + plane_camera[1] * q[1]
+            + plane_camera[2] * q[2]
+            + plane_camera[3] * q[3];
+        if dot.abs() <= 1e-6 {
+            return None;
+        }
+
+        let scale = 1.0 / dot;
+        let mut out = proj;
+        out[0][2] = plane_camera[0] * scale;
+        out[1][2] = plane_camera[1] * scale;
+        out[2][2] = plane_camera[2] * scale;
+        out[3][2] = plane_camera[3] * scale;
+        Some(out)
     }
 }
 
@@ -111,7 +119,11 @@ impl System for MirrorSystem {
 
         let mirror_cids: Vec<ComponentId> = world
             .all_components()
-            .filter(|&id| world.get_component_by_id_as::<MirrorComponent>(id).is_some())
+            .filter(|&id| {
+                world
+                    .get_component_by_id_as::<MirrorComponent>(id)
+                    .is_some()
+            })
             .collect();
 
         for cid in mirror_cids {
@@ -124,32 +136,47 @@ impl System for MirrorSystem {
             let mut transform_cid = None;
             let mut cur = cid;
             while let Some(p) = world.parent_of(cur) {
-                if world.get_component_by_id_as::<TransformComponent>(p).is_some() {
+                if world
+                    .get_component_by_id_as::<TransformComponent>(p)
+                    .is_some()
+                {
                     transform_cid = Some(p);
                     break;
                 }
                 cur = p;
             }
-            let Some(transform_cid) = transform_cid else { continue };
-            let transform = world.get_component_by_id_as::<TransformComponent>(transform_cid).unwrap();
+            let Some(transform_cid) = transform_cid else {
+                continue;
+            };
+            let transform = world
+                .get_component_by_id_as::<TransformComponent>(transform_cid)
+                .unwrap();
             let world_matrix = transform.transform.matrix_world;
 
             // 2. Find parent renderable (the surface that should be reflective).
             let mut renderable_cid = None;
             if let Some(p) = world.parent_of(cid) {
-                if world.get_component_by_id_as::<RenderableComponent>(p).is_some() {
+                if world
+                    .get_component_by_id_as::<RenderableComponent>(p)
+                    .is_some()
+                {
                     renderable_cid = Some(p);
                 }
             }
-            let Some(renderable_cid) = renderable_cid else { continue };
+            let Some(renderable_cid) = renderable_cid else {
+                continue;
+            };
 
             // 3. Find bounds (for aspect ratio).
-            let bounds = world.get_component_by_id_as::<BoundsComponent>(renderable_cid)
+            let bounds = world
+                .get_component_by_id_as::<BoundsComponent>(renderable_cid)
                 .map(|b| b.local)
                 .or_else(|| {
                     // Try children of renderable.
                     world.children_of(renderable_cid).iter().find_map(|&ch| {
-                        world.get_component_by_id_as::<BoundsComponent>(ch).map(|b| b.local)
+                        world
+                            .get_component_by_id_as::<BoundsComponent>(ch)
+                            .map(|b| b.local)
                     })
                 });
 
@@ -168,8 +195,12 @@ impl System for MirrorSystem {
             let plane_pos = [world_matrix[3][0], world_matrix[3][1], world_matrix[3][2]];
             let plane_normal = {
                 let n = [world_matrix[2][0], world_matrix[2][1], world_matrix[2][2]];
-                let len = (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]).sqrt();
-                if len > 1e-6 { [n[0]/len, n[1]/len, n[2]/len] } else { [0.0, 0.0, 1.0] }
+                let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+                if len > 1e-6 {
+                    [n[0] / len, n[1] / len, n[2] / len]
+                } else {
+                    [0.0, 0.0, 1.0]
+                }
             };
 
             // 4. Derive reflected camera views.
@@ -177,7 +208,10 @@ impl System for MirrorSystem {
             let mut derived_eyes = Vec::new();
 
             // Prefer active XR camera if available, otherwise Window.
-            let source_target = if visuals.visual_camera(CameraTarget::Xr).map_or(false, |c| !c.eyes.is_empty()) {
+            let source_target = if visuals
+                .visual_camera(CameraTarget::Xr)
+                .map_or(false, |c| !c.eyes.is_empty())
+            {
                 CameraTarget::Xr
             } else {
                 CameraTarget::Window
@@ -186,19 +220,42 @@ impl System for MirrorSystem {
             if let Some(source_cam) = visuals.visual_camera(source_target) {
                 for eye_data in &source_cam.eyes {
                     let camera_world = eye_data.transform.matrix_world;
-                    let cam_pos = [
-                        camera_world[3][0],
-                        camera_world[3][1],
-                        camera_world[3][2],
-                    ];
-                    let cam_right = [camera_world[0][0], camera_world[0][1], camera_world[0][2]];
+                    let cam_pos = [camera_world[3][0], camera_world[3][1], camera_world[3][2]];
                     let cam_up = [camera_world[1][0], camera_world[1][1], camera_world[1][2]];
                     let cam_back = [camera_world[2][0], camera_world[2][1], camera_world[2][2]];
+                    let Some(cam_forward) = Self::normalize(math::vec3_negate(cam_back)) else {
+                        continue;
+                    };
+                    let Some(cam_up) = Self::normalize(cam_up) else {
+                        continue;
+                    };
 
-                    let ref_pos = Self::reflect_pos(cam_pos, plane_pos, plane_normal);
-                    let ref_right = Self::reflect_dir(cam_right, plane_normal);
-                    let ref_up = Self::reflect_dir(cam_up, plane_normal);
-                    let ref_back = Self::reflect_dir(cam_back, plane_normal);
+                    let ref_pos = math::vec3_reflect_point(cam_pos, plane_pos, plane_normal);
+                    let Some(ref_forward) =
+                        Self::normalize(math::vec3_reflect(cam_forward, plane_normal))
+                    else {
+                        continue;
+                    };
+                    let reflected_up_hint = math::vec3_reflect(cam_up, plane_normal);
+                    let mut ref_right =
+                        Self::normalize(math::vec3_cross(ref_forward, reflected_up_hint)).or_else(
+                            || {
+                                let fallback_up = if ref_forward[1].abs() < 0.999 {
+                                    [0.0, 1.0, 0.0]
+                                } else {
+                                    [1.0, 0.0, 0.0]
+                                };
+                                Self::normalize(math::vec3_cross(ref_forward, fallback_up))
+                            },
+                        );
+                    let Some(ref_right) = ref_right.take() else {
+                        continue;
+                    };
+                    let Some(ref_up) = Self::normalize(math::vec3_cross(ref_right, ref_forward))
+                    else {
+                        continue;
+                    };
+                    let ref_back = math::vec3_negate(ref_forward);
 
                     let ref_world = [
                         [ref_right[0], ref_right[1], ref_right[2], 0.0],
@@ -206,7 +263,8 @@ impl System for MirrorSystem {
                         [ref_back[0], ref_back[1], ref_back[2], 0.0],
                         [ref_pos[0], ref_pos[1], ref_pos[2], 1.0],
                     ];
-                    let ref_view = Self::invert_affine_transform(&ref_world);
+                    let ref_view =
+                        math::mat4_inverse(ref_world).unwrap_or_else(math::mat4_identity);
 
                     let mut reflected_transform = eye_data.transform;
                     reflected_transform.matrix_world = ref_world;
@@ -223,6 +281,31 @@ impl System for MirrorSystem {
                         ref_proj[0][0] = ref_proj[1][1] / aspect;
                     }
 
+                    let plane_normal_toward_camera = if math::vec3_dot(plane_normal, ref_pos)
+                        - math::vec3_dot(plane_normal, plane_pos)
+                        < 0.0
+                    {
+                        plane_normal
+                    } else {
+                        math::vec3_negate(plane_normal)
+                    };
+                    let biased_plane_origin = math::vec3_add(
+                        plane_pos,
+                        math::vec3_scale(plane_normal_toward_camera, MIRROR_CLIP_BIAS_WORLD_UNITS),
+                    );
+                    let plane_camera = Self::transform_plane_world_to_camera(
+                        ref_view,
+                        biased_plane_origin,
+                        plane_normal_toward_camera,
+                    );
+                    if let Some(plane_camera) = plane_camera {
+                        if let Some(oblique_proj) =
+                            Self::apply_oblique_near_plane_projection(ref_proj, plane_camera)
+                        {
+                            ref_proj = oblique_proj;
+                        }
+                    }
+
                     derived_eyes.push(CameraData {
                         view: ref_view,
                         proj: ref_proj,
@@ -231,13 +314,19 @@ impl System for MirrorSystem {
                 }
             }
 
-            if derived_eyes.is_empty() { continue; }
+            if derived_eyes.is_empty() {
+                continue;
+            }
 
-            let guid = world.get_component_node(cid).map(|n| n.guid).unwrap_or_default();
+            let guid = world
+                .get_component_node(cid)
+                .map(|n| n.guid)
+                .unwrap_or_default();
             let mirror_key = format!("capture.mirror.{}.color", guid);
 
             // 5. Register with VisualWorld.
-            let source_instance = world.get_component_by_id_as::<RenderableComponent>(renderable_cid)
+            let source_instance = world
+                .get_component_by_id_as::<RenderableComponent>(renderable_cid)
                 .and_then(|r| r.handle)
                 .unwrap_or(InstanceHandle(u32::MAX)); // renderer will handle null
 
@@ -247,33 +336,43 @@ impl System for MirrorSystem {
                     target: CameraTarget::Window, // offscreen views are effectively ad-hoc window-like passes
                     eyes: derived_eyes,
                 },
+                plane_origin: plane_pos,
+                plane_normal,
                 target_key: mirror_key.clone(),
                 source_instance,
                 resolution_scale: quality as f32 / 1024.0, // normalized scale? renderer decides
             });
 
             // 6. Override parent renderable's material and texture.
-            if let Some(renderable) = world.get_component_by_id_as_mut::<RenderableComponent>(renderable_cid) {
+            if let Some(renderable) =
+                world.get_component_by_id_as_mut::<RenderableComponent>(renderable_cid)
+            {
                 renderable.renderable.material = MaterialHandle::MIRROR;
                 if let Some(handle) = renderable.handle {
                     let _ = visuals.update_material(handle, MaterialHandle::MIRROR);
                 }
-                
+
                 // Ensure TextureComponent exists and points to mirror_key.
                 let mut texture_cid = None;
                 for &ch in world.children_of(renderable_cid) {
-                    if world.get_component_by_id_as::<TextureComponent>(ch).is_some() {
+                    if world
+                        .get_component_by_id_as::<TextureComponent>(ch)
+                        .is_some()
+                    {
                         texture_cid = Some(ch);
                         break;
                     }
                 }
 
                 if let Some(t_cid) = texture_cid {
-                    let tex = world.get_component_by_id_as_mut::<TextureComponent>(t_cid).unwrap();
+                    let tex = world
+                        .get_component_by_id_as_mut::<TextureComponent>(t_cid)
+                        .unwrap();
                     tex.render_image = Some(mirror_key);
                     pending_texture_registrations.insert(t_cid);
                 } else {
-                    let new_tex_id = world.add_component(TextureComponent::render_image(mirror_key));
+                    let new_tex_id =
+                        world.add_component(TextureComponent::render_image(mirror_key));
                     let _ = world.add_child(renderable_cid, new_tex_id);
                     pending_texture_registrations.insert(new_tex_id);
                 }
@@ -282,5 +381,75 @@ impl System for MirrorSystem {
 
         self.pending_texture_registrations
             .extend(pending_texture_registrations);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MirrorSystem;
+
+    fn approx_eq(a: f32, b: f32) {
+        assert!(
+            (a - b).abs() <= 1e-4,
+            "expected {a} ~= {b}, diff={}",
+            (a - b).abs()
+        );
+    }
+
+    fn clip_z(proj: [[f32; 4]; 4], v: [f32; 4]) -> f32 {
+        MirrorSystem::mat4_mul_vec4(proj, v)[2]
+    }
+
+    #[test]
+    fn transforms_world_plane_into_camera_space() {
+        let view = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, -5.0, 1.0],
+        ];
+
+        let plane =
+            MirrorSystem::transform_plane_world_to_camera(view, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0])
+                .expect("plane");
+
+        approx_eq(plane[0], 0.0);
+        approx_eq(plane[1], 0.0);
+        approx_eq(plane[2], 1.0);
+        approx_eq(plane[3], 5.0);
+    }
+
+    #[test]
+    fn oblique_projection_maps_clip_plane_to_near_plane() {
+        let proj = crate::engine::ecs::system::camera_system::Camera3D::perspective_rh_zo(
+            60.0f32.to_radians(),
+            1.0,
+            0.1,
+            100.0,
+        );
+        let plane_camera = [0.0, 0.0, 1.0, 5.0];
+        let oblique = MirrorSystem::apply_oblique_near_plane_projection(proj, plane_camera)
+            .expect("oblique projection");
+
+        approx_eq(clip_z(oblique, [0.0, 0.0, -5.0, 1.0]), 0.0);
+        assert!(clip_z(oblique, [0.0, 0.0, -6.0, 1.0]) > 0.0);
+        assert!(clip_z(oblique, [0.0, 0.0, -4.0, 1.0]) < 0.0);
+    }
+
+    #[test]
+    fn oblique_projection_handles_flipped_plane_orientation() {
+        let proj = crate::engine::ecs::system::camera_system::Camera3D::perspective_rh_zo(
+            60.0f32.to_radians(),
+            1.0,
+            0.1,
+            100.0,
+        );
+        let plane_camera = [0.0, 0.0, -1.0, -5.0];
+        let oblique = MirrorSystem::apply_oblique_near_plane_projection(proj, plane_camera)
+            .expect("oblique projection");
+
+        approx_eq(clip_z(oblique, [0.0, 0.0, -5.0, 1.0]), 0.0);
+        assert!(clip_z(oblique, [0.0, 0.0, -6.0, 1.0]) > 0.0);
+        assert!(clip_z(oblique, [0.0, 0.0, -4.0, 1.0]) < 0.0);
     }
 }

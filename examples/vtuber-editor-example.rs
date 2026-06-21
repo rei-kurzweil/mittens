@@ -76,7 +76,6 @@ fn main() {
     utils::logger::init();
 
     let output = meow_meow::MeowMeowRunner::eval(include_str!("vtuber-editor-example.mms"));
-    
 
     for error in &output.errors {
         eprintln!("[mms] {error}");
@@ -90,15 +89,13 @@ fn main() {
     );
 
     let world = engine::ecs::World::default();
-    
-    let mut universe = engine::Universe::new(world);
 
+    let mut universe = engine::Universe::new(world);
 
     let scope = engine::ecs::ComponentId::default();
     for intent in output.intents {
         universe.command_queue.push_intent_now(scope, intent);
     }
-    
 
     universe.systems.process_commands(
         &mut universe.world,
@@ -106,7 +103,6 @@ fn main() {
         &universe.render_assets,
         &mut universe.command_queue,
     );
-
 
     let bg_root = universe.world.add_component(
         engine::ecs::component::BackgroundComponent::new().with_occlusion_and_lighting(),

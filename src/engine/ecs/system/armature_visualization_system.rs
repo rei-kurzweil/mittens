@@ -2,8 +2,8 @@ use crate::engine::ecs::component::{
     ColorComponent, GLTFComponent, OverlayComponent, RaycastableComponent, RenderableComponent,
     SignalRouteUpwardComponent, TransformComponent,
 };
-use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::engine::ecs::system::GLTFSystem;
+use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 use std::collections::HashMap;
@@ -120,9 +120,7 @@ fn spawn_joint_marker(
 ) -> ComponentId {
     let marker_root = world.add_component_boxed_named(
         "armature_joint_marker",
-        Box::new(
-            TransformComponent::new().with_scale(VIZ_BOX_SCALE, VIZ_BOX_SCALE, VIZ_BOX_SCALE),
-        ),
+        Box::new(TransformComponent::new().with_scale(VIZ_BOX_SCALE, VIZ_BOX_SCALE, VIZ_BOX_SCALE)),
     );
     let route_up = world.add_component_boxed_named(
         "armature_joint_marker_route",
@@ -201,9 +199,13 @@ mod tests {
         gltf.armature_joint_transforms = vec![joint_a, joint_b];
         systems.gltf.register_component(gltf_id);
 
-        systems
-            .armature_visualization
-            .tick_with_queue(&mut world, &systems.gltf, &mut visuals, &mut queue, 0.016);
+        systems.armature_visualization.tick_with_queue(
+            &mut world,
+            &systems.gltf,
+            &mut visuals,
+            &mut queue,
+            0.016,
+        );
         assert_eq!(
             systems
                 .armature_visualization
@@ -214,9 +216,13 @@ mod tests {
         assert_eq!(world.children_of(joint_a).len(), 1);
         assert_eq!(world.children_of(joint_b).len(), 1);
 
-        systems
-            .armature_visualization
-            .tick_with_queue(&mut world, &systems.gltf, &mut visuals, &mut queue, 0.016);
+        systems.armature_visualization.tick_with_queue(
+            &mut world,
+            &systems.gltf,
+            &mut visuals,
+            &mut queue,
+            0.016,
+        );
         assert_eq!(
             systems
                 .armature_visualization
@@ -231,9 +237,13 @@ mod tests {
             .get_component_by_id_as_mut::<GLTFComponent>(gltf_id)
             .expect("gltf")
             .armature_visible = false;
-        systems
-            .armature_visualization
-            .tick_with_queue(&mut world, &systems.gltf, &mut visuals, &mut queue, 0.016);
+        systems.armature_visualization.tick_with_queue(
+            &mut world,
+            &systems.gltf,
+            &mut visuals,
+            &mut queue,
+            0.016,
+        );
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
         assert_eq!(
             systems
@@ -245,9 +255,13 @@ mod tests {
         assert!(world.children_of(joint_a).is_empty());
         assert!(world.children_of(joint_b).is_empty());
 
-        systems
-            .armature_visualization
-            .tick_with_queue(&mut world, &systems.gltf, &mut visuals, &mut queue, 0.016);
+        systems.armature_visualization.tick_with_queue(
+            &mut world,
+            &systems.gltf,
+            &mut visuals,
+            &mut queue,
+            0.016,
+        );
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
         assert_eq!(
             systems

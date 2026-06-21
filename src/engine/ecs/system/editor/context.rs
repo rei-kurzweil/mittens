@@ -6,10 +6,10 @@ use crate::engine::ecs::component::{
     RaycastableComponent, RenderableComponent, SelectableComponent, SelectionComponent,
     SerializeComponent, SignalObserverRouterComponent, TransformComponent,
 };
-use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::system::editor::settings_panel::{
     EDITOR_SETTINGS_PAYLOAD_NAME, EDITOR_SETTINGS_SELECTION_SELECTOR, EditorSettingsOption,
 };
+use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::system::object_placement_preview::PlacementPreviewSession;
 use crate::engine::ecs::system::paint_placement::SurfacePlacementFrame;
 use crate::engine::ecs::system::selection_system::resolve_semantic_target_from_payload;
@@ -1105,8 +1105,8 @@ mod tests {
         EDITOR_CURSOR_HANDLER_NAME, EDITOR_SELECT_HANDLER_NAME, EditorContextEvent,
         EditorContextState, EditorContextWorkspaceState, NullEmit, apply_editor_root_selection,
         apply_semantic_target_selection, editor_context_event_from_shared_signal,
-        ensure_editor_observer_router, reduce_editor_context_state, sync_editor_component_selection,
-        sync_editor_observer_routes, world_panel_selection_event,
+        ensure_editor_observer_router, reduce_editor_context_state,
+        sync_editor_component_selection, sync_editor_observer_routes, world_panel_selection_event,
     };
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
@@ -1148,8 +1148,7 @@ mod tests {
 
         let state = Arc::new(Mutex::new(EditorContextState::default()));
         let mut emit = NullEmit;
-        let result =
-            apply_semantic_target_selection(&mut world, &mut emit, &state, target, false);
+        let result = apply_semantic_target_selection(&mut world, &mut emit, &state, target, false);
 
         assert_eq!(result.active_editor, Some(editor));
         assert_eq!(result.gizmo_target, Some(target));

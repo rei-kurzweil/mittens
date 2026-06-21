@@ -1,9 +1,9 @@
-use crate::engine::ecs::{ComponentId, IntentValue, World};
 use crate::engine::ecs::component::{
     EditorComponent, PoseBoneEntry, PoseCaptureComponent, PoseCaptureLibraryComponent,
     PoseCapturePoseComponent, PoseTargetRef, TransformComponent,
 };
 use crate::engine::ecs::rx::SignalEmitter;
+use crate::engine::ecs::{ComponentId, IntentValue, World};
 use std::collections::HashSet;
 
 #[derive(Debug, Default)]
@@ -14,7 +14,13 @@ impl PoseCaptureSystem {
         Self
     }
 
-    pub fn handle_capture(&self, world: &mut World, emit: &mut dyn SignalEmitter, target: ComponentId, pose_name: Option<String>) {
+    pub fn handle_capture(
+        &self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        target: ComponentId,
+        pose_name: Option<String>,
+    ) {
         let targets = self.resolve_capture_targets(world, target);
         if targets.is_empty() {
             println!(
@@ -41,30 +47,53 @@ impl PoseCaptureSystem {
         }
     }
 
-    pub fn handle_apply(&self, world: &mut World, emit: &mut dyn SignalEmitter, target: ComponentId, pose_id: ComponentId) {
+    pub fn handle_apply(
+        &self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        target: ComponentId,
+        pose_id: ComponentId,
+    ) {
         let Some(pose) = world.get_component_by_id_as::<PoseCapturePoseComponent>(pose_id) else {
-            println!("[PoseCaptureSystem] pose {:?} has no PoseCapturePoseComponent", pose_id);
+            println!(
+                "[PoseCaptureSystem] pose {:?} has no PoseCapturePoseComponent",
+                pose_id
+            );
             return;
         };
 
-        println!("[PoseCaptureSystem] applying pose '{}' to target {:?}", pose.name, target);
+        println!(
+            "[PoseCaptureSystem] applying pose '{}' to target {:?}",
+            pose.name, target
+        );
 
         for entry in &pose.entries {
             if let Some(tc_id) = self.resolve_path(world, target, &entry.path) {
-                emit.push_intent_now(tc_id, IntentValue::UpdateTransform {
-                    component_ids: vec![tc_id],
-                    translation: entry.translation,
-                    rotation_quat_xyzw: entry.rotation,
-                    scale: entry.scale,
-                });
+                emit.push_intent_now(
+                    tc_id,
+                    IntentValue::UpdateTransform {
+                        component_ids: vec![tc_id],
+                        translation: entry.translation,
+                        rotation_quat_xyzw: entry.rotation,
+                        scale: entry.scale,
+                    },
+                );
             }
         }
     }
 
-    fn ensure_library(&self, world: &mut World, target: ComponentId, emit: &mut dyn SignalEmitter) -> ComponentId {
+    fn ensure_library(
+        &self,
+        world: &mut World,
+        target: ComponentId,
+        emit: &mut dyn SignalEmitter,
+    ) -> ComponentId {
         // Find existing library as child of target
         for &child in world.children_of(target) {
-            if world.get_component_by_id_as::<PoseCaptureLibraryComponent>(child).is_some() {
+            if world
+                .get_component_by_id_as::<PoseCaptureLibraryComponent>(child)
+                .is_some()
+            {
                 return child;
             }
         }
@@ -124,11 +153,8 @@ impl PoseCaptureSystem {
             entries.len()
         );
 
-        let pose = PoseCapturePoseComponent::new(
-            name,
-            PoseTargetRef::Query("TODO".to_string()),
-            entries,
-        );
+        let pose =
+            PoseCapturePoseComponent::new(name, PoseTargetRef::Query("TODO".to_string()), entries);
         let pose_id = world.add_component(pose);
         if let Err(e) = world.add_child(library_id, pose_id) {
             println!("[PoseCaptureSystem] failed to add pose to library: {}", e);
@@ -138,7 +164,11 @@ impl PoseCaptureSystem {
         Some(pose_id)
     }
 
-    fn resolve_capture_targets(&self, world: &World, request_target: ComponentId) -> Vec<ComponentId> {
+    fn resolve_capture_targets(
+        &self,
+        world: &World,
+        request_target: ComponentId,
+    ) -> Vec<ComponentId> {
         let selected_targets = self.selected_pose_capture_targets(world);
         if !selected_targets.is_empty() {
             return selected_targets;
@@ -150,7 +180,11 @@ impl PoseCaptureSystem {
 
         world
             .all_components()
-            .filter(|&id| world.get_component_by_id_as::<PoseCaptureComponent>(id).is_some())
+            .filter(|&id| {
+                world
+                    .get_component_by_id_as::<PoseCaptureComponent>(id)
+                    .is_some()
+            })
             .collect()
     }
 
@@ -177,7 +211,10 @@ impl PoseCaptureSystem {
     fn pose_capture_ancestor(&self, world: &World, start: ComponentId) -> Option<ComponentId> {
         let mut current = Some(start);
         while let Some(id) = current {
-            if world.get_component_by_id_as::<PoseCaptureComponent>(id).is_some() {
+            if world
+                .get_component_by_id_as::<PoseCaptureComponent>(id)
+                .is_some()
+            {
                 return Some(id);
             }
             current = world.parent_of(id);
@@ -185,7 +222,12 @@ impl PoseCaptureSystem {
         None
     }
 
-    fn get_subtree_path(&self, world: &World, root: ComponentId, target: ComponentId) -> Option<String> {
+    fn get_subtree_path(
+        &self,
+        world: &World,
+        root: ComponentId,
+        target: ComponentId,
+    ) -> Option<String> {
         if target == root {
             return Some("".to_string());
         }

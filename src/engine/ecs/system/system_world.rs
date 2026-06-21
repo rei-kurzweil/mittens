@@ -2,12 +2,12 @@ use super::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::RxWorld;
 use crate::engine::ecs::SignalKind;
+use crate::engine::ecs::system::ArmatureVisualizationSystem;
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::CameraSystem;
 use crate::engine::ecs::system::ClippingSystem;
 use crate::engine::ecs::system::ClockSystem;
 use crate::engine::ecs::system::CollisionSystem;
-use crate::engine::ecs::system::ArmatureVisualizationSystem;
 use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::InputSystem;
 use crate::engine::ecs::system::KineticResponseSystem;
@@ -16,8 +16,8 @@ use crate::engine::ecs::system::MirrorSystem;
 use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::OpenXRSystem;
 use crate::engine::ecs::system::PipelineSystem;
-use crate::engine::ecs::system::PoseCaptureSystem;
 use crate::engine::ecs::system::PointerSystem;
+use crate::engine::ecs::system::PoseCaptureSystem;
 use crate::engine::ecs::system::RayCastSystem;
 use crate::engine::ecs::system::RenderToTextureSystem;
 use crate::engine::ecs::system::RenderableSystem;
@@ -118,11 +118,11 @@ mod tests {
     use super::SystemWorld;
     use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::World;
-    use crate::engine::ecs::system::System;
     use crate::engine::ecs::component::{
         ColorComponent, MirrorComponent, RenderableComponent, StencilClipComponent,
         TextureComponent, TransformComponent,
     };
+    use crate::engine::ecs::system::System;
     use crate::engine::graphics::primitives::{MaterialHandle, MeshHandle, TextureHandle};
     use crate::engine::graphics::{
         CpuMesh, GpuRenderable, MeshUploader, RenderAssets, TextureUploader, VisualWorld,
@@ -289,14 +289,23 @@ mod tests {
             .expect("renderable")
             .handle = Some(handle);
 
-        systems.mirror.tick(&mut world, &mut visuals, &Default::default(), 0.0);
+        systems
+            .mirror
+            .tick(&mut world, &mut visuals, &Default::default(), 0.0);
 
         let renderable_component = world
             .get_component_by_id_as::<RenderableComponent>(renderable)
             .expect("renderable component");
-        assert_eq!(renderable_component.renderable.material, MaterialHandle::MIRROR);
         assert_eq!(
-            visuals.instance(handle).expect("visual instance").renderable.material,
+            renderable_component.renderable.material,
+            MaterialHandle::MIRROR
+        );
+        assert_eq!(
+            visuals
+                .instance(handle)
+                .expect("visual instance")
+                .renderable
+                .material,
             MaterialHandle::MIRROR
         );
     }
@@ -320,14 +329,18 @@ mod tests {
             .expect("renderable")
             .handle = Some(handle);
 
-        systems.mirror.tick(&mut world, &mut visuals, &Default::default(), 0.0);
+        systems
+            .mirror
+            .tick(&mut world, &mut visuals, &Default::default(), 0.0);
         let registrations = systems.mirror.take_pending_texture_registrations();
         assert_eq!(registrations.len(), 1);
         for component in registrations {
             systems.register_texture(&mut world, &mut visuals, component);
         }
 
-        systems.render_to_texture.flush_pending(&mut visuals, &mut uploader);
+        systems
+            .render_to_texture
+            .flush_pending(&mut visuals, &mut uploader);
         systems
             .texture
             .flush_pending(&mut world, &mut visuals, &mut uploader);
@@ -343,10 +356,12 @@ mod tests {
             .expect("runtime texture handle");
         let visual_instance = visuals.instance(handle).expect("visual instance");
         assert_eq!(visual_instance.texture, Some(runtime_handle));
-        assert!(systems
-            .render_to_texture
-            .producer_requests()
-            .any(|request| request.selector == mirror_key));
+        assert!(
+            systems
+                .render_to_texture
+                .producer_requests()
+                .any(|request| request.selector == mirror_key)
+        );
     }
 
     #[test]
@@ -359,7 +374,8 @@ mod tests {
         let root = world.add_component(TransformComponent::new());
         let renderable = world.add_component(RenderableComponent::square());
         let mirror = world.add_component(MirrorComponent::default());
-        let texture = world.add_component(TextureComponent::render_image("capture.mirror.stale.color"));
+        let texture =
+            world.add_component(TextureComponent::render_image("capture.mirror.stale.color"));
         let _ = world.add_child(root, renderable);
         let _ = world.add_child(renderable, mirror);
         let _ = world.add_child(renderable, texture);
@@ -371,17 +387,23 @@ mod tests {
             .handle = Some(handle);
 
         systems.register_texture(&mut world, &mut visuals, texture);
-        systems.render_to_texture.flush_pending(&mut visuals, &mut uploader);
+        systems
+            .render_to_texture
+            .flush_pending(&mut visuals, &mut uploader);
         systems
             .texture
             .flush_pending(&mut world, &mut visuals, &mut uploader);
         let stale_handle = visuals.instance(handle).expect("instance").texture;
 
-        systems.mirror.tick(&mut world, &mut visuals, &Default::default(), 0.0);
+        systems
+            .mirror
+            .tick(&mut world, &mut visuals, &Default::default(), 0.0);
         for component in systems.mirror.take_pending_texture_registrations() {
             systems.register_texture(&mut world, &mut visuals, component);
         }
-        systems.render_to_texture.flush_pending(&mut visuals, &mut uploader);
+        systems
+            .render_to_texture
+            .flush_pending(&mut visuals, &mut uploader);
         systems
             .texture
             .flush_pending(&mut world, &mut visuals, &mut uploader);
@@ -1932,16 +1954,27 @@ impl SystemWorld {
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
 
-        let activations = self.pointer.build_activations(world, input, self.openxr.xr_input_state());
+        let activations =
+            self.pointer
+                .build_activations(world, input, self.openxr.xr_input_state());
 
-        self.raycast
-            .tick_with_queue(world, visuals, input, &mut self.rx, &self.bvh, &activations, &self.pointer, dt_sec);
+        self.raycast.tick_with_queue(
+            world,
+            visuals,
+            input,
+            &mut self.rx,
+            &self.bvh,
+            &activations,
+            &self.pointer,
+            dt_sec,
+        );
 
         // Execute/dispatch any signals produced by raycast immediately (e.g. RayIntersected).
         let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
 
         // Gestures interpret ray hits + input into drag events.
-        self.gesture.tick_with_rx(visuals, input, &activations, &self.pointer, &mut self.rx);
+        self.gesture
+            .tick_with_rx(visuals, input, &activations, &self.pointer, &mut self.rx);
 
         // Execute/dispatch gesture-produced signals immediately (e.g. DragStart/DragMove/DragEnd).
         let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);

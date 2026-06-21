@@ -1217,8 +1217,7 @@ fn resolve_paint_context<'a>(
         start,
         format!(
             "tool={:?} asset_key={}",
-            paint_state.selected_tool,
-            asset.key,
+            paint_state.selected_tool, asset.key,
         ),
     );
     Some(context)

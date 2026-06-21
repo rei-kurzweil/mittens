@@ -1268,27 +1268,41 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
 
         // Per-profile select bindings: trigger semantics differ by controller family.
         let select_profile_paths: &[(&str, &str, &str)] = &[
-            ("/interaction_profiles/khr/simple_controller",
+            (
+                "/interaction_profiles/khr/simple_controller",
                 "/user/hand/left/input/select/click",
-                "/user/hand/right/input/select/click"),
-            ("/interaction_profiles/oculus/touch_controller",
+                "/user/hand/right/input/select/click",
+            ),
+            (
+                "/interaction_profiles/oculus/touch_controller",
                 "/user/hand/left/input/trigger/value",
-                "/user/hand/right/input/trigger/value"),
-            ("/interaction_profiles/htc/vive_controller",
+                "/user/hand/right/input/trigger/value",
+            ),
+            (
+                "/interaction_profiles/htc/vive_controller",
                 "/user/hand/left/input/trigger/click",
-                "/user/hand/right/input/trigger/click"),
-            ("/interaction_profiles/htc/vive_focus3_controller",
+                "/user/hand/right/input/trigger/click",
+            ),
+            (
+                "/interaction_profiles/htc/vive_focus3_controller",
                 "/user/hand/left/input/trigger/click",
-                "/user/hand/right/input/trigger/click"),
-            ("/interaction_profiles/valve/index_controller",
+                "/user/hand/right/input/trigger/click",
+            ),
+            (
+                "/interaction_profiles/valve/index_controller",
                 "/user/hand/left/input/trigger/value",
-                "/user/hand/right/input/trigger/value"),
-            ("/interaction_profiles/microsoft/motion_controller",
+                "/user/hand/right/input/trigger/value",
+            ),
+            (
+                "/interaction_profiles/microsoft/motion_controller",
                 "/user/hand/left/input/trigger/value",
-                "/user/hand/right/input/trigger/value"),
-            ("/interaction_profiles/ext/hand_interaction_ext",
+                "/user/hand/right/input/trigger/value",
+            ),
+            (
+                "/interaction_profiles/ext/hand_interaction_ext",
                 "/user/hand/left/input/pinch_ext/value",
-                "/user/hand/right/input/pinch_ext/value"),
+                "/user/hand/right/input/pinch_ext/value",
+            ),
         ];
 
         for profile_str in profiles {
@@ -1296,13 +1310,17 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
                 continue;
             };
             let _ = instance.suggest_interaction_profile_bindings(profile, &pose_bindings);
-            if let Some(&(_, l, r)) = select_profile_paths.iter().find(|(p, _, _)| *p == profile_str) {
+            if let Some(&(_, l, r)) = select_profile_paths
+                .iter()
+                .find(|(p, _, _)| *p == profile_str)
+            {
                 if let (Ok(lp), Ok(rp)) = (instance.string_to_path(l), instance.string_to_path(r)) {
                     let select_bindings = [
                         openxr::Binding::new(&select, lp),
                         openxr::Binding::new(&select, rp),
                     ];
-                    let _ = instance.suggest_interaction_profile_bindings(profile, &select_bindings);
+                    let _ =
+                        instance.suggest_interaction_profile_bindings(profile, &select_bindings);
                 }
             }
         }

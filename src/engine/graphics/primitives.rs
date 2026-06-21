@@ -259,6 +259,12 @@ impl Material {
         vertex_shader: "assets/shaders/grid.vert",
         fragment_shader: "assets/shaders/grid-square.frag",
     };
+
+    /// Planar mirror material.
+    pub const MIRROR: Material = Material {
+        vertex_shader: "assets/shaders/mirror-mesh.vert",
+        fragment_shader: "assets/shaders/mirror-mesh.frag",
+    };
 }
 
 impl MaterialHandle {

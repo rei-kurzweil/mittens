@@ -8,6 +8,7 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::component::{EditorInteractionMode, TransformComponent};
 use crate::engine::ecs::rx::RxWorld;
+use crate::engine::ecs::system::GridSystem;
 use crate::engine::ecs::system::data_renderer_system::{
     DataRendererSystem, UiDetailItem, UiItem, UiItemKind,
 };
@@ -15,9 +16,10 @@ use crate::engine::ecs::system::editor::context::{
     EditorContextState, apply_editor_root_selection, apply_semantic_target_selection,
 };
 use crate::engine::ecs::system::editor::grid_panel::{
-    GRID_PANEL_ADD_BUTTON_SELECTOR, GRID_PANEL_DELETE_PAYLOAD_NAME, GRID_PANEL_ENABLED_PAYLOAD_NAME,
-    GRID_PANEL_ROOT_SELECTOR, GRID_PANEL_ROW_PAYLOAD_NAME, GRID_PANEL_ROW_SPEC,
-    GRID_PANEL_VISIBILITY_PAYLOAD_NAME, build_grid_panel_model, grid_panel_items,
+    GRID_PANEL_ADD_BUTTON_SELECTOR, GRID_PANEL_DELETE_PAYLOAD_NAME,
+    GRID_PANEL_ENABLED_PAYLOAD_NAME, GRID_PANEL_ROOT_SELECTOR, GRID_PANEL_ROW_PAYLOAD_NAME,
+    GRID_PANEL_ROW_SPEC, GRID_PANEL_VISIBILITY_PAYLOAD_NAME, build_grid_panel_model,
+    grid_panel_items,
 };
 use crate::engine::ecs::system::editor::inspector_panel::{
     INSPECTOR_DETAIL_SPEC, INSPECTOR_ITEM_PREFIX, INSPECTOR_PANEL_INSTANCE_ID_KEY,
@@ -39,10 +41,12 @@ use crate::engine::ecs::system::editor::workspace::EditorWorkspaceRuntime;
 use crate::engine::ecs::system::editor::world_panel::{
     AuthoredWorldPanelSceneModel, ITEM_PREFIX, WORLD_PANEL_PAYLOAD_NAME,
     WORLD_PANEL_SELECTION_NAME, WorldPanelModel, WorldPanelRow, WorldPanelRowKind,
-    build_world_panel_model, effective_editor_roots, editor_scene_roots, mark_nearest_layout_dirty, parse_item_index,
-    rebuild_world_panel_scene_model, register_editor_root, rerender_world_panel_content,
-    rerender_world_panel_status, sync_world_panel_selection, world_panel_item_label,
+    build_world_panel_model, editor_scene_roots, effective_editor_roots, mark_nearest_layout_dirty,
+    parse_item_index, rebuild_world_panel_scene_model, register_editor_root,
+    rerender_world_panel_content, rerender_world_panel_status, sync_world_panel_selection,
+    world_panel_item_label,
 };
+use crate::engine::ecs::system::grid_system::GridSpawnSpec;
 use crate::engine::ecs::system::panel_system::{
     EDITOR_RUNTIME_UI_ROOT_NAME, PANEL_LAYOUT_MOUNT_NAME, PANEL_LAYOUT_ROOT_NAME,
     PANEL_LAYOUT_SELECTION_NAME, PanelActionKind, PanelControlKind, PanelKind,
@@ -54,8 +58,6 @@ use crate::engine::ecs::system::panel_system::{
 use crate::engine::ecs::system::selection_system::{
     apply_selection_set, resolve_semantic_target_from_payload,
 };
-use crate::engine::ecs::system::grid_system::GridSpawnSpec;
-use crate::engine::ecs::system::GridSystem;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
 use crate::meow_meow::component_registry::{
     filtered_root_ids_for_roots, filtered_roots_to_ce_ast, spawn_tree,
@@ -180,7 +182,9 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             world,
             self.workspace_runtime.installed_editor_roots(),
         );
-        editor_memory_marker("editor setup_panels_for_editor:after rebuild_world_panel_scene_model");
+        editor_memory_marker(
+            "editor setup_panels_for_editor:after rebuild_world_panel_scene_model",
+        );
 
         let editor_context = self.editor_context();
         {
@@ -1026,7 +1030,9 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         editor_memory_marker("editor refresh_world_panels:after rerender_pose_panel");
 
         sync_editor_settings_panel_selection(world, emit, panel_query_root, &editor_context);
-        editor_memory_marker("editor refresh_world_panels:after sync_editor_settings_panel_selection");
+        editor_memory_marker(
+            "editor refresh_world_panels:after sync_editor_settings_panel_selection",
+        );
 
         let inspector_models = build_inspector_panel_models(
             world,
@@ -1116,7 +1122,6 @@ fn refresh_all_panel_models(
     rerender_pose_panel(world, emit, panel_query_root, data_renderer);
 
     sync_editor_settings_panel_selection(world, emit, panel_query_root, &editor_context);
-
 
     sync_and_refresh_inspector_panels(
         world,
@@ -1271,22 +1276,15 @@ fn apply_world_panel_semantic_selection(
     else {
         return;
     };
-    let selection_result = apply_semantic_target_selection(
-        world,
-        emit,
-        editor_context_state,
-        target_component,
-        true,
-    );
+    let selection_result =
+        apply_semantic_target_selection(world, emit, editor_context_state, target_component, true);
     let active_editor = selection_result.active_editor;
     let is_editor_root_target = active_editor == Some(target_component);
     let gizmo_target = selection_result.gizmo_target;
 
     println!(
         "[InspectorSystem][trace] world_panel selection_root={selection_root:?} clicked_row={:?} payload={:?} authored_target={target_component:?} active_editor={active_editor:?} is_editor_root_target={is_editor_root_target} gizmo_target={gizmo_target:?} select_editor_target_ran={}",
-        selected_component,
-        selected_payload,
-        selection_result.used_editor_selection_path
+        selected_component, selected_payload, selection_result.used_editor_selection_path
     );
 
     if let Some(world_panel_root) =
@@ -1715,7 +1713,9 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                             asset_system.items.len(),
                             selection_root
                         );
-                        editor_memory_marker("editor spawn_panel_layout:before asset panel population");
+                        editor_memory_marker(
+                            "editor spawn_panel_layout:before asset panel population",
+                        );
 
                         let mut last_module_id = None;
                         for (index, item) in asset_system.items.iter().enumerate() {
@@ -1779,7 +1779,9 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                             }
                         }
                         mark_nearest_layout_dirty(world, selection_root);
-                        editor_memory_marker("editor spawn_panel_layout:after asset panel population");
+                        editor_memory_marker(
+                            "editor spawn_panel_layout:after asset panel population",
+                        );
                     }
                 }
             }
@@ -1850,7 +1852,9 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         );
         editor_memory_marker("editor spawn_panel_layout:after rerender_grid_panel");
         sync_editor_settings_panel_selection(world, emit, panel_mount_root, &grid_context);
-        editor_memory_marker("editor spawn_panel_layout:after sync_editor_settings_panel_selection");
+        editor_memory_marker(
+            "editor spawn_panel_layout:after sync_editor_settings_panel_selection",
+        );
 
         println!(
             "[InspectorSystem][debug] queued attach panel_mount_root={panel_mount_root:?} -> panel_query_root={panel_query_root:?}"
@@ -2692,9 +2696,12 @@ fn handle_editor_settings_panel_click(
 
     let mut current = Some(renderable);
     while let Some(component_id) = current {
-        let Some(payload_id) = world.children_of(component_id).iter().copied().find(|&child| {
-            world.component_label(child) == Some(EDITOR_SETTINGS_PAYLOAD_NAME)
-        }) else {
+        let Some(payload_id) = world
+            .children_of(component_id)
+            .iter()
+            .copied()
+            .find(|&child| world.component_label(child) == Some(EDITOR_SETTINGS_PAYLOAD_NAME))
+        else {
             current = world.parent_of(component_id);
             continue;
         };
@@ -2876,9 +2883,10 @@ fn sync_editor_settings_armature_checkmark(
     else {
         return;
     };
-    let Some(armature_row_root) =
-        world.find_component(settings_panel_root, &format!("#{EDITOR_SETTINGS_ARMATURE_ROW_NAME}"))
-    else {
+    let Some(armature_row_root) = world.find_component(
+        settings_panel_root,
+        &format!("#{EDITOR_SETTINGS_ARMATURE_ROW_NAME}"),
+    ) else {
         return;
     };
     let Some(checkmark_slot) = world.find_component(
@@ -3101,8 +3109,8 @@ pub fn rerender_pose_panel(
             let row_node = spawn_panel_ui_row_tree(world, row_spec);
 
             // Add extra payload for target
-            if let Some(payload_id) = world
-                .find_component(row_node, &format!("[name='{POSE_PANEL_PAYLOAD_NAME}']"))
+            if let Some(payload_id) =
+                world.find_component(row_node, &format!("[name='{POSE_PANEL_PAYLOAD_NAME}']"))
             {
                 if let Some(data) = world.get_component_by_id_as_mut::<DataComponent>(payload_id) {
                     data.insert("pose_target", DataValue::Component(row.target));
@@ -3111,7 +3119,6 @@ pub fn rerender_pose_panel(
 
             let _ = world.add_child(content_slot, row_node);
         }
-
     }
 
     world.init_component_tree(content_slot, emit);
@@ -3134,7 +3141,8 @@ pub fn handle_pose_panel_click(
         return false;
     }
 
-    if let Some(capture_button) = world.find_component(panel_root, POSE_PANEL_CAPTURE_BUTTON_SELECTOR)
+    if let Some(capture_button) =
+        world.find_component(panel_root, POSE_PANEL_CAPTURE_BUTTON_SELECTOR)
         && is_descendant_or_self(world, capture_button, clicked_node)
     {
         emit.push_intent_now(
@@ -3169,10 +3177,13 @@ pub fn handle_pose_panel_click(
                     "PoseAdd" => {
                         let target_id = data.get_component("target_component");
                         if let Some(target) = target_id {
-                            emit.push_intent_now(target, IntentValue::PoseCapture {
+                            emit.push_intent_now(
                                 target,
-                                pose_name: None,
-                            });
+                                IntentValue::PoseCapture {
+                                    target,
+                                    pose_name: None,
+                                },
+                            );
                             // Delay rerender slightly to allow system to process capture
                             return true;
                         }
@@ -3242,10 +3253,7 @@ fn build_panel_component_expr(
     panel_kind: PanelKind,
     panel_kind_label: &str,
 ) -> Option<MaterializedCE> {
-    editor_memory_marker_with_panel(
-        "editor build_panel_component_expr:start",
-        export_name,
-    );
+    editor_memory_marker_with_panel("editor build_panel_component_expr:start", export_name);
     let result = build_panel_shell_component_expr(
         world,
         emit,
