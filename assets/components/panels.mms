@@ -23,7 +23,7 @@ let TITLE_BAR_HEIGHT_GU = 3.0
 let TITLE_CONTENT_GAP_GU = 0.5
 let TITLE_LABEL_PADDING_X_GU = 0.25
 let SETTINGS_PANEL_WIDTH_GU = 16.0
-let SETTINGS_PANEL_CONTENT_HEIGHT_GU = 8.0
+let SETTINGS_PANEL_CONTENT_HEIGHT_GU = 10.2
 let SETTINGS_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + SETTINGS_PANEL_CONTENT_HEIGHT_GU
 
 fn editor_settings_mode_row(row_name, label, mode_value) {
@@ -60,13 +60,11 @@ fn editor_settings_mode_row(row_name, label, mode_value) {
 fn editor_settings_armature_row() {
     return T {
         name = "editor_settings_armature_visibility"
-        Option {
-            Data {
-                name = "editor_settings_payload"
-                row_kind = "GLTFArmatureVisibility"
-                visible = false
-                interactive = true
-            }
+        Data {
+            name = "editor_settings_payload"
+            row_kind = "GLTFArmatureVisibility"
+            visible = false
+            interactive = true
         }
         Raycastable.click_only()
         Style {
@@ -140,12 +138,18 @@ export fn editor_settings_panel(title, title_color, panel_background_color) {
                 padding(0.25)
             }
 
-            editor_settings_mode_row("editor_settings_mode_select", "Select", "select")
-            editor_settings_mode_row("editor_settings_mode_cursor_3d", "3D Cursor", "cursor_3d")
-            editor_settings_mode_row("editor_settings_mode_select_cursor", "Select + Cursor", "select_cursor")
+            T {
+                name = "editor_settings_mode_rows"
+                Style {
+                    display("block")
+                }
+                editor_settings_mode_row("editor_settings_mode_select", "Select", "select")
+                editor_settings_mode_row("editor_settings_mode_cursor_3d", "3D Cursor", "cursor_3d")
+                editor_settings_mode_row("editor_settings_mode_select_cursor", "Select + Cursor", "select_cursor")
+            }
             editor_settings_armature_row()
 
-            Selection { name = "editor_settings_selection" }
+            Selection.root("#editor_settings_mode_rows") { name = "editor_settings_selection" }
         }
     }
 }

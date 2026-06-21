@@ -124,15 +124,15 @@ export fn grid_visibility_icon() {
 }
 
 export fn checkmark_icon() {
-    return T.scale(0.75, 0.75, 0.75) {
+    return T.scale(0.42, 0.42, 0.42) {
         name = "checkmark_icon"
-        T.position(0.35, 0.05, 0.0).rotation(0.0, 0.0, 0.72) {
-            T.scale(0.16, 1.25, 0.12) {
+        T.position(0.18, 0.06, 0.0).rotation(0.0, 0.0, 0.72) {
+            T.scale(0.16, 1.10, 0.12) {
                 R.cube() { C.rgba(0.18, 0.68, 0.32, 1.0) }
             }
         }
-        T.position(-0.15, -0.25, 0.0).rotation(0.0, 0.0, -0.55) {
-            T.scale(0.16, 0.68, 0.12) {
+        T.position(-0.22, -0.20, 0.0).rotation(0.0, 0.0, -0.62) {
+            T.scale(0.16, 0.52, 0.12) {
                 R.cube() { C.rgba(0.18, 0.68, 0.32, 1.0) }
             }
         }

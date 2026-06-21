@@ -2898,7 +2898,14 @@ fn sync_editor_settings_armature_checkmark(
 
     let existing_children = world.children_of(checkmark_slot).to_vec();
     for child in existing_children {
-        let _ = world.remove_component_subtree(child);
+        if world.get_component_record(child).is_some() {
+            emit.push_intent_now(
+                child,
+                IntentValue::RemoveSubtree {
+                    component_ids: vec![child],
+                },
+            );
+        }
     }
 
     if !editor_context.armature_visible {
@@ -3889,6 +3896,32 @@ mod tests {
         assert!(
             !world.children_of(checkmark_slot).is_empty(),
             "expected checkmark subtree to be rendered into slot"
+        );
+
+        assert!(handle_editor_settings_panel_click(
+            &mut world,
+            &mut emit,
+            panel_query_root,
+            armature_row,
+            &editor_context_state,
+            &installed_editor_roots,
+        ));
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        let editor_context = editor_context_state
+            .lock()
+            .expect("editor context state mutex poisoned")
+            .clone();
+        assert!(!editor_context.armature_visible);
+        sync_editor_settings_armature_checkmark(
+            &mut world,
+            &mut emit,
+            panel_query_root,
+            &editor_context,
+        );
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        assert!(
+            world.children_of(checkmark_slot).is_empty(),
+            "expected checkmark subtree to be removed when armature visibility is toggled off"
         );
     }
 }
