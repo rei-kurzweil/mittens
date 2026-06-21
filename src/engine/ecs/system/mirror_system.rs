@@ -11,6 +11,8 @@ use crate::engine::graphics::{CameraData, CameraTarget, VisualWorld};
 use crate::engine::user_input::InputState;
 use crate::utils::math;
 use std::collections::HashSet;
+use uuid::Uuid;
+use winit::event::MouseButton;
 
 const MIRROR_CLIP_BIAS_WORLD_UNITS: f32 = 0.01;
 const MIRROR_ENABLE_OBLIQUE_CLIP_PLANE: bool = false;
@@ -18,6 +20,7 @@ const MIRROR_ENABLE_OBLIQUE_CLIP_PLANE: bool = false;
 #[derive(Debug, Default)]
 pub struct MirrorSystem {
     pending_texture_registrations: Vec<ComponentId>,
+    logged_debug_sample: bool,
 }
 
 impl MirrorSystem {
@@ -107,6 +110,105 @@ impl MirrorSystem {
         out[3][2] = plane_camera[3] * scale;
         Some(out)
     }
+
+    fn mirror_local_basis(world_matrix: [[f32; 4]; 4]) -> Option<([f32; 3], [f32; 3], [f32; 3])> {
+        let x = Self::normalize([world_matrix[0][0], world_matrix[0][1], world_matrix[0][2]])?;
+        let y = Self::normalize([world_matrix[1][0], world_matrix[1][1], world_matrix[1][2]])?;
+        let z = Self::normalize([world_matrix[2][0], world_matrix[2][1], world_matrix[2][2]])?;
+        Some((x, y, z))
+    }
+
+    fn build_camera_world_from_forward_up(
+        position: [f32; 3],
+        forward: [f32; 3],
+        up_hint: [f32; 3],
+    ) -> Option<[[f32; 4]; 4]> {
+        let forward = Self::normalize(forward)?;
+        let up_hint = Self::normalize(up_hint)?;
+        let right = Self::normalize(math::vec3_cross(forward, up_hint)).or_else(|| {
+            let fallback_up = if forward[1].abs() < 0.999 {
+                [0.0, 1.0, 0.0]
+            } else {
+                [1.0, 0.0, 0.0]
+            };
+            Self::normalize(math::vec3_cross(forward, fallback_up))
+        })?;
+        let up = Self::normalize(math::vec3_cross(right, forward))?;
+        let back = math::vec3_negate(forward);
+        Some([
+            [right[0], right[1], right[2], 0.0],
+            [up[0], up[1], up[2], 0.0],
+            [back[0], back[1], back[2], 0.0],
+            [position[0], position[1], position[2], 1.0],
+        ])
+    }
+
+    fn log_debug_sample_once(
+        &mut self,
+        force: bool,
+        family: MirrorViewerFamily,
+        view_index: usize,
+        mirror_guid: &Uuid,
+        plane_pos: [f32; 3],
+        world_matrix: [[f32; 4]; 4],
+        cam_pos: [f32; 3],
+        ref_pos: [f32; 3],
+        cam_forward: [f32; 3],
+        ref_forward: [f32; 3],
+        cam_up: [f32; 3],
+        ref_up: [f32; 3],
+    ) {
+        if self.logged_debug_sample && !force {
+            return;
+        }
+        let Some((mirror_x, mirror_y, mirror_z)) = Self::mirror_local_basis(world_matrix) else {
+            return;
+        };
+
+        let source_from_plane = math::vec3_sub(cam_pos, plane_pos);
+        let reflected_from_plane = math::vec3_sub(ref_pos, plane_pos);
+        let source_local = [
+            math::vec3_dot(source_from_plane, mirror_x),
+            math::vec3_dot(source_from_plane, mirror_y),
+            math::vec3_dot(source_from_plane, mirror_z),
+        ];
+        let reflected_local = [
+            math::vec3_dot(reflected_from_plane, mirror_x),
+            math::vec3_dot(reflected_from_plane, mirror_y),
+            math::vec3_dot(reflected_from_plane, mirror_z),
+        ];
+
+        println!(
+            "[mirror-debug] guid={mirror_guid} family={} view_index={view_index}",
+            family.key_segment()
+        );
+        println!(
+            "[mirror-debug] plane_pos={plane_pos:?} mirror_x={mirror_x:?} mirror_y={mirror_y:?} mirror_z={mirror_z:?}"
+        );
+        println!(
+            "[mirror-debug] source_world_pos={cam_pos:?} source_local={source_local:?}"
+        );
+        println!(
+            "[mirror-debug] reflected_world_pos={ref_pos:?} reflected_local={reflected_local:?}"
+        );
+        println!(
+            "[mirror-debug] source_forward={cam_forward:?} reflected_forward={ref_forward:?}"
+        );
+        println!("[mirror-debug] source_up={cam_up:?} reflected_up={ref_up:?}");
+        println!(
+            "[mirror-debug] local_delta=[{:.6}, {:.6}, {:.6}] expected_z_negation_check=[sx-rx={:.6}, sy-ry={:.6}, sz+rz={:.6}]",
+            reflected_local[0] - source_local[0],
+            reflected_local[1] - source_local[1],
+            reflected_local[2] - source_local[2],
+            source_local[0] - reflected_local[0],
+            source_local[1] - reflected_local[1],
+            source_local[2] + reflected_local[2],
+        );
+
+        if !force {
+            self.logged_debug_sample = true;
+        }
+    }
 }
 
 impl System for MirrorSystem {
@@ -114,11 +216,12 @@ impl System for MirrorSystem {
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
-        _input: &InputState,
+        input: &InputState,
         _dt_sec: f32,
     ) {
         visuals.clear_mirrors();
         let mut pending_texture_registrations = HashSet::new();
+        let force_debug_dump = input.mouse_pressed.contains(&MouseButton::Left);
 
         let mirror_cids: Vec<ComponentId> = world
             .all_components()
@@ -257,32 +360,30 @@ impl System for MirrorSystem {
                         continue;
                     };
                     let reflected_up_hint = math::vec3_reflect(cam_up, plane_normal);
-                    let mut ref_right =
-                        Self::normalize(math::vec3_cross(ref_forward, reflected_up_hint)).or_else(
-                            || {
-                                let fallback_up = if ref_forward[1].abs() < 0.999 {
-                                    [0.0, 1.0, 0.0]
-                                } else {
-                                    [1.0, 0.0, 0.0]
-                                };
-                                Self::normalize(math::vec3_cross(ref_forward, fallback_up))
-                            },
-                        );
-                    let Some(ref_right) = ref_right.take() else {
+                    let Some(ref_world) = Self::build_camera_world_from_forward_up(
+                        ref_pos,
+                        ref_forward,
+                        reflected_up_hint,
+                    ) else {
                         continue;
                     };
-                    let Some(ref_up) = Self::normalize(math::vec3_cross(ref_right, ref_forward))
-                    else {
-                        continue;
-                    };
-                    let ref_back = math::vec3_negate(ref_forward);
+                    let ref_up = [ref_world[1][0], ref_world[1][1], ref_world[1][2]];
 
-                    let ref_world = [
-                        [ref_right[0], ref_right[1], ref_right[2], 0.0],
-                        [ref_up[0], ref_up[1], ref_up[2], 0.0],
-                        [ref_back[0], ref_back[1], ref_back[2], 0.0],
-                        [ref_pos[0], ref_pos[1], ref_pos[2], 1.0],
-                    ];
+                    self.log_debug_sample_once(
+                        force_debug_dump,
+                        family,
+                        view_index,
+                        &guid,
+                        plane_pos,
+                        world_matrix,
+                        cam_pos,
+                        ref_pos,
+                        cam_forward,
+                        ref_forward,
+                        cam_up,
+                        ref_up,
+                    );
+
                     let ref_view =
                         math::mat4_inverse(ref_world).unwrap_or_else(math::mat4_identity);
 
