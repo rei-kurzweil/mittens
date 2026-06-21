@@ -349,6 +349,14 @@ mod tests {
             .mirrors()
             .first()
             .expect("mirror registration")
+            .captures
+            .iter()
+            .find(|capture| {
+                capture.family
+                    == crate::engine::graphics::visual_world::MirrorViewerFamily::Monoscopic
+                    && capture.view_index == 0
+            })
+            .expect("monoscopic mirror capture")
             .target_key
             .clone();
         let runtime_handle = visuals
@@ -374,8 +382,9 @@ mod tests {
         let root = world.add_component(TransformComponent::new());
         let renderable = world.add_component(RenderableComponent::square());
         let mirror = world.add_component(MirrorComponent::default());
-        let texture =
-            world.add_component(TextureComponent::render_image("capture.mirror.stale.color"));
+        let texture = world.add_component(TextureComponent::render_image(
+            "capture.mirror.stale.mono.0.color",
+        ));
         let _ = world.add_child(root, renderable);
         let _ = world.add_child(renderable, mirror);
         let _ = world.add_child(renderable, texture);
@@ -412,6 +421,14 @@ mod tests {
             .mirrors()
             .first()
             .expect("mirror registration")
+            .captures
+            .iter()
+            .find(|capture| {
+                capture.family
+                    == crate::engine::graphics::visual_world::MirrorViewerFamily::Monoscopic
+                    && capture.view_index == 0
+            })
+            .expect("monoscopic mirror capture")
             .target_key
             .clone();
         let runtime_handle = visuals
@@ -427,6 +444,75 @@ mod tests {
                 .render_image
                 .as_deref(),
             Some(mirror_key.as_str())
+        );
+    }
+
+    #[test]
+    fn mirror_registers_capture_family_for_window_and_xr_cameras() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+
+        let ident4 = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        visuals.set_xr_camera(vec![
+            crate::engine::graphics::CameraData {
+                view: ident4,
+                proj: ident4,
+                transform: Default::default(),
+            },
+            crate::engine::graphics::CameraData {
+                view: ident4,
+                proj: ident4,
+                transform: Default::default(),
+            },
+        ]);
+
+        let root = world.add_component(TransformComponent::new());
+        let renderable = world.add_component(RenderableComponent::square());
+        let mirror = world.add_component(MirrorComponent::default());
+        let _ = world.add_child(root, renderable);
+        let _ = world.add_child(renderable, mirror);
+
+        let handle = register_test_instance(&mut visuals, renderable);
+        world
+            .get_component_by_id_as_mut::<RenderableComponent>(renderable)
+            .expect("renderable")
+            .handle = Some(handle);
+
+        systems
+            .mirror
+            .tick(&mut world, &mut visuals, &Default::default(), 0.0);
+
+        let mirror = visuals.mirrors().first().expect("mirror registration");
+        assert_eq!(mirror.captures.len(), 3);
+        assert!(
+            mirror.captures.iter().any(|capture| {
+                capture.family
+                    == crate::engine::graphics::visual_world::MirrorViewerFamily::Monoscopic
+                    && capture.view_index == 0
+            }),
+            "expected monoscopic capture"
+        );
+        assert!(
+            mirror.captures.iter().any(|capture| {
+                capture.family
+                    == crate::engine::graphics::visual_world::MirrorViewerFamily::Stereoscopic
+                    && capture.view_index == 0
+            }),
+            "expected left stereo capture"
+        );
+        assert!(
+            mirror.captures.iter().any(|capture| {
+                capture.family
+                    == crate::engine::graphics::visual_world::MirrorViewerFamily::Stereoscopic
+                    && capture.view_index == 1
+            }),
+            "expected right stereo capture"
         );
     }
 }

@@ -259,6 +259,8 @@ mod vulkano_backend {
         },
         Mirror {
             mirror_component: ComponentId,
+            family: crate::engine::graphics::visual_world::MirrorViewerFamily,
+            view_index: usize,
             plane_origin: [f32; 3],
             plane_normal: [f32; 3],
             excluded_instance: Option<crate::engine::graphics::primitives::InstanceHandle>,
@@ -2282,6 +2284,43 @@ mod vulkano_backend {
                 .collect()
         }
 
+        fn retarget_mirror_surface_textures_for_render_view(
+            visual_world: &mut VisualWorld,
+            kind: &RenderViewKind,
+        ) {
+            let (family, view_index) = match *kind {
+                RenderViewKind::Window => (
+                    crate::engine::graphics::visual_world::MirrorViewerFamily::Monoscopic,
+                    0,
+                ),
+                RenderViewKind::XrEye { eye } => (
+                    crate::engine::graphics::visual_world::MirrorViewerFamily::Stereoscopic,
+                    eye,
+                ),
+                RenderViewKind::Mirror {
+                    family, view_index, ..
+                } => (family, view_index),
+            };
+
+            let updates: Vec<_> = visual_world
+                .mirrors()
+                .iter()
+                .filter_map(|mirror| {
+                    let key = visual_world.mirror_texture_key_for_view(
+                        mirror.mirror_component,
+                        family,
+                        view_index,
+                    )?;
+                    let handle = visual_world.runtime_texture_handle(key)?;
+                    Some((mirror.source_instance, handle))
+                })
+                .collect();
+
+            for (instance, handle) in updates {
+                let _ = visual_world.update_texture(instance, Some(handle));
+            }
+        }
+
         fn hsv_debug_color_for_stencil_ref(stencil_ref: u8) -> [f32; 4] {
             if stencil_ref == 0 {
                 return [0.08, 0.08, 0.08, 1.0];
@@ -2661,10 +2700,21 @@ mod vulkano_backend {
             Arc<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
             Box<dyn std::error::Error>,
         > {
+            Self::retarget_mirror_surface_textures_for_render_view(visual_world, &render_view.kind);
+
             let (camera_target, eye) = match render_view.kind {
                 RenderViewKind::Window => (crate::engine::graphics::CameraTarget::Window, 0),
                 RenderViewKind::XrEye { eye } => (crate::engine::graphics::CameraTarget::Xr, eye),
-                RenderViewKind::Mirror { .. } => (crate::engine::graphics::CameraTarget::Window, 0),
+                RenderViewKind::Mirror {
+                    family, view_index, ..
+                } => match family {
+                    crate::engine::graphics::visual_world::MirrorViewerFamily::Monoscopic => {
+                        (crate::engine::graphics::CameraTarget::Window, view_index)
+                    }
+                    crate::engine::graphics::visual_world::MirrorViewerFamily::Stereoscopic => {
+                        (crate::engine::graphics::CameraTarget::Xr, view_index)
+                    }
+                },
             };
             let excluded_instance = match &render_view.kind {
                 RenderViewKind::Mirror {
@@ -3733,7 +3783,7 @@ mod vulkano_backend {
             let msaa_samples = self.msaa_samples;
 
             for mirror in mirrors {
-                let view_count = mirror.camera.eyes.len();
+                let view_count = mirror.captures.len();
                 if view_count == 0 {
                     continue;
                 }
@@ -3756,8 +3806,13 @@ mod vulkano_backend {
                 }
 
                 let (color_views, msaa_color_views, depth_views) = {
+                    let mirror_offscreen_key = mirror
+                        .captures
+                        .first()
+                        .map(|capture| capture.target_key.as_str())
+                        .ok_or("mirror capture key missing")?;
                     let targets = self.ensure_mirror_offscreen_targets(
-                        &mirror.target_key,
+                        mirror_offscreen_key,
                         view_count,
                         mirror_extent,
                         self.swapchain_state.swapchain.image_format(),
@@ -3770,11 +3825,11 @@ mod vulkano_backend {
                 };
 
                 for eye in 0..view_count {
-                    let eye_data = mirror
-                        .camera
-                        .eyes
+                    let capture = mirror
+                        .captures
                         .get(eye)
-                        .ok_or("mirror camera eye out of range")?;
+                        .ok_or("mirror capture out of range")?;
+                    let eye_data = &capture.camera;
 
                     let render_view = RenderView {
                         view: eye_data.view,
@@ -3782,6 +3837,8 @@ mod vulkano_backend {
                         viewport: [mirror_extent[0] as f32, mirror_extent[1] as f32],
                         kind: RenderViewKind::Mirror {
                             mirror_component: mirror.mirror_component,
+                            family: capture.family,
+                            view_index: capture.view_index,
                             plane_origin: mirror.plane_origin,
                             plane_normal: mirror.plane_normal,
                             excluded_instance: Some(mirror.source_instance),
@@ -3800,7 +3857,7 @@ mod vulkano_backend {
                     let depth_view = depth_views[eye].clone();
 
                     let runtime_texture_publication = visual_world
-                        .runtime_texture_handle(&mirror.target_key)
+                        .runtime_texture_handle(&capture.target_key)
                         .map(|handle| {
                             let src_view = color_resolve_view
                                 .clone()

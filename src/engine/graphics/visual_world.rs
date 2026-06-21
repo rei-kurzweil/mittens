@@ -39,14 +39,36 @@ pub struct VisualCamera {
     pub eyes: Vec<CameraData>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MirrorViewerFamily {
+    Monoscopic,
+    Stereoscopic,
+}
+
+impl MirrorViewerFamily {
+    pub fn key_segment(self) -> &'static str {
+        match self {
+            Self::Monoscopic => "mono",
+            Self::Stereoscopic => "stereo",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MirrorCaptureRequest {
+    pub family: MirrorViewerFamily,
+    pub view_index: usize,
+    pub camera: CameraData,
+    pub target_key: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct VisualMirror {
     pub mirror_component: ComponentId,
-    pub camera: VisualCamera,
+    pub captures: Vec<MirrorCaptureRequest>,
     pub plane_origin: [f32; 3],
     pub plane_normal: [f32; 3],
     pub aspect_ratio: f32,
-    pub target_key: String,
     pub source_instance: InstanceHandle,
     pub resolution_scale: f32,
 }
@@ -1951,6 +1973,24 @@ impl VisualWorld {
 
     pub fn mirrors(&self) -> &[VisualMirror] {
         &self.mirrors
+    }
+
+    pub fn mirror_texture_key_for_view(
+        &self,
+        mirror_component: ComponentId,
+        family: MirrorViewerFamily,
+        view_index: usize,
+    ) -> Option<&str> {
+        self.mirrors
+            .iter()
+            .find(|mirror| mirror.mirror_component == mirror_component)
+            .and_then(|mirror| {
+                mirror
+                    .captures
+                    .iter()
+                    .find(|capture| capture.family == family && capture.view_index == view_index)
+                    .map(|capture| capture.target_key.as_str())
+            })
     }
 
     pub fn mirror_count(&self) -> usize {

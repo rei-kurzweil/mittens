@@ -4,8 +4,10 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::primitives::{InstanceHandle, MaterialHandle};
-use crate::engine::graphics::visual_world::VisualMirror;
-use crate::engine::graphics::{CameraData, CameraTarget, VisualCamera, VisualWorld};
+use crate::engine::graphics::visual_world::{
+    MirrorCaptureRequest, MirrorViewerFamily, VisualMirror,
+};
+use crate::engine::graphics::{CameraData, CameraTarget, VisualWorld};
 use crate::engine::user_input::InputState;
 use crate::utils::math;
 use std::collections::HashSet;
@@ -203,22 +205,26 @@ impl System for MirrorSystem {
                 }
             };
 
-            // 4. Derive reflected camera views.
-            // We reflect the viewer camera(s) (Window or XR).
-            let mut derived_eyes = Vec::new();
+            // 4. Derive reflected camera views for each active viewer family.
+            let mut captures = Vec::new();
+            let guid = world
+                .get_component_node(cid)
+                .map(|n| n.guid)
+                .unwrap_or_default();
+            let source_families = [
+                (CameraTarget::Window, MirrorViewerFamily::Monoscopic),
+                (CameraTarget::Xr, MirrorViewerFamily::Stereoscopic),
+            ];
 
-            // Prefer active XR camera if available, otherwise Window.
-            let source_target = if visuals
-                .visual_camera(CameraTarget::Xr)
-                .map_or(false, |c| !c.eyes.is_empty())
-            {
-                CameraTarget::Xr
-            } else {
-                CameraTarget::Window
-            };
+            for (source_target, family) in source_families {
+                let Some(source_cam) = visuals.visual_camera(source_target) else {
+                    continue;
+                };
+                if source_cam.eyes.is_empty() {
+                    continue;
+                }
 
-            if let Some(source_cam) = visuals.visual_camera(source_target) {
-                for eye_data in &source_cam.eyes {
+                for (view_index, eye_data) in source_cam.eyes.iter().enumerate() {
                     let camera_world = eye_data.transform.matrix_world;
                     let cam_pos = [camera_world[3][0], camera_world[3][1], camera_world[3][2]];
                     let cam_up = [camera_world[1][0], camera_world[1][1], camera_world[1][2]];
@@ -306,23 +312,27 @@ impl System for MirrorSystem {
                         }
                     }
 
-                    derived_eyes.push(CameraData {
-                        view: ref_view,
-                        proj: ref_proj,
-                        transform: reflected_transform,
+                    captures.push(MirrorCaptureRequest {
+                        family,
+                        view_index,
+                        camera: CameraData {
+                            view: ref_view,
+                            proj: ref_proj,
+                            transform: reflected_transform,
+                        },
+                        target_key: format!(
+                            "capture.mirror.{}.{}.{}.color",
+                            guid,
+                            family.key_segment(),
+                            view_index
+                        ),
                     });
                 }
             }
 
-            if derived_eyes.is_empty() {
+            if captures.is_empty() {
                 continue;
             }
-
-            let guid = world
-                .get_component_node(cid)
-                .map(|n| n.guid)
-                .unwrap_or_default();
-            let mirror_key = format!("capture.mirror.{}.color", guid);
 
             // 5. Register with VisualWorld.
             let source_instance = world
@@ -332,14 +342,10 @@ impl System for MirrorSystem {
 
             visuals.register_mirror(VisualMirror {
                 mirror_component: cid,
-                camera: VisualCamera {
-                    target: CameraTarget::Window, // offscreen views are effectively ad-hoc window-like passes
-                    eyes: derived_eyes,
-                },
+                captures: captures.clone(),
                 plane_origin: plane_pos,
                 plane_normal,
                 aspect_ratio: aspect,
-                target_key: mirror_key.clone(),
                 source_instance,
                 resolution_scale: quality as f32 / 1024.0, // normalized scale? renderer decides
             });
@@ -369,11 +375,13 @@ impl System for MirrorSystem {
                     let tex = world
                         .get_component_by_id_as_mut::<TextureComponent>(t_cid)
                         .unwrap();
-                    tex.render_image = Some(mirror_key);
+                    tex.render_image = Some(format!("capture.mirror.{}.mono.0.color", guid));
                     pending_texture_registrations.insert(t_cid);
                 } else {
-                    let new_tex_id =
-                        world.add_component(TextureComponent::render_image(mirror_key));
+                    let new_tex_id = world.add_component(TextureComponent::render_image(format!(
+                        "capture.mirror.{}.mono.0.color",
+                        guid
+                    )));
                     let _ = world.add_child(renderable_cid, new_tex_id);
                     pending_texture_registrations.insert(new_tex_id);
                 }
