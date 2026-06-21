@@ -240,7 +240,10 @@ mod vulkano_backend {
     pub enum RenderViewKind {
         Window,
         XrEye { eye: usize },
-        Mirror { mirror_component: ComponentId },
+        Mirror {
+            mirror_component: ComponentId,
+            excluded_instance: Option<crate::engine::graphics::primitives::InstanceHandle>,
+        },
     }
 
     #[derive(Debug, Clone)]
@@ -509,6 +512,12 @@ mod vulkano_backend {
                 crate::engine::graphics::MaterialHandle::UNLIT_MESH => MaterialUBO {
                     base_color: [1.0, 1.0, 1.0, 1.0],
                     quant_steps,
+                    emissive: 1,
+                    _pad0: [0, 0],
+                },
+                crate::engine::graphics::MaterialHandle::MIRROR => MaterialUBO {
+                    base_color: [1.0, 1.0, 1.0, 1.0],
+                    quant_steps: 1.0,
                     emissive: 1,
                     _pad0: [0, 0],
                 },
@@ -2555,6 +2564,12 @@ mod vulkano_backend {
                 RenderViewKind::XrEye { eye } => (crate::engine::graphics::CameraTarget::Xr, eye),
                 RenderViewKind::Mirror { .. } => (crate::engine::graphics::CameraTarget::Window, 0),
             };
+            let excluded_instance = match &render_view.kind {
+                RenderViewKind::Mirror {
+                    excluded_instance, ..
+                } => *excluded_instance,
+                _ => None,
+            };
 
             let queue = self.context.graphics_queue().clone();
 
@@ -2581,7 +2596,13 @@ mod vulkano_backend {
 
             // --- Opaque pass ---
             // Buffer indexed by opaque_stream().1; use its length for cache invalidation.
-            let instance_count = visual_world.opaque_stream().1.len();
+            let (opaque_ops, opaque_instances) = if excluded_instance.is_some() {
+                visual_world.opaque_stream_excluding(excluded_instance)
+            } else {
+                let (ops, instances) = visual_world.opaque_stream();
+                (ops.to_vec(), instances.to_vec())
+            };
+            let instance_count = opaque_instances.len();
 
             // --- Background pass ---
             // Background instances are stored in their own draw order/batches.
@@ -2592,11 +2613,23 @@ mod vulkano_backend {
                 background_instance_count > 0 || background_occluded_lit_instance_count > 0;
 
             // --- Cutout pass ---
-            let cutout_instance_count = visual_world.cutout_stream().1.len();
+            let (cutout_ops, cutout_instances) = if excluded_instance.is_some() {
+                visual_world.cutout_stream_excluding(excluded_instance)
+            } else {
+                let (ops, instances) = visual_world.cutout_stream();
+                (ops.to_vec(), instances.to_vec())
+            };
+            let cutout_instance_count = cutout_instances.len();
 
             // --- Overlay pass ---
             // Buffer indexed by overlay_stream().1; use its length for cache invalidation.
-            let overlay_instance_count = visual_world.overlay_stream().1.len();
+            let (overlay_ops, overlay_instances) = if excluded_instance.is_some() {
+                visual_world.overlay_stream_excluding(excluded_instance)
+            } else {
+                let (ops, instances) = visual_world.overlay_stream();
+                (ops.to_vec(), instances.to_vec())
+            };
+            let overlay_instance_count = overlay_instances.len();
 
             let stencil_clip_debug_requested = camera_target
                 == crate::engine::graphics::CameraTarget::Window
@@ -2635,7 +2668,7 @@ mod vulkano_backend {
             } else {
                 let buf = self.build_instance_buffer_for_order_or_dummy(
                     &*visual_world,
-                    visual_world.opaque_stream().1,
+                    &opaque_instances,
                 )?;
 
                 self.cached_instance_count = instance_count;
@@ -2684,7 +2717,7 @@ mod vulkano_backend {
             } else {
                 let buf = self.build_instance_buffer_for_order_opt(
                     &*visual_world,
-                    visual_world.cutout_stream().1,
+                    &cutout_instances,
                 )?;
                 self.cached_cutout_instance_count = cutout_instance_count;
                 self.cached_cutout_instance_buffer = buf.clone();
@@ -2700,7 +2733,7 @@ mod vulkano_backend {
             } else {
                 let buf = self.build_instance_buffer_for_order_opt(
                     &*visual_world,
-                    visual_world.overlay_stream().1,
+                    &overlay_instances,
                 )?;
                 self.cached_overlay_instance_count = overlay_instance_count;
                 self.cached_overlay_instance_buffer = buf.clone();
@@ -3108,24 +3141,26 @@ mod vulkano_backend {
                 )?;
             }
 
-            self.record_opaque_draws(
-                &mut cbb,
-                visual_world,
-                &global_set_fg,
-                &rig_set,
-                &instance_buffer,
-                instance_count,
-            )?;
+                        self.record_opaque_draws(
+                            &mut cbb,
+                            visual_world,
+                            &global_set_fg,
+                            &rig_set,
+                            &instance_buffer,
+                            instance_count,
+                            Some((&opaque_ops, &opaque_instances)),
+                        )?;
 
             if let Some(cutout_instance_buffer) = cutout_instance_buffer.as_ref() {
-                self.record_cutout_draws(
-                    &mut cbb,
-                    visual_world,
-                    &global_set_fg,
-                    &rig_set,
-                    cutout_instance_buffer,
-                    cutout_instance_count,
-                )?;
+                        self.record_cutout_draws(
+                            &mut cbb,
+                            visual_world,
+                            &global_set_fg,
+                            &rig_set,
+                            cutout_instance_buffer,
+                            cutout_instance_count,
+                            Some((&cutout_ops, &cutout_instances)),
+                        )?;
             }
 
             self.record_transparent_single_draws(
@@ -3134,6 +3169,7 @@ mod vulkano_backend {
                 &global_set_fg,
                 &rig_set,
                 eye,
+                excluded_instance,
             )?;
 
             self.record_transparent_multi_draws(
@@ -3143,6 +3179,7 @@ mod vulkano_backend {
                 &rig_set,
                 camera_target,
                 eye,
+                excluded_instance,
             )?;
 
             // Overlay phase: when post-process is disabled, clear depth here so overlay draws on
@@ -3168,6 +3205,7 @@ mod vulkano_backend {
                         &rig_set,
                         overlay_instance_buffer,
                         overlay_instance_count,
+                        Some((&overlay_ops, &overlay_instances)),
                     )?;
                 }
             }
@@ -3388,6 +3426,7 @@ mod vulkano_backend {
                             &rig_set,
                             overlay_instance_buffer,
                             overlay_instance_count,
+                            Some((&overlay_ops, &overlay_instances)),
                         )?;
                     }
                     cbb.end_rendering()?;
@@ -3634,6 +3673,7 @@ mod vulkano_backend {
                         viewport: [mirror_extent[0] as f32, mirror_extent[1] as f32],
                         kind: RenderViewKind::Mirror {
                             mirror_component: mirror.mirror_component,
+                            excluded_instance: Some(mirror.source_instance),
                         },
                     };
 

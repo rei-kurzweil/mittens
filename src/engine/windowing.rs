@@ -71,7 +71,7 @@ impl ApplicationHandler for App {
             .unwrap_or([1024, 768]);
 
         let attrs: WindowAttributes = Window::default_attributes()
-            .with_title("cat engine 0.5 \"mittens\" ")
+            .with_title("mittens 0.5.1")
             .with_inner_size(winit::dpi::LogicalSize::new(
                 preferred_window_size[0] as f64,
                 preferred_window_size[1] as f64,

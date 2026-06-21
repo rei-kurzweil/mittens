@@ -7,47 +7,74 @@ use crate::engine::graphics::primitives::{InstanceHandle, MaterialHandle};
 use crate::engine::graphics::visual_world::VisualMirror;
 use crate::engine::graphics::{CameraData, CameraTarget, VisualCamera, VisualWorld};
 use crate::engine::user_input::InputState;
+use std::collections::HashSet;
 
 #[derive(Debug, Default)]
-pub struct MirrorSystem;
+pub struct MirrorSystem {
+    pending_texture_registrations: Vec<ComponentId>,
+}
 
 impl MirrorSystem {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
-    fn mat4_mul(a: [[f32; 4]; 4], b: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
-        let mut out = [[0.0f32; 4]; 4];
-        for c in 0..4 {
-            for r in 0..4 {
-                out[c][r] =
-                    a[0][r] * b[c][0] + a[1][r] * b[c][1] + a[2][r] * b[c][2] + a[3][r] * b[c][3];
-            }
+    pub fn take_pending_texture_registrations(&mut self) -> Vec<ComponentId> {
+        std::mem::take(&mut self.pending_texture_registrations)
+    }
+
+    fn invert_affine_transform(m: &[[f32; 4]; 4]) -> [[f32; 4]; 4] {
+        let c0 = [m[0][0], m[0][1], m[0][2]];
+        let c1 = [m[1][0], m[1][1], m[1][2]];
+        let c2 = [m[2][0], m[2][1], m[2][2]];
+
+        let a00 = c0[0];
+        let a10 = c0[1];
+        let a20 = c0[2];
+        let a01 = c1[0];
+        let a11 = c1[1];
+        let a21 = c1[2];
+        let a02 = c2[0];
+        let a12 = c2[1];
+        let a22 = c2[2];
+
+        let det = a00 * (a11 * a22 - a12 * a21) - a01 * (a10 * a22 - a12 * a20)
+            + a02 * (a10 * a21 - a11 * a20);
+        if det.abs() < 1e-8 {
+            return [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ];
         }
-        out
-    }
+        let inv_det = 1.0 / det;
 
-    fn mat4_invert(m: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
-        // Simplified inversion for orthonormal (plus scale) matrices.
-        // For reflection, it's still mostly orthonormal.
-        // Let's use a more robust version if available, or just the basics.
-        // Translation part: T' = -R^T * T
-        let r0 = [m[0][0], m[1][0], m[2][0]];
-        let r1 = [m[0][1], m[1][1], m[2][1]];
-        let r2 = [m[0][2], m[1][2], m[2][2]];
-        let t = [m[3][0], m[3][1], m[3][2]];
+        let inv00 = (a11 * a22 - a12 * a21) * inv_det;
+        let inv01 = (a02 * a21 - a01 * a22) * inv_det;
+        let inv02 = (a01 * a12 - a02 * a11) * inv_det;
 
-        let it = [
-            -(r0[0] * t[0] + r0[1] * t[1] + r0[2] * t[2]),
-            -(r1[0] * t[0] + r1[1] * t[1] + r1[2] * t[2]),
-            -(r2[0] * t[0] + r2[1] * t[1] + r2[2] * t[2]),
-        ];
+        let inv10 = (a12 * a20 - a10 * a22) * inv_det;
+        let inv11 = (a00 * a22 - a02 * a20) * inv_det;
+        let inv12 = (a02 * a10 - a00 * a12) * inv_det;
+
+        let inv20 = (a10 * a21 - a11 * a20) * inv_det;
+        let inv21 = (a01 * a20 - a00 * a21) * inv_det;
+        let inv22 = (a00 * a11 - a01 * a10) * inv_det;
+
+        let tx = m[3][0];
+        let ty = m[3][1];
+        let tz = m[3][2];
+
+        let itx = -(inv00 * tx + inv01 * ty + inv02 * tz);
+        let ity = -(inv10 * tx + inv11 * ty + inv12 * tz);
+        let itz = -(inv20 * tx + inv21 * ty + inv22 * tz);
 
         [
-            [r0[0], r0[1], r0[2], 0.0],
-            [r1[0], r1[1], r1[2], 0.0],
-            [r2[0], r2[1], r2[2], 0.0],
-            [it[0], it[1], it[2], 1.0],
+            [inv00, inv10, inv20, 0.0],
+            [inv01, inv11, inv21, 0.0],
+            [inv02, inv12, inv22, 0.0],
+            [itx, ity, itz, 1.0],
         ]
     }
 
@@ -80,6 +107,7 @@ impl System for MirrorSystem {
         _dt_sec: f32,
     ) {
         visuals.clear_mirrors();
+        let mut pending_texture_registrations = HashSet::new();
 
         let mirror_cids: Vec<ComponentId> = world
             .all_components()
@@ -157,32 +185,33 @@ impl System for MirrorSystem {
 
             if let Some(source_cam) = visuals.visual_camera(source_target) {
                 for eye_data in &source_cam.eyes {
-                    // View matrix = inverse(CameraWorldTransform)
-                    // We need the camera's world position and basis.
-                    let inv_view = Self::mat4_invert(eye_data.view);
-                    let cam_pos = [inv_view[3][0], inv_view[3][1], inv_view[3][2]];
-                    let cam_right = [inv_view[0][0], inv_view[0][1], inv_view[0][2]];
-                    let cam_up = [inv_view[1][0], inv_view[1][1], inv_view[1][2]];
-                    let cam_fwd = [inv_view[2][0], inv_view[2][1], inv_view[2][2]];
+                    let camera_world = eye_data.transform.matrix_world;
+                    let cam_pos = [
+                        camera_world[3][0],
+                        camera_world[3][1],
+                        camera_world[3][2],
+                    ];
+                    let cam_right = [camera_world[0][0], camera_world[0][1], camera_world[0][2]];
+                    let cam_up = [camera_world[1][0], camera_world[1][1], camera_world[1][2]];
+                    let cam_back = [camera_world[2][0], camera_world[2][1], camera_world[2][2]];
 
                     let ref_pos = Self::reflect_pos(cam_pos, plane_pos, plane_normal);
                     let ref_right = Self::reflect_dir(cam_right, plane_normal);
                     let ref_up = Self::reflect_dir(cam_up, plane_normal);
-                    let ref_fwd = Self::reflect_dir(cam_fwd, plane_normal);
+                    let ref_back = Self::reflect_dir(cam_back, plane_normal);
 
-                    // Reconstruct reflected view matrix.
-                    // New "forward" for the mirror camera should be pointing into the mirror?
-                    // Standard reflection: if we look at the mirror, we see the reflected world.
-                    // The reflected camera is "behind" the mirror looking "out".
-                    
-                    // Orthonormal basis: [ref_right, ref_up, ref_fwd]
-                    let ref_inv_view = [
+                    let ref_world = [
                         [ref_right[0], ref_right[1], ref_right[2], 0.0],
                         [ref_up[0], ref_up[1], ref_up[2], 0.0],
-                        [ref_fwd[0], ref_fwd[1], ref_fwd[2], 0.0],
+                        [ref_back[0], ref_back[1], ref_back[2], 0.0],
                         [ref_pos[0], ref_pos[1], ref_pos[2], 1.0],
                     ];
-                    let ref_view = Self::mat4_invert(ref_inv_view);
+                    let ref_view = Self::invert_affine_transform(&ref_world);
+
+                    let mut reflected_transform = eye_data.transform;
+                    reflected_transform.matrix_world = ref_world;
+                    reflected_transform.model = ref_world;
+                    reflected_transform.translation = ref_pos;
 
                     // Projection: Adjust aspect ratio if it differs from source.
                     let mut ref_proj = eye_data.proj;
@@ -197,7 +226,7 @@ impl System for MirrorSystem {
                     derived_eyes.push(CameraData {
                         view: ref_view,
                         proj: ref_proj,
-                        transform: Default::default(),
+                        transform: reflected_transform,
                     });
                 }
             }
@@ -226,6 +255,9 @@ impl System for MirrorSystem {
             // 6. Override parent renderable's material and texture.
             if let Some(renderable) = world.get_component_by_id_as_mut::<RenderableComponent>(renderable_cid) {
                 renderable.renderable.material = MaterialHandle::MIRROR;
+                if let Some(handle) = renderable.handle {
+                    let _ = visuals.update_material(handle, MaterialHandle::MIRROR);
+                }
                 
                 // Ensure TextureComponent exists and points to mirror_key.
                 let mut texture_cid = None;
@@ -239,13 +271,16 @@ impl System for MirrorSystem {
                 if let Some(t_cid) = texture_cid {
                     let tex = world.get_component_by_id_as_mut::<TextureComponent>(t_cid).unwrap();
                     tex.render_image = Some(mirror_key);
+                    pending_texture_registrations.insert(t_cid);
                 } else {
-                    let mut tex = TextureComponent::render_image(mirror_key);
-                    let new_tex_id = world.add_component(tex);
+                    let new_tex_id = world.add_component(TextureComponent::render_image(mirror_key));
                     let _ = world.add_child(renderable_cid, new_tex_id);
-                    // SystemWorld will pick this up on next frame's registration or we trigger it.
+                    pending_texture_registrations.insert(new_tex_id);
                 }
             }
         }
+
+        self.pending_texture_registrations
+            .extend(pending_texture_registrations);
     }
 }

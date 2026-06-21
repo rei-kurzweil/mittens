@@ -57,9 +57,9 @@ impl TextureSystem {
             return;
         };
 
-        self.textures
-            .entry(component)
-            .or_insert_with(|| TextureRecord {
+        self.textures.insert(
+            component,
+            TextureRecord {
                 uri: tex_comp.uri().map(|s| s.to_string()),
                 render_image: tex_comp.render_image.clone(),
                 format: tex_comp.format,
@@ -67,7 +67,8 @@ impl TextureSystem {
                     TextureSource::Handle(h) => Some(h),
                     TextureSource::Uri(_) => None,
                 },
-            });
+            },
+        );
 
         // If this texture is attached under a renderable, remember that relationship.
         let mut cur = component;

@@ -118,12 +118,14 @@ mod tests {
     use super::SystemWorld;
     use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::World;
+    use crate::engine::ecs::system::System;
     use crate::engine::ecs::component::{
-        ColorComponent, RenderableComponent, StencilClipComponent, TransformComponent,
+        ColorComponent, MirrorComponent, RenderableComponent, StencilClipComponent,
+        TextureComponent, TransformComponent,
     };
-    use crate::engine::graphics::primitives::{MeshHandle, TextureHandle};
+    use crate::engine::graphics::primitives::{MaterialHandle, MeshHandle, TextureHandle};
     use crate::engine::graphics::{
-        CpuMesh, MeshUploader, RenderAssets, TextureUploader, VisualWorld,
+        CpuMesh, GpuRenderable, MeshUploader, RenderAssets, TextureUploader, VisualWorld,
     };
 
     #[derive(Default)]
@@ -166,6 +168,27 @@ mod tests {
             self.next_texture += 1;
             Ok(handle)
         }
+    }
+
+    fn register_test_instance(
+        visuals: &mut VisualWorld,
+        component: crate::engine::ecs::ComponentId,
+    ) -> crate::engine::graphics::primitives::InstanceHandle {
+        visuals.register(
+            component,
+            GpuRenderable::new(MeshHandle(1), MaterialHandle::TOON_MESH),
+            Default::default(),
+            [1.0, 1.0, 1.0, 1.0],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        )
     }
 
     #[test]
@@ -246,6 +269,143 @@ mod tests {
         assert_eq!(clip_instance.stencil_ref, 0);
         assert!(!content_instance.is_stencil_clip);
         assert_eq!(content_instance.stencil_ref, 1);
+    }
+
+    #[test]
+    fn mirror_tick_updates_existing_visual_material_same_frame() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+
+        let root = world.add_component(TransformComponent::new());
+        let renderable = world.add_component(RenderableComponent::square());
+        let mirror = world.add_component(MirrorComponent::default());
+        let _ = world.add_child(root, renderable);
+        let _ = world.add_child(renderable, mirror);
+
+        let handle = register_test_instance(&mut visuals, renderable);
+        world
+            .get_component_by_id_as_mut::<RenderableComponent>(renderable)
+            .expect("renderable")
+            .handle = Some(handle);
+
+        systems.mirror.tick(&mut world, &mut visuals, &Default::default(), 0.0);
+
+        let renderable_component = world
+            .get_component_by_id_as::<RenderableComponent>(renderable)
+            .expect("renderable component");
+        assert_eq!(renderable_component.renderable.material, MaterialHandle::MIRROR);
+        assert_eq!(
+            visuals.instance(handle).expect("visual instance").renderable.material,
+            MaterialHandle::MIRROR
+        );
+    }
+
+    #[test]
+    fn mirror_texture_registration_attaches_runtime_texture_for_new_child() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let mut uploader = TestUploader::default();
+
+        let root = world.add_component(TransformComponent::new());
+        let renderable = world.add_component(RenderableComponent::square());
+        let mirror = world.add_component(MirrorComponent::default());
+        let _ = world.add_child(root, renderable);
+        let _ = world.add_child(renderable, mirror);
+
+        let handle = register_test_instance(&mut visuals, renderable);
+        world
+            .get_component_by_id_as_mut::<RenderableComponent>(renderable)
+            .expect("renderable")
+            .handle = Some(handle);
+
+        systems.mirror.tick(&mut world, &mut visuals, &Default::default(), 0.0);
+        let registrations = systems.mirror.take_pending_texture_registrations();
+        assert_eq!(registrations.len(), 1);
+        for component in registrations {
+            systems.register_texture(&mut world, &mut visuals, component);
+        }
+
+        systems.render_to_texture.flush_pending(&mut visuals, &mut uploader);
+        systems
+            .texture
+            .flush_pending(&mut world, &mut visuals, &mut uploader);
+
+        let mirror_key = visuals
+            .mirrors()
+            .first()
+            .expect("mirror registration")
+            .target_key
+            .clone();
+        let runtime_handle = visuals
+            .runtime_texture_handle(&mirror_key)
+            .expect("runtime texture handle");
+        let visual_instance = visuals.instance(handle).expect("visual instance");
+        assert_eq!(visual_instance.texture, Some(runtime_handle));
+        assert!(systems
+            .render_to_texture
+            .producer_requests()
+            .any(|request| request.selector == mirror_key));
+    }
+
+    #[test]
+    fn mirror_texture_reregistration_overwrites_existing_render_image_attachment() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let mut uploader = TestUploader::default();
+
+        let root = world.add_component(TransformComponent::new());
+        let renderable = world.add_component(RenderableComponent::square());
+        let mirror = world.add_component(MirrorComponent::default());
+        let texture = world.add_component(TextureComponent::render_image("capture.mirror.stale.color"));
+        let _ = world.add_child(root, renderable);
+        let _ = world.add_child(renderable, mirror);
+        let _ = world.add_child(renderable, texture);
+
+        let handle = register_test_instance(&mut visuals, renderable);
+        world
+            .get_component_by_id_as_mut::<RenderableComponent>(renderable)
+            .expect("renderable")
+            .handle = Some(handle);
+
+        systems.register_texture(&mut world, &mut visuals, texture);
+        systems.render_to_texture.flush_pending(&mut visuals, &mut uploader);
+        systems
+            .texture
+            .flush_pending(&mut world, &mut visuals, &mut uploader);
+        let stale_handle = visuals.instance(handle).expect("instance").texture;
+
+        systems.mirror.tick(&mut world, &mut visuals, &Default::default(), 0.0);
+        for component in systems.mirror.take_pending_texture_registrations() {
+            systems.register_texture(&mut world, &mut visuals, component);
+        }
+        systems.render_to_texture.flush_pending(&mut visuals, &mut uploader);
+        systems
+            .texture
+            .flush_pending(&mut world, &mut visuals, &mut uploader);
+
+        let mirror_key = visuals
+            .mirrors()
+            .first()
+            .expect("mirror registration")
+            .target_key
+            .clone();
+        let runtime_handle = visuals
+            .runtime_texture_handle(&mirror_key)
+            .expect("runtime texture handle");
+        let visual_instance = visuals.instance(handle).expect("visual instance");
+        assert_eq!(visual_instance.texture, Some(runtime_handle));
+        assert_ne!(visual_instance.texture, stale_handle);
+        assert_eq!(
+            world
+                .get_component_by_id_as::<TextureComponent>(texture)
+                .expect("texture component")
+                .render_image
+                .as_deref(),
+            Some(mirror_key.as_str())
+        );
     }
 }
 
@@ -1838,6 +1998,9 @@ impl SystemWorld {
 
         self.light.tick(world, visuals, input, dt_sec);
         self.mirror.tick(world, visuals, input, dt_sec);
+        for texture_component in self.mirror.take_pending_texture_registrations() {
+            self.register_texture(world, visuals, texture_component);
+        }
     }
 
     /// Process commands from the command queue.

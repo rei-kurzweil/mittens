@@ -1,4 +1,5 @@
 use super::*;
+use crate::engine::graphics::primitives::InstanceHandle;
 
 impl VulkanoState {
     fn is_skinned_material(material: crate::engine::graphics::MaterialHandle) -> bool {
@@ -393,12 +394,16 @@ impl VulkanoState {
         rig_set: &Arc<DescriptorSet>,
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
+        stream_override: Option<(
+            &[crate::engine::graphics::visual_world::RenderOp],
+            &[u32],
+        )>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if instance_count == 0 {
             return Ok(());
         }
 
-        let (ops, stream_instances) = visual_world.opaque_stream();
+        let (ops, stream_instances) = stream_override.unwrap_or_else(|| visual_world.opaque_stream());
         self.record_phase_stream_draws(
             cbb,
             visual_world,
@@ -425,12 +430,16 @@ impl VulkanoState {
         rig_set: &Arc<DescriptorSet>,
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
+        stream_override: Option<(
+            &[crate::engine::graphics::visual_world::RenderOp],
+            &[u32],
+        )>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if instance_count == 0 {
             return Ok(());
         }
 
-        let (ops, stream_instances) = visual_world.cutout_stream();
+        let (ops, stream_instances) = stream_override.unwrap_or_else(|| visual_world.cutout_stream());
         self.record_phase_stream_draws(
             cbb,
             visual_world,
@@ -457,6 +466,10 @@ impl VulkanoState {
         rig_set: &Arc<DescriptorSet>,
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
+        stream_override: Option<(
+            &[crate::engine::graphics::visual_world::RenderOp],
+            &[u32],
+        )>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if instance_count == 0 {
             return Ok(());
@@ -464,7 +477,7 @@ impl VulkanoState {
 
         // Overlay depth-tests with itself (depth write ON). Depth gets cleared right
         // before the overlay phase so it still draws on top of the scene.
-        let (ops, stream_instances) = visual_world.overlay_stream();
+        let (ops, stream_instances) = stream_override.unwrap_or_else(|| visual_world.overlay_stream());
         self.record_phase_stream_draws(
             cbb,
             visual_world,
@@ -490,8 +503,18 @@ impl VulkanoState {
         global_set: &Arc<DescriptorSet>,
         rig_set: &Arc<DescriptorSet>,
         _eye: usize,
+        excluded_instance: Option<InstanceHandle>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let (ops, stream_instances) = visual_world.transparent_single_stream();
+        let owned_stream = if excluded_instance.is_some() {
+            Some(visual_world.transparent_single_stream_excluding(excluded_instance))
+        } else {
+            None
+        };
+        let (ops, stream_instances) = if let Some((ops, instances)) = owned_stream.as_ref() {
+            (&ops[..], &instances[..])
+        } else {
+            visual_world.transparent_single_stream()
+        };
         let transparent_single_instance_count = stream_instances.len();
 
         if transparent_single_instance_count == 0 {
@@ -530,10 +553,25 @@ impl VulkanoState {
         rig_set: &Arc<DescriptorSet>,
         camera_target: crate::engine::graphics::CameraTarget,
         eye: usize,
+        excluded_instance: Option<InstanceHandle>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // --- Transparent pass (multi-layer, sorted) ---
         visual_world.prepare_transparent_multi_draw_cache_for_eye(camera_target, eye);
-        let transparent_multi_instance_count = visual_world.transparent_multi_draw_order().len();
+        let owned_transparent = if excluded_instance.is_some() {
+            Some(visual_world.transparent_multi_draw_excluding(excluded_instance))
+        } else {
+            None
+        };
+        let (transparent_multi_order, transparent_multi_batches) =
+            if let Some((order, batches)) = owned_transparent.as_ref() {
+                (&order[..], &batches[..])
+            } else {
+                (
+                    visual_world.transparent_multi_draw_order(),
+                    visual_world.transparent_multi_draw_batches(),
+                )
+            };
+        let transparent_multi_instance_count = transparent_multi_order.len();
 
         if transparent_multi_instance_count == 0 {
             return Ok(());
@@ -542,7 +580,7 @@ impl VulkanoState {
         // Build transparent instance buffer in transparent-multi draw order.
         let transparent_multi_instance_buffer = self.build_instance_buffer_for_order_or_dummy(
             &*visual_world,
-            visual_world.transparent_multi_draw_order(),
+            transparent_multi_order,
         )?;
 
         // Bind pipeline/descriptor sets per (material, texture).
@@ -551,7 +589,7 @@ impl VulkanoState {
         let mut bound_filtering: Option<TextureFiltering> = None;
         let mut bound_quant: Option<u32> = None;
 
-        for batch in visual_world.transparent_multi_draw_batches() {
+        for batch in transparent_multi_batches {
             let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
             let filtering = batch.texture_filtering;
             let quant_bits = batch.quant_steps.to_bits();

@@ -1116,6 +1116,138 @@ mod tests {
             other => panic!("expected ExitClip, got {other:?}"),
         }
     }
+
+    #[test]
+    fn opaque_stream_excluding_source_instance_skips_clip_ops_for_that_source() {
+        let mut visuals = VisualWorld::default();
+
+        let clip_handle = visuals.register(
+            cid(60),
+            dummy_renderable(),
+            Transform::default(),
+            [1.0, 1.0, 1.0, 0.0],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+        let content_handle = visuals.register(
+            cid(61),
+            dummy_renderable(),
+            Transform::default(),
+            [0.8, 0.8, 0.8, 1.0],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+
+        let _ = visuals.register_stencil_clip(clip_handle, 0);
+        let _ = visuals.update_stencil_ref(content_handle, 1);
+        visuals.prepare_draw_cache();
+
+        let (ops, instance_indices) = visuals.opaque_stream_excluding(Some(clip_handle));
+        assert_eq!(instance_indices, &[1]);
+        assert_eq!(ops.len(), 1);
+        match ops[0] {
+            RenderOp::DrawBatch(batch) => {
+                assert_eq!(batch.count, 1);
+                assert_eq!(batch.stencil_ref, 1);
+                assert_eq!(instance_indices[batch.start], 1);
+            }
+            other => panic!("expected DrawBatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn phase_exclusion_helpers_drop_source_from_overlay_cutout_and_transparent_passes() {
+        let mut visuals = VisualWorld::default();
+
+        let overlay_handle = visuals.register(
+            cid(70),
+            dummy_renderable(),
+            Transform::default(),
+            [1.0, 1.0, 1.0, 1.0],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            true,
+            0.0,
+            None,
+            3.0,
+        );
+        let cutout_handle = visuals.register(
+            cid(71),
+            dummy_renderable(),
+            Transform::default(),
+            [1.0, 1.0, 1.0, 1.0],
+            1.0,
+            false,
+            true,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+        let transparent_single_handle = visuals.register(
+            cid(72),
+            dummy_renderable(),
+            Transform::default(),
+            [1.0, 1.0, 1.0, 0.5],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+        let transparent_multi_handle = visuals.register(
+            cid(73),
+            dummy_renderable(),
+            Transform::default(),
+            [1.0, 1.0, 1.0, 0.5],
+            1.0,
+            true,
+            false,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+        visuals.prepare_draw_cache();
+        visuals.prepare_transparent_multi_draw_cache_for_view(Transform::default().model);
+
+        let (_, overlay_instances) = visuals.overlay_stream_excluding(Some(overlay_handle));
+        let (_, cutout_instances) = visuals.cutout_stream_excluding(Some(cutout_handle));
+        let (_, transparent_single_instances) =
+            visuals.transparent_single_stream_excluding(Some(transparent_single_handle));
+        let (transparent_multi_order, _) =
+            visuals.transparent_multi_draw_excluding(Some(transparent_multi_handle));
+
+        assert!(!overlay_instances.contains(&0));
+        assert!(!cutout_instances.contains(&1));
+        assert!(!transparent_single_instances.contains(&2));
+        assert!(!transparent_multi_order.contains(&3));
+    }
 }
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VisualPointLight {
@@ -1204,6 +1336,35 @@ impl VisualWorld {
         }
     }
 
+    fn filtered_phase_order(&self, order: &[u32], excluded_instance: Option<InstanceHandle>) -> Vec<u32> {
+        let Some(excluded_index) = excluded_instance.and_then(|handle| self.handle_to_index.get(&handle).copied()) else {
+            return order.to_vec();
+        };
+        order.iter()
+            .copied()
+            .filter(|&idx| idx as usize != excluded_index)
+            .collect()
+    }
+
+    fn filtered_clip_sources_by_depth(
+        &self,
+        max_depth: u8,
+        excluded_instance: Option<InstanceHandle>,
+    ) -> Vec<Vec<u32>> {
+        let mut clip_sources_by_depth = vec![Vec::new(); max_depth as usize + 1];
+        let excluded_index = excluded_instance.and_then(|handle| self.handle_to_index.get(&handle).copied());
+        for (index, inst) in self.instances.iter().enumerate() {
+            if !inst.is_stencil_clip {
+                continue;
+            }
+            if Some(index) == excluded_index {
+                continue;
+            }
+            clip_sources_by_depth[inst.stencil_ref as usize].push(index as u32);
+        }
+        clip_sources_by_depth
+    }
+
     /// Build the per-phase DFS render stream for the overlay pass.
     ///
     /// `overlay_order` must already be sorted by `(stencil_ref, material, tex, mesh, ...)`.
@@ -1264,6 +1425,66 @@ impl VisualWorld {
             0,
             max_depth,
             instances,
+            &non_clip_by_depth,
+            &all_clip_sources_by_depth,
+            &phase_clip_sources_by_depth,
+            out_ops,
+            out_instances,
+        );
+    }
+
+    fn build_phase_render_stream_excluding(
+        &self,
+        phase_order: &[u32],
+        excluded_instance: Option<InstanceHandle>,
+        out_ops: &mut Vec<RenderOp>,
+        out_instances: &mut Vec<u32>,
+    ) {
+        let filtered_order = self.filtered_phase_order(phase_order, excluded_instance);
+        out_ops.clear();
+        out_instances.clear();
+
+        if filtered_order.is_empty() {
+            return;
+        }
+
+        let excluded_index = excluded_instance.and_then(|handle| self.handle_to_index.get(&handle).copied());
+        let max_depth = filtered_order
+            .iter()
+            .map(|&i| self.instances[i as usize].stencil_ref)
+            .chain(
+                self.instances
+                    .iter()
+                    .enumerate()
+                    .filter(|inst| {
+                        let (index, inst) = inst;
+                        inst.is_stencil_clip && Some(*index) != excluded_index
+                    })
+                    .map(|(_, inst)| inst.stencil_ref),
+            )
+            .max()
+            .unwrap_or(0);
+
+        let depth_count = max_depth as usize + 1;
+        let mut non_clip_by_depth: Vec<Vec<u32>> = vec![Vec::new(); depth_count];
+        let mut phase_clip_sources_by_depth: Vec<Vec<u32>> = vec![Vec::new(); depth_count];
+        let all_clip_sources_by_depth =
+            self.filtered_clip_sources_by_depth(max_depth, excluded_instance);
+
+        for &idx in &filtered_order {
+            let inst = &self.instances[idx as usize];
+            let d = inst.stencil_ref as usize;
+            if inst.is_stencil_clip {
+                phase_clip_sources_by_depth[d].push(idx);
+            } else {
+                non_clip_by_depth[d].push(idx);
+            }
+        }
+
+        Self::build_overlay_level(
+            0,
+            max_depth,
+            &self.instances,
             &non_clip_by_depth,
             &all_clip_sources_by_depth,
             &phase_clip_sources_by_depth,
@@ -1783,6 +2004,21 @@ impl VisualWorld {
         (&self.cutout_stream, &self.cutout_stream_instances)
     }
 
+    pub fn cutout_stream_excluding(
+        &self,
+        excluded_instance: Option<InstanceHandle>,
+    ) -> (Vec<RenderOp>, Vec<u32>) {
+        let mut ops = Vec::new();
+        let mut instances = Vec::new();
+        self.build_phase_render_stream_excluding(
+            &self.cutout_order,
+            excluded_instance,
+            &mut ops,
+            &mut instances,
+        );
+        (ops, instances)
+    }
+
     /// Indices into `instances()` in the order they should be drawn (emissive cutout batching).
     pub fn emissive_cutout_order(&self) -> &[u32] {
         &self.emissive_cutout_order
@@ -1809,6 +2045,21 @@ impl VisualWorld {
         )
     }
 
+    pub fn transparent_single_stream_excluding(
+        &self,
+        excluded_instance: Option<InstanceHandle>,
+    ) -> (Vec<RenderOp>, Vec<u32>) {
+        let mut ops = Vec::new();
+        let mut instances = Vec::new();
+        self.build_phase_render_stream_excluding(
+            &self.transparent_single_draw_order,
+            excluded_instance,
+            &mut ops,
+            &mut instances,
+        );
+        (ops, instances)
+    }
+
     /// DFS-ordered render stream for the overlay phase.
     ///
     /// Returns `(ops, instance_indices)`.
@@ -1819,11 +2070,41 @@ impl VisualWorld {
         (&self.overlay_stream, &self.overlay_stream_instances)
     }
 
+    pub fn overlay_stream_excluding(
+        &self,
+        excluded_instance: Option<InstanceHandle>,
+    ) -> (Vec<RenderOp>, Vec<u32>) {
+        let mut ops = Vec::new();
+        let mut instances = Vec::new();
+        self.build_phase_render_stream_excluding(
+            &self.overlay_order,
+            excluded_instance,
+            &mut ops,
+            &mut instances,
+        );
+        (ops, instances)
+    }
+
     /// DFS-ordered render stream for the opaque phase.
     ///
     /// Returns `(ops, instance_indices)`.
     pub fn opaque_stream(&self) -> (&[RenderOp], &[u32]) {
         (&self.opaque_stream, &self.opaque_stream_instances)
+    }
+
+    pub fn opaque_stream_excluding(
+        &self,
+        excluded_instance: Option<InstanceHandle>,
+    ) -> (Vec<RenderOp>, Vec<u32>) {
+        let mut ops = Vec::new();
+        let mut instances = Vec::new();
+        self.build_phase_render_stream_excluding(
+            &self.draw_order,
+            excluded_instance,
+            &mut ops,
+            &mut instances,
+        );
+        (ops, instances)
     }
 
     /// Indices into `instances()` where `is_stencil_clip=true`, sorted by stencil_ref ascending.
@@ -1886,6 +2167,16 @@ impl VisualWorld {
 
     pub fn transparent_multi_draw_batches(&self) -> &[DrawBatch] {
         &self.transparent_multi_draw_batches
+    }
+
+    pub fn transparent_multi_draw_excluding(
+        &self,
+        excluded_instance: Option<InstanceHandle>,
+    ) -> (Vec<u32>, Vec<DrawBatch>) {
+        let order = self.filtered_phase_order(&self.transparent_multi_draw_order, excluded_instance);
+        let mut batches = Vec::new();
+        Self::build_draw_batches_for_order(&self.instances, &order, &mut batches);
+        (order, batches)
     }
 
     /// Call once per frame before rendering. Cheap if nothing changed.

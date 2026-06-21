@@ -45,11 +45,12 @@ impl RenderToTextureSystem {
 
     pub fn register_texture(&mut self, world: &mut World, component: ComponentId) {
         let Some(texture) = world.get_component_by_id_as::<TextureComponent>(component) else {
+            self.unregister_texture(component);
             return;
         };
 
         if let Some(selector) = texture.render_image.clone() {
-            self.consumers_by_component.insert(
+            let previous = self.consumers_by_component.insert(
                 component,
                 RenderTextureConsumerRegistration {
                     component,
@@ -57,13 +58,33 @@ impl RenderToTextureSystem {
                     kind: RenderTextureConsumerKind::TextureRenderImage,
                 },
             );
+            if let Some(previous) = previous {
+                self.remove_selector_if_unused(&previous.selector);
+            }
 
             self.producer_requests_by_selector
-                .entry(selector.clone())
-                .or_insert(RenderTextureProducerRequest {
+                .insert(selector.clone(), RenderTextureProducerRequest {
                     selector,
-                    kind: RenderTextureProducerKind::InternalRendererImage,
+                    kind: producer_kind_for_selector(texture.render_image.as_deref().unwrap()),
                 });
+        } else {
+            self.unregister_texture(component);
+        }
+    }
+
+    fn unregister_texture(&mut self, component: ComponentId) {
+        if let Some(previous) = self.consumers_by_component.remove(&component) {
+            self.remove_selector_if_unused(&previous.selector);
+        }
+    }
+
+    fn remove_selector_if_unused(&mut self, selector: &str) {
+        let still_used = self
+            .consumers_by_component
+            .values()
+            .any(|registration| registration.selector == selector);
+        if !still_used {
+            self.producer_requests_by_selector.remove(selector);
         }
     }
 
@@ -103,5 +124,13 @@ impl RenderToTextureSystem {
                 }
             }
         }
+    }
+}
+
+fn producer_kind_for_selector(selector: &str) -> RenderTextureProducerKind {
+    if selector.starts_with("capture.mirror.") {
+        RenderTextureProducerKind::Mirror
+    } else {
+        RenderTextureProducerKind::InternalRendererImage
     }
 }
