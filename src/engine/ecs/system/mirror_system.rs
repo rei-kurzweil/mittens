@@ -13,6 +13,7 @@ use crate::utils::math;
 use std::collections::HashSet;
 
 const MIRROR_CLIP_BIAS_WORLD_UNITS: f32 = 0.01;
+const MIRROR_ENABLE_OBLIQUE_CLIP_PLANE: bool = false;
 
 #[derive(Debug, Default)]
 pub struct MirrorSystem {
@@ -192,9 +193,10 @@ impl System for MirrorSystem {
             };
 
             // Mirror plane in world space.
-            // Local origin: m[3]
-            // Local normal (+Z): m[2]
-            let plane_pos = [world_matrix[3][0], world_matrix[3][1], world_matrix[3][2]];
+            // Start from the transform origin, then move the plane onto the renderable's
+            // visible +Z face so thick mirror slabs reflect from the surface you actually see,
+            // not from the center of the volume.
+            let mut plane_pos = [world_matrix[3][0], world_matrix[3][1], world_matrix[3][2]];
             let plane_normal = {
                 let n = [world_matrix[2][0], world_matrix[2][1], world_matrix[2][2]];
                 let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
@@ -204,6 +206,18 @@ impl System for MirrorSystem {
                     [0.0, 0.0, 1.0]
                 }
             };
+            if let Some(b) = bounds {
+                let z_axis_len = {
+                    let z = [world_matrix[2][0], world_matrix[2][1], world_matrix[2][2]];
+                    (z[0] * z[0] + z[1] * z[1] + z[2] * z[2]).sqrt()
+                };
+                if z_axis_len > 1e-6 {
+                    plane_pos = math::vec3_add(
+                        plane_pos,
+                        math::vec3_scale(plane_normal, b.max[2] * z_axis_len),
+                    );
+                }
+            }
 
             // 4. Derive reflected camera views for each active viewer family.
             let mut captures = Vec::new();
@@ -287,28 +301,33 @@ impl System for MirrorSystem {
                         ref_proj[0][0] = ref_proj[1][1] / aspect;
                     }
 
-                    let plane_normal_toward_camera = if math::vec3_dot(plane_normal, ref_pos)
-                        - math::vec3_dot(plane_normal, plane_pos)
-                        < 0.0
-                    {
-                        plane_normal
-                    } else {
-                        math::vec3_negate(plane_normal)
-                    };
-                    let biased_plane_origin = math::vec3_add(
-                        plane_pos,
-                        math::vec3_scale(plane_normal_toward_camera, MIRROR_CLIP_BIAS_WORLD_UNITS),
-                    );
-                    let plane_camera = Self::transform_plane_world_to_camera(
-                        ref_view,
-                        biased_plane_origin,
-                        plane_normal_toward_camera,
-                    );
-                    if let Some(plane_camera) = plane_camera {
-                        if let Some(oblique_proj) =
-                            Self::apply_oblique_near_plane_projection(ref_proj, plane_camera)
+                    if MIRROR_ENABLE_OBLIQUE_CLIP_PLANE {
+                        let plane_normal_toward_camera = if math::vec3_dot(plane_normal, ref_pos)
+                            - math::vec3_dot(plane_normal, plane_pos)
+                            < 0.0
                         {
-                            ref_proj = oblique_proj;
+                            plane_normal
+                        } else {
+                            math::vec3_negate(plane_normal)
+                        };
+                        let biased_plane_origin = math::vec3_add(
+                            plane_pos,
+                            math::vec3_scale(
+                                plane_normal_toward_camera,
+                                MIRROR_CLIP_BIAS_WORLD_UNITS,
+                            ),
+                        );
+                        let plane_camera = Self::transform_plane_world_to_camera(
+                            ref_view,
+                            biased_plane_origin,
+                            plane_normal_toward_camera,
+                        );
+                        if let Some(plane_camera) = plane_camera {
+                            if let Some(oblique_proj) =
+                                Self::apply_oblique_near_plane_projection(ref_proj, plane_camera)
+                            {
+                                ref_proj = oblique_proj;
+                            }
                         }
                     }
 

@@ -1,5 +1,14 @@
 # Task: Mirror Viewer-Family Captures
 
+## Status
+
+Mostly implemented.
+
+The runtime now supports per-family mirror captures instead of one shared mirror texture. However,
+that structural fix did not resolve the remaining reflected-pose/parallax bug in the live mirror
+view. The current tracking issue is documented separately in
+[docs/bugs/mirror-camera-orientation-and-tracking.md](../bugs/mirror-camera-orientation-and-tracking.md).
+
 ## Problem
 
 The current mirror model is still shaped like:

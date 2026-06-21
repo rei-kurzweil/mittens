@@ -119,8 +119,8 @@ mod tests {
     use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
-        ColorComponent, MirrorComponent, RenderableComponent, StencilClipComponent,
-        TextureComponent, TransformComponent,
+        BoundsComponent, ColorComponent, MirrorComponent, RenderableComponent,
+        StencilClipComponent, TextureComponent, TransformComponent,
     };
     use crate::engine::ecs::system::System;
     use crate::engine::graphics::primitives::{MaterialHandle, MeshHandle, TextureHandle};
