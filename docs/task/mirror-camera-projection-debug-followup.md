@@ -119,9 +119,9 @@ than at the raw reflected camera position.
 
 ### 1. Mirror projection does not match the visible mirror surface
 
-`MirrorSystem` currently starts from the source projection and rewrites only the aspect-sensitive
-term. That may still be correct in principle, but the resulting frustum may not match the intended
-window through the mirror surface.
+`MirrorSystem` currently builds a symmetric mirror projection from mirror height, aspect ratio, and
+perpendicular eye-to-plane distance. That is not the correct model for a viewer who is off-center
+relative to the mirror.
 
 This is especially suspicious because the current bug is most obvious:
 
@@ -129,7 +129,9 @@ This is especially suspicious because the current bug is most obvious:
 - when the viewer is off-center
 - when the viewer is very close to the mirror
 
-Those are all regimes where a projection mismatch becomes much more visible than at the center.
+Those are all regimes where an off-axis frustum is required. A centered frustum can look roughly
+acceptable near the middle while failing to keep edge-touching geometry connected as soon as the
+viewer shifts in mirror-local `x/y` or looks from an oblique angle.
 
 ### 2. Mirror render target / viewport conventions are inconsistent with the projection
 
@@ -215,7 +217,7 @@ without frame-by-frame log spam.
    - a close oblique-angle pose
 3. Compare the resulting NDC coordinates against expected mirror-surface coverage.
 4. If NDC coverage is wrong, inspect:
-   - `MirrorSystem` aspect rewrite
+   - `MirrorSystem` off-axis frustum construction
    - mirror render-target extent policy
    - mirror viewport conventions
    - mirror shader UV/Y-flip behavior

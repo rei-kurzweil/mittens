@@ -186,16 +186,25 @@ This is easier to reason about than working in terms of back vectors.
 
 ## Projection matrix rule
 
-The mirror projection should start from the source camera projection policy, not from ad hoc mirror
-basis changes.
+The mirror projection should be derived from the reflected eye position relative to the authored
+mirror rectangle, not from a symmetric FOV guessed only from mirror size and perpendicular
+distance.
 
-For v1:
+For a planar mirror that must stay connected at the visible edges:
 
-- preserve source vertical FOV
-- preserve source near/far policy
-- adjust aspect ratio to the mirror render target extent
+- treat the mirror surface as an off-axis window in front of the reflected eye
+- compute the four mirror plane corners in world space
+- transform those corners into reflected camera space
+- derive `left`, `right`, `bottom`, and `top` from those camera-space points at the chosen near
+  plane
+- preserve source near/far policy unless there is a clear reason not to
 - do not vertically flip the projection just to "fix" an upside-down image if the renderer already
   flips viewport Y
+
+A symmetric distance-based FOV is not sufficient here. It only matches when the viewer is centered
+on the mirror and looking near head-on. As soon as the viewer moves in mirror-local `x/y` or views
+the mirror obliquely, the correct frustum center shifts, and a centered projection produces the
+edge-seam/parallax bug seen in the current mirror task.
 
 In this engine, the default perspective matrix already assumes:
 

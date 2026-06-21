@@ -71,9 +71,7 @@ ED {
         R.cube() { C.rgba(0.90, 0.88, 0.86, 1.0) }
     }
 
-    // T.position(0.0, 1.8, -4.7).scale(7.4, 3.2, 0.26) {
-    //     R.cube() { C.rgba(0.94, 0.93, 0.92, 1.0) }
-    // }
+    
 
     T.position(0.0, 3.35, -1.9).scale(8.2, 0.34, 5.8) {
         R.cube() { C.rgba(0.90, 0.89, 0.87, 1.0) }
@@ -130,7 +128,16 @@ ED {
     T.position(0.0, 2.45, 0.55).scale(6.35, 0.24, 0.62) {
         R.cube() { C.rgba(0.92, 0.91, 0.89, 1.0) }
     }
+
+    
+    
     T.position(0.0, 0.55, -4.5).scale(3.0, 3.0, 0.08) {
+        // T.position(0.0, 0.0, -5.0).scale(3.2, 3.2, 0.08) {
+        //     R.cube() {
+        //         C.rgba(0.82, 0.88, 0.94, 1.0)
+        //     }
+        // }
+    
         R.cube() {
             C.rgba(0.82, 0.88, 0.94, 1.0)
             Mirror.quality(1024) {}
@@ -255,7 +262,7 @@ InputXR.on() {
 //     }
 //}
 
-
+ED { 
 I.speed(1.5) {
         InputTransformMode.forward_z() {
             fps_rotation()
@@ -283,6 +290,7 @@ I.speed(1.5) {
                 }
             }
         }
+}
 }
 
 XR.on()

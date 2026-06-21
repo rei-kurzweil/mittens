@@ -143,6 +143,37 @@ impl MirrorSystem {
         ])
     }
 
+    fn camera_space_off_axis_projection(
+        left: f32,
+        right: f32,
+        bottom: f32,
+        top: f32,
+        z_near: f32,
+        z_far: f32,
+    ) -> Option<[[f32; 4]; 4]> {
+        if !(z_near.is_finite() && z_far.is_finite()) || z_near <= 0.0 || z_far <= z_near {
+            return None;
+        }
+        let width = right - left;
+        let height = top - bottom;
+        if width.abs() <= 1e-6 || height.abs() <= 1e-6 {
+            return None;
+        }
+        let two_near = 2.0 * z_near;
+        let nf = 1.0 / (z_near - z_far);
+        Some([
+            [two_near / width, 0.0, 0.0, 0.0],
+            [0.0, two_near / height, 0.0, 0.0],
+            [
+                (right + left) / width,
+                (top + bottom) / height,
+                z_far * nf,
+                -1.0,
+            ],
+            [0.0, 0.0, (z_near * z_far) * nf, 0.0],
+        ])
+    }
+
     fn log_debug_sample_once(
         &mut self,
         force: bool,
@@ -355,19 +386,24 @@ impl System for MirrorSystem {
                     };
 
                     let ref_pos = math::vec3_reflect_point(cam_pos, plane_pos, plane_normal);
-                    let Some(ref_forward) =
-                        Self::normalize(math::vec3_reflect(cam_forward, plane_normal))
+                    let Some((mirror_x, mirror_y, _mirror_z)) =
+                        Self::mirror_local_basis(world_matrix)
                     else {
                         continue;
                     };
-                    let reflected_up_hint = math::vec3_reflect(cam_up, plane_normal);
+                    // For a mirror rendered onto a flat surface, the capture basis should stay
+                    // aligned to the mirror plane while the eye position moves the off-axis
+                    // frustum window. Coupling the capture basis to viewer yaw/pitch causes
+                    // edge-touching reflected geometry to shrink away from the side/corner the
+                    // viewer turns toward.
                     let Some(ref_world) = Self::build_camera_world_from_forward_up(
                         ref_pos,
-                        ref_forward,
-                        reflected_up_hint,
+                        plane_normal,
+                        mirror_y,
                     ) else {
                         continue;
                     };
+                    let ref_forward = plane_normal;
                     let ref_up = [ref_world[1][0], ref_world[1][1], ref_world[1][2]];
 
                     self.log_debug_sample_once(
@@ -393,27 +429,70 @@ impl System for MirrorSystem {
                     reflected_transform.model = ref_world;
                     reflected_transform.translation = ref_pos;
 
-                    // Build projection so the mirror surface exactly fills the viewport.
-                    // This replaces the inherited source-camera FOV with one computed from
-                    // the mirror's world-space height and the reflected camera's distance,
-                    // giving a true 1:1 mapping between mesh UVs and reflected rays.
-                    let dist_to_mirror = math::vec3_dot(
-                        math::vec3_sub(cam_pos, plane_pos),
-                        plane_normal,
-                    )
-                    .abs()
-                    .max(0.01);
-                    let fov_y = 2.0 * (mirror_world_h * 0.5 / dist_to_mirror).atan();
-                    let f = 1.0 / (0.5 * fov_y).tan();
                     let z_near = eye_data.proj[3][2] / eye_data.proj[2][2];
                     let z_far = eye_data.proj[3][2] / (1.0 + eye_data.proj[2][2]);
-                    let nf = 1.0 / (z_near - z_far);
-                    let mut ref_proj = [
-                        [f / mirror_aspect, 0.0, 0.0, 0.0],
-                        [0.0, f, 0.0, 0.0],
-                        [0.0, 0.0, z_far * nf, -1.0],
-                        [0.0, 0.0, (z_near * z_far) * nf, 0.0],
+                    let half_w = mirror_world_w * 0.5;
+                    let half_h = mirror_world_h * 0.5;
+                    let corners_world = [
+                        math::vec3_add(
+                            plane_pos,
+                            math::vec3_add(
+                                math::vec3_scale(mirror_x, -half_w),
+                                math::vec3_scale(mirror_y, -half_h),
+                            ),
+                        ),
+                        math::vec3_add(
+                            plane_pos,
+                            math::vec3_add(
+                                math::vec3_scale(mirror_x, half_w),
+                                math::vec3_scale(mirror_y, -half_h),
+                            ),
+                        ),
+                        math::vec3_add(
+                            plane_pos,
+                            math::vec3_add(
+                                math::vec3_scale(mirror_x, -half_w),
+                                math::vec3_scale(mirror_y, half_h),
+                            ),
+                        ),
+                        math::vec3_add(
+                            plane_pos,
+                            math::vec3_add(
+                                math::vec3_scale(mirror_x, half_w),
+                                math::vec3_scale(mirror_y, half_h),
+                            ),
+                        ),
                     ];
+                    let mut left = f32::INFINITY;
+                    let mut right = f32::NEG_INFINITY;
+                    let mut bottom = f32::INFINITY;
+                    let mut top = f32::NEG_INFINITY;
+                    let mut projection_valid = true;
+                    for corner_world in corners_world {
+                        let corner_camera = Self::mat4_mul_vec4(
+                            ref_view,
+                            [corner_world[0], corner_world[1], corner_world[2], 1.0],
+                        );
+                        let corner_z = corner_camera[2];
+                        if corner_z >= -1e-5 {
+                            projection_valid = false;
+                            break;
+                        }
+                        let scale = z_near / -corner_z;
+                        let x = corner_camera[0] * scale;
+                        let y = corner_camera[1] * scale;
+                        left = left.min(x);
+                        right = right.max(x);
+                        bottom = bottom.min(y);
+                        top = top.max(y);
+                    }
+                    if !projection_valid {
+                        continue;
+                    }
+                    let mut ref_proj = Self::camera_space_off_axis_projection(
+                        left, right, bottom, top, z_near, z_far,
+                    )
+                    .unwrap_or(eye_data.proj);
 
                     if MIRROR_ENABLE_OBLIQUE_CLIP_PLANE {
                         let plane_normal_toward_camera = if math::vec3_dot(plane_normal, ref_pos)
