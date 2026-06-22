@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use crate::engine::ecs::component::{
     DataComponent, DataValue, SelectableComponent, SelectionComponent, SerializeComponent,
@@ -7,6 +8,7 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::data_renderer_system::{
     DataRendererSystem, DetailRendererSpec, ItemRendererSpec, UiDetailItem, UiItem,
 };
+use crate::engine::ecs::system::editor::world_panel::WorldPanelModel;
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::meow_meow::component_registry::spawn_tree;
 use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
@@ -432,9 +434,324 @@ pub fn decode_panel_action_payload(
     None
 }
 
-fn data_text(data: &DataComponent, key: &str) -> Option<String> {
+pub fn data_text(data: &DataComponent, key: &str) -> Option<String> {
     match data.get(key) {
         Some(DataValue::Text(value)) => Some(value.clone()),
         _ => None,
     }
+}
+
+pub fn build_editor_panel_component_expr(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    asset_path: &str,
+    export_name: &str,
+    args: Vec<Value>,
+    panel_kind: PanelKind,
+    panel_kind_label: &str,
+) -> Option<MaterializedCE> {
+    let result = build_panel_shell_component_expr(
+        world,
+        emit,
+        &PanelShellSpec {
+            panel_kind,
+            asset_path: asset_path.to_string(),
+            export_name: export_name.to_string(),
+            args,
+            root_selector: String::new(),
+            slot_selectors: HashMap::new(),
+            control_selectors: HashMap::new(),
+        },
+    )
+    .map_err(|error| {
+        eprintln!("[InspectorSystemStopgapMmsAdapter] {panel_kind_label} render error: {error}");
+    });
+    result.ok()
+}
+
+pub fn build_placeholder_panel_component_expr(
+    title_name: &str,
+    title: &str,
+) -> MaterializedCE {
+    MaterializedCE {
+        component_type: "T".to_string(),
+        component_property_assignment_only: false,
+        ctor_method: None,
+        ctor_args: Vec::new(),
+        calls: Vec::new(),
+        named: vec![("name".to_string(), Value::String(title_name.to_string()))],
+        positionals: Vec::new(),
+        children: vec![CeChild::Spawn(MaterializedCE {
+            component_type: "T".to_string(),
+            component_property_assignment_only: false,
+            ctor_method: None,
+            ctor_args: Vec::new(),
+            calls: Vec::new(),
+            named: vec![(
+                "name".to_string(),
+                Value::String(format!("{title_name}_title")),
+            )],
+            positionals: Vec::new(),
+            children: vec![CeChild::Spawn(MaterializedCE {
+                component_type: "Text".to_string(),
+                component_property_assignment_only: false,
+                ctor_method: None,
+                ctor_args: Vec::new(),
+                calls: Vec::new(),
+                named: vec![(
+                    "name".to_string(),
+                    Value::String(format!("{title_name}_label")),
+                )],
+                positionals: vec![Value::String(title.to_string())],
+                children: Vec::new(),
+            })],
+        })],
+    }
+}
+
+pub fn world_panel_asset_path() -> &'static str {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
+}
+
+pub fn icons_asset_path() -> &'static str {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/icons.mms")
+}
+
+pub fn world_panel_status_asset_path() -> &'static str {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panel_items.mms")
+}
+
+pub fn inspector_panel_asset_path() -> &'static str {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
+}
+
+pub fn inspector_details_asset_path() -> &'static str {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/inspector_details.mms")
+}
+
+pub fn asset_panel_asset_path() -> &'static str {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
+}
+
+pub fn paint_panel_asset_path() -> &'static str {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
+}
+
+pub fn grid_panel_asset_path() -> &'static str {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
+}
+
+pub fn editor_settings_panel_asset_path() -> &'static str {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
+}
+
+pub fn pose_panel_asset_path() -> &'static str {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
+}
+
+/// Build the panel layout tree: all panel component expressions + mount.
+/// Returns `(panel_mount_root, layout_root_id)` on success.
+pub fn spawn_editor_panel_layout_tree(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    model: &WorldPanelModel,
+    working_file_path: &Path,
+    world_panel_pos: (f32, f32, f32),
+) -> Option<(ComponentId, ComponentId)> {
+    println!(
+        "[InspectorSystem][debug] spawn_editor_panel_layout_tree world_panel_pos={:?}",
+        world_panel_pos,
+    );
+
+    let world_panel_title_color = Value::Array(vec![
+        Value::Number(0.90),
+        Value::Number(1.00),
+        Value::Number(0.92),
+        Value::Number(1.0),
+    ]);
+    let world_panel_bg = Value::Array(vec![
+        Value::Number(0.18),
+        Value::Number(0.78),
+        Value::Number(0.22),
+        Value::Number(0.95),
+    ]);
+    let world_panel_item_bg = Value::Array(vec![
+        Value::Number(0.92),
+        Value::Number(0.97),
+        Value::Number(0.92),
+        Value::Number(1.0),
+    ]);
+
+    let asset_panel_title_color = world_panel_title_color.clone();
+    let asset_panel_bg = world_panel_bg.clone();
+    let asset_panel_item_bg = world_panel_item_bg.clone();
+
+    let paint_panel_title_color = world_panel_title_color.clone();
+    let paint_panel_bg = world_panel_bg.clone();
+    let paint_panel_item_bg = world_panel_item_bg.clone();
+
+    let working_file_path_str = working_file_path.to_string_lossy().to_string();
+
+    let world_panel = match build_editor_panel_component_expr(
+        world,
+        emit,
+        world_panel_asset_path(),
+        "world_panel",
+        vec![
+            Value::String(model.title.clone()),
+            Value::Array(Vec::new()),
+            world_panel_title_color.clone(),
+            world_panel_bg.clone(),
+            world_panel_item_bg.clone(),
+            Value::String(working_file_path_str),
+        ],
+        PanelKind::World,
+        "world panel",
+    ) {
+        Some(panel) => panel,
+        None => return None,
+    };
+
+    let asset_items_val = Value::Array(Vec::new());
+
+    let asset_panel = match build_editor_panel_component_expr(
+        world,
+        emit,
+        asset_panel_asset_path(),
+        "asset_panel",
+        vec![
+            Value::String("Assets".to_string()),
+            asset_items_val,
+            asset_panel_title_color.clone(),
+            asset_panel_bg.clone(),
+            asset_panel_item_bg.clone(),
+        ],
+        PanelKind::Assets,
+        "asset panel",
+    ) {
+        Some(panel) => panel,
+        None => return None,
+    };
+
+    let paint_panel = match build_editor_panel_component_expr(
+        world,
+        emit,
+        paint_panel_asset_path(),
+        "paint_panel",
+        vec![
+            Value::String("Paint".to_string()),
+            paint_panel_title_color.clone(),
+            paint_panel_bg.clone(),
+            paint_panel_item_bg.clone(),
+        ],
+        PanelKind::Paint,
+        "paint panel",
+    ) {
+        Some(panel) => panel,
+        None => return None,
+    };
+
+    let grid_panel = match build_editor_panel_component_expr(
+        world,
+        emit,
+        grid_panel_asset_path(),
+        "grid_panel",
+        vec![
+            Value::String("Grids".to_string()),
+            Value::Array(Vec::new()),
+            world_panel_title_color.clone(),
+            world_panel_bg.clone(),
+            world_panel_item_bg.clone(),
+        ],
+        PanelKind::Grid,
+        "grid panel",
+    ) {
+        Some(panel) => panel,
+        None => return None,
+    };
+
+    let pose_panel = match build_editor_panel_component_expr(
+        world,
+        emit,
+        pose_panel_asset_path(),
+        "pose_capture_panel",
+        vec![
+            Value::String("Poses".to_string()),
+            world_panel_title_color.clone(),
+            world_panel_bg.clone(),
+        ],
+        PanelKind::Pose,
+        "pose capture panel",
+    ) {
+        Some(panel) => panel,
+        None => return None,
+    };
+
+    let editor_settings_panel = match build_editor_panel_component_expr(
+        world,
+        emit,
+        editor_settings_panel_asset_path(),
+        "editor_settings_panel",
+        vec![
+            Value::String("Editor".to_string()),
+            world_panel_title_color.clone(),
+            world_panel_bg.clone(),
+        ],
+        PanelKind::Inspector,
+        "editor settings panel",
+    ) {
+        Some(panel) => panel,
+        None => return None,
+    };
+
+    let anchor_pos = world_panel_pos;
+
+    let total_height_gu = 60.5f64
+        .max(60.5)
+        .max(60.5)
+        .max(32.0)
+        .max(60.5)
+        .max(60.5)
+        .max(11.5)
+        * 2.0
+        + 2.0
+        + (0.5 * 2.0);
+
+    let world_panel = decorate_panel_root_ce(world_panel, 2.0);
+    let paint_panel = decorate_panel_root_ce(paint_panel, 2.0);
+    let asset_panel = decorate_panel_root_ce(asset_panel, 2.0);
+    let grid_panel = decorate_panel_root_ce(grid_panel, 2.0);
+    let pose_panel = decorate_panel_root_ce(pose_panel, 2.0);
+    let editor_settings_panel = decorate_panel_root_ce(editor_settings_panel, 2.0);
+
+    let (panel_mount_root, layout_root_id) = match spawn_panel_layout_mount(
+        world,
+        emit,
+        PanelLayoutMountSpec {
+            anchor_pos,
+            total_height_gu,
+            available_width_gu: 200000.0,
+            text_scale: 0.08,
+            mount_name: PANEL_LAYOUT_MOUNT_NAME.to_string(),
+            layout_name: PANEL_LAYOUT_ROOT_NAME.to_string(),
+            children: vec![
+                editor_settings_panel,
+                paint_panel,
+                grid_panel,
+                pose_panel,
+                asset_panel,
+                world_panel,
+            ],
+        },
+    ) {
+        Ok(ids) => ids,
+        Err(error) => {
+            eprintln!(
+                "[InspectorSystemStopgapMmsAdapter] panel layout spawn error: {error}"
+            );
+            return None;
+        }
+    };
+
+    Some((panel_mount_root, layout_root_id))
 }

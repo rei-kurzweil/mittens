@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -53,17 +52,17 @@ use crate::engine::ecs::system::editor::world_panel::{
 use crate::engine::ecs::system::grid_system::GridSpawnSpec;
 use crate::engine::ecs::system::panel_system::{
     PANEL_LAYOUT_MOUNT_NAME, PANEL_LAYOUT_ROOT_NAME, PANEL_LAYOUT_SELECTION_NAME, PanelActionKind,
-    PanelControlKind, PanelKind, PanelLayoutMountSpec, PanelShellSpec, PanelSlotKind,
-    build_panel_shell_component_expr, decode_panel_action_payload, decorate_panel_root_ce,
-    ensure_panel_layout_selection, is_descendant_or_self, panel_layout_root_id,
-    panel_layout_selection_id, spawn_panel_instance, spawn_panel_layout_mount,
+    PanelControlKind, PanelKind, PanelSlotKind, build_editor_panel_component_expr, data_text,
+    decode_panel_action_payload, ensure_panel_layout_selection, icons_asset_path,
+    is_descendant_or_self, panel_layout_root_id, panel_layout_selection_id,
+    spawn_editor_panel_layout_tree,
 };
 use crate::engine::ecs::system::selection_system::{
     apply_selection_set, resolve_semantic_target_from_payload,
 };
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
 use crate::meow_meow::component_registry::spawn_tree;
-use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
+use crate::meow_meow::object::Value;
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 const EDITOR_WORKSPACE_GRIDS_CHANGED: &str = "EditorWorkspaceGridsChanged";
 const EDITOR_SETTINGS_PANEL_WIDTH_GU: f64 = 16.0;
@@ -126,10 +125,6 @@ struct EditorInspectorSystemStopgapMmsReconciler;
 
 fn editor_memory_marker(label: &str) {
     let _ = label;
-}
-
-fn editor_memory_marker_with_panel(label: &str, panel_export: &str) {
-    editor_memory_marker(&format!("{label} export={panel_export}"));
 }
 
 impl EditorInspectorSystemStopgapMmsAdapter {
@@ -1098,7 +1093,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         panel_query_root: ComponentId,
         editor_root: ComponentId,
         world_panel_pos: (f32, f32, f32),
-        inspector_panel_pos: (f32, f32, f32),
+        _inspector_panel_pos: (f32, f32, f32),
         model: &WorldPanelModel,
         inspector_models: &[InspectorPanelModel],
         rendered_inspector_models: &Arc<Mutex<Vec<InspectorPanelModel>>>,
@@ -1106,13 +1101,8 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         asset_system: &crate::engine::ecs::system::AssetSystem,
         data_renderer: &mut DataRendererSystem,
     ) {
-        editor_memory_marker("editor reconcile_panel_layout:start");
         let existing_world_panel =
-            self.find_world_panel_node(world, panel_query_root, WORLD_PANEL_ROOT_SELECTOR);
-        let existing_inspector_panel = self
-            .find_inspector_panel_nodes(world, panel_query_root)
-            .first()
-            .copied();
+            world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR);
         let existing_panel_mount = world.all_components().find(|&component_id| {
             world
                 .component_label(component_id)
@@ -1120,14 +1110,11 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         });
 
         println!(
-            "[InspectorSystem][debug] reconcile_panel_layout panel_query_root={panel_query_root:?} existing_world_panel={existing_world_panel:?} existing_inspector_panel={existing_inspector_panel:?} existing_panel_mount={existing_panel_mount:?}"
+            "[InspectorSystem][debug] reconcile_panel_layout panel_query_root={panel_query_root:?} existing_world_panel={existing_world_panel:?} existing_panel_mount={existing_panel_mount:?}"
         );
 
         if *panel_layout_spawned {
-            if existing_world_panel.is_none()
-                && existing_inspector_panel.is_none()
-                && existing_panel_mount.is_none()
-            {
+            if existing_world_panel.is_none() && existing_panel_mount.is_none() {
                 println!(
                     "[InspectorSystem][debug] panel layout flag was stale for panel_query_root={panel_query_root:?}; respawning missing panel layout"
                 );
@@ -1136,17 +1123,15 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 println!(
                     "[InspectorSystem][debug] panel layout already spawned for panel_query_root={panel_query_root:?}; skipping duplicate spawn"
                 );
-                editor_memory_marker("editor reconcile_panel_layout:skip already spawned");
                 return;
             }
         }
 
-        if existing_world_panel.is_some() && existing_inspector_panel.is_some() {
+        if existing_world_panel.is_some() {
             println!(
                 "[InspectorSystem][debug] panel layout already present for panel_query_root={panel_query_root:?}; skipping spawn"
             );
             *panel_layout_spawned = true;
-            editor_memory_marker("editor reconcile_panel_layout:skip already present");
             return;
         }
 
@@ -1155,291 +1140,20 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 "[InspectorSystem][debug] pending panel layout mount already exists for panel_query_root={panel_query_root:?}; skipping duplicate spawn"
             );
             *panel_layout_spawned = true;
-            editor_memory_marker("editor reconcile_panel_layout:skip pending mount");
             return;
         }
 
         *panel_layout_spawned = true;
 
-        self.spawn_panel_layout(
-            world,
-            render_assets,
-            emit,
-            panel_query_root,
-            editor_root,
-            world_panel_pos,
-            inspector_panel_pos,
-            model,
-            inspector_models,
-            rendered_inspector_models,
-            working_file_path,
-            asset_system,
-            data_renderer,
-        );
-        editor_memory_marker("editor reconcile_panel_layout:end");
-    }
+        let (panel_mount_root, layout_root_id) =
+            match spawn_editor_panel_layout_tree(world, emit, model, working_file_path, world_panel_pos) {
+                Some(ids) => ids,
+                None => return,
+            };
 
-    fn find_world_panel_node(
-        &self,
-        world: &World,
-        panel_query_root: ComponentId,
-        selector: &str,
-    ) -> Option<ComponentId> {
-        world.find_component(panel_query_root, selector)
-    }
-
-    fn find_panel_layout_root(
-        &self,
-        world: &World,
-        panel_query_root: ComponentId,
-    ) -> Option<ComponentId> {
-        world.find_component(panel_query_root, &format!("#{PANEL_LAYOUT_ROOT_NAME}"))
-    }
-
-    fn find_inspector_panel_nodes(
-        &self,
-        world: &World,
-        panel_query_root: ComponentId,
-    ) -> Vec<ComponentId> {
-        let Some(layout_root) = self.find_panel_layout_root(world, panel_query_root) else {
-            return Vec::new();
-        };
-
-        world
-            .children_of(layout_root)
-            .iter()
-            .copied()
-            .filter(|&child| {
-                world
-                    .component_label(child)
-                    .is_some_and(|label| label == "inspector_panel_root")
-            })
-            .collect()
-    }
-
-    fn spawn_panel_layout(
-        &self,
-        world: &mut World,
-        render_assets: &crate::engine::graphics::RenderAssets,
-        emit: &mut dyn SignalEmitter,
-        panel_query_root: ComponentId,
-        editor_root: ComponentId,
-        world_panel_pos: (f32, f32, f32),
-        inspector_panel_pos: (f32, f32, f32),
-        model: &WorldPanelModel,
-        inspector_models: &[InspectorPanelModel],
-        rendered_inspector_models: &Arc<Mutex<Vec<InspectorPanelModel>>>,
-        working_file_path: &Path,
-        asset_system: &crate::engine::ecs::system::AssetSystem,
-        data_renderer: &mut DataRendererSystem,
-    ) {
-        editor_memory_marker("editor spawn_panel_layout:start");
-        println!(
-            "[InspectorSystem][debug] spawn_panel_layout panel_query_root={panel_query_root:?} world_panel_pos={:?} inspector_panel_pos={:?}",
-            world_panel_pos, inspector_panel_pos,
-        );
-
-        let world_panel_title_color = Value::Array(vec![
-            Value::Number(0.90),
-            Value::Number(1.00),
-            Value::Number(0.92),
-            Value::Number(1.0),
-        ]);
-        let world_panel_bg = Value::Array(vec![
-            Value::Number(0.18),
-            Value::Number(0.78),
-            Value::Number(0.22),
-            Value::Number(0.95),
-        ]);
-        let world_panel_item_bg = Value::Array(vec![
-            Value::Number(0.92),
-            Value::Number(0.97),
-            Value::Number(0.92),
-            Value::Number(1.0),
-        ]);
-
-        let asset_panel_title_color = world_panel_title_color.clone();
-        let asset_panel_bg = world_panel_bg.clone();
-        let asset_panel_item_bg = world_panel_item_bg.clone();
-
-        let paint_panel_title_color = world_panel_title_color.clone();
-        let paint_panel_bg = world_panel_bg.clone();
-        let paint_panel_item_bg = world_panel_item_bg.clone();
-
-        let working_file_path_str = working_file_path.to_string_lossy().to_string();
-
-        let world_panel = match build_panel_component_expr(
-            world,
-            emit,
-            world_panel_asset_path(),
-            "world_panel",
-            vec![
-                Value::String(model.title.clone()),
-                Value::Array(Vec::new()),
-                world_panel_title_color.clone(),
-                world_panel_bg.clone(),
-                world_panel_item_bg.clone(),
-                Value::String(working_file_path_str),
-            ],
-            PanelKind::World,
-            "world panel",
-        ) {
-            Some(panel) => panel,
-            None => return,
-        };
-        editor_memory_marker("editor spawn_panel_layout:after world_panel expr");
-
-        let asset_items_val = Value::Array(Vec::new());
-
-        let asset_panel = match build_panel_component_expr(
-            world,
-            emit,
-            asset_panel_asset_path(),
-            "asset_panel",
-            vec![
-                Value::String("Assets".to_string()),
-                asset_items_val,
-                asset_panel_title_color.clone(),
-                asset_panel_bg.clone(),
-                asset_panel_item_bg.clone(),
-            ],
-            PanelKind::Assets,
-            "asset panel",
-        ) {
-            Some(panel) => panel,
-            None => return,
-        };
-        editor_memory_marker("editor spawn_panel_layout:after asset_panel expr");
-
-        let paint_panel = match build_panel_component_expr(
-            world,
-            emit,
-            paint_panel_asset_path(),
-            "paint_panel",
-            vec![
-                Value::String("Paint".to_string()),
-                paint_panel_title_color.clone(),
-                paint_panel_bg.clone(),
-                paint_panel_item_bg.clone(),
-            ],
-            PanelKind::Paint,
-            "paint panel",
-        ) {
-            Some(panel) => panel,
-            None => return,
-        };
-        editor_memory_marker("editor spawn_panel_layout:after paint_panel expr");
-
-        let grid_panel = match build_panel_component_expr(
-            world,
-            emit,
-            grid_panel_asset_path(),
-            "grid_panel",
-            vec![
-                Value::String("Grids".to_string()),
-                Value::Array(Vec::new()),
-                world_panel_title_color.clone(),
-                world_panel_bg.clone(),
-                world_panel_item_bg.clone(),
-            ],
-            PanelKind::Grid,
-            "grid panel",
-        ) {
-            Some(panel) => panel,
-            None => return,
-        };
-        editor_memory_marker("editor spawn_panel_layout:after grid_panel expr");
-
-        let pose_panel = match build_panel_component_expr(
-            world,
-            emit,
-            pose_panel_asset_path(),
-            "pose_capture_panel",
-            vec![
-                Value::String("Poses".to_string()),
-                world_panel_title_color.clone(),
-                world_panel_bg.clone(),
-            ],
-            PanelKind::Pose,
-            "pose capture panel",
-        ) {
-            Some(panel) => panel,
-            None => return,
-        };
-        editor_memory_marker("editor spawn_panel_layout:after pose_panel expr");
-
-        let editor_settings_panel = match build_panel_component_expr(
-            world,
-            emit,
-            editor_settings_panel_asset_path(),
-            "editor_settings_panel",
-            vec![
-                Value::String("Editor".to_string()),
-                world_panel_title_color.clone(),
-                world_panel_bg.clone(),
-            ],
-            PanelKind::Inspector,
-            "editor settings panel",
-        ) {
-            Some(panel) => panel,
-            None => return,
-        };
-        editor_memory_marker("editor spawn_panel_layout:after editor_settings_panel expr");
-
-        let _ = inspector_panel_pos;
-        let anchor_pos = world_panel_pos;
-
-        let total_height_gu = WORLD_PANEL_TOTAL_HEIGHT_GU
-            .max(INSPECTOR_PANEL_TOTAL_HEIGHT_GU)
-            .max(ASSET_PANEL_TOTAL_HEIGHT_GU)
-            .max(PAINT_PANEL_TOTAL_HEIGHT_GU)
-            .max(GRID_PANEL_TOTAL_HEIGHT_GU)
-            .max(POSE_PANEL_TOTAL_HEIGHT_GU)
-            .max(EDITOR_SETTINGS_PANEL_TOTAL_HEIGHT_GU)
-            * 2.0
-            + PANEL_LAYOUT_GAP_GU
-            + (PANEL_ROOT_MARGIN_Y_GU * 2.0);
-
-        let world_panel = decorate_panel_root_ce(world_panel, PANEL_LAYOUT_GAP_GU);
-        let paint_panel = decorate_panel_root_ce(paint_panel, PANEL_LAYOUT_GAP_GU);
-        let asset_panel = decorate_panel_root_ce(asset_panel, PANEL_LAYOUT_GAP_GU);
-        let grid_panel = decorate_panel_root_ce(grid_panel, PANEL_LAYOUT_GAP_GU);
-        let pose_panel = decorate_panel_root_ce(pose_panel, PANEL_LAYOUT_GAP_GU);
-        let editor_settings_panel =
-            decorate_panel_root_ce(editor_settings_panel, PANEL_LAYOUT_GAP_GU);
-
-        let (panel_mount_root, layout_root_id) = match spawn_panel_layout_mount(
-            world,
-            emit,
-            PanelLayoutMountSpec {
-                anchor_pos,
-                total_height_gu,
-                available_width_gu: PANEL_LAYOUT_AVAILABLE_WIDTH_GU,
-                text_scale: PANEL_LAYOUT_TEXT_SCALE,
-                mount_name: PANEL_LAYOUT_MOUNT_NAME.to_string(),
-                layout_name: PANEL_LAYOUT_ROOT_NAME.to_string(),
-                children: vec![
-                    editor_settings_panel,
-                    paint_panel,
-                    grid_panel,
-                    pose_panel,
-                    asset_panel,
-                    world_panel,
-                ],
-            },
-        ) {
-            Ok(ids) => ids,
-            Err(error) => {
-                eprintln!("[InspectorSystemStopgapMmsAdapter] panel layout spawn error: {error}");
-                return;
-            }
-        };
-        editor_memory_marker("editor spawn_panel_layout:after spawn_panel_layout_mount");
-
-        // Add SelectionComponent to the LayoutRoot so we can select individual panels.
+        // Post-spawn work
         let selection = ensure_panel_layout_selection(world, layout_root_id);
         world.init_component_tree(selection, emit);
-        editor_memory_marker("editor spawn_panel_layout:after ensure_panel_layout_selection");
 
         if let Some(inspector_panel_selection) =
             world.find_component(panel_mount_root, INSPECTOR_PANEL_SELECTION_SELECTOR)
@@ -1460,14 +1174,10 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 {
                     let items_already_there = world.children_of(selection_root).len();
                     if items_already_there <= 2 {
-                        // Only style/Selection markers are there
                         println!(
                             "[InspectorSystem][debug] populating asset panel with {} items into selection_root={:?}",
                             asset_system.items.len(),
                             selection_root
-                        );
-                        editor_memory_marker(
-                            "editor spawn_panel_layout:before asset panel population",
                         );
 
                         let mut last_module_id = None;
@@ -1532,9 +1242,6 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                             }
                         }
                         mark_nearest_layout_dirty(world, selection_root);
-                        editor_memory_marker(
-                            "editor spawn_panel_layout:after asset panel population",
-                        );
                     }
                 }
             }
@@ -1559,7 +1266,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
 
         println!(
             "[InspectorSystem][debug] spawned panel mount root={panel_mount_root:?} name={} anchor_pos={:?}",
-            PANEL_LAYOUT_MOUNT_NAME, anchor_pos,
+            PANEL_LAYOUT_MOUNT_NAME, world_panel_pos,
         );
 
         emit.push_intent_now(
@@ -1603,11 +1310,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
             &grid_context,
             data_renderer,
         );
-        editor_memory_marker("editor spawn_panel_layout:after rerender_grid_panel");
         sync_editor_settings_panel_selection(world, emit, panel_mount_root, &grid_context);
-        editor_memory_marker(
-            "editor spawn_panel_layout:after sync_editor_settings_panel_selection",
-        );
 
         println!(
             "[InspectorSystem][debug] queued attach panel_mount_root={panel_mount_root:?} -> panel_query_root={panel_query_root:?}"
@@ -1619,7 +1322,6 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 child: panel_mount_root,
             },
         );
-        editor_memory_marker("editor spawn_panel_layout:end");
     }
 }
 
@@ -2055,7 +1757,7 @@ fn sync_editor_settings_armature_checkmark(
         return;
     }
 
-    let Some(checkmark) = build_panel_component_expr(
+    let Some(checkmark) = build_editor_panel_component_expr(
         world,
         emit,
         icons_asset_path(),
@@ -2265,121 +1967,7 @@ pub fn handle_pose_panel_click(
     false
 }
 
-fn world_panel_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
-}
 
-fn icons_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/icons.mms")
-}
-
-fn world_panel_status_asset_path() -> &'static str {
-    concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/panel_items.mms"
-    )
-}
-
-fn asset_panel_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
-}
-
-fn paint_panel_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
-}
-
-fn grid_panel_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
-}
-
-fn editor_settings_panel_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
-}
-
-fn inspector_panel_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
-}
-
-fn pose_panel_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
-}
-
-fn data_text(data: &DataComponent, key: &str) -> Option<String> {
-    match data.get(key) {
-        Some(DataValue::Text(value)) => Some(value.clone()),
-        _ => None,
-    }
-}
-
-fn build_panel_component_expr(
-    world: &mut World,
-    emit: &mut dyn SignalEmitter,
-    asset_path: &'static str,
-    export_name: &str,
-    args: Vec<Value>,
-    panel_kind: PanelKind,
-    panel_kind_label: &str,
-) -> Option<MaterializedCE> {
-    editor_memory_marker_with_panel("editor build_panel_component_expr:start", export_name);
-    let result = build_panel_shell_component_expr(
-        world,
-        emit,
-        &PanelShellSpec {
-            panel_kind,
-            asset_path: asset_path.to_string(),
-            export_name: export_name.to_string(),
-            args,
-            root_selector: String::new(),
-            slot_selectors: HashMap::new(),
-            control_selectors: HashMap::new(),
-        },
-    )
-    .map_err(|error| {
-        eprintln!("[InspectorSystemStopgapMmsAdapter] {panel_kind_label} render error: {error}");
-    });
-    editor_memory_marker_with_panel(
-        "editor build_panel_component_expr:after materialize",
-        export_name,
-    );
-    result.ok()
-}
-
-fn build_placeholder_panel_component_expr(title_name: &'static str, title: &str) -> MaterializedCE {
-    MaterializedCE {
-        component_type: "T".to_string(),
-        component_property_assignment_only: false,
-        ctor_method: None,
-        ctor_args: Vec::new(),
-        calls: Vec::new(),
-        named: vec![("name".to_string(), Value::String(title_name.to_string()))],
-        positionals: Vec::new(),
-        children: vec![CeChild::Spawn(MaterializedCE {
-            component_type: "T".to_string(),
-            component_property_assignment_only: false,
-            ctor_method: None,
-            ctor_args: Vec::new(),
-            calls: Vec::new(),
-            named: vec![(
-                "name".to_string(),
-                Value::String(format!("{title_name}_title")),
-            )],
-            positionals: Vec::new(),
-            children: vec![CeChild::Spawn(MaterializedCE {
-                component_type: "Text".to_string(),
-                component_property_assignment_only: false,
-                ctor_method: None,
-                ctor_args: Vec::new(),
-                calls: Vec::new(),
-                named: vec![(
-                    "name".to_string(),
-                    Value::String(format!("{title_name}_label")),
-                )],
-                positionals: vec![Value::String(title.to_string())],
-                children: Vec::new(),
-            })],
-        })],
-    }
-}
 
 fn spawn_world_panel_content_tree(
     world: &mut World,
