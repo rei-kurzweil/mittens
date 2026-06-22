@@ -54,7 +54,7 @@ mod tests {
         InspectorPanelState, InspectorScrollState, InspectorSubtreeSelection,
         InspectorWorkspaceEvent, InspectorWorkspaceState, reduce_inspector_workspace_state,
     };
-    use crate::engine::ecs::system::editor_inspector_system_stopgap_mms_adapter::set_world_panel_scene_path_for_tests;
+    use crate::engine::ecs::system::editor::world_panel::set_world_panel_scene_path_for_tests;
     use crate::engine::ecs::system::editor_system::select_editor_target;
     use crate::engine::ecs::{EventSignal, IntentValue, SignalEmitter, SystemWorld, World};
     use crate::engine::graphics::bounds::Aabb;
