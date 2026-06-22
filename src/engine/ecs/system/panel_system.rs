@@ -4,6 +4,9 @@ use crate::engine::ecs::component::{
     DataComponent, DataValue, SelectableComponent, SelectionComponent, SerializeComponent,
     TransformComponent,
 };
+use crate::engine::ecs::system::data_renderer_system::{
+    DataRendererSystem, DetailRendererSpec, ItemRendererSpec, UiDetailItem, UiItem,
+};
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::meow_meow::component_registry::spawn_tree;
 use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
@@ -353,6 +356,50 @@ pub fn spawn_panel_instance(
         mount_root,
         instance,
     })
+}
+
+pub fn render_list_into_slot(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel: &PanelInstance,
+    slot_kind: PanelSlotKind,
+    spec: &ItemRendererSpec,
+    items: &[UiItem],
+    renderer: &mut DataRendererSystem,
+) -> Result<ComponentId, String> {
+    let slot = panel
+        .slots
+        .get(&slot_kind)
+        .ok_or_else(|| format!("{:?} has no slot {:?}", panel.panel_kind, slot_kind))?;
+    renderer.render_list(world, emit, *slot, spec, items)
+}
+
+pub fn render_detail_into_slot(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel: &PanelInstance,
+    slot_kind: PanelSlotKind,
+    spec: &DetailRendererSpec,
+    detail: &UiDetailItem,
+    renderer: &mut DataRendererSystem,
+) -> Result<ComponentId, String> {
+    let slot = panel
+        .slots
+        .get(&slot_kind)
+        .ok_or_else(|| format!("{:?} has no slot {:?}", panel.panel_kind, slot_kind))?;
+    renderer.render_detail(world, emit, *slot, spec, detail)
+}
+
+pub fn clear_slot_on_panel(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel: &PanelInstance,
+    slot_kind: PanelSlotKind,
+    renderer: &mut DataRendererSystem,
+) {
+    if let Some(slot) = panel.slots.get(&slot_kind) {
+        renderer.clear_slot(world, emit, *slot);
+    }
 }
 
 pub fn decode_panel_action_payload(

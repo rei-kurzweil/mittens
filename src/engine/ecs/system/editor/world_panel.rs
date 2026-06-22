@@ -1,13 +1,19 @@
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::{
-    EditorComponent, SelectionComponent, SelectionEntry, TransformGizmoComponent,
+    DataComponent, EditorComponent, SelectionComponent, SelectionEntry, TransformGizmoComponent,
 };
 use crate::engine::ecs::system::data_renderer_system::{
     DataRendererSystem, ItemRendererSpec, RendererSpec, UiItem, UiItemKind,
 };
 use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor::panel_ui::{PanelUiRowSpec, spawn_panel_ui_row_tree};
+use crate::engine::ecs::system::editor::context::{
+    apply_semantic_target_selection,
+};
+use crate::engine::ecs::system::panel_system::{
+    decode_panel_action_payload, PanelActionKind, PanelKind,
+};
 use crate::engine::ecs::system::selection_system::{
     apply_selection_set, resolve_semantic_target_from_payload,
 };
@@ -667,4 +673,101 @@ pub fn sync_world_panel_selection(
         }],
         Some(row_root),
     );
+}
+
+pub fn apply_world_panel_semantic_selection(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    selection_root: ComponentId,
+    world_panel_root: ComponentId,
+    status_wrap: ComponentId,
+    editor_context_state: &Arc<Mutex<EditorContextState>>,
+) -> bool {
+    let Some((selected_component, selected_payload)) = world
+        .get_component_by_id_as::<SelectionComponent>(selection_root)
+        .map(|selection| (selection.selected_component, selection.selected_payload))
+    else {
+        return false;
+    };
+    let Some(target_component) =
+        resolve_semantic_target_from_payload(world, selected_payload, selected_component)
+    else {
+        return false;
+    };
+
+    let _selection_result =
+        apply_semantic_target_selection(world, emit, editor_context_state, target_component, true);
+
+    let status_text = format!(
+        "selected {}",
+        world_panel_item_label(world, target_component)
+    );
+    rerender_world_panel_status(world, emit, world_panel_root, status_wrap, &status_text);
+    true
+}
+
+/// Handle a click on a selectable world-panel list item.
+/// Returns `true` if the click landed on a world-panel row and the semantic
+/// selection was applied (caller may want to refresh inspector panels).
+pub fn handle_world_panel_item_click(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    world_panel_root: ComponentId,
+    renderable: ComponentId,
+    editor_context_state: &Arc<Mutex<EditorContextState>>,
+) -> bool {
+    let Some(action) = decode_panel_action_payload(
+        world,
+        renderable,
+        WORLD_PANEL_PAYLOAD_NAME,
+        PanelKind::World,
+        PanelActionKind::Select,
+        None,
+        None,
+    ) else {
+        return false;
+    };
+    let Some(row_name) = action.item_key.as_deref() else {
+        return false;
+    };
+    let Some(row_index) = parse_item_index(row_name) else {
+        return false;
+    };
+    let Some(row_root) = world.find_component(world_panel_root, &format!("#{row_name}")) else {
+        return false;
+    };
+    let Some(selection_root) =
+        world.find_component(world_panel_root, &format!("#{WORLD_PANEL_SELECTION_NAME}"))
+    else {
+        return false;
+    };
+    let payload_child = world.children_of(row_root).iter().copied().find(|&child| {
+        world
+            .get_component_by_id_as::<DataComponent>(child)
+            .is_some_and(|data| data.get_component("target_component").is_some())
+    });
+    println!(
+        "[WorldPanel][trace] click row_name={row_name} row_root={row_root:?} row_index={row_index} payload_child={payload_child:?} selection_root={selection_root:?}"
+    );
+    apply_selection_set(
+        world,
+        emit,
+        selection_root,
+        vec![SelectionEntry {
+            index: Some(row_index),
+            component: row_root,
+        }],
+        Some(row_root),
+    );
+    let Some(status_wrap) = world.find_component(world_panel_root, PANEL_STATUS_WRAP_SELECTOR) else {
+        return false;
+    };
+    apply_world_panel_semantic_selection(
+        world,
+        emit,
+        selection_root,
+        world_panel_root,
+        status_wrap,
+        editor_context_state,
+    )
 }
