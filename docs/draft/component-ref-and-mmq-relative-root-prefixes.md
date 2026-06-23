@@ -25,6 +25,8 @@ This draft also proposes:
 - whitespace after the root prefix is **optional**
 - world-root direct-child queries should use the direct-child combinator form, e.g. `/ > #something`
 - `/#something` and `/ #something` should both mean "search anywhere under the world root"
+- repeated leading parent climbs such as `../../#something` are allowed as root selection
+- mid-query `../` traversal is **not** part of the first implementation
 
 ## Motivation
 
@@ -79,6 +81,20 @@ Whitespace after `../` is optional:
 - `../ #xr_pose`
 
 Both are equivalent.
+
+### Repeated leading parent climbs
+
+```mms
+../../#xr_pose
+../../ #xr_pose
+```
+
+Meaning:
+
+- climb upward from the local referencer scope before selector evaluation begins
+- then evaluate the remaining selector from that computed root
+
+This is still part of **root selection**, not a query-step operator.
 
 ### 3. World-rooted: `/`
 
@@ -152,6 +168,8 @@ Equivalent examples:
 #hero
 ../#hero
 ../ #hero
+../../#hero
+../../ #hero
 /#hero
 / #hero
 />#hero
@@ -193,8 +211,8 @@ Notes:
 - the runtime resolver should parse out the root prefix before passing the remainder into the
   selector/MMQ parser
 - bare strings default to `SelfSubtree`
-- `../` initially means one parent step; this draft leaves repeated upward traversal such as
-  `../../...` open, but the parsing model should not block it
+- one or more leading `../` segments should collapse into `ParentScope { levels_up: n }`
+- once the selector body begins, `../` is no longer interpreted by the v1 resolver
 
 ## Proposed Semantics For MMQ v2
 
@@ -211,6 +229,7 @@ That keeps the shared mental model simple:
 
 - `#thing` = local
 - `../#thing` = parent-relative
+- `../../#thing` = climb multiple parent scopes before evaluation
 - `/#thing` = world-rooted
 
 ## Receiver-Style Queries
@@ -301,6 +320,12 @@ For MMQ v2:
 - bare local root is whatever subject/root the query API provides
 - parent-relative and world-rooted forms override that local root selection
 
+Important v1 limitation:
+
+- the root prefix is resolved **before** selector/MMQ evaluation
+- it is not re-applied after intermediate matches
+- therefore `../` in v1 is a root-selection feature, not a path-step combinator
+
 ## Compatibility Direction
 
 This draft intentionally changes the meaning of bare `ComponentRef::Query` strings from today's
@@ -310,19 +335,63 @@ That change is desirable for pointer-like authored references, but it is a behav
  should be rolled out deliberately. APIs that truly want global lookup should author `/...`
  explicitly.
 
+## Non-Goal For First Implementation: Mid-query Upward Traversal
+
+This draft does **not** propose that queries such as:
+
+```text
+../ #something ../ #something_else
+```
+
+work in the first implementation.
+
+That syntax implies a different evaluation model:
+
+1. choose a root
+2. match `#something`
+3. move to the parent of each match
+4. evaluate `#something_else` downward from there
+
+That is not just root-prefix parsing. It is an **upward combinator / path-step** feature inside the
+ query body.
+
+The current query AST and evaluator only model downward combinators (`Descendant` and `Child`), so
+ this feature should be treated as a later extension.
+
+### Allowed in v1
+
+```text
+#something
+../#something
+../../#something
+/#something
+/ > #something
+```
+
+These are all root-selection forms.
+
+### Not part of v1
+
+```text
+#something ../ #something_else
+../ #something ../ #something_else
+```
+
+These require a future query-step traversal model.
+
 ## Open Questions
 
-1. Should repeated upward traversal be supported immediately, e.g. `../../#foo`, or should v1
-   support only a single `../` step?
-2. For `WorldRoot`, should the implementation evaluate against:
+1. For `WorldRoot`, should the implementation evaluate against:
    - a synthetic super-root whose children are all top-level world roots, or
    - each world root independently with merged results?
-3. If MMQ v2 adds non-CSS syntax, should the root-prefix stripping happen before or after MMQ
+2. If MMQ v2 adds non-CSS syntax, should the root-prefix stripping happen before or after MMQ
    tokenization? Current preference: before.
-4. Should bare `ComponentRef` local-subtree matching include the owner component itself? Current
+3. Should bare `ComponentRef` local-subtree matching include the owner component itself? Current
    preference: yes.
-5. Do any existing `ComponentRef` consumers need to preserve global semantics temporarily during
+4. Do any existing `ComponentRef` consumers need to preserve global semantics temporarily during
    migration, or can all global callers be rewritten to `/...` explicitly?
+5. When upward traversal inside the query body is designed later, should it reuse `../` or use a
+   separate explicit combinator/operator to avoid conflating root selection with traversal steps?
 
 ## Recommended First Adoption Order
 
