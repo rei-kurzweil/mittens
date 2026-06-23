@@ -10,7 +10,9 @@ use crate::engine::ecs::system::data_renderer_system::{
 use crate::engine::ecs::system::editor::context::{
     apply_semantic_target_selection, EditorContextState,
 };
-use crate::engine::ecs::system::editor::panel_ui::{PanelUiRowSpec, spawn_panel_ui_row_tree};
+use crate::engine::ecs::system::editor::panel_ui::{
+    spawn_block_container, spawn_panel_ui_row_tree, PanelUiRowSpec,
+};
 use crate::engine::ecs::system::panel_system::{
     decode_panel_action_payload, find_named_root, is_descendant_or_self, PanelActionKind, PanelKind,
     EDITOR_RUNTIME_UI_ROOT_NAME,
@@ -22,7 +24,7 @@ use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::meow_meow::component_registry::{
     filtered_root_ids_for_roots, filtered_roots_to_ce_ast, spawn_tree,
 };
-use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
+use crate::meow_meow::object::{MaterializedCE, Value};
 use crate::meow_meow::runner::MeowMeowRunner;
 
 pub const ITEM_PREFIX: &str = "item_";
@@ -979,6 +981,122 @@ pub(crate) fn panel_status_text(world: &World, panel_root: ComponentId) -> Optio
                 .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(status_id)
                 .map(|text| text.text.clone())
         })
+}
+
+pub(crate) const WORLD_PANEL_CONTENT_ROOT_SELECTOR: &str = "#world_panel_content_root";
+
+pub(crate) fn spawn_world_panel_content_tree(
+    world: &mut World,
+    _emit: &mut dyn SignalEmitter,
+    rows: &[WorldPanelRow],
+    selected_index: Option<i64>,
+) -> ComponentId {
+    let content_root = spawn_block_container(
+        world,
+        WORLD_PANEL_CONTENT_ROOT_SELECTOR.trim_start_matches('#'),
+    );
+    let rows_mount = spawn_block_container(world, "rows_mount");
+    let _ = world.add_child(content_root, rows_mount);
+    let selection = world.add_component_boxed_named(
+        WORLD_PANEL_SELECTION_NAME,
+        Box::new(SelectionComponent::new()),
+    );
+    let _ = world.add_child(rows_mount, selection);
+
+    for (index, row) in rows.iter().enumerate() {
+        let row_root = spawn_world_panel_row_tree(
+            world,
+            &format!("{ITEM_PREFIX}{index}"),
+            row,
+            index,
+            selected_index == Some(index as i64),
+        );
+        let _ = world.add_child(rows_mount, row_root);
+    }
+
+    if let Some(index) = selected_index.and_then(|index| usize::try_from(index).ok())
+        && let Some(_) = rows.get(index)
+        && let Some(row_root) =
+            world.find_component(content_root, &format!("#{ITEM_PREFIX}{index}"))
+    {
+        let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(selection)
+        else {
+            return content_root;
+        };
+        selection.select_entry(SelectionEntry {
+            index: Some(index),
+            component: row_root,
+        });
+    }
+
+    content_root
+}
+
+pub(crate) fn spawn_world_panel_row_tree(
+    world: &mut World,
+    row_name: &str,
+    row: &WorldPanelRow,
+    _row_index: usize,
+    selected: bool,
+) -> ComponentId {
+    match row.kind {
+        WorldPanelRowKind::Spacer => spawn_panel_ui_row_tree(
+            world,
+            PanelUiRowSpec {
+                row_name,
+                payload_name: WORLD_PANEL_PAYLOAD_NAME,
+                target_component: None,
+                label: "",
+                row_kind_label: "Spacer",
+                interactive: false,
+                background_rgba: [0.0, 0.0, 0.0, 0.0],
+                text_rgba: [0.0, 0.0, 0.0, 0.0],
+                font_size_gu: None,
+                spacer_height_gu: Some(0.8),
+            },
+        ),
+        WorldPanelRowKind::EditorRoot | WorldPanelRowKind::Info | WorldPanelRowKind::Component => {
+            let (background_rgba, text_rgba, interactive, row_kind_label) = match row.kind {
+                WorldPanelRowKind::EditorRoot => (
+                    [0.30, 0.84, 0.38, 0.98],
+                    [0.03, 0.08, 0.04, 1.0],
+                    true,
+                    "EditorRoot",
+                ),
+                WorldPanelRowKind::Info => {
+                    ([0.85, 0.85, 0.85, 1.0], [0.0, 0.0, 0.0, 1.0], false, "Info")
+                }
+                WorldPanelRowKind::Component if selected => (
+                    [1.00, 0.88, 0.20, 0.96],
+                    [0.06, 0.09, 0.08, 1.0],
+                    true,
+                    "Component",
+                ),
+                WorldPanelRowKind::Component => (
+                    [0.92, 0.97, 0.92, 1.0],
+                    [0.06, 0.09, 0.08, 1.0],
+                    true,
+                    "Component",
+                ),
+                WorldPanelRowKind::Spacer => unreachable!(),
+            };
+            spawn_panel_ui_row_tree(
+                world,
+                PanelUiRowSpec {
+                    row_name,
+                    payload_name: WORLD_PANEL_PAYLOAD_NAME,
+                    target_component: row.target_component,
+                    label: &row.display_label,
+                    row_kind_label,
+                    interactive,
+                    background_rgba,
+                    text_rgba,
+                    font_size_gu: None,
+                    spacer_height_gu: None,
+                },
+            )
+        }
+    }
 }
 
 pub(crate) fn rerender_world_panel_for_context(

@@ -1,15 +1,18 @@
 use std::sync::LazyLock;
 
 use crate::engine::ecs::component::{
-    ColorComponent, DataComponent, DataValue, Display, EdgeInsets, OptionComponent,
-    RaycastableComponent, SizeDimension, StyleComponent, TextAlign, TextComponent,
+    ColorComponent, DataComponent, DataValue, Display, EdgeInsets, EditorComponent,
+    OptionComponent, RaycastableComponent, SizeDimension, StyleComponent, TextAlign, TextComponent,
     TransformComponent, style::VerticalAlign,
 };
 use crate::engine::ecs::system::GridSystem;
 use crate::engine::ecs::system::data_renderer_system::{
-    ItemRendererSpec, RendererSpec, UiItem, UiItemKind,
+    DataRendererSystem, ItemRendererSpec, RendererSpec, UiItem, UiItemKind,
 };
-use crate::engine::ecs::system::editor::world_panel::world_panel_item_label;
+use crate::engine::ecs::system::editor::context::EditorContextState;
+use crate::engine::ecs::system::editor::world_panel::{
+    world_panel_item_label, PANEL_CONTENT_SLOT_SELECTOR,
+};
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 
 pub(crate) const GRID_PANEL_ROOT_SELECTOR: &str = "#grid_panel_root";
@@ -357,6 +360,66 @@ fn spawn_grid_icon_button(
     let _ = world.add_child(root, text_root);
     let _ = world.add_child(text_root, text_component);
     root
+}
+
+pub(crate) const EDITOR_WORKSPACE_GRIDS_CHANGED: &str = "EditorWorkspaceGridsChanged";
+
+pub(crate) fn resolve_grid_panel_editor_root(
+    world: &World,
+    editor_context: &EditorContextState,
+) -> Option<ComponentId> {
+    if editor_context.active_editor.is_some() {
+        return editor_context.active_editor;
+    }
+
+    let grids = GridSystem::new();
+    for component_id in world.all_components() {
+        if world
+            .get_component_by_id_as::<EditorComponent>(component_id)
+            .is_some()
+            && !grids
+                .enumerate_grids_for_editor(world, component_id)
+                .is_empty()
+        {
+            return Some(component_id);
+        }
+    }
+
+    world.all_components().find(|&component_id| {
+        world
+            .get_component_by_id_as::<EditorComponent>(component_id)
+            .is_some()
+    })
+}
+
+pub(crate) fn rerender_grid_panel_from_context(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    editor_context: &EditorContextState,
+    data_renderer: &mut DataRendererSystem,
+) {
+    let Some(grid_panel_root) = world.find_component(panel_query_root, GRID_PANEL_ROOT_SELECTOR)
+    else {
+        return;
+    };
+    let Some(content_slot) = world.find_component(grid_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
+    else {
+        return;
+    };
+    let Some(editor_root) = resolve_grid_panel_editor_root(world, editor_context) else {
+        data_renderer.clear_slot(world, emit, content_slot);
+        return;
+    };
+
+    let grids = GridSystem::new();
+    let model = build_grid_panel_model(world, &grids, editor_root);
+    let items = grid_panel_items(&model);
+    if let Err(error) =
+        data_renderer.render_list(world, emit, content_slot, &GRID_PANEL_ROW_SPEC, &items)
+    {
+        eprintln!("[InspectorSystem] grid panel content render error: {error}");
+    }
 }
 
 #[cfg(test)]

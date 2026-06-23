@@ -2,15 +2,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::{
-    DataComponent, DataValue, EditorComponent, SelectionComponent, SelectionEntry, SelectionMode,
-    StyleComponent,
+    SelectionComponent, SelectionEntry, SelectionMode, TransformComponent,
 };
-use crate::engine::ecs::component::{EditorInteractionMode, TransformComponent};
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::system::GridSystem;
-use crate::engine::ecs::system::data_renderer_system::{
-    DataRendererSystem, UiDetailItem, UiItem, UiItemKind,
-};
+use crate::engine::ecs::system::data_renderer_system::DataRendererSystem;
 use crate::engine::ecs::system::editor::context::{
     EditorContextState, apply_editor_root_selection, apply_semantic_target_selection,
 };
@@ -18,7 +14,7 @@ use crate::engine::ecs::system::editor::grid_panel::{
     GRID_PANEL_ADD_BUTTON_SELECTOR, GRID_PANEL_DELETE_PAYLOAD_NAME,
     GRID_PANEL_ENABLED_PAYLOAD_NAME, GRID_PANEL_ROOT_SELECTOR, GRID_PANEL_ROW_PAYLOAD_NAME,
     GRID_PANEL_ROW_SPEC, GRID_PANEL_VISIBILITY_PAYLOAD_NAME, build_grid_panel_model,
-    grid_panel_items,
+    grid_panel_items, rerender_grid_panel_from_context, EDITOR_WORKSPACE_GRIDS_CHANGED,
 };
 use crate::engine::ecs::system::editor::inspector_panel::{
     INSPECTOR_DETAIL_SPEC, INSPECTOR_ITEM_PREFIX, INSPECTOR_PANEL_INSTANCE_ID_KEY,
@@ -31,23 +27,26 @@ use crate::engine::ecs::system::editor::inspector_panel::{
     sync_and_refresh_inspector_panels, world_panel_selection_matches_editor_context,
 };
 use crate::engine::ecs::system::editor::panel_ui::{
-    PanelUiRowSpec, spawn_block_container, spawn_panel_ui_row_tree,
-    spawn_panel_ui_section_header_tree,
+    spawn_panel_ui_row_tree, spawn_panel_ui_section_header_tree, PanelUiRowSpec,
 };
+use crate::engine::ecs::system::editor::pose_panel::{handle_pose_panel_click, rerender_pose_panel};
 use crate::engine::ecs::system::editor::settings_panel::{
     EDITOR_SETTINGS_ARMATURE_CHECKMARK_SLOT_NAME, EDITOR_SETTINGS_ARMATURE_ROW_NAME,
     EDITOR_SETTINGS_PANEL_ROOT_SELECTOR, EDITOR_SETTINGS_PAYLOAD_NAME,
     EDITOR_SETTINGS_SELECTION_SELECTOR, EditorSettingsOption,
+    handle_editor_settings_panel_click, sync_editor_settings_panel_selection,
+    sync_editor_settings_armature_checkmark,
 };
 use crate::engine::ecs::system::editor::workspace::EditorWorkspaceRuntime;
 use crate::engine::ecs::system::editor::world_panel::{
     apply_world_panel_semantic_selection, handle_panel_button_click, handle_world_panel_item_click,
     panel_status_text, world_panel_scene_path, AuthoredWorldPanelSceneModel, ITEM_PREFIX,
-    PANEL_CONTENT_SLOT_SELECTOR, WORLD_PANEL_PAYLOAD_NAME, WORLD_PANEL_ROOT_SELECTOR,
-    WORLD_PANEL_SELECTION_NAME, WORLD_PANEL_SELECTION_SELECTOR, WorldPanelModel, WorldPanelRow,
-    WorldPanelRowKind, build_world_panel_model, effective_editor_roots,
-    mark_nearest_layout_dirty, rebuild_world_panel_scene_model, register_editor_root,
-    rerender_world_panel_content, rerender_world_panel_status, sync_world_panel_selection,
+    PANEL_CONTENT_SLOT_SELECTOR, WORLD_PANEL_CONTENT_ROOT_SELECTOR, WORLD_PANEL_PAYLOAD_NAME,
+    WORLD_PANEL_ROOT_SELECTOR, WORLD_PANEL_SELECTION_NAME, WORLD_PANEL_SELECTION_SELECTOR,
+    WorldPanelModel, WorldPanelRow, WorldPanelRowKind, build_world_panel_model,
+    effective_editor_roots, mark_nearest_layout_dirty, rebuild_world_panel_scene_model,
+    register_editor_root, rerender_world_panel_content, rerender_world_panel_status,
+    spawn_world_panel_content_tree, spawn_world_panel_row_tree, sync_world_panel_selection,
 };
 use crate::engine::ecs::system::grid_system::GridSpawnSpec;
 use crate::engine::ecs::system::panel_system::{
@@ -64,10 +63,8 @@ use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, S
 use crate::meow_meow::component_registry::spawn_tree;
 use crate::meow_meow::object::Value;
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
-const EDITOR_WORKSPACE_GRIDS_CHANGED: &str = "EditorWorkspaceGridsChanged";
 const EDITOR_SETTINGS_PANEL_WIDTH_GU: f64 = 16.0;
 const EDITOR_SETTINGS_PANEL_TOTAL_HEIGHT_GU: f64 = 11.5;
-const WORLD_PANEL_CONTENT_ROOT_SELECTOR: &str = "#world_panel_content_root";
 const INSPECTOR_PANEL_ROOT_SELECTOR: &str = "#inspector_panel_root";
 const INSPECTOR_PANEL_SELECTION_SELECTOR: &str = "#inspector_panel_selection";
 // Removed: INSPECTOR_DETAIL_WORLD_PANEL_MOUNT_NAME, INSPECTOR_DETAIL_WORLD_LAYOUT_ROOT_NAME
@@ -1522,257 +1519,7 @@ fn handle_grid_panel_click(
     true
 }
 
-fn handle_editor_settings_panel_click(
-    world: &mut World,
-    emit: &mut dyn SignalEmitter,
-    panel_query_root: ComponentId,
-    renderable: ComponentId,
-    editor_context_state: &Arc<Mutex<EditorContextState>>,
-    installed_editor_roots: &Arc<Mutex<Vec<ComponentId>>>,
-) -> bool {
-    let Some(settings_panel_root) =
-        world.find_component(panel_query_root, EDITOR_SETTINGS_PANEL_ROOT_SELECTOR)
-    else {
-        return false;
-    };
-    if !is_descendant_or_self(world, settings_panel_root, renderable) {
-        return false;
-    }
 
-    let mut current = Some(renderable);
-    while let Some(component_id) = current {
-        let Some(payload_id) = world
-            .children_of(component_id)
-            .iter()
-            .copied()
-            .find(|&child| world.component_label(child) == Some(EDITOR_SETTINGS_PAYLOAD_NAME))
-        else {
-            current = world.parent_of(component_id);
-            continue;
-        };
-
-        let Some(payload) = world.get_component_by_id_as::<DataComponent>(payload_id) else {
-            return true;
-        };
-        let row_kind = data_text(payload, "row_kind").unwrap_or_default();
-        if row_kind != "GLTFArmatureVisibility" {
-            return false;
-        }
-
-        let visible = !editor_context_state
-            .lock()
-            .expect("editor context state mutex poisoned")
-            .armature_visible;
-
-        {
-            let mut editor_context = editor_context_state
-                .lock()
-                .expect("editor context state mutex poisoned");
-            editor_context.armature_visible = visible;
-        }
-
-        let editor_roots = effective_editor_roots(world, installed_editor_roots);
-        for editor_root in editor_roots {
-            let gltf_components = find_gltf_components_under(world, editor_root);
-            for gltf_component in gltf_components {
-                emit.push_intent_now(
-                    gltf_component,
-                    IntentValue::GLTFArmatureVisible {
-                        component_ids: vec![gltf_component],
-                        visible,
-                    },
-                );
-            }
-        }
-
-        let editor_context = editor_context_state
-            .lock()
-            .expect("editor context state mutex poisoned")
-            .clone();
-        sync_editor_settings_panel_selection(world, emit, panel_query_root, &editor_context);
-        return true;
-    }
-
-    true
-}
-
-fn find_gltf_components_under(world: &World, root: ComponentId) -> Vec<ComponentId> {
-    let mut out = Vec::new();
-    let mut stack = vec![root];
-    while let Some(component_id) = stack.pop() {
-        if world
-            .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(component_id)
-            .is_some()
-        {
-            out.push(component_id);
-        }
-        for &child in world.children_of(component_id) {
-            stack.push(child);
-        }
-    }
-    out
-}
-
-fn rerender_grid_panel_from_context(
-    world: &mut World,
-    emit: &mut dyn SignalEmitter,
-    panel_query_root: ComponentId,
-    editor_context: &EditorContextState,
-    data_renderer: &mut DataRendererSystem,
-) {
-    let Some(grid_panel_root) = world.find_component(panel_query_root, GRID_PANEL_ROOT_SELECTOR)
-    else {
-        return;
-    };
-    let Some(content_slot) = world.find_component(grid_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
-    else {
-        return;
-    };
-    let Some(editor_root) = resolve_grid_panel_editor_root(world, editor_context) else {
-        data_renderer.clear_slot(world, emit, content_slot);
-        return;
-    };
-
-    let grids = GridSystem::new();
-    let model = build_grid_panel_model(world, &grids, editor_root);
-    let items = grid_panel_items(&model);
-    if let Err(error) =
-        data_renderer.render_list(world, emit, content_slot, &GRID_PANEL_ROW_SPEC, &items)
-    {
-        eprintln!("[InspectorSystem] grid panel content render error: {error}");
-        return;
-    }
-}
-
-fn resolve_grid_panel_editor_root(
-    world: &World,
-    editor_context: &EditorContextState,
-) -> Option<ComponentId> {
-    if editor_context.active_editor.is_some() {
-        return editor_context.active_editor;
-    }
-
-    let grids = GridSystem::new();
-    for component_id in world.all_components() {
-        if world
-            .get_component_by_id_as::<EditorComponent>(component_id)
-            .is_some()
-            && !grids
-                .enumerate_grids_for_editor(world, component_id)
-                .is_empty()
-        {
-            return Some(component_id);
-        }
-    }
-
-    world.all_components().find(|&component_id| {
-        world
-            .get_component_by_id_as::<EditorComponent>(component_id)
-            .is_some()
-    })
-}
-
-fn sync_editor_settings_panel_selection(
-    world: &mut World,
-    emit: &mut dyn SignalEmitter,
-    panel_query_root: ComponentId,
-    editor_context: &EditorContextState,
-) {
-    let Some(selection_root) =
-        world.find_component(panel_query_root, EDITOR_SETTINGS_SELECTION_SELECTOR)
-    else {
-        return;
-    };
-
-    let desired_option = match editor_context.interaction_mode {
-        EditorInteractionMode::Select => EditorSettingsOption::Select,
-        EditorInteractionMode::Cursor3d => EditorSettingsOption::Cursor3d,
-        EditorInteractionMode::SelectAndCursor => EditorSettingsOption::SelectAndCursor,
-    };
-    let Some(panel_root) =
-        world.find_component(panel_query_root, EDITOR_SETTINGS_PANEL_ROOT_SELECTOR)
-    else {
-        return;
-    };
-    let Some(row_root) =
-        world.find_component(panel_root, &format!("#{}", desired_option.row_name()))
-    else {
-        return;
-    };
-    apply_selection_set(
-        world,
-        emit,
-        selection_root,
-        vec![SelectionEntry {
-            index: Some(match desired_option {
-                EditorSettingsOption::Select => 0,
-                EditorSettingsOption::Cursor3d => 1,
-                EditorSettingsOption::SelectAndCursor => 2,
-            }),
-            component: row_root,
-        }],
-        Some(row_root),
-    );
-
-    sync_editor_settings_armature_checkmark(world, emit, panel_query_root, editor_context);
-}
-
-fn sync_editor_settings_armature_checkmark(
-    world: &mut World,
-    emit: &mut dyn SignalEmitter,
-    panel_query_root: ComponentId,
-    editor_context: &EditorContextState,
-) {
-    let Some(settings_panel_root) =
-        world.find_component(panel_query_root, EDITOR_SETTINGS_PANEL_ROOT_SELECTOR)
-    else {
-        return;
-    };
-    let Some(armature_row_root) = world.find_component(
-        settings_panel_root,
-        &format!("#{EDITOR_SETTINGS_ARMATURE_ROW_NAME}"),
-    ) else {
-        return;
-    };
-    let Some(checkmark_slot) = world.find_component(
-        armature_row_root,
-        &format!("#{EDITOR_SETTINGS_ARMATURE_CHECKMARK_SLOT_NAME}"),
-    ) else {
-        return;
-    };
-
-    let existing_children = world.children_of(checkmark_slot).to_vec();
-    for child in existing_children {
-        if world.get_component_record(child).is_some() {
-            emit.push_intent_now(
-                child,
-                IntentValue::RemoveSubtree {
-                    component_ids: vec![child],
-                },
-            );
-        }
-    }
-
-    if !editor_context.armature_visible {
-        return;
-    }
-
-    let Some(checkmark) = build_editor_panel_component_expr(
-        world,
-        emit,
-        icons_asset_path(),
-        "checkmark_icon",
-        vec![],
-        PanelKind::Inspector,
-        "editor settings checkmark",
-    ) else {
-        return;
-    };
-    let Ok(root) = spawn_tree(&checkmark, Some(checkmark_slot), world, emit) else {
-        return;
-    };
-    let _ = root;
-}
 
 
 
@@ -1833,263 +1580,16 @@ fn focus_panel_from_descendant_click(
     }
 }
 
-pub fn rerender_pose_panel(
-    world: &mut World,
-    emit: &mut dyn SignalEmitter,
-    panel_mount_root: ComponentId,
-    data_renderer: &mut DataRendererSystem,
-) {
-    use crate::engine::ecs::system::editor::pose_panel::*;
-
-    let Some(panel_root) = world.find_component(panel_mount_root, POSE_PANEL_ROOT_SELECTOR) else {
-        return;
-    };
-
-    let Some(content_slot) = world.find_component(panel_root, "#content_area") else {
-        return;
-    };
-
-    // Clear content
-    let children = world.children_of(content_slot).to_vec();
-    for ch in children {
-        let _ = world.remove_component_subtree(ch);
-    }
-
-    let model = build_pose_panel_model(world);
-
-    for section in model.sections {
-        let header =
-            spawn_panel_ui_section_header_tree(world, "pose_section_header", &section.label);
-        let _ = world.add_child(content_slot, header);
-
-        for row in section.poses {
-            let row_spec = PanelUiRowSpec {
-                row_name: "pose_row",
-                payload_name: POSE_PANEL_PAYLOAD_NAME,
-                target_component: Some(row.pose),
-                label: &row.label,
-                row_kind_label: "PoseRow",
-                interactive: true,
-                background_rgba: [0.92, 0.97, 0.92, 1.0],
-                text_rgba: [0.0, 0.0, 0.0, 1.0],
-                font_size_gu: None,
-                spacer_height_gu: None,
-            };
-            let row_node = spawn_panel_ui_row_tree(world, row_spec);
-
-            // Add extra payload for target
-            if let Some(payload_id) =
-                world.find_component(row_node, &format!("[name='{POSE_PANEL_PAYLOAD_NAME}']"))
-            {
-                if let Some(data) = world.get_component_by_id_as_mut::<DataComponent>(payload_id) {
-                    data.insert("pose_target", DataValue::Component(row.target));
-                }
-            }
-
-            let _ = world.add_child(content_slot, row_node);
-        }
-    }
-
-    world.init_component_tree(content_slot, emit);
-}
-
-pub fn handle_pose_panel_click(
-    world: &mut World,
-    emit: &mut dyn SignalEmitter,
-    panel_query_root: ComponentId,
-    clicked_node: ComponentId,
-    data_renderer: &mut DataRendererSystem,
-) -> bool {
-    use crate::engine::ecs::system::editor::pose_panel::*;
-
-    let Some(panel_root) = world.find_component(panel_query_root, POSE_PANEL_ROOT_SELECTOR) else {
-        return false;
-    };
-
-    if !is_descendant_or_self(world, panel_root, clicked_node) {
-        return false;
-    }
-
-    if let Some(capture_button) =
-        world.find_component(panel_root, POSE_PANEL_CAPTURE_BUTTON_SELECTOR)
-        && is_descendant_or_self(world, capture_button, clicked_node)
-    {
-        emit.push_intent_now(
-            panel_root,
-            IntentValue::PoseCapture {
-                target: panel_root,
-                pose_name: None,
-            },
-        );
-        return true;
-    }
-
-    // Search up for a payload
-    let mut current = Some(clicked_node);
-    while let Some(curr_id) = current {
-        if let Some(payload_id) = world
-            .children_of(curr_id)
-            .iter()
-            .find(|&&child| world.component_label(child) == Some(POSE_PANEL_PAYLOAD_NAME))
-        {
-            if let Some(data) = world.get_component_by_id_as::<DataComponent>(*payload_id) {
-                let row_kind = data_text(data, "row_kind").unwrap_or_default();
-                match row_kind.as_str() {
-                    "PoseRow" => {
-                        let pose_id = data.get_component("target_component");
-                        let target_id = data.get_component("pose_target");
-                        if let (Some(pose), Some(target)) = (pose_id, target_id) {
-                            emit.push_intent_now(target, IntentValue::PoseApply { target, pose });
-                            return true;
-                        }
-                    }
-                    "PoseAdd" => {
-                        let target_id = data.get_component("target_component");
-                        if let Some(target) = target_id {
-                            emit.push_intent_now(
-                                target,
-                                IntentValue::PoseCapture {
-                                    target,
-                                    pose_name: None,
-                                },
-                            );
-                            // Delay rerender slightly to allow system to process capture
-                            return true;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        current = world.parent_of(curr_id);
-    }
-
-    false
-}
 
 
 
-fn spawn_world_panel_content_tree(
-    world: &mut World,
-    _emit: &mut dyn SignalEmitter,
-    rows: &[WorldPanelRow],
-    selected_index: Option<i64>,
-) -> ComponentId {
-    let content_root = spawn_block_container(
-        world,
-        WORLD_PANEL_CONTENT_ROOT_SELECTOR.trim_start_matches('#'),
-    );
-    let rows_mount = spawn_block_container(world, "rows_mount");
-    let _ = world.add_child(content_root, rows_mount);
-    let selection = world.add_component_boxed_named(
-        WORLD_PANEL_SELECTION_NAME,
-        Box::new(SelectionComponent::new()),
-    );
-    let _ = world.add_child(rows_mount, selection);
-
-    for (index, row) in rows.iter().enumerate() {
-        let row_root = spawn_world_panel_row_tree(
-            world,
-            &format!("{ITEM_PREFIX}{index}"),
-            row,
-            index,
-            selected_index == Some(index as i64),
-        );
-        let _ = world.add_child(rows_mount, row_root);
-    }
-
-    if let Some(index) = selected_index.and_then(|index| usize::try_from(index).ok())
-        && let Some(_) = rows.get(index)
-        && let Some(row_root) =
-            world.find_component(content_root, &format!("#{ITEM_PREFIX}{index}"))
-    {
-        let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(selection)
-        else {
-            return content_root;
-        };
-        selection.select_entry(SelectionEntry {
-            index: Some(index),
-            component: row_root,
-        });
-    }
-
-    content_root
-}
-
-fn spawn_world_panel_row_tree(
-    world: &mut World,
-    row_name: &str,
-    row: &WorldPanelRow,
-    _row_index: usize,
-    selected: bool,
-) -> ComponentId {
-    match row.kind {
-        WorldPanelRowKind::Spacer => spawn_panel_ui_row_tree(
-            world,
-            PanelUiRowSpec {
-                row_name,
-                payload_name: WORLD_PANEL_PAYLOAD_NAME,
-                target_component: None,
-                label: "",
-                row_kind_label: "Spacer",
-                interactive: false,
-                background_rgba: [0.0, 0.0, 0.0, 0.0],
-                text_rgba: [0.0, 0.0, 0.0, 0.0],
-                font_size_gu: None,
-                spacer_height_gu: Some(0.8),
-            },
-        ),
-        WorldPanelRowKind::EditorRoot | WorldPanelRowKind::Info | WorldPanelRowKind::Component => {
-            let (background_rgba, text_rgba, interactive, row_kind_label) = match row.kind {
-                WorldPanelRowKind::EditorRoot => (
-                    [0.30, 0.84, 0.38, 0.98],
-                    [0.03, 0.08, 0.04, 1.0],
-                    true,
-                    "EditorRoot",
-                ),
-                WorldPanelRowKind::Info => {
-                    ([0.85, 0.85, 0.85, 1.0], [0.0, 0.0, 0.0, 1.0], false, "Info")
-                }
-                WorldPanelRowKind::Component if selected => (
-                    [1.00, 0.88, 0.20, 0.96],
-                    [0.06, 0.09, 0.08, 1.0],
-                    true,
-                    "Component",
-                ),
-                WorldPanelRowKind::Component => (
-                    [0.92, 0.97, 0.92, 1.0],
-                    [0.06, 0.09, 0.08, 1.0],
-                    true,
-                    "Component",
-                ),
-                WorldPanelRowKind::Spacer => unreachable!(),
-            };
-            spawn_panel_ui_row_tree(
-                world,
-                PanelUiRowSpec {
-                    row_name,
-                    payload_name: WORLD_PANEL_PAYLOAD_NAME,
-                    target_component: row.target_component,
-                    label: &row.display_label,
-                    row_kind_label,
-                    interactive,
-                    background_rgba,
-                    text_rgba,
-                    font_size_gu: None,
-                    spacer_height_gu: None,
-                },
-            )
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::component::{
-        DataComponent, DataValue, EditorComponent, GLTFComponent, SelectionComponent,
-        TransformComponent,
+        DataComponent, DataValue, EditorComponent, SelectionComponent, TransformComponent,
     };
     use crate::engine::ecs::system::SystemWorld;
     use crate::engine::graphics::{RenderAssets, VisualWorld};
@@ -2164,119 +1664,6 @@ mod tests {
                 .expect("editor context mutex poisoned")
                 .selected_component,
             Some(editor_root),
-        );
-    }
-
-    #[test]
-    fn armature_settings_click_toggles_state_renders_checkmark_and_fans_out_to_all_editors() {
-        let mut world = World::default();
-        let mut emit = CommandQueue::new();
-        let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
-        let mut systems = SystemWorld::default();
-
-        let panel_query_root =
-            world.add_component_boxed_named("panel_root", Box::new(TransformComponent::new()));
-        let settings_panel_root = world.add_component_boxed_named(
-            "editor_settings_panel_root",
-            Box::new(TransformComponent::new()),
-        );
-        let armature_row = world.add_component_boxed_named(
-            EDITOR_SETTINGS_ARMATURE_ROW_NAME,
-            Box::new(TransformComponent::new()),
-        );
-        let checkmark_slot = world.add_component_boxed_named(
-            EDITOR_SETTINGS_ARMATURE_CHECKMARK_SLOT_NAME,
-            Box::new(TransformComponent::new()),
-        );
-        let payload = world.add_component_boxed_named(
-            EDITOR_SETTINGS_PAYLOAD_NAME,
-            Box::new(
-                DataComponent::new()
-                    .with_entry("row_kind", DataValue::Text("GLTFArmatureVisibility".into()))
-                    .with_entry("visible", DataValue::Bool(false)),
-            ),
-        );
-        let _ = world.add_child(panel_query_root, settings_panel_root);
-        let _ = world.add_child(settings_panel_root, armature_row);
-        let _ = world.add_child(armature_row, checkmark_slot);
-        let _ = world.add_child(armature_row, payload);
-
-        let editor_a =
-            world.add_component_boxed_named("editor_a", Box::new(EditorComponent::new()));
-        let editor_b =
-            world.add_component_boxed_named("editor_b", Box::new(EditorComponent::new()));
-        let gltf_a = world.add_component(GLTFComponent::new("a.glb"));
-        let gltf_b = world.add_component(GLTFComponent::new("b.glb"));
-        let _ = world.add_child(editor_a, gltf_a);
-        let _ = world.add_child(editor_b, gltf_b);
-
-        let editor_context_state = Arc::new(Mutex::new(EditorContextState::default()));
-        let installed_editor_roots = Arc::new(Mutex::new(vec![editor_a, editor_b]));
-
-        assert!(handle_editor_settings_panel_click(
-            &mut world,
-            &mut emit,
-            panel_query_root,
-            armature_row,
-            &editor_context_state,
-            &installed_editor_roots,
-        ));
-
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
-        let editor_context = editor_context_state
-            .lock()
-            .expect("editor context state mutex poisoned")
-            .clone();
-        assert!(editor_context.armature_visible);
-        assert!(
-            world
-                .get_component_by_id_as::<GLTFComponent>(gltf_a)
-                .expect("gltf_a")
-                .armature_visible
-        );
-        assert!(
-            world
-                .get_component_by_id_as::<GLTFComponent>(gltf_b)
-                .expect("gltf_b")
-                .armature_visible
-        );
-
-        sync_editor_settings_armature_checkmark(
-            &mut world,
-            &mut emit,
-            panel_query_root,
-            &editor_context,
-        );
-        assert!(
-            !world.children_of(checkmark_slot).is_empty(),
-            "expected checkmark subtree to be rendered into slot"
-        );
-
-        assert!(handle_editor_settings_panel_click(
-            &mut world,
-            &mut emit,
-            panel_query_root,
-            armature_row,
-            &editor_context_state,
-            &installed_editor_roots,
-        ));
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
-        let editor_context = editor_context_state
-            .lock()
-            .expect("editor context state mutex poisoned")
-            .clone();
-        assert!(!editor_context.armature_visible);
-        sync_editor_settings_armature_checkmark(
-            &mut world,
-            &mut emit,
-            panel_query_root,
-            &editor_context,
-        );
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
-        assert!(
-            world.children_of(checkmark_slot).is_empty(),
-            "expected checkmark subtree to be removed when armature visibility is toggled off"
         );
     }
 }

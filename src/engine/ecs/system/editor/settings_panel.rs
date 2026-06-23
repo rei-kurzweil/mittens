@@ -1,5 +1,18 @@
-use crate::engine::ecs::ComponentId;
+use std::sync::{Arc, Mutex};
+
 use crate::engine::ecs::component::EditorInteractionMode;
+use crate::engine::ecs::component::{
+    DataComponent, GLTFComponent, SelectionEntry,
+};
+use crate::engine::ecs::system::editor::context::EditorContextState;
+use crate::engine::ecs::system::editor::world_panel::effective_editor_roots;
+use crate::engine::ecs::system::panel_system::{
+    build_editor_panel_component_expr, data_text, icons_asset_path, is_descendant_or_self,
+    PanelKind,
+};
+use crate::engine::ecs::system::selection_system::apply_selection_set;
+use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
+use crate::meow_meow::component_registry::spawn_tree;
 
 pub(crate) const EDITOR_SETTINGS_PANEL_ROOT_SELECTOR: &str = "#editor_settings_panel_root";
 pub(crate) const EDITOR_SETTINGS_SELECTION_NAME: &str = "editor_settings_selection";
@@ -100,4 +113,318 @@ pub(crate) fn reduce_editor_settings_panel_state(
         }
     }
     new
+}
+
+fn find_gltf_components_under(world: &World, root: ComponentId) -> Vec<ComponentId> {
+    let mut out = Vec::new();
+    let mut stack = vec![root];
+    while let Some(component_id) = stack.pop() {
+        if world
+            .get_component_by_id_as::<GLTFComponent>(component_id)
+            .is_some()
+        {
+            out.push(component_id);
+        }
+        for &child in world.children_of(component_id) {
+            stack.push(child);
+        }
+    }
+    out
+}
+
+pub(crate) fn sync_editor_settings_armature_checkmark(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    editor_context: &EditorContextState,
+) {
+    let Some(settings_panel_root) =
+        world.find_component(panel_query_root, EDITOR_SETTINGS_PANEL_ROOT_SELECTOR)
+    else {
+        return;
+    };
+    let Some(armature_row_root) = world.find_component(
+        settings_panel_root,
+        &format!("#{EDITOR_SETTINGS_ARMATURE_ROW_NAME}"),
+    ) else {
+        return;
+    };
+    let Some(checkmark_slot) = world.find_component(
+        armature_row_root,
+        &format!("#{EDITOR_SETTINGS_ARMATURE_CHECKMARK_SLOT_NAME}"),
+    ) else {
+        return;
+    };
+
+    let existing_children = world.children_of(checkmark_slot).to_vec();
+    for child in existing_children {
+        if world.get_component_record(child).is_some() {
+            emit.push_intent_now(
+                child,
+                IntentValue::RemoveSubtree {
+                    component_ids: vec![child],
+                },
+            );
+        }
+    }
+
+    if !editor_context.armature_visible {
+        return;
+    }
+
+    let Some(checkmark) = build_editor_panel_component_expr(
+        world,
+        emit,
+        icons_asset_path(),
+        "checkmark_icon",
+        vec![],
+        PanelKind::Inspector,
+        "editor settings checkmark",
+    ) else {
+        return;
+    };
+    let Ok(_root) = spawn_tree(&checkmark, Some(checkmark_slot), world, emit) else {
+        return;
+    };
+}
+
+pub(crate) fn sync_editor_settings_panel_selection(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    editor_context: &EditorContextState,
+) {
+    let Some(selection_root) =
+        world.find_component(panel_query_root, EDITOR_SETTINGS_SELECTION_SELECTOR)
+    else {
+        return;
+    };
+
+    let desired_option = match editor_context.interaction_mode {
+        EditorInteractionMode::Select => EditorSettingsOption::Select,
+        EditorInteractionMode::Cursor3d => EditorSettingsOption::Cursor3d,
+        EditorInteractionMode::SelectAndCursor => EditorSettingsOption::SelectAndCursor,
+    };
+    let Some(panel_root) =
+        world.find_component(panel_query_root, EDITOR_SETTINGS_PANEL_ROOT_SELECTOR)
+    else {
+        return;
+    };
+    let Some(row_root) =
+        world.find_component(panel_root, &format!("#{}", desired_option.row_name()))
+    else {
+        return;
+    };
+    apply_selection_set(
+        world,
+        emit,
+        selection_root,
+        vec![SelectionEntry {
+            index: Some(match desired_option {
+                EditorSettingsOption::Select => 0,
+                EditorSettingsOption::Cursor3d => 1,
+                EditorSettingsOption::SelectAndCursor => 2,
+            }),
+            component: row_root,
+        }],
+        Some(row_root),
+    );
+
+    sync_editor_settings_armature_checkmark(world, emit, panel_query_root, editor_context);
+}
+
+pub(crate) fn handle_editor_settings_panel_click(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    renderable: ComponentId,
+    editor_context_state: &Arc<Mutex<EditorContextState>>,
+    installed_editor_roots: &Arc<Mutex<Vec<ComponentId>>>,
+) -> bool {
+    let Some(settings_panel_root) =
+        world.find_component(panel_query_root, EDITOR_SETTINGS_PANEL_ROOT_SELECTOR)
+    else {
+        return false;
+    };
+    if !is_descendant_or_self(world, settings_panel_root, renderable) {
+        return false;
+    }
+
+    let mut current = Some(renderable);
+    while let Some(component_id) = current {
+        let Some(payload_id) = world
+            .children_of(component_id)
+            .iter()
+            .copied()
+            .find(|&child| world.component_label(child) == Some(EDITOR_SETTINGS_PAYLOAD_NAME))
+        else {
+            current = world.parent_of(component_id);
+            continue;
+        };
+
+        let Some(payload) = world.get_component_by_id_as::<DataComponent>(payload_id) else {
+            return true;
+        };
+        let row_kind = data_text(payload, "row_kind").unwrap_or_default();
+        if row_kind != "GLTFArmatureVisibility" {
+            return false;
+        }
+
+        let visible = !editor_context_state
+            .lock()
+            .expect("editor context state mutex poisoned")
+            .armature_visible;
+
+        {
+            let mut editor_context = editor_context_state
+                .lock()
+                .expect("editor context state mutex poisoned");
+            editor_context.armature_visible = visible;
+        }
+
+        let editor_roots = effective_editor_roots(world, installed_editor_roots);
+        for editor_root in editor_roots {
+            let gltf_components = find_gltf_components_under(world, editor_root);
+            for gltf_component in gltf_components {
+                emit.push_intent_now(
+                    gltf_component,
+                    IntentValue::GLTFArmatureVisible {
+                        component_ids: vec![gltf_component],
+                        visible,
+                    },
+                );
+            }
+        }
+
+        let editor_context = editor_context_state
+            .lock()
+            .expect("editor context state mutex poisoned")
+            .clone();
+        sync_editor_settings_panel_selection(world, emit, panel_query_root, &editor_context);
+        return true;
+    }
+
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::ecs::command_queue::CommandQueue;
+    use crate::engine::ecs::component::{DataValue, EditorComponent};
+    use crate::engine::ecs::system::SystemWorld;
+    use crate::engine::graphics::{RenderAssets, VisualWorld};
+
+    #[test]
+    fn armature_settings_click_toggles_state_renders_checkmark_and_fans_out_to_all_editors() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::default();
+
+        let panel_query_root =
+            world.add_component_boxed_named("panel_root", Box::new(crate::engine::ecs::component::TransformComponent::new()));
+        let settings_panel_root = world.add_component_boxed_named(
+            "editor_settings_panel_root",
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
+        let armature_row = world.add_component_boxed_named(
+            EDITOR_SETTINGS_ARMATURE_ROW_NAME,
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
+        let checkmark_slot = world.add_component_boxed_named(
+            EDITOR_SETTINGS_ARMATURE_CHECKMARK_SLOT_NAME,
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
+        let payload = world.add_component_boxed_named(
+            EDITOR_SETTINGS_PAYLOAD_NAME,
+            Box::new(
+                DataComponent::new()
+                    .with_entry("row_kind", DataValue::Text("GLTFArmatureVisibility".into()))
+                    .with_entry("visible", DataValue::Bool(false)),
+            ),
+        );
+        let _ = world.add_child(panel_query_root, settings_panel_root);
+        let _ = world.add_child(settings_panel_root, armature_row);
+        let _ = world.add_child(armature_row, checkmark_slot);
+        let _ = world.add_child(armature_row, payload);
+
+        let editor_a =
+            world.add_component_boxed_named("editor_a", Box::new(EditorComponent::new()));
+        let editor_b =
+            world.add_component_boxed_named("editor_b", Box::new(EditorComponent::new()));
+        let gltf_a = world.add_component(GLTFComponent::new("a.glb"));
+        let gltf_b = world.add_component(GLTFComponent::new("b.glb"));
+        let _ = world.add_child(editor_a, gltf_a);
+        let _ = world.add_child(editor_b, gltf_b);
+
+        let editor_context_state = Arc::new(Mutex::new(EditorContextState::default()));
+        let installed_editor_roots = Arc::new(Mutex::new(vec![editor_a, editor_b]));
+
+        assert!(handle_editor_settings_panel_click(
+            &mut world,
+            &mut emit,
+            panel_query_root,
+            armature_row,
+            &editor_context_state,
+            &installed_editor_roots,
+        ));
+
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        let editor_context = editor_context_state
+            .lock()
+            .expect("editor context state mutex poisoned")
+            .clone();
+        assert!(editor_context.armature_visible);
+        assert!(
+            world
+                .get_component_by_id_as::<GLTFComponent>(gltf_a)
+                .expect("gltf_a")
+                .armature_visible
+        );
+        assert!(
+            world
+                .get_component_by_id_as::<GLTFComponent>(gltf_b)
+                .expect("gltf_b")
+                .armature_visible
+        );
+
+        sync_editor_settings_armature_checkmark(
+            &mut world,
+            &mut emit,
+            panel_query_root,
+            &editor_context,
+        );
+        assert!(
+            !world.children_of(checkmark_slot).is_empty(),
+            "expected checkmark subtree to be rendered into slot"
+        );
+
+        assert!(handle_editor_settings_panel_click(
+            &mut world,
+            &mut emit,
+            panel_query_root,
+            armature_row,
+            &editor_context_state,
+            &installed_editor_roots,
+        ));
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        let editor_context = editor_context_state
+            .lock()
+            .expect("editor context state mutex poisoned")
+            .clone();
+        assert!(!editor_context.armature_visible);
+        sync_editor_settings_armature_checkmark(
+            &mut world,
+            &mut emit,
+            panel_query_root,
+            &editor_context,
+        );
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        assert!(
+            world.children_of(checkmark_slot).is_empty(),
+            "expected checkmark subtree to be removed when armature visibility is toggled off"
+        );
+    }
 }
