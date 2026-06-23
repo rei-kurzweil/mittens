@@ -21,7 +21,7 @@ use crate::engine::ecs::system::editor::inspector_panel::{
     INSPECTOR_PANEL_PAYLOAD_NAME, INSPECTOR_ROW_SPEC, InspectorPanelDetailModel, InspectorPanelId,
     InspectorPanelModel, InspectorPanelRow, InspectorPanelRowKind, InspectorWorkspaceEvent,
     InspectorWorkspaceState, build_inspector_panel_models, clear_missing_inspector_targets,
-    clicked_inspector_panel_instance_id, find_inspector_panel_instance_root,
+    focus_panel_from_descendant_click,
     handle_inspector_panel_workspace_click, inspector_panel_instance_id_on_root,
     reduce_inspector_workspace_state, rerender_inspector_panels,
     sync_and_refresh_inspector_panels, world_panel_selection_matches_editor_context,
@@ -1521,64 +1521,6 @@ fn handle_grid_panel_click(
 
 
 
-
-
-fn focus_panel_from_descendant_click(
-    world: &mut World,
-    emit: &mut dyn SignalEmitter,
-    panel_query_root: ComponentId,
-    renderable: ComponentId,
-) {
-    let Some(panel_layout_selection) =
-        world.find_component(panel_query_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
-    else {
-        return;
-    };
-
-    if let Some(panel_id) = clicked_inspector_panel_instance_id(world, renderable)
-        && let Some(panel_root) =
-            find_inspector_panel_instance_root(world, panel_query_root, panel_id)
-    {
-        emit.push_intent_now(
-            panel_layout_selection,
-            IntentValue::SelectionSet {
-                component_ids: vec![panel_layout_selection],
-                entries: vec![SelectionEntry {
-                    index: None,
-                    component: panel_root,
-                }],
-                primary: Some(panel_root),
-            },
-        );
-        return;
-    }
-
-    for selector in [
-        WORLD_PANEL_ROOT_SELECTOR,
-        "#assets_root",
-        PAINT_PANEL_ROOT_SELECTOR,
-        GRID_PANEL_ROOT_SELECTOR,
-    ] {
-        let Some(panel_root) = world.find_component(panel_query_root, selector) else {
-            continue;
-        };
-        if !is_descendant_or_self(world, panel_root, renderable) {
-            continue;
-        }
-        emit.push_intent_now(
-            panel_layout_selection,
-            IntentValue::SelectionSet {
-                component_ids: vec![panel_layout_selection],
-                entries: vec![SelectionEntry {
-                    index: None,
-                    component: panel_root,
-                }],
-                primary: Some(panel_root),
-            },
-        );
-        return;
-    }
-}
 
 
 

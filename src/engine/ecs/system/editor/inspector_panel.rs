@@ -11,15 +11,17 @@ use crate::engine::ecs::system::data_renderer_system::{
 };
 use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor::panel_ui::{PanelUiRowSpec, spawn_panel_ui_row_tree};
+use crate::engine::ecs::system::editor::grid_panel::GRID_PANEL_ROOT_SELECTOR;
+use crate::engine::ecs::system::editor::workspace::PAINT_PANEL_ROOT_SELECTOR;
 use crate::engine::ecs::system::editor::world_panel::{
     AuthoredSceneNodePolicy, AuthoredWorldPanelSceneModel, authored_scene_node_policy,
     component_id_short, editor_chunk_label, mark_nearest_layout_dirty, rerender_world_panel_status,
-    world_panel_item_label, PANEL_STATUS_WRAP_SELECTOR,
+    world_panel_item_label, PANEL_STATUS_WRAP_SELECTOR, WORLD_PANEL_ROOT_SELECTOR,
 };
 use crate::engine::ecs::system::panel_system::{
     decode_panel_action_payload, is_descendant_or_self, panel_layout_root_id, PanelActionKind,
     PanelControlKind, PanelKind, PanelShellSpec, PanelSlotKind, spawn_panel_instance,
-    PANEL_LAYOUT_ROOT_NAME,
+    PANEL_LAYOUT_ROOT_NAME, PANEL_LAYOUT_SELECTION_NAME,
 };
 use crate::engine::ecs::system::selection_system::{
     apply_selection_set, resolve_semantic_target_from_payload,
@@ -1468,4 +1470,61 @@ fn spawn_inspector_panel_row_tree(
             spacer_height_gu: None,
         },
     )
+}
+
+pub(crate) fn focus_panel_from_descendant_click(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    renderable: ComponentId,
+) {
+    let Some(panel_layout_selection) =
+        world.find_component(panel_query_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
+    else {
+        return;
+    };
+
+    if let Some(panel_id) = clicked_inspector_panel_instance_id(world, renderable)
+        && let Some(panel_root) =
+            find_inspector_panel_instance_root(world, panel_query_root, panel_id)
+    {
+        emit.push_intent_now(
+            panel_layout_selection,
+            IntentValue::SelectionSet {
+                component_ids: vec![panel_layout_selection],
+                entries: vec![SelectionEntry {
+                    index: None,
+                    component: panel_root,
+                }],
+                primary: Some(panel_root),
+            },
+        );
+        return;
+    }
+
+    for selector in [
+        WORLD_PANEL_ROOT_SELECTOR,
+        "#assets_root",
+        PAINT_PANEL_ROOT_SELECTOR,
+        GRID_PANEL_ROOT_SELECTOR,
+    ] {
+        let Some(panel_root) = world.find_component(panel_query_root, selector) else {
+            continue;
+        };
+        if !is_descendant_or_self(world, panel_root, renderable) {
+            continue;
+        }
+        emit.push_intent_now(
+            panel_layout_selection,
+            IntentValue::SelectionSet {
+                component_ids: vec![panel_layout_selection],
+                entries: vec![SelectionEntry {
+                    index: None,
+                    component: panel_root,
+                }],
+                primary: Some(panel_root),
+            },
+        );
+        return;
+    }
 }
