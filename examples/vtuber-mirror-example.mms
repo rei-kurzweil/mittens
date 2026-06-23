@@ -137,13 +137,13 @@ ED {
         }
     }
 
-    T.position(-1.5, 0.55, -3).rotation(0.0, 3.14159 / 2.0, 0.0).scale(3, 3, 1.0) {
-        R.plane() { C.rgba(0.10, 0.30, 1.0, 1.0) }
-    }
+    // T.position(-1.5, 0.55, -3).rotation(0.0, 3.14159 / 2.0, 0.0).scale(3, 3, 1.0) {
+    //     R.plane() { C.rgba(0.10, 0.30, 1.0, 1.0) }
+    // }
 
-    T.position(1.5, 0.55, -3).rotation(0.0, 3.14159 / 2.0, 0.0).scale(3, 3, 1.0) {
-        R.plane() { C.rgba(0.12, 0.86, 0.22, 1.0) }
-    }
+    // T.position(1.5, 0.55, -3).rotation(0.0, 3.14159 / 2.0, 0.0).scale(3, 3, 1.0) {
+    //     R.plane() { C.rgba(0.12, 0.86, 0.22, 1.0) }
+    // }
 
 
     // T.position(0.0, 0.55, -4.08).scale(2.45, 2.75, 0.10) {
@@ -276,7 +276,7 @@ I.speed(1.5) {
                 // to the head bone, NOT move the head relative to the camera.
                 T.rotate(0.0, 3.14159, 0.0) {
                 
-                T.position(0.0, 0.08, -0.32) {
+                T.position(0.0, 0.18, -0.32) {
                     C3D { Pointer {} }
                 }
 

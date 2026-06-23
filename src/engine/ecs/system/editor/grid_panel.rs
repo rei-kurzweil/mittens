@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use crate::engine::ecs::component::{
     ColorComponent, DataComponent, DataValue, Display, EdgeInsets, EditorComponent,
@@ -9,11 +9,17 @@ use crate::engine::ecs::system::GridSystem;
 use crate::engine::ecs::system::data_renderer_system::{
     DataRendererSystem, ItemRendererSpec, RendererSpec, UiItem, UiItemKind,
 };
-use crate::engine::ecs::system::editor::context::EditorContextState;
+use crate::engine::ecs::system::editor::context::{
+    EditorContextState, apply_editor_root_selection, apply_semantic_target_selection,
+};
 use crate::engine::ecs::system::editor::world_panel::{
     world_panel_item_label, PANEL_CONTENT_SLOT_SELECTOR,
 };
-use crate::engine::ecs::{ComponentId, SignalEmitter, World};
+use crate::engine::ecs::system::grid_system::GridSpawnSpec;
+use crate::engine::ecs::system::panel_system::{
+    decode_panel_action_payload, is_descendant_or_self, PanelActionKind, PanelKind,
+};
+use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
 
 pub(crate) const GRID_PANEL_ROOT_SELECTOR: &str = "#grid_panel_root";
 pub(crate) const GRID_PANEL_ADD_BUTTON_SELECTOR: &str = "#grid_add_button";
@@ -420,6 +426,181 @@ pub(crate) fn rerender_grid_panel_from_context(
     {
         eprintln!("[InspectorSystem] grid panel content render error: {error}");
     }
+}
+
+pub(crate) enum GridPanelClickOutcome {
+    NotHandled,
+    Handled,
+    HandledNeedsFullRefresh(bool),
+}
+
+pub(crate) fn handle_grid_panel_click(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    renderable: ComponentId,
+    editor_context_state: &Arc<Mutex<EditorContextState>>,
+    installed_editor_roots: &Arc<Mutex<Vec<ComponentId>>>,
+    data_renderer: &mut DataRendererSystem,
+) -> GridPanelClickOutcome {
+    let Some(grid_panel_root) = world.find_component(panel_query_root, GRID_PANEL_ROOT_SELECTOR)
+    else {
+        return GridPanelClickOutcome::NotHandled;
+    };
+    if !is_descendant_or_self(world, grid_panel_root, renderable) {
+        return GridPanelClickOutcome::NotHandled;
+    }
+
+    let editor_context = editor_context_state
+        .lock()
+        .expect("editor context state mutex poisoned")
+        .clone();
+    let editor_root = editor_context.active_editor.or_else(|| {
+        installed_editor_roots
+            .lock()
+            .expect("installed editor roots mutex poisoned")
+            .first()
+            .copied()
+    });
+    let Some(editor_root) = editor_root else {
+        return GridPanelClickOutcome::Handled;
+    };
+
+    if let Some(add_button) = world.find_component(grid_panel_root, GRID_PANEL_ADD_BUTTON_SELECTOR)
+        && is_descendant_or_self(world, add_button, renderable)
+    {
+        let _owner_transform = GridSystem::new().spawn_grid_for_editor(
+            world,
+            emit,
+            editor_root,
+            GridSpawnSpec::from_cursor_pose(
+                editor_context.cursor_translation,
+                editor_context.cursor_rotation,
+                false,
+            ),
+        );
+        emit.push_event(
+            panel_query_root,
+            EventSignal::DataEvent {
+                name: EDITOR_WORKSPACE_GRIDS_CHANGED.to_string(),
+                payload: Some(editor_root),
+            },
+        );
+        rerender_grid_panel_from_context(
+            world,
+            emit,
+            panel_query_root,
+            &EditorContextState {
+                active_editor: Some(editor_root),
+                ..editor_context.clone()
+            },
+            data_renderer,
+        );
+        return GridPanelClickOutcome::Handled;
+    }
+
+    if let Some(action) = decode_panel_action_payload(
+        world,
+        renderable,
+        GRID_PANEL_VISIBILITY_PAYLOAD_NAME,
+        PanelKind::Grid,
+        PanelActionKind::Toggle,
+        None,
+        None,
+    ) && let Some(owner_transform) = action.target_component
+    {
+        let _ = GridSystem::new().toggle_grid_hidden(world, emit, owner_transform);
+        emit.push_event(
+            panel_query_root,
+            EventSignal::DataEvent {
+                name: EDITOR_WORKSPACE_GRIDS_CHANGED.to_string(),
+                payload: Some(owner_transform),
+            },
+        );
+        rerender_grid_panel_from_context(
+            world,
+            emit,
+            panel_query_root,
+            &editor_context,
+            data_renderer,
+        );
+        return GridPanelClickOutcome::Handled;
+    }
+
+    if let Some(action) = decode_panel_action_payload(
+        world,
+        renderable,
+        GRID_PANEL_ENABLED_PAYLOAD_NAME,
+        PanelKind::Grid,
+        PanelActionKind::Toggle,
+        None,
+        None,
+    ) && let Some(owner_transform) = action.target_component
+    {
+        let _ = GridSystem::new().toggle_grid_enabled(world, emit, owner_transform);
+        emit.push_event(
+            panel_query_root,
+            EventSignal::DataEvent {
+                name: EDITOR_WORKSPACE_GRIDS_CHANGED.to_string(),
+                payload: Some(owner_transform),
+            },
+        );
+        rerender_grid_panel_from_context(
+            world,
+            emit,
+            panel_query_root,
+            &editor_context,
+            data_renderer,
+        );
+        return GridPanelClickOutcome::Handled;
+    }
+
+    if let Some(action) = decode_panel_action_payload(
+        world,
+        renderable,
+        GRID_PANEL_DELETE_PAYLOAD_NAME,
+        PanelKind::Grid,
+        PanelActionKind::Delete,
+        None,
+        None,
+    ) && let Some(owner_transform) = action.target_component
+    {
+        if editor_context.selected_component == Some(owner_transform) {
+            apply_editor_root_selection(world, editor_context_state, editor_root);
+        }
+        let _ = GridSystem::new().delete_grid(world, emit, owner_transform);
+        emit.push_event(
+            panel_query_root,
+            EventSignal::DataEvent {
+                name: EDITOR_WORKSPACE_GRIDS_CHANGED.to_string(),
+                payload: Some(editor_root),
+            },
+        );
+        return GridPanelClickOutcome::HandledNeedsFullRefresh(true);
+    }
+
+    if let Some(action) = decode_panel_action_payload(
+        world,
+        renderable,
+        GRID_PANEL_ROW_PAYLOAD_NAME,
+        PanelKind::Grid,
+        PanelActionKind::Select,
+        None,
+        None,
+    ) && let Some(owner_transform) = action.target_component
+    {
+        let _ = editor_root;
+        let _selection_result = apply_semantic_target_selection(
+            world,
+            emit,
+            editor_context_state,
+            owner_transform,
+            true,
+        );
+        return GridPanelClickOutcome::HandledNeedsFullRefresh(false);
+    }
+
+    GridPanelClickOutcome::Handled
 }
 
 #[cfg(test)]
