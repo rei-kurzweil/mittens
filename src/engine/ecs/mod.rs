@@ -282,6 +282,16 @@ impl World {
         self.run_query(root, selector)
     }
 
+    pub fn component_matches_selector(&self, component: ComponentId, selector: &str) -> bool {
+        self.run_query(component, selector).first().copied() == Some(component)
+    }
+
+    pub fn world_roots(&self) -> Vec<ComponentId> {
+        self.all_components()
+            .filter(|&cid| self.parent_of(cid).is_none())
+            .collect()
+    }
+
     fn run_query(&self, root: ComponentId, selector: &str) -> Vec<ComponentId> {
         use crate::engine::ecs::world_query_adapter::WorldQueryAdapter;
         use crate::query::QueryEvaluator;

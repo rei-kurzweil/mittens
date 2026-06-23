@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::{
     BoundsComponent, ColorComponent, Component, ComponentRef, DataComponent, EmissiveComponent,
-    LayoutComponent, OptionComponent, RenderableComponent, SelectionComponent, SelectionEntry,
-    SelectionMode, StyleComponent, TransformComponent,
+    LayoutComponent, OptionComponent, QueryRootMode, RenderableComponent, SelectionComponent,
+    SelectionEntry, SelectionMode, StyleComponent, TransformComponent, resolve_component_ref,
 };
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
@@ -139,10 +139,14 @@ fn resolve_selection_target_root(world: &World, selection_root: ComponentId) -> 
 
     match source {
         ComponentRef::Guid(uuid) => world.component_id_by_guid(*uuid).unwrap_or(scope_owner),
-        ComponentRef::Query(selector) => world
-            .find_component(scope_owner, selector)
-            .or_else(|| world.find_component(selection_root, selector))
-            .unwrap_or(scope_owner),
+        ComponentRef::Query(selector) => resolve_component_ref(
+            world,
+            &ComponentRef::Query(selector.clone()),
+            Some(selection_root),
+            QueryRootMode::SelfSubtree,
+        )
+        .or_else(|| world.find_component(scope_owner, selector))
+        .unwrap_or(scope_owner),
     }
 }
 

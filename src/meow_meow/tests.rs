@@ -2164,9 +2164,11 @@ fn roundtrip_input_speed() {
 
 #[test]
 fn roundtrip_input_transform_mode() {
-    use crate::engine::ecs::component::{ForwardAxis, InputTransformModeComponent, RollAxis};
+    use crate::engine::ecs::component::{ComponentRef, ForwardAxis, InputTransformModeComponent, RollAxis};
     let original = InputTransformModeComponent::forward_y()
         .with_roll_axis_y()
+        .with_rotation_disabled()
+        .with_translation_basis_source(ComponentRef::Query("../#xr_pose".to_string()))
         .with_fps_rotation();
     let (world, id) = roundtrip_component(original);
     let got = world
@@ -2174,7 +2176,12 @@ fn roundtrip_input_transform_mode() {
         .unwrap();
     assert_eq!(got.forward_axis, ForwardAxis::Y);
     assert_eq!(got.roll_axis, RollAxis::Y);
+    assert!(!got.rotation_enabled);
     assert!(got.fps_rotation);
+    match got.translation_basis_source.as_ref() {
+        Some(ComponentRef::Query(s)) => assert_eq!(s, "../#xr_pose"),
+        other => panic!("unexpected translation_basis_source: {other:?}"),
+    }
 }
 
 #[test]

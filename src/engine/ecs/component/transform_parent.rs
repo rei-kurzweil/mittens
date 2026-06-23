@@ -1,4 +1,4 @@
-use super::{Component, ComponentRef};
+use super::{Component, ComponentRef, QueryRootMode, resolve_component_ref};
 use crate::engine::ecs::{ComponentId, World};
 
 #[derive(Debug, Clone, Default)]
@@ -24,7 +24,7 @@ impl TransformParentComponent {
 
     pub fn resolve_root_component(&self, world: &World) -> Option<ComponentId> {
         let src = self.root_source.as_ref()?;
-        Self::resolve_component_ref(world, src, None)
+        resolve_component_ref(world, src, None, QueryRootMode::WorldRoot)
     }
 
     pub fn resolve_target_component(&self, world: &World) -> Option<ComponentId> {
@@ -45,15 +45,19 @@ impl TransformParentComponent {
             ComponentRef::Guid(uuid) => world.component_id_by_guid(*uuid),
             ComponentRef::Query(selector) => {
                 if let Some(root) = scope_root {
-                    return world.find_component(root, selector);
+                    return resolve_component_ref(
+                        world,
+                        &ComponentRef::Query(selector.clone()),
+                        Some(root),
+                        QueryRootMode::SelfSubtree,
+                    );
                 }
-                let roots: Vec<ComponentId> = world
-                    .all_components()
-                    .filter(|&cid| world.parent_of(cid).is_none())
-                    .collect();
-                roots
-                    .into_iter()
-                    .find_map(|root| world.find_component(root, selector))
+                resolve_component_ref(
+                    world,
+                    &ComponentRef::Query(selector.clone()),
+                    None,
+                    QueryRootMode::WorldRoot,
+                )
             }
         }
     }

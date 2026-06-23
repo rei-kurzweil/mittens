@@ -1,5 +1,8 @@
 #[cfg(test)]
 mod tests {
+    use crate::engine::ecs::component::{
+        ComponentRef, QueryRootMode, parse_scoped_query, resolve_component_ref,
+    };
     use crate::engine::ecs::World;
 
     #[test]
@@ -154,5 +157,57 @@ mod tests {
 
         // Bogus guid string → no match, no panic.
         assert_eq!(w.find_component(root, "[guid=not-a-uuid]"), None);
+    }
+
+    #[test]
+    fn parse_scoped_query_recognizes_relative_prefixes() {
+        let scoped = parse_scoped_query("../../ #target");
+        assert_eq!(scoped.root_mode, QueryRootMode::ParentScope { levels_up: 2 });
+        assert_eq!(scoped.selector, "#target");
+
+        let scoped = parse_scoped_query("/ > #scene");
+        assert_eq!(scoped.root_mode, QueryRootMode::WorldRoot);
+        assert_eq!(scoped.selector, "> #scene");
+    }
+
+    #[test]
+    fn resolve_component_ref_supports_parent_and_world_root_prefixes() {
+        let mut w = World::default();
+        let scene_root = w.add_component_boxed_named(
+            "scene_root",
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
+        let owner_parent = w.add_component_boxed_named(
+            "owner_parent",
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
+        let owner = w.add_component_boxed_named(
+            "owner",
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
+        let local_target = w.add_component_boxed_named(
+            "local_target",
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
+
+        w.add_child(scene_root, owner_parent).unwrap();
+        w.add_child(owner_parent, owner).unwrap();
+        w.add_child(owner_parent, local_target).unwrap();
+
+        let parent_relative = resolve_component_ref(
+            &w,
+            &ComponentRef::Query("../#local_target".to_string()),
+            Some(owner),
+            QueryRootMode::WorldRoot,
+        );
+        assert_eq!(parent_relative, Some(local_target));
+
+        let world_root = resolve_component_ref(
+            &w,
+            &ComponentRef::Query("/ > #scene_root".to_string()),
+            Some(owner),
+            QueryRootMode::SelfSubtree,
+        );
+        assert_eq!(world_root, Some(scene_root));
     }
 }

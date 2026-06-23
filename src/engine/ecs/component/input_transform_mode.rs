@@ -1,4 +1,4 @@
-use crate::engine::ecs::component::Component;
+use crate::engine::ecs::component::{Component, ComponentRef};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ForwardAxis {
@@ -20,10 +20,12 @@ pub enum RollAxis {
 /// Intended topology:
 /// InputComponent -> (InputTransformModeComponent?)
 /// InputComponent -> TransformComponent
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct InputTransformModeComponent {
     pub forward_axis: ForwardAxis,
     pub roll_axis: RollAxis,
+    pub rotation_enabled: bool,
+    pub translation_basis_source: Option<ComponentRef>,
 
     /// If true, rotations are applied in world axes (FPS-style).
     /// If false, rotations are applied in local space (current behavior).
@@ -35,6 +37,8 @@ impl InputTransformModeComponent {
         Self {
             forward_axis: ForwardAxis::Y,
             roll_axis: RollAxis::Z,
+            rotation_enabled: true,
+            translation_basis_source: None,
             fps_rotation: false,
         }
     }
@@ -43,8 +47,20 @@ impl InputTransformModeComponent {
         Self {
             forward_axis: ForwardAxis::Z,
             roll_axis: RollAxis::Z,
+            rotation_enabled: true,
+            translation_basis_source: None,
             fps_rotation: false,
         }
+    }
+
+    pub fn with_rotation_disabled(mut self) -> Self {
+        self.rotation_enabled = false;
+        self
+    }
+
+    pub fn with_translation_basis_source(mut self, source: ComponentRef) -> Self {
+        self.translation_basis_source = Some(source);
+        self
     }
 
     pub fn with_fps_rotation(mut self) -> Self {
@@ -95,8 +111,18 @@ impl Component for InputTransformModeComponent {
         if matches!(self.roll_axis, RollAxis::Y) {
             ce = ce.with_call("roll_axis_y", vec![]);
         }
+        if !self.rotation_enabled {
+            ce = ce.with_call("rotation_disabled", vec![]);
+        }
         if self.fps_rotation {
             ce = ce.with_call("fps_rotation", vec![]);
+        }
+        if let Some(source) = &self.translation_basis_source {
+            let expr = match source {
+                ComponentRef::Guid(u) => crate::meow_meow::ast::Expression::String(format!("@uuid:{u}")),
+                ComponentRef::Query(s) => crate::meow_meow::ast::Expression::String(s.clone()),
+            };
+            ce = ce.with_call("translation_basis", vec![expr]);
         }
         ce
     }

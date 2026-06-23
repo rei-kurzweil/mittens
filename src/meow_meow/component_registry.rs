@@ -2430,11 +2430,32 @@ fn apply_call(
         }
         return Ok(());
     }
-    if let Some(itm) = world.get_component_by_id_as_mut::<InputTransformModeComponent>(id) {
-        match method {
-            "fps_rotation" => *itm = itm.clone().with_fps_rotation(),
-            "roll_axis_y" => *itm = itm.clone().with_roll_axis_y(),
-            _ => {}
+    if world
+        .get_component_by_id_as::<InputTransformModeComponent>(id)
+        .is_some()
+    {
+        let translation_basis_src = if method == "translation_basis" {
+            Some(arg_component_ref(world, args, 0)?)
+        } else {
+            None
+        };
+        let updated = {
+            let itm = world
+                .get_component_by_id_as::<InputTransformModeComponent>(id)
+                .expect("checked above")
+                .clone();
+            match method {
+                "fps_rotation" => itm.with_fps_rotation(),
+                "roll_axis_y" => itm.with_roll_axis_y(),
+                "rotation_disabled" => itm.with_rotation_disabled(),
+                "translation_basis" => itm.with_translation_basis_source(
+                    translation_basis_src.expect("computed above"),
+                ),
+                _ => itm,
+            }
+        };
+        if let Some(itm) = world.get_component_by_id_as_mut::<InputTransformModeComponent>(id) {
+            *itm = updated;
         }
         return Ok(());
     }

@@ -128,7 +128,10 @@ pub use clock::ClockComponent;
 pub use collision::CollisionComponent;
 pub use collision_shape::CollisionShapeComponent;
 pub use color::ColorComponent;
-pub use component_ref::ComponentRef;
+pub use component_ref::{
+    ComponentRef, QueryRootMode, ScopedQuery, parse_scoped_query, resolve_component_ref,
+    resolve_scoped_query,
+};
 pub use controller_xr::{ControllerHand, ControllerPoseKind, ControllerXRComponent};
 pub use data::{DataComponent, DataEntry, DataValue};
 pub use directional_light::DirectionalLightComponent;

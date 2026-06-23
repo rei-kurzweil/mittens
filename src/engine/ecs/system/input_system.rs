@@ -1,7 +1,8 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    ForwardAxis, InputComponent, InputTransformModeComponent, RollAxis, TransformComponent,
+    ComponentRef, ForwardAxis, InputComponent, InputTransformModeComponent, QueryRootMode,
+    RollAxis, TransformComponent, resolve_component_ref,
 };
 use crate::engine::ecs::system::System;
 use crate::engine::graphics::VisualWorld;
@@ -280,6 +281,40 @@ impl InputSystem {
         }
     }
 
+    fn resolve_translation_basis_rotation(
+        &self,
+        world: &World,
+        mode_component: Option<ComponentId>,
+        source: Option<&ComponentRef>,
+        fallback_rotation: [f32; 4],
+    ) -> [f32; 4] {
+        let Some(source) = source else {
+            return fallback_rotation;
+        };
+        let Some(target) =
+            resolve_component_ref(world, source, mode_component, QueryRootMode::SelfSubtree)
+        else {
+            return fallback_rotation;
+        };
+        self.nearest_transform_world_rotation(world, target)
+            .unwrap_or(fallback_rotation)
+    }
+
+    fn nearest_transform_world_rotation(
+        &self,
+        world: &World,
+        start: ComponentId,
+    ) -> Option<[f32; 4]> {
+        let mut current = Some(start);
+        while let Some(component) = current {
+            if let Some(transform) = world.get_component_by_id_as::<TransformComponent>(component) {
+                return Some(math::mat_to_quat(transform.transform.matrix_world));
+            }
+            current = world.parent_of(component);
+        }
+        None
+    }
+
     /// Process input and queue at most one transform update per InputComponent.
     ///
     /// This only supports the intended topology:
@@ -323,25 +358,43 @@ impl InputSystem {
             });
 
             // Optional mode child.
-            let (forward_axis, roll_axis, fps_rotation) = world
+            let (mode_component, forward_axis, roll_axis, rotation_enabled, fps_rotation, translation_basis_source) = world
                 .children_of(input_cid)
                 .iter()
                 .copied()
                 .find_map(|cid| {
                     world
                         .get_component_by_id_as::<InputTransformModeComponent>(cid)
-                        .map(|m| (m.forward_axis, m.roll_axis, m.fps_rotation))
+                        .map(|m| {
+                            (
+                                Some(cid),
+                                m.forward_axis,
+                                m.roll_axis,
+                                m.rotation_enabled,
+                                m.fps_rotation,
+                                m.translation_basis_source.clone(),
+                            )
+                        })
                 })
-                .unwrap_or((ForwardAxis::Y, RollAxis::Z, false));
+                .unwrap_or((None, ForwardAxis::Y, RollAxis::Z, true, false, None));
 
             let Some(transform_cid) = transform_child else {
                 continue;
             };
 
+            let external_basis_rotation = translation_basis_source.as_ref().map(|source| {
+                self.resolve_translation_basis_rotation(
+                    world,
+                    mode_component,
+                    Some(source),
+                    [0.0, 0.0, 0.0, 1.0],
+                )
+            });
+
             if let Some(transform_comp_mut) =
                 world.get_component_by_id_as_mut::<TransformComponent>(transform_cid)
             {
-                if fps_rotation {
+                if rotation_enabled && fps_rotation {
                     self.compute_rotation_fps(
                         transform_cid,
                         roll_axis,
@@ -349,7 +402,7 @@ impl InputSystem {
                         dt_sec,
                         &mut transform_comp_mut.transform.rotation,
                     );
-                } else {
+                } else if rotation_enabled {
                     self.compute_rotation(
                         roll_axis,
                         input,
@@ -357,7 +410,6 @@ impl InputSystem {
                         &mut transform_comp_mut.transform.rotation,
                     );
                 }
-                let rot = transform_comp_mut.transform.rotation;
                 let fps_yaw = if fps_rotation {
                     self.fps_yaw_pitch_roll
                         .get(&transform_cid)
@@ -365,6 +417,8 @@ impl InputSystem {
                 } else {
                     None
                 };
+                let translation_basis_rotation =
+                    external_basis_rotation.unwrap_or(transform_comp_mut.transform.rotation);
                 self.compute_translation(
                     forward_axis,
                     fps_rotation,
@@ -372,7 +426,7 @@ impl InputSystem {
                     speed_units_per_sec,
                     input,
                     dt_sec,
-                    rot,
+                    translation_basis_rotation,
                     &mut transform_comp_mut.transform.translation,
                 );
 
