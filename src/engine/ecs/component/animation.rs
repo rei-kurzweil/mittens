@@ -1,4 +1,4 @@
-use super::Component;
+use super::{Component, ComponentRef};
 use crate::engine::ecs::ComponentId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,7 +30,7 @@ impl Default for ResolveTargetsMode {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct AnimationComponent {
     pub state: AnimationState,
     pub resolve_targets: ResolveTargetsMode,
@@ -38,6 +38,8 @@ pub struct AnimationComponent {
     /// default in `AnimationSystem` (`floor(max_keyframe_beat) + 1`).
     /// Authored via `Animation.length(beats)`.
     pub length_beats: Option<f64>,
+    pub scope_source: Option<ComponentRef>,
+    pub resolved_scope: Option<ComponentId>,
 
     component: Option<ComponentId>,
 }
@@ -48,6 +50,8 @@ impl AnimationComponent {
             state: AnimationState::Looping,
             resolve_targets: ResolveTargetsMode::default(),
             length_beats: None,
+            scope_source: None,
+            resolved_scope: None,
             component: None,
         }
     }
@@ -64,6 +68,12 @@ impl AnimationComponent {
 
     pub fn with_length_beats(mut self, beats: f64) -> Self {
         self.length_beats = Some(beats);
+        self
+    }
+
+    pub fn with_scope_source(mut self, source: ComponentRef) -> Self {
+        self.scope_source = Some(source);
+        self.resolved_scope = None;
         self
     }
 
@@ -118,6 +128,15 @@ impl Component for AnimationComponent {
         _world: &crate::engine::ecs::World,
     ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
+        use crate::meow_meow::ast::Expression;
+
+        fn target_expr(t: &ComponentRef) -> Expression {
+            match t {
+                ComponentRef::Guid(u) => Expression::String(format!("@uuid:{u}")),
+                ComponentRef::Query(s) => Expression::String(s.clone()),
+            }
+        }
+
         let ctor = match self.state {
             AnimationState::Playing => "playing",
             AnimationState::Looping => "looping",
@@ -135,6 +154,9 @@ impl Component for AnimationComponent {
         }
         if let Some(n) = self.length_beats {
             ce = ce.with_call("length", vec![num(n)]);
+        }
+        if let Some(source) = &self.scope_source {
+            ce = ce.with_call("scope", vec![target_expr(source)]);
         }
         ce
     }

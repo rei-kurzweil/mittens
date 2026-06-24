@@ -1423,6 +1423,7 @@ fn create_component(
                 Some("paused") => c = c.with_state(AnimationState::Paused),
                 Some("looping") => c = c.with_state(AnimationState::Looping),
                 Some("length") => c = c.with_length_beats(arg_f32(args, 0)? as f64),
+                Some("scope") => c = c.with_scope_source(arg_component_ref(world, args, 0)?),
                 _ => {}
             }
             add!(c)
@@ -2653,8 +2654,19 @@ fn apply_call(
         }
         return Ok(());
     }
-    if let Some(anim) = world.get_component_by_id_as_mut::<AnimationComponent>(id) {
+    if world
+        .get_component_by_id_as::<AnimationComponent>(id)
+        .is_some()
+    {
         use crate::engine::ecs::component::ResolveTargetsMode;
+        let scope_src = if method == "scope" {
+            Some(arg_component_ref(world, args, 0)?)
+        } else {
+            None
+        };
+        let Some(anim) = world.get_component_by_id_as_mut::<AnimationComponent>(id) else {
+            return Ok(());
+        };
         match method {
             "playing" => *anim = anim.clone().with_state(AnimationState::Playing),
             "looping" => *anim = anim.clone().with_state(AnimationState::Looping),
@@ -2662,6 +2674,9 @@ fn apply_call(
             "length" => {
                 let n = arg_f32(args, 0)? as f64;
                 *anim = anim.clone().with_length_beats(n);
+            }
+            "scope" => {
+                *anim = anim.clone().with_scope_source(scope_src.expect("scope arg pre-parsed"));
             }
             "resolve_targets" => {
                 let mode = match arg_str(args, 0)? {

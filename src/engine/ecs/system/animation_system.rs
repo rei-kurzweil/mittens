@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::engine::ecs::component::{
-    ActionComponent, AnimationComponent, AnimationState, ComponentRef, KeyframeComponent,
-    MusicNoteComponent, ResolveTargetsMode,
+    ActionComponent, AnimationComponent, AnimationState, KeyframeComponent, MusicNoteComponent,
+    QueryRootMode, ResolveTargetsMode, resolve_component_ref,
     action::{apply_resolved_targets, signal_target_slot_count},
 };
 use crate::engine::ecs::system::System;
@@ -35,9 +35,10 @@ struct AnimationRuntime {
 ///
 /// Lookup rules:
 /// - `ComponentRef::Guid(uuid)` → `world.component_id_by_guid` (O(1)).
-/// - `ComponentRef::Query(selector)` → `world.find_component` walked from
-///   every world root (matches the registry-time `resolve_action_target`
-///   behavior for forward refs / scenes spawned with multiple roots).
+/// - `ComponentRef::Query(selector)` → resolved via the shared scoped-query
+///   helper. Bare selectors are rooted at `Animation.scope(...)` when present,
+///   otherwise the owning action subtree. Explicit `../...` and `/...`
+///   prefixes override that base root.
 /// Emit one `AudioSchedulePlay` per `MusicNoteComponent` child of `kf_id`.
 /// `beat_context` is the absolute beat the note should fire at — set by
 /// the audio lookahead pass to the keyframe's global beat, or by the
@@ -80,6 +81,43 @@ fn fire_music_note_children(
     }
 }
 
+fn owning_animation_of(world: &World, id: ComponentId) -> Option<ComponentId> {
+    let mut cursor = Some(id);
+    while let Some(node) = cursor {
+        if world
+            .get_component_by_id_as::<AnimationComponent>(node)
+            .is_some()
+        {
+            return Some(node);
+        }
+        cursor = world.parent_of(node);
+    }
+    None
+}
+
+fn resolve_animation_scope(world: &mut World, animation_id: ComponentId) -> Option<ComponentId> {
+    let (resolved_scope, scope_source) = {
+        let animation = world
+            .get_component_by_id_as::<AnimationComponent>(animation_id)?;
+        (animation.resolved_scope, animation.scope_source.clone())
+    };
+
+    if let Some(scope) = resolved_scope {
+        return Some(scope);
+    }
+
+    let source = scope_source?;
+    let scope = resolve_component_ref(
+        world,
+        &source,
+        Some(animation_id),
+        QueryRootMode::SelfSubtree,
+    )?;
+    let animation = world.get_component_by_id_as_mut::<AnimationComponent>(animation_id)?;
+    animation.resolved_scope = Some(scope);
+    Some(scope)
+}
+
 fn resolve_action_targets(world: &mut World, action_id: ComponentId) -> Result<(), String> {
     let (sources, expected_slots) = {
         let Some(action) = world.get_component_by_id_as::<ActionComponent>(action_id) else {
@@ -102,23 +140,19 @@ fn resolve_action_targets(world: &mut World, action_id: ComponentId) -> Result<(
         ));
     }
 
+    let resolution_root = owning_animation_of(world, action_id)
+        .and_then(|animation_id| resolve_animation_scope(world, animation_id))
+        .unwrap_or(action_id);
+
     let mut resolved: Vec<ComponentId> = Vec::with_capacity(sources.len());
     for source in &sources {
-        let id = match source {
-            ComponentRef::Guid(uuid) => world
-                .component_id_by_guid(*uuid)
-                .ok_or_else(|| format!("resolve: no component with guid {uuid}"))?,
-            ComponentRef::Query(selector) => {
-                let roots: Vec<ComponentId> = world
-                    .all_components()
-                    .filter(|&cid| world.parent_of(cid).is_none())
-                    .collect();
-                roots
-                    .into_iter()
-                    .find_map(|root| world.find_component(root, selector))
-                    .ok_or_else(|| format!("resolve: selector {selector:?} matched nothing"))?
-            }
-        };
+        let id = resolve_component_ref(
+            world,
+            source,
+            Some(resolution_root),
+            QueryRootMode::SelfSubtree,
+        )
+            .ok_or_else(|| format!("resolve: source {source:?} matched nothing"))?;
         resolved.push(id);
     }
 
@@ -530,5 +564,133 @@ impl System for AnimationSystem {
         _dt_sec: f32,
     ) {
         // Driven via `tick_with_beat` from SystemWorld.
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::ecs::component::{ComponentRef, TransformComponent};
+    use slotmap::Key;
+
+    #[test]
+    fn resolve_action_targets_supports_relative_parent_prefixes() {
+        let mut world = World::default();
+        let root = world.add_component(TransformComponent::new());
+        let target = world.add_component_boxed_named("hero", Box::new(TransformComponent::new()));
+        world.add_child(root, target).unwrap();
+
+        let keyframe = world.add_component(KeyframeComponent::new(0.0));
+        world.add_child(root, keyframe).unwrap();
+
+        let action = world.add_component(ActionComponent::new_authored(
+            IntentValue::SetPosition {
+                component_ids: vec![ComponentId::null()],
+                position: [1.0, 2.0, 3.0],
+            },
+            vec![ComponentRef::Query("../../#hero".to_string())],
+        ));
+        world.add_child(keyframe, action).unwrap();
+
+        resolve_action_targets(&mut world, action).expect("action resolves");
+
+        let action = world
+            .get_component_by_id_as::<ActionComponent>(action)
+            .expect("action");
+        match &action.signal {
+            IntentValue::SetPosition { component_ids, .. } => {
+                assert_eq!(component_ids, &vec![target]);
+            }
+            other => panic!("unexpected signal: {other:?}"),
+        }
+        assert!(action.resolved);
+    }
+
+    #[test]
+    fn resolve_action_targets_uses_local_scope_for_bare_queries() {
+        let mut world = World::default();
+
+        let unrelated_root = world.add_component(TransformComponent::new());
+        let unrelated_target =
+            world.add_component_boxed_named("hero", Box::new(TransformComponent::new()));
+        world.add_child(unrelated_root, unrelated_target).unwrap();
+
+        let local_root = world.add_component(TransformComponent::new());
+        let keyframe = world.add_component(KeyframeComponent::new(0.0));
+        world.add_child(local_root, keyframe).unwrap();
+
+        let action = world.add_component(ActionComponent::new_authored(
+            IntentValue::SetPosition {
+                component_ids: vec![ComponentId::null()],
+                position: [1.0, 2.0, 3.0],
+            },
+            vec![ComponentRef::Query("#hero".to_string())],
+        ));
+        world.add_child(keyframe, action).unwrap();
+        let local_target =
+            world.add_component_boxed_named("hero", Box::new(TransformComponent::new()));
+        world.add_child(action, local_target).unwrap();
+
+        resolve_action_targets(&mut world, action).expect("action resolves");
+
+        let action = world
+            .get_component_by_id_as::<ActionComponent>(action)
+            .expect("action");
+        match &action.signal {
+            IntentValue::SetPosition { component_ids, .. } => {
+                assert_eq!(component_ids, &vec![local_target]);
+                assert_ne!(component_ids, &vec![unrelated_target]);
+            }
+            other => panic!("unexpected signal: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_action_targets_use_animation_scope_for_bare_queries() {
+        let mut world = World::default();
+
+        let unrelated_root = world.add_component(TransformComponent::new());
+        let unrelated_target =
+            world.add_component_boxed_named("hero", Box::new(TransformComponent::new()));
+        world.add_child(unrelated_root, unrelated_target).unwrap();
+
+        let host = world.add_component(TransformComponent::new());
+        let scoped_root =
+            world.add_component_boxed_named("avatar_root", Box::new(TransformComponent::new()));
+        world.add_child(host, scoped_root).unwrap();
+        let scoped_target =
+            world.add_component_boxed_named("hero", Box::new(TransformComponent::new()));
+        world.add_child(scoped_root, scoped_target).unwrap();
+
+        let animation = world.add_component(
+            AnimationComponent::new()
+                .with_scope_source(ComponentRef::Query("../#avatar_root".to_string())),
+        );
+        world.add_child(host, animation).unwrap();
+
+        let keyframe = world.add_component(KeyframeComponent::new(0.0));
+        world.add_child(animation, keyframe).unwrap();
+
+        let action = world.add_component(ActionComponent::new_authored(
+            IntentValue::SetPosition {
+                component_ids: vec![ComponentId::null()],
+                position: [1.0, 2.0, 3.0],
+            },
+            vec![ComponentRef::Query("#hero".to_string())],
+        ));
+        world.add_child(keyframe, action).unwrap();
+
+        resolve_action_targets(&mut world, action).expect("action resolves");
+
+        let action = world
+            .get_component_by_id_as::<ActionComponent>(action)
+            .expect("action");
+        match &action.signal {
+            IntentValue::SetPosition { component_ids, .. } => {
+                assert_eq!(component_ids, &vec![scoped_target]);
+                assert_ne!(component_ids, &vec![unrelated_target]);
+            }
+            other => panic!("unexpected signal: {other:?}"),
+        }
     }
 }

@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::ik_chain::TwoBoneIkDebugVisuals;
 use crate::engine::ecs::component::{
     AvatarControlComponent, ColorComponent, EmissiveComponent, IKChainComponent, IKSolver,
-    OverlayComponent, RenderableComponent, TransformComponent,
+    OverlayComponent, QueryRootMode, RenderableComponent, TransformComponent, resolve_component_ref,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::utils::math::{
@@ -62,18 +62,7 @@ fn resolve_ik_chain_refs(world: &mut World, id: ComponentId) {
     };
 
     let resolve = |src: &ComponentRef| -> Option<ComponentId> {
-        match src {
-            ComponentRef::Guid(uuid) => world.component_id_by_guid(*uuid),
-            ComponentRef::Query(selector) => {
-                let roots: Vec<ComponentId> = world
-                    .all_components()
-                    .filter(|&cid| world.parent_of(cid).is_none())
-                    .collect();
-                roots
-                    .into_iter()
-                    .find_map(|root| world.find_component(root, selector))
-            }
-        }
+        resolve_component_ref(world, src, Some(id), QueryRootMode::SelfSubtree)
     };
 
     let new_target = if target_id.is_null() {
@@ -991,6 +980,7 @@ mod tests {
     use super::*;
     use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::component::{ComponentRef, IKChainComponent, IKSolver};
+    use slotmap::Key;
 
     // Temporarily gated: see docs/bugs/ik-solver-api-drift-breaks-tests.md.
     #[cfg(any())]
@@ -1004,6 +994,8 @@ mod tests {
         let ik_id = w.add_component(
             IKChainComponent::new(
                 IKSolver::TwoBoneIK {
+                    root_joint_id: ComponentId::null(),
+                    mid_joint_id: ComponentId::null(),
                     pole_direction: [0.0, 1.0, 0.0],
                     copy_end_rotation: false,
                 },
@@ -1066,5 +1058,79 @@ mod tests {
         assert_eq!(ik.target_id, pre_target);
         assert_ne!(ik.target_id, unrelated);
         assert_eq!(ik.end_effector_id, pre_ee);
+    }
+
+    #[test]
+    fn resolves_relative_parent_prefixed_sources() {
+        let mut w = World::default();
+        let root = w.add_component(TransformComponent::new());
+        let hand = w.add_component_boxed_named("hand", Box::new(TransformComponent::new()));
+        let elbow = w.add_component_boxed_named("elbow", Box::new(TransformComponent::new()));
+        w.add_child(root, hand).unwrap();
+        w.add_child(root, elbow).unwrap();
+
+        let ik_id = w.add_component(
+            IKChainComponent::new(
+                IKSolver::TwoBoneIK {
+                    root_joint_id: ComponentId::null(),
+                    mid_joint_id: ComponentId::null(),
+                    pole_direction: [0.0, 1.0, 0.0],
+                    copy_end_rotation: false,
+                },
+                ComponentId::null(),
+                ComponentId::null(),
+            )
+            .with_target_source(ComponentRef::Query("../#hand".to_string()))
+            .with_end_effector_source(ComponentRef::Query("../#elbow".to_string())),
+        );
+        w.add_child(root, ik_id).unwrap();
+
+        let mut emit = CommandQueue::new();
+        let mut sys = IKSystem::new();
+        sys.tick(&mut w, &mut emit, 0.016);
+
+        let ik = w.get_component_by_id_as::<IKChainComponent>(ik_id).unwrap();
+        assert_eq!(ik.target_id, hand);
+        assert_eq!(ik.end_effector_id, elbow);
+    }
+
+    #[test]
+    fn resolves_bare_sources_from_local_scope() {
+        let mut w = World::default();
+
+        let unrelated_root = w.add_component(TransformComponent::new());
+        let unrelated_hand = w.add_component_boxed_named("hand", Box::new(TransformComponent::new()));
+        w.add_child(unrelated_root, unrelated_hand).unwrap();
+
+        let root = w.add_component(TransformComponent::new());
+
+        let ik_id = w.add_component(
+            IKChainComponent::new(
+                IKSolver::TwoBoneIK {
+                    root_joint_id: ComponentId::null(),
+                    mid_joint_id: ComponentId::null(),
+                    pole_direction: [0.0, 1.0, 0.0],
+                    copy_end_rotation: false,
+                },
+                ComponentId::null(),
+                ComponentId::null(),
+            )
+            .with_target_source(ComponentRef::Query("#hand".to_string()))
+            .with_end_effector_source(ComponentRef::Query("#elbow".to_string())),
+        );
+        w.add_child(root, ik_id).unwrap();
+        let hand = w.add_component_boxed_named("hand", Box::new(TransformComponent::new()));
+        let elbow = w.add_component_boxed_named("elbow", Box::new(TransformComponent::new()));
+        w.add_child(ik_id, hand).unwrap();
+        w.add_child(ik_id, elbow).unwrap();
+
+        let mut emit = CommandQueue::new();
+        let mut sys = IKSystem::new();
+        sys.tick(&mut w, &mut emit, 0.016);
+
+        let ik = w.get_component_by_id_as::<IKChainComponent>(ik_id).unwrap();
+        assert_eq!(ik.target_id, hand);
+        assert_ne!(ik.target_id, unrelated_hand);
+        assert_eq!(ik.end_effector_id, elbow);
     }
 }
