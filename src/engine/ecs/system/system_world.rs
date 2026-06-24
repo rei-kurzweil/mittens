@@ -1192,6 +1192,8 @@ impl SystemWorld {
             spawn_panels, world_panel_pos, inspector_panel_pos,
         );
         let editor_context_state = self.editor_context.shared_state();
+        self.transform_gizmo
+            .set_editor_context_state(editor_context_state.clone());
 
         self.editor
             .materialize_editor_raycastables(world, emit, component);

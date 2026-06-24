@@ -5,10 +5,13 @@ use crate::engine::ecs::component::{
     TransformGizmoRotateComponent, TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
     TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
 };
+use crate::engine::ecs::system::GridSystem;
+use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
 };
 use crate::engine::user_input::InputState;
+use std::sync::{Arc, Mutex};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -20,11 +23,20 @@ enum TransformGizmoOp {
 }
 
 #[derive(Debug, Default)]
-pub struct TransformGizmoSystem;
+pub struct TransformGizmoSystem {
+    editor_context_state: Option<Arc<Mutex<EditorContextState>>>,
+}
 
 impl TransformGizmoSystem {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn set_editor_context_state(
+        &mut self,
+        editor_context_state: Arc<Mutex<EditorContextState>>,
+    ) {
+        self.editor_context_state = Some(editor_context_state);
     }
 
     /// Install per-gizmo scoped handlers rooted at the `TransformGizmoComponent` node.
@@ -38,7 +50,15 @@ impl TransformGizmoSystem {
             Self::on_parent_changed,
         );
         rx.add_handler(SignalKind::DragStart, gizmo_root, Self::on_drag_start);
-        rx.add_handler(SignalKind::DragMove, gizmo_root, Self::on_drag_move);
+        let editor_context_state = self.editor_context_state.clone();
+        rx.add_handler_closure_named(
+            SignalKind::DragMove,
+            gizmo_root,
+            None,
+            move |world, emit, env| {
+                Self::on_drag_move(world, emit, env, editor_context_state.clone());
+            },
+        );
         rx.add_handler(SignalKind::DragEnd, gizmo_root, Self::on_drag_end);
     }
 
@@ -270,6 +290,52 @@ impl TransformGizmoSystem {
             [delta_world[0], delta_world[1], delta_world[2], 0.0],
         );
         [v[0], v[1], v[2]]
+    }
+
+    fn target_local_point_to_world(
+        world: &World,
+        target_transform: ComponentId,
+        point_local: [f32; 3],
+    ) -> [f32; 3] {
+        use crate::engine::ecs::system::transform_system::TransformSystem;
+
+        let target_world = TransformSystem::world_model(world, target_transform)
+            .unwrap_or_else(Self::mat4_identity);
+        let v = Self::mat4_mul_vec4(
+            target_world,
+            [point_local[0], point_local[1], point_local[2], 1.0],
+        );
+        [v[0], v[1], v[2]]
+    }
+
+    fn world_point_to_target_local(
+        world: &World,
+        target_transform: ComponentId,
+        point_world: [f32; 3],
+    ) -> [f32; 3] {
+        use crate::engine::ecs::system::transform_system::TransformSystem;
+        use crate::utils::math;
+
+        let target_world = TransformSystem::world_model(world, target_transform)
+            .unwrap_or_else(Self::mat4_identity);
+        let inv_target_world = math::mat4_inverse(target_world).unwrap_or_else(Self::mat4_identity);
+        let v = Self::mat4_mul_vec4(
+            inv_target_world,
+            [point_world[0], point_world[1], point_world[2], 1.0],
+        );
+        [v[0], v[1], v[2]]
+    }
+
+    fn active_snap_grid_for_translate(
+        world: &World,
+        editor_context_state: Option<Arc<Mutex<EditorContextState>>>,
+    ) -> Option<crate::engine::ecs::system::grid_system::ActiveGrid> {
+        let owner_transform = editor_context_state
+            .as_ref()
+            .and_then(|state| state.lock().ok())
+            .and_then(|state| state.active_grid_owner_transform)?;
+        let grids = GridSystem::new();
+        grids.active_grid_for_owner_transform(world, owner_transform)
     }
 
     fn world_dir_to_target_local(
@@ -563,6 +629,7 @@ impl TransformGizmoSystem {
         world: &mut World,
         emit: &mut dyn SignalEmitter,
         env: &crate::engine::ecs::Signal,
+        editor_context_state: Option<Arc<Mutex<EditorContextState>>>,
     ) {
         use crate::engine::ecs::system::transform_system::TransformSystem;
         use crate::utils::math;
@@ -647,7 +714,17 @@ impl TransformGizmoSystem {
                     return;
                 };
                 let cur = t_ro.transform.translation;
-                let next = add(cur, delta);
+                let unsnapped_next = add(cur, delta);
+                let next = if let Some(active_grid) =
+                    Self::active_snap_grid_for_translate(world, editor_context_state.clone())
+                {
+                    let candidate_world =
+                        Self::target_local_point_to_world(world, target_transform, unsnapped_next);
+                    let snapped_world = GridSystem::snap_hit(&active_grid, candidate_world).point_world;
+                    Self::world_point_to_target_local(world, target_transform, snapped_world)
+                } else {
+                    unsnapped_next
+                };
 
                 if Self::debug_apply_enabled() {
                     Self::log_apply(

@@ -185,6 +185,18 @@ impl GridSystem {
             .find_map(|child| self.grid_entry(world, child))
     }
 
+    pub fn active_grid_for_owner_transform(
+        &self,
+        world: &World,
+        owner_transform: ComponentId,
+    ) -> Option<ActiveGrid> {
+        let entry = self.grid_owned_by_transform(world, owner_transform)?;
+        if !entry.enabled || entry.hidden || !entry.selectable {
+            return None;
+        }
+        self.active_grid_from_entry(world, entry)
+    }
+
     pub fn grid_entry(&self, world: &World, grid_component: ComponentId) -> Option<GridEntry> {
         self.ensure_registry_current(world);
         let registry = self.registry.lock().expect("grid registry mutex poisoned");

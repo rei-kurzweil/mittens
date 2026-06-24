@@ -750,6 +750,7 @@ export fn grid_panel(title, items, title_color, panel_background_color, item_bac
                 background_color([0.96, 0.92, 0.18, 0.80])
                 background_z(-0.001)
             }
+            Selection.root("#content_slot").optional() { name = "grid_panel_selection" }
         }
 
         T {

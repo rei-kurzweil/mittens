@@ -1301,10 +1301,11 @@ fn create_component(
         "Selection" => {
             let id = world.add_component(match ctor {
                 Some("multiple") => SelectionComponent::multiple(),
+                Some("optional") => SelectionComponent::optional(),
                 _ => SelectionComponent::new(),
             });
             if let Some(method) = ctor {
-                if method != "multiple" {
+                if method != "multiple" && method != "optional" {
                     apply_call(world, id, method, args)?;
                 }
             }
@@ -1992,6 +1993,12 @@ fn apply_call(
         .is_some()
     {
         match method {
+            "optional" => {
+                if let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(id)
+                {
+                    selection.allow_empty_single = true;
+                }
+            }
             "root" => {
                 let src = arg_component_ref(world, args, 0)?;
                 if let Some(selection) = world.get_component_by_id_as_mut::<SelectionComponent>(id)

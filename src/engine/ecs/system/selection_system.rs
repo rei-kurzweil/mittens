@@ -518,16 +518,16 @@ fn direct_option_payload(
 ) -> Option<ComponentId> {
     let row_root = selected_component?;
     let option_root = option_marker_on_node(world, row_root).unwrap_or(row_root);
-    let matches: Vec<_> = world
-        .children_of(option_root)
-        .iter()
-        .copied()
-        .filter(|&child| {
-            world
-                .get_component_by_id_as::<DataComponent>(child)
-                .is_some()
-        })
-        .collect();
+    let mut matches = Vec::new();
+    for root in [row_root, option_root] {
+        for &child in world.children_of(root) {
+            if world.get_component_by_id_as::<DataComponent>(child).is_some()
+                && !matches.contains(&child)
+            {
+                matches.push(child);
+            }
+        }
+    }
     println!(
         "[selection] direct_option_payload selection_root={selection_root:?} row_root={row_root:?} option_root={option_root:?} matches={matches:?}"
     );
@@ -721,8 +721,12 @@ fn handle_selection_click(
         } else if selection.selected_entries.len() == 1
             && selection.selected_entries[0].component == item_id
         {
-            // Single-select reclick is a no-op — keep existing selection
-            return;
+            if selection.allow_empty_single {
+                (Vec::new(), None)
+            } else {
+                // Single-select reclick is a no-op — keep existing selection
+                return;
+            }
         } else {
             (vec![entry.clone()], Some(entry.component))
         }
@@ -1056,6 +1060,31 @@ mod tests {
         assert!(!selection.contains(first));
         assert!(selection.contains(second));
         assert_eq!(selection.selected_component, Some(second));
+    }
+
+    #[test]
+    fn selection_optional_mode_reclick_clears_selection() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+
+        let selection_root = world.add_component_boxed(Box::new(SelectionComponent::optional()));
+        let item = world.add_component_boxed_named("item", Box::new(TransformComponent::new()));
+        let option = world.add_component_boxed(Box::new(OptionComponent::new()));
+        let _ = world.add_child(selection_root, item);
+        let _ = world.add_child(item, option);
+
+        handle_selection_click(&mut world, &mut emit, selection_root, item);
+        let selection = world
+            .get_component_by_id_as::<SelectionComponent>(selection_root)
+            .expect("selection");
+        assert_eq!(selection.selected_component, Some(item));
+
+        handle_selection_click(&mut world, &mut emit, selection_root, item);
+        let selection = world
+            .get_component_by_id_as::<SelectionComponent>(selection_root)
+            .expect("selection");
+        assert_eq!(selection.selected_component, None);
+        assert!(selection.selected_entries.is_empty());
     }
 
     #[test]

@@ -22,6 +22,7 @@ use std::f32::consts::FRAC_PI_2;
 const PANEL_LAYOUT_SELECTION_SELECTOR: &str = "#editor_panel_layout_selection";
 const WORLD_PANEL_SELECTION_SELECTOR: &str = "#world_panel_selection";
 const ASSETS_SELECTION_SELECTOR: &str = "#assets_selection";
+const GRID_PANEL_SELECTION_SELECTOR: &str = "#grid_panel_selection";
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 pub const EDITOR_WORKSPACE_ASSET_SELECTION_CHANGED: &str = "EditorWorkspaceAssetSelectionChanged";
 const PAINT_SYSTEM_HANDLER_NAME: &str = "paint_system";
@@ -37,6 +38,7 @@ const CURSOR_MARKER_OPACITY: f32 = 0.9;
 pub struct EditorContextState {
     pub active_editor: Option<ComponentId>,
     pub selected_component: Option<ComponentId>,
+    pub active_grid_owner_transform: Option<ComponentId>,
     pub selected_asset_payload: Option<ComponentId>,
     pub focused_panel: Option<ComponentId>,
     pub interaction_mode: EditorInteractionMode,
@@ -95,6 +97,10 @@ pub enum EditorContextEvent {
     AssetPanelSelectionChanged {
         asset_payload: Option<ComponentId>,
     },
+    GridPanelSelectionChanged {
+        active_grid_owner_transform: Option<ComponentId>,
+        editor: Option<ComponentId>,
+    },
     EditorSelectionChanged {
         editor: ComponentId,
         component: Option<ComponentId>,
@@ -137,6 +143,15 @@ pub fn reduce_editor_context_state(
         }
         EditorContextEvent::AssetPanelSelectionChanged { asset_payload } => {
             new.selected_asset_payload = *asset_payload;
+        }
+        EditorContextEvent::GridPanelSelectionChanged {
+            active_grid_owner_transform,
+            editor,
+        } => {
+            new.active_grid_owner_transform = *active_grid_owner_transform;
+            if editor.is_some() {
+                new.active_editor = *editor;
+            }
         }
         EditorContextEvent::EditorSelectionChanged {
             editor,
@@ -266,6 +281,13 @@ fn install_shared_panel_handlers(
                 return;
             };
             apply_editor_context_event(&state, &event);
+            if let EditorContextEvent::GridPanelSelectionChanged {
+                active_grid_owner_transform: Some(owner_transform),
+                ..
+            } = event
+            {
+                let _ = apply_semantic_target_selection(world, emit, &state, owner_transform, true);
+            }
             emit_editor_workspace_data_event(world, emit, panel_query_root, &event);
             sync_editor_component_selection(world, &event);
             let cursor_host = ensure_workspace_cursor_host(world, &workspace);
@@ -406,6 +428,15 @@ fn bootstrap_editor_context(
             },
         );
     }
+
+    if let Some(selection_root) =
+        world.find_component(panel_query_root, GRID_PANEL_SELECTION_SELECTOR)
+        && let Some(selection) = world.get_component_by_id_as::<SelectionComponent>(selection_root)
+    {
+        if let Some(event) = grid_panel_selection_event(world, selection, panel_query_root) {
+            apply_editor_context_event(state, &event);
+        }
+    }
 }
 
 fn editor_context_event_from_shared_signal(
@@ -438,6 +469,10 @@ fn editor_context_event_from_shared_signal(
     let is_assets_selection = world.component_label(*selection_root)
         == Some(ASSETS_SELECTION_SELECTOR.trim_start_matches('#'))
         || world.find_component(panel_query_root, ASSETS_SELECTION_SELECTOR)
+            == Some(*selection_root);
+    let is_grid_panel_selection = world.component_label(*selection_root)
+        == Some(GRID_PANEL_SELECTION_SELECTOR.trim_start_matches('#'))
+        || world.find_component(panel_query_root, GRID_PANEL_SELECTION_SELECTOR)
             == Some(*selection_root);
     let is_editor_settings_selection = world.component_label(*selection_root)
         == Some(EDITOR_SETTINGS_SELECTION_SELECTOR.trim_start_matches('#'))
@@ -479,6 +514,13 @@ fn editor_context_event_from_shared_signal(
         Some(EditorContextEvent::AssetPanelSelectionChanged {
             asset_payload: selected_payload.or(component),
         })
+    } else if is_grid_panel_selection {
+        grid_panel_selection_event_from_payload(
+            world,
+            selected_payload.or(component),
+            panel_query_root,
+            fallback_editor,
+        )
     } else {
         None
     }
@@ -1016,6 +1058,42 @@ fn world_panel_selection_event(
     })
 }
 
+fn grid_panel_selection_event(
+    world: &World,
+    selection: &SelectionComponent,
+    panel_query_root: ComponentId,
+) -> Option<EditorContextEvent> {
+    grid_panel_selection_event_from_payload(
+        world,
+        selection.selected_payload.or(selection.selected_component),
+        panel_query_root,
+        None,
+    )
+}
+
+fn grid_panel_selection_event_from_payload(
+    world: &World,
+    payload_or_row: Option<ComponentId>,
+    panel_query_root: ComponentId,
+    fallback_editor: Option<ComponentId>,
+) -> Option<EditorContextEvent> {
+    let owner_transform = payload_or_row.and_then(|payload| {
+        world
+            .get_component_by_id_as::<crate::engine::ecs::component::DataComponent>(payload)
+            .and_then(|data| data.get_component("owner_transform"))
+            .or_else(|| resolve_semantic_target_from_payload(world, Some(payload), Some(payload)))
+    });
+    Some(EditorContextEvent::GridPanelSelectionChanged {
+        active_grid_owner_transform: owner_transform,
+        editor: current_or_default_editor_root(
+            world,
+            panel_query_root,
+            owner_transform,
+            fallback_editor,
+        ),
+    })
+}
+
 fn sync_editor_component_selection(world: &mut World, event: &EditorContextEvent) {
     match event {
         EditorContextEvent::WorldPanelSelectionChanged {
@@ -1061,6 +1139,7 @@ fn sync_editor_component_selection(world: &mut World, event: &EditorContextEvent
             }
         }
         EditorContextEvent::AssetPanelSelectionChanged { .. } => {}
+        EditorContextEvent::GridPanelSelectionChanged { .. } => {}
         EditorContextEvent::InteractionModeChanged {
             editor,
             interaction_mode,
@@ -1246,6 +1325,7 @@ mod tests {
             &EditorContextState {
                 active_editor: Some(editor),
                 selected_component: Some(selected),
+                active_grid_owner_transform: None,
                 selected_asset_payload: None,
                 focused_panel: None,
                 interaction_mode: EditorInteractionMode::Select,
@@ -1276,6 +1356,7 @@ mod tests {
             &EditorContextState {
                 active_editor: Some(editor),
                 selected_component: Some(selected),
+                active_grid_owner_transform: None,
                 selected_asset_payload: None,
                 focused_panel: None,
                 interaction_mode: EditorInteractionMode::Select,
@@ -1308,6 +1389,7 @@ mod tests {
         let state = Arc::new(Mutex::new(EditorContextState {
             active_editor: Some(editor_root),
             selected_component: Some(editor_root),
+            active_grid_owner_transform: None,
             selected_asset_payload: None,
             focused_panel: None,
             interaction_mode: EditorInteractionMode::Select,
@@ -1577,6 +1659,7 @@ mod tests {
         let state = Arc::new(Mutex::new(EditorContextState {
             active_editor: Some(editor_root),
             selected_component: Some(editor_root),
+            active_grid_owner_transform: None,
             selected_asset_payload: None,
             focused_panel: None,
             interaction_mode: EditorInteractionMode::Cursor3d,

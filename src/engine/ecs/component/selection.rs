@@ -17,6 +17,7 @@ pub struct SelectionEntry {
 #[derive(Debug, Clone)]
 pub struct SelectionComponent {
     pub mode: SelectionMode,
+    pub allow_empty_single: bool,
     pub target_root_source: Option<ComponentRef>,
     pub selected_index: Option<usize>,
     pub selected_component: Option<ComponentId>,
@@ -29,6 +30,7 @@ impl SelectionComponent {
     pub fn new() -> Self {
         Self {
             mode: SelectionMode::Single,
+            allow_empty_single: false,
             target_root_source: None,
             selected_index: None,
             selected_component: None,
@@ -41,6 +43,13 @@ impl SelectionComponent {
     pub fn multiple() -> Self {
         Self {
             mode: SelectionMode::Multiple,
+            ..Self::new()
+        }
+    }
+
+    pub fn optional() -> Self {
+        Self {
+            allow_empty_single: true,
             ..Self::new()
         }
     }
@@ -129,7 +138,13 @@ impl Component for SelectionComponent {
     ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let mut expr = match self.mode {
-            SelectionMode::Single => ce_call("Selection", "", vec![]),
+            SelectionMode::Single => {
+                if self.allow_empty_single {
+                    ce_call("Selection", "optional", vec![])
+                } else {
+                    ce_call("Selection", "", vec![])
+                }
+            }
             SelectionMode::Multiple => ce_call("Selection", "multiple", vec![]),
         };
         if let Some(source) = &self.target_root_source {

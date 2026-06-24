@@ -10,7 +10,7 @@ use crate::engine::ecs::system::data_renderer_system::{
     DataRendererSystem, ItemRendererSpec, RendererSpec, UiItem, UiItemKind,
 };
 use crate::engine::ecs::system::editor::context::{
-    EditorContextState, apply_editor_root_selection, apply_semantic_target_selection,
+    EditorContextState, apply_editor_root_selection,
 };
 use crate::engine::ecs::system::editor::world_panel::{
     world_panel_item_label, PANEL_CONTENT_SLOT_SELECTOR,
@@ -22,6 +22,7 @@ use crate::engine::ecs::system::panel_system::{
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
 
 pub(crate) const GRID_PANEL_ROOT_SELECTOR: &str = "#grid_panel_root";
+pub(crate) const GRID_PANEL_SELECTION_SELECTOR: &str = "#grid_panel_selection";
 pub(crate) const GRID_PANEL_ADD_BUTTON_SELECTOR: &str = "#grid_add_button";
 pub(crate) const GRID_PANEL_ITEM_PREFIX: &str = "grid_item_";
 pub(crate) const GRID_PANEL_ROW_PAYLOAD_NAME: &str = "grid_panel_row_payload";
@@ -89,11 +90,8 @@ pub(crate) fn build_grid_panel_model(
     world: &World,
     grids: &GridSystem,
     editor_root: ComponentId,
+    active_grid_owner_transform: Option<ComponentId>,
 ) -> GridPanelModel {
-    let selected_component = world
-        .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(editor_root)
-        .and_then(|editor| editor.selected);
-
     let rows = grids
         .enumerate_grids_for_editor(world, editor_root)
         .into_iter()
@@ -103,8 +101,7 @@ pub(crate) fn build_grid_panel_model(
             label: world_panel_item_label(world, entry.owner_transform),
             shown: !entry.hidden,
             enabled: entry.enabled,
-            selected: selected_component == Some(entry.owner_transform)
-                || selected_component == Some(entry.grid_component),
+            selected: active_grid_owner_transform == Some(entry.owner_transform),
         })
         .collect();
 
@@ -139,13 +136,14 @@ fn grid_panel_row_render_fn(
         .target_ref
         .ok_or_else(|| "grid row missing owner transform".to_string())?;
     let grids = GridSystem::new();
-    let (shown, enabled) = grids
-        .grid_owned_by_transform(world, owner_transform)
-        .map(|entry| (!entry.hidden, entry.enabled))
-        .unwrap_or((true, true));
+    let Some(entry) = grids.grid_owned_by_transform(world, owner_transform) else {
+        return Err("grid row missing grid entry".to_string());
+    };
+    let (shown, enabled) = (!entry.hidden, entry.enabled);
     Ok(spawn_grid_panel_row_tree(
         world,
         &item.key,
+        entry.grid_component,
         owner_transform,
         &item.label,
         item.selected,
@@ -162,6 +160,7 @@ pub(crate) static GRID_PANEL_ROW_SPEC: LazyLock<ItemRendererSpec> =
 fn spawn_grid_panel_row_tree(
     world: &mut World,
     row_name: &str,
+    grid_component: ComponentId,
     owner_transform: ComponentId,
     label: &str,
     selected: bool,
@@ -208,7 +207,9 @@ fn spawn_grid_panel_row_tree(
             DataComponent::new()
                 .with_entry("row_name", DataValue::Text(row_name.to_string()))
                 .with_entry("label", DataValue::Text(label.to_string()))
-                .with_entry("target_component", DataValue::Component(owner_transform)),
+                .with_entry("target_component", DataValue::Component(owner_transform))
+                .with_entry("owner_transform", DataValue::Component(owner_transform))
+                .with_entry("grid_component", DataValue::Component(grid_component)),
         ),
     );
     let body_style = world.add_component_boxed_named(
@@ -368,6 +369,40 @@ fn spawn_grid_icon_button(
     root
 }
 
+fn clear_active_grid_selection_if_matches(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    editor_context_state: &Arc<Mutex<EditorContextState>>,
+    owner_transform: ComponentId,
+) {
+    let should_clear = editor_context_state
+        .lock()
+        .expect("editor context state mutex poisoned")
+        .active_grid_owner_transform
+        == Some(owner_transform);
+    if !should_clear {
+        return;
+    }
+
+    if let Some(selection_root) = world.find_component(panel_query_root, GRID_PANEL_SELECTION_SELECTOR)
+    {
+        crate::engine::ecs::system::selection_system::apply_selection_set(
+            world,
+            emit,
+            selection_root,
+            Vec::new(),
+            None,
+        );
+    }
+
+    if let Ok(mut editor_context) = editor_context_state.lock() {
+        if editor_context.active_grid_owner_transform == Some(owner_transform) {
+            editor_context.active_grid_owner_transform = None;
+        }
+    }
+}
+
 pub(crate) const EDITOR_WORKSPACE_GRIDS_CHANGED: &str = "EditorWorkspaceGridsChanged";
 
 pub(crate) fn resolve_grid_panel_editor_root(
@@ -419,7 +454,12 @@ pub(crate) fn rerender_grid_panel_from_context(
     };
 
     let grids = GridSystem::new();
-    let model = build_grid_panel_model(world, &grids, editor_root);
+    let model = build_grid_panel_model(
+        world,
+        &grids,
+        editor_root,
+        editor_context.active_grid_owner_transform,
+    );
     let items = grid_panel_items(&model);
     if let Err(error) =
         data_renderer.render_list(world, emit, content_slot, &GRID_PANEL_ROW_SPEC, &items)
@@ -510,6 +550,13 @@ pub(crate) fn handle_grid_panel_click(
     ) && let Some(owner_transform) = action.target_component
     {
         let _ = GridSystem::new().toggle_grid_hidden(world, emit, owner_transform);
+        clear_active_grid_selection_if_matches(
+            world,
+            emit,
+            panel_query_root,
+            editor_context_state,
+            owner_transform,
+        );
         emit.push_event(
             panel_query_root,
             EventSignal::DataEvent {
@@ -538,6 +585,13 @@ pub(crate) fn handle_grid_panel_click(
     ) && let Some(owner_transform) = action.target_component
     {
         let _ = GridSystem::new().toggle_grid_enabled(world, emit, owner_transform);
+        clear_active_grid_selection_if_matches(
+            world,
+            emit,
+            panel_query_root,
+            editor_context_state,
+            owner_transform,
+        );
         emit.push_event(
             panel_query_root,
             EventSignal::DataEvent {
@@ -568,6 +622,13 @@ pub(crate) fn handle_grid_panel_click(
         if editor_context.selected_component == Some(owner_transform) {
             apply_editor_root_selection(world, editor_context_state, editor_root);
         }
+        clear_active_grid_selection_if_matches(
+            world,
+            emit,
+            panel_query_root,
+            editor_context_state,
+            owner_transform,
+        );
         let _ = GridSystem::new().delete_grid(world, emit, owner_transform);
         emit.push_event(
             panel_query_root,
@@ -577,27 +638,6 @@ pub(crate) fn handle_grid_panel_click(
             },
         );
         return GridPanelClickOutcome::HandledNeedsFullRefresh(true);
-    }
-
-    if let Some(action) = decode_panel_action_payload(
-        world,
-        renderable,
-        GRID_PANEL_ROW_PAYLOAD_NAME,
-        PanelKind::Grid,
-        PanelActionKind::Select,
-        None,
-        None,
-    ) && let Some(owner_transform) = action.target_component
-    {
-        let _ = editor_root;
-        let _selection_result = apply_semantic_target_selection(
-            world,
-            emit,
-            editor_context_state,
-            owner_transform,
-            true,
-        );
-        return GridPanelClickOutcome::HandledNeedsFullRefresh(false);
     }
 
     GridPanelClickOutcome::Handled
@@ -638,12 +678,7 @@ mod tests {
         let grid = world.add_component(GridComponent::new(0.5));
         let _ = world.add_child(editor, transform);
         let _ = world.add_child(transform, grid);
-        world
-            .get_component_by_id_as_mut::<EditorComponent>(editor)
-            .expect("editor")
-            .selected = Some(transform);
-
-        let model = build_grid_panel_model(&world, &grids, editor);
+        let model = build_grid_panel_model(&world, &grids, editor, Some(transform));
         assert_eq!(model.title, "Grids");
         assert_eq!(model.rows.len(), 1);
         assert_eq!(model.rows[0].label, "grid_1");
