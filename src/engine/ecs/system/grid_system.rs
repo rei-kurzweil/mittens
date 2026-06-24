@@ -341,7 +341,7 @@ impl GridSystem {
         grid.hidden = hidden;
         if grid.enabled {
             self.ensure_live_runtime(world, emit, owner_transform, false);
-            self.sync_live_runtime_visibility(world, owner_transform, false);
+            self.sync_live_runtime_visibility(world, emit, owner_transform, false);
         }
         self.mark_dirty();
         true
@@ -367,7 +367,7 @@ impl GridSystem {
         grid.enabled = enabled;
         if enabled {
             self.ensure_live_runtime(world, emit, owner_transform, false);
-            self.sync_live_runtime_visibility(world, owner_transform, false);
+            self.sync_live_runtime_visibility(world, emit, owner_transform, false);
         } else {
             self.remove_live_runtime(world, owner_transform);
         }
@@ -527,7 +527,7 @@ impl GridSystem {
         preview_mode: bool,
     ) {
         if self.live_runtime_root(world, owner_transform).is_some() {
-            self.sync_live_runtime_visibility(world, owner_transform, preview_mode);
+            self.sync_live_runtime_visibility(world, emit, owner_transform, preview_mode);
             return;
         }
         let Some(entry) = self.grid_owned_by_transform(world, owner_transform) else {
@@ -614,6 +614,7 @@ impl GridSystem {
     fn sync_live_runtime_visibility(
         &self,
         world: &mut World,
+        emit: &mut dyn SignalEmitter,
         owner_transform: ComponentId,
         preview_mode: bool,
     ) {
@@ -630,6 +631,12 @@ impl GridSystem {
             && let Some(opacity) = world.get_component_by_id_as_mut::<OpacityComponent>(opacity_id)
         {
             opacity.opacity = grid_opacity(grid.hidden, preview_mode);
+            emit.push_intent_now(
+                owner_transform,
+                IntentValue::RegisterOpacity {
+                    component_ids: vec![opacity_id],
+                },
+            );
         }
         if let Some(selectable_id) = world.find_component(owner_transform, "#grid_live_selectable")
             && let Some(selectable) =
@@ -770,6 +777,7 @@ pub fn remap_grid_rotation_to_surface_up(surface_aligned_rotation: [f32; 4]) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::ecs::CommandQueue;
 
     #[test]
     fn snap_hit_rounds_to_grid_cell_on_xz_plane() {
@@ -912,5 +920,35 @@ mod tests {
             .selected = Some(grid_transform);
 
         assert!(grids.active_grid_for_editor(&world, editor).is_none());
+    }
+
+    #[test]
+    fn set_grid_hidden_re_registers_live_opacity() {
+        let mut world = World::default();
+        let grids = GridSystem::new();
+        let editor = world.add_component(EditorComponent::new());
+        let mut emit = CommandQueue::new();
+
+        let owner_transform = grids.spawn_grid_for_editor(
+            &mut world,
+            &mut emit,
+            editor,
+            GridSpawnSpec::default_hidden_editor_grid(),
+        );
+
+        let mut rx = RxWorld::default();
+        emit.drain_into_rx(&mut rx);
+        let _ = rx.drain_ready_intents();
+
+        assert!(grids.set_grid_hidden(&mut world, &mut emit, owner_transform, false));
+
+        emit.drain_into_rx(&mut rx);
+        let intents = rx.drain_ready_intents();
+        assert!(intents.iter().any(|signal| {
+            matches!(
+                signal.intent.as_ref().map(|intent| &intent.value),
+                Some(IntentValue::RegisterOpacity { .. })
+            )
+        }));
     }
 }

@@ -3783,10 +3783,10 @@ mod vulkano_backend {
             let msaa_samples = self.msaa_samples;
 
             for mirror in mirrors {
-                let view_count = mirror.captures.len();
-                if view_count == 0 {
+                if mirror.captures.is_empty() {
                     continue;
                 }
+                let capture_count = mirror.captures.len();
 
                 let aspect = mirror.aspect_ratio.max(1e-6);
                 let base_extent = (1024.0 * mirror.resolution_scale).max(1.0).floor() as u32;
@@ -3813,7 +3813,7 @@ mod vulkano_backend {
                         .ok_or("mirror capture key missing")?;
                     let targets = self.ensure_mirror_offscreen_targets(
                         mirror_offscreen_key,
-                        view_count,
+                        capture_count,
                         mirror_extent,
                         self.swapchain_state.swapchain.image_format(),
                     )?;
@@ -3824,11 +3824,7 @@ mod vulkano_backend {
                     )
                 };
 
-                for eye in 0..view_count {
-                    let capture = mirror
-                        .captures
-                        .get(eye)
-                        .ok_or("mirror capture out of range")?;
+                for (capture_slot, capture) in mirror.captures.iter().enumerate() {
                     let eye_data = &capture.camera;
 
                     let render_view = RenderView {
@@ -3848,13 +3844,13 @@ mod vulkano_backend {
                     let (color_attachment_view, color_resolve_view) =
                         if msaa_samples != SampleCount::Sample1 {
                             (
-                                msaa_color_views[eye].clone(),
-                                Some(color_views[eye].clone()),
+                                msaa_color_views[capture_slot].clone(),
+                                Some(color_views[capture_slot].clone()),
                             )
                         } else {
-                            (color_views[eye].clone(), None)
+                            (color_views[capture_slot].clone(), None)
                         };
-                    let depth_view = depth_views[eye].clone();
+                    let depth_view = depth_views[capture_slot].clone();
 
                     let runtime_texture_publication = visual_world
                         .runtime_texture_handle(&capture.target_key)

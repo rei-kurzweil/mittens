@@ -111,6 +111,16 @@ impl RenderToTextureSystem {
             .values()
             .map(|request| request.selector.clone())
             .collect();
+        let mirror_capture_selectors: HashSet<String> = visuals
+            .mirrors()
+            .iter()
+            .flat_map(|mirror| {
+                mirror
+                    .captures
+                    .iter()
+                    .map(|capture| capture.target_key.clone())
+            })
+            .collect();
 
         for selector in selectors {
             if visuals.runtime_texture_handle(&selector).is_some() {
@@ -122,6 +132,21 @@ impl RenderToTextureSystem {
                 Err(err) => {
                     println!(
                         "[RenderToTextureSystem] failed to allocate runtime texture handle: {err}"
+                    );
+                }
+            }
+        }
+
+        for selector in mirror_capture_selectors {
+            if visuals.runtime_texture_handle(&selector).is_some() {
+                continue;
+            }
+
+            match uploader.upload_texture_rgba8(&[0, 0, 0, 255], 1, 1) {
+                Ok(handle) => visuals.set_runtime_texture_handle(selector, handle),
+                Err(err) => {
+                    println!(
+                        "[RenderToTextureSystem] failed to allocate mirror runtime texture handle: {err}"
                     );
                 }
             }

@@ -191,6 +191,31 @@ mod tests {
         )
     }
 
+    fn configure_test_window_camera(visuals: &mut VisualWorld) {
+        let proj = crate::engine::ecs::system::camera_system::Camera3D::perspective_rh_zo(
+            60.0f32.to_radians(),
+            1.0,
+            0.1,
+            100.0,
+        );
+        let view = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, -1.0, 1.0],
+        ];
+        let mut transform = crate::engine::graphics::primitives::Transform::default();
+        transform.translation = [0.0, 0.0, 1.0];
+        transform.recompute_model();
+        transform.matrix_world = transform.model;
+        visuals.set_camera_mono_for_target_with_transform(
+            crate::engine::graphics::CameraTarget::Window,
+            view,
+            proj,
+            transform,
+        );
+    }
+
     #[test]
     fn prepare_render_resyncs_stencil_state_after_renderable_flush() {
         let mut world = World::default();
@@ -316,6 +341,7 @@ mod tests {
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
         let mut uploader = TestUploader::default();
+        configure_test_window_camera(&mut visuals);
 
         let root = world.add_component(TransformComponent::new());
         let renderable = world.add_component(RenderableComponent::square());
@@ -378,6 +404,7 @@ mod tests {
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
         let mut uploader = TestUploader::default();
+        configure_test_window_camera(&mut visuals);
 
         let root = world.add_component(TransformComponent::new());
         let renderable = world.add_component(RenderableComponent::square());
@@ -453,22 +480,33 @@ mod tests {
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
 
-        let ident4 = [
+        let proj = crate::engine::ecs::system::camera_system::Camera3D::perspective_rh_zo(
+            60.0f32.to_radians(),
+            1.0,
+            0.1,
+            100.0,
+        );
+        configure_test_window_camera(&mut visuals);
+        let xr_view = [
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, -1.0, 1.0],
         ];
+        let mut xr_transform = crate::engine::graphics::primitives::Transform::default();
+        xr_transform.translation = [0.0, 0.0, 1.0];
+        xr_transform.recompute_model();
+        xr_transform.matrix_world = xr_transform.model;
         visuals.set_xr_camera(vec![
             crate::engine::graphics::CameraData {
-                view: ident4,
-                proj: ident4,
-                transform: Default::default(),
+                view: xr_view,
+                proj,
+                transform: xr_transform,
             },
             crate::engine::graphics::CameraData {
-                view: ident4,
-                proj: ident4,
-                transform: Default::default(),
+                view: xr_view,
+                proj,
+                transform: xr_transform,
             },
         ]);
 
@@ -514,6 +552,75 @@ mod tests {
             }),
             "expected right stereo capture"
         );
+    }
+
+    #[test]
+    fn mirror_allocates_runtime_handles_for_stereo_capture_selectors() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let mut uploader = TestUploader::default();
+
+        let proj = crate::engine::ecs::system::camera_system::Camera3D::perspective_rh_zo(
+            60.0f32.to_radians(),
+            1.0,
+            0.1,
+            100.0,
+        );
+        configure_test_window_camera(&mut visuals);
+        let xr_view = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, -1.0, 1.0],
+        ];
+        let mut xr_transform = crate::engine::graphics::primitives::Transform::default();
+        xr_transform.translation = [0.0, 0.0, 1.0];
+        xr_transform.recompute_model();
+        xr_transform.matrix_world = xr_transform.model;
+        visuals.set_xr_camera(vec![
+            crate::engine::graphics::CameraData {
+                view: xr_view,
+                proj,
+                transform: xr_transform,
+            },
+            crate::engine::graphics::CameraData {
+                view: xr_view,
+                proj,
+                transform: xr_transform,
+            },
+        ]);
+
+        let root = world.add_component(TransformComponent::new());
+        let renderable = world.add_component(RenderableComponent::square());
+        let mirror = world.add_component(MirrorComponent::default());
+        let _ = world.add_child(root, renderable);
+        let _ = world.add_child(renderable, mirror);
+
+        let handle = register_test_instance(&mut visuals, renderable);
+        world
+            .get_component_by_id_as_mut::<RenderableComponent>(renderable)
+            .expect("renderable")
+            .handle = Some(handle);
+
+        systems
+            .mirror
+            .tick(&mut world, &mut visuals, &Default::default(), 0.0);
+        for component in systems.mirror.take_pending_texture_registrations() {
+            systems.register_texture(&mut world, &mut visuals, component);
+        }
+        systems
+            .render_to_texture
+            .flush_pending(&mut visuals, &mut uploader);
+
+        let mirror = visuals.mirrors().first().expect("mirror registration");
+        for capture in &mirror.captures {
+            assert!(
+                visuals.runtime_texture_handle(&capture.target_key).is_some(),
+                "expected runtime texture handle for {}",
+                capture.target_key
+            );
+        }
     }
 }
 
