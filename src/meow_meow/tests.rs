@@ -2249,6 +2249,7 @@ fn roundtrip_raycastable_pass_through() {
     let original = RaycastableComponent {
         enable: true,
         pointer_events: PointerEvents::PassThrough,
+        interaction_priority: 0,
     };
     let (world, id) = roundtrip_component(original);
     let got = world
@@ -2256,6 +2257,18 @@ fn roundtrip_raycastable_pass_through() {
         .unwrap();
     assert!(got.enable);
     assert_eq!(got.pointer_events, PointerEvents::PassThrough);
+}
+
+#[test]
+fn roundtrip_raycastable_interaction_priority() {
+    use crate::engine::ecs::component::RaycastableComponent;
+    let original = RaycastableComponent::enabled().with_interaction_priority(3);
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<RaycastableComponent>(id)
+        .unwrap();
+    assert!(got.enable);
+    assert_eq!(got.interaction_priority, 3);
 }
 
 #[test]

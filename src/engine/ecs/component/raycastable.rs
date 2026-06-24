@@ -44,6 +44,8 @@ pub struct RaycastableComponent {
     pub enable: bool,
     /// Which pointer event types this object captures vs. passes through to hits behind it.
     pub pointer_events: PointerEvents,
+    /// Higher values win interaction ordering before distance-based tie-breaking.
+    pub interaction_priority: u8,
 }
 
 impl RaycastableComponent {
@@ -51,6 +53,7 @@ impl RaycastableComponent {
         Self {
             enable,
             pointer_events: PointerEvents::All,
+            interaction_priority: 0,
         }
     }
 
@@ -67,6 +70,7 @@ impl RaycastableComponent {
         Self {
             enable: true,
             pointer_events: PointerEvents::DragOnly,
+            interaction_priority: 0,
         }
     }
 
@@ -75,7 +79,13 @@ impl RaycastableComponent {
         Self {
             enable: true,
             pointer_events: PointerEvents::ClickOnly,
+            interaction_priority: 0,
         }
+    }
+
+    pub fn with_interaction_priority(mut self, interaction_priority: u8) -> Self {
+        self.interaction_priority = interaction_priority;
+        self
     }
 }
 
@@ -106,6 +116,12 @@ impl Component for RaycastableComponent {
         let mut ce = ce_call("Raycastable", ctor, vec![]);
         if self.enable && matches!(self.pointer_events, PointerEvents::PassThrough) {
             ce = ce.with_call("pointer_events", vec![s("pass_through")]);
+        }
+        if self.enable && self.interaction_priority > 0 {
+            ce = ce.with_call(
+                "interaction_priority",
+                vec![num(self.interaction_priority as f64)],
+            );
         }
         ce
     }

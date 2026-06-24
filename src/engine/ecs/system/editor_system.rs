@@ -37,11 +37,11 @@ impl EditorSystem {
         self.installed_editor_roots.insert(editor_root);
 
         rx.add_handler_closure_named(
-            SignalKind::DragStart,
+            SignalKind::Click,
             editor_root,
             Some(EDITOR_SELECT_HANDLER_NAME.to_string()),
             move |world, emit, env| {
-                let Some(EventSignal::DragStart { renderable, .. }) = env.event.as_ref() else {
+                let Some(EventSignal::Click { renderable, .. }) = env.event.as_ref() else {
                     return;
                 };
 
@@ -61,11 +61,6 @@ impl EditorSystem {
                 }
 
                 let interaction_mode = editor_interaction_mode(world, editor_root);
-                eprintln!(
-                    "🖱️🧭🎛️ editor click resolved editor_root={editor_root:?} renderable={renderable:?} target_transform={:?} mode={interaction_mode:?}",
-                    scene_hit.target_transform
-                );
-
                 match interaction_mode {
                     EditorInteractionMode::Select => {
                         select_editor_target(
@@ -355,11 +350,10 @@ mod tests {
 
         systems.rx.push_event(
             renderable,
-            EventSignal::DragStart {
+            EventSignal::Click {
                 raycaster: renderable,
                 renderable,
                 hit_point: [0.0, 0.0, 0.0],
-                ray_dir_world: [0.0, 0.0, -1.0],
                 screen_pos_px: None,
             },
         );

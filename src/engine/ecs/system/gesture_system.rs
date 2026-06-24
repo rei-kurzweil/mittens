@@ -51,11 +51,12 @@ pub struct GestureSystem {
     states: HashMap<ComponentId, GestureState>,
     pub drag_update_policy: DragUpdatePolicy,
 
-    /// All ray hits this frame, sorted front-to-back by t.
-    /// Each entry: (t, raycaster, renderable, origin, dir, pointer_events).
+    /// All ray hits this frame, sorted by interaction priority first, then front-to-back by t.
+    /// Each entry: (priority, t, raycaster, renderable, origin, dir, pointer_events).
     ray_hits_sorted: Arc<
         Mutex<
             Vec<(
+                u8,
                 f32,
                 ComponentId,
                 ComponentId,
@@ -98,15 +99,15 @@ impl GestureSystem {
                 return;
             }
 
-            let pe = BvhSystem::find_raycastable_for_renderable(world, *renderable)
-                .map(|rc| rc.pointer_events)
-                .unwrap_or(PointerEvents::All);
+            let (priority, pe) = BvhSystem::find_raycastable_for_renderable(world, *renderable)
+                .map(|rc| (rc.interaction_priority, rc.pointer_events))
+                .unwrap_or((0, PointerEvents::All));
 
             let Ok(mut hits) = hits_ref.lock() else {
                 return;
             };
-            let entry = (*t, *raycaster, *renderable, *origin, *dir, pe);
-            let pos = hits.partition_point(|h| h.0 < *t);
+            let entry = (priority, *t, *raycaster, *renderable, *origin, *dir, pe);
+            let pos = hits.partition_point(|h| h.0 > priority || (h.0 == priority && h.1 < *t));
             hits.insert(pos, entry);
         });
 
@@ -236,6 +237,7 @@ impl GestureSystem {
         rx: &mut RxWorld,
     ) {
         let hits: Vec<(
+            u8,
             f32,
             ComponentId,
             ComponentId,
@@ -266,12 +268,12 @@ impl GestureSystem {
             };
 
             // Hits from this pointer's raycaster only.
-            let pointer_hits: Vec<_> = hits.iter().filter(|h| h.1 == raycaster_cid).collect();
+            let pointer_hits: Vec<_> = hits.iter().filter(|h| h.2 == raycaster_cid).collect();
 
-            let drag_hit = pointer_hits.iter().find(|h| h.5.captures_drag());
-            let click_hit = pointer_hits.iter().find(|h| h.5.captures_click());
+            let drag_hit = pointer_hits.iter().find(|h| h.6.captures_drag());
+            let click_hit = pointer_hits.iter().find(|h| h.6.captures_click());
 
-            let Some(&&(t, raycaster, renderable, origin, dir, _pe)) = drag_hit else {
+            let Some(&&(_priority, t, raycaster, renderable, origin, dir, _pe)) = drag_hit else {
                 continue;
             };
 
@@ -289,7 +291,7 @@ impl GestureSystem {
             state.dragging = true;
             state.drag_raycaster = Some(raycaster);
             state.drag_renderable = Some(renderable);
-            state.click_renderable = click_hit.map(|h| h.2);
+            state.click_renderable = click_hit.map(|h| h.3);
             state.last_hit_point = drag_hit_point;
             state.last_cursor_pos = if is_screen_pointer { screen_pos } else { None };
             state.drag_start_screen_pos = if is_screen_pointer { screen_pos } else { None };
@@ -346,7 +348,7 @@ impl GestureSystem {
                     continue;
                 }
 
-                let pointer_hits: Vec<_> = hits.iter().filter(|h| h.1 == active_rc).collect();
+                let pointer_hits: Vec<_> = hits.iter().filter(|h| h.2 == active_rc).collect();
                 let is_screen_pointer = self
                     .states
                     .get(&pointer_cid)
@@ -363,8 +365,10 @@ impl GestureSystem {
                     DragUpdatePolicy::RequireTargetContact => {
                         let target_hit = pointer_hits
                             .iter()
-                            .find(|h| h.1 == active_rc && h.2 == active_renderable);
-                        if let Some(&(t, _rc, _r, origin, dir, _pe)) = target_hit.copied() {
+                            .find(|h| h.2 == active_rc && h.3 == active_renderable);
+                        if let Some(&(_priority, t, _rc, _r, origin, dir, _pe)) =
+                            target_hit.copied()
+                        {
                             let cur = [
                                 origin[0] + dir[0] * t,
                                 origin[1] + dir[1] * t,

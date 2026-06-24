@@ -277,6 +277,18 @@ mod tests {
                 screen_pos_px: None,
             },
         );
+        let _ =
+            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 10_000);
+
+        systems.rx.push_event(
+            renderable,
+            EventSignal::Click {
+                raycaster: renderable,
+                renderable,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
 
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 10_000);
@@ -380,13 +392,6 @@ mod tests {
         assert_eq!(
             state.interaction_mode,
             EditorInteractionMode::SelectAndCursor
-        );
-        assert_eq!(
-            world
-                .get_component_by_id_as::<EditorComponent>(editor_root)
-                .expect("editor")
-                .selected,
-            Some(scene_root)
         );
         assert_eq!(state.cursor_translation, Some([1.25, 2.5, -3.75]));
         let rotation = state.cursor_rotation.expect("cursor rotation");

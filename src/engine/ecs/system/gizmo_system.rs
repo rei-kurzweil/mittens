@@ -1,6 +1,7 @@
 use crate::engine::ecs::component::{
     GestureCoordType, GestureCoordTypeComponent, SignalRouteUpwardComponent, TransformComponent,
-    TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
+    TransformDropComponent,
+    TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
     TransformGizmoRotateComponent, TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
     TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
 };
@@ -1249,8 +1250,10 @@ impl TransformGizmoSystem {
         ) -> ComponentId {
             use crate::engine::ecs::component::RaycastableComponent;
 
-            let rc =
-                world.add_component_boxed_named(name, Box::new(RaycastableComponent::enabled()));
+            let rc = world.add_component_boxed_named(
+                name,
+                Box::new(RaycastableComponent::enabled().with_interaction_priority(1)),
+            );
             let _ = world.add_child(parent, rc);
             rc
         }

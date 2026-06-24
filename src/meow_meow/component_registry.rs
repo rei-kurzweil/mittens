@@ -2402,6 +2402,8 @@ fn apply_call(
                 "pass_through" => PointerEvents::PassThrough,
                 _ => PointerEvents::All,
             };
+        } else if method == "interaction_priority" {
+            rc.interaction_priority = arg_f32(args, 0)?.clamp(0.0, u8::MAX as f32) as u8;
         }
         return Ok(());
     }

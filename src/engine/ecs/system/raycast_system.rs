@@ -1,7 +1,8 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    RayCastComponent, RayCastMode, RaycastableShapeComponent, RaycastableShapeType,
+    RayCastComponent, RayCastMode, RaycastableComponent, RaycastableShapeComponent,
+    RaycastableShapeType,
     RenderableComponent,
 };
 use crate::engine::ecs::system::BvhSystem;
@@ -42,6 +43,28 @@ enum RaySourceKind {
 use crate::engine::ecs::system::pointer_system::pointer_topology_context;
 
 impl RayCastSystem {
+    fn raycastable_for_renderable(
+        world: &World,
+        renderable: ComponentId,
+    ) -> Option<RaycastableComponent> {
+        BvhSystem::find_raycastable_for_renderable(world, renderable)
+    }
+
+    fn sort_hits_by_priority(world: &World, hits: &mut [(ComponentId, f32)]) {
+        hits.sort_by(|a, b| {
+            let a_pri = Self::raycastable_for_renderable(world, a.0)
+                .map(|rc| rc.interaction_priority)
+                .unwrap_or(0);
+            let b_pri = Self::raycastable_for_renderable(world, b.0)
+                .map(|rc| rc.interaction_priority)
+                .unwrap_or(0);
+
+            b_pri
+                .cmp(&a_pri)
+                .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        });
+    }
+
     fn explicit_shape_on_renderable(
         world: &World,
         renderable: ComponentId,
@@ -721,7 +744,7 @@ impl RayCastSystem {
             hits.push((cid, t2));
         }
 
-        hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        Self::sort_hits_by_priority(world, &mut hits);
         hits
     }
 
@@ -756,7 +779,7 @@ impl RayCastSystem {
             hits.push((cid, t2));
         }
 
-        hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        Self::sort_hits_by_priority(world, &mut hits);
         hits
     }
 }
