@@ -87,6 +87,15 @@ impl TransformGizmoSystem {
         })
     }
 
+    fn debug_hit_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            let v = std::env::var("CAT_DEBUG_GIZMO_HIT").unwrap_or_default();
+            let v = v.trim().to_ascii_lowercase();
+            matches!(v.as_str(), "1" | "true" | "yes" | "on")
+        })
+    }
+
     fn log_apply(world: &World, op: &str, target_transform: ComponentId, extra: &str) {
         static LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
         let n = LOG_COUNT.fetch_add(1, Ordering::Relaxed);
@@ -1252,7 +1261,7 @@ impl TransformGizmoSystem {
 
             let rc = world.add_component_boxed_named(
                 name,
-                Box::new(RaycastableComponent::enabled().with_interaction_priority(1)),
+                Box::new(RaycastableComponent::drag_only().with_interaction_priority(1)),
             );
             let _ = world.add_child(parent, rc);
             rc
@@ -1515,7 +1524,52 @@ impl TransformGizmoSystem {
             cur = world.parent_of(node);
         }
 
-        Some((gizmo?, op?))
+        let resolved = Some((gizmo?, op?));
+
+        if Self::debug_hit_enabled() {
+            let (gizmo_cid, op) = resolved?;
+            let renderable_name = world
+                .get_component_record(renderable)
+                .map(|n| {
+                    if n.name.is_empty() {
+                        n.component_type.clone()
+                    } else {
+                        format!("{}: {}", n.component_type, n.name)
+                    }
+                })
+                .unwrap_or_else(|| "<missing>".to_string());
+            let gizmo_name = world
+                .get_component_record(gizmo_cid)
+                .map(|n| {
+                    if n.name.is_empty() {
+                        n.component_type.clone()
+                    } else {
+                        format!("{}: {}", n.component_type, n.name)
+                    }
+                })
+                .unwrap_or_else(|| "<missing>".to_string());
+            let target_transform = world
+                .get_component_by_id_as::<TransformGizmoComponent>(gizmo_cid)
+                .and_then(|g| g.target_transform);
+            let target_name = target_transform
+                .and_then(|cid| world.get_component_record(cid).map(|n| (cid, n)))
+                .map(|(cid, n)| {
+                    if n.name.is_empty() {
+                        format!("{cid:?} '{}'", n.component_type)
+                    } else {
+                        format!("{cid:?} '{}: {}'", n.component_type, n.name)
+                    }
+                })
+                .unwrap_or_else(|| "<none>".to_string());
+            println!(
+                "[TransformGizmoSystem] resolve_gizmo_op renderable={renderable:?} '{}' gizmo={gizmo_cid:?} '{}' op={op:?} target={target_name}",
+                renderable_name,
+                gizmo_name,
+            );
+            return Some((gizmo_cid, op));
+        }
+
+        resolved
     }
 
     fn resolve_gesture_coord_type_for_renderable(

@@ -35,7 +35,7 @@ impl Cursor3dSystem {
         }
         self.installed_editor_roots.insert(editor_root);
 
-        for signal_kind in [SignalKind::DragStart] {
+        for signal_kind in [SignalKind::Click] {
             let editor_context_state = editor_context_state.clone();
             rx.add_handler_closure_named(
                 signal_kind,
@@ -73,7 +73,7 @@ fn handle_cursor_signal(
     }
 
     match event {
-        Some(EventSignal::DragStart {
+        Some(EventSignal::Click {
             renderable,
             hit_point,
             ..
@@ -269,27 +269,13 @@ mod tests {
 
         systems.rx.push_event(
             renderable,
-            EventSignal::DragStart {
-                raycaster: renderable,
-                renderable,
-                hit_point: [0.5, 0.0, 0.0],
-                ray_dir_world: [-1.0, 0.0, 0.0],
-                screen_pos_px: None,
-            },
-        );
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 10_000);
-
-        systems.rx.push_event(
-            renderable,
             EventSignal::Click {
                 raycaster: renderable,
                 renderable,
-                hit_point: [0.0, 0.0, 0.0],
+                hit_point: [0.5, 0.0, 0.0],
                 screen_pos_px: None,
             },
         );
-
         let _ =
             systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 10_000);
 
@@ -372,11 +358,10 @@ mod tests {
 
         systems.rx.push_event(
             renderable,
-            EventSignal::DragStart {
+            EventSignal::Click {
                 raycaster: renderable,
                 renderable,
                 hit_point: [0.0, 0.0, 0.0],
-                ray_dir_world: [0.0, 0.0, -1.0],
                 screen_pos_px: None,
             },
         );
