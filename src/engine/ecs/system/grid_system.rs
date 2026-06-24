@@ -9,7 +9,9 @@ use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
 };
-use crate::utils::math::{mat4_inverse, quat_from_axis_angle, quat_mul, vec3_normalize};
+use crate::utils::math::{
+    mat_to_quat, mat4_inverse, mat4_mul, quat_from_axis_angle, quat_mul, vec3_normalize,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GridEntry {
@@ -299,6 +301,12 @@ impl GridSystem {
         spec: GridSpawnSpec,
     ) -> ComponentId {
         let index = self.enumerate_grids_for_editor(world, editor_root).len() + 1;
+        let (translation, rotation) = if spec.world_space_pose {
+            editor_local_pose_from_world(world, editor_root, spec.translation, spec.rotation)
+                .unwrap_or((spec.translation, spec.rotation))
+        } else {
+            (spec.translation, spec.rotation)
+        };
         let grid_component = GridComponent::new(spec.spacing)
             .with_size_x(spec.size_x)
             .with_size_z(spec.size_z)
@@ -310,12 +318,8 @@ impl GridSystem {
             &format!("grid_{index}"),
             Box::new(
                 TransformComponent::new()
-                    .with_position(
-                        spec.translation[0],
-                        spec.translation[1],
-                        spec.translation[2],
-                    )
-                    .with_rotation_quat(spec.rotation),
+                    .with_position(translation[0], translation[1], translation[2])
+                    .with_rotation_quat(rotation),
             ),
         );
         let grid = world.add_component_boxed_named(
@@ -737,10 +741,35 @@ fn transform_direction(m: [[f32; 4]; 4], v: [f32; 3]) -> [f32; 3] {
     ]
 }
 
+fn editor_local_pose_from_world(
+    world: &World,
+    editor_root: ComponentId,
+    world_translation: [f32; 3],
+    world_rotation: [f32; 4],
+) -> Option<([f32; 3], [f32; 4])> {
+    let editor_world = TransformSystem::world_model(world, editor_root)?;
+    let editor_inverse = mat4_inverse(editor_world)?;
+    let world_model = TransformComponent::new()
+        .with_position(
+            world_translation[0],
+            world_translation[1],
+            world_translation[2],
+        )
+        .with_rotation_quat(world_rotation)
+        .transform
+        .model;
+    let local_model = mat4_mul(editor_inverse, world_model);
+    Some((
+        [local_model[3][0], local_model[3][1], local_model[3][2]],
+        mat_to_quat(local_model),
+    ))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GridSpawnSpec {
     pub translation: [f32; 3],
     pub rotation: [f32; 4],
+    pub world_space_pose: bool,
     pub spacing: f32,
     pub size_x: u32,
     pub size_z: u32,
@@ -754,6 +783,7 @@ impl GridSpawnSpec {
         Self {
             translation: [0.0, 0.0, 0.0],
             rotation: [0.0, 0.0, 0.0, 1.0],
+            world_space_pose: false,
             spacing: GridSystem::DEFAULT_EDITOR_GRID_SPACING,
             size_x: GridSystem::DEFAULT_EDITOR_GRID_SIZE_X,
             size_z: GridSystem::DEFAULT_EDITOR_GRID_SIZE_Z,
@@ -771,6 +801,7 @@ impl GridSpawnSpec {
         Self {
             translation: translation.unwrap_or([0.0, 0.0, 0.0]),
             rotation: rotation.unwrap_or([0.0, 0.0, 0.0, 1.0]),
+            world_space_pose: true,
             spacing: GridSystem::DEFAULT_EDITOR_GRID_SPACING,
             size_x: GridComponent::DEFAULT_SIZE_X,
             size_z: GridComponent::DEFAULT_SIZE_Z,
@@ -962,5 +993,58 @@ mod tests {
                 Some(IntentValue::RegisterOpacity { .. })
             )
         }));
+    }
+
+    #[test]
+    fn spawn_grid_from_cursor_pose_converts_world_pose_into_editor_local_space() {
+        let mut world = World::default();
+        let grids = GridSystem::new();
+        let mut emit = CommandQueue::new();
+        let editor_mount = world.add_component(
+            TransformComponent::new()
+                .with_position(5.0, 0.0, -2.0)
+                .with_rotation_quat(quat_from_axis_angle(
+                    [0.0, 1.0, 0.0],
+                    std::f32::consts::FRAC_PI_2,
+                )),
+        );
+        let editor = world.add_component(EditorComponent::new());
+        let _ = world.add_child(editor_mount, editor);
+
+        let desired_world_translation = [8.0, 1.5, 4.0];
+        let desired_world_rotation =
+            quat_from_axis_angle([1.0, 0.0, 0.0], std::f32::consts::FRAC_PI_2);
+
+        let owner_transform = grids.spawn_grid_for_editor(
+            &mut world,
+            &mut emit,
+            editor,
+            GridSpawnSpec::from_cursor_pose(
+                Some(desired_world_translation),
+                Some(desired_world_rotation),
+                false,
+            ),
+        );
+
+        let editor_world = TransformSystem::world_model(&world, editor).expect("editor world");
+        let owner_local = world
+            .get_component_by_id_as::<TransformComponent>(owner_transform)
+            .expect("grid local")
+            .transform
+            .model;
+        let owner_world = mat4_mul(editor_world, owner_local);
+        let actual_world_translation = [owner_world[3][0], owner_world[3][1], owner_world[3][2]];
+        let actual_world_rotation = mat_to_quat(owner_world);
+
+        for axis in 0..3 {
+            assert!(
+                (actual_world_translation[axis] - desired_world_translation[axis]).abs() < 1e-4
+            );
+        }
+        let rotation_dot = actual_world_rotation[0] * desired_world_rotation[0]
+            + actual_world_rotation[1] * desired_world_rotation[1]
+            + actual_world_rotation[2] * desired_world_rotation[2]
+            + actual_world_rotation[3] * desired_world_rotation[3];
+        assert!(rotation_dot.abs() > 0.9999);
     }
 }
