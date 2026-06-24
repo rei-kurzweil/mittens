@@ -10,7 +10,7 @@ use crate::engine::ecs::system::data_renderer_system::DataRendererSystem;
 use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor::grid_panel::{
     GridPanelClickOutcome, handle_grid_panel_click, rerender_grid_panel_from_context,
-    EDITOR_WORKSPACE_GRIDS_CHANGED,
+    EDITOR_WORKSPACE_GRIDS_CHANGED, GRID_PANEL_ROOT_SELECTOR, GRID_PANEL_SELECTION_SELECTOR,
 };
 use crate::engine::ecs::system::editor::inspector_panel::{
     INSPECTOR_DETAIL_SPEC, INSPECTOR_ITEM_PREFIX, INSPECTOR_PANEL_INSTANCE_ID_KEY,
@@ -551,7 +551,12 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             SignalKind::SelectionChanged,
             panel_query_root,
             move |world, emit, signal| {
-                let Some(EventSignal::SelectionChanged { selection_root, .. }) =
+                let Some(EventSignal::SelectionChanged {
+                    selection_root,
+                    selected_component,
+                    selected_payload,
+                    ..
+                }) =
                     signal.event.as_ref()
                 else {
                     return;
@@ -595,7 +600,12 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             SignalKind::SelectionChanged,
             panel_query_root,
             move |world, emit, signal| {
-                let Some(EventSignal::SelectionChanged { selection_root, .. }) =
+                let Some(EventSignal::SelectionChanged {
+                    selection_root,
+                    selected_component,
+                    selected_payload,
+                    ..
+                }) =
                     signal.event.as_ref()
                 else {
                     return;
@@ -643,8 +653,12 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             SignalKind::SelectionChanged,
             panel_query_root,
             move |world, emit, signal| {
-                let Some(EventSignal::SelectionChanged { selection_root, .. }) =
-                    signal.event.as_ref()
+                let Some(EventSignal::SelectionChanged {
+                    selection_root,
+                    selected_component,
+                    selected_payload,
+                    ..
+                }) = signal.event.as_ref()
                 else {
                     return;
                 };
@@ -721,6 +735,54 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                             component: asset_panel_root,
                         }],
                         primary: Some(asset_panel_root),
+                    },
+                );
+            },
+        );
+
+        rx.add_handler_closure(
+            SignalKind::SelectionChanged,
+            panel_query_root,
+            move |world, emit, signal| {
+                let Some(EventSignal::SelectionChanged {
+                    selection_root,
+                    selected_component,
+                    selected_payload,
+                    ..
+                }) = signal.event.as_ref()
+                else {
+                    return;
+                };
+
+                let Some(expected_selection_root) =
+                    world.find_component(panel_query_root, GRID_PANEL_SELECTION_SELECTOR)
+                else {
+                    return;
+                };
+                if *selection_root != expected_selection_root {
+                    return;
+                }
+
+                let Some(panel_layout_selection) = world
+                    .find_component(panel_query_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
+                else {
+                    return;
+                };
+                let Some(grid_panel_root) =
+                    world.find_component(panel_query_root, GRID_PANEL_ROOT_SELECTOR)
+                else {
+                    return;
+                };
+
+                emit.push_intent_now(
+                    panel_layout_selection,
+                    IntentValue::SelectionSet {
+                        component_ids: vec![panel_layout_selection],
+                        entries: vec![SelectionEntry {
+                            index: None,
+                            component: grid_panel_root,
+                        }],
+                        primary: Some(grid_panel_root),
                     },
                 );
             },

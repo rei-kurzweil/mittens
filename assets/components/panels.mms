@@ -740,17 +740,25 @@ export fn grid_panel(title, items, title_color, panel_background_color, item_bac
         }
 
         T {
-            name = "content_slot"
+            name = "grid_panel_content_area"
             Raycastable.enabled()
             Style {
                 display("block")
                 height(GRID_PANEL_CONTENT_HEIGHT_GU)
+                width(100%)
                 margin_bottom(GAP_GU)
                 overflow("scroll")
                 background_color([0.96, 0.92, 0.18, 0.80])
                 background_z(-0.001)
             }
             Selection.root("#content_slot").optional() { name = "grid_panel_selection" }
+            T {
+                name = "content_slot"
+                Style {
+                    display("block")
+                    width(100%)
+                }
+            }
         }
 
         T {

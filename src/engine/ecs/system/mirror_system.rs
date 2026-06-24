@@ -209,31 +209,22 @@ impl MirrorSystem {
             math::vec3_dot(reflected_from_plane, mirror_z),
         ];
 
-        println!(
-            "[mirror-debug] guid={mirror_guid} family={} view_index={view_index}",
-            family.key_segment()
-        );
-        println!(
-            "[mirror-debug] plane_pos={plane_pos:?} mirror_x={mirror_x:?} mirror_y={mirror_y:?} mirror_z={mirror_z:?}"
-        );
-        println!(
-            "[mirror-debug] source_world_pos={cam_pos:?} source_local={source_local:?}"
-        );
-        println!(
-            "[mirror-debug] reflected_world_pos={ref_pos:?} reflected_local={reflected_local:?}"
-        );
-        println!(
-            "[mirror-debug] source_forward={cam_forward:?} reflected_forward={ref_forward:?}"
-        );
-        println!("[mirror-debug] source_up={cam_up:?} reflected_up={ref_up:?}");
-        println!(
-            "[mirror-debug] local_delta=[{:.6}, {:.6}, {:.6}] expected_z_negation_check=[sx-rx={:.6}, sy-ry={:.6}, sz+rz={:.6}]",
-            reflected_local[0] - source_local[0],
-            reflected_local[1] - source_local[1],
-            reflected_local[2] - source_local[2],
-            source_local[0] - reflected_local[0],
-            source_local[1] - reflected_local[1],
-            source_local[2] + reflected_local[2],
+        let _ = (
+            mirror_guid,
+            family,
+            view_index,
+            plane_pos,
+            mirror_x,
+            mirror_y,
+            mirror_z,
+            cam_pos,
+            source_local,
+            ref_pos,
+            reflected_local,
+            cam_forward,
+            ref_forward,
+            cam_up,
+            ref_up,
         );
 
         if !force {

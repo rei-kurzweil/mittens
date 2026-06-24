@@ -2,8 +2,8 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 use crate::engine::ecs::component::{
     ColorComponent, DataComponent, DataValue, Display, EdgeInsets, EditorComponent,
-    OptionComponent, RaycastableComponent, SizeDimension, StyleComponent, TextAlign, TextComponent,
-    TransformComponent, style::VerticalAlign,
+    OptionComponent, RaycastableComponent, SelectionEntry, SizeDimension, StyleComponent,
+    TextAlign, TextComponent, TransformComponent, style::VerticalAlign,
 };
 use crate::engine::ecs::system::GridSystem;
 use crate::engine::ecs::system::data_renderer_system::{
@@ -19,6 +19,7 @@ use crate::engine::ecs::system::grid_system::GridSpawnSpec;
 use crate::engine::ecs::system::panel_system::{
     decode_panel_action_payload, is_descendant_or_self, PanelActionKind, PanelKind,
 };
+use crate::engine::ecs::system::selection_system::apply_selection_set;
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
 
 pub(crate) const GRID_PANEL_ROOT_SELECTOR: &str = "#grid_panel_root";
@@ -168,6 +169,28 @@ fn spawn_grid_panel_row_tree(
     enabled: bool,
 ) -> ComponentId {
     let row_root = world.add_component_boxed_named(row_name, Box::new(TransformComponent::new()));
+    let row_option = world.add_component_boxed_named(
+        format!("{row_name}_option"),
+        Box::new(OptionComponent::new()),
+    );
+    let row_raycastable = world.add_component_boxed_named(
+        format!("{row_name}_raycastable"),
+        Box::new(RaycastableComponent::click_only()),
+    );
+    let row_payload = world.add_component_boxed_named(
+        GRID_PANEL_ROW_PAYLOAD_NAME,
+        Box::new(
+            DataComponent::new()
+                .with_entry("row_name", DataValue::Text(row_name.to_string()))
+                .with_entry("label", DataValue::Text(label.to_string()))
+                .with_entry("target_component", DataValue::Component(owner_transform))
+                .with_entry("owner_transform", DataValue::Component(owner_transform))
+                .with_entry("grid_component", DataValue::Component(grid_component)),
+        ),
+    );
+    let _ = world.add_child(row_root, row_option);
+    let _ = world.add_child(row_root, row_raycastable);
+    let _ = world.add_child(row_root, row_payload);
 
     let style = world.add_component_boxed_named(
         format!("{row_name}_style"),
@@ -192,25 +215,6 @@ fn spawn_grid_panel_row_tree(
     let body = world.add_component_boxed_named(
         format!("{row_name}_body"),
         Box::new(TransformComponent::new()),
-    );
-    let body_option = world.add_component_boxed_named(
-        format!("{row_name}_body_option"),
-        Box::new(OptionComponent::new()),
-    );
-    let body_raycastable = world.add_component_boxed_named(
-        format!("{row_name}_body_raycastable"),
-        Box::new(RaycastableComponent::click_only()),
-    );
-    let body_payload = world.add_component_boxed_named(
-        GRID_PANEL_ROW_PAYLOAD_NAME,
-        Box::new(
-            DataComponent::new()
-                .with_entry("row_name", DataValue::Text(row_name.to_string()))
-                .with_entry("label", DataValue::Text(label.to_string()))
-                .with_entry("target_component", DataValue::Component(owner_transform))
-                .with_entry("owner_transform", DataValue::Component(owner_transform))
-                .with_entry("grid_component", DataValue::Component(grid_component)),
-        ),
     );
     let body_style = world.add_component_boxed_named(
         format!("{row_name}_body_style"),
@@ -247,9 +251,6 @@ fn spawn_grid_panel_row_tree(
         )),
     );
     let _ = world.add_child(row_root, body);
-    let _ = world.add_child(body, body_option);
-    let _ = world.add_child(body, body_raycastable);
-    let _ = world.add_child(body, body_payload);
     let _ = world.add_child(body, body_style);
     let _ = world.add_child(body, body_text_root);
     let _ = world.add_child(body_text_root, body_text);
@@ -461,10 +462,38 @@ pub(crate) fn rerender_grid_panel_from_context(
         editor_context.active_grid_owner_transform,
     );
     let items = grid_panel_items(&model);
-    if let Err(error) =
-        data_renderer.render_list(world, emit, content_slot, &GRID_PANEL_ROW_SPEC, &items)
-    {
+    let container = match data_renderer.render_list(world, emit, content_slot, &GRID_PANEL_ROW_SPEC, &items) {
+        Ok(container) => container,
+        Err(error) => {
         eprintln!("[InspectorSystem] grid panel content render error: {error}");
+            return;
+        }
+    };
+
+    let Some(selection_root) = world.find_component(grid_panel_root, GRID_PANEL_SELECTION_SELECTOR)
+    else {
+        return;
+    };
+
+    if let Some((index, _)) = model.rows.iter().enumerate().find(|(_, row)| row.selected) {
+        if let Some(row_root) =
+            world.find_component(container, &format!("#{GRID_PANEL_ITEM_PREFIX}{index}"))
+        {
+            apply_selection_set(
+                world,
+                emit,
+                selection_root,
+                vec![SelectionEntry {
+                    index: Some(index),
+                    component: row_root,
+                }],
+                Some(row_root),
+            );
+        } else {
+            apply_selection_set(world, emit, selection_root, Vec::new(), None);
+        }
+    } else {
+        apply_selection_set(world, emit, selection_root, Vec::new(), None);
     }
 }
 
@@ -640,7 +669,7 @@ pub(crate) fn handle_grid_panel_click(
         return GridPanelClickOutcome::HandledNeedsFullRefresh(true);
     }
 
-    GridPanelClickOutcome::Handled
+    GridPanelClickOutcome::NotHandled
 }
 
 #[cfg(test)]
