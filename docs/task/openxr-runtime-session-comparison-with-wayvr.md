@@ -14,6 +14,7 @@ Related context:
 
 - [docs/task/openxr-wayvr-style-controller-action-experiment.md](./openxr-wayvr-style-controller-action-experiment.md)
 - [docs/task/openxr-controller-actions-and-default-stick-locomotion.md](./openxr-controller-actions-and-default-stick-locomotion.md)
+- [docs/draft/openxr-vulkan-enable2-ownership-and-bootstrap.md](../draft/openxr-vulkan-enable2-ownership-and-bootstrap.md)
 - [src/engine/ecs/system/openxr_system.rs](../../src/engine/ecs/system/openxr_system.rs)
 - [/tmp/wayvr/wayvr/src/backend/openxr/mod.rs](/tmp/wayvr/wayvr/src/backend/openxr/mod.rs)
 - [/tmp/wayvr/wayvr/src/backend/openxr/helpers.rs](/tmp/wayvr/wayvr/src/backend/openxr/helpers.rs)
@@ -190,6 +191,10 @@ WayVR uses:
 This may mean:
 
 - the runtime behaves differently for action activation under those app/session types
+
+The failed narrow `khr_vulkan_enable2` experiment and the broader bootstrap implication are noted in:
+
+- [docs/draft/openxr-vulkan-enable2-ownership-and-bootstrap.md](../draft/openxr-vulkan-enable2-ownership-and-bootstrap.md)
 
 ### Hypothesis 2: Cat Engine's extension mix is still not the one the runtime expects
 
